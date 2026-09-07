@@ -1,0 +1,46 @@
+# agent-pmo:0b21609
+---
+# PHASE 2 (FULL BUILD). Puts the patched netcoredbg debug adapter for one
+# platform on disk. [DIST-DEBUGGER-BUNDLE]
+#
+# It does not decide HOW. tools/netcoredbg/provide.mjs owns that: it downloads
+# the SHA-256-pinned archive named in netcoredbg.lock.json and verifies the
+# bytes, and only compiles from source for a platform that has no pin yet. Both
+# CI and `make` go through it, so there is one answer to "which netcoredbg is
+# this" everywhere.
+#
+# The cache below covers the source-build path only. Compiling the adapter cost
+# 1m27 on Ubuntu and 4m38 on Windows, on EVERY pull request, for a binary whose
+# inputs change only when the pinned commits or the patch change - and on the
+# Windows leg it was the single largest item on the critical path. The key
+# hashes exactly the inputs that determine the result, so a bump misses and
+# rebuilds, and nothing else does. Once the lock file carries pins, a run
+# restores from cache or downloads a verified archive and never compiles at all.
+name: Provide the patched netcoredbg
+description: >-
+  Downloads the SHA-256-pinned netcoredbg archive for the given platform, or
+  builds and caches it when that platform has no pin.
+inputs:
+  vsix-platform:
+    description: Target platform triple, e.g. linux-x64 or win32-x64.
+    required: true
+outputs:
+  path:
+    description: Directory holding the adapter.
+    value: target/netcoredbg/${{ inputs.vsix-platform }}/netcoredbg
+runs:
+  using: composite
+  steps:
+    - name: Restore a previously built adapter
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        # The `.sharplsp-dap-hot-reload` marker provide.mjs checks is a dotfile;
+        # actions/cache preserves it, so a hit short-circuits both the download
+        # and the build.
+        path: target/netcoredbg/${{ inputs.vsix-platform }}/netcoredbg
+        key: >-
+          netcoredbg-${{ inputs.vsix-platform }}-${{ hashFiles('tools/netcoredbg/netcoredbg.lock.json',
+          'tools/netcoredbg/dap-hot-reload.patch', 'tools/vsix/build-netcoredbg.sh') }}
+    - name: Download or build the patched adapter
+      shell: bash
+      run: node tools/netcoredbg/provide.mjs ${{ inputs.vsix-platform }}

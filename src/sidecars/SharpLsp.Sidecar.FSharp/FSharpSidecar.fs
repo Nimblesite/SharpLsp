@@ -431,9 +431,9 @@ type FSharpSidecar() =
                 try
                     let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
                     let! items =
-                        FSharpHierarchy.incomingCalls
+                        FSharpHierarchy.incomingCallsWithSites
                             workspace request.FilePath request.Line request.Character
-                    let results = items |> List.map Helpers.toHierItem |> Array.ofList
+                    let results = items |> List.map Helpers.toHierCall |> Array.ofList
                     return Helpers.serializeOk results ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
@@ -445,9 +445,9 @@ type FSharpSidecar() =
                 try
                     let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
                     let! items =
-                        FSharpHierarchy.outgoingCalls
+                        FSharpHierarchy.outgoingCallsWithSites
                             workspace request.FilePath request.Line request.Character
-                    let results = items |> List.map Helpers.toHierItem |> Array.ofList
+                    let results = items |> List.map Helpers.toHierCall |> Array.ofList
                     return Helpers.serializeOk results ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)

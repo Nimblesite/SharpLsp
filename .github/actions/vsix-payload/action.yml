@@ -1,57 +1,30 @@
 # agent-pmo:0b21609
 ---
-# Implements [DIST-CI-VSIX-SHARDS]. ONE composite action packing the real VSIX
-# and proving the platform binary is inside it, used verbatim by both platform
-# legs.
+# PHASE 2 (FULL BUILD). Packs the real VSIX and proves the platform binary is
+# actually inside it. Used by both platform build jobs via ../build-platform.
 #
-# This check used to be a prerequisite of every test job, which meant one
-# production esbuild plus a `vsce ls` per chunk for an answer that cannot vary by
-# chunk - and, worse, it left the PRODUCTION bundle in `dist/`, whose missing
-# sourcemap silently stripped the end-to-end coverage the shards exist to
-# collect. As its own job on each leg it reports in minutes and touches nothing
-# the shards depend on.
+# This was its own job on each leg, which had to re-install npm dependencies and
+# re-download the host + sidecars it was about to package - a full job prelude
+# for a `vsce package` over binaries that already existed on the build machine.
+# Running it as the LAST step of the build that produced those binaries removes
+# both round trips, and puts the VSIX where PHASE 2 says it belongs: built with
+# everything else, exactly once, per platform.
+#
+# It must stay last. `npm run build` writes the PRODUCTION bundle over
+# src/editors/vscode/dist, and the production bundle carries no sourcemap; the
+# instrumented bundle the coverage shards measure has to have been published
+# before this runs.
 name: Verify the packaged VSIX payload
 description: >-
-  Packs the VSIX from prebuilt binaries and asserts the platform `sharplsp`
-  binary is actually in the archive.
-inputs:
-  binaries-artifact:
-    description: Artifact holding the release host and both sidecars.
-    required: true
-  debugger-artifact:
-    description: Artifact holding the patched netcoredbg build.
-    required: true
-  debugger-path:
-    description: Where the debugger artifact unpacks, e.g. target/netcoredbg/linux-x64/netcoredbg.
-    required: true
+  Packs the VSIX from the binaries already built in this job and asserts the
+  platform `sharplsp` binary is in the archive.
 runs:
   using: composite
   steps:
-    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-      with:
-        dotnet-version: |
-          9.0.x
-          10.0.303
-    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-      with:
-        node-version: '20'
-        cache: npm
-        cache-dependency-path: src/editors/vscode/package-lock.json
-    - name: Install VS Code extension deps
-      shell: bash
-      run: npm ci --prefix src/editors/vscode
-    - name: Download the prebuilt host and sidecars
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        name: ${{ inputs.binaries-artifact }}
-        path: target
-    - name: Download the patched debugger
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        name: ${{ inputs.debugger-artifact }}
-        path: ${{ inputs.debugger-path }}
     - name: Build the VSIX
       shell: bash
+      # VSIX_PREBUILT=1 stages the host and sidecars this job just built rather
+      # than invoking cargo and dotnet a second time.
       run: env VSIX_PREBUILT=1 make _build-vsix
     - name: Verify the VSIX contains the platform binary
       shell: bash

@@ -116,7 +116,12 @@ export function rangeOf(
   occurrence = 0,
 ): vscode.Range {
   const start = positionOf(document, snippet, focus, occurrence);
-  return new vscode.Range(start, start.translate(0, focus.length));
+  // Measured through the DOCUMENT, not by translating columns: a focus that
+  // spans lines — the selection over the fields a constructor is generated
+  // from, say — ends on a different line, and `translate(0, n)` would run off
+  // the end of the first one.
+  const end = document.positionAt(document.offsetAt(start) + focus.length);
+  return new vscode.Range(start, end);
 }
 
 export function rangeAfterAction(

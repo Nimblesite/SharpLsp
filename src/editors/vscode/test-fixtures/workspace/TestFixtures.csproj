@@ -3,6 +3,12 @@
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
+        <!-- The SDK's global usings (System, System.Collections.Generic,
+         System.IO, System.Linq, ...) would make those namespaces' types
+         resolve with no directive present, so the add-import suites could
+         never produce the unresolved-symbol diagnostic whose quick fix they
+         exercise. Fixture sources qualify what they need explicitly. -->
+        <ImplicitUsings>disable</ImplicitUsings>
         <!-- Override strict settings from Directory.Build.props for test fixtures.
          These are minimal C# snippets for VS Code extension integration tests,
          not production code — analyzers and doc requirements don't apply. -->

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Agent",
+      "Task"
+    ]
+  },
+  "disableWorkflows": true,
+  "autoMemoryEnabled": false
+}

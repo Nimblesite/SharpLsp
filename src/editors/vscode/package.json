@@ -756,7 +756,7 @@
       },
       {
         "command": "sharplsp.nuget.addFromExplorer",
-        "title": "%cmd.nuget.add%",
+        "title": "%cmd.nuget.addFromExplorer%",
         "category": "%category%",
         "icon": "$(package)"
       },

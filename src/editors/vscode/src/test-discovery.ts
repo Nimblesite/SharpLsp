@@ -28,29 +28,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
-import { dedupeLines, HEX_DIGITS, parseFullyQualifiedTestList } from './test-names.js';
+import { parseTestList } from './test-listing.js';
+import { HEX_DIGITS, parseFullyQualifiedTestList } from './test-names.js';
 
 export { parseFullyQualifiedTestList, withoutAdapterUniqueId } from './test-names.js';
-
-/** Lower-cased prefixes of VSTest/MSBuild output lines that are never tests. */
-const NOISE_PREFIXES = [
-  'the following',
-  'test run for',
-  'no test',
-  'starting test',
-  'a total of',
-  'passed!',
-  'failed!',
-  'skipped!',
-  'microsoft',
-  'copyright',
-  'vstest',
-  'determining',
-  'restored',
-  'restore complete',
-  'build succeeded',
-  'build started',
-];
+export { isDiscoveredTestLine, parseTestList } from './test-listing.js';
 
 /** VSTest prints one of these per test assembly it was handed. */
 const ASSEMBLY_BANNER = 'Test run for ';
@@ -96,36 +78,6 @@ export interface TestAssemblyListing {
   readonly path: string;
   /** Fully-qualified test names this assembly contributed, in listing order. */
   readonly names: readonly string[];
-}
-
-/** Punctuation a display name never contains but a diagnostic or stack frame does. */
-const NON_NAME_CHARACTERS = ['\\', '/', ':', '(', ')', ',', '"', "'", '<', '>', '='];
-
-/** A managed stack frame starts with this, and is otherwise dotted-identifier shaped. */
-const STACK_FRAME_PREFIX = 'at ';
-
-/**
- * True when `line` is a discovered test's DISPLAY name. Display names are dotted
- * identifiers (F# allows embedded spaces) and never contain path, scope or
- * argument punctuation, so path lines, the `Proj -> out.dll` mapping, version
- * banners, the summary — and, critically, managed STACK FRAMES like
- * `at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, …)` —
- * are all excluded. A stack frame slipping through would make a crashed
- * `dotnet test` look like a successful enumeration to `salvageable`. Used only
- * by the stdout fallback listing.
- */
-export function isDiscoveredTestLine(line: string): boolean {
-  if (!line.includes('.')) return false;
-  if (NON_NAME_CHARACTERS.some((character) => line.includes(character))) return false;
-  if (line.includes(' -> ')) return false;
-  const lower = line.toLowerCase();
-  if (lower.startsWith(STACK_FRAME_PREFIX)) return false;
-  return !NOISE_PREFIXES.some((prefix) => lower.startsWith(prefix));
-}
-
-/** Parse `dotnet test --list-tests` output into a de-duplicated list of names. */
-export function parseTestList(output: string): string[] {
-  return dedupeLines(output, isDiscoveredTestLine);
 }
 
 /**
@@ -321,27 +273,66 @@ function listFailure(run: DotnetRun): string {
  * Names are UNIONED, never taken from whichever framework was announced first: a
  * test compiled behind `#if NET8_0` exists in only one of the assemblies, and
  * dropping it would trade a duplicated tree for a missing test. The surviving
- * path is the lexicographically smallest, so the group ids the tree builds from
- * it stay put across sweeps however the build ordered its banners.
+ * path is the identity the frameworks SHARE (see {@link sharedOutputPath}), so
+ * the group ids the tree builds from it stay put across sweeps however the
+ * build ordered its banners.
  */
 export function mergeMultiTargeted(
   listings: readonly TestAssemblyListing[],
 ): TestAssemblyListing[] {
-  const merged = new Map<string, { path: string; names: string[] }>();
+  const merged = new Map<string, { paths: string[]; names: string[] }>();
   for (const listing of listings) {
     const existing = merged.get(listing.name);
     if (existing === undefined) {
-      merged.set(listing.name, { path: listing.path, names: [...listing.names] });
+      merged.set(listing.name, { paths: [listing.path], names: [...listing.names] });
       continue;
     }
+    existing.paths.push(listing.path);
     existing.names.push(...listing.names);
-    if (listing.path < existing.path) existing.path = listing.path;
   }
   return [...merged].map(([name, entry]) => ({
     name,
-    path: entry.path,
+    path: sharedOutputPath(entry.paths),
     names: [...new Set(entry.names)],
   }));
+}
+
+/**
+ * The identity several builds of ONE assembly share.
+ *
+ * Two target frameworks put the same assembly under `bin/<config>/net8.0/` and
+ * `bin/<config>/net9.0/`, so their paths agree everywhere except the segments
+ * that name a build. Keeping one of them as the merged group id keys the whole
+ * project's tree on a framework it merely happens to target: the id moves the
+ * moment the build announces its banners in another order, and a project
+ * targeting four frameworks gets a row identified by exactly one of them.
+ *
+ * Taking the common prefix back to its last separator and re-attaching the file
+ * name leaves what every build of the project agrees on. A project with one
+ * target framework has nothing to reconcile and keeps its real path.
+ */
+function sharedOutputPath(paths: readonly string[]): string {
+  const [first, ...rest] = paths;
+  if (first === undefined) return '';
+  if (rest.length === 0) return first;
+  const shared = rest.reduce(commonPrefix, first);
+  return shared.slice(0, lastSeparator(shared) + 1) + first.slice(lastSeparator(first) + 1);
+}
+
+/** The leading characters two paths agree on. */
+function commonPrefix(left: string, right: string): string {
+  let index = 0;
+  while (index < left.length && index < right.length && left[index] === right[index]) index += 1;
+  return left.slice(0, index);
+}
+
+/**
+ * Index of the last `/` or `\`, or -1. Both are checked rather than `path.sep`
+ * because the separator comes from whichever host BUILT the listing, which is
+ * not necessarily the one reading it.
+ */
+function lastSeparator(value: string): number {
+  return Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
 }
 
 /** Prefer VSTest's fully-qualified names; fall back to the display listing. */

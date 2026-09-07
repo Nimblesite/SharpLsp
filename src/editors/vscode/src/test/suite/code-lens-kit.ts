@@ -35,8 +35,18 @@ import * as vscode from 'vscode';
  * a tier that accounts for a SIDECAR reply (`LSP_RESPONSE_MS` or above), never
  * on `COMMAND_MS` — that tier is defined as an editor round trip which never
  * reaches a sidecar.
+ *
+ * The document is opened first. Unlike most `execute*Provider` commands,
+ * `vscode.executeCodeLensProvider` does NOT create a model reference of its
+ * own: it looks the URI up among the text models the editor already holds and
+ * throws a bare `Illegal argument` when there is none. A caller passing a file
+ * that is merely ON DISK therefore gets an error naming neither the file nor
+ * the reason, which reads like a broken provider rather than an unopened
+ * document. Opening it here is what every caller already means by "the lenses
+ * on this file", and is a no-op for a file some editor is showing.
  */
 export async function codeLensesFor(uri: vscode.Uri): Promise<vscode.CodeLens[]> {
+  await vscode.workspace.openTextDocument(uri);
   const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
     'vscode.executeCodeLensProvider',
     uri,

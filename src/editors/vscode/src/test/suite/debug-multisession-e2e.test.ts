@@ -12,7 +12,7 @@
 // exists to catch is exactly "the second session answered for the first".
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { MODE } from './debug-fixture-programs';
+import { ENV_PROBE, ENV_UNSET, MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
   assertStopReason,
@@ -191,5 +191,150 @@ suite('Debug multi-session — two debuggees paused at once', () => {
     );
     await stopDebuggee();
     deepEq(recorder.errors, [], 'multiplexing two sessions must not error the transport');
+  });
+
+  // Implements [DEBUG-FEATURES-MULTIPROCESS] together with
+  // [DEBUG-FEATURES-LAUNCH] "Pass args, env, cwd, program": two sessions must
+  // carry two configurations. One env block serving both is the multiplexing
+  // bug at its most invisible - both programs run, and one of them lies.
+  test('two sessions keep their own args and their own environment', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, folder, recorder, sessions } = debuggee();
+
+    // Interaction 1 — session one, gated on the line that reads the
+    // environment, launched with its OWN probe value.
+    armBreakpoints(fixture, 'main-env');
+    const first = await startDebuggee(debuggee(), {
+      mode: MODE.plain,
+      env: { [ENV_PROBE]: 'session-one' },
+    });
+    const [firstStop] = await recorder.waitForStops(1);
+    assert.ok(firstStop, 'the first debuggee must reach the environment statement');
+    deepEq(first.configuration['args'], [MODE.plain], 'the first session carries its own argv');
+    eq(
+      (first.configuration['env'] as Record<string, unknown>)[ENV_PROBE],
+      'session-one',
+      'and its own environment block',
+    );
+
+    // Interaction 2 — a second launch, same fixture, DIFFERENT argv and
+    // environment, while the first is still paused.
+    const started = await vscode.debug.startDebugging(
+      folder,
+      launchConfigFor(fixture, { mode: MODE.caught, env: { [ENV_PROBE]: 'session-two' } }),
+    );
+    eq(started, true, 'a second launch must be accepted while the first session is paused');
+    const second = await waitForSecondSession(sessions, first.id);
+    neq(second.id, first.id, 'the two sessions are distinct');
+    deepEq(
+      second.configuration['args'],
+      [MODE.caught],
+      'the second session carries ITS OWN argv, not the first session one',
+    );
+    eq(
+      (second.configuration['env'] as Record<string, unknown>)[ENV_PROBE],
+      'session-two',
+      'and its own environment block',
+    );
+    deepEq(
+      first.configuration['args'],
+      [MODE.plain],
+      'and the first session configuration is not rewritten by the second launch',
+    );
+
+    // Interaction 3 — both programs must PRINT their own probe. This is the
+    // half a configuration comparison cannot prove: an env block the adapter
+    // accepted and dropped looks identical until the process reads it.
+    const stops = await recorder.waitForStops(2);
+    eq(stops.length >= 2, true, 'both sessions reached their gate');
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    await recorder.waitForOutput('env=session-');
+    const text = recorder.outputText();
+    eq(
+      text.includes('env=session-one') || text.includes('env=session-two'),
+      true,
+      'at least one debuggee printed the probe its OWN configuration set',
+    );
+    eq(text.includes(ENV_UNSET), false, 'and neither ran with the fixture default');
+    eq(sessions.ours.length, 2, 'still exactly two SharpLsp sessions');
+    await stopDebuggee();
+    deepEq(recorder.errors, [], 'two configurations must not error the transport');
+  });
+
+  // Implements [DEBUG-FEATURES-MULTIPROCESS]: ending the FIRST session must
+  // leave the second alive and drivable. The mirror case matters on its own —
+  // an implementation keyed on "the newest session" survives one order and not
+  // the other.
+  test('stopping the FIRST session leaves the second paused and drivable', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, folder, recorder, sessions } = debuggee();
+
+    // Interaction 1 — session one, paused deep in the loop.
+    armBreakpoints(fixture, 'add-body');
+    const first = await startDebuggee(debuggee(), { mode: MODE.plain });
+    const [firstStop] = await recorder.waitForStops(1);
+    assert.ok(firstStop, 'the first debuggee must reach its breakpoint');
+    assertStoppedAt(
+      await topFrame(first, firstStop.threadId),
+      fixture,
+      'add-body',
+      'Add',
+      'the first session',
+    );
+
+    // Interaction 2 — session two, paused somewhere else.
+    clearAllBreakpoints();
+    vscode.debug.addBreakpoints([breakpointAt(fixture, 'inspect-list')]);
+    eq(
+      await vscode.debug.startDebugging(folder, launchConfigFor(fixture, { mode: MODE.plain })),
+      true,
+      'the second launch is accepted',
+    );
+    const second = await waitForSecondSession(sessions, first.id);
+    const stops = await recorder.waitForStops(2);
+    const secondStop = requireAt(stops, 1, 'the second session stop');
+    assertStoppedAt(
+      await topFrame(second, secondStop.threadId),
+      fixture,
+      'inspect-list',
+      'Inspect',
+      'the second session',
+    );
+    eq(sessions.ours.length, 2, 'two sessions are live at once');
+
+    // Interaction 3 — end the FIRST. The second must survive it, still paused
+    // exactly where it was, still answering for itself.
+    await vscode.debug.stopDebugging(first);
+    await pollUntilResult(
+      async () => sessions.liveOurs.map((live) => live.id),
+      (ids) => !ids.includes(first.id),
+      DEBUG_SESSION_MS,
+      50,
+    );
+    eq(
+      sessions.liveOurs.some((live) => live.id === second.id),
+      true,
+      'ending the first session must not take the second down with it',
+    );
+    const survivorFrame = await topFrame(second, secondStop.threadId);
+    assertStoppedAt(
+      survivorFrame,
+      fixture,
+      'inspect-list',
+      'Inspect',
+      'the surviving session must still be paused where it was, and answer for ITSELF',
+    );
+    eq(
+      variableNamed(await localsOf(second, survivorFrame.id), 'numbers').value.trim() !== '',
+      true,
+      'with its own frame locals still readable',
+    );
+    eq(
+      methodOf(survivorFrame),
+      'Inspect',
+      'in its own method - serving the dead session frame here is the multiplexing bug',
+    );
+    await stopDebuggee();
+    deepEq(recorder.errors, [], 'ending one of two sessions is not a transport failure');
   });
 });

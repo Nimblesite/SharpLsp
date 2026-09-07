@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
 import { comparablePath } from './test-helpers.js';
-import { COMMAND_MS } from './test-timeouts';
+import { COMMAND_MS, SETTLE_MS } from './test-timeouts';
 
 const extensionId = 'nimblesite.sharplsp';
 const lspComponentId = 'sharplsp';
@@ -39,7 +39,7 @@ suite('Bundled binary resolution', () => {
       manifestPath: path.join(ext.extensionPath, 'shipwright.json'),
       pathEntries: sidecarPathEntries(ext.extensionPath),
       showMessages: false,
-      timeoutMs: COMMAND_MS,
+      timeoutMs: SETTLE_MS,
     });
 
     const lspDiag = result.diagnostics.find(

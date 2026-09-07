@@ -13,7 +13,9 @@ use lsp_types::{
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{hierarchy_item_location, SidecarHierarchyItem, SidecarPositionReq};
+use crate::utils::{
+    hierarchy_item_location, SidecarCallHierarchyCall, SidecarHierarchyItem, SidecarPositionReq,
+};
 
 /// Handle `textDocument/prepareCallHierarchy`.
 pub fn handle_prepare(
@@ -85,23 +87,43 @@ pub fn handle_incoming(
             }
         };
 
-    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} incoming calls from sidecar", items.len());
+    let calls: Vec<SidecarCallHierarchyCall> = rmp_serde::from_slice(&response_bytes)?;
+    debug!("Got {} incoming calls from sidecar", calls.len());
 
-    let result: Vec<CallHierarchyIncomingCall> = items
+    let result: Vec<CallHierarchyIncomingCall> = calls
         .iter()
-        .filter_map(|i| {
-            let item = map_hierarchy_item(i)?;
+        .filter_map(|call| {
+            let item = map_hierarchy_item(&call.item())?;
             Some(CallHierarchyIncomingCall {
                 from: item,
-                from_ranges: vec![Range::new(
-                    Position::new(i.line, i.character),
-                    Position::new(i.end_line, i.end_character),
-                )],
+                from_ranges: call_site_ranges(call),
             })
         })
         .collect();
     Ok(serde_json::to_value(result)?)
+}
+
+/// The ranges at which the calls appear, per LSP 3.17.
+///
+/// A sidecar that reported no site still yields one range - the declaration -
+/// so an engine that cannot supply them degrades to naming the symbol rather
+/// than dropping the caller out of the tree entirely.
+fn call_site_ranges(call: &SidecarCallHierarchyCall) -> Vec<Range> {
+    if call.from_ranges.is_empty() {
+        return vec![Range::new(
+            Position::new(call.line, call.character),
+            Position::new(call.end_line, call.end_character),
+        )];
+    }
+    call.from_ranges
+        .iter()
+        .map(|site| {
+            Range::new(
+                Position::new(site.line, site.character),
+                Position::new(site.end_line, site.end_character),
+            )
+        })
+        .collect()
 }
 
 /// Handle `callHierarchy/outgoingCalls`.
@@ -134,19 +156,16 @@ pub fn handle_outgoing(
             }
         };
 
-    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} outgoing calls from sidecar", items.len());
+    let calls: Vec<SidecarCallHierarchyCall> = rmp_serde::from_slice(&response_bytes)?;
+    debug!("Got {} outgoing calls from sidecar", calls.len());
 
-    let result: Vec<CallHierarchyOutgoingCall> = items
+    let result: Vec<CallHierarchyOutgoingCall> = calls
         .iter()
-        .filter_map(|i| {
-            let mapped = map_hierarchy_item(i)?;
+        .filter_map(|call| {
+            let mapped = map_hierarchy_item(&call.item())?;
             Some(CallHierarchyOutgoingCall {
                 to: mapped,
-                from_ranges: vec![Range::new(
-                    Position::new(i.line, i.character),
-                    Position::new(i.end_line, i.end_character),
-                )],
+                from_ranges: call_site_ranges(call),
             })
         })
         .collect();
@@ -236,8 +255,10 @@ mod tests {
         assert_eq!(mapped.uri.as_str(), NATIVE_FILE_URI);
         assert_eq!(mapped.range.start, Position::new(10, 4));
         assert_eq!(mapped.range.end, Position::new(10, 14));
-        assert_eq!(mapped.selection_range.start, Position::new(10, 4));
-        assert_eq!(mapped.selection_range.end, Position::new(10, 4));
+        // The sidecar's span IS the identifier, so the selection covers it in
+        // full rather than collapsing to a caret at its start.
+        assert_eq!(mapped.selection_range, mapped.range);
+        assert_eq!(mapped.selection_range.end, Position::new(10, 14));
     }
 
     #[test]

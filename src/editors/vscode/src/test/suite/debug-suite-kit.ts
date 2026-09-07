@@ -17,7 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DapRecorder } from './debug-dap-kit';
-import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts';
 import {
   MODE,
   writeCSharpStepTarget,
@@ -190,12 +190,13 @@ async function waitForSession(): Promise<vscode.DebugSession> {
 export async function stopDebuggee(): Promise<void> {
   await stopAnyDebugSession();
   // Only reached once the terminate event has already fired, so the workbench
-  // clears the active session in milliseconds. A command-scale budget keeps
+  // clears the active session in milliseconds. `SETTLE_MS` is the tier for a
+  // wait the workbench owns rather than a command round trip, and it keeps
   // this pair of waits inside the teardown ceiling above.
   await pollUntilResult(
     async () => vscode.debug.activeDebugSession,
     (session) => session === undefined,
-    COMMAND_MS,
+    SETTLE_MS,
     50,
   );
 }
@@ -320,9 +321,15 @@ export function assertBoundAtLines(
     `${why}: every breakpoint must verify, in the response or by a later ` +
       `\`breakpoint\` event; unverified ones never stop the debuggee`,
   );
+  // Compared as a SET. DAP answers `setBreakpoints` in the order of the
+  // request, and the request is the WORKBENCH's breakpoint list — which it
+  // keeps sorted by line, not in the order a caller happened to arm them. The
+  // claim here is that every armed line came back bound to itself, and nothing
+  // drifted to a neighbouring line.
+  const ascending = (left: number, right: number): number => left - right;
   assert.deepStrictEqual(
-    bound.map((entry) => Number(entry['line'])),
-    [...lines],
+    bound.map((entry) => Number(entry['line'])).sort(ascending),
+    [...lines].sort(ascending),
     `${why}: a bound breakpoint must stay on the line the user set it on`,
   );
 }

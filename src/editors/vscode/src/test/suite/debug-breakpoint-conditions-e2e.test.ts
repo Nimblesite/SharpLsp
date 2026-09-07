@@ -16,6 +16,7 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { MODE } from './debug-fixture-programs';
 import {
+  CMD_CONTINUE,
   assertStopReason,
   assertStoppedAt,
   localsOf,
@@ -257,5 +258,177 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
     );
     await recorder.waitForOutput('done plain 45');
     assertCleanSession(debuggee(), 'a logpoint run');
+  });
+
+  // Implements [DEBUG-FEATURES-BREAKPOINTS] "Conditional breakpoints (C#
+  // expression)" with a condition over MORE THAN ONE local, and a condition
+  // that is never true. The T1/T2 evaluation tiers apply to a breakpoint
+  // condition exactly as they do to a watch: it is the same evaluator.
+  test('a condition over several locals selects exactly the visit it names', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, recorder } = debuggee();
+
+    // Interaction 1 — a condition combining the loop variable and the running
+    // total. It is true on exactly one of the three passes.
+    vscode.debug.addBreakpoints([
+      breakpointAt(fixture, 'accumulate-call', { condition: 'index == 2 && running > 1' }),
+    ]);
+    eq(vscode.debug.breakpoints.length, 1, 'one conditional breakpoint is armed');
+    const armed = requireAt(vscode.debug.breakpoints, 0, 'the conditional breakpoint');
+    assert.ok(armed instanceof vscode.SourceBreakpoint, 'armed as a source breakpoint');
+    eq(armed.condition, 'index == 2 && running > 1', 'carrying the expression the user typed');
+    eq(armed.hitCondition, undefined, 'and no hit count - this is an expression condition');
+
+    // Interaction 2 — the condition must reach the ADAPTER verbatim. A
+    // condition the workbench evaluates itself would stop and resume on every
+    // pass, which is visible as a stutter and wrong on any hot loop.
+    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+    const [stop] = await recorder.waitForStops(1);
+    assert.ok(stop, 'the condition holds on one pass, so the debuggee must stop once');
+    const sent = sentBreakpoints(recorder.requests('setBreakpoints'));
+    eq(sent.length, 1, 'one breakpoint was synced');
+    eq(
+      String(sent[0]?.['condition'] ?? ''),
+      'index == 2 && running > 1',
+      'and its condition travelled to the adapter unchanged',
+    );
+    eq(
+      recorder.capabilities()['supportsConditionalBreakpoints'],
+      true,
+      'supportsConditionalBreakpoints is a Phase 4 Yes; without it VS Code never sends one',
+    );
+
+    // Interaction 3 — the stop really is the pass the condition names, and it
+    // is the ONLY stop the run produces.
+    assertStopReason(stop, 'breakpoint', 'a multi-local conditional breakpoint');
+    const frame = await topFrame(session, stop.threadId);
+    assertStoppedAt(frame, fixture, 'accumulate-call', 'Accumulate', 'the selected pass');
+    const locals = await localsOf(session, frame.id);
+    eq(variableNamed(locals, 'index').value, '2', 'stopped on the pass the condition selects');
+    eq(variableNamed(locals, 'running').value, '3', 'with the accumulator the condition required');
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    await assertRanToCompletion(recorder, 0, 'a multi-local conditional breakpoint');
+    eq(
+      recorder.stops().length,
+      1,
+      'the loop runs ' +
+        String(LOOP_ITERATIONS) +
+        ' times and the condition holds on ONE of ' +
+        'them, so exactly one stop',
+    );
+    assertCleanSession(debuggee(), 'a multi-local condition');
+  });
+
+  // The negative half of the same row: a condition that can never hold must
+  // leave the program running. A debugger that stops anyway has turned a
+  // conditional breakpoint into a plain one, silently.
+  test('a condition that never holds never stops, and never errors the session', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, recorder } = debuggee();
+
+    // Interaction 1 — a condition over a real local that is never true.
+    vscode.debug.addBreakpoints([
+      breakpointAt(fixture, 'accumulate-call', { condition: 'index == 99' }),
+      breakpointAt(fixture, 'main-done'),
+    ]);
+    eq(vscode.debug.breakpoints.length, 2, 'one impossible condition, one plain gate at the end');
+    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+    const sent = sentBreakpoints(recorder.requests('setBreakpoints'));
+    eq(sent.length, 2, 'both breakpoints are synced in one request');
+    eq(
+      sent.filter((entry) => String(entry['condition'] ?? '') !== '').length,
+      1,
+      'exactly one of them carries a condition; the plain gate must not inherit it',
+    );
+
+    // Interaction 2 — the run must reach the LATER, unconditional gate, which
+    // proves the loop really executed and the condition really was evaluated.
+    const [stop] = await recorder.waitForStops(1);
+    assert.ok(stop, 'the run must reach the unconditional gate at the end of the program');
+    assertStopReason(stop, 'breakpoint', 'the unconditional gate');
+    assertStoppedAt(
+      await topFrame(session, stop.threadId),
+      fixture,
+      'main-done',
+      'Main',
+      'the first stop of the run is the UNCONDITIONAL gate; stopping in the loop first means ' +
+        'the condition was ignored and the breakpoint is really unconditional',
+    );
+
+    // Interaction 3 — and nothing else stopped on the way.
+    eq(
+      recorder.stops().length,
+      1,
+      'a condition that never holds must produce no stop at all, however many times its line ' +
+        'is reached',
+    );
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    await assertRanToCompletion(recorder, 0, 'a session with an impossible condition');
+    eq(recorder.stops().length, 1, 'and no stop after the gate either');
+    deepEq(
+      recorder.errors,
+      [],
+      'an expression that is merely FALSE is not an evaluation failure, and must not error ' +
+        'the transport',
+    );
+    assertCleanSession(debuggee(), 'an impossible condition');
+  });
+
+  // Implements [DEBUG-FEATURES-BREAKPOINTS] "Hit-count breakpoints" across the
+  // operator set the section names: ">", ">=", "<", "<=", "==" and "%". A hit
+  // condition that only understands a bare number is half the feature.
+  test('a hit condition using a relational operator selects the passes it names', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, recorder } = debuggee();
+
+    // Interaction 1 — ">= 2" over a line reached three times: passes two and
+    // three must stop, pass one must not.
+    vscode.debug.addBreakpoints([
+      breakpointAt(fixture, 'accumulate-call', { hitCondition: '>= 2' }),
+    ]);
+    const armed = requireAt(vscode.debug.breakpoints, 0, 'the hit-count breakpoint');
+    assert.ok(armed instanceof vscode.SourceBreakpoint, 'armed as a source breakpoint');
+    eq(armed.hitCondition, '>= 2', 'carrying the relational hit condition the user typed');
+    eq(armed.condition, undefined, 'a hit count is not an expression condition');
+    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+
+    // Interaction 2 — the condition reaches the adapter, and the FIRST stop is
+    // the second pass, not the first.
+    const [first] = await recorder.waitForStops(1);
+    assert.ok(first, 'the debuggee must stop on the second pass');
+    const sent = sentBreakpoints(recorder.requests('setBreakpoints'));
+    eq(String(sent[0]?.['hitCondition'] ?? ''), '>= 2', 'the hit condition travelled verbatim');
+    eq(
+      recorder.capabilities()['supportsHitConditionalBreakpoints'],
+      true,
+      'and the adapter advertises the capability that carries it',
+    );
+    const firstFrame = await topFrame(session, first.threadId);
+    eq(
+      variableNamed(await localsOf(session, firstFrame.id), 'index').value,
+      '2',
+      '">= 2" must skip the FIRST pass; stopping on it means the operator was ignored and the ' +
+        'condition read as a plain "stop always"',
+    );
+
+    // Interaction 3 — and the third pass stops too, because ">= 2" selects
+    // every pass from the second onward, not only the second.
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    const second = requireAt(await recorder.waitForStops(2), 1, 'the third-pass stop');
+    assertStopReason(second, 'breakpoint', 'the third pass');
+    const secondFrame = await topFrame(session, second.threadId);
+    eq(
+      variableNamed(await localsOf(session, secondFrame.id), 'index').value,
+      '3',
+      'the third pass stops as well - ">= 2" is a RANGE, not an equality',
+    );
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    await assertRanToCompletion(recorder, 0, 'a relational hit condition');
+    eq(
+      recorder.stops().length,
+      2,
+      'the line is reached ' + String(LOOP_ITERATIONS) + ' times and ">= 2" selects two of them',
+    );
+    assertCleanSession(debuggee(), 'a relational hit condition');
   });
 });

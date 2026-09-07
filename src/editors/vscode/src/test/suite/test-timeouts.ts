@@ -19,10 +19,28 @@
 //   Does it round-trip one editor command?           -> COMMAND_MS
 //   Is it pure in-process assertion?                 -> FAST_MS
 //
+// ── ONE initialization per suite ─────────────────────────────────
+//
 // The INITIALIZATION tiers at the bottom are for `suiteSetup`/`suiteTeardown`
 // ONLY. A test body must never claim one: paying restore + build inside a test
 // means the suite is initialising more than once, which is the thing the
 // per-suite setup exists to prevent.
+//
+// A suite pays ONE initialization. Activating the extension, writing the
+// fixture, restoring it and building it happen once in `suiteSetup`; every test
+// after that reuses the same activated host, the same built assemblies and the
+// same discovered tree. A suite that re-activates or re-builds per test is not
+// a slow suite -- it is a suite whose second test can no longer prove anything
+// about state the first one left behind, because there is none.
+//
+// The per-test ceilings below are ceilings on INCREMENTAL work against an
+// already-warm host, never on the setup. A test that needs an initialization
+// tier is either misplaced work or a suite missing a `suiteSetup`.
+//
+// Every value below is the tier table of [DIST-CI-VSIX-SHARDS-TIMEOUTS]. The
+// spec owns the numbers because they are measured on the CI agents, not on a
+// developer laptop; a ceiling that disagrees with that table is a bug in this
+// file, and changing one means changing the table first.
 //
 // Implements the timeout half of [DIST-CI-WIN-VSIX] and [DIST-CI-LAYOUT].
 
@@ -166,6 +184,20 @@ export const REAL_REPO_MS = 600_000;
  */
 export const REAL_REPO_WARMUP_MS = 480_000;
 
+/**
+ * How long to wait for something that must EVENTUALLY happen but is not a
+ * command round trip: a file-system watcher firing, a `SIGKILL`ed process
+ * disappearing from the process table, a spawned CLI printing `--version`, the
+ * workbench clearing its active debug session after a `terminated` event.
+ *
+ * `COMMAND_MS` covers ONE round trip the extension host itself answers. None of
+ * the above is one: they are owned by the OS or by a debounced watcher, they
+ * cost nothing when they are prompt, and a command-sized budget on them buys a
+ * flake rather than a faster suite. This is a POLL budget, so a healthy run
+ * never spends it.
+ */
+export const SETTLE_MS = 10_000;
+
 // ── Runner-level ceilings ────────────────────────────────────────
 
 /**
@@ -183,7 +215,8 @@ export const DEFAULT_TEST_MS = LSP_RESPONSE_MS;
  * MUST stay below the CI job's `timeout-minutes` ([DIST-CI-VSIX-SHARDS]): when
  * the job is killed there is no mocha report at all, so a hang is diagnosed
  * from a truncated log. Reaching this means an entire chunk hung, not that a
- * chunk legitimately grew — the largest tier above is four minutes.
+ * chunk legitimately grew — the largest tier above is four minutes, and every
+ * chunk pays it at most ONCE, in `suiteSetup`.
  */
 export const WHOLE_RUN_MS = 20 * 60 * 1_000;
 

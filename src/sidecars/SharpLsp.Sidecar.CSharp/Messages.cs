@@ -405,6 +405,23 @@ internal sealed class CallHierarchyItem
     public int EndCharacter { get; set; }
 }
 
+/// <summary>One range at which a call appears, inside the item that reports it.</summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class CallSiteResult
+{
+    [Key(0)]
+    public int Line { get; set; }
+
+    [Key(1)]
+    public int Character { get; set; }
+
+    [Key(2)]
+    public int EndLine { get; set; }
+
+    [Key(3)]
+    public int EndCharacter { get; set; }
+}
+
 [MessagePackObject(AllowPrivate = true)]
 internal sealed class CallHierarchyCallResult
 {
@@ -428,6 +445,12 @@ internal sealed class CallHierarchyCallResult
 
     [Key(6)]
     public int EndCharacter { get; set; }
+
+    /// <summary>
+    /// Every range at which the call appears, per LSP 3.17 `fromRanges`.
+    /// </summary>
+    [Key(7)]
+    public List<CallSiteResult> FromRanges { get; set; } = [];
 }
 
 // ── Type Hierarchy Types ─────────────────────────────────────────

@@ -581,7 +581,7 @@ For T3, the Debug Sidecar loads C#-sidecar `CSharpScriptCompilation` output into
 | Inner exception chain traversal | P2 |
 | Exception conditions (break only if message matches) | P2 — Phase 5 |
 
-Configuration via `setExceptionBreakpoints` with `filterOptions` and `exceptionOptions` per the DAP 1.71.0 specification.
+Configuration via `setExceptionBreakpoints` with `filterOptions` and `exceptionOptions` per the DAP 1.71.0 specification. An unhandled exception always breaks, whatever the filters say: there is nothing after it to continue to.
 
 ### Hot Reload During Debug `[DEBUG-FEATURES-HOT-RELOAD]`
 

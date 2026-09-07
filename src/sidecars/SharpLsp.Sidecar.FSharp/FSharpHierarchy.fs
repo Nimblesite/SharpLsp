@@ -24,6 +24,43 @@ type HierItem =
       EndLine: int
       EndCharacter: int }
 
+/// One range at which a call appears.
+type CallSite =
+    { Line: int
+      Character: int
+      EndLine: int
+      EndCharacter: int }
+
+/// A caller or callee together with every range the call is made at, which is
+/// what LSP 3.17 names `fromRanges`. A bare item cannot say WHERE, so a symbol
+/// called twice from one place was indistinguishable from one called once.
+type HierCall =
+    { Item: HierItem
+      Sites: CallSite list }
+
+/// The call site a symbol use occupies.
+let private siteOf (su: FSharpSymbolUse) : CallSite =
+    let r = su.Range
+
+    { Line = r.StartLine - 1
+      Character = r.StartColumn
+      EndLine = r.EndLine - 1
+      EndCharacter = r.EndColumn }
+
+/// Merge one call into the accumulator, keyed by the item it belongs to.
+///
+/// A repeat is not a duplicate to drop: it is another SITE for the row already
+/// there, and dropping it is exactly what lost the second call.
+let private addSite
+    (calls: Dictionary<string, HierCall>)
+    (key: string)
+    (item: HierItem)
+    (site: CallSite)
+    =
+    match calls.TryGetValue key with
+    | true, existing -> calls[key] <- { existing with Sites = existing.Sites @ [ site ] }
+    | _ -> calls[key] <- { Item = item; Sites = [ site ] }
+
 // ── Shared symbol → item mapping ─────────────────────────────────
 
 /// Map an FCS symbol to a capitalized kind string the Rust host understands.
@@ -152,24 +189,37 @@ let private callerItem (state: FSharpWorkspace.FSharpWorkspaceState) (su: FSharp
         return resolveCaller checkData su
     }
 
-/// Get incoming calls: project-wide call sites of the symbol, mapped to the
-/// declaration that encloses each call.
-let incomingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+/// Get incoming calls WITH the range of every call, which is what the wire
+/// publishes as LSP 3.17's `fromRanges`.
+let incomingCallsWithSites (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
     task {
         try
             let! uses = FSharpReferences.getProjectUsages state filePath line character
             let callSites = uses |> Array.filter (fun u -> not u.IsFromDefinition)
-            let results = List<HierItem>()
-            let seen = HashSet<string>()
+            let calls = Dictionary<string, HierCall>()
+            let order = List<string>()
+
             for su in callSites do
                 let! caller = callerItem state su
+
                 match caller with
-                | Some item when seen.Add(itemKey item) -> results.Add(item)
-                | _ -> ()
-            return List.ofSeq results
+                | Some item ->
+                    let key = itemKey item
+                    if not (calls.ContainsKey key) then order.Add key
+                    addSite calls key item (siteOf su)
+                | None -> ()
+
+            return [ for key in order -> calls[key] ]
         with ex ->
             Log.Debug(ex, "[F# IncomingCalls] failed")
             return []
+    }
+
+/// Get incoming calls as bare callers, for consumers that need only who calls.
+let incomingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+    task {
+        let! calls = incomingCallsWithSites state filePath line character
+        return calls |> List.map (fun call -> call.Item)
     }
 
 /// Pure computation of outgoing calls from a checked file. Extracted so
@@ -178,7 +228,7 @@ let private computeOutgoing
     (checkData: (FSharpParseFileResults * FSharpCheckFileResults * string) option)
     (line: int)
     (character: int)
-    : HierItem list =
+    : HierCall list =
     match checkData with
     | None -> []
     | Some(parseResults, checkResults, source) ->
@@ -192,20 +242,27 @@ let private computeOutgoing
                 match enclosingBinding parseResults.ParseTree pos with
                 | None -> []
                 | Some(_ident, bindingRange) ->
-                    let results = List<HierItem>()
-                    let seen = HashSet<string>()
-                    for u in checkResults.GetAllUsesOfAllSymbolsInFile() do
-                        if not u.IsFromDefinition
-                           && Range.rangeContainsRange bindingRange u.Range
-                           && isCallable u.Symbol then
-                            match itemOfSymbol u.Symbol with
-                            | Some item when seen.Add(itemKey item) -> results.Add(item)
-                            | _ -> ()
-                    List.ofSeq results
+                    let calls = Dictionary<string, HierCall>()
+                    let order = List<string>()
 
-/// Get outgoing calls: function/member applications inside the symbol's own
-/// binding body.
-let outgoingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+                    for u in checkResults.GetAllUsesOfAllSymbolsInFile() do
+                        if
+                            not u.IsFromDefinition
+                            && Range.rangeContainsRange bindingRange u.Range
+                            && isCallable u.Symbol
+                        then
+                            match itemOfSymbol u.Symbol with
+                            | Some item ->
+                                let key = itemKey item
+                                if not (calls.ContainsKey key) then order.Add key
+                                addSite calls key item (siteOf u)
+                            | None -> ()
+
+                    [ for key in order -> calls[key] ]
+
+/// Get outgoing calls WITH the range of every application, which is what the
+/// wire publishes as LSP 3.17's `fromRanges`.
+let outgoingCallsWithSites (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
     task {
         try
             let! checkData = FSharpWorkspace.checkFileWithParse state filePath
@@ -213,6 +270,13 @@ let outgoingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line ch
         with ex ->
             Log.Debug(ex, "[F# OutgoingCalls] failed")
             return []
+    }
+
+/// Get outgoing calls as bare callees, for consumers that need only who is called.
+let outgoingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+    task {
+        let! calls = outgoingCallsWithSites state filePath line character
+        return calls |> List.map (fun call -> call.Item)
     }
 
 // ── Type hierarchy ───────────────────────────────────────────────

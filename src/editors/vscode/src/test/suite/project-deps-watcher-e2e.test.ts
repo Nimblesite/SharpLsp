@@ -18,7 +18,7 @@ import {
   projectDependencies,
   resetForTests,
 } from '../../project-deps-store.js';
-import { COMMAND_MS } from './test-timeouts';
+import { COMMAND_MS, SETTLE_MS } from './test-timeouts';
 
 const CSPROJ = `<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
@@ -66,8 +66,44 @@ suite('Project-deps node watcher survives project dir deletion', () => {
     // raises it as an uncaught exception, which mocha attributes to this test.
     removeDirRecursive(dir);
 
-    const removed = await pollUntil(() => !projectDependencies.value.has(projectPath), COMMAND_MS);
+    const removed = await pollUntil(() => !projectDependencies.value.has(projectPath), SETTLE_MS);
     assert.ok(removed, 'deleted project must be dropped from projectDependencies');
     assert.ok(!fs.existsSync(projectPath), 'fixture tree really was deleted');
+    assert.ok(!fs.existsSync(dir), 'and so was the directory that held it');
+
+    // Interaction 2 — the drop is COMPLETE. A key left behind with an
+    // undefined value is a tree row that renders blank and offers build and
+    // debug actions against a file that no longer exists.
+    assert.strictEqual(
+      projectDependencies.value.has(projectPath),
+      false,
+      'no key remains for the deleted project',
+    );
+    assert.strictEqual(
+      [...projectDependencies.value.keys()].some((key) => key.includes('Deleted.csproj')),
+      false,
+      'and none under any spelling of its path',
+    );
+
+    // Interaction 3 — the HOST survives. Deleting a watched tree fires an
+    // async EPERM on Windows; without an error listener Node raises it as an
+    // uncaught exception and takes the extension host with it. Proving the
+    // store still works after the deletion is the only way to see that.
+    const survivor = path.join(os.tmpdir(), 'sharplsp-watch-survivor');
+    fs.mkdirSync(survivor, { recursive: true });
+    const survivorPath = path.join(survivor, 'Survivor.csproj');
+    fs.writeFileSync(survivorPath, CSPROJ);
+    try {
+      const stillWorks = ensureTracked(survivorPath);
+      assert.strictEqual(
+        stillWorks.nugetPackages.length,
+        1,
+        'the store still parses a project after a watched tree vanished',
+      );
+      assert.ok(projectDependencies.value.has(survivorPath), 'and still tracks it');
+      assert.strictEqual(projectDependencies.value.size, 1, 'holding only the survivor');
+    } finally {
+      removeDirRecursive(survivor);
+    }
   });
 });

@@ -85,6 +85,7 @@
   "cmd.rebuild": "重新构建",
   "cmd.clean": "清理",
   "cmd.nuget.add": "添加 NuGet 包",
+  "cmd.nuget.addFromExplorer": "向选定项目添加 NuGet 包",
   "cmd.nuget.update": "更新 NuGet 包",
   "cmd.newSolution": "新建解决方案",
   "cmd.newProject": "新建项目",

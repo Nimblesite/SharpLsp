@@ -287,7 +287,34 @@ class DebugRunFlow {
       },
       ...(target === undefined ? {} : { target }),
     };
-    return await this.host.enqueue(async () => await runTests(ids, this.cwd, options));
+    return await this.releasingQueueOnAttach(ids, options);
+  }
+
+  /**
+   * Run `dotnet test`, holding the shared `dotnet` queue only for the BUILD.
+   *
+   * The queue exists so a discovery sweep and a run cannot rebuild the same
+   * `bin/`/`obj/` at once. A debug run is different in kind: under
+   * VSTEST_HOST_DEBUG its `dotnet test` does not exit until the user has
+   * finished debugging, so holding the queue for the whole invocation froze
+   * the Test Explorer for as long as a breakpoint was held -- no discovery, no
+   * other run, for minutes or hours. MEASURED: a sweep requested while a
+   * debuggee was paused waited 39s and completed 2.7s after the session ended.
+   *
+   * The queue is released the moment a host is waiting and its attach has
+   * settled, which is strictly after the build the queue is there to protect.
+   * A run that dies before any host waits releases it just the same.
+   */
+  private async releasingQueueOnAttach(
+    ids: readonly string[],
+    options: TestRunOptions,
+  ): Promise<TestRunOutcome> {
+    const { started } = await this.host.enqueue(async () => {
+      const running = runTests(ids, this.cwd, options);
+      await Promise.race([this.attached, running]);
+      return { started: running };
+    });
+    return await started;
   }
 
   /**

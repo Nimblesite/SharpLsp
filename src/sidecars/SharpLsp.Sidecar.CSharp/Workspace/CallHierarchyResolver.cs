@@ -58,7 +58,7 @@ internal static class CallHierarchyResolver
         [
             .. callers
                 .Where(c => c.IsDirect)
-                .Select(c => ToCallResult(c.CallingSymbol))
+                .Select(c => ToCallResult(c.CallingSymbol, c.Locations))
                 .Where(c => c is not null)
                 .Cast<CallHierarchyCallResult>(),
         ];
@@ -118,11 +118,7 @@ internal static class CallHierarchyResolver
             var symbolInfo = model.GetSymbolInfo(invocation, ct);
             if (symbolInfo.Symbol is not null)
             {
-                var result = ToCallResult(symbolInfo.Symbol);
-                if (result is not null)
-                {
-                    results.Add(result);
-                }
+                AddOutgoingCall(symbolInfo.Symbol, invocation.GetLocation(), results);
             }
         }
     }
@@ -198,7 +194,42 @@ internal static class CallHierarchyResolver
         };
     }
 
-    private static CallHierarchyCallResult? ToCallResult(ISymbol symbol)
+    /// <summary>
+    /// Record one call site against its callee, merging repeats.
+    /// </summary>
+    /// <remarks>
+    /// LSP wants ONE entry per callee carrying every range it is called at; a
+    /// second entry for the same method renders as a duplicate row in the tree
+    /// that expands to exactly the same children.
+    /// </remarks>
+    private static void AddOutgoingCall(
+        ISymbol callee,
+        Location site,
+        List<CallHierarchyCallResult> results
+    )
+    {
+        var result = ToCallResult(callee, [site]);
+        if (result is null)
+        {
+            return;
+        }
+
+        var existing = results.Find(r =>
+            r.Name == result.Name && r.FilePath == result.FilePath && r.Line == result.Line
+        );
+        if (existing is null)
+        {
+            results.Add(result);
+            return;
+        }
+
+        existing.FromRanges.AddRange(result.FromRanges);
+    }
+
+    private static CallHierarchyCallResult? ToCallResult(
+        ISymbol symbol,
+        IEnumerable<Location> callSites
+    )
     {
         var item = ToCallHierarchyItem(symbol);
         return item is null
@@ -212,7 +243,23 @@ internal static class CallHierarchyResolver
                 Character = item.Character,
                 EndLine = item.EndLine,
                 EndCharacter = item.EndCharacter,
+                FromRanges = [.. callSites.Where(l => l.IsInSource).Select(ToCallSite)],
             };
+    }
+
+    /// <summary>One source location as the range the host publishes.</summary>
+    private static CallSiteResult ToCallSite(Location location)
+    {
+        var (_, line, character, endLine, endCharacter) = DocumentPosition.Coordinates(
+            location.GetMappedLineSpan()
+        );
+        return new CallSiteResult
+        {
+            Line = line,
+            Character = character,
+            EndLine = endLine,
+            EndCharacter = endCharacter,
+        };
     }
 
     private static string MapSymbolKind(ISymbol symbol)

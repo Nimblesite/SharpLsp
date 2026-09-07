@@ -215,7 +215,7 @@ how it was installed — and CI built and coverage-gated it in that state.
 
 - [ ] Add `build-rider` + `test-rider` to `.github/workflows/ci.yml`
       under a matrix job that requires JDK 17
-- [x] Cache `~/.gradle/caches` and `~/.gradle/wrapper` (`ci-editors.yml`,
+- [x] Cache `~/.gradle/caches` and `~/.gradle/wrapper` (`ci-test-editors.yml`,
       and the release `build-rider` job mirrors it)
 - [x] The Rider plugin zip is built and attached to tag releases alongside the
       VSIXs — release.yml `build-rider`, `RIDER_REQUIRED=1` so a missing JDK

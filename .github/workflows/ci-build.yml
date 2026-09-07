@@ -1,17 +1,36 @@
 # agent-pmo:0b21609
 ---
-# Single sequential gate that runs every check, analysis and format guard, and
-# then builds the release artifacts ONCE so the parallel test legs can consume
-# them without rebuilding. Called by ci.yml as the only `needs:` prerequisite of
-# every test leg: modified-files -> checks+build -> parallel tests.
+# PHASE 2 (FULL BUILD) + PHASE 3 (CACHE). [DIST-CI-LAYOUT]
 #
-# Lint and build are one job here on purpose ([DIST-CI-LAYOUT]): the test legs
-# are gated on this job, so a format/analysis failure fails the pipeline before
-# any test machine spins up, and the release binaries produced here are the
-# ONLY build of the host and sidecars on Ubuntu — no test leg may rebuild them.
+# Everything the pipeline needs, built for every platform, ONCE, and published.
+# The two jobs below are SIBLINGS: no `needs:` between them, so Ubuntu and
+# Windows compile concurrently and PHASE 2 costs one platform's build, not the
+# sum of both.
+#
+# That is the fix for the pipeline's largest structural defect. The Windows
+# build used to live in the TEST phase, gated on the Ubuntu build - which it
+# consumes nothing from - so it began 6m45 after the run started and every
+# Windows test chunk began 11m02 after that. 18 minutes of a 41-minute pipeline
+# was builds waiting on other builds.
+#
+# Both jobs run the SAME composite action (../actions/build-platform). There is
+# no Windows-only build recipe: the two had already drifted apart once, to the
+# point where Windows ran its whole VS Code suite uninstrumented while Ubuntu
+# carried the entire coverage number.
+#
+# PHASE 3 is the handoff boundary. Every artifact a test job needs is uploaded
+# here, and NOTHING downstream of this workflow is permitted to compile
+# anything. A test leg that invokes cargo, dotnet build or tsc is a bug.
 name: CI / Build
 'on':
-  workflow_call: {}
+  workflow_call:
+    outputs:
+      linux-chunks:
+        description: JSON array of VS Code feature chunks to run on Ubuntu.
+        value: ${{ jobs.build-linux.outputs.chunks }}
+      win-chunks:
+        description: JSON array of VS Code feature chunks to run on Windows.
+        value: ${{ jobs.build-windows.outputs.chunks }}
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -20,100 +39,46 @@ env:
 permissions:
   contents: read
 jobs:
-  build:
-    name: Checks + Build
+  build-linux:
+    name: Linux
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 45
+    timeout-minutes: 30
+    outputs:
+      chunks: ${{ steps.build.outputs.chunks }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Build every Linux artifact
+        id: build
+        uses: ./.github/actions/build-platform
         with:
-          toolchain: stable
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.303
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: "~/.nuget/packages"
-          key: "${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj', 'src/sidecars/Directory.Build.props') }}"
-          restore-keys: "${{ runner.os }}-nuget-"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: src/editors/vscode/package-lock.json
-      - name: Install dependencies
-        run: |
-          dotnet tool restore
-          npm ci --prefix src/editors/vscode
+          platform: linux
+          vsix-platform: linux-x64
+          host-binary: target/release/sharplsp
+          suite-artifact: vsix-suite-linux
+          binaries-artifact: linux-lsp-binaries
+          debugger-artifact: linux-netcoredbg
+          # One platform is enough to catch a layout regression in the
+          # standalone archive and the package-manager manifests.
+          archive: 'true'
 
-      # ── Checks, format and analysis ────────────────────────────────
-      - name: Format + lint (Rust)
-        run: make _lint-rust PROFILE=debug
-      - name: Format + lint (Zed)
-        run: make _lint-zed
-      - name: Format check (.NET)
-        run: dotnet csharpier check src/sidecars/
-      - name: Lint (.NET)
-        run: make _lint-dotnet
-      - name: Sidecar pack smoke test
-        run: |
-          dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          dotnet pack src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          ls -la /tmp/nupkg-smoke/*.nupkg
-      - name: Format check (VS Code)
-        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
-      - name: Lint (VS Code)
-        run: make _lint-vsix
-
-      # ── Build release artifacts once ───────────────────────────────
-      - name: Build sharplsp host (release)
-        run: make _build-rust
-      - name: Build .NET sidecars (release)
-        run: make _build-dotnet
-      - name: Build patched netcoredbg
-        run: bash tools/vsix/build-netcoredbg.sh linux-x64
-
-      # ── Standalone server archive ──────────────────────────────────
-      # [DIST-ARCHIVE] The archive is how Rider, Zed, Neovim, Helix and the
-      # Homebrew/Scoop formulas install SharpLsp — no VSIX, no shipwright, so the
-      # host must find its sidecars by the archive layout alone. Only release.yml
-      # built it before, which meant a layout regression surfaced at tag time with
-      # the release already half-published. It costs seconds here because the host
-      # and both sidecars are already built above.
-      - name: Package + verify standalone server archive
-        run: |
-          make _package-archive VSIX_PLAT=linux-x64 ARCHIVE_LSP=target/release/sharplsp
-          bash tools/packaging/verify-archive.sh linux-x64
-
-      # The Homebrew formula and Scoop manifest are only rendered on a tag, so
-      # without this the first sign of a broken one is a user's failed
-      # `brew install`. Runs the real renderer over fixture archives and asserts
-      # the install layout each package manager has to produce.
-      # [DIST-PATH-INSTALL]
-      - name: Verify Homebrew formula + Scoop manifest renderer
-        run: node tools/packaging/verify-package-manifests.mjs
-
-      # ── Cache the build for the parallel test legs ─────────────────
-      - name: Upload Linux LSP artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  build-windows:
+    name: Windows
+    # NO `needs:`. This is a sibling of build-linux, not its successor - it
+    # consumes nothing Ubuntu produces, and gating it on Ubuntu bought the
+    # pipeline nothing but 6m45 of idle Windows runner.
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 40
+    outputs:
+      chunks: ${{ steps.build.outputs.chunks }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Build every Windows artifact
+        id: build
+        uses: ./.github/actions/build-platform
         with:
-          name: linux-lsp-binaries
-          retention-days: 1
-          path: |
-            target/release/sharplsp
-            target/sidecar-csharp
-            target/sidecar-fsharp
-      - name: Upload patched Linux debugger
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: linux-netcoredbg
-          retention-days: 1
-          include-hidden-files: true
-          path: target/netcoredbg/linux-x64/netcoredbg
+          platform: win
+          vsix-platform: win32-x64
+          host-binary: target/release/sharplsp.exe
+          suite-artifact: vsix-suite-win
+          binaries-artifact: win-lsp-binaries
+          debugger-artifact: win-netcoredbg

@@ -1,0 +1,148 @@
+# agent-pmo:0b21609
+---
+# PHASE 2 (FULL BUILD) + PHASE 3 (CACHE) for ONE platform. [DIST-CI-LAYOUT]
+#
+# One composite action so the Linux and Windows build jobs are the SAME
+# pipeline, not two hand-maintained copies of it. They differ only in the inputs
+# below; everything either of them compiles, it compiles here, exactly once:
+#
+#   * the VS Code test suite (tsc + the instrumented esbuild bundle)
+#   * the release `sharplsp` host
+#   * both .NET sidecars
+#   * the patched netcoredbg adapter (from cache - see ../netcoredbg)
+#   * the packaged VSIX
+#
+# and every one of those outputs is uploaded here, because PHASE 3 is the
+# handoff boundary: no job downstream of this action is permitted to compile
+# anything. A test leg that rebuilds is a bug.
+#
+# STEP ORDER IS LOAD-BEARING. `_build-vsix-suite` writes the INSTRUMENTED bundle
+# to src/editors/vscode/dist and that is what the coverage shards measure;
+# `_build-vsix` then overwrites the same directory with the PRODUCTION bundle,
+# which has no sourcemap. The suite artifact is therefore uploaded BEFORE the
+# VSIX is packed. Reordering these two silently strips end-to-end coverage - it
+# does not fail, it just reports a smaller number.
+name: Build one platform
+description: >-
+  Compiles the VS Code suite, the release host, both sidecars, netcoredbg and
+  the VSIX for a single platform, and publishes every artifact the test phase
+  consumes.
+inputs:
+  platform:
+    description: '"linux" or "win" - selects which feature chunks this platform runs.'
+    required: true
+  vsix-platform:
+    description: Platform triple for netcoredbg and the standalone archive, e.g. linux-x64.
+    required: true
+  host-binary:
+    description: Path of the built host binary, e.g. target/release/sharplsp.
+    required: true
+  suite-artifact:
+    description: Artifact name for the compiled VS Code suite.
+    required: true
+  binaries-artifact:
+    description: Artifact name for the host binary and both sidecars.
+    required: true
+  debugger-artifact:
+    description: Artifact name for the patched netcoredbg build.
+    required: true
+  archive:
+    description: >-
+      '"true" to also build and verify the standalone server archive and the
+      package-manager manifests. Ubuntu only - one platform is enough to catch a
+      layout regression, and release.yml builds the rest at tag time.'
+    required: false
+    default: 'false'
+outputs:
+  chunks:
+    description: JSON array of feature-chunk names for this platform's test matrix.
+    value: ${{ steps.suite.outputs.chunks }}
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      with:
+        toolchain: stable
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: "~/.nuget/packages"
+        key: >-
+          ${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj',
+          'src/sidecars/Directory.Build.props') }}
+        restore-keys: "${{ runner.os }}-nuget-"
+
+    # ── The VS Code suite, and this platform's chunk matrix ────────
+    # First, because it publishes the INSTRUMENTED bundle the shards measure.
+    - name: Compile the VS Code suite and resolve the chunk matrix
+      id: suite
+      uses: ./.github/actions/vsix-suite
+      with:
+        platform: ${{ inputs.platform }}
+        suite-artifact: ${{ inputs.suite-artifact }}
+
+    # ── The host, the sidecars and the debug adapter ───────────────
+    - name: Build sharplsp host and both sidecars (release)
+      shell: bash
+      run: make _build-rust _build-dotnet
+    - name: Build or restore patched netcoredbg
+      uses: ./.github/actions/netcoredbg
+      with:
+        vsix-platform: ${{ inputs.vsix-platform }}
+
+    # ── PHASE 3: publish everything the test phase consumes ────────
+    - name: Upload LSP binaries
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.binaries-artifact }}
+        retention-days: 1
+        path: |
+          ${{ inputs.host-binary }}
+          target/sidecar-csharp
+          target/sidecar-fsharp
+    - name: Upload patched debugger
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.debugger-artifact }}
+        retention-days: 1
+        include-hidden-files: true
+        path: target/netcoredbg/${{ inputs.vsix-platform }}/netcoredbg
+
+    # ── Packaging checks over what was just built ──────────────────
+    # These assert the SHAPE of the build outputs, so they belong to the build
+    # phase and not to a test leg. They add seconds, because everything they
+    # package is already compiled above.
+    - name: Sidecar pack smoke test
+      if: ${{ inputs.archive == 'true' }}
+      shell: bash
+      run: |-
+        set -euo pipefail
+        dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
+          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+        dotnet pack src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
+          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+        ls -la /tmp/nupkg-smoke/*.nupkg
+    - name: Package and verify the standalone server archive
+      # [DIST-ARCHIVE] How Rider, Zed, Neovim, Helix and the Homebrew/Scoop
+      # formulas install SharpLsp - no VSIX, no shipwright, so the host must
+      # find its sidecars by the archive layout alone. Only release.yml built
+      # it before, which meant a layout regression surfaced at tag time with the
+      # release already half-published.
+      if: ${{ inputs.archive == 'true' }}
+      shell: bash
+      run: |-
+        set -euo pipefail
+        make _package-archive VSIX_PLAT=${{ inputs.vsix-platform }} ARCHIVE_LSP=${{ inputs.host-binary }}
+        bash tools/packaging/verify-archive.sh ${{ inputs.vsix-platform }}
+    - name: Verify Homebrew formula and Scoop manifest renderer
+      # Both are only rendered on a tag, so without this the first sign of a
+      # broken one is a user's failed `brew install`. [DIST-PATH-INSTALL]
+      if: ${{ inputs.archive == 'true' }}
+      shell: bash
+      run: node tools/packaging/verify-package-manifests.mjs
+
+    # ── The VSIX, LAST ─────────────────────────────────────────────
+    # Overwrites src/editors/vscode/dist with the production bundle, which is
+    # why it runs after the suite artifact is already published.
+    - name: Pack and verify the VSIX
+      uses: ./.github/actions/vsix-payload

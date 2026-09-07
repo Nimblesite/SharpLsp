@@ -1,0 +1,33 @@
+# agent-pmo:0b21609
+---
+# PHASE 4 — TEST. The repo's own build tooling.
+#
+# Everything else in phase 4 tests the PRODUCT. This leg tests the machinery the
+# product is built with, and specifically the supply-chain path: how the patched
+# netcoredbg debug adapter is obtained ([DIST-DEBUGGER-BUNDLE]).
+#
+# That path had no test at all while it was a source build, and it is the one
+# piece of the pipeline where a silent failure ships a different binary to users
+# rather than turning CI red - so the assertions that matter here are the
+# refusals: a digest mismatch must fail, must unpack nothing, and must NOT fall
+# back to compiling from source.
+#
+# Node's built-in runner, so this leg installs no dependencies and needs no
+# artifact from PHASE 2. It reports in well under a minute.
+name: CI / Test / Tooling
+'on':
+  workflow_call: {}
+permissions:
+  contents: read
+jobs:
+  test-tooling:
+    name: Build Tooling
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - name: Test the build tooling
+        run: make _test-tooling

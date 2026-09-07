@@ -14,6 +14,7 @@
 // session against nothing. Both are resolved HERE, before a session is created,
 // so the workbench's `startDebugging` result is the honest answer.
 import { execFile } from 'node:child_process';
+import { delay } from './utils';
 import * as path from 'node:path';
 
 /** How long a process listing may take before the attach is refused. */
@@ -55,9 +56,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** A configuration field read as a positive integer, or undefined. */
 function positiveInteger(value: unknown): number | undefined {
-  const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : value;
+  const parsed = typeof value === 'string' ? wholeNumber(value.trim()) : value;
   if (typeof parsed !== 'number' || !Number.isInteger(parsed) || parsed <= 0) return undefined;
   return parsed;
+}
+
+/**
+ * A pid spelling is DIGITS ONLY, checked by round-tripping through the same
+ * parser rather than by pattern-matching the text.
+ *
+ * `Number.parseInt` stops at the first non-digit, so '12abc' reads as 12 - and
+ * because a system-owned pid answers EPERM, which counts as alive, a mistyped
+ * or truncated pid resolved to a real attach against an unrelated process.
+ */
+function wholeNumber(text: string): number {
+  const parsed = Number.parseInt(text, 10);
+  return String(parsed) === text ? parsed : Number.NaN;
 }
 
 /** Run a command and resolve with its stdout, or with '' when it fails. */
@@ -186,8 +200,22 @@ export function commandTokens(commandLine: string): string[] {
 export function matchesProcessName(row: ProcessRow, name: string): boolean {
   const wanted = MANAGED_SUFFIXES.map((suffix) => `${name}${suffix}`.toLowerCase());
   return commandTokens(row.commandLine).some((token) =>
-    wanted.includes(path.basename(token).toLowerCase()),
+    wanted.includes(fileNameOf(token).toLowerCase()),
   );
+}
+
+/**
+ * The file name of `token`, whichever platform's separators the token uses.
+ *
+ * `path.basename` only knows the HOST's separator, so a Windows-shaped path in
+ * a command line — `"C:\a b\StepTarget.dll"` — came back whole when the
+ * listing was read on Linux, and a process the user named by assembly matched
+ * nothing. A command line is text from another process, not a host path: it can
+ * carry either separator wherever it is read.
+ */
+function fileNameOf(token: string): string {
+  const cut = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
+  return cut === -1 ? token : token.slice(cut + 1);
 }
 
 /** The refusal a name that matched nothing produces. */
@@ -208,13 +236,35 @@ function ambiguousName(name: string, pids: readonly number[]): AttachOutcome {
   };
 }
 
+/**
+ * How long a just-started process is given to appear in the OS process table.
+ *
+ * The same shape as the attach request's own ladder in dap-attach.ts: a short
+ * first look so the common case stays instant, then widening waits.
+ */
+const NAME_RESOLVE_DELAYS_MS: readonly number[] = [0, 250, 500, 1_000];
+
 /** Resolve a `processName` to the single live process it names. */
 async function resolveByName(name: string): Promise<AttachOutcome> {
-  const matched = (await listProcesses(name)).filter(
-    (row) => row.pid !== process.pid && matchesProcessName(row, name),
-  );
-  const pids = matched.map((row) => row.pid);
-  if (pids.length === 0) return noSuchName(name);
+  for (const wait of NAME_RESOLVE_DELAYS_MS) {
+    if (wait > 0) await delay(wait);
+    const outcome = await matchOnce(name);
+    if (outcome !== undefined) return outcome;
+  }
+  return noSuchName(name);
+}
+
+/**
+ * One look at the process table: an answer, or `undefined` for "not yet".
+ *
+ * Ambiguity is an ANSWER and returns immediately — a second match will not
+ * become a single one by waiting, and the user needs telling now.
+ */
+async function matchOnce(name: string): Promise<AttachOutcome | undefined> {
+  const pids = (await listProcesses(name))
+    .filter((row) => row.pid !== process.pid && matchesProcessName(row, name))
+    .map((row) => row.pid);
+  if (pids.length === 0) return undefined;
   const only = pids[0];
   if (pids.length > 1 || only === undefined) return ambiguousName(name, pids);
   return { kind: 'attach', processId: only };

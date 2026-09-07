@@ -135,6 +135,17 @@ export const FS_PROJECT = 'DebugTestTargetFs';
 /** The F# module every binding below is declared in. */
 export const FS_MODULE = 'Fs.Debug.Fixtures';
 
+/**
+ * How that module renders in the tree: a CLASS row named for the TYPE, under a
+ * NAMESPACE row carrying the rest of the path.
+ *
+ * An F# module compiles to a CLR type, so `Fs.Debug.Fixtures` is the type
+ * `Fixtures` in namespace `Fs.Debug`, and the Assembly → Namespace → Class →
+ * Test tree splits it exactly as it splits a C# class.
+ */
+export const FS_MODULE_TYPE = FS_MODULE.slice(FS_MODULE.lastIndexOf('.') + 1);
+export const FS_MODULE_NAMESPACE = FS_MODULE.slice(0, FS_MODULE.lastIndexOf('.'));
+
 /** An idiomatic backtick binding: its fully-qualified name contains SPACES. */
 export const FS_SPACED = `${FS_MODULE}.adds two numbers with spaces`;
 
@@ -276,6 +287,28 @@ export function conditionalBreakpointAt(
     new vscode.Location(uri, source.position(anchor)),
     true,
     condition,
+  );
+}
+
+/**
+ * A breakpoint that only stops on the Nth hit.
+ *
+ * [DEBUG-FEATURES-BREAKPOINTS] makes hit-count breakpoints a P1, native row and
+ * names the operators the adapter accepts: `>`, `>=`, `<`, `<=`, `==` and `%`.
+ * Against a `[Theory]` this is the gesture that selects a ROW without knowing
+ * anything about its arguments.
+ */
+export function hitCountBreakpointAt(
+  source: AnchoredSource,
+  uri: vscode.Uri,
+  anchor: string,
+  hitCondition: string,
+): vscode.SourceBreakpoint {
+  return new vscode.SourceBreakpoint(
+    new vscode.Location(uri, source.position(anchor)),
+    true,
+    undefined,
+    hitCondition,
   );
 }
 

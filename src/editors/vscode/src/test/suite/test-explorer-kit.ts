@@ -239,6 +239,24 @@ export async function runViaProfile(
 }
 
 /**
+ * Invoke the run handler with a token that is ALREADY cancelled.
+ *
+ * The workbench really does hand a handler a cancelled token — the user presses
+ * ⏹ between the run being queued and the handler starting — and the contract is
+ * the same as for any other cancellation: resolve, never reject, and do not
+ * spawn work whose results would have to be thrown away.
+ */
+export async function runAlreadyCancelled(
+  controller: SharpLspTestController,
+  kind: vscode.TestRunProfileKind,
+  items: readonly vscode.TestItem[],
+): Promise<void> {
+  await runWithToken(controller, kind, items, (source) => {
+    source.cancel();
+  });
+}
+
+/**
  * Press ▶ for `items`, then press ⏹ the moment `trigger` settles.
  *
  * A wall-clock delay cannot express "stop once the run is demonstrably under

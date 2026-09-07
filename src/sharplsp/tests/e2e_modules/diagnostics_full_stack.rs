@@ -172,11 +172,19 @@ EndGlobal"#,
     let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, clean_source);
 
+    // [HOVER-ERRORS] refuses a hover on whitespace with `null`, so the readiness
+    // poll has to sit on a real identifier: `Value` on line 3, column 15. A
+    // column past the end of `{` never resolves and would spin out the timeout.
     let hover_result =
-        poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+        poll_hover_until_ready(&mut client, &file_uri, 3, 15, Duration::from_secs(90));
     assert!(
         !hover_result.is_null(),
         "hover must work once sidecar is ready",
+    );
+    let hover_md = hover_result["contents"]["value"].as_str().unwrap_or("");
+    assert!(
+        hover_md.contains("Value"),
+        "the readiness hover must land on the `Value` property, got {hover_md:?}",
     );
 
     client.save_document(&file_uri);
@@ -486,12 +494,19 @@ fn test_full_stack_diagnostics_refreshed_on_did_change() {
     let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, clean_source);
 
-    // Wait for sidecar readiness via hover polling.
+    // Wait for sidecar readiness via hover polling. [HOVER-ERRORS] answers a
+    // whitespace position with `null`, so the poll sits on `Count` (line 3,
+    // column 15) rather than on the blank past `{`.
     let hover_result =
-        poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+        poll_hover_until_ready(&mut client, &file_uri, 3, 15, Duration::from_secs(90));
     assert!(
         !hover_result.is_null(),
         "hover must work once sidecar is ready",
+    );
+    let hover_md = hover_result["contents"]["value"].as_str().unwrap_or("");
+    assert!(
+        hover_md.contains("Count"),
+        "the readiness hover must land on the `Count` property, got {hover_md:?}",
     );
 
     // Now edit the file to introduce a type error.

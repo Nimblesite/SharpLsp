@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Build the pinned netcoredbg source plus SharpLsp's DAP hot-reload extension,
-# then stage it into the VS Code extension. Implements [DIST-DEBUGGER-BUNDLE].
+# Stage SharpLsp's patched netcoredbg into the VS Code extension.
+# Implements [DIST-DEBUGGER-BUNDLE].
+#
+# This script does NOT decide how the adapter is obtained. That is
+# tools/netcoredbg/provide.mjs, which prefers the SHA-256-pinned artifact in
+# netcoredbg.lock.json and only compiles from source when a platform has no
+# pin. Releases must ship the pinned artifact so the bytes users debug with
+# have attested provenance.
 #
 # netcoredbg is MIT-licensed (© 2017 Samsung Electronics Co., LTD) — attribution
 # is in THIRD-PARTY-NOTICES.md. Platforms without a configured native build
@@ -35,7 +41,7 @@ BUILT="$ROOT/target/netcoredbg/$PLATFORM/netcoredbg"
 BUILT_EXE="$BUILT/netcoredbg$EXE_EXT"
 BUILT_MARKER="$BUILT/.sharplsp-dap-hot-reload"
 if [ ! -f "$BUILT_EXE" ] || [ ! -f "$BUILT_MARKER" ]; then
-  bash "$SCRIPT_DIR/build-netcoredbg.sh" "$PLATFORM"
+  node "$ROOT/tools/netcoredbg/provide.mjs" "$PLATFORM"
 fi
 if [ ! -f "$BUILT_EXE" ] || [ ! -f "$BUILT_MARKER" ]; then
   echo "netcoredbg: patched build missing at $BUILT_EXE" >&2

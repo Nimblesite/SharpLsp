@@ -1,10 +1,12 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
+  activateRealSharpLsp,
   applyWorkspaceEdit,
   openFixtureDocument,
   preparedRenameAt,
   replaceDocumentText,
+  revertDocument,
   waitForCodeActions,
   waitForMatchingDiagnostics,
   waitForResolvedCodeActions,
@@ -13,7 +15,7 @@ import {
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
 import { pollUntilResult } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // Assertion helpers shared by the real-LSP F# suites. [ANALYZERS-FSAC-PARITY]
 
@@ -31,6 +33,7 @@ export async function diagnosticWithCode(
   uri: vscode.Uri,
   code: string,
   range?: vscode.Range,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Diagnostic[]> {
   // `range` exists so the WAIT can be as strong as the caller's assertion.
   // Waiting only for the code and then asserting on the location is a race FCS
@@ -46,8 +49,28 @@ export async function diagnosticWithCode(
           diagnosticCode(diagnostic) === code &&
           (range === undefined || diagnostic.range.intersection(range) !== undefined),
       ),
-    LSP_RESPONSE_MS,
+    timeoutMs,
   );
+}
+
+/**
+ * Activate SharpLsp and pay FCS's cold start ONCE, on an overlay known to
+ * produce `code`. The first F# check of the process cracks the project and can
+ * outrun `LSP_RESPONSE_MS` on a CI agent; charged to a test body it fails the
+ * first scenario on timing alone ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ */
+export async function activateWarmFSharp(
+  relativePath: string,
+  source: string,
+  code: string,
+): Promise<void> {
+  await activateRealSharpLsp();
+  const fixture = await openOverlay(relativePath, source);
+  try {
+    await diagnosticWithCode(fixture.uri, code, undefined, SIDECAR_COLD_MS);
+  } finally {
+    await revertDocument(fixture.document);
+  }
 }
 
 export async function diagnosticGone(uri: vscode.Uri, code: string): Promise<vscode.Diagnostic[]> {

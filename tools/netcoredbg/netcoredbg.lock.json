@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "[DIST-DEBUGGER-BUNDLE] The single source of truth for which netcoredbg",
+    "SharpLsp ships. Nothing else in the repo may hardcode these commits.",
+    "",
+    "SharpLsp ships a PATCHED netcoredbg: tools/netcoredbg/dap-hot-reload.patch",
+    "exposes netcoredbg's existing ICorDebug ApplyChanges implementation over the",
+    "VS Code DAP protocol, which is what backs the shipped sharplsp.hotReload.*",
+    "commands. Stock upstream release binaries do NOT carry it, so the artifacts",
+    "below are OUR builds and cannot be replaced by an upstream download.",
+    "",
+    "CHAIN OF CUSTODY. `platforms` pins a URL and a SHA-256 per platform.",
+    "tools/netcoredbg/provide.mjs downloads the URL, hashes the bytes, and",
+    "REFUSES to continue on a mismatch - it never silently falls back to a source",
+    "build, because a fallback on mismatch would defeat the pin. A platform with",
+    "no entry is built from source instead, which is the bootstrap path and is",
+    "reported loudly.",
+    "",
+    "TO POPULATE: run the `Publish netcoredbg` workflow",
+    "(.github/workflows/publish-netcoredbg.yml). It builds every platform from",
+    "the commits below, attests the provenance of each archive, publishes them to",
+    "a GitHub release, and prints the exact `platforms` block to paste here.",
+    "Bumping netcoredbgCommit, coreclrCommit or patchVersion invalidates the",
+    "pins: clear `platforms` and re-publish."
+  ],
+  "netcoredbgCommit": "9744e1f051866215611b8440c638042aa2aa2f72",
+  "coreclrCommit": "ea346eaeda73d7ef1cc3b148939ac83729cc38dc",
+  "patchVersion": "dap-hot-reload-v1",
+  "platforms": {}
+}

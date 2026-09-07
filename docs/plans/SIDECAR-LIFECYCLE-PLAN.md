@@ -174,8 +174,8 @@ in the diagnostics plan.
 | `src/sharplsp/tests/fixtures/SidecarLifecycleFixture/` | Real separately spawned shared-host fixture for protocol faults, delayed handlers, and child-process containment |
 | `src/sharplsp/tests/e2e_modules/sidecar_lifecycle.rs` | Full host/process/IPC recovery scenarios and issue traceability |
 | `src/sidecars/SharpLsp.Sidecar.Common.Tests/SidecarHostEndToEndTests.cs` | Keep only coarse real-IPC host lifecycle coverage; add ack and process-exit assertions |
-| `.github/workflows/ci-rust.yml` / `ci-dotnet.yml` | Run platform-relevant real-process lifecycle cases |
-| `.github/workflows/ci-vsix-windows.yml` | Gate the lifecycle chunk on concurrent hosts, restart, and Windows tree cleanup |
+| `.github/workflows/ci-test-rust.yml` / `ci-test-dotnet.yml` | Run platform-relevant real-process lifecycle cases |
+| `.github/workflows/ci-test-vsix-windows.yml` | Gate the lifecycle chunk on concurrent hosts, restart, and Windows tree cleanup |
 
 File names may be adjusted to match an equivalent existing abstraction discovered during
 implementation, but responsibilities MUST remain single-owner and the final tree MUST not retain a

@@ -308,6 +308,22 @@ async function openFile(
   return { doc, uri };
 }
 
+/**
+ * Open a file that ALREADY exists on disk and show it.
+ *
+ * The committed fixture workspace is the input to every semantic suite; a
+ * helper that writes content first would overwrite the very fixture under test.
+ */
+export async function openExistingFile(
+  directory: string,
+  filename: string,
+): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri }> {
+  const uri = vscode.Uri.file(path.join(directory, filename));
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc);
+  return { doc, uri };
+}
+
 /** Replace the entire content of a document. */
 export async function replaceDocumentContent(
   doc: vscode.TextDocument,
@@ -411,6 +427,34 @@ export function teardownLspTestSuite(tmpDir: string): void {
 const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/assets/screenshots');
 
 /**
+ * Load the fixture solution into the Solution Explorer so a documentation
+ * screenshot has content.
+ *
+ * Screenshot-only plumbing: it resolves the explorer through the extension's
+ * published API and waits for the tree to populate. A no-op when the extension
+ * publishes no explorer.
+ */
+export async function loadFixtureSolution(workspaceRoot: string): Promise<void> {
+  const extension = vscode.extensions.getExtension(EXTENSION_ID);
+  const api = extension?.exports as
+    | {
+        explorerProvider?: {
+          loadSolution(solutionPath: string): Promise<void>;
+          getChildren(element?: unknown): unknown[] | undefined;
+        };
+      }
+    | undefined;
+  const provider = api?.explorerProvider;
+  if (!provider) return;
+  await provider.loadSolution(path.join(workspaceRoot, 'TestFixtures.sln'));
+  let waited = 0;
+  while ((provider.getChildren() ?? []).length === 0 && waited < 8000) {
+    await sleep(200);
+    waited += 200;
+  }
+}
+
+/**
  * Open the SharpLsp activity bar panel (shows Solution Explorer + Profiler).
  * Only does anything when SHARPLSP_SCREENSHOTS=1 is set.
  */
@@ -460,6 +504,26 @@ export async function takeScreenshot(filename: string): Promise<void> {
 }
 
 // ── Utilities ────────────────────────────────────────────────────
+
+/**
+ * Pause for the workbench to RENDER, but only when a screenshot will actually
+ * be taken.
+ *
+ * {@link takeScreenshot} and {@link openSharpLspPanel} both return immediately
+ * unless `SHARPLSP_SCREENSHOTS` is set, so a bare `sleep` before one of them is
+ * time CI spends waiting for a picture it is never going to capture. Every such
+ * pause goes through here instead.
+ *
+ * This is deliberately a SLEEP and not a poll: what it waits for is the
+ * compositor painting a widget that is already open, which nothing in the
+ * extension API reports. That is also why it must never be load-bearing for an
+ * assertion - a test that needs a condition to hold polls for the condition
+ * with {@link pollUntilResult}, which fails loudly when it never does.
+ */
+export async function settleForScreenshot(ms: number): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  await sleep(ms);
+}
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

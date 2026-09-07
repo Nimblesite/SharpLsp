@@ -5,17 +5,50 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  flattenSymbolNames,
   openCSharpFile,
   openSharpLspPanel,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
+  settleForScreenshot,
   takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
 import { toSolutionSelections } from '../../solution';
+import { assertReachableCommand, commandEntries } from './extension-manifest-kit';
+import { assertSymbolShape, assertSymbolTree } from './lsp-invariants-kit';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+
+/** The three sort modes of [SE-SORT], in the order the toolbar cycles them. */
+const SORT_COMMANDS = [
+  'sharplsp.sortNatural',
+  'sharplsp.sortAlphabetical',
+  'sharplsp.sortAccessibility',
+] as const;
+
+/** The `when` clause [SE-SORT-CONTEXT] gives each sort command's toolbar icon. */
+const SORT_WHEN: Record<string, string> = {
+  'sharplsp.sortNatural': 'natural',
+  'sharplsp.sortAlphabetical': 'alphabetical',
+  'sharplsp.sortAccessibility': 'accessibility',
+};
+
+/** Whether the extension is still activated — a refresh must not unload it. */
+function sharpLspIsActive(): boolean {
+  return vscode.extensions.getExtension(EXTENSION_ID)?.isActive === true;
+}
+
+/** Every `view/title` menu entry the manifest contributes, as authored. */
+function viewTitleMenu(): { command?: string; when?: string; group?: string }[] {
+  const extension = vscode.extensions.getExtension(EXTENSION_ID);
+  assert.ok(extension, 'the extension must be installed');
+  const menus: unknown = extension.packageJSON.contributes?.menus;
+  const entries: unknown = (menus as Record<string, unknown> | undefined)?.['view/title'];
+  assert.ok(Array.isArray(entries), 'contributes.menus must declare a view/title group');
+  return entries as { command?: string; when?: string; group?: string }[];
+}
 
 suite('Solution Explorer & Workspace Symbols', () => {
   let tmpDir: string;
@@ -38,41 +71,157 @@ suite('Solution Explorer & Workspace Symbols', () => {
   // ── Command Registration ─────────────────────────────────────
 
   test('sharplsp.selectSolution command is registered', async () => {
+    // Interaction 1 - reachable: registered, declared once, titled, categorised.
     const allCommands = await vscode.commands.getCommands(true);
     assert.ok(
       allCommands.includes('sharplsp.selectSolution'),
       'sharplsp.selectSolution should be registered',
     );
+    const entry = assertReachableCommand('sharplsp.selectSolution', allCommands);
+
+    // Interaction 2 - [SE-COMMANDS] gives it a title and a toolbar icon. A
+    // command with no icon cannot appear in the view's title bar at all, which
+    // is the only place a user goes looking for "open a different solution".
+    assert.strictEqual(entry.title, 'Select Solution', 'the spec fixes the title');
+    const icon: unknown = (entry as { icon?: unknown }).icon;
+    assert.strictEqual(icon, '$(folder-opened)', 'and the folder-opened codicon');
+    assert.strictEqual(entry.category, 'SharpLsp', 'under the SharpLsp category');
+
+    // Interaction 3 - it is placed in the Solution Explorer's title bar, and
+    // unconditionally: [SE-COMMANDS] marks it "Always".
+    const placements = viewTitleMenu().filter((item) => item.command === 'sharplsp.selectSolution');
+    assert.strictEqual(placements.length, 1, 'placed in view/title exactly once');
+    assert.ok(
+      (placements[0]?.when ?? '').includes('sharplsp.solutionExplorer'),
+      `scoped to the Solution Explorer view; got: ${String(placements[0]?.when)}`,
+    );
+    assert.strictEqual(
+      (placements[0]?.when ?? '').includes('sortOrder'),
+      false,
+      'and never gated on the sort mode - it is always available',
+    );
   });
 
   test('sharplsp.refreshExplorer command is registered', async () => {
+    // Interaction 1 - reachable from the palette and the manifest alike.
     const allCommands = await vscode.commands.getCommands(true);
     assert.ok(
       allCommands.includes('sharplsp.refreshExplorer'),
       'sharplsp.refreshExplorer should be registered',
     );
+    const entry = assertReachableCommand('sharplsp.refreshExplorer', allCommands);
+
+    // Interaction 2 - [SE-COMMANDS]: "Refresh Explorer", with the refresh
+    // codicon. Refresh is the user's manual escape hatch when reactivity has
+    // not caught up, so it has to be visible without opening the palette.
+    assert.strictEqual(entry.title, 'Refresh Explorer', 'the spec fixes the title');
+    assert.strictEqual((entry as { icon?: unknown }).icon, '$(refresh)', 'and the refresh codicon');
+    assert.strictEqual(entry.category, 'SharpLsp', 'under the SharpLsp category');
+
+    // Interaction 3 - it sits in the view title bar, always, next to Select
+    // Solution rather than behind a sort-mode condition.
+    const placements = viewTitleMenu().filter(
+      (item) => item.command === 'sharplsp.refreshExplorer',
+    );
+    assert.strictEqual(placements.length, 1, 'placed in view/title exactly once');
+    assert.ok(
+      (placements[0]?.when ?? '').includes('sharplsp.solutionExplorer'),
+      'scoped to the Solution Explorer view',
+    );
+    assert.strictEqual(
+      (placements[0]?.when ?? '').includes('sortOrder'),
+      false,
+      'and is always available',
+    );
   });
 
-  for (const cmd of [
-    'sharplsp.sortNatural',
-    'sharplsp.sortAlphabetical',
-    'sharplsp.sortAccessibility',
-  ]) {
-    test(`${cmd} command is registered`, async () => {
+  for (const cmd of SORT_COMMANDS) {
+    test(`${cmd} command is registered`, async function () {
+      this.timeout(COMMAND_MS);
+      // Interaction 1 - reachable, and reachable exactly once.
       const allCommands = await vscode.commands.getCommands(true);
       assert.ok(allCommands.includes(cmd), `${cmd} should be registered`);
+      const entry = assertReachableCommand(cmd, allCommands);
+      assert.ok((entry.title ?? '').startsWith('Sort'), `${cmd} is titled as a sort mode`);
+
+      // Interaction 2 - [SE-SORT-CONTEXT]: each sort command's toolbar icon is
+      // gated on the CURRENT mode, so exactly one of the three is ever visible.
+      // Without the `when` clause all three icons stack in the title bar.
+      const placements = viewTitleMenu().filter((item) => item.command === cmd);
+      assert.strictEqual(placements.length, 1, `${cmd} is placed in view/title once`);
+      const when = placements[0]?.when ?? '';
+      assert.ok(when.includes('sharplsp.sortOrder'), `${cmd} is gated on the sort-order key`);
+      assert.ok(
+        when.includes(SORT_WHEN[cmd] ?? ''),
+        `${cmd} is shown for the '${String(SORT_WHEN[cmd])}' mode; got: ${when}`,
+      );
+
+      // Interaction 3 - all three commands CYCLE, so running this one must not
+      // throw whichever mode the tree happens to be in.
+      await assert.doesNotReject(async () => {
+        await vscode.commands.executeCommand(cmd);
+      }, `${cmd} must cycle the sort order without throwing`);
+      await assert.doesNotReject(async () => {
+        await vscode.commands.executeCommand(cmd);
+      }, `${cmd} must stay runnable after it has already cycled once`);
+
+      // Interaction 4 - the three modes are DISTINCT commands with distinct
+      // icons: a shared icon makes the toolbar unable to show the active mode.
+      const icons = SORT_COMMANDS.map(
+        (id) =>
+          (commandEntries().find((c) => c.command === id) as { icon?: string } | undefined)?.icon,
+      );
+      assert.strictEqual(new Set(icons).size, 3, `three distinct icons; got ${icons.join(', ')}`);
+      assert.ok(
+        icons.every((value) => typeof value === 'string' && value.length > 0),
+        'all set',
+      );
     });
   }
 
   // ── Package Contributions ────────────────────────────────────
 
-  test('extension contributes sharplsp-explorer view container', () => {
+  test('extension contributes sharplsp-explorer view container', async function () {
+    this.timeout(COMMAND_MS);
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const containers = ext.packageJSON.contributes?.viewsContainers?.activitybar ?? [];
     const container = containers.find((c: { id: string }) => c.id === 'sharplsp-explorer');
     assert.ok(container, 'Should contribute sharplsp-explorer view container');
     assert.strictEqual(container.title, 'SharpLsp');
+
+    // Interaction 2 - the container carries an activity-bar icon. A container
+    // with no icon has no clickable target in the activity bar, so the whole
+    // Solution Explorer becomes unreachable.
+    assert.ok(container.icon, 'the activity-bar container must declare an icon');
+    assert.strictEqual(typeof container.icon, 'string', 'the icon is a path or a codicon');
+    assert.strictEqual(
+      containers.filter((c: { id: string }) => c.id === 'sharplsp-explorer').length,
+      1,
+      'declared exactly once',
+    );
+
+    // Interaction 3 - it is the container `openSharpLspPanel` reveals, so the
+    // id in the manifest and the id the extension opens are the same string.
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('workbench.view.extension.sharplsp-explorer');
+    }, 'the container id must be openable as workbench.view.extension.<id>');
+    const views: Record<string, unknown> = ext.packageJSON.contributes?.views ?? {};
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(views, 'sharplsp-explorer'),
+      'and contributes.views must key its views by that same container id',
+    );
+
+    // Interaction 4 - the container's icon really SHIPS. A manifest icon path
+    // that resolves to nothing leaves a blank square in the activity bar, which
+    // is indistinguishable from the extension having failed to load.
+    if (typeof container.icon === 'string' && !container.icon.startsWith('$(')) {
+      const iconPath = path.join(ext.extensionPath, container.icon);
+      assert.ok(fs.existsSync(iconPath), `the container icon must ship at ${iconPath}`);
+      assert.ok(fs.statSync(iconPath).size > 0, 'and must not be an empty file');
+    }
+    assert.strictEqual(container.title, 'SharpLsp', 'the activity-bar tooltip names the product');
+    assert.ok(Array.isArray(containers), 'the activitybar contribution is an array');
   });
 
   test('extension contributes solutionExplorer view', () => {
@@ -83,6 +232,31 @@ suite('Solution Explorer & Workspace Symbols', () => {
     const explorer = sharplspViews.find((v) => v.id === 'sharplsp.solutionExplorer');
     assert.ok(explorer, 'Should contribute sharplsp.solutionExplorer view');
     assert.strictEqual(explorer.name, 'Solution Explorer');
+
+    // Interaction 2 - declared once, and it is not the only view in the
+    // container: [PROFILER-SPEC] shares the SharpLsp activity bar with it.
+    assert.strictEqual(
+      sharplspViews.filter((v) => v.id === 'sharplsp.solutionExplorer').length,
+      1,
+      'the view is declared exactly once',
+    );
+    assert.ok(sharplspViews.length >= 1, 'the container holds at least the explorer');
+    assert.strictEqual(
+      new Set(sharplspViews.map((v) => v.id)).size,
+      sharplspViews.length,
+      'and no two views in the container share an id',
+    );
+
+    // Interaction 3 - every command [SE-COMMANDS] places in the title bar is
+    // scoped to THIS view id. A `when` naming a different view puts the sort
+    // icons on someone else's toolbar.
+    const titled = viewTitleMenu().filter((item) =>
+      (item.when ?? '').includes('sharplsp.solutionExplorer'),
+    );
+    assert.ok(titled.length >= 5, `the five [SE-COMMANDS] entries; got ${titled.length}`);
+    for (const item of titled) {
+      assert.ok(item.command?.startsWith('sharplsp.'), `${String(item.command)} is ours`);
+    }
   });
 
   // ── sharplsp/workspaceSymbols via Real LSP ──────────────────────
@@ -244,7 +418,7 @@ EndGlobal`,
     await openSharpLspPanel();
     // Refresh the tree view so the UI renders the loaded solution before screenshotting.
     await vscode.commands.executeCommand('sharplsp.refreshExplorer');
-    await new Promise((r) => setTimeout(r, 2000));
+    await settleForScreenshot(2000);
     await takeScreenshot('solution-explorer.png');
 
     api.explorerProvider.getChildren; // keep reference
@@ -331,6 +505,29 @@ EndGlobal`,
 
     const outerMethod = outerClass.children?.find((s) => s.name === 'OuterMethod');
     assert.ok(outerMethod, 'Should find OuterMethod in OuterClass');
+
+    // Interaction 2 - [SE-SYMBOL-KINDS]: every level carries the kind its tree
+    // icon is drawn from. A class reported as a namespace draws the wrong icon
+    // at every depth of the tree.
+    const doc = await vscode.workspace.openTextDocument(uri);
+    assertSymbolShape(ns, vscode.SymbolKind.Namespace, doc);
+    assertSymbolShape(outerClass, vscode.SymbolKind.Class, doc);
+    assertSymbolShape(innerClass, vscode.SymbolKind.Class, doc);
+    assertSymbolShape(outerMethod, vscode.SymbolKind.Method, doc);
+
+    // Interaction 3 - [SE-TREE]: the nesting is CONTAINMENT, all the way down.
+    // A flattened level lets the tree offer "Sort Members" on a node whose
+    // members live somewhere else.
+    assertSymbolTree(symbols, doc);
+    assert.ok(ns.range.contains(outerClass.range), 'Outer contains OuterClass');
+    assert.ok(outerClass.range.contains(innerClass.range), 'OuterClass contains InnerClass');
+    assert.ok(innerClass.range.contains(innerMethod.range), 'InnerClass contains InnerMethod');
+    assert.strictEqual(symbols.length, 1, 'and the namespace is the only root');
+    assert.deepEqual(
+      outerClass.children?.map((child) => child.name),
+      ['InnerClass', 'OuterMethod'],
+      'OuterClass owns exactly its nested type and its method, in source order',
+    );
   });
 
   test('LSP handles interface with method declarations', async function () {
@@ -365,6 +562,31 @@ EndGlobal`,
     const delegate = ns.children?.find((s) => s.name === 'OnSaved');
     assert.ok(delegate, 'Should find OnSaved delegate');
     assert.strictEqual(delegate.kind, vscode.SymbolKind.Function);
+
+    // Interaction 2 - [SE-SYMBOL-KINDS] maps `delegate_declaration` to Function
+    // and `interface_declaration` to Interface. They are DIFFERENT rows in that
+    // table, so a tree that draws both as classes has lost the distinction the
+    // icon column exists to make.
+    assert.notStrictEqual(delegate.kind, repo.kind, 'a delegate is not an interface');
+    assert.notStrictEqual(delegate.kind, vscode.SymbolKind.Class, 'nor a class');
+    const doc = await vscode.workspace.openTextDocument(uri);
+    assertSymbolShape(repo, vscode.SymbolKind.Interface, doc);
+    assertSymbolShape(save, vscode.SymbolKind.Method, doc);
+
+    // Interaction 3 - a delegate has no members, and the interface owns both of
+    // its methods in source order.
+    assertSymbolTree(symbols, doc);
+    assert.deepEqual(delegate.children ?? [], [], 'a delegate declares no members');
+    assert.deepEqual(
+      repo.children?.map((child) => child.name),
+      ['Save', 'Delete'],
+      'the interface owns both methods, in declaration order',
+    );
+    assert.strictEqual(
+      ns.children?.length,
+      2,
+      'the namespace holds the interface and the delegate',
+    );
   });
 
   test('LSP returns correct hierarchy for file-scoped namespace', async function () {
@@ -400,6 +622,27 @@ public class ApiController
 
     const post = controller.children?.find((s) => s.name === 'Post');
     assert.ok(post, 'Should find Post method');
+
+    // Interaction 2 - [SE-TREE-FILE-NAMESPACE]: tree-sitter emits a
+    // file-scoped namespace WITHOUT nesting the types that follow it, and the
+    // host reparents them. The proof is containment, not mere membership: a
+    // reparented node whose range still sits outside its new parent breaks
+    // every range-based feature hung off the tree.
+    const doc = await vscode.workspace.openTextDocument(uri);
+    assertSymbolTree(symbols, doc);
+    assert.ok(ns.range.contains(controller.range), 'the namespace really contains the class');
+    assert.ok(controller.range.contains(get.range), 'and the class contains its method');
+
+    // Interaction 3 - kinds, and exactly one root. Two roots means the
+    // reparenting only moved some of the types.
+    assertSymbolShape(controller, vscode.SymbolKind.Class, doc);
+    assertSymbolShape(get, vscode.SymbolKind.Method, doc);
+    assert.strictEqual(symbols.length, 1, 'the file-scoped namespace is the only root');
+    assert.deepEqual(
+      controller.children?.map((child) => child.name),
+      ['Get', 'Post'],
+      'the class owns both methods, in source order',
+    );
   });
 
   test('file-scoped namespace: multiple types all nested inside namespace', async function () {
@@ -490,15 +733,90 @@ public record UserDto(string Name, int Age);`;
 
     const dto = ns.children?.find((s) => s.name === 'UserDto');
     assert.ok(dto, 'UserDto must be INSIDE namespace');
+
+    // Interaction 2 - a BASE LIST must not confuse the reparenting. The base
+    // type name sits between the class name and its body, and a reader that
+    // stops at the first identifier reparents `ControllerBase` instead.
+    assert.strictEqual(
+      ns.children?.some((child) => child.name === 'ControllerBase'),
+      false,
+      'the base type is a reference, not a declaration in this file',
+    );
+    const doc = await vscode.workspace.openTextDocument(uri);
+    assertSymbolShape(controller, vscode.SymbolKind.Class, doc);
+    assertSymbolTree(symbols, doc);
+
+    // Interaction 3 - the class keeps its own members, and the positional
+    // record beside it is a type rather than a member ([SE-SYMBOL-KINDS] maps
+    // `record_declaration` to Class).
+    assert.deepEqual(
+      controller.children?.map((child) => child.name),
+      ['Index', 'About'],
+      'the derived class owns its own members, in source order',
+    );
+    assert.ok(
+      [vscode.SymbolKind.Class, vscode.SymbolKind.Struct].includes(dto.kind),
+      `a record is a type kind, got ${vscode.SymbolKind[dto.kind]}`,
+    );
+    assert.strictEqual(ns.children?.length, 2, 'the namespace holds the class and the record');
   });
 
   // ── sharplsp.refreshExplorer command ────────────────────────────
 
   test('sharplsp.refreshExplorer executes without error', async function () {
     this.timeout(COMMAND_MS);
+    // Interaction 1 - refresh is the user's manual escape hatch when the
+    // reactive tree has not caught up. It must run with no solution loaded,
+    // which is the state a fresh window is in.
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.refreshExplorer');
     }, 'refreshExplorer command should not throw');
+
+    // Interaction 2 - and it must be REPEATABLE. A refresh that only works
+    // once is a refresh the user cannot lean on.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await assert.doesNotReject(
+        async () => {
+          await vscode.commands.executeCommand('sharplsp.refreshExplorer');
+        },
+        `refresh attempt ${attempt + 1} must not throw`,
+      );
+    }
+
+    // Interaction 3 - it fires the tree's change event, which is the entire
+    // point: a refresh that mutates state without telling the view leaves the
+    // stale rows on screen ([SE-ARCHITECTURE]).
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext?.isActive, 'the extension must be active');
+    const api = ext.exports as
+      { explorerProvider?: { onDidChangeTreeData: vscode.Event<unknown> } } | undefined;
+    assert.ok(api?.explorerProvider, 'the extension must export explorerProvider');
+    let fired = 0;
+    const subscription = api.explorerProvider.onDidChangeTreeData(() => {
+      fired += 1;
+    });
+    try {
+      await vscode.commands.executeCommand('sharplsp.refreshExplorer');
+      const observed = await pollUntilResult(
+        async () => fired,
+        (count) => count > 0,
+        COMMAND_MS,
+        50,
+      );
+      assert.ok(observed > 0, 'refresh must notify the view that the tree changed');
+    } finally {
+      subscription.dispose();
+    }
+
+    // Interaction 4 - and the command stays registered afterwards: refreshing
+    // must not dispose the thing that did the refreshing.
+    const palette = await vscode.commands.getCommands(true);
+    assert.ok(palette.includes('sharplsp.refreshExplorer'), 'still registered afterwards');
+    assert.ok(palette.includes('sharplsp.selectSolution'), 'and so is Select Solution');
+    for (const sortCommand of SORT_COMMANDS) {
+      assert.ok(palette.includes(sortCommand), `${sortCommand} survives a refresh too`);
+    }
+    assert.strictEqual(sharpLspIsActive(), true, 'and the extension is still active');
   });
 
   // ── Solution File Discovery ──────────────────────────────────
@@ -521,31 +839,191 @@ public record UserDto(string Name, int Age);`;
     // We can't guarantee tmpDir is inside the workspace folder,
     // but we can verify the API works and returns results.
     assert.ok(Array.isArray(uris), 'findFiles should return an array');
+
+    // Interaction 2 - the glob accepts BOTH extensions. .slnx is the new
+    // XML-based solution format; a picker that only matches .sln cannot open a
+    // modern solution at all ([SE-SOLUTION]).
+    assert.ok(fs.existsSync(slnPath), 'the .sln fixture was written');
+    assert.ok(fs.existsSync(slnxPath), 'and the .slnx fixture too');
+    for (const candidate of [slnPath, slnxPath]) {
+      const selections = toSolutionSelections([candidate]);
+      assert.strictEqual(selections.length, 1, `${candidate} yields one selection`);
+      assert.strictEqual(
+        selections[0]?.path,
+        candidate,
+        'and the selection keeps the absolute path the picker will open',
+      );
+    }
+
+    // Interaction 3 - every URI findFiles DOES return is a solution file, on
+    // the file scheme, with no duplicates. A picker offering the same solution
+    // twice cannot tell the user which one they chose.
+    const paths = uris.map((uri) => uri.fsPath);
+    assert.deepEqual([...new Set(paths)], paths, 'findFiles must not report a file twice');
+    for (const uri of uris) {
+      assert.strictEqual(uri.scheme, 'file', `${uri.toString()} is a real file`);
+      assert.ok(/\.slnx?$/.test(uri.fsPath), `${uri.fsPath} matches the solution glob`);
+    }
+
+    // Interaction 4 - the glob EXCLUDES node_modules, which a JavaScript-heavy
+    // repository is full of. A picker that offers a solution vendored inside a
+    // dependency loads someone else's workspace.
+    assert.strictEqual(
+      paths.some((candidate) => candidate.includes('node_modules')),
+      false,
+      'no solution inside node_modules may be offered',
+    );
+    assert.ok(uris.length >= 1, 'the committed fixture workspace contributes at least one');
+    const discovered = toSolutionSelections(paths);
+    assert.strictEqual(discovered.length, paths.length, 'every discovered file becomes a row');
+    assert.deepEqual(
+      discovered.map((selection) => selection.name),
+      [...discovered.map((selection) => selection.name)].sort((left, right) =>
+        left.localeCompare(right),
+      ),
+      'and the rows are offered in a stable, sorted order',
+    );
   });
 
   test('solution selections preserve single .slnx filename', () => {
+    // Interaction 1 - the label is the FULL basename, extension included.
+    // Trimming it makes App.sln and App.slnx indistinguishable in the picker.
     const selections = toSolutionSelections(['/repo/App.slnx']);
-
     assert.equal(selections.length, 1);
     assert.equal(selections[0]?.name, 'App.slnx');
+    assert.equal(selections[0]?.path, '/repo/App.slnx', 'the path is the one we passed');
+
+    // Interaction 2 - the directory is NOT folded into the label, and the path
+    // is not rewritten. The picker shows a name and opens a path; conflating
+    // them opens the wrong solution.
+    assert.strictEqual(selections[0]?.name.includes('/'), false, 'the label carries no directory');
+    assert.strictEqual(
+      selections[0]?.path.startsWith('/repo/'),
+      true,
+      'while the path keeps its directory',
+    );
+    assert.notStrictEqual(selections[0]?.name, selections[0]?.path, 'the two are distinct fields');
+
+    // Interaction 3 - a deeper path still labels by basename alone, so the
+    // picker stays readable however far down the solution lives.
+    const nested = toSolutionSelections(['/repo/src/nested/deep/App.slnx']);
+    assert.equal(nested.length, 1, 'one selection for one path');
+    assert.equal(nested[0]?.name, 'App.slnx', 'labelled by basename regardless of depth');
+    assert.equal(nested[0]?.path, '/repo/src/nested/deep/App.slnx', 'with the full path intact');
+
+    // Interaction 4 - and no input means no selections, rather than a phantom
+    // row the user can click.
+    assert.deepEqual(toSolutionSelections([]), [], 'no paths, no selections');
   });
 
   test('solution selections keep multiple .slnx files distinct', () => {
+    // Interaction 1 - two solutions, two rows, SORTED. An unsorted picker
+    // reorders itself between invocations and the user's muscle memory picks
+    // the wrong solution.
     const selections = toSolutionSelections(['/repo/B.slnx', '/repo/A.slnx']);
-
     assert.deepEqual(
       selections.map((selection) => selection.name),
       ['A.slnx', 'B.slnx'],
     );
+    assert.strictEqual(selections.length, 2, 'both solutions survive');
+    assert.deepEqual(
+      selections.map((selection) => selection.path),
+      ['/repo/A.slnx', '/repo/B.slnx'],
+      'and each row keeps the path it will open',
+    );
+
+    // Interaction 2 - the row's label and its path agree. A sort that moves
+    // labels without moving paths opens B when the user clicked A, which is
+    // silent and unrecoverable.
+    for (const selection of selections) {
+      assert.ok(
+        selection.path.endsWith(selection.name),
+        `${selection.name} must be the basename of ${selection.path}`,
+      );
+    }
+
+    // Interaction 3 - solutions of the SAME name in different directories stay
+    // distinct rows: a monorepo has App.slnx more than once.
+    const sameName = toSolutionSelections(['/repo/two/App.slnx', '/repo/one/App.slnx']);
+    assert.strictEqual(sameName.length, 2, 'both are offered');
+    assert.deepEqual(
+      sameName.map((selection) => selection.path),
+      ['/repo/one/App.slnx', '/repo/two/App.slnx'],
+      'ordered by path when the names tie, so the order is deterministic',
+    );
+    assert.deepEqual(
+      sameName.map((selection) => selection.name),
+      ['App.slnx', 'App.slnx'],
+      'even though both carry the same label',
+    );
+    assert.strictEqual(
+      new Set(sameName.map((selection) => selection.path)).size,
+      2,
+      'and two distinct paths, so the picker can still open the right one',
+    );
+
+    // Interaction 4 - the ordering is TOTAL: the same set given in any input
+    // order comes back identically, which is what makes the picker stable
+    // across refreshes.
+    assert.deepEqual(
+      toSolutionSelections(['/repo/A.slnx', '/repo/B.slnx']),
+      selections,
+      'input order does not change the offered order',
+    );
+    assert.deepEqual(
+      toSolutionSelections(['/repo/one/App.slnx', '/repo/two/App.slnx']),
+      sameName,
+      'nor does it for same-named solutions',
+    );
+    assert.strictEqual(selections[0]?.name, 'A.slnx', 'A still sorts first');
   });
 
   test('solution selections keep mixed .sln and .slnx filenames distinct', () => {
+    // Interaction 1 - a repository mid-migration holds both formats of the same
+    // solution. Truncating the extension would collapse them into one
+    // indistinguishable row ([SE-SOLUTION]).
     const selections = toSolutionSelections(['/repo/App.slnx', '/repo/App.sln']);
-
     assert.deepEqual(
       selections.map((selection) => selection.name),
       ['App.sln', 'App.slnx'],
     );
+    assert.strictEqual(selections.length, 2, 'both formats are offered');
+    assert.strictEqual(new Set(selections.map((s) => s.name)).size, 2, 'under distinct labels');
+
+    // Interaction 2 - and under distinct paths, each ending in its own label.
+    assert.deepEqual(
+      selections.map((selection) => selection.path),
+      ['/repo/App.sln', '/repo/App.slnx'],
+      'sorted by label, with the path each row opens',
+    );
+    for (const selection of selections) {
+      assert.ok(selection.path.endsWith(selection.name), `${selection.name} matches its path`);
+    }
+
+    // Interaction 3 - the ordering is STABLE: the same set in a different input
+    // order produces the same rows, so the picker never reshuffles itself.
+    const reversed = toSolutionSelections(['/repo/App.sln', '/repo/App.slnx']);
+    assert.deepEqual(reversed, selections, 'input order does not change the offered order');
+    assert.deepEqual(
+      toSolutionSelections(['/repo/App.slnx', '/repo/App.sln', '/repo/Other.sln']).map(
+        (selection) => selection.name,
+      ),
+      ['App.sln', 'App.slnx', 'Other.sln'],
+      'and a third solution slots into the same ordering',
+    );
+
+    // Interaction 4 - `.sln` sorts before `.slnx` because the label sort is a
+    // plain string comparison, and every row still points at its own file.
+    const three = toSolutionSelections(['/repo/App.slnx', '/repo/App.sln', '/repo/Other.sln']);
+    assert.strictEqual(three.length, 3, 'all three solutions are offered');
+    assert.deepEqual(
+      three.map((selection) => selection.path),
+      ['/repo/App.sln', '/repo/App.slnx', '/repo/Other.sln'],
+      'each row keeps the path it opens',
+    );
+    for (const selection of three) {
+      assert.ok(selection.path.endsWith(selection.name), `${selection.name} matches its path`);
+    }
   });
 
   // ── Real LSP roundtrip with record types ─────────────────────
@@ -577,6 +1055,31 @@ public record Address
 
     const street = address.children?.find((s) => s.name === 'Street');
     assert.ok(street, 'Should find Street property in Address');
+
+    // Interaction 2 - [SE-SYMBOL-KINDS] maps `record_declaration` to Class, and
+    // its members keep their own kinds. A record drawn as a method puts the
+    // wrong icon on the most common type in a modern C# domain model.
+    const doc = await vscode.workspace.openTextDocument(uri);
+    assertSymbolShape(address, vscode.SymbolKind.Class, doc);
+    assertSymbolShape(street, vscode.SymbolKind.Property, doc);
+    assertSymbolTree(symbols, doc);
+
+    // Interaction 3 - both record SHAPES land in the tree: the positional
+    // one-liner and the braced body. A reader that only handles the braced form
+    // silently drops every DTO in the project.
+    assert.strictEqual(ns.children?.length, 2, 'both records are children of the namespace');
+    assert.ok(ns.range.contains(person.range), 'the positional record sits inside the namespace');
+    assert.ok(ns.range.contains(address.range), 'and so does the braced one');
+    assert.deepEqual(
+      address.children?.map((child) => child.name),
+      ['Street', 'City'],
+      'the braced record owns both properties, in source order',
+    );
+    assert.strictEqual(
+      doc.getText(person.selectionRange).includes('('),
+      false,
+      'and the positional record is named without its parameter list',
+    );
   });
 
   // ── Events and fields ────────────────────────────────────────
@@ -608,6 +1111,29 @@ public class EventSource
     const counter = source.children?.find((s) => s.name === '_counter');
     assert.ok(counter, 'Should find _counter field');
     assert.strictEqual(counter.kind, vscode.SymbolKind.Field);
+
+    // Interaction 2 - [SE-SYMBOL-KINDS] gives Event and Field separate rows,
+    // separate icons and separate theme colours. An event drawn as a field is
+    // the difference between "subscribe here" and "read this value".
+    assert.notStrictEqual(evt.kind, counter.kind, 'an event is not a field');
+    const doc = await vscode.workspace.openTextDocument(uri);
+    assertSymbolShape(evt, vscode.SymbolKind.Event, doc);
+    assertSymbolShape(counter, vscode.SymbolKind.Field, doc);
+    assertSymbolTree(symbols, doc);
+
+    // Interaction 3 - a `static readonly` field is still a Field, and every
+    // member is a CHILD of the class rather than a sibling of it. Private and
+    // static members must not be filtered out of the tree: [SE-SORT-ACCESS]
+    // sorts by access, which presupposes they are all present.
+    const constant = source.children?.find((child) => child.name === 'DefaultName');
+    assert.ok(constant, 'a static readonly field must appear in the tree');
+    assert.deepEqual(
+      source.children?.map((child) => child.name),
+      ['OnChanged', '_counter', 'DefaultName'],
+      'all three members, in source order, public and private alike',
+    );
+    assert.ok(source.range.contains(counter.range), 'the private field sits inside the class');
+    assert.ok(ns.range.contains(source.range), 'and the class inside the namespace');
   });
 
   // ── Reactive Tree Auto-Refresh ──────────────────────────────
@@ -665,9 +1191,49 @@ public class EventSource
         'Tree must auto-refresh when C# document content changes — ' +
           'renaming a symbol should update the solution explorer',
       );
+
+      // Interaction 2 - the refresh reflects the NEW content. An event that
+      // fires while the tree still serves the old symbol is worse than no
+      // event: the view looks live and reports stale data ([SE-LIVE-BUFFER]).
+      const after = await pollUntilResult(
+        async () =>
+          (await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+            'vscode.executeDocumentSymbolProvider',
+            doc.uri,
+          )) ?? [],
+        (found) => flattenSymbolNames(found).includes('NewMethod'),
+        5_000,
+      );
+      const names = flattenSymbolNames(after);
+      assert.ok(names.includes('NewMethod'), 'the renamed member is visible after the refresh');
+      assert.strictEqual(names.includes('OldMethod'), false, 'and the old name is gone');
+      assert.ok(after.length > 0, 'the outline is not merely empty');
+
+      // Interaction 3 - a SECOND edit fires again. A provider that fires once
+      // and then goes quiet leaves the tree stale from the second keystroke on.
+      const firstRound = treeChangeCount;
+      await replaceDocumentContent(doc, 'class Before { void ThirdMethod() {} }');
+      const again = await pollUntilResult(
+        async () => treeChangeCount,
+        (count) => count > firstRound,
+        5_000,
+        100,
+      );
+      assert.ok(again > firstRound, 'a second edit must fire the change event again');
+      assert.strictEqual(doc.isDirty, true, 'and the buffer is unsaved throughout');
     } finally {
       disposable.dispose();
     }
+
+    // Interaction 4 - disposing the subscription really unsubscribes, so a
+    // closed view stops paying for edits it can no longer show.
+    const settled = treeChangeCount;
+    const reopened = await vscode.workspace.openTextDocument(
+      vscode.Uri.file(path.join(tmpDir, 'reactive-test.cs')),
+    );
+    await replaceDocumentContent(reopened, 'class Before { void FourthMethod() {} }');
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    assert.strictEqual(treeChangeCount, settled, 'no event reaches a disposed listener');
   });
 
   // ── Live-buffer fidelity [SE-LIVE-BUFFER] ───────────────────────────────
@@ -713,6 +1279,31 @@ public class EventSource
       "documentSymbol must show 'Renamed' for unsaved edit — " +
         'this proves the VFS/tree-sitter path works correctly',
     );
+
+    // Interaction 3 - the OLD name is gone. "The new name appeared" is only
+    // half of [SE-LIVE-BUFFER]: a VFS that appends without replacing shows both
+    // classes, and Go to Symbol then offers one that no longer exists.
+    assert.strictEqual(
+      nsAfter.children?.some((child) => child.name === 'Original'),
+      false,
+      'the pre-edit class name must not survive the rename',
+    );
+    assert.strictEqual(doc.isDirty, true, 'and the buffer is still unsaved');
+    assert.ok(
+      fs.readFileSync(uri.fsPath, 'utf8').includes('Original'),
+      'while the file ON DISK still says Original - which is the whole point',
+    );
+
+    // Interaction 4 - the tree is still well formed and the member survived the
+    // rename of its containing type.
+    assertSymbolTree(after, doc);
+    assertSymbolShape(renamedClass, vscode.SymbolKind.Class, doc);
+    assert.deepEqual(
+      renamedClass.children?.map((child) => child.name),
+      ['Foo'],
+      'the method inside the renamed class is untouched',
+    );
+    assert.strictEqual(after.length, 1, 'and the namespace is still the only root');
   });
 
   test('workspace symbols show unsaved edits, not stale disk content', async function () {
@@ -965,7 +1556,13 @@ public class EventSource
     const initial =
       'namespace StaleDataTest;\n\npublic sealed class Alpha\n{\n    public string Name { get; set; }\n}';
     const { doc } = await openCSharpFile(projDir, 'Thing.cs', initial);
-    await waitForDocumentSymbols(doc.uri);
+    const opened = await waitForDocumentSymbols(doc.uri);
+    assert.ok(opened.length > 0, 'the source the tree will read really has symbols');
+    assert.ok(
+      flattenSymbolNames(opened).includes('Alpha'),
+      'and the outline names Alpha before the tree is asked',
+    );
+    assert.strictEqual(doc.isDirty, false, 'the file starts clean on disk');
 
     // Load solution into tree and verify "Alpha" appears.
     await api.explorerProvider.loadSolution(slnPath);
@@ -992,6 +1589,13 @@ public class EventSource
       5_000,
     );
     assert.ok(hasAlpha, "Tree must show 'Alpha' before rename");
+
+    assert.strictEqual(treeContains('Bravo'), false, 'and must NOT show Bravo before the rename');
+    assert.ok(fs.existsSync(slnPath), 'the solution the tree loaded is on disk');
+    assert.ok(
+      (provider.getChildren() ?? []).length > 0,
+      'and the loaded solution produced at least one root row',
+    );
 
     // Rename class: Alpha → Bravo
     const renamed =

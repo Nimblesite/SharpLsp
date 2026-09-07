@@ -1,0 +1,87 @@
+# agent-pmo:0b21609
+---
+# PHASE 4 — TEST. The VS Code leg on Windows. [DIST-CI-WIN-VSIX]
+#
+# The transport job ([DIST-CI-WIN-TRANSPORT], ci-test-dotnet.yml) proves win32
+# named pipes carry frames. This leg proves the whole EDITOR EXPERIENCE works on
+# top of them: the end-to-end suite sliced into feature chunks, each chunk its
+# own Windows job, driving the REAL LSP - release-built `sharplsp` host plus the
+# Roslyn and FCS sidecars - inside the real VS Code extension host. Ubuntu's leg
+# cannot exercise any of that on win32.
+#
+# A chunk is a GROUP of feature areas, not one area per job. Every job repeats
+# the same multi-minute preamble - setup-dotnet, node_modules, three artifact
+# downloads, the VS Code host cache - so a matrix of 26 single-area jobs bought
+# its parallelism by paying that preamble 26 times, and produced a check list
+# too long to read. Nine grouped jobs pay it nine times and each still finishes
+# well inside the ceiling below.
+#
+# THIS FILE NO LONGER BUILDS ANYTHING, and that is the single largest fix in the
+# pipeline. It used to open with a `Build host + sidecars + suite` job that was
+# gated on the Ubuntu build - which it consumed nothing from - and then compiled
+# Rust, both sidecars, netcoredbg and the suite itself. Windows tests therefore
+# began 17 minutes into a 41-minute run: 6m45 waiting for an unrelated Ubuntu
+# build, then 11m02 building. Both platforms now build as PHASE 2 siblings and
+# this leg is pure fan-out over the artifacts.
+#
+# It is the mirror of ci-test-vsix.yml and deliberately runs the SAME composite
+# action and the SAME make target. There is no Windows-only recipe: the two had
+# already drifted apart once, to the point where Windows ran the whole suite
+# uninstrumented while Ubuntu carried the entire coverage number.
+#
+# Chunk membership is declared in src/editors/vscode/test-chunks.json and
+# resolved once in PHASE 2 - never duplicated into this YAML. `make _lint-vsix`
+# fails if a suite belongs to no chunk. The `win` matrix drops only the chunks
+# marked `linuxOnly`, which clone and restore third-party repositories.
+name: CI / Test / VS Code (Windows)
+'on':
+  workflow_call:
+    inputs:
+      chunks:
+        description: JSON array of feature chunks, resolved by the PHASE 2 Windows build.
+        required: true
+        type: string
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  test-vsix-windows:
+    name: ${{ matrix.chunk }}
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    # A chunk installs deps, downloads a compiled suite and prebuilt binaries,
+    # then runs its slice against real Roslyn/FCS sidecars loading real
+    # solutions. That preamble is FIXED COST paid once per job — several minutes
+    # of it — which is why a chunk is a GROUP of feature areas and not a single
+    # one: at 26 jobs the matrix spent more runner time on preamble than on
+    # tests, and read as a wall of 26 rows nobody could scan.
+    #
+    # The ceiling is per JOB, so it scales with membership; it is not a budget
+    # for one feature area to grow into. The per-test ceilings still live in
+    # src/test/suite/test-timeouts.ts and none exceeds 2 minutes, so a job
+    # approaching this is a hang, not a slow suite.
+    timeout-minutes: 40
+    strategy:
+      # Every chunk is an independent GROUP of feature areas: one failure must
+      # not cancel the rest, or a single flake hides the state of the whole
+      # surface.
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJSON(inputs.chunks) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Run the shard
+        # No xvfb: the GitHub Windows runner has an interactive desktop session,
+        # so the VS Code test host launches directly.
+        uses: ./.github/actions/vsix-shard
+        with:
+          chunk: ${{ matrix.chunk }}
+          platform: win32
+          suite-artifact: vsix-suite-win
+          binaries-artifact: win-lsp-binaries
+          debugger-artifact: win-netcoredbg
+          debugger-path: target/netcoredbg/win32-x64/netcoredbg
+          user-data-dir: ${{ runner.temp }}/vsx-${{ matrix.chunk }}

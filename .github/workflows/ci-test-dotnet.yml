@@ -1,7 +1,18 @@
 # agent-pmo:0b21609
 ---
-# Reusable .NET sidecar leg of the PR pipeline (called by ci.yml).
-name: CI / .NET
+# PHASE 4 — TEST. The .NET sidecar leg.
+#
+# EVERY TEST RUNS EXACTLY ONCE. The Ubuntu job runs the whole sidecar solution.
+# The Windows job runs ONLY the classes whose behaviour is platform-dependent -
+# named-pipe connection setup and the real sidecar handshake over those pipes
+# ([DIST-CI-WIN-TRANSPORT]).
+#
+# It used to run the entire SharpLsp.Sidecar.Common.Tests project instead, which
+# re-executed about a dozen files of platform-agnostic assertions - XML doc
+# rendering, solution-file reading, metadata decompilation, log formatting - that
+# the Ubuntu job had already run. The filter lives in tools/make/main.mk beside
+# the target, not in this YAML.
+name: CI / Test / .NET
 'on':
   workflow_call: {}
 env:
@@ -33,9 +44,12 @@ jobs:
         run: chmod +x target/sidecar-csharp/SharpLsp.Sidecar.CSharp target/sidecar-fsharp/SharpLsp.Sidecar.FSharp
       - name: Test .NET sidecars with coverage
         env:
-          # The `build` leg already published both sidecars; this job stages
-          # the downloaded artifacts instead of rebuilding them.
+          # PHASE 2 already published both sidecars; stage the downloaded
+          # artifacts instead of rebuilding them.
           VSIX_PREBUILT: '1'
+        # PHASE 5 for this leg is the ratchet inside `_test-dotnet`. The suite is
+        # not sharded, so the gate has a complete tracefile in-job and needs no
+        # separate merge - unlike the Rust and VS Code legs (ci-coverage.yml).
         run: make _test-dotnet
       - name: Verify sidecar version flags
         shell: bash
@@ -45,11 +59,7 @@ jobs:
           FS_VERSION="$(dotnet msbuild src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
           target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
           target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
-      - name: Upload coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-dotnet
-          path: coverage-thresholds.json
+
   test-dotnet-windows:
     name: Named-Pipe Transport (Windows)
     # Implements [DIST-CI-WIN-TRANSPORT]: the named-pipe arm of the sidecar IPC
@@ -64,7 +74,10 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.303
-      - name: Restore full solution (caches FCS nuspec for dependency-consistency tests)
-        run: dotnet restore src/sidecars/SharpLsp.Sidecars.sln
-      - name: Test sidecar IPC transport on Windows
-        run: dotnet test src/sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj --blame-hang-timeout 2min --blame-hang-dump-type none
+      - name: Test the win32 named-pipe transport
+        # Only the platform-dependent classes. The full-solution `dotnet restore`
+        # that used to precede this existed to cache the FCS nuspec for the
+        # dependency-consistency tests, which are platform-agnostic and now run
+        # only on Ubuntu.
+        shell: bash
+        run: make _test-dotnet-win-transport

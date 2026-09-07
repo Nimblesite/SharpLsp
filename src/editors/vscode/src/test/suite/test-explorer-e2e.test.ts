@@ -1842,6 +1842,43 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       'exactly the split-derived classes exist, each once',
     );
     assert.strictEqual(seenClasses.length, 2, 'two class groups across the whole tree');
+
+    // Interaction 2 — a class group is a GROUP, never a test. Its id must not
+    // be an FQN and it must not be runnable as a leaf, or the play button on
+    // the row runs one thing and reports another ([TEST-EXPLORER]).
+    assert.strictEqual(
+      seenClasses.some((label) => fqnSet.has(label)),
+      false,
+      'no class label collides with a test FQN',
+    );
+    assert.deepStrictEqual(
+      [...new Set(seenClasses)],
+      seenClasses,
+      'no class group is materialised twice',
+    );
+
+    // Interaction 3 — every leaf in the tree belongs to exactly one class
+    // group. A test reachable from two groups is a test that runs twice and
+    // reports its result to whichever row asked last.
+    const owners = new Map<string, string[]>();
+    for (const rootNode of roots) {
+      rootNode.children.forEach((nsNode) => {
+        nsNode.children.forEach((classNode) => {
+          classNode.children.forEach((leaf) => {
+            owners.set(leaf.id, [...(owners.get(leaf.id) ?? []), classNode.label]);
+          });
+        });
+      });
+    }
+    assert.strictEqual(owners.size, fqnSet.size, `every discovered test is grouped once`);
+    for (const [id, groups] of owners) {
+      assert.strictEqual(
+        groups.length,
+        1,
+        `${id} belongs to one class group, not ${groups.length}`,
+      );
+      assert.strictEqual(fqnSet.has(id), true, `${id} is a discovered FQN`);
+    }
   });
 
   test('every TEST is a leaf at depth 4 carrying its FQN as id and its method as label', async function () {

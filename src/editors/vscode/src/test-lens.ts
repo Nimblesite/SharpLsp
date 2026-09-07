@@ -12,17 +12,22 @@ import { type CachedTestResult, type SharpLspTestController } from './testing.js
 import { CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR } from './constants.js';
 import { info } from './log.js';
 import { forEachLeaf } from './test-tree.js';
-
-/** Attribute markers that identify a method as a test. */
-const CS_TEST_ATTRIBUTES = ['Fact', 'Theory', 'Test', 'TestMethod', 'TestCase'] as const;
-
-/** F# test attribute markers (angle-bracket form). */
-const FS_TEST_ATTRIBUTES = ['Fact', 'Theory', 'Test', 'TestMethod', 'TestCase'] as const;
+import { singleLine } from './utils.js';
+import {
+  CS_DECLARATION_SPAN,
+  declarationBelow,
+  FS_DECLARATION_SPAN,
+  hasCSharpTestAttribute,
+  hasFSharpTestAttribute,
+} from './test-lens-attributes.js';
 
 /**
  * Provides code lenses above test methods showing their last known result.
  * Each lens also offers "Run Test" and "Debug Test" actions.
  */
+/** What a test's status reads before anything in this session has run it. */
+export const NEVER_RUN: CachedTestResult = { outcome: 'notRun', passed: false };
+
 export class TestStatusLensProvider implements vscode.CodeLensProvider {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   public readonly onDidChangeCodeLenses = this.changeEmitter.event;
@@ -72,87 +77,44 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
   }
 
   private lensesForCSharp(document: vscode.TextDocument): vscode.CodeLens[] {
-    const lenses: vscode.CodeLens[] = [];
-    const text = document.getText();
-    const lines = text.split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? '';
-      if (!this.hasTestAttribute(line, CS_TEST_ATTRIBUTES)) {
-        continue;
-      }
-      const methodName = this.findCSharpMethodName(lines, i);
-      if (methodName === undefined) {
-        continue;
-      }
-      const range = new vscode.Range(i, 0, i, line.length);
-      this.addLensesForTest(lenses, range, methodName, document.uri);
-    }
-
-    return lenses;
+    return this.lensesFor(document, hasCSharpTestAttribute, extractCSharpMethodName, {
+      span: CS_DECLARATION_SPAN,
+    });
   }
 
   private lensesForFSharp(document: vscode.TextDocument): vscode.CodeLens[] {
-    const lenses: vscode.CodeLens[] = [];
-    const text = document.getText();
-    const lines = text.split('\n');
+    return this.lensesFor(document, hasFSharpTestAttribute, extractFSharpFunctionName, {
+      span: FS_DECLARATION_SPAN,
+    });
+  }
 
+  /**
+   * One lens pair per attributed DECLARATION, whichever language the file is.
+   *
+   * Keyed on the declaration rather than on the attribute because a test may
+   * carry several: `[DataRow(1, 2)]` above `[DataTestMethod]`, or NUnit's
+   * `[Test]` above `[TestCase(2, 2, 4)]`. Emitting per attribute stacked two
+   * identical Run buttons over one method and made the status line read twice.
+   */
+  private lensesFor(
+    document: vscode.TextDocument,
+    isAttribute: (line: string) => boolean,
+    nameAt: (line: string) => string | undefined,
+    reach: { readonly span: number },
+  ): vscode.CodeLens[] {
+    const lenses: vscode.CodeLens[] = [];
+    const lines = document.getText().split('\n');
+    const claimed = new Set<number>();
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      if (!this.hasFSharpTestAttribute(line)) {
-        continue;
-      }
-      const methodName = this.findFSharpTestName(lines, i);
-      if (methodName === undefined) {
-        continue;
-      }
+      if (!isAttribute(line)) continue;
+      const declaration = declarationBelow(lines, i, reach.span, nameAt);
+      if (declaration === undefined || claimed.has(declaration.line)) continue;
+      claimed.add(declaration.line);
       const range = new vscode.Range(i, 0, i, line.length);
-      this.addLensesForTest(lenses, range, methodName, document.uri);
+      this.addLensesForTest(lenses, range, declaration.name, document.uri);
     }
-
     return lenses;
-  }
-
-  private hasTestAttribute(line: string, attributes: readonly string[]): boolean {
-    const trimmed = line.trim();
-    return attributes.some(
-      (attr) =>
-        trimmed.startsWith(`[${attr}]`) ||
-        trimmed.startsWith(`[${attr}(`) ||
-        trimmed.includes(`[${attr}]`) ||
-        trimmed.includes(`[${attr}(`),
-    );
-  }
-
-  private hasFSharpTestAttribute(line: string): boolean {
-    const trimmed = line.trim();
-    return FS_TEST_ATTRIBUTES.some(
-      (attr) => trimmed.includes(`[<${attr}>]`) || trimmed.includes(`[<${attr}(`),
-    );
-  }
-
-  private findCSharpMethodName(lines: string[], attrLine: number): string | undefined {
-    const limit = Math.min(attrLine + 6, lines.length);
-    for (let i = attrLine; i < limit; i++) {
-      const line = lines[i] ?? '';
-      const match = extractCSharpMethodName(line);
-      if (match !== undefined) {
-        return match;
-      }
-    }
-    return undefined;
-  }
-
-  private findFSharpTestName(lines: string[], attrLine: number): string | undefined {
-    const limit = Math.min(attrLine + 4, lines.length);
-    for (let i = attrLine; i < limit; i++) {
-      const line = lines[i] ?? '';
-      const match = extractFSharpFunctionName(line);
-      if (match !== undefined) {
-        return match;
-      }
-    }
-    return undefined;
   }
 
   private addLensesForTest(
@@ -161,19 +123,21 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
     methodName: string,
     uri: vscode.Uri,
   ): void {
-    const result = this.findResultByMethodName(methodName);
+    // No cached result IS the not-run result. [TEST-STATUS-LENS] pins
+    // "$(circle-slash) Not run" as one of the four titles the lens renders, but
+    // nothing writes to the cache until a run FINISHES, so that state was
+    // unreachable: a freshly discovered test showed Run and Debug and no status
+    // at all, and the row only began reporting itself after the user had
+    // already run it — exactly when they no longer needed telling.
+    const result = this.findResultByMethodName(methodName) ?? NEVER_RUN;
 
-    if (result !== undefined) {
-      const statusTitle = statusLensTitle(result);
-
-      lenses.push(
-        new vscode.CodeLens(range, {
-          title: statusTitle,
-          command: '',
-          arguments: [],
-        }),
-      );
-    }
+    lenses.push(
+      new vscode.CodeLens(range, {
+        title: statusLensTitle(result),
+        command: '',
+        arguments: [],
+      }),
+    );
 
     lenses.push(
       new vscode.CodeLens(range, {
@@ -194,9 +158,7 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
 
   private findResultByMethodName(methodName: string): CachedTestResult | undefined {
     for (const [testId, result] of this.testController.cachedResults) {
-      const lastDot = testId.lastIndexOf('.');
-      const shortName = lastDot >= 0 ? testId.substring(lastDot + 1) : testId;
-      if (shortName === methodName) {
+      if (methodNameOf(testId) === methodName) {
         return result;
       }
     }
@@ -204,11 +166,54 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
   }
 }
 
+/**
+ * `line` with any LEADING attribute groups removed, so a signature sharing a
+ * line with its attributes is still a signature.
+ *
+ * `[Fact] public void Adds()` is idiomatic C# and the shape most xUnit one-line
+ * tests are written in. Rejecting every line that opens with `[` — which is how
+ * a bare `[InlineData(2, 2, 4)]` was kept from reading as a method called
+ * `InlineData` — silently dropped the whole lens for those methods: no status,
+ * no Run, no Debug. Stripping the groups instead keeps the bare attribute line
+ * rejected (nothing is left of it) while letting the combined form through.
+ *
+ * Brackets are counted, not searched for, so an attribute carrying its own
+ * indexer or array type closes where it really closes; a `]` inside a string
+ * argument (`[Fact(Skip = "a]b")]`) is not a bracket at all.
+ */
+function withoutLeadingAttributes(line: string): string {
+  let rest = line.trim();
+  while (rest.startsWith('[')) {
+    const end = attributeGroupEnd(rest);
+    if (end === undefined) return '';
+    rest = rest.slice(end + 1).trim();
+  }
+  return rest;
+}
+
+/** The index of the `]` closing the attribute group `text` opens with. */
+function attributeGroupEnd(text: string): number | undefined {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i] ?? '';
+    if (quote !== undefined) {
+      if (ch === '\\') i += 1;
+      else if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '[') depth += 1;
+    else if (ch === ']' && --depth === 0) return i;
+  }
+  return undefined;
+}
+
 /** Extract a C# method name from a line containing a method signature. */
 export function extractCSharpMethodName(line: string): string | undefined {
-  const trimmed = line.trim();
+  const trimmed = withoutLeadingAttributes(line);
   if (
-    trimmed.startsWith('[') ||
+    trimmed === '' ||
     trimmed.startsWith('//') ||
     trimmed.startsWith('/*') ||
     trimmed.startsWith('*') ||
@@ -260,15 +265,40 @@ const CS_KEYWORDS = new Set([
 /** Extract an F# function name from a `let` or `member` binding. */
 export function extractFSharpFunctionName(line: string): string | undefined {
   const trimmed = line.trim();
-  const letMatch = /^let\s+(\w+)/.exec(trimmed);
-  if (letMatch?.[1] !== undefined) {
-    return letMatch[1];
-  }
-  const memberMatch = /^member\s+\w+\.(\w+)/.exec(trimmed);
-  if (memberMatch?.[1] !== undefined) {
-    return memberMatch[1];
-  }
-  return undefined;
+  return (
+    bindingName(/^let\s+(?:``([^`]+)``|(\w+))/, trimmed) ??
+    bindingName(/^member\s+\w+\.(?:``([^`]+)``|(\w+))/, trimmed)
+  );
+}
+
+/**
+ * The name `pattern` captured, whichever of its two alternatives matched.
+ *
+ * F# names a test by writing it the way it reads — ``let `` `adds two numbers`
+ * `` () =`` — and `\w+` cannot match a double-backtick binding, so every test
+ * named in the idiomatic style resolved to nothing and carried no lens at all:
+ * no status, no Run, no Debug. The backticks are F# syntax, not part of the
+ * name, so the INNER text is captured: that is what the test id carries.
+ */
+function bindingName(pattern: RegExp, line: string): string | undefined {
+  const match = pattern.exec(line);
+  return match?.[1] ?? match?.[2];
+}
+
+/**
+ * The bare method name a cached test id ends in.
+ *
+ * A data-driven test is listed one ROW per case — `Ns.Class.Adds(a: 2, b: 2)` —
+ * so a lens looking up `Adds` matched nothing and the method showed no status
+ * until a run replaced those ids with the merged bare name. Cutting at the
+ * first `(` resolves both forms, and must happen BEFORE the last dot is taken:
+ * an argument carrying a dot (`2.5`) would otherwise make the arguments look
+ * like the method name.
+ */
+function methodNameOf(testId: string): string {
+  const head = testId.split('(')[0] ?? testId;
+  const lastDot = head.lastIndexOf('.');
+  return lastDot >= 0 ? head.slice(lastDot + 1) : head;
 }
 
 /**
@@ -284,9 +314,24 @@ export function statusLensTitle(result: CachedTestResult): string {
     return `$(debug-step-over) Skipped`;
   }
   if (result.outcome === 'notRun') {
-    return `$(circle-slash) Not run${result.message !== undefined ? `: ${result.message}` : ''}`;
+    return `$(circle-slash) Not run${detail(result.message)}`;
   }
-  return `$(error) Failed${result.message !== undefined ? `: ${result.message}` : ''}`;
+  return `$(error) Failed${detail(result.message)}`;
+}
+
+/**
+ * A message rendered as the tail of a lens title, flattened onto ONE line.
+ *
+ * `cachedFrom` already flattens what it stores, so for a result that came from
+ * a run this is the identity. It is applied again here because the lens takes a
+ * {@link CachedTestResult}, not a TRX result: nothing in the type says the
+ * message is single-line, and a lens is the one place that cannot render it if
+ * it is not.
+ */
+function detail(message: string | undefined): string {
+  if (message === undefined) return '';
+  const flattened = singleLine(message);
+  return flattened === '' ? '' : `: ${flattened}`;
 }
 
 /** Format a duration in ms for display. */

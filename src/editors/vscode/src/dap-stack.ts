@@ -25,6 +25,7 @@ import {
   type RawFrame,
 } from './dap-frames';
 import { armAsyncDebugging, readAsyncChain, topFrameId, type AsyncChain } from './dap-async-chain';
+import { delay } from './utils';
 import { resolveMethodSource } from './dap-frame-sources';
 import { belongsToUserCode } from './dap-statement';
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
@@ -34,24 +35,17 @@ import { error } from './log';
 /** Synthetic frame ids live far above netcoredbg's per-stop counters. */
 const SYNTHETIC_BASE = 0x0f00_0000;
 
-/** How long an empty-stack refetch waits out the attach-pause suspend race. */
-const EMPTY_STACK_REFETCH_MS = 15_000;
-
-/** How many resume-and-repause recovery cycles one empty stack may spend. */
-const MAX_EMPTY_STACK_REPAUSES = 3;
-
-/** Refetch-loop polls spent before each resume-and-repause recovery cycle. */
-const EMPTY_STACK_REPAUSE_POLLS = 8;
+/**
+ * How long an empty-stack refetch waits out the attach-pause suspend race.
+ *
+ * The client gets no `stackTrace` answer until this elapses, so it is bounded
+ * by the race it absorbs - [DEBUG-PERFORMANCE] budgets a whole attach at <3s -
+ * and not by the patience of whoever is waiting.
+ */
+const EMPTY_STACK_REFETCH_MS = 3_000;
 
 /** The poll interval inside that window. */
 const EMPTY_STACK_POLL_MS = 250;
-
-/** One delayed step, for the empty-stack refetch. */
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 /** How deep the full-stack refetch reads. */
 const FULL_STACK_LEVELS = 1_000;
@@ -119,6 +113,19 @@ export class StackDelivery {
   private launchRoot: string | undefined;
   /** Entry-stop arming for the current launch; undefined for attach/noDebug. */
   private arming: Arming | undefined;
+  /**
+   * Whether the runtime's async-task registry was armed for this session.
+   *
+   * `s_currentActiveTasks` only exists once `s_asyncDebuggingEnabled` has been
+   * set, and only a LAUNCH gets the entry stop that sets it. Without it every
+   * heap walk can only answer `null`, so asking costs a func-eval -- MEASURED
+   * at 113ms per stop against a test host -- for an answer already known. That
+   * delay is not merely slow: the client's own `stackTrace` waits behind it,
+   * and the workbench focuses the stopped thread only once that answer lands,
+   * so a step made first is dispatched at whichever thread happens to be first
+   * in the list and netcoredbg refuses it ([DEBUG-ARCHITECTURE-ROUTER]).
+   */
+  private asyncRegistryArmed = false;
   /** Whether one source path is the user's own code, for frame filtering. */
   private readonly isUserPath = (path: string): boolean =>
     belongsToUserCode({ path, line: 0, column: 0 }, this.launchRoot);
@@ -149,6 +156,7 @@ export class StackDelivery {
    */
   public onLaunch(args: Record<string, unknown>): void {
     this.arming = undefined;
+    this.asyncRegistryArmed = false;
     if (typeof args.cwd === 'string') this.launchRoot = args.cwd;
     if (args.noDebug === true) return;
     const userWantedEntry = args.stopAtEntry === true;
@@ -180,7 +188,10 @@ export class StackDelivery {
   /** Enable the async-task registry at a paused moment; optionally resume. */
   private async armAtStop(threadId: number, resume: boolean): Promise<void> {
     try {
-      await armAsyncDebugging(this.host, await topFrameId(this.host, threadId));
+      this.asyncRegistryArmed = await armAsyncDebugging(
+        this.host,
+        await topFrameId(this.host, threadId),
+      );
     } catch (cause) {
       error(`async-debug arming failed: ${String(cause)}`);
     }
@@ -215,13 +226,24 @@ export class StackDelivery {
    * A response containing async state-machine frames — or one whose window
    * filtered down to nothing — is rebuilt from a full fetch: renamed, heap
    * reconstruction spliced in, and the caller's original window re-applied.
+   *
+   * Only when the reconstruction can actually contribute. Without the
+   * runtime's async-task registry there is no chain to recover and none to
+   * continue, so the frames the adapter just returned ARE the answer and the
+   * rebuild would cost a full re-fetch and a queue hop for nothing. That delay
+   * is not free: the workbench focuses the stopped thread only once this
+   * response lands, and a step made before it does is dispatched at whichever
+   * thread happens to be first in the list — which netcoredbg then refuses
+   * ([DEBUG-ARCHITECTURE-ROUTER]).
    */
   public deliver(message: DapMessage, args: Record<string, unknown> | undefined): void {
     const body = isRecord(message.body) ? message.body : {};
     const frames = isFrameList(body.stackFrames) ? body.stackFrames : [];
-    const hasAsyncFrames = frames.some((frame) => logicalFrameName(frame.name) !== frame.name);
+    const reconstructable =
+      this.asyncRegistryArmed &&
+      frames.some((frame) => logicalFrameName(frame.name) !== frame.name);
     const logical = enrichAsyncFrames(frames, this.justMyCode, this.isUserPath);
-    if (!hasAsyncFrames && logical.length > 0) {
+    if (!reconstructable && logical.length > 0) {
       this.emitStack(message, body, args, logical);
       return;
     }
@@ -232,32 +254,18 @@ export class StackDelivery {
         // report an empty stack for a stopped thread before its frames are
         // walkable. One delayed refetch settles the race; a genuinely frameless
         // thread stays empty.
+        // The refetch is PASSIVE: re-probe `threads` so netcoredbg refreshes
+        // its per-thread walk state, then read again. The adapter must never
+        // resume the debuggee to make one of its own reads succeed - a thread
+        // parked in native runtime code stays frameless, and `stackFrames: []`
+        // is the honest answer for it.
         let assembled = await this.logicalStack(threadId);
-        let attempt = 0;
-        let repauses = 0;
         const deadline = Date.now() + EMPTY_STACK_REFETCH_MS;
         while (assembled.length === 0 && Date.now() < deadline) {
-          await sleep(EMPTY_STACK_POLL_MS);
-          // netcoredbg refreshes its per-thread walk state on a `threads`
-          // probe; without one it can keep answering an empty stackTrace for
-          // a freshly paused attached thread.
+          await delay(EMPTY_STACK_POLL_MS);
           await this.fetchThreads();
           this.cache.delete(threadId);
           assembled = await this.logicalStack(threadId);
-          attempt += 1;
-          // A pause that lands while the thread is inside native runtime code
-          // (e.g. Thread.Sleep) can leave the stack unwalkable indefinitely.
-          // Bounded resume-and-repause cycles give the runtime further chances
-          // to park the thread somewhere walkable.
-          if (
-            assembled.length === 0 &&
-            repauses < MAX_EMPTY_STACK_REPAUSES &&
-            attempt >= EMPTY_STACK_REPAUSE_POLLS * (repauses + 1)
-          ) {
-            repauses += 1;
-            await this.safeResumePause(threadId);
-            continue;
-          }
         }
         this.emitStack(message, body, args, assembled);
       } catch (cause) {
@@ -265,26 +273,6 @@ export class StackDelivery {
         this.host.emit(this.handles.translateResponseBody(message));
       }
     });
-  }
-
-  /**
-   * One `continue` immediately followed by one `pause`, for the empty-stack
-   * recovery loop. Best-effort in both directions: a thread that exits or
-   * refuses either request simply keeps its current stop.
-   */
-  private async safeResumePause(threadId: number): Promise<void> {
-    try {
-      this.cache.delete(threadId);
-      const resumed = await this.host.request('continue', { threadId });
-      if (resumed.success === false) return;
-      await sleep(EMPTY_STACK_POLL_MS);
-      await this.host.request('pause', { threadId });
-      // Give the adapter a moment to deliver and settle the fresh stop before
-      // the next stack probe.
-      await sleep(EMPTY_STACK_POLL_MS);
-    } catch {
-      // The next poll retries anyway.
-    }
   }
 
   /** One `threads` probe, for the empty-stack refetch loop. */
@@ -342,6 +330,7 @@ export class StackDelivery {
 
   /** Walk the heap for the awaiting callers of the paused async method. */
   private async recoverChain(raw: RawFrame[]): Promise<AsyncChain> {
+    if (!this.asyncRegistryArmed) return { frames: [], complete: false };
     const pausedSmType = raw
       .map((frame) => frameStateMachineType(frame.name))
       .find((smType) => smType !== undefined);
@@ -403,7 +392,19 @@ export class StackDelivery {
     return tail.slice(start);
   }
 
-  /** The enriched stacks of other threads that carry async frames. */
+  /**
+   * The enriched stacks of other threads that carry async frames.
+   *
+   * The probes are issued TOGETHER. A test host parks a dozen runtime and
+   * thread-pool threads, and walking them one after another turned a
+   * `stackTrace` netcoredbg answered in 2ms into one the client waited 149ms
+   * for -- on every stop. VS Code focuses the stopped thread only once that
+   * response lands, and a step gesture made before it does is dispatched
+   * against the FIRST thread in the list instead: netcoredbg then refuses
+   * `next` on a thread that never stopped (`0x80004005`), and the user's F10
+   * reads as a broken gesture. The adapter answers each probe independently,
+   * so nothing about the result changes -- only how long the client waits.
+   */
   private async asyncThreadStacks(pausedThreadId: number): Promise<RawFrame[][]> {
     const response = await this.host.request('threads', {});
     const body = isRecord(response.body) ? response.body : {};
@@ -411,13 +412,10 @@ export class StackDelivery {
       .map((thread) => Number(thread.id ?? 0))
       .filter((id) => id > 0 && id !== pausedThreadId)
       .slice(0, MAX_STITCH_THREADS);
-    const stacks: RawFrame[][] = [];
-    for (const id of ids) {
-      const raw = await this.fetchFrames(id);
-      if (!raw.some((frame) => logicalFrameName(frame.name) !== frame.name)) continue;
-      stacks.push(enrichAsyncFrames(raw, this.justMyCode, this.isUserPath));
-    }
-    return stacks;
+    const walked = await Promise.all(ids.map(async (id) => await this.fetchFrames(id)));
+    return walked
+      .filter((raw) => raw.some((frame) => logicalFrameName(frame.name) !== frame.name))
+      .map((raw) => enrichAsyncFrames(raw, this.justMyCode, this.isUserPath));
   }
 
   /** Emit one enriched stack, windowed and handle-translated as promised. */

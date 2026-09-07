@@ -229,7 +229,7 @@ internal sealed class CodeActionResolver
         return new CodeFixContext(
             document,
             diagnostic,
-            (action, _) => CacheAndAdd(action, FixKind(diagnostic.Id), items),
+            (action, _) => CacheAndAdd(action, FixKind(diagnostic.Id), items, null),
             ct
         );
     }
@@ -246,7 +246,7 @@ internal sealed class CodeActionResolver
             .ConfigureAwait(false);
         if (action is not null)
         {
-            CacheAndAdd(action, "refactor.rewrite", items);
+            CacheAndAdd(action, "refactor.rewrite", items, null);
         }
     }
 
@@ -265,9 +265,51 @@ internal sealed class CodeActionResolver
         foreach (var provider in CachedRefactoringProviders.Value)
         {
             ct.ThrowIfCancellationRequested();
+            var before = items.Count;
             await TryRegisterRefactoringAsync(provider, document, span, items, ct)
                 .ConfigureAwait(false);
+            if (items.Count == before)
+            {
+                await AskAboutCaretAsync(provider, document, span, items, ct).ConfigureAwait(false);
+            }
         }
+    }
+
+    /// <summary>
+    /// Ask one provider about the collapsed caret, after it answered nothing
+    /// about the selection.
+    /// </summary>
+    /// <remarks>
+    /// Roslyn finds a refactoring's target with `TryGetRelevantNode`, which needs
+    /// the span to sit inside ONE node — so a selection over an invocation's
+    /// method name resolves to the identifier, not the invocation, and
+    /// `Inline 'X'` was offered for a caret on a word and withheld the moment the
+    /// user double-clicked it. Asking about the caret UNCONDITIONALLY would drag
+    /// in whatever sub-expression it lands inside: selecting `1 + 2` would offer
+    /// constants for `1` as well. A provider that answered the selection has said
+    /// what it has to say about it.
+    /// </remarks>
+    private async Task AskAboutCaretAsync(
+        CodeRefactoringProvider provider,
+        Document document,
+        TextSpan span,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
+    {
+        if (span.IsEmpty)
+        {
+            return;
+        }
+
+        await TryRegisterRefactoringAsync(
+                provider,
+                document,
+                new TextSpan(span.Start, 0),
+                items,
+                ct
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task TryRegisterRefactoringAsync(
@@ -311,7 +353,7 @@ internal sealed class CodeActionResolver
         return new CodeRefactoringContext(
             document,
             span,
-            action => CacheAndAdd(action, RefactoringKind(provider, action), items),
+            action => CacheAndAdd(action, RefactoringKind(provider, action), items, null),
             ct
         );
     }
@@ -341,17 +383,28 @@ internal sealed class CodeActionResolver
             || providerName.Contains("IntroduceField", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void CacheAndAdd(CodeAction action, string kind, List<CodeActionItem> items)
+    private void CacheAndAdd(
+        CodeAction action,
+        string kind,
+        List<CodeActionItem> items,
+        string? parentTitle
+    )
     {
-        if (CacheNestedActions(action, kind, items) || IsDuplicate(action, kind, items))
+        var title = Qualified(parentTitle, action.Title);
+        if (CacheNestedActions(action, kind, items, title) || IsDuplicate(title, kind, items))
         {
             return;
         }
 
-        items.Add(CacheAction(action, kind));
+        items.Add(CacheAction(action, kind, title));
     }
 
-    private bool CacheNestedActions(CodeAction action, string kind, List<CodeActionItem> items)
+    private bool CacheNestedActions(
+        CodeAction action,
+        string kind,
+        List<CodeActionItem> items,
+        string title
+    )
     {
         if (action.NestedActions.IsEmpty)
         {
@@ -360,25 +413,55 @@ internal sealed class CodeActionResolver
 
         foreach (var nested in action.NestedActions)
         {
-            CacheAndAdd(nested, kind, items);
+            CacheAndAdd(nested, kind, items, title);
         }
 
         return true;
     }
 
-    private static bool IsDuplicate(CodeAction action, string kind, List<CodeActionItem> items)
+    /// <summary>
+    /// A flattened child's title, carrying the container it came from when it
+    /// cannot stand without it.
+    /// </summary>
+    /// <remarks>
+    /// LSP has no submenus, so a nested action arrives in the same flat list as
+    /// every other and its title is all the user reads before choosing. Roslyn
+    /// writes children in two shapes: sentences that name themselves ("Inline
+    /// and keep 'X'", "Convert to binary") and continuations of the PARENT's
+    /// sentence ("and update call sites directly", "into new overload") that say
+    /// nothing alone. Only the continuations are joined, and with a space, so
+    /// the result reads as the sentence Roslyn actually wrote. Renaming the
+    /// self-contained ones would only make them stutter.
+    /// </remarks>
+    private static string Qualified(string? parentTitle, string title)
     {
-        return items.Any(item => item.Title == action.Title && item.Kind == kind);
+        return string.IsNullOrEmpty(parentTitle) || !IsContinuation(title)
+            ? title
+            : parentTitle + " " + title;
     }
 
-    private CodeActionItem CacheAction(CodeAction action, string kind)
+    /// <summary>
+    /// Whether a child's title continues its parent's sentence instead of
+    /// naming itself. Roslyn writes those in lower case, and only those.
+    /// </summary>
+    private static bool IsContinuation(string title)
+    {
+        return title.Length > 0 && char.IsLower(title[0]);
+    }
+
+    private static bool IsDuplicate(string title, string kind, List<CodeActionItem> items)
+    {
+        return items.Any(item => item.Title == title && item.Kind == kind);
+    }
+
+    private CodeActionItem CacheAction(CodeAction action, string kind, string title)
     {
         var id = Interlocked.Increment(ref _nextId);
         _pendingActions[id] = action;
         return new CodeActionItem
         {
             Id = id,
-            Title = action.Title,
+            Title = title,
             Kind = kind,
             IsPreferred = action.Priority == CodeActionPriority.High,
         };

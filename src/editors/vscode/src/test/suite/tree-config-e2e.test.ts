@@ -663,13 +663,28 @@ suite('Config E2E — every getter, with workspace round-trips', () => {
     assert.ok(config.loggingLevel().length > 0, 'loggingLevel is a non-empty string');
 
     // Round-trip an override and confirm the getter reflects it, then restore.
+    // The committed fixture pins NOTHING at workspace scope — a pin there would
+    // hide every user-scope write behind it — so restoring "verbatim" means the
+    // key is removed again, not parked at a default.
+    const committed = ws().inspect('logging.level')?.workspaceValue;
+    assert.strictEqual(committed, undefined, 'the fixture workspace pins no logging.level');
     await withSetting('logging.level', 'debug', () => {
       assert.strictEqual(config.loggingLevel(), 'debug', 'loggingLevel reflects the override');
+      assert.strictEqual(
+        ws().inspect('logging.level')?.workspaceValue,
+        'debug',
+        'and the override landed at workspace scope',
+      );
     });
     assert.strictEqual(
       ws().inspect('logging.level')?.workspaceValue,
-      'info',
-      'committed fixture logging.level (info) is restored verbatim',
+      committed,
+      'the committed fixture workspace value is restored verbatim',
+    );
+    assert.strictEqual(
+      config.loggingLevel(),
+      ws().inspect('logging.level')?.defaultValue,
+      'and the getter reads the manifest default again',
     );
 
     await withSetting('server.extraArgs', ['--verbose', '--port=9091'], () => {

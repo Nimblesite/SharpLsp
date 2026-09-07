@@ -44,6 +44,20 @@ export interface PromptLog {
   readonly infoMessages: string[];
   readonly warningMessages: string[];
   readonly errorMessages: string[];
+  /**
+   * The `MessageOptions` each message box was shown with, in order.
+   *
+   * `modal` is the difference between a dialog the user must answer and a toast
+   * that disappears on its own — the only thing standing between a stray click
+   * and an irreversible project edit.
+   */
+  readonly infoOptions: (vscode.MessageOptions | undefined)[];
+  readonly warningOptions: (vscode.MessageOptions | undefined)[];
+  readonly errorOptions: (vscode.MessageOptions | undefined)[];
+  /** The action labels each message box offered, in order. */
+  readonly infoActions: string[][];
+  readonly warningActions: string[][];
+  readonly errorActions: string[][];
   readonly openDialogOptions: (vscode.OpenDialogOptions | undefined)[];
   readonly saveDialogOptions: (vscode.SaveDialogOptions | undefined)[];
 }
@@ -94,6 +108,35 @@ function pickActionFromArgs(selector: MessageSelector, args: unknown[]): string 
 }
 
 /**
+ * The `MessageOptions` argument of a message box, if one was passed.
+ *
+ * VS Code's overloads put it FIRST after the message, but only when present —
+ * everything else in the rest arguments is an action.
+ */
+function messageOptionsOf(rest: readonly unknown[]): vscode.MessageOptions | undefined {
+  const first = rest[0];
+  if (typeof first !== 'object' || first === null) return undefined;
+  const candidate = first as { title?: unknown; modal?: unknown; detail?: unknown };
+  if (typeof candidate.title === 'string') return undefined; // a MessageItem action
+  if (candidate.modal === undefined && candidate.detail === undefined) return undefined;
+  return candidate as vscode.MessageOptions;
+}
+
+/** The action labels a message box offered, whether strings or `MessageItem`s. */
+function actionLabelsOf(rest: readonly unknown[]): string[] {
+  const labels: string[] = [];
+  for (const argument of rest) {
+    if (typeof argument === 'string') {
+      labels.push(argument);
+      continue;
+    }
+    const title = (argument as { title?: unknown } | null)?.title;
+    if (typeof title === 'string') labels.push(title);
+  }
+  return labels;
+}
+
+/**
  * Install the harness over `vscode.window`. By default every prompt is
  * "cancelled" (returns undefined); queue methods supply real answers FIFO.
  */
@@ -117,6 +160,12 @@ export function installUiStubs(): UiStubs {
     infoMessages: [],
     warningMessages: [],
     errorMessages: [],
+    infoOptions: [],
+    warningOptions: [],
+    errorOptions: [],
+    infoActions: [],
+    warningActions: [],
+    errorActions: [],
     openDialogOptions: [],
     saveDialogOptions: [],
   };
@@ -143,16 +192,22 @@ export function installUiStubs(): UiStubs {
 
   mutWindow.showInformationMessage = async (message: string, ...rest: unknown[]) => {
     log.infoMessages.push(message);
+    log.infoOptions.push(messageOptionsOf(rest));
+    log.infoActions.push(actionLabelsOf(rest));
     return infos.length > 0 ? pickActionFromArgs(infos.shift(), rest) : undefined;
   };
 
   mutWindow.showWarningMessage = async (message: string, ...rest: unknown[]) => {
     log.warningMessages.push(message);
+    log.warningOptions.push(messageOptionsOf(rest));
+    log.warningActions.push(actionLabelsOf(rest));
     return warnings.length > 0 ? pickActionFromArgs(warnings.shift(), rest) : undefined;
   };
 
   mutWindow.showErrorMessage = async (message: string, ...rest: unknown[]) => {
     log.errorMessages.push(message);
+    log.errorOptions.push(messageOptionsOf(rest));
+    log.errorActions.push(actionLabelsOf(rest));
     return errors.length > 0 ? pickActionFromArgs(errors.shift(), rest) : undefined;
   };
 
