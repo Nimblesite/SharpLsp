@@ -676,6 +676,7 @@ derived from measured behaviour on the CI agents.
 |---|---|---|
 | `FAST_MS` | 1s | Pure in-process work — parsers, tree builders, HTML rendering, manifest conformance |
 | `COMMAND_MS` | 5s | One command round trip through the extension host; no sidecar |
+| `SETTLE_MS` | 10s | A POLL budget for something the OS or a debounced watcher owns — a killed process leaving the process table, a file watcher firing, the workbench clearing its active debug session |
 | `SETTINGS_WRITE_MS` | 30s | Several user-scoped `settings.json` writes, each awaiting its change event (measured 4.56s for four) |
 | `LSP_RESPONSE_MS` | 15s | One semantic request answered by a warm sidecar |
 | `DEBUG_SESSION_MS` | 45s | A live `netcoredbg` session — launch, bind, step, evaluate, detach |
