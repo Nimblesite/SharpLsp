@@ -198,6 +198,8 @@ export class DebugSessionRecorder {
       }),
       vscode.debug.onDidTerminateDebugSession((session) => {
         this.terminatedIds.push(session.id);
+        const live = this.liveSessions.findIndex((known) => known.id === session.id);
+        if (live >= 0) this.liveSessions.splice(live, 1);
       }),
     );
   }
