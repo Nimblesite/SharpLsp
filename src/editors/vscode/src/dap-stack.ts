@@ -226,13 +226,24 @@ export class StackDelivery {
    * A response containing async state-machine frames — or one whose window
    * filtered down to nothing — is rebuilt from a full fetch: renamed, heap
    * reconstruction spliced in, and the caller's original window re-applied.
+   *
+   * Only when the reconstruction can actually contribute. Without the
+   * runtime's async-task registry there is no chain to recover and none to
+   * continue, so the frames the adapter just returned ARE the answer and the
+   * rebuild would cost a full re-fetch and a queue hop for nothing. That delay
+   * is not free: the workbench focuses the stopped thread only once this
+   * response lands, and a step made before it does is dispatched at whichever
+   * thread happens to be first in the list — which netcoredbg then refuses
+   * ([DEBUG-ARCHITECTURE-ROUTER]).
    */
   public deliver(message: DapMessage, args: Record<string, unknown> | undefined): void {
     const body = isRecord(message.body) ? message.body : {};
     const frames = isFrameList(body.stackFrames) ? body.stackFrames : [];
-    const hasAsyncFrames = frames.some((frame) => logicalFrameName(frame.name) !== frame.name);
+    const reconstructable =
+      this.asyncRegistryArmed &&
+      frames.some((frame) => logicalFrameName(frame.name) !== frame.name);
     const logical = enrichAsyncFrames(frames, this.justMyCode, this.isUserPath);
-    if (!hasAsyncFrames && logical.length > 0) {
+    if (!reconstructable && logical.length > 0) {
       this.emitStack(message, body, args, logical);
       return;
     }
@@ -307,7 +318,11 @@ export class StackDelivery {
     const chain = await this.recoverChain(raw);
     const present = new Set(enriched.map((frame) => nameKey(frame.name)));
     const injected = await this.injectedFrames(chain, present, enriched);
-    const tail = chain.complete ? [] : await this.stitchedTail(threadId, present, injected);
+    // A tail CONTINUES a chain. No chain was recovered means there is nothing
+    // to continue, and another thread's frames spliced onto this stack would
+    // be a caller the debuggee never had.
+    const cut = chain.frames.length > 0 && !chain.complete;
+    const tail = cut ? await this.stitchedTail(threadId, present, injected) : [];
     const insertAfter = findLastRenamed(enriched, renamedKeys);
     return [
       ...enriched.slice(0, insertAfter + 1),
