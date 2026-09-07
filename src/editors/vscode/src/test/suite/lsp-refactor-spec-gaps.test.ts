@@ -109,7 +109,11 @@ const GENERATE_CASES: readonly ActionLifecycleCase[] = [
     // from the field it seeds — `_count` -> `count`, `_label` -> `label`.
     // (Measured against the real provider in GenerateConstructorFromMembersTests.)
     title: "Generate constructor 'GenerateConstructorTarget(int count, string label)'",
-    kind: 'refactor',
+    // The sidecar classifies a code-GENERATING refactoring as `refactor.rewrite`
+    // (its default: not inline, not extraction, not organize-imports —
+    // CodeActionResolver.RefactoringKind), the same kind the other rewrite
+    // families in this file carry. LSP 3.17 has no `refactor.generate`.
+    kind: 'refactor.rewrite',
     presentAfter: ['generate-constructor-sentinel'],
     absentAfter: [],
     patternsAfter: [
