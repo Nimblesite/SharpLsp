@@ -595,10 +595,12 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     eq(methodOf(into.frame), 'Add', 'step into lands in the helper the test called');
     eq(into.frame.line, CS_SOURCE.dapLine('add-body'), 'on the helper first statement');
     const insideStack = await stackFrames(requireActive('inside the helper'), into.stop.threadId);
+    // The caller frame sits on the CALL it is waiting on, not on the line the
+    // step started from: that is the frame the user clicks to see why `Add` ran.
     eq(
-      trace(insideStack).includes('Adds_Two_Numbers'),
+      trace(insideStack).includes('Adds_Two_Numbers@' + String(CS_SOURCE.dapLine('adds-call'))),
       true,
-      'and the TEST is still on the stack below it — the helper was reached FROM the test',
+      'and the TEST is still on the stack below it, on the call — the helper was reached FROM the test',
     );
     eq(
       variableNamed(await localsOf(requireActive('inside the helper'), into.frame.id), 'left')

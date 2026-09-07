@@ -711,52 +711,24 @@ suite('Hover / Quick Info', () => {
       `Tree must have symbol nodes, found ${String(symbolNodes.length)}`,
     );
 
-    // Resolve symbol nodes and verify tooltips match LSP hover.
-    // Not every symbol gets hover from the sidecar (e.g. compact field
-    // declarations), so we verify the mechanism works on those that do.
-    const provider = api.explorerProvider;
-    const tokenSource = new vscode.CancellationTokenSource();
-    let tooltipCount = 0;
-
-    for (const node of symbolNodes) {
-      const treeItem = provider.getTreeItem(node);
-      const resolved = await provider.resolveTreeItem(treeItem, node, tokenSource.token);
-
-      // Skip symbols where the sidecar returned no hover data.
-      if (resolved.tooltip === undefined || !(resolved.tooltip instanceof vscode.MarkdownString)) {
-        continue;
-      }
-
-      tooltipCount++;
-      const treeMd = resolved.tooltip.value;
-      assert.ok(treeMd.length > 0, `Tooltip for '${node.sortName ?? '?'}' must not be empty`);
-      assert.ok(
-        treeMd.includes('```'),
-        `Tooltip for '${node.sortName ?? '?'}' must have code block: ${treeMd}`,
-      );
-
-      // Tooltip should contain the symbol name or a type signature.
-      if (node.sortName !== undefined && node.sortName.length > 0) {
-        assert.ok(
-          treeMd.includes(node.sortName) || treeMd.includes('```'),
-          `Tooltip must contain symbol name '${node.sortName}' or code block: ${treeMd}`,
-        );
-      }
-
-      // Tree tooltip must match the code editor hover at the same position.
-      if (node.symbolUri !== undefined && node.symbolPosition !== undefined) {
-        const nodeUri = vscode.Uri.parse(node.symbolUri);
-        const pos = new vscode.Position(node.symbolPosition.line, node.symbolPosition.character);
-        const codeHover = await waitForHoverResult(nodeUri, pos);
-        const codeMd = hoverToString(codeHover);
-        assert.strictEqual(
-          treeMd,
-          codeMd,
-          `Tree tooltip must match code hover for '${node.sortName ?? '?'}'`,
-        );
-      }
+    // Every file the walk will hover is opened ONCE and kept open, the way the
+    // user's own files are. A hover on a CLOSED file has the workbench open a
+    // model around the request and drop it after, so the server would see a
+    // didOpen/didClose cycle per SYMBOL rather than per file.
+    for (const file of symbolFiles(symbolNodes)) {
+      await vscode.workspace.openTextDocument(vscode.Uri.parse(file));
     }
 
+    // Resolve every symbol's tooltip and hold it to the code hover. The walk
+    // is concurrent: several hundred sidecar round trips are pipelined instead
+    // of paid one after another, which is what put the sweep past its budget.
+    const tokenSource = new vscode.CancellationTokenSource();
+    const produced = await Promise.all(
+      symbolNodes.map((node) =>
+        assertTooltipMatchesHover(api.explorerProvider, node, tokenSource.token),
+      ),
+    );
+    const tooltipCount = produced.filter(Boolean).length;
     assert.ok(
       tooltipCount > 0,
       `At least one symbol must have a tooltip, got ${String(tooltipCount)} from ${String(symbolNodes.length)} symbols`,
@@ -887,6 +859,46 @@ interface SymbolTreeNode {
   readonly symbolPosition?: { line: number; character: number };
   readonly nodeType?: string;
   readonly children?: SymbolTreeNode[];
+}
+
+/** The slice of the explorer provider a tooltip walk needs. */
+interface TooltipProvider {
+  getTreeItem(element: unknown): vscode.TreeItem;
+  resolveTreeItem(
+    item: vscode.TreeItem,
+    element: unknown,
+    token: vscode.CancellationToken,
+  ): Promise<vscode.TreeItem>;
+}
+
+/** The distinct files the symbol nodes point into. */
+function symbolFiles(nodes: readonly SymbolTreeNode[]): string[] {
+  const uris = nodes.flatMap((node) => (node.symbolUri === undefined ? [] : [node.symbolUri]));
+  return [...new Set(uris)];
+}
+
+/**
+ * Resolve one symbol node's tooltip and, when the sidecar gave it one, hold it
+ * to the code hover at the symbol's own position. Answers whether a tooltip
+ * was produced: not every symbol gets hover from the sidecar (compact field
+ * declarations, say), so the caller counts the ones that did.
+ */
+async function assertTooltipMatchesHover(
+  provider: TooltipProvider,
+  node: SymbolTreeNode,
+  token: vscode.CancellationToken,
+): Promise<boolean> {
+  const resolved = await provider.resolveTreeItem(provider.getTreeItem(node), node, token);
+  if (!(resolved.tooltip instanceof vscode.MarkdownString)) return false;
+  const treeMd = resolved.tooltip.value;
+  const name = node.sortName ?? '?';
+  assert.ok(treeMd.length > 0, `Tooltip for '${name}' must not be empty`);
+  assert.ok(treeMd.includes('```'), `Tooltip for '${name}' must have code block: ${treeMd}`);
+  if (node.symbolUri === undefined || node.symbolPosition === undefined) return true;
+  const pos = new vscode.Position(node.symbolPosition.line, node.symbolPosition.character);
+  const codeMd = hoverToString(await waitForHoverResult(vscode.Uri.parse(node.symbolUri), pos));
+  assert.strictEqual(treeMd, codeMd, `Tree tooltip must match code hover for '${name}'`);
+  return true;
 }
 
 /** Recursively collect all symbol nodes from the tree. */
