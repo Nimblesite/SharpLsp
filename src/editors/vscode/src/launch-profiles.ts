@@ -10,6 +10,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isIgnoredDir } from './launch-target';
+import { isRecord } from './utils';
 
 /** One entry of a `launchSettings.json` / `<app>.run.json` profiles map. */
 export interface LaunchProfile {
@@ -25,11 +26,6 @@ const URLS_VARIABLE = 'ASPNETCORE_URLS';
 
 /** Only `Project` profiles describe launching the project itself. */
 const PROJECT_COMMAND = 'Project';
-
-/** A plain, non-null object. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Sound type guard for a launch-settings document.
