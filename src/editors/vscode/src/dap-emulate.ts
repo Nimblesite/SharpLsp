@@ -9,6 +9,14 @@
 
 /** One DAP message. The index signature keeps fields this file never names
  *  surviving a spread when the router rewrites a message. */
+import { isRecord } from './utils';
+
+// The DAP modules have always reached for `isRecord` here, and it is genuinely
+// theirs: every wire message body is an untyped bag. The definition now lives in
+// `utils.ts`, because five modules outside DAP had written it out identically.
+// Re-exported so the ten DAP importers keep one obvious place to get it.
+export { isRecord } from './utils';
+
 export interface DapMessage {
   type?: unknown;
   command?: unknown;
@@ -16,11 +24,6 @@ export interface DapMessage {
   arguments?: unknown;
   seq?: unknown;
   [field: string]: unknown;
-}
-
-/** Narrow an unknown to a plain non-null object. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** Narrow an unknown to a list of plain objects, dropping anything else. */

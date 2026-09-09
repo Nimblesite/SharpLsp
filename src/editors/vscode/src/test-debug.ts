@@ -24,7 +24,8 @@ import { DEBUG_TYPE } from './constants';
 import { whenDebugSessionArmed } from './debug';
 import { TEST_HOST_ATTACH_FLAG } from './dap-attach';
 import { error, info, warn } from './log';
-import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execution';
+import type { TestRunOptions, TestRunOutcome } from './test-execution';
+import { TestHostWatcher } from './test-host-announce';
 import { filterBatches } from './test-filter';
 import { runTarget } from './test-targets';
 
@@ -40,10 +41,18 @@ import { runTarget } from './test-targets';
 export const TEST_HOST_DEBUG_ENV: Readonly<Record<string, string>> = {
   VSTEST_HOST_DEBUG: '1',
   VSTEST_RUNNER_DEBUG: '0',
+  // A Microsoft.Testing.Platform module IS the test host — there is no
+  // `testhost.dll` child — and it waits on its OWN variable. Both are set
+  // because each runner ignores the other's, so one environment serves both
+  // and no runner flag has to be threaded through this flow.
+  // Spec: [TEST-MTP-DEBUG].
+  TESTINGPLATFORM_WAIT_ATTACH_DEBUGGER: '1',
 };
 
 /** The terminal the Debug profile mirrors the run's output into. */
 export const TEST_DEBUG_TERMINAL_NAME = 'SharpLsp Test Debug';
+
+export { announcedTestHostPid, TestHostWatcher } from './test-host-announce';
 
 /**
  * How long a debug run may live. A debuggee parked on a breakpoint is the
@@ -53,71 +62,22 @@ export const TEST_DEBUG_TERMINAL_NAME = 'SharpLsp Test Debug';
  */
 const DEBUG_RUN_CEILING_MS = 24 * 60 * 60 * 1_000;
 
-/** The stable prefix of VSTest's waiting-host announcement, en-US pinned. */
-const PROCESS_ID_PREFIX = 'Process Id:';
-
 /** What the debug flow needs from the owning test controller. */
 export interface TestDebugHost {
   /** Serialise behind every other `dotnet` invocation the controller makes. */
   enqueue<T>(work: () => Promise<T>): Promise<T>;
+  /**
+   * Start the selection with whichever runner the last discovery sweep chose.
+   * The debug flow is identical for both; only the command differs.
+   * Spec: [TEST-MTP-DEBUG].
+   */
+  runSelection(
+    ids: readonly string[],
+    cwd: string,
+    options: TestRunOptions,
+  ): Promise<TestRunOutcome>;
   /** Report a finished invocation onto the RUN — never onto the result cache. */
   finish(run: vscode.TestRun, tests: readonly vscode.TestItem[], outcome: TestRunOutcome): void;
-}
-
-/** ASCII digits only, checked per UTF-16 unit — a pid is never a surrogate. */
-function isAllDigits(candidate: string): boolean {
-  for (let index = 0; index < candidate.length; index += 1) {
-    const code = candidate.charCodeAt(index);
-    if (code < 0x30 || code > 0x39) return false;
-  }
-  return true;
-}
-
-/**
- * The pid a waiting test host announced on `line`, or undefined.
- *
- * The contract is VSTest's own console line, `Process Id: {0}, Name: {1}`,
- * printed by the HOST about itself — the parent never prints it with
- * `VSTEST_RUNNER_DEBUG` pinned off. The digits are validated whole: a partial
- * `parseInt` would accept a corrupted line and aim the debugger at noise.
- */
-export function announcedTestHostPid(line: string): number | undefined {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith(PROCESS_ID_PREFIX)) return undefined;
-  const rest = trimmed.slice(PROCESS_ID_PREFIX.length);
-  const comma = rest.indexOf(',');
-  const digits = (comma === -1 ? rest : rest.slice(0, comma)).trim();
-  if (digits.length === 0 || !isAllDigits(digits)) return undefined;
-  const pid = Number.parseInt(digits, 10);
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
-}
-
-/**
- * Watches a debug run's live output for waiting test hosts, once each.
- *
- * Chunk boundaries fall anywhere, so lines are reassembled before parsing; a
- * solution with several test projects announces one host PER ASSEMBLY, and
- * every one of them is waiting — each new pid is handed on exactly once.
- */
-export class TestHostWatcher {
-  private tail = '';
-  private readonly announced = new Set<number>();
-
-  constructor(private readonly onHost: (pid: number) => void) {}
-
-  /** Feed one raw output chunk; complete lines are scanned for announcements. */
-  public absorb(chunk: string): void {
-    const lines = (this.tail + chunk).split('\n');
-    this.tail = lines.pop() ?? '';
-    for (const line of lines) this.offer(line);
-  }
-
-  private offer(line: string): void {
-    const pid = announcedTestHostPid(line);
-    if (pid === undefined || this.announced.has(pid)) return;
-    this.announced.add(pid);
-    this.onHost(pid);
-  }
 }
 
 /** The attach configuration aimed at one waiting test host. */
@@ -310,7 +270,7 @@ class DebugRunFlow {
     options: TestRunOptions,
   ): Promise<TestRunOutcome> {
     const { started } = await this.host.enqueue(async () => {
-      const running = runTests(ids, this.cwd, options);
+      const running = this.host.runSelection(ids, this.cwd, options);
       await Promise.race([this.attached, running]);
       return { started: running };
     });

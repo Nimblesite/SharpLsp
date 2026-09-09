@@ -46,20 +46,31 @@ const coberturaParser = new XMLParser({
   isArray: (tagName) => tagName === 'package' || tagName === 'class' || tagName === 'line',
 });
 
+/** Cobertura reports end with this, whichever collector wrote them. */
+const COBERTURA_SUFFIX = '.cobertura.xml';
+
 /**
- * EVERY `coverage.cobertura.xml` one directory below `resultsDir`.
+ * EVERY Cobertura report of one run, at either depth the collectors use.
  *
- * The collector writes one report per test project, each into its own
- * run-id folder. Taking only the first — as this did — silently dropped every
- * other project's coverage from a solution-wide run, and which one "first" meant
- * depended on directory order.
+ * `coverlet.collector` — the VSTest path — writes one `coverage.cobertura.xml`
+ * per test project, each into its own run-id folder ONE LEVEL DOWN. Taking only
+ * the first silently dropped every other project's coverage from a
+ * solution-wide run, and which one "first" meant depended on directory order.
+ *
+ * The Microsoft.Testing.Platform collector writes `<guid>.cobertura.xml`
+ * DIRECTLY into the results directory instead ([TEST-MTP-RUN]). Both depths are
+ * read, so one rule serves both runners and neither loses a report.
  */
 export function findCoberturaFiles(resultsDir: string): string[] {
   if (!fs.existsSync(resultsDir)) return [];
   const reports: string[] = [];
-  for (const entry of fs.readdirSync(resultsDir)) {
-    const candidate = path.join(resultsDir, entry, 'coverage.cobertura.xml');
-    if (fs.existsSync(candidate)) reports.push(candidate);
+  for (const entry of fs.readdirSync(resultsDir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.toLowerCase().endsWith(COBERTURA_SUFFIX)) {
+      reports.push(path.join(resultsDir, entry.name));
+      continue;
+    }
+    const nested = path.join(resultsDir, entry.name, 'coverage.cobertura.xml');
+    if (entry.isDirectory() && fs.existsSync(nested)) reports.push(nested);
   }
   return reports.sort();
 }

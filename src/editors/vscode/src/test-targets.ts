@@ -57,3 +57,15 @@ export function isExpectoTest(name: string): boolean {
 export function isFsCheckTest(name: string): boolean {
   return name.includes('FsCheck') || name.includes('Property');
 }
+/**
+ * The filter ids a run uses. "Run everything, nothing excluded" is how VS Code
+ * expresses ▶ on the root of the Testing view; passing NO filter then runs every
+ * test in ONE `dotnet test` — instead of N command-line-sized filter batches.
+ */
+export function filterIdsFor(
+  request: vscode.TestRunRequest,
+  tests: readonly vscode.TestItem[],
+): readonly string[] {
+  const unfiltered = request.include === undefined && (request.exclude ?? []).length === 0;
+  return unfiltered ? [] : tests.map((test) => test.id);
+}

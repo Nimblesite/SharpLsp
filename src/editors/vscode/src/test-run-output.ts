@@ -100,3 +100,48 @@ function isErrorMessageTerminator(line: string): boolean {
   const trimmed = line.trim();
   return ERROR_MESSAGE_TERMINATORS.some((terminator) => trimmed.startsWith(terminator));
 }
+
+/**
+ * The per-module summary a Microsoft.Testing.Platform run prints.
+ *
+ * MTP does not print VSTest's `Passed! - Failed: 0, …` line. It prints a block
+ * instead, one per module, and the counts are summed the same way:
+ *
+ * ```
+ * Test run summary: Failed! - …/CsXunitMtp.dll (net10.0|x64)
+ *   total: 5
+ *   failed: 2
+ *   succeeded: 2
+ *   skipped: 1
+ * ```
+ *
+ * Implements [TEST-MTP-RUN]. The text is English because [TEST-ENV-LOCALE]
+ * pins `DOTNET_CLI_UI_LANGUAGE`.
+ */
+export function parseMtpSummary(output: string): TestRunSummary | undefined {
+  const totals = { passed: 0, failed: 0, skipped: 0, total: 0 };
+  let seen = false;
+  for (const raw of output.split('\n')) {
+    const match = MTP_COUNT_PATTERN.exec(raw.trim());
+    if (match === null) continue;
+    seen = true;
+    addMtpCount(totals, match[1] ?? '', Number(match[2] ?? '0'));
+  }
+  return seen ? { ...totals, outcome: outcomeOf(totals) } : undefined;
+}
+
+/** One `  <label>: <count>` line of an MTP summary block. */
+const MTP_COUNT_PATTERN = /^(total|failed|succeeded|skipped):\s+(\d+)$/;
+
+/** Add one counted line into the running totals. */
+function addMtpCount(
+  totals: { passed: number; failed: number; skipped: number; total: number },
+  label: string,
+  count: number,
+): void {
+  if (!Number.isFinite(count)) return;
+  if (label === 'total') totals.total += count;
+  if (label === 'failed') totals.failed += count;
+  if (label === 'succeeded') totals.passed += count;
+  if (label === 'skipped') totals.skipped += count;
+}

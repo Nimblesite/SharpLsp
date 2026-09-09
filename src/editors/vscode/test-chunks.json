@@ -107,7 +107,8 @@
         "test-explorer-names.test.js",
         "testing-lens-e2e.test.js",
         "testing-lens-status.test.js",
-        "test-explorer-coverage.test.js"
+        "test-explorer-coverage.test.js",
+        "test-explorer-mtp-parsers.test.js"
       ]
     },
     "testexplorer-frameworks": {
@@ -117,6 +118,13 @@
         "test-explorer-outcomes.test.js",
         "test-explorer-adapter-ids.test.js",
         "test-explorer-cancellation.test.js"
+      ]
+    },
+    "testexplorer-mtp": {
+      "description": "Microsoft.Testing.Platform (MTP) end to end, its own job because it builds a SECOND six-project fixture solution: `xunit.v3` 4.0.0 (MTP v2 only, no VSTest adapter at all), MSTest and NUnit on their own runners, each in C# and F#. It covers the whole MTP path — the `global.json` opt-in and the `IsTestingPlatformApplication` probe, the modules MSBuild reports, `--list-tests json` discovery with source locations, `--filter-uid` runs, `--report-trx` outcomes, the unfiltered retry an NUnit refusal earns, and the message a module missing `Microsoft.Testing.Extensions.TrxReport` produces ([TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN]). Kept apart from `testexplorer-frameworks` because the two together would build twelve test projects in one job and blow the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
+      "files": [
+        "test-explorer-mtp.test.js",
+        "test-explorer-mtp-outcomes.test.js"
       ]
     },
     "workspace": {
