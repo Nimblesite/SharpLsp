@@ -354,6 +354,38 @@
                     "type": "boolean"
                   }
                 }
+              },
+              "exceptionPolicy": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Override the LSP-owned [debug.exceptions] policy from sharplsp.toml for this session.",
+                "properties": {
+                  "break_on": {
+                    "type": "string",
+                    "enum": [
+                      "editor",
+                      "all",
+                      "user-unhandled",
+                      "unhandled"
+                    ],
+                    "description": "Choose when to break. Omit to inherit TOML; editor preserves exception checkboxes."
+                  },
+                  "ignore": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Exact fully qualified CLR types to ignore. Terminal unhandled exceptions still stop."
+                  },
+                  "external_code": {
+                    "type": "string",
+                    "enum": [
+                      "throw-site",
+                      "user-boundary"
+                    ],
+                    "description": "Show external exceptions at the throw site or nearest user caller."
+                  }
+                }
               }
             }
           },
@@ -373,6 +405,38 @@
                 "type": "boolean",
                 "description": "%debugger.launch.justMyCode%",
                 "default": true
+              },
+              "exceptionPolicy": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Override the LSP-owned [debug.exceptions] policy from sharplsp.toml for this session.",
+                "properties": {
+                  "break_on": {
+                    "type": "string",
+                    "enum": [
+                      "editor",
+                      "all",
+                      "user-unhandled",
+                      "unhandled"
+                    ],
+                    "description": "Choose when to break. Omit to inherit TOML; editor preserves exception checkboxes."
+                  },
+                  "ignore": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Exact fully qualified CLR types to ignore. Terminal unhandled exceptions still stop."
+                  },
+                  "external_code": {
+                    "type": "string",
+                    "enum": [
+                      "throw-site",
+                      "user-boundary"
+                    ],
+                    "description": "Show external exceptions at the throw site or nearest user caller."
+                  }
+                }
               }
             }
           }
@@ -1182,28 +1246,28 @@
     "format:check": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
-    "@nimblesite/shipwright-vscode": "^0.10.0",
-    "fast-xml-parser": "^5.10.1",
-    "vscode-languageclient": "^9.0.1"
+    "@nimblesite/shipwright-vscode": "^0.11.0",
+    "fast-xml-parser": "^5.11.1",
+    "vscode-languageclient": "^10.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.6",
-    "@types/node": "^26.1.1",
-    "@types/vscode": "^1.125.0",
-    "@typescript-eslint/eslint-plugin": "^8.64.0",
-    "@typescript-eslint/parser": "^8.64.0",
+    "@types/node": "^26.4.1",
+    "@types/vscode": "^1.136.0",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@typescript-eslint/parser": "^8.69.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
-    "esbuild": "^0.28.0",
-    "eslint": "^10.7.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.10.0",
     "glob": "^13.0.6",
-    "mocha": "^11.7.6",
-    "playwright": "^1.61.1",
-    "prettier": "3.9.4",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.64.0"
+    "mocha": "^12.0.0",
+    "playwright": "^1.63.0",
+    "prettier": "3.9.6",
+    "typescript": "^7.0.2",
+    "typescript-eslint": "^8.69.0"
   },
   "files": [
     "bin/",

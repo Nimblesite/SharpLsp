@@ -409,7 +409,7 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 | Monorepo static analyzers | `workspace/diagnostic` partial results | SharpLsp-owned unused-public-code analyzers for C# and F#; gated by `workspace.repository_kind = "monorepo"` | P0 |
 | NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAG-RESTORE](DIAGNOSTICS-SPEC.md)) | P0 |
 | Project init complete | Custom: `workspace/projectInitializationComplete` | Notification fired once per workspace open after restore + `MSBuildWorkspace.OpenSolutionAsync`; matches Roslyn LSP contract | P0 |
-| Configuration | `workspace/didChangeConfiguration` | [.editorconfig](https://editorconfig.org/) + sharplsp.toml | P0 |
+| Configuration | `workspace/didChangeConfiguration`, `sharplsp/configuration` | [.editorconfig](https://editorconfig.org/) + [shared TOML configuration](CONFIGURATION-SPEC.md) | P0 |
 
 ### [SHARPLSP-FEATURES-FSHARP] F#-Specific Features
 

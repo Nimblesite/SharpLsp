@@ -22,6 +22,8 @@ import { TFM, builtDll, isolateFromRepoMsbuild, type ConsoleProject } from './ru
 
 /** `argv[0]` values the fixtures understand. A launch config passes one in `args`. */
 export const MODE = {
+  /** Throws inside a framework method, matching a missing Assembly.Load dependency. */
+  missingAssembly: 'missing-assembly',
   /** Runs to completion, throws nothing. */
   plain: 'plain',
   /** Throws an `InvalidOperationException` and CATCHES it. */
@@ -191,6 +193,7 @@ public static class Program
             ThrowUnhandled();                                          // @anchor:main-unhandled
         }
 
+        if (mode == "missing-assembly") System.Reflection.Assembly.Load("SharpLsp.MissingAssembly");
         if (mode == "wait")
         {
             // Mostly-managed spin: a pause that lands inside the native
@@ -281,6 +284,7 @@ let main argv =
     if mode = "caught" || mode = "both" then throwCaught ()            // @anchor:main-caught
     if mode = "async" || mode = "both" then printfn "%d" ((rootTask 1).Result) // @anchor:main-async
     if mode = "unhandled" || mode = "both" then throwUnhandled ()      // @anchor:main-unhandled
+    if mode = "missing-assembly" then System.Reflection.Assembly.Load("SharpLsp.MissingAssembly") |> ignore
     if mode = "wait" then
         // Mostly-managed spin — see the C# fixture for why not a bare Sleep.
         let waitUntil = System.DateTime.UtcNow.AddSeconds 30.0

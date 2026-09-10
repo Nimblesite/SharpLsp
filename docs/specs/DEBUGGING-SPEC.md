@@ -571,6 +571,10 @@ For T3, the Debug Sidecar loads C#-sidecar `CSharpScriptCompilation` output into
 
 ### Exception Handling `[DEBUG-FEATURES-EXCEPTIONS]`
 
+Shared exception policy is resolved by the LSP from `sharplsp.toml`; see
+[CONFIG-DEBUG-EXCEPTIONS](CONFIGURATION-SPEC.md#exceptions-config-debug-exceptions)
+for break modes, excluded types and presentation at the user-code boundary.
+
 | Feature | Priority |
 |---|---|
 | Break on all CLR exceptions | P1 |

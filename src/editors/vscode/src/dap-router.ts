@@ -2,6 +2,7 @@
 import type * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { retarget } from './dap-exceptions';
+import { withExceptionPolicy, type ExceptionPolicy } from './dap-exception-policy';
 import { isRecord, sourcePathOf, type DapMessage } from './dap-emulate';
 import { isFSharpSource, withClrConditions } from './dap-fsharp-conditions';
 import { BreakpointEmulator } from './dap-breakpoints';
@@ -130,6 +131,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** True once the child itself sent the DAP `terminated` event. */
   private childAnnouncedTerminated = false;
   private justMyCode = true;
+  private exceptionPolicy: ExceptionPolicy | undefined;
   private launchRoot: string | undefined;
   /** Run-to-cursor emulation ([DEBUG-FEATURES-STEPPING], P2). */
   private readonly goto: GotoEmulator;
@@ -280,6 +282,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       breakpointPath !== undefined && isFSharpSource(breakpointPath)
         ? withClrConditions(message)
         : message;
+    if (command === 'launch' || command === 'attach') this.rememberLaunchOptions(args);
     this.replayer.observe(msg, breakpointPath);
     if (command === 'setFunctionBreakpoints') this.breakpoints.recordFunctions(args);
     if (command === 'launch' && this.replayer.wantsTerminal()) {
@@ -412,6 +415,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** Track `justMyCode` off the launch/attach request that carries it. */
   private rememberLaunchOptions(args: Record<string, unknown> | undefined): void {
     if (args === undefined) return;
+    this.exceptionPolicy = isRecord(args.exceptionPolicy) ? args.exceptionPolicy : undefined;
+    this.stacks.setExceptionBoundary(this.exceptionPolicy?.external_code === 'user-boundary');
     if (typeof args.cwd === 'string') this.launchRoot = args.cwd;
     if (typeof args.justMyCode === 'boolean') {
       this.justMyCode = args.justMyCode;
@@ -420,7 +425,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   }
   /** Serialise one message to the child using DAP's framing. */
   public write(message: DapMessage): void {
-    this.wire.write(message);
+    this.wire.write(withExceptionPolicy(retarget(message), this.exceptionPolicy));
   }
   /** Send a request in the router's own name and await its response. */
   public async request(command: string, args: Record<string, unknown>): Promise<DapMessage> {

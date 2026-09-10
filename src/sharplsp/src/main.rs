@@ -6,6 +6,8 @@ mod call_hierarchy;
 mod code_actions;
 mod code_lens;
 mod config;
+mod config_debug;
+mod configuration;
 mod diagnostics;
 mod document_symbols;
 // Formatting module is sequestered — not wired into the LSP server.
@@ -263,10 +265,11 @@ fn run_server() -> Result<()> {
         );
     }
 
+    let mut configuration = configuration::Configuration::new(config_root.unwrap_or(fallback_root));
     main_loop(
         &connection,
         &runtime,
-        &sharplsp_config,
+        &mut configuration,
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
         &vfs,
@@ -315,6 +318,10 @@ async fn shutdown_sidecars(
 /// Build the server capabilities advertised during LSP initialization.
 fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilities {
     ServerCapabilities {
+        // Implements [CONFIG-RESOLUTION]: discoverable by every LSP client.
+        experimental: Some(
+            serde_json::json!({"configurationProvider": {"method": "sharplsp/configuration"}}),
+        ),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         document_symbol_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
@@ -601,7 +608,7 @@ async fn handle_csharp_event(
 fn main_loop(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
-    _sharplsp_config: &config::SharpLspConfig,
+    configuration: &mut configuration::Configuration,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
@@ -626,6 +633,10 @@ fn main_loop(
                     continue;
                 }
 
+                if req.method == "sharplsp/configuration" {
+                    configuration.respond(req, connection)?;
+                    continue;
+                }
                 handle_request(
                     req,
                     vfs,
@@ -639,6 +650,17 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
+                if notif.method == "workspace/didChangeConfiguration" {
+                    if let Err(error) = configuration.update(
+                        notif
+                            .params
+                            .get("settings")
+                            .unwrap_or(&serde_json::Value::Null),
+                    ) {
+                        warn!("Configuration change rejected: {error:#}");
+                    }
+                    continue;
+                }
                 if notif.method == SHUTDOWN_ANSWERED {
                     shutdown_requested = true;
                     continue;
