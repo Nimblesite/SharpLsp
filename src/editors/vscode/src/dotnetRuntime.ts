@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as log from './log.js';
+import { type SdkPin, installedSdkVersions, pinSatisfiedBy, readSdkPin } from './global-json.js';
 import { type Result, err, ok } from './result.js';
 import { ServerState, type SharpLspStatusBar } from './status.js';
 import { getErrorMessage } from './utils.js';
@@ -61,8 +62,14 @@ export async function acquireDotnet10Sdk(statusBar: SharpLspStatusBar): Promise<
     return err(toolReady.error);
   }
 
+  const pin = workspaceSdkPin();
+  if (pin !== undefined) {
+    log.info(
+      `workspace pins .NET SDK ${pin.version} (rollForward: ${pin.rollForward}) via ${pin.source}`,
+    );
+  }
   log.info(`checking for an existing .NET ${DOTNET_VERSION} SDK (arch=${dotnetArchitecture()})…`);
-  const existing = await tryFindExistingSdk();
+  const existing = await tryFindExistingSdk(pin);
   if (existing.ok) {
     log.info(`found existing .NET ${DOTNET_VERSION} SDK at ${existing.value}`);
     return ok(existing.value);
@@ -78,7 +85,7 @@ export async function acquireDotnet10Sdk(statusBar: SharpLspStatusBar): Promise<
       title: 'SharpLsp: Installing .NET 10 SDK',
       cancellable: false,
     },
-    async (progress) => await callAcquireSdk(progress),
+    async (progress) => await callAcquireSdk(progress, pin),
   );
 }
 
@@ -108,6 +115,7 @@ async function ensureInstallToolActivated(): Promise<Result<void>> {
 
 async function callAcquireSdk(
   progress: vscode.Progress<{ message?: string; increment?: number }>,
+  pin?: SdkPin,
 ): Promise<Result<string>> {
   // A global SDK install runs the platform installer and may prompt for
   // elevation — that UI belongs to the .NET Install Tool, not SharpLsp.
@@ -115,7 +123,9 @@ async function callAcquireSdk(
   // Implements [DIST-API-PARAMETERS]: all four required IDotnetAcquireContext
   // fields, plus the SDK-specific `installType: 'global'`.
   const result = await safeExecuteCommand<AcquireResult | undefined>(CMD_ACQUIRE_GLOBAL_SDK, {
-    version: DOTNET_VERSION,
+    // A pinned workspace needs that exact SDK: `10.0` would happily install a
+    // feature band `global.json` rejects, leaving every build broken.
+    version: pin?.version ?? DOTNET_VERSION,
     mode: 'sdk',
     architecture: dotnetArchitecture(),
     requestingExtensionId: REQUESTING_EXTENSION_ID,
@@ -134,7 +144,7 @@ async function callAcquireSdk(
   return ok(dotnetPath);
 }
 
-async function tryFindExistingSdk(): Promise<Result<string>> {
+async function tryFindExistingSdk(pin?: SdkPin): Promise<Result<string>> {
   // Implements [DIST-API-PARAMETERS]: acquireContext carries all four required
   // fields with mode 'sdk'; `greater_than_or_equal` accepts any SDK >= 10.0.
   const result = await safeExecuteCommand<FindPathResult | undefined>(CMD_FIND_PATH, {
@@ -159,6 +169,15 @@ async function tryFindExistingSdk(): Promise<Result<string>> {
     log.info(`${CMD_FIND_PATH} returned stale path (does not exist on disk): ${dotnetPath}`);
     return err('stale path');
   }
+  if (pin !== undefined && !pinSatisfiedBy(installedSdkVersions(dotnetPath), pin)) {
+    // `greater_than_or_equal` on `10.0` accepts any 10.0.x, including a feature
+    // band the workspace pin forbids. Fall through to acquisition instead of
+    // handing back an SDK every later `dotnet` call rejects with exit code 155.
+    log.info(
+      `${CMD_FIND_PATH} returned ${dotnetPath}, but no SDK there satisfies the workspace pin — acquiring ${pin.version}`,
+    );
+    return err('installed SDKs do not satisfy the workspace global.json pin');
+  }
   log.info(`${CMD_FIND_PATH} returned ${dotnetPath}`);
   return ok(dotnetPath);
 }
@@ -170,6 +189,44 @@ async function safeExecuteCommand<T>(command: string, payload: unknown): Promise
   } catch (caught: unknown) {
     return err(getErrorMessage(caught));
   }
+}
+
+/** The SDK pin governing the open workspace, if it declares one. */
+export function workspaceSdkPin(): SdkPin | undefined {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return root === undefined ? undefined : readSdkPin(root);
+}
+
+/**
+ * Whether the SDKs installed beside `dotnetPath` can satisfy the pin governing
+ * `workspaceRoot`. An unpinned workspace accepts whatever the Install Tool found.
+ */
+export function existingSdkSatisfiesWorkspace(dotnetPath: string, workspaceRoot: string): boolean {
+  const pin = readSdkPin(workspaceRoot);
+  return pin === undefined || pinSatisfiedBy(installedSdkVersions(dotnetPath), pin);
+}
+
+/**
+ * An actionable diagnosis of an unsatisfiable pin, or undefined when the pin is
+ * satisfied. Names the pinned version, the policy, the `global.json` that set
+ * it, and what is actually installed — the facts `exit code: 155` omits.
+ * Implements [DIST-FAILURE-UX].
+ */
+export function describeSdkPinFailure(
+  dotnetPath: string,
+  workspaceRoot: string,
+): string | undefined {
+  const pin = readSdkPin(workspaceRoot);
+  if (pin === undefined) return undefined;
+  const installed = installedSdkVersions(dotnetPath);
+  if (pinSatisfiedBy(installed, pin)) return undefined;
+  const have = installed.length === 0 ? 'none' : installed.join(', ');
+  return (
+    `${pin.source} pins .NET SDK ${pin.version} (rollForward: ${pin.rollForward}), ` +
+    `but ${dotnetRootFromPath(dotnetPath)} has: ${have}. ` +
+    `Every dotnet command in this workspace fails with exit code 155 until ` +
+    `${pin.version} is installed or the pin is widened.`
+  );
 }
 
 /** Directory containing the dotnet executable — used to set DOTNET_ROOT. */

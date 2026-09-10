@@ -42,7 +42,16 @@ The framework-dependent `net10.0` sidecars require a .NET 10 SDK, not merely a r
 2. SharpLsp MUST explicitly activate the .NET Install Tool extension (`vscode.extensions.getExtension(...).activate()`) before invoking its commands. `extensionDependencies` activates it first, but the explicit await turns a missing/disabled dependency into a clear `[DIST-FAILURE-UX]` message instead of an opaque "command `dotnet.findPath` not found".
 3. On every activation SharpLsp MUST call the `dotnet.acquireGlobalSDK` command exposed by the .NET Install Tool with the parameter shape mandated in [DIST-API-PARAMETERS]. The command returns `{ dotnetPath: string }` pointing at the `dotnet` executable of a system-wide SDK install. A global SDK install runs the platform installer and **may prompt for elevation** — that UI belongs to the .NET Install Tool, and is the unavoidable cost of providing MSBuild; SharpLsp never shows the elevation prompt itself.
 4. Before `dotnet.acquireGlobalSDK`, SharpLsp MUST call `dotnet.findPath` with `mode: 'sdk'` and `versionSpecRequirement: 'greater_than_or_equal'` to skip acquisition when the user already has a compatible SDK (>= 10.0). The path returned by either call is the SDK SharpLsp uses.
-5. SharpLsp MUST set `DOTNET_ROOT` (the directory of `dotnetPath`) on the environment passed to the Rust LSP host so all spawned sidecars run on that SDK's runtime and so `MSBuildLocator` finds that SDK's MSBuild.
+5. **"Compatible" MUST be judged against the workspace `global.json`, not merely `>= 10.0`.** `greater_than_or_equal` on `10.0` is satisfied by *any* 10.0.x SDK, including a feature band the workspace pin forbids — `10.0.203` (band 200) against a `10.0.303` (band 300) pin under the default `latestPatch`. Accepting it makes SharpLsp report success while every subsequent `dotnet` invocation — builds, tests, and the C# sidecar's `hostfxr_resolve_sdk2` — fails with exit code 155. SharpLsp MUST therefore read the nearest `global.json` at or above the workspace root, evaluate the installed SDKs beside the returned `dotnetPath` against its `version`/`rollForward`, and treat an unsatisfiable result as "not found" so acquisition proceeds. `rollForward` defaults to `latestPatch` when a `version` is present.
+6. When the workspace pins an SDK, `dotnet.acquireGlobalSDK` MUST request that **exact pinned version** rather than the `10.0` band, so the install actually satisfies the pin instead of landing in a band `global.json` rejects.
+7. An unsatisfiable pin MUST be surfaced per [DIST-FAILURE-UX] naming the pinned version, the `rollForward` policy, the `global.json` that set it, and the SDKs actually installed. `dotnet` writes those facts to the build task's terminal, which the task's `close: true` presentation disposes on exit, leaving the user only VS Code's generic `failed to launch (exit code: 155)`.
+
+**Implementation reference:**
+- `src/editors/vscode/src/global-json.ts` — pin discovery (`readSdkPin`), `rollForward` evaluation (`sdkSatisfiesPin`), installed-SDK enumeration.
+- `src/editors/vscode/src/dotnetRuntime.ts` — `existingSdkSatisfiesWorkspace`, `describeSdkPinFailure`, pin-aware `tryFindExistingSdk` / `callAcquireSdk`.
+- `src/editors/vscode/src/build.ts` — `diagnoseBuildFailure` turns a non-zero build exit into the pin diagnosis.
+- `src/editors/vscode/src/test/suite/sdk-pin.test.ts` — regression suite.
+8. SharpLsp MUST set `DOTNET_ROOT` (the directory of `dotnetPath`) on the environment passed to the Rust LSP host so all spawned sidecars run on that SDK's runtime and so `MSBuildLocator` finds that SDK's MSBuild.
 
 **UX during acquisition — inform, never ask (SharpLsp's own UI):**
 
@@ -79,7 +88,7 @@ Every call SharpLsp makes to the .NET Install Tool MUST include all four require
 
 ```ts
 {
-  version: '10.0',                     // major.minor only — the docs require this exact format
+  version: '10.0',                     // major.minor band, OR the exact version global.json pins
   mode: 'sdk',                         // 'runtime' | 'sdk' | 'aspnetcore' — SharpLsp needs 'sdk' for MSBuild
   architecture: dotnetArchitecture(),  // 'x64' | 'arm64' | 'x86' — derived from process.arch
   requestingExtensionId: 'nimblesite.sharplsp',
@@ -88,6 +97,8 @@ Every call SharpLsp makes to the .NET Install Tool MUST include all four require
 ```
 
 `dotnet.findPath` takes the same four required fields nested under `acquireContext` (no `installType`), plus `versionSpecRequirement: 'greater_than_or_equal'`. `dotnet.acquireGlobalSDK` takes them flat, plus `installType: 'global'`.
+
+`dotnet.findPath` MUST use the `10.0` band — it is a discovery probe, and the pin is applied to its answer per [DIST-RUNTIME-ACQUIRE] rule 5. `dotnet.acquireGlobalSDK` MUST use the pinned version when the workspace declares one (rule 6); a global SDK install accepts a fully-qualified version.
 
 `architecture` is derived from Node's `process.arch` and mapped as: `x64` → `x64`, `arm64` → `arm64`, `ia32` → `x86`, default → `x64`. This mapping lives in `src/editors/vscode/src/dotnetRuntime.ts`.
 

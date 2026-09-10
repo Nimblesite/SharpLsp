@@ -30,7 +30,7 @@
       ]
     },
     "fsharp": {
-      "description": "F# is a first-class citizen, so its WHOLE LSP surface is gated in one job: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol; the code-fix catalogue (basics, type conversions, generation); and rename, including the cross-language case where an F# origin renames C# references and back — the slowest suite in the matrix, because each of its tests rebuilds both languages. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement.",
+      "description": "F# is a first-class citizen, so its WHOLE LSP surface is gated in one job: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol; the code-fix catalogue (basics, type conversions, generation); and rename, including the cross-language case where an F# origin renames C# references and back \u2014 the slowest suite in the matrix, because each of its tests rebuilds both languages. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement.",
       "files": [
         "fsharp-lsp-navigation.test.js",
         "fsharp-lsp-intelligence.test.js",
@@ -63,7 +63,7 @@
       ]
     },
     "debug-breakpoints": {
-      "description": "Where a live session STOPS, and why. Breakpoints as a user sets them (F9 through the editor, binding and verification, mid-session add/remove/disable, function breakpoints, conditions, hit counts, logpoints); stepping F10/F11/Shift+F11 asserted line by line and frame by frame, Just My Code, run to cursor, stepping off the end of a method and of the program, and the physical/async call stack; and the exception filters — break-on-all catching a handled throw, unhandled-only ignoring one, the info panel and the inner-exception chain. Implements [DEBUG-FEATURES-BREAKPOINTS], [DEBUG-FEATURES-STEPPING], [DEBUG-FEATURES-STACK] and [DEBUG-FEATURES-EXCEPTIONS].",
+      "description": "Where a live session STOPS, and why. Breakpoints as a user sets them (F9 through the editor, binding and verification, mid-session add/remove/disable, function breakpoints, conditions, hit counts, logpoints); stepping F10/F11/Shift+F11 asserted line by line and frame by frame, Just My Code, run to cursor, stepping off the end of a method and of the program, and the physical/async call stack; and the exception filters \u2014 break-on-all catching a handled throw, unhandled-only ignoring one, the info panel and the inner-exception chain. Implements [DEBUG-FEATURES-BREAKPOINTS], [DEBUG-FEATURES-STEPPING], [DEBUG-FEATURES-STACK] and [DEBUG-FEATURES-EXCEPTIONS].",
       "files": [
         "debug-breakpoints-e2e.test.js",
         "debug-breakpoint-conditions-e2e.test.js",
@@ -90,7 +90,7 @@
       ]
     },
     "debug-tests": {
-      "description": "The session and the protocol around it, and the hardest consumer of both. The DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id — then debugging a TEST through the Test Explorer Debug profile, which re-attaches to successive test hosts inside one session. Grouped because a test-debugging failure is a session-lifecycle failure. Implements [DEBUG-FEATURES-TESTS].",
+      "description": "The session and the protocol around it, and the hardest consumer of both. The DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id \u2014 then debugging a TEST through the Test Explorer Debug profile, which re-attaches to successive test hosts inside one session. Grouped because a test-debugging failure is a session-lifecycle failure. Implements [DEBUG-FEATURES-TESTS].",
       "files": [
         "debug-test-fsharp-e2e.test.js",
         "debug-test-debugging-e2e.test.js",
@@ -102,7 +102,7 @@
       ]
     },
     "testexplorer": {
-      "description": "The Test Explorer a user READS: discovery, the reactive tree, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library — one Cobertura report per test project, every one parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS] and [TEST-COVERAGE].",
+      "description": "The Test Explorer a user READS: discovery, the reactive tree, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library \u2014 one Cobertura report per test project, every one parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS] and [TEST-COVERAGE].",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-reactive.test.js",
@@ -116,7 +116,7 @@
       ]
     },
     "testexplorer-frameworks": {
-      "description": "The Test Explorer RUNNING things, over the widest fixture surface in the matrix: the framework matrix (xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the pinned 2.2.0 VSTest adapter that decorates the names it reports), and Stop terminating the whole `dotnet test` process TREE across every gesture that starts a run. Kept apart from `testexplorer` because between them they restore and build eight test projects, and because the sleeping-fixture cancellation suite is the likeliest place in the matrix to hang — a hang here must not take the Test Explorer's read surface with it.",
+      "description": "The Test Explorer RUNNING things, over the widest fixture surface in the matrix: the framework matrix (xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the pinned 2.2.0 VSTest adapter that decorates the names it reports), and Stop terminating the whole `dotnet test` process TREE across every gesture that starts a run. Kept apart from `testexplorer` because between them they restore and build eight test projects, and because the sleeping-fixture cancellation suite is the likeliest place in the matrix to hang \u2014 a hang here must not take the Test Explorer's read surface with it.",
       "files": [
         "test-explorer-frameworks.test.js",
         "test-explorer-outcomes.test.js",
@@ -131,6 +131,7 @@
         "bundled-sidecars.test.js",
         "extension.test.js",
         "lifecycle-e2e.test.js",
+        "sdk-pin.test.js",
         "coverage-extension-workflows.test.js",
         "solution-explorer.test.js",
         "tree-config-e2e.test.js",
@@ -148,7 +149,7 @@
     },
     "realrepo": {
       "linuxOnly": true,
-      "description": "Cold-loading the three pinned real-world repositories — serilog/serilog, FluentValidation and FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
+      "description": "Cold-loading the three pinned real-world repositories \u2014 serilog/serilog, FluentValidation and FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only \u2014 the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
       "files": [
         "real-repo-serilog.test.js",
         "real-repo-fluentvalidation.test.js",

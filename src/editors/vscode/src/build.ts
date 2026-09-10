@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from './constants';
 import { currentDotnetExecutable } from './dotnet-process';
+import { describeSdkPinFailure } from './dotnetRuntime.js';
 import { info } from './log';
 
 const diagnosticCollection = vscode.languages.createDiagnosticCollection('sharplsp-build');
@@ -126,6 +127,44 @@ export function parseBuildDiagnostics(output: string): void {
   }
 }
 
+/**
+ * `dotnet`'s exit code when `hostfxr_resolve_sdk2` cannot satisfy a
+ * `global.json` pin — "A compatible .NET SDK was not found".
+ */
+export const SDK_RESOLUTION_EXIT_CODE = 155;
+
+/**
+ * Explain a failed build when the cause is an unsatisfiable SDK pin.
+ *
+ * `dotnet` prints the real reason — the requested version, the `global.json`
+ * responsible, and the installed SDKs — to the task terminal, which
+ * `close: true` disposes the instant the process exits. All that survives is
+ * VS Code's generic "failed to launch (exit code: 155)", which names none of
+ * it. Implements [DIST-FAILURE-UX].
+ */
+export function diagnoseBuildFailure(
+  exitCode: number | undefined,
+  dotnetPath: string,
+  workspaceRoot?: string,
+): string | undefined {
+  if (exitCode === undefined || exitCode === 0) return undefined;
+  if (workspaceRoot === undefined) return undefined;
+  return describeSdkPinFailure(dotnetPath, workspaceRoot);
+}
+
+/** Show the SDK-pin diagnosis for a build that exited non-zero, if that was the cause. */
+async function reportBuildFailure(event: vscode.TaskProcessEndEvent): Promise<void> {
+  if (event.execution.task.source !== SharpLspBuildTaskProvider.Source) return;
+  const diagnosis = diagnoseBuildFailure(
+    event.exitCode,
+    currentDotnetExecutable(),
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+  );
+  if (diagnosis === undefined) return;
+  info(`build failed with exit code ${String(event.exitCode)}: ${diagnosis}`);
+  await vscode.window.showErrorMessage(`SharpLsp could not build: ${diagnosis}`);
+}
+
 /** A solution/project tree node that can supply an MSBuild target file path. */
 interface BuildTarget {
   readonly projectFilePath?: string;
@@ -134,6 +173,11 @@ interface BuildTarget {
 /** Register build commands and task provider. */
 export function registerBuildCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(diagnosticCollection);
+  context.subscriptions.push(
+    vscode.tasks.onDidEndTaskProcess((event) => {
+      void reportBuildFailure(event);
+    }),
+  );
   context.subscriptions.push(
     vscode.tasks.registerTaskProvider(
       SharpLspBuildTaskProvider.Type,
