@@ -58,7 +58,8 @@
         "run-debug-target.test.js",
         "run-debug-build.test.js",
         "run-debug-commands.test.js",
-        "run-debug-scripts.test.js"
+        "run-debug-scripts.test.js",
+        "configuration-e2e.test.js"
       ]
     },
     "debug-breakpoints": {
@@ -70,7 +71,11 @@
         "debug-stepping-boundaries-e2e.test.js",
         "debug-callstack-e2e.test.js",
         "debug-exceptions-e2e.test.js",
-        "debug-exception-filters-e2e.test.js"
+        "debug-exception-filters-e2e.test.js",
+        "dap-exception-policy.test.js",
+        "debug-just-my-code-e2e.test.js",
+        "debug-policy-e2e.test.js",
+        "debug-terminal-exception-e2e.test.js"
       ]
     },
     "debug-inspection": {

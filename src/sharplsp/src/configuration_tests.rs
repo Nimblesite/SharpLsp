@@ -84,6 +84,7 @@ mod contract {
             "user-boundary"
         );
         assert_eq!(config["debug"]["exceptions"]["ignore"], json!([]));
+        assert_eq!(config["debug"]["exceptions"]["just_my_code"], true);
         assert_eq!(config["server"]["debounce_ms"], 150);
         Ok(())
     }
@@ -112,6 +113,7 @@ mod contract {
         let dir = tempfile::tempdir()?;
         for overlay in [
             json!({"debug":{"exception":{}}}),
+            json!({"debug":{"exceptions":{"just_my_code":"false"}}}),
             json!({"debug":{"exceptions":{"ignore":["!System.Exception"]}}}),
             json!({"debug":{"exceptions":{"ignore":["System.Exception System.Other"]}}}),
         ] {

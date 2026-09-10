@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build SharpLsp's minimal DAP hot-reload extension on the exact netcoredbg
-# release commit. The patch only exposes netcoredbg's existing, tested
-# ICorDebug ApplyChanges implementation to its VS Code protocol.
+# Build SharpLsp's DAP hot-reload extension and symbol-less stepping fix on
+# the exact netcoredbg release commit. The patch exposes ICorDebug ApplyChanges
+# and permits CLR stepping from exception frames without source sequence points.
 set -euo pipefail
 
 # [DIST-DEBUGGER-BUNDLE] The commits and the patch version live in
@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PLATFORM="${1:-$(node -e "process.stdout.write(process.platform + '-' + process.arch)")}"
 HOST_PLATFORM="$(node -e "process.stdout.write(process.platform + '-' + process.arch)")"
-PATCH="$ROOT/tools/netcoredbg/dap-hot-reload.patch"
+PATCHES=("$ROOT/tools/netcoredbg/dap-hot-reload.patch" "$ROOT/tools/netcoredbg/exception-stepping.patch")
 CACHE_ROOT="${NETCOREDBG_BUILD_CACHE_DIR:-${TMPDIR:-/tmp}/sharplsp-netcoredbg-build/$PLATFORM}"
 SOURCE="$CACHE_ROOT/source"
 CORECLR="$CACHE_ROOT/coreclr"
@@ -74,12 +74,14 @@ clone_commit() {
 clone_commit "https://github.com/Samsung/netcoredbg.git" "$NETCOREDBG_COMMIT" "$SOURCE"
 clone_commit "https://github.com/dotnet/runtime.git" "$CORECLR_COMMIT" "$CORECLR"
 
-if git -C "$SOURCE" apply --check "$PATCH" 2>/dev/null; then
-  git -C "$SOURCE" apply "$PATCH"
-elif ! git -C "$SOURCE" apply --reverse --check "$PATCH"; then
-  echo "netcoredbg: hot-reload patch does not apply cleanly to $NETCOREDBG_COMMIT" >&2
-  exit 1
-fi
+for patch in "${PATCHES[@]}"; do
+  if git -C "$SOURCE" apply --check "$patch" 2>/dev/null; then
+    git -C "$SOURCE" apply "$patch"
+  elif ! git -C "$SOURCE" apply --reverse --check "$patch"; then
+    echo "netcoredbg: $patch does not apply cleanly to $NETCOREDBG_COMMIT" >&2
+    exit 1
+  fi
+done
 
 DOTNET_EXE="$(command -v dotnet)"
 DOTNET_DIR="${DOTNET_ROOT:-$(cd "$(dirname "$DOTNET_EXE")" && pwd)}"

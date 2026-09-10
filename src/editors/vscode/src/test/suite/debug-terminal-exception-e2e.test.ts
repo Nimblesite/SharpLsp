@@ -6,27 +6,26 @@ import { LiveRouter } from './debug-router-kit';
 import { DEBUG_TEST_MS } from './test-timeouts';
 import { isRecord } from '../../dap-emulate';
 
-suite('Debug terminal exception recovery', () => {
+suite('Debug terminal exception visibility', () => {
   const debuggee = useDebuggee('debug-terminal-fs-', 'fsharp');
 
-  test('F10 after an unhandled exception explains why stepping cannot resume and how to recover', async function () {
+  test('Just My Code and exclusions preserve genuinely unhandled framework exceptions', async function () {
     this.timeout(DEBUG_TEST_MS);
     const driver = new LiveRouter();
     try {
-      await driver.launch(debuggee().fixture, MODE.missingAssembly);
+      await driver.launch(debuggee().fixture, MODE.missingAssembly, {
+        break_on: 'all',
+        just_my_code: true,
+        ignore: ['System.IO.FileNotFoundException'],
+      });
       const threadId = await driver.exceptionStop();
       const info = await driver.request('exceptionInfo', { threadId });
       assert.ok(isRecord(info.body));
       assert.equal(info.body.breakMode, 'unhandled');
       assert.equal(info.body.exceptionId, 'CLR/System.IO.FileNotFoundException');
-      const result = await driver.request('next', { threadId });
-      assert.equal(result.success, false);
-      assert.match(
-        String(result.message),
-        /unhandled exception/i,
-        'F10 must explain the terminal exception',
-      );
-      assert.match(String(result.message), /restart/i, 'F10 must explain how to recover');
+      assert.match(String(info.body.description), /FileNotFoundException/);
+      assert.ok(isRecord(info.body.details));
+      assert.equal(info.body.details.fullTypeName, 'System.IO.FileNotFoundException');
       assert.deepEqual((await driver.request('exceptionInfo', { threadId })).body, info.body);
     } finally {
       driver.dispose();

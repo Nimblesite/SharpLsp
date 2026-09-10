@@ -38,6 +38,7 @@ settings hot-reload.
 ```toml
 [debug.exceptions]
 break_on = "all"
+just_my_code = true
 ignore = ["System.OperationCanceledException", "System.Threading.Tasks.TaskCanceledException"]
 external_code = "user-boundary"
 ```
@@ -47,7 +48,7 @@ external_code = "user-boundary"
 | Value | Behavior |
 | --- | --- |
 | `editor` (default) | Preserve the DAP client's exception checkboxes. |
-| `all` | Break on thrown exceptions, even if later caught. |
+| `all` | Break on thrown exceptions, even if later caught, subject to Just My Code. |
 | `user-unhandled` | Break when not handled by user code; enables Just My Code. |
 | `unhandled` | Break only on terminal unhandled exceptions. |
 
@@ -56,13 +57,28 @@ matches. It narrows the selected exception filters. Terminal unhandled exception
 still stop, retaining the crash for inspection. Debugger filtering does not catch an
 exception in the application or make a fatal exception recoverable.
 
+`just_my_code = true` (default) skips first-chance throws in external code, including
+libraries without symbols and sources outside the workspace/launch root. A library
+can execute its own handler and return without a visible exception stop. Throws in
+user code still obey the selected filters. Set `just_my_code = false` with
+`break_on = "all"` to inspect every throw, including inside libraries. This option
+controls exception stops independently of the launch setting for normal stepping.
+User-unhandled and terminal unhandled stops remain visible. Failed classification
+or resume requests retain the original stop.
+
+Ignoring an exception preserves a pending F10/F11/step-out gesture. The bundled
+adapter permits stepping from symbol-less managed frames so a first-chance throw
+does not strand stepping with `0x80004005`. Continue and step both let the runtime
+run any existing handler; neither inserts a catch into the application.
+
 `external_code = "throw-site"` (default) retains the throwing frame.
 `external_code = "user-boundary"` presents the nearest workspace/launch-root caller
 as the first frame for exception stops. It does not move the instruction pointer or
 alter the exception's original stack/details. If no user frame exists, show the raw
 stack. Pagination applies after this projection. Other stop reasons retain normal
-stack behavior. Use `user-unhandled` to avoid stopping on exceptions libraries handle
-internally; boundary presentation alone does not change when an exception is thrown.
+stack behavior. Use `just_my_code = true` to skip library-internal first-chance
+throws, or `user-unhandled` to stop only when an exception escapes user handling.
+Boundary presentation alone does not change exception selection.
 
 ## Editor integration `[CONFIG-EDITOR-BRIDGE]`
 

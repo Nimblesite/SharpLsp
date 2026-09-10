@@ -65,6 +65,7 @@ export class LiveRouter implements vscode.Disposable {
     fixture: DebugFixture,
     mode: string,
     exceptionPolicy?: Record<string, unknown>,
+    breakpointAnchors: readonly string[] = [],
   ): Promise<void> {
     assert.equal(
       (
@@ -85,6 +86,19 @@ export class LiveRouter implements vscode.Disposable {
       exceptionPolicy,
     });
     await this.event('initialized');
+    if (breakpointAnchors.length > 0) {
+      assert.equal(
+        (
+          await this.request('setBreakpoints', {
+            source: { path: fixture.uri.fsPath },
+            breakpoints: breakpointAnchors.map((anchor) => ({
+              line: fixture.source.dapLine(anchor),
+            })),
+          })
+        ).success,
+        true,
+      );
+    }
     assert.equal((await this.request('setExceptionBreakpoints', { filters: [] })).success, true);
     assert.equal((await this.request('configurationDone')).success, true);
     assert.equal((await launched).success, true);

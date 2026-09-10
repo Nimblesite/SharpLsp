@@ -384,6 +384,10 @@
                       "user-boundary"
                     ],
                     "description": "Show external exceptions at the throw site or nearest user caller."
+                  },
+                  "just_my_code": {
+                    "type": "boolean",
+                    "description": "Skip first-chance exceptions inside external code. Inherits shared TOML configuration (default true). Set false with break_on all to inspect every throw."
                   }
                 }
               }
@@ -435,6 +439,10 @@
                       "user-boundary"
                     ],
                     "description": "Show external exceptions at the throw site or nearest user caller."
+                  },
+                  "just_my_code": {
+                    "type": "boolean",
+                    "description": "Skip first-chance exceptions inside external code. Inherits shared TOML configuration (default true). Set false with break_on all to inspect every throw."
                   }
                 }
               }

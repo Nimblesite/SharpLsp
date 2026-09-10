@@ -236,7 +236,7 @@ export class StepCoalescer {
     }
     const stepCommand = asStepCommand(command);
     this.run(async () => {
-      const origin = await this.locate(threadId);
+      const origin = await this.locateOrigin(threadId);
       const originCarries = await this.host.carriesCode(origin);
       this.pending =
         origin.depth > 0 && stepCommand !== undefined
@@ -249,6 +249,13 @@ export class StepCoalescer {
   /** Forget the step in flight; the next stop is delivered as it arrives. */
   public reset(): void {
     this.pending = undefined;
+  }
+
+  /** A first-chance exception cancels the CLR stepper; restore the user's gesture. */
+  public async resumeIgnoredException(threadId: number): Promise<DapMessage> {
+    const pending = this.pending;
+    const command = pending?.threadId === threadId ? pending.command : 'continue';
+    return await this.host.request(command, { threadId });
   }
 
   /**
@@ -372,6 +379,27 @@ export class StepCoalescer {
       return topFrameLocation(stack.body);
     } catch {
       return { path: undefined, line: 0, column: 0, depth: 0 };
+    }
+  }
+
+  /** A symbol-less exception resumes at its caller's call-site sequence point. */
+  private async locateOrigin(threadId: number): Promise<StepLocation> {
+    const origin = await this.locate(threadId);
+    if (origin.path !== undefined) return origin;
+    try {
+      const stack = await this.host.request('stackTrace', { threadId });
+      const body = stack.success === true && isRecord(stack.body) ? stack.body : {};
+      const frames = recordList(body.stackFrames);
+      const index = frames.findIndex((frame) =>
+        this.host.belongsToUser(topFrameLocation({ stackFrames: [frame] })),
+      );
+      if (index < 0) return origin;
+      return topFrameLocation({
+        stackFrames: frames.slice(index),
+        totalFrames: Number(body.totalFrames ?? 0) - index,
+      });
+    } catch {
+      return origin;
     }
   }
 

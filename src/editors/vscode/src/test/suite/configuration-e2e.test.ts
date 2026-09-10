@@ -42,6 +42,7 @@ suite('Editor bridge to shared configuration', () => {
         exceptionPolicy: { ignore: [] },
       };
       assert.deepEqual((await sharedDebugConfiguration(folder, config)).exceptionPolicy, {
+        just_my_code: true,
         break_on: 'all',
         ignore: [],
         external_code: 'throw-site',
@@ -54,6 +55,11 @@ suite('Editor bridge to shared configuration', () => {
       assert.equal(changed.justMyCode, true);
       assert.equal(changed.exceptionPolicy?.external_code, 'user-boundary');
       assert.deepEqual(config.exceptionPolicy, { ignore: [] });
+      const allCode = await sharedDebugConfiguration(folder, {
+        ...config,
+        exceptionPolicy: { just_my_code: false },
+      });
+      assert.equal(allCode.exceptionPolicy?.just_my_code, false);
       fs.writeFileSync(file, `${base}break_on = "typo"\n`);
       await assert.rejects(
         sharedDebugConfiguration(folder, config),

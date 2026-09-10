@@ -3,6 +3,7 @@ import { isRecord, type DapMessage } from './dap-emulate';
 
 /** Wire representation of the LSP's validated TOML exception configuration. */
 export interface ExceptionPolicy {
+  readonly just_my_code?: boolean;
   readonly break_on?: 'editor' | 'all' | 'user-unhandled' | 'unhandled';
   readonly ignore?: readonly string[];
   readonly external_code?: 'throw-site' | 'user-boundary';
