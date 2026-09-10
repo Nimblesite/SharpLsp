@@ -6,11 +6,36 @@ import * as path from 'node:path';
 import { LanguageClient } from 'vscode-languageclient/node';
 import { sharedDebugConfiguration } from '../../debug-configuration';
 import * as state from '../../state';
-import { fakeFolder } from './run-debug-kit';
+import { authoredConfigurationAttributes, fakeFolder } from './run-debug-kit';
+import { assertSchemaProperty, ATTACH_SCHEMA, LAUNCH_SCHEMA } from './run-debug-manifest-kit';
 import { removeDirRecursive } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
 suite('Editor bridge to shared configuration', () => {
+  test('launch and attach exception options inherit shared TOML settings', () => {
+    const schemas = authoredConfigurationAttributes();
+    for (const [kind, expected] of [
+      ['launch', LAUNCH_SCHEMA],
+      ['attach', ATTACH_SCHEMA],
+    ] as const) {
+      const properties = schemas[kind].properties;
+      assert.deepEqual(Object.keys(properties).sort(), expected);
+      assertSchemaProperty(properties, 'exceptionPolicy', 'object');
+      const policy = properties.exceptionPolicy;
+      assert.equal(policy.additionalProperties, false);
+      assert.deepEqual(Object.keys(policy.properties).sort(), [
+        'break_on',
+        'external_code',
+        'ignore',
+        'just_my_code',
+      ]);
+      assertSchemaProperty(policy.properties, 'just_my_code', 'boolean');
+      assert.equal(policy.properties.just_my_code.default, undefined, 'inherit TOML');
+      assertSchemaProperty(policy.properties, 'ignore', 'array');
+      assert.equal(policy.properties.ignore.items.type, 'string');
+    }
+  });
+
   test('launch overrides merge on the server and file edits are read on the next resolution', async function () {
     this.timeout(DEBUG_TEST_MS);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-config-'));

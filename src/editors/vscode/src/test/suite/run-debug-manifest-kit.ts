@@ -55,7 +55,7 @@ export const CORE_INJECTED = (
 ).split(' ');
 /** The launch schema of [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 3, sorted. */
 export const LAUNCH_SCHEMA = (
-  'args console cwd env hotReload justMyCode program ' +
+  'args console cwd env exceptionPolicy hotReload justMyCode program ' +
   'requireExactSource stopAtEntry symbolOptions'
 ).split(' ');
 /**
@@ -65,7 +65,7 @@ export const LAUNCH_SCHEMA = (
  * `config.justMyCode ??= true` BEFORE it checks the request kind, so an attach
  * configuration receives it too, and rule 3 requires the schema to say so.
  */
-export const ATTACH_SCHEMA = 'justMyCode processId'.split(' ');
+export const ATTACH_SCHEMA = 'exceptionPolicy justMyCode processId'.split(' ');
 export const ACCIDENT =
   'both must be listed: C# breakpoints are impossible today, and F# works only by accident ' +
   'because the built-in ms-vscode.js-debug happens to contribute fsharp (rule 3)';
