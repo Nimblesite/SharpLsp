@@ -237,6 +237,23 @@ Two further failure classes were investigated and turned out **not** to be defec
 - [x] Create `docs/plans/DISTRIBUTION-PLAN.md`
 - [x] Add Distribution section to `docs/specs/SHARPLSP-SPEC.md`
 
+### SDK pin (global.json) — [DIST-RUNTIME-ACQUIRE]
+
+Fixes the defect where every `dotnet` entry point failed with exit code 155 on a
+machine whose installed .NET 10 SDK sat in a different feature band from the one
+`global.json` pins. Acquisition treated "any SDK >= 10.0" as compatible, so it
+reported success on an SDK the workspace could never use.
+
+- [x] `global-json.ts`: pin discovery, `rollForward` evaluation, installed-SDK enumeration
+- [x] Reject a found SDK that cannot satisfy the workspace pin, so acquisition proceeds
+- [x] Request the **pinned** version from `dotnet.acquireGlobalSDK`, not the `10.0` band
+- [x] Never block `activate()` on a global installer when a usable-but-unpinned SDK exists
+- [x] Surface the pin, its `global.json`, and the installed SDKs instead of a bare exit code 155
+- [x] Wire `configureDotnet()` at activation so builds/tests run the resolved SDK, not `$PATH`'s
+- [x] Bound Install Tool calls so a stalled elevation prompt cannot wedge the extension host
+- [x] Regression suite `sdk-pin.test.ts`, registered in the `workspace` chunk
+- [x] `tools/ci/check-sdk-pin.mjs` fails CI when `global.json` and the workflow `dotnet-version` pins diverge
+
 ### External prerequisites (manual, pre-merge)
 
 - [ ] Create GitHub repo `Nimblesite/homebrew-tap` (empty, default branch `main`)

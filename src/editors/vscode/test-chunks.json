@@ -121,6 +121,7 @@
         "test-explorer-frameworks.test.js",
         "test-explorer-outcomes.test.js",
         "test-explorer-adapter-ids.test.js",
+        "test-explorer-goto-test.test.js",
         "test-explorer-cancellation.test.js"
       ]
     },

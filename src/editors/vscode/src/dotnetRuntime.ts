@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as log from './log.js';
 import { type SdkPin, installedSdkVersions, pinSatisfiedBy, readSdkPin } from './global-json.js';
+import { CMD_RETRY_DOTNET_ACQUISITION } from './constants.js';
 import { type Result, err, ok } from './result.js';
 import { ServerState, type SharpLspStatusBar } from './status.js';
 import { getErrorMessage } from './utils.js';
@@ -20,6 +21,8 @@ export const INSTALL_TOOL_EXTENSION_ID = 'ms-dotnettools.vscode-dotnet-runtime';
 // installer; `dotnet.findPath` discovers an already-installed one.
 const CMD_FIND_PATH = 'dotnet.findPath';
 const CMD_ACQUIRE_GLOBAL_SDK = 'dotnet.acquireGlobalSDK';
+/** Built-in command that restarts the extension host on a new SDK. */
+const CMD_RELOAD_WINDOW = 'workbench.action.reloadWindow';
 
 /** Map Node `process.arch` to the .NET Install Tool's architecture identifiers. */
 export function dotnetArchitecture(): string {
@@ -75,18 +78,81 @@ export async function acquireDotnet10Sdk(statusBar: SharpLspStatusBar): Promise<
     return ok(existing.value);
   }
 
+  // An SDK that exists but cannot satisfy the pin must NOT block activation on a
+  // platform installer: a global install can sit indefinitely on an elevation
+  // prompt, and `activate()` awaits this call, so the whole extension host —
+  // completions, navigation, everything — would stall behind a build fix. Report
+  // it, keep the SDK that IS installed, and let the user start the install.
+  const unpinned: Result<string> = pin === undefined ? err('unpinned') : await tryFindExistingSdk();
+  if (pin !== undefined && unpinned.ok) {
+    void reportUnsatisfiablePin(unpinned.value, pin, statusBar);
+    return ok(unpinned.value);
+  }
+
   log.info(
     `no existing .NET ${DOTNET_VERSION} SDK found — invoking ${CMD_ACQUIRE_GLOBAL_SDK} via .NET Install Tool…`,
   );
   statusBar.setState(ServerState.Starting);
+  return await installPinnedSdk(pin);
+}
+
+/** Run the Install Tool's global SDK install behind a progress notification. */
+async function installPinnedSdk(pin?: SdkPin): Promise<Result<string>> {
   return await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: 'SharpLsp: Installing .NET 10 SDK',
+      title: `SharpLsp: Installing .NET ${pin?.version ?? DOTNET_VERSION} SDK`,
       cancellable: false,
     },
     async (progress) => await callAcquireSdk(progress, pin),
   );
+}
+
+/**
+ * Tell the user their SDK cannot satisfy the workspace pin, and offer to fix it.
+ *
+ * Without this the first symptom is `dotnet` exiting 155 into a task terminal
+ * that closes itself, leaving only VS Code's "failed to launch (exit code:
+ * 155)". Implements [DIST-FAILURE-UX].
+ */
+async function reportUnsatisfiablePin(
+  dotnetPath: string,
+  pin: SdkPin,
+  statusBar: SharpLspStatusBar,
+): Promise<void> {
+  const diagnosis = describeSdkPinFailure(dotnetPath, path.dirname(pin.source));
+  if (diagnosis === undefined) return;
+  log.error(diagnosis);
+  const install = `Install ${pin.version}`;
+  const choice = await vscode.window.showErrorMessage(
+    `SharpLsp: ${diagnosis}`,
+    install,
+    'Show Log',
+  );
+  if (choice === 'Show Log') {
+    log.output().show();
+    return;
+  }
+  if (choice !== install) return;
+  statusBar.setState(ServerState.Starting);
+  const installed = await installPinnedSdk(pin);
+  if (!installed.ok) {
+    void showAcquireFailureNotification(installed.error, CMD_RETRY_DOTNET_ACQUISITION);
+    return;
+  }
+  await promptReload(pin);
+}
+
+/** A newly installed SDK only reaches every dotnet child after a reload. */
+async function promptReload(pin: SdkPin): Promise<void> {
+  const reload = 'Reload Window';
+  const choice = await vscode.window.showInformationMessage(
+    `SharpLsp installed .NET SDK ${pin.version}. Reload to use it.`,
+    reload,
+  );
+  if (choice === reload) {
+    await vscode.commands.executeCommand(CMD_RELOAD_WINDOW);
+  }
 }
 
 /** Activate the .NET Install Tool extension so its commands are registered. */
@@ -182,12 +248,40 @@ async function tryFindExistingSdk(pin?: SdkPin): Promise<Result<string>> {
   return ok(dotnetPath);
 }
 
+/**
+ * Ceiling on one Install Tool call.
+ *
+ * A global SDK install shells out to the platform installer, which can sit
+ * indefinitely on an elevation prompt nobody answers. `acquireDotnet10Sdk` is
+ * awaited by `activate()`, so an unbounded wait wedges the extension host and
+ * every feature with it. The install is left running — only our wait ends.
+ */
+const ACQUIRE_TIMEOUT_MS = 5 * 60 * 1000;
+
 async function safeExecuteCommand<T>(command: string, payload: unknown): Promise<Result<T>> {
   try {
-    const value = await vscode.commands.executeCommand<T>(command, payload);
-    return ok(value);
+    const value = await withTimeout(
+      vscode.commands.executeCommand<T>(command, payload),
+      `${command} did not return within ${String(ACQUIRE_TIMEOUT_MS / 1000)}s`,
+    );
+    return value;
   } catch (caught: unknown) {
     return err(getErrorMessage(caught));
+  }
+}
+
+/** Resolve with the promise's value, or an error once the ceiling elapses. */
+async function withTimeout<T>(promise: Thenable<T>, message: string): Promise<Result<T>> {
+  let timer: NodeJS.Timeout | undefined;
+  const expiry = new Promise<Result<T>>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(err(message));
+    }, ACQUIRE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([Promise.resolve(promise).then((value) => ok(value)), expiry]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

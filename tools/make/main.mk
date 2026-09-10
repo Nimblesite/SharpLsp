@@ -590,9 +590,15 @@ _lint-zed:
 	cargo fmt --manifest-path $(ZED_DIR)/Cargo.toml --check
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
-_lint-vsix: _check-vsix-chunks
+_lint-vsix: _check-vsix-chunks _check-sdk-pin
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
+
+# global.json and every workflow's dotnet-version MUST agree ([DIST-RUNTIME-ACQUIRE]).
+# CI installs the pinned SDK onto $$PATH, so a mismatch is invisible in CI and
+# breaks every build on machines that lack the pinned band.
+_check-sdk-pin:
+	node tools/ci/check-sdk-pin.mjs
 
 # Dash-form MSBuild switches only: Git Bash (MSYS) mangles slash-form switches
 # like `/p:...` on Windows (strips the `/`, MSBuild then reads it as a project
