@@ -1,0 +1,9 @@
+{
+  "_agent_pmo": "a72c926",
+  "recommendations": [
+    "nimblesite.commandtree",
+    "nimblesite.too-many-cooks",
+    "nimblesite.typeDiagram",
+    "nimblesite.deslop-live"
+  ]
+}

@@ -183,6 +183,48 @@ The extension's icon assets in `src/editors/vscode/icons/` are symlinks into `do
 3. The resolver MUST run automatically before packaging (`vscode:prepublish`) and before the e2e suite (`pretest`), so both the packaged VSIX and the extension-development host load real images. The e2e suite asserts the invariant (`bundled-binary.test.ts`).
 4. Resolved stubs modify the working tree and MUST NOT be committed — Git would record the binary content as the symlink's target text, corrupting the symlink for every other platform. Restore with `git restore src/editors/vscode/icons`.
 
+## [DIST-VSIX-DEV-INSTALL] Local Install Loop
+
+Building the VSIX is not installing it. A developer changing the Rust host, either
+sidecar or the extension needs one command that puts the result into their own VS
+Code, and it MUST be a **full** cycle — stale servers killed, every artifact
+cleaned, all three components rebuilt for the host platform, the extension
+uninstalled first, the fresh VSIX packaged and installed.
+
+Anything less silently tests the previous build: a running `sharplsp` holds the
+binary open (fatally so on Windows), a partial `bin/` stage survives into the
+package, and `--install-extension` over an identical version is a no-op unless
+forced.
+
+| Target | Contract |
+|---|---|
+| `make reinstall-vsix` | uninstall → kill → `clean` → `_build-vsix` (Rust host + both sidecars + extension, packaged) → install. The whole loop. |
+| `make install-vsix` | install `dist/sharplsp.vsix` as it stands. Fails if it is absent. |
+| `make uninstall-vsix` | remove the installed extension. Succeeds when nothing is installed. |
+
+Requirements:
+
+1. The loop MUST work identically on **macOS, Linux and Windows**. Windows runs
+   these recipes under Git Bash, where the VS Code CLI is a `.cmd` shim, so the
+   CLI MUST be resolved by probe — `code`, `code.cmd`, then the default per-user
+   and machine-wide install locations — and overridable with `CODE=/path/to/code`.
+   A missing CLI MUST fail loudly, never silently skip the install.
+2. The VSIX path passed to the CLI MUST stay repo-relative. Git Bash absolute
+   paths (`/c/...`) are not intelligible to a Windows `code.cmd`.
+3. The extension identifier MUST be derived from the extension manifest
+   (`publisher` + `name`), never hardcoded. A hardcoded copy drifts: the repo
+   carried a dead `_uninstall-vsix` naming `sharplsp.sharp-lsp` long after the
+   extension became `nimblesite.sharplsp`, so it could not have uninstalled
+   anything.
+4. Steps MUST be ordered explicitly as sub-makes, not as prerequisites of one
+   target. Under `make -j` prerequisites run concurrently, and `clean` racing the
+   build it feeds deletes that build's output.
+5. `install-vsix` MUST pass `--force`, so reinstalling the same version replaces
+   it instead of no-opping.
+6. The uninstall MUST run **before** the clean and rebuild, not after. A build
+   that fails midway then leaves no stale SharpLsp loaded in VS Code to be
+   mistaken for the change under test.
+
 ## [DIST-ARCHIVE] Standalone Server Archive
 
 The VSIX is how VS Code gets SharpLsp. It is not how anything else does. Rider,
@@ -531,7 +573,7 @@ The Rust e2e suite runs single-threaded (`RUST_TEST_THREADS=1` — tests spawn r
 Invariants:
 
 - **Same tests, same serialization.** A shard changes only *which* slice of the suite runs, never how: `--no-fail-fast` and the `--test-threads` serialization apply to every shard. Sharding MUST NOT skip, filter, or reorder tests beyond the partition itself.
-- **One gate, over the union.** Each shard exports lcov (`target/coverage-rust-shard<n>.lcov`). No shard can meet the line threshold alone, so no shard runs the coverage gate; the `coverage-rust` job union-merges the tracefiles (`tools/coverage/merge-lcov.mjs`) and enforces the identical `tools/coverage/check-coverage.sh` ratchet a single-job run enforces. Every shard tracefile carries the full instrumented line set (unexecuted lines as `DA:<line>,0`), so the union reproduces exactly the line percentage of an unsharded run.
+- **One gate, over the union.** Each shard exports lcov (`target/coverage-rust-shard<n>.lcov`). No shard can meet the line threshold alone, so no shard runs the coverage gate; the `coverage-rust` job union-merges the tracefiles (`tools/coverage/merge-lcov.mjs`) and enforces the identical `tools/coverage/check-coverage.mjs` ratchet a single-job run enforces. Every shard tracefile carries the full instrumented line set (unexecuted lines as `DA:<line>,0`), so the union reproduces exactly the line percentage of an unsharded run.
 - **Local runs stay unsharded.** `make test` / `make _test-rust` remain the single-invocation JSON + inline-gate path; sharding is a CI wall-clock concern only.
 - **Version contract is its own job.** The `--version` contract checks ([DIST-VERSION-OUTPUT]) run in the `version-contract` job: the release-profile build shares no artifacts with the instrumented test build, so bundling it into a test job serializes it onto the critical path for zero reuse.
 

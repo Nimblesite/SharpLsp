@@ -127,6 +127,15 @@ function wireStatusBar(
         statusBar.setState(ServerState.Stopped);
         log.info('Server stopped.');
         break;
+      // vscode-languageclient 10 added this state: the server never reached
+      // Running because `start()` itself failed. Reporting it as Stopped would
+      // render a failure as the clean shutdown the user asked for, and leave
+      // the one indicator they have showing a dimmed circle. Error is the state
+      // whose tooltip offers the click-to-restart that recovers it.
+      case State.StartFailed:
+        statusBar.setState(ServerState.Error);
+        log.error('Server failed to start.');
+        break;
     }
   });
   context.subscriptions.push(listener);

@@ -1,4 +1,4 @@
-# agent-pmo:0b21609
+# agent-pmo:a72c926
 name: CodeQL
 
 # Static analysis for the supported codebase and GitHub Actions workflows.
@@ -44,7 +44,11 @@ jobs:
     # would fail with "Code Security must be enabled for this repository" - the
     # gate skips the job cleanly instead, and self-re-enables once the repo is
     # public again. No follow-up edit needed. [DIST-CI-SECURITY]
-    if: github.event.repository.visibility == 'public'
+    # `github.actor` guard: Dependabot PRs are swept into the staging branch by
+    # dependabot-automerge.yml without ever being merged to main, so scanning
+    # them burns the matrix for nothing. The batch is scanned once, at the
+    # consolidation PR. [GITHUB-DEPENDABOT]
+    if: github.event.repository.visibility == 'public' && github.actor != 'dependabot[bot]'
     permissions:
       security-events: write
       actions: read

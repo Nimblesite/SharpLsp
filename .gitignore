@@ -1,180 +1,153 @@
 # =============================================================================
-# UNIVERSAL
+# SharpLsp .gitignore
+#
+# One rule per artifact class, filed under the tool that produces it. A pattern
+# earns its place only if this repo's build, tests, CI or a contributor's editor
+# actually writes that artifact into the working tree. Patterns for toolchains
+# we do not use are not free: they hide real files, and nobody ever audits them.
+#
+# Deliberately NOT ignored: `.vscode/`, `.idea/` and the per-editor tooling under
+# `src/editors/` are shared dev config, and they are committed.
 # =============================================================================
 
-# OS
+# -----------------------------------------------------------------------------
+# OS and editor scratch
+# -----------------------------------------------------------------------------
 .DS_Store
-.DS_Store?
 ._*
-.Spotlight-V100
-.Trashes
 Thumbs.db
-ehthumbs.db
 Desktop.ini
-
-# IDE / Editor
-# NOTE: .vscode/ and .idea/ are intentionally NOT ignored — shared dev tooling
-# (settings, launch configs, title-bar colors, run configs) is committed.
-# [GITIGNORE-RULES]
 *.swp
 *.swo
 *~
-.project
-.classpath
-.settings/
-*.sublime-project
-*.sublime-workspace
 
-# Portfolio-wide tooling
-.too_many_cooks/
-.commandtree/
-.playwright-mcp/
-coordination/
-logs/
-nohup.out
+# -----------------------------------------------------------------------------
+# Secrets and per-developer machine state
+#
+# The one section kept on the precautionary principle rather than on evidence:
+# nothing here matches anything today, and a miss publishes a credential.
+# -----------------------------------------------------------------------------
+.env
+.env.*
+*.pem
+*.key
+# Per-machine agent config — leaks local paths and usernames, never publish.
+**/settings.local.json
+.claude/**/*.local.json
+# ...with ONE exception, dug back out because the portfolio standard requires it
+# committed: `.claude/settings.local.json` pins `"autoMemoryEnabled": false`.
+# Claude Code's local settings file has the highest precedence, so this is the
+# only place the value can be pinned for every contributor — and it holds that
+# one reviewed key, never machine paths. [GITIGNORE-RULES] [AGENT-AUTOMEMORY]
+!.claude/settings.local.json
 
-# Coverage artifacts (all languages)
+# -----------------------------------------------------------------------------
+# Rust
+# -----------------------------------------------------------------------------
+/target
+# The Zed extension is a separate cargo workspace with its own target dir.
+/src/editors/zed/target/
+
+# -----------------------------------------------------------------------------
+# Node / VS Code extension
+# -----------------------------------------------------------------------------
+node_modules/
+dist/
+out/
+*.vsix
+.vscode-test/
+
+# -----------------------------------------------------------------------------
+# .NET
+# -----------------------------------------------------------------------------
+bin/
+obj/
+*.user
+.vs/
+# Where `gh run download` drops the release workflow's outputs (release.yml).
+artifacts/
+# `dotnet test` without `--results-directory`. Every Makefile target passes one
+# (`target/coverage-dotnet`); an ad-hoc run inside a sidecar project does not.
+TestResults/
+
+# -----------------------------------------------------------------------------
+# JetBrains Rider plugin (Gradle IntelliJ Platform)
+# -----------------------------------------------------------------------------
+src/editors/rider/.intellijPlatform/
+
+# -----------------------------------------------------------------------------
+# F#
+# -----------------------------------------------------------------------------
+.ionide/
+
+# -----------------------------------------------------------------------------
+# Coverage
+#
+# Every gate writes into `coverage/` or under `target/`. The blanket `coverage/`
+# rule also swallows the two committed directories that happen to carry that
+# name, so they are dug back out — directory first, then contents, because git
+# never descends into an excluded directory.
+# -----------------------------------------------------------------------------
 coverage/
 !.config/coverage/
 !.config/coverage/**
 !tools/coverage/
 !tools/coverage/**
-lcov.info
-*.profraw
-*.profdata
-htmlcov/
-.coverage
-coverage.xml
-coverage.out
-coverage-summary.json
-TestResults/
-mutants.out/
 
-# Secrets / local overrides
-.env
-.env.local
-.env.*.local
-*.local
-*.secret
-*.pem
-*.key
-!*.pub.key
-
-# Per-developer machine-local agent config (never publish — leaks local paths/usernames)
-.claude/settings.local.json
-**/settings.local.json
-.claude/**/*.local.json
-
-# Temporary
-tmp/
-temp/
-scratch/
-.tmp-*/
-.tmp-*
-
-# =============================================================================
-# RUST
-# =============================================================================
-/target
-src/editors/zed/target/
-
-# =============================================================================
-# TYPESCRIPT / NODE
-# =============================================================================
-node_modules/
-dist/
-out/
-*.vsix
-*.tgz
-.npm/
-.cache/
-.vscode-test/
-.vscode-test-web/
-.nyc_output/
-
-# =============================================================================
-# C# / .NET
-# =============================================================================
-bin/
-obj/
-publish/
-artifacts/
-*.user
-*.userosscache
-*.suo
-*.vs/
-.vs/
-project.lock.json
-*.nupkg
-*.snupkg
-*.TargetFrameworkMonikers
-*.dotCover
-
-# =============================================================================
-# F#
-# =============================================================================
-.ionide/
-
-# Screenshot test artifacts at root
-/*.png
-
-src/editors/rider/.intellijPlatform/
-
-src/website/test-results/
-
+# -----------------------------------------------------------------------------
+# Test output and on-demand fixtures
+# -----------------------------------------------------------------------------
+# Playwright's default output directory (src/website).
 test-results/
-
-/src/editors/zed/target/
-
-.deslop-cache/
-# Deslop's local index/state directory ([CI-DESLOP]).
-.deslop/
-# Deslop report artifacts (generated locally by `deslop`, never committed).
-deslop-report.*
-deslop-*.log
-/debug.log
-.ghissues/
-.vscode/code-navigator/
-# Real-world repos cloned by the e2e stress suites (src/editors/vscode real-repo tests).
-# Never committed - fetched on demand at pinned tags.
+# Real-world repositories cloned by the VS Code e2e stress suites at pinned
+# tags — fetched on demand, never committed (src/.../real-repo-helpers.ts).
 /src/fixtures/real-world/
-
-# Pre-consolidation residue from before the repo moved under src/ and tools/.
-# Anchored to the repo root so a nested directory of the same name is never
-# hidden. `/src/editors/zed/target/` and `/src/fixtures/real-world/` above are
-# the live rules; these two only stop a stale local checkout being committed.
-/editors/
+# The same clones from before the repo moved under src/. No code refers to this
+# path any more; the rule only stops a stale local checkout being committed.
 /real-world-fixtures/
 
 # Scratch projects the VS Code debug suites materialise inside the fixture
 # workspace. They MUST live there — VS Code only resolves breakpoints and launch
 # targets for files inside an open workspace folder — but they are per-run
 # detritus, not fixtures. A crashed or killed run leaks one, and once committed
-# its StepTarget/Program.cs is globbed into TestFixtures.csproj alongside the
-# next run's copy: CS0101/CS0111 duplicate types, and every .NET and VS Code
-# job fails at fixture build before a single test runs.
-# Every directory the VS Code suites materialise inside the fixture workspace.
-# They MUST live there — VS Code only resolves breakpoints and launch targets
-# for files inside an open workspace folder — but they are per-run detritus, not
-# fixtures. A crashed or killed run leaks one, and once committed its generated
-# sources are globbed into TestFixtures.csproj alongside the next run's copy:
-# CS0101/CS0111 duplicate types, and every .NET and VS Code job fails at fixture
-# build before a single test runs.
+# its generated sources are globbed into TestFixtures.csproj alongside the next
+# run's copy: CS0101/CS0111 duplicate types, and every .NET and VS Code job
+# fails at fixture build before a single test runs.
 #
 # A whitelist, not a prefix list: the suites use two dozen different
 # `mkdtempSync` prefixes and add more freely, so naming them individually is a
-# race nobody wins. Only the committed fixtures below are tracked.
+# race nobody wins. Only the committed fixture directories below are tracked.
 /src/editors/vscode/test-fixtures/workspace/*/
+!/src/editors/vscode/test-fixtures/workspace/.vscode/
 !/src/editors/vscode/test-fixtures/workspace/crosslanguage/
 !/src/editors/vscode/test-fixtures/workspace/fsharp/
-/src/editors/vscode/test-fixtures/workspace/sharplsp-*/
 
-# Google Trends research output. `src/website/tools/trends-research.mjs` writes
-# this file by driving the live trends.google.com explore UI; it is a ~7 MB
-# capture of one run's raw API responses, reproducible on demand and read by
-# nothing in the build. Committed once by accident, it dwarfed every other file
-# in the repository.
+# Handshake residue from the screenshot suites, which write into the committed
+# website assets directory: `<name>.tmp-<pid>.png` plus a `.signal` file next to
+# the final PNG (src/editors/vscode/src/test/suite/test-helpers.ts). A killed run
+# leaks both into a tracked directory.
+/src/website/src/assets/screenshots/*.tmp-*
+/src/website/src/assets/screenshots/*.signal
+
+# Google Trends research output: `src/website/tools/trends-research.mjs` drives
+# the live explore UI and writes a ~7 MB capture of one run's raw API responses.
+# Reproducible on demand, read by nothing in the build; committed once by
+# accident, it dwarfed every other file in the repository.
 /src/website/tools/trends-results.json
 
+# -----------------------------------------------------------------------------
+# Agent and portfolio tooling
+# -----------------------------------------------------------------------------
+.too_many_cooks/
+.commandtree/
+.playwright-mcp/
+# Deslop's local index ([CI-DESLOP]) and the reports the CLI writes locally.
+.deslop/
+deslop-report.*
+deslop-*.log
 
+# -----------------------------------------------------------------------------
+# SharpLsp runtime state
+# -----------------------------------------------------------------------------
+# Profiler output; `profiler.output_directory` in src/sharplsp/src/config.rs.
 .sharplsp/profiles/

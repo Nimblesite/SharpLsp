@@ -3,7 +3,7 @@ name: spec-check
 description: Audit spec/plan documents against the codebase. Ensures every spec section has implementing code, tests, and matching logic. Use when the user says "check specs", "spec audit", or "verify specs".
 argument-hint: "[optional spec ID or filename filter]"
 ---
-<!-- agent-pmo:2efd847 -->
+<!-- agent-pmo:a72c926 -->
 
 # spec-check
 
@@ -241,16 +241,30 @@ Checked N spec sections across M files. All have implementing code, tests, and m
 
 ---
 
-## Rules
+## Search strategy summary
 
-- **NEVER modify spec files during this audit** — report only
-- **NEVER modify code files during this audit** — report only
-- **NEVER modify test files during this audit** — report only
+1. **Validate spec IDs:** Check all IDs are hierarchical, descriptive, grouped, and non-numbered
+2. **Find spec files:** Glob for `docs/**/*.md`, `SPEC.md`, `PLAN.md`, `specs/**/*.md` — in SharpLsp that is `docs/specs/**/*.md` and `docs/plans/**/*.md`, with `docs/specs/SHARPLSP-SPEC.md` as the root technical spec
+3. **Extract spec IDs:** Grep for `\[[A-Z][A-Z0-9]*(-[A-Z0-9]+)+\]` in those files
+4. **Find code refs:** Grep for the literal spec ID in all files, excluding `docs/`, `node_modules/`, `target/`, `.git/`, `*.md`
+5. **Find test refs:** Grep for the literal spec ID in test directories and test file patterns — `src/sharplsp/tests/`, `src/sidecars/*.Tests/`, `src/editors/vscode/src/test/`, `tools/**/*.test.mjs`
+6. **Read and compare:** Read the spec section content and the implementing code, compare logic
+
+## Key principles
+
 - **Fail fast.** Stop on the first violation. One fix at a time.
 - **Be pedantic.** If the spec says it, the code must do it. No "close enough".
 - **Quote everything.** Always quote the spec text and the code in error messages so the developer sees exactly what's wrong.
 - **Be actionable.** Every error must tell the developer what file to change and what to do.
-- **Exclude docs from code search.** Markdown files are documentation, not implementation.
-- **No numbered IDs.** Spec IDs are hierarchical descriptive slugs, NEVER sequential numbers.
+- **Exclude docs from code search.** Markdown files are documentation, not implementation. Only search actual code files for spec references.
+- **No numbered IDs.** Spec IDs are hierarchical descriptive slugs (`[AUTH-TOKEN-VERIFY]`), NEVER sequential numbers (`[SPEC-001]`). The first word is the group — sections sharing a group must be adjacent in the TOC. If you encounter numbered or ungrouped IDs, flag them as a violation.
+
+## Rules
+
+The Key principles above apply in full. In addition, and specific to this audit:
+
+- **NEVER modify spec files during this audit** — report only
+- **NEVER modify code files during this audit** — report only
+- **NEVER modify test files during this audit** — report only
 - If a spec section is aspirational (describes future work), note it but don't flag it as missing.
 - Spec IDs are case-sensitive — `[auth-login]` does NOT match `[AUTH-LOGIN]`.

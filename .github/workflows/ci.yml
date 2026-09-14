@@ -1,4 +1,4 @@
-# agent-pmo:0b21609
+# agent-pmo:a72c926
 ---
 # INVARIANT: This file is the orchestrator for the PR pipeline.
 # Phase 1 — ANALYSE. Lint, format checks, static analysis, every language. Nothing else runs until this is green. It builds nothing that later phases consume.
@@ -46,6 +46,15 @@ permissions:
 jobs:
   detect-changes:
     name: Detect Changed Paths
+    # Dependabot PRs run NO CI. Version bumps target the `dependabot-upgrades`
+    # staging branch (which this workflow does not watch); security bumps are
+    # force-opened against `main` by GitHub and are swept into that same staging
+    # branch within seconds by dependabot-automerge.yml. Burning the full matrix
+    # on a bump that is about to be swept away is pure waste — the batch is
+    # tested exactly once, at the `dependabot-upgrades -> main` consolidation PR.
+    # This is the cascade root: every job below `needs:` it, so skipping here
+    # skips the entire pipeline. [GITHUB-DEPENDABOT]
+    if: github.actor != 'dependabot[bot]'
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
@@ -230,3 +239,43 @@ jobs:
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
   # and a direct push to a protected branch ([DIST-CI-LAYOUT]). Thresholds
   # ratchet via the reviewed PR diff, not a bot commit.
+
+  # ══ TERMINAL GATE ═══════════════════════════════════════════════════
+  # The single status check `main`'s ruleset requires ([GITHUB-PROTECTION]).
+  # Everything above fans out into per-shard, per-chunk check names that change
+  # whenever the matrix changes — and the VS Code chunks are computed at runtime,
+  # so they cannot be named in a ruleset at all. This job collapses all of them
+  # into one fixed context, "CI", which is what branch protection pins.
+  #
+  # `always()` so it reports a real conclusion rather than inheriting a skip:
+  # on a docs-only PR every upstream job skips and this passes; on a Dependabot
+  # PR the whole pipeline skips and this passes; any failure or cancellation
+  # anywhere upstream fails it, and with it the merge.
+  ci:
+    name: CI
+    if: ${{ always() }}
+    needs:
+      - detect-changes
+      - analyse
+      - security
+      - validate-manifest
+      - build
+      - test-rust
+      - test-dotnet
+      - test-vsix
+      - test-vsix-windows
+      - test-editors
+      - test-tooling
+      - coverage
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        shell: bash
+        run: |-
+          echo "::error::A required CI job did not pass. See the failed job above."
+          exit 1
+      - name: Report
+        shell: bash
+        run: echo "All CI jobs passed or were skipped."

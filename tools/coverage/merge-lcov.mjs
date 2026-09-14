@@ -8,7 +8,7 @@
 // full set of instrumented lines (unexecuted ones as `DA:<line>,0`). Summing
 // hit counts per (file, line) across shards therefore reproduces exactly the
 // line set — and percentage — of a single unsharded run; the result feeds the
-// same tools/coverage/check-coverage.sh ratchet gate.
+// same tools/coverage/check-coverage.mjs ratchet gate.
 //
 // Usage: node tools/coverage/merge-lcov.mjs <output.lcov> <shard.lcov> [...]
 // stdout: merged line percentage only (for command substitution);
