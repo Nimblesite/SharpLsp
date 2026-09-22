@@ -3,12 +3,13 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as vscode from 'vscode';
 import { LanguageClient } from 'vscode-languageclient/node';
 import { sharedDebugConfiguration } from '../../debug-configuration';
 import * as state from '../../state';
 import { authoredConfigurationAttributes, fakeFolder } from './run-debug-kit';
 import { assertSchemaProperty, ATTACH_SCHEMA, LAUNCH_SCHEMA } from './run-debug-manifest-kit';
-import { removeDirRecursive } from './test-helpers';
+import { findSharpLspBinary, removeDirRecursive } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
 suite('Editor bridge to shared configuration', () => {
@@ -43,18 +44,19 @@ suite('Editor bridge to shared configuration', () => {
     const file = path.join(root, 'sharplsp.toml');
     const base = '[csharp]\nenabled = false\n[fsharp]\nenabled = false\n[debug.exceptions]\n';
     fs.writeFileSync(file, `${base}break_on = "all"\nignore = ["System.FormatException"]\n`);
-    const binary =
-      process.env['SHARPLSP_TEST_LSP'] ??
-      path.resolve(
-        __dirname,
-        '../../../../../../target/debug',
-        process.platform === 'win32' ? 'sharplsp.exe' : 'sharplsp',
-      );
+    // The server the extension itself runs in this test host: CI legs stage the
+    // release binary and build no `target/debug`.
+    const binary = findSharpLspBinary();
+    assert.ok(binary, 'Test host must resolve a staged sharplsp binary');
+    // A channel the client creates itself is disposed by `stop()` while the
+    // server is still writing its shutdown log to stderr, and that late write
+    // throws. The extension's own client passes a channel it keeps; so does this.
+    const outputChannel = vscode.window.createOutputChannel('Configuration test', { log: true });
     const client = new LanguageClient(
       'configuration-test',
       'Configuration test',
       { command: binary, options: { cwd: root } },
-      { documentSelector: [], workspaceFolder: folder },
+      { documentSelector: [], workspaceFolder: folder, outputChannel },
     );
     const previous = state.client.value;
     try {
@@ -92,7 +94,8 @@ suite('Editor bridge to shared configuration', () => {
       );
     } finally {
       state.client.value = previous;
-      await client.stop();
+      // A client that never started cannot stop, and its error would mask why.
+      if (client.isRunning()) await client.stop();
       removeDirRecursive(root);
     }
   });
