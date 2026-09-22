@@ -32,7 +32,6 @@ import {
   buildProjectXml,
   createSolution,
   installedFrameworkPair,
-  mtpProjectXml,
   MTP_PROPERTIES,
   MTP_TRX_REPORT,
   MTP_XUNIT_PACKAGES,
@@ -40,6 +39,7 @@ import {
   writeMtpGlobalJson,
   writeProject,
 } from './dotnet-project-kit';
+import { idsOf, mtpFixtureFor, writeMtpProject } from './test-explorer-mtp-fixtures';
 import {
   activateTestExplorer,
   discoverSolution,
@@ -63,16 +63,16 @@ const NAMESPACE = 'Cs.ModulesMtp.Fixtures';
 
 /** The project WITHOUT the TRX extension, so `--report-trx` fails on it. */
 const NO_TRX_PROJECT = 'NoTrxModulesMtpCs';
-const NO_TRX_NAMESPACE = 'Cs.NoTrxModulesMtp.Fixtures';
-const NO_TRX_PACKAGES = MTP_XUNIT_PACKAGES.filter((ref) => ref !== MTP_TRX_REPORT);
+const NO_TRX_FIXTURE = mtpFixtureFor('nunit-csharp');
+const NO_TRX_IDS = idsOf(NO_TRX_FIXTURE);
 
 /** The source file the edit-then-run test rewrites. */
 const CALCULATOR_FILE = 'CalculatorTests.cs';
 
 /** The test the user edits between discovery and ▶. */
 const EDITED = `${NAMESPACE}.CalculatorTests.Adds_TwoNumbers`;
-/** The only test of the module that cannot report per-test results. */
-const NO_TRX_ID = `${NO_TRX_NAMESPACE}.CalculatorTests.Adds_TwoNumbers`;
+/** A test of the module that cannot report per-test results. */
+const NO_TRX_ID = NO_TRX_FIXTURE.passing;
 
 /** One fact asserting `1 + 2` equals `expected` — green at 3, red otherwise. */
 function calculatorSource(namespace: string, expected: number): string {
@@ -142,13 +142,12 @@ async function createFixture(root: string, frameworks: readonly string[]): Promi
   );
   // C# globs its sources, so the second class needs no project edit.
   fs.writeFileSync(path.join(multi, 'FrameworkTests.cs'), frameworkSource(frameworks), 'utf8');
-  const bare = writeProject(
-    path.join(root, NO_TRX_PROJECT),
-    `${NO_TRX_PROJECT}.csproj`,
-    mtpProjectXml(NO_TRX_PACKAGES),
-    CALCULATOR_FILE,
-    calculatorSource(NO_TRX_NAMESPACE, 3),
-  );
+  const bare = writeMtpProject(root, {
+    ...NO_TRX_FIXTURE,
+    projectName: NO_TRX_PROJECT,
+    projectFileName: `${NO_TRX_PROJECT}.csproj`,
+    packages: NO_TRX_FIXTURE.packages.filter((ref) => ref.id !== MTP_TRX_REPORT.id),
+  });
   return await createSolution(root, 'ModulesMtp', [multi, bare]);
 }
 
@@ -166,7 +165,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform across several modules',
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-modules-'));
     frameworks = await installedFrameworkPair(root);
     slnPath = await createFixture(root, frameworks);
-    expected = [EDITED, ...frameworks.map(frameworkId), NO_TRX_ID];
+    expected = [EDITED, ...frameworks.map(frameworkId), ...NO_TRX_IDS];
     await discoverSolution(api, slnPath, expected);
   });
 
@@ -260,7 +259,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform across several modules',
     );
     assert.deepStrictEqual(
       sorted([...outcome.results.keys()]),
-      sorted(expected.filter((id) => id !== NO_TRX_ID)),
+      sorted(expected.filter((id) => !NO_TRX_IDS.includes(id))),
       'every module that wrote a report is still read',
     );
 

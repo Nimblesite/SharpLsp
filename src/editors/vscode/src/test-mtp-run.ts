@@ -21,15 +21,18 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
-import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
+import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
 import { relistModule } from './test-mtp-discovery.js';
+import { runReported } from './test-mtp-report.js';
 import { buildTarget, dirOf } from './test-mtp-modules.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
 import { collectReport, trxFiles, worse } from './test-trx-collect.js';
 import type { TrxRunInfo, TrxTestResult } from './test-trx.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
+
+export { runArgs } from './test-mtp-report.js';
 
 /** Ceiling on the uid arguments handed to ONE invocation. */
 export const MAX_UID_ARG_CHARS = MAX_ARG_CHARS;
@@ -68,28 +71,6 @@ function untouched(module: MtpModuleRun, testIds: readonly string[]): boolean {
 export function trxNameFor(modulePath: string, index: number): string {
   const stem = path.basename(modulePath, path.extname(modulePath));
   return `${stem}.${String(index)}.trx`;
-}
-
-/** The argument vector for one module invocation. */
-export function runArgs(
-  modulePath: string,
-  uids: readonly string[],
-  resultsDirectory: string,
-  options: TestRunOptions,
-  trxName: string,
-): string[] {
-  return [
-    'exec',
-    modulePath,
-    ...(uids.length === 0 ? [] : ['--filter-uid', ...uids]),
-    ...(options.debug === true ? [] : ['--report-trx', '--report-trx-filename', trxName]),
-    '--results-directory',
-    resultsDirectory,
-    '--no-banner',
-    '--no-ansi',
-    // `--no-progress` is deprecated since MTP 2.3 and warns on every run.
-    ...(options.coverage === true ? ['--coverage', '--coverage-output-format', 'cobertura'] : []),
-  ];
 }
 
 /** An empty outcome, so a run that started nothing still has a shape. */
@@ -172,14 +153,12 @@ async function invoke(
   uids: readonly string[],
   context: RunContext,
 ): Promise<TestRunOutcome> {
-  const { resultsDirectory, cwd, options } = context;
+  const { resultsDirectory, options } = context;
   fs.mkdirSync(resultsDirectory, { recursive: true });
   const before = new Set(trxFiles(resultsDirectory));
   const trxName = nextTrxName(module, context);
-  const args = runArgs(module.modulePath, uids, resultsDirectory, options, trxName);
   const started = Date.now();
-  const timeoutMs = options.timeoutMs ?? DOTNET_TIMEOUT_MS;
-  const run = await runDotnet(args, cwd, timeoutMs, options.signal, options.hooks);
+  const run = await runReported({ ...context, modulePath: module.modulePath, uids, trxName });
   const report = collectReport(resultsDirectory, before);
   return outcomeOf(module.modulePath, debugged(run, options), report, Date.now() - started);
 }
