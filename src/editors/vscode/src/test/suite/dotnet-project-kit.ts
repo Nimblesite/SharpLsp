@@ -337,6 +337,16 @@ export async function warmDiscovery(solutionPath: string, cwd: string): Promise<
   return dotnet(['test', solutionPath, '--list-tests', '--nologo', '--verbosity', 'quiet'], cwd);
 }
 
+/**
+ * The compilation symbol the SDK defines implicitly for a target framework.
+ *
+ * `net10.0` → `NET10_0`. Derived rather than pinned, because the frameworks
+ * themselves are read off the agent by {@link installedFrameworkPair}.
+ */
+export function symbolFor(framework: string): string {
+  return framework.toUpperCase().replace(/[.-]/gu, '_');
+}
+
 /** The shared framework whose installed runtimes decide what a test host can run. */
 const NETCORE_APP = 'Microsoft.NETCore.App';
 
