@@ -31,7 +31,12 @@ suite('global.json SDK pin', () => {
   function fakeDotnet(name: string, sdks: readonly string[]): string {
     const root = path.join(scratchDir, name);
     for (const sdk of sdks) fs.mkdirSync(path.join(root, 'sdk', sdk), { recursive: true });
-    const exe = path.join(root, 'dotnet');
+    // The PLATFORM's executable name. `findDotnetSatisfying` re-derives it from
+    // the root it is handed, so a fixture that only ever writes `dotnet` is
+    // invisible to it on Windows - every root is skipped, the pinned SDK is
+    // "not found", and the assertion below reads as a resolution bug that isn't
+    // one. A real Windows install holds dotnet.exe; so does this.
+    const exe = path.join(root, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet');
     fs.writeFileSync(exe, '');
     return exe;
   }
@@ -186,9 +191,18 @@ suite('global.json SDK pin', () => {
   });
 
   test('the candidate roots cover where each platform installs dotnet', () => {
-    const roots = candidateDotnetRoots({ DOTNET_ROOT: '/opt/pinned-dotnet' });
+    // Shaped for the platform, because `candidateDotnetRoots` normalises what it
+    // reads: on Windows `path.join('/opt/pinned-dotnet')` comes back as
+    // `\opt\pinned-dotnet`, so comparing against the POSIX spelling fails on a
+    // root that WAS honoured. Normalising is correct behaviour, so the fixture
+    // asks the question in the platform's own terms.
+    const pinnedRoot = path.join(
+      process.platform === 'win32' ? 'C:\\opt' : '/opt',
+      'pinned-dotnet',
+    );
+    const roots = candidateDotnetRoots({ DOTNET_ROOT: pinnedRoot });
 
-    assert.ok(roots.includes('/opt/pinned-dotnet'), `DOTNET_ROOT is honoured: ${roots.join()}`);
+    assert.ok(roots.includes(pinnedRoot), `DOTNET_ROOT is honoured: ${roots.join()}`);
     assert.ok(
       roots.includes(path.join(os.homedir(), '.dotnet')),
       `the user-local root - the one findPath missed - is probed: ${roots.join()}`,
