@@ -169,7 +169,7 @@ Rider's test framework (`BasePlatformTestCase`) loads a test project with a real
 
 ### Real-server smoke coverage `[RIDER-TESTS-SMOKE]`
 
-A manual dev-loop test, run from `make test-rider`:
+A manual dev-loop test, run from `make _test-rider`:
 
 1. `make install` — binaries in `~/.local/bin` and `~/.local/lib/sharplsp`.
 2. `./gradlew runIde` — boots a sandboxed Rider instance with the plugin.

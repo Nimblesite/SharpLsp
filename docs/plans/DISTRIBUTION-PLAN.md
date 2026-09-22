@@ -42,7 +42,7 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 
 ### Verification (clean Windows machine, no .NET 10 installed)
 
-- [ ] `make package-vsix-win32-x64 VERSION=0.1.1` succeeds
+- [ ] `make _package-vsix-win32-x64 VERSION=0.1.1` succeeds
 - [ ] Uninstall SharpLsp: `code --uninstall-extension nimblesite.sharplsp`
 - [ ] Uninstall the .NET Install Tool: `code --uninstall-extension ms-dotnettools.vscode-dotnet-runtime`
 - [ ] `code --install-extension dist/sharplsp-win32-x64.vsix` — VS Code auto-installs the .NET Install Tool dependency without prompting

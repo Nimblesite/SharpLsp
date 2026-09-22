@@ -6,6 +6,6 @@
     "titleBar.inactiveForeground": "#ffffffcc"
   },
   "deslop.topOffenders.splitByLanguage": true,
-  "makefile.makefilePath": "${workspaceFolder}/tools/make/vscode.mk",
+  "makefile.makefilePath": "${workspaceFolder}/Makefile",
   "makefile.phonyOnlyTargets": true
 }

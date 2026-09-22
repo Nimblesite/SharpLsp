@@ -10,7 +10,7 @@
 # It used to run the entire SharpLsp.Sidecar.Common.Tests project instead, which
 # re-executed about a dozen files of platform-agnostic assertions - XML doc
 # rendering, solution-file reading, metadata decompilation, log formatting - that
-# the Ubuntu job had already run. The filter lives in tools/make/main.mk beside
+# the Ubuntu job had already run. The filter lives in the root Makefile beside
 # the target, not in this YAML.
 name: CI / Test / .NET
 'on':
