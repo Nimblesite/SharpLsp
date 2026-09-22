@@ -110,8 +110,8 @@ BINDIR    = $(PREFIX)/bin
 CHECK_COV = node tools/coverage/check-coverage.mjs
 # Resolves a JDK 21+ and runs a Gradle task in the Rider project. [DIST-CI-RIDER]
 RIDER_GRADLE = sh tools/rider/gradle.sh
-MERGE_COBERTURA = dotnet run --file tools/coverage/merge-cobertura.cs --
-KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
+MERGE_COBERTURA = $(DOTNET) run --file tools/coverage/merge-cobertura.cs --
+KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
 
 # The public surface. Everything under it is an internal step or a CI leg.
 .PHONY: build ci test lint fmt clean audit setup \
@@ -177,10 +177,12 @@ export PATH := $(SHARPLSP_DOTNET_ROOT):$(PATH)
 endif
 endif
 
+DOTNET = $(if $(SHARPLSP_DOTNET_ROOT),$(SHARPLSP_DOTNET_ROOT)/,)dotnet$(EXE_EXT)
+
 CHECK_DOTNET_PIN = \
 	if [ -z "$$SHARPLSP_DOTNET_ROOT" ]; then \
 		echo "ERROR: no dotnet on this machine satisfies the SDK pinned in global.json." >&2; \
-		dotnet --version 2>&1 | sed 's/^/       /' >&2 || true; \
+		$(DOTNET) --version 2>&1 | sed 's/^/       /' >&2 || true; \
 		echo "       Install the pinned SDK with: make install-dotnet-10" >&2; \
 		exit 1; \
 	fi; \
@@ -205,8 +207,8 @@ _build-rust:
 _build-dotnet:
 	@$(CHECK_DOTNET_PIN)
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
-	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
-	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
+	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
+	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 
 _build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
@@ -361,8 +363,8 @@ _audit-rust:
 _audit-dotnet:
 	@echo "==> dotnet list package --vulnerable $(SIDECAR_SLN)"
 	@mkdir -p $(dir $(AUDIT_DOTNET_JSON))
-	dotnet restore $(SIDECAR_SLN) --verbosity quiet
-	dotnet list $(SIDECAR_SLN) package --vulnerable --include-transitive --format json > $(AUDIT_DOTNET_JSON)
+	$(DOTNET) restore $(SIDECAR_SLN) --verbosity quiet
+	$(DOTNET) list $(SIDECAR_SLN) package --vulnerable --include-transitive --format json > $(AUDIT_DOTNET_JSON)
 	@node tools/audit/dotnet-vulnerable.mjs $(AUDIT_DOTNET_JSON) $(AUDIT_LEVEL)
 
 _audit-npm:
@@ -384,7 +386,7 @@ RUST_E2E_SIDECARS = \
 
 _prepare-rust-tests: $(if $(VSIX_PREBUILT),,_build-dotnet) _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
-	dotnet build src/sharplsp/tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
+	$(DOTNET) build src/sharplsp/tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
 
 _test-rust: _prepare-rust-tests
 	@echo "==> Running sharplsp tests with coverage..."
@@ -637,7 +639,7 @@ _test-rider:
 _test-dotnet: $(if $(VSIX_PREBUILT),,_build-dotnet)
 	@echo "==> Running .NET sidecar tests..."
 	@rm -rf target/coverage-dotnet
-	dotnet test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \
+	$(DOTNET) test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \
 		--collect:"XPlat Code Coverage" \
 		--results-directory target/coverage-dotnet \
 		--settings .config/coverage/coverlet.runsettings \
@@ -663,7 +665,7 @@ DOTNET_WIN_TRANSPORT_FILTER = FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.I
 
 _test-dotnet-win-transport:
 	@echo "==> Running win32 named-pipe transport tests..."
-	dotnet test $(SIDECAR_COMMON_TESTS) --configuration $(DOTNET_CFG) \
+	$(DOTNET) test $(SIDECAR_COMMON_TESTS) --configuration $(DOTNET_CFG) \
 		--filter "$(DOTNET_WIN_TRANSPORT_FILTER)" \
 		--blame-hang-timeout 2min --blame-hang-dump-type none
 
@@ -720,7 +722,7 @@ _check-sdk-pin:
 # like `/p:...` on Windows (strips the `/`, MSBuild then reads it as a project
 # path and fails with MSB1008). Dash-form behaves identically on all platforms.
 _lint-dotnet:
-	dotnet build $(SIDECAR_SLN) --configuration $(DOTNET_CFG) -warnaserror \
+	$(DOTNET) build $(SIDECAR_SLN) --configuration $(DOTNET_CFG) -warnaserror \
 		-p:UseSharedCompilation=false -nodeReuse:false -maxcpucount:1
 
 # ── Format ───────────────────────────────────────────────────────
@@ -738,8 +740,8 @@ _fmt-vsix:
 	cd $(VSCODE_DIR) && npx prettier --write 'src/**/*.ts'
 
 _fmt-dotnet:
-	dotnet csharpier format $(dir $(SIDECAR_SLN))
-	dotnet format $(SIDECAR_SLN)
+	$(DOTNET) csharpier format $(dir $(SIDECAR_SLN))
+	$(DOTNET) format $(SIDECAR_SLN)
 
 # ── Screenshots ───────────────────────────────────────────────────
 
@@ -1075,8 +1077,8 @@ setup:
 	cargo install cargo-llvm-cov || true
 	cargo install cargo-audit --locked || true
 	npm install --prefix $(VSCODE_DIR)
-	dotnet restore $(SIDECAR_SLN)
-	dotnet tool restore
+	$(DOTNET) restore $(SIDECAR_SLN)
+	$(DOTNET) tool restore
 	@echo "==> Setup complete. Run 'make ci' to validate."
 
 # ── .NET 10 SDK + Runtime install/uninstall ───────────────────────
@@ -1107,23 +1109,23 @@ install-dotnet-10:
 	fi
 	sudo bash $(DOTNET_INSTALL_SCRIPT) --channel 10.0 --install-dir /usr/local/share/dotnet
 	@echo "==> .NET 10 installed:"
-	@dotnet --list-sdks | grep '^10\.' || true
-	@dotnet --list-runtimes | grep '^Microsoft.*10\.' || true
+	@$(DOTNET) --list-sdks | grep '^10\.' || true
+	@$(DOTNET) --list-runtimes | grep '^Microsoft.*10\.' || true
 
 _uninstall-dotnet-10:
 	@echo "==> Uninstalling .NET 10 SDK + runtime from /usr/local/share/dotnet..."
-	@for sdk in $$(dotnet --list-sdks 2>/dev/null | awk '/^10\./ {print $$1}'); do \
+	@for sdk in $$($(DOTNET) --list-sdks 2>/dev/null | awk '/^10\./ {print $$1}'); do \
 		echo "  Removing SDK $$sdk..."; \
 		sudo rm -rf "/usr/local/share/dotnet/sdk/$$sdk"; \
 	done
-	@for rt in $$(dotnet --list-runtimes 2>/dev/null | awk '/10\./ {print $$2}'); do \
+	@for rt in $$($(DOTNET) --list-runtimes 2>/dev/null | awk '/10\./ {print $$2}'); do \
 		echo "  Removing runtime $$rt..."; \
 		sudo rm -rf "/usr/local/share/dotnet/shared/Microsoft.NETCore.App/$$rt"; \
 		sudo rm -rf "/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App/$$rt"; \
 		sudo rm -rf "/usr/local/share/dotnet/host/fxr/$$rt"; \
 	done
 	@echo "==> .NET 10 removed. Remaining:"
-	@dotnet --list-sdks || true
-	@dotnet --list-runtimes || true
+	@$(DOTNET) --list-sdks || true
+	@$(DOTNET) --list-runtimes || true
 
 endif
