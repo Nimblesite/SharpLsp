@@ -527,6 +527,8 @@ netcoredbg reports physical `MoveNext` frames. `DapRouter` and the C# sidecar re
 
 If compiler-generated fields cannot be resolved, the response retains the physical stack unchanged.
 
+Phase Four performs steps 2–5 through netcoredbg itself ([`dap-async-chain.ts`](../../src/editors/vscode/src/dap-async-chain.ts)). `DapRouter` sets `Task.s_asyncDebuggingEnabled` at the entry stop, so every suspended builder box registers in `Task.s_currentActiveTasks`. The router then follows each box's `m_continuationObject` to the box that awaits it. Every hop (`Action._target`, `ContinuationWrapper._continuation`, `AwaitTaskContinuation.m_action`) is a field read by `evaluate`, never a `variables` expansion. netcoredbg runs an expanded object's property getters as func-evals inside the stopped debuggee, and a getter deadlocked on a runtime lock costs the 5 s evaluation timeout and the chain. A refused hop cuts the chain, and the router still stitches the physical stacks. Only a continuation that carries no box ends the chain.
+
 Phase Five reads continuation chains directly through `ICorDebugProcess::ReadMemory`, without a Roslyn compilation model.
 
 ### Variables and Inspection `[DEBUG-FEATURES-VARIABLES]`

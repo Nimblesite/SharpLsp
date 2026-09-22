@@ -10,7 +10,14 @@
 // which every suspended async method's builder box registers itself in
 // `Task.s_currentActiveTasks`. Walking that dictionary and each box's
 // `m_continuationObject` IS the continuation traversal, performed through DAP
-// `evaluate`/`variables` instead of `ICorDebugObjectValue::GetFieldValue`.
+// `evaluate` instead of `ICorDebugObjectValue::GetFieldValue`.
+//
+// Every continuation hop is a FIELD read. Expanding a carrier with `variables`
+// makes netcoredbg run each of its property getters inside the stopped
+// debuggee (`Delegate.Method` is reflection), and a func-eval that deadlocks
+// against a thread holding a runtime lock - the main thread still creating the
+// thread pool's gate thread, say - costs netcoredbg's 5 s evaluation timeout
+// and the whole chain.
 //
 // Everything here is bounded and fail-open: any refused request, missing
 // field, ambiguous edge or exhausted budget abandons the walk, and the caller
@@ -40,6 +47,30 @@ const MAX_HOPS = 32;
 /** `variables` entries examined when searching one object graph. */
 const MAX_DIG = 48;
 
+/** Carrier hops followed from one continuation to the box that awaits it. */
+const MAX_CARRIER_HOPS = 8;
+
+/** Items of a multi-continuation list examined for an awaiting box. */
+const MAX_LIST_ITEMS = 4;
+
+/** The runtime type of `m_continuationObject` once a task has several continuations. */
+const CONTINUATION_LIST = 'System.Collections.Generic.List<object>';
+
+/**
+ * The field that carries a continuation one hop nearer its awaiting box, by the
+ * carrier's runtime type. With async debugging armed, an awaiter registers its
+ * box's `MoveNextAction` inside a `ContinuationWrapper`, so a continuation reads
+ * `Action -> ContinuationWrapper -> Action -> AsyncStateMachineBox`.
+ * `ContinuationWrapper._innerTask` names the task AWAITED, never the awaiter.
+ */
+const CARRIER_FIELDS: ReadonlyMap<string, string> = new Map([
+  ['System.Action', '_target'],
+  ['System.Runtime.CompilerServices.AsyncMethodBuilderCore.ContinuationWrapper', '_continuation'],
+  ['System.Threading.Tasks.AwaitTaskContinuation', 'm_action'],
+  ['System.Threading.Tasks.SynchronizationContextAwaitTaskContinuation', 'm_action'],
+  ['System.Threading.Tasks.TaskSchedulerAwaitTaskContinuation', 'm_action'],
+]);
+
 /** What the chain walker needs from its owning router. */
 export interface ChainHost {
   /** Request in the router's own name and await the response. */
@@ -59,15 +90,14 @@ interface TaskNode {
   readonly smType: string;
   /** `variablesReference` of the state machine object — its hoisted locals. */
   readonly smRef: number;
-  /** `variablesReference` of the whole registry box (`AsyncStateMachineBox`). */
-  readonly boxRef: number;
   /** The logical method name, when the type name yields one. */
   readonly method: string | undefined;
   /** The qualified prefix in front of the method (`Ns.Type`). */
   readonly prefix: string;
-  /** The continuation's runtime type, or undefined while unhooked. */
+  /** The continuation's runtime type, or undefined while unhooked or unreadable. */
   readonly contType: string | undefined;
-  readonly contRef: number;
+  /** The expression that reads the continuation, extended field by field per hop. */
+  readonly contPath: string;
   used: boolean;
 }
 
@@ -185,22 +215,21 @@ async function readSlot(
   if (value === undefined || value.result === 'null') return undefined;
   const machine = await evaluate(host, frameId, `${entry}.value.StateMachine`);
   if (machine === undefined) return undefined;
-  const cont = await evaluate(host, frameId, `${entry}.value.m_continuationObject`);
-  return nodeFrom(machine, cont, value.ref);
+  const contPath = `${entry}.value.m_continuationObject`;
+  return nodeFrom(machine, await evaluate(host, frameId, contPath), contPath);
 }
 
 /** Assemble one node from its evaluated state machine and continuation. */
-function nodeFrom(machine: Evaluated, cont: Evaluated | undefined, boxRef = 0): TaskNode {
+function nodeFrom(machine: Evaluated, cont: Evaluated | undefined, contPath: string): TaskNode {
   const smType = machine.type !== '' ? machine.type : unbrace(machine.result);
   const { method, prefix } = parseMachineType(smType);
   return {
     smType,
     smRef: machine.ref,
-    boxRef,
     method,
     prefix,
     contType: cont === undefined || cont.result === 'null' ? undefined : unbrace(cont.result),
-    contRef: cont?.ref ?? 0,
+    contPath,
     used: false,
   };
 }
@@ -288,72 +317,81 @@ function frameOf(method: string, prefix: string, localsRef: number): AwaitingFra
 /** Follow one continuation edge; 'sink' ends the chain, undefined cuts it. */
 async function nextHop(
   host: ChainHost,
+  frameId: number,
   nodes: readonly TaskNode[],
   current: TaskNode,
 ): Promise<TaskNode | AwaitingFrame | 'sink' | undefined> {
   if (current.contType === undefined) return undefined;
-  const byBoxRef = new Map(
-    nodes
-      .filter((node) => node !== current && node.boxRef > 0)
-      .map((node) => [node.boxRef, node.smType]),
-  );
-  const inner =
-    (current.contRef > 0 ? byBoxRef.get(current.contRef) : undefined) ??
-    boxStateMachineType(current.contType) ??
-    (await digBoxedContinuation(host, current.contRef, current.smType, byBoxRef));
-  if (inner === undefined) return 'sink';
-  const node = soleMatch(nodes, inner);
+  const carried = { path: current.contPath, type: current.contType };
+  const lead = await awaitingMachine(host, frameId, carried, current.smType, MAX_CARRIER_HOPS);
+  if (lead === undefined || lead === 'sink') return lead;
+  const node = soleMatch(nodes, lead.machine);
   if (node !== undefined) return node;
-  const { method, prefix } = parseMachineType(inner);
+  const { method, prefix } = parseMachineType(lead.machine);
   return method === undefined ? 'sink' : frameOf(method, prefix, 0);
 }
 
-/** Search a wrapped continuation (context callbacks etc.) for its box. */
-async function digBoxedContinuation(
+/** One object on the way from a continuation to its box: how to read it, what it is. */
+interface Carried {
+  readonly path: string;
+  readonly type: string;
+}
+
+/**
+ * Where a continuation leads: the state machine of the box that awaits, 'sink'
+ * for a continuation that carries no box - a blocked waiter - or undefined when
+ * a hop was REFUSED: a cut, which the caller still stitches from the physical
+ * stacks rather than presenting as the end of the chain.
+ */
+type Lead = { readonly machine: string } | 'sink' | undefined;
+
+/** Cross carriers one FIELD at a time to the box a continuation leads to. */
+async function awaitingMachine(
   host: ChainHost,
-  ref: number,
-  currentMachineType?: string,
-  byBoxRef: ReadonlyMap<number, string> = new Map(),
-): Promise<string | undefined> {
-  const visited = new Set<number>();
-  const direct = byBoxRef.get(ref);
-  if (direct !== undefined) return direct;
-  let spent = 0;
+  frameId: number,
+  carried: Carried,
+  from: string,
+  budget: number,
+): Promise<Lead> {
+  const machine = boxStateMachineType(carried.type);
+  if (machine !== undefined) return machine === from ? 'sink' : { machine };
+  if (carried.type === CONTINUATION_LIST) {
+    return await listedMachine(host, frameId, carried, from, budget);
+  }
+  const field = CARRIER_FIELDS.get(carried.type);
+  if (field === undefined) return 'sink';
+  const next =
+    budget > 0 ? await readCarried(host, frameId, `${carried.path}.${field}`) : undefined;
+  if (next === undefined || next === 'null') return next === 'null' ? 'sink' : undefined;
+  return await awaitingMachine(host, frameId, next, from, budget - 1);
+}
 
-  /** Descend through delegate/wrapper fields; junk (reflection objects,
-   * IntPtrs) is never expanded, so the budget goes to the wrapper chain. */
-  const descend = async (candidate: number, depth: number): Promise<string | undefined> => {
-    if (depth > 8 || candidate <= 0 || visited.has(candidate)) return undefined;
-    visited.add(candidate);
-    for (const child of await expand(host, candidate)) {
-      spent += 1;
-      if (spent > MAX_DIG) return undefined;
-      // `ContinuationWrapper._innerTask` names the task being AWAITED — the
-      // caller's own box — not the awaiter. Matching it yields the machine we
-      // are walking FROM (a self-loop that cuts the chain); the awaiter lives
-      // in `_continuation`.
-      const name = textOf(child.name);
-      const childRef = Number(child.variablesReference ?? 0);
-      if (/innerTask/i.test(name)) continue;
-      const referred = childRef > 0 ? byBoxRef.get(childRef) : undefined;
-      if (referred !== undefined) return referred;
-      const rendered = [textOf(child.type), unbrace(textOf(child.value))];
-      for (const text of rendered) {
-        const inner = boxStateMachineType(text);
-        if (inner !== undefined && inner !== currentMachineType) return inner;
-      }
-      // Wrapper and delegate fields carry the chain onward; anything else is
-      // a dead end.
-      const wrapperish = rendered.some((text) => /action|func|delegate|continuation/i.test(text));
-      if (wrapperish && childRef > 0) {
-        const found = await descend(childRef, depth + 1);
-        if (found !== undefined) return found;
-      }
-    }
-    return undefined;
-  };
+/** The box awaiting among a task's several continuations: the first one found. */
+async function listedMachine(
+  host: ChainHost,
+  frameId: number,
+  list: Carried,
+  from: string,
+  budget: number,
+): Promise<Lead> {
+  for (let index = 0; index < MAX_LIST_ITEMS; index += 1) {
+    const item = await readCarried(host, frameId, `${list.path}._items[${String(index)}]`);
+    if (item === undefined || item === 'null') return item === 'null' ? 'sink' : undefined;
+    const lead = await awaitingMachine(host, frameId, item, from, budget - 1);
+    if (lead !== 'sink') return lead;
+  }
+  return 'sink';
+}
 
-  return await descend(ref, 0);
+/** Read one carrier field by `evaluate`: its runtime type, 'null', or undefined when refused. */
+async function readCarried(
+  host: ChainHost,
+  frameId: number,
+  path: string,
+): Promise<Carried | 'null' | undefined> {
+  const read = await evaluate(host, frameId, path);
+  if (read === undefined) return undefined;
+  return read.result === 'null' ? 'null' : { path, type: unbrace(read.result) };
 }
 
 /** The registered activation the paused frame is executing, if any. */
@@ -386,25 +424,23 @@ export async function readAsyncChain(
   const start = startNode(nodes, pausedSmType, pausedMethod);
   if (start === undefined) return undefined;
   start.used = true;
-  return await followChain(host, nodes, start);
+  return await followChain(host, frameId, nodes, start);
 }
 
 /** Walk the continuation edges from the paused activation outward. */
 async function followChain(
   host: ChainHost,
+  frameId: number,
   nodes: readonly TaskNode[],
   start: TaskNode,
 ): Promise<AsyncChain> {
   const frames: AwaitingFrame[] = [];
   let current = start;
   for (let hop = 0; hop < MAX_HOPS; hop += 1) {
-    const next = await nextHop(host, nodes, current);
+    const next = await nextHop(host, frameId, nodes, current);
     if (next === undefined) return { frames, complete: false };
     if (next === 'sink') return { frames, complete: true };
-    if (!isNode(next)) {
-      frames.push(next);
-      return { frames, complete: true };
-    }
+    if (!isNode(next)) return { frames: [...frames, next], complete: true };
     next.used = true;
     if (next.method !== undefined) frames.push(frameOf(next.method, next.prefix, next.smRef));
     current = next;

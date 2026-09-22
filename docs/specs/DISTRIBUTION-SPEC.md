@@ -755,6 +755,12 @@ Invariants:
   test first and the helper's "what did it actually see" message is never
   printed. In-test polls take `LSP_RESPONSE_MS`; a warmup poll inside a
   `REAL_REPO_MS` hook takes `REAL_REPO_WARMUP_MS`.
+- **The whole-run ceiling is per chunk.** `WHOLE_RUN_MS` (20 min) bounds one
+  chunk in `test-cli-runner.cjs`, below the CI job's `timeout-minutes`, so a hung
+  chunk still prints its mocha report. A run with no `MOCHA_FILES` runs every
+  chunk in one process (`make test`), and its ceiling is `WHOLE_RUN_MS` times the
+  number of chunks in `test-chunks.json`. A single-chunk ceiling on the whole
+  suite kills a healthy run part-way through.
 - **A shard that resolves to no suites fails.** `RUN_VSIX_SUITE` refuses to run
   when `CHUNK` is set and the manifest yields nothing, rather than falling back
   to the empty `MOCHA_FILES` that means "run everything".

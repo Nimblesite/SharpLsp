@@ -22,6 +22,7 @@
 //
 // Covers [TEST-MTP-DETECT], [TEST-MTP-DISCOVERY] and [TEST-MTP-RUN].
 import * as assert from 'node:assert/strict';
+import * as path from 'node:path';
 import {
   MTP_INVALID_COMMAND_LINE,
   mtpIds,
@@ -462,17 +463,20 @@ suite('Test Explorer MTP — the readers that decide what is discovered and run'
       'XunitMtpCs/XunitMtpCs.csproj',
       '',
     ].join('\n');
-    const projects = parseSolutionProjects(output, '/repo');
+    // The solution directory is absolute on THIS platform, as `projectsOf` hands
+    // it over, so the projects are native absolute paths: `D:\repo\…` on Windows.
+    const repo = path.resolve('/repo');
+    const projects = parseSolutionProjects(output, repo);
 
     assert.deepStrictEqual(projects, [
-      '/repo/XunitMtpFs/XunitMtpFs.fsproj',
-      '/repo/XunitMtpCs/XunitMtpCs.csproj',
+      path.join(repo, 'XunitMtpFs', 'XunitMtpFs.fsproj'),
+      path.join(repo, 'XunitMtpCs', 'XunitMtpCs.csproj'),
     ]);
     assert.deepStrictEqual(
-      parseSolutionProjects(['Projekt(e)', '------', 'A/A.csproj'].join('\n'), '/repo'),
-      ['/repo/A/A.csproj'],
+      parseSolutionProjects(['Projekt(e)', '------', 'A/A.csproj'].join('\n'), repo),
+      [path.join(repo, 'A', 'A.csproj')],
       'a localized header must not become a project path',
     );
-    assert.deepStrictEqual(parseSolutionProjects('', '/repo'), []);
+    assert.deepStrictEqual(parseSolutionProjects('', repo), []);
   });
 });
