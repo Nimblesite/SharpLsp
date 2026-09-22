@@ -74,10 +74,16 @@ clone_commit() {
 clone_commit "https://github.com/Samsung/netcoredbg.git" "$NETCOREDBG_COMMIT" "$SOURCE"
 clone_commit "https://github.com/dotnet/runtime.git" "$CORECLR_COMMIT" "$CORECLR"
 
+# [DIST-DEBUGGER-BUNDLE] Upstream mixes CRLF files (steppers.cpp) with LF ones
+# (vscodeprotocol.cpp), and this repo stores every patch LF. Apply against
+# line-ending-normalised content, never the runner's own core.autocrlf: under
+# `false` (the Linux runner default) a CRLF target rejects an LF patch.
+apply_patch() { git -C "$SOURCE" -c core.autocrlf=input apply "$@"; }
+
 for patch in "${PATCHES[@]}"; do
-  if git -C "$SOURCE" apply --check "$patch" 2>/dev/null; then
-    git -C "$SOURCE" apply "$patch"
-  elif ! git -C "$SOURCE" apply --reverse --check "$patch"; then
+  if apply_patch --check "$patch" 2>/dev/null; then
+    apply_patch "$patch"
+  elif ! apply_patch --reverse --check "$patch"; then
     echo "netcoredbg: $patch does not apply cleanly to $NETCOREDBG_COMMIT" >&2
     exit 1
   fi
