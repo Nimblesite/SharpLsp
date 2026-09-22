@@ -1,4 +1,5 @@
 # CLAUDE.md
+<!-- agent-pmo:a72c926 -->
 
 ⚠️ Never kill VS Code processes — not desktop, not browser. They belong to the user. ⚠️
 ⚠️ Don't ask the user questions — use your judgment. ⚠️
@@ -60,9 +61,54 @@ F# ahead of C# when building new features. F# never takes the backseat.
 # Git
 
 - Worktrees = ⛔️ ILLEGAL. Only one branch at a time is allowed
-- Default to never performing write operations unless the user explicitly requests
-- Log BUG type GitHub issues when you encounter bugs in release
-- Never use worktrees or more than one feature branch at a time
+
+**Default to NOT touching git at all.** Use git only when the user has explicitly green-lit it for
+the task (open a PR, merge, cut a branch). Absent that, leave commits, branches, pushes and merges
+to the user and CI. Log BUG type GitHub issues when you encounter bugs in release.
+
+The rules below govern the cases where you *have* been green-lit:
+
+- **NEVER push to `main` directly.** Always PR → CI green → merge. No exceptions. `main` is
+  protected by a ruleset that requires a PR and the `CI` status check, with branches up to date
+  before merge — a direct push is rejected anyway.
+- **Once you open a PR, OWN it until it is green.** Enable auto-merge (`gh pr merge --auto --squash`)
+  so it lands the moment checks pass — but that does NOT end your job. Monitor the pipeline; when a
+  check fails, pull the logs, fix the cause, push the fix, and loop until every required check
+  passes. Never hand a PR back on a red or still-running pipeline.
+- **NEVER list yourself as a commit co-author.** No `Co-Authored-By` trailer, no agent attribution
+  in the commit message. This one is never overridable.
+- **Work on exactly ONE branch at a time. Always.** Even when several agents share the repo — they
+  share the single branch and coordinate through TMC, they do not cut their own.
+- **NEVER start a new branch when a feature branch already exists.** Check first; work on the open one.
+- **If multiple feature branches already exist, merge them into one IMMEDIATELY**, before any other work.
+- **Worktrees are forbidden.** Never run `git worktree` unless the user explicitly demands one.
+
+Branch naming: `feature/[ISSUE]-[slug]`, `fix/[ISSUE]-[slug]`, `chore/[slug]`, `release/[semver]`.
+Default branch is `main`, never `master`. Squash-merge only; delete the branch after merge.
+
+**Auto-memory is OFF.** Persistent rules go through a reviewed PR to this file — never auto-captured
+memory. Pinned for every contributor by `"autoMemoryEnabled": false` in the committed
+`.claude/settings.local.json`.
+
+# Logging
+
+Every diagnostic goes through a structured logging library — `tracing` in the Rust host,
+`Microsoft.Extensions.Logging` in both sidecars, and the extension's own channel logger in the
+editors. `println!`, `Console.WriteLine`, `printfn` and `console.log` are prohibited for diagnostics.
+
+- **Log at entry/exit of significant operations** — LSP request handling, sidecar spawn/restart,
+  workspace load, IPC round-trips. Levels: `error`, `warn`, `info`, `debug`, `trace`. Silent
+  failures are forbidden.
+- **Structured fields, not string interpolation.** `{ method: "textDocument/completion", uri, ms }`,
+  never `"completion for {uri} took {ms}ms"`.
+- **VS Code extension**: detailed structured logs to a file under the extension's state folder AND
+  basic errors/diagnostics to the VS Code Output Channel — both sinks active at once, so a user can
+  see failures without hunting for a file.
+- **I/O sinks are async.** A log write never blocks an LSP request or the UI thread.
+- **NEVER log PII** — names, emails, addresses, phone numbers, IPs.
+- **NEVER log secrets.** No tokens, keys or connection strings. To confirm a key is loaded, log
+  `"API key: present"` or a truncated hash — never the value. Source file *contents* are user data:
+  log URIs, ranges and lengths, not the text.
 
 ## Duplication — [Deslop - MCP or CLI](https://deslop.live/docs/for-ai/) 
 

@@ -113,6 +113,39 @@ the UNION of the frameworks' listings, never the first framework's alone — a t
 behind `#if NET8_0` exists in only one assembly, and dropping it would trade a duplicated
 tree for a missing test.
 
+## Go to Test `[TEST-GOTO-SOURCE]`
+
+The Testing view's built-in **Go to Test** action (`testing.editFocusedTest`) reveals a test
+item at `TestItem.uri` and `TestItem.range`. It is menu-gated on `testItemHasUri`, so an item
+with no URI does not even offer the action, and an item whose URI is a DIRECTORY opens
+nothing at all — the user right-clicks a test, picks Go to Test, and the editor does not move.
+
+Every TEST leaf MUST therefore carry:
+
+- `uri` — the **source file that declares the test**, never the project directory, the
+  solution directory or the built assembly. `vscode.workspace.openTextDocument(uri)` must
+  succeed on it.
+- `range` — the declaration of the test itself, so the reveal lands on the method/binding and
+  not on line 1 of a file that happens to hold a hundred tests.
+
+This holds for **F# first**: an idiomatic `let \`\`adds two numbers\`\` ()` binding in a module
+must resolve to its own line in the `.fs` file exactly as a C# `[Fact]` method resolves to its
+line in the `.cs` file. Locations come from the AST/CST of the declaring document — never
+from string or regex matching over source text.
+
+Group nodes (Assembly → Namespace → Class) carry the same contract where a single declaring
+file exists for them; an assembly root has no source file and keeps the project directory.
+
+A runner's own location wins (MTP reports one for every framework except NUnit). Every test it
+does not locate, including every VSTest test, is found in the discovery target's
+`sharplsp/workspaceSymbols` tree ([SE-WORKSPACE-SYMBOLS-REQUEST]), whether that target is the
+loaded solution or a workspace folder, by the name .NET reports: a member joins its container with
+`.`, and a type or F# module nested in a type or module joins with `+` (`Ns.Outer+Inner.M`; an F#
+module compiles to a static class). F# declarations are re-rooted under the file's root namespace
+or module by range. The reveal lands on the symbol's `selectionRange`, and a data-row id
+(`M(a: 1)`) is declared as its method `M` (`test-source-locations.ts`). Discovery re-runs when the
+server comes (back) up, so a sweep that ran before it did gains its locations.
+
 ## Filter Grammar `[TEST-FILTER-ESCAPE]`
 
 `--filter` takes an EXPRESSION, not a literal. `\`, `(`, `)`, `&`, `|`, `=`, `!` and `~` are

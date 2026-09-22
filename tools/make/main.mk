@@ -9,6 +9,10 @@
 #   make lint                         lint all languages
 #   make fmt                          format all languages
 #   make clean                        remove build artifacts
+#   make reinstall-vsix               uninstall + full clean + rebuild (host, sidecars, extension)
+#                                     + package + reinstall the VSIX (macOS/Linux/Windows)
+#   make install-vsix                 install dist/sharplsp.vsix into VS Code
+#   make uninstall-vsix               remove the installed extension
 #   make setup                        install toolchain dependencies
 #   make screenshots                  capture website screenshots from real VS Code
 #   make website-build                build the website
@@ -123,7 +127,34 @@ KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix _package-archive \
         _deploy-rust _deploy-sidecars \
+        reinstall-vsix install-vsix uninstall-vsix \
         _kill _clean-rider
+
+# The sidecars build against the SDK pinned in global.json ([DIST-RUNTIME-ACQUIRE]).
+# `dotnet --list-sdks | grep '^10\.'` was never that check: a 10.0.2xx SDK passes
+# it, and then `dotnet publish` dies with a bare exit 155, because `rollForward:
+# latestPatch` does not cross SDK feature bands. So let the dotnet host evaluate
+# the pin itself - `dotnet --version` reads global.json - and when it cannot,
+# surface the pin, what this host can see, and any OTHER dotnet root on the
+# machine that does satisfy it. A user-local ~/.dotnet is invisible to a
+# /usr/local host, which is a PATH problem wearing a missing-SDK costume.
+CHECK_DOTNET_PIN = \
+	dotnet --version >/dev/null 2>&1 || { \
+		echo "ERROR: no SDK visible to the dotnet on PATH satisfies global.json." >&2; \
+		dotnet --version 2>&1 | sed 's/^/       /' >&2; \
+		for root in "$$HOME/.dotnet" /usr/local/share/dotnet \
+			"$$LOCALAPPDATA/Microsoft/dotnet" "$$ProgramFiles/dotnet"; do \
+			[ -x "$$root/dotnet" ] || continue; \
+			DOTNET_ROOT="$$root" "$$root/dotnet" --version >/dev/null 2>&1 || continue; \
+			echo "" >&2; \
+			echo "       $$root HAS a matching SDK but is not the dotnet on PATH." >&2; \
+			echo "       Use it for this shell with:" >&2; \
+			echo "         export DOTNET_ROOT=\"$$root\" PATH=\"$$root:\$$PATH\"" >&2; \
+			exit 1; \
+		done; \
+		echo "       Install the pinned SDK with: make install-dotnet-10" >&2; \
+		exit 1; \
+	}
 
 # ── Build ─────────────────────────────────────────────────────────
 
@@ -142,12 +173,8 @@ _build-rust:
 	@test -f $(BINARY) || { echo "ERROR: $(BINARY) not found" >&2; exit 1; }
 
 _build-dotnet:
-	@echo "==> Checking for .NET 10 SDK..."
-	@dotnet --list-sdks 2>/dev/null | grep -q '^10\.' || { \
-		echo "ERROR: .NET 10 SDK is not installed. The sidecars target net10.0 and require the .NET 10 SDK to build." >&2; \
-		echo "       Install it from https://dot.net or via: brew install dotnet-sdk" >&2; \
-		exit 1; \
-	}
+	@echo "==> Checking for the SDK pinned in global.json..."
+	@$(CHECK_DOTNET_PIN)
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
 	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
@@ -553,14 +580,15 @@ _test-dotnet-win-transport:
 		--filter "$(DOTNET_WIN_TRANSPORT_FILTER)" \
 		--blame-hang-timeout 2min --blame-hang-dump-type none
 
-# [DIST-DEBUGGER-BUNDLE] Tests for the repo's own build tooling, as opposed to
-# the product. Today that is how the netcoredbg debug adapter is obtained -
-# the supply-chain path that every VSIX and every release depends on, and that
-# nothing else in the suite exercises. Node's built-in runner, so this needs no
-# dependency of its own.
+# Tests for the repo's own build tooling, as opposed to the product. Today that
+# is how the netcoredbg debug adapter is obtained ([DIST-DEBUGGER-BUNDLE]) - the
+# supply-chain path that every VSIX and every release depends on - and the local
+# install loop ([DIST-VSIX-DEV-INSTALL]), whose whole contract is an ordering
+# that nothing else in the suite exercises. Node's built-in runner, so this
+# needs no dependency of its own.
 _test-tooling:
 	@echo "==> Running repo tooling tests..."
-	node --test tools/netcoredbg/custody.test.mjs tools/audit/dotnet-vulnerable.test.mjs
+	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/audit/dotnet-vulnerable.test.mjs
 
 website-build:
 	@echo "==> Building website..."
@@ -593,9 +621,15 @@ _lint-zed:
 	cargo fmt --manifest-path $(ZED_DIR)/Cargo.toml --check
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
-_lint-vsix: _check-vsix-chunks
+_lint-vsix: _check-vsix-chunks _check-sdk-pin
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
+
+# global.json and every workflow's dotnet-version MUST agree ([DIST-RUNTIME-ACQUIRE]).
+# CI installs the pinned SDK onto $$PATH, so a mismatch is invisible in CI and
+# breaks every build on machines that lack the pinned band.
+_check-sdk-pin:
+	node tools/ci/check-sdk-pin.mjs
 
 # Dash-form MSBuild switches only: Git Bash (MSYS) mangles slash-form switches
 # like `/p:...` on Windows (strips the `/`, MSBuild then reads it as a project
@@ -850,9 +884,67 @@ _deploy-sidecars:
 
 # ── Install (private) ─────────────────────────────────────────────
 
-_uninstall-vsix:
-	@echo "==> Uninstalling existing SharpLsp extension..."
-	-code --uninstall-extension sharplsp.sharp-lsp 2>/dev/null || true
+# ── Install / reinstall the VSIX ──────────────────────────────────
+# [DIST-VSIX-DEV-INSTALL] The local loop: kill stale servers, clean every
+# artifact, rebuild the Rust host + both sidecars + the extension for the host
+# platform, drop the installed extension, install the fresh VSIX.
+
+# The extension identifier, read from the manifest that defines it. Hardcoding it
+# is how the previous uninstall target came to name an extension id that had not
+# existed for months, silently uninstalling nothing. [DIST-VSIX-DEV-INSTALL]
+EXTENSION_ID = $(shell node -e "const p=require('./$(VSCODE_DIR)/package.json');process.stdout.write(p.publisher+'.'+p.name)")
+
+# Resolve the VS Code CLI into $$code_cli, or fail loudly. Windows runs these
+# recipes under Git Bash, where `code` is a .cmd shim that may not be on PATH, so
+# probe the default per-user and machine-wide install locations too. Override the
+# whole probe with CODE=/path/to/code. [DIST-VSIX-DEV-INSTALL]
+RESOLVE_CODE = \
+	code_cli="$(CODE)"; \
+	if [ -z "$$code_cli" ]; then \
+		for candidate in code code.cmd \
+			"$$LOCALAPPDATA/Programs/Microsoft VS Code/bin/code.cmd" \
+			"/c/Program Files/Microsoft VS Code/bin/code.cmd" \
+			"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"; do \
+			if command -v "$$candidate" >/dev/null 2>&1; then code_cli="$$candidate"; break; fi; \
+		done; \
+	fi; \
+	if [ -z "$$code_cli" ]; then \
+		echo "ERROR: no VS Code CLI found. Enable it from VS Code (Command Palette:" >&2; \
+		echo "       'Shell Command: Install code command in PATH'), or pass CODE=/path/to/code." >&2; \
+		exit 1; \
+	fi
+
+# Ordered sub-makes, NOT prerequisites: under `make -j` prerequisites run
+# concurrently and `clean` would race the build it feeds. [DIST-VSIX-DEV-INSTALL]
+#
+# The extension comes off first, so a failed build leaves no stale copy of
+# SharpLsp loaded in VS Code pretending to be the change under test.
+# `_build-vsix` pulls in `_build-rust` and `_build-dotnet`, so the Rust host and
+# both sidecar binaries are rebuilt here, not reused from the cleaned tree.
+reinstall-vsix:
+	@echo "==> Uninstall, full clean, rebuild and reinstall for $(HOST_PLATFORM)..."
+	$(MAKE) uninstall-vsix
+	$(MAKE) _kill
+	$(MAKE) clean
+	$(MAKE) _build-vsix
+	$(MAKE) install-vsix
+
+install-vsix:
+	@test -f $(DEV_VSIX) || { \
+		echo "ERROR: $(DEV_VSIX) not found. Run 'make reinstall-vsix' to build and install it." >&2; \
+		exit 1; \
+	}
+	@echo "==> Installing $(DEV_VSIX)..."
+	@$(RESOLVE_CODE); \
+		"$$code_cli" --install-extension "$(DEV_VSIX)" --force
+	@echo "==> $(EXTENSION_ID) installed. Reload VS Code to pick it up."
+
+# Uninstalling what is not installed is a success, not a failure: the reinstall
+# loop runs this on a clean machine too.
+uninstall-vsix:
+	@echo "==> Uninstalling $(EXTENSION_ID)..."
+	@$(RESOLVE_CODE); \
+		"$$code_cli" --uninstall-extension "$(EXTENSION_ID)" || true
 
 _install-binaries: _kill _build-rust _build-dotnet _deploy-rust _deploy-sidecars
 	@echo "==> All binaries installed:"

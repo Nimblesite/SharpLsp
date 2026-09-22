@@ -41,6 +41,7 @@ import {
 } from './dotnet-project-kit';
 import { fixtureFor } from './test-explorer-fixtures';
 import {
+  assertDeclaredInside,
   activateTestExplorer,
   collectItemIds,
   drainDiscovery,
@@ -457,11 +458,7 @@ function assertSnapshot(snapshot: TestItemSnapshot, anchor: string): void {
     'string',
     `${snapshot.id} must carry a uri for the editor to reveal`,
   );
-  assert.strictEqual(
-    comparablePath(snapshot.uriPath ?? ''),
-    comparablePath(anchor),
-    `${snapshot.id} must be anchored at the discovery target's directory`,
-  );
+  assertDeclaredInside(snapshot.uriPath, anchor, snapshot.id);
 }
 
 /** One `Test run for <dll>` banner, asserted to name a real built assembly. */
@@ -668,9 +665,14 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       'plain xUnit tests AND their groups carry no framework tag anywhere — that tag is reserved for Expecto/FsCheck naming',
     );
     assert.strictEqual(
-      new Set(snapshots.map((snapshot) => snapshot.uriPath)).size,
+      new Set(groupSnapshots.map((snapshot) => snapshot.uriPath)).size,
       1,
-      'every item — test and group alike — shares the one discovery-target uri',
+      'every group shares the one discovery-target uri',
+    );
+    assert.strictEqual(
+      new Set(leafSnapshots.map((snapshot) => snapshot.uriPath)).size,
+      2,
+      'every test points at its declaring file: one per fixture project',
     );
     assert.strictEqual(
       new Set(leafSnapshots.map((snapshot) => snapshot.description)).size,
@@ -719,10 +721,11 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       false,
       'F# backticks are source syntax, never part of the FQN',
     );
+    assertDeclaredInside(spaced.uri?.fsPath, root, 'the spaced F# test');
     assert.strictEqual(
-      comparablePath(spaced.uri?.fsPath ?? ''),
-      comparablePath(root),
-      'the spaced F# test is revealed inside the solution directory',
+      path.basename(spaced.uri?.fsPath ?? ''),
+      'Tests.fs',
+      'the spaced F# test is revealed at the .fs file that declares it',
     );
     for (const expected of EXPECTED) assertLeafItem(api.testController.items, expected);
     assert.strictEqual(
@@ -838,9 +841,14 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     );
     assert.strictEqual(reloadedGroups.length, 6, 'the six hierarchy groups render reactively too');
     assert.strictEqual(
-      new Set(reloaded.map((snapshot) => snapshot.uriPath)).size,
+      new Set(reloadedGroups.map((snapshot) => snapshot.uriPath)).size,
       1,
-      'every reactively rebuilt item — test and group alike — is re-anchored at the one discovery target',
+      'every reactively rebuilt group is re-anchored at the one discovery target',
+    );
+    assert.strictEqual(
+      new Set(reloadedLeaves.map((snapshot) => snapshot.uriPath)).size,
+      2,
+      'every reactively rebuilt test is re-anchored at its declaring file: one per fixture project',
     );
     assertLeafItem(api.testController.items, FS_MIXED_THEORY);
     assertLeafItem(api.testController.items, CS_MIXED_THEORY);
@@ -1933,11 +1941,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
         [],
         `a plain xUnit test carries no framework tag: ${fqn}`,
       );
-      assert.strictEqual(
-        comparablePath(leaf.uri?.fsPath ?? ''),
-        comparablePath(root),
-        `a leaf is anchored at the discovery target's directory: ${fqn}`,
-      );
+      assertDeclaredInside(leaf.uri?.fsPath, root, `leaf ${fqn}`);
     }
     // The spaced F# backtick binding is ONE leaf whose label keeps its spaces.
     const spaced = findItem(api.testController.items, FS_FACT_SPACED);

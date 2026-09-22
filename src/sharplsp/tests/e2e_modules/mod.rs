@@ -80,6 +80,7 @@ pub mod user_session_csharp;
 pub mod user_session_fsharp;
 pub mod version;
 pub mod workspace_symbols;
+pub mod workspace_symbols_selection;
 
 // ── Re-exports so `use super::*;` in test modules gets everything ─
 pub use fixtures::*;

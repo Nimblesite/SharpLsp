@@ -40,7 +40,7 @@ runs:
         path: target/netcoredbg/${{ inputs.vsix-platform }}/netcoredbg
         key: >-
           netcoredbg-${{ inputs.vsix-platform }}-${{ hashFiles('tools/netcoredbg/netcoredbg.lock.json',
-          'tools/netcoredbg/dap-hot-reload.patch', 'tools/vsix/build-netcoredbg.sh') }}
+          'tools/netcoredbg/*.patch', 'tools/vsix/build-netcoredbg.sh') }}
     - name: Download or build the patched adapter
       shell: bash
       run: node tools/netcoredbg/provide.mjs ${{ inputs.vsix-platform }}

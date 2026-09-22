@@ -95,17 +95,20 @@ let private recordProject () =
 
 // ── Uses FCS reports without renameable source text ────────────────
 
-/// A record copy-and-update expression `{ value with Field = 1 }` reports a use of
-/// the record type at a ZERO-WIDTH range on the `{`. There is no identifier there
-/// to rewrite, so it must be skipped — not treated as an unclassifiable use that
-/// aborts the whole rename. [RENAME-FSHARP-APPLY]
+/// A record copy-and-update expression `{ value with Field = 1 }` reported a use of
+/// the record type at a ZERO-WIDTH range on the `{`, with no identifier there to
+/// rewrite. FCS 43.12.400 no longer surfaces that use through `getProjectUsages`
+/// (43.12.204 did, as four uses rather than three), so every use reached here is
+/// renameable and the rename must rewrite all of them. The skip-rather-than-abort
+/// path this case used to cover is still covered by the indexer tests below, whose
+/// `x.[i]` call site carries no `Item` token to rewrite. [RENAME-FSHARP-APPLY]
 [<Fact>]
 let ``record copy-and-update does not abort renaming the record type`` () = task {
     let! (state, dir, _fsproj, paths) = recordProject ()
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5
         let! renamed = FSharpRename.renameResult state paths[0] 1 5 "RenamedRecord"
-        Assert.Equal(4, uses.Length)
+        Assert.Equal(3, uses.Length)
         assertEdits
             [ "Decls.fs:1.5-1.16=>RenamedRecord"
               "Decls.fs:2.13-2.24=>RenamedRecord"

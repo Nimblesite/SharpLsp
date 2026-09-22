@@ -6,8 +6,9 @@
     "SharpLsp ships a PATCHED netcoredbg: tools/netcoredbg/dap-hot-reload.patch",
     "exposes netcoredbg's existing ICorDebug ApplyChanges implementation over the",
     "VS Code DAP protocol, which is what backs the shipped sharplsp.hotReload.*",
-    "commands. Stock upstream release binaries do NOT carry it, so the artifacts",
-    "below are OUR builds and cannot be replaced by an upstream download.",
+    "commands. exception-stepping.patch also permits steps from symbol-less frames.",
+    "Stock upstream binaries do NOT carry these changes, so the artifacts below",
+    "are OUR builds and cannot be replaced by an upstream download.",
     "",
     "CHAIN OF CUSTODY. `platforms` pins a URL and a SHA-256 per platform.",
     "tools/netcoredbg/provide.mjs downloads the URL, hashes the bytes, and",
@@ -25,6 +26,6 @@
   ],
   "netcoredbgCommit": "9744e1f051866215611b8440c638042aa2aa2f72",
   "coreclrCommit": "ea346eaeda73d7ef1cc3b148939ac83729cc38dc",
-  "patchVersion": "dap-hot-reload-v1",
+  "patchVersion": "dap-exception-stepping-v2",
   "platforms": {}
 }

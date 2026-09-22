@@ -1,22 +1,29 @@
 ---
-# agent-pmo:0b21609
+# agent-pmo:a72c926
 name: Deploy Pages
-# Website changes merged to main deploy immediately. workflow_call keeps release
-# tags deployable at the release ref, and workflow_dispatch remains the manual
-# recovery path.
+# The site deploys ON RELEASE ONLY. release.yml calls this workflow at the
+# release ref once the GitHub release exists, so the published site can never
+# get ahead of the artifact it documents. [CI-WORKFLOWS]
+#
+# There is deliberately NO `push: branches: [main]` trigger. It used to deploy
+# every website commit immediately, which meant main could advertise a version,
+# a download link or a feature that no released build had yet shipped.
+# workflow_dispatch remains the manual recovery path.
 'on':
-  push:
-    branches:
-      - main
-    paths:
-      - src/website/**
-      - docs/designs/logo/**
-      - .github/workflows/deploy-pages.yml
   workflow_call:
   workflow_dispatch:
+# Default every job to read-only and let the two jobs below widen what they
+# actually need (`deploy` takes pages:write + id-token:write). Without this
+# default the workflow inherits the repository's default token scope, which may
+# be read/write on everything. [SWR-SEC-TOKEN-PRIVILEGE]
+permissions:
+  contents: read
 concurrency:
   group: pages
-  queue: max
+  # NOTE: `queue: max` used to sit here. It is not a valid `concurrency` key —
+  # GitHub accepts only `group` and `cancel-in-progress` — so the whole file was
+  # an invalid workflow. `cancel-in-progress: false` already expresses the
+  # intent: let a running deploy finish rather than cancelling it.
   cancel-in-progress: false
 jobs:
   build:

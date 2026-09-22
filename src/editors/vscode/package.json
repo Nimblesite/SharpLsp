@@ -354,6 +354,42 @@
                     "type": "boolean"
                   }
                 }
+              },
+              "exceptionPolicy": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Override the LSP-owned [debug.exceptions] policy from sharplsp.toml for this session.",
+                "properties": {
+                  "break_on": {
+                    "type": "string",
+                    "enum": [
+                      "editor",
+                      "all",
+                      "user-unhandled",
+                      "unhandled"
+                    ],
+                    "description": "Choose when to break. Omit to inherit TOML; editor preserves exception checkboxes."
+                  },
+                  "ignore": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Exact fully qualified CLR types to ignore. Terminal unhandled exceptions still stop."
+                  },
+                  "external_code": {
+                    "type": "string",
+                    "enum": [
+                      "throw-site",
+                      "user-boundary"
+                    ],
+                    "description": "Show external exceptions at the throw site or nearest user caller."
+                  },
+                  "just_my_code": {
+                    "type": "boolean",
+                    "description": "Skip first-chance exceptions inside external code. Inherits shared TOML configuration (default true). Set false with break_on all to inspect every throw."
+                  }
+                }
               }
             }
           },
@@ -373,6 +409,42 @@
                 "type": "boolean",
                 "description": "%debugger.launch.justMyCode%",
                 "default": true
+              },
+              "exceptionPolicy": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Override the LSP-owned [debug.exceptions] policy from sharplsp.toml for this session.",
+                "properties": {
+                  "break_on": {
+                    "type": "string",
+                    "enum": [
+                      "editor",
+                      "all",
+                      "user-unhandled",
+                      "unhandled"
+                    ],
+                    "description": "Choose when to break. Omit to inherit TOML; editor preserves exception checkboxes."
+                  },
+                  "ignore": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Exact fully qualified CLR types to ignore. Terminal unhandled exceptions still stop."
+                  },
+                  "external_code": {
+                    "type": "string",
+                    "enum": [
+                      "throw-site",
+                      "user-boundary"
+                    ],
+                    "description": "Show external exceptions at the throw site or nearest user caller."
+                  },
+                  "just_my_code": {
+                    "type": "boolean",
+                    "description": "Skip first-chance exceptions inside external code. Inherits shared TOML configuration (default true). Set false with break_on all to inspect every throw."
+                  }
+                }
               }
             }
           }
@@ -1202,7 +1274,7 @@
     "mocha": "^12.0.1",
     "playwright": "^1.63.0",
     "prettier": "3.9.6",
-    "typescript": "^6.0.3",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.0"
   },
   "files": [

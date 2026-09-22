@@ -55,7 +55,7 @@ No `std::fs::write` of concatenated strings. No `.replace()` / `.splice()` / `.l
 - `src/editors/vscode/src/debug.ts` `readLaunchProfiles` — **READ-ONLY** using `JSON.parse`. OK.
 - `src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/MetadataNavigator.cs` — writes to temp `.cs` files for decompiled source, line-based search for symbol position. **Transient cache**, not a structured project file. OK.
 - `src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs` line 37 `parseFsprojSourceFiles` — already uses `XDocument.Load`. OK.
-- `tools/coverage/check-coverage.sh` — uses `jq`. OK.
+- `tools/coverage/check-coverage.mjs` — Node, no `jq`. OK.
 
 ## Design
 

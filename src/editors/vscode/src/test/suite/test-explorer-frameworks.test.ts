@@ -37,6 +37,7 @@ import {
 import { createSolution, projectXml, warmDiscovery, writeProject } from './dotnet-project-kit';
 import { FRAMEWORK_FIXTURES, type FrameworkFixture } from './test-explorer-fixtures';
 import {
+  assertDeclaredInside,
   activateTestExplorer,
   collectLeafIds,
   discoverSolution,
@@ -330,11 +331,7 @@ function assertItemShape(snapshot: TestItemSnapshot, anchor: string): void {
     'string',
     `${snapshot.id} must carry a uri for the editor to open`,
   );
-  assert.strictEqual(
-    comparablePath(snapshot.uriPath ?? ''),
-    comparablePath(anchor),
-    `${snapshot.id} must be anchored at the discovery target's directory`,
-  );
+  assertDeclaredInside(snapshot.uriPath, anchor, snapshot.id);
 }
 
 /** A fixture's project really is on disk, directly under the solution root. */
@@ -837,9 +834,14 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       'plain xUnit/NUnit/MSTest tests AND their groups carry no framework tag anywhere in the tree',
     );
     assert.strictEqual(
-      new Set(snapshots.map((snapshot) => snapshot.uriPath)).size,
+      new Set(groupSnapshots.map((snapshot) => snapshot.uriPath)).size,
       1,
-      'every item — test and group alike — shares the one discovery-target uri',
+      'every group shares the one discovery-target uri',
+    );
+    assert.strictEqual(
+      new Set(testSnapshots.map((snapshot) => snapshot.uriPath)).size,
+      6,
+      'every test points at its declaring file: one per fixture project',
     );
     assert.strictEqual(
       new Set(testSnapshots.map((snapshot) => snapshot.description)).size,

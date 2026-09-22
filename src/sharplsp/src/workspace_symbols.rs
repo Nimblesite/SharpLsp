@@ -83,6 +83,10 @@ pub struct SymbolNode {
     pub access: Option<String>,
     /// Source range of the symbol.
     pub range: SymbolRange,
+    /// The declared name alone (LSP `selectionRange`): where a reveal lands,
+    /// never on the attribute lines `range` starts at. [TEST-GOTO-SOURCE]
+    #[serde(rename = "selectionRange")]
+    pub selection_range: SymbolRange,
     /// Nested child symbols.
     pub children: Vec<SymbolNode>,
 }
@@ -186,6 +190,21 @@ pub fn handle(
     solution_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<WorkspaceSymbolsResponse> {
+    let target = Path::new(&params.solution);
+    if !crate::workspace_targets::is_solution(target) {
+        let projects = crate::workspace_targets::projects_of(target)
+            .iter()
+            .enumerate()
+            .map(|(order, path)| standalone_project(path, order))
+            .filter_map(|project| {
+                build_project_node(&project, parsers, vfs, runtime, fsharp_sidecar).ok()
+            })
+            .collect();
+        return Ok(WorkspaceSymbolsResponse {
+            projects,
+            solution_folders: Vec::new(),
+        });
+    }
     let sln_data = read_solution(params, runtime, solution_sidecar)?;
 
     info!(
@@ -287,6 +306,20 @@ fn project_info(project: &SolutionProjectEntry, folders: &[SolutionFolderEntry])
     }
 }
 
+/// A project named directly rather than read from a solution.
+fn standalone_project(path: &str, declaration_order: usize) -> ProjectInfo {
+    ProjectInfo {
+        name: Path::new(path).file_stem().map_or_else(
+            || path.to_string(),
+            |stem| stem.to_string_lossy().to_string(),
+        ),
+        path: path.to_string(),
+        identity: path.to_string(),
+        parent_folder: None,
+        declaration_order,
+    }
+}
+
 /// Resolve a project display name, falling back to the project file stem.
 fn project_name(project: &SolutionProjectEntry) -> String {
     if !project.display_name.is_empty() {
@@ -372,7 +405,7 @@ fn is_dotnet_project(project: &SolutionProjectEntry) -> bool {
 }
 
 /// Check whether a path points at a C# or F# project file.
-fn is_dotnet_project_path(path: &str) -> bool {
+pub(crate) fn is_dotnet_project_path(path: &str) -> bool {
     Path::new(path)
         .extension()
         .and_then(|extension| extension.to_str())
@@ -485,6 +518,16 @@ fn map_sidecar_symbol(item: &crate::document_symbols::SidecarDocumentSymbol) -> 
                 character: item.end_character,
             },
         },
+        selection_range: SymbolRange {
+            start: SymbolPosition {
+                line: item.selection_start_line,
+                character: item.selection_start_character,
+            },
+            end: SymbolPosition {
+                line: item.selection_end_line,
+                character: item.selection_end_character,
+            },
+        },
         children: item.children.iter().map(map_sidecar_symbol).collect(),
     }
 }
@@ -492,12 +535,12 @@ fn map_sidecar_symbol(item: &crate::document_symbols::SidecarDocumentSymbol) -> 
 /// Recursively find `.cs` and `.fs` files under a directory.
 fn find_source_files(dir: &Path) -> Vec<String> {
     let mut files = Vec::new();
-    collect_source_files(dir, &mut files);
+    collect_files(dir, is_source_file, &mut files);
     files
 }
 
-/// Recursively collect `.cs` and `.fs` files, skipping build output.
-fn collect_source_files(dir: &Path, files: &mut Vec<String>) {
+/// Recursively collect the files `keep` accepts, skipping build output.
+pub(crate) fn collect_files(dir: &Path, keep: fn(&Path) -> bool, files: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -513,8 +556,8 @@ fn collect_source_files(dir: &Path, files: &mut Vec<String>) {
             ) {
                 continue;
             }
-            collect_source_files(&path, files);
-        } else if is_source_file(&path) {
+            collect_files(&path, keep, files);
+        } else if keep(&path) {
             files.push(path.to_string_lossy().to_string());
         }
     }
@@ -592,15 +635,6 @@ fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<SymbolNode> {
     symbols
 }
 
-/// Extract the symbol name, handling field/event nested structure.
-fn extract_ws_symbol_name(node: Node<'_>, source: &[u8]) -> Option<String> {
-    if let Some(name_node) = node.child_by_field_name("name") {
-        return name_node.utf8_text(source).ok().map(String::from);
-    }
-    // field_declaration / event_field_declaration: variable_declaration > variable_declarator
-    crate::sort_members::variable_declarator_name(&node, source)
-}
-
 /// Map a tree-sitter node to a `SymbolNode` if it is a recognized declaration.
 fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
     let kind = match node.kind() {
@@ -619,22 +653,10 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
         _ => return None,
     };
 
-    let name = extract_ws_symbol_name(node, source)?;
+    let (name, name_node) = crate::syntax::extract_symbol_name(node, source)?;
 
     let detail = extract_type_detail(node, source);
     let access = crate::sort_members::extract_access_modifiers(&node, source);
-
-    let range = SymbolRange {
-        start: SymbolPosition {
-            line: usize_to_u32(node.start_position().row),
-            character: usize_to_u32(node.start_position().column),
-        },
-        end: SymbolPosition {
-            line: usize_to_u32(node.end_position().row),
-            character: usize_to_u32(node.end_position().column),
-        },
-    };
-
     let children = collect_symbols(node, source);
 
     Some(SymbolNode {
@@ -642,9 +664,22 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
         kind: kind.to_string(),
         detail,
         access,
-        range,
+        range: node_range(node),
+        selection_range: node_range(name_node),
         children,
     })
+}
+
+/// The span a tree-sitter node covers, in 0-based lines and characters.
+fn node_range(node: Node<'_>) -> SymbolRange {
+    let position = |point: tree_sitter::Point| SymbolPosition {
+        line: usize_to_u32(point.row),
+        character: usize_to_u32(point.column),
+    };
+    SymbolRange {
+        start: position(node.start_position()),
+        end: position(node.end_position()),
+    }
 }
 
 /// Extract type info (base class, return type) for display.
@@ -682,6 +717,16 @@ mod tests {
             detail: None,
             access: None,
             range: SymbolRange {
+                start: SymbolPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: SymbolPosition {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            selection_range: SymbolRange {
                 start: SymbolPosition {
                     line: 0,
                     character: 0,
@@ -783,7 +828,7 @@ mod tests {
         std::fs::write(dir.join("readme.txt"), "").unwrap();
 
         let mut files = Vec::new();
-        collect_source_files(dir, &mut files);
+        collect_files(dir, is_source_file, &mut files);
 
         assert_eq!(files.len(), 2, "must find exactly 2 source files");
         assert!(files.iter().any(|f| f.ends_with("Foo.cs")));
@@ -808,7 +853,7 @@ mod tests {
         std::fs::write(dir.join("obj").join("Build.cs"), "").unwrap();
 
         let mut files = Vec::new();
-        collect_source_files(dir, &mut files);
+        collect_files(dir, is_source_file, &mut files);
 
         assert_eq!(files.len(), 1, "must skip bin/obj, got: {files:?}");
         assert!(files[0].ends_with("Main.cs"));
@@ -819,7 +864,7 @@ mod tests {
         let path = Path::new("/nonexistent/path/that/does/not/exist");
         let mut files = Vec::new();
         // Must not panic — simply returns nothing.
-        collect_source_files(path, &mut files);
+        collect_files(path, is_source_file, &mut files);
         assert!(files.is_empty());
     }
 
@@ -834,7 +879,7 @@ mod tests {
         std::fs::write(dir.join("Root.cs"), "").unwrap();
 
         let mut files = Vec::new();
-        collect_source_files(dir, &mut files);
+        collect_files(dir, is_source_file, &mut files);
 
         assert_eq!(files.len(), 2, "must recurse into subdirs");
         assert!(files.iter().any(|f| f.ends_with("Nested.cs")));

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build SharpLsp's minimal DAP hot-reload extension on the exact netcoredbg
-# release commit. The patch only exposes netcoredbg's existing, tested
-# ICorDebug ApplyChanges implementation to its VS Code protocol.
+# Build SharpLsp's DAP hot-reload extension and symbol-less stepping fix on
+# the exact netcoredbg release commit. The patch exposes ICorDebug ApplyChanges
+# and permits CLR stepping from exception frames without source sequence points.
 set -euo pipefail
 
 # [DIST-DEBUGGER-BUNDLE] The commits and the patch version live in
@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PLATFORM="${1:-$(node -e "process.stdout.write(process.platform + '-' + process.arch)")}"
 HOST_PLATFORM="$(node -e "process.stdout.write(process.platform + '-' + process.arch)")"
-PATCH="$ROOT/tools/netcoredbg/dap-hot-reload.patch"
+PATCHES=("$ROOT/tools/netcoredbg/dap-hot-reload.patch" "$ROOT/tools/netcoredbg/exception-stepping.patch")
 CACHE_ROOT="${NETCOREDBG_BUILD_CACHE_DIR:-${TMPDIR:-/tmp}/sharplsp-netcoredbg-build/$PLATFORM}"
 SOURCE="$CACHE_ROOT/source"
 CORECLR="$CACHE_ROOT/coreclr"
@@ -48,10 +48,25 @@ if [ -f "$EXE" ] && [ "$(cat "$MARKER" 2>/dev/null || true)" = "$BUILD_ID" ]; th
   exit 0
 fi
 
+# macOS purges $TMPDIR by deleting files and leaving the directory tree, so a
+# purged cache still has a `.git` directory that is no longer a repository. An
+# empty shell is safe to rebuild; one still holding files is not ours to delete.
+reset_purged_cache() {
+  local destination="$1"
+  [ -d "$destination" ] || return 0
+  git --git-dir="$destination/.git" rev-parse --git-dir >/dev/null 2>&1 && return 0
+  if [ -n "$(find "$destination" -type f -print -quit)" ]; then
+    echo "netcoredbg: incomplete source cache at '$destination'; move it aside and retry" >&2
+    exit 1
+  fi
+  rm -rf "$destination"
+}
+
 clone_commit() {
   local repository="$1"
   local commit="$2"
   local destination="$3"
+  reset_purged_cache "$destination"
   if [ ! -d "$destination/.git" ]; then
     if [ -e "$destination" ]; then
       echo "netcoredbg: incomplete source cache at '$destination'; move it aside and retry" >&2
@@ -74,12 +89,20 @@ clone_commit() {
 clone_commit "https://github.com/Samsung/netcoredbg.git" "$NETCOREDBG_COMMIT" "$SOURCE"
 clone_commit "https://github.com/dotnet/runtime.git" "$CORECLR_COMMIT" "$CORECLR"
 
-if git -C "$SOURCE" apply --check "$PATCH" 2>/dev/null; then
-  git -C "$SOURCE" apply "$PATCH"
-elif ! git -C "$SOURCE" apply --reverse --check "$PATCH"; then
-  echo "netcoredbg: hot-reload patch does not apply cleanly to $NETCOREDBG_COMMIT" >&2
-  exit 1
-fi
+# [DIST-DEBUGGER-BUNDLE] Upstream mixes CRLF files (steppers.cpp) with LF ones
+# (vscodeprotocol.cpp), and this repo stores every patch LF. Apply against
+# line-ending-normalised content, never the runner's own core.autocrlf: under
+# `false` (the Linux runner default) a CRLF target rejects an LF patch.
+apply_patch() { git -C "$SOURCE" -c core.autocrlf=input apply "$@"; }
+
+for patch in "${PATCHES[@]}"; do
+  if apply_patch --check "$patch" 2>/dev/null; then
+    apply_patch "$patch"
+  elif ! apply_patch --reverse --check "$patch"; then
+    echo "netcoredbg: $patch does not apply cleanly to $NETCOREDBG_COMMIT" >&2
+    exit 1
+  fi
+done
 
 DOTNET_EXE="$(command -v dotnet)"
 DOTNET_DIR="${DOTNET_ROOT:-$(cd "$(dirname "$DOTNET_EXE")" && pwd)}"

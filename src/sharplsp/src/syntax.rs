@@ -44,7 +44,7 @@ fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<DocumentSymbol> {
 ///
 /// Most declarations have a direct `name` field. Field and event-field
 /// declarations nest the name inside `variable_declaration > variable_declarator`.
-fn extract_symbol_name<'a>(node: Node<'a>, source: &[u8]) -> Option<(String, Node<'a>)> {
+pub(crate) fn extract_symbol_name<'a>(node: Node<'a>, source: &[u8]) -> Option<(String, Node<'a>)> {
     // Try direct name field first (class, method, property, etc.)
     if let Some(name_node) = node.child_by_field_name("name") {
         let name = name_node.utf8_text(source).ok()?.to_string();

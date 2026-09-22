@@ -10,6 +10,9 @@ VSCODE_TARGETS := \
 	lint \
 	fmt \
 	clean \
+	reinstall-vsix \
+	install-vsix \
+	uninstall-vsix \
 	setup \
 	screenshots \
 	website-build \

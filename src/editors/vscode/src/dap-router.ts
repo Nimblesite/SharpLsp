@@ -2,6 +2,8 @@
 import type * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { retarget } from './dap-exceptions';
+import { withExceptionPolicy, type ExceptionPolicy } from './dap-exception-policy';
+import { filterExceptionStop } from './dap-exception-stops';
 import { isRecord, sourcePathOf, type DapMessage } from './dap-emulate';
 import { isFSharpSource, withClrConditions } from './dap-fsharp-conditions';
 import { BreakpointEmulator } from './dap-breakpoints';
@@ -131,6 +133,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** True once the child itself sent the DAP `terminated` event. */
   private childAnnouncedTerminated = false;
   private justMyCode = true;
+  private exceptionPolicy: ExceptionPolicy | undefined;
   private launchRoot: string | undefined;
   /** Run-to-cursor emulation ([DEBUG-FEATURES-STEPPING], P2). */
   private readonly goto: GotoEmulator;
@@ -284,6 +287,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       breakpointPath !== undefined && isFSharpSource(breakpointPath)
         ? withClrConditions(message)
         : message;
+    if (command === 'launch' || command === 'attach') this.rememberLaunchOptions(args);
     this.replayer.observe(msg, breakpointPath);
     if (command === 'setFunctionBreakpoints') this.breakpoints.recordFunctions(args);
     if (command === 'launch' && this.replayer.wantsTerminal()) {
@@ -416,6 +420,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** Track `justMyCode` off the launch/attach request that carries it. */
   private rememberLaunchOptions(args: Record<string, unknown> | undefined): void {
     if (args === undefined) return;
+    this.exceptionPolicy = isRecord(args.exceptionPolicy) ? args.exceptionPolicy : undefined;
+    this.stacks.setExceptionBoundary(this.exceptionPolicy?.external_code === 'user-boundary');
     if (typeof args.cwd === 'string') this.launchRoot = args.cwd;
     if (typeof args.justMyCode === 'boolean') {
       this.justMyCode = args.justMyCode;
@@ -424,7 +430,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   }
   /** Serialise one message to the child using DAP's framing. */
   public write(message: DapMessage): void {
-    this.wire.write(message);
+    this.wire.write(withExceptionPolicy(retarget(message), this.exceptionPolicy));
   }
   /** Send a request in the router's own name and await its response. */
   public async request(command: string, args: Record<string, unknown>): Promise<DapMessage> {
@@ -556,6 +562,28 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     });
     return true;
   }
+  /** Apply exception ownership before exposing any paused UI or hot-reload state. */
+  private async deliverExceptionStop(message: DapMessage): Promise<void> {
+    const visible = await filterExceptionStop(
+      {
+        request: async (command, args) => await this.request(command, args),
+        resume: async (threadId) => await this.stepper.resumeIgnoredException(threadId),
+        belongsToUser: (location) => belongsToUserCode(location, this.launchRoot),
+      },
+      message,
+      this.exceptionPolicy?.just_my_code ?? this.justMyCode,
+    );
+    if (visible === undefined || this.disposed || this.transitioning) return;
+    this.deliverStopped(visible);
+  }
+
+  /** Preserve synchronous delivery for stops that need no exception probe. */
+  private deliverStopped(message: DapMessage): void {
+    this.hotReload.onStopped(message, () => {
+      if (!this.stops.onStopped(message)) this.emit(message);
+    });
+  }
+
   /** Events that carry emulation state, not just data. */
   private onChildEvent(message: DapMessage): void {
     const name = typeof message.event === 'string' ? message.event : '';
@@ -577,9 +605,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       // A VSTest host's own attach break is resumed, never surfaced
       // ([DEBUG-FEATURES-TESTS]); dap-attach.ts owns that judgement.
       if (this.attaches.absorbTestHostBreak(message)) return;
-      this.hotReload.onStopped(message, () => {
-        if (!this.stops.onStopped(message)) this.emit(message);
-      });
+      if (stoppedBody.reason === 'exception') void this.deliverExceptionStop(message);
+      else this.deliverStopped(message);
       return;
     } else if (name === 'initialized') {
       this.transitioning = false;

@@ -30,6 +30,7 @@ import {
   VIEW_SOLUTION_EXPLORER,
   VIEW_PROFILER,
 } from './constants.js';
+import { configureDotnet } from './dotnet-process.js';
 import { acquireDotnet10Sdk, showAcquireFailureNotification } from './dotnetRuntime.js';
 import * as client from './client.js';
 import * as sharedState from './state.js';
@@ -203,6 +204,11 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   // Interactive) use it even when `dotnet` is not on $PATH. See
   // [DIST-RUNTIME-ACQUIRE].
   sharedState.dotnetPath.value = dotnetPath;
+  // Point builds, test discovery and test runs at the SDK that was actually
+  // resolved. Without this every `dotnet` child runs whatever is first on
+  // $PATH — which on a machine whose PATH SDK cannot satisfy the workspace
+  // `global.json` is precisely the SDK that fails with exit code 155.
+  configureDotnet(dotnetPath);
 
   log.info('step 11: activateShipwright');
   // Implements [DIST-FAILURE-UX] and [BINARY-VSCODE]: deployment-toolkit failures surface a toast

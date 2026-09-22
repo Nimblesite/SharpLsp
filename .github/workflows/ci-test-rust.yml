@@ -87,6 +87,12 @@ jobs:
           retention-days: 1
           path: target/coverage-rust-shard${{ matrix.shard }}.lcov
 
+  # NO coverage gate here. A shard tracefile is a partition, and the ratchet
+  # needs the union of them, so the single gate lives in PHASE 5
+  # (ci-coverage.yml) as the header above says. A second copy of that job also
+  # uploaded an artifact named `coverage-rust`, which the PHASE 5 job already
+  # publishes in the same run — and upload-artifact rejects a duplicate name,
+  # failing the leg for a reason that has nothing to do with the tests.
   version-contract:
     name: Version Contract
     # Implements [DIST-VERSION-OUTPUT] + the version line of [DIST-CI-SMOKE].

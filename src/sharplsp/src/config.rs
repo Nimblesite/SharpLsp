@@ -5,14 +5,16 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
-use serde::Deserialize;
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 /// Top-level configuration loaded from `sharplsp.toml`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SharpLspConfig {
+    /// Editor-independent debugger policy.
+    pub debug: crate::config_debug::DebugConfig,
     /// General server settings.
     pub server: ServerConfig,
     /// C# sidecar configuration.
@@ -28,7 +30,7 @@ pub struct SharpLspConfig {
 }
 
 /// Server-level settings.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
     /// Log level filter (e.g. "info", "debug", "trace").
@@ -38,7 +40,7 @@ pub struct ServerConfig {
 }
 
 /// C# sidecar configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CSharpConfig {
     /// Whether C# support is enabled.
@@ -48,7 +50,7 @@ pub struct CSharpConfig {
 }
 
 /// F# sidecar configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FSharpConfig {
     /// Whether F# support is enabled.
@@ -56,7 +58,7 @@ pub struct FSharpConfig {
 }
 
 /// Diagnostics configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DiagnosticsConfig {
     /// Whether to run Roslyn analyzers.
@@ -142,7 +144,7 @@ impl Default for DiagnosticsConfig {
 
 /// Static-analyzer configuration. Drives the novel monorepo dead-code analyzer
 /// implemented in both the F# (FCS) and C# (Roslyn) sidecars.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AnalyzersConfig {
     /// Whether the dead-code analyzer runs at all.
@@ -164,7 +166,7 @@ impl Default for AnalyzersConfig {
 }
 
 /// Profiler configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProfilerConfig {
     /// Maximum concurrent profiling sessions.
@@ -200,21 +202,17 @@ const CONFIG_FILE_NAME: &str = "sharplsp.toml";
 /// Load configuration by searching for `sharplsp.toml` starting from `workspace_root`
 /// and walking up to parent directories. Returns defaults if no file is found.
 pub fn load_config(workspace_root: &Path) -> Result<SharpLspConfig> {
-    if let Some(path) = find_config_file(workspace_root) {
-        info!("Loading configuration from {}", path.display());
-        let content = std::fs::read_to_string(&path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
-        let config: SharpLspConfig = toml::from_str(&content)
-            .with_context(|| format!("failed to parse {}", path.display()))?;
-        Ok(config)
-    } else {
-        info!("No sharplsp.toml found, using default configuration");
-        Ok(SharpLspConfig::default())
-    }
+    let value = crate::configuration::resolve(
+        workspace_root,
+        crate::configuration::user_config_file().as_deref(),
+        &serde_json::json!({}),
+        serde_json::json!({}),
+    )?;
+    Ok(serde_json::from_value(value)?)
 }
 
 /// Walk up from `start` looking for `sharplsp.toml`.
-fn find_config_file(start: &Path) -> Option<PathBuf> {
+pub(crate) fn find_config_file(start: &Path) -> Option<PathBuf> {
     let mut current = Some(start);
     while let Some(dir) = current {
         let candidate = dir.join(CONFIG_FILE_NAME);

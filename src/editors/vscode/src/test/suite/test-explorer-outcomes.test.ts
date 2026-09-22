@@ -35,6 +35,7 @@ import { createSolution, warmDiscovery } from './dotnet-project-kit';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import { fixtureFor, LIBRARY_TEST, writeCoverageFixture } from './test-explorer-fixtures';
 import {
+  assertDeclaredInside,
   activateTestExplorer,
   collectLeafIds,
   drainDiscovery,
@@ -44,7 +45,7 @@ import {
   profileOfKind,
   runViaProfile,
 } from './test-explorer-kit';
-import { comparablePath, pollUntilResult, removeDirRecursive } from './test-helpers.js';
+import { pollUntilResult, removeDirRecursive } from './test-helpers.js';
 import {
   assertEveryOutcome,
   assertFailed,
@@ -1188,10 +1189,6 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       FS_SPACED,
       'and the description carries the whole FQN the lens keys on',
     );
-    assert.strictEqual(
-      comparablePath(item.uri?.fsPath ?? ''),
-      comparablePath(path.dirname(slnPath)),
-      "the item points at the loaded solution's folder",
-    );
+    assertDeclaredInside(item.uri?.fsPath, path.dirname(slnPath), 'the spaced F# fact');
   });
 });

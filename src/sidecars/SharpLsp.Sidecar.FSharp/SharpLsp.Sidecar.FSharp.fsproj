@@ -31,8 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="10.1.204" />
-    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.204" />
+    <PackageReference Include="FSharp.Core" Version="10.1.400" />
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.400" />
     <PackageReference Include="Fantomas.Core" Version="8.0.0" />
     <PackageReference Include="FSharpLint.Core" Version="0.27.0" />
     <PackageReference Include="MessagePack" Version="3.1.8" />

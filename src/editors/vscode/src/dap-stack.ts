@@ -109,6 +109,13 @@ interface StackCache {
 export class StackDelivery {
   /** Mirrors the launch argument so stack enrichment matches the user's choice. */
   private justMyCode = true;
+  private exceptionBoundary = false;
+  private exceptionThread: number | undefined;
+
+  /** Present library exceptions at the nearest user caller when configured. */
+  public setExceptionBoundary(enabled: boolean): void {
+    this.exceptionBoundary = enabled;
+  }
   /** The launch `cwd`, anchoring the "is this source the user's" judgement. */
   private launchRoot: string | undefined;
   /** Entry-stop arming for the current launch; undefined for attach/noDebug. */
@@ -175,6 +182,7 @@ export class StackDelivery {
     this.cache.clear();
     this.synthetic.clear();
     const body = isRecord(message.body) ? message.body : {};
+    this.exceptionThread = body.reason === 'exception' ? Number(body.threadId) : undefined;
     if (this.arming === undefined || body.reason !== 'entry') return false;
     const threadId = Number(body.threadId ?? 0);
     if (this.arming.userWantedEntry) {
@@ -243,7 +251,8 @@ export class StackDelivery {
       this.asyncRegistryArmed &&
       frames.some((frame) => logicalFrameName(frame.name) !== frame.name);
     const logical = enrichAsyncFrames(frames, this.justMyCode, this.isUserPath);
-    if (!reconstructable && logical.length > 0) {
+    const boundary = this.exceptionBoundary && this.exceptionThread === args?.threadId;
+    if (!reconstructable && !boundary && logical.length > 0) {
       this.emitStack(message, body, args, logical);
       return;
     }
@@ -425,8 +434,15 @@ export class StackDelivery {
     args: Record<string, unknown> | undefined,
     frames: readonly RawFrame[],
   ): void {
+    const boundary = this.exceptionBoundary && this.exceptionThread === args?.threadId;
+    const user = boundary
+      ? frames.findIndex(
+          (frame) => frame.source?.path !== undefined && this.isUserPath(frame.source.path),
+        )
+      : -1;
+    const visible = user > 0 ? frames.slice(user) : frames;
     const windowed = withWindow(
-      { ...message, body: { ...body, stackFrames: frames, totalFrames: frames.length } },
+      { ...message, body: { ...body, stackFrames: visible, totalFrames: visible.length } },
       args,
     );
     this.host.emit(this.handles.translateResponseBody(windowed));

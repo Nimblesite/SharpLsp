@@ -7,10 +7,12 @@
 // workbench does: the refresh/resolve handlers, the run profiles' handlers, and
 // the shared `state.solutionPath` signal behind `loadSolution`.
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import type { SharpLspTestController } from '../../testing.js';
-import { EXTENSION_ID, sleep } from './test-helpers';
+import { comparablePath, EXTENSION_ID, sleep } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** Longer than the controller's 1 s reactive-discovery debounce. */
@@ -70,6 +72,29 @@ export function collectLeafIds(items: vscode.TestItemCollection): string[] {
     else ids.push(...collectLeafIds(item.children));
   });
   return ids;
+}
+
+/**
+ * A test leaf reveals the SOURCE FILE that declares it, inside the discovery
+ * target — never a directory, which Go to Test cannot open. [TEST-GOTO-SOURCE]
+ */
+export function assertDeclaredInside(
+  uriPath: string | undefined,
+  anchor: string,
+  id: string,
+): void {
+  const file = uriPath ?? '';
+  assert.strictEqual(
+    comparablePath(file).startsWith(comparablePath(anchor) + path.sep),
+    true,
+    `${id} must be anchored inside the discovery target's directory, not at ${file}`,
+  );
+  assert.strictEqual(
+    fs.existsSync(file) && fs.statSync(file).isFile(),
+    true,
+    `${id} must point at the source file that declares it, never a directory: ${file}`,
+  );
+  assert.ok(['.cs', '.fs'].includes(path.extname(file)), `${id} is declared in C# or F#: ${file}`);
 }
 
 /** Recursively snapshot every TestItem, for shape assertions. */

@@ -30,8 +30,8 @@ type SymbolItem =
 /// (see `parse_document_symbol_kind` in src/sharplsp/src/document_symbols.rs).
 let private kindOfGlyph (glyph: FSharpGlyph) : string =
     match glyph with
-    | FSharpGlyph.Module
-    | FSharpGlyph.NameSpace -> "Module"
+    | FSharpGlyph.NameSpace -> "Namespace"
+    | FSharpGlyph.Module -> "Module"
     | FSharpGlyph.Class
     | FSharpGlyph.Type
     | FSharpGlyph.Typedef
@@ -52,6 +52,15 @@ let private kindOfGlyph (glyph: FSharpGlyph) : string =
     | FSharpGlyph.TypeParameter -> "TypeParameter"
     | _ -> "Field"
 
+/// A navigation item's kind. FCS draws a namespace with the module glyph, but a
+/// namespace and a module compile differently - a module is a static class, so a
+/// type inside it is `Module+Type` - and consumers that rebuild runtime names
+/// ([TEST-GOTO-SOURCE]) must be able to tell them apart.
+let private kindOf (nav: NavigationItem) : string =
+    match nav.Kind with
+    | NavigationItemKind.Namespace -> "Namespace"
+    | _ -> kindOfGlyph nav.Glyph
+
 /// Smaller of two source positions (line, then column).
 let private posMin (a: pos) (b: pos) : pos =
     if a.Line < b.Line || (a.Line = b.Line && a.Column <= b.Column) then a else b
@@ -69,7 +78,7 @@ let private toItem (children: SymbolItem list) (nav: NavigationItem) : SymbolIte
     let outerStart = posMin ident.Start body.Start
     let outerEnd = posMax ident.End body.End
     { Name = nav.LogicalName
-      Kind = kindOfGlyph nav.Glyph
+      Kind = kindOf nav
       StartLine = outerStart.Line - 1
       StartCharacter = outerStart.Column
       EndLine = outerEnd.Line - 1

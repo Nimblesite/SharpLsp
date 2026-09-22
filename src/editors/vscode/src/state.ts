@@ -48,6 +48,8 @@ export interface SymbolNode {
   readonly detail: string | null;
   readonly access: string | null;
   readonly range: LspRange;
+  /** The declared name alone, where a reveal lands. [TEST-GOTO-SOURCE] */
+  readonly selectionRange: LspRange;
   readonly children: SymbolNode[];
 }
 
@@ -91,6 +93,9 @@ const RETRY_DELAY_MS = 2_000;
 
 /** The active LSP language client. */
 export const client = new Signal<LanguageClient | undefined>(undefined);
+
+/** Whether that client's server is Running: what serves the tree and test locations. */
+export const serverRunning = new Signal<boolean>(false);
 
 /** Path to the currently loaded solution file. */
 export const solutionPath = new Signal<string | undefined>(undefined);

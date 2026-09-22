@@ -35,6 +35,7 @@ import {
   armBreakpoints,
   assertCleanSession,
   assertRanToCompletion,
+  settleBreakpointCount,
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
@@ -383,6 +384,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     // Interaction 3 - the temporary breakpoint must be TEMPORARY. One left in
     // the view is one the user never set and cannot explain; one left armed on
     // the adapter stops the program again on the next pass.
+    await settleBreakpointCount(1);
     eq(
       vscode.debug.breakpoints.length,
       1,
