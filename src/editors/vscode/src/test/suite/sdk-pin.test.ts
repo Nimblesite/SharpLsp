@@ -14,6 +14,7 @@ import {
   type SdkPin,
 } from '../../global-json.js';
 import { describeSdkPinFailure, existingSdkSatisfiesWorkspace } from '../../dotnetRuntime.js';
+import { candidateDotnetRoots, findDotnetSatisfying } from '../../dotnet-roots.js';
 import { SDK_RESOLUTION_EXIT_CODE, diagnoseBuildFailure } from '../../build.js';
 
 /**
@@ -136,6 +137,76 @@ suite('global.json SDK pin', () => {
   });
 
   // ── The bug: acquisition accepted an SDK the workspace could never use ──
+
+  // ── The bug: one unsatisfying root was treated as the whole machine ──
+
+  test('the pinned SDK is found in another root, not reported as missing', () => {
+    // The production failure: `dotnet.findPath` reports the system-wide root,
+    // whose newest 10.0 SDK is a band below the pin, while the SDK the pin asks
+    // for sits in the user-local root the Install Tool never looked at. Every
+    // build, test discovery and sidecar launch then ran the root that cannot
+    // work, and the user was told to install an SDK they already had.
+    const workspace = fakeWorkspace(
+      'roots-ws',
+      JSON.stringify({ sdk: { version: '10.0.303', rollForward: 'latestPatch' } }),
+    );
+    const target = readSdkPin(workspace);
+    assert.ok(target !== undefined, 'the fixture must declare a pin');
+
+    const reported = fakeDotnet('share-dotnet', ['9.0.312', '10.0.203']);
+    const userLocal = fakeDotnet('home-dotnet', ['10.0.100', '10.0.303']);
+
+    assert.equal(
+      findDotnetSatisfying(target, [path.dirname(reported), path.dirname(userLocal)]),
+      userLocal,
+      'the root that satisfies the pin is chosen over the one that cannot',
+    );
+
+    // A machine whose reported root already works keeps using it: probing must
+    // never move a working install onto some other copy of the same SDK.
+    const alsoWorks = fakeDotnet('other-dotnet', ['10.0.303']);
+    assert.equal(
+      findDotnetSatisfying(target, [path.dirname(userLocal), path.dirname(alsoWorks)]),
+      userLocal,
+      'the first satisfying root wins, so the preferred one is kept',
+    );
+
+    // Only when NO root can satisfy the pin is it genuinely missing.
+    const alsoBroken = fakeDotnet('broken-2', ['10.0.203']);
+    assert.equal(
+      findDotnetSatisfying(target, [path.dirname(reported), path.dirname(alsoBroken)]),
+      undefined,
+      'nothing installed satisfies the pin, so acquisition is the only way out',
+    );
+    assert.equal(
+      findDotnetSatisfying(target, [path.join(scratchDir, 'no-such-root')]),
+      undefined,
+      'a root with no dotnet executable is skipped, not crashed on',
+    );
+  });
+
+  test('the candidate roots cover where each platform installs dotnet', () => {
+    const roots = candidateDotnetRoots({ DOTNET_ROOT: '/opt/pinned-dotnet' });
+
+    assert.ok(roots.includes('/opt/pinned-dotnet'), `DOTNET_ROOT is honoured: ${roots.join()}`);
+    assert.ok(
+      roots.includes(path.join(os.homedir(), '.dotnet')),
+      `the user-local root - the one findPath missed - is probed: ${roots.join()}`,
+    );
+    assert.equal(new Set(roots).size, roots.length, 'no root is probed twice');
+
+    // The system-wide root differs per platform; every platform must name one.
+    const systemWide =
+      process.platform === 'win32'
+        ? 'dotnet'
+        : process.platform === 'darwin'
+          ? '/usr/local/share/dotnet'
+          : '/usr/share/dotnet';
+    assert.ok(
+      roots.some((root) => root.includes(systemWide)),
+      `a system-wide root is probed on ${process.platform}: ${roots.join()}`,
+    );
+  });
 
   test('an installed SDK that cannot satisfy the workspace pin is not usable', () => {
     const workspace = fakeWorkspace(

@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from './constants';
 import { currentDotnetExecutable } from './dotnet-process';
@@ -58,16 +59,27 @@ export function createBuildTask(command: string, label: string, target?: string)
     '$msCompile',
   );
   task.group = vscode.TaskGroup.Build;
-  // A build is headless and self-contained ([DEBUG-FEATURES-LAUNCH-BUILD]):
-  // `Silent` keeps the panel closed, and `New` gives the run a terminal of its
-  // OWN — the default `Shared` panel hands the task ANY idle task terminal, so
-  // terminating the build disposes a terminal some other task created. `close`
-  // folds the fresh terminal away on exit, so repeated builds cannot stack up
-  // panels; build errors still reach Problems through `$msCompile`.
+  // [SE-ACTIONS-BUILD]: "Output appears in VS Code terminal".
+  //
+  // Nothing dispatches this task on the user's behalf. The pre-launch build of
+  // [DEBUG-FEATURES-LAUNCH-BUILD] rule 1 runs IN-PROCESS through msbuild.ts, so
+  // every run of this task is one a person asked for — from the Solution
+  // Explorer, the palette, Run Task or their own `tasks.json`. The previous
+  // `Silent` + `close: true` was written for a headless pre-launch build that no
+  // longer dispatches it, and it made a user-invoked build invisible: the panel
+  // was never revealed and the terminal was disposed the instant MSBuild exited,
+  // so a success, a compile error and a `dotnet` that never launched at all all
+  // produced the same observation — nothing.
+  //
+  // `Dedicated` keys the terminal to THIS task, so repeated builds reuse one
+  // panel instead of stacking (the default `Shared` would hand the build any
+  // idle task terminal, and terminating it would dispose a terminal some other
+  // task created). `clear` means the visible output is this run's, not this run
+  // appended to the last one.
   task.presentationOptions = {
-    reveal: vscode.TaskRevealKind.Silent,
-    panel: vscode.TaskPanelKind.New,
-    close: true,
+    reveal: vscode.TaskRevealKind.Always,
+    panel: vscode.TaskPanelKind.Dedicated,
+    clear: true,
   };
   return task;
 }
@@ -137,10 +149,11 @@ export const SDK_RESOLUTION_EXIT_CODE = 155;
  * Explain a failed build when the cause is an unsatisfiable SDK pin.
  *
  * `dotnet` prints the real reason — the requested version, the `global.json`
- * responsible, and the installed SDKs — to the task terminal, which
- * `close: true` disposes the instant the process exits. All that survives is
- * VS Code's generic "failed to launch (exit code: 155)", which names none of
- * it. Implements [DIST-FAILURE-UX].
+ * responsible, and the installed SDKs — to the task terminal. That terminal now
+ * stays up ([SE-ACTIONS-BUILD]), but nothing makes the user read it, and a
+ * `dotnet` that never launched writes no reason there at all: VS Code's generic
+ * "failed to launch (exit code: 155)" is the whole of it. The notification names
+ * the cause outright. Implements [DIST-FAILURE-UX].
  */
 export function diagnoseBuildFailure(
   exitCode: number | undefined,
@@ -213,7 +226,52 @@ export async function runDotnetTask(
   const target = targetFromNode(node);
   info(`Running dotnet ${command}${target === undefined ? '' : ` for ${target}`}`);
   if (command === 'clean') diagnosticCollection.clear();
-  await vscode.tasks.executeTask(createBuildTask(command, label, target));
+  const task = createBuildTask(command, label, target);
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: progressTitle(command, target) },
+    async () => {
+      await runToCompletion(task);
+    },
+  );
+}
+
+/** The gerund each build verb reports while it runs. */
+const PROGRESS_VERBS: Readonly<Record<string, string>> = {
+  build: 'Building',
+  rebuild: 'Rebuilding',
+  clean: 'Cleaning',
+};
+
+/** What the progress notification says: the verb, and what it is acting on. */
+export function progressTitle(command: string, target?: string): string {
+  const verb = PROGRESS_VERBS[command] ?? 'Running';
+  return target === undefined ? `${verb} the workspace` : `${verb} ${path.basename(target)}`;
+}
+
+/**
+ * Start `task` and resolve once its run has ended.
+ *
+ * The end listener goes up BEFORE the task starts, and is keyed on the task
+ * object this module just built: a build that fails to launch ends almost
+ * immediately, and a listener registered after `executeTask` resolves can miss
+ * that — leaving a progress notification up over a build that is already over.
+ * [SE-ACTIONS-BUILD] requires the notification to last exactly as long as the
+ * build, which means neither flashing past it nor outliving it.
+ */
+async function runToCompletion(task: vscode.Task): Promise<void> {
+  let settle: () => void = () => undefined;
+  const ended = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const subscription = vscode.tasks.onDidEndTask((event) => {
+    if (event.execution.task === task) settle();
+  });
+  try {
+    await vscode.tasks.executeTask(task);
+    await ended;
+  } finally {
+    subscription.dispose();
+  }
 }
 
 /** Publish diagnostics for a finished build's output. */

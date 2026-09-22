@@ -20,15 +20,11 @@ import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { runMtpTests } from '../../test-mtp-run.js';
 import { listMtpTests } from '../../test-mtp-discovery.js';
-import {
-  createSolution,
-  mtpProjectXml,
-  writeMtpGlobalJson,
-  writeProject,
-} from './dotnet-project-kit';
+import { MTP_TRX_REPORT } from './dotnet-project-kit';
 import {
   ALL_MTP_IDS,
   createMtpSolution,
+  idsOf,
   MTP_FIXTURES,
   mtpFixtureFor,
 } from './test-explorer-mtp-fixtures';
@@ -63,20 +59,6 @@ const FAILING: readonly string[] = MTP_FIXTURES.flatMap((fixture) => [
 ]);
 /** Every id that must come back skipped, and NEVER as a failure. */
 const SKIPPED: readonly string[] = MTP_FIXTURES.map((fixture) => fixture.skipped);
-
-/** An MTP project WITHOUT the TRX report extension — `--report-trx` fails on it. */
-const NO_TRX_SOURCE = [
-  'using Xunit;',
-  '',
-  'namespace Cs.NoTrxMtp.Fixtures',
-  '{',
-  '    public class CalculatorTests',
-  '    {',
-  '        [Fact] public void Adds_TwoNumbers() => Assert.Equal(3, 1 + 2);',
-  '    }',
-  '}',
-  '',
-].join('\n');
 
 suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
   let api: SharpLspExtensionApi;
@@ -313,45 +295,88 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
     );
   });
 
-  test('a module without the TRX extension says which package to reference', async function () {
+  for (const fixture of MTP_FIXTURES.filter((item) => item.framework === 'nunit')) {
+    test(`${fixture.language} without either TRX reporter names the required package`, async function () {
+      this.timeout(FIXTURE_BUILD_MS);
+      // NUnit has no built-in reporter. Preserve the actionable diagnosis in
+      // both languages when neither reporting capability is available.
+      const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-notrx-'));
+      try {
+        const sln = await createMtpSolution(bare, [
+          {
+            ...fixture,
+            packages: fixture.packages.filter((ref) => ref.id !== MTP_TRX_REPORT.id),
+          },
+        ]);
+        const listing = await listMtpTests(sln, bare);
+        assert.deepStrictEqual(sorted([...listing.names]), sorted(idsOf(fixture)));
+        assert.ok(listing.mtp, 'discovery still supplies a run plan');
+        const outcome = await runMtpTests(listing.mtp, [...listing.names], bare);
+        assert.equal(outcome.results.size, 0, 'no reporter means no per-test result');
+        assert.ok(outcome.failure, 'the run must not fail silently');
+        assert.match(outcome.failure, /Microsoft\.Testing\.Extensions\.TrxReport/);
+        assert.match(outcome.failure, /--report-trx/, 'name the original missing capability');
+        assert.equal(outcome.retriedUnfiltered, false, 'a missing reporter is not a filter error');
+      } finally {
+        removeDirRecursive(bare);
+      }
+    });
+  }
+});
+
+// [TEST-MTP-RUN]: xUnit already includes a TRX reporter. The user's project
+// must not need an extra package merely to run the tests the tree discovered.
+suite('Test Explorer e2e — built-in xUnit reporting', () => {
+  const fixtures = MTP_FIXTURES.filter((fixture) => fixture.framework === 'xunit').map(
+    (fixture) => ({
+      ...fixture,
+      packages: fixture.packages.filter((ref) => ref.id !== MTP_TRX_REPORT.id),
+    }),
+  );
+  let api: SharpLspExtensionApi;
+  let root: string;
+  let slnPath: string;
+
+  suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    // `--report-trx` is an EXTENSION, not part of MTP. A module that does not
-    // register it exits with code 5. Reporting that as itself is the whole
-    // point: silence would report every selected test as "No result reported"
-    // and hide the cause.
-    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-notrx-'));
-    try {
-      writeMtpGlobalJson(bare);
-      const dir = writeProject(
-        path.join(bare, 'NoTrxMtpCs'),
-        'NoTrxMtpCs.csproj',
-        mtpProjectXml([{ id: 'xunit.v3', version: '4.0.0' }]),
-        'Tests.cs',
-        NO_TRX_SOURCE,
-      );
-      const sln = await createSolution(bare, 'NoTrx', [dir]);
-
-      // 1. Discovery still works: `--list-tests json` needs no extension.
-      const listing = await listMtpTests(sln, bare);
-      assert.deepStrictEqual(
-        [...listing.names],
-        ['Cs.NoTrxMtp.Fixtures.CalculatorTests.Adds_TwoNumbers'],
-        `the test must be discovered; warnings: ${listing.warnings.join(' | ') || '(none)'}`,
-      );
-      assert.ok(listing.mtp, 'and a run plan must come back with it');
-
-      // 2. The RUN cannot report per-test outcomes, and says exactly why.
-      const outcome = await runMtpTests(listing.mtp, [...listing.names], bare);
-      assert.equal(outcome.results.size, 0, 'no TRX means no per-test result');
-      assert.ok(outcome.failure, 'and the run must not fail silently');
-      assert.match(
-        outcome.failure,
-        /Microsoft\.Testing\.Extensions\.TrxReport/,
-        `the message must name the missing package, got: ${outcome.failure}`,
-      );
-      assert.match(outcome.failure, /--report-trx/, 'and the option that was refused');
-    } finally {
-      removeDirRecursive(bare);
-    }
+    api = await activateTestExplorer();
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-xunit-report-'));
+    slnPath = await createMtpSolution(root, fixtures);
+    await discoverSolution(api, slnPath, fixtures.flatMap(idsOf));
   });
+
+  suiteTeardown(async function () {
+    this.timeout(DOTNET_CLI_MS);
+    await teardownFixtureSolution(api, root, removeDirRecursive);
+  });
+
+  for (const fixture of fixtures) {
+    test(`${fixture.language} runs and selects tests without the optional TRX package`, async function () {
+      this.timeout(FIXTURE_BUILD_MS);
+      const ids = idsOf(fixture);
+      const listing = await listMtpTests(slnPath, root);
+      assert.ok(listing.mtp, 'discovery supplies an executable plan');
+      const outcome = await runMtpTests(listing.mtp, ids, root);
+      assert.equal(outcome.failure, undefined, outcome.failure ?? 'the runner reports outcomes');
+      assert.deepStrictEqual(sorted([...outcome.results.keys()]), sorted(ids));
+      assert.equal(outcome.results.get(fixture.parameterized)?.outcome, 'passed');
+      assert.equal(outcome.retriedUnfiltered, false, 'reporting keeps the original selection');
+
+      await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
+      await api.testController.whenIdle();
+      assertPassed(cachedFor(api, fixture.passing), fixture.passing);
+      assertFailed(cachedFor(api, fixture.failing), fixture.failing, fixture.failureText);
+      assertSkipped(cachedFor(api, fixture.skipped), fixture.skipped);
+      assertPassed(cachedFor(api, fixture.parameterized), fixture.parameterized);
+      if (fixture.mixedParameterized !== undefined) {
+        assertFailed(cachedFor(api, fixture.mixedParameterized), fixture.mixedParameterized);
+      }
+
+      const selected = await runMtpTests(listing.mtp, [fixture.passing], root);
+      assert.equal(selected.failure, undefined);
+      assert.deepStrictEqual([...selected.results.keys()], [fixture.passing]);
+      assert.equal(selected.results.get(fixture.passing)?.outcome, 'passed');
+      assertPassed(await api.testController.runSingle(fixture.passing), fixture.passing);
+    });
+  }
 });

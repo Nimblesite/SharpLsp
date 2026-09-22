@@ -14,8 +14,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -35,6 +36,43 @@ const stepAt = (recipe, needle) => {
   const at = recipe.indexOf(needle);
   assert.notEqual(at, -1, `step missing from recipe: ${needle}`);
   return at;
+};
+
+/** The root Makefile, which is the build system itself and not a shim. */
+const makefile = () => readFileSync(resolve(ROOT, 'Makefile'), 'utf8');
+
+/** Every target the Makefile declares .PHONY — what a target list shows. */
+const phonyTargets = () =>
+  [...makefile().matchAll(/^\.PHONY:((?:[^\n\\]*\\\n)*[^\n]*)/gm)]
+    .flatMap((match) => match[1].split(/[\s\\]+/))
+    .filter(Boolean);
+
+/** The value make resolved for one of its own variables. */
+const makeVariable = (name) => {
+  const { status, stdout } = spawnSync('make', ['-n', '-p'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(status, 0, `make -p failed`);
+  return new RegExp(`^${name} :?= ?(.*)$`, 'm').exec(stdout)?.[1] ?? '';
+};
+
+
+/**
+ * The PATH a recipe's CHILD process inherits, with `env` poisoning make's own.
+ *
+ * Driven through `MAKEFILES`, which make reads BEFORE the root Makefile, so the
+ * probe target sees exactly the environment every real recipe exports. Nothing
+ * here asserts on a variable make prints — a child's lookup is the thing that
+ * was wrong, so a child is what gets asked.
+ */
+const childPath = (env) => {
+  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
+  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
+  const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...env, MAKEFILES: probe },
+  });
+  assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
+  return stdout.trim().split(delimiter);
 };
 
 /** The identifier the loop must derive from the extension manifest, not hardcode. */
@@ -81,32 +119,95 @@ test('reinstall-vsix rebuilds the binaries it packages, and kills what holds the
   assert.match(recipe, /rm -rf src\/editors\/vscode\/bin/, 'the VSIX bin/ stage must be cleared');
 });
 
-// [DIST-RUNTIME-ACQUIRE] The sidecar build must test the global.json pin, not
-// the presence of any 10.x SDK. The grep this replaced passed on a machine
-// carrying 10.0.203 against a 10.0.303 pin, so the loop ran a full clean and a
-// full Rust rebuild before dying on a bare exit 155 from `dotnet publish`.
-test('the sidecar build tests the global.json pin, not just any 10.x SDK', () => {
-  const recipe = dryRun('reinstall-vsix');
+// [DIST-RUNTIME-ACQUIRE] The sidecar build must run against the SDK global.json
+// pins, and `dotnet --list-sdks | grep '^10\.'` was never that check: it passed
+// on a machine carrying 10.0.203 against a 10.0.303 pin, so the loop ran a full
+// clean and a full Rust rebuild before dying on a bare exit 155.
+//
+// Testing the dotnet on PATH was not that check either. A satisfying SDK in
+// ~/.dotnet beside a stale one in /usr/local/share/dotnet is the ordinary state
+// of a macOS dev machine, and the build stopped on it every time to explain
+// which root the developer should have exported. Resolving the root IS the fix.
+test('the build resolves a dotnet that satisfies global.json, wherever it lives', () => {
   const pin = JSON.parse(readFileSync(resolve(ROOT, 'global.json'), 'utf8')).sdk;
+  const root = makeVariable('DOTNET_ROOT');
+  assert.ok(root, `make resolved no dotnet root, and global.json pins ${pin.version}`);
 
-  // `dotnet --version` reads global.json, so the host evaluates rollForward -
-  // nothing here reimplements band-crossing rules that only dotnet knows.
-  assert.match(recipe, /dotnet --version >\/dev\/null/, 'the pin must be probed');
+  // `dotnet --version` READS global.json, so a zero exit from the resolved root
+  // is the pin being satisfied - rollForward and all - evaluated by the host
+  // that owns those rules instead of reimplemented here.
+  const dotnet = resolve(root, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet');
+  const probe = spawnSync(dotnet, ['--version'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, DOTNET_ROOT: root },
+  });
+  assert.equal(
+    probe.status,
+    0,
+    `${dotnet} does not satisfy the pin:\n${probe.stdout}${probe.stderr}`,
+  );
+  assert.match(probe.stdout.trim(), /^\d+\.\d+\.\d+/);
+
+  // Exported, not merely used in one recipe: MSBuild, the sidecars and the test
+  // hosts must all run against the SDK the build was resolved against.
+  assert.equal(makeVariable('SHARPLSP_DOTNET_ROOT'), root);
+  assert.ok(makeVariable('PATH').includes(root), 'the resolved root must be on PATH for children');
+
+  // rollForward across feature bands is the case that broke: assert the pin the
+  // resolution defends is still the strict kind that makes this test meaningful.
+  assert.equal(pin.rollForward, 'latestPatch');
+  assert.match(pin.version, /^\d+\.\d+\.\d+$/);
+});
+
+test('with no satisfying SDK anywhere, the build says to install the pinned one', () => {
+  const recipe = dryRun('_build-dotnet');
+
+  assert.match(recipe, /global\.json/, 'the failure must name the file that set the pin');
+  assert.match(recipe, /make install-dotnet-10/, 'the install remedy must be offered');
   assert.doesNotMatch(
     recipe,
     /--list-sdks[^|]*\|\s*grep -q/,
     'a --list-sdks grep cannot see a feature-band mismatch',
   );
 
-  // The diagnosis must name the pin's own file and the way out.
-  assert.match(recipe, /global\.json/);
-  assert.match(recipe, /is not the dotnet on PATH/, 'a wrong-root PATH must be named as such');
-  assert.match(recipe, /make install-dotnet-10/, 'the install remedy must be offered');
+  // The old failure handed the developer an export line to paste. Nothing is
+  // left for them to put on PATH: a root that satisfies the pin is found and
+  // used, so reaching this message means there is no such root to find.
+  assert.doesNotMatch(recipe, /is not the dotnet on PATH/);
+  assert.doesNotMatch(recipe, /export DOTNET_ROOT=/);
+});
 
-  // rollForward across feature bands is the case that broke: assert the pin the
-  // check defends is still the strict kind that makes this test meaningful.
-  assert.equal(pin.rollForward, 'latestPatch');
-  assert.match(pin.version, /^\d+\.\d+\.\d+$/);
+// [DIST-VSIX-DEV-INSTALL] rule 8.
+test('the root Makefile is the build system, and its public surface is a dozen targets', () => {
+  const text = makefile();
+
+  // Not a shim around tools/make/*.mk: `make` must find the actions in the file
+  // `make` looks for, and a target list must be one file long.
+  assert.doesNotMatch(text, /^include /m, 'the root Makefile must not include another make file');
+
+  const PUBLIC = [
+    'audit',
+    'build',
+    'ci',
+    'clean',
+    'fmt',
+    'install-dotnet-10',
+    'install-vsix',
+    'lint',
+    'reinstall-vsix',
+    'setup',
+    'test',
+    'uninstall-vsix',
+  ];
+  for (const target of PUBLIC) {
+    assert.match(text, new RegExp(`^${target}:`, 'm'), `${target} must be defined here`);
+  }
+
+  // Every other target carries the `_` prefix, which is the whole convention:
+  // a tool listing this file's targets shows the dozen a developer runs.
+  const listed = phonyTargets().filter((target) => !target.startsWith('_'));
+  assert.deepEqual([...new Set(listed)].sort(), PUBLIC);
 });
 
 test('the loop names the extension from the manifest and forces the install', () => {
@@ -142,4 +243,127 @@ test('install-vsix and uninstall-vsix stand alone with the documented contracts'
     assert.match(recipe, /for candidate in code code\.cmd/);
     assert.match(recipe, /ERROR: no VS Code CLI found/);
   }
+});
+
+// [DIST-VSIX-CONTENTS] The loop must not install a VSIX it never checked.
+//
+// Every copy and rename in `_stage-vsix-binary-only` ends in
+// `2>/dev/null || true`, so a stage that half-ran is indistinguishable from one
+// that worked: packaging proceeds, `--install-extension` succeeds, and the
+// developer learns the host or a sidecar is missing as activation failures.
+// `_test-vsix` has gated on `_verify-vsix-payload` all along. The one command a
+// developer actually runs to install their own build did not.
+test('reinstall-vsix verifies the payload before it installs anything', () => {
+  const recipe = dryRun('reinstall-vsix');
+
+  const verify = stepAt(recipe, 'verify-vsix-payload.mjs');
+  const packaged = stepAt(recipe, 'vsce package');
+  const install = stepAt(recipe, '--install-extension');
+
+  // The gate runs, and it runs while there is still something to gate on.
+  assert.ok(verify < install, 'the payload must be verified before the install');
+  assert.ok(
+    verify < packaged || verify < install,
+    'verification must bracket the package step, not trail the install',
+  );
+
+  // The verifier reads the staged tree, so the stage must still be on disk when
+  // it runs - `_build-vsix` ends with `rm -rf bin`, which is what makes a plain
+  // prerequisite useless here.
+  assert.match(recipe, /_stage-vsix-binary-only|cp target\/release\/sharplsp/, 'stage must precede verification');
+
+  // The production bundle is what ships, so it is what gets judged.
+  assert.match(recipe, /npm run build:production/, 'the verifier must judge the production bundle');
+});
+
+// [DIST-VSIX-DEV-INSTALL] Requirement 7: the dev VSIX carries THIS platform's
+// host binary and THIS platform's debug adapter. A package built without
+// `--target` has no TargetPlatform in its manifest, so VS Code treats it as
+// universal and will install it anywhere - onto machines whose host binary and
+// netcoredbg are simply not in it. Every released VSIX is built with --target;
+// the dev loop must produce the same shape or it is not exercising what ships.
+test('the dev VSIX is packaged for the host platform, like every released VSIX', () => {
+  // `make -n` prints a recipe line's backslash continuations as separate lines,
+  // so flatten them before matching: the assertion is about the command, not
+  // about where someone chose to wrap it.
+  const recipe = dryRun('reinstall-vsix').replace(/\\\n\s*/g, ' ');
+
+  // HOST_PLATFORM is `process.platform + '-' + process.arch` evaluated by node
+  // (Makefile), which is vsce's own target vocabulary - darwin-arm64,
+  // linux-x64, win32-x64. `make -p` would hand back the unexpanded $(shell ...)
+  // definition, so compute the expected value the same way the Makefile does.
+  const hostPlatform = `${process.platform}-${process.arch}`;
+  assert.match(
+    makefile(),
+    /^HOST_PLATFORM = \$\(shell node -e "process\.stdout\.write\(process\.platform \+ '-' \+ process\.arch\)"\)$/m,
+    'HOST_PLATFORM must stay node-derived, so it keeps matching vsce target ids',
+  );
+
+  assert.match(
+    recipe,
+    /vsce package[^\n]*--target /,
+    'the dev package must declare a target platform',
+  );
+  assert.match(
+    recipe,
+    new RegExp(`vsce package[^\\n]*--target ${hostPlatform}\\b`),
+    `the dev package must target the host platform (${hostPlatform})`,
+  );
+
+  // The staged host binary and the declared target must be the same platform,
+  // or the VSIX advertises one platform and carries another.
+  assert.match(
+    recipe,
+    new RegExp(`src/editors/vscode/bin/${hostPlatform}/sharplsp`),
+    'the staged host binary must sit under the same platform the package targets',
+  );
+});
+
+// [DIST-RUNTIME-ACQUIRE] Resolving the root is only half the fix. `$(DOTNET)` is
+// absolute, so every RECIPE is immune — but the tools those recipes spawn are
+// not: build-test-fixtures.mjs, dotnet-vulnerable.mjs and the packaging scripts
+// all run a bare `dotnet`, and a bare `dotnet` is whatever PATH says first.
+//
+// The guard that skipped the prepend tested whether the resolved root was
+// PRESENT on PATH. The requirement is that it be FIRST. A machine carrying a
+// stale root ahead of a good one — `export PATH="$DOTNET_ROOT:$PATH"` in a
+// shell profile, pointing at /usr/local/share/dotnet — satisfies "present" and
+// loses the lookup, so the prepend was skipped in exactly the configuration it
+// exists to fix, and the audit leg and the fixture build ran on the wrong SDK.
+//
+// Both cases below must resolve to the pinned root. Only the FIRST of them
+// discriminates: with the root absent from PATH the old guard prepends and
+// passes, which is why "absent" alone would have proved nothing.
+test('the resolved SDK wins the PATH, not merely appears on it', () => {
+  const root = makeVariable('DOTNET_ROOT');
+  assert.ok(root, 'make resolved no dotnet root to put on PATH');
+  const stale = resolve('/nonexistent-stale-dotnet-root');
+  assert.notEqual(stale, root, 'the stale root must not be the resolved one');
+
+  const outranked = childPath({
+    PATH: [stale, root, '/usr/bin', '/bin'].join(delimiter),
+    DOTNET_ROOT: stale,
+  });
+  assert.equal(
+    outranked[0],
+    root,
+    `a stale root outranked the pinned one: a child would run ${outranked[0]}/dotnet`,
+  );
+
+  const absent = childPath({
+    PATH: [stale, '/usr/bin', '/bin'].join(delimiter),
+    DOTNET_ROOT: stale,
+  });
+  assert.equal(absent[0], root, 'and the root is still prepended when it is absent entirely');
+
+  // Idempotent: once the root is first, a nested sub-make must not stack it
+  // again. Duplicate-free is what the original guard was reaching for, and
+  // testing precedence gets it for free.
+  const already = childPath({ PATH: [root, '/usr/bin', '/bin'].join(delimiter) });
+  assert.equal(already[0], root, 'a PATH already led by the root keeps it');
+  assert.equal(
+    already.filter((entry) => entry === root).length,
+    1,
+    `the root was stacked more than once: ${already.join(delimiter)}`,
+  );
 });

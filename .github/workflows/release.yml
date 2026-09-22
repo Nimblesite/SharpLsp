@@ -145,7 +145,7 @@ jobs:
       # install.
       - name: Package VSIX + standalone server archive
         shell: bash
-        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target
+        run: make _package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target
           }} VERSION="${{ needs.version.outputs.version }}"
       - name: Verify binary version
         if: "${{ matrix.can_execute }}"

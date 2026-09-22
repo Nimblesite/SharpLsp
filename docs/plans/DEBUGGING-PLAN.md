@@ -254,7 +254,7 @@ open and are called out as such, because nothing implements them.
 
 - [x] Stage netcoredbg into the VSIX for every platform with an upstream prebuilt, and prove it
       reached the package. `tools/vsix/fetch-netcoredbg.sh` (invoked from
-      `tools/make/main.mk:193` and `:607`), payload assertion in
+      `Makefile:231` and `:854`), payload assertion in
       `tools/vsix/verify-vsix-payload.mjs:42` for both `netcoredbg` and its `ManagedPart.dll`;
       test `00-vsix-dev-binary-staging.test.ts` *bundles the netcoredbg debug adapter the launch
       path resolves first* — which runs as the shared head of **every** Windows chunk

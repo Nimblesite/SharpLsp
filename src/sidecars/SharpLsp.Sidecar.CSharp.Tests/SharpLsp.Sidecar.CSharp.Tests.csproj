@@ -15,7 +15,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="MessagePack" Version="3.1.8" />
+        <PackageReference Include="MessagePack" Version="3.1.9" />
         <!-- The MSBuild-family assemblies flow in transitively via the CSharp sidecar's
              Microsoft.CodeAnalysis.Workspaces.MSBuild reference. MSBuildLocator supplies
              these assemblies from the SDK at runtime, so keep them compile-time only to

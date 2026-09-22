@@ -42,7 +42,7 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 
 ### Verification (clean Windows machine, no .NET 10 installed)
 
-- [ ] `make package-vsix-win32-x64 VERSION=0.1.1` succeeds
+- [ ] `make _package-vsix-win32-x64 VERSION=0.1.1` succeeds
 - [ ] Uninstall SharpLsp: `code --uninstall-extension nimblesite.sharplsp`
 - [ ] Uninstall the .NET Install Tool: `code --uninstall-extension ms-dotnettools.vscode-dotnet-runtime`
 - [ ] `code --install-extension dist/sharplsp-win32-x64.vsix` — VS Code auto-installs the .NET Install Tool dependency without prompting
@@ -108,6 +108,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 - [x] `make audit` runs cargo audit, dotnet list package --vulnerable and npm audit over every lockfile/solution
 - [x] `tools/audit/dotnet-vulnerable.mjs` fails the .NET leg (dotnet list exits 0 on findings) + tests in `make _test-tooling`
 - [x] `ci-audit.yml` runs `make audit` on every PR (`ci.yml`), weekly on `main`, and as a release gate (`release` needs `audit`)
+- [x] Include `audit` in the final CI job's dependencies; YAML-based regression tests guard both CI and Marketplace/Open VSX release enforcement.
 - [ ] Upgrade `@vscode/test-cli` once a release drops mocha 11 (its nested `diff` 7.0.0 carries low-severity GHSA-73rr-hh4g-fpgx)
 
 ## TODO Checklist — original v0.1.0 work (status snapshot)
@@ -237,7 +238,9 @@ Two further failure classes were investigated and turned out **not** to be defec
 - [x] Add `install-sidecars` target (dotnet tool install from local nupkgs)
 - [x] Keep `install-binaries` as alias for both
 - [x] Verify `test-vsix` still works with new install layout — `make test-vsix` stages binaries at `$(PREFIX)` and runs tests with coverage; all passing
-- [x] `reinstall-vsix` runs the whole local loop in order: uninstall → kill → `clean` → rebuild host + both sidecars + extension → package → install ([DIST-VSIX-DEV-INSTALL])
+- [x] `reinstall-vsix` runs the whole local loop in order: uninstall → kill → `clean` → rebuild host + both sidecars + extension → verify payload → package → install ([DIST-VSIX-DEV-INSTALL])
+- [x] `_build-vsix` gates on `_verify-vsix-payload` before packaging, so a half-finished stage can never reach `--install-extension` ([DIST-VSIX-CONTENTS])
+- [x] the dev VSIX is packaged `--target $(HOST_PLATFORM)`, the same shape every released VSIX has ([DIST-VSIX-DEV-INSTALL])
 - [x] `tools/make/reinstall-loop.test.mjs` asserts that ordering and the CLI/`--force`/manifest-id contracts against the real Makefile, wired into `make _test-tooling`
 
 ### Documentation

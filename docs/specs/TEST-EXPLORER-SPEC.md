@@ -373,7 +373,7 @@ REPLACE the refused attempt's; counts are summed only ACROSS modules.
 Invocations that answer for DIFFERENT tests — two batches of one module, two modules, two
 runners ([TEST-MTP-ROUTING]) — KEEP every failure when they merge: one that reported nothing is
 never rescued by one that reported something, because its failure is the only account its
-tests get. A solution where one project lacks `Microsoft.Testing.Extensions.TrxReport`
+tests get. A solution where one project has neither supported TRX reporter
 therefore still shows that project's tests the message naming the package, whatever the
 other projects reported. Within one module the same rule is what makes the retry reachable: a
 selection spanning several batches whose LATER batch holds the refused uid still carries that
@@ -382,9 +382,16 @@ results. Only the unfiltered retry — the same tests again — replaces a failu
 
 `--report-trx` is an EXTENSION, not part of MTP. A module that does not register
 `Microsoft.Testing.Extensions.TrxReport` rejects the option and exits with code 5, printing
-`Unknown option '--report-trx'`. That exit code MUST be reported as itself: the message tells
-the user to reference the package. A silent empty run would report every selected test as
-"No result reported" and hide the cause.
+`Unknown option '--report-trx'`. xUnit supplies its own reporter without that package:
+`--report-xunit-trx --report-xunit-trx-filename <module>.<n>.trx`. A non-debug invocation that
+rejects `--report-trx` MUST retry once with those two options, preserving its literal UIDs,
+results directory, report name, coverage options, and cancellation. Argument validation
+has run no tests, so this does not execute a test twice. A failed test, timeout, cancellation,
+or debug invocation MUST NOT trigger reporter negotiation. If the runner also rejects the
+xUnit option, retain the original diagnosis naming `Microsoft.Testing.Extensions.TrxReport`.
+Both C# and F# xUnit projects MUST run without the optional package, including theory rows
+and individual selection. A runner with neither reporter must still explain the missing
+package rather than report an unexplained empty run.
 
 Coverage is also an extension. MTP has no `--collect:"XPlat Code Coverage"`; it takes
 `--coverage --coverage-output-format cobertura`, and it writes `<guid>.cobertura.xml`

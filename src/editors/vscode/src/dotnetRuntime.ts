@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as log from './log.js';
 import { type SdkPin, installedSdkVersions, pinSatisfiedBy, readSdkPin } from './global-json.js';
+import { candidateDotnetRoots, findDotnetSatisfying } from './dotnet-roots.js';
 import { CMD_RETRY_DOTNET_ACQUISITION } from './constants.js';
 import { type Result, err, ok } from './result.js';
 import { ServerState, type SharpLspStatusBar } from './status.js';
@@ -78,12 +79,29 @@ export async function acquireDotnet10Sdk(statusBar: SharpLspStatusBar): Promise<
     return ok(existing.value);
   }
 
+  // The Install Tool reports ONE host. Before concluding the pinned SDK is
+  // missing, ask every other root on the machine the same question: a
+  // user-local ~/.dotnet carrying the pinned SDK is invisible to a findPath
+  // that resolved the system-wide install, and answering "install it" to a
+  // machine that already has it leaves every dotnet entry point on the host
+  // that cannot run them. [DIST-RUNTIME-ACQUIRE]
+  const unpinned: Result<string> = pin === undefined ? err('unpinned') : await tryFindExistingSdk();
+  if (pin !== undefined) {
+    const elsewhere = findDotnetSatisfying(pin, [
+      ...(unpinned.ok ? [dotnetRootFromPath(unpinned.value)] : []),
+      ...candidateDotnetRoots(),
+    ]);
+    if (elsewhere !== undefined) {
+      log.info(`.NET SDK ${pin.version} satisfied by ${elsewhere} — using it`);
+      return ok(elsewhere);
+    }
+  }
+
   // An SDK that exists but cannot satisfy the pin must NOT block activation on a
   // platform installer: a global install can sit indefinitely on an elevation
   // prompt, and `activate()` awaits this call, so the whole extension host —
   // completions, navigation, everything — would stall behind a build fix. Report
   // it, keep the SDK that IS installed, and let the user start the install.
-  const unpinned: Result<string> = pin === undefined ? err('unpinned') : await tryFindExistingSdk();
   if (pin !== undefined && unpinned.ok) {
     void reportUnsatisfiablePin(unpinned.value, pin, statusBar);
     return ok(unpinned.value);

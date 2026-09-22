@@ -45,6 +45,7 @@ import {
   activateTestExplorer,
   collectItemIds,
   drainDiscovery,
+  errorTextOf,
   findItem,
   pollForIds,
   pollUntilDiscovered,
@@ -1353,8 +1354,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       undefined,
       'the failure row carries an error — that is what the Testing view renders',
     );
-    const message =
-      failure.error instanceof vscode.MarkdownString ? failure.error.value : String(failure.error);
+    const message = errorTextOf(failure);
     assert.strictEqual(
       message.includes(ghost),
       true,
@@ -2279,8 +2279,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       undefined,
       'the row carries an error for the view to render',
     );
-    const message =
-      failure.error instanceof vscode.MarkdownString ? failure.error.value : String(failure.error);
+    const message = errorTextOf(failure);
     assert.strictEqual(
       message.includes('MSB1011'),
       true,

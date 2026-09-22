@@ -185,7 +185,7 @@ Before running any install command, run `getVersion("brew")` / `getVersion("scoo
 
 ### Makefile installation targets `[BINARY-MAKEFILE]`
 
-`tools/make/main.mk:584-600` — the install targets currently stage sharplsp + sidecars into `$PREFIX`. Replace with:
+`Makefile:930-946` — the install targets currently stage sharplsp + sidecars into `$PREFIX`. Replace with:
 
 - `install-rust`: just copies `sharplsp` to `$PREFIX/bin` (for local dev)
 - `install-sidecars`: runs `dotnet tool install -g` from locally packed nupkgs so contributors can test the tool install flow end-to-end

@@ -111,6 +111,24 @@ if [ "$PLATFORM" = "win32-x64" ]; then
 fi
 mkdir -p "$BUILD" "$OUTPUT"
 
+# [DIST-DEBUGGER-BUNDLE] One `dotnet publish` of the managed part emits BOTH
+# ManagedPart.dll and the platform's dbgshim library into the build directory,
+# but CMake declares only the .dll as that custom command's OUTPUT. So a publish
+# that half-ran - interrupted, or restored before the native asset resolved -
+# leaves a build tree that is stuck for good: every later build skips the publish
+# because the .dll is there, and `cmake --install` then dies on the dbgshim
+# library that never arrived. Deleting the .dll is what makes CMake publish
+# again; nothing else in the tree can express "this output is incomplete".
+case "$PLATFORM" in
+  darwin-*) DBGSHIM_LIB="libdbgshim.dylib" ;;
+  win32-*)  DBGSHIM_LIB="dbgshim.dll" ;;
+  *)        DBGSHIM_LIB="libdbgshim.so" ;;
+esac
+if [ -f "$BUILD/src/ManagedPart.dll" ] && [ ! -f "$BUILD/src/$DBGSHIM_LIB" ]; then
+  echo "netcoredbg: cached managed part is missing $DBGSHIM_LIB; publishing it again"
+  rm -f "$BUILD/src/ManagedPart.dll"
+fi
+
 CMAKE_ARGS=(
   -S "$SOURCE"
   -B "$BUILD"

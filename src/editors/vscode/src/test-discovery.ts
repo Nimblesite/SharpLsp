@@ -29,7 +29,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
-import { parseTestList } from './test-listing.js';
+import { parseListingDiagnostics, parseTestList } from './test-listing.js';
 import { HEX_DIGITS, parseFullyQualifiedTestList } from './test-names.js';
 import {
   mergeMultiTargeted,
@@ -306,8 +306,16 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
   // announced assemblies and then produced nothing at all did not run to
   // completion, whatever the exit code claimed.
   const fallback = parseTestList(output);
-  const ok = fallback.length > 0 || (assemblies.length === 0 && warnings.length === 0);
-  return { names: fallback, ok, warnings, byAssembly: [] };
+  if (fallback.length > 0) return { names: fallback, ok: true, warnings, byAssembly: [] };
+
+  // Nothing at all: no assembly, no name. A target `dotnet` REFUSED and still
+  // exited 0 lands here, and its diagnostic is the whole answer — the one thing
+  // that separates it from a solution that really holds no test
+  // ([TEST-MTP-MODULES]). Consulted only here, so a build warning over a
+  // solution that did enumerate is never mistaken for a failure.
+  const refusals = parseListingDiagnostics(output);
+  const ok = assemblies.length === 0 && warnings.length === 0 && refusals.length === 0;
+  return { names: [], ok, warnings: [...warnings, ...refusals], byAssembly: [] };
 }
 
 // Batched multi-assembly listing is intentionally no longer used by discovery:

@@ -17,7 +17,7 @@ documentation, decide the design.
 
 | Package set | MTP version | `--list-tests json` | `--filter-uid` | `--report-trx` |
 |---|---|---|---|---|
-| `xunit.v3` 4.0.0 | 2.3.3 | yes | yes | needs `Microsoft.Testing.Extensions.TrxReport` |
+| `xunit.v3` 4.0.0 | 2.3.3 | yes | yes | optional extension; built-in `--report-xunit-trx` also works |
 | `MSTest` 4.4.0 | 2.x | yes | yes | built in |
 | `NUnit` 4.4.0 + `NUnit3TestAdapter` 6.3.0 | 2.x | yes | yes | needs the TrxReport package |
 | `MSTest` 3.11.0 | 1.9.0 | **no** — "expects no arguments" | yes | built in |
@@ -187,6 +187,14 @@ framework's own text, defaulting to xUnit's so every existing caller is unchange
 MTP fixture declares the text its framework writes.
 
 ## Not done
+
+Release regression follow-through ([TEST-MTP-RUN]):
+
+- [x] Reproduce bare xUnit v3 execution failure with real F# and C# projects before fixing it.
+- [x] Negotiate xUnit's built-in reporter after the optional MTP reporter is rejected.
+- [x] Verify pass/fail/skip, theory attribution, individual selection, and CodeLens without an extra package.
+- [x] Preserve missing-reporter diagnostics using real F# and C# NUnit projects with neither reporter.
+- [ ] Complete the MTP regression chunks against the final release candidate on supported platforms.
 
 * **MTP server mode** (`--server jsonrpc`) is how Visual Studio and Rider talk to a module.
   It would give streaming results, cancellation and locations with no extension packages at
