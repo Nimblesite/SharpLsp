@@ -202,7 +202,7 @@ and types `make` finds the actions where `make` looks for them.
 
 | Target | Contract |
 |---|---|
-| `make reinstall-vsix` | uninstall → kill → `clean` → `_build-vsix` (Rust host + both sidecars + extension, packaged) → install. The whole loop. |
+| `make reinstall-vsix` | uninstall → kill → `clean` → `_build-vsix` (Rust host + both sidecars + extension, payload verified, packaged for the host platform) → install. The whole loop. |
 | `make install-vsix` | install `dist/sharplsp.vsix` as it stands. Fails if it is absent. |
 | `make uninstall-vsix` | remove the installed extension. Succeeds when nothing is installed. |
 
@@ -238,3 +238,17 @@ Requirements:
    in the table MUST be prefixed `_`. The prefix is the public/private boundary:
    a tool that lists this file's targets shows the dozen a developer runs, not
    the seventy the build is made of.
+9. The loop MUST verify the VSIX payload ([DIST-VSIX-CONTENTS]) **before** it
+   installs, and the verification MUST run while the staged `bin/` is still on
+   disk. Every copy and rename in the staging step ends in `2>/dev/null || true`,
+   so a stage that half-ran is indistinguishable from one that worked: packaging
+   proceeds, `--install-extension` succeeds, and the developer meets the missing
+   host, sidecar or debug adapter as activation failures instead of as a build
+   error. The test path has always gated on this; the path a developer actually
+   runs to install their own build MUST gate on it too, or the only unverified
+   VSIX the project produces is the one most likely to be broken.
+10. The dev VSIX MUST be packaged with `--target <host platform>`. Without it the
+    package carries no `TargetPlatform`, so VS Code treats a VSIX holding exactly
+    ONE platform's host binary and debug adapter as installable on every
+    platform. Every released VSIX is built with `--target`, so omitting it here
+    also means the loop never exercises the shape that ships.

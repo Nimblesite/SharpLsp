@@ -210,11 +210,27 @@ _build-dotnet:
 	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 
+# [DIST-VSIX-CONTENTS] The gate runs BEFORE the package, not after: `vsce ls` is
+# the same file list `vsce package` writes, so verifying the staged tree is
+# verifying the artifact, and doing it first means a half-stage never becomes a
+# VSIX that `install-vsix` will happily push into VS Code. Every copy and rename
+# in `_stage-vsix-binary-only` ends in `2>/dev/null || true`, so a stage that
+# half-ran looks exactly like one that worked; without this the developer meets
+# the hole as an activation failure. A sub-make, not a prerequisite, because
+# this recipe ends by deleting the very `bin/` the verifier reads.
+#
+# `--target` because a package built without it carries no TargetPlatform, and
+# VS Code then treats a VSIX holding exactly ONE platform's host binary and
+# debug adapter as installable on every platform. Released VSIXes are always
+# built with it, so omitting it here means the dev loop never exercises the
+# shape that ships. [DIST-VSIX-DEV-INSTALL]
 _build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
-	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies -o ../../../$(DEV_VSIX)
+	@$(MAKE) _verify-vsix-payload
+	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies \
+		--target $(HOST_PLATFORM) -o ../../../$(DEV_VSIX)
 	rm -rf $(VSCODE_DIR)/bin
 
 _build-zed:

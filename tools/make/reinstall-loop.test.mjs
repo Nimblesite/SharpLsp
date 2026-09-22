@@ -222,3 +222,77 @@ test('install-vsix and uninstall-vsix stand alone with the documented contracts'
     assert.match(recipe, /ERROR: no VS Code CLI found/);
   }
 });
+
+// [DIST-VSIX-CONTENTS] The loop must not install a VSIX it never checked.
+//
+// Every copy and rename in `_stage-vsix-binary-only` ends in
+// `2>/dev/null || true`, so a stage that half-ran is indistinguishable from one
+// that worked: packaging proceeds, `--install-extension` succeeds, and the
+// developer learns the host or a sidecar is missing as activation failures.
+// `_test-vsix` has gated on `_verify-vsix-payload` all along. The one command a
+// developer actually runs to install their own build did not.
+test('reinstall-vsix verifies the payload before it installs anything', () => {
+  const recipe = dryRun('reinstall-vsix');
+
+  const verify = stepAt(recipe, 'verify-vsix-payload.mjs');
+  const packaged = stepAt(recipe, 'vsce package');
+  const install = stepAt(recipe, '--install-extension');
+
+  // The gate runs, and it runs while there is still something to gate on.
+  assert.ok(verify < install, 'the payload must be verified before the install');
+  assert.ok(
+    verify < packaged || verify < install,
+    'verification must bracket the package step, not trail the install',
+  );
+
+  // The verifier reads the staged tree, so the stage must still be on disk when
+  // it runs - `_build-vsix` ends with `rm -rf bin`, which is what makes a plain
+  // prerequisite useless here.
+  assert.match(recipe, /_stage-vsix-binary-only|cp target\/release\/sharplsp/, 'stage must precede verification');
+
+  // The production bundle is what ships, so it is what gets judged.
+  assert.match(recipe, /npm run build:production/, 'the verifier must judge the production bundle');
+});
+
+// [DIST-VSIX-DEV-INSTALL] Requirement 7: the dev VSIX carries THIS platform's
+// host binary and THIS platform's debug adapter. A package built without
+// `--target` has no TargetPlatform in its manifest, so VS Code treats it as
+// universal and will install it anywhere - onto machines whose host binary and
+// netcoredbg are simply not in it. Every released VSIX is built with --target;
+// the dev loop must produce the same shape or it is not exercising what ships.
+test('the dev VSIX is packaged for the host platform, like every released VSIX', () => {
+  // `make -n` prints a recipe line's backslash continuations as separate lines,
+  // so flatten them before matching: the assertion is about the command, not
+  // about where someone chose to wrap it.
+  const recipe = dryRun('reinstall-vsix').replace(/\\\n\s*/g, ' ');
+
+  // HOST_PLATFORM is `process.platform + '-' + process.arch` evaluated by node
+  // (Makefile), which is vsce's own target vocabulary - darwin-arm64,
+  // linux-x64, win32-x64. `make -p` would hand back the unexpanded $(shell ...)
+  // definition, so compute the expected value the same way the Makefile does.
+  const hostPlatform = `${process.platform}-${process.arch}`;
+  assert.match(
+    makefile(),
+    /^HOST_PLATFORM = \$\(shell node -e "process\.stdout\.write\(process\.platform \+ '-' \+ process\.arch\)"\)$/m,
+    'HOST_PLATFORM must stay node-derived, so it keeps matching vsce target ids',
+  );
+
+  assert.match(
+    recipe,
+    /vsce package[^\n]*--target /,
+    'the dev package must declare a target platform',
+  );
+  assert.match(
+    recipe,
+    new RegExp(`vsce package[^\\n]*--target ${hostPlatform}\\b`),
+    `the dev package must target the host platform (${hostPlatform})`,
+  );
+
+  // The staged host binary and the declared target must be the same platform,
+  // or the VSIX advertises one platform and carries another.
+  assert.match(
+    recipe,
+    new RegExp(`src/editors/vscode/bin/${hostPlatform}/sharplsp`),
+    'the staged host binary must sit under the same platform the package targets',
+  );
+});

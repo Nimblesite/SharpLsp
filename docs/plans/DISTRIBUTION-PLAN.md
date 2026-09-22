@@ -237,7 +237,9 @@ Two further failure classes were investigated and turned out **not** to be defec
 - [x] Add `install-sidecars` target (dotnet tool install from local nupkgs)
 - [x] Keep `install-binaries` as alias for both
 - [x] Verify `test-vsix` still works with new install layout — `make test-vsix` stages binaries at `$(PREFIX)` and runs tests with coverage; all passing
-- [x] `reinstall-vsix` runs the whole local loop in order: uninstall → kill → `clean` → rebuild host + both sidecars + extension → package → install ([DIST-VSIX-DEV-INSTALL])
+- [x] `reinstall-vsix` runs the whole local loop in order: uninstall → kill → `clean` → rebuild host + both sidecars + extension → verify payload → package → install ([DIST-VSIX-DEV-INSTALL])
+- [x] `_build-vsix` gates on `_verify-vsix-payload` before packaging, so a half-finished stage can never reach `--install-extension` ([DIST-VSIX-CONTENTS])
+- [x] the dev VSIX is packaged `--target $(HOST_PLATFORM)`, the same shape every released VSIX has ([DIST-VSIX-DEV-INSTALL])
 - [x] `tools/make/reinstall-loop.test.mjs` asserts that ordering and the CLI/`--force`/manifest-id contracts against the real Makefile, wired into `make _test-tooling`
 
 ### Documentation
