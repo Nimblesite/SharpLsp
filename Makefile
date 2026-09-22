@@ -180,17 +180,29 @@ export DOTNET_ROOT := $(SHARPLSP_DOTNET_ROOT)
 # lookup, so testing presence skipped the prepend in precisely the configuration
 # it exists to fix.
 #
-# Testing PRECEDENCE also gets the duplicate-free property the presence test was
+# The test is delegated to the SHELL rather than done with `firstword`, because
+# every make word function splits on whitespace and the Windows default root is
+# `/c/Program Files/dotnet`. `firstword` read its head as `/c/Program`, which
+# never equals the root, so the guard prepended again at every level of a
+# recursive build - unbounded PATH growth, and the precedence it exists to
+# assert never actually checked. `$${PATH%%:*}` compares the whole first entry.
+# A `case` glob cannot be used here: make counts parentheses inside
+# `$(shell ...)`, so the `)` closing a case pattern terminates the call.
+#
+# Testing precedence also gets the duplicate-free property the presence test was
 # reaching for: after one prepend the root leads, so a nested sub-make compares
-# equal and skips it. A first PATH entry containing a space compares unequal and
-# prepends again — harmless, and no worse than the word-splitting the presence
-# test already had.
-ifneq ($(firstword $(subst :, ,$(PATH))),$(SHARPLSP_DOTNET_ROOT))
+# equal and skips it.
+ifneq ($(shell [ "$${PATH%%:*}" = "$(SHARPLSP_DOTNET_ROOT)" ] && echo led),led)
 export PATH := $(SHARPLSP_DOTNET_ROOT):$(PATH)
 endif
 endif
 
-DOTNET = $(if $(SHARPLSP_DOTNET_ROOT),$(SHARPLSP_DOTNET_ROOT)/,)dotnet$(EXE_EXT)
+# QUOTED, because the resolved root routinely contains a space: the Windows
+# installer's default is `C:\Program Files\dotnet`, which Git Bash hands to make
+# as `/c/Program Files/dotnet`. Unquoted, every recipe below splits it and the
+# shell runs `/c/Program` - exit 127, and `_build-dotnet` died before it
+# compiled anything. Ubuntu cannot reproduce it: /usr/share/dotnet has no space.
+DOTNET = "$(if $(SHARPLSP_DOTNET_ROOT),$(SHARPLSP_DOTNET_ROOT)/,)dotnet$(EXE_EXT)"
 
 CHECK_DOTNET_PIN = \
 	if [ -z "$$SHARPLSP_DOTNET_ROOT" ]; then \
@@ -199,7 +211,7 @@ CHECK_DOTNET_PIN = \
 		echo "       Install the pinned SDK with: make install-dotnet-10" >&2; \
 		exit 1; \
 	fi; \
-	echo "==> SDK: $$($$SHARPLSP_DOTNET_ROOT/dotnet$(EXE_EXT) --version) from $$SHARPLSP_DOTNET_ROOT"
+	echo "==> SDK: $$("$$SHARPLSP_DOTNET_ROOT/dotnet$(EXE_EXT)" --version) from $$SHARPLSP_DOTNET_ROOT"
 
 # ── Build ─────────────────────────────────────────────────────────
 
@@ -882,8 +894,16 @@ PACKAGE_VSIX_TARGETS = \
 # contract (test-dotnet) holds. A release passes VERSION=x.y.z, overriding this.
 $(PACKAGE_VSIX_TARGETS): VERSION ?= 0.0.0
 
+# [DIST-VSIX-CONTENTS] The platform is stripped off the FULL target name,
+# leading underscore included. `package-vsix-` matches from index 1 of
+# `_package-vsix-win32-x64` and leaves the `_` behind, so VSIX_PLAT became
+# `_win32-x64` and flowed into vsce's `--target`, the .vsix filename, the bin/
+# staging directory and fetch-netcoredbg.sh - on all six platforms. The targets
+# were renamed when tools/make/main.mk was consolidated; release.yml:148 is the
+# only caller in the repo and no PR pipeline runs it, so it would have failed
+# first on a tag.
 $(PACKAGE_VSIX_TARGETS): _stamp-version
-	$(eval VSIX_PLAT := $(subst package-vsix-,,$@))
+	$(eval VSIX_PLAT := $(subst _package-vsix-,,$@))
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))
 	@echo "==> Building sharplsp for $(RUST_TARGET)..."
 	cargo build --release --target $(RUST_TARGET)
