@@ -59,12 +59,13 @@ export function createOpenSync(selector: DocumentSelector): OpenSync {
 
   return {
     middleware: {
+      // Only a didOpen the CURRENT server received counts. One that failed (its
+      // connection closed under it) or that went to the server a restart has since
+      // replaced would let a request through ahead of the re-open.
       didOpen: async (document, next) => {
-        try {
-          await next(document);
-        } finally {
-          record(document, true);
-        }
+        const { session } = state.value;
+        await next(document);
+        if (state.value.session === session) record(document, true);
       },
       didClose: async (document, next) => {
         record(document, false);

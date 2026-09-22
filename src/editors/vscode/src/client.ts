@@ -25,7 +25,7 @@ import { detectRuntimePlatform } from './platform.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 
 /** The documents the client syncs to the server, and holds requests about. */
-const DOCUMENT_SELECTOR = [
+export const DOCUMENT_SELECTOR = [
   { scheme: 'file', language: 'csharp' },
   { scheme: 'file', language: 'fsharp' },
   { scheme: 'untitled', language: 'csharp' },
