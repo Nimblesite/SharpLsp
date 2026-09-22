@@ -13,6 +13,7 @@
 # comprehension:
 #
 #   ci-analyse.yml             PHASE 1  every lint, format and analysis check
+#   ci-audit.yml               PHASE 1  vulnerable dependencies already in the tree
 #   ci-build.yml               PHASE 2+3  both platforms, in parallel, published
 #   ci-test-rust.yml           PHASE 4  sharded Rust e2e suite, version contract
 #   ci-test-dotnet.yml         PHASE 4  sidecar tests + the win32 transport arm
@@ -106,8 +107,8 @@ jobs:
     # rather than a step inside it because it scans the PR diff and needs no
     # toolchain at all. Owns vulnerable *dependencies* (Cargo, npm, NuGet).
     # CodeQL (codeql.yml) owns vulnerable *code* and `make lint` owns style - no
-    # overlap. There is no native vuln-gate (cargo-deny/osv) in this repo, so
-    # dependency-review is the single dependency scanner. [DIST-CI-SECURITY]
+    # overlap. Dependency review sees only what this PR ADDS; `audit` below
+    # covers every dependency already in the tree. [DIST-CI-SECURITY]
     permissions:
       contents: read
     steps:
@@ -118,6 +119,16 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+
+  # Every dependency ALREADY in the tree, checked with each ecosystem's own
+  # scanner via `make audit`. The same reusable job gates releases.
+  # [DIST-CI-AUDIT]
+  audit:
+    name: Audit
+    needs:
+      - detect-changes
+    uses: ./.github/workflows/ci-audit.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   validate-manifest:

@@ -63,6 +63,15 @@ jobs:
     with:
       gate: true
 
+  # Dependency vulnerability release gate: the SAME reusable job every PR runs
+  # (`make audit`), re-run against the tagged SHA because advisories land after
+  # the PR merged. The `release` job `needs:` this, so a vulnerable Rust, .NET or
+  # npm dependency blocks the GitHub Release and every downstream publish.
+  # [DIST-CI-AUDIT] [DIST-RELEASE]
+  audit:
+    name: Dependency audit release gate
+    uses: ./.github/workflows/ci-audit.yml
+
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
     needs: version
@@ -250,6 +259,7 @@ jobs:
       - build-vsix
       - build-rider
       - codeql
+      - audit
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:

@@ -386,6 +386,9 @@ Tag-triggered (`v*`). Jobs:
    ([DIST-VERSION-INVARIANT]).
 2. **`codeql`** — release gate. `release` needs it, so a High/Critical finding
    blocks every downstream publish ([DIST-CI-SECURITY]).
+   **`audit`** — release gate. The same `ci-audit.yml` job every PR runs,
+   re-run on the tagged SHA; `release` needs it, so a vulnerable dependency
+   blocks every downstream publish ([DIST-CI-AUDIT]).
 3. **`build-vsix`** — one job per platform (`linux-x64`, `linux-arm64`,
    `darwin-arm64`, `win32-x64`, `win32-arm64`). Builds the Rust host and both
    sidecars ONCE, then emits BOTH artifacts for that platform: the
@@ -437,6 +440,7 @@ detect-changes -> ANALYSE -> FULL BUILD (linux || windows) -> TEST -> COVERAGE
 |---|---|---|
 | — | `ci.yml` | Orchestrator: `detect-changes` and one `uses:` job per phase |
 | 1 ANALYSE | `ci-analyse.yml` | Every Rust / Zed / .NET / VS Code lint, format and analysis gate |
+| 1 ANALYSE | `ci-audit.yml` | `make audit`: vulnerable Rust / .NET / npm dependencies already in the tree ([DIST-CI-AUDIT]) |
 | 1 ANALYSE | (in `ci.yml`) | Dependency review ([DIST-CI-SECURITY]) and Shipwright manifest validation |
 | 2 BUILD + 3 CACHE | `ci-build.yml` | Both platforms in parallel: host, sidecars, netcoredbg, VS Code suite, VSIX — then published |
 | 4 TEST | `ci-test-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the version contract |
@@ -491,7 +495,24 @@ Phase invariants:
 
 ### [DIST-CI-SECURITY] Security Gates
 
-[ci.yml](../../.github/workflows/ci.yml) MUST run dependency review for pull requests. [codeql.yml](../../.github/workflows/codeql.yml) MUST scan pull requests, weekly schedules, and tagged releases; `release.yml` calls it with `gate: true`, and any high or critical finding blocks release and publication. Workflow permissions default to `contents: read`; only jobs that publish security events or artifacts receive narrower write permissions.
+[ci.yml](../../.github/workflows/ci.yml) MUST run dependency review for pull requests, and the dependency audit ([DIST-CI-AUDIT]). [codeql.yml](../../.github/workflows/codeql.yml) MUST scan pull requests, weekly schedules, and tagged releases; `release.yml` calls it with `gate: true`, and any high or critical finding blocks release and publication. Workflow permissions default to `contents: read`; only jobs that publish security events or artifacts receive narrower write permissions.
+
+### [DIST-CI-AUDIT] Dependency Vulnerability Audit
+
+`make audit` ([tools/make/audit.mk](../../tools/make/audit.mk)) MUST check every dependency already in the tree against its ecosystem's own advisory database:
+
+| Ecosystem | Scanner | Scope |
+|---|---|---|
+| Rust | `cargo audit` (RustSec) | `Cargo.lock`, `src/editors/zed/Cargo.lock` |
+| .NET | `dotnet list package --vulnerable --include-transitive` | `src/sidecars/SharpLsp.Sidecars.sln`, direct and transitive |
+| npm | `npm audit --package-lock-only` | `src/editors/vscode`, `src/website` |
+
+- **Report what to upgrade.** Every finding names the package, the installed version and the advisory. `cargo audit` and `npm audit` print the patched version; the .NET checker ([tools/audit/dotnet-vulnerable.mjs](../../tools/audit/dotnet-vulnerable.mjs)) says whether to raise the direct `PackageReference` or pin the transitive package.
+- **One run lists everything.** All three scanners run even when an earlier one fails; the target fails at the end.
+- **Fail level.** `AUDIT_LEVEL` (default `moderate`) is the lowest npm/NuGet severity that fails. Lower findings are still printed. `cargo audit` fails on any vulnerability; yanked, unsound and unmaintained crates are warnings.
+- **Never silently green.** `dotnet list` exits 0 whatever it finds, so its JSON report is checked by `dotnet-vulnerable.mjs`, and a report carrying an error (an unrestored solution) fails the audit. A missing `cargo-audit` fails the audit.
+- **Read-only.** `npm audit` reads the lockfile only and never touches `node_modules`.
+- **One job, three callers.** [ci-audit.yml](../../.github/workflows/ci-audit.yml) runs `make audit` for every pull request (`ci.yml`), for the tagged SHA as a release gate (`release.yml`; `release` needs it), and weekly on `main`, because advisories are published between pull requests. Dependency review only sees what a PR adds; this audit covers what is already shipped.
 
 ## [DIST-CI-NODE] Node.js Toolchain
 

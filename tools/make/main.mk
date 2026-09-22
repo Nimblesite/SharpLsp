@@ -3,7 +3,8 @@
 # Public targets:
 #   make                              build everything (host platform, release)
 #   make PROFILE=debug                build everything (debug)
-#   make ci                           lint → test → build
+#   make ci                           lint → test → build → audit
+#   make audit [AUDIT_LEVEL=moderate] vulnerable Rust/.NET/npm dependencies
 #   make test                         run all tests with coverage
 #   make lint                         lint all languages
 #   make fmt                          format all languages
@@ -246,8 +247,10 @@ _stage-sidecars:
 
 # ── CI ────────────────────────────────────────────────────────────
 
-ci: lint test build
+ci: lint test build audit
 	@echo "==> CI pipeline passed."
+
+include tools/make/audit.mk
 
 # ── Test ─────────────────────────────────────────────────────────
 
@@ -557,7 +560,7 @@ _test-dotnet-win-transport:
 # dependency of its own.
 _test-tooling:
 	@echo "==> Running repo tooling tests..."
-	node --test tools/netcoredbg/custody.test.mjs
+	node --test tools/netcoredbg/custody.test.mjs tools/audit/dotnet-vulnerable.test.mjs
 
 website-build:
 	@echo "==> Building website..."
@@ -893,6 +896,7 @@ setup:
 	@echo "==> Setting up development environment..."
 	rustup component add clippy rustfmt llvm-tools-preview
 	cargo install cargo-llvm-cov || true
+	cargo install cargo-audit --locked || true
 	npm install --prefix $(VSCODE_DIR)
 	dotnet restore $(SIDECAR_SLN)
 	dotnet tool restore
