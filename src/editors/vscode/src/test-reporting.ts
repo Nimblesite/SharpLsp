@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { info } from './log';
 import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
+import { ownedBy, type MtpRunPlan } from './test-listing-model';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
 import { singleLine } from './utils';
@@ -81,6 +82,25 @@ export function reportOutcome(
     cache?.(test.id, cachedFrom(result));
     reportResult(run, test, result);
   }
+}
+
+/**
+ * Report a finished DEBUG run: nothing is cached, and a test no report covers
+ * BY DESIGN is left without a verdict. An MTP module is debugged without a TRX
+ * report ([TEST-MTP-DEBUG]), so its tests stay unmarked instead of painted
+ * "No result reported"; a run that FAILED still reports that on every test.
+ */
+export function reportDebugOutcome(
+  run: vscode.TestRun,
+  tests: readonly vscode.TestItem[],
+  outcome: ReportableOutcome,
+  mtp: MtpRunPlan | undefined,
+): void {
+  const unreported = (test: vscode.TestItem): boolean =>
+    mtp !== undefined && ownedBy(mtp, test.id) && !outcome.results.has(test.id);
+  const reportable =
+    outcome.failure === undefined ? tests.filter((test) => !unreported(test)) : tests;
+  reportOutcome(run, reportable, outcome, undefined);
 }
 
 /** A selected test the run never reported on: build failure or no match. */

@@ -23,6 +23,7 @@
 // Covers [TEST-MTP-DETECT], [TEST-MTP-DISCOVERY] and [TEST-MTP-RUN].
 import * as assert from 'node:assert/strict';
 import {
+  MTP_INVALID_COMMAND_LINE,
   mtpIds,
   mtpLocationsById,
   mtpRunnerSelected,
@@ -30,6 +31,7 @@ import {
   parseMtpTestList,
   rejectedMtpOption,
 } from '../../test-mtp.js';
+import { listArgs } from '../../test-mtp-discovery.js';
 import { parseSolutionProjects } from '../../test-mtp-modules.js';
 import { runArgs, trxNameFor, uidBatches, uidsFor } from '../../test-mtp-run.js';
 import { announcedTestHostPid, TestHostWatcher } from '../../test-host-announce.js';
@@ -231,6 +233,38 @@ suite('Test Explorer MTP — the readers that decide what is discovered and run'
     assert.equal(rejectedMtpOption(''), undefined);
   });
 
+  test('an option given an ARGUMENT it does not take is named as rejected too', function () {
+    // MTP 1.9 — what MSTest 3.11 carries — knows `--list-tests` but takes no
+    // argument, and rejects `--list-tests json` with THIS line, verbatim, and
+    // exit code 5. It is the only thing that tells the user their platform is
+    // older than 2.3; unread, the module "listed no test" for no stated reason.
+    const output = [
+      "Option '--list-tests' from provider 'Platform command line provider' " +
+        '(UID: PlatformCommandLineProvider) expects no arguments',
+      'Usage dotnet exec OldMtp.dll [option providers] [extension option providers]',
+    ].join('\n');
+    assert.equal(rejectedMtpOption(output), '--list-tests');
+
+    // A test that merely PRINTS an option name is not a rejection.
+    assert.equal(rejectedMtpOption("Option '--verbose' was set by the fixture"), undefined);
+    assert.equal(rejectedMtpOption("Option '' expects no arguments"), undefined);
+
+    // [TEST-MTP-DISCOVERY]: the option named is one the listing really SENDS.
+    assert.ok(listArgs('/repo/bin/OldMtp.dll').includes('--list-tests'), 'discovery sends it');
+    // [TEST-MTP-RUN]: the refusal comes with MTP's invalid-command-line exit code.
+    assert.equal(MTP_INVALID_COMMAND_LINE, 5, 'the exit code the spec names');
+    // A Windows agent ends the same line in CRLF, and whatever was printed first stays apart.
+    const crlf = ['Warning: a line before the refusal', ...output.split('\n')].join('\r\n');
+    assert.equal(rejectedMtpOption(crlf), '--list-tests', 'CRLF, after another line');
+    // The arity refusal names whichever option drew it, not only `--list-tests`.
+    const atLeast =
+      "Option '--report-trx-filename' from provider 'TRX report generator' " +
+      '(UID: TrxReportGenerator) expects at least 1 arguments';
+    assert.equal(rejectedMtpOption(atLeast), '--report-trx-filename');
+    // And the missing-extension form is still read as itself ([TEST-MTP-RUN]).
+    assert.equal(rejectedMtpOption("Unknown option '--report-trx'"), '--report-trx');
+  });
+
   test('a run is one command line per module, under the Windows ceiling', function () {
     const args = runArgs(
       '/repo/bin/XunitMtpCs.dll',
@@ -372,6 +406,52 @@ suite('Test Explorer MTP — the readers that decide what is discovered and run'
     watcher.absorb('ss Id: 900, Name: dotnet\nProcess Id: 900, Name: dotnet\n');
     watcher.absorb('Process Id: 901, Name: testhost\n');
     assert.deepStrictEqual(seen, [900, 901], 'one report per host, across chunk boundaries');
+  });
+
+  test('a line that only MENTIONS a process id never aims the debugger', function () {
+    // A debug run scans ALL of the run's output, test output included. Only the
+    // two announcements a waiting host prints may name the pid to attach to; a
+    // test or a logger printing the same words mid-line is not a host.
+    // Spec: [DEBUG-FEATURES-TESTS], [TEST-MTP-DEBUG].
+    for (const decoy of [
+      'Test output: Process Id: 1234, Name: testhost',
+      '[xUnit.net 00:00:00.12]     Worker Process Id: 99, Name: dotnet',
+      '  Passed Adds_TwoNumbers [1 ms] Process Id: 5, Name: dotnet',
+      'Standard Output Messages: Process Id: 77, Name: logger',
+    ]) {
+      assert.equal(announcedTestHostPid(decoy), undefined, `must not read a pid from: '${decoy}'`);
+    }
+
+    // The real announcements still parse, bare and behind the MTP prefix.
+    assert.equal(announcedTestHostPid('Process Id: 4242, Name: testhost'), 4242);
+    assert.equal(
+      announcedTestHostPid('Waiting for debugger to attach... Process Id: 31, Name: dotnet'),
+      31,
+    );
+
+    // The watcher, fed a decoy BEFORE the real host, reports only the host.
+    const seen: number[] = [];
+    const watcher = new TestHostWatcher((pid) => seen.push(pid));
+    watcher.absorb('Test output: Process Id: 1234, Name: testhost\n');
+    watcher.absorb('Process Id: 555, Name: testhost\n');
+    assert.deepStrictEqual(seen, [555], 'the decoy must not start an attach');
+
+    // [TEST-MTP-DEBUG]: the MTP form counts only at the START of a line too.
+    const waiting = 'Waiting for debugger to attach... Process Id:';
+    assert.equal(announcedTestHostPid(`log: ${waiting} 8, Name: dotnet`), undefined);
+    // A pid is a number: anything else aims nothing.
+    assert.equal(announcedTestHostPid('Process Id: abc, Name: testhost'), undefined);
+    // A Windows line ending does not hide a real module.
+    assert.equal(announcedTestHostPid(`${waiting} 44, Name: dotnet\r`), 44);
+    // The watcher over MTP output: a mid-line decoy first, then the module's own
+    // announcement split across two chunks — the module alone, once.
+    const modules: number[] = [];
+    const moduleWatcher = new TestHostWatcher((pid) => modules.push(pid));
+    moduleWatcher.absorb(`log: ${waiting} 8, Name: dotnet\nWaiting for debugger to att`);
+    moduleWatcher.absorb('ach... Process Id: 66, Name: dotnet\r\n');
+    assert.deepStrictEqual(modules, [66], 'the module, not the decoy');
+    moduleWatcher.absorb(`${waiting} 66, Name: dotnet\n`);
+    assert.deepStrictEqual(modules, [66], 'and one attach per module, however often it repeats');
   });
 
   test('the solution project list is classified line by line, not sliced past a header', function () {

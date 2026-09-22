@@ -15,6 +15,16 @@
 /** The stable text of a waiting host's announcement, en-US pinned. */
 const PROCESS_ID_PREFIX = 'Process Id:';
 
+/**
+ * The only two ways a waiting host starts its announcement line: VSTest's
+ * `testhost.dll` prints the pid bare, and a Microsoft.Testing.Platform module
+ * prints it behind its own "waiting" text.
+ */
+const ANNOUNCEMENTS: readonly string[] = [
+  PROCESS_ID_PREFIX,
+  `Waiting for debugger to attach... ${PROCESS_ID_PREFIX}`,
+];
+
 /** ASCII digits only, checked per UTF-16 unit — a pid is never a surrogate. */
 function isAllDigits(candidate: string): boolean {
   for (let index = 0; index < candidate.length; index += 1) {
@@ -32,19 +42,20 @@ function isAllDigits(candidate: string): boolean {
  * pinned off.
  *
  * A Microsoft.Testing.Platform module prints the SAME text behind a prefix:
- * `Waiting for debugger to attach... Process Id: 212243, Name: dotnet`. The
- * text is therefore found ANYWHERE in the line rather than only at its start —
- * anchored to the start, every MTP debug run hung on a module nothing ever
- * attached to. Spec: [TEST-MTP-DEBUG].
+ * `Waiting for debugger to attach... Process Id: 212243, Name: dotnet`. Both
+ * forms are matched from the START of the line and nowhere else: a debug run
+ * scans all of the run's output, and a test or a logger that merely prints
+ * "Process Id: 1234" mid-line would otherwise aim the debugger at its number.
+ * Spec: [DEBUG-FEATURES-TESTS], [TEST-MTP-DEBUG].
  *
  * The digits are validated whole: a partial `parseInt` would accept a corrupted
  * line and aim the debugger at noise.
  */
 export function announcedTestHostPid(line: string): number | undefined {
   const trimmed = line.trim();
-  const marker = trimmed.indexOf(PROCESS_ID_PREFIX);
-  if (marker < 0) return undefined;
-  const rest = trimmed.slice(marker + PROCESS_ID_PREFIX.length);
+  const announcement = ANNOUNCEMENTS.find((prefix) => trimmed.startsWith(prefix));
+  if (announcement === undefined) return undefined;
+  const rest = trimmed.slice(announcement.length);
   const comma = rest.indexOf(',');
   const digits = (comma === -1 ? rest : rest.slice(0, comma)).trim();
   if (digits.length === 0 || !isAllDigits(digits)) return undefined;

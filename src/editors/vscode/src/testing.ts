@@ -3,13 +3,12 @@ import { effect } from './signals';
 import { info } from './log';
 import * as state from './state';
 import { listTests } from './test-discovery';
-import { mergePlans, type MtpRunPlan, type TestListing } from './test-listing-model';
-import { runMtpTests } from './test-mtp-run';
+import type { TestListing } from './test-listing-model';
+import { runnersFor, runRouted, VSTEST_ONLY, type RunnerMap } from './test-run-routes';
 import { makeAssemblyItem, makeErrorItem, makeTestItem, type ItemContext } from './test-items';
 import {
   cancelled,
   runOptions,
-  runTests,
   type RunInvocation,
   type TestRunOptions,
   type TestRunOutcome,
@@ -21,10 +20,11 @@ import {
   cachedFrom,
   freshCoverageDir,
   reportAll,
+  reportDebugOutcome,
   reportOutcome,
   type CachedTestResult,
 } from './test-reporting';
-import { DotnetQueue } from './test-queue';
+import { DotnetQueue, NewestJob } from './test-queue';
 import { TestResultCache } from './test-result-cache';
 import { cancellationSignal, configureDotnet } from './dotnet-process';
 import { discoveryTargets, dirOf, filterIdsFor, runCwd, runTarget } from './test-targets';
@@ -32,6 +32,13 @@ import { discoveryTargets, dirOf, filterIdsFor, runCwd, runTarget } from './test
 export { buildFilterArgs } from './test-execution';
 export { isExpectoTest, isFsCheckTest } from './test-targets';
 export type { CachedTestResult } from './test-reporting';
+
+/** What one discovery sweep collected across every target. */
+interface Sweep {
+  readonly items: vscode.TestItem[];
+  readonly errors: vscode.TestItem[];
+  readonly listings: TestListing[];
+}
 
 /**
  * Debounce for reactive re-discovery. Loading a solution can churn the
@@ -73,11 +80,12 @@ export class SharpLspTestController {
   /** One `dotnet` invocation at a time, discovery and runs alike. */
   private readonly dotnetQueue = new DotnetQueue();
   /**
-   * How to RUN what the last sweep discovered, when the runner was
-   * Microsoft.Testing.Platform. `undefined` means VSTest, whose test ids ARE
-   * the filter values. Spec: [TEST-MTP-RUN].
+   * How to RUN the tree on view — the MTP plan, and whether any target was
+   * VSTest. It changes only with the tree. Spec: [TEST-MTP-ROUTING].
    */
-  private mtpPlan: MtpRunPlan | undefined;
+  private runners: RunnerMap = VSTEST_ONLY;
+  /** The newest sweep: awaiting a superseded one waits for it. */
+  private readonly sweeps = new NewestJob();
 
   /** Fires after any test run completes and results are cached. */
   public readonly onResultsChanged = this.results.onChanged;
@@ -191,26 +199,37 @@ export class SharpLspTestController {
    * and a sweep where NO target could be enumerated leaves the previous tree
    * standing — with an error row appended saying why — rather than blanking the
    * view on a transient `dotnet` failure.
+   *
+   * The sweep AND its result are ONE queued job, so a run queued behind it runs
+   * with the runners it found, and a superseded sweep resolves only once the
+   * newest one has applied ([TEST-REACTIVITY], [TEST-MTP-ROUTING]).
    */
   public async discover(): Promise<void> {
     const generation = ++this.discoverGeneration;
     const targets = discoveryTargets();
-    const items: vscode.TestItem[] = [];
-    const errors: vscode.TestItem[] = [];
-    const plans: MtpRunPlan[] = [];
-    let anyOk = targets.length === 0;
+    const job = this.enqueue(async () => {
+      const sweep = await this.sweep(targets, generation);
+      if (sweep === undefined || generation !== this.discoverGeneration) return;
+      const anyOk = targets.length === 0 || sweep.listings.some((listing) => listing.ok);
+      if (this.applyDiscovery(sweep.items, sweep.errors, anyOk, targets.length)) {
+        this.runners = runnersFor(sweep.listings);
+      }
+    });
+    await this.sweeps.settle(job);
+  }
+
+  /** Enumerate every target; `undefined` once a newer sweep supersedes this one. */
+  private async sweep(targets: readonly string[], generation: number): Promise<Sweep | undefined> {
+    const sweep: Sweep = { items: [], errors: [], listings: [] };
     for (const target of targets) {
       // A newer sweep supersedes this one: stop before paying for another build
       // rather than enumerating targets whose results will be thrown away.
-      if (generation !== this.discoverGeneration) return;
+      if (generation !== this.discoverGeneration) return undefined;
       const listing = await this.safeList(target);
-      anyOk = anyOk || listing.ok;
-      if (listing.mtp !== undefined) plans.push(listing.mtp);
-      this.rowsFor(target, listing, items, errors);
+      sweep.listings.push(listing);
+      this.rowsFor(target, listing, sweep.items, sweep.errors);
     }
-    if (generation !== this.discoverGeneration) return;
-    this.mtpPlan = mergePlans(plans);
-    this.applyDiscovery(items, errors, anyOk, targets.length);
+    return sweep;
   }
 
   /** Turn one target's listing into tree rows, or into the row that explains it. */
@@ -247,20 +266,21 @@ export class SharpLspTestController {
    * standing tree, logged but not perturbed, so a good view never flaps. Error
    * rows appear only when a tree is actually (re)built: a total failure over an
    * EMPTY view surfaces the real diagnostic instead of silent blankness.
+   * Returns whether the tree was replaced.
    */
   private applyDiscovery(
     items: vscode.TestItem[],
     errors: vscode.TestItem[],
     anyOk: boolean,
     targetCount: number,
-  ): void {
+  ): boolean {
     if (!anyOk && items.length === 0 && this.controller.items.size > 0) {
       info(
         `Test discovery: every target failed; keeping ${String(
           this.controller.items.size,
         )} item(s) standing`,
       );
-      return;
+      return false;
     }
     this.controller.items.replace([...items, ...errors]);
     this.results.pruneTo([...items, ...errors]);
@@ -268,11 +288,12 @@ export class SharpLspTestController {
       `Test discovery: ${String(items.length)} item(s) from ${String(targetCount)} target(s)` +
         (errors.length > 0 ? `; ${String(errors.length)} error row(s)` : ''),
     );
+    return true;
   }
 
-  /** List one target, logging whatever diagnostics the enumeration produced. */
+  /** List one target (inside the sweep's queued job), logging its diagnostics. */
   private async safeList(target: string): Promise<TestListing> {
-    const listing = await this.enqueue(async () => await listTests(target));
+    const listing = await listTests(target);
     for (const warning of listing.warnings) {
       info(`Test discovery (${target}): ${warning}`);
     }
@@ -336,15 +357,13 @@ export class SharpLspTestController {
     }
   }
 
-  /** Send one invocation to the runner the last discovery sweep chose. */
+  /** Send each test of one invocation to the runner that discovered it. */
   private async dispatch(
     ids: readonly string[],
     cwd: string,
     options: TestRunOptions,
   ): Promise<TestRunOutcome> {
-    const plan = this.mtpPlan;
-    if (plan === undefined) return await runTests(ids, cwd, options);
-    return await runMtpTests(plan, ids, cwd, options);
+    return await runRouted(this.runners, ids, cwd, options);
   }
 
   /**
@@ -401,7 +420,7 @@ export class SharpLspTestController {
       // Run-only reporting: a debug run neither caches results nor announces a
       // results change — the last real run's outcome stands.
       finish: (run, tests, outcome) => {
-        reportOutcome(run, tests, outcome, undefined);
+        reportDebugOutcome(run, tests, outcome, this.runners.mtp);
       },
     };
   }

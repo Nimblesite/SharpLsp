@@ -39,6 +39,11 @@ Facts that shaped the code:
 * MTP coverage writes `<guid>.cobertura.xml` directly into the results directory.
 * `--debug` prints `Waiting for debugger to attach... Process Id: <pid>, Name: <name>`.
   The module is the test host; there is no `testhost.dll` child.
+* Except with `--report-trx`. `Microsoft.Testing.Extensions.TrxReport` 2.4.0 then runs the module
+  as a test host CONTROLLER that launches the real host as a child. The child gets the parent's
+  whole environment and command line, so under `TESTINGPLATFORM_WAIT_ATTACH_DEBUGGER=1` (or
+  `--debug`) BOTH processes wait for a debugger. Measured by attaching netcoredbg to the first
+  process: the second line `Waiting for debugger to attach... Process Id: <child>` follows it.
 
 ## Design
 
@@ -98,6 +103,61 @@ Two defects that only a real fixture could show:
       this work. The three command-line batchers were unified by hand into
       `test-batching.ts`; run `rescan` and `top-offenders` before merge.
 - [x] Run the two new e2e suites in the real extension host.
+- [x] `test-explorer-mtp-modules.test.ts` — failing tests for three run defects found in
+      review, committed before any fix: a stale module, a TRX collision, a lost failure
+- [x] Build the target before every MTP run. `dotnet exec` builds nothing, so an edited test
+      ran from its stale module and reported its OLD outcome.
+- [x] Number TRX reports across the whole run, not per module. The two target frameworks of
+      one project share a module file name, so the second report overwrote the first and a
+      test failing on one framework only showed as passed.
+- [x] Keep every module's failure when merging ACROSS modules. A sibling's results erased the
+      message naming `Microsoft.Testing.Extensions.TrxReport`.
+- [x] Failing tests for the review's regressions and remaining defects, each confirmed red
+      against the code before its fix: `multiroot/test-explorer-mixed-runners.test.ts`,
+      `test-explorer-mtp-sweeps.test.ts`, `test-explorer-mtp-batches.test.ts`, and a decoy-line
+      case in `test-explorer-mtp-parsers.test.ts`
+- [x] A second editor start for multi-root suites (`.vscode-test.mjs`, `src/test/suite/index.ts`,
+      [DIST-CI-VSIX-SHARDS]) and the `testexplorer-mtp-runners` chunk
+- [x] Route each test to the runner that discovered it ([TEST-MTP-ROUTING],
+      `test-run-routes.ts`). One MTP folder in a multi-root workspace sent EVERY run to MTP, so
+      the VSTest folder's tests all reported "No result reported".
+- [x] Rebuild each module from its OWN discovery target. The run's working directory is the
+      first workspace folder, so an MTP module in the second folder ran stale.
+- [x] The probe after the VSTest passes evaluates first and builds only an MTP project. A
+      library solution and a VSTest solution that failed to build were built twice per sweep.
+      Each project is evaluated once, not twice.
+- [x] Resolve a folder or a project file the way `dotnet` does. Walking the folder listed
+      modules an earlier build had left on disk; an opted-in folder `dotnet` refuses is now an
+      error row, not an empty tree.
+- [x] Replace the run plan only when the tree is replaced. A sweep whose modules failed to list
+      kept the tree but swapped in an empty plan.
+- [x] Keep a refused batch's failure beside an accepted batch of the same module, so the
+      refusal is retried.
+- [x] Anchor the pid reader to the two real announcements. A test printing "Process Id: N"
+      mid-line aimed the debugger at N.
+- [x] Name `Microsoft.Testing.Extensions.CodeCoverage` when a module rejects `--coverage`.
+- [x] [TEST-MTP-DEBUG] describes `TESTINGPLATFORM_WAIT_ATTACH_DEBUGGER`, which is what the code
+      sets; it never passed `--debug`.
+- [x] `test-explorer-mtp-merges.test.ts` — the merge, routing, runner, Cobertura-depth and
+      folder-resolution rules at their own boundary
+- [x] `invoke`, `runModule`, `listTests` and `listMtpTests` split under 20 lines
+- [x] Read MTP's arity refusal — `Option '--list-tests' from provider … expects no arguments` —
+      as a rejected option ([TEST-MTP-DISCOVERY]). MSTest 3.11 printed it, not `Unknown option`,
+      so its "older than 2.3" warning never appeared. Red first in the parser and sweep suites.
+- [x] Run a sweep AND apply its result as ONE queued job ([TEST-REACTIVITY]). A run queued
+      behind a sweep started before the sweep's runners were applied, so it went to the runners
+      of the sweep before: a project just moved onto MTP went to `dotnet test`, and the MTP Debug
+      profile left its module waiting for a debugger forever. Red first in
+      `test-explorer-mtp-queue.test.ts` and `debug-test-mtp-e2e.test.ts`.
+- [x] Debug an MTP module WITHOUT `--report-trx` ([TEST-MTP-DEBUG]). The TRX host controller
+      waited for the debugger too, so the Debug profile attached a second session to a process
+      that runs no test. That debug run reports no per-test verdict and never retries unfiltered.
+      Red first in `debug-test-mtp-e2e.test.ts` ("ONE selection is ONE session").
+- [x] A refresh superseded by a newer sweep resolves only once the NEWEST sweep has applied
+      ([TEST-REACTIVITY], `NewestJob` in `test-queue.ts`). It returned over the previous
+      solution's tree. Red first in the second test of `test-explorer-mtp-queue.test.ts`.
+- [x] At least five more spec-derived assertions on every test written or changed in this
+      review round (the frozen `test-explorer-mtp-modules.test.ts` is untouched)
 
 ## Verification run
 

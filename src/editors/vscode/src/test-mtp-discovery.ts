@@ -34,7 +34,12 @@ import {
   rejectedMtpOption,
   type MtpTest,
 } from './test-mtp.js';
-import { scanMtpProjects, type MtpProject } from './test-mtp-modules.js';
+import {
+  probeMtpProjects,
+  scanMtpProjects,
+  type MtpProject,
+  type MtpProjectScan,
+} from './test-mtp-modules.js';
 
 /** Ask a module for its tests as JSON, and nothing else. */
 export function listArgs(modulePath: string): string[] {
@@ -82,20 +87,24 @@ interface ModuleResult {
   readonly warnings: readonly string[];
 }
 
+/** Where a sweep's modules came from, and how long each `dotnet` call may take. */
+interface SweepContext {
+  /** The discovery target: the build that produces every module listed. */
+  readonly target: string;
+  readonly cwd: string;
+  readonly timeoutMs: number;
+}
+
 /** List one module and shape what it reported for both the tree and the run. */
-async function scanModule(
-  modulePath: string,
-  cwd: string,
-  timeoutMs: number,
-): Promise<ModuleResult> {
-  const listed = await listModule(modulePath, cwd, timeoutMs);
+async function scanModule(modulePath: string, sweep: SweepContext): Promise<ModuleResult> {
+  const listed = await listModule(modulePath, sweep.cwd, sweep.timeoutMs);
   return {
     assembly: {
       name: path.basename(modulePath, path.extname(modulePath)),
       path: modulePath,
       names: mtpIds(listed.tests),
     },
-    run: { modulePath, uidsById: mtpUidsById(listed.tests) },
+    run: { modulePath, buildTarget: sweep.target, uidsById: mtpUidsById(listed.tests) },
     locations: mtpLocationsById(listed.tests),
     warnings: listed.warnings,
   };
@@ -117,35 +126,81 @@ function collectLocations(
 }
 
 /**
- * Enumerate every MTP test of `target`.
+ * Enumerate every MTP test of `target`, building it first.
  *
  * `ok` says whether an EMPTY result can be trusted, because that is what
  * decides whether the caller blanks the Testing view. A target with no MTP
  * project at all is a truthful empty answer; a target whose modules all failed
- * to list is not.
+ * to list, or whose build `dotnet` refused outright, is not.
  */
 export async function listMtpTests(
   target: string,
   cwd: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<TestListing> {
-  const scan = await scanMtpProjects(target, cwd, timeoutMs);
-  const warnings = [...scan.warnings];
-  const modules = modulesOf(scan.projects);
-  const byAssembly: TestAssemblyListing[] = [];
-  const runs: MtpModuleRun[] = [];
-  const locations = new Map<string, TestLocation>();
+  const sweep: SweepContext = { target, cwd, timeoutMs };
+  return await listScanned(await scanMtpProjects(target, cwd, timeoutMs), sweep);
+}
+
+/**
+ * Enumerate every MTP test of a target the VSTest passes have just restored.
+ *
+ * Unlike {@link listMtpTests} it builds only when a project turns out to BE an
+ * MTP test module: this runs after every VSTest sweep that attributed no
+ * assembly, so a library solution or a VSTest solution that failed to build
+ * must not pay a second build for a probe that finds nothing. Spec:
+ * [TEST-MTP-DETECT].
+ */
+export async function probeMtpTests(
+  target: string,
+  cwd: string,
+  timeoutMs: number = DOTNET_TIMEOUT_MS,
+): Promise<TestListing> {
+  const sweep: SweepContext = { target, cwd, timeoutMs };
+  return await listScanned(await probeMtpProjects(target, cwd, timeoutMs), sweep);
+}
+
+/** What every module of a sweep reported, gathered for the tree and the run. */
+interface Gathered {
+  readonly byAssembly: TestAssemblyListing[];
+  readonly runs: MtpModuleRun[];
+  readonly locations: Map<string, TestLocation>;
+  readonly warnings: string[];
+}
+
+/** List each module in turn; one module's failure never stops the next. */
+async function gather(
+  modules: readonly string[],
+  sweep: SweepContext,
+  warnings: readonly string[],
+): Promise<Gathered> {
+  const gathered: Gathered = {
+    byAssembly: [],
+    runs: [],
+    locations: new Map(),
+    warnings: [...warnings],
+  };
   for (const modulePath of modules) {
-    const scanned = await scanModule(modulePath, cwd, timeoutMs);
-    warnings.push(...scanned.warnings);
-    byAssembly.push(scanned.assembly);
-    runs.push(scanned.run);
-    collectLocations(locations, scanned.locations);
+    const scanned = await scanModule(modulePath, sweep);
+    gathered.warnings.push(...scanned.warnings);
+    gathered.byAssembly.push(scanned.assembly);
+    gathered.runs.push(scanned.run);
+    collectLocations(gathered.locations, scanned.locations);
   }
+  return gathered;
+}
+
+/** List every module a project scan found. */
+async function listScanned(scan: MtpProjectScan, sweep: SweepContext): Promise<TestListing> {
+  const modules = modulesOf(scan.projects);
+  const { byAssembly, runs, locations, warnings } = await gather(modules, sweep, scan.warnings);
   const names = [...new Set(byAssembly.flatMap((assembly) => [...assembly.names]))];
   return {
     names,
-    ok: names.length > 0 || modules.length === 0,
+    // Nothing found is a truthful answer only when nothing went wrong finding
+    // it: a build `dotnet` refused (MSB1011) must reach the user as an error
+    // row, never as an empty tree.
+    ok: names.length > 0 || (modules.length === 0 && scan.warnings.length === 0),
     warnings,
     byAssembly: mergeMultiTargeted(byAssembly.filter((assembly) => assembly.names.length > 0)),
     mtp: { modules: runs },

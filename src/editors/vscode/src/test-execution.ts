@@ -72,6 +72,12 @@ export interface TestRunOptions {
    * Spec: [DEBUG-FEATURES-TESTS].
    */
   readonly hooks?: DotnetHooks;
+  /**
+   * A Debug-profile run: every test host WAITS for a debugger. An MTP module
+   * then runs without `--report-trx`, whose host controller would wait too.
+   * Spec: [TEST-MTP-DEBUG].
+   */
+  readonly debug?: boolean;
 }
 
 /**

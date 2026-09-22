@@ -267,6 +267,43 @@ export function libraryProjectXml(...compileIncludes: readonly string[]): string
   return buildProjectXml({ compileIncludes });
 }
 
+/**
+ * Count the builds a discovery sweep costs, instead of guessing from timings.
+ *
+ * Writes a `Directory.Build.props` into `root` whose target appends the
+ * project's name to a log at the START of every build — before `BeforeBuild`,
+ * the first step of `Build`, and so before anything compiles. A hook on `Build`
+ * itself would run only AFTER the compile and never count a build that fails.
+ * MSBuild imports the file into every project below `root`, so each line is
+ * one build of one project. Returns the log's path; {@link buildsLogged} reads
+ * it back.
+ */
+export function writeBuildCounter(root: string): string {
+  const log = path.join(root, 'builds.log');
+  const xml: string = projectBuilder.build({
+    Project: {
+      Target: {
+        '@_Name': 'SharpLspCountBuild',
+        '@_BeforeTargets': 'BeforeBuild',
+        WriteLinesToFile: { '@_File': log, '@_Lines': '$(MSBuildProjectName)' },
+      },
+    },
+  });
+  fs.writeFileSync(path.join(root, 'Directory.Build.props'), xml.trimStart(), 'utf8');
+  return log;
+}
+
+/** The project names {@link writeBuildCounter}'s log recorded, one per build. */
+export function buildsLogged(log: string): string[] {
+  if (!fs.existsSync(log)) return [];
+  return fs
+    .readFileSync(log, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .sort();
+}
+
 /** Write a fixture project (project file + single source file); returns its dir. */
 export function writeProject(
   dir: string,

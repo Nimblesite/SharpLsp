@@ -52,6 +52,13 @@ export interface MtpRunPlan {
 export interface MtpModuleRun {
   /** Absolute path of the built test module. */
   readonly modulePath: string;
+  /**
+   * The discovery target whose build produces this module: the solution, or
+   * the workspace folder. A run rebuilds THIS before it runs the module — in a
+   * multi-root workspace the run's working directory is the FIRST folder,
+   * which need not be the module's.
+   */
+  readonly buildTarget: string;
   /** Test id to the `--filter-uid` values that run it. */
   readonly uidsById: ReadonlyMap<string, readonly string[]>;
 }
@@ -153,4 +160,9 @@ function lastSeparator(value: string): number {
 export function mergePlans(plans: readonly MtpRunPlan[]): MtpRunPlan | undefined {
   const modules = plans.flatMap((plan) => [...plan.modules]);
   return modules.length === 0 ? undefined : { modules };
+}
+
+/** True when some module of `plan` owns `id`. */
+export function ownedBy(plan: MtpRunPlan, id: string): boolean {
+  return plan.modules.some((module) => module.uidsById.has(id));
 }

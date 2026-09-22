@@ -13,12 +13,12 @@
 
 /** A serial queue of `dotnet` invocations. */
 export class DotnetQueue {
-  private tail: Promise<unknown> = Promise.resolve();
+  private readonly tail = new Latest();
 
   /** Queue `work` behind any invocation already in flight. */
   public async enqueue<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.tail.then(work, work);
-    this.tail = next.catch(() => undefined);
+    const next = this.tail.current.then(work, work);
+    this.tail.current = next.catch(() => undefined);
     return await next;
   }
 
@@ -28,9 +28,36 @@ export class DotnetQueue {
    * left pointing at a deleted directory hangs and poisons the next run.
    */
   public async whenIdle(): Promise<void> {
+    await this.tail.settled();
+  }
+}
+
+/**
+ * The newest of a series of jobs that SUPERSEDE each other.
+ *
+ * A superseded discovery sweep applies nothing, so whoever awaited it — a
+ * refresh, the view's first reveal — must wait for the sweep that superseded it
+ * instead. Resolving at once left the previous solution's tree on view as if
+ * it had just been discovered. Implements [TEST-REACTIVITY].
+ */
+export class NewestJob {
+  private readonly newest = new Latest();
+
+  /** Make `job` the newest, then resolve once the newest job — whichever — has run. */
+  public async settle(job: Promise<unknown>): Promise<void> {
+    this.newest.current = job;
+    await this.newest.settled();
+  }
+}
+
+/** A promise later work may replace; settling waits out every replacement too. */
+class Latest {
+  public current: Promise<unknown> = Promise.resolve();
+
+  public async settled(): Promise<void> {
     let seen: Promise<unknown> | undefined;
-    while (seen !== this.tail) {
-      seen = this.tail;
+    while (seen !== this.current) {
+      seen = this.current;
       await seen;
     }
   }

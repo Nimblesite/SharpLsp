@@ -17,7 +17,15 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AnchoredSource } from './debug-anchors';
 import type { DapRecorder } from './debug-dap-kit';
-import { XUNIT_PACKAGES, createSolution, dotnet, projectXml } from './dotnet-project-kit';
+import {
+  MTP_XUNIT_PACKAGES,
+  XUNIT_PACKAGES,
+  createSolution,
+  dotnet,
+  mtpProjectXml,
+  projectXml,
+  writeMtpGlobalJson,
+} from './dotnet-project-kit';
 import { isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { DEBUG_TYPE_ID, type DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
 import { activateTestExplorer } from './test-explorer-kit';
@@ -195,6 +203,22 @@ export interface TestDebugFixture {
 export type FixtureLanguage = 'csharp' | 'fsharp';
 
 /**
+ * Which runner the fixture's tests run on. `mtp` builds the SAME source on
+ * `xunit.v3` — whose `[Fact]`, `[Theory]` and `Skip` are the ones the source
+ * already uses — opted in with `global.json`, so the Debug profile debugs a
+ * Microsoft.Testing.Platform MODULE rather than a VSTest host ([TEST-MTP-DEBUG]).
+ */
+export type FixtureRunner = 'vstest' | 'mtp';
+
+/** The project file for one language on one runner. */
+function fixtureProjectXml(csharp: boolean, runner: FixtureRunner, sourceName: string): string {
+  const compile = csharp ? [] : [sourceName];
+  return runner === 'mtp'
+    ? mtpProjectXml(MTP_XUNIT_PACKAGES, ...compile)
+    : projectXml(XUNIT_PACKAGES, ...compile);
+}
+
+/**
  * Write and solution-ify one fixture project under a fresh scratch directory.
  *
  * Inside the WORKSPACE root, not the OS temp dir: a debug session is bound to a
@@ -204,9 +228,11 @@ export type FixtureLanguage = 'csharp' | 'fsharp';
 export async function writeDebugTestFixture(
   prefix: string,
   language: FixtureLanguage,
+  runner: FixtureRunner = 'vstest',
 ): Promise<TestDebugFixture> {
   const scratchDir = fs.mkdtempSync(path.join(requireWorkspaceRoot(), prefix));
   isolateFromRepoMsbuild(scratchDir);
+  if (runner === 'mtp') writeMtpGlobalJson(scratchDir);
   const csharp = language === 'csharp';
   const project = csharp ? CS_PROJECT : FS_PROJECT;
   const sourceName = csharp ? 'CalculatorTests.cs' : 'Tests.fs';
@@ -214,7 +240,7 @@ export async function writeDebugTestFixture(
   fs.mkdirSync(projectDir, { recursive: true });
   fs.writeFileSync(
     path.join(projectDir, `${project}.${csharp ? 'csproj' : 'fsproj'}`),
-    csharp ? projectXml(XUNIT_PACKAGES) : projectXml(XUNIT_PACKAGES, sourceName),
+    fixtureProjectXml(csharp, runner, sourceName),
     'utf8',
   );
   const sourceFile = path.join(projectDir, sourceName);

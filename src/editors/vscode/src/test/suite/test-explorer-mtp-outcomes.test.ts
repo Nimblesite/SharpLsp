@@ -34,6 +34,7 @@ import {
 } from './test-explorer-mtp-fixtures';
 import {
   activateTestExplorer,
+  collectLeafIds,
   discoverSolution,
   runAlreadyCancelled,
   runViaProfile,
@@ -204,16 +205,38 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
     this.timeout(FIXTURE_BUILD_MS);
     const items = itemsFor(api, [...PASSING]);
     const before = api.testController.items.size;
+    const leaves = sorted(collectLeafIds(api.testController.items));
+    // ⏹ means STOP: whatever a killed run managed to write is a TRUNCATED account
+    // of a run the user abandoned, so nothing of it may be cached or painted —
+    // the contract the VSTest cancellation suite holds its runs to.
+    const baseline = new Map(api.testController.cachedResults);
+    const assertNothingCached = (why: string): void => {
+      for (const id of PASSING) {
+        assert.deepStrictEqual(api.testController.getResult(id), baseline.get(id), `${id}: ${why}`);
+      }
+      assert.equal(
+        api.testController.cachedResults.size,
+        baseline.size,
+        `no entry invented: ${why}`,
+      );
+    };
 
-    // 1. Press ⏹ shortly after ▶: the run resolves rather than rejecting.
+    // 1. Press ⏹ shortly after ▶ — inside the build every MTP run starts with:
+    //    the run resolves rather than rejecting, and caches nothing.
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items, 200);
     await api.testController.whenIdle();
     assert.equal(api.testController.items.size, before, 'the tree stands after a cancelled run');
+    assertNothingCached('a stopped run caches nothing');
+    // [TEST-MTP-RUN]: ⏹ kills the build like any other invocation — the tree
+    // keeps every test, not just as many roots.
+    assert.deepStrictEqual(sorted(collectLeafIds(api.testController.items)), leaves, 'every leaf');
 
     // 2. A token already cancelled when the handler is entered starts nothing.
     await runAlreadyCancelled(api.testController, vscode.TestRunProfileKind.Run, items);
     await api.testController.whenIdle();
     assert.equal(api.testController.items.size, before, 'and still stands');
+    assertNothingCached('a run cancelled before it started caches nothing');
+    assert.deepStrictEqual(sorted(collectLeafIds(api.testController.items)), leaves, 'every leaf');
 
     // 3. The queue drained, so the next run is not poisoned.
     const [one] = itemsFor(api, [mtpFixtureFor('xunit-fsharp').passing]);
@@ -221,6 +244,20 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [one]);
     await api.testController.whenIdle();
     assert.equal(cachedFor(api, mtpFixtureFor('xunit-fsharp').passing).outcome, 'passed');
+    // [TEST-RUN-TRX]/[TEST-STATUS-LENS]: a whole pass — flag, duration, no text, lens …
+    assertPassed(cachedFor(api, one.id), one.id);
+    // … and [TEST-MTP-RUN]: `--filter-uid` ran that ONE test; every other stands.
+    const others = PASSING.filter((id) => id !== one.id);
+    assert.deepStrictEqual(
+      others.filter((id) => api.testController.getResult(id) !== baseline.get(id)),
+      [],
+      'no other test was run or re-cached',
+    );
+    assert.equal(
+      api.testController.cachedResults.size,
+      baseline.size + (baseline.has(one.id) ? 0 : 1),
+      'one entry at most was added: the test that ran',
+    );
   });
 
   test('an F# [<TestCase>] NUnit selection recovers from the adapter refusing it', async function () {

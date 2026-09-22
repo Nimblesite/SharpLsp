@@ -238,6 +238,7 @@ class DebugRunFlow {
     const options: TestRunOptions = {
       signal: this.stop.signal,
       timeoutMs: DEBUG_RUN_CEILING_MS,
+      debug: true,
       hooks: {
         env: TEST_HOST_DEBUG_ENV,
         onOutput: (chunk) => {

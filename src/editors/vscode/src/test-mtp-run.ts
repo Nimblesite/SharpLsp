@@ -21,9 +21,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
-import { DOTNET_TIMEOUT_MS, runDotnet } from './dotnet-process.js';
+import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
+import { buildTarget, dirOf } from './test-mtp-modules.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
 import { collectReport, trxFiles, worse } from './test-trx-collect.js';
 import type { TrxRunInfo, TrxTestResult } from './test-trx.js';
@@ -42,7 +43,10 @@ export function uidBatches(uids: readonly string[], maxChars = MAX_UID_ARG_CHARS
 }
 
 /** The uids one module must run for `testIds`; empty ids mean "run everything". */
-export function uidsFor(module: MtpModuleRun, testIds: readonly string[]): string[] {
+export function uidsFor(
+  module: Pick<MtpModuleRun, 'uidsById'>,
+  testIds: readonly string[],
+): string[] {
   if (testIds.length === 0) return [];
   return testIds.flatMap((id) => [...(module.uidsById.get(id) ?? [])]);
 }
@@ -53,15 +57,16 @@ function untouched(module: MtpModuleRun, testIds: readonly string[]): boolean {
 }
 
 /**
- * A TRX name unique to this module.
+ * The TRX name of one invocation; `index` counts the run's invocations.
  *
- * Two modules writing one auto-named report into a shared results directory
+ * Two invocations writing one report name into a shared results directory
  * would overwrite each other, which is the defect [TEST-RUN-TRX] avoids under
- * VSTest by never pinning `LogFileName`.
+ * VSTest by never pinning `LogFileName`. The stem alone cannot tell them apart:
+ * the target frameworks of one project build modules sharing ONE file name.
  */
-export function trxNameFor(modulePath: string, batchIndex: number): string {
+export function trxNameFor(modulePath: string, index: number): string {
   const stem = path.basename(modulePath, path.extname(modulePath));
-  return `${stem}.${String(batchIndex)}.trx`;
+  return `${stem}.${String(index)}.trx`;
 }
 
 /** The argument vector for one module invocation. */
@@ -76,9 +81,7 @@ export function runArgs(
     'exec',
     modulePath,
     ...(uids.length === 0 ? [] : ['--filter-uid', ...uids]),
-    '--report-trx',
-    '--report-trx-filename',
-    trxName,
+    ...(options.debug === true ? [] : ['--report-trx', '--report-trx-filename', trxName]),
     '--results-directory',
     resultsDirectory,
     '--no-banner',
@@ -116,55 +119,103 @@ function invocationFailure(
   resultCount: number,
 ): string | undefined {
   const rejected = rejectedMtpOption(output);
-  if (rejected === '--report-trx') {
-    return (
-      `${path.basename(modulePath)} does not support ${rejected} (MTP exit code ` +
-      `${String(MTP_INVALID_COMMAND_LINE)}). Add a PackageReference to ` +
-      'Microsoft.Testing.Extensions.TrxReport so the Test Explorer can read per-test results.'
-    );
-  }
-  if (rejected !== undefined) {
-    return `${path.basename(modulePath)} does not support ${rejected}.`;
-  }
-  return resultCount > 0 ? undefined : (errorMessage ?? undefined);
+  if (rejected === undefined) return resultCount > 0 ? undefined : (errorMessage ?? undefined);
+  const extension = EXTENSION_PACKAGES.get(rejected);
+  const refusal =
+    `${path.basename(modulePath)} does not support ${rejected} (MTP exit code ` +
+    `${String(MTP_INVALID_COMMAND_LINE)}).`;
+  return extension === undefined
+    ? refusal
+    : `${refusal} Add a PackageReference to ${extension.packageId} so ${extension.purpose}.`;
+}
+
+/**
+ * The options this path passes that are EXTENSIONS, not part of MTP, and the
+ * package that registers each. A module without the package rejects the option,
+ * and the only useful message is the one that names it.
+ */
+const EXTENSION_PACKAGES: ReadonlyMap<string, { packageId: string; purpose: string }> = new Map([
+  [
+    '--report-trx',
+    {
+      packageId: 'Microsoft.Testing.Extensions.TrxReport',
+      purpose: 'the Test Explorer can read per-test results',
+    },
+  ],
+  [
+    '--coverage',
+    {
+      packageId: 'Microsoft.Testing.Extensions.CodeCoverage',
+      purpose: 'Run with Coverage can collect coverage',
+    },
+  ],
+]);
+
+/** What every invocation of one run shares. */
+interface RunContext {
+  readonly resultsDirectory: string;
+  readonly cwd: string;
+  readonly options: TestRunOptions;
+  /**
+   * Invocations started so far in this run. It numbers the TRX reports, so no
+   * two invocations of one run ever share a report name — not even the two
+   * target frameworks of one project, whose modules share a FILE name and
+   * would otherwise overwrite each other's report.
+   */
+  readonly started: { count: number };
 }
 
 /** One `dotnet exec <module>` invocation into `resultsDirectory`. */
 async function invoke(
   module: MtpModuleRun,
   uids: readonly string[],
-  batchIndex: number,
-  context: { resultsDirectory: string; cwd: string; options: TestRunOptions },
+  context: RunContext,
 ): Promise<TestRunOutcome> {
   const { resultsDirectory, cwd, options } = context;
   fs.mkdirSync(resultsDirectory, { recursive: true });
   const before = new Set(trxFiles(resultsDirectory));
-  const args = runArgs(
-    module.modulePath,
-    uids,
-    resultsDirectory,
-    options,
-    trxNameFor(module.modulePath, batchIndex),
-  );
+  const trxName = nextTrxName(module, context);
+  const args = runArgs(module.modulePath, uids, resultsDirectory, options, trxName);
   const started = Date.now();
-  const run = await runDotnet(
-    args,
-    cwd,
-    options.timeoutMs ?? DOTNET_TIMEOUT_MS,
-    options.signal,
-    options.hooks,
-  );
-  const output = `${run.stdout}\n${run.stderr}`;
+  const timeoutMs = options.timeoutMs ?? DOTNET_TIMEOUT_MS;
+  const run = await runDotnet(args, cwd, timeoutMs, options.signal, options.hooks);
   const report = collectReport(resultsDirectory, before);
+  return outcomeOf(module.modulePath, debugged(run, options), report, Date.now() - started);
+}
+
+/**
+ * A debug run's exit code is no verdict ([TEST-MTP-DEBUG]): it writes no TRX
+ * report, a failing test exits non-zero by design, and stopping the debugger
+ * ends the module however it ends. A refused option or a kill still reports.
+ */
+function debugged(run: DotnetRun, options: TestRunOptions): DotnetRun {
+  return options.debug === true ? { ...run, errorMessage: undefined } : run;
+}
+
+/** The next report name of this run: no two of its invocations share one. */
+function nextTrxName(module: MtpModuleRun, context: RunContext): string {
+  const name = trxNameFor(module.modulePath, context.started.count);
+  context.started.count += 1;
+  return name;
+}
+
+/** What one finished invocation reported, and why it reported nothing if so. */
+function outcomeOf(
+  modulePath: string,
+  run: DotnetRun,
+  report: { results: Map<string, TrxTestResult>; runInfos: TrxRunInfo[] },
+  durationMs: number,
+): TestRunOutcome {
+  const output = `${run.stdout}\n${run.stderr}`;
   return {
     results: report.results,
     summary: parseMtpSummary(output),
     failure: run.killed
-      ? `${path.basename(module.modulePath)} was killed: ${run.errorMessage ?? 'no detail'}`
-      : invocationFailure(module.modulePath, output, run.errorMessage, report.results.size),
+      ? `${path.basename(modulePath)} was killed: ${run.errorMessage ?? 'no detail'}`
+      : invocationFailure(modulePath, output, run.errorMessage, report.results.size),
     runInfos: report.runInfos,
     retriedUnfiltered: false,
-    durationMs: Date.now() - started,
+    durationMs,
     output,
   };
 }
@@ -206,7 +257,7 @@ export function mergeOutcomes(left: TestRunOutcome, right: TestRunOutcome): Test
     summary: mergeSummaries(left.summary, right.summary),
     failure: results.size > 0 ? undefined : (left.failure ?? right.failure),
     runInfos,
-    retriedUnfiltered: false,
+    retriedUnfiltered: left.retriedUnfiltered || right.retriedUnfiltered,
     durationMs: left.durationMs + right.durationMs,
     output: `${left.output}\n${right.output}`,
   };
@@ -216,28 +267,36 @@ export function mergeOutcomes(left: TestRunOutcome, right: TestRunOutcome): Test
 async function runModule(
   module: MtpModuleRun,
   testIds: readonly string[],
-  context: { resultsDirectory: string; cwd: string; options: TestRunOptions },
+  context: RunContext,
 ): Promise<TestRunOutcome | undefined> {
-  const uids = uidsFor(module, testIds);
-  const batches = testIds.length === 0 ? [[]] : uidBatches(uids);
+  const batches = testIds.length === 0 ? [[]] : uidBatches(uidsFor(module, testIds));
   let merged: TestRunOutcome | undefined;
-  let index = 0;
   for (const batch of batches) {
     if (context.options.signal?.aborted === true) break;
-    const one = await invoke(module, batch, index, context);
-    merged = merged === undefined ? one : mergeOutcomes(merged, one);
-    index += 1;
+    const one = await invoke(module, batch, context);
+    // A batch that reported nothing keeps its failure beside a batch that
+    // reported something, or the refusal it hides is never retried.
+    merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
   }
   if (merged === undefined || !needsUnfilteredRetry(module, merged, testIds, context)) {
     return merged;
   }
-  const unfiltered = await invoke(module, [], index, context);
+  return await retryUnfiltered(module, merged, context);
+}
+
+/** The ONE unfiltered recovery of a module that refused its selection. */
+async function retryUnfiltered(
+  module: MtpModuleRun,
+  refused: TestRunOutcome,
+  context: RunContext,
+): Promise<TestRunOutcome> {
+  const unfiltered = await invoke(module, [], context);
   return {
-    ...mergeOutcomes(merged, unfiltered),
+    ...mergeOutcomes(refused, unfiltered),
     // The retry re-ran the SAME module, so its counts REPLACE the refused
     // attempt's rather than adding to them. Summing is right only ACROSS
     // modules, which is what `mergeOutcomes` does everywhere else.
-    summary: unfiltered.summary ?? merged.summary,
+    summary: unfiltered.summary ?? refused.summary,
     retriedUnfiltered: true,
   };
 }
@@ -265,7 +324,8 @@ function needsUnfilteredRetry(
   testIds: readonly string[],
   context: { options: TestRunOptions },
 ): boolean {
-  if (testIds.length === 0) return false;
+  // A debug run reads no report: a retry would only start another waiting module.
+  if (testIds.length === 0 || context.options.debug === true) return false;
   if (context.options.signal?.aborted === true) return false;
   if (outcome.failure === undefined) return false;
   // A REJECTED option is rejected again without a filter, so retrying only
@@ -273,6 +333,83 @@ function needsUnfilteredRetry(
   if (rejectedMtpOption(outcome.output) !== undefined) return false;
   const mine = testIds.filter((id) => module.uidsById.has(id));
   return mine.some((id) => !outcome.results.has(id));
+}
+
+/**
+ * Merge two invocations that answer for DIFFERENT tests: two batches, two
+ * modules, or two runners. One that reported nothing is not rescued by one
+ * that reported something: its failure is the only account its tests get, and
+ * the reason a batch's refusal is retried, so every failure is kept. Only the
+ * unfiltered retry — the same tests again — replaces a failure with results.
+ */
+export function mergeKeepingFailures(left: TestRunOutcome, right: TestRunOutcome): TestRunOutcome {
+  const failures = [left.failure, right.failure].filter((failure) => failure !== undefined);
+  return {
+    ...mergeOutcomes(left, right),
+    failure: failures.length === 0 ? undefined : failures.join('\n'),
+  };
+}
+
+/**
+ * Build one discovery target, exactly as `dotnet test` does on the VSTest
+ * path. `dotnet exec` builds nothing, so without this a test edited since the
+ * last discovery would run from its STALE module. A failed build fails that
+ * target's modules rather than running whatever an earlier build left behind.
+ */
+async function rebuild(target: string, options: TestRunOptions): Promise<string | undefined> {
+  const timeoutMs = options.timeoutMs ?? DOTNET_TIMEOUT_MS;
+  const warnings = await buildTarget(target, dirOf(target), timeoutMs, options.signal);
+  return warnings.length === 0 ? undefined : warnings.join('\n');
+}
+
+/**
+ * The modules the selection starts, grouped by the target that builds them.
+ *
+ * A module is rebuilt from ITS target, never from the run's working directory:
+ * in a multi-root workspace that is the FIRST folder, and building it would run
+ * the second folder's module as it was before the user's edit.
+ */
+function byBuildTarget(plan: MtpRunPlan, testIds: readonly string[]): Map<string, MtpModuleRun[]> {
+  const groups = new Map<string, MtpModuleRun[]>();
+  for (const module of plan.modules) {
+    if (untouched(module, testIds)) continue;
+    groups.set(module.buildTarget, [...(groups.get(module.buildTarget) ?? []), module]);
+  }
+  return groups;
+}
+
+/** Every module of one target, merged; `undefined` when none started. */
+async function runModules(
+  modules: readonly MtpModuleRun[],
+  testIds: readonly string[],
+  context: RunContext,
+): Promise<TestRunOutcome | undefined> {
+  let merged: TestRunOutcome | undefined;
+  for (const module of modules) {
+    if (context.options.signal?.aborted === true) break;
+    const one = await runModule(module, testIds, context);
+    if (one === undefined) continue;
+    merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
+  }
+  return merged;
+}
+
+/** Each target is built, then its modules run; one target's failure is its own. */
+async function runTargets(
+  plan: MtpRunPlan,
+  testIds: readonly string[],
+  context: RunContext,
+): Promise<TestRunOutcome | undefined> {
+  let merged: TestRunOutcome | undefined;
+  for (const [target, modules] of byBuildTarget(plan, testIds)) {
+    if (context.options.signal?.aborted === true) break;
+    const failure = await rebuild(target, context.options);
+    const one =
+      failure === undefined ? await runModules(modules, testIds, context) : emptyOutcome(failure);
+    if (one === undefined) continue;
+    merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
+  }
+  return merged;
 }
 
 /** Run `testIds` (all tests when empty) across the plan's modules. */
@@ -284,17 +421,9 @@ export async function runMtpTests(
 ): Promise<TestRunOutcome> {
   const owned = options.resultsDirectory === undefined;
   const resultsDirectory = options.resultsDirectory ?? freshTempDir();
-  const context = { resultsDirectory, cwd, options };
+  const context: RunContext = { resultsDirectory, cwd, options, started: { count: 0 } };
   try {
-    let merged: TestRunOutcome | undefined;
-    for (const module of plan.modules) {
-      if (options.signal?.aborted === true) break;
-      if (untouched(module, testIds)) continue;
-      const one = await runModule(module, testIds, context);
-      if (one === undefined) continue;
-      merged = merged === undefined ? one : mergeOutcomes(merged, one);
-    }
-    return merged ?? emptyOutcome(noModuleRan(plan, options));
+    return (await runTargets(plan, testIds, context)) ?? emptyOutcome(noModuleRan(plan, options));
   } finally {
     if (owned) fs.rmSync(resultsDirectory, { recursive: true, force: true });
   }

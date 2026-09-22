@@ -36,7 +36,7 @@ import {
   type TestAssemblyListing,
   type TestListing,
 } from './test-listing-model.js';
-import { listMtpTests } from './test-mtp-discovery.js';
+import { listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
 import { usesMtpRunner } from './test-mtp.js';
 
 export { parseFullyQualifiedTestList, withoutAdapterUniqueId } from './test-names.js';
@@ -164,29 +164,43 @@ export async function listTests(
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<TestListing> {
   const cwd = targetCwd(target);
-  if (cwd === undefined) {
-    return {
-      names: [],
-      ok: false,
-      warnings: [`Discovery target does not exist: ${target}`],
-      byAssembly: [],
-    };
-  }
+  if (cwd === undefined) return missingTarget(target);
   // [TEST-MTP-DETECT]: a `global.json` opt-in makes the whole target MTP, and
   // every VSTest command below would fail against it — `--nologo` alone exits
   // with code 5 and lists nothing. Go straight to the runner that can answer.
   if (usesMtpRunner(cwd)) return await listMtpTests(target, cwd, timeoutMs);
   const vstest = await listWithVsTest(target, cwd, timeoutMs);
-  // No assembly attributed a name: either a genuinely empty solution, or an MTP
-  // project with no opt-in — which MTP v2 on the .NET 10 SDK makes ordinary,
-  // because it removed the VSTest shim. Ask MSBuild before settling for the
-  // display-name fallback, which cannot run anything it lists.
   if (vstest.byAssembly.length > 0) return vstest;
-  const mtp = await listMtpTests(target, cwd, timeoutMs);
-  if (mtp.names.length === 0) {
-    return { ...vstest, warnings: [...vstest.warnings, ...mtp.warnings] };
-  }
-  return { ...mtp, warnings: [...vstest.warnings, ...mtp.warnings] };
+  return await withMtpProbe(vstest, target, cwd, timeoutMs);
+}
+
+/** A target that is not on disk: nothing to enumerate, and the reason why. */
+function missingTarget(target: string): TestListing {
+  return {
+    names: [],
+    ok: false,
+    warnings: [`Discovery target does not exist: ${target}`],
+    byAssembly: [],
+  };
+}
+
+/**
+ * VSTest attributed no assembly: either a genuinely empty solution, or an MTP
+ * project with no opt-in — which MTP v2 on the .NET 10 SDK makes ordinary,
+ * because it removed the VSTest shim. Ask MSBuild before settling for the
+ * display-name fallback, which cannot run anything it lists. The probe builds
+ * nothing unless MSBuild names an MTP project: the VSTest passes have already
+ * restored the target, and a solution with no MTP project must not pay twice.
+ */
+async function withMtpProbe(
+  vstest: TestListing,
+  target: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<TestListing> {
+  const mtp = await probeMtpTests(target, cwd, timeoutMs);
+  const warnings = [...vstest.warnings, ...mtp.warnings];
+  return mtp.names.length === 0 ? { ...vstest, warnings } : { ...mtp, warnings };
 }
 
 /** The two VSTest passes: build and announce, then ask for the real names. */

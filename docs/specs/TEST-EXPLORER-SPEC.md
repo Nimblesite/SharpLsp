@@ -183,8 +183,14 @@ in two steps:
    `true` is an MTP test module. `IsTestProject` MUST NOT be used for this: `xunit.v3` leaves
    it empty.
 
-This order costs a VSTest solution nothing. It also keeps the MTP probe out of the hot path
-for every sweep that already worked.
+This order costs a VSTest solution that lists tests nothing, and keeps the MTP probe out of
+the hot path for every sweep that already worked. The probe itself runs on every sweep that
+attributed no assembly — a library solution with the Testing view open, a VSTest solution
+that fails to build — so it MUST NOT build anything unless MSBuild names an MTP project: the
+VSTest passes have already restored the target, the probe EVALUATES first, and only an MTP
+project earns a build ([TEST-MTP-MODULES]). A solution with no MTP project is built exactly
+as often as the VSTest passes build it, and a failing build is not repeated before its error
+row appears.
 
 ## Microsoft.Testing.Platform: the test modules `[TEST-MTP-MODULES]`
 
@@ -193,11 +199,28 @@ listing. They come from MSBuild, which is the only source that survives a custom
 `AssemblyName`, a custom `OutputPath`, an `ArtifactsPath` or a `RuntimeIdentifier`:
 
 1. `dotnet build <target>` once. It builds the same projects a VSTest sweep builds.
-2. `dotnet sln <solution> list` for the projects. The first two lines are a header and are
-   dropped; the rest are project paths RELATIVE to the solution. With no solution loaded,
-   the workspace folder is searched for `*.csproj` and `*.fsproj` instead.
+2. The target's projects, resolved exactly the way `dotnet` resolves the target:
+   * a solution: `dotnet sln <solution> list`. Lines are classified one by one; the header is
+     not a path, and the paths are RELATIVE to the solution;
+   * a project file: that ONE project, never the projects beside or below it;
+   * a folder: the single project or solution file DIRECTLY in it. `dotnet` refuses a folder
+     holding several (MSB1011) or none (MSB1003), and so does this: the folder is never
+     walked. Walking it listed modules an EARLIER build had left on disk as if they were live,
+     while every run's build failed.
 3. `dotnet msbuild <project> -getProperty:IsTestingPlatformApplication -getProperty:TargetPath`
-   per project. `TargetPath` of an MTP project is its test module.
+   ONCE per project. `TargetPath` of an MTP project is its test module; a multi-targeted
+   project reports an empty `TargetPath` and is re-evaluated once per framework.
+4. Only modules that exist on disk are kept.
+
+The ORDER of steps 1–3 depends on who restored the target. `IsTestingPlatformApplication` comes
+from the test framework's package, so an unrestored MTP project evaluates as an ordinary one:
+with the `global.json` opt-in nothing has restored the target yet, and the build comes first.
+The probe after the VSTest passes ([TEST-MTP-DETECT]) runs on a target they have just restored,
+so it evaluates first and builds only when an MTP project was found.
+
+A scan that went wrong and found nothing is NOT an empty answer. A folder `dotnet` refused, or
+a build that failed before any module existed, reaches the user as an error row carrying the
+`dotnet` diagnostic — never as an empty tree.
 
 A multi-targeted project reports one module per target framework. They are ONE project and
 MUST collapse to one tree root, by the same union rule as [TEST-DISCOVERY-FQN].
@@ -235,19 +258,39 @@ Three fields, three jobs, and they MUST NOT be confused:
 * **`location`** gives the test item its file and line. NUnit sends none, so the field is
   optional and its absence is not an error.
 
+A module on a platform older than MTP 2.3 — MSTest 3.11 carries 1.9 — takes no argument after
+`--list-tests`. It refuses `json` with exit code 5 and the line `Option '--list-tests' from
+provider '…' (UID: …) expects no arguments`. A line that STARTS `Option '<name>'` and says what
+it expects names the refused option exactly as `Unknown option '<name>'` does ([TEST-MTP-RUN]),
+and the module's warning says its platform is older than 2.3 and to update the test framework
+package — never a bare "listed no test".
+
 The reader tolerates a leading blank line and a byte-order mark, and it starts at the first
 `{`. An unknown `schemaVersion` produces a warning, not an exception. A module that fails to
 list leaves the other modules alone, the same contract as [TEST-DISCOVERY-FQN].
 
 ## Microsoft.Testing.Platform: runs `[TEST-MTP-RUN]`
 
-One invocation per MODULE for the whole selection, never one per test:
+Each module's target is BUILT first, then each module is invoked once for the whole selection,
+never once per test:
 
 ```
+dotnet build <target> --nologo
 dotnet exec <module.dll> --filter-uid <uid> <uid> … \
-    --report-trx --report-trx-filename <module>.trx \
+    --report-trx --report-trx-filename <module>.<n>.trx \
     --results-directory <dir> --no-banner --no-ansi
 ```
+
+* The build is the one `dotnet test` performs on the VSTest path. `dotnet exec` builds
+  nothing, so without it a test edited since the last discovery would run from its STALE
+  module — reporting the old outcome, caching it and painting it on the status lens. What is
+  built is the module's own DISCOVERY target — the solution, or the workspace folder it was
+  found in — each target once per run, never the run's working directory: in a multi-root
+  workspace that is the FIRST folder, and building it would run another folder's module as it
+  was before the edit. A FAILED build fails that target's modules with the build's output; the
+  modules an earlier build left behind MUST NOT be run instead, and another target's modules
+  are unaffected. A selection that starts no module builds nothing, and ⏹ kills the build
+  like any other invocation.
 
 * `--filter-uid` takes LITERAL values, so the [TEST-FILTER-ESCAPE] grammar does not apply and
   MUST NOT be used. An NUnit uid contains parentheses and commas; escaping them would make it
@@ -255,9 +298,14 @@ dotnet exec <module.dll> --filter-uid <uid> <uid> … \
   command-line ceiling, for the same reason the VSTest filter is.
 * An empty selection means "run everything", and then no `--filter-uid` is sent.
 * A module the selection does not touch is not started at all.
-* `--report-trx-filename` is set per module. Two modules writing one auto-named file in a
-  shared results directory would overwrite each other, which is the same defect
-  [TEST-RUN-TRX] avoids with auto-naming under VSTest.
+* `--report-trx-filename` is unique per INVOCATION across the whole run: `<n>` counts every
+  invocation the run starts, batches and retries included. Two invocations writing one file
+  name into the shared results directory would overwrite each other — the defect
+  [TEST-RUN-TRX] avoids with auto-naming under VSTest — and the second report would then be
+  skipped as already present. Numbering per MODULE is not enough: the target frameworks of
+  one project build modules sharing ONE file name (`bin/Debug/net9.0/Foo.dll` and
+  `bin/Debug/net10.0/Foo.dll`), and a test failing on one framework only would be reported
+  as passed.
 * `--no-progress` MUST NOT be used. MTP 2.3 deprecated it and prints a warning on every run.
 
 The TRX report is read back by the reader [TEST-RUN-TRX] already specifies, and the worst-row
@@ -280,6 +328,16 @@ the outcomes are picked out of its report by name. Slower, but correct — and o
 the module failed, never on a selection that legitimately matched nothing. A retry's counts
 REPLACE the refused attempt's; counts are summed only ACROSS modules.
 
+Invocations that answer for DIFFERENT tests — two batches of one module, two modules, two
+runners ([TEST-MTP-ROUTING]) — KEEP every failure when they merge: one that reported nothing is
+never rescued by one that reported something, because its failure is the only account its
+tests get. A solution where one project lacks `Microsoft.Testing.Extensions.TrxReport`
+therefore still shows that project's tests the message naming the package, whatever the
+other projects reported. Within one module the same rule is what makes the retry reachable: a
+selection spanning several batches whose LATER batch holds the refused uid still carries that
+batch's failure, so the refusal is retried instead of hidden behind the earlier batch's
+results. Only the unfiltered retry — the same tests again — replaces a failure with results.
+
 `--report-trx` is an EXTENSION, not part of MTP. A module that does not register
 `Microsoft.Testing.Extensions.TrxReport` rejects the option and exits with code 5, printing
 `Unknown option '--report-trx'`. That exit code MUST be reported as itself: the message tells
@@ -289,22 +347,63 @@ the user to reference the package. A silent empty run would report every selecte
 Coverage is also an extension. MTP has no `--collect:"XPlat Code Coverage"`; it takes
 `--coverage --coverage-output-format cobertura`, and it writes `<guid>.cobertura.xml`
 DIRECTLY into the results directory, not one level below it as `coverlet.collector` does.
-[TEST-COVERAGE] therefore reads both depths.
+[TEST-COVERAGE] therefore reads both depths. A module that does not reference
+`Microsoft.Testing.Extensions.CodeCoverage` rejects `--coverage` with exit code 5 and runs NO
+test, so Run with Coverage reports every selected test as not run with the message naming
+that package, exactly as the TRX message names its own.
+
+## Microsoft.Testing.Platform: two runners in one tree `[TEST-MTP-ROUTING]`
+
+The runner is chosen per discovery TARGET ([TEST-MTP-DETECT]), and a multi-root workspace
+with no solution loaded has one target per folder. One tree can therefore hold VSTest tests
+beside MTP tests, and one ▶ can select from both. Each test MUST go to the runner that
+discovered it:
+
+* An MTP module OWNS the ids its listing reported. Every other id is a VSTest filter value,
+  exactly as it was before MTP existed, and runs through `dotnet test`.
+* When only one runner was discovered, it gets every id — an id nothing owns still goes where
+  it always went.
+* ▶ on the whole tree (no ids) starts BOTH runners over everything; a selection is split by
+  ownership, and a runner left with no id is not started.
+* The two outcomes merge with every failure kept ([TEST-MTP-RUN]), and every entry point
+  goes through the same routing: the Run, Debug and Run-with-Coverage profiles and the status
+  CodeLens's single-test run.
+
+What the controller knows about the runners — the MTP plan, and whether any target was
+VSTest — changes ONLY when the tree does. A sweep that keeps the standing tree because every
+target failed ([TEST-REACTIVITY]) keeps the plan that runs that tree too: replacing the plan
+with one whose modules listed nothing left every test of the kept tree "No result reported".
 
 ## Microsoft.Testing.Platform: debugging `[TEST-MTP-DEBUG]`
 
-An MTP module IS the test host: there is no `testhost.dll` grandchild. `--debug` makes the
-module print
+An MTP module IS the test host: there is no `testhost.dll` grandchild. The debug run sets
+`TESTINGPLATFORM_WAIT_ATTACH_DEBUGGER=1` in the module's environment — beside VSTest's
+`VSTEST_HOST_DEBUG=1`, because each runner ignores the other's variable — and no command-line
+option. The module then prints
 
 ```
 Waiting for debugger to attach... Process Id: 212243, Name: dotnet
 ```
 
-and then wait. The announcement carries the same `Process Id: <pid>, Name: <name>` text as
-VSTest, but a prefix comes before it, so the pid reader MUST find that text anywhere in the
-line rather than only at its start. Everything else in [DEBUG-FEATURES-TESTS] is unchanged:
-one invocation, attach to the announced pid, mirror the output into the terminal, and write
-no result to the cache.
+and waits. The announcement carries the same `Process Id: <pid>, Name: <name>` text as
+VSTest behind its own prefix. The pid reader accepts exactly those two forms, each at the
+START of the line: VSTest's bare `Process Id:` and MTP's `Waiting for debugger to attach...
+Process Id:`. It MUST NOT find the text anywhere else in a line — a debug run scans all of
+the run's output, and a test or a logger printing "Process Id: 1234" mid-line would aim the
+debugger at its number. Everything else in [DEBUG-FEATURES-TESTS] is unchanged: one
+invocation, attach to the announced pid, mirror the output into the terminal, and write no
+result to the cache.
+
+A debug run passes NO `--report-trx`. `Microsoft.Testing.Extensions.TrxReport` 2.x runs a module
+that reports TRX under a test host CONTROLLER, which launches the real test host as a child
+with the controller's own environment and command line. Both then wait for a debugger, so the
+Debug profile attached a second session to a supervisor that runs no test. Without the option
+the module is one process: the test host, and the one session. Such a run has no per-test
+report. Its exit code is no verdict either, because a failing test exits non-zero by design and
+stopping the debugger ends the module however it ends. So its MTP tests are left without a
+verdict, never painted "No result reported", and it is never re-run unfiltered, which would only
+start another waiting module. A run that FAILED — a build error, a refused option, a kill —
+still reports that failure on every selected test.
 
 ## Reactivity `[TEST-REACTIVITY]`
 
@@ -313,12 +412,22 @@ once the user has engaged the Testing view — revealed it (`resolveHandler`) or
 refresh (`refreshHandler`) — does the controller become active. From then on a change to the
 shared `state.solutionPath` signal reactively re-discovers with no manual refresh, debounced
 by one second to collapse the burst a solution load emits. A monotonic generation counter
-ensures a superseded sweep never clobbers a newer one.
+ensures a superseded sweep never clobbers a newer one. A superseded sweep applies nothing, so
+whoever awaited it — a refresh, the view's first reveal — resolves only once the NEWEST sweep
+has applied. Resolving at once left the previous solution's tree on view as if it had just been
+discovered.
 
 Every `dotnet` invocation the controller makes is serialized through a single queue.
 Discovery builds the solution and a run rebuilds the same projects, so two overlapping
 invocations race on the shared `bin/`/`obj/` output and VSTest dies with "The application to
 execute does not exist: …testhost.dll". `whenIdle()` resolves once the queue has drained.
+
+A discovery sweep is ONE job in that queue: every target listed AND the result applied — the
+tree, and the runners that run it ([TEST-MTP-ROUTING]). A run pressed while a sweep is listing
+waits behind it, and must run with what that sweep found. Applying the result after the queue
+had already moved on sent that run to the runners of the sweep BEFORE it: a project just moved
+onto MTP went to `dotnet test --filter … --logger trx`, which MTP refuses with exit code 5, and
+a Debug press left the module waiting for a debugger that never came.
 
 ## Environment `[TEST-ENV-LOCALE]`
 
@@ -381,6 +490,10 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `debug-test-fsharp-e2e.test.ts` | F# first: a backtick name carrying SPACES debugged, its module helper on the stack, `[<Theory>]` rows, and Debug Test at the cursor |
 | `test-explorer-mtp.test.ts` | Microsoft.Testing.Platform, end to end: the `global.json` opt-in and the `IsTestingPlatformApplication` probe, module resolution through MSBuild, and the tree for `xunit.v3`, MSTest and NUnit × C# and F# — including the MSTest bare display name that MUST NOT become an id, the F# backtick name carrying SPACES, and the source location the JSON listing carries ([TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-DISCOVERY]) |
 | `test-explorer-mtp-outcomes.test.ts` | MTP runs: pass, fail and skip attribution across all six projects, the assertion text, a data-driven test whose rows disagree collapsing onto one id, ▶ on one test and on a class row, ⏹, the unfiltered retry an F# NUnit refusal earns and the C# selection that must NOT be retried, and the exit-code-5 message a module without `Microsoft.Testing.Extensions.TrxReport` earns ([TEST-MTP-RUN]) |
+| `test-explorer-mtp-modules.test.ts` | MTP across SEVERAL modules and after an EDIT: a multi-targeted project whose frameworks build modules sharing one file name, each report read (a test failing on one framework only is red from ▶ on the whole tree, and one TRX lands per module); a project without `Microsoft.Testing.Extensions.TrxReport` keeping its message beside projects that report results; and a test edited then run — from the Testing view and the status lens — reporting the EDITED outcome, then green again once reverted ([TEST-MTP-RUN], [TEST-MTP-MODULES]) |
+| `test-explorer-mtp-sweeps.test.ts` | What ONE probe sweep costs, reaches and keeps, with builds COUNTED by a real `Directory.Build.props`: a library solution and a VSTest solution that fails to build are built no more often than the VSTest passes build them, directly and through the Testing view; a folder holding two projects (MSB1011), a folder with projects only below it (MSB1003) and a project file with an MTP project nested under it list nothing an earlier build left on disk, and an opted-in ambiguous folder is an error, not an empty tree; a sweep whose module fails to LIST keeps both the tree and the plan that runs it, so ▶ and the status lens still run it ([TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-ROUTING]) |
+| `test-explorer-mtp-batches.test.ts` | One F# NUnit module whose selection spans several `--filter-uid` batches with the refused spaced `[<TestCase>]` uid in the LAST one: the refusal still earns the unfiltered retry and every test reports its verdict, directly and from ▶ on the module's root; Run with Coverage on a module without `Microsoft.Testing.Extensions.CodeCoverage` names the package on the run and on the test, and the plain Run profile stays green ([TEST-MTP-RUN]) |
+| `multiroot/test-explorer-mixed-runners.test.ts` | Runs in the SECOND editor start, a two-folder workspace: an F# VSTest folder beside a C# `xunit.v3` folder with no opt-in. Each folder is its own assembly root, found by its own runner; ▶ on each runner's tests, on a selection spanning both, on the whole tree, and the status lens all report real outcomes; and an edit in the SECOND folder is rebuilt from that folder before it runs ([TEST-MTP-DETECT], [TEST-MTP-RUN], [TEST-MTP-ROUTING]) |
 | `test-explorer-mtp-parsers.test.ts` | the JSON listing reader at its boundary: a byte-order mark, a leading blank line, an unknown `schemaVersion`, an empty `tests` array, a missing `location`, a missing `type`, and two rows collapsing onto one id with two uids; the `global.json` opt-in against every decoy that merely mentions MTP; the uid batcher; and the waiting-host pid line in BOTH its bare and its prefixed form ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-DEBUG]) |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows

@@ -656,6 +656,17 @@ Invariants:
   its whole line set to the union (unexecuted lines as `DA:<line>,0`) — which
   reproduces exactly the file set, line set and percentage of one unsharded run.
   Enabling `includeAll` would silently move the ratchet.
+- **One editor start per workspace SHAPE.** Most suites run in the fixture
+  folder; suites under `src/test/suite/multiroot/` need a workspace OPENED with
+  two folders, because adding a second folder from inside the test host turns
+  the window into a workspace and VS Code restarts the extension host running
+  the suite. `.vscode-test.mjs` therefore declares a second configuration that
+  opens a freshly generated two-folder `.code-workspace` and names its shape in
+  `SHARPLSP_WORKSPACE_SHAPE`; `src/test/suite/index.ts` runs only the suites of
+  the shape it was started for. The second start happens only when the run
+  selects a multi-root suite, so a chunk without one pays nothing, and both
+  starts instrument into ONE coverage directory, so a shard still writes one
+  tracefile.
 - **Local runs stay unsharded.** `make test` / `make _test-vsix` remain the
   single-invocation, inline-gate path; sharding is a CI wall-clock concern only.
 - **The payload check is its own job.** Verifying the packaged VSIX carries the

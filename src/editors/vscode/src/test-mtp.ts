@@ -224,17 +224,51 @@ export const MTP_INVALID_COMMAND_LINE = 5;
 const UNKNOWN_OPTION = "Unknown option '";
 
 /**
+ * How a module starts the line refusing an option's ARGUMENTS:
+ * `Option '<name>' from provider '…' (UID: …) expects no arguments`.
+ */
+const ARITY_REFUSAL = "Option '";
+
+/** The words that make an `Option '…'` line a refusal, not a mention. */
+const EXPECTS = ' expects ';
+
+/**
  * The option a module rejected, or `undefined`.
  *
  * `--report-trx` and `--coverage` are EXTENSIONS, not part of MTP. A module
  * that does not register the extension exits with code 5 and prints this line.
  * Reporting it as itself is what tells the user to reference the package;
  * swallowing it would report every selected test as "No result reported".
+ *
+ * A module KNOWS an option but refuses what it was given the same way, with
+ * its own line: MTP 1.9 — MSTest 3.11 — takes no argument after `--list-tests`
+ * and refuses `--list-tests json` with exit code 5. Unread, that module
+ * "listed no test" for no stated reason ([TEST-MTP-DISCOVERY]).
  */
 export function rejectedMtpOption(output: string): string | undefined {
+  return unknownOption(output) ?? firstDefined(output.split('\n').map(arityRefusal));
+}
+
+/** The option an `Unknown option '<name>'` message names. */
+function unknownOption(output: string): string | undefined {
   const start = output.indexOf(UNKNOWN_OPTION);
-  if (start < 0) return undefined;
-  const rest = output.slice(start + UNKNOWN_OPTION.length);
+  return start < 0 ? undefined : quotedName(output.slice(start + UNKNOWN_OPTION.length));
+}
+
+/** The option a line STARTING `Option '<name>'` and saying what it expects refuses. */
+function arityRefusal(line: string): string | undefined {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith(ARITY_REFUSAL) || !trimmed.includes(EXPECTS)) return undefined;
+  return quotedName(trimmed.slice(ARITY_REFUSAL.length));
+}
+
+/** The text before the closing quote; `undefined` when there is none or it is empty. */
+function quotedName(rest: string): string | undefined {
   const end = rest.indexOf("'");
   return end <= 0 ? undefined : rest.slice(0, end);
+}
+
+/** The first value that is not `undefined`. */
+function firstDefined(values: readonly (string | undefined)[]): string | undefined {
+  return values.find((value) => value !== undefined);
 }
