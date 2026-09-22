@@ -50,6 +50,7 @@ import {
   collectLeafIds,
   discoverSolution,
   drainDiscovery,
+  errorTextOf,
   findItem,
   rootsOf,
   runViaProfile,
@@ -163,11 +164,6 @@ function leftOnDisk(dir: string, name: string): boolean {
 /** The modules a listing would RUN — none, when it planned nothing. */
 function modulesPlanned(listing: TestListing): string[] {
   return (listing.mtp?.modules ?? []).map((module) => module.modulePath);
-}
-
-/** The text of an error row. */
-function errorText(row: vscode.TestItem | undefined): string {
-  return row?.error instanceof vscode.MarkdownString ? row.error.value : String(row?.error);
 }
 
 /** The builds `run` cost, counted afresh from an empty log. */
@@ -290,7 +286,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     );
     const rows = rootsOf(api.testController.items);
     assert.equal(rows.length, 1, 'one row: the error');
-    assert.ok(errorText(rows[0]).includes('NotDefinedAnywhere'), errorText(rows[0]));
+    assert.ok(errorTextOf(rows[0]).includes('NotDefinedAnywhere'), errorTextOf(rows[0]));
   });
 
   test('a folder or a project file is enumerated the way dotnet resolves it, never walked', async function () {
@@ -442,7 +438,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     const errors = rootsOf(api.testController.items).filter((item) => item.error !== undefined);
     assert.equal(errors.length, 1, 'one error row for the solution');
     const [row] = errors;
-    const text = row?.error instanceof vscode.MarkdownString ? row.error.value : String(row?.error);
+    const text = errorTextOf(row);
     assert.ok(text.includes('Update the test framework package'), `the remedy is shown: ${text}`);
     // The row says it all: the cause, the module, and nothing else stands beside it.
     assert.ok(text.includes('older than 2.3'), `the cause, in the tree too: ${text}`);

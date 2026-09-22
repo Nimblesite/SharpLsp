@@ -97,3 +97,65 @@ function withoutCaseArguments(line: string): string | undefined {
 export function parseTestList(output: string): string[] {
   return dedupeLines(output, isDiscoveredTestLine);
 }
+
+/**
+ * The `<origin>: <severity> <code>:` separator MSBuild guarantees on every
+ * diagnostic it prints, whatever the tool that raised it.
+ */
+const ERROR_MARKER = ': error ';
+const BARE_WARNING_MARKER = ': warning :';
+
+/**
+ * True when `line` is a diagnostic that means the TARGET was refused.
+ *
+ * An MSBuild ERROR always is: nothing enumerated because something failed.
+ *
+ * A WARNING only is when it carries no diagnostic CODE. That is the line
+ * separating the two cases this classifier exists to tell apart, and both are
+ * real:
+ *
+ *   Core.csproj : warning NU1903: Package 'X' has a known vulnerability [s.slnx]
+ *       A project that WAS restored and built, and simply holds no test. The
+ *       solution is healthy; the empty tree is the truth.
+ *
+ *   NuGet.targets(198,5): warning : Unable to find a project to restore! [s.sln]
+ *       No project was restored AT ALL. Not a report about a project — the
+ *       build system saying it did nothing.
+ *
+ * A coded warning is ABOUT something MSBuild processed. A bare one comes from
+ * the SDK's own targets and is structural. Treating every warning as a refusal
+ * turned a library solution carrying an ordinary NU1903 advisory into a "Test
+ * discovery failed" row, which is the same defect as the blank tree with the
+ * sign flipped: a scan that went RIGHT reported as one that went wrong.
+ */
+function isRefusal(line: string): boolean {
+  return line.includes(ERROR_MARKER) || line.includes(BARE_WARNING_MARKER);
+}
+
+/**
+ * The diagnostics in a listing's output that mean the target was refused,
+ * de-duplicated and in order.
+ *
+ * `dotnet` does NOT always answer a target it cannot use with a non-zero exit.
+ * A solution that names projects but declares no solution configuration
+ * restores nothing, lists nothing and still exits 0, saying only the bare
+ * warning above. Read as an enumeration that simply found no test, that blanks
+ * the Testing view behind VS Code's own "No tests have been found in this
+ * workspace yet", whose one offered remedy — install a test extension — cannot
+ * help. [TEST-MTP-MODULES] forbids exactly this: "a scan that went wrong and
+ * found nothing is NOT an empty answer".
+ *
+ * Only consulted when a listing produced NOTHING, so a diagnostic over a
+ * solution that did enumerate never reaches the user as a failure.
+ *
+ * Matched on the separator rather than over the whole line: an origin carries a
+ * Windows drive letter, and a message can contain anything at all.
+ */
+export function parseListingDiagnostics(output: string): string[] {
+  const diagnostics = new Set<string>();
+  for (const raw of output.split('\n')) {
+    const line = raw.trim();
+    if (isRefusal(line)) diagnostics.add(line);
+  }
+  return [...diagnostics];
+}

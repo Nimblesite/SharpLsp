@@ -50,6 +50,15 @@ export function rootsOf(items: vscode.TestItemCollection): vscode.TestItem[] {
   return roots;
 }
 
+/**
+ * The text an error row renders, whether it carries a `MarkdownString` or a
+ * plain one — and the word `undefined` when it carries no error at all, so an
+ * assertion on a row that should have failed reads as a miss, not as a throw.
+ */
+export function errorTextOf(item: vscode.TestItem | undefined): string {
+  return item?.error instanceof vscode.MarkdownString ? item.error.value : String(item?.error);
+}
+
 /** Recursively collect every TestItem id in a controller collection. */
 export function collectItemIds(items: vscode.TestItemCollection): string[] {
   const ids: string[] = [];
