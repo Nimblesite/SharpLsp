@@ -104,7 +104,7 @@ Whenever activation cannot deliver a working language server — for any reason,
 3. **Every failure surfaces a non-modal `vscode.window.showErrorMessage(…)`** with at minimum a `[Show Log]` button that calls `log.output().show()`. Where applicable, additional informational links MAY be added (`[Open dot.net]`, `[Retry]`, `[Reinstall]`). Buttons are convenience links, never required actions.
 4. **The status bar MUST move to `ServerState.Error`** so the persistent indicator reflects the degraded state.
 5. **The error message MUST name the failure mode in plain language** ("required binaries are missing or version-mismatched", ".NET 10 install failed", "language server crashed during startup") — never just dump a stack trace into the toast. The full diagnostic text goes to the output channel reachable via `[Show Log]`.
-6. **Recovery commands MUST be registered** so the user can re-attempt without uninstalling. Examples: `sharplsp.retryDotnetAcquisition`, `sharplsp.restartServer`. These appear in the command palette under the `SharpLsp:` category. `sharplsp.restartServer` MUST start a fresh server even when the old one does not answer `shutdown` in time — a hung server is exactly when a user reaches for it.
+6. **Recovery commands MUST be registered** so the user can re-attempt without uninstalling. Examples: `sharplsp.retryDotnetAcquisition`, `sharplsp.restartServer`. These appear in the command palette under the `SharpLsp:` category. `sharplsp.restartServer` MUST start a fresh server even when the old one does not answer `shutdown` in time — a hung server is exactly when a user reaches for it. A restarted server MUST serve the documents the user already has open: a request about an open document waits until the CURRENT server has been sent its `didOpen`. A `didOpen` that failed to send, or that reached the server the restart replaced, does not count (`open-sync.ts`).
 
 **Implementation reference:**
 - `src/editors/vscode/src/result.ts` — `Result<T, E>`, `ok`, `err`.
@@ -386,6 +386,9 @@ Tag-triggered (`v*`). Jobs:
    ([DIST-VERSION-INVARIANT]).
 2. **`codeql`** — release gate. `release` needs it, so a High/Critical finding
    blocks every downstream publish ([DIST-CI-SECURITY]).
+   **`audit`** — release gate. The same `ci-audit.yml` job every PR runs,
+   re-run on the tagged SHA; `release` needs it, so a vulnerable dependency
+   blocks every downstream publish ([DIST-CI-AUDIT]).
 3. **`build-vsix`** — one job per platform (`linux-x64`, `linux-arm64`,
    `darwin-arm64`, `win32-x64`, `win32-arm64`). Builds the Rust host and both
    sidecars ONCE, then emits BOTH artifacts for that platform: the
@@ -437,6 +440,7 @@ detect-changes -> ANALYSE -> FULL BUILD (linux || windows) -> TEST -> COVERAGE
 |---|---|---|
 | — | `ci.yml` | Orchestrator: `detect-changes` and one `uses:` job per phase |
 | 1 ANALYSE | `ci-analyse.yml` | Every Rust / Zed / .NET / VS Code lint, format and analysis gate |
+| 1 ANALYSE | `ci-audit.yml` | `make audit`: vulnerable Rust / .NET / npm dependencies already in the tree ([DIST-CI-AUDIT]) |
 | 1 ANALYSE | (in `ci.yml`) | Dependency review ([DIST-CI-SECURITY]) and Shipwright manifest validation |
 | 2 BUILD + 3 CACHE | `ci-build.yml` | Both platforms in parallel: host, sidecars, netcoredbg, VS Code suite, VSIX — then published |
 | 4 TEST | `ci-test-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the version contract |
@@ -491,7 +495,24 @@ Phase invariants:
 
 ### [DIST-CI-SECURITY] Security Gates
 
-[ci.yml](../../.github/workflows/ci.yml) MUST run dependency review for pull requests. [codeql.yml](../../.github/workflows/codeql.yml) MUST scan pull requests, weekly schedules, and tagged releases; `release.yml` calls it with `gate: true`, and any high or critical finding blocks release and publication. Workflow permissions default to `contents: read`; only jobs that publish security events or artifacts receive narrower write permissions.
+[ci.yml](../../.github/workflows/ci.yml) MUST run dependency review for pull requests, and the dependency audit ([DIST-CI-AUDIT]). [codeql.yml](../../.github/workflows/codeql.yml) MUST scan pull requests, weekly schedules, and tagged releases; `release.yml` calls it with `gate: true`, and any high or critical finding blocks release and publication. Workflow permissions default to `contents: read`; only jobs that publish security events or artifacts receive narrower write permissions.
+
+### [DIST-CI-AUDIT] Dependency Vulnerability Audit
+
+`make audit` ([tools/make/audit.mk](../../tools/make/audit.mk)) MUST check every dependency already in the tree against its ecosystem's own advisory database:
+
+| Ecosystem | Scanner | Scope |
+|---|---|---|
+| Rust | `cargo audit` (RustSec) | `Cargo.lock`, `src/editors/zed/Cargo.lock` |
+| .NET | `dotnet list package --vulnerable --include-transitive` | `src/sidecars/SharpLsp.Sidecars.sln`, direct and transitive |
+| npm | `npm audit --package-lock-only` | `src/editors/vscode`, `src/website` |
+
+- **Report what to upgrade.** Every finding names the package, the installed version and the advisory. `cargo audit` and `npm audit` print the patched version; the .NET checker ([tools/audit/dotnet-vulnerable.mjs](../../tools/audit/dotnet-vulnerable.mjs)) says whether to raise the direct `PackageReference` or pin the transitive package.
+- **One run lists everything.** All three scanners run even when an earlier one fails; the target fails at the end.
+- **Fail level.** `AUDIT_LEVEL` (default `moderate`) is the lowest npm/NuGet severity that fails. Lower findings are still printed. `cargo audit` fails on any vulnerability; yanked, unsound and unmaintained crates are warnings.
+- **Never silently green.** `dotnet list` exits 0 whatever it finds, so its JSON report is checked by `dotnet-vulnerable.mjs`, and a report carrying an error (an unrestored solution) fails the audit. A missing `cargo-audit` fails the audit.
+- **Read-only.** `npm audit` reads the lockfile only and never touches `node_modules`.
+- **One job, three callers.** [ci-audit.yml](../../.github/workflows/ci-audit.yml) runs `make audit` for every pull request (`ci.yml`), for the tagged SHA as a release gate (`release.yml`; `release` needs it), and weekly on `main`, because advisories are published between pull requests. Dependency review only sees what a PR adds; this audit covers what is already shipped.
 
 ## [DIST-CI-NODE] Node.js Toolchain
 
@@ -635,6 +656,17 @@ Invariants:
   its whole line set to the union (unexecuted lines as `DA:<line>,0`) — which
   reproduces exactly the file set, line set and percentage of one unsharded run.
   Enabling `includeAll` would silently move the ratchet.
+- **One editor start per workspace SHAPE.** Most suites run in the fixture
+  folder; suites under `src/test/suite/multiroot/` need a workspace OPENED with
+  two folders, because adding a second folder from inside the test host turns
+  the window into a workspace and VS Code restarts the extension host running
+  the suite. `.vscode-test.mjs` therefore declares a second configuration that
+  opens a freshly generated two-folder `.code-workspace` and names its shape in
+  `SHARPLSP_WORKSPACE_SHAPE`; `src/test/suite/index.ts` runs only the suites of
+  the shape it was started for. The second start happens only when the run
+  selects a multi-root suite, so a chunk without one pays nothing, and both
+  starts instrument into ONE coverage directory, so a shard still writes one
+  tracefile.
 - **Local runs stay unsharded.** `make test` / `make _test-vsix` remain the
   single-invocation, inline-gate path; sharding is a CI wall-clock concern only.
 - **The payload check is its own job.** Verifying the packaged VSIX carries the
@@ -723,6 +755,12 @@ Invariants:
   test first and the helper's "what did it actually see" message is never
   printed. In-test polls take `LSP_RESPONSE_MS`; a warmup poll inside a
   `REAL_REPO_MS` hook takes `REAL_REPO_WARMUP_MS`.
+- **The whole-run ceiling is per chunk.** `WHOLE_RUN_MS` (20 min) bounds one
+  chunk in `test-cli-runner.cjs`, below the CI job's `timeout-minutes`, so a hung
+  chunk still prints its mocha report. A run with no `MOCHA_FILES` runs every
+  chunk in one process (`make test`), and its ceiling is `WHOLE_RUN_MS` times the
+  number of chunks in `test-chunks.json`. A single-chunk ceiling on the whole
+  suite kills a healthy run part-way through.
 - **A shard that resolves to no suites fails.** `RUN_VSIX_SUITE` refuses to run
   when `CHUNK` is set and the manifest yields nothing, rather than falling back
   to the empty `MOCHA_FILES` that means "run everything".

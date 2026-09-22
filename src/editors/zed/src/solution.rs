@@ -43,7 +43,7 @@ fn parse_slnx_solution(content: &str, sln_path: &str) -> Vec<SolutionProject> {
             Ok(Event::Empty(element)) | Ok(Event::Start(element))
                 if is_project_element(&element) =>
             {
-                if let Some(project) = parse_slnx_project(&reader, &element, &sln_dir) {
+                if let Some(project) = parse_slnx_project(&element, &sln_dir) {
                     projects.push(project);
                 }
             }
@@ -56,12 +56,8 @@ fn parse_slnx_solution(content: &str, sln_path: &str) -> Vec<SolutionProject> {
     projects
 }
 
-fn parse_slnx_project(
-    reader: &Reader<&[u8]>,
-    element: &BytesStart<'_>,
-    sln_dir: &str,
-) -> Option<SolutionProject> {
-    let raw_path = attribute_value(reader, element, b"Path")?;
+fn parse_slnx_project(element: &BytesStart<'_>, sln_dir: &str) -> Option<SolutionProject> {
+    let raw_path = attribute_value(element, "Path")?;
     if !is_dotnet_project(&raw_path) {
         return None;
     }
@@ -74,20 +70,16 @@ fn parse_slnx_project(
 }
 
 fn is_project_element(element: &BytesStart<'_>) -> bool {
-    element.name().as_ref() == b"Project"
+    element.name().as_ref() == "Project"
 }
 
-fn attribute_value(
-    reader: &Reader<&[u8]>,
-    element: &BytesStart<'_>,
-    name: &[u8],
-) -> Option<String> {
+fn attribute_value(element: &BytesStart<'_>, name: &str) -> Option<String> {
     element
         .attributes()
         .flatten()
         .find(|attr| attr.key.as_ref() == name)
         .and_then(|attr| {
-            attr.decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
+            attr.normalized_value(XmlVersion::Implicit1_0)
                 .ok()
                 .map(|value| value.into_owned())
         })

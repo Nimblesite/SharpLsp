@@ -14,7 +14,7 @@
 // session against nothing. Both are resolved HERE, before a session is created,
 // so the workbench's `startDebugging` result is the honest answer.
 import { execFile } from 'node:child_process';
-import { delay } from './utils';
+import { delay, isRecord } from './utils';
 import * as path from 'node:path';
 
 /** How long a process listing may take before the attach is refused. */
@@ -47,11 +47,6 @@ export function isProcessAlive(pid: number): boolean {
     // still a live process and still a legitimate attach target.
     return isRecord(cause) && cause.code === 'EPERM';
   }
-}
-
-/** Narrow an unknown to an indexable object without asserting it is one. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 /** A configuration field read as a positive integer, or undefined. */

@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "sources": [
+    "https://api.nuget.org/v3/index.json"
+  ],
+  "projects": [
+    {
+      "path": "Vuln.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0",
+          "topLevelPackages": [
+            {
+              "id": "Microsoft.Data.SqlClient",
+              "requestedVersion": "5.1.1",
+              "resolvedVersion": "5.1.1",
+              "vulnerabilities": [
+                {
+                  "severity": "High",
+                  "advisoryurl": "https://github.com/advisories/GHSA-98g6-xh36-x2p7"
+                }
+              ]
+            },
+            {
+              "id": "Newtonsoft.Json",
+              "requestedVersion": "12.0.1",
+              "resolvedVersion": "12.0.1",
+              "vulnerabilities": [
+                {
+                  "severity": "High",
+                  "advisoryurl": "https://github.com/advisories/GHSA-5crp-9r3c-p9vr"
+                }
+              ]
+            }
+          ],
+          "transitivePackages": [
+            {
+              "id": "Azure.Identity",
+              "resolvedVersion": "1.7.0",
+              "vulnerabilities": [
+                {
+                  "severity": "Moderate",
+                  "advisoryurl": "https://github.com/advisories/GHSA-m5vv-6r4h-3vj9"
+                },
+                {
+                  "severity": "Moderate",
+                  "advisoryurl": "https://github.com/advisories/GHSA-wvxc-855f-jvrv"
+                },
+                {
+                  "severity": "High",
+                  "advisoryurl": "https://github.com/advisories/GHSA-5mfx-4wcx-rv27"
+                }
+              ]
+            },
+            {
+              "id": "Microsoft.IdentityModel.JsonWebTokens",
+              "resolvedVersion": "6.24.0",
+              "vulnerabilities": [
+                {
+                  "severity": "Moderate",
+                  "advisoryurl": "https://github.com/advisories/GHSA-59j7-ghrg-fj52"
+                }
+              ]
+            },
+            {
+              "id": "System.IdentityModel.Tokens.Jwt",
+              "resolvedVersion": "6.24.0",
+              "vulnerabilities": [
+                {
+                  "severity": "Moderate",
+                  "advisoryurl": "https://github.com/advisories/GHSA-59j7-ghrg-fj52"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

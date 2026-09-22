@@ -1,6 +1,7 @@
 // The router's attach semantics: the bounded retry for netcoredbg's transient
-// Windows invalid-argument failure, what "stop" means for an attached process,
-// and the VSTest host-debug handshake a test debug run attaches through.
+// Windows invalid-argument failure, what "stop" means for an attached process
+// (and for the adapter a restart retires), and the VSTest host-debug handshake
+// a test debug run attaches through.
 //
 // Implements [DEBUG-GAPS] "Attach error `0x80070057` | Retry with exponential
 // backoff" (the same upstream race can reject the first `evaluate` issued as a
@@ -121,6 +122,25 @@ export class AttachRetrier extends InvalidArgumentRetrier {
     if (!this.attachMode) return message;
     const args = isRecord(message.arguments) ? message.arguments : {};
     return { ...message, arguments: { ...args, terminateDebuggee: false } };
+  }
+
+  /**
+   * The `disconnect` that retires this session's adapter before a respawn.
+   *
+   * A Restart replaces netcoredbg, and ending netcoredbg with a signal leaves
+   * the debuggee it owns behind: a program paused at a breakpoint stayed
+   * suspended, reparented to init, for good. Asked through DAP instead, the
+   * adapter ends the debuggee the way the user's own Stop would - a launched
+   * program is terminated, an attached one only detached - and then exits.
+   * Spec: [DEBUG-FEATURES-LAUNCH] restart row.
+   */
+  public farewell(seq: number): DapMessage {
+    return this.rewriteDisconnect({
+      seq,
+      type: 'request',
+      command: 'disconnect',
+      arguments: { restart: true, terminateDebuggee: true },
+    });
   }
 
   /**

@@ -1,4 +1,5 @@
 import { defineConfig } from '@vscode/test-cli';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -13,25 +14,70 @@ import path from 'node:path';
 const testUserDataDir =
   process.env.VSCODE_TEST_USER_DATA_DIR ?? path.join(os.tmpdir(), 'slsp-vsx', `u${process.pid}`);
 
+/** The directory of the suites that need a MULTI-ROOT workspace ([DIST-CI-VSIX-SHARDS]). */
+const MULTI_ROOT_SUITES = 'multiroot/';
+
+/**
+ * True when this run selects a multi-root suite: no `MOCHA_FILES` means every
+ * suite, and a chunk naming none of them must not pay a second editor start.
+ */
+function wantsMultiRoot() {
+  const requested = process.env.MOCHA_FILES?.trim();
+  if (!requested) return true;
+  return requested.split(',').some((glob) => glob.trim().startsWith(MULTI_ROOT_SUITES));
+}
+
+/**
+ * A fresh two-folder workspace for the multi-root suites: `vstest` and `mtp`.
+ *
+ * Only a workspace OPENED with two folders has two: adding the second folder
+ * from inside the test host turns the window into a workspace, and VS Code
+ * restarts the extension host — the one running the suite — to do it. So the
+ * folders exist before the editor starts, and the suite writes its projects
+ * into them. They live under the canonical temp root, the spelling every
+ * `dotnet` child reports back ([DIST-CI-WIN-VSIX]).
+ */
+function multiRootWorkspace() {
+  const root = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'slsp-mr-'));
+  for (const folder of ['vstest', 'mtp']) fs.mkdirSync(path.join(root, folder));
+  const file = path.join(root, 'mixed-runners.code-workspace');
+  const workspace = { folders: [{ path: 'vstest' }, { path: 'mtp' }], settings: {} };
+  fs.writeFileSync(file, `${JSON.stringify(workspace, null, 2)}\n`, 'utf8');
+  return file;
+}
+
+/** One editor start: the same extension and dependency, its own workspace shape. */
+function testConfig(label, workspaceFolder, userDataDir) {
+  return {
+    label,
+    files: 'test-cli-runner.cjs',
+    extensionDevelopmentPath: '.',
+    workspaceFolder,
+    // Read by src/test/suite/index.ts, which runs only the suites of this shape.
+    env: { SHARPLSP_WORKSPACE_SHAPE: label },
+    // The extension declares ms-dotnettools.vscode-dotnet-runtime as an
+    // extensionDependency ([DIST-RUNTIME-ACQUIRE]).
+    // VS Code refuses to activate SharpLsp unless that dependency is installed
+    // AND enabled in the test host. Installing it into the isolated test
+    // extensions dir replaces the previous '--disable-extensions' flag, which
+    // disabled the dependency and made activation fail with
+    // "depends on unknown extension 'ms-dotnettools.vscode-dotnet-runtime'".
+    installExtensions: ['ms-dotnettools.vscode-dotnet-runtime'],
+    launchArgs: [
+      `--user-data-dir=${userDataDir}`,
+      ...(process.env.SHARPLSP_SCREENSHOTS ? ['--remote-debugging-port=9239'] : []),
+    ],
+  };
+}
+
 export default defineConfig({
+  // Both editor starts write into ONE coverage directory, so a run that needs
+  // the multi-root shape still produces one tracefile.
   tests: [
-    {
-      files: 'test-cli-runner.cjs',
-      extensionDevelopmentPath: '.',
-      workspaceFolder: 'test-fixtures/workspace',
-      // The extension declares ms-dotnettools.vscode-dotnet-runtime as an
-      // extensionDependency ([DIST-RUNTIME-ACQUIRE]).
-      // VS Code refuses to activate SharpLsp unless that dependency is installed
-      // AND enabled in the test host. Installing it into the isolated test
-      // extensions dir replaces the previous '--disable-extensions' flag, which
-      // disabled the dependency and made activation fail with
-      // "depends on unknown extension 'ms-dotnettools.vscode-dotnet-runtime'".
-      installExtensions: ['ms-dotnettools.vscode-dotnet-runtime'],
-      launchArgs: [
-        `--user-data-dir=${testUserDataDir}`,
-        ...(process.env.SHARPLSP_SCREENSHOTS ? ['--remote-debugging-port=9239'] : []),
-      ],
-    },
+    testConfig('folder', 'test-fixtures/workspace', testUserDataDir),
+    ...(wantsMultiRoot()
+      ? [testConfig('multiroot', multiRootWorkspace(), `${testUserDataDir}-mr`)]
+      : []),
   ],
   coverage: {
     // `dist/**` is deliberately NOT excluded. The extension runs from the

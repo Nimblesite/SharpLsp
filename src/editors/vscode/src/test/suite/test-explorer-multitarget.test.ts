@@ -46,6 +46,7 @@ import {
   createSolution,
   dotnet,
   installedFrameworkPair,
+  symbolFor,
   warmDiscovery,
   writeProject,
 } from './dotnet-project-kit';
@@ -88,16 +89,6 @@ const SHARED: readonly string[] = [
   CS.parameterized,
   ...(CS.mixedParameterized === undefined ? [] : [CS.mixedParameterized]),
 ];
-
-/**
- * The compilation symbol the SDK defines implicitly for a target framework.
- *
- * `net10.0` → `NET10_0`. Derived rather than pinned, because the frameworks
- * themselves are read off the agent.
- */
-function symbolFor(framework: string): string {
-  return framework.toUpperCase().replace(/[.-]/gu, '_');
-}
 
 /** The method name of the test only `framework`'s assembly carries. */
 function conditionalMethod(framework: string): string {
