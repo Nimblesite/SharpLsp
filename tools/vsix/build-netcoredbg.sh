@@ -48,10 +48,25 @@ if [ -f "$EXE" ] && [ "$(cat "$MARKER" 2>/dev/null || true)" = "$BUILD_ID" ]; th
   exit 0
 fi
 
+# macOS purges $TMPDIR by deleting files and leaving the directory tree, so a
+# purged cache still has a `.git` directory that is no longer a repository. An
+# empty shell is safe to rebuild; one still holding files is not ours to delete.
+reset_purged_cache() {
+  local destination="$1"
+  [ -d "$destination" ] || return 0
+  git --git-dir="$destination/.git" rev-parse --git-dir >/dev/null 2>&1 && return 0
+  if [ -n "$(find "$destination" -type f -print -quit)" ]; then
+    echo "netcoredbg: incomplete source cache at '$destination'; move it aside and retry" >&2
+    exit 1
+  fi
+  rm -rf "$destination"
+}
+
 clone_commit() {
   local repository="$1"
   local commit="$2"
   local destination="$3"
+  reset_purged_cache "$destination"
   if [ ! -d "$destination/.git" ]; then
     if [ -e "$destination" ]; then
       echo "netcoredbg: incomplete source cache at '$destination'; move it aside and retry" >&2
