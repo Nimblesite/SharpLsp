@@ -108,6 +108,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 - [x] `make audit` runs cargo audit, dotnet list package --vulnerable and npm audit over every lockfile/solution
 - [x] `tools/audit/dotnet-vulnerable.mjs` fails the .NET leg (dotnet list exits 0 on findings) + tests in `make _test-tooling`
 - [x] `ci-audit.yml` runs `make audit` on every PR (`ci.yml`), weekly on `main`, and as a release gate (`release` needs `audit`)
+- [x] Include `audit` in the final CI job's dependencies; YAML-based regression tests guard both CI and Marketplace/Open VSX release enforcement.
 - [ ] Upgrade `@vscode/test-cli` once a release drops mocha 11 (its nested `diff` 7.0.0 carries low-severity GHSA-73rr-hh4g-fpgx)
 
 ## TODO Checklist — original v0.1.0 work (status snapshot)

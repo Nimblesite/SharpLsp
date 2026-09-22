@@ -2,6 +2,16 @@
 
 This is the normative specification for SharpLsp distribution.
 
+## [DIST-CI-AUDIT] Dependency Vulnerability Gate
+
+`make audit` MUST scan both Cargo lockfiles (host and Zed), the sidecar NuGet solution including transitive packages, and both npm lockfiles (VS Code and website) against current advisory databases. Rust vulnerability findings fail the gate; NuGet and npm fail at moderate or higher by default, including every high/critical finding. Lower-severity findings remain visible. Scanner or restore failures MUST fail, not count as a clean result.
+
+CI and tagged releases MUST call the same reusable `ci-audit.yml` workflow. The final CI job MUST include `audit` in its dependencies and fail on its failure/cancellation. GitHub Release creation MUST depend on a successful audit of the tagged revision, and Marketplace/Open VSX publishing MUST depend on that release. No `continue-on-error` or publish bypass is permitted. New advisories require a fresh release-time scan even when the PR previously passed.
+
+Known vulnerabilities MUST be resolved by upgrading affected direct/transitive dependencies and testing compatibility, not by weakening thresholds or suppressing findings. A clean advisory scan is evidence about the scanned dependency inventory, not a guarantee that all bundled native binaries or runtime installations are vulnerability-free.
+
+Regression guards: `tools/audit/dotnet-vulnerable.test.mjs` tests real vulnerable and clean NuGet reports; `tools/ci/security-gates.test.mjs` parses workflow YAML and verifies CI/release dependency enforcement. Both MUST run in CI.
+
 ## [DIST-COMPONENTS] Required Components
 
 SharpLsp has three executable components. All three are REQUIRED and MUST be bundled in the VSIX. Missing any one of them puts activation into degraded mode with a user-facing error notification (see [DIST-FAILURE-UX]).
