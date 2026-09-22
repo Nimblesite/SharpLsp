@@ -31,6 +31,9 @@ const LOCK = join(HERE, 'netcoredbg.lock.json');
 // code path here cannot collide with a genuine adapter on the runner.
 const PLATFORM = 'linux-arm64';
 const OUTPUT = join(ROOT, 'target', 'netcoredbg', PLATFORM, 'netcoredbg');
+const STAGED = join(ROOT, 'src', 'editors', 'vscode', 'bin', PLATFORM);
+const FETCH = join(ROOT, 'tools', 'vsix', 'fetch-netcoredbg.sh');
+const MARKER = '.sharplsp-dap-hot-reload';
 
 let scratch = '';
 let server;
@@ -54,20 +57,20 @@ function buildArchive(body) {
 }
 
 /**
- * Runs provide.mjs against a lock file pinning the served archive to `sha256`.
+ * Runs `command` against a lock file pinning the served archive to `sha256`.
  *
  * Deliberately async: the archive is served from THIS process, and spawnSync
  * blocks the event loop, so a synchronous child could never be answered and the
  * test would hang instead of failing.
  */
-function provide(sha256) {
+function runPinned(sha256, command, args) {
     const lock = JSON.parse(readFileSync(LOCK, 'utf8'));
     lock.platforms = { [PLATFORM]: { url: baseUrl, sha256 } };
     const lockPath = join(scratch, 'netcoredbg.lock.json');
     writeFileSync(lockPath, JSON.stringify(lock));
 
     return new Promise((done, fail) => {
-        const child = spawn(process.execPath, [PROVIDE, PLATFORM], {
+        const child = spawn(command, args, {
             cwd: ROOT,
             env: { ...process.env, SHARPLSP_NETCOREDBG_LOCK: lockPath },
         });
@@ -82,6 +85,16 @@ function provide(sha256) {
         child.on('error', fail);
         child.on('close', (status) => done({ status, stdout, stderr }));
     });
+}
+
+/** provide.mjs, the step that guarantees target/ holds the pinned adapter. */
+function provide(sha256) {
+    return runPinned(sha256, process.execPath, [PROVIDE, PLATFORM]);
+}
+
+/** fetch-netcoredbg.sh, the step that stages that adapter into the extension. */
+function stage(sha256) {
+    return runPinned(sha256, 'bash', [FETCH, PLATFORM]);
 }
 
 /** Serves whatever `served` currently holds, so each test can swap the bytes. */
@@ -99,12 +112,14 @@ before(async () => {
 
 beforeEach(() => {
     rmSync(OUTPUT, { recursive: true, force: true });
+    rmSync(STAGED, { recursive: true, force: true });
 });
 
 after(() => {
     server?.close();
     rmSync(scratch, { recursive: true, force: true });
     rmSync(OUTPUT, { recursive: true, force: true });
+    rmSync(STAGED, { recursive: true, force: true });
 });
 
 test('a pinned artifact whose digest matches is downloaded and unpacked', async () => {
@@ -145,6 +160,44 @@ test('an adapter already on disk is not downloaded again', async () => {
         /already available/,
         'a second call should short-circuit on the marker, not re-download',
     );
+});
+
+test('staging never ships an adapter an older lock file described', async () => {
+    // A developer's target/ and bin/ still hold the build the PREVIOUS lock
+    // pinned - say, from before a patchVersion bump. Existence is not freshness:
+    // staging that build ships an adapter without the new patch.
+    for (const directory of [OUTPUT, join(STAGED, 'netcoredbg')]) {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, 'netcoredbg'), 'stale-adapter');
+        writeFileSync(join(directory, MARKER), 'older-commit:older-patch\n');
+    }
+    served = buildArchive('patched-adapter');
+    const digest = createHash('sha256').update(served).digest('hex');
+    const lock = JSON.parse(readFileSync(LOCK, 'utf8'));
+
+    const result = await stage(digest);
+
+    assert.equal(result.status, 0, `fetch-netcoredbg.sh failed: ${result.stderr}`);
+    assert.equal(
+        readFileSync(join(OUTPUT, 'netcoredbg'), 'utf8'),
+        'patched-adapter',
+        'a build whose marker names an older lock must be provided again',
+    );
+    assert.equal(
+        readFileSync(join(STAGED, 'netcoredbg', 'netcoredbg'), 'utf8'),
+        'patched-adapter',
+        'the extension must be staged with the build the lock describes',
+    );
+    assert.equal(
+        readFileSync(join(STAGED, 'netcoredbg', MARKER), 'utf8').trim(),
+        `${lock.netcoredbgCommit}:${lock.patchVersion}`,
+        'the staged marker names the current build',
+    );
+
+    const again = await stage(digest);
+
+    assert.equal(again.status, 0, `a second staging failed: ${again.stderr}`);
+    assert.match(again.stdout, /already staged/, 'a current staged build is left alone');
 });
 
 test('a digest mismatch REFUSES, and does not fall back to a source build', async () => {
