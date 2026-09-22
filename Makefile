@@ -169,10 +169,23 @@ export SHARPLSP_DOTNET_ROOT
 
 ifneq ($(SHARPLSP_DOTNET_ROOT),)
 export DOTNET_ROOT := $(SHARPLSP_DOTNET_ROOT)
-# findstring, not filter: a Windows PATH carries spaces, which would split it
-# into words. Skipping a root already on PATH keeps nested sub-makes from
-# stacking duplicate entries.
-ifeq ($(findstring $(SHARPLSP_DOTNET_ROOT):,$(PATH)),)
+# The resolved root must WIN the lookup, not merely appear on PATH.
+#
+# `$(DOTNET)` is absolute, so every recipe in this file is immune — but the
+# tools those recipes spawn are not. build-test-fixtures.mjs, the audit's
+# dotnet-vulnerable.mjs and the packaging scripts all run a BARE `dotnet`, and a
+# bare `dotnet` is whatever PATH names first. A machine carrying a stale root
+# ahead of a good one (`export PATH="$DOTNET_ROOT:$PATH"` in a shell profile,
+# pointing at /usr/local/share/dotnet) is "already present" and loses every
+# lookup, so testing presence skipped the prepend in precisely the configuration
+# it exists to fix.
+#
+# Testing PRECEDENCE also gets the duplicate-free property the presence test was
+# reaching for: after one prepend the root leads, so a nested sub-make compares
+# equal and skips it. A first PATH entry containing a space compares unequal and
+# prepends again — harmless, and no worse than the word-splitting the presence
+# test already had.
+ifneq ($(firstword $(subst :, ,$(PATH))),$(SHARPLSP_DOTNET_ROOT))
 export PATH := $(SHARPLSP_DOTNET_ROOT):$(PATH)
 endif
 endif
@@ -725,6 +738,7 @@ _lint-zed:
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
 _lint-vsix: _check-vsix-chunks _check-sdk-pin
+	node --test tools/ci/security-gates.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 

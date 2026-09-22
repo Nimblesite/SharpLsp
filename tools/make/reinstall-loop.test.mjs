@@ -14,8 +14,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -51,6 +52,27 @@ const makeVariable = (name) => {
   const { status, stdout } = spawnSync('make', ['-n', '-p'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(status, 0, `make -p failed`);
   return new RegExp(`^${name} :?= ?(.*)$`, 'm').exec(stdout)?.[1] ?? '';
+};
+
+
+/**
+ * The PATH a recipe's CHILD process inherits, with `env` poisoning make's own.
+ *
+ * Driven through `MAKEFILES`, which make reads BEFORE the root Makefile, so the
+ * probe target sees exactly the environment every real recipe exports. Nothing
+ * here asserts on a variable make prints — a child's lookup is the thing that
+ * was wrong, so a child is what gets asked.
+ */
+const childPath = (env) => {
+  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
+  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
+  const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...env, MAKEFILES: probe },
+  });
+  assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
+  return stdout.trim().split(delimiter);
 };
 
 /** The identifier the loop must derive from the extension manifest, not hardcode. */
@@ -294,5 +316,54 @@ test('the dev VSIX is packaged for the host platform, like every released VSIX',
     recipe,
     new RegExp(`src/editors/vscode/bin/${hostPlatform}/sharplsp`),
     'the staged host binary must sit under the same platform the package targets',
+  );
+});
+
+// [DIST-RUNTIME-ACQUIRE] Resolving the root is only half the fix. `$(DOTNET)` is
+// absolute, so every RECIPE is immune — but the tools those recipes spawn are
+// not: build-test-fixtures.mjs, dotnet-vulnerable.mjs and the packaging scripts
+// all run a bare `dotnet`, and a bare `dotnet` is whatever PATH says first.
+//
+// The guard that skipped the prepend tested whether the resolved root was
+// PRESENT on PATH. The requirement is that it be FIRST. A machine carrying a
+// stale root ahead of a good one — `export PATH="$DOTNET_ROOT:$PATH"` in a
+// shell profile, pointing at /usr/local/share/dotnet — satisfies "present" and
+// loses the lookup, so the prepend was skipped in exactly the configuration it
+// exists to fix, and the audit leg and the fixture build ran on the wrong SDK.
+//
+// Both cases below must resolve to the pinned root. Only the FIRST of them
+// discriminates: with the root absent from PATH the old guard prepends and
+// passes, which is why "absent" alone would have proved nothing.
+test('the resolved SDK wins the PATH, not merely appears on it', () => {
+  const root = makeVariable('DOTNET_ROOT');
+  assert.ok(root, 'make resolved no dotnet root to put on PATH');
+  const stale = resolve('/nonexistent-stale-dotnet-root');
+  assert.notEqual(stale, root, 'the stale root must not be the resolved one');
+
+  const outranked = childPath({
+    PATH: [stale, root, '/usr/bin', '/bin'].join(delimiter),
+    DOTNET_ROOT: stale,
+  });
+  assert.equal(
+    outranked[0],
+    root,
+    `a stale root outranked the pinned one: a child would run ${outranked[0]}/dotnet`,
+  );
+
+  const absent = childPath({
+    PATH: [stale, '/usr/bin', '/bin'].join(delimiter),
+    DOTNET_ROOT: stale,
+  });
+  assert.equal(absent[0], root, 'and the root is still prepended when it is absent entirely');
+
+  // Idempotent: once the root is first, a nested sub-make must not stack it
+  // again. Duplicate-free is what the original guard was reaching for, and
+  // testing precedence gets it for free.
+  const already = childPath({ PATH: [root, '/usr/bin', '/bin'].join(delimiter) });
+  assert.equal(already[0], root, 'a PATH already led by the root keeps it');
+  assert.equal(
+    already.filter((entry) => entry === root).length,
+    1,
+    `the root was stacked more than once: ${already.join(delimiter)}`,
   );
 });
