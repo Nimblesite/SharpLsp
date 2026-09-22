@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Build.Locator;
 
 #pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — we're tests
@@ -59,6 +60,67 @@ public class MSBuildInstanceSelectorTests
         // The bundled Microsoft.CodeAnalysis.dll must sit next to the sidecar so a
         // matching SDK can be selected; a null here means project load will fail.
         Assert.NotNull(MSBuildInstanceSelector.ReadBundledRoslynVersion());
+    }
+
+    [Fact]
+    public void Repo_pinned_sdk_ships_exactly_the_bundled_roslyn()
+    {
+        // Implements [DIST-RUNTIME-ACQUIRE]: an installed SDK must ship the SAME
+        // Roslyn the sidecar bundles. The SDK global.json pins is the one CI and
+        // every contributor runs, so a Microsoft.CodeAnalysis bump past its Roslyn
+        // (a grouped dependabot bump once paired 5.9 with 10.0.303's 5.6) fails
+        // here, not as a restarted server that silently loses the workspace.
+        var candidates = MSBuildInstanceSelector.ToCandidates(
+            MSBuildInstanceSelector.QueryInstalledSdks()
+        );
+        var pinnedSdk = Assert.NotNull(ResolvePinnedSdk(candidates, ReadPinnedSdkVersion()));
+        var bundled = MSBuildInstanceSelector.ReadBundledRoslynVersion();
+
+        Assert.NotNull(pinnedSdk.RoslynVersion);
+        Assert.NotNull(bundled);
+        Assert.Equal(pinnedSdk.RoslynVersion, bundled);
+        Assert.Equal(
+            bundled,
+            MSBuildInstanceSelector.SelectMatching(candidates, bundled)?.RoslynVersion
+        );
+    }
+
+    // The newest installed SDK global.json's `latestPatch` roll-forward accepts:
+    // same major.minor and feature band, patch at or above the pin - the SDK
+    // hostfxr resolves for this repo.
+    private static MSBuildInstanceSelector.SdkCandidate? ResolvePinnedSdk(
+        IReadOnlyList<MSBuildInstanceSelector.SdkCandidate> candidates,
+        Version pinned
+    )
+    {
+        return candidates
+            .Where(candidate =>
+                candidate.SdkVersion.Major == pinned.Major
+                && candidate.SdkVersion.Minor == pinned.Minor
+                && candidate.SdkVersion.Build / 100 == pinned.Build / 100
+                && candidate.SdkVersion.Build >= pinned.Build
+            )
+            .OrderByDescending(candidate => candidate.SdkVersion)
+            .Cast<MSBuildInstanceSelector.SdkCandidate?>()
+            .FirstOrDefault();
+    }
+
+    private static Version ReadPinnedSdkVersion()
+    {
+        var globalJson = Ancestors(new DirectoryInfo(AppContext.BaseDirectory))
+            .Select(directory => Path.Combine(directory.FullName, "global.json"))
+            .First(File.Exists);
+        using var document = JsonDocument.Parse(File.ReadAllText(globalJson));
+        var version = document.RootElement.GetProperty("sdk").GetProperty("version").GetString();
+        return Version.Parse(Assert.IsType<string>(version));
+    }
+
+    private static IEnumerable<DirectoryInfo> Ancestors(DirectoryInfo? directory)
+    {
+        for (; directory is not null; directory = directory.Parent)
+        {
+            yield return directory;
+        }
     }
 
     [Fact]

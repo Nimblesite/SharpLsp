@@ -4,6 +4,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../..)
 VSCODE_TARGETS := \
 	build \
 	ci \
+	audit \
 	test \
 	test-rust \
 	lint \

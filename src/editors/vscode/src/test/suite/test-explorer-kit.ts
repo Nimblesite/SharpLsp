@@ -173,6 +173,28 @@ export async function drainDiscovery(
   await controller.whenIdle();
 }
 
+/**
+ * Tear one fixture solution down: unload it, empty the tree, let reactive
+ * re-discovery settle, and only THEN delete the fixture from disk.
+ *
+ * The order is the whole point. Discovery is debounced, not cancelled, so a
+ * teardown that deletes first leaves a `dotnet test` pointed at a removed
+ * directory, where it hangs forever and poisons every later run in the same
+ * extension host. Every Test Explorer suite needs exactly this, so it lives
+ * here rather than being written out once per suite.
+ */
+export async function teardownFixtureSolution(
+  api: SharpLspExtensionApi,
+  root: string,
+  removeDir: (dir: string) => void,
+): Promise<void> {
+  await drainDiscovery(() => {
+    api.explorerProvider.clear();
+    api.testController.items.replace([]);
+  }, api.testController);
+  removeDir(root);
+}
+
 /** Load a solution and force one discovery sweep, then wait for `expected`. */
 export async function discoverSolution(
   api: SharpLspExtensionApi,

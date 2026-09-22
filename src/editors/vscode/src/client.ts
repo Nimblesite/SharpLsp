@@ -19,9 +19,18 @@ import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from '
 import { getErrorMessage } from './utils.js';
 import * as config from './config.js';
 import * as log from './log.js';
+import { createOpenSync, type OpenSync } from './open-sync.js';
 import { createAnsiStrippingChannel } from './output-filter.js';
 import { detectRuntimePlatform } from './platform.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
+
+/** The documents the client syncs to the server, and holds requests about. */
+export const DOCUMENT_SELECTOR = [
+  { scheme: 'file', language: 'csharp' },
+  { scheme: 'file', language: 'fsharp' },
+  { scheme: 'untitled', language: 'csharp' },
+  { scheme: 'untitled', language: 'fsharp' },
+];
 
 export interface DeploymentPaths {
   readonly serverPath?: string;
@@ -62,14 +71,10 @@ export async function start(
   };
 
   const serverOptions: ServerOptions = { run, debug: run };
+  const openSync = createOpenSync(DOCUMENT_SELECTOR);
 
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [
-      { scheme: 'file', language: 'csharp' },
-      { scheme: 'file', language: 'fsharp' },
-      { scheme: 'untitled', language: 'csharp' },
-      { scheme: 'untitled', language: 'fsharp' },
-    ],
+    documentSelector: DOCUMENT_SELECTOR,
     // Never auto-reveal / steal focus to the Output panel when the server logs an
     // error. vscode-languageclient defaults this to RevealOutputChannelOn.Error,
     // which yanks the user's focus on every server-side diagnostic — intrusive UX,
@@ -83,11 +88,14 @@ export async function start(
     outputChannel: createAnsiStrippingChannel(log.output()),
     traceOutputChannel: log.trace(),
     errorHandler: makeErrorHandler(statusBar),
+    // After every (re)start a request waits for its document's didOpen, so it
+    // never reaches a fresh server ahead of the document it is about.
+    middleware: openSync.middleware,
   };
 
   const client = new LanguageClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
 
-  wireStatusBar(client, statusBar, context);
+  wireClientState(client, statusBar, openSync, context);
 
   statusBar.setState(ServerState.Starting);
   await client.start();
@@ -108,13 +116,15 @@ function sidecarEnv(deploymentPaths: DeploymentPaths, dotnetPath?: string): Reco
   return env;
 }
 
-/** Wire client state changes to the status bar indicator. */
-function wireStatusBar(
+/** Wire client state changes to the status bar indicator and the request hold. */
+function wireClientState(
   client: LanguageClient,
   statusBar: SharpLspStatusBar,
+  openSync: OpenSync,
   context: ExtensionContext,
 ): void {
   const listener: Disposable = client.onDidChangeState((event) => {
+    openSync.observe(event.newState);
     switch (event.newState) {
       case State.Starting:
         statusBar.setState(ServerState.Starting);

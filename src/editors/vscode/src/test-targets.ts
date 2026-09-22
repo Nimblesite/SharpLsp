@@ -5,10 +5,11 @@
  * Testing API wiring and nothing else.
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as state from './state';
+
+export { dirOf } from './test-mtp-modules';
 
 /** The paths to enumerate: the loaded solution, else each workspace folder. */
 export function discoveryTargets(): string[] {
@@ -17,15 +18,6 @@ export function discoveryTargets(): string[] {
     return [solution];
   }
   return (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
-}
-
-/** Directory containing a target path (the path itself when it is a directory). */
-export function dirOf(target: string): string {
-  try {
-    return fs.statSync(target).isDirectory() ? target : path.dirname(target);
-  } catch {
-    return path.dirname(target);
-  }
 }
 
 /**
@@ -56,4 +48,16 @@ export function isExpectoTest(name: string): boolean {
 /** True when a test name matches FsCheck property-test conventions. */
 export function isFsCheckTest(name: string): boolean {
   return name.includes('FsCheck') || name.includes('Property');
+}
+/**
+ * The filter ids a run uses. "Run everything, nothing excluded" is how VS Code
+ * expresses ▶ on the root of the Testing view; passing NO filter then runs every
+ * test in ONE `dotnet test` — instead of N command-line-sized filter batches.
+ */
+export function filterIdsFor(
+  request: vscode.TestRunRequest,
+  tests: readonly vscode.TestItem[],
+): readonly string[] {
+  const unfiltered = request.include === undefined && (request.exclude ?? []).length === 0;
+  return unfiltered ? [] : tests.map((test) => test.id);
 }

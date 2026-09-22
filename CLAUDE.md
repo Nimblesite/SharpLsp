@@ -60,6 +60,8 @@ F# ahead of C# when building new features. F# never takes the backseat.
 
 # Git
 
+- Worktrees = ⛔️ ILLEGAL. Only one branch at a time is allowed
+
 **Default to NOT touching git at all.** Use git only when the user has explicitly green-lit it for
 the task (open a PR, merge, cut a branch). Absent that, leave commits, branches, pushes and merges
 to the user and CI. Log BUG type GitHub issues when you encounter bugs in release.

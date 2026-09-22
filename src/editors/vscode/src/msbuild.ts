@@ -14,6 +14,7 @@
 import * as path from 'node:path';
 import { runDotnet } from './dotnet-process';
 import { err, ok, type Result } from './result';
+import { isRecord } from './utils';
 
 /** The properties a launch needs from MSBuild. */
 export interface ProjectProperties {
@@ -25,6 +26,14 @@ export interface ProjectProperties {
   readonly targetFrameworks: readonly string[];
   /** `Exe`, `WinExe` or `Library`. */
   readonly outputType: string;
+  /**
+   * True when the project builds a Microsoft.Testing.Platform test module.
+   *
+   * This is the property the .NET SDK itself uses to tell the two runners
+   * apart, so it is the one SharpLsp asks. `IsTestProject` MUST NOT be used
+   * instead: `xunit.v3` leaves it empty. Spec: [TEST-MTP-DETECT].
+   */
+  readonly isTestingPlatformApplication: boolean;
 }
 
 /** MSBuild evaluation is a full project load; a cold one can take a while. */
@@ -36,6 +45,7 @@ const REQUESTED = [
   'TargetFrameworks',
   'OutputType',
   'RunCommand',
+  'IsTestingPlatformApplication',
 ] as const;
 
 /** `-getProperty:` arguments for a project, optionally pinned to one TFM. */
@@ -46,11 +56,6 @@ function evaluateArgs(projectFile: string, framework?: string): string[] {
   }
   for (const property of REQUESTED) args.push(`-getProperty:${property}`);
   return args;
-}
-
-/** A plain, non-null object — the only shape a properties bag can take. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** Every string-valued entry of a bag, ignoring anything else MSBuild emitted. */
@@ -106,6 +111,8 @@ export async function evaluateProject(
     targetFramework: bag.value.get('TargetFramework') ?? '',
     targetFrameworks: splitList(bag.value.get('TargetFrameworks')),
     outputType: bag.value.get('OutputType') ?? '',
+    isTestingPlatformApplication:
+      (bag.value.get('IsTestingPlatformApplication') ?? '').trim().toLowerCase() === 'true',
   });
 }
 

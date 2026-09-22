@@ -29,13 +29,17 @@
 
     <ItemGroup>
         <!-- Microsoft .NET Analyzers -->
-        <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.400">
+        <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.401">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
+        <!-- The C# sidecar SHIPS this Roslyn, so it must equal the Roslyn of the SDK
+             global.json pins (10.0.303 => 5.6.0) or project load fails
+             [DIST-RUNTIME-ACQUIRE]. Bump it only together with the SDK pin;
+             Repo_pinned_sdk_ships_exactly_the_bundled_roslyn guards it. -->
         <PackageReference
             Include="Microsoft.CodeAnalysis.CSharp"
-            Version="5.9.0"
+            Version="5.6.0"
             PrivateAssets="all"
         />
         <PackageReference

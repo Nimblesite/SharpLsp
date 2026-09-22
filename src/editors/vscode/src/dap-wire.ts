@@ -11,7 +11,7 @@
 // Deliberately free of `vscode` imports: nothing here needs the workbench.
 import * as cp from 'node:child_process';
 import { isRecord, type DapMessage } from './dap-emulate';
-import { signalChild } from './child-signal';
+import { livePid, signalChild } from './child-signal';
 import { error, info } from './log';
 import { getErrorMessage } from './utils';
 
@@ -20,6 +20,60 @@ const HEADER_END = '\r\n\r\n';
 
 /** The header that carries the payload length. */
 const CONTENT_LENGTH = 'Content-Length: ';
+
+/** How long a SIGTERM gets before a lingering child is SIGKILLed. */
+const SIGKILL_AFTER_MS = 1_000;
+
+/**
+ * How long a replaced child gets to answer its farewell `disconnect` and exit
+ * by itself before it is signalled. netcoredbg does both in tens of
+ * milliseconds; the bound only matters for an adapter that never does.
+ */
+const FAREWELL_GRACE_MS = 1_000;
+
+/** One DAP message in its `Content-Length` framing. */
+function frameOf(message: DapMessage): string {
+  const body = JSON.stringify(message);
+  return `${CONTENT_LENGTH}${String(Buffer.byteLength(body))}${HEADER_END}${body}`;
+}
+
+/**
+ * SIGTERM `child` after `delayMs`, then SIGKILL it if it lingers a second more.
+ * Returns the cancel, for a child that exits first.
+ *
+ * Both signals go through `signalChild`: an adapter that never started has no
+ * pid, and the escalation would otherwise SIGKILL the extension host's own
+ * process group — a signal nothing in it can catch or survive.
+ */
+function escalate(child: cp.ChildProcess, delayMs: number): () => void {
+  const term = setTimeout(() => {
+    signalChild(child);
+  }, delayMs);
+  const kill = setTimeout(() => {
+    signalChild(child, 'SIGKILL');
+  }, delayMs + SIGKILL_AFTER_MS);
+  return () => {
+    clearTimeout(term);
+    clearTimeout(kill);
+  };
+}
+
+/**
+ * Send `farewell` to a child that is being replaced; false when none can hear it.
+ *
+ * A child that never started has no pid, no debuggee and nothing to answer
+ * with, and a closed stdin cannot carry the request: both go straight to the
+ * signals instead.
+ */
+function sayFarewell(child: cp.ChildProcessWithoutNullStreams, farewell: DapMessage): boolean {
+  if (livePid(child) === undefined || child.stdin.destroyed || !child.stdin.writable) return false;
+  try {
+    child.stdin.write(frameOf(farewell));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Read the body length out of one DAP header block, if well-formed. */
 function parseContentLength(header: string): number | undefined {
@@ -108,36 +162,35 @@ export class AdapterWire {
       this.host.onUndeliverable(message);
       return;
     }
-    const body = JSON.stringify(message);
-    const frame = `${CONTENT_LENGTH}${String(Buffer.byteLength(body))}${HEADER_END}${body}`;
     // `write` can also throw SYNCHRONOUSLY once the stream has been destroyed.
     // Both failure modes mean the same thing and end the session once.
     try {
-      this.child.stdin.write(frame);
+      this.child.stdin.write(frameOf(message));
     } catch (cause) {
       this.host.onGone(`stdin closed: ${getErrorMessage(cause)}`);
     }
   }
 
-  /** Swap the child process for a respawn, clearing stale transport state. */
-  public respawn(attachArgs: readonly string[], onReady?: () => void): void {
+  /**
+   * Swap the child process for a respawn, clearing stale transport state.
+   *
+   * The outgoing child is retired with `farewell`, the router's `disconnect`,
+   * and signalled only if it does not then exit by itself. A signal stops
+   * netcoredbg but never the debuggee it launched: every Restart used to leave
+   * the previous run suspended at its breakpoint, reparented to init, for good.
+   */
+  public respawn(attachArgs: readonly string[], farewell: DapMessage, onReady?: () => void): void {
     this.buffer = Buffer.alloc(0);
     const old = this.child;
-    // Marked BEFORE the signal, or the exit races the flag: the death below is
+    // Marked BEFORE the farewell, or the exit races the flag: the death below is
     // ordered by us, so it must not be reported as the session dying.
     this.replaced = old;
     old.stdout.removeAllListeners('data');
-    // Both signals go through `signalChild`: an adapter that never started has
-    // no pid, and the escalation below would otherwise SIGKILL the extension
-    // host's own process group — a signal nothing in it can catch or survive.
-    signalChild(old);
-    // A paused debuggee can make netcoredbg linger on SIGTERM; the restart
-    // gesture must not wait for it. Escalate to SIGKILL after a grace second.
-    const escalate = setTimeout(() => {
-      signalChild(old, 'SIGKILL');
-    }, 1_000);
+    const cancelSignals = escalate(old, sayFarewell(old, farewell) ? FAREWELL_GRACE_MS : 0);
     old.once('exit', () => {
-      clearTimeout(escalate);
+      cancelSignals();
+      // A router disposed mid-respawn has no session left for a replacement.
+      if (this.host.isDisposed()) return;
       this.child = this.spawn(attachArgs);
       this.replaced = undefined;
       // `onReady` replays the handshake, so it must reach the replacement

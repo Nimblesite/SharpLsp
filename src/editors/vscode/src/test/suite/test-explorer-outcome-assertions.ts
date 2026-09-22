@@ -82,8 +82,19 @@ export function assertPassed(result: CachedTestResult, id: string): void {
   );
 }
 
+/**
+ * The assertion text xUnit writes. It is the default because every VSTest
+ * fixture that reaches {@link assertFailed} is an xUnit one; a suite whose
+ * fixtures span other frameworks passes each framework's own text instead.
+ */
+export const XUNIT_FAILURE_TEXT = 'Assert.Equal() Failure';
+
 /** A real failure carrying the REAL assertion text, not "Test failed". */
-export function assertFailed(result: CachedTestResult, id: string): void {
+export function assertFailed(
+  result: CachedTestResult,
+  id: string,
+  failureText: string = XUNIT_FAILURE_TEXT,
+): void {
   assert.strictEqual(
     result.outcome,
     'failed',
@@ -97,9 +108,9 @@ export function assertFailed(result: CachedTestResult, id: string): void {
   );
   const message = result.message ?? '';
   assert.strictEqual(
-    message.includes('Assert.Equal() Failure'),
+    message.includes(failureText),
     true,
-    `${id} must surface xUnit's own text: ${message}`,
+    `${id} must surface the framework's own text ('${failureText}'): ${message}`,
   );
   assert.strictEqual(
     message.includes('Expected'),

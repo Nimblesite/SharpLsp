@@ -39,7 +39,7 @@ The current Phase Four factory and resolver in [`debug.ts`](../../src/editors/vs
 
 Target `DapRouter` responsibilities:
 
-- **Adapter lifecycle**: spawn and monitor netcoredbg or the Debug Sidecar; restart crashes with exponential backoff
+- **Adapter lifecycle**: spawn and monitor netcoredbg or the Debug Sidecar; restart crashes with exponential backoff. A launched debuggee never outlives its adapter: when the adapter dies before ending it, the router ends the process that the adapter's DAP `process` event named with `startMethod: "launch"`. An attached process is never ended
 - **DAP proxy**: forward messages between the editor and active adapter
 - **Capability augmentation**: amend `initialize` responses for proxy-layer features
 - **Logpoint emulation**: translates DAP `setBreakpoints` logpoint requests into conditional breakpoints that evaluate + log + continue (Phase 4)
@@ -122,6 +122,7 @@ SharpLsp targets **DAP specification version 1.71.0**.
 | Remote attach via SSH tunnel | `attach` (remote) | P2 | SharpLsp manages SSH tunnel transparently |
 | Launch with environment variables | `launch` (env) | P1 | |
 | Launch with custom working directory | `launch` (cwd) | P1 | |
+| Restart the same configuration | `restart` | P1 | Emulated by respawning netcoredbg. The outgoing adapter is retired with `disconnect` (`restart: true`) before any signal, so a launched debuggee is terminated and an attached one only detached; a restart never leaves the previous run behind |
 | Launch browser for Blazor WASM | `launch` (browser) | P3 | Requires browser devtools bridge |
 | Hot Reload enabled launch | `launch` (hotReload: true) | P2 | See [DEBUG-FEATURES-HOT-RELOAD] |
 | Child process auto-attach | `launch` event | P2 | Phase 5: `ICorDebugManagedCallback::CreateProcess` |
@@ -525,6 +526,8 @@ netcoredbg reports physical `MoveNext` frames. `DapRouter` and the C# sidecar re
 5. Inject the logical frames before forwarding `stackTrace`.
 
 If compiler-generated fields cannot be resolved, the response retains the physical stack unchanged.
+
+Phase Four performs steps 2–5 through netcoredbg itself ([`dap-async-chain.ts`](../../src/editors/vscode/src/dap-async-chain.ts)). `DapRouter` sets `Task.s_asyncDebuggingEnabled` at the entry stop, so every suspended builder box registers in `Task.s_currentActiveTasks`. The router then follows each box's `m_continuationObject` to the box that awaits it. Every hop (`Action._target`, `ContinuationWrapper._continuation`, `AwaitTaskContinuation.m_action`) is a field read by `evaluate`, never a `variables` expansion. netcoredbg runs an expanded object's property getters as func-evals inside the stopped debuggee, and a getter deadlocked on a runtime lock costs the 5 s evaluation timeout and the chain. A refused hop cuts the chain, and the router still stitches the physical stacks. Only a continuation that carries no box ends the chain.
 
 Phase Five reads continuation chains directly through `ICorDebugProcess::ReadMemory`, without a Roslyn compilation model.
 

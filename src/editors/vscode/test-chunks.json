@@ -17,6 +17,7 @@
         "lsp-integration-semantic.test.js",
         "lsp-document-sync.test.js",
         "lsp-lifecycle.test.js",
+        "open-sync.test.js",
         "lsp-refactor-quickfixes.test.js",
         "lsp-codeaction-add-using.test.js",
         "lsp-refactor-organize-imports.test.js",
@@ -95,6 +96,7 @@
         "debug-test-fsharp-e2e.test.js",
         "debug-test-debugging-e2e.test.js",
         "debug-test-groups-e2e.test.js",
+        "debug-test-mtp-e2e.test.js",
         "debug-protocol-capabilities-e2e.test.js",
         "debug-session-lifecycle-e2e.test.js",
         "debug-output-routing-e2e.test.js",
@@ -112,7 +114,9 @@
         "test-explorer-names.test.js",
         "testing-lens-e2e.test.js",
         "testing-lens-status.test.js",
-        "test-explorer-coverage.test.js"
+        "test-explorer-coverage.test.js",
+        "test-explorer-mtp-parsers.test.js",
+        "test-explorer-mtp-merges.test.js"
       ]
     },
     "testexplorer-frameworks": {
@@ -123,6 +127,32 @@
         "test-explorer-adapter-ids.test.js",
         "test-explorer-goto-test.test.js",
         "test-explorer-cancellation.test.js"
+      ]
+    },
+    "testexplorer-mtp": {
+      "description": "Microsoft.Testing.Platform (MTP) end to end, its own job because it builds a SECOND six-project fixture solution: `xunit.v3` 4.0.0 (MTP v2 only, no VSTest adapter at all), MSTest and NUnit on their own runners, each in C# and F#. It covers the whole MTP path — the `global.json` opt-in and the `IsTestingPlatformApplication` probe, the modules MSBuild reports, `--list-tests json` discovery with source locations, `--filter-uid` runs, `--report-trx` outcomes, the unfiltered retry an NUnit refusal earns, and the message a module missing `Microsoft.Testing.Extensions.TrxReport` produces ([TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN]). Kept apart from `testexplorer-frameworks` because the two together would build twelve test projects in one job and blow the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
+      "files": [
+        "test-explorer-mtp.test.js",
+        "test-explorer-mtp-outcomes.test.js",
+        "test-explorer-mtp-modules.test.js"
+      ]
+    },
+    "testexplorer-mtp-runners": {
+      "description": "Where Microsoft.Testing.Platform meets everything that is NOT one MTP solution: a VSTest folder and an MTP folder open in ONE multi-root workspace, each test routed to the runner that discovered it and an MTP module rebuilt from its own folder ([TEST-MTP-ROUTING]); the probe sweep a solution with no MTP project must not pay for, folders and project files enumerated the way `dotnet` resolves them, and the run plan a failed sweep keeps with its tree ([TEST-MTP-DETECT], [TEST-MTP-MODULES]); and a selection spanning several `--filter-uid` batches, plus Run with Coverage on a module with no coverage extension ([TEST-MTP-RUN]); and a run queued behind a discovery sweep, which must run with the runner that sweep found ([TEST-REACTIVITY]). The multi-root suite lives under `multiroot/` and runs in the second editor start `.vscode-test.mjs` opens for it. Its own job because every suite here builds its own fixtures, and joining `testexplorer-mtp` would take that job past the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
+      "files": [
+        "multiroot/test-explorer-mixed-runners.test.js",
+        "test-explorer-mtp-sweeps.test.js",
+        "test-explorer-mtp-batches.test.js",
+        "test-explorer-mtp-coverage.test.js",
+        "test-explorer-mtp-queue.test.js"
+      ]
+    },
+    "testexplorer-mtp-parity": {
+      "description": "Microsoft.Testing.Platform parity: F# for every case the C# suites prove on one module ([TEST-OVERVIEW]: F# first), and the data rows of C# `xunit.v3` and MSTest tests edited or added between discovery and ▶, which only a re-listed uid can reach ([TEST-MTP-RUN]). An F# `xunit.v3` module multi-targeted at the two newest runtimes on the machine, with `#if` bindings that fail in one framework's module only, reported as ONE tree root with one numbered TRX per module ([TEST-MTP-MODULES], [TEST-MTP-RUN]); an F# binding and `[<Theory>]` edited between discovery and ▶ and rebuilt before they run; an F# project moved from VSTest onto MTP in place ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY]); and the Debug profile on an F# MTP module: backtick names, theory rows and the at-cursor gesture ([TEST-MTP-DEBUG]). Its own job because the F# compiler's cold start and a multi-targeted build would take either MTP chunk past the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
+      "files": [
+        "test-explorer-mtp-fsharp.test.js",
+        "test-explorer-mtp-rows.test.js",
+        "debug-test-mtp-fsharp-e2e.test.js"
       ]
     },
     "workspace": {
