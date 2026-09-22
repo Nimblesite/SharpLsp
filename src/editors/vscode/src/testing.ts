@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { effect } from './signals';
 import { info } from './log';
 import * as state from './state';
-import { listTests } from './test-discovery';
 import type { TestListing } from './test-listing-model';
+import { listLocatedTests, onDiscoveryInputs } from './test-source-locations';
 import { runnersFor, runRouted, VSTEST_ONLY, type RunnerMap } from './test-run-routes';
 import { makeAssemblyItem, makeErrorItem, makeTestItem, type ItemContext } from './test-items';
 import {
@@ -152,11 +152,11 @@ export class SharpLspTestController {
         await this.activateAndDiscover();
       }
     };
-    // Reactive: once tests are being shown, a change to the loaded solution must
-    // reactively re-discover with no manual refresh. Debounced to collapse the
-    // burst a solution load emits. Gated on `active` so merely loading a solution
-    // never triggers a background build before the user looks at tests.
-    this.solutionSubscription = state.solutionPath.subscribe(() => {
+    // Reactive: once tests are being shown, a change to the loaded solution (or the
+    // server that locates its tests coming up) must re-discover with no manual
+    // refresh. Debounced to collapse the burst a solution load emits. Gated on
+    // `active` so loading a solution never builds before the user looks at tests.
+    this.solutionSubscription = onDiscoveryInputs(() => {
       if (this.active) {
         this.scheduleDiscovery();
       }
@@ -293,7 +293,7 @@ export class SharpLspTestController {
 
   /** List one target (inside the sweep's queued job), logging its diagnostics. */
   private async safeList(target: string): Promise<TestListing> {
-    const listing = await listTests(target);
+    const listing = await listLocatedTests(target);
     for (const warning of listing.warnings) {
       info(`Test discovery (${target}): ${warning}`);
     }

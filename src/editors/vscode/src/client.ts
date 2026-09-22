@@ -22,6 +22,7 @@ import * as log from './log.js';
 import { createOpenSync, type OpenSync } from './open-sync.js';
 import { createAnsiStrippingChannel } from './output-filter.js';
 import { detectRuntimePlatform } from './platform.js';
+import * as state from './state.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 
 /** The documents the client syncs to the server, and holds requests about. */
@@ -125,6 +126,7 @@ function wireClientState(
 ): void {
   const listener: Disposable = client.onDidChangeState((event) => {
     openSync.observe(event.newState);
+    state.serverRunning.value = event.newState === State.Running;
     switch (event.newState) {
       case State.Starting:
         statusBar.setState(ServerState.Starting);

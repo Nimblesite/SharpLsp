@@ -23,6 +23,7 @@ import { escapeFilterValue, filterClause, filterExpression } from '../../test-fi
 import { createSolution, projectXml, warmDiscovery, writeProject } from './dotnet-project-kit';
 import { fixtureFor } from './test-explorer-fixtures';
 import {
+  assertDeclaredInside,
   activateTestExplorer,
   collectItemIds,
   collectLeafIds,
@@ -252,10 +253,10 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       );
     }
     for (const snapshot of testSnapshots) {
-      assert.strictEqual(
-        comparablePath(snapshot.uriPath ?? ''),
-        comparablePath(hostileDir),
-        `${snapshot.id} must be anchored at the hostile solution directory, parentheses and all`,
+      assertDeclaredInside(
+        snapshot.uriPath,
+        hostileDir,
+        `${snapshot.id}, under the hostile solution directory, parentheses and all,`,
       );
       assert.strictEqual(
         snapshot.description,
@@ -297,10 +298,11 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
     );
     assert.strictEqual(spaced.canResolveChildren, false, 'a leaf test resolves no children');
     assert.strictEqual(spaced.children.size, 0, 'a leaf test has no children');
+    assertDeclaredInside(spaced.uri?.fsPath, hostileDir, 'the spaced F# test');
     assert.strictEqual(
-      comparablePath(spaced.uri?.fsPath ?? ''),
-      comparablePath(hostileDir),
-      'the spaced F# test is revealed inside the hostile directory',
+      path.basename(spaced.uri?.fsPath ?? ''),
+      'Tests.fs',
+      'the spaced F# test is revealed at its .fs file inside the hostile directory',
     );
     const mixed = findItem(api.testController.items, CS_MIXED_THEORY);
     assert.ok(mixed, `${CS_MIXED_THEORY} must be ONE item, not one per theory row`);

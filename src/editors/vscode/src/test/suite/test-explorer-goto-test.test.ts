@@ -60,6 +60,12 @@ const FS_SOURCE = new AnchoredSource([
   'let ``navigates to the theory`` (a: int) (b: int) (expected: int) =    // @anchor:fs-theory',
   '    Assert.Equal(expected, a + b)',
   '',
+  // A nested module is the idiomatic F# way to group tests; it compiles to a
+  // nested static class, so its tests are named `Fs.Goto.Fixtures+Nested.…`.
+  'module Nested =',
+  '    [<Fact>]',
+  '    let ``finds a nested test`` () = Assert.Equal(2, 1 + 1)           // @anchor:fs-nested',
+  '',
 ]);
 
 /** The C# fixture, ANCHORED — same shape, same file, two distinct lines. */
@@ -93,11 +99,12 @@ const CS_FILE = 'Tests.cs';
 
 const FS_FACT = 'Fs.Goto.Fixtures.navigates to the test';
 const FS_THEORY = 'Fs.Goto.Fixtures.navigates to the theory';
+const FS_NESTED = 'Fs.Goto.Fixtures+Nested.finds a nested test';
 const CS_FACT = 'Cs.Goto.Fixtures.NavigationTests.Navigates_ToTheTest';
 const CS_THEORY = 'Cs.Goto.Fixtures.NavigationTests.Navigates_ToTheTheory';
 
 /** Every FQN the two fixtures expose — F# first. */
-const EXPECTED = [FS_FACT, FS_THEORY, CS_FACT, CS_THEORY] as const;
+const EXPECTED = [FS_FACT, FS_THEORY, FS_NESTED, CS_FACT, CS_THEORY] as const;
 
 /** The declaring file and 0-based declaration line each FQN must reveal. */
 interface GotoExpectation {
@@ -121,6 +128,12 @@ const EXPECTATIONS: readonly GotoExpectation[] = [
     fileName: FS_FILE,
     line: FS_SOURCE.line('fs-theory'),
     declares: 'navigates to the theory',
+  },
+  {
+    fqn: FS_NESTED,
+    fileName: FS_FILE,
+    line: FS_SOURCE.line('fs-nested'),
+    declares: 'finds a nested test',
   },
   {
     fqn: CS_FACT,
@@ -323,6 +336,12 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
       gotoRange(fact).start.line,
       'two tests in ONE file must reveal at DIFFERENT lines — a constant range is the bug',
     );
+
+    // A test in a NESTED module reveals at its own binding, in the same file.
+    assert.strictEqual(ids.includes(FS_NESTED), true, `discovery must surface ${FS_NESTED}`);
+    const nested = leafFor(api, FS_NESTED);
+    const nestedEditor = await goToTest(nested);
+    assertRevealed(nestedEditor, nested, expectationFor(FS_NESTED), fsProjDir);
   });
 
   test('Go to Test on a C# test opens its .cs file at the method', async function () {

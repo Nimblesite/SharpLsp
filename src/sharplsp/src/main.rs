@@ -34,6 +34,7 @@ mod type_hierarchy;
 mod utils;
 mod vfs;
 mod workspace_symbols;
+mod workspace_targets;
 
 use std::collections::HashMap;
 use std::io::IsTerminal;

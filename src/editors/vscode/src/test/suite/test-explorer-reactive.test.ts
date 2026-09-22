@@ -22,6 +22,7 @@ import {
 } from './dotnet-project-kit';
 import { fixtureFor } from './test-explorer-fixtures';
 import {
+  assertDeclaredInside,
   activateTestExplorer,
   collectLeafIds,
   discoverSolution,
@@ -173,12 +174,8 @@ function assertRows(controller: SharpLspTestController, solutionDir: string, why
     assert.strictEqual(row.label, labelOf(row.id), `${why}: ${row.id} label is the leaf segment`);
     assert.notStrictEqual(row.label, '', `${why}: ${row.id} must render a non-empty label`);
     assert.strictEqual(row.uriPath !== undefined, true, `${why}: ${row.id} must carry a uri`);
-    // Anchored at the discovery TARGET — the loaded solution — not the project.
-    assert.strictEqual(
-      comparablePath(row.uriPath ?? ''),
-      comparablePath(solutionDir),
-      `${why}: ${row.id} anchored`,
-    );
+    // Inside the discovery TARGET — the loaded solution — at its declaring file.
+    assertDeclaredInside(row.uriPath, solutionDir, `${why}: ${row.id}`);
     assert.strictEqual(row.childCount, 0, `${why}: a TEST row is a leaf; groups carry children`);
     assert.deepStrictEqual(
       row.tags,
@@ -521,8 +518,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     );
     assert.strictEqual(
       comparablePath(added.uri?.fsPath ?? ''),
-      comparablePath(solutionDir),
-      'anchored at the solution',
+      comparablePath(csSourcePath),
+      'Go to Test reveals the very file the user typed the test into',
     );
     // …and the user deletes it again.
     fs.writeFileSync(csSourcePath, originalText, 'utf8');
@@ -616,11 +613,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       comparablePath(extraProjDir),
       'the projects are distinct dirs',
     );
-    assert.strictEqual(
-      comparablePath(joined.uri?.fsPath ?? ''),
-      comparablePath(solutionDir),
-      'anchored at the solution',
-    );
+    assertDeclaredInside(joined.uri?.fsPath, extraProjDir, "the joined project's test");
     assert.notStrictEqual(
       comparablePath(joined.uri?.fsPath ?? ''),
       comparablePath(extraProjDir),
