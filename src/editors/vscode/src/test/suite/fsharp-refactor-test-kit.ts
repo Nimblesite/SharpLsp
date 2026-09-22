@@ -73,6 +73,37 @@ export async function activateWarmFSharp(
   }
 }
 
+/**
+ * Wait until `code` has cleared AND the document carries no error diagnostics.
+ *
+ * `diagnosticGone` is satisfied the instant ONE code disappears - which is not
+ * the same as the server having finished republishing for the content it was
+ * just handed. Every generation and conversion spec overlays the SAME file
+ * (`fsharp/DiagnosticsTarget.fs`), so a caller that then asserts the document is
+ * error-free can read a STALE error belonging to the PREVIOUS overlay.
+ *
+ * That is what failed on Windows: the exhaustive-DU spec, whose source is a
+ * two-case union and a complete match, was charged with
+ * `FS0366 No implementation was given for 'abstract IShape.Area'` - a
+ * diagnostic for an interface its own source does not contain. Ubuntu
+ * republished fast enough to hide it.
+ *
+ * The named code is still required to clear, because it is often a WARNING
+ * (FS0025) that the error filter alone would not catch.
+ */
+export async function diagnosticsSettled(
+  uri: vscode.Uri,
+  code: string,
+): Promise<vscode.Diagnostic[]> {
+  return waitForMatchingDiagnostics(
+    uri,
+    (diagnostics) =>
+      diagnostics.every((diagnostic) => diagnosticCode(diagnostic) !== code) &&
+      diagnostics.every((diagnostic) => diagnostic.severity !== vscode.DiagnosticSeverity.Error),
+    LSP_RESPONSE_MS,
+  );
+}
+
 export async function diagnosticGone(uri: vscode.Uri, code: string): Promise<vscode.Diagnostic[]> {
   return waitForMatchingDiagnostics(
     uri,
