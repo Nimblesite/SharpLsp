@@ -253,8 +253,20 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform discovery', () => {
       const item = findItem(api.testController.items, fixture.passing);
       assert.ok(item, `${fixture.key}: the passing test must be a row`);
       if (!fixture.reportsLocation) {
-        // NUnit reports none. The row still exists, pointed at the target folder.
-        assert.equal(item.range, undefined, `${fixture.key}: no location means no range`);
+        // NUnit reports none, so the row is located from the source's own syntax
+        // tree [TEST-GOTO-SOURCE]: the file that declares it, at the declaration
+        // itself - read back from that file, so it is never invented.
+        assert.ok(item.uri, `${fixture.key}: the row still gets the file it is written in`);
+        assert.equal(path.basename(item.uri.fsPath), fixture.sourceFileName, fixture.key);
+        assert.ok(item.range, `${fixture.key}: the row gets its declaration's range`);
+        const declared = fs.readFileSync(item.uri.fsPath, 'utf8').split('\n')[
+          item.range.start.line
+        ];
+        const name = fixture.passing.split('.').at(-1) ?? fixture.passing;
+        assert.ok(
+          declared?.includes(name) === true,
+          `${fixture.key}: the range is ${name}'s own declaration, got: ${String(declared)}`,
+        );
         continue;
       }
       assert.ok(item.uri, `${fixture.key}: a reported location gives the row a file`);
