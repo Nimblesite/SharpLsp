@@ -63,16 +63,31 @@ const makeVariable = (name) => {
  * here asserts on a variable make prints — a child's lookup is the thing that
  * was wrong, so a child is what gets asked.
  */
+const PROBE_MARKER = 'SHARPLSP_PROBE_PATH=';
+
 const childPath = (env) => {
   const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
-  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
+  // The decoy line is deliberate. GNU Make 4.x prints `make[1]: Entering
+  // directory '...'` to STDOUT whenever MAKELEVEL is set, and `_test-tooling`
+  // always sets it - it runs `node --test` from inside a recipe. Splitting raw
+  // stdout on `:` read that banner as a PATH entry, so the Ubuntu leg went red
+  // reporting `make[1]` as the winning root while macOS stayed green, because
+  // GNU Make 3.81 prints no banner. Emitting the same shape here pins the
+  // parser against that noise on every run and every platform, instead of
+  // trusting that no future recipe, flag or make version ever prints anything.
+  writeFileSync(
+    probe,
+    `_probe_path:\n\t@echo "make[1]: Entering directory '/decoy'"\n\t@echo "${PROBE_MARKER}$$PATH"\n`,
+  );
   const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
     cwd: ROOT,
     encoding: 'utf8',
     env: { ...process.env, ...env, MAKEFILES: probe },
   });
   assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
-  return stdout.trim().split(delimiter);
+  const answer = stdout.split('\n').find((line) => line.startsWith(PROBE_MARKER));
+  assert.ok(answer, `the probe printed no ${PROBE_MARKER} line:\n${stdout}`);
+  return answer.slice(PROBE_MARKER.length).trim().split(delimiter);
 };
 
 /**
@@ -149,20 +164,10 @@ test('the SDK banner names a version instead of reporting an empty one', () => {
 // `/c/Program`, never equals the root, and every nested sub-make prepends again.
 test('a root containing a space leads the PATH exactly once', () => {
   const root = rootWithSpace();
-  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
-  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
-  const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      SHARPLSP_DOTNET_ROOT: root,
-      PATH: [root, '/usr/bin', '/bin'].join(delimiter),
-      MAKEFILES: probe,
-    },
+  const entries = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
+    PATH: [root, '/usr/bin', '/bin'].join(delimiter),
   });
-  assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
-  const entries = stdout.trim().split(delimiter);
   assert.equal(entries[0], root, `a spaced root lost the lookup to ${entries[0]}`);
   assert.equal(
     entries.filter((entry) => entry === root).length,
