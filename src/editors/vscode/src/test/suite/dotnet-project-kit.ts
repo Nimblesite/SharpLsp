@@ -59,6 +59,91 @@ export const MSTEST_PACKAGES: readonly PackageRef[] = [
   { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
 ];
 
+/**
+ * The TRX report extension every Microsoft.Testing.Platform fixture references.
+ *
+ * `--report-trx` is NOT part of MTP: a module that does not register this
+ * extension rejects the option and exits with code 5 ([TEST-MTP-RUN]). MSTest
+ * carries it already, `xunit.v3` and NUnit do not. One version is pinned for
+ * every fixture, because a TrxReport built against a newer platform than the
+ * framework brought in fails at load with a `TypeLoadException`.
+ */
+export const MTP_TRX_REPORT: PackageRef = {
+  id: 'Microsoft.Testing.Extensions.TrxReport',
+  version: '2.4.0',
+};
+
+/**
+ * `xunit.v3` on Microsoft.Testing.Platform — the reported case (issue #249).
+ *
+ * From 4.0.0 the package supports MTP v2 ONLY. It carries no VSTest adapter at
+ * all, so `dotnet vstest` cannot load the module and the whole VSTest discovery
+ * path reports nothing for it.
+ */
+export const MTP_XUNIT_PACKAGES: readonly PackageRef[] = [
+  { id: 'xunit.v3', version: '4.0.0' },
+  MTP_TRX_REPORT,
+];
+
+/**
+ * MSTest on its own runner. Its listed DISPLAY name is the BARE method name, so
+ * this fixture is what proves an MTP id comes from the listing's `type` block
+ * and never from the display name ([TEST-MTP-DISCOVERY]).
+ */
+export const MTP_MSTEST_PACKAGES: readonly PackageRef[] = [{ id: 'MSTest', version: '4.4.0' }];
+
+/**
+ * NUnit on its own runner. Its uid is a DECORATED name carrying parentheses and
+ * commas — `Ns.Class.Adds_Case(2,2,4)` — which is what proves `--filter-uid`
+ * takes literal values and must never be escaped. It also reports no source
+ * location, which is what proves the location is optional.
+ */
+export const MTP_NUNIT_PACKAGES: readonly PackageRef[] = [
+  { id: 'NUnit', version: '4.4.0' },
+  { id: 'NUnit3TestAdapter', version: '6.3.0' },
+  MTP_TRX_REPORT,
+];
+
+/**
+ * The project properties that put a fixture on the MTP runner.
+ *
+ * `OutputType` is `Exe` because an MTP test project builds an EXECUTABLE test
+ * module — that module is what discovery and runs talk to. Each framework has
+ * its own switch, and setting a framework's switch on another framework does
+ * nothing, so one bag serves all three.
+ */
+export const MTP_PROPERTIES: Readonly<Record<string, string>> = {
+  OutputType: 'Exe',
+  UseMicrosoftTestingPlatformRunner: 'true',
+  EnableMSTestRunner: 'true',
+  EnableNUnitRunner: 'true',
+};
+
+/**
+ * Opt a fixture solution into the MTP mode of `dotnet test`.
+ *
+ * This is the switch a real user throws, and it is what [TEST-MTP-DETECT] reads
+ * first. The SDK version is pinned to whatever built the fixture, so the file
+ * never changes which SDK the agent resolves.
+ */
+export function writeMtpGlobalJson(root: string): string {
+  const file = path.join(root, 'global.json');
+  fs.writeFileSync(
+    file,
+    `${JSON.stringify({ test: { runner: 'Microsoft.Testing.Platform' } }, null, 2)}\n`,
+    'utf8',
+  );
+  return file;
+}
+
+/** Project XML for an MTP test project: the runner switches plus its packages. */
+export function mtpProjectXml(
+  packages: readonly PackageRef[],
+  ...compileIncludes: readonly string[]
+): string {
+  return buildProjectXml({ packages, compileIncludes, properties: MTP_PROPERTIES });
+}
+
 /** Every framework the Test Explorer claims to support, for table-driven suites. */
 export const TEST_FRAMEWORKS = {
   xunit: XUNIT_PACKAGES,

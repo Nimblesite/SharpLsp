@@ -28,11 +28,21 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
+import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
 import { parseTestList } from './test-listing.js';
 import { HEX_DIGITS, parseFullyQualifiedTestList } from './test-names.js';
+import {
+  mergeMultiTargeted,
+  type TestAssemblyListing,
+  type TestListing,
+} from './test-listing-model.js';
+import { listMtpTests } from './test-mtp-discovery.js';
+import { usesMtpRunner } from './test-mtp.js';
 
 export { parseFullyQualifiedTestList, withoutAdapterUniqueId } from './test-names.js';
 export { isDiscoveredTestLine, parseTestList } from './test-listing.js';
+export { mergeMultiTargeted } from './test-listing-model.js';
+export type { TestAssemblyListing, TestListing } from './test-listing-model.js';
 
 /** VSTest prints one of these per test assembly it was handed. */
 const ASSEMBLY_BANNER = 'Test run for ';
@@ -48,37 +58,11 @@ const VSTEST_LISTING_OUTPUT = '-p:VsTestUseMSBuildOutput=false';
 
 /**
  * Ceiling on the assembly arguments handed to a single `dotnet vstest`.
- * Windows caps a process command line at 32 767 characters, and a solution with
- * many test projects — each contributing a long `bin/Debug/netX/Name.dll` path —
- * reaches that, at which point the spawn fails outright instead of enumerating.
+ * A solution with many test projects — each contributing a long
+ * `bin/Debug/netX/Name.dll` path — reaches the Windows command-line limit, at
+ * which point the spawn fails outright instead of enumerating.
  */
-const MAX_ASSEMBLY_ARG_CHARS = 24_000;
-
-/** The outcome of enumerating one target. Never an exception. */
-export interface TestListing {
-  /** Fully-qualified names, in discovery order, de-duplicated. */
-  readonly names: readonly string[];
-  /** True when the enumeration ran to completion (so an empty list is real). */
-  readonly ok: boolean;
-  /** Diagnostics worth writing to the extension log. */
-  readonly warnings: readonly string[];
-  /**
-   * The names grouped by the assembly that contributed them — the grouping the
-   * Test Explorer renders as Assembly → Namespace → Class → Test. Empty for
-   * the weaker display-name fallback, which cannot attribute names.
-   */
-  readonly byAssembly: readonly TestAssemblyListing[];
-}
-
-/** One built test assembly and the fully-qualified names it contributed. */
-export interface TestAssemblyListing {
-  /** Assembly file name without extension — the tree's root label. */
-  readonly name: string;
-  /** Absolute path of the built assembly — the stable, unique group id. */
-  readonly path: string;
-  /** Fully-qualified test names this assembly contributed, in listing order. */
-  readonly names: readonly string[];
-}
+const MAX_ASSEMBLY_ARG_CHARS = MAX_ARG_CHARS;
 
 /**
  * Extract the assembly path from a `Test run for <path> (<framework>)` banner.
@@ -167,21 +151,7 @@ export function batchAssemblies(
   assemblies: readonly string[],
   maxChars: number = MAX_ASSEMBLY_ARG_CHARS,
 ): string[][] {
-  const batches: string[][] = [];
-  let current: string[] = [];
-  let width = 0;
-  for (const assembly of assemblies) {
-    const cost = assembly.length + 3;
-    if (current.length > 0 && width + cost > maxChars) {
-      batches.push(current);
-      current = [];
-      width = 0;
-    }
-    current.push(assembly);
-    width += cost;
-  }
-  if (current.length > 0) batches.push(current);
-  return batches;
+  return batchByWidth(assemblies, (assembly) => assembly.length + 3, maxChars);
 }
 
 /**
@@ -202,6 +172,29 @@ export async function listTests(
       byAssembly: [],
     };
   }
+  // [TEST-MTP-DETECT]: a `global.json` opt-in makes the whole target MTP, and
+  // every VSTest command below would fail against it — `--nologo` alone exits
+  // with code 5 and lists nothing. Go straight to the runner that can answer.
+  if (usesMtpRunner(cwd)) return await listMtpTests(target, cwd, timeoutMs);
+  const vstest = await listWithVsTest(target, cwd, timeoutMs);
+  // No assembly attributed a name: either a genuinely empty solution, or an MTP
+  // project with no opt-in — which MTP v2 on the .NET 10 SDK makes ordinary,
+  // because it removed the VSTest shim. Ask MSBuild before settling for the
+  // display-name fallback, which cannot run anything it lists.
+  if (vstest.byAssembly.length > 0) return vstest;
+  const mtp = await listMtpTests(target, cwd, timeoutMs);
+  if (mtp.names.length === 0) {
+    return { ...vstest, warnings: [...vstest.warnings, ...mtp.warnings] };
+  }
+  return { ...mtp, warnings: [...vstest.warnings, ...mtp.warnings] };
+}
+
+/** The two VSTest passes: build and announce, then ask for the real names. */
+async function listWithVsTest(
+  target: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<TestListing> {
   const positional = cwd === target ? [] : [target];
   const args = [
     'test',
@@ -257,82 +250,6 @@ function listFailure(run: DotnetRun): string {
   return run.killed
     ? `dotnet test --list-tests was killed (timeout or signal); output truncated: ${cause}${detail}`
     : `dotnet test --list-tests failed: ${cause}${detail}`;
-}
-
-/**
- * Collapse the assemblies ONE multi-targeted project produced into one listing.
- *
- * `dotnet test --list-tests` announces a `Test run for …` banner per TARGET
- * FRAMEWORK, so a project declaring `<TargetFrameworks>net8.0;net9.0</…>` reports
- * two assemblies carrying the same file name under different
- * `bin/<config>/<tfm>/` directories. That is one project, and so one root of the
- * Assembly → Namespace → Class → Test tree: keeping them apart rendered every
- * namespace, class and test of that project TWICE, under two labels the user
- * cannot tell apart.
- *
- * Names are UNIONED, never taken from whichever framework was announced first: a
- * test compiled behind `#if NET8_0` exists in only one of the assemblies, and
- * dropping it would trade a duplicated tree for a missing test. The surviving
- * path is the identity the frameworks SHARE (see {@link sharedOutputPath}), so
- * the group ids the tree builds from it stay put across sweeps however the
- * build ordered its banners.
- */
-export function mergeMultiTargeted(
-  listings: readonly TestAssemblyListing[],
-): TestAssemblyListing[] {
-  const merged = new Map<string, { paths: string[]; names: string[] }>();
-  for (const listing of listings) {
-    const existing = merged.get(listing.name);
-    if (existing === undefined) {
-      merged.set(listing.name, { paths: [listing.path], names: [...listing.names] });
-      continue;
-    }
-    existing.paths.push(listing.path);
-    existing.names.push(...listing.names);
-  }
-  return [...merged].map(([name, entry]) => ({
-    name,
-    path: sharedOutputPath(entry.paths),
-    names: [...new Set(entry.names)],
-  }));
-}
-
-/**
- * The identity several builds of ONE assembly share.
- *
- * Two target frameworks put the same assembly under `bin/<config>/net8.0/` and
- * `bin/<config>/net9.0/`, so their paths agree everywhere except the segments
- * that name a build. Keeping one of them as the merged group id keys the whole
- * project's tree on a framework it merely happens to target: the id moves the
- * moment the build announces its banners in another order, and a project
- * targeting four frameworks gets a row identified by exactly one of them.
- *
- * Taking the common prefix back to its last separator and re-attaching the file
- * name leaves what every build of the project agrees on. A project with one
- * target framework has nothing to reconcile and keeps its real path.
- */
-function sharedOutputPath(paths: readonly string[]): string {
-  const [first, ...rest] = paths;
-  if (first === undefined) return '';
-  if (rest.length === 0) return first;
-  const shared = rest.reduce(commonPrefix, first);
-  return shared.slice(0, lastSeparator(shared) + 1) + first.slice(lastSeparator(first) + 1);
-}
-
-/** The leading characters two paths agree on. */
-function commonPrefix(left: string, right: string): string {
-  let index = 0;
-  while (index < left.length && index < right.length && left[index] === right[index]) index += 1;
-  return left.slice(0, index);
-}
-
-/**
- * Index of the last `/` or `\`, or -1. Both are checked rather than `path.sep`
- * because the separator comes from whichever host BUILT the listing, which is
- * not necessarily the one reading it.
- */
-function lastSeparator(value: string): number {
-  return Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
 }
 
 /** Prefer VSTest's fully-qualified names; fall back to the display listing. */
