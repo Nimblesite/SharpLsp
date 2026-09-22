@@ -36,6 +36,7 @@ import {
   pollUntilResult,
   removeDirRecursive,
   requireWorkspaceRoot,
+  sleep,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
@@ -124,6 +125,26 @@ export function armBreakpoints(
   const breakpoints = anchors.map((anchor) => breakpointAt(fixture, anchor));
   vscode.debug.addBreakpoints(breakpoints);
   return breakpoints;
+}
+
+/**
+ * Resolve once the Breakpoints view holds `count` entries, or at `SETTLE_MS`.
+ *
+ * VS Code's own run to cursor puts its temporary breakpoint in the view and
+ * removes it when the RENDERER sees the session stop, after the adapter's
+ * `stopped` has already reached this host. A synchronous read races that
+ * removal; the caller's assertion still fails if the entry is never removed.
+ */
+export async function settleBreakpointCount(count: number): Promise<void> {
+  if (vscode.debug.breakpoints.length === count) return;
+  let listener: vscode.Disposable | undefined;
+  const settled = new Promise<void>((resolve) => {
+    listener = vscode.debug.onDidChangeBreakpoints(() => {
+      if (vscode.debug.breakpoints.length === count) resolve();
+    });
+  });
+  await Promise.race([settled, sleep(SETTLE_MS)]);
+  listener?.dispose();
 }
 
 /** Remove every breakpoint in the workbench. Leaking one poisons the next test. */
