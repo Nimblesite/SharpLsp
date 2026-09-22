@@ -16,6 +16,7 @@ import { RequestCorrelator } from './dap-correlator';
 import { enrichResponse, withEventCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
 import { AdapterWire } from './dap-wire';
+import { LaunchedDebuggee } from './dap-debuggee';
 import { belongsToUserCode, carriesUserCode } from './dap-statement';
 import { VariableExpander } from './dap-variables';
 import { DapHotReload } from './dap-hot-reload';
@@ -137,6 +138,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private readonly stepper: StepCoalescer;
   /** Session-scoped handle namespacing ([DEBUG-FEATURES-MULTIPROCESS]). */
   private readonly handles = new HandleNamespace();
+  /** The debuggee the adapter launched, ended here only if the adapter dies first. */
+  private readonly debuggee = new LaunchedDebuggee();
   /** True once the session is being torn down; nothing may fire or write. */
   private disposed = false;
   /** The child's latest advertised capabilities, from `capabilities` events. */
@@ -227,6 +230,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.closed = true;
     this.correlator.failAll(why ?? 'exited');
     if (why === undefined || this.disposed) return;
+    this.debuggee.endOrphan();
     error(`netcoredbg ${why}; ending the debug session.`);
     this.fire({
       type: 'event',
@@ -472,6 +476,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** netcoredbg -> VS Code, with the router's enrichments and emulations. */
   private routeChildMessage(message: DapMessage): void {
     if (this.disposed) return;
+    this.debuggee.observe(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
         `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
@@ -647,6 +652,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private armSession(): void {
     this.debuggeeExited = false;
     this.childAnnouncedTerminated = false;
+    this.debuggee.forget();
   }
 
   /** Restart: respawn through the replayer and swallow the teardown noise. */
@@ -663,7 +669,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** Swap the child process for a respawn, clearing stale transport state. */
   public respawn(attachArgs: readonly string[], onReady?: () => void): void {
     this.transitioning = true;
-    this.wire.respawn(attachArgs, onReady);
+    this.wire.respawn(attachArgs, this.attaches.farewell(this.correlator.nextSequence()), onReady);
   }
   /** The seq of a recorded client message. */
   public seqOf(message: DapMessage): number {

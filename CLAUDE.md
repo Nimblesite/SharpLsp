@@ -59,6 +59,7 @@ F# ahead of C# when building new features. F# never takes the backseat.
 
 # Git
 
+- Worktrees = ⛔️ ILLEGAL. Only one branch at a time is allowed
 - Default to never performing write operations unless the user explicitly requests
 - Log BUG type GitHub issues when you encounter bugs in release
 - Never use worktrees or more than one feature branch at a time
