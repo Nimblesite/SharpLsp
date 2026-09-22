@@ -39,7 +39,7 @@
              Repo_pinned_sdk_ships_exactly_the_bundled_roslyn guards it. -->
         <PackageReference
             Include="Microsoft.CodeAnalysis.CSharp"
-            Version="5.9.0"
+            Version="5.6.0"
             PrivateAssets="all"
         />
         <PackageReference
