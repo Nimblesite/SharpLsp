@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -22,8 +22,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** Expands a target's recipe through every sub-make without executing it. */
-const dryRun = (target) => {
-  const { status, stdout, stderr } = spawnSync('make', ['-n', target], {
+const dryRun = (target, args = []) => {
+  const { status, stdout, stderr } = spawnSync('make', ['-n', target, ...args], {
     cwd: ROOT,
     encoding: 'utf8',
   });
@@ -75,6 +75,129 @@ const childPath = (env) => {
   return stdout.trim().split(delimiter);
 };
 
+/**
+ * A dotnet root whose path contains a SPACE, holding an executable that
+ * announces itself.
+ *
+ * `C:\\Program Files\\dotnet` is where the Windows installer puts the SDK, and
+ * Git Bash hands it to make as `/c/Program Files/dotnet`. Nothing about that is
+ * exotic - it is the platform DEFAULT - and a space in a path is the single
+ * most predictable difference between Windows and every other platform. Nothing
+ * in this suite asserted on one before, which is why an unquoted `$(DOTNET)`
+ * reached main and took the Windows build down at exit 127.
+ *
+ * `SHARPLSP_DOTNET_ROOT` is an ordinary variable, so a Linux runner can pose
+ * the question perfectly well. This needs no Windows runner.
+ */
+const rootWithSpace = () => {
+  const root = join(mkdtempSync(join(tmpdir(), 'sharplsp-sdk-')), 'Program Files', 'dotnet');
+  mkdirSync(root, { recursive: true });
+  for (const name of ['dotnet', 'dotnet.exe']) {
+    const exe = join(root, name);
+    writeFileSync(exe, '#!/bin/sh\necho 10.0.303\n');
+    chmodSync(exe, 0o755);
+  }
+  return root;
+};
+
+/** Run a probe recipe through the REAL Makefile, returning the raw result. */
+const probeRecipe = (body, env) => {
+  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
+  writeFileSync(probe, `_probe:\n\t@${body}\n`);
+  return spawnSync('make', ['_probe'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...env, MAKEFILES: probe },
+  });
+};
+
+// [DIST-RUNTIME-ACQUIRE] The resolved root is interpolated into every recipe
+// that spawns the SDK. Unquoted, a root with a space splits and the shell runs
+// `/c/Program`: exit 127, and `_build-dotnet` dies before it compiles anything.
+test('a dotnet root containing a space is executed, not split into words', () => {
+  const root = rootWithSpace();
+  const { status, stdout, stderr } = probeRecipe('$(DOTNET) --version', {
+    SHARPLSP_DOTNET_ROOT: root,
+  });
+  assert.equal(status, 0, `make could not run the dotnet it resolved at ${root}:\n${stderr}`);
+  assert.match(
+    stdout,
+    /10\.0\.303/,
+    `the recipe ran something other than the resolved dotnet:\n${stdout}${stderr}`,
+  );
+});
+
+// The SDK banner reports the version through a command substitution, and a
+// substitution that fails still lets `echo` exit 0. Unquoted, it printed
+// "==> SDK:  from /c/Program Files/dotnet" - a blank version, no error, and the
+// build carried on. Agents.md: no silent failures.
+test('the SDK banner names a version instead of reporting an empty one', () => {
+  const root = rootWithSpace();
+  const { status, stdout, stderr } = probeRecipe('$(CHECK_DOTNET_PIN)', {
+    SHARPLSP_DOTNET_ROOT: root,
+  });
+  assert.equal(status, 0, `the pin check failed against ${root}:\n${stderr}`);
+  assert.match(
+    stdout,
+    new RegExp(`==> SDK: 10\\.0\\.303 from ${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+    `the banner reported no version, and said so without failing:\n${stdout}`,
+  );
+});
+
+// The same space defeats a precedence test built on `firstword`, which splits on
+// whitespace: the head of `/c/Program Files/dotnet:/usr/bin` reads as
+// `/c/Program`, never equals the root, and every nested sub-make prepends again.
+test('a root containing a space leads the PATH exactly once', () => {
+  const root = rootWithSpace();
+  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
+  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
+  const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      SHARPLSP_DOTNET_ROOT: root,
+      PATH: [root, '/usr/bin', '/bin'].join(delimiter),
+      MAKEFILES: probe,
+    },
+  });
+  assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
+  const entries = stdout.trim().split(delimiter);
+  assert.equal(entries[0], root, `a spaced root lost the lookup to ${entries[0]}`);
+  assert.equal(
+    entries.filter((entry) => entry === root).length,
+    1,
+    `the spaced root was stacked more than once: ${entries.join(delimiter)}`,
+  );
+});
+
+// [DIST-RELEASE] The packaging targets derive the platform from their own name,
+// and `release.yml:148` is the ONLY caller in the repo - no PR pipeline runs
+// them, so a break here surfaces first on a tag. It already had: the targets
+// were renamed `package-vsix-*` -> `_package-vsix-*` when tools/make/main.mk was
+// consolidated, and `$(subst package-vsix-,,$@)` matches from index 1, leaving
+// the underscore behind. Every platform packaged as `_win32-x64`: an unknown
+// --target for vsce, a misnamed .vsix, a bin/ staging dir nothing reads.
+for (const platform of ['linux-x64', 'linux-arm64', 'darwin-arm64', 'darwin-x64', 'win32-x64', 'win32-arm64']) {
+  test(`_package-vsix-${platform} packages that platform, underscore-free`, () => {
+    const recipe = dryRun(`_package-vsix-${platform}`, ['VSIX_PREBUILT=1']);
+    assert.ok(
+      recipe.includes(`--target ${platform}`),
+      `vsce must be handed ${platform}; it rejects anything else`,
+    );
+    assert.ok(
+      recipe.includes(`sharplsp-${platform}.vsix`),
+      `the artifact must be named for ${platform}, or the release uploads a file nobody looks for`,
+    );
+    assert.ok(
+      !recipe.includes(`_${platform}`),
+      `the target's leading underscore leaked into the platform name: ${
+        recipe.split('\n').find((line) => line.includes(`_${platform}`)) ?? ''
+      }`,
+    );
+  });
+}
+
 /** The identifier the loop must derive from the extension manifest, not hardcode. */
 const manifestExtensionId = () => {
   const manifest = JSON.parse(
@@ -106,8 +229,8 @@ test('reinstall-vsix rebuilds the binaries it packages, and kills what holds the
 
   // All three components, per the spec's "full cycle".
   assert.match(recipe, /cargo build --release/, 'Rust host must be rebuilt');
-  assert.match(recipe, /dotnet publish .*SharpLsp\.Sidecar\.CSharp\.csproj/, 'C# sidecar must be rebuilt');
-  assert.match(recipe, /dotnet publish .*SharpLsp\.Sidecar\.FSharp\.fsproj/, 'F# sidecar must be rebuilt');
+  assert.match(recipe, /dotnet(\.exe)?" publish .*SharpLsp\.Sidecar\.CSharp\.csproj/, 'C# sidecar must be rebuilt');
+  assert.match(recipe, /dotnet(\.exe)?" publish .*SharpLsp\.Sidecar\.FSharp\.fsproj/, 'F# sidecar must be rebuilt');
   assert.match(recipe, /npm run build --prefix src\/editors\/vscode/, 'extension must be rebuilt');
 
   // A running server holds its binary open - fatally so on Windows - and the
