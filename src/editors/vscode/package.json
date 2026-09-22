@@ -1290,6 +1290,9 @@
   "overrides": {
     "serialize-javascript": "7.0.5",
     "brace-expansion@^2.0.0": "2.1.4",
-    "brace-expansion@^5.0.0": "5.0.9"
+    "brace-expansion@^5.0.0": "5.0.9",
+    "@vscode/test-cli": {
+      "mocha": "$mocha"
+    }
   }
 }
