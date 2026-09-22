@@ -127,6 +127,10 @@ function wireStatusBar(
         statusBar.setState(ServerState.Stopped);
         log.info('Server stopped.');
         break;
+      case State.StartFailed:
+        statusBar.setState(ServerState.Error);
+        log.error('Server failed to start.');
+        break;
     }
   });
   context.subscriptions.push(listener);

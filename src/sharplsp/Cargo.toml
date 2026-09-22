@@ -16,16 +16,16 @@ formatting = []
 
 [dependencies]
 # Version dispatch — Shipwright binary version contract [DIST-VERSION-OUTPUT]
-shipwright = "0.10"
-shipwright-manifest = "0.10"
+shipwright = "0.11"
+shipwright-manifest = "0.11"
 # Implements the executable packaging contract [BINARY-RUST].
 
 # LSP
-lsp-server = "0.9"
+lsp-server = "0.10"
 lsp-types = "0.97"
 
 # Tree-sitter
-tree-sitter = "0.26"
+tree-sitter = "0.27"
 tree-sitter-c-sharp = "0.23"
 tree-sitter-fsharp = "0.3"
 
