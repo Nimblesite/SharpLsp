@@ -22,7 +22,7 @@ import {
   assertNoAction,
   assertQuickFix,
   diagnosticCode,
-  diagnosticGone,
+  diagnosticsSettled,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
@@ -431,7 +431,7 @@ async function applyGeneration(
 }
 
 async function assertAllErrorsGone(uri: vscode.Uri, diagnostic: string): Promise<void> {
-  const diagnostics = await diagnosticGone(uri, diagnostic);
+  const diagnostics = await diagnosticsSettled(uri, diagnostic);
   const errors = diagnostics.filter((item) => item.severity === vscode.DiagnosticSeverity.Error);
   assert.deepStrictEqual(
     errors.map((item) => `${item.range.start.line}:${diagnosticCode(item)} ${item.message}`),
