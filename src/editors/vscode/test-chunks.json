@@ -140,6 +140,14 @@
         "test-explorer-mtp-queue.test.js"
       ]
     },
+    "testexplorer-mtp-parity": {
+      "description": "Microsoft.Testing.Platform parity: F# for every case the C# suites prove on one module ([TEST-OVERVIEW]: F# first), and the data rows of C# `xunit.v3` and MSTest tests edited or added between discovery and ▶, which only a re-listed uid can reach ([TEST-MTP-RUN]). An F# `xunit.v3` module multi-targeted at the two newest runtimes on the machine, with `#if` bindings that fail in one framework's module only, reported as ONE tree root with one numbered TRX per module ([TEST-MTP-MODULES], [TEST-MTP-RUN]); an F# binding and `[<Theory>]` edited between discovery and ▶ and rebuilt before they run; an F# project moved from VSTest onto MTP in place ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY]); and the Debug profile on an F# MTP module: backtick names, theory rows and the at-cursor gesture ([TEST-MTP-DEBUG]). Its own job because the F# compiler's cold start and a multi-targeted build would take either MTP chunk past the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
+      "files": [
+        "test-explorer-mtp-fsharp.test.js",
+        "test-explorer-mtp-rows.test.js",
+        "debug-test-mtp-fsharp-e2e.test.js"
+      ]
+    },
     "workspace": {
       "description": "The IDE surface that is not a language service: activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, and the cross-cutting command workflows; the Solution Explorer tree with its reactive sort/state signals, tooltips, reveal, full context-menu surface and project-dependency watcher; scaffolding and the NuGet surface down to real .csproj dependency edits; and profiling end to end (dotnet-trace sessions, live counters, memory dumps, .nettrace conversion, profiler webviews) plus FSI and build-output filtering.",
       "files": [

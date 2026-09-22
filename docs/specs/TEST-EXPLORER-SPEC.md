@@ -292,6 +292,15 @@ dotnet exec <module.dll> --filter-uid <uid> <uid> … \
   are unaffected. A selection that starts no module builds nothing, and ⏹ kills the build
   like any other invocation.
 
+* The uids a filtered run sends are read off the REBUILT module, never off the discovery that
+  preceded it: after the build, each module the selection touches is listed again
+  (`--list-tests json`) and the selected ids resolve to the uids THAT build reports. A uid is
+  the module's own key and frameworks derive it from more than the test's name — `xunit.v3`
+  hashes a data row's arguments into it, MSTest keys a row by its position — so a row ADDED
+  since discovery, or an `xunit.v3` row whose data was EDITED, has a uid discovery never saw.
+  Filtering by the old uids runs every row EXCEPT the one the user just wrote, and a row the
+  edit turned red reports green. An unfiltered run lists nothing, and a module that lists
+  nothing keeps the uids it had.
 * `--filter-uid` takes LITERAL values, so the [TEST-FILTER-ESCAPE] grammar does not apply and
   MUST NOT be used. An NUnit uid contains parentheses and commas; escaping them would make it
   match nothing. The uids are still BATCHED against the Windows 32 767-character
@@ -494,6 +503,9 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `test-explorer-mtp-sweeps.test.ts` | What ONE probe sweep costs, reaches and keeps, with builds COUNTED by a real `Directory.Build.props`: a library solution and a VSTest solution that fails to build are built no more often than the VSTest passes build them, directly and through the Testing view; a folder holding two projects (MSB1011), a folder with projects only below it (MSB1003) and a project file with an MTP project nested under it list nothing an earlier build left on disk, and an opted-in ambiguous folder is an error, not an empty tree; a sweep whose module fails to LIST keeps both the tree and the plan that runs it, so ▶ and the status lens still run it ([TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-ROUTING]) |
 | `test-explorer-mtp-batches.test.ts` | One F# NUnit module whose selection spans several `--filter-uid` batches with the refused spaced `[<TestCase>]` uid in the LAST one: the refusal still earns the unfiltered retry and every test reports its verdict, directly and from ▶ on the module's root; Run with Coverage on a module without `Microsoft.Testing.Extensions.CodeCoverage` names the package on the run and on the test, and the plain Run profile stays green ([TEST-MTP-RUN]) |
 | `multiroot/test-explorer-mixed-runners.test.ts` | Runs in the SECOND editor start, a two-folder workspace: an F# VSTest folder beside a C# `xunit.v3` folder with no opt-in. Each folder is its own assembly root, found by its own runner; ▶ on each runner's tests, on a selection spanning both, on the whole tree, and the status lens all report real outcomes; and an edit in the SECOND folder is rebuilt from that folder before it runs ([TEST-MTP-DETECT], [TEST-MTP-RUN], [TEST-MTP-ROUTING]) |
+| `test-explorer-mtp-fsharp.test.ts` | MTP on F#, every case the C# suites prove on one module: an F# `xunit.v3` module multi-targeted at the two newest runtimes whose `#if` bindings fail in one framework's module only — ONE tree root, a module per framework, a numbered TRX per module, each theory row its own uid; an F# `[<Fact>]` and `[<Theory>]` edited between discovery and ▶, rebuilt before they run, the rows pointing at the attribute the listing reported; and an F# project moved from VSTest onto MTP in place keeping its ids and its root ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-MODULES]) |
+| `test-explorer-mtp-rows.test.ts` | Data rows of C# `xunit.v3` and MSTest tests changed between discovery and ▶: a row ADDED (a uid discovery never saw, in both frameworks) turns its test red and then green again, an `xunit.v3` row whose DATA is edited runs with the new data, the untouched tests stay green, and the tree never grows a row per data row ([TEST-MTP-RUN]) |
+| `debug-test-mtp-fsharp-e2e.test.ts` | The Debug profile on an F# MTP module: a backtick binding whose id carries SPACES attached to by pid and stopped in its body with its `let` bindings readable, an F# `[<Theory>]` stopping once per row with each row's arguments, and Debug Test at the cursor in the `.fs` file — none writing a result, ▶ afterwards reporting the real one ([TEST-MTP-DEBUG]) |
 | `test-explorer-mtp-parsers.test.ts` | the JSON listing reader at its boundary: a byte-order mark, a leading blank line, an unknown `schemaVersion`, an empty `tests` array, a missing `location`, a missing `type`, and two rows collapsing onto one id with two uids; the `global.json` opt-in against every decoy that merely mentions MTP; the uid batcher; and the waiting-host pid line in BOTH its bare and its prefixed form ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-DEBUG]) |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows

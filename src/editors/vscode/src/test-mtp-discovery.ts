@@ -79,6 +79,22 @@ async function listModule(
   return { tests: listing.tests, warnings: [...listing.warnings, ...failure] };
 }
 
+/**
+ * `module` with the uids its CURRENT build reports, or unchanged when the
+ * module lists nothing. A uid may hash more than the test's name — `xunit.v3`
+ * hashes a theory row's data — so a rebuilt module's uids are read off the
+ * rebuilt module, never off the discovery that preceded the edit
+ * ([TEST-MTP-RUN]).
+ */
+export async function relistModule(
+  module: MtpModuleRun,
+  cwd: string,
+  timeoutMs: number,
+): Promise<MtpModuleRun> {
+  const listed = await listModule(module.modulePath, cwd, timeoutMs);
+  return listed.tests.length === 0 ? module : { ...module, uidsById: mtpUidsById(listed.tests) };
+}
+
 /** The tree root and the run plan one module contributes. */
 interface ModuleResult {
   readonly assembly: TestAssemblyListing;

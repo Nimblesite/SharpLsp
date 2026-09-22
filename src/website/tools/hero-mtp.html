@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1672px; height: 941px; overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0b1220; color: #e6edf3; position: relative; }
+  .grid { position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 64px 64px; }
+  .glow { position: absolute; width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(15,127,73,.28), transparent 60%);
+    top: -250px; right: -150px; }
+  h1 { position: absolute; left: 72px; top: 64px; width: 760px;
+    font-size: 58px; line-height: 1.12; font-weight: 700; letter-spacing: -.5px; }
+  h1 .accent { color: #2ecc8f; }
+  .sub { position: absolute; left: 72px; top: 320px; width: 700px;
+    font-size: 26px; line-height: 1.5; color: #9fb0c0; }
+  .sub b { color: #e6edf3; font-weight: 600; }
+  .chart { position: absolute; left: 72px; top: 470px; width: 780px; }
+  .legend { display: flex; gap: 28px; margin-bottom: 10px; font-size: 20px; }
+  .legend span { display: flex; align-items: center; gap: 10px; color: #9fb0c0; }
+  .dot { width: 14px; height: 14px; border-radius: 4px; }
+  .panel { position: absolute; right: 72px; top: 120px; width: 640px; height: 700px;
+    background: #0d1526; border: 1px solid #223047; border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5); overflow: hidden; }
+  .panel-bar { height: 52px; background: #111b30; display: flex; align-items: center;
+    padding: 0 22px; gap: 10px; border-bottom: 1px solid #223047; }
+  .panel-bar .c { width: 14px; height: 14px; border-radius: 50%; }
+  .panel-bar .t { margin-left: 12px; font-size: 20px; color: #9fb0c0; }
+  .panel-body { padding: 26px 30px; font-size: 21px; line-height: 1.75; }
+  .kw { color: #7ee2b8; }
+  .str { color: #e2c08d; }
+  .cm { color: #5d7290; }
+  .ok { color: #2ecc8f; }
+  .frame { color: #9fb0c0; }
+  .arrow { color: #2ecc8f; font-weight: 700; }
+  .badge { position: absolute; left: 72px; bottom: 56px; display: flex; gap: 16px; }
+  .badge div { border: 1px solid #2a3c58; border-radius: 999px; padding: 10px 24px;
+    font-size: 20px; color: #9fb0c0; background: rgba(17,27,48,.7); }
+  .bars { display: flex; flex-direction: column; gap: 18px; }
+  .bar { display: flex; align-items: center; gap: 18px; font-size: 22px; color: #9fb0c0; }
+  .bar .label { width: 330px; }
+  .bar .fill { height: 30px; border-radius: 8px; }
+  .bar .n { color: #e6edf3; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+  <h1><span class="accent">dotnet test</span> on Microsoft.Testing.Platform, in C# and F#</h1>
+  <div class="sub">xUnit v3, MSTest and NUnit on <b>MTP</b>, side by side with <b>VSTest</b>: discovered, run, debugged and covered in the SharpLsp Test Explorer.</div>
+
+  <div class="chart">
+    <div class="legend"><span>Google Trends, trailing 12 months, average interest</span></div>
+    <div class="bars">
+      <div class="bar"><span class="label">dotnet test</span><i class="fill" style="width:352px;background:#2ecc8f"></i><span class="n">44</span></div>
+      <div class="bar"><span class="label">microsoft testing platform</span><i class="fill" style="width:152px;background:#7ee2b8"></i><span class="n">19</span></div>
+      <div class="bar"><span class="label">vstest</span><i class="fill" style="width:40px;background:#4a6285"></i><span class="n">5</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar">
+      <i class="c" style="background:#e0564f"></i><i class="c" style="background:#e2a24a"></i><i class="c" style="background:#2ecc8f"></i>
+      <span class="t">Test Explorer — Microsoft.Testing.Platform</span>
+    </div>
+    <div class="panel-body">
+      <div><span class="cm">$ dotnet exec Tests.dll --list-tests json</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Cs.Calc.</span>Adds_TwoNumbers <span class="cm">C# · xUnit v3</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Fs.Calc.</span><span class="str">``adds two numbers``</span> <span class="cm">F#</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Cs.Calc.</span>Adds_Row <span class="cm">MSTest · 2 rows</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Fs.Calc.</span><span class="str">adds case(2,2,4)</span> <span class="cm">NUnit</span></div>
+      <br>
+      <div><span class="kw">--filter-uid</span> <span class="cm">…</span> <span class="kw">--report-trx</span></div>
+      <div><span class="kw">--coverage</span> <span class="cm">→ &lt;guid&gt;.cobertura.xml</span></div>
+      <div><span class="kw">TESTINGPLATFORM_WAIT_ATTACH_DEBUGGER</span><span class="cm">=1</span></div>
+      <br>
+      <div><span class="ok">✓</span> passed&nbsp;&nbsp;<span class="str">✗</span> failed&nbsp;&nbsp;<span class="cm">○</span> skipped&nbsp;&nbsp;<span class="cm">(TRX, per module)</span></div>
+    </div>
+  </div>
+
+  <div class="badge">
+    <div>MTP + VSTest</div><div>xUnit v3 · MSTest · NUnit</div><div>C# + F#</div><div>Debug · Coverage</div>
+  </div>
+</body>
+</html>

@@ -24,6 +24,7 @@ import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
+import { relistModule } from './test-mtp-discovery.js';
 import { buildTarget, dirOf } from './test-mtp-modules.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
 import { collectReport, trxFiles, worse } from './test-trx-collect.js';
@@ -394,6 +395,28 @@ async function runModules(
   return merged;
 }
 
+/**
+ * The rebuilt modules with the uids THEIR build reports, when a filter needs
+ * uids at all.
+ *
+ * Discovery's uids describe the build discovery saw. `xunit.v3` hashes a theory
+ * row's DATA into its uid, so editing an `[<InlineData>]` row gives that row a
+ * new uid: filtering the rebuilt module by the old ones runs every row EXCEPT
+ * the edited one, and a row the edit turned red reports green. One listing per
+ * module is the price; an unfiltered run pays nothing.
+ */
+async function relisted(
+  modules: readonly MtpModuleRun[],
+  testIds: readonly string[],
+  context: RunContext,
+): Promise<MtpModuleRun[]> {
+  if (testIds.length === 0) return [...modules];
+  const timeoutMs = context.options.timeoutMs ?? DOTNET_TIMEOUT_MS;
+  const fresh: MtpModuleRun[] = [];
+  for (const module of modules) fresh.push(await relistModule(module, context.cwd, timeoutMs));
+  return fresh;
+}
+
 /** Each target is built, then its modules run; one target's failure is its own. */
 async function runTargets(
   plan: MtpRunPlan,
@@ -405,7 +428,9 @@ async function runTargets(
     if (context.options.signal?.aborted === true) break;
     const failure = await rebuild(target, context.options);
     const one =
-      failure === undefined ? await runModules(modules, testIds, context) : emptyOutcome(failure);
+      failure === undefined
+        ? await runModules(await relisted(modules, testIds, context), testIds, context)
+        : emptyOutcome(failure);
     if (one === undefined) continue;
     merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
   }

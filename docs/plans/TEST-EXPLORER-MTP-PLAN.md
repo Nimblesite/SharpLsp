@@ -158,6 +158,14 @@ Two defects that only a real fixture could show:
       solution's tree. Red first in the second test of `test-explorer-mtp-queue.test.ts`.
 - [x] At least five more spec-derived assertions on every test written or changed in this
       review round (the frozen `test-explorer-mtp-modules.test.ts` is untouched)
+- [x] F# parity for every single-module C# case: `test-explorer-mtp-fsharp.test.ts`
+      (multi-targeted F# module, edit then ▶, VSTest → MTP migration in place) and
+      `debug-test-mtp-fsharp-e2e.test.ts` (backtick names, theory rows, at-cursor), in the new
+      `testexplorer-mtp-parity` chunk
+- [x] Re-list each rebuilt module before a filtered run and select by ITS uids
+      ([TEST-MTP-RUN], `relistModule`). `xunit.v3` hashes a row's data into its uid and MSTest
+      keys rows by position, so an edited or added row was skipped and a red row reported
+      green. Red first in `test-explorer-mtp-fsharp.test.ts` and `test-explorer-mtp-rows.test.ts`.
 
 ## Verification run
 
