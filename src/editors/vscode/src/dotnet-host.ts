@@ -35,7 +35,7 @@ function isSidecarRuntime(line: string): boolean {
   return (
     framework === 'Microsoft.NETCore.App' &&
     version !== undefined &&
-    runtimeFloorMet([version], `${SIDECAR_MAJOR}.0.0`)
+    runtimeFloorMet([version], `${String(SIDECAR_MAJOR)}.0.0`)
   );
 }
 
