@@ -155,9 +155,18 @@ public static class Program
         return numbers.Count + maybe.Value;                            // @anchor:inspect-return
     }
 
+    // Opened by Main only after RootAsync has returned its Task, so by the time
+    // the leaf resumes every awaiter in the chain has registered its
+    // continuation. A leaf that yields to the thread pool instead resumes WHILE
+    // the caller is still unwinding through its awaits, and a breakpoint in it
+    // stops the world mid-registration: the heap then holds a chain with no
+    // continuations to follow, on whichever runs the pool thread wins.
+    private static readonly TaskCompletionSource LeafGate =
+        new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public static async Task<int> LeafAsync(int seed)
     {
-        await Task.Yield();                                            // @anchor:leaf-await
+        await LeafGate.Task;                                           // @anchor:leaf-await
         return seed + 1;                                               // @anchor:leaf-return
     }
 
@@ -188,7 +197,9 @@ public static class Program
 
         if (mode == "async" || mode == "both")
         {
-            Console.WriteLine(RootAsync(1).GetAwaiter().GetResult());  // @anchor:main-async
+            var root = RootAsync(1);                                   // @anchor:main-async
+            LeafGate.SetResult();                                      // @anchor:main-release
+            Console.WriteLine(root.GetAwaiter().GetResult());          // @anchor:main-await
         }
 
         if (mode == "unhandled" || mode == "both")
@@ -267,9 +278,13 @@ let throwCaught () =
 let throwUnhandled () =
     raise (ApplicationException("unhandled-by-design", FormatException("inner-cause"))) // @anchor:throw-unhandled
 
+// Opened by main only after rootTask has returned its Task: see LeafGate in the
+// C# debuggee for why the leaf must not resume before the chain is registered.
+let leafGate = TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+
 let leafTask seed =
     task {
-        do! Task.Yield()                                               // @anchor:leaf-await
+        do! leafGate.Task                                              // @anchor:leaf-await
         return seed + 1                                                // @anchor:leaf-return
     }
 
@@ -292,7 +307,10 @@ let main argv =
     let numbers = [ 10; 20; 30 ]                                       // @anchor:main-list
     printfn "total=%d y=%d" total point.Y                              // @anchor:main-print
     if mode = "caught" || mode = "both" then throwCaught ()            // @anchor:main-caught
-    if mode = "async" || mode = "both" then printfn "%d" ((rootTask 1).Result) // @anchor:main-async
+    if mode = "async" || mode = "both" then
+        let root = rootTask 1                                          // @anchor:main-async
+        leafGate.SetResult()                                           // @anchor:main-release
+        printfn "%d" root.Result                                       // @anchor:main-await
     if mode = "unhandled" || mode = "both" then throwUnhandled ()      // @anchor:main-unhandled
     if mode = "missing-assembly" then System.Reflection.Assembly.Load("SharpLsp.MissingAssembly") |> ignore
     if mode = "library-caught" then
