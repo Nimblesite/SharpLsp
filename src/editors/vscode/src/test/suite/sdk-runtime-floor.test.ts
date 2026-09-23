@@ -377,3 +377,96 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     );
   });
 });
+
+/**
+ * What a probe that cannot answer costs, measured rather than assumed.
+ *
+ * `supportsSidecars` decides by SPAWNING `dotnet --list-runtimes`, so it has a
+ * failure mode the predicate alone does not: the root is fine and the question
+ * goes unanswered — a corrupt or half-written install, a locked-down or
+ * virus-scanned muxer, a stalled network share. It then returns false and the
+ * root is discarded, which on the last candidate turns into an SDK download
+ * the machine did not need.
+ *
+ * That is deliberately fail-closed: an unanswered question is not a yes, and
+ * shipping a host that cannot start the sidecars is the #297 regression itself.
+ * These tests hold that contract to its two real costs — a healthy root thrown
+ * away, and the wall-clock a hung probe adds to `activate()` — so neither can
+ * change without a test saying so. Implements [DIST-RUNTIME-ACQUIRE] rule 6,
+ * "a successful, bounded `dotnet --list-runtimes` probe".
+ */
+suite('[DIST-RUNTIME-ACQUIRE] a probe that cannot answer discards the root', () => {
+  /** The bound `supportsSidecars` puts on one probe. */
+  const PROBE_TIMEOUT_MS = 10_000;
+  let scratch: string;
+  let ten: string;
+
+  setup(function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-probe-fails-'));
+    ten = composeRoot(scratch, realSource(), 'ten', 10, '10.0.7');
+  });
+
+  teardown(() => {
+    removeDirRecursive(scratch);
+  });
+
+  /** Prove the root is genuinely good, so a later rejection is about the probe alone. */
+  function assertHealthy(): void {
+    assert.equal(launchStatus(scratch, ten, 'CSharp'), 0, 'the fixture root must really host C#');
+    assert.equal(launchStatus(scratch, ten, 'FSharp'), 0, 'the fixture root must really host F#');
+  }
+
+  test('a root that really hosts both sidecars is discarded when its probe errors', async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    assertHealthy();
+    assert.equal(await supportsSidecars(ten), true, 'the intact root must be accepted');
+
+    // A real executable that is not the muxer: it exits non-zero on
+    // `--list-runtimes` exactly as a broken install does, with no stub
+    // anywhere near the code under test.
+    fs.copyFileSync(process.execPath, ten);
+    fs.chmodSync(ten, 0o755);
+    assert.notEqual(
+      spawnSync(ten, ['--list-runtimes'], { encoding: 'utf8' }).status,
+      0,
+      'the fixture must really fail the probe, or the rejection below means nothing',
+    );
+    assert.equal(
+      await supportsSidecars(ten),
+      false,
+      'an unanswered question is not a yes: fail closed rather than ship a host that may not start',
+    );
+    assert.ok(
+      realRuntimes(path.dirname(ten)).includes('10.0.7'),
+      'and the root still carries the runtime it was rejected over — the loss is real',
+    );
+  });
+
+  test('a probe that never answers cannot stall activation past its own bound', async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    if (process.platform === 'win32') {
+      // The fixture is a muxer that hangs; on Windows that must be a real
+      // `dotnet.exe`, which cannot be written from here. The bound itself is
+      // `execFile`'s, not ours, and is exercised on every other platform.
+      this.skip();
+    }
+    assertHealthy();
+    fs.writeFileSync(ten, '#!/bin/sh\nsleep 600\n', { mode: 0o755 });
+
+    const started = Date.now();
+    const answer = await supportsSidecars(ten);
+    const elapsed = Date.now() - started;
+
+    assert.equal(answer, false, 'a probe that never answers cannot be read as a yes');
+    assert.ok(
+      elapsed >= PROBE_TIMEOUT_MS / 2,
+      `the probe must really have hung and been killed, not failed early (${String(elapsed)}ms)`,
+    );
+    assert.ok(
+      elapsed < PROBE_TIMEOUT_MS * 2,
+      `one hung root costs ~${String(PROBE_TIMEOUT_MS)}ms of activate(), not forever ` +
+        `(${String(elapsed)}ms). Every candidate root pays this in the worst case.`,
+    );
+  });
+});
