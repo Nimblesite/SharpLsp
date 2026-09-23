@@ -195,6 +195,17 @@ Release regression follow-through ([TEST-MTP-RUN]):
 - [x] Verify pass/fail/skip, theory attribution, individual selection, and CodeLens without an extra package.
 - [x] Preserve missing-reporter diagnostics using real F# and C# NUnit projects with neither reporter.
 - [ ] Complete the MTP regression chunks against the final release candidate on supported platforms.
+- [x] #298: after the single build, resolve current MSBuild outputs before execution. The
+      old discovery plan must never execute an obsolete DLL after `OutputPath` changes.
+- [x] #299: distinguish valid empty discovery (including MTP exit 8) from failed discovery;
+      prune deleted tests/results only for a successful empty listing.
+- [x] Real C# and F# regressions in `test-explorer-mtp-release.test.ts`: four failures against
+      pre-fix production code, then four passes with the fixes. The obsolete passing DLL
+      remains on disk; filtered and unfiltered runs must report the edited assertion failure.
+      Failed-build controls preserve the previous tree and cached result unchanged.
+- [x] Malformed-node parser assertion fails against the old parser. All 12 parser tests and
+      the four new real-project tests pass together on macOS arm64 (46 seconds).
+- [ ] Complete the broader MTP regression rerun after #298/#299 and obtain green PR checks.
 
 * **MTP server mode** (`--server jsonrpc`) is how Visual Studio and Rider talk to a module.
   It would give streaming results, cancellation and locations with no extension packages at

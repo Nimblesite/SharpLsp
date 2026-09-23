@@ -181,7 +181,10 @@ export function parseMtpTestList(stdout: string): MtpListing {
   const tests = entries
     .map((entry) => toTest(entry))
     .filter((test): test is MtpTest => test !== undefined);
-  return { tests, warnings: schemaWarning(document) };
+  const warnings = schemaWarning(document);
+  if (tests.length !== entries.length)
+    warnings.push('Test listing contained nodes without usable uids');
+  return { tests, warnings };
 }
 
 /** The ids one module reported, in listing order, without repeats. */

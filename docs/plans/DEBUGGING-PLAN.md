@@ -595,10 +595,16 @@ waiting; a debug run never writes the result cache.
       test twice in a row gives two clean, separate sessions* followed by *the profiles are
       Run/Debug/Coverage and Debug opens a terminal instead of caching a result* reproduced
       an orphaned runner and duplicate terminal before the production fix; both pass unchanged.
-- [ ] Verify the complete Stop fix across ordinary attach and C#/F# VSTest/MTP debugging.
-      `test-execution.ts` must also prevent a stopped debug host from triggering an
-      unfiltered retry. The broader existing suites exposed that second failure after the
-      owned-host disconnect fix; verification is in progress, with tests unchanged (#302).
+- [x] Verify the complete Stop fix across ordinary attach and C#/F# VSTest/MTP debugging:
+      40 existing tests pass unchanged on macOS arm64. `test-execution.ts` prevents a stopped
+      debug host from triggering an unfiltered retry; the broader suites exposed that second
+      failure after the owned-host disconnect fix (#302).
+- [x] Four new `debug-test-stop-e2e.test.ts` cases fail against pre-fix production code and
+      pass with the complete fix (51 seconds). A breakpoint retains a 30-second wait after
+      detach; Stop must close the terminal within five seconds, terminate the owned PID,
+      preserve the cached verdict, never retry and permit a fresh explicit Debug. Reverting
+      only the VSTest retry guard independently makes both VSTest cases fail.
+- [ ] Obtain green Linux/Windows PR checks for the complete Stop fix and its new tests.
 - [x] Wire test filter (class/method) into `dotnet test --filter`, escaped for the VSTest
       grammar. `test-filter.ts`, `test-execution.ts` `buildFilterArgs`; test
       `test-explorer-e2e.test.ts` (VSTest filter grammar cases, `testexplorer` chunk, green)

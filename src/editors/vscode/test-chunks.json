@@ -94,6 +94,7 @@
       "files": [
         "debug-test-fsharp-e2e.test.js",
         "debug-test-debugging-e2e.test.js",
+        "debug-test-stop-e2e.test.js",
         "debug-test-groups-e2e.test.js",
         "debug-test-mtp-e2e.test.js",
         "debug-protocol-capabilities-e2e.test.js",
@@ -155,6 +156,7 @@
       "files": [
         "test-explorer-mtp-fsharp.test.js",
         "test-explorer-mtp-rows.test.js",
+        "test-explorer-mtp-release.test.js",
         "debug-test-mtp-fsharp-e2e.test.js"
       ]
     },

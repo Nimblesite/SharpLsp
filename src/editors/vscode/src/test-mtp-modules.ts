@@ -178,6 +178,12 @@ function onDisk(candidates: readonly MtpProject[], warnings: readonly string[]):
   return { projects, warnings: all };
 }
 
+/** Resolve current MSBuild outputs after a build, without building again. */
+export async function builtMtpProjects(target: string, timeoutMs: number): Promise<MtpProjectScan> {
+  const found = await findMtpProjects(target, timeoutMs);
+  return onDisk(found.candidates, found.warnings);
+}
+
 /** Build `target` so every test module exists before anything is asked of it. */
 export async function buildTarget(
   target: string,
@@ -209,8 +215,8 @@ export async function scanMtpProjects(
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<MtpProjectScan> {
   const built = await buildTarget(target, cwd, timeoutMs);
-  const found = await findMtpProjects(target, timeoutMs);
-  return onDisk(found.candidates, [...built, ...found.warnings]);
+  const found = await builtMtpProjects(target, timeoutMs);
+  return { projects: found.projects, warnings: [...built, ...found.warnings] };
 }
 
 /**
