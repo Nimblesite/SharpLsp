@@ -709,6 +709,12 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.debuggeeExited = false;
     this.childAnnouncedTerminated = false;
     this.debuggee.forget();
+    // A stop the PREVIOUS adapter was owed is not owed by this one. A restart
+    // retires that adapter as `replaced`, whose death is ordered rather than
+    // reported, so `onChildGone` — the only other place the debt is settled —
+    // never runs for it. Left armed, the deadline fired 15s after a Stop the
+    // user had already given up on, killing the healthy session Restart began.
+    this.shutdown.cancel();
   }
 
   /** Restart: respawn through the replayer and swallow the teardown noise. */

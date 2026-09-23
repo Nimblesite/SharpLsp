@@ -273,6 +273,48 @@ suite('An adapter that stops answering the request to stop', () => {
     }
   });
 
+  test('a restart inside the deadline retires it along with the adapter it was owed by', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    behave(BEHAVIOUR.wedge);
+    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    try {
+      eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
+      eq(
+        (await driver.request('terminate')).success,
+        true,
+        'the first adapter answers the stop, then wedges',
+      );
+      // Stop visibly did nothing, so the user's next click is Restart. The
+      // wedged adapter is retired as `replaced` — its death is ordered, never
+      // reported — and a fresh one takes over the session.
+      eq((await driver.request('restart')).success, true, 'restart is accepted');
+
+      await new Promise((resolve) => setTimeout(resolve, TEST_DEADLINE_MS * 4));
+      eq(
+        driver.events('terminated').length,
+        0,
+        'the deadline the RETIRED adapter owed did not end the session the restart began',
+      );
+      eq(driver.console(), '', 'and the user was not told a replaced adapter stopped answering');
+      eq(
+        (await driver.request('threads')).success,
+        true,
+        'the restarted adapter is alive and answering',
+      );
+
+      // Retired, not disabled: a stop the NEW adapter wedges on is owed its own end.
+      eq(
+        (await driver.request('terminate')).success,
+        true,
+        'the restarted adapter answers a stop, then wedges',
+      );
+      const ended = await driver.awaitTerminated();
+      eq(ended.length, 1, 'the router ended the session exactly once, on the fresh deadline');
+    } finally {
+      driver.dispose();
+    }
+  });
+
   test('a request that is not a stop request arms nothing', async function () {
     this.timeout(DEBUG_TEST_MS);
     behave(BEHAVIOUR.wedge);
