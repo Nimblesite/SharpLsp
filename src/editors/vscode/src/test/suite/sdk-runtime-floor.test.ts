@@ -44,13 +44,30 @@ function namesUnder(root: string, component: string): string[] {
 const realSdks = (root: string): string[] => namesUnder(root, 'sdk');
 const realRuntimes = (root: string): string[] => namesUnder(root, FRAMEWORK);
 
-/** A real installed root carrying a real >= 10 runtime, to compose fixtures from. */
+/**
+ * A real installed root carrying a real >= 10 runtime: the source of the muxer,
+ * hostfxr and the runtime bits every fixture needs to genuinely launch.
+ */
 function realSource(): string {
-  const found = candidateDotnetRoots().find(
-    (root) => realRuntimes(root).some((v) => v.startsWith('10.')) && realSdks(root).length > 0,
+  const found = candidateDotnetRoots().find((root) =>
+    realRuntimes(root).some((version) => version.startsWith('10.')),
   );
-  assert.ok(found, 'a real .NET 10 installation is required to compose real hosts');
+  assert.ok(found, 'a real .NET 10 runtime is required to compose hosts that really start');
   return found;
+}
+
+/**
+ * The first root carrying an SDK of this major, wherever it lives.
+ *
+ * SDKs and runtimes are installed independently and land in different roots on
+ * an ordinary machine: here `~/.dotnet` carries 10.0.100 and 10.0.303 with no
+ * 9.x at all, while `/usr/local/share/dotnet` carries 9.0.312. Requiring ONE
+ * root to supply every major a fixture needs makes the suite depend on which
+ * root happens to be probed first, which is a property of the machine and not
+ * of the code under test.
+ */
+function sdkSource(prefix: string): string | undefined {
+  return candidateDotnetRoots().find((root) => newest(realSdks(root), prefix) !== undefined);
 }
 
 /** The newest real directory whose name starts with `prefix`. */
@@ -99,15 +116,35 @@ function composeRoot(
   runtimeAs: string,
 ): string {
   const root = path.join(scratch, name);
-  const sdk = newest(realSdks(source), sdkPrefix);
-  assert.ok(sdk, `the source install must carry an SDK ${sdkPrefix}x to compose ${name}`);
   fs.mkdirSync(root, { recursive: true });
   fs.copyFileSync(dotnetExecutable(source), dotnetExecutable(root));
   fs.chmodSync(dotnetExecutable(root), 0o755);
-  cloneInto(source, path.join('sdk', sdk), path.join(root, 'sdk', sdk));
+  stageSdk(root, sdkPrefix);
   copyFxr(source, root);
   copyRuntime(source, root, runtimeAs);
   return dotnetExecutable(root);
+}
+
+/**
+ * Give the root an SDK of `prefix`, copied from wherever one really is.
+ *
+ * When the machine has no SDK of that major anywhere, the directory is created
+ * by name instead. That is enough and it is not a shortcut: the only consumer
+ * of `sdk/` in this whole path is `installedSdkVersions`, which reads directory
+ * NAMES — nothing here executes an SDK, and the sidecars are
+ * framework-dependent, so what decides whether they start is the runtime, which
+ * is always real. Falling back keeps the suite meaningful on a machine that
+ * happens to carry only one SDK major, instead of failing as a fixture error
+ * and telling nobody anything about the code.
+ */
+function stageSdk(root: string, prefix: string): void {
+  const source = sdkSource(prefix);
+  const real = source === undefined ? undefined : newest(realSdks(source), prefix);
+  if (source !== undefined && real !== undefined) {
+    cloneInto(source, path.join('sdk', real), path.join(root, 'sdk', real));
+    return;
+  }
+  fs.mkdirSync(path.join(root, 'sdk', `${prefix}0.100`), { recursive: true });
 }
 
 /** Launch one real staged sidecar on `host`. Returns its exit status. */
