@@ -104,8 +104,8 @@ const childPath = (env) => {
  * `SHARPLSP_DOTNET_ROOT` is an ordinary variable, so a Linux runner can pose
  * the question perfectly well. This needs no Windows runner.
  */
-const rootWithSpace = () => {
-  const root = join(mkdtempSync(join(tmpdir(), 'sharplsp-sdk-')), 'Program Files', 'dotnet');
+const rootHolding = (...leaf) => {
+  const root = join(mkdtempSync(join(tmpdir(), 'sharplsp-sdk-')), ...leaf);
   mkdirSync(root, { recursive: true });
   for (const name of ['dotnet', 'dotnet.exe']) {
     const exe = join(root, name);
@@ -114,6 +114,20 @@ const rootWithSpace = () => {
   }
   return root;
 };
+
+const rootWithSpace = () => rootHolding('Program Files', 'dotnet');
+
+/**
+ * A root that is definitely NOT a system directory.
+ *
+ * The PATH guard has to be asked about a root of our choosing, not about
+ * whatever this machine resolved. The tooling runner installs no SDK of its
+ * own, so its only dotnet is `/usr/bin/dotnet` and the resolved root IS
+ * `/usr/bin` - a fixture built as `[root, '/usr/bin', '/bin']` then supplies
+ * the duplicate it goes on to blame the guard for. Stripping `/usr/bin` is not
+ * the answer either: it takes `make` with it. A synthetic root sidesteps both.
+ */
+const plainRoot = () => rootHolding('dotnet');
 
 /** Run a probe recipe through the REAL Makefile, returning the raw result. */
 const probeRecipe = (body, env) => {
@@ -463,12 +477,17 @@ test('the dev VSIX is packaged for the host platform, like every released VSIX',
 // discriminates: with the root absent from PATH the old guard prepends and
 // passes, which is why "absent" alone would have proved nothing.
 test('the resolved SDK wins the PATH, not merely appears on it', () => {
-  const root = makeVariable('DOTNET_ROOT');
-  assert.ok(root, 'make resolved no dotnet root to put on PATH');
+  // This machine must resolve SOMETHING, or the guard never runs at all.
+  assert.ok(makeVariable('DOTNET_ROOT'), 'make resolved no dotnet root to put on PATH');
+
+  // ...but the guard is then asked about a root of OUR choosing, so the answer
+  // cannot depend on where this machine happens to keep dotnet.
+  const root = plainRoot();
   const stale = resolve('/nonexistent-stale-dotnet-root');
   assert.notEqual(stale, root, 'the stale root must not be the resolved one');
 
   const outranked = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
     PATH: [stale, root, '/usr/bin', '/bin'].join(delimiter),
     DOTNET_ROOT: stale,
   });
@@ -479,6 +498,7 @@ test('the resolved SDK wins the PATH, not merely appears on it', () => {
   );
 
   const absent = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
     PATH: [stale, '/usr/bin', '/bin'].join(delimiter),
     DOTNET_ROOT: stale,
   });
@@ -487,7 +507,10 @@ test('the resolved SDK wins the PATH, not merely appears on it', () => {
   // Idempotent: once the root is first, a nested sub-make must not stack it
   // again. Duplicate-free is what the original guard was reaching for, and
   // testing precedence gets it for free.
-  const already = childPath({ PATH: [root, '/usr/bin', '/bin'].join(delimiter) });
+  const already = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
+    PATH: [root, '/usr/bin', '/bin'].join(delimiter),
+  });
   assert.equal(already[0], root, 'a PATH already led by the root keeps it');
   assert.equal(
     already.filter((entry) => entry === root).length,
