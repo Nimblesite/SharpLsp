@@ -225,4 +225,67 @@ suite('prerelease ordering decides both the floor and the pin', () => {
       'build metadata carries no precedence between prereleases either',
     );
   });
+
+  test('a numeric identifier is digits, not whatever Number() will parse', () => {
+    // Semver 11.4: a numeric identifier is `[0-9]+`. Classifying with
+    // `Number.isInteger(Number(x))` casts a far wider net — it accepts hex,
+    // exponent, binary, octal, signed and whitespace-only strings — and every
+    // one it wrongly calls numeric is then sorted BELOW every alphanumeric
+    // identifier and compared by VALUE instead of lexically.
+    //
+    // All of these survive parsing: build metadata is cut at `+`, so only `+1`
+    // is unreachable, and it is the one case left out below.
+    const pin = (version: string): SdkPin => ({
+      version,
+      rollForward: 'latestPatch',
+      source: '/ws/global.json',
+    });
+
+    // Compared against a LARGE numeric identifier on purpose. `Number` reads
+    // these as 16, 1000, 3, 15, -1 and 0, all below 9999, so the broken
+    // classifier answers "below" — while semver says every alphanumeric
+    // identifier outranks every numeric one. Against a small number like `1`
+    // the wrong classifier would coincidentally agree and the test would pass
+    // while proving nothing.
+    for (const identifier of ['0x10', '1e3', '0b11', '0o17', '-1', '  ']) {
+      assert.equal(
+        sdkSatisfiesPin(`10.0.100-${identifier}`, pin('10.0.100-9999')),
+        true,
+        `"${identifier}" is alphanumeric under semver, so it outranks numeric 9999`,
+      );
+      assert.equal(
+        sdkSatisfiesPin('10.0.100-9999', pin(`10.0.100-${identifier}`)),
+        false,
+        `and numeric 9999 therefore sits below "${identifier}"`,
+      );
+    }
+
+    // An EMPTY identifier is not the number zero. Semver does not define one
+    // at all -- `10.0.100-rc.` is not a valid version -- so what matters is
+    // that it does not silently TIE `rc.0`, which is what reading it as
+    // `Number('') === 0` did. It falls to the non-numeric side and therefore
+    // outranks the numeric `0`, deterministically and in one direction only.
+    assert.equal(
+      sdkSatisfiesPin('10.0.100-rc.', pin('10.0.100-rc.0')),
+      true,
+      'an empty identifier is not numeric, so it outranks the numeric 0',
+    );
+    assert.equal(
+      sdkSatisfiesPin('10.0.100-rc.0', pin('10.0.100-rc.')),
+      false,
+      'and the ordering is strict: rc.0 does not also satisfy a pin on rc.',
+    );
+
+    // Genuine numeric identifiers must still compare by value, not as text.
+    assert.equal(
+      sdkSatisfiesPin('10.0.100-rc.10', pin('10.0.100-rc.9')),
+      true,
+      'rc.10 is above rc.9: real numeric identifiers compare numerically',
+    );
+    assert.equal(
+      sdkSatisfiesPin('10.0.100-rc.9', pin('10.0.100-rc.10')),
+      false,
+      'and rc.9 is below rc.10, which a lexical comparison would reverse',
+    );
+  });
 });

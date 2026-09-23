@@ -204,17 +204,33 @@ function comparePrerelease(left: string | undefined, right: string | undefined):
 }
 
 /**
+ * Whether an identifier is NUMERIC in the semver sense: digits, and at least
+ * one of them.
+ *
+ * Not "something `Number` can parse". `Number` also accepts hex, exponent,
+ * binary and octal literals, a leading sign, and whitespace-only or empty
+ * strings — `0x10`, `1e3`, `0b11`, `0o17`, `-1` and `""` all become integers.
+ * Each one wrongly called numeric is then ranked BELOW every alphanumeric
+ * identifier and compared by value rather than lexically, which is backwards
+ * on both counts. Every one of those is reachable in a version string; only
+ * `+1` is not, because `+` always begins build metadata.
+ */
+function isNumericIdentifier(identifier: string): boolean {
+  return identifier.length > 0 && Array.from(identifier).every((ch) => ch >= '0' && ch <= '9');
+}
+
+/**
  * One prerelease identifier. Numeric identifiers compare numerically and rank
  * below any alphanumeric one; a missing identifier ranks below a present one.
  */
 function compareIdentifier(left: string | undefined, right: string | undefined): number {
   if (left === undefined) return -1;
   if (right === undefined) return 1;
-  const ours = Number(left);
-  const theirs = Number(right);
-  if (Number.isInteger(ours) && Number.isInteger(theirs)) return ours - theirs;
-  if (Number.isInteger(ours)) return -1;
-  if (Number.isInteger(theirs)) return 1;
+  const ours = isNumericIdentifier(left);
+  const theirs = isNumericIdentifier(right);
+  if (ours && theirs) return Number(left) - Number(right);
+  if (ours) return -1;
+  if (theirs) return 1;
   if (left < right) return -1;
   return left > right ? 1 : 0;
 }
