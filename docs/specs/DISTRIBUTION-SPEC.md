@@ -205,6 +205,45 @@ bin/
 
 The sidecar binaries are identical across all platform VSIXs — they are managed assemblies and require no platform-specific build.
 
+## [DIST-VSIX-CONTENTS] VSIX Payload Verification
+
+[DIST-VSIX-LAYOUT] says where the payload goes. This says that it is actually there, and that nothing else is.
+
+Every staging step in the Makefile ends in `2>/dev/null || true`, so a stage that half-ran is indistinguishable from one that worked. Without a check, the first report of a missing payload is a user whose extension fails to activate, or a Windows CI chunk that spends forty minutes producing a wall of LSP timeouts whose cause is one absent file.
+
+1. A VSIX MUST NOT be produced unless it carries every entry below for the platform it targets. Each is fatal on its own:
+
+   | Entry | Consequence if absent |
+   |---|---|
+   | `bin/<platform>/sharplsp[.exe]` | the LSP host — nothing activates |
+   | `bin/all/sharplsp-sidecar-csharp[.exe]` | C# has no semantics |
+   | `bin/all/sharplsp-sidecar-fsharp[.exe]` | F# has no semantics |
+   | `bin/all/SharpLsp.Sidecar.CSharp.dll` | the Roslyn sidecar's managed half |
+   | `bin/all/SharpLsp.Sidecar.FSharp.dll` | the FCS sidecar's managed half |
+   | `dist/extension.js` | the bundle the manifest's `main` points at |
+   | `bin/<platform>/netcoredbg/netcoredbg[.exe]` | F5 fails with a spawn ENOENT |
+   | `bin/<platform>/netcoredbg/ManagedPart.dll` | the launcher alone cannot debug |
+
+   The two netcoredbg entries are REQUIRED except on the platforms [DIST-DEBUGGER-BUNDLE] names as having no upstream prebuilt, where they MUST be absent rather than stubbed. A stub that spawns and fails is worse than a missing file, because it defers the error to the user's first F5.
+
+2. A VSIX MUST NOT contain any of the following. Each is a packaging leak, not a harmless extra:
+
+   | Forbidden | Why |
+   |---|---|
+   | `__MACOSX/` | AppleDouble resource forks from a macOS archive |
+   | `src/` | TypeScript sources; the bundle already carries them |
+   | `out/` | the compiled test tree |
+   | `test-fixtures/` | test fixtures, tens of megabytes of them |
+   | `*.map` | source maps |
+
+3. The verification MUST read the file list `vsce` itself will write (`vsce ls`), not the working tree. A check that walks `bin/` proves a staging step ran; it does not prove the result survived `.vscodeignore`, which is the failure this exists to catch.
+
+4. The verification MUST run BEFORE packaging, while the staged `bin/` is still on disk, and its failure MUST stop the build. Verifying afterwards means a broken VSIX already exists and can be installed by anything that does not re-check.
+
+5. The platform MUST be overridable (`SHARPLSP_VSIX_PLATFORM`) so a cross-platform package can be verified for the platform it targets rather than the one building it.
+
+6. `tools/vsix/verify-vsix-payload.mjs` implements this. Both the release packaging path and the local install loop of [DIST-VSIX-DEV-INSTALL] MUST gate on it — a dev loop that installs an unverified VSIX reintroduces exactly the failure this section exists to prevent, one machine at a time.
+
 ## [DIST-VSIX-ASSET-INTEGRITY] VSIX Asset Integrity
 
 The extension's icon assets in `src/editors/vscode/icons/` are symlinks into `docs/designs/logo/`. With `core.symlinks=false`, Git materializes target paths as text files, which `vsce` would package as broken icons.
