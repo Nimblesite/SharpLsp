@@ -2,6 +2,7 @@ import { defineConfig } from '@vscode/test-cli';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { selectedWorkspaceShapes } from './test-shapes.mjs';
 
 // Default the test host's --user-data-dir to a SHORT path under the OS temp
 // dir, not the repo-relative `.vscode-test/`. VS Code's main IPC handle is a
@@ -13,19 +14,6 @@ import path from 'node:path';
 // pipes, so it's unaffected either way). Overridable via the env var.
 const testUserDataDir =
   process.env.VSCODE_TEST_USER_DATA_DIR ?? path.join(os.tmpdir(), 'slsp-vsx', `u${process.pid}`);
-
-/** The directory of the suites that need a MULTI-ROOT workspace ([DIST-CI-VSIX-SHARDS]). */
-const MULTI_ROOT_SUITES = 'multiroot/';
-
-/**
- * True when this run selects a multi-root suite: no `MOCHA_FILES` means every
- * suite, and a chunk naming none of them must not pay a second editor start.
- */
-function wantsMultiRoot() {
-  const requested = process.env.MOCHA_FILES?.trim();
-  if (!requested) return true;
-  return requested.split(',').some((glob) => glob.trim().startsWith(MULTI_ROOT_SUITES));
-}
 
 /**
  * A fresh two-folder workspace for the multi-root suites: `vstest` and `mtp`.
@@ -70,12 +58,16 @@ function testConfig(label, workspaceFolder, userDataDir) {
   };
 }
 
+const shapes = selectedWorkspaceShapes(process.env.MOCHA_FILES);
+
 export default defineConfig({
   // Both editor starts write into ONE coverage directory, so a run that needs
   // the multi-root shape still produces one tracefile.
   tests: [
-    testConfig('folder', 'test-fixtures/workspace', testUserDataDir),
-    ...(wantsMultiRoot()
+    ...(shapes.includes('folder')
+      ? [testConfig('folder', 'test-fixtures/workspace', testUserDataDir)]
+      : []),
+    ...(shapes.includes('multiroot')
       ? [testConfig('multiroot', multiRootWorkspace(), `${testUserDataDir}-mr`)]
       : []),
   ],

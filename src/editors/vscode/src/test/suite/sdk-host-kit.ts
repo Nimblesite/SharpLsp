@@ -12,6 +12,21 @@ import { SETTLE_MS } from './test-timeouts.js';
 
 export type Language = 'CSharp' | 'FSharp';
 
+/**
+ * What hostfxr returns when the root ships no framework the app can use.
+ *
+ * ONE condition, two encodings. The host fails with `FrameworkMissingFailure`,
+ * `0x80008096`. POSIX truncates a process exit status to its low byte, so it
+ * arrives as 150 — `0x96` — while Windows preserves the whole 32-bit value and
+ * reports 2147516566. Asserting a bare 150 everywhere therefore passed on
+ * Ubuntu and failed on Windows against a host that had done exactly the right
+ * thing, and said so on stderr while doing it (#297 CI).
+ */
+export const FRAMEWORK_MISSING_EXIT = process.platform === 'win32' ? 0x8000_8096 : 150;
+
+/** What it prints while exiting that way, on either platform. */
+export const FRAMEWORK_MISSING_MESSAGE = 'You must install or update .NET';
+
 /** Where hostfxr looks for shared frameworks, relative to a root. */
 export const FRAMEWORK = path.join('shared', 'Microsoft.NETCore.App');
 

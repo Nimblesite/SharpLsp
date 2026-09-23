@@ -10,6 +10,7 @@ import { SharpLspStatusBar } from '../../status.js';
 import { removeDirRecursive } from './test-helpers.js';
 import { installUiStubs, type UiStubs } from './ui-stubs.js';
 import {
+  FRAMEWORK_MISSING_EXIT,
   assertSidecarsRun,
   copySdkMajor,
   describeRun,
@@ -102,7 +103,7 @@ suite('SDK pin preserves the sidecar host', () => {
         const run = launchSidecar(modernHost, scratch, language);
         assert.equal(
           run.status,
-          compatible ? 0 : 150,
+          compatible ? 0 : FRAMEWORK_MISSING_EXIT,
           describeRun(`${language} on a ${version} runtime`, run),
         );
         assert.equal(run.signal, null, describeRun(`${language} must decide, not time out`, run));

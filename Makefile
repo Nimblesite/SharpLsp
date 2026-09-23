@@ -719,7 +719,7 @@ _test-dotnet-win-transport:
 # needs no dependency of its own.
 _test-tooling:
 	@echo "==> Running repo tooling tests..."
-	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/audit/dotnet-vulnerable.test.mjs
+	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/vsix/test-shapes.test.mjs tools/audit/dotnet-vulnerable.test.mjs
 
 _website-build:
 	@echo "==> Building website..."

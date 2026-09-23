@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import { type SdkPin, pinSatisfiedBy, runtimeFloorMet } from '../../global-json.js';
 import { findSidecarSdk, supportsSidecars } from '../../dotnet-host.js';
 import {
+  FRAMEWORK_MISSING_EXIT,
+  FRAMEWORK_MISSING_MESSAGE,
   type Language,
   composeRoot,
   describeRun,
@@ -66,6 +68,24 @@ function launchStatus(cwd: string, host: string, language: Language): number | n
     describeRun(`${language} timed out rather than deciding on ${host}`, run),
   );
   return run.status;
+}
+
+/**
+ * A root that cannot host must say so as hostfxr's own framework-missing
+ * failure, and print the message the extension reads — never a silent
+ * non-zero the caller cannot tell from a crash.
+ */
+function assertFrameworkMissing(cwd: string, host: string, language: Language): void {
+  const run = launchSidecar(host, cwd, language);
+  assert.equal(
+    run.status,
+    FRAMEWORK_MISSING_EXIT,
+    describeRun(`${language} must refuse ${host} as a missing framework`, run),
+  );
+  assert.ok(
+    run.stderr.includes(FRAMEWORK_MISSING_MESSAGE),
+    describeRun(`${language} must name the missing runtime on stderr`, run),
+  );
 }
 
 /** Whether the root carries an SDK at or above the sidecars' framework. */
@@ -156,17 +176,7 @@ suite('a root is judged by whether the sidecars actually start on it', () => {
       }
 
       // And the failure mode is the documented one, never a silent non-zero.
-      if (!starts) {
-        assert.equal(
-          csharp,
-          150,
-          describeRun(
-            `a host that cannot start the sidecars must fail as exit 150 ("you must install or ` +
-              `update .NET"), not some other code the extension cannot recognise`,
-            launchSidecar(host, scratch, 'CSharp'),
-          ),
-        );
-      }
+      if (!starts) assertFrameworkMissing(scratch, host, 'CSharp');
     });
   }
 });
@@ -221,22 +231,9 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
       pinSatisfiedBy(realSdks(path.dirname(nineOnly)), ninePin),
       'the 9-only root must satisfy its own pin, or this is not the #297 scenario',
     );
-    assert.equal(
-      launchStatus(scratch, nineOnly, 'CSharp'),
-      150,
-      describeRun(
-        'the 9-only root must really refuse the C# sidecar, or there is nothing here to avoid',
-        launchSidecar(nineOnly, scratch, 'CSharp'),
-      ),
-    );
-    assert.equal(
-      launchStatus(scratch, nineOnly, 'FSharp'),
-      150,
-      describeRun(
-        'and the F# sidecar too — both are net10.0, so both must be lost together',
-        launchSidecar(nineOnly, scratch, 'FSharp'),
-      ),
-    );
+    assertFrameworkMissing(scratch, nineOnly, 'CSharp');
+    // And the F# sidecar too — both are net10.0, so both must be lost together.
+    assertFrameworkMissing(scratch, nineOnly, 'FSharp');
 
     // Rule 6 / rule 7: no root answers both, so the answer is nothing.
     const chosen = await findSidecarSdk(ninePin, [path.dirname(ten), path.dirname(nineOnly)]);
