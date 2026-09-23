@@ -73,7 +73,17 @@ public class MSBuildInstanceSelectorTests
         var candidates = MSBuildInstanceSelector.ToCandidates(
             MSBuildInstanceSelector.QueryInstalledSdks()
         );
-        var pinnedSdk = Assert.NotNull(ResolvePinnedSdk(candidates, ReadPinnedSdkVersion()));
+        var pinned = ReadPinnedSdkVersion();
+        var resolved = ResolvePinnedSdk(candidates, pinned);
+        Assert.True(
+            resolved.HasValue,
+            $"global.json pins {pinned}, but the .NET root this process runs under ships none that "
+                + $"satisfies it (found {string.Join(", ", candidates.Select(c => c.SdkVersion))}). "
+                + "Discovery enumerates ONE root - the one DOTNET_ROOT or the running host selects - "
+                + "so a pinned SDK installed under a DIFFERENT root is invisible here. `make` exports "
+                + "the root that satisfies the pin; a bare `dotnet test` inherits whatever is set. (#295)"
+        );
+        var pinnedSdk = resolved.Value;
         var bundled = MSBuildInstanceSelector.ReadBundledRoslynVersion();
 
         Assert.NotNull(pinnedSdk.RoslynVersion);
@@ -229,5 +239,103 @@ public class MSBuildInstanceSelectorTests
         // Describe(null) renders the missing bundled version as "unknown".
         Assert.Contains("unknown", message, StringComparison.Ordinal);
         Assert.Contains("Install a matching SDK", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A throwaway .NET root holding an `sdk/&lt;version&gt;` directory each.</summary>
+    private static string FakeDotnetRoot(params string[] sdkVersions)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"slsp-root-{Guid.NewGuid():N}");
+        foreach (var version in sdkVersions)
+        {
+            Directory.CreateDirectory(Path.Combine(root, "sdk", version));
+        }
+        return root;
+    }
+
+    [Fact]
+    public void SdkCandidatesUnder_reads_release_and_prerelease_band_directories()
+    {
+        // [DIST-SDK-DISCOVERY] An SDK directory may carry a prerelease suffix,
+        // which Version.Parse rejects outright. Missing those would under-report
+        // the very installs this scan exists to find.
+        var root = FakeDotnetRoot("10.0.303", "11.0.100-preview.1.25080.5", "not-an-sdk");
+
+        try
+        {
+            var versions = MSBuildInstanceSelector
+                .SdkCandidatesUnder(root)
+                .Select(candidate => candidate.SdkVersion)
+                .ToList();
+
+            Assert.Contains(new Version(10, 0, 303), versions);
+            Assert.Contains(new Version(11, 0, 100), versions);
+            // A directory naming no version is skipped, never guessed at.
+            Assert.Equal(2, versions.Count);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void SdkCandidatesUnder_is_empty_for_a_root_that_holds_no_sdks()
+    {
+        // A runtime-only install has no sdk/ directory, and a path that is no
+        // .NET root at all must contribute nothing rather than throw: this runs
+        // on the diagnostic path, which may never take the sidecar down.
+        Assert.Empty(MSBuildInstanceSelector.SdkCandidatesUnder(FakeDotnetRoot()));
+        Assert.Empty(MSBuildInstanceSelector.SdkCandidatesUnder("/no/such/dotnet/root"));
+    }
+
+    [Fact]
+    public void CandidateDotnetRoots_are_existing_distinct_directories()
+    {
+        // [DIST-SDK-DISCOVERY] The probe list is walked whenever the Roslyn match
+        // fails, so it must not carry duplicates or paths that are not there.
+        var roots = MSBuildInstanceSelector.CandidateDotnetRoots();
+
+        Assert.NotEmpty(roots);
+        Assert.All(roots, root => Assert.True(Directory.Exists(root), root));
+        Assert.Equal(roots.Count, roots.Distinct(StringComparer.Ordinal).Count());
+        // The test host runs on a real SDK, so some root must actually hold one.
+        Assert.Contains(roots, root => MSBuildInstanceSelector.SdkCandidatesUnder(root).Count > 0);
+    }
+
+    [Fact]
+    public void DescribeElsewhere_points_at_DOTNET_ROOT_rather_than_a_reinstall()
+    {
+        // Issue #295. On a machine carrying two .NET roots - a dotnet-install.sh
+        // copy in ~/.dotnet beside an installer copy in /usr/local/share/dotnet -
+        // the matching SDK can be installed and still invisible, because
+        // discovery enumerates only the root DOTNET_ROOT selects. Telling that
+        // user "no installed SDK ships Roslyn X" is false AND sends them to
+        // reinstall something they already have.
+        var named = MSBuildInstanceSelector.DescribeElsewhere(["/opt/other-dotnet"]);
+
+        Assert.Contains("/opt/other-dotnet", named, StringComparison.Ordinal);
+        Assert.Contains("DOTNET_ROOT", named, StringComparison.Ordinal);
+        Assert.Contains("rather than installing again", named, StringComparison.Ordinal);
+        // Nothing to report stays silent instead of emitting a dangling clause.
+        Assert.Equal(string.Empty, MSBuildInstanceSelector.DescribeElsewhere([]));
+        Assert.Equal(string.Empty, MSBuildInstanceSelector.ElsewhereHint(bundled: null));
+    }
+
+    [Fact]
+    public void WarnNoMatch_does_not_claim_the_active_root_is_every_root()
+    {
+        // The old wording - "no installed .NET SDK ships Roslyn X" - is a claim
+        // about the MACHINE made from evidence about ONE root.
+        using var writer = new StringWriter();
+
+        MSBuildInstanceSelector.WarnNoMatch(
+            writer,
+            new Version(99, 0, 0, 0),
+            [.. MSBuildLocator.QueryVisualStudioInstances()]
+        );
+
+        var message = writer.ToString();
+        Assert.Contains("the active root", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("no installed .NET SDK ships", message, StringComparison.Ordinal);
     }
 }
