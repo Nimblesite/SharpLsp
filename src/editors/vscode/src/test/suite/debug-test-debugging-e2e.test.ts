@@ -482,8 +482,23 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     // Interaction 2 — the condition reaches the adapter verbatim: an adapter
     // that never received it would stop on BOTH rows and still look correct
     // from the first stop alone.
-    const requested = recorder.requests('setBreakpoints');
-    const sent = requested[requested.length - 1]?.args['breakpoints'];
+    // Waited for, not sampled: reading the last `setBreakpoints` the instant
+    // the session starts asks what the wire holds right now, and the sync
+    // carrying the condition may not have landed yet. A machine fast enough to
+    // have sent it passes; a slower one reads an earlier request, or none.
+    const armed = await recorder.waitForRequestArgs(
+      'setBreakpoints',
+      (args) => {
+        const list: unknown = args['breakpoints'];
+        return (
+          Array.isArray(list) &&
+          list.length === 1 &&
+          String((list[0] as Record<string, any>)['condition']) === 'expected == 30'
+        );
+      },
+      'the condition the user typed must reach the adapter unaltered',
+    );
+    const sent = armed['breakpoints'];
     assert.ok(Array.isArray(sent), '`setBreakpoints` must carry a breakpoints array');
     deepEq(
       (sent as Record<string, any>[]).map((entry) => entry['condition']),

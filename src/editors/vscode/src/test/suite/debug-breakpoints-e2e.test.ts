@@ -45,49 +45,27 @@ function armedLines(): number[] {
     .sort((left, right) => left - right);
 }
 
+/** The 1-based lines carried by one `setBreakpoints` request, sorted. */
+function linesOf(args: Record<string, any>): number[] {
+  const list: unknown = args['breakpoints'];
+  assert.ok(Array.isArray(list), '`setBreakpoints` must carry a breakpoints array');
+  return list.map((entry) => Number((entry as Record<string, any>)['line'])).sort((a, b) => a - b);
+}
+
+/** Does this `setBreakpoints` request carry exactly `want`? */
+function sameLines(args: Record<string, any>, want: readonly number[]): boolean {
+  const list: unknown = args['breakpoints'];
+  if (!Array.isArray(list)) return false;
+  const lines = list.map((e) => Number((e as Record<string, any>)['line'])).sort((a, b) => a - b);
+  return lines.length === want.length && want.every((line, at) => lines[at] === line);
+}
+
 /** The 1-based lines of the most recent `setBreakpoints` request, sorted. */
 function lastRequestedLines(requests: readonly { args: Record<string, any> }[]): number[] {
   const last = requests[requests.length - 1]?.args ?? {};
   const list: unknown = last['breakpoints'];
   assert.ok(Array.isArray(list), '`setBreakpoints` must carry a breakpoints array');
   return list.map((entry) => Number((entry as Record<string, any>)['line'])).sort((a, b) => a - b);
-}
-
-/**
- * Wait until the workbench has synced a specific SET of lines to the adapter.
- *
- * Counting syncs cannot express this. Enabling a breakpoint through the
- * checkbox is a remove followed by an add, and EACH one syncs: the removal
- * carries the old set, the add carries the new one. A wait for `syncs + 1` is
- * satisfied by the removal alone, so the assertion then reads the REMOVAL's
- * lines and fails with the re-enabled line missing - which is why this only
- * ever failed on a machine slow enough to poll between the two, and passed
- * everywhere the pair landed inside one 50ms interval.
- *
- * `syncs + 2` would be wrong in the other direction: the workbench is free to
- * coalesce the pair into ONE request, and that wait would never be satisfied.
- * The final state is what the test asserts, so it is what the test waits for.
- */
-async function waitForRequestedLines(
-  requests: () => readonly { args: Record<string, any> }[],
-  expected: readonly number[],
-): Promise<number[]> {
-  const want = [...expected].sort((left, right) => left - right);
-  const matches = (lines: readonly number[]): boolean =>
-    lines.length === want.length && want.every((line, at) => lines[at] === line);
-  const seen = await pollUntilResult(
-    async () => (requests().length === 0 ? [] : lastRequestedLines(requests())),
-    matches,
-    20_000,
-    50,
-  );
-  assert.ok(
-    matches(seen),
-    `the workbench must sync [${want.join(', ')}] to the adapter; the last ` +
-      `\`setBreakpoints\` carried [${seen.join(', ')}]. A breakpoint change that never ` +
-      'reaches the adapter is a breakpoint the running debuggee will not honour',
-  );
-  return seen;
 }
 
 /** Wait until the workbench has sent at least `count` `setBreakpoints` requests. */
@@ -272,12 +250,13 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
     ].sort((left, right) => left - right);
     vscode.debug.removeBreakpoints(disabled);
     vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-inspect')]);
-    const afterEnable = await waitForRequestedLines(
-      () => recorder.requests('setBreakpoints'),
-      bothArmed,
+    const afterEnable = await recorder.waitForRequestArgs(
+      'setBreakpoints',
+      (args) => sameLines(args, bothArmed),
+      'enabling a breakpoint mid-session must arm it on the live adapter',
     );
     deepEq(
-      afterEnable,
+      linesOf(afterEnable),
       bothArmed,
       'enabling a breakpoint mid-session must arm it on the live adapter',
     );
