@@ -252,7 +252,7 @@ _build-dotnet:
 # debug adapter as installable on every platform. Released VSIXes are always
 # built with it, so omitting it here means the dev loop never exercises the
 # shape that ships. [DIST-VSIX-DEV-INSTALL]
-_build-vsix: _stage-vsix-binary
+_build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
@@ -291,12 +291,21 @@ _rebuild-vsix-binaries:
 	bash tools/vsix/build-netcoredbg.sh $(VSIX_PLAT) --rebuild
 
 # [DIST-VSIX-REBUILD] Ordered sub-makes keep clean/build/copy sequential under
-# make -j. VSIX_PREBUILT is deliberately not an escape hatch.
+# make -j. This is the DEFAULT path: a local tree's incremental Rust and sidecar
+# output is exactly what makes a VSIX test pass against a binary that no longer
+# matches the source (#279), so nothing here trusts what is already on disk.
 _stage-vsix-binary: _rebuild-vsix-binaries
 	@$(MAKE) _copy-vsix-binaries
 
-# The old staging-only entry point also enforces the clean rebuild contract.
-_stage-vsix-binary-only: _stage-vsix-binary
+# [DIST-CI-VSIX-SHARDS] Staging what is already on disk, WITHOUT rebuilding.
+# The staleness #279 describes is a property of an incremental local tree, not
+# of a CI artifact: the binaries a shard downloads were built by the `build` job
+# of THIS run from THIS commit, so they cannot be stale. Rebuilding Rust, both
+# sidecars and netcoredbg once per shard would multiply that work by the matrix
+# width and add hours to every PR, which is why CI - and only CI, by setting
+# VSIX_PREBUILT - takes this path.
+_stage-vsix-binary-only:
+	@$(MAKE) _copy-vsix-binaries
 
 _copy-vsix-binaries:
 	@echo "==> Staging required VSIX binaries ($(HOST_PLATFORM))..."
@@ -529,7 +538,7 @@ VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
 # definitions, a reduced refactor set, and an empty unused-package report - all
 # of which look like test failures rather than a missing restore. Every shard
 # therefore builds the fixtures itself, restoring against its own NuGet cache.
-VSIX_PRETEST = npm run prepare:tests
+VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),npm run prepare:test-fixtures,npm run prepare:tests)
 
 define RUN_VSIX_SUITE
 	status=0; \
@@ -546,7 +555,7 @@ define RUN_VSIX_SUITE
 	exit $$status
 endef
 
-_run-vsix-suite: _stage-vsix-binary
+_run-vsix-suite: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	$(RUN_VSIX_SUITE)
 
 # Compilation-only build-phase entry point. Test consumers always recompile
@@ -650,7 +659,7 @@ _check-vsix-chunks:
 # whatever `dist/` happens to hold, and `npm run pretest` leaves the DEV
 # bundle's sourcemap there, so the first chunk on a clean tree passes and every
 # chunk after it fails on a file that would never have shipped.
-_verify-vsix-payload: _stage-vsix-binary
+_verify-vsix-payload: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	@$(MAKE) _verify-staged-vsix-payload
 
 _verify-staged-vsix-payload:

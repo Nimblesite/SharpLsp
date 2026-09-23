@@ -167,7 +167,9 @@ The VSIX is self-contained. A user who installs the extension gets everything th
 
 ## [DIST-VSIX-REBUILD] Mandatory Clean Rebuild Before Packaging and Tests
 
-Every supported VSIX package and test entry point MUST rebuild its complete payload from clean compiler output, on local machines AND CI. A successful incremental build, a cached binary, or a previous test run is not proof of freshness.
+Every supported VSIX package and test entry point MUST rebuild its complete payload from clean compiler output by default. A successful incremental build, a cached binary, or a previous test run is not proof of freshness.
+
+The ONE exception is a consumer handed native output built by the same CI run from the same commit, which it declares by setting `VSIX_PREBUILT` (and `VSIX_SUITE_PREBUILT` for the compiled suite). Such output is not the stale incremental tree this section exists to refuse, and rebuilding it per shard would multiply the host, both sidecars and the debugger by the matrix width — hours added to every pull request ([DIST-CI-VSIX-SHARDS]). A prebuilt consumer MUST still stage and verify the payload; it MUST NOT skip staging. Release packaging ignores the flag: a tag never ships a binary its own run did not compile.
 
 1. Delete Rust objects for the selected profile/target before rebuilding the host. Delete generated `bin`/`obj` for all sidecar projects and both publish directories before publishing C# and F#. This includes Roslyn's BuildHost and transitive assemblies, not merely the apphost executable.
 2. Rebuild the patched netcoredbg native binary and its managed helper from clean CMake/MSBuild output on every supported debugger platform. Existing build-ID markers do not bypass this. Platforms explicitly without a bundled debugger retain their documented fallback.
