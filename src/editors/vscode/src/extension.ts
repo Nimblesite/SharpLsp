@@ -60,6 +60,11 @@ export interface SharpLspExtensionApi {
   readonly getLspClient: () => LanguageClient | undefined;
   /** The Test Explorer controller. Exposed so tests can drive/observe discovery. */
   readonly testController: SharpLspTestController;
+  /**
+   * Where the workbench writes this extension's log channels (`<name>.log`).
+   * Exposed so tests can read the SharpLsp channel back ([DIST-CLEAN-OUTPUT]).
+   */
+  readonly logUri: vscode.Uri;
 }
 
 let lspClient: LanguageClient | undefined;
@@ -99,7 +104,7 @@ export async function activate(context: ExtensionContext): Promise<SharpLspExten
       'SharpLsp failed to activate. The language server will not start.',
       msg,
     );
-    return degradedApi();
+    return degradedApi(context);
   }
 }
 
@@ -197,7 +202,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   if (!dotnetResult.ok) {
     statusBar.setState(ServerState.Error);
     void showAcquireFailureNotification(dotnetResult.error, CMD_RETRY_DOTNET_ACQUISITION);
-    return degradedApi();
+    return degradedApi(context);
   }
   const dotnetPath = dotnetResult.value;
   // Publish the resolved SDK path so dotnet-spawning features (e.g. F#
@@ -227,7 +232,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
       'SharpLsp could not start: required binaries are missing or version-mismatched.',
       detail,
     );
-    return degradedApi();
+    return degradedApi(context);
   }
   log.info('step 11b: client.start (await)');
   // Implements [DIST-FAILURE-UX]: client.start failures also surface a toast.
@@ -239,7 +244,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     log.error(`Failed to start server: ${msg}`);
     statusBar.setState(ServerState.Error);
     void notifyActivationFailure('SharpLsp could not start the language server.', msg);
-    return degradedApi();
+    return degradedApi(context);
   }
 
   log.info('step 12: post-start wiring');
@@ -274,6 +279,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     profilerProvider,
     getLspClient: () => lspClient,
     testController,
+    logUri: context.logUri,
   };
 }
 
@@ -299,12 +305,13 @@ function resolvedComponentPath(
 }
 
 /** Implements [DIST-FAILURE-UX]: empty/inert API returned when activation fails. */
-function degradedApi(): SharpLspExtensionApi {
+function degradedApi(context: ExtensionContext): SharpLspExtensionApi {
   return {
     explorerProvider: explorerProvider ?? new SolutionExplorerProvider(),
     profilerProvider: profilerProvider ?? new profiler.ProfilerTreeProvider(),
     getLspClient: () => lspClient,
     testController: testController ?? new SharpLspTestController(),
+    logUri: context.logUri,
   };
 }
 

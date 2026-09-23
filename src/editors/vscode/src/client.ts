@@ -21,6 +21,7 @@ import * as config from './config.js';
 import * as log from './log.js';
 import { createOpenSync, type OpenSync } from './open-sync.js';
 import { createAnsiStrippingChannel } from './output-filter.js';
+import { serverStdioOptions } from './server-stderr.js';
 import { detectRuntimePlatform } from './platform.js';
 import * as state from './state.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
@@ -87,6 +88,11 @@ export async function start(
     // the user-facing Output panel (issue #78). The host gates ANSI on whether
     // stderr is a TTY, but this is defence-in-depth against any leaked codes.
     outputChannel: createAnsiStrippingChannel(log.output()),
+    // The host writes every tracing level to stderr (stdout is the protocol),
+    // and the client's default handler tags each stderr line `error`. Read the
+    // level off the line instead, so the channel's level column means
+    // something ([DIST-CLEAN-OUTPUT]).
+    stdioOptions: serverStdioOptions(),
     traceOutputChannel: log.trace(),
     errorHandler: makeErrorHandler(statusBar),
     // After every (re)start a request waits for its document's didOpen, so it

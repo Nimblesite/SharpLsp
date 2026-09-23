@@ -15,6 +15,7 @@
         "lsp-integration-semantic.test.js",
         "lsp-document-sync.test.js",
         "lsp-lifecycle.test.js",
+        "server-stderr.test.js",
         "open-sync.test.js",
         "lsp-refactor-quickfixes.test.js",
         "lsp-codeaction-add-using.test.js",
