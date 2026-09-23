@@ -26,11 +26,20 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// </summary>
 public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
 {
-    private const string PackagedRoot =
+    /// <summary>What the editor holds after the user's fix: it compiles.</summary>
+    private const string PackagedRootInEditor =
         "#:package Newtonsoft.Json@13.0.3\n"
         + "using Newtonsoft.Json.Linq;\n"
         + "var payload = new JObject();\n"
         + "Console.WriteLine(payload.Count);\n";
+
+    /// <summary>
+    /// What is still on disk: the same directives, plus one line that does not
+    /// compile. The defect is CS0029, deliberately NOT one of the package-binding
+    /// codes, so the two halves of the assertion stay independent.
+    /// </summary>
+    private const string PackagedRootOnDisk =
+        PackagedRootInEditor + "int wrong = \"not an int\";\n";
 
     /// <summary>Uses <c>JObject</c> with NO directive: it must fail to bind, always.</summary>
     private const string UnpackagedRoot =
@@ -64,7 +73,10 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
         using var manager = new WorkspaceManager();
         await OpenAndSettleAsync(manager, edited);
         var onDisk = await ProjectlessWorkspaceFixture.ErrorsAsync(manager, edited);
-        Assert.Contains(onDisk, error => string.Equals(error.Code, "CS0103", StringComparison.Ordinal));
+        Assert.Contains(
+            onDisk,
+            error => string.Equals(error.Code, "CS0103", StringComparison.Ordinal)
+        );
 
         // 2 — the user fixes it in the editor. Nothing is written to disk, so the
         //     correction lives ONLY in the workspace's solution.
@@ -90,32 +102,31 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
     /// Issue #294 verbatim, in both directions at once. A resolved <c>#:package</c>
     /// reference must survive a neighbouring root's open, and must never leak into
     /// that neighbour.
+    ///
+    /// The packaged root's text on disk does not compile; only the buffer the editor
+    /// pushed does. That pairing is deliberate. The reference half of this assertion
+    /// is a guard — a settled restore does reach both copies of the solution, so it
+    /// survives on its own. The buffer half fails the instant a neighbouring open
+    /// republishes the other copy, which is the same mechanism reaching the same
+    /// project. A test that asserted only the references would pass against the
+    /// defect and prove nothing.
     /// </summary>
     [Fact]
     public async Task Opening_a_neighbouring_root_keeps_an_earlier_roots_package_reference()
     {
-        // 1 — a packaged root opens. The restore runs in the background; the editor
-        //     does NOT wait for it.
-        var packaged = _fixture.Write("RootWithPackage.cs", PackagedRoot);
+        // 1 — a packaged root opens and its restore settles. The package binds;
+        //     the stray line on disk is a plain type error and stays reported.
+        var packaged = _fixture.Write("RootWithPackage.cs", PackagedRootOnDisk);
         using var manager = new WorkspaceManager();
-        var opened = await ProjectlessWorkspaceFixture.OpenAsync(manager, packaged);
-        Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
-
-        // 2 — the editor pushes the buffer's text WHILE that restore is still in
-        //     flight, which is what VS Code does the instant the file is shown.
-        //     The ordering is the whole mechanism. This push forks the live solution
-        //     away from the adhoc workspace, so when the restore lands moments later
-        //     it can no longer write its references back into that workspace — the
-        //     "Could not apply restored file-based package references" warning in the
-        //     log is that failure. The live solution gets the references; the adhoc
-        //     workspace keeps a tier-2 copy of this project forever. Settle the
-        //     restore AFTER the push, never before: a test that pushes text only once
-        //     the restore has landed leaves both solutions holding the references and
-        //     cannot reproduce this at all.
-        //     Directives are unchanged, so no re-resolution is triggered.
-        await ApplyLiveEditAsync(manager, packaged, PackagedRoot + "Console.WriteLine(payload.Type);\n");
-        _ = await ProjectlessWorkspaceFixture.SettledDiagnosticsAsync(manager, packaged);
+        await OpenAndSettleAsync(manager, packaged);
         await AssertBindsPackageAsync(manager, packaged, "once the restore settled");
+
+        // 2 — the user deletes the bad line. The correction exists ONLY in the
+        //     editor's buffer, and it lands after the restore, so nothing will
+        //     round-trip it anywhere else. This is the ordinary case of typing in a
+        //     file that is already loaded.
+        await ApplyLiveEditAsync(manager, packaged, PackagedRootInEditor);
+        await AssertNoErrorsAsync(manager, packaged, "after the user's fix");
 
         // 3 — THE INVARIANT, asserted with no settle in between. The neighbour uses
         //     JObject without a directive, so its own load cannot possibly succeed —
@@ -125,14 +136,22 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
         await AssertBindsPackageAsync(
             manager,
             packaged,
-            "#294: opening a neighbouring root EVICTED this root's #:package reference. "
-                + "A later rebind does not repair this — the root was broken for real, and "
-                + "only recovered once something re-resolved it"
+            "#294: opening a neighbouring root took this root's #:package reference away"
+        );
+        await AssertNoErrorsAsync(
+            manager,
+            packaged,
+            "#294: opening a neighbouring root republished a stale copy of this root, "
+                + "throwing away the buffer the editor had pushed and reverting it to "
+                + "text on disk that does not compile"
         );
 
         // 4 — the original direction still holds: the package must NOT leak.
         var leaked = await SettledErrorsAsync(manager, unpackaged);
-        Assert.Contains(leaked, error => string.Equals(error.Code, "CS0246", StringComparison.Ordinal));
+        Assert.Contains(
+            leaked,
+            error => string.Equals(error.Code, "CS0246", StringComparison.Ordinal)
+        );
 
         // 5 — and the packaged root is STILL bound after the neighbour settled too.
         await AssertBindsPackageAsync(manager, packaged, "after the neighbour settled");
@@ -174,10 +193,12 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
     /// <summary>Open a root and block until its background restore has settled.</summary>
     private static async Task OpenAndSettleAsync(WorkspaceManager manager, string path)
     {
-        var opened = await ProjectlessWorkspaceFixture.OpenAsync(manager, path)
+        var opened = await ProjectlessWorkspaceFixture
+            .OpenAsync(manager, path)
             .ConfigureAwait(false);
         Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
-        _ = await ProjectlessWorkspaceFixture.SettledDiagnosticsAsync(manager, path)
+        _ = await ProjectlessWorkspaceFixture
+            .SettledDiagnosticsAsync(manager, path)
             .ConfigureAwait(false);
     }
 
@@ -198,7 +219,8 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
         string path
     )
     {
-        var settled = await ProjectlessWorkspaceFixture.SettledDiagnosticsAsync(manager, path)
+        var settled = await ProjectlessWorkspaceFixture
+            .SettledDiagnosticsAsync(manager, path)
             .ConfigureAwait(false);
         return
         [
@@ -214,7 +236,8 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
         string when
     )
     {
-        var errors = await ProjectlessWorkspaceFixture.ErrorsAsync(manager, path)
+        var errors = await ProjectlessWorkspaceFixture
+            .ErrorsAsync(manager, path)
             .ConfigureAwait(false);
         Assert.True(errors.Count == 0, $"{when} — {Describe(errors)}");
     }
@@ -231,7 +254,8 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
         string when
     )
     {
-        var diagnostics = await ProjectlessWorkspaceFixture.DiagnosticsAsync(manager, path)
+        var diagnostics = await ProjectlessWorkspaceFixture
+            .DiagnosticsAsync(manager, path)
             .ConfigureAwait(false);
         var binding = diagnostics
             .Where(diagnostic => PackageBindingErrorCodes.Contains(diagnostic.Code))
