@@ -209,6 +209,68 @@ suite('global.json SDK pin', () => {
     );
   });
 
+  test('a RELEASE pin is not satisfied by a prerelease of that same version', () => {
+    // #297 follow-up. `runtimeFloorMet` learned that a prerelease sorts BELOW
+    // its own release; `sdkSatisfiesPin` never did, and it decides which root
+    // this PR's selector commits to — `findSidecarSdk`, `validateAcquiredPin`
+    // and `tryFindExistingSdk` all gate on it. `compare()` is built from
+    // `parseSdkVersion`, which strips the suffix, so `10.0.100-rc.1` ties with
+    // `10.0.100` and clears a `>=` test it sits below.
+    //
+    // The cost is not cosmetic: the SDK resolver disagrees, so every `dotnet`
+    // command on the host we chose fails the pin with exit 155.
+    const gaPin = (rollForward: SdkPin['rollForward']): SdkPin => ({
+      version: '10.0.100',
+      rollForward,
+      source: '/ws/global.json',
+    });
+
+    for (const rollForward of [
+      'latestPatch',
+      'latestFeature',
+      'latestMinor',
+      'latestMajor',
+    ] as const) {
+      assert.equal(
+        sdkSatisfiesPin('10.0.100-rc.1', gaPin(rollForward)),
+        false,
+        `${rollForward}: rc.1 sorts below the 10.0.100 it pins, so it can never satisfy it — ` +
+          'selecting that root hands every build exit 155',
+      );
+    }
+    assert.equal(
+      sdkSatisfiesPin('10.0.100-rc.1+x1', gaPin('latestPatch')),
+      false,
+      'build metadata carries no precedence, so it cannot lift a prerelease onto its release',
+    );
+    assert.equal(
+      pinSatisfiedBy(['10.0.100-rc.1'], gaPin('latestPatch')),
+      false,
+      'and a root carrying only that prerelease does not satisfy the pin either',
+    );
+
+    // The rule is ORDERING, not a "-" test: everything genuinely at or above
+    // the pin must still pass, or this trades one wrong answer for another.
+    assert.equal(sdkSatisfiesPin('10.0.100', gaPin('latestPatch')), true, 'the release itself');
+    assert.equal(sdkSatisfiesPin('10.0.107', gaPin('latestPatch')), true, 'a later patch');
+    assert.equal(sdkSatisfiesPin('10.0.303', gaPin('latestFeature')), true, 'a later band');
+    assert.equal(
+      sdkSatisfiesPin('10.0.303-rc.1', gaPin('latestFeature')),
+      true,
+      'a prerelease of a LATER band is still above the pin — only the tie was ever wrong',
+    );
+    assert.equal(
+      sdkSatisfiesPin('10.0.100', { ...gaPin('latestPatch'), version: '10.0.100-rc.1' }),
+      true,
+      'and the release satisfies a pin on its own prerelease, which is the same rule inverted',
+    );
+    assert.equal(
+      sdkSatisfiesPin('10.0.100-rc.1', { ...gaPin('disable'), version: '10.0.100-rc.1' }),
+      true,
+      'rollForward=disable stays an exact string match, prerelease or not',
+    );
+  });
+
   test('readSdkPin reads the nearest global.json and defaults rollForward', () => {
     const pinned = fakeWorkspace(
       'pinned',

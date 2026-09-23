@@ -85,6 +85,14 @@ function compare(left: SdkVersion, right: SdkVersion): number {
  * Every policy is "at least the pinned version"; they differ only in how far
  * up the version they may roll — patch within the band, band within the minor,
  * and so on. `disable` demands an exact match.
+ *
+ * "At least" is SEMVER ordering, so a prerelease sits below its own release.
+ * `compare` cannot see that on its own: it is built from `parseSdkVersion`,
+ * which discards the suffix because SDK band arithmetic needs it gone. That
+ * left `10.0.100-rc.1` tied with `10.0.100` and clearing a pin it sits under —
+ * and the SDK resolver does not agree, so every `dotnet` command on the root
+ * chosen that way fails the pin with exit 155. Only the TIE was ever wrong:
+ * a prerelease of a later band is genuinely above the pin and still passes.
  */
 export function sdkSatisfiesPin(installed: string, pin: SdkPin): boolean {
   if (pin.rollForward === 'disable') return installed === pin.version;
@@ -92,6 +100,9 @@ export function sdkSatisfiesPin(installed: string, pin: SdkPin): boolean {
   const got = parseSdkVersion(installed);
   if (want === undefined || got === undefined) return false;
   if (compare(got, want) < 0) return false;
+  if (compare(got, want) === 0 && isPrerelease(installed) && !isPrerelease(pin.version)) {
+    return false;
+  }
   if (got.major !== want.major && !isMajorPolicy(pin.rollForward)) return false;
   if (got.minor !== want.minor && !isMinorPolicy(pin.rollForward)) return false;
   return got.band === want.band || isFeaturePolicy(pin.rollForward);
