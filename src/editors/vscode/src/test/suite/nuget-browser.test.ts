@@ -13,6 +13,13 @@ import {
   takeScreenshot,
   teardownLspTestSuite,
 } from './test-helpers';
+import {
+  BY_ID_PREFIX,
+  INSTALLED_FIXTURE_PACKAGE,
+  SEEDED_IDS,
+  SEEDED_PACKAGES,
+  stubSearchFeed,
+} from './nuget-stub-kit';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 interface SharpLspApiForNuGetTests {
@@ -237,7 +244,8 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     // Ensure we have a real LSP client before proceeding.
     assert.ok(getClient(), 'LSP client must be running for this test');
@@ -246,21 +254,81 @@ suite('NuGet Browser', () => {
 
     try {
       await panel.waitForInitialLoad();
-      const count = panel.getSearchResultsCount();
-      assert.ok(
-        count > 0,
-        `Browse tab must be populated after initial load (got ${count.toString()} results)`,
+
+      // 1 — the defect was that the initial load never searched at all. Assert the
+      //     request itself, not just its effect: an empty result set and a search
+      //     that was never issued look identical from the outside.
+      //
+      //     The initial load issues two KINDS of search. The browse list is the
+      //     empty query, and each installed package is enriched by a `packageid:`
+      //     lookup. Counting them together would pass on a load that enriched the
+      //     installed tab and never populated browse at all, which is the defect.
+      const browseSearches = feed.searches.filter((search) => search.query === '');
+      assert.strictEqual(
+        browseSearches.length,
+        1,
+        `initial load must issue exactly one browse search, issued ${browseSearches.length.toString()}` +
+          ` (all queries: ${feed.searches.map((search) => `"${search.query}"`).join(', ')})`,
       );
       assert.ok(
-        count >= 5,
-        `Browse tab must show at least 5 popular packages, got ${count.toString()}`,
+        feed.searches.some(
+          (search) => search.query === `${BY_ID_PREFIX}${INSTALLED_FIXTURE_PACKAGE.id}`,
+        ),
+        'the initial load must also enrich the installed package by id',
       );
+      const initial = browseSearches[0]!;
+      assert.strictEqual(
+        initial.query,
+        '',
+        'the initial search is the popular list: an empty query',
+      );
+      assert.strictEqual(initial.skip, 0, 'the initial search starts at the first page');
+      assert.ok(
+        initial.take > 0,
+        `the initial search must ask for packages, asked ${String(initial.take)}`,
+      );
+      assert.strictEqual(initial.prerelease, false, 'prerelease is off unless the user asks');
+      assert.strictEqual(
+        initial.projectPath,
+        projectPath,
+        'the search must be scoped to the project the panel was opened for',
+      );
+
+      // 2 — every package the feed returned reached the panel, in order and whole.
+      assert.strictEqual(
+        panel.getSearchResultsCount(),
+        SEEDED_PACKAGES.length,
+        'the panel must keep every package the feed returned',
+      );
+      assert.deepStrictEqual(
+        panel.getSearchResultIds(),
+        [...SEEDED_IDS],
+        'the panel must preserve the feed order rather than re-sorting it',
+      );
+
+      // 3 — and each one is actually rendered, with the version that came back.
       const html = panel.getRenderedHtml();
-      assert.ok(
-        html.includes('package-list') || html.includes('package-item') || html.includes('NuGet'),
-        'Browse HTML must contain package list markup',
+      for (const pkg of SEEDED_PACKAGES) {
+        assert.ok(html.includes(pkg.id), `browse HTML must render ${pkg.id}`);
+        assert.ok(
+          html.includes(pkg.version),
+          `browse HTML must render ${pkg.id}'s version ${pkg.version}`,
+        );
+      }
+      const rendered = html.split('class="package-item').length - 1;
+      assert.strictEqual(
+        rendered,
+        SEEDED_PACKAGES.length,
+        `browse tab must render one row per package, rendered ${rendered.toString()}`,
       );
-      assert.ok(html.length > 500, 'Browse HTML must have substantial content');
+
+      // 4 — the browse tab is the one on screen, and nothing is still loading.
+      assert.strictEqual(panel.getCurrentTab(), 'browse', 'the panel opens on the browse tab');
+      assert.deepStrictEqual(
+        panel.getActiveLoadingKeys(),
+        [],
+        'no spinner may be left running once the initial load has resolved',
+      );
       await takeNuGetScreenshot('vscode-nuget-browse.png');
     } finally {
       panel.dispose();
@@ -279,7 +347,8 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     assert.ok(getClient(), 'LSP client must be running for this test');
 
@@ -342,7 +411,8 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     assert.ok(getClient(), 'LSP client must be running for this test');
 
@@ -370,7 +440,8 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     assert.ok(getClient(), 'LSP client must be running for this test');
 
@@ -443,7 +514,8 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     assert.ok(getClient(), 'LSP client must be running for this test');
 
@@ -452,17 +524,48 @@ suite('NuGet Browser', () => {
     try {
       await panel.waitForInitialLoad();
 
+      const beforeSearch = feed.searches.length;
+
+      // 1 — the user types a query that matches some of the catalogue, not all of
+      //     it. A query matching everything could not tell filtering from a panel
+      //     that ignored the query and re-rendered the popular list.
       await panel.simulateWebviewMessage({
         command: 'search',
-        data: { query: 'Serilog' },
+        data: { query: 'Bravo' },
       });
 
-      const searchCount = panel.getSearchResultsCount();
-      assert.ok(searchCount > 0, "Search for 'Serilog' must return results");
-      assert.ok(searchCount >= 3, `Search must return ≥3 results, got ${searchCount.toString()}`);
+      assert.strictEqual(
+        feed.searches.length,
+        beforeSearch + 1,
+        'typing a query must issue exactly one more search',
+      );
+      assert.strictEqual(
+        feed.searches[feed.searches.length - 1]!.query,
+        'Bravo',
+        'the panel must send the query the user typed, verbatim',
+      );
+
+      // 2 — the results are exactly the matches, and the non-matches are gone.
+      const expected = SEEDED_PACKAGES.filter((pkg) => pkg.id.includes('Bravo')).map(
+        (pkg) => pkg.id,
+      );
+      assert.ok(expected.length > 0 && expected.length < SEEDED_PACKAGES.length, 'fixture sanity');
+      assert.deepStrictEqual(
+        panel.getSearchResultIds(),
+        expected,
+        'the browse list must show the matches and only the matches',
+      );
       const searchHtml = panel.getRenderedHtml();
-      assert.ok(searchHtml.toLowerCase().includes('serilog'), "HTML must contain 'Serilog'");
-      assert.ok(searchHtml.length > 300, 'Search results HTML must have content');
+      for (const id of expected) {
+        assert.ok(searchHtml.includes(id), `search HTML must render the match ${id}`);
+      }
+      for (const pkg of SEEDED_PACKAGES) {
+        if (expected.includes(pkg.id)) continue;
+        assert.ok(
+          !searchHtml.includes(pkg.id),
+          `${pkg.id} does not match the query and must not still be on screen`,
+        );
+      }
       await takeNuGetScreenshot('vscode-nuget-search.png');
     } finally {
       panel.dispose();
@@ -505,7 +608,8 @@ suite('NuGet Browser', () => {
     );
 
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
     assert.ok(getClient(), 'LSP client must be running');
 
     const panel = NuGetBrowserPanel.open(context, csprojPath, 'Scratch', getClient);
@@ -576,7 +680,8 @@ suite('NuGet Browser', () => {
     );
 
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     const panel = NuGetBrowserPanel.open(context, csprojPath, 'ScratchAdd', getClient);
 
@@ -623,30 +728,50 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
 
     try {
       await panel.waitForInitialLoad();
 
-      // Select Newtonsoft.Json — it definitely has an iconUrl on nuget.org.
+      // 1 — the user clicks the installed package. Its metadata is not on the
+      //     browse list, so the panel has to enrich it by id.
       await panel.simulateWebviewMessage({
         command: 'selectPackage',
-        data: { packageId: 'Newtonsoft.Json' },
+        data: { packageId: INSTALLED_FIXTURE_PACKAGE.id },
       });
 
-      // Allow enrichment HTTP fetch to complete.
       await pollUntilResult(
         () => Promise.resolve(panel.getRenderedHtml()),
         (html) => html.includes('class="package-icon-img"'),
         LSP_RESPONSE_MS,
       );
 
+      // 2 — it asked for exactly that package, by id.
+      const byId = feed.searches.filter((search) => search.query.startsWith(BY_ID_PREFIX));
+      assert.ok(
+        byId.some((search) => search.query === `${BY_ID_PREFIX}${INSTALLED_FIXTURE_PACKAGE.id}`),
+        `enrichment must look the package up by id, sent: ${byId
+          .map((search) => search.query)
+          .join(', ')}`,
+      );
+
+      // 3 — and it rendered the icon the feed actually returned, not a placeholder.
       const html = panel.getRenderedHtml();
       assert.ok(
         html.includes('class="package-icon-img"'),
         'Details panel must render an <img> with class package-icon-img when iconUrl is present',
+      );
+      assert.ok(
+        html.includes(INSTALLED_FIXTURE_PACKAGE.iconUrl!),
+        'the rendered icon must be the URL the feed returned for this package',
+      );
+      assert.strictEqual(
+        panel.getSelectedPackageId(),
+        INSTALLED_FIXTURE_PACKAGE.id,
+        'clicking a package must select it',
       );
       await takeNuGetScreenshot('vscode-nuget-package-details.png');
     } finally {
@@ -664,7 +789,8 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
 
@@ -695,6 +821,15 @@ suite('NuGet Browser', () => {
       assert.ok(
         section.includes('class="package-icon-img"'),
         'Installed tab MUST render <img class="package-icon-img"> (DRY with browse tab)',
+      );
+      assert.ok(
+        section.includes(INSTALLED_FIXTURE_PACKAGE.iconUrl!),
+        'the installed row must show the icon the feed returned, not a generic glyph',
+      );
+      assert.strictEqual(
+        panel.getCurrentTab(),
+        'installed',
+        'the installed tab must be the one on screen',
       );
     } finally {
       panel.dispose();
@@ -729,7 +864,8 @@ suite('NuGet Browser', () => {
     );
 
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
     assert.ok(getClient(), 'LSP client must be running');
 
     const panel = NuGetBrowserPanel.open(context, csprojPath, 'ReactivityDetails', getClient);
