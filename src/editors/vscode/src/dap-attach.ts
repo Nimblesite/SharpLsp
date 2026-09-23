@@ -94,6 +94,8 @@ class InvalidArgumentRetrier {
 export class AttachRetrier extends InvalidArgumentRetrier {
   /** True once this session attached rather than launched. */
   private attachMode = false;
+  /** The Test Explorer owns this host, unlike a user-selected attach target. */
+  private testHost = false;
   /** One-shot: the next non-user stop is the test host's `Debugger.Break()`. */
   private pendingTestHostBreak = false;
 
@@ -103,7 +105,8 @@ export class AttachRetrier extends InvalidArgumentRetrier {
 
   public override start(clientRequest: DapMessage, args: Record<string, unknown>): void {
     this.attachMode = true;
-    this.pendingTestHostBreak = args[TEST_HOST_ATTACH_FLAG] === true;
+    this.testHost = args[TEST_HOST_ATTACH_FLAG] === true;
+    this.pendingTestHostBreak = this.testHost;
     super.start(clientRequest, args);
   }
 
@@ -113,15 +116,16 @@ export class AttachRetrier extends InvalidArgumentRetrier {
    * VS Code's stop gesture sends `terminateDebuggee: true` whenever the
    * adapter advertises `supportTerminateDebuggee`, and netcoredbg then KILLS
    * the debuggee — data loss on any long-running service the user merely
-   * attached to. An ATTACH session therefore always disconnects with
-   * `terminateDebuggee: false`; a LAUNCH session's disconnect passes through
-   * untouched, so stopping a launched debuggee still terminates it.
-   * Spec: [DEBUG-FEATURES-LAUNCH] attach rows.
+   * attached to. A user-selected ATTACH target therefore disconnects with
+   * `terminateDebuggee: false`. A test host belongs to the Test Explorer's
+   * run and must terminate on Stop, allowing its runner and terminal to end.
+   * Launch disconnects pass through untouched.
+   * Spec: [DEBUG-FEATURES-LAUNCH], [DEBUG-FEATURES-TESTS].
    */
   public rewriteDisconnect(message: DapMessage): DapMessage {
     if (!this.attachMode) return message;
     const args = isRecord(message.arguments) ? message.arguments : {};
-    return { ...message, arguments: { ...args, terminateDebuggee: false } };
+    return { ...message, arguments: { ...args, terminateDebuggee: this.testHost } };
   }
 
   /**

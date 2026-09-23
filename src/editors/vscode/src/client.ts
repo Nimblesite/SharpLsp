@@ -25,6 +25,7 @@ import { serverStdioOptions } from './server-stderr.js';
 import { detectRuntimePlatform } from './platform.js';
 import * as state from './state.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
+import { dotnetHostEnvironment } from './dotnetRuntime.js';
 
 /** The documents the client syncs to the server, and holds requests about. */
 export const DOCUMENT_SELECTOR = [
@@ -118,7 +119,7 @@ function sidecarEnv(deploymentPaths: DeploymentPaths, dotnetPath?: string): Reco
     env.SHARPLSP_FSHARP_SIDECAR_PATH = deploymentPaths.fsharpSidecarPath;
   }
   if (dotnetPath !== undefined && dotnetPath !== '') {
-    env.DOTNET_ROOT = path.dirname(dotnetPath);
+    Object.assign(env, dotnetHostEnvironment(dotnetPath));
   }
   return env;
 }

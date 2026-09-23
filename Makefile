@@ -138,7 +138,7 @@ KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix _package-archive \
         _deploy-rust _deploy-sidecars \
-        _kill _clean-rider
+        _kill _clean-rider _clean-artifacts
 
 # The sidecars build against the SDK pinned in global.json ([DIST-RUNTIME-ACQUIRE]).
 # `dotnet --list-sdks | grep '^10\.'` was never that check: a 10.0.2xx SDK passes
@@ -1047,7 +1047,7 @@ reinstall-vsix:
 	@echo "==> Uninstall, full clean, rebuild and reinstall for $(HOST_PLATFORM)..."
 	$(MAKE) uninstall-vsix
 	$(MAKE) _kill
-	$(MAKE) clean
+	$(MAKE) _clean-artifacts
 	$(MAKE) _build-vsix
 	$(MAKE) install-vsix
 
@@ -1092,7 +1092,14 @@ _kill:
 
 # ── Clean ─────────────────────────────────────────────────────────
 
-clean: _clean-rider
+clean: _clean-rider _clean-artifacts
+	@echo "==> Clean."
+
+# The VSIX rebuild loop's own clean: Rust host, sidecars, VS Code and dist
+# output. `reinstall-vsix` calls this directly, never the full `clean`, so
+# uninstalling and rebuilding the extension never shells out to Gradle for a
+# Rider plugin it does not touch ([DIST-VSIX-REBUILD]).
+_clean-artifacts:
 	@echo "==> Cleaning build artifacts..."
 	cargo clean
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml
@@ -1101,7 +1108,6 @@ clean: _clean-rider
 	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
 	rm -rf $(ZED_PKG_DIR) $(DIST_DIR)
 	rm -f $(DEV_VSIX) $(ZED_PKG_TAR)
-	@echo "==> Clean."
 
 _clean-rider:
 	@$(RIDER_GRADLE) clean || true

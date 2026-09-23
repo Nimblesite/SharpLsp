@@ -201,6 +201,21 @@ suite('Test Explorer MTP — the readers that decide what is discovered and run'
 
     assert.deepStrictEqual(parseMtpTestList(listing()).tests, [], 'an empty listing is empty');
     assert.deepStrictEqual(
+      parseMtpTestList(listing()).warnings,
+      [],
+      'a valid empty document is trusted',
+    );
+    assert.equal(
+      parseMtpTestList(listing({ displayName: 'no uid' })).warnings.length,
+      1,
+      'malformed nodes must not masquerade as a successful empty listing (#299)',
+    );
+    assert.equal(
+      parseMtpTestList(JSON.stringify({ schemaVersion: 99, tests: [] })).warnings.length,
+      1,
+      'an unknown empty schema must not clear a previously populated tree',
+    );
+    assert.deepStrictEqual(
       parseMtpTestList('Unhandled exception. System.TypeLoadException').tests,
       [],
       'a crashed module produces no test',

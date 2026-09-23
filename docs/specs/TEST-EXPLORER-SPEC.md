@@ -302,6 +302,13 @@ The reader tolerates a leading blank line and a byte-order mark, and it starts a
 `{`. An unknown `schemaVersion` produces a warning, not an exception. A module that fails to
 list leaves the other modules alone, the same contract as [TEST-DISCOVERY-FQN].
 
+A valid schema-version-1 document with `tests: []` is successful empty discovery,
+including MTP's no-tests exit code 8. Refresh MUST remove the deleted tests and their cached
+results. A killed process, failed build, unknown schema, malformed document or unusable test
+nodes MUST NOT be mistaken for that success: unsuccessful empty discovery preserves the
+previous tree and results. `test-explorer-mtp-release.test.ts` proves both branches with real
+C# and F# projects (#299).
+
 ## Microsoft.Testing.Platform: runs `[TEST-MTP-RUN]`
 
 Each module's target is BUILT first, then each module is invoked once for the whole selection,
@@ -325,6 +332,13 @@ dotnet exec <module.dll> --filter-uid <uid> <uid> … \
   are unaffected. A selection that starts no module builds nothing, and ⏹ kills the build
   like any other invocation.
 
+* After that build, resolve the CURRENT modules through MSBuild again, without a second
+  build. `OutputPath`, `AssemblyName` and target frameworks can change between discovery and
+  Run. Neither filtered nor unfiltered execution may use the obsolete discovery-time DLL,
+  even when it still exists. Resolution failure fails the target instead of falling back to
+  obsolete modules. `test-explorer-mtp-release.test.ts` retains the old passing binary while
+  requiring the edited assertion's failure from the new output in both C# and F# (#298).
+
 * The uids a filtered run sends are read off the REBUILT module, never off the discovery that
   preceded it: after the build, each module the selection touches is listed again
   (`--list-tests json`) and the selected ids resolve to the uids THAT build reports. A uid is
@@ -332,8 +346,8 @@ dotnet exec <module.dll> --filter-uid <uid> <uid> … \
   hashes a data row's arguments into it, MSTest keys a row by its position — so a row ADDED
   since discovery, or an `xunit.v3` row whose data was EDITED, has a uid discovery never saw.
   Filtering by the old uids runs every row EXCEPT the one the user just wrote, and a row the
-  edit turned red reports green. An unfiltered run lists nothing, and a module that lists
-  nothing keeps the uids it had.
+  edit turned red reports green. An unfiltered run lists nothing. A failed listing may keep
+  known uids only for the same current module path; a valid empty listing clears its uids.
 * `--filter-uid` takes LITERAL values, so the [TEST-FILTER-ESCAPE] grammar does not apply and
   MUST NOT be used. An NUnit uid contains parentheses and commas; escaping them would make it
   match nothing. The uids are still BATCHED against the Windows 32 767-character

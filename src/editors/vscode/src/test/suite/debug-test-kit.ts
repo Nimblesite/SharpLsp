@@ -229,6 +229,7 @@ export async function writeDebugTestFixture(
   prefix: string,
   language: FixtureLanguage,
   runner: FixtureRunner = 'vstest',
+  source?: string,
 ): Promise<TestDebugFixture> {
   const scratchDir = fs.mkdtempSync(path.join(requireWorkspaceRoot(), prefix));
   isolateFromRepoMsbuild(scratchDir);
@@ -244,7 +245,7 @@ export async function writeDebugTestFixture(
     'utf8',
   );
   const sourceFile = path.join(projectDir, sourceName);
-  fs.writeFileSync(sourceFile, (csharp ? CS_SOURCE : FS_SOURCE).text, 'utf8');
+  fs.writeFileSync(sourceFile, source ?? (csharp ? CS_SOURCE : FS_SOURCE).text, 'utf8');
   const solutionPath = await createSolution(scratchDir, `${project}Sln`, [projectDir]);
   // BUILT HERE, not by whichever test happens to run first. Discovery and every
   // debug run shell out to `dotnet test`, which RESTORES and COMPILES on its

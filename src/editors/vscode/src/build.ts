@@ -142,6 +142,16 @@ export function parseBuildDiagnostics(output: string): void {
 /**
  * `dotnet`'s exit code when `hostfxr_resolve_sdk2` cannot satisfy a
  * `global.json` pin — "A compatible .NET SDK was not found".
+ *
+ * 155 is the POSIX form. The host fails with `0x8000809b`, and POSIX truncates
+ * a process exit status to its low byte (`0x9b`) while Windows preserves the
+ * whole 32-bit value — the same split that made the sidecars' missing-framework
+ * failure read as 150 on one agent and 2147516566 on the other (#297).
+ *
+ * So nothing below compares against this number, and that is deliberate:
+ * `diagnoseBuildFailure` asks the PIN whether it is satisfiable, because a
+ * diagnosis gated on `exitCode === 155` would simply never fire on Windows.
+ * It is exported for tests, which need a realistic failing code to pass in.
  */
 export const SDK_RESOLUTION_EXIT_CODE = 155;
 

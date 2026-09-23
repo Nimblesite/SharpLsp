@@ -272,12 +272,18 @@ reported success on an SDK the workspace could never use.
 - [x] `global-json.ts`: pin discovery, `rollForward` evaluation, installed-SDK enumeration
 - [x] Reject a found SDK that cannot satisfy the workspace pin, so acquisition proceeds
 - [x] Request the **pinned** version from `dotnet.acquireGlobalSDK`, not the `10.0` band
-- [x] Never block `activate()` on a global installer when a usable-but-unpinned SDK exists
+- [x] Automatically acquire the exact pin through the .NET Install Tool when no installed host satisfies both workspace and sidecar requirements; a mismatched host plus a manual Install button is not success (#297).
 - [x] Surface the pin, its `global.json`, and the installed SDKs instead of a bare exit code 155
 - [x] Wire `configureDotnet()` at activation so builds/tests run the resolved SDK, not `$PATH`'s
 - [x] Bound Install Tool calls so a stalled elevation prompt cannot wedge the extension host
 - [x] Regression suite `sdk-pin.test.ts`, registered in the `workspace` chunk
 - [x] `tools/ci/check-sdk-pin.mjs` fails CI when `global.json` and the workflow `dotnet-version` pins diverge
+- [x] #297: validate the sidecar SDK/runtime independently of the workspace pin for existing, alternate-root and acquired hosts; never accept a .NET 9-only host for net10.0 sidecars.
+- [x] #297: on fresh installation of an older pin, also acquire the .NET 10 SDK when required and verify both capabilities coexist without relaxing `global.json`.
+- [x] #297: real-host tests reproduced exit 150 and the missing automatic SDK install request before the fixes. Cover separate roots, fresh acquisition, existing compatible installs and SDK files without the runtime, launching both staged F# and C# release sidecars. Register in the Linux/Windows `workspace` CI chunk.
+- [x] #297: replace blanket prerelease rejection with the runtime floor comparison after two real-sidecar regression cases failed; keep the below-floor rejection assertions unchanged.
+- [x] #297: propagate the selected host into Shipwright probes as well as the Rust host. The unchanged deployment test reproduced failures with inherited `DOTNET_ROOT` and `DOTNET_ROOT_ARM64` pointing at a .NET 9-only root before the respective production fixes.
+- [ ] #297: verify the new regression suite in green Linux and Windows PR checks before release.
 
 ### External prerequisites (manual, pre-merge)
 

@@ -18,7 +18,7 @@
  */
 
 import * as path from 'node:path';
-import { DOTNET_TIMEOUT_MS, runDotnet } from './dotnet-process.js';
+import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
 import {
   mergeMultiTargeted,
   type MtpModuleRun,
@@ -71,9 +71,21 @@ async function listModule(
       ],
     };
   }
+  return moduleListing(modulePath, run);
+}
+
+/** Distinguish a valid empty document from a failed or incomplete listing. */
+function moduleListing(modulePath: string, run: DotnetRun): ModuleListing {
   const listing = parseMtpTestList(run.stdout);
+  // MTP exit 8 means no tests. Trust it only with a complete, valid empty
+  // document; crashes, truncated output and malformed nodes must keep the tree.
+  const empty =
+    listing.tests.length === 0 &&
+    listing.warnings.length === 0 &&
+    !run.killed &&
+    (!run.failed || run.errorMessage === 'dotnet exited with code 8');
   const failure =
-    listing.tests.length === 0 && run.failed
+    listing.tests.length === 0 && run.failed && !empty
       ? [`${path.basename(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]
       : [];
   return { tests: listing.tests, warnings: [...listing.warnings, ...failure] };
@@ -81,7 +93,8 @@ async function listModule(
 
 /**
  * `module` with the uids its CURRENT build reports, or unchanged when the
- * module lists nothing. A uid may hash more than the test's name — `xunit.v3`
+ * listing fails. A valid empty listing clears its previous uids. A uid may hash
+ * more than the test's name — `xunit.v3`
  * hashes a theory row's data — so a rebuilt module's uids are read off the
  * rebuilt module, never off the discovery that preceded the edit
  * ([TEST-MTP-RUN]).
@@ -92,7 +105,9 @@ export async function relistModule(
   timeoutMs: number,
 ): Promise<MtpModuleRun> {
   const listed = await listModule(module.modulePath, cwd, timeoutMs);
-  return listed.tests.length === 0 ? module : { ...module, uidsById: mtpUidsById(listed.tests) };
+  return listed.tests.length === 0 && listed.warnings.length > 0
+    ? module
+    : { ...module, uidsById: mtpUidsById(listed.tests) };
 }
 
 /** The tree root and the run plan one module contributes. */
@@ -216,7 +231,7 @@ async function listScanned(scan: MtpProjectScan, sweep: SweepContext): Promise<T
     // Nothing found is a truthful answer only when nothing went wrong finding
     // it: a build `dotnet` refused (MSB1011) must reach the user as an error
     // row, never as an empty tree.
-    ok: names.length > 0 || (modules.length === 0 && scan.warnings.length === 0),
+    ok: names.length > 0 || warnings.length === 0,
     warnings,
     byAssembly: mergeMultiTargeted(byAssembly.filter((assembly) => assembly.names.length > 0)),
     mtp: { modules: runs },

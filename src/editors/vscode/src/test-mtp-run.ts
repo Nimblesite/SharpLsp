@@ -26,7 +26,8 @@ import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
 import { relistModule } from './test-mtp-discovery.js';
 import { runReported } from './test-mtp-report.js';
-import { buildTarget, dirOf } from './test-mtp-modules.js';
+import { buildTarget, builtMtpProjects, dirOf, type MtpProjectScan } from './test-mtp-modules.js';
+import { err, ok, type Result } from './result.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
 import { collectReport, trxFiles, worse } from './test-trx-collect.js';
 import type { TrxRunInfo, TrxTestResult } from './test-trx.js';
@@ -336,10 +337,37 @@ export function mergeKeepingFailures(left: TestRunOutcome, right: TestRunOutcome
  * last discovery would run from its STALE module. A failed build fails that
  * target's modules rather than running whatever an earlier build left behind.
  */
-async function rebuild(target: string, options: TestRunOptions): Promise<string | undefined> {
+async function rebuild(
+  target: string,
+  previous: readonly MtpModuleRun[],
+  options: TestRunOptions,
+): Promise<Result<MtpModuleRun[]>> {
   const timeoutMs = options.timeoutMs ?? DOTNET_TIMEOUT_MS;
   const warnings = await buildTarget(target, dirOf(target), timeoutMs, options.signal);
-  return warnings.length === 0 ? undefined : warnings.join('\n');
+  if (warnings.length > 0) return err(warnings.join('\n'));
+  // OutputPath, AssemblyName and target frameworks may have changed since
+  // discovery. Never execute the obsolete DLL merely because it still exists.
+  const found = await builtMtpProjects(target, timeoutMs);
+  return currentModules(target, found, previous);
+}
+
+/** Keep known uids only for a module MSBuild still identifies as current. */
+function currentModules(
+  target: string,
+  found: MtpProjectScan,
+  previous: readonly MtpModuleRun[],
+): Result<MtpModuleRun[]> {
+  if (found.warnings.length > 0) return err(found.warnings.join('\n'));
+  const known = new Map(previous.map((module) => [module.modulePath, module.uidsById]));
+  return ok(
+    found.projects.flatMap((project) =>
+      project.modules.map((modulePath) => ({
+        modulePath,
+        buildTarget: target,
+        uidsById: known.get(modulePath) ?? new Map<string, string[]>(),
+      })),
+    ),
+  );
 }
 
 /**
@@ -405,11 +433,10 @@ async function runTargets(
   let merged: TestRunOutcome | undefined;
   for (const [target, modules] of byBuildTarget(plan, testIds)) {
     if (context.options.signal?.aborted === true) break;
-    const failure = await rebuild(target, context.options);
-    const one =
-      failure === undefined
-        ? await runModules(await relisted(modules, testIds, context), testIds, context)
-        : emptyOutcome(failure);
+    const rebuilt = await rebuild(target, modules, context.options);
+    const one = rebuilt.ok
+      ? await runModules(await relisted(rebuilt.value, testIds, context), testIds, context)
+      : emptyOutcome(rebuilt.error);
     if (one === undefined) continue;
     merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
   }

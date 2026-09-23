@@ -1,5 +1,4 @@
 /** Implements [SE-COMMANDS], [SE-ACTIONS], [SE-SOLUTION], and [SE-NAVIGATION]. */
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type ExtensionContext, commands, window, workspace } from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
@@ -32,6 +31,7 @@ import {
 } from './constants.js';
 import { configureDotnet } from './dotnet-process.js';
 import { acquireDotnet10Sdk, showAcquireFailureNotification } from './dotnetRuntime.js';
+import { verifyDeployment } from './deployment.js';
 import * as client from './client.js';
 import * as sharedState from './state.js';
 import * as deps from './dependencies.js';
@@ -218,9 +218,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 11: activateShipwright');
   // Implements [DIST-FAILURE-UX] and [BINARY-VSCODE]: deployment-toolkit failures surface a toast
   // and return a degraded API instead of throwing out of activate().
-  const manifestPath = path.join(context.extensionPath, 'shipwright.json');
-  const { activateShipwright } = await import('@nimblesite/shipwright-vscode');
-  const deployResult = await activateShipwright(context, { manifestPath });
+  const deployResult = await verifyDeployment(context.extensionPath, dotnetPath);
   const blockingDiagnostics = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
   if (blockingDiagnostics.length > 0) {
     for (const diagnostic of blockingDiagnostics) {
