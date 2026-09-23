@@ -12,7 +12,7 @@ import {
   assertQuickFix,
   assertReplacement,
   diagnosticCode,
-  diagnosticGone,
+  diagnosticsSettled,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
@@ -64,7 +64,7 @@ async function runImplicitConversion(scenario: CodeFixScenario): Promise<void> {
   try {
     const version = fixture.document.version;
     const range = tokenRange(fixture.document, scenario.target, scenario.occurrence);
-    const diagnostics = await diagnosticGone(fixture.uri, scenario.diagnostic);
+    const diagnostics = await diagnosticsSettled(fixture.uri, scenario.diagnostic);
     assert.ok(diagnostics.every((item) => diagnosticCode(item) !== scenario.diagnostic));
     assert.ok(diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error));
     await assertPrepareAcrossRange(fixture.uri, range, scenario.target);
@@ -214,7 +214,7 @@ async function applyConversion(
 }
 
 async function assertConversionClean(uri: vscode.Uri, diagnostic: string): Promise<void> {
-  const diagnostics = await diagnosticGone(uri, diagnostic);
+  const diagnostics = await diagnosticsSettled(uri, diagnostic);
   assert.ok(
     diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
     'conversion must leave the real F# document free of compiler errors',

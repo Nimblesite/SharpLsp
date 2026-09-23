@@ -174,7 +174,7 @@ ifneq ($(SHARPLSP_DOTNET_ROOT),)
 export DOTNET_ROOT := $(SHARPLSP_DOTNET_ROOT)
 # The resolved root must WIN the lookup, not merely appear on PATH.
 #
-# `$(DOTNET)` is absolute, so every recipe in this file is immune - but the
+# `$(DOTNET)` is absolute, so every recipe in this file is immune — but the
 # tools those recipes spawn are not. build-test-fixtures.mjs, the audit's
 # dotnet-vulnerable.mjs and the packaging scripts all run a BARE `dotnet`, and a
 # bare `dotnet` is whatever PATH names first. A machine carrying a stale root
@@ -185,13 +185,12 @@ export DOTNET_ROOT := $(SHARPLSP_DOTNET_ROOT)
 #
 # The test is delegated to the SHELL rather than done with `firstword`, because
 # every make word function splits on whitespace and the Windows default root is
-# `/c/Program Files/dotnet`. `firstword` reads its head as `/c/Program`, which
+# `/c/Program Files/dotnet`. `firstword` read its head as `/c/Program`, which
 # never equals the root, so the guard prepended again at every level of a
-# recursive build - unbounded PATH growth, and the precedence it was asserting
-# never actually checked. `$${PATH%%:*}` is a whole-string comparison of the
-# first entry, and a `case` glob cannot be used here: make counts parentheses
-# inside `$(shell ...)`, so the `)` closing a case pattern would terminate the
-# function call.
+# recursive build - unbounded PATH growth, and the precedence it exists to
+# assert never actually checked. `$${PATH%%:*}` compares the whole first entry.
+# A `case` glob cannot be used here: make counts parentheses inside
+# `$(shell ...)`, so the `)` closing a case pattern terminates the call.
 #
 # Testing precedence also gets the duplicate-free property the presence test was
 # reaching for: after one prepend the root leads, so a nested sub-make compares
@@ -204,8 +203,8 @@ endif
 # QUOTED, because the resolved root routinely contains a space: the Windows
 # installer's default is `C:\Program Files\dotnet`, which Git Bash hands to make
 # as `/c/Program Files/dotnet`. Unquoted, every recipe below splits it and the
-# shell runs `/c/Program` - exit 127, and `_build-dotnet` dies before it compiles
-# anything. Ubuntu never reproduces it, because /usr/share/dotnet has no space.
+# shell runs `/c/Program` - exit 127, and `_build-dotnet` died before it
+# compiled anything. Ubuntu cannot reproduce it: /usr/share/dotnet has no space.
 DOTNET = "$(if $(SHARPLSP_DOTNET_ROOT),$(SHARPLSP_DOTNET_ROOT)/,)dotnet$(EXE_EXT)"
 
 CHECK_DOTNET_PIN = \
@@ -215,7 +214,7 @@ CHECK_DOTNET_PIN = \
 		echo "       Install the pinned SDK with: make install-dotnet-10" >&2; \
 		exit 1; \
 	fi; \
-	echo "==> SDK: $$($$SHARPLSP_DOTNET_ROOT/dotnet$(EXE_EXT) --version) from $$SHARPLSP_DOTNET_ROOT"
+	echo "==> SDK: $$("$$SHARPLSP_DOTNET_ROOT/dotnet$(EXE_EXT)" --version) from $$SHARPLSP_DOTNET_ROOT"
 
 # ── Build ─────────────────────────────────────────────────────────
 
@@ -887,6 +886,14 @@ PACKAGE_VSIX_TARGETS = \
 # contract (test-dotnet) holds. A release passes VERSION=x.y.z, overriding this.
 $(PACKAGE_VSIX_TARGETS): VERSION ?= 0.0.0
 
+# [DIST-VSIX-CONTENTS] The platform is stripped off the FULL target name,
+# leading underscore included. `package-vsix-` matches from index 1 of
+# `_package-vsix-win32-x64` and leaves the `_` behind, so VSIX_PLAT became
+# `_win32-x64` and flowed into vsce's `--target`, the .vsix filename, the bin/
+# staging directory and fetch-netcoredbg.sh - on all six platforms. The targets
+# were renamed when tools/make/main.mk was consolidated; release.yml:148 is the
+# only caller in the repo and no PR pipeline runs it, so it would have failed
+# first on a tag.
 $(PACKAGE_VSIX_TARGETS): _stamp-version
 	$(eval VSIX_PLAT := $(subst _package-vsix-,,$@))
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))

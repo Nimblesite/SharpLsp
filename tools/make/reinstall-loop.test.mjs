@@ -18,21 +18,10 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from '
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+
 import { dryRun, stepAt } from './make-test-kit.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-
-/**
- * How a recipe spells an invocation of the RESOLVED SDK.
- *
- * `$(DOTNET)` is quoted, because the Windows default root is `C:\Program
- * Files\dotnet`. Matching the closing quote is deliberate: it pins that the
- * step runs the resolved dotnet rather than whatever `dotnet` PATH happens to
- * name, which a bare `dotnet publish` needle could not tell apart.
- */
-const dotnetStep = (verb) => `dotnet${process.platform === 'win32' ? '.exe' : ''}" ${verb}`;
-
 
 /** The root Makefile, which is the build system itself and not a shim. */
 const makefile = () => readFileSync(resolve(ROOT, 'Makefile'), 'utf8');
@@ -59,16 +48,31 @@ const makeVariable = (name) => {
  * here asserts on a variable make prints — a child's lookup is the thing that
  * was wrong, so a child is what gets asked.
  */
+const PROBE_MARKER = 'SHARPLSP_PROBE_PATH=';
+
 const childPath = (env) => {
   const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
-  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
+  // The decoy line is deliberate. GNU Make 4.x prints `make[1]: Entering
+  // directory '...'` to STDOUT whenever MAKELEVEL is set, and `_test-tooling`
+  // always sets it - it runs `node --test` from inside a recipe. Splitting raw
+  // stdout on `:` read that banner as a PATH entry, so the Ubuntu leg went red
+  // reporting `make[1]` as the winning root while macOS stayed green, because
+  // GNU Make 3.81 prints no banner. Emitting the same shape here pins the
+  // parser against that noise on every run and every platform, instead of
+  // trusting that no future recipe, flag or make version ever prints anything.
+  writeFileSync(
+    probe,
+    `_probe_path:\n\t@echo "make[1]: Entering directory '/decoy'"\n\t@echo "${PROBE_MARKER}$$PATH"\n`,
+  );
   const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
     cwd: ROOT,
     encoding: 'utf8',
     env: { ...process.env, ...env, MAKEFILES: probe },
   });
   assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
-  return stdout.trim().split(delimiter);
+  const answer = stdout.split('\n').find((line) => line.startsWith(PROBE_MARKER));
+  assert.ok(answer, `the probe printed no ${PROBE_MARKER} line:\n${stdout}`);
+  return answer.slice(PROBE_MARKER.length).trim().split(delimiter);
 };
 
 /**
@@ -76,22 +80,41 @@ const childPath = (env) => {
  * announces itself.
  *
  * `C:\\Program Files\\dotnet` is where the Windows installer puts the SDK, and
- * Git Bash presents it to make as `/c/Program Files/dotnet`. Nothing about that
- * is exotic — it is the DEFAULT on the platform — so every assertion about the
- * resolved root has to survive it.
+ * Git Bash hands it to make as `/c/Program Files/dotnet`. Nothing about that is
+ * exotic - it is the platform DEFAULT - and a space in a path is the single
+ * most predictable difference between Windows and every other platform. Nothing
+ * in this suite asserted on one before, which is why an unquoted `$(DOTNET)`
+ * reached main and took the Windows build down at exit 127.
+ *
+ * `SHARPLSP_DOTNET_ROOT` is an ordinary variable, so a Linux runner can pose
+ * the question perfectly well. This needs no Windows runner.
  */
-const rootWithSpace = () => {
-  const root = join(mkdtempSync(join(tmpdir(), 'sharplsp-sdk-')), 'Program Files', 'dotnet');
+const rootHolding = (...leaf) => {
+  const root = join(mkdtempSync(join(tmpdir(), 'sharplsp-sdk-')), ...leaf);
   mkdirSync(root, { recursive: true });
   for (const name of ['dotnet', 'dotnet.exe']) {
     const exe = join(root, name);
-    writeFileSync(exe, '#!/bin/sh\necho SHARPLSP-FAKE-DOTNET-RAN\n');
+    writeFileSync(exe, '#!/bin/sh\necho 10.0.303\n');
     chmodSync(exe, 0o755);
   }
   return root;
 };
 
-/** Run a probe recipe through the REAL Makefile, returning its result. */
+const rootWithSpace = () => rootHolding('Program Files', 'dotnet');
+
+/**
+ * A root that is definitely NOT a system directory.
+ *
+ * The PATH guard has to be asked about a root of our choosing, not about
+ * whatever this machine resolved. The tooling runner installs no SDK of its
+ * own, so its only dotnet is `/usr/bin/dotnet` and the resolved root IS
+ * `/usr/bin` - a fixture built as `[root, '/usr/bin', '/bin']` then supplies
+ * the duplicate it goes on to blame the guard for. Stripping `/usr/bin` is not
+ * the answer either: it takes `make` with it. A synthetic root sidesteps both.
+ */
+const plainRoot = () => rootHolding('dotnet');
+
+/** Run a probe recipe through the REAL Makefile, returning the raw result. */
 const probeRecipe = (body, env) => {
   const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
   writeFileSync(probe, `_probe:\n\t@${body}\n`);
@@ -103,48 +126,47 @@ const probeRecipe = (body, env) => {
 };
 
 // [DIST-RUNTIME-ACQUIRE] The resolved root is interpolated into every recipe
-// that spawns the SDK. `C:\Program Files\dotnet` is the Windows default, so an
-// unquoted `$(DOTNET)` splits at the space and the shell runs `/c/Program`,
-// which does not exist: exit 127, and a `_build-dotnet` that dies before it
-// compiles anything. Linux never sees it, because /usr/share/dotnet has no
-// space — so this has to be asserted, not assumed from a green Ubuntu leg.
+// that spawns the SDK. Unquoted, a root with a space splits and the shell runs
+// `/c/Program`: exit 127, and `_build-dotnet` dies before it compiles anything.
 test('a dotnet root containing a space is executed, not split into words', () => {
   const root = rootWithSpace();
   const { status, stdout, stderr } = probeRecipe('$(DOTNET) --version', {
     SHARPLSP_DOTNET_ROOT: root,
   });
-  assert.equal(
-    status,
-    0,
-    `make could not run the dotnet it resolved at ${root}:\n${stderr}`,
-  );
+  assert.equal(status, 0, `make could not run the dotnet it resolved at ${root}:\n${stderr}`);
   assert.match(
     stdout,
-    /SHARPLSP-FAKE-DOTNET-RAN/,
+    /10\.0\.303/,
     `the recipe ran something other than the resolved dotnet:\n${stdout}${stderr}`,
+  );
+});
+
+// The SDK banner reports the version through a command substitution, and a
+// substitution that fails still lets `echo` exit 0. Unquoted, it printed
+// "==> SDK:  from /c/Program Files/dotnet" - a blank version, no error, and the
+// build carried on. Agents.md: no silent failures.
+test('the SDK banner names a version instead of reporting an empty one', () => {
+  const root = rootWithSpace();
+  const { status, stdout, stderr } = probeRecipe('$(CHECK_DOTNET_PIN)', {
+    SHARPLSP_DOTNET_ROOT: root,
+  });
+  assert.equal(status, 0, `the pin check failed against ${root}:\n${stderr}`);
+  assert.match(
+    stdout,
+    new RegExp(`==> SDK: 10\\.0\\.303 from ${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+    `the banner reported no version, and said so without failing:\n${stdout}`,
   );
 });
 
 // The same space defeats a precedence test built on `firstword`, which splits on
 // whitespace: the head of `/c/Program Files/dotnet:/usr/bin` reads as
-// `/c/Program`, never equals the root, and every nested sub-make prepends it
-// again. Unbounded PATH growth, and the guard's whole point lost.
+// `/c/Program`, never equals the root, and every nested sub-make prepends again.
 test('a root containing a space leads the PATH exactly once', () => {
   const root = rootWithSpace();
-  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
-  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
-  const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      SHARPLSP_DOTNET_ROOT: root,
-      PATH: [root, '/usr/bin', '/bin'].join(delimiter),
-      MAKEFILES: probe,
-    },
+  const entries = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
+    PATH: [root, '/usr/bin', '/bin'].join(delimiter),
   });
-  assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
-  const entries = stdout.trim().split(delimiter);
   assert.equal(entries[0], root, `a spaced root lost the lookup to ${entries[0]}`);
   assert.equal(
     entries.filter((entry) => entry === root).length,
@@ -152,6 +174,33 @@ test('a root containing a space leads the PATH exactly once', () => {
     `the spaced root was stacked more than once: ${entries.join(delimiter)}`,
   );
 });
+
+// [DIST-RELEASE] The packaging targets derive the platform from their own name,
+// and `release.yml:148` is the ONLY caller in the repo - no PR pipeline runs
+// them, so a break here surfaces first on a tag. It already had: the targets
+// were renamed `package-vsix-*` -> `_package-vsix-*` when tools/make/main.mk was
+// consolidated, and `$(subst package-vsix-,,$@)` matches from index 1, leaving
+// the underscore behind. Every platform packaged as `_win32-x64`: an unknown
+// --target for vsce, a misnamed .vsix, a bin/ staging dir nothing reads.
+for (const platform of ['linux-x64', 'linux-arm64', 'darwin-arm64', 'darwin-x64', 'win32-x64', 'win32-arm64']) {
+  test(`_package-vsix-${platform} packages that platform, underscore-free`, () => {
+    const recipe = dryRun(`_package-vsix-${platform}`, ['VSIX_PREBUILT=1']);
+    assert.ok(
+      recipe.includes(`--target ${platform}`),
+      `vsce must be handed ${platform}; it rejects anything else`,
+    );
+    assert.ok(
+      recipe.includes(`sharplsp-${platform}.vsix`),
+      `the artifact must be named for ${platform}, or the release uploads a file nobody looks for`,
+    );
+    assert.ok(
+      !recipe.includes(`_${platform}`),
+      `the target's leading underscore leaked into the platform name: ${
+        recipe.split('\n').find((line) => line.includes(`_${platform}`)) ?? ''
+      }`,
+    );
+  });
+}
 
 /** The identifier the loop must derive from the extension manifest, not hardcode. */
 const manifestExtensionId = () => {
@@ -413,12 +462,17 @@ test('the dev VSIX is packaged for the host platform, like every released VSIX',
 // discriminates: with the root absent from PATH the old guard prepends and
 // passes, which is why "absent" alone would have proved nothing.
 test('the resolved SDK wins the PATH, not merely appears on it', () => {
-  const root = makeVariable('DOTNET_ROOT');
-  assert.ok(root, 'make resolved no dotnet root to put on PATH');
+  // This machine must resolve SOMETHING, or the guard never runs at all.
+  assert.ok(makeVariable('DOTNET_ROOT'), 'make resolved no dotnet root to put on PATH');
+
+  // ...but the guard is then asked about a root of OUR choosing, so the answer
+  // cannot depend on where this machine happens to keep dotnet.
+  const root = plainRoot();
   const stale = resolve('/nonexistent-stale-dotnet-root');
   assert.notEqual(stale, root, 'the stale root must not be the resolved one');
 
   const outranked = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
     PATH: [stale, root, '/usr/bin', '/bin'].join(delimiter),
     DOTNET_ROOT: stale,
   });
@@ -429,6 +483,7 @@ test('the resolved SDK wins the PATH, not merely appears on it', () => {
   );
 
   const absent = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
     PATH: [stale, '/usr/bin', '/bin'].join(delimiter),
     DOTNET_ROOT: stale,
   });
@@ -437,7 +492,10 @@ test('the resolved SDK wins the PATH, not merely appears on it', () => {
   // Idempotent: once the root is first, a nested sub-make must not stack it
   // again. Duplicate-free is what the original guard was reaching for, and
   // testing precedence gets it for free.
-  const already = childPath({ PATH: [root, '/usr/bin', '/bin'].join(delimiter) });
+  const already = childPath({
+    SHARPLSP_DOTNET_ROOT: root,
+    PATH: [root, '/usr/bin', '/bin'].join(delimiter),
+  });
   assert.equal(already[0], root, 'a PATH already led by the root keeps it');
   assert.equal(
     already.filter((entry) => entry === root).length,
