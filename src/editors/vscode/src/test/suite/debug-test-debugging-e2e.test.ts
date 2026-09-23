@@ -67,6 +67,14 @@ import {
   closeAllEditors,
   comparablePath,
   deepEq,
+/** The `hitCondition` of every entry in one `setBreakpoints` request. */
+function hitConditionsOf(args: Record<string, any>): string[] {
+  const list: unknown = args['breakpoints'];
+  return Array.isArray(list)
+    ? list.map((entry) => String((entry as Record<string, any>)['hitCondition'] ?? ''))
+    : [];
+}
+
   eq,
   neq,
   requireAt,
@@ -810,9 +818,16 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     // resume it, which is visible as a stutter and wrong on any real loop.
     await debugRun([item]);
     assertOneTestSession(sessions, 'a hit-count breakpoint on a theory');
-    const requests = recorder.requests('setBreakpoints');
-    eq(requests.length >= 1, true, 'the workbench must sync the breakpoint');
-    const sent: unknown = requests[requests.length - 1]?.args['breakpoints'];
+    // `length >= 1` is satisfied by an INTERMEDIATE sync - enabling or moving a
+    // breakpoint is a remove then an add - so reading the last entry at an
+    // arbitrary moment can read the state before the gesture finished. Wait for
+    // the request that carries what this assertion is about.
+    const carried = await recorder.waitForRequestArgs(
+      'setBreakpoints',
+      (args) => hitConditionsOf(args).length === 1 && hitConditionsOf(args)[0] === '2',
+      'the workbench must sync the hit-count breakpoint to the adapter',
+    );
+    const sent: unknown = carried['breakpoints'];
     assert.ok(Array.isArray(sent), 'setBreakpoints carries a breakpoints array');
     eq(sent.length, 1, 'one breakpoint was sent');
     eq(

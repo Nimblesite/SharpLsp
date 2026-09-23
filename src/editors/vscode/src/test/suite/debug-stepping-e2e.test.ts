@@ -301,7 +301,10 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       targetId: target.id,
     });
     const stops = await recorder.waitForStops(baseline + 1);
-    const landed = requireAt(stops, stops.length - 1, 'the run-to-cursor stop');
+    // Positionally: the wait is satisfied by ONE new stop, but a second landing
+    // before the array is read would make the last entry a stop run-to-cursor
+    // did not cause. Index `baseline` is the first stop after the gesture.
+    const landed = requireAt(stops, baseline, 'the run-to-cursor stop');
     neq(landed.reason, 'exception', 'run to cursor must not be reported as an exception stop');
     assertStoppedAt(
       await topFrame(session, landed.threadId),
