@@ -19,6 +19,7 @@ import { enrichResponse, withEventCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
 import { AdapterWire } from './dap-wire';
 import { LaunchedDebuggee } from './dap-debuggee';
+import { SHUTDOWN_DEADLINE_MS, ShutdownDeadline } from './dap-shutdown';
 import { belongsToUserCode, carriesUserCode } from './dap-statement';
 import { VariableExpander } from './dap-variables';
 import { DapHotReload } from './dap-hot-reload';
@@ -143,6 +144,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private readonly handles = new HandleNamespace();
   /** The debuggee the adapter launched, ended here only if the adapter dies first. */
   private readonly debuggee = new LaunchedDebuggee();
+  /** The end a stop request is owed; fires when the adapter wedges instead. */
+  private readonly shutdown: ShutdownDeadline;
   /** True once the session is being torn down; nothing may fire or write. */
   private disposed = false;
   /** The child's latest advertised capabilities, from `capabilities` events. */
@@ -162,7 +165,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       return err(getErrorMessage(cause));
     }
   }
-  constructor(public readonly adapterPath: string) {
+  constructor(
+    public readonly adapterPath: string,
+    shutdownDeadlineMs: number = SHUTDOWN_DEADLINE_MS,
+  ) {
+    this.shutdown = new ShutdownDeadline(shutdownDeadlineMs, () => {
+      this.onShutdownWedged();
+    });
     this.correlator = new RequestCorrelator((message) => {
       this.write(message);
     });
@@ -231,6 +240,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // session is already gone.
     if (this.closed) return;
     this.closed = true;
+    this.shutdown.cancel();
     this.correlator.failAll(why ?? 'exited');
     if (why === undefined || this.disposed) return;
     this.debuggee.endOrphan();
@@ -246,6 +256,21 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.endsSessionOnce('terminated')) {
       this.fire({ type: 'event', event: 'terminated', body: {} });
     }
+  }
+
+  /**
+   * The adapter was asked to stop, answered, and then never ended the session.
+   *
+   * It is alive, so `onChildGone` has not run and will not: the wire is
+   * disposed first, which signals the child while the session is still open,
+   * and the session is then ended by the same path a dead adapter takes — the
+   * debuggee reaped, the user told, `terminated` fired once. Without this the
+   * session stays in the debug toolbar with no way to close it (#260).
+   */
+  private onShutdownWedged(): void {
+    if (this.closed || this.disposed) return;
+    this.wire.dispose();
+    this.onChildGone('stopped answering the request to stop');
   }
 
   /**
@@ -276,6 +301,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     }
     const command = typeof message.command === 'string' ? message.command : '';
     const args = isRecord(message.arguments) ? message.arguments : undefined;
+    this.shutdown.armFor(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1' && command !== '') {
       traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`);
     }
@@ -403,6 +429,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // frames still in flight, and firing into a disposed EventEmitter throws,
     // which takes the whole extension host down with it.
     this.disposed = true;
+    this.shutdown.cancel();
     this.hotReload.dispose();
     this.wire.dispose();
     this.emitter.dispose();
@@ -483,6 +510,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private routeChildMessage(message: DapMessage): void {
     if (this.disposed) return;
     this.debuggee.observe(message);
+    this.shutdown.observe(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
         `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,

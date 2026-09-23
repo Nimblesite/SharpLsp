@@ -99,6 +99,7 @@
         "debug-test-mtp-e2e.test.js",
         "debug-protocol-capabilities-e2e.test.js",
         "debug-session-lifecycle-e2e.test.js",
+        "dap-shutdown-wedge.test.js",
         "debug-output-routing-e2e.test.js",
         "debug-multisession-e2e.test.js"
       ]
