@@ -297,7 +297,22 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       true,
       'the adapter must advertise supportsFunctionBreakpoints',
     );
-    const names: unknown = requested[requested.length - 1]?.args['breakpoints'];
+    // Waited for by NAME, not read off the end of the wire: `requested` was
+    // sampled above to prove the request exists at all, and the entry last on
+    // the wire at that instant need not be the one carrying this name.
+    const sentFunction = await recorder.waitForRequestArgs(
+      'setFunctionBreakpoints',
+      (args) => {
+        const list: unknown = args['breakpoints'];
+        return (
+          Array.isArray(list) &&
+          list.length === 1 &&
+          String((list[0] as Record<string, any>)['name']) === functionName
+        );
+      },
+      'the fully-qualified method name must be forwarded verbatim',
+    );
+    const names: unknown = sentFunction['breakpoints'];
     assert.ok(Array.isArray(names), '`setFunctionBreakpoints` carries a breakpoints array');
     deepEq(
       names.map((entry) => String((entry as Record<string, any>)['name'])),
