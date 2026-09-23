@@ -9,6 +9,8 @@
 // the client and attaches a fresh adapter to it with `--attach`).
 import type { DapMessage } from './dap-emulate';
 import { isRecord } from './dap-emulate';
+import { signalPid } from './child-signal';
+import { info } from './log';
 
 /**
  * The DAP `runInTerminal` kind each `console` value names.
@@ -138,6 +140,19 @@ export class SessionReplayer {
     const attachable =
       process.platform === 'win32' ? body.processId : (body.processId ?? body.shellProcessId);
     const pid = Number(attachable ?? 0);
+    if (this.cancelledTerminalSeqs.delete(Number(message.request_seq))) {
+      // This process was launched for OUR cancelled terminal request, not a
+      // user's attach target. A late response must never restart the session.
+      if (message.success === true && Number.isInteger(pid) && pid > 0) {
+        const ended = signalPid(pid, 'SIGKILL');
+        info(
+          ended.ok
+            ? 'Ended cancelled terminal debuggee.'
+            : `Could not end cancelled terminal debuggee: ${ended.error}`,
+        );
+      }
+      return;
+    }
     if (message.success !== true || !Number.isInteger(pid) || pid <= 0) {
       // Degrade honestly rather than kill the session: respawn the adapter
       // plainly and run the launch through it, adapter-hosted. The debuggee
@@ -218,7 +233,14 @@ export class SessionReplayer {
 
   /** Seqs the router issued itself for its reverse `runInTerminal` request. */
   private readonly ourReverseSeqs = new Set<number>();
+  private readonly cancelledTerminalSeqs = new Set<number>();
   private nextSeq = 2_000_000;
+
+  /** Cancel pending launches without forgetting ownership of their late replies. */
+  public cancelTerminalLaunch(): boolean {
+    for (const seq of this.ourReverseSeqs) this.cancelledTerminalSeqs.add(seq);
+    return this.ourReverseSeqs.size > 0;
+  }
 
   /** Was this reverse-request response answering OUR `runInTerminal`? */
   public isOurReverseResponse(requestSeq: number): boolean {

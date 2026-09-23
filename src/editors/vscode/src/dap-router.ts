@@ -230,6 +230,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // console lines for one death, and the second `terminated` lands after the
     // session is already gone.
     if (this.closed) return;
+    this.replayer.cancelTerminalLaunch();
     this.closed = true;
     this.correlator.failAll(why ?? 'exited');
     if (why === undefined || this.disposed) return;
@@ -276,6 +277,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     }
     const command = typeof message.command === 'string' ? message.command : '';
     const args = isRecord(message.arguments) ? message.arguments : undefined;
+    if (this.cancelPendingTerminal(message, command)) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1' && command !== '') {
       traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`);
     }
@@ -301,6 +303,20 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       return;
     }
     this.write(this.handles.translateRequestArguments(retarget(msg)));
+  }
+
+  /** [DEBUG-FEATURES-LAUNCH-OUTPUT]: Stop can arrive before runInTerminal answers. */
+  private cancelPendingTerminal(message: DapMessage, command: string): boolean {
+    if (command !== 'terminate' && command !== 'disconnect') return false;
+    if (!this.replayer.cancelTerminalLaunch()) return false;
+    // No debuggee has reached netcoredbg yet. Its terminate is a no-op, so
+    // retire the empty adapter and end the launch that WE own, exactly once.
+    this.wire.dispose();
+    this.onChildGone(undefined);
+    this.respondTo(message, true, {});
+    if (this.endsSessionOnce('terminated'))
+      this.fire({ type: 'event', event: 'terminated', body: {} });
+    return true;
   }
 
   /**
@@ -403,6 +419,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // frames still in flight, and firing into a disposed EventEmitter throws,
     // which takes the whole extension host down with it.
     this.disposed = true;
+    this.replayer.cancelTerminalLaunch();
     this.hotReload.dispose();
     this.wire.dispose();
     this.emitter.dispose();
@@ -430,6 +447,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   }
   /** Serialise one message to the child using DAP's framing. */
   public write(message: DapMessage): void {
+    if (this.closed) {
+      this.answerUndeliverable(message);
+      return;
+    }
     this.wire.write(withExceptionPolicy(retarget(message), this.exceptionPolicy));
   }
   /** Send a request in the router's own name and await its response. */
@@ -695,6 +716,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   }
   /** Swap the child process for a respawn, clearing stale transport state. */
   public respawn(attachArgs: readonly string[], onReady?: () => void): void {
+    if (this.disposed || this.closed) return;
     this.transitioning = true;
     this.wire.respawn(attachArgs, this.attaches.farewell(this.correlator.nextSequence()), onReady);
   }

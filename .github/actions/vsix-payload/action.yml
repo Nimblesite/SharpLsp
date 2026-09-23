@@ -16,16 +16,15 @@
 # before this runs.
 name: Verify the packaged VSIX payload
 description: >-
-  Packs the VSIX from the binaries already built in this job and asserts the
+  Clean-rebuilds the binaries, packs the VSIX and asserts the
   platform `sharplsp` binary is in the archive.
 runs:
   using: composite
   steps:
     - name: Build the VSIX
       shell: bash
-      # VSIX_PREBUILT=1 stages the host and sidecars this job just built rather
-      # than invoking cargo and dotnet a second time.
-      run: env VSIX_PREBUILT=1 make _build-vsix
+      # [DIST-VSIX-REBUILD] Packaging must not reuse incremental native output.
+      run: make _build-vsix
     - name: Verify the VSIX contains the platform binary
       shell: bash
       run: |-

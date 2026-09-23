@@ -663,6 +663,12 @@ code plus a regression test, and each test's chunk is green.
       `debug-session-lifecycle-e2e.test.ts` *Restart relaunches the same configuration and
       re-arms the breakpoints* and `debug-output-routing-e2e.test.ts` *integratedTerminal gives
       the debuggee a real terminal, so stdin works*. [DEBUG-FEATURES-LAUNCH-OUTPUT]
+- [x] **Pending terminal Stop (#290).** Real-netcoredbg regression failed before the fix
+      (45 seconds, no termination event). Router/replayer cancellation passes 10 targeted
+      C#/F# cases covering both terminal types, terminate/disconnect and a late owned PID
+      after disposal; full clean-build debug-tests shard passes 66/66 on macOS arm64.
+      [DEBUG-FEATURES-LAUNCH-OUTPUT]
+- [ ] Integrate #290 and verify the unchanged complete Windows/Linux PR matrix.
 - [x] **Every diagnostic was published twice.** The server advertised `diagnosticProvider`
       (pull) AND pushed `publishDiagnostics`; `vscode-languageclient` builds a second
       `DiagnosticCollection` for the pull model and `vscode.languages.getDiagnostics`

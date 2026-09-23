@@ -43,7 +43,7 @@ fi
 
 EXE="$OUTPUT/netcoredbg$EXE_EXT"
 MARKER="$OUTPUT/.sharplsp-dap-hot-reload"
-if [ -f "$EXE" ] && [ "$(cat "$MARKER" 2>/dev/null || true)" = "$BUILD_ID" ]; then
+if [ "${2:-}" != "--rebuild" ] && [ -f "$EXE" ] && [ "$(cat "$MARKER" 2>/dev/null || true)" = "$BUILD_ID" ]; then
   echo "netcoredbg: patched build already available at $EXE"
   exit 0
 fi
@@ -88,6 +88,12 @@ clone_commit() {
 
 clone_commit "https://github.com/Samsung/netcoredbg.git" "$NETCOREDBG_COMMIT" "$SOURCE"
 clone_commit "https://github.com/dotnet/runtime.git" "$CORECLR_COMMIT" "$CORECLR"
+
+# [DIST-VSIX-REBUILD] Rebuild native objects AND the managed helper. A matching
+# marker or warm CMake/MSBuild outputs do not satisfy a full VSIX rebuild.
+if [ "${2:-}" = "--rebuild" ]; then
+  rm -rf "$BUILD" "$OUTPUT" "$SOURCE/src/managed/bin" "$SOURCE/src/managed/obj"
+fi
 
 # [DIST-DEBUGGER-BUNDLE] Upstream mixes CRLF files (steppers.cpp) with LF ones
 # (vscodeprotocol.cpp), and this repo stores every patch LF. Apply against

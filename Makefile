@@ -66,6 +66,8 @@ else
     SHELL       := /bin/bash
 endif
 .SHELLFLAGS := -eo pipefail -c
+# [DIST-VSIX-REBUILD] Cleaning must never race a sibling build/test recipe.
+.NOTPARALLEL:
 
 PROFILE           ?= release
 CARGO_FLAG         = $(if $(filter release,$(PROFILE)),--release,)
@@ -88,7 +90,7 @@ SIDECAR_SLN = src/sidecars/SharpLsp.Sidecars.sln
 SIDECAR_COMMON_TESTS = src/sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj
 RIDER_DIR   = src/editors/rider
 
-BINARY         = target/$(PROFILE)/sharplsp$(EXE_EXT)
+BINARY         = target/$(if $(RUST_TARGET),$(RUST_TARGET)/,)$(PROFILE)/sharplsp$(EXE_EXT)
 SIDECAR_CS_OUT = target/sidecar-csharp
 SIDECAR_FS_OUT = target/sidecar-fsharp
 ZED_WASM       = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
@@ -103,7 +105,8 @@ ARCHIVE_STAGE  = target/archive
 
 # Host platform for local VSIX dev builds
 HOST_PLATFORM = $(shell node -e "process.stdout.write(process.platform + '-' + process.arch)")
-HOST_VSIX_BIN = $(VSCODE_DIR)/bin/$(HOST_PLATFORM)/sharplsp$(EXE_EXT)
+VSIX_PLAT ?= $(HOST_PLATFORM)
+HOST_VSIX_BIN = $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE_EXT)
 
 PREFIX   ?= $(HOME)/.local
 BINDIR    = $(PREFIX)/bin
@@ -129,7 +132,7 @@ KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
         _test-zed _test-rider \
         _gate-rust-coverage _test-vsix _run-vsix-suite _test-vsix-shard \
         _gate-vsix-coverage _build-vsix-suite _check-vsix-chunks \
-        _verify-vsix-payload \
+        _verify-vsix-payload _verify-staged-vsix-payload _rebuild-vsix-binaries _copy-vsix-binaries \
         _test-dotnet _test-dotnet-win-transport _test-tooling _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
@@ -171,7 +174,7 @@ ifneq ($(SHARPLSP_DOTNET_ROOT),)
 export DOTNET_ROOT := $(SHARPLSP_DOTNET_ROOT)
 # The resolved root must WIN the lookup, not merely appear on PATH.
 #
-# `$(DOTNET)` is absolute, so every recipe in this file is immune — but the
+# `$(DOTNET)` is absolute, so every recipe in this file is immune - but the
 # tools those recipes spawn are not. build-test-fixtures.mjs, the audit's
 # dotnet-vulnerable.mjs and the packaging scripts all run a BARE `dotnet`, and a
 # bare `dotnet` is whatever PATH names first. A machine carrying a stale root
@@ -180,17 +183,30 @@ export DOTNET_ROOT := $(SHARPLSP_DOTNET_ROOT)
 # lookup, so testing presence skipped the prepend in precisely the configuration
 # it exists to fix.
 #
-# Testing PRECEDENCE also gets the duplicate-free property the presence test was
+# The test is delegated to the SHELL rather than done with `firstword`, because
+# every make word function splits on whitespace and the Windows default root is
+# `/c/Program Files/dotnet`. `firstword` reads its head as `/c/Program`, which
+# never equals the root, so the guard prepended again at every level of a
+# recursive build - unbounded PATH growth, and the precedence it was asserting
+# never actually checked. `$${PATH%%:*}` is a whole-string comparison of the
+# first entry, and a `case` glob cannot be used here: make counts parentheses
+# inside `$(shell ...)`, so the `)` closing a case pattern would terminate the
+# function call.
+#
+# Testing precedence also gets the duplicate-free property the presence test was
 # reaching for: after one prepend the root leads, so a nested sub-make compares
-# equal and skips it. A first PATH entry containing a space compares unequal and
-# prepends again — harmless, and no worse than the word-splitting the presence
-# test already had.
-ifneq ($(firstword $(subst :, ,$(PATH))),$(SHARPLSP_DOTNET_ROOT))
+# equal and skips it.
+ifneq ($(shell [ "$${PATH%%:*}" = "$(SHARPLSP_DOTNET_ROOT)" ] && echo led),led)
 export PATH := $(SHARPLSP_DOTNET_ROOT):$(PATH)
 endif
 endif
 
-DOTNET = $(if $(SHARPLSP_DOTNET_ROOT),$(SHARPLSP_DOTNET_ROOT)/,)dotnet$(EXE_EXT)
+# QUOTED, because the resolved root routinely contains a space: the Windows
+# installer's default is `C:\Program Files\dotnet`, which Git Bash hands to make
+# as `/c/Program Files/dotnet`. Unquoted, every recipe below splits it and the
+# shell runs `/c/Program` - exit 127, and `_build-dotnet` dies before it compiles
+# anything. Ubuntu never reproduces it, because /usr/share/dotnet has no space.
+DOTNET = "$(if $(SHARPLSP_DOTNET_ROOT),$(SHARPLSP_DOTNET_ROOT)/,)dotnet$(EXE_EXT)"
 
 CHECK_DOTNET_PIN = \
 	if [ -z "$$SHARPLSP_DOTNET_ROOT" ]; then \
@@ -214,7 +230,7 @@ build: _build-rust _build-dotnet _build-vsix _build-zed _build-rider
 
 _build-rust:
 	@echo "==> Building sharplsp ($(PROFILE))..."
-	cargo build $(CARGO_FLAG)
+	cargo build $(CARGO_FLAG) $(if $(RUST_TARGET),--target $(RUST_TARGET),)
 	@test -f $(BINARY) || { echo "ERROR: $(BINARY) not found" >&2; exit 1; }
 
 _build-dotnet:
@@ -237,12 +253,12 @@ _build-dotnet:
 # debug adapter as installable on every platform. Released VSIXes are always
 # built with it, so omitting it here means the dev loop never exercises the
 # shape that ships. [DIST-VSIX-DEV-INSTALL]
-_build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
+_build-vsix: _stage-vsix-binary
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
-	@$(MAKE) _verify-vsix-payload
-	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies \
+	@$(MAKE) _verify-staged-vsix-payload
+	cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
 		--target $(HOST_PLATFORM) -o ../../../$(DEV_VSIX)
 	rm -rf $(VSCODE_DIR)/bin
 
@@ -266,14 +282,24 @@ _build-rider:
 			echo "ERROR: no Rider plugin zip in $(RIDER_DIR)/build/distributions/" >&2; exit 1; \
 		fi
 
-_stage-vsix-binary: _build-rust _build-dotnet
-	@$(MAKE) _stage-vsix-binary-only
+_rebuild-vsix-binaries:
+	@$(CHECK_DOTNET_PIN)
+	cargo clean --profile $(if $(filter debug,$(PROFILE)),dev,$(PROFILE)) $(if $(RUST_TARGET),--target $(RUST_TARGET),)
+	node tools/vsix/clean-sidecar-output.mjs
+	$(MAKE) _build-rust
+	$(MAKE) _build-dotnet
+	$(DOTNET) test $(SIDECAR_CS).Tests/SharpLsp.Sidecar.CSharp.Tests.csproj --configuration $(DOTNET_CFG) --filter FullyQualifiedName~Repo_pinned_sdk_ships_exactly_the_bundled_roslyn
+	bash tools/vsix/build-netcoredbg.sh $(VSIX_PLAT) --rebuild
 
-# Staging with the build prerequisites stripped off. CI's Windows VSIX feature
-# chunks ([DIST-CI-WIN-VSIX]) download the host binary + both sidecars as
-# artifacts from a single build job and fan out, so each chunk must stage what
-# is already on disk instead of rebuilding Rust and .NET seven times over.
-_stage-vsix-binary-only:
+# [DIST-VSIX-REBUILD] Ordered sub-makes keep clean/build/copy sequential under
+# make -j. VSIX_PREBUILT is deliberately not an escape hatch.
+_stage-vsix-binary: _rebuild-vsix-binaries
+	@$(MAKE) _copy-vsix-binaries
+
+# The old staging-only entry point also enforces the clean rebuild contract.
+_stage-vsix-binary-only: _stage-vsix-binary
+
+_copy-vsix-binaries:
 	@echo "==> Staging required VSIX binaries ($(HOST_PLATFORM))..."
 	rm -rf $(VSCODE_DIR)/bin
 	mkdir -p $(dir $(HOST_VSIX_BIN)) $(VSCODE_DIR)/bin/all
@@ -288,7 +314,7 @@ _stage-vsix-binary-only:
 	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	@$(VERIFY_STAGED_SIDECARS)
-	@bash tools/vsix/fetch-netcoredbg.sh $(HOST_PLATFORM)
+	@bash tools/vsix/fetch-netcoredbg.sh $(VSIX_PLAT)
 
 # A .NET apphost is only a launcher: strip SharpLsp.Sidecar.<lang>.dll from beside
 # it and the executable still EXISTS but cannot run. Every copy/rename above is
@@ -484,17 +510,13 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 #                        Empty runs EVERY suite - the inner runner reads an empty
 #                        MOCHA_FILES as "all" - which is what a local `make test`
 #                        wants.
-#   VSIX_SUITE_PREBUILT  non-empty means `out/`, `dist/` and the built fixtures
-#                        are already on disk, so the shard skips `pretest`.
+#   Prebuilt flags cannot skip compilation ([DIST-VSIX-REBUILD]).
 #
 # Coverage is NOT a knob. Every shard on every platform instruments, and one gate
 # at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]); a
 # shard that ran uninstrumented would silently shrink that union.
 #
-# Compiling is not a per-shard cost either. `pretest` cleans, type-checks the
-# whole suite, bundles the extension and builds the .NET test fixtures - minutes
-# of identical work that CI does ONCE in `_build-vsix-suite` and every shard
-# downloads.
+# Every shard compiles the suite and extension after its native rebuild.
 VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
 # `pretest` has a PORTABLE half and a MACHINE-BOUND half.
 #
@@ -508,7 +530,7 @@ VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
 # definitions, a reduced refactor set, and an empty unused-package report - all
 # of which look like test failures rather than a missing restore. Every shard
 # therefore builds the fixtures itself, restoring against its own NuGet cache.
-VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),npm run prepare:test-fixtures,npm run pretest)
+VSIX_PRETEST = npm run prepare:tests
 
 define RUN_VSIX_SUITE
 	status=0; \
@@ -525,25 +547,21 @@ define RUN_VSIX_SUITE
 	exit $$status
 endef
 
-_run-vsix-suite:
+_run-vsix-suite: _stage-vsix-binary
 	$(RUN_VSIX_SUITE)
 
-# [DIST-CI-VSIX-SHARDS] Compile the suite ONCE. `pretest` is the expensive,
-# entirely shard-independent half of a run: clean, tsc the whole suite, esbuild
-# the dev bundle, build the .NET test fixtures. CI runs this in a single job per
-# platform and publishes the result; every shard downloads it and sets
-# VSIX_SUITE_PREBUILT=1. Running it per shard multiplied it by the matrix width.
+# Compilation-only build-phase entry point. Test consumers always recompile
+# their own extension/suite and rebuild binaries under [DIST-VSIX-REBUILD].
 _build-vsix-suite:
 	@echo "==> Compiling the VS Code suite once for every shard..."
-	@cd $(VSCODE_DIR) && npm run pretest
+	@cd $(VSCODE_DIR) && npm run prepare:tests
 
 # The whole suite in one process, with coverage and the ratcheted gate. This is
 # what `make test` runs locally. CI never runs it: unsharded it was the longest
 # job in the pipeline by a wide margin, so the Ubuntu leg fans out over
 # `_test-vsix-shard` instead and gates once over the union.
-_test-vsix: $(if $(VSIX_PREBUILT),,_build-rust _build-dotnet) _build-vsix _verify-vsix-payload
+_test-vsix: _build-vsix
 	@echo "==> Running VS Code extension tests..."
-	@$(MAKE) $(VSIX_STAGE_TARGET)
 	@$(MAKE) _run-vsix-suite
 	@$(CHECK_COV) vscode-extension --json $(VSCODE_DIR)/coverage/coverage-summary.json total.lines.pct
 
@@ -571,17 +589,10 @@ _test-vsix: $(if $(VSIX_PREBUILT),,_build-rust _build-dotnet) _build-vsix _verif
 VSIX_PLATFORM = $(shell node -e "process.stdout.write(process.platform)")
 VSIX_SHARD_LCOV = target/coverage-vsix-shard-$(VSIX_PLATFORM)-$(CHUNK).lcov
 
-#
-# Staging is a `$(MAKE)` sub-invocation, NOT a prerequisite. `VSIX_STAGE_TARGET`
-# is defined further down this file, so in a prerequisite list it expands to
-# nothing and the shard runs against an unstaged `bin/` - which is precisely how
-# this broke once the payload check (whose own sub-make happened to stage as a
-# side effect) moved out to its own job. Recipe lines expand at run time, so
-# this one always sees the variable.
+# The shared runner owns the full rebuild, so invoking it directly is safe too.
 _test-vsix-shard:
 	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-shard CHUNK=lsp)" >&2; exit 1; }
 	@echo "==> Running VS Code coverage shard '$(VSIX_PLATFORM)/$(CHUNK)'..."
-	@$(MAKE) $(VSIX_STAGE_TARGET)
 	@$(MAKE) _run-vsix-suite CHUNK=$(CHUNK)
 	@mkdir -p target
 	@node tools/coverage/relativize-lcov.mjs $(VSCODE_DIR)/coverage/lcov.info $(VSIX_SHARD_LCOV) .
@@ -612,21 +623,13 @@ _gate-vsix-coverage:
 # chunk name into the MOCHA_FILES glob list the inner mocha runner applies, and
 # `_check-vsix-chunks` fails lint if any suite escapes every chunk.
 #
-# Deliberately runs WITHOUT --coverage and skips the coverage gate: one chunk
-# can't meet the line threshold, so the Ubuntu `_test-vsix` job owns coverage.
+# Every chunk is instrumented; the combined coverage gate runs over the union.
 VSIX_CHUNKS = node tools/vsix/vsix-test-chunks.mjs
 
 _check-vsix-chunks:
 	@$(VSIX_CHUNKS) check
 
-# Building the payload the chunk will run against. Locally this is a FULL fresh
-# build — Rust host, both .NET sidecars, and the netcoredbg debug adapter — so a
-# VSIX test can never pass against a stale binary. CI's Windows matrix sets
-# VSIX_PREBUILT=1 because its `build` job already produced the host and sidecars
-# once and every chunk downloads them as artifacts; rebuilding Rust eleven times
-# would add hours. The staging step itself is identical either way, and it is
-# what fetches netcoredbg ([DIST-DEBUGGER-BUNDLE]).
-VSIX_STAGE_TARGET = $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
+# All VSIX consumers use the same fresh payload on local and CI machines.
 
 # Pack the real VSIX and verify the payload actually made it in. `vsce ls` is the
 # same file list `vsce package` writes, so this catches a .vscodeignore that
@@ -648,10 +651,12 @@ VSIX_STAGE_TARGET = $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-bi
 # whatever `dist/` happens to hold, and `npm run pretest` leaves the DEV
 # bundle's sourcemap there, so the first chunk on a clean tree passes and every
 # chunk after it fails on a file that would never have shipped.
-_verify-vsix-payload:
-	@$(MAKE) _stage-vsix-binary-only
+_verify-vsix-payload: _stage-vsix-binary
+	@$(MAKE) _verify-staged-vsix-payload
+
+_verify-staged-vsix-payload:
 	@cd $(VSCODE_DIR) && npm run build:production --silent
-	@cd $(VSCODE_DIR) && node ../../../tools/vsix/verify-vsix-payload.mjs
+	@cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) node ../../../tools/vsix/verify-vsix-payload.mjs
 
 # [DIST-CI-RIDER] The Rider plugin's only automated verification. Skipped
 # locally when no JDK 21+ is installed; CI sets RIDER_REQUIRED=1 so it can never
@@ -706,7 +711,7 @@ _test-dotnet-win-transport:
 # needs no dependency of its own.
 _test-tooling:
 	@echo "==> Running repo tooling tests..."
-	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/audit/dotnet-vulnerable.test.mjs
+	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/audit/dotnet-vulnerable.test.mjs
 
 _website-build:
 	@echo "==> Building website..."
@@ -738,7 +743,7 @@ _lint-zed:
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
 _lint-vsix: _check-vsix-chunks _check-sdk-pin
-	node --test tools/ci/security-gates.test.mjs
+	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
@@ -883,35 +888,21 @@ PACKAGE_VSIX_TARGETS = \
 $(PACKAGE_VSIX_TARGETS): VERSION ?= 0.0.0
 
 $(PACKAGE_VSIX_TARGETS): _stamp-version
-	$(eval VSIX_PLAT := $(subst package-vsix-,,$@))
+	$(eval VSIX_PLAT := $(subst _package-vsix-,,$@))
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))
-	@echo "==> Building sharplsp for $(RUST_TARGET)..."
-	cargo build --release --target $(RUST_TARGET)
-	$(MAKE) _build-dotnet DOTNET_CFG=Release VERSION=$(VERSION)
 	$(MAKE) _package-vsix VSIX_PLAT=$(VSIX_PLAT) RUST_TARGET=$(RUST_TARGET) EXE=$(EXE) VERSION=$(VERSION)
 	$(MAKE) _package-archive VSIX_PLAT=$(VSIX_PLAT) RUST_TARGET=$(RUST_TARGET) EXE=$(EXE)
 
-_package-vsix:
+_package-vsix: PROFILE = release
+_package-vsix: _stage-vsix-binary
 	@echo "==> Packaging VSIX for $(VSIX_PLAT)..."
-	rm -rf $(VSCODE_DIR)/bin/$(VSIX_PLAT) $(VSCODE_DIR)/bin/all
-	mkdir -p $(VSCODE_DIR)/bin/$(VSIX_PLAT) $(VSCODE_DIR)/bin/all
-	cp target/$(RUST_TARGET)/release/sharplsp$(EXE) $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE)
-	chmod +x $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE) 2>/dev/null || true
-	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
-	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) 2>/dev/null || true
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp$(EXE_EXT) \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
-	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
-	@bash tools/vsix/fetch-netcoredbg.sh $(VSIX_PLAT)
 	npm run build --prefix $(VSCODE_DIR)
+	@$(MAKE) _verify-staged-vsix-payload
 	mkdir -p dist
 	# vsce/ovsx refuse to PUBLISH with --pre-release unless the VSIX was also
 	# PACKAGED with --pre-release (it sets preRelease=true in the embedded
 	# manifest). A hyphenated SemVer VERSION (e.g. 0.2.0-rc.1) is a prerelease.
-	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies \
+	cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
 		$(if $(findstring -,$(VERSION)),--pre-release,) \
 		--target $(VSIX_PLAT) \
 		-o ../../../dist/sharplsp-$(VSIX_PLAT).vsix
@@ -1089,6 +1080,7 @@ clean: _clean-rider
 	@echo "==> Cleaning build artifacts..."
 	cargo clean
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml
+	node tools/vsix/clean-sidecar-output.mjs
 	rm -rf $(SIDECAR_CS_OUT) $(SIDECAR_FS_OUT)
 	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
 	rm -rf $(ZED_PKG_DIR) $(DIST_DIR)

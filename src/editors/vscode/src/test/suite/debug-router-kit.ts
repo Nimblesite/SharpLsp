@@ -61,6 +61,23 @@ export class LiveRouter implements vscode.Disposable {
     return event;
   }
 
+  /** Observe protocol traffic without substituting an adapter. */
+  public traffic(): readonly DapMessage[] {
+    return this.messages;
+  }
+
+  /** Answer a reverse request as the DAP client, including a deliberately late answer. */
+  public answerReverse(request: DapMessage, success: boolean, body = {}): void {
+    this.router.handleMessage({
+      type: 'response',
+      seq: ++this.seq,
+      request_seq: request.seq,
+      command: request.command,
+      success,
+      body,
+    });
+  }
+
   async launch(
     fixture: DebugFixture,
     mode: string,

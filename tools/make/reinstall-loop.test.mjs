@@ -14,29 +14,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { dryRun, stepAt } from './make-test-kit.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/** Expands a target's recipe through every sub-make without executing it. */
-const dryRun = (target) => {
-  const { status, stdout, stderr } = spawnSync('make', ['-n', target], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  });
-  assert.equal(status, 0, `make -n ${target} failed:\n${stderr}`);
-  return stdout;
-};
 
-/** Byte offset of a step in the expanded recipe, asserting it is present. */
-const stepAt = (recipe, needle) => {
-  const at = recipe.indexOf(needle);
-  assert.notEqual(at, -1, `step missing from recipe: ${needle}`);
-  return at;
-};
+/**
+ * How a recipe spells an invocation of the RESOLVED SDK.
+ *
+ * `$(DOTNET)` is quoted, because the Windows default root is `C:\Program
+ * Files\dotnet`. Matching the closing quote is deliberate: it pins that the
+ * step runs the resolved dotnet rather than whatever `dotnet` PATH happens to
+ * name, which a bare `dotnet publish` needle could not tell apart.
+ */
+const dotnetStep = (verb) => `dotnet${process.platform === 'win32' ? '.exe' : ''}" ${verb}`;
+
 
 /** The root Makefile, which is the build system itself and not a shim. */
 const makefile = () => readFileSync(resolve(ROOT, 'Makefile'), 'utf8');
@@ -75,6 +71,88 @@ const childPath = (env) => {
   return stdout.trim().split(delimiter);
 };
 
+/**
+ * A dotnet root whose path contains a SPACE, holding an executable that
+ * announces itself.
+ *
+ * `C:\\Program Files\\dotnet` is where the Windows installer puts the SDK, and
+ * Git Bash presents it to make as `/c/Program Files/dotnet`. Nothing about that
+ * is exotic — it is the DEFAULT on the platform — so every assertion about the
+ * resolved root has to survive it.
+ */
+const rootWithSpace = () => {
+  const root = join(mkdtempSync(join(tmpdir(), 'sharplsp-sdk-')), 'Program Files', 'dotnet');
+  mkdirSync(root, { recursive: true });
+  for (const name of ['dotnet', 'dotnet.exe']) {
+    const exe = join(root, name);
+    writeFileSync(exe, '#!/bin/sh\necho SHARPLSP-FAKE-DOTNET-RAN\n');
+    chmodSync(exe, 0o755);
+  }
+  return root;
+};
+
+/** Run a probe recipe through the REAL Makefile, returning its result. */
+const probeRecipe = (body, env) => {
+  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
+  writeFileSync(probe, `_probe:\n\t@${body}\n`);
+  return spawnSync('make', ['_probe'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...env, MAKEFILES: probe },
+  });
+};
+
+// [DIST-RUNTIME-ACQUIRE] The resolved root is interpolated into every recipe
+// that spawns the SDK. `C:\Program Files\dotnet` is the Windows default, so an
+// unquoted `$(DOTNET)` splits at the space and the shell runs `/c/Program`,
+// which does not exist: exit 127, and a `_build-dotnet` that dies before it
+// compiles anything. Linux never sees it, because /usr/share/dotnet has no
+// space — so this has to be asserted, not assumed from a green Ubuntu leg.
+test('a dotnet root containing a space is executed, not split into words', () => {
+  const root = rootWithSpace();
+  const { status, stdout, stderr } = probeRecipe('$(DOTNET) --version', {
+    SHARPLSP_DOTNET_ROOT: root,
+  });
+  assert.equal(
+    status,
+    0,
+    `make could not run the dotnet it resolved at ${root}:\n${stderr}`,
+  );
+  assert.match(
+    stdout,
+    /SHARPLSP-FAKE-DOTNET-RAN/,
+    `the recipe ran something other than the resolved dotnet:\n${stdout}${stderr}`,
+  );
+});
+
+// The same space defeats a precedence test built on `firstword`, which splits on
+// whitespace: the head of `/c/Program Files/dotnet:/usr/bin` reads as
+// `/c/Program`, never equals the root, and every nested sub-make prepends it
+// again. Unbounded PATH growth, and the guard's whole point lost.
+test('a root containing a space leads the PATH exactly once', () => {
+  const root = rootWithSpace();
+  const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
+  writeFileSync(probe, '_probe_path:\n\t@echo "$$PATH"\n');
+  const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      SHARPLSP_DOTNET_ROOT: root,
+      PATH: [root, '/usr/bin', '/bin'].join(delimiter),
+      MAKEFILES: probe,
+    },
+  });
+  assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
+  const entries = stdout.trim().split(delimiter);
+  assert.equal(entries[0], root, `a spaced root lost the lookup to ${entries[0]}`);
+  assert.equal(
+    entries.filter((entry) => entry === root).length,
+    1,
+    `the spaced root was stacked more than once: ${entries.join(delimiter)}`,
+  );
+});
+
 /** The identifier the loop must derive from the extension manifest, not hardcode. */
 const manifestExtensionId = () => {
   const manifest = JSON.parse(
@@ -106,8 +184,8 @@ test('reinstall-vsix rebuilds the binaries it packages, and kills what holds the
 
   // All three components, per the spec's "full cycle".
   assert.match(recipe, /cargo build --release/, 'Rust host must be rebuilt');
-  assert.match(recipe, /dotnet publish .*SharpLsp\.Sidecar\.CSharp\.csproj/, 'C# sidecar must be rebuilt');
-  assert.match(recipe, /dotnet publish .*SharpLsp\.Sidecar\.FSharp\.fsproj/, 'F# sidecar must be rebuilt');
+  assert.match(recipe, /dotnet(\.exe)?" publish .*SharpLsp\.Sidecar\.CSharp\.csproj/, 'C# sidecar must be rebuilt');
+  assert.match(recipe, /dotnet(\.exe)?" publish .*SharpLsp\.Sidecar\.FSharp\.fsproj/, 'F# sidecar must be rebuilt');
   assert.match(recipe, /npm run build --prefix src\/editors\/vscode/, 'extension must be rebuilt');
 
   // A running server holds its binary open - fatally so on Windows - and the

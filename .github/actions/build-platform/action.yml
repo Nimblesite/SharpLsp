@@ -13,8 +13,8 @@
 #   * the packaged VSIX
 #
 # and every one of those outputs is uploaded here, because PHASE 3 is the
-# handoff boundary: no job downstream of this action is permitted to compile
-# anything. A test leg that rebuilds is a bug.
+# handoff boundary for non-VSIX consumers. VSIX package/test consumers MUST
+# clean-rebuild under [DIST-VSIX-REBUILD], even when artifacts are available.
 #
 # STEP ORDER IS LOAD-BEARING. `_build-vsix-suite` writes the INSTRUMENTED bundle
 # to src/editors/vscode/dist and that is what the coverage shards measure;

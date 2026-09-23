@@ -15,8 +15,8 @@
 # runner needs a virtual X server.
 name: Run one VS Code coverage shard
 description: >-
-  Installs deps, stages the prebuilt host + sidecars + debugger and the
-  precompiled suite, builds the .NET test fixtures locally, runs one
+  Installs deps, clean-rebuilds the host + sidecars + debugger and
+  recompiles the suite and .NET test fixtures locally, runs one
   instrumented feature chunk, and uploads its lcov tracefile.
 inputs:
   chunk:
@@ -49,6 +49,10 @@ inputs:
 runs:
   using: composite
   steps:
+    # [DIST-VSIX-REBUILD] Every test entry point rebuilds its native payload.
+    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      with:
+        toolchain: stable
     - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
         dotnet-version: |
@@ -61,16 +65,6 @@ runs:
       with:
         name: ${{ inputs.suite-artifact }}
         path: src/editors/vscode
-    - name: Download the prebuilt host and sidecars
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        name: ${{ inputs.binaries-artifact }}
-        path: target
-    - name: Download the patched debugger
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        name: ${{ inputs.debugger-artifact }}
-        path: ${{ inputs.debugger-path }}
     - name: Cache the NuGet store
       # The shard builds the fixture solution itself (see VSIX_PRETEST in
       # the root Makefile); this keeps the restore that build needs off the
@@ -100,11 +94,6 @@ runs:
         # diagnostics step below knows where the extension-host logs land instead
         # of guessing at the runner's os.tmpdir().
         VSCODE_TEST_USER_DATA_DIR: ${{ inputs.user-data-dir }}
-        # Stage the downloaded host + sidecars + debugger instead of rebuilding
-        # Rust and .NET, and reuse the compiled suite instead of running
-        # `pretest` again.
-        VSIX_PREBUILT: '1'
-        VSIX_SUITE_PREBUILT: '1'
       run: |-
         set -euo pipefail
         if [ "${{ inputs.xvfb }}" = "true" ]; then

@@ -12,6 +12,12 @@ Known vulnerabilities MUST be resolved by upgrading affected direct/transitive d
 
 Regression guards: `tools/audit/dotnet-vulnerable.test.mjs` tests real vulnerable and clean NuGet reports; `tools/ci/security-gates.test.mjs` parses workflow YAML and verifies CI/release dependency enforcement. Both MUST run in CI.
 
+## [DIST-CI-CLASSIFICATION] Fail-Closed Change Detection
+
+The PR workflow MUST successfully retrieve every page of changed files before deciding which checks can skip. An API error, including failure after partial output, or an empty response MUST fail `detect-changes` without publishing classification outputs. The terminal `CI` job MUST depend on every upstream job and fail on any failure or cancellation. The active main-branch ruleset MUST require this exact GitHub Actions check with no bypass actors; build/test failures and pending checks cannot be merged.
+
+Product tests MUST run on pull requests only, not on a push or merge to main. `tools/ci/changed-files.test.mjs` executes the workflow's actual Bash classifier, covering failed, partial, empty, docs-only, code and manifest responses, and guards the terminal dependency list and PR-only trigger. It MUST run through `make _lint-vsix` in CI.
+
 ## [DIST-COMPONENTS] Required Components
 
 SharpLsp has three executable components. All three are REQUIRED and MUST be bundled in the VSIX. Missing any one of them puts activation into degraded mode with a user-facing error notification (see [DIST-FAILURE-UX]).
@@ -158,6 +164,19 @@ The VSIX is self-contained. A user who installs the extension gets everything th
 - `sharplsp-sidecar-fsharp` — framework-dependent .NET assembly, bundled at `bin/all/`
 
 **No component is ever installed via `dotnet tool install`, package manager, or any mechanism outside the VSIX.** The `dotnet-tool` source type is NOT used for VSIX distribution.
+
+## [DIST-VSIX-REBUILD] Mandatory Clean Rebuild Before Packaging and Tests
+
+Every supported VSIX package and test entry point MUST rebuild its complete payload from clean compiler output, on local machines AND CI. A successful incremental build, a cached binary, or a previous test run is not proof of freshness.
+
+1. Delete Rust objects for the selected profile/target before rebuilding the host. Delete generated `bin`/`obj` for all sidecar projects and both publish directories before publishing C# and F#. This includes Roslyn's BuildHost and transitive assemblies, not merely the apphost executable.
+2. Rebuild the patched netcoredbg native binary and its managed helper from clean CMake/MSBuild output on every supported debugger platform. Existing build-ID markers do not bypass this. Platforms explicitly without a bundled debugger retain their documented fallback.
+3. Run the Roslyn/pinned-SDK compatibility regression before staging. Failures in clean, build, compatibility verification, copy, or package verification MUST stop the consumer; never fall back to an old output tree.
+4. Stage only after all builds succeed, into an empty VSIX `bin` tree. Recompile the extension/test JavaScript before its consumer. Verify the production payload before packaging.
+5. `_build-vsix`, `_package-vsix` and every platform wrapper, `_test-vsix`, `_test-vsix-shard`, `_run-vsix-suite`, and `_verify-vsix-payload` MUST enforce this automatically. `VSIX_PREBUILT` and `VSIX_SUITE_PREBUILT` MUST NOT bypass it. `npm test`, `npm run test:run`, and `vscode:prepublish` MUST enforce the same rule.
+6. Clean/build/stage/consume steps MUST run in order. Parallel builds in the same checkout must not overwrite a payload while it is packaged or tested. A filesystem race is a failure, never a passing verification.
+
+Regression coverage: `tools/make/vsix-rebuild.test.mjs` exercises the actual expanded Make recipes, including prebuilt flags and all six release platforms. `tools/vsix/rebuild-contract.test.mjs` verifies npm lifecycle hooks and removal of real stale BuildHost files while preserving sources. Both run in `_test-tooling`; workflow wiring is also checked by `tools/ci/security-gates.test.mjs` in `_lint-vsix`.
 
 ## [DIST-VSIX-LAYOUT] VSIX Layout
 
