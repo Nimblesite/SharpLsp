@@ -28,11 +28,20 @@ import { SHUTDOWN_DEADLINE_MS } from '../../dap-shutdown';
 import { isRecord, type DapMessage } from '../../dap-emulate';
 import { buildProjectXml, writeProject } from './dotnet-project-kit';
 import { TFM, buildProject, isolateFromRepoMsbuild } from './run-debug-fixtures';
-import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { eq, pollUntilResult, removeDirRecursive } from './test-helpers';
 
 /** How long this suite gives the router's own deadline to fire. */
 const TEST_DEADLINE_MS = 400;
+
+/**
+ * Budget for one wait on the stub: a response, or the router's synthesised
+ * `terminated`. The stub answers in milliseconds and the deadline under test
+ * is TEST_DEADLINE_MS, so COMMAND_MS is more than ten times what either
+ * needs, and sits well under the default test ceiling — a wait that could
+ * outlive its test would be killed by mocha with no diagnostic.
+ */
+const WAIT_MS = COMMAND_MS;
 
 /** The stub reads this file beside its apphost to learn how to misbehave. */
 const BEHAVIOUR_FILE = 'behaviour.txt';
@@ -161,7 +170,7 @@ class WedgeDriver {
     const answer = await pollUntilResult(
       async () => this.emitted.find((m) => m.type === 'response' && m.request_seq === seq),
       (m) => m !== undefined,
-      DEBUG_SESSION_MS,
+      WAIT_MS,
       10,
     );
     assert.ok(answer, `the stub answered ${command}`);
@@ -178,7 +187,7 @@ class WedgeDriver {
     return await pollUntilResult(
       async () => this.events('terminated'),
       (found) => found.length > 0,
-      DEBUG_SESSION_MS,
+      WAIT_MS,
       10,
     );
   }
@@ -201,6 +210,9 @@ suite('An adapter that stops answering the request to stop', () => {
   let outDir = '';
 
   suiteSetup(async function () {
+    // A real `dotnet build` of the F# stub: NuGet restore of FSharp.Core plus
+    // the F# compiler, once for the suite. Cold on a CI runner that is tens of
+    // seconds — the same budget every other suite that builds a fixture uses.
     this.timeout(FIXTURE_BUILD_MS);
     dir = mkdtempSync(path.join(tmpdir(), 'sharplsp-wedge-'));
     ({ apphost, outDir } = await buildStub(dir));
@@ -214,8 +226,7 @@ suite('An adapter that stops answering the request to stop', () => {
     writeFileSync(path.join(outDir, BEHAVIOUR_FILE), behaviour, 'utf8');
   };
 
-  test('terminate that is answered but never honoured still ends the session', async function () {
-    this.timeout(DEBUG_TEST_MS);
+  test('terminate that is answered but never honoured still ends the session', async () => {
     behave(BEHAVIOUR.wedge);
     const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
     try {
@@ -239,8 +250,7 @@ suite('An adapter that stops answering the request to stop', () => {
     }
   });
 
-  test('disconnect is owed an end on the same deadline as terminate', async function () {
-    this.timeout(DEBUG_TEST_MS);
+  test('disconnect is owed an end on the same deadline as terminate', async () => {
     behave(BEHAVIOUR.wedge);
     const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
     try {
@@ -255,8 +265,7 @@ suite('An adapter that stops answering the request to stop', () => {
     }
   });
 
-  test('an adapter that honours the stop is never second-guessed', async function () {
-    this.timeout(DEBUG_TEST_MS);
+  test('an adapter that honours the stop is never second-guessed', async () => {
     behave(BEHAVIOUR.honest);
     const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
     try {
@@ -273,8 +282,7 @@ suite('An adapter that stops answering the request to stop', () => {
     }
   });
 
-  test('a restart inside the deadline retires it along with the adapter it was owed by', async function () {
-    this.timeout(DEBUG_TEST_MS);
+  test('a restart inside the deadline retires it along with the adapter it was owed by', async () => {
     behave(BEHAVIOUR.wedge);
     const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
     try {
@@ -315,8 +323,7 @@ suite('An adapter that stops answering the request to stop', () => {
     }
   });
 
-  test('a request that is not a stop request arms nothing', async function () {
-    this.timeout(DEBUG_TEST_MS);
+  test('a request that is not a stop request arms nothing', async () => {
     behave(BEHAVIOUR.wedge);
     const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
     try {
