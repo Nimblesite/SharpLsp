@@ -169,6 +169,7 @@
         "lifecycle-e2e.test.js",
         "sdk-host-kit.test.js",
         "sdk-pin.test.js",
+        "sdk-pin-prerelease.test.js",
         "sdk-resolved-host.test.js",
         "sdk-sidecar-host.test.js",
         "sdk-runtime-floor.test.js",

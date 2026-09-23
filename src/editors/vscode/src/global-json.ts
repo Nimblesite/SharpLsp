@@ -99,8 +99,9 @@ export function sdkSatisfiesPin(installed: string, pin: SdkPin): boolean {
   const want = parseSdkVersion(pin.version);
   const got = parseSdkVersion(installed);
   if (want === undefined || got === undefined) return false;
-  if (compare(got, want) < 0) return false;
-  if (compare(got, want) === 0 && isPrerelease(installed) && !isPrerelease(pin.version)) {
+  const order = compare(got, want);
+  if (order < 0) return false;
+  if (order === 0 && comparePrerelease(prereleaseOf(installed), prereleaseOf(pin.version)) < 0) {
     return false;
   }
   if (got.major !== want.major && !isMajorPolicy(pin.rollForward)) return false;
@@ -165,13 +166,57 @@ function releaseCore(version: string): string {
 }
 
 /**
- * Whether this version is a prerelease, which sorts BELOW its own release.
+ * The prerelease part of a version, or undefined when it is a release.
  *
  * Build metadata carries no precedence and may itself contain `-`
- * (`10.0.0+build-5` is a release), so it goes before the question is asked.
+ * (`10.0.0+build-5` is a release), so it is cut before the question is asked.
  */
+function prereleaseOf(version: string): string | undefined {
+  const core = version.split('+')[0] ?? '';
+  const at = core.indexOf('-');
+  return at === -1 ? undefined : core.slice(at + 1);
+}
+
+/** Whether this version is a prerelease, which sorts BELOW its own release. */
 function isPrerelease(version: string): boolean {
-  return (version.split('+')[0] ?? '').includes('-');
+  return prereleaseOf(version) !== undefined;
+}
+
+/**
+ * Semver prerelease ordering, asked only at equal `major.minor.band.patch`.
+ *
+ * An absent prerelease is the release itself, which outranks every prerelease
+ * of the same number. Otherwise the dot-separated identifiers are compared
+ * left to right, and a shorter list sorts below a longer one whose leading
+ * identifiers match — so `rc` < `rc.1` < `rc.2` < `rc.10`.
+ */
+function comparePrerelease(left: string | undefined, right: string | undefined): number {
+  if (left === right) return 0;
+  if (left === undefined) return 1;
+  if (right === undefined) return -1;
+  const ours = left.split('.');
+  const theirs = right.split('.');
+  for (let index = 0; index < Math.max(ours.length, theirs.length); index += 1) {
+    const order = compareIdentifier(ours[index], theirs[index]);
+    if (order !== 0) return order;
+  }
+  return 0;
+}
+
+/**
+ * One prerelease identifier. Numeric identifiers compare numerically and rank
+ * below any alphanumeric one; a missing identifier ranks below a present one.
+ */
+function compareIdentifier(left: string | undefined, right: string | undefined): number {
+  if (left === undefined) return -1;
+  if (right === undefined) return 1;
+  const ours = Number(left);
+  const theirs = Number(right);
+  if (Number.isInteger(ours) && Number.isInteger(theirs)) return ours - theirs;
+  if (Number.isInteger(ours)) return -1;
+  if (Number.isInteger(theirs)) return 1;
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
 }
 
 /** Whether any installed SDK satisfies the pin. */
