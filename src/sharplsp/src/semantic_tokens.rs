@@ -197,50 +197,63 @@ fn fetch_full_tokens(
     Ok(Some(result.data))
 }
 
+/// Integers per token on the wire: `[deltaLine, deltaStart, length, tokenType,
+/// tokenModifiers]`.
+const TOKEN_FIELDS: usize = 5;
+
 /// Compute semantic token edits between old and new flat i32 arrays.
+///
+/// Implements [SHARPLSP-FEATURES-HIGHLIGHTING] "Delta semantic tokens".
+///
+/// The diff is taken over whole TOKENS, never over the flat integers. An edit's
+/// `data` is a list of tokens, so an integer-granular range that began or ended
+/// inside a token could only be sent by dropping the partial token — and that is
+/// what left the client's array shorter than the server's cache, so that every
+/// later delta landed outside it (#292). The matching suffix is clamped so it
+/// never overlaps the matching prefix: without the clamp, appending a copy of
+/// the last tokens looks like no change at all.
 fn compute_delta(old: &[i32], new: &[i32]) -> Vec<SemanticTokensEdit> {
-    if old == new {
-        return vec![];
-    }
-    // Find first differing position.
-    let prefix_len = old
+    let old_tokens = old.as_chunks::<TOKEN_FIELDS>().0;
+    let new_tokens = new.as_chunks::<TOKEN_FIELDS>().0;
+    let prefix = old_tokens
         .iter()
-        .zip(new.iter())
+        .zip(new_tokens)
         .take_while(|(a, b)| a == b)
         .count();
-    // Find last differing position from the end.
-    let suffix_len = old
+    let unmatched = old_tokens
+        .len()
+        .min(new_tokens.len())
+        .saturating_sub(prefix);
+    let suffix = old_tokens
         .iter()
         .rev()
-        .zip(new.iter().rev())
+        .zip(new_tokens.iter().rev())
         .take_while(|(a, b)| a == b)
-        .count();
-    let old_changed_end = old.len().saturating_sub(suffix_len);
-    let new_changed_end = new.len().saturating_sub(suffix_len);
-
-    if prefix_len >= old_changed_end && prefix_len >= new_changed_end {
-        return vec![];
-    }
-
-    let delete_count = old_changed_end.saturating_sub(prefix_len);
-    let insert_data: Vec<SemanticToken> = new
-        .get(prefix_len..new_changed_end)
+        .count()
+        .min(unmatched);
+    let deleted = old_tokens
+        .len()
+        .saturating_sub(prefix)
+        .saturating_sub(suffix);
+    let inserted: Vec<SemanticToken> = new_tokens
+        .get(prefix..new_tokens.len().saturating_sub(suffix))
         .unwrap_or_default()
-        .as_chunks::<5>()
-        .0
         .iter()
         .map(token_from_record)
         .collect();
-
+    if deleted == 0 && inserted.is_empty() {
+        return vec![];
+    }
     vec![SemanticTokensEdit {
-        start: u32::try_from(prefix_len).unwrap_or(0),
-        delete_count: u32::try_from(delete_count).unwrap_or(0),
-        data: if insert_data.is_empty() {
-            None
-        } else {
-            Some(insert_data)
-        },
+        start: wire_offset(prefix),
+        delete_count: wire_offset(deleted),
+        data: (!inserted.is_empty()).then_some(inserted),
     }]
+}
+
+/// The flat-array offset or count that `tokens` whole tokens occupy.
+fn wire_offset(tokens: usize) -> u32 {
+    u32::try_from(tokens.saturating_mul(TOKEN_FIELDS)).unwrap_or(u32::MAX)
 }
 
 /// Token type legend — must match the sidecar's `SemanticTokensResolver.TokenTypes`.
@@ -297,7 +310,7 @@ fn token_field(value: i32) -> u32 {
 /// The wire format is `[deltaLine, deltaStart, length, tokenType,
 /// tokenModifiers]` per token; taking the record as a fixed-size array is what
 /// makes every field access infallible without indexing.
-fn token_from_record(record: &[i32; 5]) -> SemanticToken {
+fn token_from_record(record: &[i32; TOKEN_FIELDS]) -> SemanticToken {
     let [delta_line, delta_start, length, token_type, modifiers] = *record;
     SemanticToken {
         delta_line: token_field(delta_line),
@@ -311,7 +324,7 @@ fn token_from_record(record: &[i32; 5]) -> SemanticToken {
 /// Decode a flat i32 array into LSP `SemanticTokens`.
 fn decode_tokens(data: &[i32]) -> SemanticTokens {
     let tokens: Vec<SemanticToken> = data
-        .as_chunks::<5>()
+        .as_chunks::<TOKEN_FIELDS>()
         .0
         .iter()
         .map(token_from_record)
@@ -400,12 +413,86 @@ mod tests {
     }
 
     #[test]
-    fn compute_delta_when_change_is_absorbed_by_prefix_and_suffix_is_empty() {
-        // The new array merely duplicates the old: the matching prefix and suffix
-        // overlap so there is no net change to emit.
+    fn compute_delta_for_an_appended_copy_of_the_last_token_inserts_it() {
+        // The matching prefix and the matching suffix would overlap here; the
+        // suffix must yield, or a real second token is reported as no change.
         let old = [1, 2, 3, 4, 5];
         let new = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
 
-        assert!(compute_delta(&old, &new).is_empty());
+        let edits = compute_delta(&old, &new);
+
+        let edit = edits.first().unwrap();
+        assert_eq!(edit.start, 5, "the insert lands after the existing token");
+        assert_eq!(edit.delete_count, 0, "nothing is deleted");
+        assert_eq!(
+            edit.data.as_ref().unwrap().len(),
+            1,
+            "one token is inserted"
+        );
+    }
+
+    #[test]
+    fn compute_delta_replaces_a_token_whose_leading_fields_still_match() {
+        // Only `length` changed: an integer-granular diff would begin inside the
+        // token and have to drop it, sending a deletion with no replacement.
+        let old = [0, 0, 1, 0, 0];
+        let new = [0, 0, 2, 0, 0];
+
+        let edits = compute_delta(&old, &new);
+
+        let edit = edits.first().unwrap();
+        assert_eq!(edit.start, 0, "the edit starts on the token boundary");
+        assert_eq!(edit.delete_count, 5, "the whole old token is deleted");
+        let inserted = edit.data.as_ref().unwrap();
+        assert_eq!(inserted.len(), 1, "and the whole new token replaces it");
+        assert_eq!(inserted.first().unwrap().length, 2);
+    }
+
+    /// Replay `edits` over `old` exactly as an LSP client does.
+    fn apply(old: &[i32], edits: &[SemanticTokensEdit]) -> Vec<i32> {
+        let mut data = old.to_vec();
+        for edit in edits.iter().rev() {
+            let start = usize::try_from(edit.start).unwrap();
+            let end = start + usize::try_from(edit.delete_count).unwrap();
+            let inserted: Vec<i32> = edit.data.iter().flatten().flat_map(record_of).collect();
+            let _replaced: Vec<i32> = data.splice(start..end, inserted).collect();
+        }
+        data
+    }
+
+    /// The five wire integers of one decoded token.
+    fn record_of(token: &SemanticToken) -> [i32; TOKEN_FIELDS] {
+        [
+            token.delta_line,
+            token.delta_start,
+            token.length,
+            token.token_type,
+            token.token_modifiers_bitset,
+        ]
+        .map(|field| i32::try_from(field).unwrap())
+    }
+
+    #[test]
+    fn compute_delta_edits_replay_to_exactly_the_new_array() {
+        let a = [0, 0, 1, 0, 0];
+        let b = [0, 2, 3, 1, 0];
+        let c = [1, 0, 4, 2, 0];
+        let d = [0, 5, 6, 3, 1];
+        let cases: [(Vec<i32>, Vec<i32>); 6] = [
+            ([a, b, c].concat(), [d, a, b, c].concat()),
+            ([a, b, c].concat(), [a, d, b, c].concat()),
+            ([a, b, c].concat(), [a, d, c].concat()),
+            ([a, b, c].concat(), [a, c].concat()),
+            ([a, b, c].concat(), [a].concat()),
+            ([a, b, c, d].concat(), [a, b, c, d, c, d].concat()),
+        ];
+        for (old, new) in &cases {
+            let edits = compute_delta(old, new);
+            assert_eq!(
+                &apply(old, &edits),
+                new,
+                "old={old:?} new={new:?} edits={edits:?}"
+            );
+        }
     }
 }

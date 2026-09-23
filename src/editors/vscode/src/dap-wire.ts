@@ -210,16 +210,35 @@ export class AdapterWire {
   }
 
   /**
-   * Detach from the child and stop it.
+   * Detach from the child and stop it. True when the child was still alive to
+   * stop — the caller then owns whatever that child was holding.
    *
-   * `signalChild`, not `child.kill()`: a child whose spawn failed has no pid,
-   * and Node turns that into `kill(0, ...)` — a SIGTERM to the extension
-   * host's own process group. See child-signal.ts.
+   * The same SIGTERM-then-SIGKILL schedule as `abandon` and `respawn`: an
+   * adapter still alive at dispose is one that did not exit on its own, and
+   * one SIGTERM trusted to be acted on is how a wedged one stayed up. Both
+   * signals go through `signalChild`, never `child.kill()`: a child whose spawn
+   * failed has no pid, and Node turns that into `kill(0, ...)` — a SIGTERM to
+   * the extension host's own process group. See child-signal.ts.
    */
-  public dispose(): void {
+  public dispose(): boolean {
     this.child.stdout.removeAllListeners('data');
     this.child.stderr.removeAllListeners('data');
-    if (!this.host.isClosed()) signalChild(this.child);
+    if (this.host.isClosed()) return false;
+    escalate(this.child, 0);
+    return true;
+  }
+
+  /**
+   * Detach from a child that is alive but has stopped answering, and end it.
+   *
+   * Escalates to SIGKILL a second after the SIGTERM — the same schedule a
+   * replaced child gets in `respawn`. Its `exit` still settles through
+   * `watchDeath`, which the caller has already closed the session against.
+   */
+  public abandon(): void {
+    this.child.stdout.removeAllListeners('data');
+    this.child.stderr.removeAllListeners('data');
+    escalate(this.child, 0);
   }
 
   /** Spawn netcoredbg and wire its output into the frame parser. */

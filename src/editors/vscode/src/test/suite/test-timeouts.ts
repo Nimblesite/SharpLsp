@@ -198,6 +198,19 @@ export const REAL_REPO_WARMUP_MS = 480_000;
  */
 export const SETTLE_MS = 10_000;
 
+/**
+ * The readiness POLL inside `setupLspTestSuite`, which its callers run under an
+ * `ACTIVATION_MS` hook.
+ *
+ * Strictly below that ceiling, by a whole `SETTLE_MS`: the poll begins only
+ * after the scratch directory and the probe file exist, and a budget equal to
+ * the ceiling let mocha kill the hook first, every time, so the report was
+ * "Timeout of 60000ms exceeded ... ensure done() is called" - a promise bug
+ * that does not exist - instead of the server that never answered
+ * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ */
+export const READINESS_MS = ACTIVATION_MS - SETTLE_MS;
+
 // ── Runner-level ceilings ────────────────────────────────────────
 
 /**

@@ -28,6 +28,7 @@
 // against a live adapter.
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
 import { splitQualifiedName, stateMachineMethod } from './dap-frames';
+import { err, ok, type Result } from './result';
 
 /** The internal static the runtime keys async-debugging support on. */
 const DEBUG_FLAG = 'System.Threading.Tasks.Task.s_asyncDebuggingEnabled';
@@ -159,15 +160,21 @@ export async function topFrameId(host: ChainHost, threadId: number): Promise<num
  * Enable the runtime's async-task registry.
  *
  * Must run while the debuggee is paused and BEFORE the awaits under
- * inspection are reached — `dap-stack.ts` arms it at the entry stop.
+ * inspection are reached — `dap-stack.ts` arms it at the entry stop. A refusal
+ * is returned as the adapter's own words, never swallowed: without the registry
+ * every later walk can only fall back to the physical stack, and a fallback
+ * with no cause on record is indistinguishable from the reconstruction being
+ * broken.
  */
-export async function armAsyncDebugging(host: ChainHost, frameId: number): Promise<boolean> {
+export async function armAsyncDebugging(host: ChainHost, frameId: number): Promise<Result<void>> {
   const response = await host.request('setExpression', {
     expression: DEBUG_FLAG,
     value: 'true',
     frameId,
   });
-  return response.success !== false;
+  if (response.success !== false) return ok(undefined);
+  const reason = typeof response.message === 'string' ? response.message : 'no message';
+  return err(`setExpression ${DEBUG_FLAG} refused: ${reason}`);
 }
 
 /** Strip the `{...}` netcoredbg wraps object values in. */

@@ -38,9 +38,18 @@ internal sealed partial class WorkspaceManager
         }
     }
 
+    /// <summary>
+    /// Drop the project a root already owns, so reopening it replaces rather than duplicates.
+    /// </summary>
+    /// <remarks>
+    /// Scoped to THIS root by file path, and applied to <c>_solution</c> — the one
+    /// authority. Removing from <c>_adhocWorkspace</c> instead left the removal
+    /// invisible to everything that reads the solution, and made the workspace a
+    /// second, silently diverging copy of the loaded set. Issue #294.
+    /// </remarks>
     private void RemoveExistingProjectlessRoot(string rootPath)
     {
-        var project = _adhocWorkspace?.CurrentSolution.Projects.FirstOrDefault(candidate =>
+        var project = _solution?.Projects.FirstOrDefault(candidate =>
             candidate.FilePath is not null
             && string.Equals(
                 NormalizeRootPath(candidate.FilePath),
@@ -53,11 +62,7 @@ internal sealed partial class WorkspaceManager
             return;
         }
 
-        var nextSolution = _adhocWorkspace!.CurrentSolution.RemoveProject(project.Id);
-        if (!_adhocWorkspace.TryApplyChanges(nextSolution))
-        {
-            Log.Warning("Could not replace reopened projectless root {Root}", rootPath);
-        }
+        _solution = _solution!.RemoveProject(project.Id);
     }
 
     /// <summary>
@@ -216,21 +221,12 @@ internal sealed partial class WorkspaceManager
                 generation,
                 resolved.References.Count
             );
-            ApplyAdhocChanges(nextSolution);
             _solution = nextSolution;
             _ = _projectlessDegradations.TryRemove(rootPath, out _);
         }
         finally
         {
             _ = _solutionMutationLock.Release();
-        }
-    }
-
-    private void ApplyAdhocChanges(Solution nextSolution)
-    {
-        if (_adhocWorkspace is not null && !_adhocWorkspace.TryApplyChanges(nextSolution))
-        {
-            Log.Warning("Could not apply restored file-based package references");
         }
     }
 

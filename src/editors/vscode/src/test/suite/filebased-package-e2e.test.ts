@@ -47,6 +47,58 @@ function insertionText(item: vscode.CompletionItem): string {
   return inserted;
 }
 
+/**
+ * The provisional "restore pending" notice the host publishes while a
+ * `#:package` reference is still being resolved (`RESTORE_PENDING_CODE` in
+ * src/sharplsp/src/diagnostics.rs). Its REAPPEARANCE on an already-resolved root
+ * is the signature of that root's workspace being rebuilt underneath it.
+ */
+const RESTORE_PENDING = 'SLSPC0002';
+
+/**
+ * How long to keep watching the packaged root while a neighbour is loaded.
+ *
+ * The eviction of issue #294 lands ~22ms after the neighbouring `workspace/open`
+ * and is repaired some time later — 2.4s on a fast machine, over two minutes on
+ * a slow Windows runner. The window only has to be wide enough to contain the
+ * break; it deliberately does NOT wait for the repair, because the repair is
+ * what used to hide this.
+ */
+const EVICTION_WATCH_MS = 5_000;
+
+/**
+ * Every distinct error code seen on `uri` while `during` runs AND for
+ * {@link EVICTION_WATCH_MS} after it returns.
+ *
+ * Sampling starts before `during` does, because the eviction lands during the
+ * neighbour's `workspace/open`, and continues past it, because the republished
+ * diagnostics arrive asynchronously ~22ms later. A caller then asserts over the
+ * whole set rather than over the final state — which is the difference between
+ * "never broke" and "broke and recovered before anyone looked".
+ */
+async function codesSeenDuring(uri: vscode.Uri, during: () => Promise<void>): Promise<Set<string>> {
+  const seen = new Set<string>();
+  // Sampling runs until `during` returns and the tail window elapses. Infinity,
+  // not `undefined`: the poll loop below reads this from a nested closure, so a
+  // sentinel that is also the "not set yet" value keeps the deadline check a
+  // single comparison and keeps the variable genuinely reassigned exactly once.
+  let stopAt = Number.POSITIVE_INFINITY;
+  const sample = (): void => {
+    for (const diagnostic of errorsFor(uri)) seen.add(diagnosticCode(diagnostic));
+  };
+  const poll = (async () => {
+    for (;;) {
+      sample();
+      if (Date.now() >= stopAt) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  })();
+  await during();
+  stopAt = Date.now() + EVICTION_WATCH_MS;
+  await poll;
+  return seen;
+}
+
 suite('VSIX E2E — C# file-based #:package directives', () => {
   let tmpDir: string;
 
@@ -190,6 +242,21 @@ Console.WriteLine(payload.Count);
   });
 
   // Implements [SCRIPT-MULTIROOT] and guards package-reference leakage.
+  // Implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD] and [SCRIPT-CONE].
+  //
+  // Isolation between two file-based roots is TWO claims, not one: the package
+  // must not leak INTO the plain root, and opening the plain root must not evict
+  // it FROM the packaged one. Only the first was ever asserted, and the second is
+  // where issue #294 lived -- WorkspaceManager holds ONE `_solution`, so loading
+  // the neighbour replaces the packaged root's restored context outright.
+  //
+  // That defect was invisible to an end-state assertion. The binding is rebuilt
+  // some time later, so a test that polls until completion finally succeeds
+  // passes on a machine that rebinds quickly and times out only on one that does
+  // not: a green run meant "recovered in time", never "never broke". It was green
+  // on darwin and linux for exactly that reason while the bug was live. So every
+  // assertion here that matters is sampled ACROSS the neighbour's open rather
+  // than after it, and the recovery is treated as evidence, not as an alibi.
   test('a package reference never leaks into a neighboring file-based root', async function () {
     this.timeout(DOTNET_CLI_MS);
     const packageRoot = `${PACKAGE}
@@ -201,6 +268,9 @@ Console.WriteLine(owned.Count);
 var isolated = new JObject();
 Console.WriteLine(isolated.Count);
 `;
+
+    // 1 -- the packaged root binds, and binds CLEANLY. A restore-pending notice
+    //      left behind means the reference is provisional, not resolved.
     const packageFile = await openFileBasedApp(tmpDir, 'RootWithPackage.cs', packageRoot);
     const bound = await completionList(
       packageFile.uri,
@@ -208,20 +278,75 @@ Console.WriteLine(isolated.Count);
       'Properties',
     );
     assert.strictEqual(itemNamed(bound, 'Properties').kind, vscode.CompletionItemKind.Method);
+    assert.ok(itemNamed(bound, 'Properties').detail !== '', 'a bound symbol carries detail');
     assertNoPackageBindingErrors(packageFile.uri);
+    const settled = errorsFor(packageFile.uri).map(diagnosticCode);
+    assert.ok(
+      !settled.includes(RESTORE_PENDING),
+      `the restore must be COMPLETE before the neighbour opens, not pending: ${settled.join(', ')}`,
+    );
+    assert.ok(!settled.includes('CS0246'), `the package must be bound: ${settled.join(', ')}`);
+    assert.deepStrictEqual(
+      settled,
+      [],
+      `the packaged root starts clean; got ${settled.join(', ')}`,
+    );
 
-    const plainFile = await openFileBasedApp(tmpDir, 'RootWithoutPackage.cs', plainRoot);
+    // 2 -- THE INVARIANT. Open the neighbour while watching the packaged root the
+    //      whole time. Nothing may appear on it at ANY sample: not CS0246 from a
+    //      discarded reference, not SLSPC0002 from a workspace being rebuilt
+    //      underneath it, not anything else.
+    let plainFile!: { doc: vscode.TextDocument; uri: vscode.Uri };
+    const duringOpen = await codesSeenDuring(packageFile.uri, async () => {
+      plainFile = await openFileBasedApp(tmpDir, 'RootWithoutPackage.cs', plainRoot);
+    });
+    const observed = [...duringOpen].sort().join(', ') || 'none';
+    assert.ok(
+      !duringOpen.has('CS0246'),
+      `#294: opening a neighbouring root EVICTED the package reference -- ` +
+        `CS0246 appeared on RootWithPackage.cs while RootWithoutPackage.cs loaded. ` +
+        `Codes seen across the open: ${observed}. A later rebind does not repair ` +
+        `this: the packaged root was broken for real, and only recovered afterwards.`,
+    );
+    assert.ok(
+      !duringOpen.has(RESTORE_PENDING),
+      `#294: the packaged root was pushed back to restore-pending (${RESTORE_PENDING}) by a ` +
+        `neighbour's load; its resolved context must survive. Codes seen: ${observed}`,
+    );
+    assert.deepStrictEqual(
+      [...duringOpen],
+      [],
+      `the packaged root must stay clean for every sample across a neighbour's ` +
+        `open; saw ${observed}`,
+    );
     assert.notStrictEqual(plainFile.uri.toString(), packageFile.uri.toString());
+
+    // 3 -- the direction this test always covered: the package does NOT leak into
+    //      the plain root, and the failure is attributed to our own server.
     const isolatedErrors = await waitForErrorCode(plainFile.uri, 'CS0246');
     assert.ok(isolatedErrors.some((diagnostic) => diagnostic.message.includes('JObject')));
     assert.ok(isolatedErrors.every((diagnostic) => diagnostic.source === 'sharplsp-csharp'));
+    assert.ok(
+      isolatedErrors.every((diagnostic) => diagnosticCode(diagnostic) !== RESTORE_PENDING),
+      'a root with no #:package is not pending a restore; it simply has no package',
+    );
 
+    // 4 -- and the packaged root is STILL bound afterwards, by both measures.
+    //      Diagnostics first: a completion poll can outlast a rebind and hide a
+    //      gap, so the cheap end-state check goes before the forgiving one.
+    const after = errorsFor(packageFile.uri).map(diagnosticCode);
+    assert.deepStrictEqual(after, [], `packaged root must remain clean; got ${after.join(', ')}`);
     const stillBound = await completionList(
       packageFile.uri,
       positionAfter(packageRoot, 'owned.'),
       'DeepClone',
     );
     assert.strictEqual(itemNamed(stillBound, 'DeepClone').kind, vscode.CompletionItemKind.Method);
+    assert.ok(
+      stillBound.items.length >= bound.items.length,
+      `the packaged root must not lose members to a neighbour's open: ` +
+        `${bound.items.length.toString()} before, ${stillBound.items.length.toString()} after`,
+    );
     assertNoPackageBindingErrors(packageFile.uri);
   });
 

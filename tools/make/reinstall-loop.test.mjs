@@ -19,24 +19,9 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+import { dryRun, stepAt } from './make-test-kit.mjs';
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-/** Expands a target's recipe through every sub-make without executing it. */
-const dryRun = (target, args = []) => {
-  const { status, stdout, stderr } = spawnSync('make', ['-n', target, ...args], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  });
-  assert.equal(status, 0, `make -n ${target} failed:\n${stderr}`);
-  return stdout;
-};
-
-/** Byte offset of a step in the expanded recipe, asserting it is present. */
-const stepAt = (recipe, needle) => {
-  const at = recipe.indexOf(needle);
-  assert.notEqual(at, -1, `step missing from recipe: ${needle}`);
-  return at;
-};
 
 /** The root Makefile, which is the build system itself and not a shim. */
 const makefile = () => readFileSync(resolve(ROOT, 'Makefile'), 'utf8');

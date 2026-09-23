@@ -19,6 +19,7 @@ import { enrichResponse, withEventCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
 import { AdapterWire } from './dap-wire';
 import { LaunchedDebuggee } from './dap-debuggee';
+import { SHUTDOWN_DEADLINE_MS, ShutdownDeadline } from './dap-shutdown';
 import { belongsToUserCode, carriesUserCode } from './dap-statement';
 import { VariableExpander } from './dap-variables';
 import { DapHotReload } from './dap-hot-reload';
@@ -143,6 +144,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private readonly handles = new HandleNamespace();
   /** The debuggee the adapter launched, ended here only if the adapter dies first. */
   private readonly debuggee = new LaunchedDebuggee();
+  /** The end a stop request is owed; fires when the adapter wedges instead. */
+  private readonly shutdown: ShutdownDeadline;
   /** True once the session is being torn down; nothing may fire or write. */
   private disposed = false;
   /** The child's latest advertised capabilities, from `capabilities` events. */
@@ -162,7 +165,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       return err(getErrorMessage(cause));
     }
   }
-  constructor(public readonly adapterPath: string) {
+  constructor(
+    public readonly adapterPath: string,
+    shutdownDeadlineMs: number = SHUTDOWN_DEADLINE_MS,
+  ) {
+    this.shutdown = new ShutdownDeadline(shutdownDeadlineMs, () => {
+      this.onShutdownWedged();
+    });
     this.correlator = new RequestCorrelator((message) => {
       this.write(message);
     });
@@ -230,7 +239,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // console lines for one death, and the second `terminated` lands after the
     // session is already gone.
     if (this.closed) return;
+    this.replayer.cancelTerminalLaunch();
     this.closed = true;
+    this.shutdown.cancel();
     this.correlator.failAll(why ?? 'exited');
     if (why === undefined || this.disposed) return;
     this.debuggee.endOrphan();
@@ -246,6 +257,22 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.endsSessionOnce('terminated')) {
       this.fire({ type: 'event', event: 'terminated', body: {} });
     }
+  }
+
+  /**
+   * The adapter was asked to stop, answered, and then never ended the session.
+   *
+   * It is alive, so `onChildGone` has not run and will not: the wire abandons
+   * it — SIGTERM now, SIGKILL if it lingers, because an adapter that ignores
+   * a stop request may ignore a signal too — and the session is then ended
+   * by the same path a dead adapter takes: the debuggee reaped, the user
+   * told, `terminated` fired once. Without this the session stays in the
+   * debug toolbar with no way to close it (#260).
+   */
+  private onShutdownWedged(): void {
+    if (this.closed || this.disposed) return;
+    this.wire.abandon();
+    this.onChildGone('stopped answering the request to stop');
   }
 
   /**
@@ -276,6 +303,11 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     }
     const command = typeof message.command === 'string' ? message.command : '';
     const args = isRecord(message.arguments) ? message.arguments : undefined;
+    // Armed BEFORE the pending-terminal cancel: that path can end the session
+    // itself, and its `terminated` disarms the deadline. Returning early
+    // without arming would leave a stop it failed to finish owing nothing.
+    this.shutdown.armFor(message);
+    if (this.cancelPendingTerminal(message, command)) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1' && command !== '') {
       traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`);
     }
@@ -301,6 +333,20 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       return;
     }
     this.write(this.handles.translateRequestArguments(retarget(msg)));
+  }
+
+  /** [DEBUG-FEATURES-LAUNCH-OUTPUT]: Stop can arrive before runInTerminal answers. */
+  private cancelPendingTerminal(message: DapMessage, command: string): boolean {
+    if (command !== 'terminate' && command !== 'disconnect') return false;
+    if (!this.replayer.cancelTerminalLaunch()) return false;
+    // No debuggee has reached netcoredbg yet. Its terminate is a no-op, so
+    // retire the empty adapter and end the launch that WE own, exactly once.
+    this.wire.dispose();
+    this.onChildGone(undefined);
+    this.respondTo(message, true, {});
+    if (this.endsSessionOnce('terminated'))
+      this.fire({ type: 'event', event: 'terminated', body: {} });
+    return true;
   }
 
   /**
@@ -403,8 +449,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // frames still in flight, and firing into a disposed EventEmitter throws,
     // which takes the whole extension host down with it.
     this.disposed = true;
+    this.replayer.cancelTerminalLaunch();
+    this.shutdown.cancel();
     this.hotReload.dispose();
-    this.wire.dispose();
+    // An adapter signalled away while it still held a debuggee never ends it:
+    // the debuggee stays suspended under a debugger that is gone, so the job
+    // is the router's now, exactly as when the adapter dies on its own.
+    if (this.wire.dispose()) this.debuggee.endOrphan();
     this.emitter.dispose();
   }
 
@@ -430,6 +481,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   }
   /** Serialise one message to the child using DAP's framing. */
   public write(message: DapMessage): void {
+    if (this.closed) {
+      this.answerUndeliverable(message);
+      return;
+    }
     this.wire.write(withExceptionPolicy(retarget(message), this.exceptionPolicy));
   }
   /** Send a request in the router's own name and await its response. */
@@ -483,6 +538,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private routeChildMessage(message: DapMessage): void {
     if (this.disposed) return;
     this.debuggee.observe(message);
+    this.shutdown.observe(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
         `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
@@ -680,6 +736,12 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.debuggeeExited = false;
     this.childAnnouncedTerminated = false;
     this.debuggee.forget();
+    // A stop the PREVIOUS adapter was owed is not owed by this one. A restart
+    // retires that adapter as `replaced`, whose death is ordered rather than
+    // reported, so `onChildGone` — the only other place the debt is settled —
+    // never runs for it. Left armed, the deadline fired 15s after a Stop the
+    // user had already given up on, killing the healthy session Restart began.
+    this.shutdown.cancel();
   }
 
   /** Restart: respawn through the replayer and swallow the teardown noise. */
@@ -695,6 +757,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   }
   /** Swap the child process for a respawn, clearing stale transport state. */
   public respawn(attachArgs: readonly string[], onReady?: () => void): void {
+    if (this.disposed || this.closed) return;
     this.transitioning = true;
     this.wire.respawn(attachArgs, this.attaches.farewell(this.correlator.nextSequence()), onReady);
   }

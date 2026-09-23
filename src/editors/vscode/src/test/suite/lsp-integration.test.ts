@@ -24,6 +24,7 @@ import {
   openCSharpFile,
   openExistingFile,
   openSharpLspPanel,
+  pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
   settleForScreenshot,
@@ -40,7 +41,7 @@ import {
   assertSymbolTree,
   symbolNamed,
 } from './lsp-invariants-kit';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('LSP Integration — Document Symbols', () => {
   let tmpDir: string;
@@ -742,16 +743,29 @@ suite('LSP Integration — Fixture Files', () => {
       `File must have >10 visible lines before folding, got ${linesBefore}`,
     );
     await vscode.commands.executeCommand('editor.foldAll');
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const linesAfter = visible();
+    // The fold lands in the editor's visible ranges; wait for that, not for a
+    // guess at how long the view takes to redraw.
+    const linesAfter = await pollUntilResult(
+      async () => visible(),
+      (lines) => lines < linesBefore,
+      COMMAND_MS,
+      50,
+      'foldAll to reduce the visible lines',
+    );
     assert.ok(
       linesAfter < linesBefore,
       `Folding must reduce visible lines: before=${linesBefore} after=${linesAfter}`,
     );
     assert.ok(linesAfter <= 5, `After foldAll, should have ≤5 visible lines, got ${linesAfter}`);
     await vscode.commands.executeCommand('editor.unfoldAll');
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    assert.strictEqual(visible(), linesBefore, 'and unfolding restores every line');
+    const restored = await pollUntilResult(
+      async () => visible(),
+      (lines) => lines === linesBefore,
+      COMMAND_MS,
+      50,
+      'unfoldAll to restore every visible line',
+    );
+    assert.strictEqual(restored, linesBefore, 'and unfolding restores every line');
 
     // Keep the editor focused so the folded regions are clearly visible.
     await vscode.commands.executeCommand('editor.foldAll');

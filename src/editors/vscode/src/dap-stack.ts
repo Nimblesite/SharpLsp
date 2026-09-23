@@ -193,13 +193,19 @@ export class StackDelivery {
     return true;
   }
 
-  /** Enable the async-task registry at a paused moment; optionally resume. */
+  /**
+   * Enable the async-task registry at a paused moment; optionally resume.
+   *
+   * A refusal is logged with the adapter's reason. It is not an error for the
+   * session — the physical stack still serves — but it is the one line that
+   * explains every logical stack this session then fails to show.
+   */
   private async armAtStop(threadId: number, resume: boolean): Promise<void> {
     try {
-      this.asyncRegistryArmed = await armAsyncDebugging(
-        this.host,
-        await topFrameId(this.host, threadId),
-      );
+      const armed = await armAsyncDebugging(this.host, await topFrameId(this.host, threadId));
+      this.asyncRegistryArmed = armed.ok;
+      if (!armed.ok)
+        error(`async-debug arming refused; logical async stacks unavailable: ${armed.error}`);
     } catch (cause) {
       error(`async-debug arming failed: ${String(cause)}`);
     }
@@ -350,8 +356,16 @@ export class StackDelivery {
     const frameId = raw[0]?.id ?? 0;
     try {
       const chain = await readAsyncChain(this.host, frameId, pausedSmType, pausedMethod);
+      if (chain === undefined) {
+        error(
+          `async chain unavailable for ${String(pausedMethod)}: the paused activation is not in the task registry`,
+        );
+      }
       return chain ?? { frames: [], complete: false };
-    } catch {
+    } catch (cause) {
+      // Fail open — the physical stack still serves — but never silently: a
+      // walk that threw and a walk that found nothing must read differently.
+      error(`async chain walk failed for ${String(pausedMethod)}: ${String(cause)}`);
       return { frames: [], complete: false };
     }
   }

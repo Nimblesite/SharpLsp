@@ -70,7 +70,14 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          mapfile -t files < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')
+          # [DIST-CI-CLASSIFICATION] Process substitution hides the API's exit
+          # status. Capture it first so a failed page cannot skip all tests.
+          changed_files="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')"
+          if [ -z "$changed_files" ]; then
+            echo "::error::Changed-file lookup returned no files; refusing to skip CI."
+            exit 1
+          fi
+          mapfile -t files <<< "$changed_files"
 
           code_changed=false
           manifest_changed=false

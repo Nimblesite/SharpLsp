@@ -26,8 +26,8 @@ import {
   threadsOf,
   topFrame,
   variableNamed,
-  waitForActiveFrame,
 } from './debug-drive-kit';
+import { waitForActiveFrame } from './debug-thread-kit';
 import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
 import { comparablePath, deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
 import { DEBUG_TEST_MS, LSP_RESPONSE_MS } from './test-timeouts';

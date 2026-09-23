@@ -45,6 +45,21 @@ function armedLines(): number[] {
     .sort((left, right) => left - right);
 }
 
+/** The 1-based lines carried by one `setBreakpoints` request, sorted. */
+function linesOf(args: Record<string, any>): number[] {
+  const list: unknown = args['breakpoints'];
+  assert.ok(Array.isArray(list), '`setBreakpoints` must carry a breakpoints array');
+  return list.map((entry) => Number((entry as Record<string, any>)['line'])).sort((a, b) => a - b);
+}
+
+/** Does this `setBreakpoints` request carry exactly `want`? */
+function sameLines(args: Record<string, any>, want: readonly number[]): boolean {
+  const list: unknown = args['breakpoints'];
+  if (!Array.isArray(list)) return false;
+  const lines = list.map((e) => Number((e as Record<string, any>)['line'])).sort((a, b) => a - b);
+  return lines.length === want.length && want.every((line, at) => lines[at] === line);
+}
+
 /** The 1-based lines of the most recent `setBreakpoints` request, sorted. */
 function lastRequestedLines(requests: readonly { args: Record<string, any> }[]): number[] {
   const last = requests[requests.length - 1]?.args ?? {};
@@ -229,18 +244,20 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
     // Interaction 3 — enable it (remove + re-add, which is what the checkbox does).
     const disabled = vscode.debug.breakpoints.filter((breakpoint) => !breakpoint.enabled);
     eq(disabled.length, 1, 'exactly one breakpoint is disabled before the toggle');
-    const syncs = recorder.requests('setBreakpoints').length;
+    const bothArmed = [
+      fixture.source.dapLine('main-accumulate'),
+      fixture.source.dapLine('main-inspect'),
+    ].sort((left, right) => left - right);
     vscode.debug.removeBreakpoints(disabled);
     vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-inspect')]);
-    const afterEnable = await waitForBreakpointSyncs(
-      () => recorder.requests('setBreakpoints'),
-      syncs + 1,
+    const afterEnable = await recorder.waitForRequestArgs(
+      'setBreakpoints',
+      (args) => sameLines(args, bothArmed),
+      'enabling a breakpoint mid-session must arm it on the live adapter',
     );
     deepEq(
-      lastRequestedLines(afterEnable),
-      [fixture.source.dapLine('main-accumulate'), fixture.source.dapLine('main-inspect')].sort(
-        (left, right) => left - right,
-      ),
+      linesOf(afterEnable),
+      bothArmed,
       'enabling a breakpoint mid-session must arm it on the live adapter',
     );
 
@@ -280,7 +297,22 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       true,
       'the adapter must advertise supportsFunctionBreakpoints',
     );
-    const names: unknown = requested[requested.length - 1]?.args['breakpoints'];
+    // Waited for by NAME, not read off the end of the wire: `requested` was
+    // sampled above to prove the request exists at all, and the entry last on
+    // the wire at that instant need not be the one carrying this name.
+    const sentFunction = await recorder.waitForRequestArgs(
+      'setFunctionBreakpoints',
+      (args) => {
+        const list: unknown = args['breakpoints'];
+        return (
+          Array.isArray(list) &&
+          list.length === 1 &&
+          String((list[0] as Record<string, any>)['name']) === functionName
+        );
+      },
+      'the fully-qualified method name must be forwarded verbatim',
+    );
+    const names: unknown = sentFunction['breakpoints'];
     assert.ok(Array.isArray(names), '`setFunctionBreakpoints` carries a breakpoints array');
     deepEq(
       names.map((entry) => String((entry as Record<string, any>)['name'])),

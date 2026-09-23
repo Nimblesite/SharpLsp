@@ -2,9 +2,7 @@
   "description": "Feature chunks of the VS Code end-to-end suite ([DIST-CI-WIN-VSIX], [DIST-CI-VSIX-SHARDS]). Each chunk is one CI job running a GROUP of related feature areas from the SAME suite through the real LSP inside the real extension host. A chunk is a group and not a single area because every job repays a multi-minute preamble (setup-dotnet, node_modules, three artifact downloads, the VS Code host cache): each leg MUST fan out over roughly 6-10 jobs, and a chunk projected past ~15 minutes MUST be split again ([DIST-CI-WIN-VSIX]). and BOTH platform legs fan out over this one list: Windows proves the win32 named-pipe editor experience, Ubuntu adds the linuxOnly repo-ingestion stress suites. Every shard on both platforms is instrumented, and one gate at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]). Single source of truth: the Makefile (_test-vsix-shard), both CI matrices, and the completeness guard all read this file. Consumed via tools/vsix/vsix-test-chunks.mjs. A chunk carrying \"linuxOnly\": true is skipped by the Windows matrix and run by the Ubuntu one.",
   "shared": {
     "description": "Prepended to every chunk. Asserts the bundled host + sidecars were staged before the extension host started, so a staging regression fails as itself instead of as a wall of LSP timeouts.",
-    "files": [
-      "00-vsix-dev-binary-staging.test.js"
-    ]
+    "files": ["00-vsix-dev-binary-staging.test.js"]
   },
   "chunks": {
     "lsp": {
@@ -99,7 +97,10 @@
         "debug-test-mtp-e2e.test.js",
         "debug-protocol-capabilities-e2e.test.js",
         "debug-session-lifecycle-e2e.test.js",
+        "dap-shutdown-wedge.test.js",
+        "debug-router-dispose-e2e.test.js",
         "debug-output-routing-e2e.test.js",
+        "debug-terminal-cancel-e2e.test.js",
         "debug-multisession-e2e.test.js"
       ]
     },
@@ -167,6 +168,7 @@
         "coverage-extension-workflows.test.js",
         "solution-explorer.test.js",
         "solution-explorer-build.test.js",
+        "fixture-solutions.test.js",
         "tree-config-e2e.test.js",
         "context-menus.test.js",
         "project-deps-watcher-e2e.test.js",

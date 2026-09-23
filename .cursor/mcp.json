@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "too-many-cooks": {
+      "type": "http",
+      "url": "http://localhost:4040/mcp"
+    }
+  }
+}

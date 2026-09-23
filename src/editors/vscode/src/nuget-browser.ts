@@ -179,6 +179,10 @@ export class NuGetBrowserPanel {
   public getSearchResultsCount(): number {
     return this.searchResults.length;
   }
+  /** The ids on the browse list, in the order they are rendered. */
+  public getSearchResultIds(): string[] {
+    return this.searchResults.map((pkg) => pkg.id);
+  }
   public getInstalledPackageIds(): string[] {
     return Array.from(this.installedPackages.keys());
   }

@@ -105,6 +105,12 @@ runs:
         # `pretest` again.
         VSIX_PREBUILT: '1'
         VSIX_SUITE_PREBUILT: '1'
+        # Record every DAP request and response the router sees. A debug leg
+        # that passed says nothing about WHICH path passed it - a `terminated`
+        # the adapter sent and one the ShutdownDeadline synthesised look the
+        # same to mocha - and the trace is the only record that tells them
+        # apart. Off, the log carries the router's console lines and no traffic.
+        SHARPLSP_DAP_TRACE: '1'
       run: |-
         set -euo pipefail
         if [ "${{ inputs.xvfb }}" = "true" ]; then
@@ -118,10 +124,13 @@ runs:
         name: coverage-vsix-shard-${{ inputs.platform }}-${{ inputs.chunk }}
         retention-days: 1
         path: target/coverage-vsix-shard-${{ inputs.platform }}-${{ inputs.chunk }}.lcov
-    - name: Upload failure diagnostics
+    - name: Upload extension-host diagnostics
       # A chunk that fails or HANGS is exactly what the split exists to isolate,
-      # so keep the extension-host logs for triage.
-      if: failure()
+      # so keep the extension-host logs for triage. Keep them for a GREEN chunk
+      # too: a fallback that fired - the ShutdownDeadline ending a wedged stop,
+      # a retried attach - leaves its line in these logs and nowhere else, so a
+      # green run's logs are the evidence that the fix, not luck, passed it.
+      if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: vsix-logs-${{ inputs.platform }}-${{ inputs.chunk }}

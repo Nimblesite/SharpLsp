@@ -103,6 +103,17 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 - [ ] Stamp v0.1.1 and re-release once verification passes on all three platforms
 
+## TODO Checklist — clean VSIX payload ([DIST-VSIX-REBUILD])
+
+- [x] Reproduce missing full rebuilds with failing tests for six VSIX entry points and both prebuilt flags.
+- [x] Clean Rust objects and every sidecar bin/obj/publish directory before rebuilding; force clean native/managed netcoredbg compilation.
+- [x] Run the Roslyn/SDK compatibility regression before staging; make errors fatal.
+- [x] Wire package, full-suite, shard, direct-runner and npm lifecycle paths to the rebuild.
+- [x] Install the Rust toolchain in CI shards and remove the prebuilt bypass flags.
+- [x] Cover all six release target names; fix the internal underscore leaking into platform IDs.
+- [x] Complete an uncontended real package build and MTP VSIX feature runs: 22 main-chunk and 11 parity tests passing, each with both old prebuilt flags set; full tooling 39/39 and VS Code lint/type checking pass. Logs: `/tmp/sharplsp-vsix-rebuild.NsFxE8/`. Packaged VSIX SHA-256: `1f36e6117f6a0ed8a0958db833e0cfdfbcc18b3d1bd79510f058fd3afd629b2c`. The initial concurrent-build failure is superseded, not counted as a pass. Tracking: [#279](https://github.com/Nimblesite/SharpLsp/issues/279).
+- [ ] Land the changes and pass combined supported-platform CI; local macOS evidence does not certify Windows/Linux.
+
 ## TODO Checklist — dependency vulnerability audit ([DIST-CI-AUDIT])
 
 - [x] `make audit` runs cargo audit, dotnet list package --vulnerable and npm audit over every lockfile/solution
@@ -210,6 +221,8 @@ Two further failure classes were investigated and turned out **not** to be defec
 
 ### CI workflow layout ([DIST-CI-LAYOUT])
 
+- [x] Fail closed on changed-file API failures, partial pagination and empty responses; execute the real YAML classifier in regression tests ([DIST-CI-CLASSIFICATION], #288). Three red cases before the fix; 12 classifier/security guards pass after it, including the PR-only trigger contract.
+- [ ] Verify the classifier fix in a full green PR run before merging; require terminal `CI` through the live main ruleset, with no bypass actors.
 - [x] Split `ci.yml` into reusable workflows, one per phase: `ci-analyse`,
       `ci-build`, `ci-test-rust`, `ci-test-dotnet`, `ci-test-vsix`,
       `ci-test-vsix-windows`, `ci-test-editors`, `ci-coverage`
