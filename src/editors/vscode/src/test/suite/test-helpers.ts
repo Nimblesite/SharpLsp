@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS, POLL_INTERVAL_MS, READINESS_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -101,6 +101,7 @@ export async function pollUntilResult<T>(
   predicate: (result: T) => boolean,
   timeoutMs: number = LSP_RESPONSE_MS,
   intervalMs: number = POLL_INTERVAL_MS,
+  waitingFor = 'a condition',
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   let last: T = await fn();
@@ -112,7 +113,7 @@ export async function pollUntilResult<T>(
 
   if (!predicate(last)) {
     assert.fail(
-      `Timed out after ${String(timeoutMs)}ms polling for a condition that never held. ` +
+      `Timed out after ${String(timeoutMs)}ms polling for ${waitingFor}, which never held. ` +
         `Last observed value: ${describePolled(last)}`,
     );
   }
@@ -377,7 +378,10 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
   const probeContent = 'namespace Probe { class Probe { } }\n';
   const { uri } = await openCSharpFile(tmpDir, 'probe.cs', probeContent);
 
-  // Poll until the server is ready — documentSymbol returns results.
+  // Poll until the server is ready — documentSymbol returns results. The
+  // budget sits under the `ACTIVATION_MS` hook every caller runs this in, so a
+  // server that never answers is reported HERE, by name, and not by mocha's
+  // generic hook timeout ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
   await pollUntilResult(
     async () => {
       const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
@@ -387,8 +391,9 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
       return result ?? [];
     },
     (symbols) => symbols.length > 0,
-    ACTIVATION_MS,
+    READINESS_MS,
     500,
+    `the SharpLsp server (${sharplspBinary ?? 'no staged binary found'}) to answer documentSymbol for the probe file`,
   );
 
   await closeAllEditors();

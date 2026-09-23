@@ -18,6 +18,33 @@ The PR workflow MUST successfully retrieve every page of changed files before de
 
 Product tests MUST run on pull requests only, not on a push or merge to main. `tools/ci/changed-files.test.mjs` executes the workflow's actual Bash classifier, covering failed, partial, empty, docs-only, code and manifest responses, and guards the terminal dependency list and PR-only trigger. It MUST run through `make _lint-vsix` in CI.
 
+## [DIST-CI-VSIX-SHARDS] VS Code Suite Shards
+
+One runner, `make _test-vsix-shard CHUNK=<name>`, drives every slice of the VS Code end-to-end suite on every platform, always instrumented for coverage. The chunks are declared once, in `src/editors/vscode/test-chunks.json`, and the Ubuntu and Windows matrices both expand from it. Every shard uploads its extension-host logs (`vsix-logs-<platform>-<chunk>`) on every outcome, with the DAP trace enabled, so a green shard carries the evidence of WHICH path passed it — a fallback that fired leaves its line in those logs and nowhere else.
+
+### [DIST-CI-VSIX-SHARDS-TIMEOUTS] Test Timeout Tiers
+
+Every wait in the suite is a poll for the STATE the next step needs, never a count of events and never a fixed sleep, and every poll takes its budget from one tier in `src/editors/vscode/src/test/suite/test-timeouts.ts`. A test that needs longer names the slow process it waits on, in a comment, at the site.
+
+The invariant: a poll's budget plus the work that precedes it MUST sit strictly below the ceiling of the test or hook it runs in. When the two are equal the runner kills the test first and reports its own generic timeout, which names nothing, in place of the poll's report, which names what never held and the last value it saw. Exhausting a poll budget FAILS; it never returns the last value.
+
+| Tier | Budget | Used for |
+|------|--------|----------|
+| `FAST_MS` | 1 s | Pure in-process work: no IPC, no editor round trip |
+| `COMMAND_MS` | 5 s | One command round trip through the extension host, never reaching a sidecar |
+| `SETTLE_MS` | 10 s | Workbench or OS settling; a healthy run never spends it |
+| `LSP_RESPONSE_MS` (`DEFAULT_TEST_MS`) | 15 s | One request to a warm language server; the ceiling a test inherits when it declares none |
+| `PROCESS_START_MS`, `SETTINGS_WRITE_MS` | 30 s | Starting a debuggee to attach to; a settings write propagating back through the extension host |
+| `DEBUG_SESSION_MS` | 45 s | One debug gesture: launch, stop, step, stop-session |
+| `DEBUG_TEST_MS` | 50 s | The ceiling of a test built on one `DEBUG_SESSION_MS` wait |
+| `ACTIVATION_MS`, `LSP_SWEEP_MS` | 60 s | Extension activation (hooks only); a sweep of sidecar round trips scaling with the fixture |
+| `READINESS_MS` | `ACTIVATION_MS − SETTLE_MS` | The readiness poll inside `setupLspTestSuite`, under the `ACTIVATION_MS` hook that calls it |
+| `SIDECAR_COLD_MS` | 90 s | The first semantic request against a freshly opened project |
+| `DOTNET_CLI_MS`, `SERVER_RESTART_MS` | 120 s | A `dotnet` CLI call; a server restart followed by its cold request |
+| `FIXTURE_BUILD_MS` | 240 s | `dotnet build` of a test fixture |
+| `REAL_REPO_MS`, `REAL_REPO_WARMUP_MS` | 600 s, 480 s | A real repository loaded end to end; its warm-up poll, under the hook that contains it |
+| `WHOLE_RUN_MS` | 20 min | The runner's ceiling for one shard; MUST stay below the job's `timeout-minutes` so a hang still gets a mocha report |
+
 ## [DIST-COMPONENTS] Required Components
 
 SharpLsp has three executable components. All three are REQUIRED and MUST be bundled in the VSIX. Missing any one of them puts activation into degraded mode with a user-facing error notification (see [DIST-FAILURE-UX]).
