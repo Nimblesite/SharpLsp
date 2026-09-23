@@ -251,7 +251,12 @@ export async function stepAndStop(
   await gesture(command);
   if (request !== undefined) assertSteppedThread(recorder, request, sentBefore, resting.threadId);
   const stops = await recorder.waitForStops(baseline + 1, timeoutMs);
-  return stops[stops.length - 1]!;
+  // Positionally, NOT `stops[stops.length - 1]`. The wait is satisfied by one
+  // new stop, but nothing stops a second arriving before the array is read -
+  // a breakpoint immediately after the step, or an exception - and then the
+  // last entry is a stop this gesture did not cause. Index `baseline` is the
+  // first stop after the gesture on every machine, fast or slow.
+  return stops[baseline]!;
 }
 
 /** Step, then read the frame the debuggee came to rest in. One call, one step. */

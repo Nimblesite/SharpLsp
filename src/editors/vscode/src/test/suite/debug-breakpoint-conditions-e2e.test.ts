@@ -30,17 +30,43 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
+import type { DapRecorder } from './debug-dap-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
-/** The `breakpoints` entries of the most recent `setBreakpoints` request. */
-function sentBreakpoints(
-  requests: readonly { args: Record<string, any> }[],
-): Record<string, any>[] {
-  const last = requests[requests.length - 1]?.args ?? {};
-  const list: unknown = last['breakpoints'];
-  assert.ok(Array.isArray(list), '`setBreakpoints` must carry a breakpoints array');
-  return list as Record<string, any>[];
+/** The `breakpoints` entries of one `setBreakpoints` request. */
+function entriesOf(args: Record<string, any>): Record<string, any>[] {
+  const list: unknown = args['breakpoints'];
+  return Array.isArray(list) ? (list as Record<string, any>[]) : [];
+}
+
+/**
+ * Wait until a `setBreakpoints` request carries exactly `want` under `field`.
+ *
+ * Reading the LAST request the wire holds asks what is there RIGHT NOW, which
+ * is the final state only if nothing further is in flight. One gesture is
+ * routinely several requests - the workbench syncs a breakpoint as a remove
+ * then an add - so the last entry at an arbitrary moment can be an
+ * INTERMEDIATE one carrying the state before the gesture completed, and which
+ * one a test observes is then decided by how fast the machine is.
+ */
+async function waitForSentField(
+  recorder: DapRecorder,
+  field: string,
+  want: readonly (string | undefined)[],
+  why: string,
+): Promise<(string | undefined)[]> {
+  const read = (args: Record<string, any>): (string | undefined)[] =>
+    entriesOf(args).map((entry) => entry[field] as string | undefined);
+  const carried = await recorder.waitForRequestArgs(
+    'setBreakpoints',
+    (args) => {
+      const got = read(args);
+      return got.length === want.length && want.every((value, at) => got[at] === value);
+    },
+    why,
+  );
+  return read(carried);
 }
 
 /** How many times the fixture's `Add` call site is reached in one run. */
@@ -74,7 +100,12 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         'without it VS Code never forwards the condition and the breakpoint stops every time',
     );
     deepEq(
-      sentBreakpoints(recorder.requests('setBreakpoints')).map((entry) => entry['condition']),
+      await waitForSentField(
+        recorder,
+        'condition',
+        ['index == 3'],
+        'the C# expression must be forwarded verbatim to the adapter',
+      ),
       ['index == 3'],
       'the C# expression must be forwarded verbatim to the adapter',
     );
@@ -136,7 +167,12 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
       '[DEBUG-PROTOCOL-CAPABILITIES] lists supportsHitConditionalBreakpoints as Yes for Phase 4',
     );
     deepEq(
-      sentBreakpoints(recorder.requests('setBreakpoints')).map((entry) => entry['hitCondition']),
+      await waitForSentField(
+        recorder,
+        'hitCondition',
+        ['3'],
+        'the hit condition must be forwarded to the adapter, not evaluated in the editor',
+      ),
       ['3'],
       'the hit condition must be forwarded to the adapter, not evaluated in the editor',
     );
@@ -221,7 +257,12 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         'means VS Code silently downgrades the logpoint to a normal breakpoint',
     );
     deepEq(
-      sentBreakpoints(recorder.requests('setBreakpoints')).map((entry) => entry['logMessage']),
+      await waitForSentField(
+        recorder,
+        'logMessage',
+        [message],
+        'the log message must reach the adapter layer that emulates it',
+      ),
       [message],
       'the log message must reach the adapter layer that emulates it',
     );
@@ -285,10 +326,15 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
     const session = await startDebuggee(debuggee(), { mode: MODE.plain });
     const [stop] = await recorder.waitForStops(1);
     assert.ok(stop, 'the condition holds on one pass, so the debuggee must stop once');
-    const sent = sentBreakpoints(recorder.requests('setBreakpoints'));
-    eq(sent.length, 1, 'one breakpoint was synced');
+    const conditions = await waitForSentField(
+      recorder,
+      'condition',
+      ['index == 2 && running > 1'],
+      'a compound condition must travel to the adapter unchanged',
+    );
+    eq(conditions.length, 1, 'one breakpoint was synced');
     eq(
-      String(sent[0]?.['condition'] ?? ''),
+      conditions[0] ?? '',
       'index == 2 && running > 1',
       'and its condition travelled to the adapter unchanged',
     );
@@ -333,10 +379,16 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
     ]);
     eq(vscode.debug.breakpoints.length, 2, 'one impossible condition, one plain gate at the end');
     const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const sent = sentBreakpoints(recorder.requests('setBreakpoints'));
-    eq(sent.length, 2, 'both breakpoints are synced in one request');
+    const conditioned = (args: Record<string, any>): number =>
+      entriesOf(args).filter((entry) => String(entry['condition'] ?? '') !== '').length;
+    const bothSynced = await recorder.waitForRequestArgs(
+      'setBreakpoints',
+      (args) => entriesOf(args).length === 2 && conditioned(args) === 1,
+      'both breakpoints must be synced with the condition on exactly one of them',
+    );
+    eq(entriesOf(bothSynced).length, 2, 'both breakpoints are synced in one request');
     eq(
-      sent.filter((entry) => String(entry['condition'] ?? '') !== '').length,
+      conditioned(bothSynced),
       1,
       'exactly one of them carries a condition; the plain gate must not inherit it',
     );
@@ -396,8 +448,13 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
     // the second pass, not the first.
     const [first] = await recorder.waitForStops(1);
     assert.ok(first, 'the debuggee must stop on the second pass');
-    const sent = sentBreakpoints(recorder.requests('setBreakpoints'));
-    eq(String(sent[0]?.['hitCondition'] ?? ''), '>= 2', 'the hit condition travelled verbatim');
+    const hits = await waitForSentField(
+      recorder,
+      'hitCondition',
+      ['>= 2'],
+      'the hit condition travelled verbatim',
+    );
+    eq(hits[0] ?? '', '>= 2', 'the hit condition travelled verbatim');
     eq(
       recorder.capabilities()['supportsHitConditionalBreakpoints'],
       true,
