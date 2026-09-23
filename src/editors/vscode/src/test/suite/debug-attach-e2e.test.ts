@@ -278,6 +278,22 @@ suite('Debug attach — taking control of a process that is already running', ()
       `the name '${fixture.assemblyName}' must resolve to exactly one live process; the ` +
         `resolver said: ${outcome?.kind === 'refused' ? outcome.reason : String(outcome?.kind)}`,
     );
+    // ...and to the RIGHT process. `kind === 'attach'` only says the name
+    // matched exactly one thing; it does not say that thing is the process this
+    // test started. On Windows a `dotnet Foo.dll` debuggee runs as dotnet.exe,
+    // so a matcher keyed on the assembly name can land on another process in
+    // the same tree - a single match that is the wrong one, which resolution
+    // cannot refuse and the pause below reports only as `0x80004005`. Asserted
+    // BEFORE the attach so the pid is named in the failure rather than inferred
+    // from one 25 lines later that never runs. [DEBUG-FEATURES-LAUNCH]
+    const resolvedPid = outcome?.kind === 'attach' ? outcome.processId : undefined;
+    eq(
+      resolvedPid,
+      running.pid,
+      `the name '${fixture.assemblyName}' must resolve to the process this test started ` +
+        `(pid ${String(running.pid)}), not another in its tree; it resolved ` +
+        String(resolvedPid),
+    );
     const started = await vscode.debug.startDebugging(folder, config);
     eq(
       started,
