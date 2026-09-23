@@ -292,7 +292,7 @@ suite('Debug attach — taking control of a process that is already running', ()
       running.pid,
       `the name '${fixture.assemblyName}' must resolve to the process this test started ` +
         `(pid ${String(running.pid)}), not another in its tree; it resolved ` +
-        `${String(resolvedPid)}`,
+        String(resolvedPid),
     );
     const started = await vscode.debug.startDebugging(folder, config);
     eq(
