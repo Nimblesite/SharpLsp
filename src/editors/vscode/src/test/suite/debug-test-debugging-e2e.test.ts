@@ -574,6 +574,9 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     // frame is a step INTO wearing the wrong label.
     const over = await stepToFrame(recorder, CMD_STEP_OVER);
     assertStopReason(over.stop, 'step', 'a step over inside a test');
+    // The test runs on a WORKER thread of the runner; a step that stopped any
+    // other thread stepped the runner instead and let the test run to its end.
+    eq(over.stop.threadId, first.threadId, 'the step stopped the thread the test is running on');
     eq(methodOf(over.frame), 'Adds_Two_Numbers', 'step over stays in the test method');
     eq(over.frame.line, CS_SOURCE.dapLine('adds-call'), 'and lands on the next statement');
     eq(
@@ -592,6 +595,7 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     // user's own `Add`, rather than into xUnit's invocation machinery.
     const into = await stepToFrame(recorder, CMD_STEP_INTO);
     assertStopReason(into.stop, 'step', 'a step into a helper called from a test');
+    eq(into.stop.threadId, first.threadId, 'still on the thread the test is running on');
     eq(methodOf(into.frame), 'Add', 'step into lands in the helper the test called');
     eq(into.frame.line, CS_SOURCE.dapLine('add-body'), 'on the helper first statement');
     const insideStack = await stackFrames(requireActive('inside the helper'), into.stop.threadId);
@@ -610,6 +614,7 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     );
     const out = await stepToFrame(recorder, CMD_STEP_OUT);
     assertStopReason(out.stop, 'step', 'a step out of the helper');
+    eq(out.stop.threadId, first.threadId, 'and the step out stays on it too');
     eq(methodOf(out.frame), 'Adds_Two_Numbers', 'step out returns to the test method');
     eq(
       out.frame.line >= CS_SOURCE.dapLine('adds-call'),
@@ -617,6 +622,17 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
       'at or past the call it stepped out of, never before it',
     );
     eq(recorder.stops().length, 4, 'four stops: the breakpoint and three steps');
+    deepEq(
+      [
+        ...recorder.requests('next'),
+        ...recorder.requests('stepIn'),
+        ...recorder.requests('stepOut'),
+      ]
+        .map((request) => Number(request.args['threadId']))
+        .filter((threadId) => threadId !== first.threadId),
+      [],
+      'every step request named the stopped thread — none went to the runner main thread',
+    );
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
   });
