@@ -109,6 +109,37 @@ function isMajorPolicy(rollForward: RollForward): boolean {
   return rollForward === 'major' || rollForward === 'latestMajor';
 }
 
+/**
+ * Whether any `installed` runtime reaches the release version `minimum`.
+ *
+ * The sidecars are framework-dependent `net10.0` apps, so a root must ship a
+ * `Microsoft.NETCore.App` at or above their framework version to start them —
+ * a question about `shared/`, not about `sdk/`, and independent of the
+ * workspace pin. Both are necessary and each can fail while the other passes.
+ *
+ * A prerelease sorts BELOW its own release, which is the whole reason this
+ * cannot reuse `sdkSatisfiesPin` or `parseSdkVersion` alone: that parser
+ * deliberately discards the prerelease suffix (correct for SDK feature-band
+ * arithmetic) and so reads `10.0.0-rc.2` as `10.0.0`. Measured against the
+ * real sidecars on single-runtime roots: `10.0.0-rc.2` exits 150, while
+ * `10.0.99-rc.1` and `11.0.0-preview.1` start them — the rule is ordering, not
+ * prerelease-ness, and `RollForward=LatestMajor` is what leaves it
+ * upward-open. Issue #297.
+ */
+export function runtimeFloorMet(installed: readonly string[], minimum: string): boolean {
+  const want = parseSdkVersion(minimum);
+  if (want === undefined) return false;
+  return installed.some((version) => clearsFloor(version, want));
+}
+
+/** One runtime against the floor: strictly above it, or exactly it and released. */
+function clearsFloor(version: string, want: SdkVersion): boolean {
+  const got = parseSdkVersion(version);
+  if (got === undefined) return false;
+  const order = compare(got, want);
+  return order > 0 || (order === 0 && !version.includes('-'));
+}
+
 /** Whether any installed SDK satisfies the pin. */
 export function pinSatisfiedBy(installed: readonly string[], pin: SdkPin): boolean {
   return installed.some((version) => sdkSatisfiesPin(version, pin));

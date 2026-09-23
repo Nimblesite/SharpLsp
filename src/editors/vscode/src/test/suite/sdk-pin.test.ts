@@ -8,6 +8,7 @@ import {
   findGlobalJson,
   installedSdkVersions,
   parseSdkVersion,
+  runtimeFloorMet,
   pinSatisfiedBy,
   readSdkPin,
   sdkSatisfiesPin,
@@ -108,6 +109,62 @@ suite('global.json SDK pin', () => {
     });
     assert.equal(parseSdkVersion('10.0'), undefined, 'major.minor alone is not an SDK version');
     assert.equal(parseSdkVersion('not.a.version'), undefined);
+  });
+
+  test('a prerelease runtime sits below its own release, so the floor rejects it', () => {
+    // #297. The sidecars are framework-dependent net10.0 apps: they need a
+    // RUNTIME at or above 10.0.0, which is a different question from the SDK
+    // pin and is answered by a different directory. Every naive floor check
+    // gets it wrong the same way, because `parseSdkVersion` strips the
+    // prerelease suffix — correct for SDK band arithmetic, and blind here.
+    assert.deepEqual(
+      parseSdkVersion('10.0.0-rc.2'),
+      parseSdkVersion('10.0.0'),
+      'parseSdkVersion cannot tell a prerelease from its release, so a floor built on it alone ' +
+        'accepts a runtime that cannot start either sidecar',
+    );
+
+    // Every case below was measured against the real staged sidecar DLL on a
+    // composed root carrying exactly one Microsoft.NETCore.App directory.
+    assert.equal(
+      runtimeFloorMet(['10.0.0-rc.2'], '10.0.0'),
+      false,
+      'measured: a 10.0.0-rc.2-only root exits 150 — a prerelease is below its own release',
+    );
+    assert.equal(
+      runtimeFloorMet(['9.0.14'], '10.0.0'),
+      false,
+      'measured: a 9-only root exits 150, which is issue #297 itself',
+    );
+    assert.equal(runtimeFloorMet(['10.0.7'], '10.0.0'), true, 'measured: starts both sidecars');
+    assert.equal(
+      runtimeFloorMet(['10.0.99-rc.1'], '10.0.0'),
+      true,
+      'measured: a prerelease ABOVE the floor starts them — the rule is ordering, not a "-" test',
+    );
+    assert.equal(
+      runtimeFloorMet(['11.0.0-preview.1'], '10.0.0'),
+      true,
+      'measured: RollForward=LatestMajor makes the floor upward-open, so 11.x hosts them',
+    );
+
+    // A root is judged on its best runtime, not its first or its worst.
+    assert.equal(
+      runtimeFloorMet(['9.0.14', '10.0.7'], '10.0.0'),
+      true,
+      'the two-root macOS machine: 9 and 10 side by side still hosts the sidecars',
+    );
+    assert.equal(
+      runtimeFloorMet(['9.0.14', '10.0.0-rc.2'], '10.0.0'),
+      false,
+      'neither a 9 nor a below-floor prerelease can host them, so the root cannot',
+    );
+    assert.equal(runtimeFloorMet([], '10.0.0'), false, 'a root with no runtime hosts nothing');
+    assert.equal(
+      runtimeFloorMet(['not.a.version'], '10.0.0'),
+      false,
+      'an unreadable runtime directory is not evidence of capability',
+    );
   });
 
   test('readSdkPin reads the nearest global.json and defaults rollForward', () => {
