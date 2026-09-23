@@ -167,6 +167,7 @@
         "coverage-extension-workflows.test.js",
         "solution-explorer.test.js",
         "solution-explorer-build.test.js",
+        "fixture-solutions.test.js",
         "tree-config-e2e.test.js",
         "context-menus.test.js",
         "project-deps-watcher-e2e.test.js",

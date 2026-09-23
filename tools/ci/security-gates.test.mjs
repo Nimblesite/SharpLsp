@@ -28,24 +28,48 @@ const action = (name) =>
         ),
     );
 
-test("CI and release enter the mandatory VSIX rebuild paths", () => {
+// [DIST-VSIX-REBUILD] + [DIST-CI-VSIX-SHARDS]. A CI consumer may skip the
+// rebuild ONLY by declaring the binaries came from this run, and a shard that
+// declares it must also have downloaded them - a shard claiming prebuilt
+// binaries it never fetched would run the suite against whatever bin/ held.
+// Release declares nothing, so a tag compiles its own.
+test("CI stages same-run binaries and release compiles its own", () => {
     const payload = action("vsix-payload").runs.steps;
-    assert.ok(payload.some((step) => step.run === "make _build-vsix"));
-    const shard = action("vsix-shard").runs.steps;
     assert.ok(
-        shard.some((step) => step.uses?.startsWith("dtolnay/rust-toolchain@")),
+        payload.some((step) => step.run === "env VSIX_PREBUILT=1 make _build-vsix"),
+        "packaging the payload must stage what this run built, not rebuild it",
     );
+    const shard = action("vsix-shard").runs.steps;
     const run = shard.find((step) =>
         step.run?.includes("make _test-vsix-shard"),
     );
-    assert.ok(run);
-    assert.equal(run.env?.VSIX_PREBUILT, undefined);
-    assert.equal(run.env?.VSIX_SUITE_PREBUILT, undefined);
-    assert.equal(run["continue-on-error"], undefined);
+    assert.ok(run, "the shard action must invoke the shard target");
+    assert.equal(
+        run.env?.VSIX_PREBUILT,
+        "1",
+        "a shard must not rebuild Rust, both sidecars and netcoredbg per chunk",
+    );
+    assert.equal(
+        run.env?.VSIX_SUITE_PREBUILT,
+        "1",
+        "nor recompile the shard-independent suite per chunk",
+    );
+    const downloads = shard.filter((step) =>
+        step.uses?.startsWith("actions/download-artifact@"),
+    );
     assert.ok(
-        release.jobs["build-vsix"].steps.some((step) =>
-            step.run?.includes("make _package-vsix-${{ matrix.platform }}"),
-        ),
+        downloads.length >= 3,
+        `declaring prebuilt binaries obliges the shard to download them; found ${String(downloads.length)}`,
+    );
+    assert.equal(run["continue-on-error"], undefined, "a shard may not be advisory");
+    const pkg = release.jobs["build-vsix"].steps.find((step) =>
+        step.run?.includes("make _package-vsix-${{ matrix.platform }}"),
+    );
+    assert.ok(pkg, "release must package through the per-platform target");
+    assert.equal(
+        pkg.env?.VSIX_PREBUILT,
+        undefined,
+        "a tag must never declare prebuilt: it compiles its own binaries",
     );
 });
 
