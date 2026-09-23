@@ -72,7 +72,10 @@ function sdkSource(prefix: string): string | undefined {
 
 /** The newest real directory whose name starts with `prefix`. */
 function newest(names: readonly string[], prefix: string): string | undefined {
-  return [...names].filter((name) => name.startsWith(prefix)).sort().pop();
+  return [...names]
+    .filter((name) => name.startsWith(prefix))
+    .sort()
+    .pop();
 }
 
 function cloneInto(source: string, relative: string, target: string): void {
