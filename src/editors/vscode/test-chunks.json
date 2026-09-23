@@ -98,6 +98,7 @@
         "debug-protocol-capabilities-e2e.test.js",
         "debug-session-lifecycle-e2e.test.js",
         "dap-shutdown-wedge.test.js",
+        "debug-router-dispose-e2e.test.js",
         "debug-output-routing-e2e.test.js",
         "debug-terminal-cancel-e2e.test.js",
         "debug-multisession-e2e.test.js"

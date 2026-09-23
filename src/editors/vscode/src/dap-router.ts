@@ -452,7 +452,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.replayer.cancelTerminalLaunch();
     this.shutdown.cancel();
     this.hotReload.dispose();
-    this.wire.dispose();
+    // An adapter signalled away while it still held a debuggee never ends it:
+    // the debuggee stays suspended under a debugger that is gone, so the job
+    // is the router's now, exactly as when the adapter dies on its own.
+    if (this.wire.dispose()) this.debuggee.endOrphan();
     this.emitter.dispose();
   }
 

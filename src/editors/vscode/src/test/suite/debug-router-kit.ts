@@ -66,6 +66,19 @@ export class LiveRouter implements vscode.Disposable {
     return this.messages;
   }
 
+  /** The pid netcoredbg reported for the debuggee it LAUNCHED, once it has. */
+  async launchedPid(): Promise<number> {
+    const event = await this.event('process');
+    assert.ok(isRecord(event.body), 'the process event carries a body');
+    assert.strictEqual(event.body.startMethod, 'launch', 'the debuggee was launched, not attached');
+    const pid = Number(event.body.systemProcessId);
+    assert.ok(
+      Number.isInteger(pid) && pid > 0,
+      `a real pid, not ${String(event.body.systemProcessId)}`,
+    );
+    return pid;
+  }
+
   /** Answer a reverse request as the DAP client, including a deliberately late answer. */
   public answerReverse(request: DapMessage, success: boolean, body = {}): void {
     this.router.handleMessage({
