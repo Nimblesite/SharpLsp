@@ -261,15 +261,16 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /**
    * The adapter was asked to stop, answered, and then never ended the session.
    *
-   * It is alive, so `onChildGone` has not run and will not: the wire is
-   * disposed first, which signals the child while the session is still open,
-   * and the session is then ended by the same path a dead adapter takes — the
-   * debuggee reaped, the user told, `terminated` fired once. Without this the
-   * session stays in the debug toolbar with no way to close it (#260).
+   * It is alive, so `onChildGone` has not run and will not: the wire abandons
+   * it — SIGTERM now, SIGKILL if it lingers, because an adapter that ignores
+   * a stop request may ignore a signal too — and the session is then ended
+   * by the same path a dead adapter takes: the debuggee reaped, the user
+   * told, `terminated` fired once. Without this the session stays in the
+   * debug toolbar with no way to close it (#260).
    */
   private onShutdownWedged(): void {
     if (this.closed || this.disposed) return;
-    this.wire.dispose();
+    this.wire.abandon();
     this.onChildGone('stopped answering the request to stop');
   }
 

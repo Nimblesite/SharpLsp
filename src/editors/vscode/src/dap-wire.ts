@@ -222,6 +222,21 @@ export class AdapterWire {
     if (!this.host.isClosed()) signalChild(this.child);
   }
 
+  /**
+   * Detach from a child that is alive but has stopped answering, and end it.
+   *
+   * `dispose` sends one SIGTERM and trusts the child to act on it. A wedged
+   * adapter is precisely one that may not, so this escalates to SIGKILL a
+   * second later — the same schedule a replaced child gets in `respawn`. Its
+   * `exit` still settles through `watchDeath`, which the caller has already
+   * closed the session against.
+   */
+  public abandon(): void {
+    this.child.stdout.removeAllListeners('data');
+    this.child.stderr.removeAllListeners('data');
+    escalate(this.child, 0);
+  }
+
   /** Spawn netcoredbg and wire its output into the frame parser. */
   private spawn(attachArgs: readonly string[]): cp.ChildProcessWithoutNullStreams {
     info(`DapRouter starting netcoredbg: ${this.adapterPath}`);

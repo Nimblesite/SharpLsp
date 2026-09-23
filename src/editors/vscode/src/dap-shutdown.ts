@@ -38,7 +38,7 @@ function asksToStop(message: DapMessage): boolean {
 }
 
 /** True for the event that says the session itself has ended. */
-function announcesEnd(message: DapMessage): boolean {
+function announcesSessionEnd(message: DapMessage): boolean {
   return message.type === 'event' && message.event === 'terminated';
 }
 
@@ -62,7 +62,7 @@ export class ShutdownDeadline {
 
   /** The adapter reported the end it owed. */
   public observe(message: DapMessage): void {
-    if (announcesEnd(message)) this.cancel();
+    if (announcesSessionEnd(message)) this.cancel();
   }
 
   /** The session is over by some other route; the debt cannot come due. */
