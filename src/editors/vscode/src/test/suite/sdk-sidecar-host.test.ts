@@ -12,9 +12,12 @@ import { installUiStubs, type UiStubs } from './ui-stubs.js';
 import {
   assertSidecarsRun,
   copySdkMajor,
+  describeRun,
+  launchSidecar,
   runHost,
   sdkSource,
   selectRuntimeVersion,
+  stageSdk,
   stubSdkWorkspace,
 } from './sdk-host-kit.js';
 import { DOTNET_CLI_MS } from './test-timeouts.js';
@@ -95,11 +98,14 @@ suite('SDK pin preserves the sidecar host', () => {
       // These are real installed runtime bits with remapped directory versions,
       // testing hostfxr selection, not claiming preview SDKs were downloaded.
       selectRuntimeVersion(path.dirname(modernHost), version);
-      for (const language of ['FSharp', 'CSharp']) {
-        const dll = path.resolve(__dirname, '../../../bin/all', `SharpLsp.Sidecar.${language}.dll`);
-        const run = runHost(modernHost, scratch, [dll, '--version']);
-        assert.equal(run.status, compatible ? 0 : 150, `${language}: ${run.stderr}`);
-        assert.equal(run.signal, null);
+      for (const language of ['FSharp', 'CSharp'] as const) {
+        const run = launchSidecar(modernHost, scratch, language);
+        assert.equal(
+          run.status,
+          compatible ? 0 : 150,
+          describeRun(`${language} on a ${version} runtime`, run),
+        );
+        assert.equal(run.signal, null, describeRun(`${language} must decide, not time out`, run));
       }
       assert.equal(await supportsSidecars(modernHost), compatible, version);
     });
@@ -158,10 +164,10 @@ suite('SDK pin preserves the sidecar host', () => {
 
   test('SDK files without the required runtime are rejected even when installation reports success', async function () {
     this.timeout(DOTNET_CLI_MS);
-    fs.cpSync(path.join(modernSource, 'sdk'), path.join(path.dirname(oldHost), 'sdk'), {
-      recursive: true,
-      mode: fs.constants.COPYFILE_FICLONE,
-    });
+    // ONE real 10 SDK, not every installed one: `fs.cpSync` is synchronous, so
+    // copying the whole `sdk` tree blocks the event loop past the point where
+    // mocha could even report the timeout it caused (#297 CI).
+    stageSdk(path.dirname(oldHost), 10);
     assert.ok(installedSdkVersions(oldHost).some((sdk) => sdk.startsWith('10.')));
     assert.equal(runHost(oldHost, scratch, ['--version']).stdout.trim(), pinnedVersion);
     restore = stubSdkWorkspace(

@@ -1,14 +1,23 @@
 import * as assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { candidateDotnetRoots, dotnetExecutable } from '../../dotnet-roots.js';
 import { type SdkPin, pinSatisfiedBy, runtimeFloorMet } from '../../global-json.js';
 import { findSidecarSdk, supportsSidecars } from '../../dotnet-host.js';
-import { sdkSource } from './sdk-host-kit.js';
+import {
+  type Language,
+  composeRoot,
+  describeRun,
+  installMuxer,
+  launchSidecar,
+  replaceMuxer,
+  realSdks,
+  realRuntimes,
+  realSource,
+  runHost,
+} from './sdk-host-kit.js';
 import { removeDirRecursive } from './test-helpers.js';
-import { FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts.js';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts.js';
 
 /**
  * Whether a .NET root can host the sidecars is decided by ONE authority: the
@@ -26,126 +35,36 @@ import { FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts.js';
  * ahead of the sidecars', and an SDK major differing from the runtime's. Those
  * four are exactly where a "does this look like 10?" check goes wrong.
  *
+ * Composing a root copies a real SDK and a real runtime, which costs tens of
+ * seconds on an agent without reflinks, so every root is composed ONCE in
+ * `suiteSetup` and the test bodies only launch processes against them
+ * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]: a suite pays one initialization).
+ *
  * Implements [DIST-RUNTIME-ACQUIRE].
  */
 
 /** The floor the sidecars' `runtimeconfig.json` asks hostfxr for. */
 const SIDECAR_FRAMEWORK = '10.0.0';
-const FRAMEWORK = path.join('shared', 'Microsoft.NETCore.App');
 
-/** Directory names under one component of a root, or nothing when unreadable. */
-function namesUnder(root: string, component: string): string[] {
-  try {
-    return fs.readdirSync(path.join(root, component));
-  } catch {
-    return [];
-  }
-}
+/** [name, SDK major on the root, runtime version it advertises]. */
+const CASES: readonly (readonly [string, number, string])[] = [
+  ['nine-only', 9, '9.0.14'],
+  ['ten', 10, '10.0.7'],
+  ['prerelease-below-the-floor', 10, '10.0.0-rc.2'],
+  ['prerelease-above-the-floor', 10, '10.0.99-rc.1'],
+  ['next-major-preview', 10, '11.0.0-preview.1'],
+  ['old-sdk-current-runtime', 9, '10.0.7'],
+  ['build-metadata', 10, '10.0.99+x1'],
+];
 
-const realSdks = (root: string): string[] => namesUnder(root, 'sdk');
-const realRuntimes = (root: string): string[] => namesUnder(root, FRAMEWORK);
-
-/**
- * A real installed root carrying a real >= 10 runtime: the source of the muxer,
- * hostfxr and the runtime bits every fixture needs to genuinely launch.
- */
-function realSource(): string {
-  const found = candidateDotnetRoots().find((root) =>
-    realRuntimes(root).some((version) => version.startsWith('10.')),
+/** Launch one real staged sidecar, failing with everything the host said. */
+function launchStatus(cwd: string, host: string, language: Language): number | null {
+  const run = launchSidecar(host, cwd, language);
+  assert.equal(
+    run.signal,
+    null,
+    describeRun(`${language} timed out rather than deciding on ${host}`, run),
   );
-  assert.ok(found, 'a real .NET 10 runtime is required to compose hosts that really start');
-  return found;
-}
-
-/** The newest real directory whose name starts with `prefix`. */
-function newest(names: readonly string[], prefix: string): string | undefined {
-  return [...names]
-    .filter((name) => name.startsWith(prefix))
-    .sort()
-    .pop();
-}
-
-function cloneInto(source: string, relative: string, target: string): void {
-  fs.cpSync(path.join(source, relative), target, {
-    recursive: true,
-    mode: fs.constants.COPYFILE_FICLONE,
-  });
-}
-
-/** Every hostfxr the source ships: the muxer picks the newest it can find. */
-function copyFxr(source: string, root: string): void {
-  for (const version of namesUnder(source, path.join('host', 'fxr'))) {
-    cloneInto(source, path.join('host', 'fxr', version), path.join(root, 'host', 'fxr', version));
-  }
-}
-
-/** Real runtime bits, advertised under the version name being tested. */
-function copyRuntime(source: string, root: string, advertised: string): void {
-  const real = newest(realRuntimes(source), '10.') ?? realRuntimes(source)[0];
-  assert.ok(real, 'the source install must carry a real runtime to compose from');
-  cloneInto(source, path.join(FRAMEWORK, real), path.join(root, FRAMEWORK, advertised));
-}
-
-/**
- * A real, launchable root advertising exactly one SDK and one runtime.
- *
- * The muxer is COPIED, never symlinked: it resolves its root from its own real
- * path, so a symlinked one reports the SOURCE root's runtimes and every
- * assertion here would silently be about the wrong machine.
- *
- * `runtimeAs` renames real runtime bits to the version under test. hostfxr
- * selects frameworks by directory NAME, which is the mechanism being tested;
- * the binaries inside stay real, so the process genuinely starts whenever the
- * name says it may.
- */
-function composeRoot(
-  scratch: string,
-  source: string,
-  name: string,
-  sdkMajor: number,
-  runtimeAs: string,
-): string {
-  const root = path.join(scratch, name);
-  fs.mkdirSync(root, { recursive: true });
-  fs.copyFileSync(dotnetExecutable(source), dotnetExecutable(root));
-  fs.chmodSync(dotnetExecutable(root), 0o755);
-  stageSdk(root, sdkMajor);
-  copyFxr(source, root);
-  copyRuntime(source, root, runtimeAs);
-  return dotnetExecutable(root);
-}
-
-/**
- * Give the root a REAL SDK of `major`, copied from wherever one really is.
- *
- * Nothing here is ever fabricated by name. `installedSdkVersions` reads
- * directory names, so an empty directory would satisfy every predicate under
- * test while proving nothing about a machine that could really build — the
- * suite would keep passing and quietly stop meaning what it says. A missing
- * SDK is a fixture prerequisite, and `sdkSource` fails the test saying so.
- *
- * SDK majors live in different roots on an ordinary machine — here `~/.dotnet`
- * carries 10.0.100 and 10.0.303 with no 9.x, while `/usr/local/share/dotnet`
- * carries 9.0.312 — so each major is sourced independently.
- */
-function stageSdk(root: string, major: number): void {
-  const source = sdkSource(major);
-  const real = newest(realSdks(source), `${String(major)}.`);
-  assert.ok(real, `SDK ${String(major)} must be a real installed directory, never composed`);
-  cloneInto(source, path.join('sdk', real), path.join(root, 'sdk', real));
-}
-
-/** Launch one real staged sidecar on `host`. Returns its exit status. */
-function launchStatus(cwd: string, host: string, language: 'CSharp' | 'FSharp'): number | null {
-  const dll = path.resolve(__dirname, '../../../bin/all', `SharpLsp.Sidecar.${language}.dll`);
-  assert.ok(fs.existsSync(dll), `the staged ${language} sidecar must exist: ${dll}`);
-  const run = spawnSync(host, [dll, '--version'], {
-    cwd,
-    encoding: 'utf8',
-    timeout: SETTLE_MS,
-    env: { ...process.env, DOTNET_ROOT: path.dirname(host) },
-  });
-  assert.equal(run.signal, null, `${language} timed out rather than deciding on ${host}`);
   return run.status;
 }
 
@@ -156,45 +75,39 @@ function hasSidecarSdk(host: string): boolean {
 
 suite('a root is judged by whether the sidecars actually start on it', () => {
   let scratch: string;
-  let source: string;
+  const hosts = new Map<string, string>();
 
-  setup(function () {
+  suiteSetup(function () {
     this.timeout(FIXTURE_BUILD_MS);
-    source = realSource();
+    const source = realSource();
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-runtime-floor-'));
+    for (const [name, sdkMajor, runtime] of CASES) {
+      hosts.set(name, composeRoot(scratch, source, name, sdkMajor, runtime));
+    }
   });
 
-  teardown(() => {
+  suiteTeardown(() => {
     removeDirRecursive(scratch);
   });
 
-  // [name, SDK major on the root, runtime version it advertises].
-  const cases: readonly (readonly [string, number, string])[] = [
-    ['nine-only', 9, '9.0.14'],
-    ['ten', 10, '10.0.7'],
-    ['prerelease-below-the-floor', 10, '10.0.0-rc.2'],
-    ['prerelease-above-the-floor', 10, '10.0.99-rc.1'],
-    ['next-major-preview', 10, '11.0.0-preview.1'],
-    ['old-sdk-current-runtime', 9, '10.0.7'],
-    ['build-metadata', 10, '10.0.99+x1'],
-  ];
-
-  for (const [name, sdkMajor, runtime] of cases) {
+  for (const [name, , runtime] of CASES) {
     test(`${name}: the host predicate matches what the sidecars actually do`, async function () {
-      this.timeout(FIXTURE_BUILD_MS);
-      const host = composeRoot(scratch, source, name, sdkMajor, runtime);
+      this.timeout(DOTNET_CLI_MS);
+      const host = hosts.get(name);
+      assert.ok(host, `${name} must have been composed in suiteSetup`);
 
       // The fixture is only evidence if the root really advertises what was
       // asked for. A composed root that quietly resolved to the machine's own
       // installation would make every assertion below meaningless.
-      const advertised = spawnSync(host, ['--list-runtimes'], { encoding: 'utf8' }).stdout;
+      const listed = runHost(host, scratch, ['--list-runtimes']);
+      const advertised = listed.stdout;
       assert.ok(
         advertised.includes(`Microsoft.NETCore.App ${runtime}`),
-        `the composed root must advertise ${runtime}, got: ${advertised}`,
+        describeRun(`the composed root must advertise ${runtime}`, listed),
       );
       assert.ok(
         advertised.includes(path.join(scratch, name)),
-        `the composed root must resolve to ITSELF, not the source install: ${advertised}`,
+        describeRun(`the composed root must resolve to ITSELF, not the source install`, listed),
       );
 
       // THE ORACLE. Not a table — the processes whose startup is being predicted.
@@ -244,7 +157,15 @@ suite('a root is judged by whether the sidecars actually start on it', () => {
 
       // And the failure mode is the documented one, never a silent non-zero.
       if (!starts) {
-        assert.equal(csharp, 150, 'a host that cannot start the sidecars must fail as exit 150');
+        assert.equal(
+          csharp,
+          150,
+          describeRun(
+            `a host that cannot start the sidecars must fail as exit 150 ("you must install or ` +
+              `update .NET"), not some other code the extension cannot recognise`,
+            launchSidecar(host, scratch, 'CSharp'),
+          ),
+        );
       }
     });
   }
@@ -278,7 +199,7 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     return { version: sdk, rollForward: 'disable', source: path.join(scratch, 'global.json') };
   }
 
-  setup(function () {
+  suiteSetup(function () {
     this.timeout(FIXTURE_BUILD_MS);
     const source = realSource();
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-both-questions-'));
@@ -288,12 +209,12 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     tenPin = pinFor(ten);
   });
 
-  teardown(() => {
+  suiteTeardown(() => {
     removeDirRecursive(scratch);
   });
 
   test('a pin satisfied only by a 9-only root selects NOTHING, never that root', async function () {
-    this.timeout(FIXTURE_BUILD_MS);
+    this.timeout(DOTNET_CLI_MS);
     // The fixture must really be the #297 shape, or this proves nothing: the
     // 9-only root satisfies the pin exactly, and cannot start the sidecars.
     assert.ok(
@@ -303,12 +224,18 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     assert.equal(
       launchStatus(scratch, nineOnly, 'CSharp'),
       150,
-      'the 9-only root must really refuse the C# sidecar, or there is nothing here to avoid',
+      describeRun(
+        'the 9-only root must really refuse the C# sidecar, or there is nothing here to avoid',
+        launchSidecar(nineOnly, scratch, 'CSharp'),
+      ),
     );
     assert.equal(
       launchStatus(scratch, nineOnly, 'FSharp'),
       150,
-      'and the F# sidecar too — both are net10.0, so both must be lost together',
+      describeRun(
+        'and the F# sidecar too — both are net10.0, so both must be lost together',
+        launchSidecar(nineOnly, scratch, 'FSharp'),
+      ),
     );
 
     // Rule 6 / rule 7: no root answers both, so the answer is nothing.
@@ -328,7 +255,7 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
   });
 
   test('a pin the hosting root satisfies selects it, whatever the probe order', async function () {
-    this.timeout(FIXTURE_BUILD_MS);
+    this.timeout(DOTNET_CLI_MS);
     const roots = [path.dirname(nineOnly), path.dirname(ten)];
     assert.equal(
       await findSidecarSdk(tenPin, roots),
@@ -358,7 +285,7 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
   });
 
   test('a pin no installed root satisfies selects nothing, so acquisition proceeds', async function () {
-    this.timeout(FIXTURE_BUILD_MS);
+    this.timeout(DOTNET_CLI_MS);
     const absent: SdkPin = {
       version: '10.0.999',
       rollForward: 'disable',
@@ -395,20 +322,29 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
  * away, and the wall-clock a hung probe adds to `activate()` — so neither can
  * change without a test saying so. Implements [DIST-RUNTIME-ACQUIRE] rule 6,
  * "a successful, bounded `dotnet --list-runtimes` probe".
+ *
+ * Each test BREAKS the muxer, so `setup` restores it from the source install.
+ * That is one small file; the root itself is composed once, like every other.
  */
 suite('[DIST-RUNTIME-ACQUIRE] a probe that cannot answer discards the root', () => {
   /** The bound `supportsSidecars` puts on one probe. */
   const PROBE_TIMEOUT_MS = 10_000;
   let scratch: string;
+  let source: string;
   let ten: string;
 
-  setup(function () {
+  suiteSetup(function () {
     this.timeout(FIXTURE_BUILD_MS);
+    source = realSource();
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-probe-fails-'));
-    ten = composeRoot(scratch, realSource(), 'ten', 10, '10.0.7');
+    ten = composeRoot(scratch, source, 'ten', 10, '10.0.7');
   });
 
-  teardown(() => {
+  setup(() => {
+    installMuxer(source, path.dirname(ten));
+  });
+
+  suiteTeardown(() => {
     removeDirRecursive(scratch);
   });
 
@@ -419,19 +355,22 @@ suite('[DIST-RUNTIME-ACQUIRE] a probe that cannot answer discards the root', () 
   }
 
   test('a root that really hosts both sidecars is discarded when its probe errors', async function () {
-    this.timeout(FIXTURE_BUILD_MS);
+    this.timeout(DOTNET_CLI_MS);
     assertHealthy();
     assert.equal(await supportsSidecars(ten), true, 'the intact root must be accepted');
 
     // A real executable that is not the muxer: it exits non-zero on
     // `--list-runtimes` exactly as a broken install does, with no stub
     // anywhere near the code under test.
-    fs.copyFileSync(process.execPath, ten);
-    fs.chmodSync(ten, 0o755);
+    replaceMuxer(ten, process.execPath);
+    const broken = runHost(ten, scratch, ['--list-runtimes']);
     assert.notEqual(
-      spawnSync(ten, ['--list-runtimes'], { encoding: 'utf8' }).status,
+      broken.status,
       0,
-      'the fixture must really fail the probe, or the rejection below means nothing',
+      describeRun(
+        'the fixture must really fail the probe, or the rejection below is empty',
+        broken,
+      ),
     );
     assert.equal(
       await supportsSidecars(ten),
@@ -445,7 +384,7 @@ suite('[DIST-RUNTIME-ACQUIRE] a probe that cannot answer discards the root', () 
   });
 
   test('a probe that never answers cannot stall activation past its own bound', async function () {
-    this.timeout(FIXTURE_BUILD_MS);
+    this.timeout(DOTNET_CLI_MS);
     if (process.platform === 'win32') {
       // The fixture is a muxer that hangs; on Windows that must be a real
       // `dotnet.exe`, which cannot be written from here. The bound itself is
@@ -453,6 +392,7 @@ suite('[DIST-RUNTIME-ACQUIRE] a probe that cannot answer discards the root', () 
       this.skip();
     }
     assertHealthy();
+    fs.rmSync(ten, { force: true });
     fs.writeFileSync(ten, '#!/bin/sh\nsleep 600\n', { mode: 0o755 });
 
     const started = Date.now();
