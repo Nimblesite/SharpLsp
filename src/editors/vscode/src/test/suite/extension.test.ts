@@ -414,7 +414,8 @@ suite('Extension Activation & Configuration', () => {
     );
     assert.strictEqual(fsDoc.languageId, 'fsharp', 'the F# split keeps its own language');
     assert.strictEqual(doc.languageId, 'csharp', 'and the C# side is unchanged by the split');
-    await new Promise((r) => setTimeout(r, 800));
+    // Nothing below asserts on the split settling; the pause is for the picture.
+    await settleForScreenshot(800);
     if (process.env['SHARPLSP_SCREENSHOTS']) {
       await loadFixtureSolution(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
     }

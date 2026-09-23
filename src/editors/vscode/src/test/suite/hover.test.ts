@@ -143,7 +143,15 @@ suite('Hover / Quick Info', () => {
     const completionPosition = new vscode.Position(11, 24);
     completionEditor.selection = new vscode.Selection(completionPosition, completionPosition);
     completionEditor.revealRange(new vscode.Range(completionPosition, completionPosition));
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait for the editor the assertion reads to BE the active one, not for a
+    // guess at how long the workbench takes to make it so.
+    await pollUntilResult(
+      async () => vscode.window.activeTextEditor?.document.uri.toString(),
+      (active) => active === completionUri.toString(),
+      COMMAND_MS,
+      50,
+      'the completion editor to become the active editor',
+    );
     assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), completionUri.toString());
     assert.ok(
       completionEditor.selection.active.isEqual(completionPosition),
@@ -157,7 +165,6 @@ suite('Hover / Quick Info', () => {
 
     // Dismiss suggestion widget then switch back to HoverMulti.cs for go-to-definition.
     await vscode.commands.executeCommand('hideSuggestWidget');
-    await new Promise((r) => setTimeout(r, 300));
 
     const goToEditor = await vscode.window.showTextDocument(
       await vscode.workspace.openTextDocument(completionUri),

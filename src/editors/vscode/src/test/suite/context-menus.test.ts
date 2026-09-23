@@ -25,7 +25,7 @@ import {
   waitForDocumentSymbols,
 } from './test-helpers';
 import { installUiStubs } from './ui-stubs';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, FAST_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 // ── Shared interfaces ─────────────────────────────────────────────
 
@@ -73,6 +73,27 @@ function findByLabel(nodes: TreeNode[] | undefined, label: string): TreeNode | u
 
 function findByContext(nodes: TreeNode[] | undefined, contextValue: string): TreeNode | undefined {
   return findNode(nodes, (n) => n.contextValue === contextValue);
+}
+
+/**
+ * Run a copy command on `node` and return what it put on the clipboard.
+ *
+ * The clipboard is primed with `sentinel` first, then polled until it holds
+ * something else: a command that copied nothing leaves the sentinel there and
+ * fails as itself, and a wait on the clipboard's STATE replaces the fixed sleep
+ * that used to guess how long the write took ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ * The budget sits under the `COMMAND_MS` ceiling of the tests that call this.
+ */
+async function copiedText(command: string, node: TreeNode, sentinel: string): Promise<string> {
+  await vscode.env.clipboard.writeText(sentinel);
+  await vscode.commands.executeCommand(command, node);
+  return pollUntilResult(
+    async () => vscode.env.clipboard.readText(),
+    (text) => text !== sentinel,
+    FAST_MS,
+    50,
+    `'${command}' to replace the clipboard sentinel '${sentinel}'`,
+  );
 }
 
 function getProvider(): ExplorerApi['explorerProvider'] {
@@ -646,11 +667,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     const classNode = findByLabel(provider.getChildren(), 'OuterClass');
     assert.ok(classNode, 'OuterClass must be in the tree');
 
-    await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', classNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyQualifiedName', classNode, '');
     assert.ok(
       text.includes('OuterNS') && text.includes('OuterClass'),
       `Expected 'OuterNS.OuterClass', got '${text}'`,
@@ -667,11 +684,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     );
     assert.ok(methodNode, 'OuterMethod must be in the tree');
 
-    await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', methodNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyQualifiedName', methodNode, '');
     assert.ok(
       text.includes('OuterNS') && text.includes('OuterClass') && text.includes('OuterMethod'),
       `Expected 'OuterNS.OuterClass.OuterMethod', got '${text}'`,
@@ -686,11 +699,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     );
     assert.ok(propNode, 'OuterProp must be in the tree');
 
-    await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', propNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyQualifiedName', propNode, '');
     assert.ok(
       text.includes('OuterNS') && text.includes('OuterClass') && text.includes('OuterProp'),
       `Expected qualified name with OuterNS, OuterClass, OuterProp; got '${text}'`,
@@ -702,11 +711,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     const ifaceNode = findByLabel(provider.getChildren(), 'IService');
     assert.ok(ifaceNode, 'IService must be in the tree');
 
-    await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', ifaceNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyQualifiedName', ifaceNode, '');
     assert.ok(
       text.includes('OuterNS') && text.includes('IService'),
       `Expected 'OuterNS.IService', got '${text}'`,
@@ -721,11 +726,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     );
     assert.ok(innerNode, 'InnerClass must be in the tree');
 
-    await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', innerNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyQualifiedName', innerNode, '');
     assert.ok(
       text.includes('InnerClass'),
       `Expected qualified name with 'InnerClass', got '${text}'`,
@@ -740,11 +741,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     );
     assert.ok(innerMethodNode, 'InnerMethod must be in the tree');
 
-    await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', innerMethodNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyQualifiedName', innerMethodNode, '');
     assert.ok(
       text.includes('InnerMethod'),
       `Expected qualified name with 'InnerMethod', got '${text}'`,
@@ -757,11 +754,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     const classNode = findByLabel(provider.getChildren(), 'OuterClass');
     assert.ok(classNode, 'OuterClass must be in the tree');
 
-    await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', classNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyQualifiedName', classNode, '');
     assert.ok(text.length > 0, 'Qualified name must not be empty');
     assert.ok(!text.startsWith('.'), 'Must not start with dot');
     assert.ok(!text.endsWith('.'), 'Must not end with dot');
@@ -816,11 +809,7 @@ suite('Context Menu — Copy Name', () => {
     const node = findByLabel(provider.getChildren(), 'AllTypesClass');
     assert.ok(node, 'AllTypesClass node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', node);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', node, 'BEFORE');
     assert.strictEqual(text, 'AllTypesClass', `Expected 'AllTypesClass', got '${text}'`);
   });
 
@@ -832,11 +821,7 @@ suite('Context Menu — Copy Name', () => {
     );
     assert.ok(node, 'Execute method node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', node);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', node, 'BEFORE');
     assert.strictEqual(text, 'Execute', `Expected 'Execute', got '${text}'`);
   });
 
@@ -845,11 +830,7 @@ suite('Context Menu — Copy Name', () => {
     const node = findByLabel(provider.getChildren(), 'IRunner');
     assert.ok(node, 'IRunner node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', node);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', node, 'BEFORE');
     assert.strictEqual(text, 'IRunner', `Expected 'IRunner', got '${text}'`);
   });
 
@@ -861,11 +842,7 @@ suite('Context Menu — Copy Name', () => {
     );
     assert.ok(node, 'Label property node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', node);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', node, 'BEFORE');
     assert.strictEqual(text, 'Label', `Expected 'Label', got '${text}'`);
   });
 
@@ -874,11 +851,7 @@ suite('Context Menu — Copy Name', () => {
     const node = findByLabel(provider.getChildren(), 'MyEnum');
     assert.ok(node, 'MyEnum node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', node);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', node, 'BEFORE');
     assert.strictEqual(text, 'MyEnum', `Expected 'MyEnum', got '${text}'`);
   });
 
@@ -887,11 +860,7 @@ suite('Context Menu — Copy Name', () => {
     const node = findByLabel(provider.getChildren(), 'MyPoint');
     assert.ok(node, 'MyPoint struct node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', node);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', node, 'BEFORE');
     assert.strictEqual(text, 'MyPoint', `Expected 'MyPoint', got '${text}'`);
   });
 
@@ -900,11 +869,7 @@ suite('Context Menu — Copy Name', () => {
     const node = findByLabel(provider.getChildren(), 'AllTypesClass');
     assert.ok(node, 'AllTypesClass node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', node);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', node, 'BEFORE');
     assert.ok(!text.includes('.'), `copyName must return unqualified name, got '${text}'`);
   });
 
@@ -915,11 +880,7 @@ suite('Context Menu — Copy Name', () => {
     const slnNode = roots[0];
     assert.ok(slnNode, 'Solution node must exist');
 
-    await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('sharplsp.copyName', slnNode);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const text = await vscode.env.clipboard.readText();
+    const text = await copiedText('sharplsp.copyName', slnNode, 'BEFORE');
     assert.ok(
       text.length > 0 && text !== 'BEFORE',
       `copyName for solution must write something to clipboard, got '${text}'`,

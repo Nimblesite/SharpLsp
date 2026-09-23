@@ -106,9 +106,9 @@ suite('Lifecycle E2E', () => {
       await vscode.commands.executeCommand('sharplsp.restartServer');
     }, 'restartServer must not throw');
 
-    // Give the respawned server a moment to settle, then re-open the document so
-    // it is active and definitely synced to the fresh server instance.
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    // Re-open the document so it is active and synced to the fresh server
+    // instance. No settling pause first: the poll below waits for the state a
+    // recovered server produces, and a fixed second only guessed at it.
     const { uri: reopened } = await openCSharpFile(tmpDir, filename, content);
 
     // CRITICAL: restart MUST recover — poll generously until symbols return so

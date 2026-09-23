@@ -26,6 +26,8 @@ One runner, `make _test-vsix-shard CHUNK=<name>`, drives every slice of the VS C
 
 Every wait in the suite is a poll for the STATE the next step needs, never a count of events and never a fixed sleep, and every poll takes its budget from one tier in `src/editors/vscode/src/test/suite/test-timeouts.ts`. A test that needs longer names the slow process it waits on, in a comment, at the site.
 
+The one exception is a NEGATIVE assertion — that a stop never came, that a process was not killed, that the host never signalled itself. A state that must never arrive cannot be waited for, so a fixed quiet period (`QUIET_MS`) followed by the assertion is the correct structure there; the assertion fails if the forbidden thing happens inside the window, and the only judgement is whether the window is long enough. The test for a wait is therefore: does the assertion after it say something HAPPENED (poll for the state) or that something DIDN'T (quiet period)?
+
 The invariant: a poll's budget plus the work that precedes it MUST sit strictly below the ceiling of the test or hook it runs in. When the two are equal the runner kills the test first and reports its own generic timeout, which names nothing, in place of the poll's report, which names what never held and the last value it saw. Exhausting a poll budget FAILS; it never returns the last value.
 
 | Tier | Budget | Used for |
@@ -194,6 +196,36 @@ The VSIX is self-contained. A user who installs the extension gets everything th
 
 ## [DIST-VSIX-REBUILD] Mandatory Clean Rebuild Before Packaging and Tests
 
+### [DIST-CI-ARTIFACT-TESTS] Build Once, Then Test the Cached Artifacts
+
+PR CI has an enforced handoff: **check/analyse/build → artifact-only tests**.
+Security and analysis gates complete before builds; all test jobs wait for the
+build workflow and download immutable artifacts from that same run/commit.
+
+- Each platform/target builds once. C#/F# sidecars and their tests compile in
+  Release together; publishing and testing use `--no-build --no-restore`.
+- Rust/Zed Release test binaries are built into nextest archives before fan-out.
+  Test jobs execute those archives with zero retries; they never compile them.
+- Rider builds its plugin and test classes before handoff. Test execution excludes
+  Java/Kotlin compilation, and a task-graph guard rejects new compiler dependencies.
+- VS Code tests execute the production JavaScript and native payload extracted
+  from the packaged VSIX, not a separately built development extension. Its matching
+  source map is a private test artifact and never ships inside the VSIX. Coverage
+  excludes vendor code after remapping, without lowering the existing ratchet.
+- Static test fixtures and coverage utilities are precompiled. Consumers may
+  restore NuGet metadata to rebase machine-local package paths, but not compile.
+  A feature test which deliberately builds/edits a user's fixture project still
+  exercises that operation; this is not permission to rebuild the LSP or harness.
+- Each suite has exactly one shard owner per platform. Platform coverage remains
+  intentional (Linux and Windows are distinct environments); shared executable
+  suites, automatic retries and full-suite reruns after sharding are forbidden.
+- Missing artifacts, mismatched package metadata, compilation attempts, failed
+  tests and failed coverage gates fail CI. Test execution remains PR-only.
+
+The default local/release entry points below still produce clean native binaries.
+An enclosing fresh build passes the prebuilt flag into npm's packaging lifecycle
+so that lifecycle cannot secretly rebuild the payload a second time.
+
 Every supported VSIX package and test entry point MUST rebuild its complete payload from clean compiler output by default. A successful incremental build, a cached binary, or a previous test run is not proof of freshness.
 
 The ONE exception is a consumer handed native output built by the same CI run from the same commit, which it declares by setting `VSIX_PREBUILT` (and `VSIX_SUITE_PREBUILT` for the compiled suite). Such output is not the stale incremental tree this section exists to refuse, and rebuilding it per shard would multiply the host, both sidecars and the debugger by the matrix width — hours added to every pull request ([DIST-CI-VSIX-SHARDS]). A prebuilt consumer MUST still stage and verify the payload; it MUST NOT skip staging. Release packaging ignores the flag: a tag never ships a binary its own run did not compile.
@@ -202,7 +234,7 @@ The ONE exception is a consumer handed native output built by the same CI run fr
 2. Rebuild the patched netcoredbg native binary and its managed helper from clean CMake/MSBuild output on every supported debugger platform. Existing build-ID markers do not bypass this. Platforms explicitly without a bundled debugger retain their documented fallback.
 3. Run the Roslyn/pinned-SDK compatibility regression before staging. Failures in clean, build, compatibility verification, copy, or package verification MUST stop the consumer; never fall back to an old output tree.
 4. Stage only after all builds succeed, into an empty VSIX `bin` tree. Recompile the extension/test JavaScript before its consumer. Verify the production payload before packaging.
-5. `_build-vsix`, `_package-vsix` and every platform wrapper, `_test-vsix`, `_test-vsix-shard`, `_run-vsix-suite`, and `_verify-vsix-payload` MUST enforce this automatically. `VSIX_PREBUILT` and `VSIX_SUITE_PREBUILT` MUST NOT bypass it. `npm test`, `npm run test:run`, and `vscode:prepublish` MUST enforce the same rule.
+5. `_build-vsix`, `_package-vsix` and every platform wrapper, `_test-vsix`, `_test-vsix-shard`, `_run-vsix-suite`, and `_verify-vsix-payload` MUST enforce this automatically. Prebuilt flags are only for the same-run handoff above, not stale local outputs. `npm test`, `npm run test:run`, and `vscode:prepublish` MUST enforce the same default and same-run exception.
 6. Clean/build/stage/consume steps MUST run in order. Parallel builds in the same checkout must not overwrite a payload while it is packaged or tested. A filesystem race is a failure, never a passing verification.
 
 Regression coverage: `tools/make/vsix-rebuild.test.mjs` exercises the actual expanded Make recipes, including prebuilt flags and all six release platforms. `tools/vsix/rebuild-contract.test.mjs` verifies npm lifecycle hooks and removal of real stale BuildHost files while preserving sources. Both run in `_test-tooling`; workflow wiring is also checked by `tools/ci/security-gates.test.mjs` in `_lint-vsix`.
