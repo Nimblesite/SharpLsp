@@ -166,6 +166,8 @@
         "extension.test.js",
         "lifecycle-e2e.test.js",
         "sdk-pin.test.js",
+        "sdk-sidecar-host.test.js",
+        "sdk-runtime-floor.test.js",
         "coverage-extension-workflows.test.js",
         "solution-explorer.test.js",
         "solution-explorer-build.test.js",
