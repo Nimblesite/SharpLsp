@@ -73,6 +73,33 @@ test("CI stages same-run binaries and release compiles its own", () => {
     );
 });
 
+// Implements [DIST-CI-SMOKE] and [DIST-DEBUGGER-BUNDLE]. The release rebuilds
+// the macOS debugger from source, so a Linux/Windows-only PR build cannot
+// detect a macOS compiler or linker failure before a tag is published.
+test("the macOS debugger source build is a required PR gate", () => {
+    const releaseMac = release.jobs["build-vsix"].strategy.matrix.include.find(
+        (entry) => entry.platform === "darwin-arm64",
+    );
+    assert.ok(releaseMac, "the release must declare an Apple Silicon VSIX");
+
+    const build = workflow("ci-build");
+    const mac = build.jobs["build-macos"];
+    assert.ok(mac, "PR CI must check the macOS debugger build before release");
+    assert.equal(mac["runs-on"], releaseMac.os);
+    assert.ok(
+        mac.steps.some((step) =>
+            step.run?.includes("bash tools/vsix/build-netcoredbg.sh darwin-arm64"),
+        ),
+        "PR CI must compile the same patched macOS debugger as release",
+    );
+    assert.ok(
+        mac.steps.some((step) => step.run?.includes("netcoredbg --version")),
+        "the macOS build check must run the binary it produced",
+    );
+    assert.notEqual(mac["continue-on-error"], true);
+    assert.ok(ci.jobs.ci.needs.includes("build"));
+});
+
 test("a dependency audit failure reaches the final CI result", () => {
     assert.ok(
         ci.jobs.ci.needs.includes("audit"),
