@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { candidateDotnetRoots, dotnetExecutable } from '../../dotnet-roots.js';
 import { type SdkPin, pinSatisfiedBy, runtimeFloorMet } from '../../global-json.js';
 import { findSidecarSdk, supportsSidecars } from '../../dotnet-host.js';
+import { sdkSource } from './sdk-host-kit.js';
 import { removeDirRecursive } from './test-helpers.js';
 import { FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts.js';
 
@@ -56,20 +57,6 @@ function realSource(): string {
   return found;
 }
 
-/**
- * The first root carrying an SDK of this major, wherever it lives.
- *
- * SDKs and runtimes are installed independently and land in different roots on
- * an ordinary machine: here `~/.dotnet` carries 10.0.100 and 10.0.303 with no
- * 9.x at all, while `/usr/local/share/dotnet` carries 9.0.312. Requiring ONE
- * root to supply every major a fixture needs makes the suite depend on which
- * root happens to be probed first, which is a property of the machine and not
- * of the code under test.
- */
-function sdkSource(prefix: string): string | undefined {
-  return candidateDotnetRoots().find((root) => newest(realSdks(root), prefix) !== undefined);
-}
-
 /** The newest real directory whose name starts with `prefix`. */
 function newest(names: readonly string[], prefix: string): string | undefined {
   return [...names]
@@ -115,39 +102,37 @@ function composeRoot(
   scratch: string,
   source: string,
   name: string,
-  sdkPrefix: string,
+  sdkMajor: number,
   runtimeAs: string,
 ): string {
   const root = path.join(scratch, name);
   fs.mkdirSync(root, { recursive: true });
   fs.copyFileSync(dotnetExecutable(source), dotnetExecutable(root));
   fs.chmodSync(dotnetExecutable(root), 0o755);
-  stageSdk(root, sdkPrefix);
+  stageSdk(root, sdkMajor);
   copyFxr(source, root);
   copyRuntime(source, root, runtimeAs);
   return dotnetExecutable(root);
 }
 
 /**
- * Give the root an SDK of `prefix`, copied from wherever one really is.
+ * Give the root a REAL SDK of `major`, copied from wherever one really is.
  *
- * When the machine has no SDK of that major anywhere, the directory is created
- * by name instead. That is enough and it is not a shortcut: the only consumer
- * of `sdk/` in this whole path is `installedSdkVersions`, which reads directory
- * NAMES — nothing here executes an SDK, and the sidecars are
- * framework-dependent, so what decides whether they start is the runtime, which
- * is always real. Falling back keeps the suite meaningful on a machine that
- * happens to carry only one SDK major, instead of failing as a fixture error
- * and telling nobody anything about the code.
+ * Nothing here is ever fabricated by name. `installedSdkVersions` reads
+ * directory names, so an empty directory would satisfy every predicate under
+ * test while proving nothing about a machine that could really build — the
+ * suite would keep passing and quietly stop meaning what it says. A missing
+ * SDK is a fixture prerequisite, and `sdkSource` fails the test saying so.
+ *
+ * SDK majors live in different roots on an ordinary machine — here `~/.dotnet`
+ * carries 10.0.100 and 10.0.303 with no 9.x, while `/usr/local/share/dotnet`
+ * carries 9.0.312 — so each major is sourced independently.
  */
-function stageSdk(root: string, prefix: string): void {
-  const source = sdkSource(prefix);
-  const real = source === undefined ? undefined : newest(realSdks(source), prefix);
-  if (source !== undefined && real !== undefined) {
-    cloneInto(source, path.join('sdk', real), path.join(root, 'sdk', real));
-    return;
-  }
-  fs.mkdirSync(path.join(root, 'sdk', `${prefix}0.100`), { recursive: true });
+function stageSdk(root: string, major: number): void {
+  const source = sdkSource(major);
+  const real = newest(realSdks(source), `${String(major)}.`);
+  assert.ok(real, `SDK ${String(major)} must be a real installed directory, never composed`);
+  cloneInto(source, path.join('sdk', real), path.join(root, 'sdk', real));
 }
 
 /** Launch one real staged sidecar on `host`. Returns its exit status. */
@@ -183,20 +168,20 @@ suite('a root is judged by whether the sidecars actually start on it', () => {
     removeDirRecursive(scratch);
   });
 
-  // [name, SDK prefix on the root, runtime version it advertises].
-  const cases: readonly (readonly [string, string, string])[] = [
-    ['nine-only', '9.', '9.0.14'],
-    ['ten', '10.', '10.0.7'],
-    ['prerelease-below-the-floor', '10.', '10.0.0-rc.2'],
-    ['prerelease-above-the-floor', '10.', '10.0.99-rc.1'],
-    ['next-major-preview', '10.', '11.0.0-preview.1'],
-    ['old-sdk-current-runtime', '9.', '10.0.7'],
+  // [name, SDK major on the root, runtime version it advertises].
+  const cases: readonly (readonly [string, number, string])[] = [
+    ['nine-only', 9, '9.0.14'],
+    ['ten', 10, '10.0.7'],
+    ['prerelease-below-the-floor', 10, '10.0.0-rc.2'],
+    ['prerelease-above-the-floor', 10, '10.0.99-rc.1'],
+    ['next-major-preview', 10, '11.0.0-preview.1'],
+    ['old-sdk-current-runtime', 9, '10.0.7'],
   ];
 
-  for (const [name, sdkPrefix, runtime] of cases) {
+  for (const [name, sdkMajor, runtime] of cases) {
     test(`${name}: the host predicate matches what the sidecars actually do`, async function () {
       this.timeout(FIXTURE_BUILD_MS);
-      const host = composeRoot(scratch, source, name, sdkPrefix, runtime);
+      const host = composeRoot(scratch, source, name, sdkMajor, runtime);
 
       // The fixture is only evidence if the root really advertises what was
       // asked for. A composed root that quietly resolved to the machine's own
@@ -296,8 +281,8 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     this.timeout(FIXTURE_BUILD_MS);
     const source = realSource();
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-both-questions-'));
-    nineOnly = composeRoot(scratch, source, 'nine-only', '9.', '9.0.14');
-    ten = composeRoot(scratch, source, 'ten', '10.', '10.0.7');
+    nineOnly = composeRoot(scratch, source, 'nine-only', 9, '9.0.14');
+    ten = composeRoot(scratch, source, 'ten', 10, '10.0.7');
     ninePin = pinFor(nineOnly);
     tenPin = pinFor(ten);
   });
