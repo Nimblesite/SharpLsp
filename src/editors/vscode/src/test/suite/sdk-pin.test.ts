@@ -148,6 +148,48 @@ suite('global.json SDK pin', () => {
       'measured: RollForward=LatestMajor makes the floor upward-open, so 11.x hosts them',
     );
 
+    // Build metadata is NOT a prerelease. Semver gives `+…` no precedence at
+    // all, hostfxr's own parser accepts it, and a source-built or locally
+    // patched runtime lands in a directory carrying it. Measured on a composed
+    // root advertising exactly `10.0.99+x1`: `dotnet --list-runtimes` reports
+    // it and the real C# sidecar exits 0. A floor that rejects it discards a
+    // host that demonstrably works, which is #297's harm with the sign flipped.
+    assert.equal(
+      runtimeFloorMet(['10.0.99+x1'], '10.0.0'),
+      true,
+      'measured: a 10.0.99+x1-only root STARTS the sidecars, so the floor must accept it',
+    );
+    assert.equal(
+      runtimeFloorMet(['10.0.0+x1'], '10.0.0'),
+      true,
+      'build metadata carries no precedence: 10.0.0+x1 IS the release 10.0.0, not below it',
+    );
+    assert.equal(
+      runtimeFloorMet(['10.0.0+build-5'], '10.0.0'),
+      true,
+      'build metadata may itself contain "-", so the prerelease test must run after it is cut',
+    );
+    assert.equal(
+      runtimeFloorMet(['10.0.0-rc.1+sha.abc'], '10.0.0'),
+      false,
+      'a prerelease stays below its release however much build metadata follows it',
+    );
+    assert.equal(
+      runtimeFloorMet(['9.0.14+x1'], '10.0.0'),
+      false,
+      'stripping build metadata must not promote a 9.x runtime over the floor',
+    );
+    assert.deepEqual(
+      parseSdkVersion('10.0.99+x1'),
+      parseSdkVersion('10.0.99'),
+      'build metadata must parse away entirely rather than turning the patch into NaN',
+    );
+    assert.equal(
+      parseSdkVersion('10.0.0+x1') === undefined,
+      false,
+      'a version hostfxr accepts must never be read as malformed',
+    );
+
     // A root is judged on its best runtime, not its first or its worst.
     assert.equal(
       runtimeFloorMet(['9.0.14', '10.0.7'], '10.0.0'),

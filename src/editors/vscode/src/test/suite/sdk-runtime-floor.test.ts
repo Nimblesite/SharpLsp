@@ -176,6 +176,7 @@ suite('a root is judged by whether the sidecars actually start on it', () => {
     ['prerelease-above-the-floor', 10, '10.0.99-rc.1'],
     ['next-major-preview', 10, '11.0.0-preview.1'],
     ['old-sdk-current-runtime', 9, '10.0.7'],
+    ['build-metadata', 10, '10.0.99+x1'],
   ];
 
   for (const [name, sdkMajor, runtime] of cases) {

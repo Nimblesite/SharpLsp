@@ -59,9 +59,9 @@ interface SdkVersion {
   readonly patch: number;
 }
 
-/** Parse `major.minor.bpp`, ignoring any prerelease suffix. Undefined if malformed. */
+/** Parse `major.minor.bpp`, ignoring any prerelease or build suffix. Undefined if malformed. */
 export function parseSdkVersion(version: string): SdkVersion | undefined {
-  const parts = (version.split('-')[0] ?? '').split('.');
+  const parts = releaseCore(version).split('.');
   if (parts.length < 3) return undefined;
   const numbers = parts.slice(0, 3).map((part) => Number(part));
   if (!numbers.every((value) => Number.isInteger(value) && value >= 0)) return undefined;
@@ -137,7 +137,30 @@ function clearsFloor(version: string, want: SdkVersion): boolean {
   const got = parseSdkVersion(version);
   if (got === undefined) return false;
   const order = compare(got, want);
-  return order > 0 || (order === 0 && !version.includes('-'));
+  return order > 0 || (order === 0 && !isPrerelease(version));
+}
+
+/**
+ * `major.minor.patch`, with any prerelease and build suffix removed.
+ *
+ * Build metadata is stripped FIRST because semver orders it last
+ * (`1.2.3-rc.1+sha`), so cutting at `-` alone leaves `0+sha` in the third
+ * component, `Number` reads it as `NaN`, and the whole version parses as
+ * undefined — a runtime hostfxr accepts, rejected as malformed.
+ */
+function releaseCore(version: string): string {
+  const withoutBuild = version.split('+')[0] ?? '';
+  return withoutBuild.split('-')[0] ?? '';
+}
+
+/**
+ * Whether this version is a prerelease, which sorts BELOW its own release.
+ *
+ * Build metadata carries no precedence and may itself contain `-`
+ * (`10.0.0+build-5` is a release), so it goes before the question is asked.
+ */
+function isPrerelease(version: string): boolean {
+  return (version.split('+')[0] ?? '').includes('-');
 }
 
 /** Whether any installed SDK satisfies the pin. */
