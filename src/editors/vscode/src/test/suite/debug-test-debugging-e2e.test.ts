@@ -67,14 +67,6 @@ import {
   closeAllEditors,
   comparablePath,
   deepEq,
-/** The `hitCondition` of every entry in one `setBreakpoints` request. */
-function hitConditionsOf(args: Record<string, any>): string[] {
-  const list: unknown = args['breakpoints'];
-  return Array.isArray(list)
-    ? list.map((entry) => String((entry as Record<string, any>)['hitCondition'] ?? ''))
-    : [];
-}
-
   eq,
   neq,
   requireAt,
@@ -82,6 +74,14 @@ function hitConditionsOf(args: Record<string, any>): string[] {
 } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
+
+/** The `hitCondition` of every entry in one `setBreakpoints` request. */
+function hitConditionsOf(args: Record<string, any>): string[] {
+  const list: unknown = args['breakpoints'];
+  return Array.isArray(list)
+    ? list.map((entry) => String((entry as Record<string, any>)['hitCondition'] ?? ''))
+    : [];
+}
 
 suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints', () => {
   let fixture: TestDebugFixture;
