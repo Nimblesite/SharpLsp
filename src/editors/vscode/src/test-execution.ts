@@ -199,9 +199,10 @@ async function runBatch(
   options: TestRunOptions,
 ): Promise<TestRunOutcome> {
   const filtered = await invoke(testIds, cwd, resultsDirectory, options);
-  // A cancelled run gets no recovery attempt: the user asked for the tests to
-  // STOP, and an unfiltered retry would start every one of them over again.
-  if (options.signal?.aborted === true) return filtered;
+  // A stopped debug host reports a run error, not a rejected filter. Retrying
+  // would start another waiting host after Stop. Debug and cancelled runs get
+  // no recovery attempt ([DEBUG-FEATURES-TESTS]), as on the MTP path.
+  if (options.debug === true || options.signal?.aborted === true) return filtered;
   if (!needsUnfilteredRetry(filtered, testIds)) return filtered;
   const unfiltered = await invoke([], cwd, resultsDirectory, options);
   return mergeRuns(filtered, unfiltered);

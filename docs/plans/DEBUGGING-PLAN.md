@@ -318,7 +318,7 @@ open and are called out as such, because nothing implements them.
       VS Code's stop gesture sends `disconnect {terminateDebuggee: true}` because the router
       advertises `supportTerminateDebuggee`, and netcoredbg then KILLED the attached process.
       `dap-attach.ts` `AttachRetrier.rewriteDisconnect` forces `terminateDebuggee: false` for
-      an attach-mode session (launch disconnects pass through untouched); the router's
+      a user-selected attach session (launch disconnects pass through untouched); the router's
       `disconnect` intercept routes through it. Test `debug-attach-e2e.test.ts` *attaching by
       pid pauses the live process and exposes its state* — green locally end to end,
       including "stopping an ATTACH session detaches".
@@ -589,6 +589,16 @@ waiting; a debug run never writes the result cache.
 - [x] Resolve test host child process PID — `test-debug.ts` `TestHostWatcher` /
       `announcedTestHostPid` over the live `dotnet test` output; `VSTEST_RUNNER_DEBUG=0`
       pins the PARENT runner so only hosts ever announce
+- [x] Terminate the owned test host on Stop ([DEBUG-FEATURES-TESTS]), while preserving
+      detach-only behavior for user-selected processes. `dap-attach.ts` retains ownership
+      independently of its one-shot initial-break flag. Existing tests *debugging the same
+      test twice in a row gives two clean, separate sessions* followed by *the profiles are
+      Run/Debug/Coverage and Debug opens a terminal instead of caching a result* reproduced
+      an orphaned runner and duplicate terminal before the production fix; both pass unchanged.
+- [ ] Verify the complete Stop fix across ordinary attach and C#/F# VSTest/MTP debugging.
+      `test-execution.ts` must also prevent a stopped debug host from triggering an
+      unfiltered retry. The broader existing suites exposed that second failure after the
+      owned-host disconnect fix; verification is in progress, with tests unchanged (#302).
 - [x] Wire test filter (class/method) into `dotnet test --filter`, escaped for the VSTest
       grammar. `test-filter.ts`, `test-execution.ts` `buildFilterArgs`; test
       `test-explorer-e2e.test.ts` (VSTest filter grammar cases, `testexplorer` chunk, green)
