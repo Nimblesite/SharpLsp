@@ -9,4 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\fsharp\FSharpFixtures.fsproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="4.4.0" />
+  </ItemGroup>
 </Project>

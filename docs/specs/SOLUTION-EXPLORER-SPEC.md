@@ -384,6 +384,20 @@ Solution and project nodes expose **Build** and **Rebuild**.
 - Output appears in VS Code terminal
 - Progress notification shown during build
 
+### Buildable Fixture Solutions `[SE-ACTIONS-BUILD-FIXTURES]`
+
+Every solution offered by the checked-in VS Code fixture workspace MUST build all
+three declared projects in Debug and Release. `.sln` and `.slnx` must produce the
+same F# and C# assemblies from a copy without `bin` or `obj`; a zero exit code
+without those assemblies is not a successful build. The `.sln` MUST declare both
+solution configurations and each project's active/build mapping.
+
+These projects are semantic-test libraries, not .NET test projects. An empty test
+listing for these libraries is correct; their names do not imply test-framework
+references. Actual Test Explorer discovery is covered by [TEST-DISCOVERY-FQN] and
+[TEST-MTP-DISCOVERY]. `fixture-solutions.test.ts` protects the build contract in
+both platform workspace chunks. See [the plan](../plans/SOLUTION-FIXTURES-PLAN.md).
+
 ### Run and Debug `[SE-ACTIONS-RUN-DEBUG]`
 
 Project nodes expose **Run** and **Debug**. Both reuse the single launch-target

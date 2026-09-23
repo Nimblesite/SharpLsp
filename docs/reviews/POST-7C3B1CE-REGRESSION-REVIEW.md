@@ -16,9 +16,3 @@ Introduction dates remain unproven. A later green run does not establish these r
 - `src/editors/vscode/src/test/suite/nuget-deps-e2e.test.ts` still falls back to the first workspace project when its temporary target is absent, then accepts either success or a handled error. Remove the fallback; use disposable C# and F# projects, assert the exact update, and prove committed fixtures remain unchanged.
 
 Both defects predate the release baseline.
-
-## P2 — Selectable test solution contains no buildable project configurations ([#273](https://github.com/Nimblesite/SharpLsp/issues/273))
-
-`src/editors/vscode/test-fixtures/workspace/TestFixtures.sln` lists projects but has an empty `Global` section. Selecting it cannot build or discover its tests.
-
-**Remaining:** add valid solution/project configurations or remove this duplicate in favour of `TestFixtures.slnx`, updating dependent tests. Assert that every offered fixture solution actually builds and discovers tests.
