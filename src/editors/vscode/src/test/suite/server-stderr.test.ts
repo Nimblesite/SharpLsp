@@ -22,7 +22,7 @@ import { classifyServerLine, serverStdioOptions } from '../../server-stderr.js';
 import { recordingChannel } from './fsi-build-kit.js';
 import { activateRealSharpLsp } from './refactor-test-helpers';
 import { EXTENSION_ID, pollUntilResult } from './test-helpers';
-import { ACTIVATION_MS, COMMAND_MS, FAST_MS, POLL_INTERVAL_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, FAST_MS, POLL_INTERVAL_MS, SETTLE_MS } from './test-timeouts';
 
 const STAMP = '2026-09-23T04:11:44.163792Z';
 
@@ -141,12 +141,14 @@ suite('Server stderr is shown at the level the host wrote', () => {
     });
 
     test("files the running host's INFO lines under info in the channel log, none under error", async function () {
-      this.timeout(COMMAND_MS);
+      this.timeout(SETTLE_MS);
       // The channel is write-only from the extension host; its log file is not.
+      // The workbench writes that file from a logger thread, so the line the
+      // host emitted at spawn is polled for, under the test's own ceiling.
       const lines = await pollUntilResult(
         () => Promise.resolve(channelLogLines(channelLog)),
         (found) => found.some((line) => line.includes(STARTING)),
-        COMMAND_MS - FAST_MS,
+        SETTLE_MS - FAST_MS,
         POLL_INTERVAL_MS,
         `${channelLog} to hold the host's '${STARTING}' line`,
       );
