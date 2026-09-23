@@ -574,9 +574,10 @@ function buildSolutionChoiceNode(sol: SolutionSelection): ExplorerNode {
 }
 
 function makeErrorNode(message: string): ExplorerNode {
+  // [HOVER-TREE-IMPLEMENTATION]: an error row has no source position to hover.
   const node = new ExplorerNode(
     `Error: ${message}`,
-    NodeType.Symbol,
+    NodeType.Feedback,
     TreeItemCollapsibleState.None,
   );
   node.iconPath = new ThemeIcon('error');
