@@ -167,6 +167,7 @@
         "bundled-sidecars.test.js",
         "extension.test.js",
         "lifecycle-e2e.test.js",
+        "sdk-host-kit.test.js",
         "sdk-pin.test.js",
         "sdk-sidecar-host.test.js",
         "sdk-runtime-floor.test.js",

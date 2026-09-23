@@ -23,14 +23,16 @@ export function copySdkMajor(source: string, target: string, major: number): str
   fs.copyFileSync(dotnetExecutable(source), dotnetExecutable(target));
   for (const component of ['sdk', 'host/fxr', 'shared/Microsoft.NETCore.App']) {
     const parent = path.join(source, component);
-    const versions = fs.readdirSync(parent).filter((version) => version.startsWith(`${major}.`));
-    assert.ok(versions.length > 0, `${component} must supply .NET ${major}`);
-    for (const version of versions) {
-      fs.cpSync(path.join(parent, version), path.join(target, component, version), {
-        recursive: true,
-        mode: fs.constants.COPYFILE_FICLONE,
-      });
-    }
+    const version = fs
+      .readdirSync(parent)
+      .filter((name) => name.startsWith(`${major}.`))
+      .sort()
+      .at(-1);
+    assert.ok(version, `${component} must supply .NET ${major}`);
+    fs.cpSync(path.join(parent, version), path.join(target, component, version), {
+      recursive: true,
+      mode: fs.constants.COPYFILE_FICLONE,
+    });
   }
   return dotnetExecutable(target);
 }
