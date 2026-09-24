@@ -75,7 +75,7 @@ import {
   SETTINGS_WRITE_MS,
   SIDECAR_COLD_MS,
 } from './test-timeouts';
-import { installUiStubs, type UiStubs } from './ui-stubs';
+import { useUiStubs } from './ui-stubs';
 
 /** A faithful TestItem stand-in carrying the only field buildFilterArgs reads. */
 function testItem(id: string): vscode.TestItem {
@@ -317,7 +317,7 @@ const FRAMEWORK_NON_TESTS: readonly string[] = [
 
 suite('Testing module e2e — run/debug commands and helpers', () => {
   let tmpDir: string;
-  let stubs: UiStubs;
+  const stubs = useUiStubs();
 
   suiteSetup(async function () {
     this.timeout(ACTIVATION_MS);
@@ -328,14 +328,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     teardownLspTestSuite(tmpDir);
   });
 
-  setup(() => {
-    stubs = installUiStubs();
-  });
-
-  teardown(async () => {
-    stubs.restore();
-    await closeAllEditors();
-  });
+  teardown(() => closeAllEditors());
 
   for (const { command, project, method, attribute } of [
     {
@@ -372,21 +365,21 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       // The lens hands the command (uri, methodName). With a freshly-activated
       // controller no tests are discovered yet, so the deterministic outcome is a
       // warning — which we capture via the stub instead of a real modal.
-      stubs.queueWarning(undefined);
+      stubs().queueWarning(undefined);
       await assert.doesNotReject(async () => {
         await vscode.commands.executeCommand(command, uri, method);
       });
-      assert.strictEqual(stubs.log.warningMessages.length, 1, 'one warning must be shown');
-      const warning = stubs.log.warningMessages[0] ?? '';
+      assert.strictEqual(stubs().log.warningMessages.length, 1, 'one warning must be shown');
+      const warning = stubs().log.warningMessages[0] ?? '';
       assertContainsAll(warning, [method, 'discovery'], 'warning');
 
       // Interaction 2 - "not discovered yet" is a WARNING, not an error and not a
       // silent no-op, and a command that cannot start must not START ANYTHING: a
       // half-launched session with no test to run leaves the debug toolbar on
       // screen with nothing behind it ([TEST-EXPLORER]).
-      assert.deepEqual(stubs.log.errorMessages, [], 'an undiscovered test is not an error');
-      assert.deepEqual(stubs.log.infoMessages, [], 'and nothing claims the test ran');
-      assert.notStrictEqual(stubs.log.warningOptions[0]?.modal, true, 'and it does not block');
+      assert.deepEqual(stubs().log.errorMessages, [], 'an undiscovered test is not an error');
+      assert.deepEqual(stubs().log.infoMessages, [], 'and nothing claims the test ran');
+      assert.notStrictEqual(stubs().log.warningOptions[0]?.modal, true, 'and it does not block');
       assert.strictEqual(vscode.debug.activeDebugSession, undefined, 'and no session starts');
 
       // Interaction 3 - the caret really was on the method, so the warning is
@@ -402,12 +395,12 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       // message. A command that remembers it already complained goes silent on
       // the second press, and two commands that disagree about whether a test
       // exists send the user hunting for a difference that is not there.
-      stubs.queueWarning(undefined);
+      stubs().queueWarning(undefined);
       await assert.doesNotReject(async () => {
         await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, method);
       });
-      assert.strictEqual(stubs.log.warningMessages.length, 2, 'the second press warns again');
-      assert.strictEqual(stubs.log.warningMessages[1], warning, 'naming the same method');
+      assert.strictEqual(stubs().log.warningMessages.length, 2, 'the second press warns again');
+      assert.strictEqual(stubs().log.warningMessages[1], warning, 'naming the same method');
     });
   }
 
@@ -417,7 +410,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     assertContainsAll(registered, [CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR], 'registered');
 
     // Driving them back to back must never reject, even with no discovered tests.
-    stubs.queueWarning(undefined, undefined);
+    stubs().queueWarning(undefined, undefined);
     const uri = vscode.Uri.file(path.join(tmpDir, 'phantom.cs'));
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Phantom');
@@ -425,7 +418,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Phantom');
     });
-    assert.strictEqual(stubs.log.warningMessages.length, 2);
+    assert.strictEqual(stubs().log.warningMessages.length, 2);
 
     // Interaction 3 - the two are DISTINCT commands. A lens pair backed by one
     // id renders two buttons that do the same thing, which is the defect the
@@ -441,10 +434,10 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
 
     // Interaction 5 - a phantom file warns rather than throwing, and warns for
     // BOTH commands: the two warnings above came one from each.
-    assert.deepEqual(stubs.log.errorMessages, [], 'a phantom file is not an error');
+    assert.deepEqual(stubs().log.errorMessages, [], 'a phantom file is not an error');
     assert.ok(
-      stubs.log.warningMessages.every((message) => message.includes('Phantom')),
-      `both warnings name the phantom method: ${stubs.log.warningMessages.join(' | ')}`,
+      stubs().log.warningMessages.every((message) => message.includes('Phantom')),
+      `both warnings name the phantom method: ${stubs().log.warningMessages.join(' | ')}`,
     );
   });
 
@@ -702,14 +695,14 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     // warning must show the user the name it actually looked for. A name that
     // arrived trimmed or split is a name no discovered test can ever match.
     const spaced = 'adds two numbers with spaces';
-    stubs.queueWarning(undefined);
+    stubs().queueWarning(undefined);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, spaced);
     });
-    eq(stubs.log.warningMessages.length, 1, 'an unresolvable at-cursor run warns exactly once');
-    const first = stubs.log.warningMessages[0] ?? '';
+    eq(stubs().log.warningMessages.length, 1, 'an unresolvable at-cursor run warns exactly once');
+    const first = stubs().log.warningMessages[0] ?? '';
     assertContainsAll(first, [spaced, 'discovery'], 'first');
-    deepEq(stubs.log.errorMessages, [], 'a name it cannot resolve is not an ERROR');
+    deepEq(stubs().log.errorMessages, [], 'a name it cannot resolve is not an ERROR');
 
     // Interaction 2 - every remaining shape the spec's tables name, plus each
     // filter-grammar character. None may reject, and each must be echoed back.
@@ -722,20 +715,20 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'Has!Bang',
       'Has~Tilde',
     ];
-    stubs.queueWarning(...names.map(() => undefined));
+    stubs().queueWarning(...names.map(() => undefined));
     for (const name of names) {
       await assert.doesNotReject(async () => {
         await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, name);
       }, name + ' must never make the at-cursor command reject');
     }
     eq(
-      stubs.log.warningMessages.length,
+      stubs().log.warningMessages.length,
       names.length + 1,
       'one warning per invocation - a swallowed gesture is a Run Test that did nothing',
     );
     for (const name of names) {
       assert.ok(
-        stubs.log.warningMessages.some((message) => message.includes(name)),
+        stubs().log.warningMessages.some((message) => message.includes(name)),
         name + ' must be reported back verbatim, not escaped or truncated',
       );
     }
@@ -743,20 +736,20 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     // Interaction 3 - the DEBUG half must behave identically. [TEST-STATUS-LENS]
     // puts both actions on the lens, so a Debug that rejects where Run warns is
     // a dead button on every test in the file.
-    const before = stubs.log.warningMessages.length;
-    stubs.queueWarning(undefined, undefined);
+    const before = stubs().log.warningMessages.length;
+    stubs().queueWarning(undefined, undefined);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, spaced);
     });
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Adds_Case(2,2,4)');
     });
-    eq(stubs.log.warningMessages.length, before + 2, 'Debug warns once per gesture as Run does');
+    eq(stubs().log.warningMessages.length, before + 2, 'Debug warns once per gesture as Run does');
     assert.ok(
-      (stubs.log.warningMessages[before] ?? '').includes(spaced),
+      (stubs().log.warningMessages[before] ?? '').includes(spaced),
       'and names the same binding the Run action would have run',
     );
-    deepEq(stubs.log.errorMessages, [], 'still nothing reported to the user as a failure');
+    deepEq(stubs().log.errorMessages, [], 'still nothing reported to the user as a failure');
   });
 
   // Implements the [TEST-DISCOVERY-FQN] listing rules: every line is classified
@@ -1091,7 +1084,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
 
 suite('Test status lens e2e — CodeLens provider and toggle', () => {
   let tmpDir: string;
-  let stubs: UiStubs;
+  useUiStubs();
 
   suiteSetup(async function () {
     // A cold sidecar, not just activation: the warm-up below is the FIRST
@@ -1119,14 +1112,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     teardownLspTestSuite(tmpDir);
   });
 
-  setup(() => {
-    stubs = installUiStubs();
-  });
-
-  teardown(async () => {
-    stubs.restore();
-    await closeAllEditors();
-  });
+  teardown(() => closeAllEditors());
 
   for (const { language, open, file, source, fact, theory } of [
     {

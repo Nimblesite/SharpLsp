@@ -153,7 +153,7 @@ internal static class TypeHierarchyResolver
 
     private static HierarchyItem? ToItem(INamedTypeSymbol symbol)
     {
-        return DocumentPosition.ToHierarchyItem(symbol, MapKind(symbol));
+        return DocumentPosition.ToHierarchyItem<HierarchyItem>(symbol, MapKind(symbol));
     }
 
     private static string MapKind(INamedTypeSymbol symbol)

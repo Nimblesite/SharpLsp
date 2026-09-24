@@ -38,7 +38,12 @@ import {
   requireActive,
   type TestDebugFixture,
 } from './debug-test-kit';
-import { debugRun, useDebugTestFixture, firstBreakpointStop } from './debug-test-harness';
+import {
+  debugRun,
+  useDebugTestFixture,
+  firstBreakpointStop,
+  caretInSource,
+} from './debug-test-harness';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import {
   activateTestExplorer,
@@ -164,13 +169,7 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
 
     // 1. The caret sits in the spaced binding of the MTP module's source.
     await rowFor(FS_SPACED);
-    const document = await vscode.workspace.openTextDocument(fixture.sourceUri);
-    const editor = await vscode.window.showTextDocument(document);
-    const caret = FS_SOURCE.line('fs-call');
-    editor.selection = new vscode.Selection(caret, 4, caret, 4);
-    eq(editor.selection.active.line, caret, 'the caret sits inside the F# binding');
-    eq(document.languageId, 'fsharp', 'and the editor knows it is F#');
-    eq(comparablePath(document.uri.fsPath), comparablePath(fixture.sourceFile), 'in Tests.fs');
+    await caretInSource(fixture, FS_SOURCE, 'fs-call', 'fsharp');
 
     // 2. Arm and fire the at-cursor command: the same attach the tree makes.
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-call')]);

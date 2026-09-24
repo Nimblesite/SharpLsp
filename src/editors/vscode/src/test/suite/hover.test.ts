@@ -19,6 +19,7 @@ import {
 } from './test-helpers';
 import { COMMAND_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS, LSP_SWEEP_MS } from './test-timeouts';
 import { hoverText } from './fsharp-helpers';
+import { MEMBER_CARET } from './completion-shot-kit';
 
 /**
  * [HOVER-PROTOCOL-RESPONSE]: every content entry MUST be Markdown.
@@ -117,7 +118,7 @@ suite('Hover / Quick Info', () => {
     const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
       'vscode.executeCompletionItemProvider',
       completionUri,
-      new vscode.Position(11, 24),
+      MEMBER_CARET,
     );
     assert.ok(completions, 'Must get completions');
     assert.ok(completions.items.length > 0, 'Must have at least one completion item');
@@ -129,7 +130,7 @@ suite('Hover / Quick Info', () => {
       await vscode.workspace.openTextDocument(completionUri),
       { preview: false },
     );
-    const completionPosition = new vscode.Position(11, 24);
+    const completionPosition = MEMBER_CARET;
     completionEditor.selection = new vscode.Selection(completionPosition, completionPosition);
     completionEditor.revealRange(new vscode.Range(completionPosition, completionPosition));
     // Wait for the editor the assertion reads to BE the active one, not for a

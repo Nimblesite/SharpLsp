@@ -29,9 +29,8 @@ import {
   type TestDebugFixture,
 } from './debug-test-kit';
 import { DebugSessionRecorder } from './run-debug-kit';
-import { requireAt } from './test-helpers';
 import { activateTestExplorer, runViaProfile } from './test-explorer-kit';
-import { closeAllEditors } from './test-helpers';
+import { closeAllEditors, comparablePath, eq, requireAt } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
@@ -116,4 +115,23 @@ export async function firstBreakpointStop(
   const stop = requireAt(await recorder.waitForStops(1), 0, `the first stop: ${why}`);
   assertStopReason(stop, 'breakpoint', why);
   return stop;
+}
+
+/**
+ * Put the caret inside `anchor`'s line of the fixture's test source, asserted
+ * open in the editor as `languageId` — the start of every at-cursor command.
+ */
+export async function caretInSource(
+  fixture: { readonly sourceUri: vscode.Uri; readonly sourceFile: string },
+  source: AnchoredSource,
+  anchor: string,
+  languageId: string,
+): Promise<void> {
+  const document = await vscode.workspace.openTextDocument(fixture.sourceUri);
+  const editor = await vscode.window.showTextDocument(document);
+  const caret = source.line(anchor);
+  editor.selection = new vscode.Selection(caret, 4, caret, 4);
+  eq(editor.selection.active.line, caret, `the caret sits inside ${anchor}`);
+  eq(document.languageId, languageId, `and the editor knows it is ${languageId}`);
+  eq(comparablePath(document.uri.fsPath), comparablePath(fixture.sourceFile), 'in the fixture');
 }

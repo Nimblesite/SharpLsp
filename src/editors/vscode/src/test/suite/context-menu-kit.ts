@@ -16,6 +16,7 @@ import {
 import { useLspTestSuite } from './lsp-suite-kit';
 import { pollUntilResult, waitForDocumentSymbols } from './test-helpers';
 import { ACTIVATION_MS, FAST_MS } from './test-timeouts';
+import { nodeLabel, findNode } from './tree-node-kit';
 
 /** A Solution Explorer node, viewed through the fields the menus key on. */
 export interface TreeNode {
@@ -28,36 +29,6 @@ export interface TreeNode {
 }
 
 export type SymbolTree = ExplorerProvider<TreeNode>;
-
-export function nodeLabel(node: TreeNode): string {
-  if (typeof node.label === 'string') return node.label;
-  return node.label?.label ?? '';
-}
-
-/** The first node, depth-first, that `predicate` accepts. */
-export function findNode(
-  nodes: TreeNode[] | undefined,
-  predicate: (n: TreeNode) => boolean,
-): TreeNode | undefined {
-  if (nodes === undefined) return undefined;
-  for (const node of nodes) {
-    if (predicate(node)) return node;
-    const found = findNode(node.children, predicate);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-export function findByLabel(nodes: TreeNode[] | undefined, label: string): TreeNode | undefined {
-  return findNode(nodes, (n) => nodeLabel(n).includes(label));
-}
-
-export function findByContext(
-  nodes: TreeNode[] | undefined,
-  contextValue: string,
-): TreeNode | undefined {
-  return findNode(nodes, (n) => n.contextValue === contextValue);
-}
 
 /** The node labelled `label` (with `contextValue`, when given), asserted present. */
 export function requireNode(

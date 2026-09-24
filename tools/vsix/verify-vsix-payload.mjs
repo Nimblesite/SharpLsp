@@ -11,6 +11,7 @@
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import * as path from "node:path";
+import { runMain } from "./run-main.mjs";
 
 /** VS Code platform id: "<platform>-<arch>". */
 const PLATFORM = process.env.SHARPLSP_VSIX_PLATFORM ?? `${process.platform}-${process.arch}`;
@@ -125,9 +126,4 @@ function main() {
     );
 }
 
-try {
-    main();
-} catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    process.exit(1);
-}
+runMain(main);

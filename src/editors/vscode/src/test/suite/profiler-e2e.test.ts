@@ -143,10 +143,20 @@ function spyWebviewPanels(): PanelSpy {
 
 // ── Fake LanguageClient stubs (for workflow functions, no LSP needed) ──
 
-function resolvingDiffClient(
-  result: HeapDiffResult,
-  sink?: { method?: string; payload?: unknown },
-) {
+interface DiffSink {
+  method?: string;
+  payload?: unknown;
+}
+
+/** The client was asked to diff exactly the two dumps the user picked. */
+function assertDiffRequested(sink: DiffSink, baseline: vscode.Uri, comparison: vscode.Uri): void {
+  assert.strictEqual(sink.method, 'sharplsp/profiler/diffHeapSnapshots', 'correct LSP method');
+  const payload = sink.payload as { baseline_dump_path: string; comparison_dump_path: string };
+  assert.strictEqual(payload.baseline_dump_path, baseline.fsPath);
+  assert.strictEqual(payload.comparison_dump_path, comparison.fsPath);
+}
+
+function resolvingDiffClient(result: HeapDiffResult, sink?: DiffSink) {
   return {
     sendRequest: async (method: string, payload: unknown): Promise<unknown> => {
       if (sink) {
@@ -1010,14 +1020,11 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // (c) Both files chosen → one diff panel rendered with the result.
     panelSpy = spyWebviewPanels();
     stubs = installUiStubs().queueOpenDialog([baseline], [comparison]);
-    const sink: { method?: string; payload?: unknown } = {};
+    const sink: DiffSink = {};
     await promptAndOpenDiff(fakeContext(), resolvingDiffClient(result, sink));
 
     assert.strictEqual(panelSpy.created.length, 1, 'both files selected → one diff panel');
-    assert.strictEqual(sink.method, 'sharplsp/profiler/diffHeapSnapshots', 'correct LSP method');
-    const payload = sink.payload as { baseline_dump_path: string; comparison_dump_path: string };
-    assert.strictEqual(payload.baseline_dump_path, baseline.fsPath);
-    assert.strictEqual(payload.comparison_dump_path, comparison.fsPath);
+    assertDiffRequested(sink, baseline, comparison);
 
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('<h2>Heap Snapshot Diff</h2>'), 'rendered the diff document');
@@ -1077,7 +1084,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     stubs = installUiStubs()
       .queueInfo('Select Baseline', 'Select Comparison Dump')
       .queueOpenDialog([baseline], [comparison]);
-    const sink: { method?: string; payload?: unknown } = {};
+    const sink: DiffSink = {};
     await detectLeaksWorkflow(fakeContext(), resolvingDiffClient(result, sink));
 
     assert.strictEqual(panelSpy.created.length, 1, 'happy path opens exactly one diff panel');
@@ -1086,10 +1093,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       stubs.log.infoMessages[1]?.includes('exercise the suspected leak path'),
       'second guided step prompts the user to exercise the leak path',
     );
-    assert.strictEqual(sink.method, 'sharplsp/profiler/diffHeapSnapshots');
-    const payload = sink.payload as { baseline_dump_path: string; comparison_dump_path: string };
-    assert.strictEqual(payload.baseline_dump_path, baseline.fsPath);
-    assert.strictEqual(payload.comparison_dump_path, comparison.fsPath);
+    assertDiffRequested(sink, baseline, comparison);
     const html = panelSpy.created[0]?.webview.html ?? '';
     assertContainsAll(html, ['<h2>Heap Snapshot Diff</h2>', severityBadge('medium')], 'html');
   });

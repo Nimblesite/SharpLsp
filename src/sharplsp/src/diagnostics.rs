@@ -635,18 +635,11 @@ mod tests {
 
         publish(&sender, uri.clone(), vec![diag]).unwrap();
 
-        let msg = receiver.recv().unwrap();
-        match msg {
-            Message::Notification(n) => {
-                assert_eq!(n.method, "textDocument/publishDiagnostics");
-                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).unwrap();
-                assert_eq!(params.uri, uri);
-                assert_eq!(params.diagnostics.len(), 1);
-                assert_eq!(params.diagnostics[0].message, "test diagnostic");
-                assert!(params.version.is_none());
-            }
-            _ => panic!("expected Notification, got {msg:?}"),
-        }
+        let params = next_publish(&receiver);
+        assert_eq!(params.uri, uri);
+        assert_eq!(params.diagnostics.len(), 1);
+        assert_eq!(params.diagnostics[0].message, "test diagnostic");
+        assert!(params.version.is_none());
     }
 
     /// [GitHub #160] Phantom-diagnostics repro at the push-pipeline level.
@@ -933,15 +926,19 @@ mod tests {
 
         clear(&sender, uri.clone()).unwrap();
 
-        let msg = receiver.recv().unwrap();
-        match msg {
+        let params = next_publish(&receiver);
+        assert_eq!(params.uri, uri);
+        assert!(params.diagnostics.is_empty());
+    }
+
+    /// The next message on the wire, proven to be a `publishDiagnostics` push.
+    fn next_publish(receiver: &crossbeam_channel::Receiver<Message>) -> PublishDiagnosticsParams {
+        match receiver.recv().unwrap() {
             Message::Notification(n) => {
                 assert_eq!(n.method, "textDocument/publishDiagnostics");
-                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).unwrap();
-                assert_eq!(params.uri, uri);
-                assert!(params.diagnostics.is_empty());
+                serde_json::from_value(n.params).unwrap()
             }
-            _ => panic!("expected Notification, got {msg:?}"),
+            msg => panic!("expected Notification, got {msg:?}"),
         }
     }
 }

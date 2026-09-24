@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { pollUntilResult, assertContainsNone } from './test-helpers';
 import { DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { loadSolutionInServer } from './real-repo-helpers';
+import { diagnosticCode } from './document-anchors';
 
 export const PACKAGE = '#:package Newtonsoft.Json@13.0.3';
 
@@ -20,13 +21,6 @@ export function positionInside(text: string, marker: string): vscode.Position {
   const after = positionAfter(text, marker);
   assert.ok(after.character > 0, `fixture token ${JSON.stringify(marker)} must be non-empty`);
   return after.translate(0, -1);
-}
-
-export function diagnosticCode(diagnostic: vscode.Diagnostic): string {
-  const code = diagnostic.code;
-  if (code === undefined) return '';
-  if (typeof code === 'object') return String(code.value);
-  return String(code);
 }
 
 export function errorsFor(uri: vscode.Uri): vscode.Diagnostic[] {

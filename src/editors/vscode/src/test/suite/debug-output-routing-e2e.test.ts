@@ -23,9 +23,32 @@ import {
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { deepEq, eq, pollUntilResult, requireAt, assertContainsAll } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
+import { type DapRecorder, assertOneWholeSession } from './debug-dap-kit';
 
 /** DAP output categories a debuggee's own writes may legitimately carry. */
 const PROGRAM_CATEGORIES: readonly string[] = ['stdout', 'stderr', 'console', ''];
+
+/**
+ * The debuggee printed, and every `output` event names a category the Debug
+ * Console can route: an unknown category is dropped.
+ */
+function routableOutput(recorder: DapRecorder): ReturnType<DapRecorder['events']> {
+  const events = recorder.events('output');
+  assert.ok(events.length > 0, 'a debuggee that prints must produce `output` events');
+  const categories = events.map((event) => String(event.body['category'] ?? ''));
+  deepEq(
+    categories.filter((category) => !PROGRAM_CATEGORIES.includes(category)),
+    [],
+    `every output event must carry a routable category; seen: ${[...new Set(categories)].join(', ')}`,
+  );
+  return events;
+}
+
+/** A `runInTerminal` request names the command it wants run. */
+function assertNamesCommand(args: Record<string, unknown>): void {
+  const argv: unknown = args['args'];
+  assert.ok(Array.isArray(argv) && argv.length > 0, 'the request must name a command to run');
+}
 
 suite('Debug output routing — internalConsole, integratedTerminal and stdin', () => {
   const debuggee = useDebuggee('debug-output-cs-', 'csharp');
@@ -50,18 +73,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     // Interaction 2 — every line the program printed must arrive as output.
     await recorder.waitForOutput('total=8');
     await recorder.waitForOutput('done plain 45');
-    const events = recorder.events('output');
-    assert.ok(events.length > 0, 'a debuggee that prints must produce `output` events');
-    deepEq(
-      events
-        .map((event) => String(event.body['category'] ?? ''))
-        .filter((category) => !PROGRAM_CATEGORIES.includes(category)),
-      [],
-      'every output event must carry a category the Debug Console can route; an unknown ' +
-        `category is dropped. Categories seen: ${[
-          ...new Set(events.map((event) => String(event.body['category'] ?? '<none>'))),
-        ].join(', ')}`,
-    );
+    routableOutput(recorder);
 
     // Interaction 3 — output must be ORDERED as the program wrote it.
     const text = recorder.outputText();
@@ -139,8 +151,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
       'integrated',
       '`integratedTerminal` must ask for an INTEGRATED terminal, not an external one',
     );
-    const argv: unknown = request.args['args'];
-    assert.ok(Array.isArray(argv) && argv.length > 0, 'the request must name a command to run');
+    assertNamesCommand(request.args);
 
     // Interaction 3 — a terminal must actually appear.
     const terminals = await pollUntilResult(
@@ -219,8 +230,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
       '`externalTerminal` must ask for an EXTERNAL terminal; asking for an integrated one ' +
         'silently substitutes a different row of the routing table',
     );
-    const argv: unknown = request.args['args'];
-    assert.ok(Array.isArray(argv) && argv.length > 0, 'the request must name a command to run');
+    assertNamesCommand(request.args);
     eq(
       typeof request.args['cwd'],
       'string',
@@ -293,15 +303,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
 
     // Interaction 3 — every event carries a routable category, and the session
     // ends without an error.
-    const events = recorder.events('output');
-    assert.ok(events.length > 0, 'a debuggee that prints produces output events');
-    deepEq(
-      events
-        .map((event) => String(event.body['category'] ?? ''))
-        .filter((category) => !PROGRAM_CATEGORIES.includes(category)),
-      [],
-      'an output event with an unroutable category is dropped by the Debug Console',
-    );
+    const events = routableOutput(recorder);
     assert.ok(
       events.every((event) => typeof event.body['output'] === 'string'),
       'and every one of them carries the text it is meant to show',
@@ -396,8 +398,6 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
       recorder.responses('configurationDone').every((response) => response.success),
       'and answered successfully',
     );
-    eq(recorder.events('initialized').length, 1, 'behind one initialized event');
-    eq(recorder.events('terminated').length, 1, 'and one termination');
-    deepEq(recorder.exits, [], 'with the adapter process alive until then');
+    assertOneWholeSession(recorder);
   });
 });

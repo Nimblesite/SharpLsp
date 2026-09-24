@@ -53,6 +53,7 @@ import {
   rootsOf,
   runViaProfile,
   activateWithScratch,
+  clearTestTree,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
 import { removeDirRecursive, assertContainsAll } from './test-helpers';
@@ -190,12 +191,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     ({ api, root: parent } = await activateWithScratch('sharplsp-mtp-sweeps-'));
   });
 
-  teardown(async () => {
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-  });
+  teardown(() => clearTestTree(api));
 
   suiteTeardown(() => {
     removeDirRecursive(parent);

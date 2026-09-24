@@ -5,21 +5,20 @@ import {
   assertFragments,
   assertRawActionData,
   assertRawTitles,
-  codeOf,
   onlyAction,
-  rangeOf,
   rawCodeActions,
 } from './csharp-refactor-test-kit';
+import { diagnosticCode, rangeOf } from './document-anchors';
 import {
   applyWorkspaceEdit,
   replaceDocumentText,
-  revertDocument,
   waitForCodeActions,
   waitForMatchingDiagnostics,
   waitForResolvedCodeActions,
   type OpenFixture,
   type WorkspaceEditSnapshot,
   useRefactorFixture,
+  restoreCommitted,
 } from './refactor-test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -158,9 +157,9 @@ async function assertNegativeRange(
 
 async function assertDiagnostic(fixture: OpenFixture, scenario: QuickFixScenario): Promise<void> {
   const diagnostics = await waitForMatchingDiagnostics(fixture.uri, (items) =>
-    items.some((item) => codeOf(item) === scenario.diagnosticCode),
+    items.some((item) => diagnosticCode(item) === scenario.diagnosticCode),
   );
-  const matches = diagnostics.filter((item) => codeOf(item) === scenario.diagnosticCode);
+  const matches = diagnostics.filter((item) => diagnosticCode(item) === scenario.diagnosticCode);
   assert.ok(matches.length >= 1, `missing ${scenario.diagnosticCode}`);
   assert.ok(matches.every((item) => item.message.length > 0));
   assert.ok(matches.every((item) => !item.range.isEmpty));
@@ -226,7 +225,7 @@ async function assertNoLongerOffered(
   range: vscode.Range,
 ): Promise<void> {
   await waitForMatchingDiagnostics(fixture.uri, (items) =>
-    items.every((item) => codeOf(item) !== scenario.diagnosticCode),
+    items.every((item) => diagnosticCode(item) !== scenario.diagnosticCode),
   );
   const raw = await rawCodeActions(fixture.uri, range);
   assert.ok(!raw.some((action) => action.title === scenario.title));
@@ -247,24 +246,16 @@ async function runScenario(
   assertSnapshots(await applyWorkspaceEdit(edit), fixture);
   assertMutation(fixture, scenario, version);
   await assertNoLongerOffered(fixture, scenario, range);
-  await revertDocument(fixture.document);
-  assert.strictEqual(fixture.document.getText(), committedText);
-  assert.ok(!fixture.document.isDirty);
+  await restoreCommitted(fixture, committedText);
 }
 
 suite('C# real LSP - compiler quick fixes', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
   const refactor = useRefactorFixture(FILE);
-  setup(() => {
-    ({ fixture, committedText } = refactor());
-  });
 
   for (const scenario of SCENARIOS) {
     test(`${scenario.label}: list, resolve, apply, requery, and revert`, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await runScenario(fixture, committedText, scenario);
+      await runScenario(refactor.fixture, refactor.committedText, scenario);
     });
   }
 });

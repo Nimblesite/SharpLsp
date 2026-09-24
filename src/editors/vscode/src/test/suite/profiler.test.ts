@@ -13,6 +13,7 @@ import {
 } from './test-helpers';
 import { ACTIVATION_MS, COMMAND_MS, FAST_MS } from './test-timeouts';
 import { commandEntries } from './extension-manifest-kit';
+import { nodeLabel } from './tree-node-kit';
 
 interface ProfilerTreeNode {
   readonly label?: string | { label: string };
@@ -33,11 +34,6 @@ interface ProfilerProviderApi {
 
 interface ProfilerExtensionApi {
   readonly profilerProvider: ProfilerProviderApi;
-}
-
-function nodeLabel(node: ProfilerTreeNode): string {
-  if (typeof node.label === 'string') return node.label;
-  return node.label?.label ?? '';
 }
 
 function findByLabel(nodes: ProfilerTreeNode[], substring: string): ProfilerTreeNode | undefined {

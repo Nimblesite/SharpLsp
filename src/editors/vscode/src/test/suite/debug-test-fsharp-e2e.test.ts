@@ -40,7 +40,12 @@ import {
   requireActive,
   type TestDebugFixture,
 } from './debug-test-kit';
-import { debugRun, useDebugTestFixture, firstBreakpointStop } from './debug-test-harness';
+import {
+  debugRun,
+  useDebugTestFixture,
+  firstBreakpointStop,
+  caretInSource,
+} from './debug-test-harness';
 import { DebugSessionRecorder } from './run-debug-kit';
 import { activateTestExplorer, discoverSolution, findItem } from './test-explorer-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
@@ -287,17 +292,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // a command that resolves nothing is exactly how "Debug Test does nothing"
     // presents (issue #233).
     await rowFor(FS_SPACED);
-    const document = await vscode.workspace.openTextDocument(fixture.sourceUri);
-    const editor = await vscode.window.showTextDocument(document);
-    const caret = FS_SOURCE.line('fs-call');
-    editor.selection = new vscode.Selection(caret, 4, caret, 4);
-    eq(editor.selection.active.line, caret, 'the caret sits inside the F# test binding');
-    eq(
-      comparablePath(document.uri.fsPath),
-      comparablePath(fixture.sourceFile),
-      'in the fixture the tests were discovered from',
-    );
-    eq(document.languageId, 'fsharp', 'and the editor knows it is F#');
+    await caretInSource(fixture, FS_SOURCE, 'fs-call', 'fsharp');
 
     // Interaction 2 — arm a breakpoint and fire the at-cursor command.
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-call')]);

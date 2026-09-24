@@ -12,7 +12,7 @@
 // sequences, with the same density, on the F# program.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { dap, assertAnswered } from './debug-dap-kit';
+import { dap, assertAnswered, assertOneWholeSession } from './debug-dap-kit';
 import { CAUGHT_MESSAGE, CAUGHT_TYPE, MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
@@ -333,9 +333,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     // Interaction 5 - the F# conditional breakpoint travelled as a CONDITION,
     // and the session behind it was complete.
     assertAnswered(recorder, 'setBreakpoints', 'the conditional breakpoint was synced');
-    eq(recorder.events('initialized').length, 1, 'behind one initialized event');
-    eq(recorder.events('terminated').length, 1, 'and one termination');
-    deepEq(recorder.exits, [], 'with the adapter process alive throughout');
+    assertOneWholeSession(recorder);
   });
 
   // Implements [DEBUG-FEATURES-VARIABLES] "Local variables" and "Function

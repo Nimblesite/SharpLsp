@@ -21,7 +21,6 @@ import {
   assertInsertion,
   assertNoAction,
   assertQuickFix,
-  diagnosticCode,
   diagnosticsSettled,
   diagnosticWithCode,
   openOverlay,
@@ -32,6 +31,7 @@ import {
   undoAction,
   uniqueAction,
 } from './fsharp-refactor-test-kit';
+import { diagnosticCode } from './document-anchors';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
 import { closeAllEditors, comparableText } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';

@@ -54,6 +54,7 @@ import { ok, err, type Result } from '../../result.js';
 import { detectRuntimePlatform } from '../../platform.js';
 import { CONFIG_SECTION } from '../../constants.js';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { nodeLabel, findNode, findByLabel, findByContext, walkTree } from './tree-node-kit';
 
 // ── Shared tree-node shape (the real ExplorerNode, viewed structurally) ──────
 
@@ -88,40 +89,6 @@ function getProvider(): ExplorerApi['explorerProvider'] {
   const api = ext.exports as ExplorerApi | undefined;
   assert.ok(api?.explorerProvider, 'Extension must export explorerProvider');
   return api.explorerProvider;
-}
-
-function nodeLabel(node: TreeNode): string {
-  return typeof node.label === 'string' ? node.label : (node.label?.label ?? '');
-}
-
-function findNode(
-  nodes: TreeNode[] | undefined,
-  predicate: (node: TreeNode) => boolean,
-): TreeNode | undefined {
-  if (nodes === undefined) return undefined;
-  for (const node of nodes) {
-    if (predicate(node)) return node;
-    const found = findNode(node.children, predicate);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-function findByLabel(nodes: TreeNode[] | undefined, label: string): TreeNode | undefined {
-  return findNode(nodes, (node) => nodeLabel(node).includes(label));
-}
-
-function findByContext(nodes: TreeNode[] | undefined, contextValue: string): TreeNode | undefined {
-  return findNode(nodes, (node) => node.contextValue === contextValue);
-}
-
-/** Walk every node in the tree (roots → leaves), invoking `visit`. */
-function walkTree(nodes: TreeNode[] | undefined, visit: (node: TreeNode) => void): void {
-  if (nodes === undefined) return;
-  for (const node of nodes) {
-    visit(node);
-    walkTree(node.children, visit);
-  }
 }
 
 /** Load the committed fixture solution and wait until its symbols populate. */

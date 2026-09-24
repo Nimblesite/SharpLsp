@@ -14,14 +14,12 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
-  codeOf,
   exerciseCodeAction,
-  positionOf,
-  rangeOf,
   rawCodeActions,
   type ActionLifecycleCase,
   type RawCodeAction,
 } from './csharp-refactor-test-kit';
+import { diagnosticCode, positionOf, rangeOf } from './document-anchors';
 import {
   replaceDocumentText,
   waitForCodeActions,
@@ -257,32 +255,26 @@ async function caretActions(
 }
 
 suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORING]', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
   const refactor = useRefactorFixture('RefactorCore.cs');
-  setup(() => {
-    ({ fixture, committedText } = refactor());
-  });
 
   for (const actionCase of CASES) {
     const label = `${actionCase.label}: Ctrl-. offers ${actionCase.title} and clears ${actionCase.diagnosticCode}`;
     test(label, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseCodeAction(fixture, committedText, actionCase);
+      await exerciseCodeAction(refactor.fixture, refactor.committedText, actionCase);
     });
   }
 
   test('the import is the PREFERRED action, so Ctrl-. lands on it first', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentText(fixture.document, NEW_EXPRESSION);
+    await replaceDocumentText(refactor.fixture.document, NEW_EXPRESSION);
 
     // Interaction 1 - the developer types the unimported type and the compiler
     // reports it. Without the diagnostic there is nothing for Ctrl-. to fix.
-    const before = await waitForMatchingDiagnostics(fixture.uri, (items) =>
-      items.some((item) => codeOf(item) === UNRESOLVED),
+    const before = await waitForMatchingDiagnostics(refactor.fixture.uri, (items) =>
+      items.some((item) => diagnosticCode(item) === UNRESOLVED),
     );
-    const unresolved = before.filter((item) => codeOf(item) === UNRESOLVED);
+    const unresolved = before.filter((item) => diagnosticCode(item) === UNRESOLVED);
     assert.strictEqual(unresolved.length, 1, 'exactly one unresolved-type error');
     assert.strictEqual(unresolved[0]?.severity, vscode.DiagnosticSeverity.Error, 'it is an error');
     assert.ok(
@@ -293,7 +285,7 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
     // Interaction 2 - the caret goes on the type name, nothing is selected, and
     // Ctrl-. is pressed. The import must be offered, and offered FIRST: an
     // import buried under "Generate class Stopwatch" is a broken lightbulb.
-    const offered = await caretActions(fixture, 'new Stopwatch()', 'Stopwatch');
+    const offered = await caretActions(refactor.fixture, 'new Stopwatch()', 'Stopwatch');
     const imports = usingActions(offered);
     assert.strictEqual(imports.length, 1, 'exactly one using directive is offered');
     assert.strictEqual(imports[0]?.title, 'using System.Diagnostics;', 'naming the namespace');
@@ -312,8 +304,8 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
     // Interaction 3 - the same request through VS Code's own provider, because
     // the lightbulb the developer actually sees is the editor's, not the wire's.
     const uiActions = await waitForCodeActions({
-      uri: fixture.uri,
-      range: rangeOf(fixture.document, 'new Stopwatch()', 'Stopwatch'),
+      uri: refactor.fixture.uri,
+      range: rangeOf(refactor.fixture.document, 'new Stopwatch()', 'Stopwatch'),
       kind: vscode.CodeActionKind.QuickFix,
       predicate: (items) => items.some((item) => item.title === 'using System.Diagnostics;'),
     });
@@ -332,15 +324,16 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
 
   test('a type that exists in no namespace offers no import at all', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentText(fixture.document, UNKNOWN_TYPE);
+    await replaceDocumentText(refactor.fixture.document, UNKNOWN_TYPE);
 
     // Interaction 1 - an unresolvable name still reports CS0246; the import fix
     // must not invent a namespace for a type no assembly contains. The wait
     // names the type: the previous scenario's CS0246 can still be published
     // for the text this one replaced.
-    const diagnostics = await waitForMatchingDiagnostics(fixture.uri, (items) =>
+    const diagnostics = await waitForMatchingDiagnostics(refactor.fixture.uri, (items) =>
       items.some(
-        (item) => codeOf(item) === UNRESOLVED && item.message.includes('NoSuchTypeAnywhere'),
+        (item) =>
+          diagnosticCode(item) === UNRESOLVED && item.message.includes('NoSuchTypeAnywhere'),
       ),
     );
     assert.ok(diagnostics.length >= 1, 'the unresolvable type is reported');
@@ -351,47 +344,51 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
 
     // Interaction 2 - Ctrl-. on it may offer generation, but never a fabricated
     // import: a using for a namespace that does not exist compiles to nothing.
-    const offered = await caretActions(fixture, 'new NoSuchTypeAnywhere()', 'NoSuchTypeAnywhere');
+    const offered = await caretActions(
+      refactor.fixture,
+      'new NoSuchTypeAnywhere()',
+      'NoSuchTypeAnywhere',
+    );
     assert.deepStrictEqual(usingActions(offered), [], 'no using directive is offered');
     assert.ok(
       offered.every((action) => !action.title.includes('NoSuchTypeAnywhere;')),
       'and nothing pretends the name is a namespace',
     );
     assert.ok(
-      !fixture.document.getText().includes('using NoSuchTypeAnywhere'),
+      !refactor.fixture.document.getText().includes('using NoSuchTypeAnywhere'),
       'the buffer gains no invented directive',
     );
   });
 
   test('a type whose namespace is already imported offers no second import', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentText(fixture.document, ALREADY_IMPORTED);
+    await replaceDocumentText(refactor.fixture.document, ALREADY_IMPORTED);
 
     // Interaction 1 - with the using present the type resolves, so there is no
     // unresolved-symbol error left to fix.
     const diagnostics = await waitForMatchingDiagnostics(
-      fixture.uri,
-      (items) => !items.some((item) => codeOf(item) === UNRESOLVED),
+      refactor.fixture.uri,
+      (items) => !items.some((item) => diagnosticCode(item) === UNRESOLVED),
     );
     assert.ok(
-      diagnostics.every((item) => codeOf(item) !== UNRESOLVED),
+      diagnostics.every((item) => diagnosticCode(item) !== UNRESOLVED),
       'an imported type reports no unresolved-type error',
     );
     assert.ok(
-      fixture.document.getText().includes('using System.Text;'),
+      refactor.fixture.document.getText().includes('using System.Text;'),
       'because the directive is already in the buffer',
     );
 
     // Interaction 2 - Ctrl-. on the resolved type must not offer to import it
     // a second time; a duplicate directive is a compile error of its own.
-    const offered = await caretActions(fixture, 'new StringBuilder()', 'StringBuilder');
+    const offered = await caretActions(refactor.fixture, 'new StringBuilder()', 'StringBuilder');
     assert.deepStrictEqual(
       usingActions(offered).map((action) => action.title),
       [],
       'no redundant import is offered for an already-imported type',
     );
     assert.strictEqual(
-      fixture.document.getText().split('using System.Text;').length - 1,
+      refactor.fixture.document.getText().split('using System.Text;').length - 1,
       1,
       'and the buffer still carries exactly one such directive',
     );

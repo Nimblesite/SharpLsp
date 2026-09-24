@@ -65,6 +65,7 @@ import {
   rootsOf,
   runViaProfile,
   assertLeavesAre,
+  profilesOf,
 } from './test-explorer-kit';
 import {
   assertFailed,
@@ -124,6 +125,13 @@ function libraryCoverageIn(report: string): vscode.FileCoverage | undefined {
 function libraryLinesIn(report: string): number[] {
   const file = libraryCoverageIn(report);
   return file === undefined ? [] : executedLines(loadDetailedCoverage(file));
+}
+
+/** The file names a Cobertura report covers, asserted free of the test sources. */
+function libraryFilesIn(report: string): string[] {
+  const files = parseCoberturaXml(report).map((file) => path.basename(file.uri.fsPath));
+  assertContainsNone(files, [CS_TESTS_FILE, FS_TESTS_FILE], 'files');
+  return files;
 }
 
 suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
@@ -497,8 +505,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // library present, in EVERY report. `coverlet.collector` leaves the test
     // assembly out by default and only reports assemblies the run LOADED.
     for (const report of findCoberturaFiles(coverageDir)) {
-      const files = parseCoberturaXml(report).map((file) => path.basename(file.uri.fsPath));
-      assertContainsNone(files, [CS_TESTS_FILE, FS_TESTS_FILE], 'files');
+      const files = libraryFilesIn(report);
       assert.ok(
         files.includes(LIBRARY_FILE),
         `${report} must report the library the tests exercise`,
@@ -515,8 +522,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // percentage the user reads is diluted by the tests themselves
     // ([TEST-COVERAGE] claim 4).
     for (const report of findCoberturaFiles(coverageDir)) {
-      const files = parseCoberturaXml(report).map((file) => path.basename(file.uri.fsPath));
-      assertContainsNone(files, [CS_TESTS_FILE, FS_TESTS_FILE], 'files');
+      const files = libraryFilesIn(report);
       assert.ok(files.length >= 1, 'while still reporting something');
     }
     assert.ok(
@@ -1600,9 +1606,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // view's Debug button does nothing — the opposite of the contract. What ▶
     // actually obeys is the default of the RUN kind, so that is what is pinned
     // here, along with the kinds being distinct.
-    const runProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Run);
-    const debugProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Debug);
-    const coverageProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage);
+    const { runProfile, debugProfile, coverageProfile } = profilesOf(api.testController);
     assert.ok(runProfile.isDefault, '▶ presses the Run profile');
     assert.strictEqual(runProfile.kind, vscode.TestRunProfileKind.Run, 'which runs, never debugs');
     assert.notStrictEqual(debugProfile.kind, runProfile.kind, 'Debug is not Run');

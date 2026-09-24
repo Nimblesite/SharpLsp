@@ -25,37 +25,11 @@ import {
   undoLiveSort,
 } from './sort-members-test-kit';
 import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { DEFAULT_SORT_POLICY } from '../../sort-members-policy.js';
 
-const DEFAULT_ACCESS = [
-  'public',
-  'protected internal',
-  'internal',
-  'protected',
-  'private protected',
-  'private',
-] as const;
-const DEFAULT_CATEGORIES = [
-  'constant',
-  'field',
-  'constructor',
-  'finalizer',
-  'delegate',
-  'event',
-  'enum',
-  'interface',
-  'property',
-  'indexer',
-  'operator',
-  'method',
-  'struct',
-  'class',
-  'record',
-] as const;
-const DEFAULT_POLICY: SortPolicy = {
-  hierarchy: ['accessibility', 'category', 'alphabetical'],
-  accessibilityOrder: DEFAULT_ACCESS,
-  categoryOrder: DEFAULT_CATEGORIES,
-};
+const DEFAULT_ACCESS = DEFAULT_SORT_POLICY.accessibilityOrder;
+const DEFAULT_CATEGORIES = DEFAULT_SORT_POLICY.categoryOrder;
+const DEFAULT_POLICY: SortPolicy = DEFAULT_SORT_POLICY;
 const CATEGORY_FIRST_POLICY: SortPolicy = {
   ...DEFAULT_POLICY,
   hierarchy: ['category', 'accessibility', 'alphabetical'],

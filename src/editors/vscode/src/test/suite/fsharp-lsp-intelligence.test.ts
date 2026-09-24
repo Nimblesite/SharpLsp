@@ -4,11 +4,8 @@ import { closeAllEditors, pollUntilResult, pollProvider, assertContainsAll } fro
 import { openFSharpFixture, positionOf } from './fsharp-helpers';
 import { IGNORE_SOURCE } from './fsharp-refactor-fixtures';
 import {
-  applyAction,
   assertInsertion,
-  assertNoAction,
   assertQuickFix,
-  diagnosticGone,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
@@ -17,6 +14,7 @@ import {
   tokenRange,
   undoAction,
   uniqueAction,
+  assertFixApplied,
 } from './fsharp-refactor-test-kit';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
@@ -302,13 +300,6 @@ async function applyIgnoreAction(
   fixture: Awaited<ReturnType<typeof openOverlay>>,
   action: vscode.CodeAction,
 ): Promise<void> {
-  const version = fixture.document.version;
-  const snapshots = await applyAction(action);
-  assert.strictEqual(snapshots.length, 1);
-  assert.ok(fixture.document.version > version);
-  assert.strictEqual(fixture.document.getText(), IGNORE_SOURCE.replace('1 + 1', '1 + 1 |> ignore'));
-  assert.ok(fixture.document.isDirty);
-  await diagnosticGone(fixture.uri, 'FS0020');
-  const actions = await quickFixes(fixture.uri, tokenRange(fixture.document, '1 + 1'));
-  assertNoAction(actions, "Add '|> ignore'");
+  const expected = IGNORE_SOURCE.replace('1 + 1', '1 + 1 |> ignore');
+  await assertFixApplied(fixture, action, expected, 'FS0020', '1 + 1');
 }

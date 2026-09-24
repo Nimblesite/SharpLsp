@@ -2,6 +2,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { assertContainsAll, assertContainsNone } from './test-helpers';
+import { type LspRange } from './sort-members-types';
 
 export const CLASS_ANCHORS: Readonly<Record<string, string>> = {
   Alpha: 'public string Alpha()',
@@ -12,11 +13,6 @@ export const CLASS_ANCHORS: Readonly<Record<string, string>> = {
   Zebra: 'private string Zebra()',
   _zeta: 'private readonly int _zeta',
 };
-
-interface LspRange {
-  readonly start: { readonly line: number; readonly character: number };
-  readonly end: { readonly line: number; readonly character: number };
-}
 
 interface TreeNodeShape {
   readonly children: readonly TreeNodeShape[];
@@ -143,7 +139,8 @@ function occurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
 }
 
-function toRange(range: LspRange): vscode.Range {
+/** The editor range for a wire range. */
+export function toRange(range: LspRange): vscode.Range {
   return new vscode.Range(
     range.start.line,
     range.start.character,

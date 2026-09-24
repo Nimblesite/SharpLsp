@@ -56,6 +56,8 @@ import {
   teardownFixtureSolution,
   collectLeafIds,
   assertLeavesAre,
+  assertPlainLeaf,
+  announcedPair,
 } from './test-explorer-kit';
 import { findTestByMethodName } from '../../test-lens.js';
 import {
@@ -66,6 +68,7 @@ import {
   assertContainsNone,
 } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { sorted } from './test-explorer-outcome-assertions';
 
 const CS = fixtureFor('xunit-csharp');
 const FS_FIXTURE = fixtureFor('xunit-fsharp');
@@ -136,11 +139,6 @@ const XML_PACKAGES = [
   '</Project>',
   '',
 ];
-
-/** Ordinal sort with an explicit comparator, for set-equality assertions. */
-function sorted(names: readonly string[]): string[] {
-  return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-}
 
 /** The direct child labelled `label`, or `undefined` — one tree level down. */
 function childByLabel(
@@ -376,37 +374,6 @@ function assertExactTree(ids: readonly string[], where: string): void {
   assertNoChatter(ids);
 }
 
-/** Every property a discovered item hands the Testing view. */
-function assertSnapshot(snapshot: TestItemSnapshot, anchor: string): void {
-  assert.strictEqual(
-    snapshot.description,
-    snapshot.id,
-    `the description must carry the whole FQN so same-named methods stay distinct: ${snapshot.id}`,
-  );
-  assert.strictEqual(
-    snapshot.label,
-    snapshot.id.split('.').at(-1),
-    `the label must be the last dotted segment of ${snapshot.id}`,
-  );
-  assert.ok(snapshot.label.length > 0, `${snapshot.id} must have a non-empty label`);
-  assert.ok(
-    snapshot.id.endsWith(snapshot.label),
-    `${snapshot.id} must end with the label the tree renders`,
-  );
-  assert.strictEqual(snapshot.childCount, 0, `discovery produces a flat tree: ${snapshot.id}`);
-  assert.deepStrictEqual(
-    snapshot.tags,
-    [],
-    `a plain xUnit test carries no framework tag: ${snapshot.id}`,
-  );
-  assert.strictEqual(
-    typeof snapshot.uriPath,
-    'string',
-    `${snapshot.id} must carry a uri for the editor to reveal`,
-  );
-  assertDeclaredInside(snapshot.uriPath, anchor, snapshot.id);
-}
-
 /** One `Test run for <dll>` banner, asserted to name a real built assembly. */
 function assertAnnouncedAssembly(assembly: string, anchor: string): void {
   assert.ok(path.isAbsolute(assembly), `${assembly} must be an absolute path`);
@@ -459,7 +426,7 @@ function assertRenderedRows(items: vscode.TestItemCollection, anchor: string): v
     sorted(EXPECTED),
     'the rendered TEST rows are exactly the fixtures’ eleven names',
   );
-  for (const snapshot of leaves) assertSnapshot(snapshot, anchor);
+  for (const snapshot of leaves) assertPlainLeaf(snapshot, anchor);
   for (const snapshot of groups) assertGroupSnapshot(snapshot, anchor);
   assert.deepStrictEqual(
     snapshots.flatMap((snapshot) => snapshot.tags),
@@ -702,14 +669,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // `listing` is the real `dotnet test --list-tests` output captured in
     // suiteSetup: two projects, two banners, and the chatter between them.
     assert.ok(listing.length > 0, 'suiteSetup must have captured a real listing to parse');
-    assertContainsAll(listing, ['Test run for ', '(.NETCoreApp,Version=v10.0)'], 'the captured');
-    const announced = parseAnnouncedAssemblies(listing);
-    assert.strictEqual(announced.length, 2, `one banner per project: ${announced.join(', ')}`);
-    assert.strictEqual(
-      new Set(announced).size,
-      2,
-      'a repeated banner is de-duplicated, never double-counted',
-    );
+    const announced = announcedPair(listing);
     assert.deepStrictEqual(
       sorted(announced.map((assembly) => path.basename(assembly))),
       ['XunitCs.dll', 'XunitFs.dll'],
@@ -1085,7 +1045,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     for (const snapshot of snapshotItems(api.testController.items).filter(
       (s) => s.childCount === 0,
     )) {
-      assertSnapshot(snapshot, root);
+      assertPlainLeaf(snapshot, root);
     }
     assertLeafItem(api.testController.items, FS_FACT_SPACED);
   });

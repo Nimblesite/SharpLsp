@@ -421,23 +421,8 @@ export async function promptAndOpenDiff(
   context: vscode.ExtensionContext,
   client: LanguageClient,
 ): Promise<void> {
-  const baseline = await vscode.window.showOpenDialog({
-    canSelectMany: false,
-    filters: { 'Dump files': ['dmp'] },
-    title: 'Select BASELINE dump file',
-  });
-  const baselineFile = baseline?.[0];
-  if (baselineFile === undefined) return;
-
-  const comparison = await vscode.window.showOpenDialog({
-    canSelectMany: false,
-    filters: { 'Dump files': ['dmp'] },
-    title: 'Select COMPARISON dump file',
-  });
-  const comparisonFile = comparison?.[0];
-  if (comparisonFile === undefined) return;
-
-  await HeapDiffPanel.open(baselineFile.fsPath, comparisonFile.fsPath, context, client);
+  const baseline = await pickDump('BASELINE');
+  if (baseline !== undefined) await diffAgainst(baseline, context, client);
 }
 
 /** Guided "Detect Leaks" workflow: baseline → prompt user → comparison → diff. */
@@ -452,28 +437,35 @@ export async function detectLeaksWorkflow(
   );
   if (answer !== 'Select Baseline') return;
 
-  const baseline = await vscode.window.showOpenDialog({
-    canSelectMany: false,
-    filters: { 'Dump files': ['dmp'] },
-    title: 'Select BASELINE dump file',
-  });
-  const baselineFile = baseline?.[0];
-  if (baselineFile === undefined) return;
+  const baseline = await pickDump('BASELINE');
+  if (baseline === undefined) return;
 
   const answer2 = await vscode.window.showInformationMessage(
     'Now exercise the suspected leak path in your application, then collect a comparison dump.',
     'Select Comparison Dump',
     'Cancel',
   );
-  if (answer2 !== 'Select Comparison Dump') return;
+  if (answer2 === 'Select Comparison Dump') await diffAgainst(baseline, context, client);
+}
 
-  const comparison = await vscode.window.showOpenDialog({
+/** The one `.dmp` file the user picks for `which` side, or undefined on cancel. */
+async function pickDump(which: 'BASELINE' | 'COMPARISON'): Promise<vscode.Uri | undefined> {
+  const picked = await vscode.window.showOpenDialog({
     canSelectMany: false,
     filters: { 'Dump files': ['dmp'] },
-    title: 'Select COMPARISON dump file',
+    title: `Select ${which} dump file`,
   });
-  const comparisonFile = comparison?.[0];
-  if (comparisonFile === undefined) return;
+  return picked?.[0];
+}
 
-  await HeapDiffPanel.open(baselineFile.fsPath, comparisonFile.fsPath, context, client);
+/** Pick the comparison dump, then open the diff of `baseline` against it. */
+async function diffAgainst(
+  baseline: vscode.Uri,
+  context: vscode.ExtensionContext,
+  client: LanguageClient,
+): Promise<void> {
+  const comparison = await pickDump('COMPARISON');
+  if (comparison !== undefined) {
+    await HeapDiffPanel.open(baseline.fsPath, comparison.fsPath, context, client);
+  }
 }

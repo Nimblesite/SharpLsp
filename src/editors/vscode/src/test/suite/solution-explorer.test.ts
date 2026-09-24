@@ -27,6 +27,7 @@ import { assertReachableCommand, commandEntries } from './extension-manifest-kit
 import { assertSymbolShape, assertSymbolTree, childNamed } from './lsp-invariants-kit';
 import { COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
+import { nodeLabel } from './tree-node-kit';
 
 /** The three sort modes of [SE-SORT], in the order the toolbar cycles them. */
 const SORT_COMMANDS = [
@@ -457,9 +458,6 @@ EndGlobal`,
       'Solution Explorer must show at least one node after loadSolution',
     );
 
-    function nodeLabel(n: { label?: string | { label: string } }): string {
-      return typeof n.label === 'string' ? n.label : (n.label?.label ?? '');
-    }
     const slnNode = treeNodes.find((n) => nodeLabel(n).includes('MyApp'));
     assert.ok(slnNode, 'Solution Explorer must show MyApp solution or project node');
     assert.ok(treeNodes.length >= 1, 'Tree must have at least one root node');

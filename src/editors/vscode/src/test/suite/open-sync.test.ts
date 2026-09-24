@@ -39,6 +39,13 @@ function hooksOf(sync: OpenSync): Hooks {
   return { didOpen, sendRequest };
 }
 
+/** A hold over a running server, its hooks, and an empty wire log. */
+function runningSync(): { sync: OpenSync; hooks: Hooks; wire: string[] } {
+  const sync = createOpenSync(DOCUMENT_SELECTOR);
+  sync.observe(State.Running);
+  return { sync, hooks: hooksOf(sync), wire: [] };
+}
+
 /** A request about `document`; `wire` records when it reaches the server. */
 function ask(hooks: Hooks, document: vscode.TextDocument, wire: string[]): Promise<string> {
   const param = { textDocument: { uri: document.uri.toString() } };
@@ -89,10 +96,7 @@ suite('Open sync across a restart', () => {
   test('a didOpen the restarting client failed to send never counts as synced', async function () {
     this.timeout(ACTIVATION_MS);
     const { doc } = await openCSharpFile(tmpDir, 'failed-open.cs', 'class FailedOpen { }');
-    const sync = createOpenSync(DOCUMENT_SELECTOR);
-    const hooks = hooksOf(sync);
-    const wire: string[] = [];
-    sync.observe(State.Running);
+    const { sync, hooks, wire } = runningSync();
 
     // A running server that has the document answers at once.
     await open(hooks, doc, wire);
@@ -123,10 +127,7 @@ suite('Open sync across a restart', () => {
     this.timeout(ACTIVATION_MS);
     const { doc } = await openCSharpFile(tmpDir, 'stale-open.cs', 'class StaleOpen { }');
     const { doc: other } = await openCSharpFile(tmpDir, 'other-open.cs', 'class OtherOpen { }');
-    const sync = createOpenSync(DOCUMENT_SELECTOR);
-    const hooks = hooksOf(sync);
-    const wire: string[] = [];
-    sync.observe(State.Running);
+    const { sync, hooks, wire } = runningSync();
 
     // The didOpen is written to the old server, and settles only after it died.
     let settle: () => void = () => undefined;
@@ -164,10 +165,7 @@ suite('Open sync across a restart', () => {
   test('a request made after the server restarted is held only until its re-open', async function () {
     this.timeout(LSP_RESPONSE_MS);
     const { doc } = await openCSharpFile(tmpDir, 'reopen.cs', 'class Reopen { }');
-    const sync = createOpenSync(DOCUMENT_SELECTOR);
-    const hooks = hooksOf(sync);
-    const wire: string[] = [];
-    sync.observe(State.Running);
+    const { sync, hooks, wire } = runningSync();
     await open(hooks, doc, wire);
 
     // A clean restart forgets what the old server had.

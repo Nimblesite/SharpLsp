@@ -12,7 +12,7 @@ import {
   countOccurrences,
   editCount,
   openOverlay,
-  requestPrepareRename,
+  assertPrepareRename,
   requestRename,
   semanticTokenRange,
   undoAction,
@@ -55,7 +55,7 @@ async function runRename(scenario: RenameScenario): Promise<void> {
   try {
     const range = await scenarioRange(fixture.declarations, scenario);
     const position = interiorPosition(range);
-    await assertPrepare(fixture.declarations.uri, range, position, scenario.target);
+    await assertPrepareRename(fixture.declarations.uri, range, position, scenario.target);
     const edit = await requestRename(
       fixture.declarations.uri,
       position,
@@ -94,21 +94,6 @@ async function scenarioRange(
     scenario.target,
     scenario.targetOccurrence ?? 0,
   );
-}
-
-async function assertPrepare(
-  uri: vscode.Uri,
-  expected: vscode.Range,
-  position: vscode.Position,
-  placeholder: string,
-): Promise<void> {
-  const prepare = await requestPrepareRename(uri, position);
-  assert.ok(prepare, `${placeholder} must support prepareRename`);
-  assert.strictEqual(prepare.placeholder, placeholder);
-  assert.strictEqual(prepare.range.start.line, expected.start.line);
-  assert.strictEqual(prepare.range.start.character, expected.start.character);
-  assert.strictEqual(prepare.range.end.line, expected.end.line);
-  assert.strictEqual(prepare.range.end.character, expected.end.character);
 }
 
 async function inspectRenameEdit(
@@ -224,7 +209,7 @@ async function assertRenamedPrepare(
     fixture.declarations.document,
     scenario.newName,
   );
-  await assertPrepare(
+  await assertPrepareRename(
     fixture.declarations.uri,
     newRange,
     interiorPosition(newRange),
@@ -279,7 +264,7 @@ async function undoAndRequery(fixture: RenameFixture, scenario: RenameScenario):
   assert.ok(fixture.usages.document.isDirty);
   const range = await scenarioRange(fixture.declarations, scenario);
   const position = interiorPosition(range);
-  await assertPrepare(fixture.declarations.uri, range, position, scenario.target);
+  await assertPrepareRename(fixture.declarations.uri, range, position, scenario.target);
   const replay = await requestRename(
     fixture.declarations.uri,
     position,

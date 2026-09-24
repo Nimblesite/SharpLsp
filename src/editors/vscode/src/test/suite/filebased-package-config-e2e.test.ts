@@ -15,7 +15,6 @@ import {
   PACKAGE,
   assertNoPackageBindingErrors,
   completionList,
-  diagnosticCode,
   errorsFor,
   hoverText,
   itemNamed,
@@ -25,6 +24,7 @@ import {
   waitForErrorCode,
   waitForHoverText,
 } from './filebased-package-kit';
+import { diagnosticCode } from './document-anchors';
 import { ACTIVATION_MS, DOTNET_CLI_MS } from './test-timeouts';
 
 function writeFixture(tmpDir: string, filename: string, content: string): string {

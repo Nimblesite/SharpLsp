@@ -19,14 +19,13 @@ import {
   type TreeNode,
   assertRuns,
   copiedText,
-  findNode,
   labelled,
   loadTreeUntil,
-  nodeLabel,
   requireNode,
   requireSolutionNode,
   useSymbolTree,
 } from './context-menu-kit';
+import { findNode, nodeLabel } from './tree-node-kit';
 import { activeExplorerProvider } from './explorer-kit';
 import { useLspTestSuite } from './lsp-suite-kit';
 import {

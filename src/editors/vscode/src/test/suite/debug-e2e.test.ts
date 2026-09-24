@@ -34,6 +34,18 @@ import {
   useHarness,
 } from './debug-e2e-kit';
 
+/** An IISExpress profile the adapter must skip, and one eligible `Project` profile. */
+const IIS_AND_WEB = {
+  profiles: {
+    IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
+    Web: {
+      commandName: 'Project',
+      environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
+      commandLineArgs: '--port 5000',
+    },
+  },
+};
+
 suite('Debug E2E — F5 with no launch.json', () => {
   const harness = useHarness('sharplsp-debug-noconfig-e2e-');
 
@@ -166,16 +178,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'ExplicitProfile'), 'ExplicitProfile');
     const folder = fakeFolder(project.dir);
-    writeLaunchSettings(project.dir, {
-      profiles: {
-        IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
-        Web: {
-          commandName: 'Project',
-          environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
-          commandLineArgs: '--port 5000',
-        },
-      },
-    });
+    writeLaunchSettings(project.dir, IIS_AND_WEB);
 
     // 1. The user's own program, plus the project's profile. Both must survive.
     const chosen = path.join(project.dir, 'bin', 'Debug', TFM, 'HandPicked.dll');
@@ -272,16 +275,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
     // 4. The user repairs the document. One `Project` profile is eligible; the
     //    IISExpress one is not. [DEBUG-FEATURES-LAUNCH-PROFILES] mapping table.
-    writeLaunchSettings(project.dir, {
-      profiles: {
-        IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
-        Web: {
-          commandName: 'Project',
-          environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
-          commandLineArgs: '--port 5000',
-        },
-      },
-    });
+    writeLaunchSettings(project.dir, IIS_AND_WEB);
     const launch = await resolveConfig(folder, {
       type: DEBUG_TYPE_ID,
       name: 'L',

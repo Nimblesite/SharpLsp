@@ -42,6 +42,7 @@ import {
   errorTextOf,
   rootsOf,
   activateWithScratch,
+  clearTestTree,
 } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
@@ -103,12 +104,7 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
     ({ api, root: parent } = await activateWithScratch('sharplsp-refusals-'));
   });
 
-  teardown(async () => {
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-  });
+  teardown(() => clearTestTree(api));
 
   suiteTeardown(() => {
     removeDirRecursive(parent);
@@ -217,12 +213,7 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
     ({ api, root: parent } = await activateWithScratch('sharplsp-refusal-kinds-'));
   });
 
-  teardown(async () => {
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-  });
+  teardown(() => clearTestTree(api));
 
   suiteTeardown(() => {
     removeDirRecursive(parent);

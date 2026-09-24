@@ -35,6 +35,18 @@ function nugetTestProjectPath(): string {
   return path.join(sourceRoot, 'sharplsp', 'tests', 'fixtures', 'NuGetTest', 'NuGetTest.csproj');
 }
 
+type SendRequest = (method: string, params: unknown) => Promise<unknown>;
+
+/** Answer a method from `route` first; `undefined` falls through to the fake. */
+function interceptRequests(
+  handle: ReturnType<typeof makeFakeClient>,
+  route: (method: string) => unknown,
+): void {
+  const original = handle.client.sendRequest.bind(handle.client) as SendRequest;
+  const client = handle.client as unknown as { sendRequest: SendRequest };
+  client.sendRequest = async (method, params) => route(method) ?? original(method, params);
+}
+
 suite('NuGet Browser', () => {
   const tmpDir = useLspTestSuite('nuget-');
 
@@ -1643,20 +1655,14 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       install: { success: true, message: 'ok' },
     });
     // Make the installed route reflect the package after install.
-    const original = handle.client.sendRequest.bind(handle.client) as (
-      m: string,
-      p: unknown,
-    ) => Promise<unknown>;
-    (handle.client as unknown as { sendRequest: typeof original }).sendRequest = async (m, p) => {
+    interceptRequests(handle, (m) => {
       if (m === 'sharplsp/nuget/installed') return installedPackages;
-      if (m === 'sharplsp/nuget/install') {
-        installedPackages = {
-          packages: [{ id: 'Good.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-        };
-        return { success: true, message: 'ok' };
-      }
-      return original(m, p);
-    };
+      if (m !== 'sharplsp/nuget/install') return undefined;
+      installedPackages = {
+        packages: [{ id: 'Good.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
+      };
+      return { success: true, message: 'ok' };
+    });
     NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
     const panel = NuGetBrowserPanel.open(
       fakeContextWithStore(),
@@ -1987,22 +1993,16 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       targets: { targets: [buildPropsTarget()], defaultTargetId: 'props-1', cpmEnabled: false },
       search: { packages: [], totalHits: 0 },
     });
-    const original = handle.client.sendRequest.bind(handle.client) as (
-      m: string,
-      p: unknown,
-    ) => Promise<unknown>;
     // This override replaces the recording sendRequest, so `handle.calls` no
     // longer captures the uninstall — track it with a local flag instead.
     let uninstallSent = false;
-    (handle.client as unknown as { sendRequest: typeof original }).sendRequest = async (m, p) => {
+    interceptRequests(handle, (m) => {
       if (m === 'sharplsp/nuget/installed') return installed;
-      if (m === 'sharplsp/nuget/uninstall') {
-        uninstallSent = true;
-        installed = { packages: [] }; // server confirms removal
-        return { success: true, message: 'removed' };
-      }
-      return original(m, p);
-    };
+      if (m !== 'sharplsp/nuget/uninstall') return undefined;
+      uninstallSent = true;
+      installed = { packages: [] }; // server confirms removal
+      return { success: true, message: 'removed' };
+    });
     NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
     const panel = NuGetBrowserPanel.open(
       fakeContextWithStore(),

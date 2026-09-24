@@ -9,6 +9,7 @@ import {
   waitForDocumentSymbols,
   assertContainsAll,
   openCSharpOutline,
+  flattenSymbolNames,
 } from './test-helpers';
 import { COMMAND_MS, LSP_RESPONSE_MS, SERVER_RESTART_MS, SIDECAR_COLD_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
@@ -89,7 +90,10 @@ suite('LSP Lifecycle', () => {
     );
     const symbols2 = await waitForDocumentSymbols(uri2);
     assert.ok(symbols2.length > 0, 'File 2 should produce symbols');
-    assert.ok(flattenNames(symbols2).includes('Cycle2'), 'File 2 symbols should contain Cycle2');
+    assert.ok(
+      flattenSymbolNames(symbols2).includes('Cycle2'),
+      'File 2 symbols should contain Cycle2',
+    );
 
     await closeAllEditors();
 
@@ -113,8 +117,8 @@ suite('LSP Lifecycle', () => {
     const symbolsA = await waitForDocumentSymbols(uriA);
     const symbolsB = await waitForDocumentSymbols(uriB);
 
-    const namesA = flattenNames(symbolsA);
-    const namesB = flattenNames(symbolsB);
+    const namesA = flattenSymbolNames(symbolsA);
+    const namesB = flattenSymbolNames(symbolsB);
 
     assert.ok(namesA.includes('Alpha'), 'File A should contain Alpha');
     assert.ok(namesB.includes('Beta'), 'File B should contain Beta');
@@ -231,7 +235,7 @@ suite('LSP Lifecycle', () => {
       'class AfterRestart { void NewMethod() { } }',
     );
     const symbols = await waitForDocumentSymbols(uri2, SIDECAR_COLD_MS);
-    const names = flattenNames(symbols);
+    const names = flattenSymbolNames(symbols);
     assertContainsAll(names, ['AfterRestart', 'NewMethod'], 'New file');
   });
 
@@ -250,7 +254,7 @@ suite('LSP Lifecycle', () => {
     const content = `namespace BigFile {\n  public class BigClass {\n${methods}\n  }\n}`;
 
     const { symbols } = await openCSharpOutline(tmpDir(), 'big.cs', content, SIDECAR_COLD_MS);
-    const names = flattenNames(symbols);
+    const names = flattenSymbolNames(symbols);
 
     assert.ok(names.includes('BigClass'), 'Should find BigClass');
     // Verify at least some methods are found.
@@ -366,16 +370,4 @@ function killLspServerProcesses(binaryPath: string): number {
     }
   }
   return killed;
-}
-
-function flattenNames(symbols: vscode.DocumentSymbol[]): string[] {
-  const names: string[] = [];
-  function walk(list: vscode.DocumentSymbol[]): void {
-    for (const sym of list) {
-      names.push(sym.name);
-      walk(sym.children);
-    }
-  }
-  walk(symbols);
-  return names;
 }

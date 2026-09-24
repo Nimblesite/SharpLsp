@@ -10,6 +10,7 @@ import {
   pollSymbols,
   assertContainsAll,
   openCSharpOutline,
+  flattenSymbolNames,
 } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
@@ -41,7 +42,7 @@ suite('LSP Document Synchronization', () => {
       'open-test.cs',
       'class OpenTest { void M() { } }',
     );
-    const names = flattenNames(symbols);
+    const names = flattenSymbolNames(symbols);
     assert.ok(names.includes('OpenTest'), 'Should find OpenTest symbol');
   });
 
@@ -58,7 +59,7 @@ suite('LSP Document Synchronization', () => {
 
     // Verify initial symbols.
     let symbols = await waitForDocumentSymbols(uri);
-    let names = flattenNames(symbols);
+    let names = flattenSymbolNames(symbols);
     assert.ok(names.includes('Original'), 'Should find Original initially');
 
     // Edit the document — add a new class.
@@ -70,11 +71,11 @@ class Added { void NewMethod() { } }`;
     // Wait for the server to pick up the change.
     symbols = await pollSymbols(
       uri,
-      (syms) => flattenNames(syms).includes('Added'),
+      (syms) => flattenSymbolNames(syms).includes('Added'),
       LSP_RESPONSE_MS,
     );
 
-    names = flattenNames(symbols);
+    names = flattenSymbolNames(symbols);
     assertContainsAll(names, ['Original', 'Added', 'NewMethod'], 'names');
   });
 
@@ -119,15 +120,19 @@ class Added { void NewMethod() { } }`;
     const { doc, uri } = await openCSharpFile(tmpDir(), 'remove-test.cs', REMOVE_TEST_CS);
 
     let symbols = await waitForDocumentSymbols(uri);
-    let names = flattenNames(symbols);
+    let names = flattenSymbolNames(symbols);
     assertContainsAll(names, ['A', 'B'], 'Should find');
 
     // Remove class B.
     await replaceDocumentContent(doc, 'class A { void X() { } }');
 
-    symbols = await pollSymbols(uri, (syms) => !flattenNames(syms).includes('B'), LSP_RESPONSE_MS);
+    symbols = await pollSymbols(
+      uri,
+      (syms) => !flattenSymbolNames(syms).includes('B'),
+      LSP_RESPONSE_MS,
+    );
 
-    names = flattenNames(symbols);
+    names = flattenSymbolNames(symbols);
     assert.ok(names.includes('A'), 'Should still find A');
     assert.ok(!names.includes('B'), 'B should be gone after removal');
   });
@@ -161,16 +166,19 @@ class Added { void NewMethod() { } }`;
     // Open.
     const { doc, uri } = await openCSharpFile(tmpDir(), 'full-cycle.cs', 'class Step1 { }');
     let symbols = await waitForDocumentSymbols(uri);
-    assert.ok(flattenNames(symbols).includes('Step1'), 'Step 1: Should find Step1');
+    assert.ok(flattenSymbolNames(symbols).includes('Step1'), 'Step 1: Should find Step1');
 
     // Edit.
     await replaceDocumentContent(doc, 'class Step1 { }\nclass Step2 { void M() { } }');
     symbols = await pollSymbols(
       uri,
-      (syms) => flattenNames(syms).includes('Step2'),
+      (syms) => flattenSymbolNames(syms).includes('Step2'),
       LSP_RESPONSE_MS,
     );
-    assert.ok(flattenNames(symbols).includes('Step2'), 'Step 2: Should find Step2 after edit');
+    assert.ok(
+      flattenSymbolNames(symbols).includes('Step2'),
+      'Step 2: Should find Step2 after edit',
+    );
 
     // Close.
     await closeAllEditors();
@@ -179,7 +187,7 @@ class Added { void NewMethod() { } }`;
     const { uri: finalUri } = await openCSharpFile(tmpDir(), 'final.cs', 'class Final { }');
     const finalSymbols = await waitForDocumentSymbols(finalUri);
     assert.ok(
-      flattenNames(finalSymbols).includes('Final'),
+      flattenSymbolNames(finalSymbols).includes('Final'),
       'Step 3: Server should respond after full cycle',
     );
   });
@@ -199,25 +207,13 @@ class Added { void NewMethod() { } }`;
     // The server should eventually settle on the final version.
     const symbols = await pollSymbols(
       uri,
-      (syms) => flattenNames(syms).includes('V5'),
+      (syms) => flattenSymbolNames(syms).includes('V5'),
       LSP_RESPONSE_MS,
     );
 
-    const names = flattenNames(symbols);
+    const names = flattenSymbolNames(symbols);
     assertContainsAll(names, ['V5', 'M5'], 'Should settle on');
   });
 });
 
 // ── Helpers ──────────────────────────────────────────────────────
-
-function flattenNames(symbols: vscode.DocumentSymbol[]): string[] {
-  const names: string[] = [];
-  function walk(list: vscode.DocumentSymbol[]): void {
-    for (const sym of list) {
-      names.push(sym.name);
-      walk(sym.children);
-    }
-  }
-  walk(symbols);
-  return names;
-}

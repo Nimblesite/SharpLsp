@@ -64,13 +64,18 @@ function ensureFsiTerminal(): vscode.Terminal {
   return fsiTerminal;
 }
 
+/** The active editor when it holds F#; otherwise warn and answer undefined. */
+function activeFSharpEditor(): vscode.TextEditor | undefined {
+  const editor = vscode.window.activeTextEditor;
+  if (editor?.document.languageId === 'fsharp') return editor;
+  void vscode.window.showWarningMessage('No F# file is active.');
+  return undefined;
+}
+
 /** Start F# Interactive and optionally send selected text. */
 function sendToFsi(): void {
-  const editor = vscode.window.activeTextEditor;
-  if (editor?.document.languageId !== 'fsharp') {
-    void vscode.window.showWarningMessage('No F# file is active.');
-    return;
-  }
+  const editor = activeFSharpEditor();
+  if (editor === undefined) return;
 
   const selection = editor.selection;
   const text = selection.isEmpty
@@ -131,11 +136,8 @@ export function extractSignature(source: string): string {
 
 /** Send entire file to FSI via #load. */
 function sendFileToFsi(): void {
-  const editor = vscode.window.activeTextEditor;
-  if (editor?.document.languageId !== 'fsharp') {
-    void vscode.window.showWarningMessage('No F# file is active.');
-    return;
-  }
+  const editor = activeFSharpEditor();
+  if (editor === undefined) return;
 
   const terminal = ensureFsiTerminal();
   terminal.show(true);

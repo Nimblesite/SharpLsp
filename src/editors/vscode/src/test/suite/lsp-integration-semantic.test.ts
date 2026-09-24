@@ -30,9 +30,8 @@ import {
 import { assertCompletionEditSpans } from './lsp-invariants-kit';
 import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
+import { assertShotMembers, MEMBER_CARET } from './completion-shot-kit';
 
-/** The caret inside `CompletionShot.cs` that sits after a member-access dot. */
-const MEMBER_CARET = new vscode.Position(11, 24);
 /** The `Add(...)` call site in the same fixture. */
 const ADD_CALL = new vscode.Position(10, 26);
 /** The line `Add` is declared on. */
@@ -66,10 +65,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
     const { uri } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
     const completions = await completionsAt(uri, MEMBER_CARET);
-    const items = new Map(completions.items.map((item) => [item.label.toString(), item]));
-    assert.strictEqual(items.get('Name')?.kind, vscode.CompletionItemKind.Property);
-    assert.strictEqual(items.get('Add')?.kind, vscode.CompletionItemKind.Method);
-    assert.strictEqual(items.get('_count')?.kind, vscode.CompletionItemKind.Field);
+    assertShotMembers(completions);
 
     // Interaction 2 — [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]: every
     // item carries an explicit edit span covering the identifier AT the caret.

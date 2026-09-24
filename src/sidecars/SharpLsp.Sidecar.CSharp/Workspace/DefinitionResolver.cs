@@ -360,52 +360,21 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var resolved = await ResolveModelAndPositionAsync(document, line, character, ct)
+        var resolved = await DocumentPosition
+            .ResolveTokenAsync(document, line, character, ct)
             .ConfigureAwait(false);
-        if (resolved is null)
+        if (resolved is not { Token.Parent: { } parent } found)
         {
+            Log.Debug("[Resolve] no token with a parent at the position");
             return null;
         }
 
-        var (model, position) = resolved.Value;
-
-        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
-        if (root is null)
-        {
-            return null;
-        }
-
-        var token = root.FindToken(position);
-        if (token.Parent is null)
-        {
-            Log.Debug("[Resolve] token.Parent is null");
-            return null;
-        }
-
-        // Try reference resolution first (call sites, type references).
-        var symbolInfo = model.GetSymbolInfo(token.Parent, ct);
-        var symbol = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
-        if (symbol is not null)
-        {
-            return symbol;
-        }
-
-        // Fall back to declaration resolution (cursor on a declaration).
-        // Walk up the syntax tree — the identifier may be nested inside
-        // a declaration node (e.g., MethodDeclaration, PropertyDeclaration).
-        var node = token.Parent;
-        while (node is not null)
-        {
-            var declared = model.GetDeclaredSymbol(node, ct);
-            if (declared is not null)
-            {
-                return declared;
-            }
-
-            node = node.Parent;
-        }
-
-        return null;
+        // Reference resolution first (call sites, type references), then the
+        // declaration the cursor sits in.
+        var symbolInfo = found.Model.GetSymbolInfo(parent, ct);
+        return symbolInfo.Symbol
+            ?? symbolInfo.CandidateSymbols.FirstOrDefault()
+            ?? DocumentPosition.EnclosingDeclaredSymbol(parent, found.Model, ct);
     }
 
     /// <summary>Convert line/character to an absolute position.</summary>

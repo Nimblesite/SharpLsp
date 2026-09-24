@@ -100,6 +100,13 @@ interface RefSpec {
 }
 
 /** Write a .csproj/.fsproj with package + project references; return its path. */
+/** A `Library` project in its own `Lib` folder under `root`, for reference tests. */
+function writeLibrary(root: string): string {
+  const libDir = path.join(root, 'Lib');
+  fs.mkdirSync(libDir, { recursive: true });
+  return writeProjectFile(libDir, 'Library');
+}
+
 function writeProjectFile(
   dir: string,
   name: string,
@@ -1017,9 +1024,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   test('addProjectReference then removeProjectReference round-trips the <ProjectReference>', async function () {
     this.timeout(DOTNET_CLI_MS);
     const consumer = writeProjectFile(tmpDir, 'Consumer');
-    const libDir = path.join(tmpDir, 'Lib');
-    fs.mkdirSync(libDir, { recursive: true });
-    const library = writeProjectFile(libDir, 'Library');
+    const library = writeLibrary(tmpDir);
 
     // addProjectReference shells out to `dotnet add <consumer> reference <library>`
     // (src/dependencies.ts), which writes a <ProjectReference Include="..."> element
@@ -1182,9 +1187,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
 
   test('sharplsp.removeProjectReference command confirms then removes the reference', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const libDir = path.join(tmpDir, 'Lib');
-    fs.mkdirSync(libDir, { recursive: true });
-    const library = writeProjectFile(libDir, 'Library');
+    const library = writeLibrary(tmpDir);
     const consumer = writeProjectFile(tmpDir, 'CmdRemoveRef', {
       projects: [path.relative(tmpDir, library)],
     });

@@ -36,7 +36,6 @@ import {
 import { createSolution, projectXml, warmDiscovery, writeProject } from './dotnet-project-kit';
 import { FRAMEWORK_FIXTURES, type FrameworkFixture } from './test-explorer-fixtures';
 import {
-  assertDeclaredInside,
   assertLeafItem,
   collectLeafIds,
   discoverSolution,
@@ -46,6 +45,7 @@ import {
   type TestItemSnapshot,
   activateWithScratch,
   teardownFixtureSolution,
+  assertPlainLeaf,
 } from './test-explorer-kit';
 import {
   comparablePath,
@@ -54,6 +54,7 @@ import {
   assertContainsNone,
 } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { sorted } from './test-explorer-outcome-assertions';
 
 /** The idiomatic F# backtick fact whose xUnit FQN literally contains spaces. */
 const FS_SPACED_FACT = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
@@ -112,11 +113,6 @@ const AWKWARD_SHAPES: readonly (readonly [string, string, string])[] = [
 /** The dotted prefix every name in one fixture shares — unique, so it partitions the tree. */
 function namespaceOf(fixture: FrameworkFixture): string {
   return fixture.passing.split('.').slice(0, 3).join('.');
-}
-
-/** Ordinal sort with an explicit comparator, for set-equality assertions. */
-function sorted(names: readonly string[]): string[] {
-  return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
 /** Project XML for a fixture: F# must declare its compile order, C# must not. */
@@ -241,31 +237,7 @@ function assertXunitVisible(fixture: FrameworkFixture, displayNames: readonly st
 
 /** Every property a discovered item hands the Testing view. */
 function assertItemShape(snapshot: TestItemSnapshot, anchor: string): void {
-  assert.strictEqual(
-    snapshot.description,
-    snapshot.id,
-    'the description must carry the whole FQN so same-named methods stay distinct',
-  );
-  assert.strictEqual(
-    snapshot.label,
-    snapshot.id.split('.').at(-1),
-    `the label must be the last dotted segment of ${snapshot.id}`,
-  );
-  assert.ok(snapshot.label.length > 0, `${snapshot.id} must have a non-empty label`);
-  assert.ok(
-    snapshot.id.endsWith(snapshot.label),
-    `${snapshot.id} must end with the label the tree renders`,
-  );
-  assert.strictEqual(
-    snapshot.childCount,
-    0,
-    `a discovered TEST is a leaf; groups sit above it: ${snapshot.id}`,
-  );
-  assert.deepStrictEqual(
-    snapshot.tags,
-    [],
-    `plain xUnit/NUnit/MSTest tests carry no framework tag: ${snapshot.id}`,
-  );
+  assertPlainLeaf(snapshot, anchor);
   assert.ok(
     !isExpectoTest(snapshot.id),
     `${snapshot.id} is not an Expecto name, which is WHY it is untagged`,
@@ -274,12 +246,6 @@ function assertItemShape(snapshot: TestItemSnapshot, anchor: string): void {
     !isFsCheckTest(snapshot.id),
     `${snapshot.id} is not an FsCheck name, which is WHY it is untagged`,
   );
-  assert.strictEqual(
-    typeof snapshot.uriPath,
-    'string',
-    `${snapshot.id} must carry a uri for the editor to open`,
-  );
-  assertDeclaredInside(snapshot.uriPath, anchor, snapshot.id);
 }
 
 /** A fixture's project really is on disk, directly under the solution root. */

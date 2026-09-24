@@ -724,33 +724,35 @@ export function registerCommands(
     }),
   );
 
+  /** The live session a tree item stands for, with its id. */
+  const sessionOf = (item?: ProfilerTreeItem): { id: string; session: SessionInfo } | undefined => {
+    const id = item?.sessionId;
+    const session = id === undefined ? undefined : provider.findSession(id);
+    return id === undefined || session === undefined ? undefined : { id, session };
+  };
+  const showCounters = (id: string, pid: number): void => {
+    counterPanels.set(id, CounterWebviewPanel.open(id, pid, context));
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_SHOW_COUNTERS_PANEL, (item?: ProfilerTreeItem) => {
-      const sessionId = item?.sessionId;
-      if (sessionId === undefined) return;
-      const session = provider.findSession(sessionId);
-      if (session === undefined) return;
-      const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
-      counterPanels.set(sessionId, panel);
+      const found = sessionOf(item);
+      if (found !== undefined) showCounters(found.id, found.session.pid);
     }),
   );
 
   // Default click on a session tree item: dispatch to the right "stop" by kind.
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_STOP_SESSION, async (item?: ProfilerTreeItem) => {
-      const sessionId = item?.sessionId;
-      if (sessionId === undefined) return;
-      const session = provider.findSession(sessionId);
-      if (session === undefined) return;
-      if (session.kind === 'Trace') {
-        const outputPath = await stopTraceById(sessionId);
+      const found = sessionOf(item);
+      if (found?.session.kind === 'Trace') {
+        const outputPath = await stopTraceById(found.id);
         if (outputPath !== undefined) {
           await openTraceFile(getClient(), outputPath);
         }
-      } else if (session.kind === 'Counters') {
+      } else if (found?.session.kind === 'Counters') {
         // Clicking a counters session reveals the live panel rather than stopping it.
-        const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
-        counterPanels.set(sessionId, panel);
+        showCounters(found.id, found.session.pid);
       }
     }),
   );

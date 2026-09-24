@@ -31,6 +31,8 @@ import {
   snapshotItems,
   activateWithScratch,
   teardownFixtureSolution,
+  assertPlainLeaf,
+  announcedPair,
 } from './test-explorer-kit';
 import {
   comparablePath,
@@ -232,31 +234,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       );
     }
     for (const snapshot of testSnapshots) {
-      assertDeclaredInside(
-        snapshot.uriPath,
-        hostileDir,
-        `${snapshot.id}, under the hostile solution directory, parentheses and all,`,
-      );
-      assert.strictEqual(
-        snapshot.description,
-        snapshot.id,
-        'the description carries the full FQN so same-named methods disambiguate',
-      );
-      assert.strictEqual(
-        snapshot.label,
-        snapshot.id.split('.').at(-1),
-        `the label must be the last dotted segment of ${snapshot.id}`,
-      );
-      assert.strictEqual(
-        snapshot.childCount,
-        0,
-        'a discovered TEST is a leaf; groups sit above it',
-      );
-      assert.deepStrictEqual(
-        snapshot.tags,
-        [],
-        `${snapshot.id} is plain xUnit and must carry no framework tag`,
-      );
+      assertPlainLeaf(snapshot, hostileDir);
     }
     const spaced = findItem(api.testController.items, FS_FACT_SPACED);
     assert.ok(spaced, `${FS_FACT_SPACED} must resolve by id`);
@@ -305,14 +283,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   test('the assembly banner parser strips the framework suffix from the RIGHT of a hostile path', function () {
     this.timeout(FAST_MS);
     // The genuine listing for a path containing ` (` — why `lastIndexOf` exists.
-    assertContainsAll(listing, ['Test run for ', '(.NETCoreApp,Version=v10.0)'], 'the captured');
-    const announced = parseAnnouncedAssemblies(listing);
-    assert.strictEqual(announced.length, 2, `one banner per project: ${announced.join(', ')}`);
-    assert.strictEqual(
-      new Set(announced).size,
-      2,
-      'a repeated banner is de-duplicated, never double-counted',
-    );
+    const announced = announcedPair(listing);
 
     // The banner path comes through MSBuild, which PERCENT-ESCAPES the
     // characters it reserves — `(` becomes `%28`, `)` becomes `%29`. That is why

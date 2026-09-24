@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DapRouter } from '../../dap-router';
-import { isRecord, type DapMessage } from '../../dap-emulate';
+import { isRecord, recordList, type DapMessage } from '../../dap-emulate';
 import type { DebugFixture } from './debug-fixture-programs';
 import { pollUntilResult } from './test-helpers';
 import { DEBUG_SESSION_MS } from './test-timeouts';
@@ -59,6 +59,21 @@ export class LiveRouter implements vscode.Disposable {
     const event = events[count - 1];
     assert.ok(event, `event ${name} #${count}`);
     return event;
+  }
+
+  /** The `count`th `stopped` event's body, proven to carry `reason`. */
+  async stopped(count: number, reason: string, why?: string): Promise<Record<string, unknown>> {
+    const event = await this.event('stopped', count);
+    assert.ok(isRecord(event.body), `stopped #${count} carries a body`);
+    assert.equal(event.body.reason, reason, why ?? `stopped #${count} is a ${reason} stop`);
+    return event.body;
+  }
+
+  /** `stackTrace` for the top frame of `threadId`, and that frame's line. */
+  async topStack(threadId: number): Promise<{ body: Record<string, unknown>; line: unknown }> {
+    const stack = await this.request('stackTrace', { threadId, startFrame: 0, levels: 1 });
+    assert.ok(isRecord(stack.body), 'stackTrace carries a body');
+    return { body: stack.body, line: recordList(stack.body.stackFrames)[0]?.line };
   }
 
   /** Observe protocol traffic without substituting an adapter. */
@@ -135,15 +150,23 @@ export class LiveRouter implements vscode.Disposable {
   }
 
   async exceptionStop(): Promise<number> {
-    const event = await this.event('stopped');
-    assert.ok(isRecord(event.body));
-    assert.equal(event.body.reason, 'exception');
-    assert.equal(typeof event.body.threadId, 'number');
-    return Number(event.body.threadId);
+    const event = await this.stopped(1, 'exception');
+    assert.equal(typeof event.threadId, 'number');
+    return Number(event.threadId);
   }
 
   dispose(): void {
     this.subscription.dispose();
     this.router.dispose();
+  }
+}
+
+/** Runs `body` against a fresh router, disposed however the body ends. */
+export async function withRouter(body: (driver: LiveRouter) => Promise<void>): Promise<void> {
+  const driver = new LiveRouter();
+  try {
+    await body(driver);
+  } finally {
+    driver.dispose();
   }
 }

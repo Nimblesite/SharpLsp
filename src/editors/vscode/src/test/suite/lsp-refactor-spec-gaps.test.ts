@@ -5,7 +5,7 @@
 // priority. A row that fails is not a broken test -- it is the spec's P0/P1
 // column reporting that the family is not wired up yet.
 import { exerciseCodeAction, type ActionLifecycleCase } from './csharp-refactor-test-kit';
-import { type OpenFixture, useRefactorFixture } from './refactor-test-helpers';
+import { useRefactorFixture } from './refactor-test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const INTRODUCE_LOCAL_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
@@ -182,18 +182,12 @@ const CASES: readonly ActionLifecycleCase[] = [
 ];
 
 suite('C# real LSP - refactoring families the spec table requires', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
   const refactor = useRefactorFixture('RefactorCore.cs');
-  setup(() => {
-    ({ fixture, committedText } = refactor());
-  });
 
   for (const actionCase of CASES) {
     test(`${actionCase.label}: list, resolve, apply, requery, undo, redo, retry`, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseCodeAction(fixture, committedText, actionCase);
+      await exerciseCodeAction(refactor.fixture, refactor.committedText, actionCase);
     });
   }
 });

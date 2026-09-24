@@ -41,6 +41,7 @@ import {
   startDebuggee,
   useDebuggee,
   runToFirstStop,
+  type Debuggee,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
@@ -62,6 +63,13 @@ function advertisedFilters(capabilities: Record<string, any>): string[] {
       'none advertised the user has no exception checkboxes at all',
   );
   return filters.map((filter) => String((filter as Record<string, any>)['filter']));
+}
+
+/** Stop at the start of the twice-throwing mode with "All Exceptions" ticked. */
+async function stopWithAllFilter(debuggee: Debuggee): Promise<vscode.DebugSession> {
+  const { session } = await runToFirstStop(debuggee, 'main-mode', { mode: MODE.both });
+  await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
+  return session;
 }
 
 suite('Debug exceptions — breaking on them, and ignoring them', () => {
@@ -341,8 +349,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — break on every throw, in the mode that throws twice.
-    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.both });
-    await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
+    const session = await stopWithAllFilter(debuggee());
     assert.ok(
       advertisedFilters(recorder.capabilities()).includes(FILTER_ALL),
       'the "all exceptions" checkbox must be offered before it can be ticked',
@@ -415,8 +422,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — break on all, and prove it by catching the first throw.
-    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.both });
-    await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
+    const session = await stopWithAllFilter(debuggee());
     const caught = await stepToFrame(recorder, CMD_CONTINUE);
     assertStopReason(caught.stop, 'exception', 'the first throw with the filter on');
     assertStoppedAt(caught.frame, fixture, 'throw-caught', 'ThrowCaught', 'the first throw');

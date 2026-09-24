@@ -6,7 +6,7 @@
 // plus server memory/CPU bounds.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { codeOf } from './csharp-refactor-test-kit';
+import { diagnosticCode } from './document-anchors';
 import {
   FLUENT_VALIDATION,
   assertSaneRange,
@@ -162,9 +162,9 @@ suite('Real repo stress — FluentValidation (C#)', () => {
       const error = await waitForError(
         uri,
         LSP_RESPONSE_MS,
-        (item) => codeOf(item) === 'CS0029' && item.range.start.line === insertAt.line,
+        (item) => diagnosticCode(item) === 'CS0029' && item.range.start.line === insertAt.line,
       );
-      assert.strictEqual(codeOf(error), 'CS0029');
+      assert.strictEqual(diagnosticCode(error), 'CS0029');
       assert.strictEqual(error.source, 'sharplsp-csharp');
       assertContainsAll(error.message, ["'int'", "'string'"], 'error.message');
       assertSaneRange(doc, error.range, 'injected CS0029');

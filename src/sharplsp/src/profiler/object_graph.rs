@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use super::object_inspection::read_dumpobj;
+use super::object_inspection::{field_tokens, read_dumpobj};
 use super::{dump_cmd, tool_discovery};
 
 /// Default maximum traversal depth for the object graph.
@@ -247,17 +247,7 @@ fn parse_dumpobj_for_graph(output: &str, address: &str, depth: usize) -> ParsedN
 ///
 /// Returns `(field_name, reference_address)` if this is a non-null reference field.
 fn extract_reference_field(line: &str) -> Option<(String, String)> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with("---") {
-        return None;
-    }
-
-    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-    // Need at least: MT, FieldToken, Offset, Type, VT, Attr, Value, Name
-    if tokens.len() < 8 {
-        return None;
-    }
-
+    let tokens = field_tokens(line)?;
     let name = (*tokens.last()?).to_string();
     let value_str = *tokens.get(tokens.len() - 2)?;
     let vt_idx = tokens.len() - 4;

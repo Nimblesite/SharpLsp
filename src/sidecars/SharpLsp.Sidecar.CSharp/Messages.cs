@@ -386,7 +386,7 @@ internal sealed class CodeLensResult
 /// does in the F# sidecar.
 /// </summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class HierarchyItem
+internal class HierarchyItem
 {
     [Key(0)]
     public string Name { get; set; } = "";
@@ -427,30 +427,13 @@ internal sealed class CallSiteResult
     public int EndCharacter { get; set; }
 }
 
+/// <summary>
+/// One incoming or outgoing call: the <see cref="HierarchyItem"/> at keys 0-6,
+/// then the ranges the call appears at.
+/// </summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class CallHierarchyCallResult
+internal sealed class CallHierarchyCallResult : HierarchyItem
 {
-    [Key(0)]
-    public string Name { get; set; } = "";
-
-    [Key(1)]
-    public string Kind { get; set; } = "";
-
-    [Key(2)]
-    public string FilePath { get; set; } = "";
-
-    [Key(3)]
-    public int Line { get; set; }
-
-    [Key(4)]
-    public int Character { get; set; }
-
-    [Key(5)]
-    public int EndLine { get; set; }
-
-    [Key(6)]
-    public int EndCharacter { get; set; }
-
     /// <summary>
     /// Every range at which the call appears, per LSP 3.17 `fromRanges`.
     /// </summary>

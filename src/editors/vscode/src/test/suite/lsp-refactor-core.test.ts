@@ -8,19 +8,19 @@ import {
   assertRawTitles,
   assertSingleDocumentEdit,
   onlyAction,
-  rangeAfterAction,
-  rangeOf,
   rawCodeActions,
   type RawCodeAction,
 } from './csharp-refactor-test-kit';
+import { rangeAfterAction, rangeOf } from './document-anchors';
 import {
   applyWorkspaceEdit,
   replaceDocumentText,
-  revertDocument,
   waitForCodeActions,
   waitForResolvedCodeActions,
   type OpenFixture,
   useRefactorFixture,
+  restoreCommitted,
+  type RefactorFixture,
 } from './refactor-test-helpers';
 import {
   EXPRESSION_OPTIONS,
@@ -375,30 +375,19 @@ async function runScenario(
   assertSingleDocumentEdit(await applyWorkspaceEdit(edit), fixture);
   assertMutation(fixture, scenario, version);
   await assertRequery(fixture, scenario, discovered.range, discovered.raw);
-  await revertDocument(fixture.document);
-  assert.strictEqual(fixture.document.getText(), committedText);
-  assert.ok(!fixture.document.isDirty);
+  await restoreCommitted(fixture, committedText);
 }
 
-function registerCoreTests(getFixture: () => OpenFixture, getCommittedText: () => string): void {
+function registerCoreTests(refactor: RefactorFixture): void {
   for (const scenario of SCENARIOS) {
     test(`${scenario.label}: list, resolve, apply, requery, and revert`, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await runScenario(getFixture(), getCommittedText(), scenario);
+      await runScenario(refactor.fixture, refactor.committedText, scenario);
     });
   }
 }
 
 suite('C# real LSP - Roslyn refactor families', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
   const refactor = useRefactorFixture(FILE);
-  setup(() => {
-    ({ fixture, committedText } = refactor());
-  });
-  registerCoreTests(
-    () => fixture,
-    () => committedText,
-  );
+  registerCoreTests(refactor);
 });

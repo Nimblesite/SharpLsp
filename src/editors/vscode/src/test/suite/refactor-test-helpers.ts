@@ -380,7 +380,8 @@ async function waitForDocumentText(
   assert.strictEqual(comparableText(text), comparableText(expectedText));
 }
 
-function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
+/** The range covering every character of `document`. */
+export function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
   return new vscode.Range(
     new vscode.Position(0, 0),
     document.positionAt(document.getText().length),
@@ -410,7 +411,7 @@ export interface RefactorFixture {
  * once keeps it out of every test's ceiling ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
  * Each test's edits are reverted after it.
  */
-export function useRefactorFixture(file: string): () => RefactorFixture {
+export function useRefactorFixture(file: string): RefactorFixture {
   let state: RefactorFixture | undefined;
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
@@ -422,8 +423,23 @@ export function useRefactorFixture(file: string): () => RefactorFixture {
   teardown(async () => {
     if (state !== undefined) await revertDocument(state.fixture.document);
   });
-  return () => {
+  const opened = (): RefactorFixture => {
     assert.ok(state, 'the refactor fixture must be opened in suiteSetup');
     return state;
   };
+  return {
+    get fixture() {
+      return opened().fixture;
+    },
+    get committedText() {
+      return opened().committedText;
+    },
+  };
+}
+
+/** Reverts the fixture and proves the committed text is back, unsaved edits gone. */
+export async function restoreCommitted(fixture: OpenFixture, committedText: string): Promise<void> {
+  await revertDocument(fixture.document);
+  assert.strictEqual(fixture.document.getText(), committedText);
+  assert.ok(!fixture.document.isDirty);
 }

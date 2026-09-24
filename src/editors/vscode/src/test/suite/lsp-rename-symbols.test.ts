@@ -1,13 +1,6 @@
 // Real release-LSP matrix for every feasible C# [RENAME-COVERAGE] category.
-import {
-  exerciseRename,
-  openRenameFixtures,
-  revertRenameFixtures,
-  type RenameCase,
-  type RenameFixtureSet,
-} from './csharp-rename-test-kit';
-import { activateRealSharpLsp } from './refactor-test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { exerciseRename, type RenameCase, useRenameFixtures } from './csharp-rename-test-kit';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const SYMBOLS_ONLY = ['symbols'] as const;
 const SYMBOLS_AND_USAGE = ['symbols', 'usage'] as const;
@@ -314,21 +307,12 @@ const CASES: readonly RenameCase[] = [
 ];
 
 suite('C# real LSP - exhaustive symbol rename matrix [RENAME-TESTS]', () => {
-  let fixtures: RenameFixtureSet;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    await activateRealSharpLsp();
-    fixtures = await openRenameFixtures();
-  });
-
-  teardown(async () => revertRenameFixtures(fixtures));
-  suiteTeardown(async () => revertRenameFixtures(fixtures));
+  const fixtures = useRenameFixtures();
 
   for (const renameCase of CASES) {
     test(`${renameCase.label}: prepare, edit, apply, requery, reverse, revert`, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseRename(fixtures, renameCase);
+      await exerciseRename(fixtures(), renameCase);
     });
   }
 });

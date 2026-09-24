@@ -49,6 +49,13 @@ import { DEBUG_TEST_MS } from './test-timeouts';
 /** The framework directory a Just-My-Code step must never surface. */
 const FRAMEWORK_HINTS: readonly string[] = ['Microsoft.NETCore.App', 'System.Private.CoreLib'];
 
+/** Each workbench breakpoint's 0-based line, in order; -1 marks a non-source one. */
+function workbenchBreakpointLines(): number[] {
+  return vscode.debug.breakpoints.map((breakpoint) =>
+    breakpoint instanceof vscode.SourceBreakpoint ? breakpoint.location.range.start.line : -1,
+  );
+}
+
 suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
   const debuggee = useDebuggee('debug-step-cs-', 'csharp');
 
@@ -313,9 +320,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
 
     // Interaction 4 — the temporary breakpoint must not have been persisted.
     deepEq(
-      vscode.debug.breakpoints.map((breakpoint) =>
-        breakpoint instanceof vscode.SourceBreakpoint ? breakpoint.location.range.start.line : -1,
-      ),
+      workbenchBreakpointLines(),
       [fixture.source.line('main-accumulate')],
       'run to cursor uses a TEMPORARY breakpoint; leaving it in the Breakpoints view is a ' +
         'stale stop the user never asked for',
@@ -338,9 +343,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
     const anchors = ['main-accumulate', 'main-inspect', 'main-done'];
     armBreakpoints(fixture, ...anchors);
     deepEq(
-      vscode.debug.breakpoints.map((breakpoint) =>
-        breakpoint instanceof vscode.SourceBreakpoint ? breakpoint.location.range.start.line : -1,
-      ),
+      workbenchBreakpointLines(),
       anchors.map((anchor) => fixture.source.line(anchor)),
       'the workbench holds all three breakpoints, on the lines they were set on',
     );

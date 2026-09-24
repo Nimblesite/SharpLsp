@@ -76,7 +76,8 @@ internal static class DocumentPosition
     /// symbol's first in-source declaration. Returns <see langword="null"/> for a
     /// symbol declared only in metadata — there is no source row to navigate to.
     /// </summary>
-    public static HierarchyItem? ToHierarchyItem(ISymbol symbol, string kind)
+    public static T? ToHierarchyItem<T>(ISymbol symbol, string kind)
+        where T : HierarchyItem, new()
     {
         var loc = symbol.Locations.FirstOrDefault(l => l.IsInSource);
         if (loc is null)
@@ -85,7 +86,7 @@ internal static class DocumentPosition
         }
 
         var (path, line, character, endLine, endCharacter) = Coordinates(loc.GetMappedLineSpan());
-        return new HierarchyItem
+        return new T
         {
             Name = symbol.Name,
             Kind = kind,
@@ -95,5 +96,33 @@ internal static class DocumentPosition
             EndLine = endLine,
             EndCharacter = endCharacter,
         };
+    }
+
+    /// <summary>
+    /// Whether <paramref name="candidate"/> is what a request for
+    /// <paramref name="requested"/> means: a caret touches a span it sits in or
+    /// starts, a selection touches a span it overlaps.
+    /// </summary>
+    public static bool SpansTouch(TextSpan candidate, TextSpan requested)
+    {
+        return requested.IsEmpty
+            ? candidate.Contains(requested.Start) || candidate.Start == requested.Start
+            : candidate.IntersectsWith(requested);
+    }
+
+    /// <summary>
+    /// The symbol declared by <paramref name="node"/> or its nearest declaring
+    /// ancestor: the identifier under the cursor may sit deep inside the method,
+    /// property or type declaration it names.
+    /// </summary>
+    public static ISymbol? EnclosingDeclaredSymbol(
+        SyntaxNode node,
+        SemanticModel model,
+        CancellationToken ct
+    )
+    {
+        return node.AncestorsAndSelf()
+            .Select(ancestor => model.GetDeclaredSymbol(ancestor, ct))
+            .FirstOrDefault(declared => declared is not null);
     }
 }

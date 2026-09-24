@@ -1,6 +1,6 @@
 // Full-lifecycle real-LSP matrix for remaining [SHARPLSP-FEATURES-REFACTORING] families.
 import { exerciseCodeAction, type ActionLifecycleCase } from './csharp-refactor-test-kit';
-import { type OpenFixture, useRefactorFixture } from './refactor-test-helpers';
+import { useRefactorFixture } from './refactor-test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const CONSTANT_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
@@ -442,18 +442,12 @@ const CASES: readonly ActionLifecycleCase[] = [
 ];
 
 suite('C# real LSP - extended Roslyn rewrite families', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
   const refactor = useRefactorFixture('RefactorCore.cs');
-  setup(() => {
-    ({ fixture, committedText } = refactor());
-  });
 
   for (const actionCase of CASES) {
     test(`${actionCase.label}: list, resolve, apply, requery, and revert`, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseCodeAction(fixture, committedText, actionCase);
+      await exerciseCodeAction(refactor.fixture, refactor.committedText, actionCase);
     });
   }
 });

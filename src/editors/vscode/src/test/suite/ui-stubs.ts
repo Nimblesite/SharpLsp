@@ -10,6 +10,7 @@
  * Every stub is restored via `restore()` (call it in `teardown`) so unrelated
  * suites observe a pristine `vscode.window` / `vscode.workspace`.
  */
+import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 
 type ShowInputBox = typeof vscode.window.showInputBox;
@@ -259,4 +260,19 @@ export function installUiStubs(): UiStubs {
     },
   };
   return stubs;
+}
+
+/** Fresh stubs before every test of the suite, restored after it. */
+export function useUiStubs(): () => UiStubs {
+  let stubs: UiStubs | undefined;
+  setup(() => {
+    stubs = installUiStubs();
+  });
+  teardown(() => {
+    stubs?.restore();
+  });
+  return () => {
+    assert.ok(stubs, 'UI stubs are installed before each test');
+    return stubs;
+  };
 }

@@ -172,17 +172,7 @@ pub(super) fn read_dumpobj(output: &str) -> DumpObjListing<'_> {
 /// two tokens are always Value and Name. The Type column can contain spaces
 /// (e.g. `System.Collections.Generic.List'1`).
 fn parse_field_line(line: &str) -> Option<ObjectField> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with("---") {
-        return None;
-    }
-
-    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-
-    // Need at least: MT, FieldToken, Offset, Type, VT, Attr, Value, Name
-    if tokens.len() < 8 {
-        return None;
-    }
+    let tokens = field_tokens(line)?;
 
     // Name is always the last token.
     let name = (*tokens.last()?).to_string();
@@ -226,6 +216,18 @@ fn parse_field_line(line: &str) -> Option<ObjectField> {
         is_reference,
         reference_address,
     })
+}
+
+/// The whitespace-separated columns of a `dumpobj` field line, or `None` for
+/// a blank line, the `---` separator, or a line too short to be a field row
+/// (`MT  FieldToken  Offset  Type  VT  Attr  Value  Name`).
+pub(super) fn field_tokens(line: &str) -> Option<Vec<&str>> {
+    let trimmed = line.trim();
+    if trimmed.starts_with("---") {
+        return None;
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    (tokens.len() >= 8).then_some(tokens)
 }
 
 /// Parse the Size field: `Size: 52(0x34) bytes` → 52.

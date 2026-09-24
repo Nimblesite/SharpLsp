@@ -7,17 +7,17 @@ import {
   assertRawTitles,
   assertSingleDocumentEdit,
   onlyAction,
-  rangeOf,
   rawCodeActions,
   type RawCodeAction,
 } from './csharp-refactor-test-kit';
+import { rangeOf } from './document-anchors';
 import {
   applyWorkspaceEdit,
   replaceDocumentText,
-  revertDocument,
   waitForResolvedCodeActions,
   type OpenFixture,
   useRefactorFixture,
+  restoreCommitted,
 } from './refactor-test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -26,17 +26,11 @@ const TITLE = 'Sort Usings';
 const SOURCE = 'using System.Text;\nusing System;\nnamespace SharpLsp.TestFixtures.Refactors;\n';
 
 suite('C# real LSP - organize imports', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
   const refactor = useRefactorFixture(FILE);
-  setup(() => {
-    ({ fixture, committedText } = refactor());
-  });
 
   test('advertised action is listed, resolved, applied, requeried, and reverted', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await runOrganizeImports(fixture, committedText);
+    await runOrganizeImports(refactor.fixture, refactor.committedText);
   });
 });
 
@@ -79,7 +73,5 @@ async function runOrganizeImports(fixture: OpenFixture, committedText: string): 
   const after = await rawCodeActions(fixture.uri, rangeOf(fixture.document, 'using System;'));
   assertRawActionData(after, fixture.uri);
   assertFreshActionDataIds(after, discovered.raw);
-  await revertDocument(fixture.document);
-  assert.strictEqual(fixture.document.getText(), committedText);
-  assert.ok(!fixture.document.isDirty);
+  await restoreCommitted(fixture, committedText);
 }

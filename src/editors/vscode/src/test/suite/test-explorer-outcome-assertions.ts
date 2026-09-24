@@ -14,12 +14,12 @@ import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { formatDuration, statusLensTitle } from '../../test-lens.js';
 import type { CachedTestResult } from '../../testing.js';
-import { collectItemIds, findItem } from './test-explorer-kit';
+import { collectItemIds, findItem, runViaProfile } from './test-explorer-kit';
 import { assertContainsAll } from './test-helpers';
 
 /** Sorted copy, so set-equality assertions do not depend on discovery order. */
 export function sorted(ids: readonly string[]): string[] {
-  return [...ids].sort((left, right) => left.localeCompare(right));
+  return [...ids].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
 /** The cached result for `id`, failing with what WAS cached when absent. */
@@ -39,6 +39,15 @@ export function itemsFor(api: SharpLspExtensionApi, ids: readonly string[]): vsc
     assert.strictEqual(item.id, id, 'findItem must return the item asked for, not a near miss');
     return item;
   });
+}
+
+/** ▶ on `ids` exactly as the Testing view's Run button does, then settle. */
+export async function runAndSettle(
+  api: SharpLspExtensionApi,
+  ids: readonly string[],
+): Promise<void> {
+  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
+  await api.testController.whenIdle();
 }
 
 /** Cached ids belonging to THIS suite's fixtures (the cache outlives a suite). */

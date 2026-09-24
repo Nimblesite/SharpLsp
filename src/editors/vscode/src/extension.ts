@@ -51,6 +51,7 @@ import { registerDebugAdapter } from './debug.js';
 import { registerTestExplorer, SharpLspTestController } from './testing.js';
 import { registerTestStatusLens } from './test-lens.js';
 import { initProjectDepsStore } from './project-deps-store.js';
+import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface SharpLspExtensionApi {
@@ -575,35 +576,12 @@ async function sortMembers(node: ExplorerNode | undefined): Promise<void> {
   }
 
   const config = workspace.getConfiguration('sharplsp.memberSortOrder');
-  const hierarchy = config.get<string[]>('hierarchy', [
-    'accessibility',
-    'category',
-    'alphabetical',
-  ]);
+  const hierarchy = config.get<string[]>('hierarchy', [...DEFAULT_SORT_POLICY.hierarchy]);
   const accessibilityOrder = config.get<string[]>('accessibilityOrder', [
-    'public',
-    'protected internal',
-    'internal',
-    'protected',
-    'private protected',
-    'private',
+    ...DEFAULT_SORT_POLICY.accessibilityOrder,
   ]);
   const categoryOrder = config.get<string[]>('categoryOrder', [
-    'constant',
-    'field',
-    'constructor',
-    'finalizer',
-    'delegate',
-    'event',
-    'enum',
-    'interface',
-    'property',
-    'indexer',
-    'operator',
-    'method',
-    'struct',
-    'class',
-    'record',
+    ...DEFAULT_SORT_POLICY.categoryOrder,
   ]);
 
   try {

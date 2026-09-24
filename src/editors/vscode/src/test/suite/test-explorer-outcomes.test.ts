@@ -37,9 +37,9 @@ import {
   collectLeafIds,
   findItem,
   nextResultsChange,
-  profileOfKind,
   runViaProfile,
   assertLeavesAre,
+  profilesOf,
 } from './test-explorer-kit';
 import { pollUntilResult, assertContainsAll, assertContainsNone } from './test-helpers.js';
 import {
@@ -656,9 +656,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       profiles.length,
       'each kind has exactly one profile, so each is the default for its own button',
     );
-    const runProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Run);
-    const debugProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Debug);
-    const coverageProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage);
+    const { runProfile, debugProfile, coverageProfile } = profilesOf(api.testController);
     assert.ok(runProfile.isDefault, '▶ must map to Run, not to Debug or Coverage');
     assert.strictEqual(
       debugProfile.kind,
