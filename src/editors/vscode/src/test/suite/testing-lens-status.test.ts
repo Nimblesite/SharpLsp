@@ -30,14 +30,19 @@
 // Covers [TEST-STATUS-LENS], and [TEST-RUN-TRX] for the outcomes it renders.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { CMD_TEST_DEBUG_AT_CURSOR, CMD_TEST_RUN_AT_CURSOR } from '../../constants.js';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { formatDuration } from '../../test-lens.js';
-import { createSolution, warmDiscovery } from './dotnet-project-kit';
-import { codeLensesFor, warmCodeLensPath } from './code-lens-kit';
+import { createSolution } from './dotnet-project-kit';
+import {
+  codeLensesFor,
+  warmCodeLensPath,
+  TEST_LENS_SECTION,
+  TEST_LENS_KEY,
+  setTestLens,
+} from './code-lens-kit';
 import {
   fixtureFor,
   LIBRARY_TEST,
@@ -45,15 +50,21 @@ import {
   writeCoverageFixture,
 } from './test-explorer-fixtures';
 import {
-  activateTestExplorer,
-  drainDiscovery,
-  pollUntilDiscovered,
   rootsOf,
   runViaProfile,
+  activateWithScratch,
+  teardownFixtureSolution,
+  collectLeafIds,
 } from './test-explorer-kit';
 import { cachedFor, itemsFor, sorted } from './test-explorer-outcome-assertions';
-import { collectLeafIds } from './test-explorer-kit';
-import { closeAllEditors, deepEq, eq, neq, removeDirRecursive } from './test-helpers.js';
+import {
+  closeAllEditors,
+  deepEq,
+  eq,
+  neq,
+  removeDirRecursive,
+  assertContainsAll,
+} from './test-helpers.js';
 import {
   DOTNET_CLI_MS,
   FIXTURE_BUILD_MS,
@@ -61,6 +72,7 @@ import {
   SETTINGS_WRITE_MS,
   SIDECAR_COLD_MS,
 } from './test-timeouts';
+import { warmAndDiscover } from './test-explorer-harness';
 
 const CS = fixtureFor('xunit-csharp');
 const FSX = fixtureFor('xunit-fsharp');
@@ -87,9 +99,6 @@ const SKIPPED = [CS.skipped, FSX.skipped] as const;
 const ALL_TESTS: readonly string[] = [...PASSING, ...FAILING, ...SKIPPED].filter(
   (id) => id.length > 0,
 );
-
-const TEST_LENS_SECTION = 'sharplsp.testLens';
-const TEST_LENS_KEY = 'enabled';
 
 /** The four titles [TEST-STATUS-LENS] pins, by the icon each opens with. */
 const NOT_RUN = '$(circle-slash) Not run';
@@ -155,20 +164,15 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-lensstatus-'));
+    ({ api, root } = await activateWithScratch('sharplsp-lensstatus-'));
     const slnPath = await createSolution(root, 'LensStatus', writeCoverageFixture(root));
     csFile = vscode.Uri.file(path.join(root, CS.projectName, CS.sourceFileName));
     fsFile = vscode.Uri.file(path.join(root, FSX.projectName, FSX.sourceFileName));
     libraryTestsFile = vscode.Uri.file(path.join(root, CS.projectName, LIBRARY_TESTS_FILE));
-    assert.strictEqual(fs.existsSync(csFile.fsPath), true, 'the C# fixture source is on disk');
-    assert.strictEqual(fs.existsSync(fsFile.fsPath), true, 'the F# fixture source is on disk');
+    assert.ok(fs.existsSync(csFile.fsPath), 'the C# fixture source is on disk');
+    assert.ok(fs.existsSync(fsFile.fsPath), 'the F# fixture source is on disk');
 
-    await warmDiscovery(slnPath, root);
-    await api.explorerProvider.loadSolution(slnPath);
-    await api.testController.activateAndDiscover();
-    await drainDiscovery(() => undefined, api.testController);
-    await pollUntilDiscovered(api.testController, ALL_TESTS);
+    await warmAndDiscover(api, slnPath, root, ALL_TESTS);
     // Pay the code-lens cold start once, per language
     // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
     this.timeout(FIXTURE_BUILD_MS + SIDECAR_COLD_MS);
@@ -178,14 +182,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
   suiteTeardown(async function () {
     this.timeout(DOTNET_CLI_MS);
     await closeAllEditors();
-    await vscode.workspace
-      .getConfiguration(TEST_LENS_SECTION)
-      .update(TEST_LENS_KEY, undefined, vscode.ConfigurationTarget.Global);
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-    removeDirRecursive(root);
+    await setTestLens(undefined, vscode.ConfigurationTarget.Global);
+    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('before any run, every discovered test carries a "Not run" status plus Run and Debug', async function () {
@@ -216,9 +214,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     // SPACES. A lens keyed on a name it cannot round-trip shows nothing at all.
     const fsLenses = await codeLensesFor(fsFile);
     const fsMethods = lensedMethods(fsLenses);
-    assert.strictEqual(
+    assert.ok(
       fsMethods.includes(methodOf(FS_SPACED)),
-      true,
       `the backtick binding "${methodOf(FS_SPACED)}" must carry a lens like any other test; ` +
         `got ${fsMethods.join(' | ') || '(nothing)'}`,
     );
@@ -298,15 +295,13 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'the C# actions come in Run/Debug pairs',
     );
     eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'and so do the F# ones');
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'every C# test method is lensed',
     );
-    eq(lensedMethods(await codeLensesFor(fsFile)).length >= 4, true, 'and every F# binding');
-    eq(
+    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and every F# binding');
+    assert.ok(
       rootsOf(api.testController.items).length >= 1,
-      true,
       'while the tree behind them is discovered',
     );
   });
@@ -337,21 +332,14 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     // TRX ErrorInfo, so the user reads what went wrong without opening a panel.
     const failing = cachedFor(api, CS.failing);
     const failedTitle = statusFor(csLenses, methodOf(CS.failing)) ?? '';
-    assert.strictEqual(
+    assert.ok(
       failedTitle.startsWith(FAILED_PREFIX),
-      true,
       `a red test renders as "${FAILED_PREFIX} <assertion text>"; got ${failedTitle || '(nothing)'}`,
     );
-    assert.strictEqual(
-      failedTitle.includes('Assert.Equal'),
-      true,
-      "the lens carries xUnit's own assertion output, not a generic 'Test failed'",
-    );
-    assert.strictEqual(
-      failedTitle.includes((failing.message ?? '').split('\n')[0] ?? ''),
-      true,
-      'and exactly the assertion text the run cached for it, so the row and the Test Results ' +
-        'panel never disagree about why the test is red',
+    assertContainsAll(
+      failedTitle,
+      ['Assert.Equal', (failing.message ?? '').split('\n')[0] ?? ''],
+      'failedTitle',
     );
 
     // Interaction 4 — a SKIP is neither, and must never render as a failure.
@@ -360,28 +348,24 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       SKIPPED_TITLE,
       'a skipped test renders as a skip',
     );
-    assert.strictEqual(
-      (statusFor(csLenses, methodOf(CS.skipped)) ?? '').startsWith(FAILED_PREFIX),
-      false,
+    assert.ok(
+      !(statusFor(csLenses, methodOf(CS.skipped)) ?? '').startsWith(FAILED_PREFIX),
       'a skipped test MUST NOT be reported as a failure',
     );
 
     // Interaction 5 — the same three states, F# first, including the spaced
     // binding and the theory whose rows disagree.
     const fsLenses = await codeLensesFor(fsFile);
-    assert.strictEqual(
+    assert.ok(
       (statusFor(fsLenses, methodOf(FSX.passing)) ?? '').startsWith(PASSED_PREFIX),
-      true,
       'the F# passing binding renders as a pass',
     );
-    assert.strictEqual(
+    assert.ok(
       (statusFor(fsLenses, methodOf(FS_SPACED)) ?? '').startsWith(PASSED_PREFIX),
-      true,
       `"${methodOf(FS_SPACED)}" carries spaces and still resolves to its own green result`,
     );
-    assert.strictEqual(
+    assert.ok(
       (statusFor(fsLenses, methodOf(FSX.failing)) ?? '').startsWith(FAILED_PREFIX),
-      true,
       'the F# failing binding renders as a failure',
     );
     assert.strictEqual(
@@ -390,9 +374,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'and the skipped one as a skip',
     );
     const mixed = FSX.mixedParameterized ?? '';
-    assert.strictEqual(
+    assert.ok(
       (statusFor(fsLenses, methodOf(mixed)) ?? '').startsWith(FAILED_PREFIX),
-      true,
       'a [<Theory>] with one failing row is a failing test, and its ONE lens says so ' +
         '([TEST-RUN-TRX] merges rows to the worst)',
     );
@@ -416,18 +399,17 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     for (const uri of [csFile, fsFile]) {
       for (const lens of (await codeLensesFor(uri)).filter((each) => isStatusLens(each))) {
         const title = lens.command?.title ?? '';
-        eq(
+        assert.ok(
           title === NOT_RUN ||
             title === SKIPPED_TITLE ||
             title.startsWith(PASSED_PREFIX) ||
             title.startsWith(FAILED_PREFIX),
-          true,
           'a status lens rendered ' +
             JSON.stringify(title) +
             ', which is not one of the four ' +
             'titles [TEST-STATUS-LENS] specifies',
         );
-        eq(title.includes('\n'), false, 'and a CodeLens title is ONE line');
+        assert.ok(!title.includes('\n'), 'and a CodeLens title is ONE line');
         neq(title.trim(), '', 'and never empty');
       }
     }
@@ -436,17 +418,16 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       SKIPPED_TITLE,
       'the skipped test reads as a SKIP - [TEST-RUN-TRX] forbids reporting it as a failure',
     );
-    eq(cachedFor(api, CS.passing).passed, true, 'the controller cached a real pass');
-    eq(cachedFor(api, CS.skipped).passed, false, 'and a skip is not a pass');
+    assert.ok(cachedFor(api, CS.passing).passed, 'the controller cached a real pass');
+    assert.ok(!cachedFor(api, CS.skipped).passed, 'and a skip is not a pass');
     eq(cachedFor(api, CS.failing).outcome, 'failed', 'and the failure is a failure');
     eq(
       itemsFor(api, [CS.passing, CS.failing, CS.skipped]).length,
       3,
       'each of them a row of its own',
     );
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'with every method still lensed',
     );
   });
@@ -464,9 +445,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     await vscode.window.showTextDocument(document, { preview: false });
     const before = await codeLensesFor(csFile);
     const method = methodOf(CS.passing);
-    assert.strictEqual(
+    assert.ok(
       (statusFor(before, method) ?? '').startsWith(PASSED_PREFIX),
-      true,
       'the row starts green from the previous run',
     );
     assert.strictEqual(
@@ -485,9 +465,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     );
     const after = await codeLensesFor(csFile);
     const title = statusFor(after, method) ?? '';
-    assert.strictEqual(
+    assert.ok(
       title.startsWith(PASSED_PREFIX),
-      true,
       `${method} passed again, so its row still reads a pass; got ${title || '(nothing)'}`,
     );
     assert.strictEqual(
@@ -504,9 +483,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       SKIPPED_TITLE,
       'an unselected test keeps its LAST KNOWN result across a re-run of another test',
     );
-    assert.strictEqual(
+    assert.ok(
       (statusFor(after, methodOf(CS.failing)) ?? '').startsWith(FAILED_PREFIX),
-      true,
       'and so does the failing one',
     );
     assert.deepStrictEqual(
@@ -519,16 +497,15 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     // changing. A lens that only refreshes on an edit leaves the user staring
     // at a stale result until they type something.
     const openDocument = await vscode.workspace.openTextDocument(csFile);
-    eq(openDocument.isDirty, false, 'the file was never edited during the re-run');
+    assert.ok(!openDocument.isDirty, 'the file was never edited during the re-run');
     eq(
       openDocument.uri.toString(),
       csFile.toString(),
       'and it is the same document the lens was read from',
     );
     const repainted = await codeLensesFor(csFile);
-    eq(
+    assert.ok(
       lensedMethods(repainted).length >= 4,
-      true,
       'every method still carries its actions after the re-run',
     );
     for (const method of lensedMethods(repainted)) {
@@ -540,9 +517,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       lensedMethods(repainted).length,
       'one status row per method, still',
     );
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'every method is still lensed after the re-run',
     );
     eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'in Run/Debug pairs');
@@ -551,8 +527,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'passed',
       'and the cache the lens reads holds a real outcome',
     );
-    eq(rootsOf(api.testController.items).length >= 1, true, 'with the tree still discovered');
-    eq(vscode.window.visibleTextEditors.length >= 0, true, 'and the editor left open throughout');
+    assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree still discovered');
+    assert.ok(vscode.window.visibleTextEditors.length >= 0, 'and the editor left open throughout');
   });
 
   test('disabling sharplsp.testLens.enabled removes the STATUS lens too, and re-enabling restores it', async function () {
@@ -574,7 +550,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
 
     // Interaction 2 — turn it off. BOTH halves go: a user who switched the lens
     // off still seeing a row of results is the setting doing nothing.
-    await configuration.update(TEST_LENS_KEY, false, vscode.ConfigurationTarget.Global);
+    await setTestLens(false, vscode.ConfigurationTarget.Global);
     const disabled = await codeLensesFor(csFile);
     assert.deepStrictEqual(
       lensedMethods(disabled),
@@ -589,16 +565,15 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
 
     // Interaction 3 — turn it back on. The lens returns, and it still remembers
     // the results from the runs above: the cache is not a function of the view.
-    await configuration.update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Global);
+    await setTestLens(true, vscode.ConfigurationTarget.Global);
     const restored = await codeLensesFor(csFile);
     assert.deepStrictEqual(
       lensedMethods(restored),
       lensedMethods(enabled),
       'every action comes back, for exactly the same methods',
     );
-    assert.strictEqual(
+    assert.ok(
       (statusFor(restored, methodOf(CS.passing)) ?? '').startsWith(PASSED_PREFIX),
-      true,
       'and the LAST KNOWN result is still known — toggling a view setting is not a test run',
     );
     assert.strictEqual(
@@ -606,9 +581,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       SKIPPED_TITLE,
       'for every state the lens renders',
     );
-    assert.strictEqual(
+    assert.ok(
       (statusFor(restored, methodOf(CS.failing)) ?? '').includes('Assert.Equal'),
-      true,
       'assertion text included',
     );
     // Interaction 4 - the setting governs the STATUS and the ACTIONS together.
@@ -621,10 +595,9 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'the setting is back on at the end of the round trip',
     );
     const restoredAgain = await codeLensesFor(csFile);
-    eq(actionLenses(restoredAgain).length >= 4, true, 'the actions came back');
-    eq(
+    assert.ok(actionLenses(restoredAgain).length >= 4, 'the actions came back');
+    assert.ok(
       restoredAgain.filter((lens) => isStatusLens(lens)).length >= 2,
-      true,
       'and so did the status rows',
     );
     for (const method of lensedMethods(restoredAgain)) {
@@ -634,9 +607,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
         method + ' carries a status again after re-enabling',
       );
     }
-    eq(
+    assert.ok(
       lensedMethods(restoredAgain).includes(methodOf(CS.passing)),
-      true,
       'including the method the earlier run passed',
     );
     eq(
@@ -644,12 +616,11 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       true,
       'the setting is left on for every test that follows',
     );
-    eq(lensedMethods(await codeLensesFor(csFile)).length >= 4, true, 'and the C# rows are back');
-    eq(lensedMethods(await codeLensesFor(fsFile)).length >= 4, true, 'and the F# ones');
+    assert.ok(lensedMethods(await codeLensesFor(csFile)).length >= 4, 'and the C# rows are back');
+    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and the F# ones');
     eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'in Run/Debug pairs');
-    eq(
+    assert.ok(
       rootsOf(api.testController.items).length >= 1,
-      true,
       'with the tree untouched by the toggle',
     );
   });
@@ -693,10 +664,9 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     await api.testController.whenIdle();
     const result = cachedFor(api, CS.passing);
     assert.strictEqual(result.outcome, 'passed', `${CS.passing} passes when run from the lens`);
-    assert.strictEqual(result.passed, true, 'with the pass flag set');
-    assert.strictEqual(
-      (result.message ?? '').includes('No result reported'),
-      false,
+    assert.ok(result.passed, 'with the pass flag set');
+    assert.ok(
+      !(result.message ?? '').includes('No result reported'),
       'the lens resolved to a REAL test, so a real result came back',
     );
 
@@ -718,9 +688,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       lensedMethods(before),
       'running from the lens adds and removes no lenses',
     );
-    assert.strictEqual(
-      (statusFor(after, method) ?? '').startsWith(NOT_RUN),
-      false,
+    assert.ok(
+      !(statusFor(after, method) ?? '').startsWith(NOT_RUN),
       'and the row certainly no longer reads "Not run"',
     );
     await closeAllEditors();
@@ -735,9 +704,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'passed',
       'and the controller cached a real outcome for it',
     );
-    eq(
+    assert.ok(
       cachedFor(api, CS.passing).passed,
-      true,
       'with the passed flag agreeing - a SKIP is not a pass',
     );
     const afterAction = await codeLensesFor(csFile);
@@ -748,13 +716,12 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     );
     eq(cachedFor(api, CS.passing).outcome, 'passed', 'the lens action produced a real outcome');
     eq(itemsFor(api, [CS.passing]).length, 1, 'for exactly one row');
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'and every row is still lensed',
     );
     eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'in Run/Debug pairs');
-    eq(rootsOf(api.testController.items).length >= 1, true, 'with the tree standing');
+    assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree standing');
   });
 
   test('a COVERAGE run paints exactly the same statuses as a plain run', async function () {
@@ -773,22 +740,19 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     );
     const plain = await codeLensesFor(csFile);
     const plainStatuses = lensedMethods(plain).map((method) => statusFor(plain, method) ?? '');
-    assert.strictEqual(
+    assert.ok(
       plainStatuses.every((title) => title.length > 0),
-      true,
       'every method shows a status after a plain run',
     );
-    assert.strictEqual(
+    assert.ok(
       plainStatuses.some((title) => title.startsWith(PASSED_PREFIX)),
-      true,
       'including at least one pass',
     );
-    assert.strictEqual(
+    assert.ok(
       plainStatuses.some((title) => title.startsWith(FAILED_PREFIX)),
-      true,
       'at least one failure',
     );
-    assert.strictEqual(plainStatuses.includes(SKIPPED_TITLE), true, 'and the skip');
+    assert.ok(plainStatuses.includes(SKIPPED_TITLE), 'and the skip');
 
     // Interaction 2 — run the same selection with coverage.
     await runViaProfile(
@@ -809,20 +773,15 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     for (const method of lensedMethods(covered)) {
       const before = statusFor(plain, method) ?? '';
       const after = statusFor(covered, method) ?? '';
-      assert.strictEqual(
-        after.length > 0,
-        true,
-        `${method} must still show a status after a coverage run`,
-      );
+      assert.ok(after.length > 0, `${method} must still show a status after a coverage run`);
       assert.strictEqual(
         after.split(' ')[0],
         before.split(' ')[0],
         `${method}: collecting coverage must not change the state the row reports ` +
           `(was '${before}', now '${after}')`,
       );
-      assert.strictEqual(
-        after.startsWith(NOT_RUN),
-        false,
+      assert.ok(
+        !after.startsWith(NOT_RUN),
         `${method} ran under coverage, so it must not read "Not run"`,
       );
     }
@@ -831,9 +790,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       SKIPPED_TITLE,
       'a skip is still a skip under --collect',
     );
-    assert.strictEqual(
+    assert.ok(
       (statusFor(covered, methodOf(CS.failing)) ?? '').includes('Assert.Equal'),
-      true,
       'and a failure still carries its assertion text',
     );
     // Interaction 4 - a Coverage run is still a run, so the tree must carry the
@@ -843,7 +801,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     }
     for (const id of SKIPPED) {
       eq(cachedFor(api, id).outcome, 'skipped', id + ' is still SKIPPED, never failed');
-      eq(cachedFor(api, id).passed, false, 'and a skip is not a pass');
+      assert.ok(!cachedFor(api, id).passed, 'and a skip is not a pass');
     }
     for (const id of FAILING.filter((each) => each.length > 0)) {
       eq(cachedFor(api, id).outcome, 'failed', id + ' failed under Coverage as it would plainly');
@@ -865,13 +823,12 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       PASSING.length,
       'every passing test is a row of its own',
     );
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'and the C# rows are all lensed',
     );
-    eq(lensedMethods(await codeLensesFor(fsFile)).length >= 4, true, 'and the F# ones');
-    eq(rootsOf(api.testController.items).length >= 1, true, 'with the tree intact');
+    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and the F# ones');
+    assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree intact');
   });
 
   test('closing and reopening the file re-renders the LAST KNOWN result', async function () {
@@ -891,7 +848,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     await vscode.window.showTextDocument(opened, { preview: false });
     const before = await codeLensesFor(csFile);
     const statusesBefore = lensedMethods(before).map((method) => statusFor(before, method) ?? '');
-    assert.strictEqual(statusesBefore.length > 0, true, 'the file carries lensed methods');
+    assert.ok(statusesBefore.length > 0, 'the file carries lensed methods');
     assert.deepStrictEqual(
       statusesBefore.filter((title) => title.startsWith(NOT_RUN)),
       [],
@@ -927,9 +884,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
         `${method} must still show the result it showed before the file was closed — the ` +
           'cache is a property of the session, not of the open editor',
       );
-      assert.strictEqual(
-        (statusFor(after, method) ?? '').startsWith(NOT_RUN),
-        false,
+      assert.ok(
+        !(statusFor(after, method) ?? '').startsWith(NOT_RUN),
         `${method} has run, so reopening the file must not reset it to "Not run"`,
       );
     }
@@ -957,9 +913,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'and the skipped one still as a skip',
     );
     eq(actionLenses(rerendered).length, lensedMethods(rerendered).length * 2, 'with both actions');
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'the reopened file carries every row',
     );
     eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'in Run/Debug pairs');
@@ -969,7 +924,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'and the cache still holds the result it renders',
     );
     eq(itemsFor(api, [CS.passing]).length, 1, 'for a row that is still there');
-    eq(rootsOf(api.testController.items).length >= 1, true, 'with the tree standing');
+    assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree standing');
   });
 
   test('a run started from the TREE repaints the rows of BOTH language files', async function () {
@@ -986,9 +941,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       itemsFor(api, [CS.passing]),
     );
     const csRows = await codeLensesFor(csFile);
-    assert.strictEqual(
+    assert.ok(
       (statusFor(csRows, methodOf(CS.passing)) ?? '').startsWith(PASSED_PREFIX),
-      true,
       'the C# row the run covered is green',
     );
 
@@ -1010,27 +964,23 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       assert.ok(methods.length > 0, `${path.basename(file.fsPath)} carries lensed methods`);
       for (const method of methods) {
         const title = statusFor(lenses, method) ?? '';
-        assert.strictEqual(
+        assert.ok(
           title.length > 0,
-          true,
           `${path.basename(file.fsPath)}: ${method} must show a status after a root run`,
         );
-        assert.strictEqual(
-          title.startsWith(NOT_RUN),
-          false,
+        assert.ok(
+          !title.startsWith(NOT_RUN),
           `${path.basename(file.fsPath)}: ${method} was covered by the root run, so it must ` +
             'not still read "Not run"',
         );
-        assert.strictEqual(
+        assert.ok(
           STATUS_ICONS.some((icon) => title.startsWith(icon)),
-          true,
           `${method}'s title must be one of the four [TEST-STATUS-LENS] states; got ${title}`,
         );
       }
     }
-    assert.strictEqual(
+    assert.ok(
       (statusFor(fsAfter, methodOf(FS_SPACED)) ?? '').startsWith(PASSED_PREFIX),
-      true,
       `"${methodOf(FS_SPACED)}" carries SPACES and must still resolve to its own green result`,
     );
     assert.strictEqual(
@@ -1066,13 +1016,12 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     );
     eq(cachedFor(api, FS_SPACED).outcome, 'passed', 'the F# binding carrying SPACES really ran');
     eq(itemsFor(api, [FS_SPACED]).length, 1, 'and is exactly one row');
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(fsFile)).includes(methodOf(FS_SPACED)),
-      true,
       'lensed under its own binding name',
     );
     eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'with both actions');
-    eq(rootsOf(api.testController.items).length >= 1, true, 'and the tree standing');
+    assert.ok(rootsOf(api.testController.items).length >= 1, 'and the tree standing');
   });
 
   // Implements [TEST-STATUS-LENS] "showing its LAST KNOWN RESULT". A run of ONE
@@ -1092,15 +1041,14 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     );
     const before = await codeLensesFor(csFile);
     const methods = lensedMethods(before);
-    eq(methods.length >= 4, true, 'the C# fixture declares several test methods');
+    assert.ok(methods.length >= 4, 'the C# fixture declares several test methods');
     const baseline = new Map(methods.map((method) => [method, statusFor(before, method)]));
     for (const method of methods) {
       const title = baseline.get(method);
       neq(title, undefined, method + ' must carry a status after a whole-tree run');
       neq(title, NOT_RUN, method + ' has been run, so its row must no longer read "Not run"');
-      eq(
+      assert.ok(
         STATUS_ICONS.some((icon) => (title ?? '').startsWith(icon)),
-        true,
         method + ' must open with one of the four status icons',
       );
     }
@@ -1174,9 +1122,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       true,
       'including the backtick binding carrying SPACES',
     );
-    eq(
+    assert.ok(
       actionLenses(fsAfter).length >= 2,
-      true,
       'and the Run and Debug actions are still there beside the status',
     );
     // Interaction 5 - the cache the lens reads is the controller's own, so the
@@ -1199,7 +1146,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
         cached.outcome === 'failed',
         id + ': and "Failed" exactly when the controller says failed',
       );
-      eq(rendered.includes('\n'), false, id + ': rendered on one line');
+      assert.ok(!rendered.includes('\n'), id + ': rendered on one line');
     }
     eq(
       itemsFor(api, [...ALL_TESTS]).length,
@@ -1207,13 +1154,12 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'every test in the fixture is still a row',
     );
     eq(cachedFor(api, CS.passing).outcome, 'passed', 'the single run produced a real outcome');
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'and every C# row is still lensed',
     );
-    eq(lensedMethods(await codeLensesFor(fsFile)).length >= 4, true, 'and every F# one');
-    eq(rootsOf(api.testController.items).length >= 1, true, 'with the tree standing');
+    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and every F# one');
+    assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree standing');
   });
 
   // Implements [TEST-STATUS-LENS] "above every C# and F# test method" as a
@@ -1226,14 +1172,13 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
 
     // Interaction 1 — what the tree holds for these two projects.
     const leaves = collectLeafIds(api.testController.items);
-    eq(leaves.length >= ALL_TESTS.length, true, 'the whole fixture solution is discovered');
+    assert.ok(leaves.length >= ALL_TESTS.length, 'the whole fixture solution is discovered');
     const csIds = leaves.filter((id) => id.startsWith('Cs.Xunit.Fixtures.'));
     const fsIds = leaves.filter((id) => id.startsWith('Fs.Xunit.Fixtures.'));
-    eq(csIds.length >= 4, true, 'the C# project contributes several tests');
-    eq(fsIds.length >= 4, true, 'and so does the F# project');
-    eq(
+    assert.ok(csIds.length >= 4, 'the C# project contributes several tests');
+    assert.ok(fsIds.length >= 4, 'and so does the F# project');
+    assert.ok(
       fsIds.some((id) => id.includes(' ')),
-      true,
       'the F# project contributes a name carrying SPACES, which is the hard case',
     );
 
@@ -1243,23 +1188,20 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     const csLenses = [...(await codeLensesFor(csFile)), ...(await codeLensesFor(libraryTestsFile))];
     const csMethods = lensedMethods(csLenses);
     for (const id of csIds) {
-      eq(
+      assert.ok(
         csMethods.includes(methodOf(id)),
-        true,
         id + ' is discovered, so the editor must offer a lens above it',
       );
       const status = statusFor(csLenses, methodOf(id));
       neq(status, undefined, id + ' must carry a status lens as well as its actions');
-      eq(
+      assert.ok(
         STATUS_ICONS.some((icon) => (status ?? '').startsWith(icon)),
-        true,
         id + ': the status must be one of the four the specification pins',
       );
     }
     for (const method of csMethods) {
-      eq(
+      assert.ok(
         csIds.some((id) => methodOf(id) === method),
-        true,
         'the lens over ' +
           method +
           ' must address a test the tree really holds - a lens over ' +
@@ -1272,18 +1214,16 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     const fsLenses = await codeLensesFor(fsFile);
     const fsMethods = lensedMethods(fsLenses);
     for (const id of fsIds) {
-      eq(fsMethods.includes(methodOf(id)), true, id + ' must carry an F# lens');
+      assert.ok(fsMethods.includes(methodOf(id)), id + ' must carry an F# lens');
     }
     for (const method of fsMethods) {
-      eq(
+      assert.ok(
         fsIds.some((id) => methodOf(id) === method),
-        true,
         'the F# lens over ' + method + ' must address a discovered binding',
       );
     }
-    eq(
+    assert.ok(
       fsMethods.includes(methodOf(FS_SPACED)),
-      true,
       'and the backtick binding is one of them, spaces and all',
     );
 
@@ -1320,7 +1260,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
             lens.command?.arguments?.[1] === method,
         );
         assert.ok(run && debug, method + ' must carry both actions');
-        eq(run.range.isEqual(debug.range), true, method + ': both actions on one row');
+        assert.ok(run.range.isEqual(debug.range), method + ': both actions on one row');
       }
     }
     // Interaction 5 - and no lens is rendered for a file with no tests in it.
@@ -1349,19 +1289,17 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'and no status row either - a "Not run" above a helper is a Run button that runs nothing',
     );
     eq(lensedMethods(plainLenses).length, 0, 'so the file carries no lensed method at all');
-    eq(
+    assert.ok(
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      true,
       'while the real test file still carries all of its rows',
     );
-    eq(
+    assert.ok(
       collectLeafIds(api.testController.items).length >= ALL_TESTS.length,
-      true,
       'the whole fixture is discovered',
     );
     eq(itemsFor(api, [...ALL_TESTS]).length, ALL_TESTS.length, 'and every test resolves to a row');
     eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'the C# actions are paired');
     eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'and so are the F# ones');
-    eq(rootsOf(api.testController.items).length >= 1, true, 'under at least one assembly root');
+    assert.ok(rootsOf(api.testController.items).length >= 1, 'under at least one assembly root');
   });
 });

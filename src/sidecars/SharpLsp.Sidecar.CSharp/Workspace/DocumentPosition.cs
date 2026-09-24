@@ -70,4 +70,30 @@ internal static class DocumentPosition
             EndCharacter = endCharacter,
         };
     }
+
+    /// <summary>
+    /// Builds the <see cref="HierarchyItem"/> both hierarchies answer with, at the
+    /// symbol's first in-source declaration. Returns <see langword="null"/> for a
+    /// symbol declared only in metadata — there is no source row to navigate to.
+    /// </summary>
+    public static HierarchyItem? ToHierarchyItem(ISymbol symbol, string kind)
+    {
+        var loc = symbol.Locations.FirstOrDefault(l => l.IsInSource);
+        if (loc is null)
+        {
+            return null;
+        }
+
+        var (path, line, character, endLine, endCharacter) = Coordinates(loc.GetMappedLineSpan());
+        return new HierarchyItem
+        {
+            Name = symbol.Name,
+            Kind = kind,
+            FilePath = path,
+            Line = line,
+            Character = character,
+            EndLine = endLine,
+            EndCharacter = endCharacter,
+        };
+    }
 }

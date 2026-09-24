@@ -14,7 +14,7 @@ import {
   type PrepareRenameResult,
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
-import { pollUntilResult } from './test-helpers';
+import { pollUntilResult, assertContainsAll } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 export type RenameFixtureKey = 'symbols' | 'usage' | 'edge';
@@ -233,15 +233,23 @@ function assertAppliedVersions(
 
 function assertLiteralAndCommentSentinels(fixtures: RenameFixtureSet): void {
   const symbols = fixtures.symbols.document.getText();
-  assert.ok(symbols.includes('"RenameClass RenameMethod renameLocal"'));
-  assert.ok(
-    symbols.includes('// RenameClass RenameMethod renameLocal must remain untouched in comments.'),
+  assertContainsAll(
+    symbols,
+    [
+      '"RenameClass RenameMethod renameLocal"',
+      '// RenameClass RenameMethod renameLocal must remain untouched in comments.',
+    ],
+    'symbols',
   );
   const edge = fixtures.edge.document.getText();
   if (fixtures.baselines.edge.includes('"PartialRenameTarget PartialMember"')) {
-    assert.ok(edge.includes('"PartialRenameTarget PartialMember"'));
-    assert.ok(
-      edge.includes('// PartialRenameTarget and PartialMember stay unchanged in this comment.'),
+    assertContainsAll(
+      edge,
+      [
+        '"PartialRenameTarget PartialMember"',
+        '// PartialRenameTarget and PartialMember stay unchanged in this comment.',
+      ],
+      'edge',
     );
   }
 }

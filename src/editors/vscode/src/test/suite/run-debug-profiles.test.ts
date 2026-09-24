@@ -104,7 +104,7 @@ function assertEnv(config: Config, expected: Record<string, string>, why: string
   const env: unknown = config.env;
   assert.strictEqual(typeof env, 'object', `${why}: env must be an object, got ${typeof env}`);
   assert.notStrictEqual(env, null, `${why}: env must never be null`);
-  assert.strictEqual(Array.isArray(env), false, `${why}: env is a map, never an array`);
+  assert.ok(!Array.isArray(env), `${why}: env is a map, never an array`);
   assert.deepStrictEqual(config.env, expected, `${why}: env matches exactly, key for key`);
   const keys = Object.keys(config.env).sort();
   assert.deepStrictEqual(keys, Object.keys(expected).sort(), `${why}: no extra or missing keys`);
@@ -112,7 +112,7 @@ function assertEnv(config: Config, expected: Record<string, string>, why: string
 /** `args` must be real argv: a string array with no shell quoting left in it. */
 function assertArgv(config: Config, expected: readonly string[], why: string): void {
   assert.deepStrictEqual(config.args, [...expected], `${why}: tokens match a real shell parser`);
-  assert.strictEqual(Array.isArray(config.args), true, `${why}: args must be an array`);
+  assert.ok(Array.isArray(config.args), `${why}: args must be an array`);
   assert.strictEqual(config.args.length, expected.length, `${why}: exact argv entry count`);
   const tokens = config.args as unknown[];
   const nonStrings = tokens.filter((token) => typeof token !== 'string');
@@ -139,7 +139,7 @@ function assertTarget(resolved: Config, dir: string, dll: string): void {
   assert.strictEqual(cwd, comparablePath(dir), 'cwd is the project dir, not the workspace root');
   assert.strictEqual(path.basename(program), comparablePath(dll), 'program is the project output');
   const under = program.startsWith(comparablePath(dir));
-  assert.strictEqual(under, true, `program must sit under ${dir}; got ${program}`);
+  assert.ok(under, `program must sit under ${dir}; got ${program}`);
 }
 /** Resolve through the real provider, attributing a throw to the resolver. */
 async function resolveVia(root: string, config: Config): Promise<Config> {
@@ -237,7 +237,7 @@ suite('Run and Debug: launch profiles', () => {
     const active = comparablePath(editor.document.uri.fsPath);
     assert.strictEqual(active, comparablePath(sourceFile), 'the project source is active');
     const rootProps = fs.existsSync(path.join(root, 'Properties'));
-    assert.strictEqual(rootProps, false, 'the premise: the ROOT owns no Properties/ directory');
+    assert.ok(!rootProps, 'the premise: the ROOT owns no Properties/ directory');
     // Interaction 2 — discovery from the WORKSPACE ROOT, which owns no profile. B34
     const fromRoot = readLaunchProfiles(root);
     assert.deepStrictEqual(Object.keys(fromRoot), ['Dev'], 'root discovery reaches src/App');
@@ -307,16 +307,16 @@ suite('Run and Debug: launch profiles', () => {
     for (const bad of UNSOUND_PROFILES) {
       const label = JSON.stringify(bad) ?? 'undefined';
       const verdict = isLaunchSettings({ profiles: bad });
-      assert.strictEqual(verdict, false, `a profiles value of ${label} is not a settings document`);
+      assert.ok(!verdict, `a profiles value of ${label} is not a settings document`);
     }
-    assert.strictEqual(isLaunchSettings({ unrelated: true }), false, 'no profiles key: not one');
-    assert.strictEqual(isLaunchSettings(null), false, 'null is not a launch-settings document');
-    assert.strictEqual(isLaunchSettings(undefined), false, 'undefined is not a document');
-    assert.strictEqual(isLaunchSettings('{}'), false, 'an UNPARSED string is not a document');
-    assert.strictEqual(isLaunchSettings([{ profiles: {} }]), false, 'an array is not a document');
-    assert.strictEqual(isLaunchSettings({ profiles: {} }), true, 'an empty profiles map IS one');
+    assert.ok(!isLaunchSettings({ unrelated: true }), 'no profiles key: not one');
+    assert.ok(!isLaunchSettings(null), 'null is not a launch-settings document');
+    assert.ok(!isLaunchSettings(undefined), 'undefined is not a document');
+    assert.ok(!isLaunchSettings('{}'), 'an UNPARSED string is not a document');
+    assert.ok(!isLaunchSettings([{ profiles: {} }]), 'an array is not a document');
+    assert.ok(isLaunchSettings({ profiles: {} }), 'an empty profiles map IS one');
     const populated = { profiles: { Dev: projectProfile({}) } };
-    assert.strictEqual(isLaunchSettings(populated), true, 'a populated profiles map IS one');
+    assert.ok(isLaunchSettings(populated), 'a populated profiles map IS one');
     // Interaction 2 — the user saves `{"profiles": null}` and presses F5. B35
     const dir = caseDir('null-profiles');
     const settingsFile = writeRawLaunchSettings(dir, '{"profiles": null}');
@@ -328,7 +328,7 @@ suite('Run and Debug: launch profiles', () => {
     }
     // Interaction 4 — the user deletes the file entirely.
     fs.rmSync(settingsFile);
-    assert.strictEqual(fs.existsSync(settingsFile), false, 'the premise: the file is really gone');
+    assert.ok(!fs.existsSync(settingsFile), 'the premise: the file is really gone');
     assertNoProfiles(dir, 'a deleted launchSettings.json');
     // Interaction 5 — the candidate path exists but is a DIRECTORY.
     fs.mkdirSync(settingsFile, { recursive: true });
@@ -430,14 +430,14 @@ suite('Run and Debug: launch profiles', () => {
     const labels = pickLabels(stubs.log.quickPickItems[0] ?? []);
     const offered = [...labels].sort();
     assert.deepStrictEqual(offered, ['Dev', 'Staging'], 'every eligible profile name is offered');
-    assert.strictEqual(labels.includes('IIS'), false, 'an ineligible profile is never offered');
+    assert.ok(!labels.includes('IIS'), 'an ineligible profile is never offered');
     assert.strictEqual(labels.length, 2, 'nothing is offered twice');
     assertEnv(chosen, { STAGE: 'staging' }, "the CHOSEN profile's env, not the first profile's");
     assert.strictEqual(chosen.env.DEV_ONLY, undefined, 'the first profile is not taken silently');
     assertArgv(chosen, QUOTED_TOKENS, "the chosen profile's args are tokenized too");
     const placeHolder = stubs.log.quickPickOptions[0]?.placeHolder ?? '';
     const asksForProfile = placeHolder.toLowerCase().includes('profile');
-    assert.strictEqual(asksForProfile, true, `the prompt must name profiles; got '${placeHolder}'`);
+    assert.ok(asksForProfile, `the prompt must name profiles; got '${placeHolder}'`);
     const many = stubs.log.quickPickOptions[0]?.canPickMany;
     assert.notStrictEqual(many, true, 'exactly one profile launches; the pick is single-select');
     assert.deepStrictEqual(stubs.log.errorMessages, [], 'choosing a profile is not an error path');
@@ -460,7 +460,7 @@ suite('Run and Debug: launch profiles', () => {
     assert.strictEqual(opened, comparablePath(entry), 'the app is the active document');
     assert.strictEqual(editor.document.languageId, 'csharp', 'a file-based app is a C# document');
     const hasProps = fs.existsSync(path.join(appRoot, 'Properties'));
-    assert.strictEqual(hasProps, false, 'a file-based app has no Properties/ directory');
+    assert.ok(!hasProps, 'a file-based app has no Properties/ directory');
     const contents = fs.readdirSync(appRoot).sort();
     assert.deepStrictEqual(contents, ['app.cs', 'app.run.json'], 'the premise: no owning project');
     // Interaction 2 — profiles are discovered from the sibling run.json. B49

@@ -15,7 +15,6 @@
 // Covers [TEST-MTP-RUN] and [TEST-MTP-DISCOVERY].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -30,11 +29,12 @@ import {
   writeProject,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
+  assertLeavesAre,
 } from './test-explorer-kit';
 import {
   assertFailed,
@@ -183,8 +183,7 @@ suite('Test Explorer e2e — MTP data rows edited between discovery and ▶', ()
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-rows-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-rows-'));
     writeMtpGlobalJson(root);
     const dirs = MODULES.map((module) =>
       writeProject(
@@ -227,9 +226,9 @@ suite('Test Explorer e2e — MTP data rows edited between discovery and ▶', ()
     assertRowsFailed(api);
     const lens = await api.testController.runSingle(rowsId(MSTEST));
     assert.equal(lens.outcome, 'failed', `the lens runs the new row: ${lens.message ?? ''}`);
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(allIds),
+    assertLeavesAre(
+      api.testController,
+      allIds,
       'a row is never a leaf of its own: the tree is unchanged',
     );
     await run(api, PLAIN_IDS);

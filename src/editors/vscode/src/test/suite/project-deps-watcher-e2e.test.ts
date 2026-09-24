@@ -74,14 +74,12 @@ suite('Project-deps node watcher survives project dir deletion', () => {
     // Interaction 2 — the drop is COMPLETE. A key left behind with an
     // undefined value is a tree row that renders blank and offers build and
     // debug actions against a file that no longer exists.
-    assert.strictEqual(
-      projectDependencies.value.has(projectPath),
-      false,
+    assert.ok(
+      !projectDependencies.value.has(projectPath),
       'no key remains for the deleted project',
     );
-    assert.strictEqual(
-      [...projectDependencies.value.keys()].some((key) => key.includes('Deleted.csproj')),
-      false,
+    assert.ok(
+      ![...projectDependencies.value.keys()].some((key) => key.includes('Deleted.csproj')),
       'and none under any spelling of its path',
     );
 

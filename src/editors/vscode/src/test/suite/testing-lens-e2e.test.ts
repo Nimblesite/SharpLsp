@@ -55,8 +55,18 @@ import {
   requireAt,
   setupLspTestSuite,
   teardownLspTestSuite,
+  assertContainsAll,
+  assertContainsNone,
 } from './test-helpers';
-import { codeLensesFor, warmCodeLensPath } from './code-lens-kit';
+import {
+  codeLensesFor,
+  warmCodeLensPath,
+  TEST_LENS_SECTION,
+  TEST_LENS_KEY,
+  setTestLens,
+  withTestLensRestored,
+  lensTargets,
+} from './code-lens-kit';
 import {
   ACTIVATION_MS,
   COMMAND_MS,
@@ -66,9 +76,6 @@ import {
   SIDECAR_COLD_MS,
 } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-
-const TEST_LENS_SECTION = 'sharplsp.testLens';
-const TEST_LENS_KEY = 'enabled';
 
 /** A faithful TestItem stand-in carrying the only field buildFilterArgs reads. */
 function testItem(id: string): vscode.TestItem {
@@ -330,147 +337,84 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     await closeAllEditors();
   });
 
-  test('runAtCursor on a [Fact] method resolves and warns when no test is discovered', async function () {
-    this.timeout(COMMAND_MS);
-    const projectDir = path.join(tmpDir, 'RunProj');
-    fs.mkdirSync(projectDir, { recursive: true });
-    fs.writeFileSync(path.join(projectDir, 'RunProj.csproj'), CSPROJ_XML, 'utf8');
-    const { doc, uri } = await openCSharpFile(projectDir, 'CalculatorTests.cs', CSHARP_TESTS);
+  for (const { command, project, method, attribute } of [
+    {
+      command: CMD_TEST_RUN_AT_CURSOR,
+      project: 'RunProj',
+      method: 'Lens_AddsTwoNumbers',
+      attribute: '[Fact]',
+    },
+    {
+      command: CMD_TEST_DEBUG_AT_CURSOR,
+      project: 'DebugProj',
+      method: 'Lens_AddsTheory',
+      attribute: '[Theory]',
+    },
+  ]) {
+    test(`${command} on a ${attribute} method resolves and warns when no test is discovered`, async function () {
+      this.timeout(COMMAND_MS);
+      const projectDir = path.join(tmpDir, project);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(path.join(projectDir, `${project}.csproj`), CSPROJ_XML, 'utf8');
+      const { doc, uri } = await openCSharpFile(projectDir, 'CalculatorTests.cs', CSHARP_TESTS);
 
-    // Put the cursor on the [Fact] test method body so this is a real
-    // "run the test under my caret" interaction, not a synthetic call.
-    const editor = vscode.window.activeTextEditor;
-    assert.ok(editor !== undefined, 'a text editor must be active');
-    const factLine = doc
-      .getText()
-      .split('\n')
-      .findIndex((line) => line.includes('Lens_AddsTwoNumbers()'));
-    assert.ok(factLine > 0, 'fixture must contain the [Fact] method');
-    editor.selection = new vscode.Selection(factLine, 8, factLine, 8);
+      // Put the cursor on the test method so this is a real "run the test under
+      // my caret" interaction, not a synthetic call.
+      const editor = vscode.window.activeTextEditor;
+      assert.ok(editor !== undefined, 'a text editor must be active');
+      const methodLine = doc
+        .getText()
+        .split('\n')
+        .findIndex((line) => line.includes(`${method}(`));
+      assert.ok(methodLine > 0, `fixture must contain the ${attribute} method`);
+      editor.selection = new vscode.Selection(methodLine, 8, methodLine, 8);
 
-    // The lens hands the command (uri, methodName). With a freshly-activated
-    // controller no tests are discovered yet, so the deterministic outcome is a
-    // warning — which we capture via the stub instead of a real modal.
-    stubs.queueWarning(undefined);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Lens_AddsTwoNumbers');
+      // The lens hands the command (uri, methodName). With a freshly-activated
+      // controller no tests are discovered yet, so the deterministic outcome is a
+      // warning — which we capture via the stub instead of a real modal.
+      stubs.queueWarning(undefined);
+      await assert.doesNotReject(async () => {
+        await vscode.commands.executeCommand(command, uri, method);
+      });
+      assert.strictEqual(stubs.log.warningMessages.length, 1, 'one warning must be shown');
+      const warning = stubs.log.warningMessages[0] ?? '';
+      assertContainsAll(warning, [method, 'discovery'], 'warning');
+
+      // Interaction 2 - "not discovered yet" is a WARNING, not an error and not a
+      // silent no-op, and a command that cannot start must not START ANYTHING: a
+      // half-launched session with no test to run leaves the debug toolbar on
+      // screen with nothing behind it ([TEST-EXPLORER]).
+      assert.deepEqual(stubs.log.errorMessages, [], 'an undiscovered test is not an error');
+      assert.deepEqual(stubs.log.infoMessages, [], 'and nothing claims the test ran');
+      assert.notStrictEqual(stubs.log.warningOptions[0]?.modal, true, 'and it does not block');
+      assert.strictEqual(vscode.debug.activeDebugSession, undefined, 'and no session starts');
+
+      // Interaction 3 - the caret really was on the method, so the warning is
+      // about discovery rather than about a caret that resolved to nothing.
+      assert.strictEqual(editor.selection.active.line, methodLine, 'the caret sat on the method');
+      assert.ok(
+        doc.lineAt(methodLine).text.includes(method),
+        'and that line really declares the method the command was given',
+      );
+      assert.ok(doc.getText().includes(attribute), `the fixture really declares a ${attribute}`);
+
+      // Interaction 4 - pressing Run on the SAME method warns again, with the same
+      // message. A command that remembers it already complained goes silent on
+      // the second press, and two commands that disagree about whether a test
+      // exists send the user hunting for a difference that is not there.
+      stubs.queueWarning(undefined);
+      await assert.doesNotReject(async () => {
+        await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, method);
+      });
+      assert.strictEqual(stubs.log.warningMessages.length, 2, 'the second press warns again');
+      assert.strictEqual(stubs.log.warningMessages[1], warning, 'naming the same method');
     });
-
-    assert.strictEqual(stubs.log.warningMessages.length, 1, 'one warning must be shown');
-    const warning = stubs.log.warningMessages[0] ?? '';
-    assert.ok(warning.includes('Lens_AddsTwoNumbers'), 'warning names the missing test method');
-    assert.ok(warning.includes('discovery'), 'warning points the user at discovery');
-
-    // Interaction 3 - "not discovered yet" is a WARNING, not an error and not a
-    // silent no-op. The user pressed Run and something must answer: a silent
-    // return leaves them pressing it again ([TEST-EXPLORER]).
-    assert.deepEqual(stubs.log.errorMessages, [], 'an undiscovered test is not an error');
-    assert.deepEqual(stubs.log.infoMessages, [], 'and nothing claims the test ran');
-    assert.notStrictEqual(stubs.log.warningOptions[0]?.modal, true, 'and it does not block');
-
-    // Interaction 4 - the caret really was on the [Fact] method, so the warning
-    // is about discovery rather than about a caret that resolved to nothing.
-    assert.strictEqual(
-      editor.selection.active.line,
-      factLine,
-      'the caret sat on the [Fact] method',
-    );
-    assert.ok(
-      doc.lineAt(factLine).text.includes('Lens_AddsTwoNumbers'),
-      'and that line really declares the method the command was given',
-    );
-    assert.ok(
-      doc.getText().includes('[Fact]'),
-      'the fixture carries the attribute that makes it a test at all',
-    );
-
-    // Interaction 5 - running the SAME method again warns again. A command that
-    // remembers it already complained goes silent on the second press, which is
-    // exactly when the user is most likely to press it.
-    stubs.queueWarning(undefined);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Lens_AddsTwoNumbers');
-    });
-    assert.strictEqual(stubs.log.warningMessages.length, 2, 'the second press warns again');
-    assert.strictEqual(
-      stubs.log.warningMessages[1],
-      warning,
-      'with the same message, naming the same method',
-    );
-  });
-
-  test('debugAtCursor on a method resolves and warns for an undiscovered test', async function () {
-    this.timeout(COMMAND_MS);
-    const projectDir = path.join(tmpDir, 'DebugProj');
-    fs.mkdirSync(projectDir, { recursive: true });
-    fs.writeFileSync(path.join(projectDir, 'DebugProj.csproj'), CSPROJ_XML, 'utf8');
-    const { doc, uri } = await openCSharpFile(projectDir, 'CalculatorTests.cs', CSHARP_TESTS);
-
-    const editor = vscode.window.activeTextEditor;
-    assert.ok(editor !== undefined);
-    const theoryLine = doc
-      .getText()
-      .split('\n')
-      .findIndex((line) => line.includes('Lens_AddsTheory('));
-    assert.ok(theoryLine > 0);
-    editor.selection = new vscode.Selection(theoryLine, 8, theoryLine, 8);
-
-    stubs.queueWarning(undefined);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Lens_AddsTheory');
-    });
-
-    assert.strictEqual(stubs.log.warningMessages.length, 1);
-    const debugWarning = stubs.log.warningMessages[0] ?? '';
-    assert.ok(debugWarning.includes('Lens_AddsTheory'), 'the warning names the theory method');
-    assert.ok(debugWarning.includes('discovery'), 'and points the user at discovery');
-
-    // Interaction 2 - a debug that cannot start must not START ANYTHING. A
-    // half-launched session with no test to run leaves the debug toolbar on
-    // screen with nothing behind it ([TEST-EXPLORER]).
-    assert.strictEqual(
-      vscode.debug.activeDebugSession,
-      undefined,
-      'an undiscovered test starts no debug session',
-    );
-    assert.deepEqual(stubs.log.errorMessages, [], 'and reports no error');
-    assert.deepEqual(stubs.log.infoMessages, [], 'and claims no run');
-
-    // Interaction 3 - the caret sat on the [Theory] declaration, so the warning
-    // is about discovery and not about an unresolvable caret.
-    assert.strictEqual(editor?.selection.active.line, theoryLine, 'the caret sat on the theory');
-    assert.ok(
-      doc.lineAt(theoryLine).text.includes('Lens_AddsTheory'),
-      'and that line declares the method the command was given',
-    );
-    assert.ok(doc.getText().includes('[Theory]'), 'the fixture really declares a theory');
-
-    // Interaction 4 - the DEBUG path warns for the same reason the RUN path
-    // does. Two commands that disagree about whether a test exists send the
-    // user hunting for a difference that is not there.
-    stubs.queueWarning(undefined);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Lens_AddsTheory');
-    });
-    assert.strictEqual(stubs.log.warningMessages.length, 2, 'the run path warns as well');
-    assert.strictEqual(
-      stubs.log.warningMessages[1],
-      debugWarning,
-      'with the very same message for the very same method',
-    );
-  });
+  }
 
   test('both at-cursor commands are registered and stay registered', async function () {
     this.timeout(COMMAND_MS);
     const registered = await vscode.commands.getCommands(true);
-    assert.ok(
-      registered.includes(CMD_TEST_RUN_AT_CURSOR),
-      'sharplsp.test.runAtCursor must be registered',
-    );
-    assert.ok(
-      registered.includes(CMD_TEST_DEBUG_AT_CURSOR),
-      'sharplsp.test.debugAtCursor must be registered',
-    );
+    assertContainsAll(registered, [CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR], 'registered');
 
     // Driving them back to back must never reject, even with no discovered tests.
     stubs.queueWarning(undefined, undefined);
@@ -493,15 +437,13 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     // Interaction 4 - they STAY registered after being driven. A command that
     // disposes itself on a failed run works exactly once per window.
     const after = await vscode.commands.getCommands(true);
-    assert.ok(after.includes(CMD_TEST_RUN_AT_CURSOR), 'runAtCursor survives being run');
-    assert.ok(after.includes(CMD_TEST_DEBUG_AT_CURSOR), 'and so does debugAtCursor');
+    assertContainsAll(after, [CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR], 'after');
 
     // Interaction 5 - a phantom file warns rather than throwing, and warns for
     // BOTH commands: the two warnings above came one from each.
     assert.deepEqual(stubs.log.errorMessages, [], 'a phantom file is not an error');
-    assert.strictEqual(
+    assert.ok(
       stubs.log.warningMessages.every((message) => message.includes('Phantom')),
-      true,
       `both warnings name the phantom method: ${stubs.log.warningMessages.join(' | ')}`,
     );
   });
@@ -528,41 +470,38 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'Sample.Tests.CalculatorTests.Adds_TwoNumbers',
       'Sample.Tests.CalculatorTests.Adds_Theory',
     ]);
-    assert.strictEqual(isDiscoveredTestLine('The following Tests are available:'), false);
-    assert.strictEqual(isDiscoveredTestLine('Build succeeded.'), false);
-    assert.strictEqual(isDiscoveredTestLine('Determining projects to restore...'), false);
-    assert.strictEqual(isDiscoveredTestLine('Passed!  - Failed: 0, Passed: 2'), false);
-    assert.strictEqual(isDiscoveredTestLine('JustAnIdentifierNoDot'), false);
-    assert.strictEqual(isDiscoveredTestLine('Ns.Class.Param(x: 1)'), false);
+    assert.ok(!isDiscoveredTestLine('The following Tests are available:'));
+    assert.ok(!isDiscoveredTestLine('Build succeeded.'));
+    assert.ok(!isDiscoveredTestLine('Determining projects to restore...'));
+    assert.ok(!isDiscoveredTestLine('Passed!  - Failed: 0, Passed: 2'));
+    assert.ok(!isDiscoveredTestLine('JustAnIdentifierNoDot'));
+    assert.ok(!isDiscoveredTestLine('Ns.Class.Param(x: 1)'));
     // A managed stack frame is dotted-identifier shaped, so it has to be
     // rejected explicitly: accepting one makes a CRASHED `dotnet test` look
     // like a successful enumeration to the salvage path.
-    assert.strictEqual(
-      isDiscoveredTestLine('at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs'),
-      false,
+    assert.ok(
+      !isDiscoveredTestLine('at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs'),
       'a stack frame is never a test name',
     );
-    assert.strictEqual(
+    assert.ok(
       isDiscoveredTestLine('Ns.Module.adds two numbers with spaces'),
-      true,
       'an idiomatic F# backtick name carries spaces and must survive',
     );
-    assert.strictEqual(
-      isDiscoveredTestLine('Proj -> C:\\out\\Proj.dll'),
-      false,
+    assert.ok(
+      !isDiscoveredTestLine('Proj -> C:\\out\\Proj.dll'),
       'the MSBuild output mapping is never a test name',
     );
 
     // The same addTestItem tagging logic (Expecto || FsCheck => F#).
     const isFsharp = (name: string): boolean => isExpectoTest(name) || isFsCheckTest(name);
-    assert.strictEqual(isFsharp('MyLib.Tests.testCase'), true);
-    assert.strictEqual(isFsharp('MyLib.Tests.testList'), true);
-    assert.strictEqual(isFsharp('MyLib.Expecto.Foo'), true);
-    assert.strictEqual(isFsharp('MyLib.FsCheck.Prop'), true);
-    assert.strictEqual(isFsharp('MyLib.Property.Roundtrip'), true);
-    assert.strictEqual(isFsharp('Sample.Tests.CalculatorTests.Adds_TwoNumbers'), false);
-    assert.strictEqual(isExpectoTest('FsCheck'), false);
-    assert.strictEqual(isFsCheckTest('Expecto'), false);
+    assert.ok(isFsharp('MyLib.Tests.testCase'));
+    assert.ok(isFsharp('MyLib.Tests.testList'));
+    assert.ok(isFsharp('MyLib.Expecto.Foo'));
+    assert.ok(isFsharp('MyLib.FsCheck.Prop'));
+    assert.ok(isFsharp('MyLib.Property.Roundtrip'));
+    assert.ok(!isFsharp('Sample.Tests.CalculatorTests.Adds_TwoNumbers'));
+    assert.ok(!isExpectoTest('FsCheck'));
+    assert.ok(!isFsCheckTest('Expecto'));
   });
 
   test('buildFilterArgs assembles the dotnet --filter clause for selected tests', async function () {
@@ -680,9 +619,8 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
         'FullyQualifiedName=Ns.Class.Method\\' + char + 'Tail',
         char + ' is filter grammar and MUST be backslash-escaped inside the name',
       );
-      eq(
+      assert.ok(
         (args[1] ?? '').startsWith('FullyQualifiedName='),
-        true,
         char + ': the FullyQualifiedName= separator is the grammar, never escaped itself',
       );
       eq(separatorPipes(args[1] ?? ''), 0, char + ': one test is one clause, so no OR');
@@ -697,21 +635,21 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'FullyQualifiedName=Cs.Nunit.Fixtures.CalculatorTests.Adds_Case\\(2,2,4\\)',
       'the NUnit [TestCase] parentheses are escaped and its commas are left alone',
     );
-    eq((nunit[1] ?? '').includes('\\,'), false, 'a comma is not filter grammar');
+    assert.ok(!(nunit[1] ?? '').includes('\\,'), 'a comma is not filter grammar');
     const fsharp = buildFilterArgs([testItem('Fs.Xunit.Fixtures.adds two numbers with spaces')]);
     eq(
       fsharp[1],
       'FullyQualifiedName=Fs.Xunit.Fixtures.adds two numbers with spaces',
       'an idiomatic F# backtick name carries SPACES and must survive verbatim',
     );
-    eq((fsharp[1] ?? '').includes('\\ '), false, 'a space is not filter grammar');
+    assert.ok(!(fsharp[1] ?? '').includes('\\ '), 'a space is not filter grammar');
     const mstest = buildFilterArgs([testItem('Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers')]);
     eq(
       mstest[1],
       'FullyQualifiedName=Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers',
       'a CLR nested-type + is part of the name, not the filter grammar',
     );
-    eq((mstest[1] ?? '').includes('\\+'), false, 'a plus is not filter grammar');
+    assert.ok(!(mstest[1] ?? '').includes('\\+'), 'a plus is not filter grammar');
 
     // Interaction 3 - a SELECTION. The joining pipe is unescaped; a pipe inside
     // a name is not. Getting that backwards either merges two tests into one
@@ -739,9 +677,8 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       2,
       'three selected tests are two separators, however many pipes their NAMES carry',
     );
-    eq(
+    assert.ok(
       (hostile[1] ?? '').includes('\\|Pipe'),
-      true,
       'the pipe inside a name is escaped, so it can never be read as a clause break',
     );
     eq(
@@ -749,9 +686,8 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       3,
       'one FullyQualifiedName= clause per selected test, in selection order',
     );
-    eq(
+    assert.ok(
       (hostile[1] ?? '').indexOf('Ns.Class.Plain') > (hostile[1] ?? '').indexOf('Has'),
-      true,
       'and the order the user selected them in is preserved',
     );
   });
@@ -772,8 +708,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     });
     eq(stubs.log.warningMessages.length, 1, 'an unresolvable at-cursor run warns exactly once');
     const first = stubs.log.warningMessages[0] ?? '';
-    eq(first.includes(spaced), true, 'the warning names the binding, spaces and all');
-    eq(first.includes('discovery'), true, 'and points the user at discovery');
+    assertContainsAll(first, [spaced, 'discovery'], 'first');
     deepEq(stubs.log.errorMessages, [], 'a name it cannot resolve is not an ERROR');
 
     // Interaction 2 - every remaining shape the spec's tables name, plus each
@@ -799,9 +734,8 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'one warning per invocation - a swallowed gesture is a Run Test that did nothing',
     );
     for (const name of names) {
-      eq(
+      assert.ok(
         stubs.log.warningMessages.some((message) => message.includes(name)),
-        true,
         name + ' must be reported back verbatim, not escaped or truncated',
       );
     }
@@ -818,9 +752,8 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Adds_Case(2,2,4)');
     });
     eq(stubs.log.warningMessages.length, before + 2, 'Debug warns once per gesture as Run does');
-    eq(
+    assert.ok(
       (stubs.log.warningMessages[before] ?? '').includes(spaced),
-      true,
       'and names the same binding the Run action would have run',
     );
     deepEq(stubs.log.errorMessages, [], 'still nothing reported to the user as a failure');
@@ -848,23 +781,22 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'Passed!  - Failed: 0, Passed: 4',
     ].join('\n');
     const names = parseTestList(listing);
-    eq(
-      names.includes('Fs.Xunit.Fixtures.adds two numbers with spaces'),
-      true,
-      'an F# backtick name printed AFTER a second banner is still a test name - every line ' +
-        'is classified independently, so a banner-index slice can never be the rule',
+    assertContainsAll(
+      names,
+      [
+        'Fs.Xunit.Fixtures.adds two numbers with spaces',
+        'Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
+      ],
+      'names',
     );
-    eq(
-      names.includes('Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers'),
-      true,
-      'as is the C# one',
+    assertContainsNone(
+      names,
+      [
+        'Cs.Xunit.Fixtures -> /w/bin/Debug/net10.0/Cs.Xunit.Fixtures.dll',
+        'Passed!  - Failed: 0, Passed: 4',
+      ],
+      'names',
     );
-    eq(
-      names.includes('Cs.Xunit.Fixtures -> /w/bin/Debug/net10.0/Cs.Xunit.Fixtures.dll'),
-      false,
-      'the MSBuild output mapping is dotted-identifier shaped and must still be rejected',
-    );
-    eq(names.includes('Passed!  - Failed: 0, Passed: 4'), false, 'nor is the summary a test');
     eq(names.length, new Set(names).size, 'the listing is de-duplicated');
 
     // Interaction 2 - the same predicate at its boundary, one line at a time.
@@ -880,7 +812,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       '   ',
     ];
     for (const line of rejected) {
-      eq(isDiscoveredTestLine(line), false, JSON.stringify(line) + ' is never a test name');
+      assert.ok(!isDiscoveredTestLine(line), JSON.stringify(line) + ' is never a test name');
     }
     for (const line of [
       'Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
@@ -889,7 +821,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers',
       'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
     ]) {
-      eq(isDiscoveredTestLine(line), true, line + ' is a shape the spec table requires');
+      assert.ok(isDiscoveredTestLine(line), line + ' is a shape the spec table requires');
     }
 
     // Interaction 3 - the announced assemblies, and the MSBuild `%XX` escaping
@@ -898,9 +830,8 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     // test, every MSTest test and every theory.
     const announced = parseAnnouncedAssemblies(listing);
     eq(announced.length, 2, 'one banner per built test assembly');
-    eq(
+    assert.ok(
       announced.includes('/w/bin/Debug/net10.0/Fs.Xunit.Fixtures.dll'),
-      true,
       'and the F# assembly is announced as well as the C# one',
     );
     const escaped = 'C:\\Program Files %28x86%29\\App\\bin\\Debug\\net10.0\\Cs.Xunit.Fixtures.dll';
@@ -935,11 +866,11 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       return '/w/very/long/output/path/segment/Project' + String(index) + '/bin/Debug/Tests.dll';
     });
     const batches = batchAssemblies(many, 400);
-    eq(batches.length > 1, true, 'forty long paths cannot fit one 400-character command line');
+    assert.ok(batches.length > 1, 'forty long paths cannot fit one 400-character command line');
     deepEq(batches.flat(), many, 'every assembly appears exactly once, in listing order');
     for (const batch of batches) {
-      eq(batch.length >= 1, true, 'an empty batch would spawn vstest with no assembly');
-      eq(batch.join(' ').length <= 400 + 3, true, 'each batch stays inside the ceiling');
+      assert.ok(batch.length >= 1, 'an empty batch would spawn vstest with no assembly');
+      assert.ok(batch.join(' ').length <= 400 + 3, 'each batch stays inside the ceiling');
     }
     deepEq(batchAssemblies([], 400), [], 'nothing to enumerate is no invocation at all');
     deepEq(
@@ -1029,8 +960,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     const beta = plantReport(resultsDir, 'run-beta', coberturaFor('/src/Beta.cs', [0, 0, 7, 2]));
     const found = findCoberturaFiles(resultsDir);
     eq(found.length, 2, 'one report per test project, and BOTH must be found');
-    eq(found.includes(alpha), true, 'the first project report is in the list');
-    eq(found.includes(beta), true, 'and so is the second - directory order decides neither');
+    assertContainsAll(found, [alpha, beta], 'found');
     neq(
       findCoberturaFile(resultsDir),
       undefined,
@@ -1040,14 +970,12 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     const merged = mergeCoberturaReports(found);
     const files = merged.map((entry) => entry.uri.fsPath).sort();
     eq(merged.length, 2, 'two reports over two files produce two FileCoverage entries');
-    eq(
+    assert.ok(
       files.some((file) => file.endsWith('Alpha.cs')),
-      true,
       'the first project file is covered',
     );
-    eq(
+    assert.ok(
       files.some((file) => file.endsWith('Beta.cs')),
-      true,
       'and so is the second - attaching only reports[0] paints it as dead code',
     );
 
@@ -1200,191 +1128,100 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     await closeAllEditors();
   });
 
-  test('a C# test file exposes Run + Debug test lenses wired to the at-cursor commands', async function () {
-    // `codeLensesFor` awaits the LSP client's server-backed provider too, so
-    // this is a SEMANTIC request, not the editor round trip `COMMAND_MS` names.
-    this.timeout(LSP_RESPONSE_MS);
-    const { uri } = await openCSharpFile(tmpDir, 'LensTargets.cs', CSHARP_TESTS);
+  for (const { language, open, file, source, fact, theory } of [
+    {
+      language: 'C#',
+      open: openCSharpFile,
+      file: 'LensTargets.cs',
+      source: CSHARP_TESTS,
+      fact: 'Lens_AddsTwoNumbers',
+      theory: 'Lens_AddsTheory',
+    },
+    {
+      language: 'F#',
+      open: openFSharpFile,
+      file: 'LensTargets.fs',
+      source: FSHARP_TESTS,
+      fact: 'addsTwoNumbers',
+      theory: 'addsTheory',
+    },
+  ]) {
+    test(`a ${language} test file exposes paired Run + Debug lenses wired to the at-cursor commands`, async function () {
+      // `codeLensesFor` awaits the LSP client's server-backed provider too, so
+      // this is a SEMANTIC request, not the editor round trip `COMMAND_MS` names.
+      // F# is the slower of the two engines: measured at 1967ms cold against
+      // 96ms for a warm C# call in the same process.
+      this.timeout(LSP_RESPONSE_MS);
+      const { uri } = await open(tmpDir, file, source);
+      const lenses = testLensCommands(await codeLensesFor(uri));
+      const runLenses = lenses.filter((l) => l.command?.command === CMD_TEST_RUN_AT_CURSOR);
+      const debugLenses = lenses.filter((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
+      const targetsOf = (group: vscode.CodeLens[]): string[] =>
+        group
+          .map((lens) => lens.command?.arguments?.[1])
+          .filter((name): name is string => typeof name === 'string');
+      const runTargets = targetsOf(runLenses);
 
-    const all = await codeLensesFor(uri);
-    const lenses = testLensCommands(all);
-    assert.ok(
-      lenses.length >= 4,
-      `expected ≥4 test lenses (2 per [Fact]/[Theory]), got ${lenses.length}`,
-    );
-
-    const runLenses = lenses.filter((l) => l.command?.command === CMD_TEST_RUN_AT_CURSOR);
-    const debugLenses = lenses.filter((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
-    assert.strictEqual(runLenses.length, debugLenses.length, 'Run/Debug lenses are paired');
-    assert.ok(runLenses.length >= 2, 'both [Fact] and [Theory] get a Run lens');
-
-    // Each Run lens carries (uri, methodName) targeting a discovered method name.
-    const runTargets = runLenses
-      .map((l) => l.command?.arguments?.[1])
-      .filter((name): name is string => typeof name === 'string');
-    assert.ok(runTargets.includes('Lens_AddsTwoNumbers'));
-    assert.ok(runTargets.includes('Lens_AddsTheory'));
-    assert.ok(!runTargets.includes('NotATest'), 'plain methods get no test lens');
-
-    // The Run lens title matches the rendered "play" action.
-    const firstRun = runLenses[0];
-    assert.ok(firstRun !== undefined);
-    assert.strictEqual(firstRun.command?.title, '$(play) Run Test');
-    assert.strictEqual(firstRun.command?.arguments?.[0]?.toString(), uri.toString());
-
-    // Interaction 2 — the DEBUG half of [TEST-STATUS-LENS]'s "plus Run and Debug
-    // actions". A Debug lens that reached the wrong method, or carried no
-    // method at all, is how "Debug Test does nothing" presents to the user.
-    const debugTargets = debugLenses
-      .map((lens) => lens.command?.arguments?.[1])
-      .filter((name): name is string => typeof name === 'string');
-    assert.deepStrictEqual(
-      [...debugTargets].sort(),
-      [...runTargets].sort(),
-      'every method offering Run must offer Debug, and for the SAME method name',
-    );
-    assert.deepStrictEqual(
-      [...new Set(debugLenses.map((lens) => lens.command?.title))],
-      ['$(bug) Debug Test'],
-      'and every one of them renders as the Debug action',
-    );
-    assert.deepStrictEqual(
-      debugLenses.filter((lens) => lens.command?.arguments?.length !== 2),
-      [],
-      'the at-cursor command takes (uri, methodName) — a missing argument makes it a no-op',
-    );
-    assert.deepStrictEqual(
-      [...new Set(debugLenses.map((lens) => lens.command?.arguments?.[0]?.toString() ?? ''))],
-      [uri.toString()],
-      'and every Debug lens points at the file the user is looking at',
-    );
-
-    // Interaction 3 — the pair sits on ONE method: Run and Debug for a given
-    // method share the range, so the user sees them side by side above it.
-    for (const target of runTargets) {
-      const run = runLenses.find((lens) => lens.command?.arguments?.[1] === target);
-      const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === target);
-      assert.ok(run && debug, `${target} must have both a Run and a Debug lens`);
-      assert.strictEqual(
-        run.range.isEqual(debug.range),
-        true,
-        `${target}: the Run and Debug actions must render on the same line`,
+      // Interaction 1 — exactly the [Fact] and the [Theory] get ONE Run lens each,
+      // rendered as the play action; a plain method gets none. F# is not a
+      // second-class case here ([TEST-OVERVIEW]): each attribute sits over a
+      // plain `let` binding, which is a resolvable run target.
+      assert.deepStrictEqual(
+        [...runTargets].sort(),
+        [fact, theory].sort(),
+        `${language}: one Run lens per test method, and none on a plain one`,
       );
-      assert.strictEqual(
-        runLenses.filter((lens) => lens.command?.arguments?.[1] === target).length,
-        1,
-        `${target}: one Run lens, not one per attribute`,
+      assert.deepStrictEqual(
+        [...new Set(runLenses.map((lens) => lens.command?.title))],
+        ['$(play) Run Test'],
+        'the Run half renders as the Run action',
       );
-      assert.strictEqual(
-        debugLenses.filter((lens) => lens.command?.arguments?.[1] === target).length,
-        1,
-        `${target}: one Debug lens either`,
+
+      // Interaction 2 — the DEBUG half of [TEST-STATUS-LENS]'s "plus Run and Debug
+      // actions". A Debug lens that reached the wrong method, or carried no
+      // method at all, is how "Debug Test does nothing" presents to the user.
+      assert.deepStrictEqual(
+        targetsOf(debugLenses).sort(),
+        [...runTargets].sort(),
+        'every method offering Run must offer Debug, and for the SAME method name',
       );
-    }
-  });
-
-  test('an F# test file exposes Run + Debug lenses for [<Fact>]/[<Theory>] bindings', async function () {
-    // As above, and F# is the slower of the two engines: measured at 1967ms
-    // cold against 96ms for a warm C# call in the same process.
-    this.timeout(LSP_RESPONSE_MS);
-    const { uri } = await openFSharpFile(tmpDir, 'LensTargets.fs', FSHARP_TESTS);
-
-    const lenses = testLensCommands(await codeLensesFor(uri));
-    const runTargets = lenses
-      .filter((l) => l.command?.command === CMD_TEST_RUN_AT_CURSOR)
-      .map((l) => l.command?.arguments?.[1])
-      .filter((name): name is string => typeof name === 'string');
-
-    assert.ok(
-      runTargets.length >= 2,
-      `F# file must expose ≥2 run lenses, got ${runTargets.length}`,
-    );
-    // Both [<Fact>] and [<Theory>] sit over a plain `let` binding, so each is a
-    // resolvable run target.
-    assert.ok(runTargets.includes('addsTwoNumbers'), 'the [<Fact>] let binding is a run target');
-    assert.ok(runTargets.includes('addsTheory'), 'the [<Theory>] let binding is a run target');
-    assert.ok(
-      lenses.some((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR),
-      'F# tests also get a Debug lens',
-    );
-
-    // Interaction 2 — F# is not a second-class case here ([TEST-OVERVIEW]): the
-    // Debug action must reach every binding the Run action does, addressed by
-    // the same name, and carrying the same (uri, methodName) pair.
-    const fsDebug = lenses.filter((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
-    const fsDebugTargets = fsDebug
-      .map((lens) => lens.command?.arguments?.[1])
-      .filter((name): name is string => typeof name === 'string');
-    assert.deepStrictEqual(
-      [...fsDebugTargets].sort(),
-      [...runTargets].sort(),
-      'every F# binding offering Run offers Debug, for the same binding',
-    );
-    assert.strictEqual(
-      fsDebugTargets.includes('addsTwoNumbers'),
-      true,
-      'the [<Fact>] binding is a DEBUG target too, not only a run target',
-    );
-    assert.deepStrictEqual(
-      [...new Set(fsDebug.map((lens) => lens.command?.title))],
-      ['$(bug) Debug Test'],
-      'and it renders as the Debug action above the binding',
-    );
-    assert.deepStrictEqual(
-      [...new Set(fsDebug.map((lens) => lens.command?.arguments?.[0]?.toString() ?? ''))],
-      [uri.toString()],
-      'pointing at the .fs file the user has open',
-    );
-
-    // Interaction 3 — no lens targets a name the F# file does not declare: a
-    // lens over the wrong binding runs the wrong test.
-    for (const target of [...runTargets, ...fsDebugTargets]) {
-      assert.strictEqual(
-        FSHARP_TESTS.includes(target),
-        true,
-        `${target} must be a binding this fixture actually declares`,
+      assert.deepStrictEqual(
+        [...new Set(debugLenses.map((lens) => lens.command?.title))],
+        ['$(bug) Debug Test'],
+        'and every one of them renders as the Debug action',
       );
-    }
+      assert.deepStrictEqual(
+        lenses.filter((lens) => lens.command?.arguments?.length !== 2),
+        [],
+        'the at-cursor commands take (uri, methodName) — a missing argument makes them no-ops',
+      );
+      assert.deepStrictEqual(
+        [...new Set(lenses.map((lens) => lens.command?.arguments?.[0]?.toString() ?? ''))],
+        [uri.toString()],
+        'and every lens points at the file the user is looking at',
+      );
 
-    // Interaction 4 - one Run lens and one Debug lens PER BINDING. Two lenses
-    // over the same `let` render two identical buttons, and the user cannot
-    // tell which of them is about to run.
-    for (const target of runTargets) {
-      assert.strictEqual(
-        runTargets.filter((name) => name === target).length,
-        1,
-        `${target}: one Run lens, not one per attribute`,
-      );
-      assert.strictEqual(
-        fsDebugTargets.filter((name) => name === target).length,
-        1,
-        `${target}: one Debug lens either`,
-      );
-    }
-
-    // Interaction 5 - every lens is anchored inside the file, and the Run
-    // lenses render as the Run action. A lens with no title renders a blank
-    // clickable line above the binding.
-    const document = await vscode.workspace.openTextDocument(uri);
-    for (const lens of lenses) {
-      assert.ok(
-        lens.range.end.line < document.lineCount,
-        `a lens at line ${lens.range.start.line} must sit inside the file`,
-      );
-      assert.ok((lens.command?.title ?? '').length > 0, 'and carry a visible title');
-    }
-    assert.deepStrictEqual(
-      [
-        ...new Set(
-          lenses
-            .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
-            .map((lens) => lens.command?.title),
-        ),
-      ],
-      ['$(play) Run Test'],
-      'and the Run half renders as the Run action',
-    );
-  });
+      // Interaction 3 — the pair sits on ONE method: Run and Debug for a given
+      // method share the range, so the user sees them side by side above it,
+      // and every lens is anchored inside the file.
+      for (const target of runTargets) {
+        const run = runLenses.find((lens) => lens.command?.arguments?.[1] === target);
+        const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === target);
+        assert.ok(run && debug, `${target} must have both a Run and a Debug lens`);
+        assert.ok(
+          run.range.isEqual(debug.range),
+          `${target}: the Run and Debug actions must render on the same line`,
+        );
+      }
+      const document = await vscode.workspace.openTextDocument(uri);
+      for (const lens of lenses) {
+        assert.ok(
+          lens.range.end.line < document.lineCount,
+          `a lens at line ${lens.range.start.line} must sit inside the file`,
+        );
+      }
+    });
+  }
 
   test('disabling sharplsp.testLens.enabled removes the test lenses; re-enabling restores them', async function () {
     // FOUR scoped configuration writes AND four semantic lens round trips.
@@ -1392,35 +1229,34 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     // larger of the two costs; `COMMAND_MS` covered neither.
     this.timeout(SETTINGS_WRITE_MS);
     const { uri } = await openCSharpFile(tmpDir, 'Toggle.cs', CSHARP_TESTS);
+    const read = (): boolean | undefined =>
+      vscode.workspace.getConfiguration(TEST_LENS_SECTION).get<boolean>(TEST_LENS_KEY);
 
-    const cfg = vscode.workspace.getConfiguration(TEST_LENS_SECTION);
-    const savedWorkspaceValue = cfg.inspect<boolean>(TEST_LENS_KEY)?.workspaceValue;
-
-    try {
+    await withTestLensRestored(async () => {
       // Baseline: lenses present while enabled (default true).
-      await cfg.update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
+      await setTestLens(true);
       const enabledLenses = testLensCommands(await codeLensesFor(uri));
       assert.ok(enabledLenses.length >= 2, 'lenses present while enabled');
 
       // Disable → the provider returns an empty array, so no test lenses remain.
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, false, vscode.ConfigurationTarget.Workspace);
+      await setTestLens(false);
       const disabledLenses = testLensCommands(await codeLensesFor(uri));
       assert.strictEqual(disabledLenses.length, 0, 'disabling testLens removes the lenses');
 
-      // Re-enable → lenses come back.
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
+      // Re-enable → lenses come back. Restoring is EXACT, not approximate: the
+      // same targets as the baseline, or "restored" means "some came back".
+      await setTestLens(true);
       const reEnabledLenses = testLensCommands(await codeLensesFor(uri));
-      assert.ok(reEnabledLenses.length >= 2, 're-enabling restores the lenses');
+      assert.deepStrictEqual(
+        lensTargets(reEnabledLenses),
+        lensTargets(enabledLenses),
+        'the restored lenses target exactly the baseline methods',
+      );
+      assert.strictEqual(reEnabledLenses.length, enabledLenses.length, 'as many as there were');
 
       // Interaction 4 - the setting really flipped at each step, so the lens
       // counts above are a statement about the provider and not about a write
       // that never landed.
-      const read = () =>
-        vscode.workspace.getConfiguration(TEST_LENS_SECTION).get<boolean>(TEST_LENS_KEY);
       assert.strictEqual(read(), true, 'the setting reads back as enabled');
       assert.strictEqual(
         vscode.workspace.getConfiguration(TEST_LENS_SECTION).inspect<boolean>(TEST_LENS_KEY)
@@ -1429,26 +1265,10 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
         'and is recorded at the workspace scope it was written to',
       );
 
-      // Interaction 5 - restoring is EXACT, not approximate. The re-enabled
-      // set must name the same targets as the baseline, or "restored" means
-      // "some lenses came back".
-      assert.deepStrictEqual(
-        reEnabledLenses.map((lens) => lens.command?.arguments?.[1]).sort(),
-        enabledLenses.map((lens) => lens.command?.arguments?.[1]).sort(),
-        'the restored lenses target exactly the baseline methods',
-      );
-      assert.strictEqual(
-        reEnabledLenses.length,
-        enabledLenses.length,
-        'and there are exactly as many of them',
-      );
-
-      // Interaction 6 - disabling removes the TEST lenses only. The setting is
+      // Interaction 5 - disabling removes the TEST lenses only. The setting is
       // scoped to the test lens; taking the reference-count lenses with it
       // would make one toggle silently disable an unrelated feature.
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, false, vscode.ConfigurationTarget.Workspace);
+      await setTestLens(false);
       const allWhileDisabled = await codeLensesFor(uri);
       assert.strictEqual(
         testLensCommands(allWhileDisabled).length,
@@ -1460,18 +1280,11 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
         Array.isArray(allWhileDisabled),
         'the provider still answers while disabled, with an empty test-lens set',
       );
-      assert.strictEqual(
+      assert.ok(
         allWhileDisabled.every((lens) => lens.command?.command !== CMD_TEST_RUN_AT_CURSOR),
-        true,
         'and no Run-Test lens is among whatever it did return',
       );
-    } finally {
-      // Restore the exact prior workspace value (undefined when unset) so the
-      // key is removed rather than persisted into the fixture settings.
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, savedWorkspaceValue, vscode.ConfigurationTarget.Workspace);
-    }
+    });
   });
 
   test('a non-test C# file produces no test lenses, and the signature parsers agree with discovery', async function () {
@@ -1536,9 +1349,8 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     // "(1000ms)" on one run and "(1.0s)" on the next for the same test.
     assert.strictEqual(formatDuration(998), ' (998ms)', 'just below the boundary');
     assert.strictEqual(formatDuration(1001), ' (1.0s)', 'just above it');
-    assert.strictEqual(
-      formatDuration(999).includes('s)') && !formatDuration(999).includes('ms)'),
-      false,
+    assert.ok(
+      !(formatDuration(999).includes('s)') && !formatDuration(999).includes('ms)')),
       '999ms must not be rendered as seconds',
     );
 
@@ -1605,11 +1417,10 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     // never-run test is not a result at all.
     const skipped = statusLensTitle(cached({ outcome: 'skipped' }));
     eq(skipped, '$(debug-step-over) Skipped', 'a skip renders as the step-over icon');
-    eq(skipped.includes('$(error)'), false, 'and never as an error');
-    eq(skipped.includes('$(pass)'), false, 'nor as a pass');
+    assertContainsNone(skipped, ['$(error)', '$(pass)'], 'skipped');
     const notRun = statusLensTitle(cached({ outcome: 'notRun' }));
     eq(notRun, '$(circle-slash) Not run', 'a test that has never run says so');
-    eq(notRun.includes('$(error)'), false, 'a test nobody ran has not failed');
+    assert.ok(!notRun.includes('$(error)'), 'a test nobody ran has not failed');
     eq(
       statusLensTitle(cached({ outcome: 'skipped', duration: 12 })),
       '$(debug-step-over) Skipped',
@@ -1621,23 +1432,22 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     // failure shows what actually went wrong instead of a generic 'Test failed'".
     const message = 'Assert.Equal() Failure: Values differ';
     const failed = statusLensTitle(cached({ outcome: 'failed', message }));
-    eq(failed.startsWith('$(error) Failed:'), true, 'a failure renders as the error icon');
-    eq(failed.includes(message), true, 'and shows the assertion the test actually tripped on');
-    eq(failed.includes('\n'), false, 'a CodeLens title is ONE line; a newline mangles the lens');
+    assert.ok(failed.startsWith('$(error) Failed:'), 'a failure renders as the error icon');
+    assert.ok(failed.includes(message), 'and shows the assertion the test actually tripped on');
+    assert.ok(!failed.includes('\n'), 'a CodeLens title is ONE line; a newline mangles the lens');
     const multiline = statusLensTitle(
       cached({ outcome: 'failed', message: message + '\nExpected: 4\nActual: 5' }),
     );
-    eq(multiline.startsWith('$(error) Failed:'), true, 'a multi-line assertion still renders');
-    eq(multiline.includes('\n'), false, 'flattened onto the single line a lens can show');
-    eq(
+    assert.ok(multiline.startsWith('$(error) Failed:'), 'a multi-line assertion still renders');
+    assert.ok(!multiline.includes('\n'), 'flattened onto the single line a lens can show');
+    assert.ok(
       statusLensTitle(cached({ outcome: 'failed' })).startsWith('$(error) Failed'),
-      true,
       'a failure with no ErrorInfo at all still reads as a failure',
     );
     const titles = [statusLensTitle(cached({ outcome: 'passed' })), skipped, notRun, failed];
     eq(new Set(titles).size, 4, 'the four states are four distinct titles the user can tell apart');
     for (const title of titles) {
-      eq(title.startsWith('$('), true, 'every status title leads with its icon');
+      assert.ok(title.startsWith('$('), 'every status title leads with its icon');
     }
   });
 
@@ -1657,7 +1467,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       .map((lens) => lens.command?.arguments?.[1])
       .filter((name): name is string => typeof name === 'string');
     for (const method of FRAMEWORK_TEST_METHODS) {
-      eq(runTargets.includes(method), true, method + ' must be offered a Run action');
+      assert.ok(runTargets.includes(method), method + ' must be offered a Run action');
       eq(
         runTargets.filter((name) => name === method).length,
         1,
@@ -1673,10 +1483,9 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     // Interaction 2 - and nothing over a helper, a property or a plain public
     // method. A lens there runs a "test" the adapter has never heard of.
     for (const member of FRAMEWORK_NON_TESTS) {
-      eq(runTargets.includes(member), false, member + ' is not a test and gets no Run action');
-      eq(
-        debugLenses.some((lens) => lens.command?.arguments?.[1] === member),
-        false,
+      assert.ok(!runTargets.includes(member), member + ' is not a test and gets no Run action');
+      assert.ok(
+        !debugLenses.some((lens) => lens.command?.arguments?.[1] === member),
         member + ' gets no Debug action either',
       );
     }
@@ -1699,7 +1508,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       const run = runLenses.find((lens) => lens.command?.arguments?.[1] === method);
       const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === method);
       assert.ok(run && debug, method + ' must carry both actions');
-      eq(run.range.isEqual(debug.range), true, method + ': both actions render on the same line');
+      assert.ok(run.range.isEqual(debug.range), method + ': both actions render on the same line');
       eq(
         run.command?.arguments?.[0]?.toString(),
         uri.toString(),
@@ -1730,7 +1539,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       ['Lens_AddsTheory', 'Lens_AddsTwoNumbers'],
       'the fixture declares exactly two test methods',
     );
-    eq(before.includes('NotATest'), false, 'and one plain method, which gets no lens');
+    assert.ok(!before.includes('NotATest'), 'and one plain method, which gets no lens');
 
     // Interaction 2 - the user ADDS a test method. The new lens must appear
     // against the edited buffer, with no save and no window reload.
@@ -1741,23 +1550,22 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
         '        [Fact]\n        public void Lens_AddedLater()\n        {\n        }\n\n' +
           '        public void NotATest()',
       );
-    eq(await replaceDocumentContent(doc, withExtra), true, 'the edit must apply');
+    assert.ok(await replaceDocumentContent(doc, withExtra), 'the edit must apply');
     const afterAdd = testLensCommands(await codeLensesFor(uri))
       .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
       .map((lens) => lens.command?.arguments?.[1])
       .filter((name): name is string => typeof name === 'string');
-    eq(
+    assert.ok(
       afterAdd.includes('Lens_AddedLater'),
-      true,
       'a test method typed into the open buffer gets its lens immediately',
     );
     eq(afterAdd.length, before.length + 1, 'and exactly one new lens, not a duplicated set');
-    eq(afterAdd.includes('Lens_AddsTwoNumbers'), true, 'the existing lenses survive the edit');
-    eq(afterAdd.includes('NotATest'), false, 'the plain method still gets none');
+    assert.ok(afterAdd.includes('Lens_AddsTwoNumbers'), 'the existing lenses survive the edit');
+    assert.ok(!afterAdd.includes('NotATest'), 'the plain method still gets none');
 
     // Interaction 3 - the user REMOVES every test. A lens left behind runs a
     // method that no longer exists.
-    eq(
+    assert.ok(
       await replaceDocumentContent(
         doc,
         [
@@ -1770,12 +1578,11 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
           '',
         ].join('\n'),
       ),
-      true,
       'the second edit must apply too',
     );
     const afterRemove = testLensCommands(await codeLensesFor(uri));
     deepEq(afterRemove, [], 'a file with no test method carries no test lens at all');
-    eq(doc.isDirty, true, 'and all of this happened in the buffer, with nothing written to disk');
+    assert.ok(doc.isDirty, 'and all of this happened in the buffer, with nothing written to disk');
   });
 
   // Implements [TEST-STATUS-LENS]: "`sharplsp.testLens.enabled` (default true)".
@@ -1787,21 +1594,16 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     const csharp = await openCSharpFile(tmpDir, 'ToggleBoth.cs', CSHARP_TESTS);
     const fsharp = await openFSharpFile(tmpDir, 'ToggleBoth.fs', FSHARP_TESTS);
 
-    const section = vscode.workspace.getConfiguration(TEST_LENS_SECTION);
-    const saved = section.inspect<boolean>(TEST_LENS_KEY)?.workspaceValue;
-    try {
+    await withTestLensRestored(async () => {
       // Interaction 1 - the default. Both languages carry lenses before the
       // user has touched the setting at all.
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
+      await setTestLens(true);
       const csOn = testLensCommands(await codeLensesFor(csharp.uri));
       const fsOn = testLensCommands(await codeLensesFor(fsharp.uri));
-      eq(csOn.length >= 4, true, 'C# carries a Run and a Debug lens per test method');
-      eq(fsOn.length >= 4, true, 'and F# carries them for its [<Fact>] and [<Theory>] bindings');
-      eq(
+      assert.ok(csOn.length >= 4, 'C# carries a Run and a Debug lens per test method');
+      assert.ok(fsOn.length >= 4, 'and F# carries them for its [<Fact>] and [<Theory>] bindings');
+      assert.ok(
         fsOn.some((lens) => lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR),
-        true,
         'F# gets the Debug action too - it is not a second-class case',
       );
       eq(
@@ -1813,65 +1615,40 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       // Interaction 2 - switch it off. BOTH languages must go quiet, and the
       // status half must go with the actions: a lens showing a stale "Passed"
       // over a file whose lenses the user disabled is the worst of both.
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, false, vscode.ConfigurationTarget.Workspace);
-      const csOff = await codeLensesFor(csharp.uri);
-      const fsOff = await codeLensesFor(fsharp.uri);
-      deepEq(testLensCommands(csOff), [], 'no C# test lens survives the setting being off');
-      deepEq(testLensCommands(fsOff), [], 'and no F# one either');
-      deepEq(
-        csOff.filter((lens) => (lens.command?.title ?? '').startsWith('$(circle-slash)')),
-        [],
-        'nor a status lens - the setting governs the whole contribution',
-      );
-      deepEq(
-        fsOff.filter((lens) => (lens.command?.title ?? '').startsWith('$(circle-slash)')),
-        [],
-        'in F# as in C#',
-      );
+      await setTestLens(false);
+      for (const [language, uri] of [
+        ['C#', csharp.uri],
+        ['F#', fsharp.uri],
+      ] as const) {
+        const off = await codeLensesFor(uri);
+        deepEq(
+          testLensCommands(off),
+          [],
+          `no ${language} test lens survives the setting being off`,
+        );
+        deepEq(
+          off.filter((lens) => (lens.command?.title ?? '').startsWith('$(circle-slash)')),
+          [],
+          `nor a ${language} status lens - the setting governs the whole contribution`,
+        );
+      }
 
       // Interaction 3 - switch it back on. What comes back must be what left,
       // for both languages, addressed by the same names.
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
+      await setTestLens(true);
       const csBack = testLensCommands(await codeLensesFor(csharp.uri));
       const fsBack = testLensCommands(await codeLensesFor(fsharp.uri));
       eq(csBack.length, csOn.length, 're-enabling restores exactly the C# lenses that were there');
       eq(fsBack.length, fsOn.length, 'and exactly the F# ones');
       deepEq(
-        csBack
-          .map((lens) => lens.command?.arguments?.[1])
-          .filter((name): name is string => typeof name === 'string')
-          .sort(),
-        csOn
-          .map((lens) => lens.command?.arguments?.[1])
-          .filter((name): name is string => typeof name === 'string')
-          .sort(),
+        lensTargets(csBack),
+        lensTargets(csOn),
         'addressing the same C# methods by the same names',
       );
-      deepEq(
-        fsBack
-          .map((lens) => lens.command?.arguments?.[1])
-          .filter((name): name is string => typeof name === 'string')
-          .sort(),
-        fsOn
-          .map((lens) => lens.command?.arguments?.[1])
-          .filter((name): name is string => typeof name === 'string')
-          .sort(),
-        'and the same F# bindings',
-      );
-    } finally {
-      await vscode.workspace
-        .getConfiguration(TEST_LENS_SECTION)
-        .update(TEST_LENS_KEY, saved, vscode.ConfigurationTarget.Workspace);
-    }
+      deepEq(lensTargets(fsBack), lensTargets(fsOn), 'and the same F# bindings');
+    });
   });
 
-  // Implements [TEST-STATUS-LENS] - the SIGNATURE readers that decide which
-  // method name a lens carries. A reader that answers the wrong name puts a Run
-  // button over one test and runs another.
   test('the signature readers agree with the fixtures on every shape and near miss', async function () {
     this.timeout(FAST_MS);
 
@@ -1897,9 +1674,8 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       );
     }
     for (const method of FRAMEWORK_TEST_METHODS) {
-      eq(
+      assert.ok(
         FRAMEWORK_TESTS.includes(method),
-        true,
         method + ' must be a method the framework fixture really declares',
       );
     }

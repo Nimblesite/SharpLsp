@@ -26,7 +26,6 @@ import {
   topFrame,
   variableNamed,
 } from './debug-drive-kit';
-import { assertBoundAtLines, clearAllBreakpoints, stopDebuggee } from './debug-suite-kit';
 import {
   FS_ALL,
   FS_MODULE,
@@ -36,11 +35,10 @@ import {
   assertHandshakeOrder,
   assertOneTestSession,
   breakpointAt,
-  disposeDebugTestFixture,
   requireActive,
-  writeDebugTestFixture,
   type TestDebugFixture,
 } from './debug-test-kit';
+import { debugRun, useDebugTestFixture, firstBreakpointStop } from './debug-test-harness';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import {
   activateTestExplorer,
@@ -49,9 +47,9 @@ import {
   runViaProfile,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor } from './test-explorer-outcome-assertions';
-import { closeAllEditors, comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-import { installUiStubs, type UiStubs } from './ui-stubs';
+import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
+import { type UiStubs } from './ui-stubs';
 
 suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor gesture', () => {
   let fixture: TestDebugFixture;
@@ -59,46 +57,19 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
   let sessions: DebugSessionRecorder;
   let stubs: UiStubs;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    fixture = await writeDebugTestFixture('debug-mtp-fs-', 'fsharp', 'mtp');
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    await disposeDebugTestFixture(fixture);
-  });
-
+  const harness = useDebugTestFixture('debug-mtp-fs-', 'fsharp', 'mtp');
   setup(() => {
-    clearAllBreakpoints();
-    recorder = new DapRecorder();
-    sessions = new DebugSessionRecorder();
-    stubs = installUiStubs();
-  });
-
-  teardown(async () => {
-    await stopDebuggee();
-    clearAllBreakpoints();
-    sessions.dispose();
-    recorder.dispose();
-    stubs.restore();
-    await closeAllEditors();
+    ({ fixture, recorder, sessions, stubs } = harness());
   });
 
   /** Discover the F# MTP fixture and return the tree row for `fqn`. */
   async function rowFor(fqn: string): Promise<vscode.TestItem> {
     const api = await activateTestExplorer();
     const discovered = await discoverSolution(api, fixture.solutionPath, FS_ALL);
-    eq(discovered.includes(fqn), true, `${fqn} must be discovered: ${discovered.join(', ')}`);
+    assert.ok(discovered.includes(fqn), `${fqn} must be discovered: ${discovered.join(', ')}`);
     const item = findItem(api.testController.items, fqn);
     assert.ok(item, `the TestItem for ${fqn} must exist`);
     return item;
-  }
-
-  /** Press the Debug button on `items`, exactly as the workbench does. */
-  async function debugRun(items: readonly vscode.TestItem[]): Promise<void> {
-    const api = await activateTestExplorer();
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Debug, items);
   }
 
   test('an F# backtick test on MTP attaches to the module and breaks in its body', async function () {
@@ -124,12 +95,9 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     neq(Number(session.configuration['processId']), process.pid, 'the module, not the host');
     eq(session.configuration['justMyCode'], true, 'Just My Code holds in a test context');
     assertHandshakeOrder(recorder, 'debugging an F# MTP test');
-    assertBoundAtLines(recorder, [FS_SOURCE.dapLine('fs-call')], 'an F# MTP breakpoint');
-
     // 3. It stops IN the F# binding, with its `let` bindings readable and the
     //    watch window evaluating in the F# frame.
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop in the F# MTP test');
-    assertStopReason(stop, 'breakpoint', 'a breakpoint inside an F# MTP test');
+    const stop = await firstBreakpointStop(recorder, FS_SOURCE, 'fs-call');
     const active = requireActive('an F# MTP breakpoint stop');
     const frame = await topFrame(active, stop.threadId);
     eq(frame.line, FS_SOURCE.dapLine('fs-call'), 'on the armed line of the .fs file');
@@ -154,7 +122,7 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     // 1. ONE row in the tree for both uids, qualified by the F# module.
     const item = await rowFor(FS_ROWS);
     eq(item.id, FS_ROWS, 'one id for both rows');
-    eq(item.id.startsWith(`${FS_MODULE}.`), true, 'qualified by the F# module');
+    assert.ok(item.id.startsWith(`${FS_MODULE}.`), 'qualified by the F# module');
     eq(item.children.size, 0, 'a theory is ONE leaf, however many rows it runs');
     const api = await activateTestExplorer();
     const cachedBefore = api.testController.getResult(FS_ROWS);
@@ -214,11 +182,8 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     const session = assertOneTestSession(sessions, 'debugging an F# MTP test at the cursor');
     eq(session.configuration['request'], 'attach', 'to the waiting module');
     eq(session.configuration['justMyCode'], true, 'with the same Just My Code contract');
-    assertBoundAtLines(recorder, [FS_SOURCE.dapLine('fs-call')], 'the at-cursor breakpoint');
-
     // 3. It breaks where the caret was, and nothing warns or errors.
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the at-cursor stop');
-    assertStopReason(stop, 'breakpoint', 'the at-cursor F# MTP gesture');
+    const stop = await firstBreakpointStop(recorder, FS_SOURCE, 'fs-call');
     const frame = await topFrame(requireActive('the at-cursor stop'), stop.threadId);
     eq(frame.line, FS_SOURCE.dapLine('fs-call'), 'on the line the caret was on');
     eq(comparablePath(frame.sourcePath), comparablePath(fixture.sourceFile), 'in that file');

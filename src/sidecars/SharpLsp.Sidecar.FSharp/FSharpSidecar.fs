@@ -64,27 +64,12 @@ type FSharpSidecar() =
             with ex ->
                 Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
 
-        base.Register("textDocument/hover", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! hover = FSharpWorkspace.getHover workspace request.FilePath request.Line request.Character
-                    match hover with
-                    | Some (markdown, sl, sc, el, ec) ->
-                        let result =
-                            { Contents = markdown
-                              StartLine = Nullable sl
-                              StartCharacter = Nullable sc
-                              EndLine = Nullable el
-                              EndCharacter = Nullable ec }
-                        return Helpers.serializeOk result ct
-                    | None ->
-                        // Return MessagePack nil (0xC0) for no hover result.
-                        let bytes = [| 0xC0uy |]
-                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/hover", Helpers.atPosition (FSharpWorkspace.getHover workspace) (Helpers.optionOf (fun (markdown, sl, sc, el, ec) ->
+            { Contents = markdown
+              StartLine = Nullable sl
+              StartCharacter = Nullable sc
+              EndLine = Nullable el
+              EndCharacter = Nullable ec })))
 
         // Records the editor's in-memory buffer so per-file analyses (hover,
         // completion, …) reflect unsaved edits instead of stale on-disk text.
@@ -100,19 +85,8 @@ type FSharpSidecar() =
             }))
 
         // Unused-package detection [PKG-UNUSED-DETECT-FS].
-        base.Register("project/unusedPackages", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let projectPath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
-                    let! usage = FSharpPackages.getReferenceUsage workspace projectPath
-                    let result =
-                        { UsedPaths = usage.Used
-                          AllPaths = usage.All
-                          PackagesRoot = usage.Root }
-                    return Helpers.serializeOk result ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("project/unusedPackages", Helpers.handle (FSharpPackages.getReferenceUsage workspace) (fun usage ct ->
+            Helpers.serializeOk { UsedPaths = usage.Used; AllPaths = usage.All; PackagesRoot = usage.Root } ct))
 
         base.Register("textDocument/definition", Helpers.locationOptionHandler workspace FSharpWorkspace.getDefinition)
         base.Register("textDocument/typeDefinition", Helpers.locationOptionHandler workspace FSharpWorkspace.getTypeDefinition)
@@ -120,92 +94,40 @@ type FSharpSidecar() =
         base.Register("textDocument/implementation", Helpers.locationListHandler workspace FSharpWorkspace.getImplementations)
 
         // References
-        base.Register("textDocument/references", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<ReferencesRequest>(payload, cancellationToken = ct)
-                    let! results =
-                        FSharpReferences.getReferences
-                            workspace request.FilePath request.Line
-                            request.Character request.IncludeDeclaration
-                    let locations =
-                        results
-                        |> List.map Helpers.toLocationResult
-                        |> Array.ofList
-                    return Helpers.serializeOk { Locations = locations } ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/references", Helpers.handle (fun (request: ReferencesRequest) ->
+            FSharpReferences.getReferences
+                workspace request.FilePath request.Line request.Character request.IncludeDeclaration) (fun results ct ->
+            Helpers.serializeOk { Locations = results |> List.map Helpers.toLocationResult |> Array.ofList } ct))
 
         // Document highlights
-        base.Register("textDocument/documentHighlight", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! results =
-                        FSharpReferences.getDocumentHighlights
-                            workspace request.FilePath request.Line request.Character
-                    let highlights =
-                        results
-                        |> List.map (fun h ->
-                            { DocumentHighlightResult.StartLine = h.StartLine
-                              StartCharacter = h.StartCharacter
-                              EndLine = h.EndLine
-                              EndCharacter = h.EndCharacter
-                              Kind = h.Kind })
-                        |> Array.ofList
-                    return Helpers.serializeOk { Highlights = highlights } ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/documentHighlight", Helpers.atPosition (FSharpReferences.getDocumentHighlights workspace) (fun results ct ->
+            let highlights =
+                results
+                |> List.map (fun h ->
+                    { DocumentHighlightResult.StartLine = h.StartLine
+                      StartCharacter = h.StartCharacter
+                      EndLine = h.EndLine
+                      EndCharacter = h.EndCharacter
+                      Kind = h.Kind })
+                |> Array.ofList
+            Helpers.serializeOk { Highlights = highlights } ct))
 
         // Formatting via Fantomas
-        base.Register("textDocument/formatting", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! edits = FSharpFeatures.formatDocument workspace request.FilePath
-                    let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
-                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/formatting", Helpers.handle (fun (request: PositionRequest) ->
+            FSharpFeatures.formatDocument workspace request.FilePath) Helpers.serializeOk)
 
         // Range formatting via Fantomas
-        base.Register("textDocument/rangeFormatting", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<RangeRequest>(payload, cancellationToken = ct)
-                    let! edits = FSharpFeatures.formatRange workspace request.FilePath request.StartLine request.StartCharacter request.EndLine request.EndCharacter
-                    let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
-                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/rangeFormatting", Helpers.handle (fun (request: RangeRequest) ->
+            FSharpFeatures.formatRange workspace request.FilePath request.StartLine request.StartCharacter request.EndLine request.EndCharacter) Helpers.serializeOk)
 
         // Semantic tokens
-        base.Register("textDocument/semanticTokens/full", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! data = FSharpFeatures.getSemanticTokens workspace request.FilePath
-                    let bytes = MessagePackSerializer.Serialize({ Data = data }, cancellationToken = ct)
-                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/semanticTokens/full", Helpers.handle (fun (request: PositionRequest) ->
+            FSharpFeatures.getSemanticTokens workspace request.FilePath) (fun data ct -> Helpers.serializeOk { Data = data } ct))
 
         // Semantic tokens range
-        base.Register("textDocument/semanticTokens/range", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<RangeRequest>(payload, cancellationToken = ct)
-                    let! data = FSharpFeatures.getSemanticTokensRange workspace request.FilePath request.StartLine request.EndLine
-                    let bytes = MessagePackSerializer.Serialize({ Data = data }, cancellationToken = ct)
-                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/semanticTokens/range", Helpers.handle (fun (request: RangeRequest) ->
+            FSharpFeatures.getSemanticTokensRange workspace request.FilePath request.StartLine request.EndLine) (fun data ct ->
+            Helpers.serializeOk { Data = data } ct))
 
         // Code actions (F# code fixes via FCS diagnostics)
         base.Register("textDocument/codeAction", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
@@ -258,16 +180,8 @@ type FSharpSidecar() =
                 Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
 
         // Inlay hints
-        base.Register("textDocument/inlayHint", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<InlayHintRequest>(payload, cancellationToken = ct)
-                    let! hints = FSharpFeatures.getInlayHints workspace request.FilePath request.StartLine request.EndLine
-                    let bytes = MessagePackSerializer.Serialize(hints |> List.toArray, cancellationToken = ct)
-                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/inlayHint", Helpers.handle (fun (request: InlayHintRequest) ->
+            FSharpFeatures.getInlayHints workspace request.FilePath request.StartLine request.EndLine) (Helpers.listOf id))
 
         // Diagnostics (FCS compiler errors + FSharpLint warnings)
         base.Register("workspace/diagnostics", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
@@ -331,26 +245,13 @@ type FSharpSidecar() =
                     match preview with
                     | Some result ->
                         return Helpers.serializeOk { Original = result.Original; Formatted = result.Formatted } ct
-                    | None ->
-                        let bytes = [| 0xC0uy |]
-                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                    | None -> return Helpers.nilResult ()
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))
 
         // Completion [SHARPLSP-FEATURES-INTELLIGENCE]
-        base.Register("textDocument/completion", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! items =
-                        FSharpCompletion.getCompletions
-                            workspace request.FilePath request.Line request.Character
-                    let results = items |> List.map Helpers.toCompletionItem |> Array.ofList
-                    return Helpers.serializeOk results ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/completion", Helpers.atPosition (FSharpCompletion.getCompletions workspace) (Helpers.listOf Helpers.toCompletionItem))
 
         // Completion resolve [SHARPLSP-FEATURES-INTELLIGENCE] — no extra edits yet (see plan).
         base.Register("completionItem/resolve", Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
@@ -358,49 +259,18 @@ type FSharpSidecar() =
             Task.FromResult<ByteResult>(Helpers.serializeOk result ct)))
 
         // Code lens [SHARPLSP-FEATURES-CODE-LENS]
-        base.Register("textDocument/codeLens", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<FileRequest>(payload, cancellationToken = ct)
-                    let! lenses = FSharpCodeLens.getCodeLenses workspace request.FilePath
-                    let results =
-                        lenses
-                        |> List.map (fun (lens: FSharpCodeLens.CodeLensEntry) ->
-                            { CodeLensItemResult.Line = lens.Line
-                              Character = lens.Character
-                              Title = lens.Title })
-                        |> Array.ofList
-                    return Helpers.serializeOk results ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/codeLens", Helpers.handle (fun (request: FileRequest) ->
+            FSharpCodeLens.getCodeLenses workspace request.FilePath) (Helpers.listOf (fun (lens: FSharpCodeLens.CodeLensEntry) ->
+            { CodeLensItemResult.Line = lens.Line
+              Character = lens.Character
+              Title = lens.Title })))
 
         // Document symbols [SE-FSHARP-SYMBOLS]
-        base.Register("textDocument/documentSymbol", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<FileRequest>(payload, cancellationToken = ct)
-                    let! symbols = FSharpSymbols.documentSymbols workspace request.FilePath
-                    let results = symbols |> List.map Helpers.toDocumentSymbol |> Array.ofList
-                    return Helpers.serializeOk results ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/documentSymbol", Helpers.handle (fun (request: FileRequest) ->
+            FSharpSymbols.documentSymbols workspace request.FilePath) (Helpers.listOf Helpers.toDocumentSymbol))
 
         // Signature help [SHARPLSP-FEATURES-INTELLIGENCE]
-        base.Register("textDocument/signatureHelp", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! help =
-                        FSharpSignature.signatureHelp
-                            workspace request.FilePath request.Line request.Character
-                    match help with
-                    | Some h -> return Helpers.serializeOk (Helpers.toSignatureHelp h) ct
-                    | None -> return Helpers.nilResult ()
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/signatureHelp", Helpers.atPosition (FSharpSignature.signatureHelp workspace) (Helpers.optionOf Helpers.toSignatureHelp))
 
         // Prepare rename [RENAME-FSHARP-PREPARE]
         base.Register("textDocument/prepareRename", Helpers.prepareRenameHandler workspace)
@@ -411,87 +281,19 @@ type FSharpSidecar() =
         base.Register("workspace/renameForeign", Helpers.renameForeignHandler workspace)
 
         // Call hierarchy prepare [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("textDocument/prepareCallHierarchy", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! item =
-                        FSharpHierarchy.prepareCall
-                            workspace request.FilePath request.Line request.Character
-                    match item with
-                    | Some i -> return Helpers.serializeOk (Helpers.toHierItem i) ct
-                    | None -> return Helpers.nilResult ()
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/prepareCallHierarchy", Helpers.atPosition (FSharpHierarchy.prepareCall workspace) (Helpers.optionOf Helpers.toHierItem))
 
         // Incoming calls [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("callHierarchy/incomingCalls", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! items =
-                        FSharpHierarchy.incomingCallsWithSites
-                            workspace request.FilePath request.Line request.Character
-                    let results = items |> List.map Helpers.toHierCall |> Array.ofList
-                    return Helpers.serializeOk results ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("callHierarchy/incomingCalls", Helpers.atPosition (FSharpHierarchy.incomingCallsWithSites workspace) (Helpers.listOf Helpers.toHierCall))
 
         // Outgoing calls [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("callHierarchy/outgoingCalls", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! items =
-                        FSharpHierarchy.outgoingCallsWithSites
-                            workspace request.FilePath request.Line request.Character
-                    let results = items |> List.map Helpers.toHierCall |> Array.ofList
-                    return Helpers.serializeOk results ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("callHierarchy/outgoingCalls", Helpers.atPosition (FSharpHierarchy.outgoingCallsWithSites workspace) (Helpers.listOf Helpers.toHierCall))
 
         // Type hierarchy prepare [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("textDocument/prepareTypeHierarchy", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! item =
-                        FSharpHierarchy.prepareType
-                            workspace request.FilePath request.Line request.Character
-                    match item with
-                    | Some i -> return Helpers.serializeOk (Helpers.toHierItem i) ct
-                    | None -> return Helpers.nilResult ()
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/prepareTypeHierarchy", Helpers.atPosition (FSharpHierarchy.prepareType workspace) (Helpers.optionOf Helpers.toHierItem))
 
         // Supertypes [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("typeHierarchy/supertypes", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! items =
-                        FSharpHierarchy.supertypes
-                            workspace request.FilePath request.Line request.Character
-                    let results = items |> List.map Helpers.toHierItem |> Array.ofList
-                    return Helpers.serializeOk results ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("typeHierarchy/supertypes", Helpers.atPosition (FSharpHierarchy.supertypes workspace) (Helpers.listOf Helpers.toHierItem))
 
         // Subtypes [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("typeHierarchy/subtypes", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! items =
-                        FSharpHierarchy.subtypes
-                            workspace request.FilePath request.Line request.Character
-                    let results = items |> List.map Helpers.toHierItem |> Array.ofList
-                    return Helpers.serializeOk results ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("typeHierarchy/subtypes", Helpers.atPosition (FSharpHierarchy.subtypes workspace) (Helpers.listOf Helpers.toHierItem))

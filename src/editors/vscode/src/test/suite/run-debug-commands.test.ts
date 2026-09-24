@@ -21,6 +21,7 @@
 //    only once `dotnet build` produced a dll, and `session.workspaceFolder` is
 //    defined only when the document belongs to an open folder — a temp dir would
 //    exercise the "outside every workspace folder" refusal instead.
+import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -112,7 +113,7 @@ function samePath(actual: string | undefined, expected: string, message: string)
  * `.length` off one of them is the reported crash.
  */
 function assertAbsent(config: vscode.DebugConfiguration, key: string, why: string): void {
-  eq(Object.prototype.hasOwnProperty.call(config, key), false, `\`${key}\` ${why}`);
+  assert.ok(!Object.prototype.hasOwnProperty.call(config, key), `\`${key}\` ${why}`);
 }
 
 /**
@@ -241,7 +242,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 2 — press F5.
     const f5 = await invokeCommand(CMD_VSCODE_DEBUG_START);
-    eq(f5.rejected, false, `F5 must not reject: ${f5.message}`); // B08
+    assert.ok(!f5.rejected, `F5 must not reject: ${f5.message}`); // B08
     const afterF5 = await waitForCaptures(captures, 1);
     eq(
       afterF5.length,
@@ -283,7 +284,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 3 — press Ctrl/Cmd+F5, Run Without Debugging.
     const ctrlF5 = await invokeCommand(CMD_VSCODE_DEBUG_RUN);
-    eq(ctrlF5.rejected, false, `Ctrl+F5 must not reject: ${ctrlF5.message}`); // B09
+    assert.ok(!ctrlF5.rejected, `Ctrl+F5 must not reject: ${ctrlF5.message}`); // B09
     const afterRun = await waitForCaptures(captures, 2);
     eq(afterRun.length, 2, 'Ctrl+F5 must reach the provider chain exactly once more'); // B09
     const runCapture = requireAt(afterRun, 1, 'the config Ctrl+F5 handed the chain');
@@ -299,7 +300,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     // Interaction 4 — focus the OTHER project and press F5 again.
     await focusDocument(appB.sourceFile);
     const again = await invokeCommand(CMD_VSCODE_DEBUG_START);
-    eq(again.rejected, false, `the second F5 must not reject either: ${again.message}`);
+    assert.ok(!again.rejected, `the second F5 must not reject either: ${again.message}`);
     const afterSecond = await waitForCaptures(captures, 3);
     eq(afterSecond.length, 3, 'every F5 press must reach the provider chain');
     const secondCapture = requireAt(afterSecond, 2, 'the config the second F5 handed the chain');
@@ -331,12 +332,12 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 2 — focus the built project's entry point.
     const dllA = builtDll(appA);
-    eq(fs.existsSync(dllA), true, `the fixture build must have produced ${dllA}`);
+    assert.ok(fs.existsSync(dllA), `the fixture build must have produced ${dllA}`);
     await focusDocument(appA.sourceFile);
 
     // Interaction 3 — Run Without Debugging.
     const run = await invokeCommand(CMD_RUN_PROGRAM);
-    eq(run.rejected, false, `${CMD_RUN_PROGRAM} must exist and succeed: ${run.message}`); // B11
+    assert.ok(!run.rejected, `${CMD_RUN_PROGRAM} must exist and succeed: ${run.message}`); // B11
     eq(run.message, '', 'a successful run reports no failure message');
     const afterRun = await recorder.waitForSessions(1);
     eq(afterRun.length, 1, 'Run must start exactly one debug session'); // B15
@@ -366,7 +367,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 5 — Debug the same document.
     const dbg = await invokeCommand(CMD_DEBUG_PROGRAM);
-    eq(dbg.rejected, false, `${CMD_DEBUG_PROGRAM} must succeed: ${dbg.message}`);
+    assert.ok(!dbg.rejected, `${CMD_DEBUG_PROGRAM} must succeed: ${dbg.message}`);
     const afterDebug = await recorder.waitForSessions(2);
     eq(afterDebug.length, 2, 'Debug must start a second session'); // B16
     const debugSession = requireAt(afterDebug, 1, 'the session Debug started');
@@ -403,7 +404,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 2 — Debug Program on the same document.
     const first = await invokeCommand(CMD_DEBUG_PROGRAM);
-    eq(first.rejected, false, `Debug Program must succeed for project B: ${first.message}`);
+    assert.ok(!first.rejected, `Debug Program must succeed for project B: ${first.message}`);
     const afterB = await recorder.waitForSessions(1);
     eq(afterB.length, 1, 'Debug Program must start exactly one session');
     const sessionB = requireAt(afterB, 0, 'the session started while B was focused');
@@ -424,7 +425,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 4 — Debug Program again, now on A.
     const second = await invokeCommand(CMD_DEBUG_PROGRAM);
-    eq(second.rejected, false, `the second Debug Program must succeed: ${second.message}`);
+    assert.ok(!second.rejected, `the second Debug Program must succeed: ${second.message}`);
     const afterA = await recorder.waitForSessions(2);
     eq(afterA.length, 2, 'the second gesture must start a second session');
     const sessionA = requireAt(afterA, 1, 'the session started while A was focused');
@@ -442,8 +443,8 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 1 — a project that exists and cannot be built.
     const missingDll = builtDll(unbuilt);
-    eq(fs.existsSync(unbuilt.projectFile), true, 'the refusal fixture is a real project file');
-    eq(fs.existsSync(missingDll), false, 'the refusal fixture must NOT have been built'); // B62
+    assert.ok(fs.existsSync(unbuilt.projectFile), 'the refusal fixture is a real project file');
+    assert.ok(!fs.existsSync(missingDll), 'the refusal fixture must NOT have been built'); // B62
 
     // Interaction 2 — focus it.
     const editor = await focusDocument(unbuilt.sourceFile);
@@ -452,7 +453,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 3 — Debug Program. startDebugging resolves false.
     const dbg = await invokeCommand(CMD_DEBUG_PROGRAM);
-    eq(dbg.rejected, false, `a refusal is reported, not thrown at the caller: ${dbg.message}`); // B62
+    assert.ok(!dbg.rejected, `a refusal is reported, not thrown at the caller: ${dbg.message}`); // B62
     await recorder.assertNoSession('a launch whose program is missing must start no session'); // B62
     const afterDebug = refusals(stubs);
     eq(
@@ -463,21 +464,21 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     ); // B62
     const debugMessage = requireAt(afterDebug, 0, 'the refusal message for Debug Program');
     neq(debugMessage, '', 'a refusal message must have content');
-    eq(debugMessage.includes('Cannot read properties'), false, 'not a TypeError'); // B62
+    assert.ok(!debugMessage.includes('Cannot read properties'), 'not a TypeError'); // B62
     deepEq(stubs.log.infoMessages, [], 'a refusal is not an informational message');
     eq(vscode.debug.activeDebugSession, undefined, 'a refused launch leaves no active session');
 
     // Interaction 4 — Run Without Debugging on the same document must refuse
     // identically: one resolver means one refusal, never a silent no-op.
     const run = await invokeCommand(CMD_RUN_PROGRAM);
-    eq(run.rejected, false, `${CMD_RUN_PROGRAM} must exist and refuse cleanly: ${run.message}`); // B11
+    assert.ok(!run.rejected, `${CMD_RUN_PROGRAM} must exist and refuse cleanly: ${run.message}`); // B11
     await recorder.assertNoSession('Run must refuse the same unbuildable target Debug refused'); // B62
     const afterRun = refusals(stubs);
     eq(afterRun.length, 2, 'Run must produce exactly one further refusal message'); // B62
     const runMessage = requireAt(afterRun, 1, 'the refusal message for Run Without Debugging');
     neq(runMessage, '', 'the Run refusal must have content too');
-    eq(runMessage.includes('Cannot read properties'), false, 'no leaked TypeError'); // B62
+    assert.ok(!runMessage.includes('Cannot read properties'), 'no leaked TypeError'); // B62
     deepEq(recorder.terminated, [], 'nothing started across either gesture, so nothing ended');
-    eq(fs.existsSync(missingDll), false, 'a refused launch must not have built anything');
+    assert.ok(!fs.existsSync(missingDll), 'a refused launch must not have built anything');
   });
 });

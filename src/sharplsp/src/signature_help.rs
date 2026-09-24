@@ -13,10 +13,9 @@ use lsp_server::Request;
 use lsp_types::{
     ParameterInformation, ParameterLabel, SignatureHelp, SignatureHelpParams, SignatureInformation,
 };
-use tracing::warn;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::SidecarPositionReq;
+use crate::utils::{request_sidecar, with_sidecar, SidecarPositionReq};
 
 /// Handle `textDocument/signatureHelp` by delegating to the sidecar.
 pub fn handle(
@@ -24,34 +23,17 @@ pub fn handle(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        return Ok(serde_json::Value::Null);
-    };
-    let params: SignatureHelpParams = serde_json::from_value(req.params)?;
-    let file_path =
-        crate::semantic::uri_to_path(&params.text_document_position_params.text_document.uri)?;
-    let pos = params.text_document_position_params.position;
-
-    let request = SidecarPositionReq {
-        file_path,
-        line: pos.line,
-        character: pos.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/signatureHelp", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar signatureHelp unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
-
-    let result: Option<SidecarSignatureHelp> = rmp_serde::from_slice(&response_bytes)?;
-    match result {
-        None => Ok(serde_json::Value::Null),
-        Some(help) => Ok(serde_json::to_value(map_signature_help(&help))?),
-    }
+    with_sidecar(req, sidecar, |sidecar, params: SignatureHelpParams| {
+        let at = &params.text_document_position_params;
+        let request = SidecarPositionReq::at(&at.text_document.uri, at.position)?;
+        let method = "textDocument/signatureHelp";
+        let help: Option<Option<SidecarSignatureHelp>> =
+            request_sidecar(runtime, sidecar, method, &request)?;
+        Ok(match help.flatten() {
+            None => serde_json::Value::Null,
+            Some(help) => serde_json::to_value(map_signature_help(&help))?,
+        })
+    })
 }
 
 /// Convert a sidecar signature-help payload into an LSP [`SignatureHelp`].

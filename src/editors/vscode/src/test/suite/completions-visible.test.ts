@@ -7,6 +7,7 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
   waitForDocumentSymbols,
+  assertContainsAll,
 } from './test-helpers';
 import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -56,9 +57,7 @@ suite('Visible Completions', () => {
 
     const items = new Map(completions.items.map((item) => [item.label.toString(), item]));
     const labels = new Set(items.keys());
-    assert.ok(labels.has('Name'), 'Visible completion site must offer property Name');
-    assert.ok(labels.has('Add'), 'Visible completion site must offer method Add');
-    assert.ok(labels.has('_count'), 'Visible completion site must offer field _count');
+    assertContainsAll(labels, ['Name', 'Add', '_count'], 'Visible completion site must offer');
     assert.strictEqual(items.get('Name')?.kind, vscode.CompletionItemKind.Property);
     assert.strictEqual(items.get('Add')?.kind, vscode.CompletionItemKind.Method);
     assert.strictEqual(items.get('_count')?.kind, vscode.CompletionItemKind.Field);

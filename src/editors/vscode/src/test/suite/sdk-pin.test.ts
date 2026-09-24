@@ -15,6 +15,7 @@ import {
 import { describeSdkPinFailure, existingSdkSatisfiesWorkspace } from '../../dotnetRuntime.js';
 import { candidateDotnetRoots, findDotnetSatisfying } from '../../dotnet-roots.js';
 import { SDK_RESOLUTION_EXIT_CODE, diagnoseBuildFailure } from '../../build.js';
+import { assertContainsAll } from './test-helpers';
 
 /**
  * Regression suite for the SDK pin that broke every `dotnet` entry point on a
@@ -201,11 +202,7 @@ suite('global.json SDK pin', () => {
     );
     const roots = candidateDotnetRoots({ DOTNET_ROOT: pinnedRoot });
 
-    assert.ok(roots.includes(pinnedRoot), `DOTNET_ROOT is honoured: ${roots.join()}`);
-    assert.ok(
-      roots.includes(path.join(os.homedir(), '.dotnet')),
-      `the user-local root - the one findPath missed - is probed: ${roots.join()}`,
-    );
+    assertContainsAll(roots, [pinnedRoot, path.join(os.homedir(), '.dotnet')], 'roots');
     assert.equal(new Set(roots).size, roots.length, 'no root is probed twice');
 
     // The system-wide root differs per platform; every platform must name one.
@@ -255,13 +252,11 @@ suite('global.json SDK pin', () => {
 
     const message = describeSdkPinFailure(broken, workspace);
     assert.ok(message !== undefined, 'an unsatisfiable pin must produce a diagnosis');
-    assert.ok(message.includes('10.0.303'), `names the pinned version: ${message}`);
-    assert.ok(message.includes('latestPatch'), `names the rollForward policy: ${message}`);
-    assert.ok(
-      message.includes(path.join(workspace, 'global.json')),
-      `names the global.json responsible: ${message}`,
+    assertContainsAll(
+      message,
+      ['10.0.303', 'latestPatch', path.join(workspace, 'global.json'), '10.0.203'],
+      'message',
     );
-    assert.ok(message.includes('10.0.203'), `names what is actually installed: ${message}`);
 
     // A satisfiable pin produces no diagnosis at all.
     const working = fakeDotnet('diag-ok', ['10.0.303']);
@@ -277,8 +272,7 @@ suite('global.json SDK pin', () => {
 
     const diagnosis = diagnoseBuildFailure(SDK_RESOLUTION_EXIT_CODE, broken, workspace);
     assert.ok(diagnosis !== undefined, 'exit code 155 must be explained, not passed through');
-    assert.ok(diagnosis.includes('10.0.303'), 'the diagnosis names the SDK the build needed');
-    assert.ok(diagnosis.includes('10.0.203'), 'the diagnosis names what is installed instead');
+    assertContainsAll(diagnosis, ['10.0.303', '10.0.203'], 'the diagnosis names');
 
     // A successful build is never second-guessed.
     assert.equal(diagnoseBuildFailure(0, broken, workspace), undefined);

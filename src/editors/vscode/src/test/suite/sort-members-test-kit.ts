@@ -8,7 +8,7 @@ import {
   revertDocument,
   workspaceFixturePath,
 } from './refactor-test-helpers';
-import { EXTENSION_ID, closeAllEditors, pollUntilResult } from './test-helpers';
+import { EXTENSION_ID, closeAllEditors, pollUntilResult, assertContainsNone } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 import {
   CLASS_ANCHORS,
@@ -380,8 +380,7 @@ export async function installLiveBuffer(
   assert.notStrictEqual(liveText, originalText);
   assert.strictEqual(document.getText(), liveText);
   assert.ok(document.isDirty, 'the user-edited VFS buffer must be dirty');
-  assert.ok(!originalText.includes('LIVE-ZEBRA'));
-  assert.ok(!originalText.includes('_zeta = 99'));
+  assertContainsNone(originalText, ['LIVE-ZEBRA', '_zeta = 99'], 'originalText');
   assert.ok(document.getText().includes('Unsaved helper must travel'));
   await waitForTypeOrder(CLASS_NAME, initial);
   assertClassNodeContract(await refreshNode(CLASS_NAME), initial);

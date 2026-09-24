@@ -410,3 +410,12 @@ export async function tryDap(
     return { body: {}, failure: error instanceof Error ? error.message : String(error) };
   }
 }
+
+/** `command` really reached the adapter, and every reply to it succeeded. */
+export function assertAnswered(recorder: DapRecorder, command: string, why: string): void {
+  assert.ok(recorder.requests(command).length >= 1, `${why}: '${command}' must reach the adapter`);
+  assert.ok(
+    recorder.responses(command).every((response) => response.success),
+    `${why}: every '${command}' reply must succeed`,
+  );
+}

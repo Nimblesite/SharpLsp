@@ -29,7 +29,7 @@ import { isRecord, type DapMessage } from '../../dap-emulate';
 import { buildProjectXml, writeProject } from './dotnet-project-kit';
 import { TFM, buildProject, isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-import { eq, pollUntilResult, removeDirRecursive } from './test-helpers';
+import { eq, pollUntilResult, removeDirRecursive, assertContainsAll } from './test-helpers';
 
 /** How long this suite gives the router's own deadline to fire. */
 const TEST_DEADLINE_MS = 400;
@@ -240,11 +240,7 @@ suite('An adapter that stops answering the request to stop', () => {
       const ended = await driver.awaitTerminated();
       eq(ended.length, 1, 'the router ended the session exactly once');
       const told = driver.console();
-      assert.ok(
-        told.includes('netcoredbg'),
-        `the user is told WHICH component stopped answering: ${told}`,
-      );
-      assert.ok(told.includes('stop'), `and WHAT it stopped answering: ${told}`);
+      assertContainsAll(told, ['netcoredbg', 'stop'], 'told');
     } finally {
       driver.dispose();
     }

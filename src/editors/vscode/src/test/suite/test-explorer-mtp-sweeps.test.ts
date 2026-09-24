@@ -22,7 +22,6 @@
 // Covers [TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-DISCOVERY] and [TEST-MTP-RUN].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -46,7 +45,6 @@ import {
   XUNIT_PACKAGES,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   drainDiscovery,
@@ -54,9 +52,10 @@ import {
   findItem,
   rootsOf,
   runViaProfile,
+  activateWithScratch,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
-import { removeDirRecursive } from './test-helpers';
+import { removeDirRecursive, assertContainsAll } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** An F# library: something to build, and no test anywhere. */
@@ -188,8 +187,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    parent = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-sweeps-'));
+    ({ api, root: parent } = await activateWithScratch('sharplsp-mtp-sweeps-'));
   });
 
   teardown(async () => {
@@ -421,8 +419,11 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     const warnings = listing.warnings.join('\n');
     assert.deepStrictEqual(namesOf(listing), [], 'a module that cannot list shows no test');
     assert.equal(listing.ok, false, 'and that is not an empty module');
-    assert.ok(warnings.includes('older than 2.3'), `the cause is named: ${warnings}`);
-    assert.ok(warnings.includes('SweepOldMtpCs.dll rejected --list-tests'), warnings);
+    assertContainsAll(
+      warnings,
+      ['older than 2.3', 'SweepOldMtpCs.dll rejected --list-tests'],
+      'warnings',
+    );
     // [TEST-MTP-DETECT] the opt-in chose MTP, and [TEST-MTP-MODULES] the build came
     // first: the module that refused is on disk, so the refusal is not a build error.
     assert.equal(usesMtpRunner(root), true, 'global.json opts the solution in');
@@ -441,8 +442,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     const text = errorTextOf(row);
     assert.ok(text.includes('Update the test framework package'), `the remedy is shown: ${text}`);
     // The row says it all: the cause, the module, and nothing else stands beside it.
-    assert.ok(text.includes('older than 2.3'), `the cause, in the tree too: ${text}`);
-    assert.ok(text.includes('SweepOldMtpCs.dll'), `and the module: ${text}`);
+    assertContainsAll(text, ['older than 2.3', 'SweepOldMtpCs.dll'], 'text');
     assert.equal(rootsOf(api.testController.items).length, 1, 'the error row is the whole tree');
   });
 });

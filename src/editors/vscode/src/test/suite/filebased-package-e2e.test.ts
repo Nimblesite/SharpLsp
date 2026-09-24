@@ -10,6 +10,8 @@ import {
   teardownLspTestSuite,
   waitForDiagnostics,
   waitForHoverResult,
+  assertContainsAll,
+  assertContainsNone,
 } from './test-helpers';
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import {
@@ -132,15 +134,14 @@ Console.WriteLine(clone.ToString());
     assert.strictEqual(doc.languageId, 'csharp', 'the target is handled as C#');
     assert.strictEqual(doc.uri.toString(), uri.toString(), 'the opened URI is the requested file');
     assert.strictEqual(doc.lineAt(0).text, PACKAGE, 'the package directive remains verbatim');
-    assert.strictEqual(fs.existsSync(path.join(tmpDir, 'PackageApp.csproj')), false);
-    assert.strictEqual(fs.existsSync(path.join(tmpDir, 'Directory.Build.props')), false);
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'PackageApp.csproj')));
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'Directory.Build.props')));
 
     const typePosition = positionInside(source, 'JObject');
     const hovers = await waitForHoverText(uri, typePosition, 'Newtonsoft.Json.Linq');
     const markdown = hoverText(hovers);
     assert.ok(hovers.length > 0, 'restored JObject must return hover information');
-    assert.ok(markdown.includes('JObject'), 'hover must name the package type');
-    assert.ok(markdown.includes('Newtonsoft.Json.Linq'), 'hover must name the package namespace');
+    assertContainsAll(markdown, ['JObject', 'Newtonsoft.Json.Linq'], 'hover must name the package');
 
     const completions = await completionList(uri, positionAfter(source, 'payload.'), 'DeepClone');
     assert.ok(completions.items.length > 3, 'package member completion must be non-trivial');
@@ -173,7 +174,7 @@ Console.WriteLine(payload.Count);
     assert.ok(missing.some((diagnostic) => diagnostic.range.start.line <= 2));
 
     const withDirective = `${PACKAGE}\n${withoutDirective}`;
-    assert.strictEqual(await replaceDocumentContent(doc, withDirective), true);
+    assert.ok(await replaceDocumentContent(doc, withDirective));
     assert.ok(doc.isDirty, 'the package edit remains unsaved while didChange is exercised');
     assert.ok(doc.version > initialVersion, 'VS Code increments the document version');
     assert.strictEqual(doc.lineAt(0).text, PACKAGE, 'the in-memory directive is visible');
@@ -187,14 +188,14 @@ Console.WriteLine(payload.Count);
     assertNoPackageBindingErrors(uri);
 
     const versionWithPackage = doc.version;
-    assert.strictEqual(await replaceDocumentContent(doc, withoutDirective), true);
+    assert.ok(await replaceDocumentContent(doc, withoutDirective));
     assert.ok(doc.version > versionWithPackage, 'removal is a new didChange generation');
-    assert.strictEqual(doc.getText().startsWith('#:package'), false, 'directive was removed');
+    assert.ok(!doc.getText().startsWith('#:package'), 'directive was removed');
     const removed = await waitForErrorCode(uri, 'CS0246');
     assert.ok(removed.some((diagnostic) => diagnosticCode(diagnostic) === 'CS0246'));
     assert.ok(removed.some((diagnostic) => diagnostic.message.includes('JObject')));
 
-    assert.strictEqual(await replaceDocumentContent(doc, withDirective), true);
+    assert.ok(await replaceDocumentContent(doc, withDirective));
     const restored = await completionList(
       uri,
       positionAfter(withDirective, 'payload.'),
@@ -229,7 +230,7 @@ Console.WriteLine(payload.Count);
       included,
       'closure input is unchanged',
     );
-    assert.strictEqual(doc.getText().includes(PACKAGE), false, 'the root itself has no package');
+    assert.ok(!doc.getText().includes(PACKAGE), 'the root itself has no package');
 
     const factoryHover = hoverText(
       await waitForHoverText(uri, positionInside(root, 'PackageFactory'), 'PackageFactory'),
@@ -281,11 +282,7 @@ Console.WriteLine(isolated.Count);
     assert.ok(itemNamed(bound, 'Properties').detail !== '', 'a bound symbol carries detail');
     assertNoPackageBindingErrors(packageFile.uri);
     const settled = errorsFor(packageFile.uri).map(diagnosticCode);
-    assert.ok(
-      !settled.includes(RESTORE_PENDING),
-      `the restore must be COMPLETE before the neighbour opens, not pending: ${settled.join(', ')}`,
-    );
-    assert.ok(!settled.includes('CS0246'), `the package must be bound: ${settled.join(', ')}`);
+    assertContainsNone(settled, [RESTORE_PENDING, 'CS0246'], 'settled');
     assert.deepStrictEqual(
       settled,
       [],
@@ -301,18 +298,7 @@ Console.WriteLine(isolated.Count);
       plainFile = await openFileBasedApp(tmpDir, 'RootWithoutPackage.cs', plainRoot);
     });
     const observed = [...duringOpen].sort().join(', ') || 'none';
-    assert.ok(
-      !duringOpen.has('CS0246'),
-      `#294: opening a neighbouring root EVICTED the package reference -- ` +
-        `CS0246 appeared on RootWithPackage.cs while RootWithoutPackage.cs loaded. ` +
-        `Codes seen across the open: ${observed}. A later rebind does not repair ` +
-        `this: the packaged root was broken for real, and only recovered afterwards.`,
-    );
-    assert.ok(
-      !duringOpen.has(RESTORE_PENDING),
-      `#294: the packaged root was pushed back to restore-pending (${RESTORE_PENDING}) by a ` +
-        `neighbour's load; its resolved context must survive. Codes seen: ${observed}`,
-    );
+    assertContainsNone(duringOpen, ['CS0246', RESTORE_PENDING], 'duringOpen');
     assert.deepStrictEqual(
       [...duringOpen],
       [],
@@ -364,8 +350,7 @@ Console.WriteLine(text.Length);
     const consoleHover = hoverText(
       await waitForHoverResult(uri, positionInside(source, 'Console'), DOTNET_CLI_MS),
     );
-    assert.ok(consoleHover.includes('Console'), 'tier 2 must retain BCL hover');
-    assert.ok(consoleHover.includes('System'), 'tier-2 hover must retain the BCL namespace');
+    assertContainsAll(consoleHover, ['Console', 'System'], 'consoleHover');
     const bclMembers = await completionList(uri, positionAfter(source, 'text.'), 'Length');
     assert.strictEqual(
       itemNamed(bclMembers, 'Length').kind,
@@ -394,11 +379,17 @@ Console.WriteLine(text.Length);
     assert.strictEqual(degraded[0]?.range.start.character, 0);
     assert.strictEqual(degraded[0]?.range.end.line, 0);
     assert.strictEqual(degraded[0]?.range.end.character, 1);
-    assert.ok(degraded[0]?.message.includes('BCL-only references'));
-    assert.ok(degraded[0]?.message.includes('Restore failed'));
+    assertContainsAll(
+      degraded[0]?.message,
+      ['BCL-only references', 'Restore failed'],
+      'degraded[0]?.message',
+    );
     assert.ok(!degraded[0]?.message.includes('pending'));
-    assert.ok(degraded[0]?.message.includes('SharpLsp.Package.That.Does.Not.Exist'));
-    assert.ok(degraded[0]?.message.includes('0.0.0'));
+    assertContainsAll(
+      degraded[0]?.message,
+      ['SharpLsp.Package.That.Does.Not.Exist', '0.0.0'],
+      'degraded[0]?.message',
+    );
     assert.deepStrictEqual(errorsFor(uri), [], 'restore failure must not kill BCL analysis');
   });
 
@@ -457,16 +448,15 @@ Console.WriteLine(json.Count + plural.Length);
     assert.ok(missingHumanizer.some((diagnostic) => diagnostic.message.includes('Pluralize')));
 
     const beforeSwapVersion = doc.version;
-    assert.strictEqual(await replaceDocumentContent(doc, second), true);
+    assert.ok(await replaceDocumentContent(doc, second));
     assert.ok(doc.version > beforeSwapVersion, 'package replacement is a new didChange generation');
     assert.strictEqual(doc.lineAt(0).text, humanizer, 'the new package identity is in memory');
-    assert.strictEqual(doc.getText().includes(PACKAGE), false, 'the old directive is gone');
+    assert.ok(!doc.getText().includes(PACKAGE), 'the old directive is gone');
 
     const humanizerHover = hoverText(
       await waitForHoverText(uri, positionInside(second, 'Pluralize'), 'Humanizer'),
     );
-    assert.ok(humanizerHover.includes('Pluralize'), 'the replacement package binds');
-    assert.ok(humanizerHover.includes('Humanizer'), 'hover identifies the replacement package');
+    assertContainsAll(humanizerHover, ['Pluralize', 'Humanizer'], 'humanizerHover');
     const staleReferenceErrors = await waitForErrorCode(uri, 'CS0246');
     assert.ok(staleReferenceErrors.some((diagnostic) => diagnostic.message.includes('JObject')));
     assert.ok(
@@ -505,7 +495,7 @@ Console.WriteLine(json.Count + plural.Length);
     const workspaceEdit = new vscode.WorkspaceEdit();
     workspaceEdit.replace(uri, primaryRange, primaryText);
     for (const edit of additional) workspaceEdit.replace(uri, edit.range, edit.newText);
-    assert.strictEqual(await vscode.workspace.applyEdit(workspaceEdit), true);
+    assert.ok(await vscode.workspace.applyEdit(workspaceEdit));
     assert.strictEqual(doc.getText(), 'var result = 42;\nresult.ToString');
     assert.strictEqual(doc.getText().split('ToString').length - 1, 1, 'text appears exactly once');
   });

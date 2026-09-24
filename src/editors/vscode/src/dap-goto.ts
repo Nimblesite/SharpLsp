@@ -6,14 +6,16 @@
 // serves the gesture with a temporary adapter-side breakpoint that is merged
 // into the source's current set, then removed the moment it hits — leaving the
 // Breakpoints view untouched, exactly as the gesture promises.
-import { isRecord, recordList, sourcePathOf, type DapMessage } from './dap-emulate';
+import {
+  isRecord,
+  recordList,
+  sourcePathOf,
+  type DapMessage,
+  type RouterChannel,
+} from './dap-emulate';
 
 /** What the emulator needs from its owning router. */
-export interface GotoHost {
-  /** Request in the router's own name and await the response. */
-  request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
-  /** Emit one message towards VS Code. */
-  fire(message: Record<string, unknown> & { seq?: unknown }): void;
+export interface GotoHost extends RouterChannel {
   /** Respond to a client request on the router's behalf. */
   respondTo(message: DapMessage, success: boolean, body: unknown): void;
   /** The seq of a recorded client message, for response correlation. */

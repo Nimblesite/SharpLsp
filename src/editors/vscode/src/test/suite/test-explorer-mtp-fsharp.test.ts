@@ -44,13 +44,13 @@ import {
   XUNIT_PACKAGES,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   findItem,
   rootsOf,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import {
   assertFailed,
@@ -184,8 +184,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform on F# modules', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-fsharp-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-fsharp-'));
     migrateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-fsharp-migrate-'));
     frameworks = await installedFrameworkPair(root);
     slnPath = await createModulesFixture(root, frameworks);

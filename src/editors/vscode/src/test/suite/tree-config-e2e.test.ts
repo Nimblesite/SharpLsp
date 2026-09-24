@@ -39,6 +39,8 @@ import {
   pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
+  pollSymbols,
+  assertContainsAll,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { buildQualifiedName } from '../../tree.js';
@@ -380,15 +382,7 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
       'Program.cs',
       'namespace TipApp { public class Program { public void Run() { } } }',
     );
-    await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          uri,
-        )) ?? [],
-      (syms) => syms.length > 0,
-      30_000,
-    );
+    await pollSymbols(uri, (syms) => syms.length > 0, 30_000);
 
     await provider.loadSolution(slnPath);
     await provider.refresh();
@@ -416,9 +410,11 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
 
     const tooltip = buildNonSymbolTooltip(pkg as never);
     assert.ok(tooltip instanceof vscode.MarkdownString, 'package tooltip must be a MarkdownString');
-    assert.ok(tooltip.value.includes('**NuGet Package**'), 'tooltip has bold header');
-    assert.ok(tooltip.value.includes('Newtonsoft.Json'), 'tooltip names the package');
-    assert.ok(tooltip.value.includes('13.0.3'), 'tooltip carries the version');
+    assertContainsAll(
+      tooltip.value,
+      ['**NuGet Package**', 'Newtonsoft.Json', '13.0.3'],
+      'tooltip.value',
+    );
   });
 
   test('symbol and structural nodes get NO non-symbol tooltip (symbols use LSP hover)', () => {
@@ -698,31 +694,31 @@ suite('Config E2E — every getter, with workspace round-trips', () => {
 
   test('inlay-hint flags default to true and reflect explicit false overrides', async function () {
     this.timeout(COMMAND_MS);
-    assert.strictEqual(config.inlayHintsParameterNames(), true, 'parameter hints default on');
-    assert.strictEqual(config.inlayHintsTypeInference(), true, 'type-inference hints default on');
-    assert.strictEqual(config.inlayHintsPipelineTypes(), true, 'pipeline hints default on');
+    assert.ok(config.inlayHintsParameterNames(), 'parameter hints default on');
+    assert.ok(config.inlayHintsTypeInference(), 'type-inference hints default on');
+    assert.ok(config.inlayHintsPipelineTypes(), 'pipeline hints default on');
 
     await withSetting('inlayHints.parameterNames', false, () => {
-      assert.strictEqual(config.inlayHintsParameterNames(), false);
+      assert.ok(!config.inlayHintsParameterNames());
     });
     await withSetting('inlayHints.typeInference', false, () => {
-      assert.strictEqual(config.inlayHintsTypeInference(), false);
+      assert.ok(!config.inlayHintsTypeInference());
     });
     await withSetting('inlayHints.pipelineTypes', false, () => {
-      assert.strictEqual(config.inlayHintsPipelineTypes(), false);
+      assert.ok(!config.inlayHintsPipelineTypes());
     });
   });
 
   test('nuget + hot-reload booleans default false and reflect a true override', async function () {
     this.timeout(COMMAND_MS);
-    assert.strictEqual(config.nugetIncludePrerelease(), false, 'prerelease off by default');
-    assert.strictEqual(config.hotReloadOnSave(), false, 'hot reload on save off by default');
+    assert.ok(!config.nugetIncludePrerelease(), 'prerelease off by default');
+    assert.ok(!config.hotReloadOnSave(), 'hot reload on save off by default');
 
     await withSetting('nuget.includePrerelease', true, () => {
-      assert.strictEqual(config.nugetIncludePrerelease(), true);
+      assert.ok(config.nugetIncludePrerelease());
     });
     await withSetting('hotReload.onSave', true, () => {
-      assert.strictEqual(config.hotReloadOnSave(), true);
+      assert.ok(config.hotReloadOnSave());
     });
 
     // Every boolean getter returns a real boolean primitive.
@@ -826,8 +822,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     assert.strictEqual(stubs.log.quickPickItems.length, 1, 'selectSolution prompts exactly once');
     const items = stubs.log.quickPickItems[0] as { label: string }[];
     const labels = items.map((item) => item.label);
-    assert.ok(labels.includes('TestFixtures.sln'), 'quick pick offers the .sln');
-    assert.ok(labels.includes('TestFixtures.slnx'), 'quick pick offers the .slnx');
+    assertContainsAll(labels, ['TestFixtures.sln', 'TestFixtures.slnx'], 'quick pick offers the');
 
     // The command drives the live (bundled) provider, so assert the OBSERVABLE
     // result: a solution root labelled exactly 'TestFixtures.sln' appears in the
@@ -961,14 +956,14 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     }
 
     const result = await discover();
-    assert.strictEqual(result.ok, true, 'discovery must succeed against the fixture workspace');
+    assert.ok(result.ok, 'discovery must succeed against the fixture workspace');
     if (result.ok) {
       assert.ok(result.value >= 2, 'fixture workspace exposes at least .sln + .slnx');
     }
 
     // The error arm narrows correctly too.
     const failure: Result<number> = err('boom');
-    assert.strictEqual(failure.ok, false);
+    assert.ok(!failure.ok);
     if (!failure.ok) {
       assert.strictEqual(failure.error, 'boom', 'err() carries its message; discriminant narrows');
     }

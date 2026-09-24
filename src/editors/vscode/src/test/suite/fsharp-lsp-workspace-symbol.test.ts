@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { closeAllEditors, pollUntilResult, waitForDocumentSymbols } from './test-helpers';
+import { closeAllEditors, waitForDocumentSymbols, pollProvider } from './test-helpers';
 import { openFSharpFixture } from './fsharp-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -24,12 +24,9 @@ async function pollWorkspaceSymbols(
   predicate: (symbols: vscode.SymbolInformation[]) => boolean,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.SymbolInformation[]> {
-  return pollUntilResult(
-    async () =>
-      (await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
-        'vscode.executeWorkspaceSymbolProvider',
-        query,
-      )) ?? [],
+  return pollProvider<vscode.SymbolInformation>(
+    'vscode.executeWorkspaceSymbolProvider',
+    [query],
     predicate,
     timeoutMs,
     2_000,

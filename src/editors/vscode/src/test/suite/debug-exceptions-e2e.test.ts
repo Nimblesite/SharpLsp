@@ -40,8 +40,9 @@ import {
   assertRanToCompletion,
   startDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
-import { deepEq, eq, neq, requireAt } from './test-helpers';
+import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** The filter id every DAP adapter uses for "break on every throw". */
@@ -80,15 +81,13 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
 
     // Interaction 2 — the filter set: "all" plus an unhandled-only filter.
     const filters = advertisedFilters(capabilities);
-    eq(
+    assert.ok(
       filters.includes(FILTER_ALL),
-      true,
       `"Break on all CLR exceptions" is P1; an '${FILTER_ALL}' filter must be advertised. ` +
         `Advertised: ${filters.join(', ') || '<none>'}`,
     );
-    eq(
+    assert.ok(
       filters.some((filter) => UNHANDLED_FILTERS.includes(filter)),
-      true,
       '"Break on unhandled exceptions only" is P1; one of ' +
         `${UNHANDLED_FILTERS.join('/')} must be advertised. Advertised: ${filters.join(', ')}`,
     );
@@ -139,10 +138,9 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop early so the filters can be configured before the throw.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.caught });
-    const [gate] = await recorder.waitForStops(1);
-    assert.ok(gate, 'the debuggee must reach the gate breakpoint');
+    const { session, stop: gate } = await runToFirstStop(debuggee(), 'main-mode', {
+      mode: MODE.caught,
+    });
     assertStoppedAt(
       await topFrame(session, gate.threadId),
       fixture,
@@ -210,12 +208,10 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
   // and "Break on exceptions from user code only" — the IGNORING half.
   test('with only the unhandled filter, a handled throw is ignored completely', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — gate, then select ONLY the unhandled-style filter.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.caught });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.caught });
     const filters = advertisedFilters(recorder.capabilities());
     const unhandled = filters.find((filter) => UNHANDLED_FILTERS.includes(filter));
     assert.ok(unhandled, `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`);
@@ -252,11 +248,11 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     // also what a session that died on launch produces, so the negative above
     // only means something beside the positive evidence that the debuggee got
     // all the way through the catch block and past it.
-    assert.ok(
-      recorder.outputText().includes(`handled ${CAUGHT_MESSAGE}`),
-      'the debuggee caught the exception itself',
+    assertContainsAll(
+      recorder.outputText(),
+      [`handled ${CAUGHT_MESSAGE}`, 'done caught 45'],
+      'recorder.outputText()',
     );
-    assert.ok(recorder.outputText().includes('done caught 45'), 'and finished its own work');
     eq(recorder.stops().length, baseline, 'with no stop added after the gate');
 
     // Interaction 5 - the SELECTION is still the one that was asked for. A
@@ -267,9 +263,8 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const last = requests[requests.length - 1];
     assert.ok(last, 'at least one setExceptionBreakpoints reached the adapter');
     deepEq(last.args['filters'], [unhandled], 'and the last one still names only that filter');
-    eq(
-      JSON.stringify(last.args['filters']).includes('"all"'),
-      false,
+    assert.ok(
+      !JSON.stringify(last.args['filters']).includes('"all"'),
       'with `all` never smuggled back in alongside it',
     );
 
@@ -283,9 +278,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate, then select the unhandled filter and run into the throw.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.unhandled });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.unhandled });
     const filters = advertisedFilters(recorder.capabilities());
     const unhandled = filters.find((filter) => UNHANDLED_FILTERS.includes(filter));
     assert.ok(unhandled, `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`);
@@ -306,12 +299,14 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     // Interaction 3 — the panel must carry type, message and a real stack.
     const info = await exceptionInfoOf(session, crash.stop.threadId);
     assertExceptionIs(info, UNHANDLED_TYPE, UNHANDLED_MESSAGE, 'the unhandled exception');
-    eq(
+    assert.ok(
       info.stackTrace.includes('ThrowUnhandled'),
-      true,
       `the panel's stackTrace must name the throwing method; got: ${info.stackTrace}`,
     );
-    eq(info.breakMode.length > 0, true, 'DAP requires a breakMode on every exceptionInfo response');
+    assert.ok(
+      info.breakMode.length > 0,
+      'DAP requires a breakMode on every exceptionInfo response',
+    );
 
     // Interaction 4 — the inner exception chain (P2).
     deepEq(
@@ -346,13 +341,10 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — break on every throw, in the mode that throws twice.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.both });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.both });
     await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
-    eq(
+    assert.ok(
       advertisedFilters(recorder.capabilities()).includes(FILTER_ALL),
-      true,
       'the "all exceptions" checkbox must be offered before it can be ticked',
     );
 
@@ -371,15 +363,14 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     assertExceptionIs(info, CAUGHT_TYPE, CAUGHT_MESSAGE, 'the first throw');
     neq(info.description, '', 'the panel needs a description to render');
     const frames = await stackFrames(session, first.stop.threadId);
-    eq(frames.length >= 2, true, 'the throwing method was called from somewhere');
+    assert.ok(frames.length >= 2, 'the throwing method was called from somewhere');
     eq(
       methodOf(requireAt(frames, 0, 'the throwing frame')),
       'ThrowCaught',
       'the innermost frame is the method that threw',
     );
-    eq(
+    assert.ok(
       frames.map((frame) => methodOf(frame)).includes('Main'),
-      true,
       'and the caller chain up to Main is intact, which is how the user finds the cause',
     );
 
@@ -402,10 +393,9 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
       info.exceptionId,
       'the two throws are different exceptions and must report different ids',
     );
-    eq(
+    assert.ok(
       secondInfo.description.includes(INNER_MESSAGE) ||
         secondInfo.description.includes(UNHANDLED_MESSAGE),
-      true,
       '"Inner exception chain traversal" is a specified row: the panel must carry the cause, ' +
         'or the user sees a wrapper and never the real failure',
     );
@@ -425,9 +415,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — break on all, and prove it by catching the first throw.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.both });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.both });
     await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
     const caught = await stepToFrame(recorder, CMD_CONTINUE);
     assertStopReason(caught.stop, 'exception', 'the first throw with the filter on');
@@ -439,9 +427,8 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     await dap(session, 'setExceptionBreakpoints', { filters: [] });
     const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
     deepEq(sent.args['filters'], [], 'an empty filter list must be pushed to the LIVE adapter');
-    eq(
+    assert.ok(
       recorder.requests('setExceptionBreakpoints').length > before,
-      true,
       'and it must be sent, not merely remembered',
     );
 
@@ -463,9 +450,8 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
       exceptionsSoFar + 1,
       'nothing but the crash may stop the debuggee once every filter is unticked',
     );
-    eq(
+    assert.ok(
       recorder.outputText().includes('handled ' + CAUGHT_MESSAGE),
-      true,
       'and the program really did carry on running past the handled throw',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
@@ -477,18 +463,15 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
   // anyway has made every clean run unusable.
   test('with every filter armed, a program that throws nothing still runs clean', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — arm every advertised filter at once.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), 'main-mode');
     const filters = advertisedFilters(recorder.capabilities());
-    eq(filters.length >= 2, true, 'at least an all filter and an unhandled-only one are offered');
-    eq(filters.includes(FILTER_ALL), true, 'including "break on all"');
-    eq(
+    assert.ok(filters.length >= 2, 'at least an all filter and an unhandled-only one are offered');
+    assert.ok(filters.includes(FILTER_ALL), 'including "break on all"');
+    assert.ok(
       filters.some((filter) => UNHANDLED_FILTERS.includes(filter)),
-      true,
       'and an unhandled-only filter under one of the names adapters use',
     );
 

@@ -30,7 +30,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
         await driver.launch(debuggee().fixture, MODE.caught, { break_on: 'all' });
         const threadId = await driver.exceptionStop();
         const pid = await driver.launchedPid();
-        assert.strictEqual(isProcessAlive(pid), true, 'the paused debuggee is alive');
+        assert.ok(isProcessAlive(pid), 'the paused debuggee is alive');
         assert.ok(threadId > 0, 'and paused on a real thread');
         driver.dispose();
         disposed = true;
@@ -46,7 +46,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           50,
           `debuggee ${String(pid)} to end after its router was disposed`,
         );
-        assert.strictEqual(isProcessAlive(pid), false, 'the debuggee is gone');
+        assert.ok(!isProcessAlive(pid), 'the debuggee is gone');
       } finally {
         if (!disposed) driver.dispose();
       }

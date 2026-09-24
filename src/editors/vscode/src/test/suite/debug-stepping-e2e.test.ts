@@ -41,6 +41,7 @@ import {
   assertRanToCompletion,
   startDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
@@ -61,8 +62,8 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
     const editor = await openFixture(fixture);
     eq(vscode.debug.breakpoints.length, 1, 'exactly one breakpoint is armed');
     const armed = requireAt(vscode.debug.breakpoints, 0, 'the armed breakpoint');
-    eq(armed instanceof vscode.SourceBreakpoint, true, 'a line breakpoint is a SourceBreakpoint');
-    eq(armed.enabled, true, 'an armed breakpoint is enabled');
+    assert.ok(armed instanceof vscode.SourceBreakpoint, 'a line breakpoint is a SourceBreakpoint');
+    assert.ok(armed.enabled, 'an armed breakpoint is enabled');
     eq(armed.condition, undefined, 'an unconditional breakpoint carries no condition');
     eq(armed.hitCondition, undefined, 'and no hit condition');
     eq(armed.logMessage, undefined, 'and no log message — this one must PAUSE');
@@ -234,9 +235,8 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
         'System.Console decompiled or a "source not available" tab',
     );
     for (const hint of FRAMEWORK_HINTS) {
-      eq(
-        stepped.frame.sourcePath.includes(hint),
-        false,
+      assert.ok(
+        !stepped.frame.sourcePath.includes(hint),
         `Just My Code must never land the user in ${hint}`,
       );
     }
@@ -268,10 +268,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — reach the first breakpoint, well before the target.
-    armBreakpoints(fixture, 'main-accumulate');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint');
+    const { session, stop } = await runToFirstStop(debuggee(), 'main-accumulate');
     eq(vscode.debug.breakpoints.length, 1, 'one real breakpoint exists before the gesture');
 
     // Interaction 2 — the adapter must actually claim the capability the spec
@@ -360,16 +357,15 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       'Main',
       'the first stop is the FIRST breakpoint in source order',
     );
-    eq(recorder.outputText().includes('total='), false, 'nothing has been printed yet');
+    assert.ok(!recorder.outputText().includes('total='), 'nothing has been printed yet');
 
     // Interaction 3 — continue to the second breakpoint.
     const second = await stepToFrame(recorder, CMD_CONTINUE);
     assertStopReason(second.stop, 'breakpoint', 'the second stop');
     assertStoppedAt(second.frame, fixture, 'main-inspect', 'Main', 'the second breakpoint');
     await recorder.waitForOutput('total=8');
-    eq(
-      recorder.outputText().includes('boxed=8'),
-      false,
+    assert.ok(
+      !recorder.outputText().includes('boxed=8'),
       'Inspect has not run yet, so its output must not have appeared',
     );
 

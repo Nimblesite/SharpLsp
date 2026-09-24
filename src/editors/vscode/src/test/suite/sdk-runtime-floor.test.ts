@@ -18,7 +18,7 @@ import {
   realSource,
   runHost,
 } from './sdk-host-kit.js';
-import { removeDirRecursive } from './test-helpers.js';
+import { removeDirRecursive, assertContainsAll } from './test-helpers.js';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts.js';
 
 /**
@@ -121,13 +121,10 @@ suite('a root is judged by whether the sidecars actually start on it', () => {
       // installation would make every assertion below meaningless.
       const listed = runHost(host, scratch, ['--list-runtimes']);
       const advertised = listed.stdout;
-      assert.ok(
-        advertised.includes(`Microsoft.NETCore.App ${runtime}`),
-        describeRun(`the composed root must advertise ${runtime}`, listed),
-      );
-      assert.ok(
-        advertised.includes(path.join(scratch, name)),
-        describeRun(`the composed root must resolve to ITSELF, not the source install`, listed),
+      assertContainsAll(
+        advertised,
+        [`Microsoft.NETCore.App ${runtime}`, path.join(scratch, name)],
+        'advertised',
       );
 
       // THE ORACLE. Not a table — the processes whose startup is being predicted.

@@ -14,8 +14,6 @@
 //
 // Covers [TEST-MTP-RUN].
 import * as assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -33,14 +31,14 @@ import {
   writeProject,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   discoverSolution,
   rootsOf,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
-import { removeDirRecursive } from './test-helpers';
+import { removeDirRecursive, assertContainsAll } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const PROJECT = 'BatchMtpFs';
@@ -101,8 +99,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform selections past one invo
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-batches-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-batches-'));
     writeMtpGlobalJson(root);
     const dir = writeProject(
       path.join(root, PROJECT),
@@ -205,8 +202,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform selections past one invo
     assert.match(failure, /Microsoft\.Testing\.Extensions\.CodeCoverage/, `got: ${failure}`);
     assert.ok(failure.includes(`${PROJECT}.dll`), `and names the module: ${failure}`);
     // [TEST-MTP-RUN]: the option it refused, and the exit code, reported as themselves …
-    assert.ok(failure.includes('--coverage'), `names the option: ${failure}`);
-    assert.ok(failure.includes('exit code 5'), `and the exit code: ${failure}`);
+    assertContainsAll(failure, ['--coverage', 'exit code 5'], 'failure');
     // … it ran NO test …
     assert.deepStrictEqual([...outcome.results.keys()], [], 'a refused command line runs nothing');
     // … and a REJECTED option earns no unfiltered retry: it would be rejected again.

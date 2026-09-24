@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import * as log from './log.js';
-import { getErrorMessage } from './utils.js';
+import { escapeHtml, getErrorMessage } from './utils.js';
 import {
   CMD_PROFILER_LIST_PROCESSES,
   CMD_PROFILER_START_TRACE,
@@ -482,13 +482,7 @@ export function formatCounterValue(value: number, unit: string): string {
   return value.toFixed(2);
 }
 
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+export { escapeHtml };
 
 // ── Status Bar ────────────────────────────────────────────────────
 

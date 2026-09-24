@@ -14,15 +14,13 @@ import {
   type RawCodeAction,
 } from './csharp-refactor-test-kit';
 import {
-  activateRealSharpLsp,
   applyWorkspaceEdit,
-  openFixtureDocument,
   replaceDocumentText,
   revertDocument,
   waitForCodeActions,
   waitForResolvedCodeActions,
   type OpenFixture,
-  warmSemanticEngine,
+  useRefactorFixture,
 } from './refactor-test-helpers';
 import {
   EXPRESSION_OPTIONS,
@@ -37,7 +35,7 @@ import {
   PROPERTY_OPTIONS,
   PROPERTY_SOURCE,
 } from './lsp-refactor-core-fixtures';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorCore.cs';
 
@@ -71,51 +69,75 @@ function vscodeKind(value: string): vscode.CodeActionKind {
   }
 }
 
+const EXPRESSION_SITE = {
+  source: EXPRESSION_SOURCE,
+  snippet: 'input * 2',
+  focus: 'input * 2',
+  kind: 'refactor.extract',
+  options: EXPRESSION_OPTIONS,
+};
+
+const FIELD_SITE = {
+  source: FIELD_SOURCE,
+  snippet: 'public int EncapsulateTarget;',
+  focus: 'EncapsulateTarget',
+  kind: 'refactor.rewrite',
+  options: FIELD_OPTIONS,
+};
+
+const PROPERTY_SITE = {
+  source: PROPERTY_SOURCE,
+  snippet: 'AutoProperty { get; set; }',
+  focus: 'AutoProperty',
+  kind: 'refactor.rewrite',
+  options: PROPERTY_OPTIONS,
+};
+
+const IF_SITE = {
+  source: IF_SOURCE,
+  snippet: 'if (input > 0)',
+  focus: 'if',
+  kind: 'refactor.rewrite',
+  options: IF_OPTIONS,
+};
+
+const PARAMETER_SITE = {
+  source: PARAMETER_SOURCE,
+  snippet: 'input * 2',
+  focus: 'input * 2',
+  kind: 'refactor.rewrite',
+  options: PARAMETER_OPTIONS,
+};
+
 const SCENARIOS: readonly RefactorScenario[] = [
   {
+    ...EXPRESSION_SITE,
     label: 'introduce one local',
-    source: EXPRESSION_SOURCE,
-    snippet: 'input * 2',
-    focus: 'input * 2',
     title: "Introduce local for 'input * 2'",
-    kind: 'refactor.extract',
-    options: EXPRESSION_OPTIONS,
     presentAfter: ['expression-refactor-sentinel'],
     absentAfter: [],
     patternsAfter: [/var \w+ = input \* 2;/],
   },
   {
+    ...EXPRESSION_SITE,
     label: 'introduce local for all occurrences',
-    source: EXPRESSION_SOURCE,
-    snippet: 'input * 2',
-    focus: 'input * 2',
     title: "Introduce local for all occurrences of 'input * 2'",
-    kind: 'refactor.extract',
-    options: EXPRESSION_OPTIONS,
     presentAfter: ['expression-refactor-sentinel'],
     absentAfter: ['input * 2 + input * 2'],
     patternsAfter: [/var \w+ = input \* 2;/],
   },
   {
+    ...EXPRESSION_SITE,
     label: 'extract method',
-    source: EXPRESSION_SOURCE,
-    snippet: 'input * 2',
-    focus: 'input * 2',
     title: 'Extract method',
-    kind: 'refactor.extract',
-    options: EXPRESSION_OPTIONS,
     presentAfter: ['expression-refactor-sentinel'],
     absentAfter: [],
     patternsAfter: [/private static int \w+\(int input\)/],
   },
   {
+    ...EXPRESSION_SITE,
     label: 'extract local function',
-    source: EXPRESSION_SOURCE,
-    snippet: 'input * 2',
-    focus: 'input * 2',
     title: 'Extract local function',
-    kind: 'refactor.extract',
-    options: EXPRESSION_OPTIONS,
     presentAfter: ['expression-refactor-sentinel'],
     absentAfter: [],
     patternsAfter: [/static int \w+\(int input\)/],
@@ -135,26 +157,18 @@ const SCENARIOS: readonly RefactorScenario[] = [
     postApplyFocus: 'input * 2',
   },
   {
+    ...FIELD_SITE,
     label: 'encapsulate and redirect uses',
-    source: FIELD_SOURCE,
-    snippet: 'public int EncapsulateTarget;',
-    focus: 'EncapsulateTarget',
     title: FIELD_OPTIONS[0],
-    kind: 'refactor.rewrite',
-    options: FIELD_OPTIONS,
     presentAfter: ['field-refactor-sentinel', 'Read() => EncapsulateTarget'],
     absentAfter: [],
     patternsAfter: [/private int \w*encapsulateTarget/i, /public int EncapsulateTarget\s*\{/],
     mustDisappear: true,
   },
   {
+    ...FIELD_SITE,
     label: 'encapsulate while retaining field uses',
-    source: FIELD_SOURCE,
-    snippet: 'public int EncapsulateTarget;',
-    focus: 'EncapsulateTarget',
     title: FIELD_OPTIONS[1],
-    kind: 'refactor.rewrite',
-    options: FIELD_OPTIONS,
     presentAfter: ['field-refactor-sentinel'],
     absentAfter: ['public int EncapsulateTarget;'],
     patternsAfter: [
@@ -165,13 +179,9 @@ const SCENARIOS: readonly RefactorScenario[] = [
     mustDisappear: true,
   },
   {
+    ...FIELD_SITE,
     label: 'generate constructor from field',
-    source: FIELD_SOURCE,
-    snippet: 'public int EncapsulateTarget;',
-    focus: 'EncapsulateTarget',
     title: FIELD_OPTIONS[2],
-    kind: 'refactor.rewrite',
-    options: FIELD_OPTIONS,
     presentAfter: [
       'RefactorTarget(int encapsulateTarget)',
       'EncapsulateTarget = encapsulateTarget',
@@ -180,62 +190,42 @@ const SCENARIOS: readonly RefactorScenario[] = [
     mustDisappear: true,
   },
   {
+    ...PROPERTY_SITE,
     label: 'convert auto property to full property',
-    source: PROPERTY_SOURCE,
-    snippet: 'AutoProperty { get; set; }',
-    focus: 'AutoProperty',
     title: 'Convert to full property',
-    kind: 'refactor.rewrite',
-    options: PROPERTY_OPTIONS,
     presentAfter: ['property-refactor-sentinel'],
     absentAfter: ['AutoProperty { get; set; }'],
     patternsAfter: [/private int _?autoProperty/i, /public int AutoProperty\s*\{\s*get/],
     mustDisappear: true,
   },
   {
+    ...PROPERTY_SITE,
     label: 'convert auto property to field-backed accessors',
-    source: PROPERTY_SOURCE,
-    snippet: 'AutoProperty { get; set; }',
-    focus: 'AutoProperty',
     title: "Convert to 'field' property",
-    kind: 'refactor.rewrite',
-    options: PROPERTY_OPTIONS,
     presentAfter: ['property-refactor-sentinel', 'field'],
     absentAfter: ['AutoProperty { get; set; }'],
     mustDisappear: true,
   },
   {
+    ...PROPERTY_SITE,
     label: 'replace property with methods',
-    source: PROPERTY_SOURCE,
-    snippet: 'AutoProperty { get; set; }',
-    focus: 'AutoProperty',
     title: "Replace 'AutoProperty' with methods",
-    kind: 'refactor.rewrite',
-    options: PROPERTY_OPTIONS,
     presentAfter: ['GetAutoProperty', 'SetAutoProperty', 'property-refactor-sentinel'],
     absentAfter: ['AutoProperty { get; set; }'],
     mustDisappear: true,
   },
   {
+    ...PROPERTY_SITE,
     label: 'generate constructor from property',
-    source: PROPERTY_SOURCE,
-    snippet: 'AutoProperty { get; set; }',
-    focus: 'AutoProperty',
     title: "Generate constructor 'RefactorTarget(int autoProperty)'",
-    kind: 'refactor.rewrite',
-    options: PROPERTY_OPTIONS,
     presentAfter: ['RefactorTarget(int autoProperty)', 'AutoProperty = autoProperty'],
     absentAfter: [],
     mustDisappear: true,
   },
   {
+    ...IF_SITE,
     label: 'invert condition',
-    source: IF_SOURCE,
-    snippet: 'if (input > 0)',
-    focus: 'if',
     title: 'Invert if',
-    kind: 'refactor.rewrite',
-    options: IF_OPTIONS,
     presentAfter: ['condition-refactor-sentinel'],
     absentAfter: ['if (input > 0)'],
     patternsAfter: [/if \(input <= 0\)|if \(!\(input > 0\)\)/],
@@ -243,61 +233,41 @@ const SCENARIOS: readonly RefactorScenario[] = [
     requeryTitleCount: 1,
   },
   {
+    ...IF_SITE,
     label: 'convert condition to switch statement',
-    source: IF_SOURCE,
-    snippet: 'if (input > 0)',
-    focus: 'if',
     title: "Convert to 'switch' statement",
-    kind: 'refactor.rewrite',
-    options: IF_OPTIONS,
     presentAfter: ['switch', 'condition-refactor-sentinel'],
     absentAfter: ['if (input > 0)'],
     mustDisappear: true,
   },
   {
+    ...IF_SITE,
     label: 'convert condition to switch expression',
-    source: IF_SOURCE,
-    snippet: 'if (input > 0)',
-    focus: 'if',
     title: "Convert to 'switch' expression",
-    kind: 'refactor.rewrite',
-    options: IF_OPTIONS,
     presentAfter: ['switch', 'condition-refactor-sentinel'],
     absentAfter: ['if (input > 0)'],
     mustDisappear: true,
   },
   {
+    ...PARAMETER_SITE,
     label: 'introduce parameter and update call sites directly',
-    source: PARAMETER_SOURCE,
-    snippet: 'input * 2',
-    focus: 'input * 2',
     title: PARAMETER_OPTIONS[0],
-    kind: 'refactor.rewrite',
-    options: PARAMETER_OPTIONS,
     presentAfter: ['introduce-parameter-sentinel'],
     absentAfter: [],
     patternsAfter: [/Compute\(int input, int \w+\)/, /Compute\(3, 3 \* 2\)/],
   },
   {
+    ...PARAMETER_SITE,
     label: 'introduce parameter through an extracted call-site method',
-    source: PARAMETER_SOURCE,
-    snippet: 'input * 2',
-    focus: 'input * 2',
     title: PARAMETER_OPTIONS[1],
-    kind: 'refactor.rewrite',
-    options: PARAMETER_OPTIONS,
     presentAfter: ['introduce-parameter-sentinel'],
     absentAfter: [],
     patternsAfter: [/Compute\(int input, int \w+\)/, /Compute\(3, \w+\(3\)\)/],
   },
   {
+    ...PARAMETER_SITE,
     label: 'introduce parameter through a compatibility overload',
-    source: PARAMETER_SOURCE,
-    snippet: 'input * 2',
-    focus: 'input * 2',
     title: PARAMETER_OPTIONS[2],
-    kind: 'refactor.rewrite',
-    options: PARAMETER_OPTIONS,
     presentAfter: ['introduce-parameter-sentinel'],
     absentAfter: [],
     patternsAfter: [
@@ -423,21 +393,10 @@ suite('C# real LSP - Roslyn refactor families', () => {
   let fixture: OpenFixture;
   let committedText = '';
 
-  suiteSetup(async function () {
-    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
-    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    this.timeout(FIXTURE_BUILD_MS);
-    await activateRealSharpLsp();
-    fixture = await openFixtureDocument(FILE);
-    // This fixture is known to produce code actions, so an empty result
-    // means Roslyn has not loaded the project yet. Pay that load HERE,
-    // once, instead of inside the first test's ceiling
-    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    await warmSemanticEngine(fixture.uri);
-    committedText = fixture.document.getText();
+  const refactor = useRefactorFixture(FILE);
+  setup(() => {
+    ({ fixture, committedText } = refactor());
   });
-
-  teardown(async () => revertDocument(fixture.document));
   registerCoreTests(
     () => fixture,
     () => committedText,

@@ -23,7 +23,7 @@ import {
   revertDocument,
   waitForMatchingDiagnostics,
 } from './refactor-test-helpers';
-import { closeAllEditors } from './test-helpers';
+import { closeAllEditors, assertContainsAll } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Real-LSP rejection/live-overlay boundaries. [RENAME-FSHARP-PREPARE] [RENAME-FSHARP-APPLY]
@@ -153,8 +153,11 @@ async function applyUnsavedEdit(
   await applyWorkspaceEdit(edit);
   assert.ok(fixture.document.version > version);
   assert.strictEqual(fixture.document.getText(), renamedEdgeSource(newName));
-  assert.ok(fixture.document.getText().includes('// unsavedName in a comment'));
-  assert.ok(fixture.document.getText().includes('let stringValue = "unsavedName"'));
+  assertContainsAll(
+    fixture.document.getText(),
+    ['// unsavedName in a comment', 'let stringValue = "unsavedName"'],
+    'fixture.document.getText()',
+  );
   assert.ok(fixture.document.isDirty);
   await assertNoErrors(fixture.uri);
   const renamedRange = tokenRange(fixture.document, newName);

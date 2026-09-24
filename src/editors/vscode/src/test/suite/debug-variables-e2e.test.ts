@@ -12,7 +12,6 @@
 // nullable local is asserted like any other and this suite reports the gap.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
   assertStoppedAt,
@@ -24,8 +23,8 @@ import {
   variablesOf,
   type Variable,
 } from './debug-drive-kit';
-import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
-import { deepEq, eq, neq, requireAt } from './test-helpers';
+import { assertCleanSession, useDebuggee, runToFirstStop } from './debug-suite-kit';
+import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** Assert a variable's rendered value CONTAINS `needle`, naming what it was. */
@@ -73,19 +72,15 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop inside a two-argument method, after its local is set.
-    armBreakpoints(fixture, 'add-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside Add');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-return');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'add-return', 'Add', 'the return statement of Add');
 
     // Interaction 2 — both arguments must be there, with their real values.
     const locals = await localsOf(session, frame.id);
     const names = locals.map((local) => local.name).sort();
-    eq(
+    assert.ok(
       ['left', 'right', 'sum'].every((wanted) => names.includes(wanted)),
-      true,
       '"Function arguments" and "Local variables" are separate P1 rows: `left`, `right` and ' +
         `\`sum\` must all be inspectable. The frame offered: ${names.join(', ')}`,
     );
@@ -113,13 +108,10 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // Implements [DEBUG-FEATURES-VARIABLES] "`this` / instance members | P1".
   test('an instance method exposes `this` and its members', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { fixture } = debuggee();
 
     // Interaction 1 — stop inside an INSTANCE method.
-    armBreakpoints(fixture, 'box-describe-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside Box.Describe');
+    const { session, stop } = await runToFirstStop(debuggee(), 'box-describe-return');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(
       frame,
@@ -142,9 +134,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     // Interaction 3 — its members must carry the constructor's arguments.
     const members = await variablesOf(session, self.reference);
     const memberNames = members.map((member) => member.name);
-    eq(
+    assert.ok(
       ['Value', 'Label'].every((wanted) => memberNames.includes(wanted)),
-      true,
       `both auto-properties must be inspectable; \`this\` offered: ${memberNames.join(', ')}`,
     );
     eq(variableNamed(members, 'Value').value, '8', 'Accumulate produced 8, so Box.Value is 8');
@@ -163,20 +154,16 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // the `Nullable<T>` row of [DEBUG-ADAPTER-GAPS].
   test('collections, dictionaries, arrays and nullables all expand', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { fixture } = debuggee();
 
     // Interaction 1 — stop where every container is populated.
-    armBreakpoints(fixture, 'inspect-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the print statement in Inspect');
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'inspect-print', 'Inspect', 'the fully populated frame');
     const locals = await localsOf(session, frame.id);
     const names = locals.map((local) => local.name).sort();
-    eq(
+    assert.ok(
       ['box', 'letters', 'lookup', 'maybe', 'numbers', 'text'].every((w) => names.includes(w)),
-      true,
       `every local of Inspect must be listed; the panel offered: ${names.join(', ')}`,
     );
 
@@ -184,9 +171,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     const numbers = variableNamed(locals, 'numbers');
     assert.ok(numbers.reference > 0, 'a List<int> must be expandable');
     const elements = await variablesOf(session, numbers.reference);
-    eq(
+    assert.ok(
       elements.some((element) => element.value === '10'),
-      true,
       `the list's elements must be reachable; expansion produced: ${elements
         .map((element) => `${element.name}=${element.value}`)
         .join(', ')}`,
@@ -202,9 +188,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     const letters = variableNamed(locals, 'letters');
     assert.ok(letters.reference > 0, 'a char[] must be expandable');
     const chars = await variablesOf(session, letters.reference);
-    eq(
+    assert.ok(
       chars.filter((entry) => entry.value.includes("'a'") || entry.value.includes('a')).length > 0,
-      true,
       `the array elements must be reachable; expansion produced: ${chars
         .map((entry) => entry.value)
         .join(', ')}`,
@@ -232,13 +217,10 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // Implements [DEBUG-FEATURES-VARIABLES] "Static fields | variables | P1".
   test('a static field is reachable from the variables panel', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { fixture } = debuggee();
 
     // Interaction 1 — stop after the static has been assigned.
-    armBreakpoints(fixture, 'accumulate-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the return statement of Accumulate');
+    const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-return');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'accumulate-return', 'Accumulate', 'after the static is set');
 
@@ -253,9 +235,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
 
     // Interaction 3 — the static field must be among them.
     const offered = variables.map((variable) => variable.name).sort();
-    eq(
+    assert.ok(
       offered.includes('Total'),
-      true,
       '"Static fields | `variables` | P1": `Program.Total` was assigned on the previous ' +
         'statement and must be inspectable from the paused frame. Scopes offered ' +
         `[${scopes.map((scope) => scope.name).join(', ')}] holding [${offered.join(', ')}]`,
@@ -273,9 +254,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       '8',
       'the local the static was copied from must read the same',
     );
-    eq(
-      requireAt(scopes, 0, 'the first scope').expensive,
-      false,
+    assert.ok(
+      !requireAt(scopes, 0, 'the first scope').expensive,
       'the first scope must not be flagged expensive; VS Code refuses to auto-expand one, so ' +
         'the user sees an empty Variables panel until they click',
     );
@@ -292,10 +272,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
 
     // Interaction 1 — stop on the last statement of the method that declares
     // one of each interesting shape, so all of them are initialised.
-    armBreakpoints(fixture, 'inspect-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the print statement');
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'inspect-print', 'Inspect', 'the inspection frame');
     eq(
@@ -320,15 +297,13 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       neq(variable.value, '', name + ' must render a value, not an empty cell');
       assertTyped(variable, type, 'the local ' + name);
       assertValueHas(variable, value, 'the local ' + name);
-      eq(
+      assert.ok(
         variable.evaluateName === '' || variable.evaluateName.includes(name),
-        true,
         name + ' must carry an evaluateName the Watch panel can re-evaluate it by',
       );
     }
-    eq(
+    assert.ok(
       locals.length >= expected.length,
-      true,
       'the panel shows at least every local the method declares',
     );
     eq(
@@ -347,10 +322,9 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       'a stopped frame read twice must answer identically',
     );
     const { scopes, variables } = await allScopeVariables(session, frame.id);
-    eq(scopes.length >= 1, true, 'at least one scope backs the panel');
-    eq(
+    assert.ok(scopes.length >= 1, 'at least one scope backs the panel');
+    assert.ok(
       variables.length >= locals.length,
-      true,
       'and reading every scope reaches at least the locals',
     );
     assertCleanSession(debuggee(), 'reading every local of a frame');
@@ -361,13 +335,9 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // deeper: an object local must EXPAND to its own members.
   test('an object local expands to its members, each named, valued and re-evaluable', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop where the object is fully constructed.
-    armBreakpoints(fixture, 'inspect-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the print statement');
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
     const frame = await topFrame(session, stop.threadId);
     const box = variableNamed(await localsOf(session, frame.id), 'box');
     neq(
@@ -380,15 +350,13 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     // Interaction 2 — the members themselves.
     const members = await variablesOf(session, box.reference);
     const names = members.map((member) => member.name);
-    eq(names.includes('Value'), true, 'the object own Value property is a member row');
-    eq(names.includes('Label'), true, 'and so is Label');
+    assertContainsAll(names, ['Value', 'Label'], 'names');
     assertValueHas(variableNamed(members, 'Value'), '8', 'the expanded Value member');
     assertValueHas(variableNamed(members, 'Label'), 'boxed', 'the expanded Label member');
     for (const member of members) {
       neq(member.name, '', 'every member row must be named');
-      eq(
+      assert.ok(
         member.evaluateName === '' || member.evaluateName.includes('.'),
-        true,
         member.name +
           ': an expanded member evaluateName must address it THROUGH its parent, ' +
           'or adding it to the Watch panel resolves the wrong symbol',
@@ -411,15 +379,13 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     const collection = variableNamed(await localsOf(session, frame.id), 'numbers');
     neq(collection.reference, 0, 'a collection must expand too');
     const items = await variablesOf(session, collection.reference);
-    eq(
+    assert.ok(
       items.length >= 3,
-      true,
       'a three-element list must expose at least its three elements, or the user cannot see ' +
         'what is in the collection they are debugging',
     );
-    eq(
+    assert.ok(
       items.some((item) => item.value === '10'),
-      true,
       'and the elements carry the values the program put in them',
     );
     assertCleanSession(debuggee(), 'expanding an object and a collection');
@@ -432,13 +398,10 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // first step.
   test('the panel reports the NEW value after the program advances', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — stop inside the loop on its first pass.
-    armBreakpoints(fixture, 'accumulate-call');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [first] = await recorder.waitForStops(1);
-    assert.ok(first, 'the debuggee must reach the call inside the loop');
+    const { session, stop: first } = await runToFirstStop(debuggee(), 'accumulate-call');
     const firstFrame = await topFrame(session, first.threadId);
     const firstLocals = await localsOf(session, firstFrame.id);
     eq(variableNamed(firstLocals, 'running').value, '2', 'the accumulator starts at the seed');

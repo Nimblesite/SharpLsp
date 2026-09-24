@@ -14,7 +14,6 @@
 // is marked "Fails" for Phase 4 and is therefore NOT asserted here.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
   assertStoppedAt,
@@ -25,13 +24,12 @@ import {
   topFrame,
   variableNamed,
 } from './debug-drive-kit';
-import { dap, tryDap } from './debug-dap-kit';
+import { dap, tryDap, assertAnswered } from './debug-dap-kit';
 import {
-  armBreakpoints,
   assertCleanSession,
   assertRanToCompletion,
-  startDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
@@ -55,10 +53,7 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop where every operand is in scope.
-    armBreakpoints(fixture, 'inspect-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the print statement');
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'inspect-print', 'Inspect', 'the evaluation frame');
     eq(
@@ -116,14 +111,12 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
       true,
       'hover evaluation is advertised',
     );
-    eq(
+    assert.ok(
       recorder.requests('evaluate').length >= TIER_ONE.length,
-      true,
       'every expression really reached the adapter',
     );
-    eq(
+    assert.ok(
       recorder.responses('evaluate').every((response) => response.success),
-      true,
       'and every one of them was answered',
     );
     eq(recorder.stops().length, 1, 'evaluating never resumed or re-stopped the debuggee');
@@ -137,10 +130,7 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop before the loop consumes the seed.
-    armBreakpoints(fixture, 'accumulate-loop', 'main-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the loop header');
+    const { session, stop } = await runToFirstStop(debuggee(), ['accumulate-loop', 'main-print']);
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'accumulate-loop', 'Accumulate', 'before the loop runs');
     eq(
@@ -184,9 +174,8 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     assert.ok(stops[1], 'the debuggee must reach the print statement');
     await vscode.commands.executeCommand(CMD_CONTINUE);
     await recorder.waitForOutput('total=106');
-    eq(
-      recorder.outputText().includes('total=8'),
-      false,
+    assert.ok(
+      !recorder.outputText().includes('total=8'),
       'the ORIGINAL value must not have been used: a `setVariable` that only updates the ' +
         'panel, and not the debuggee, is the defect this row exists to prevent',
     );
@@ -194,9 +183,8 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     assertCleanSession(debuggee(), 'editing a variable at runtime');
     // Interaction 4 - a write is a change to the RUNNING program, so the
     // adapter must have been asked to make it, and the session must survive.
-    eq(
+    assert.ok(
       recorder.requests('setVariable').length >= 1,
-      true,
       'setVariable really reached the adapter',
     );
     eq(
@@ -204,8 +192,8 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
       true,
       'which is why the panel offers the edit at all',
     );
-    eq(recorder.stops().length >= 1, true, 'the debuggee was paused for the write');
-    eq(recorder.events('terminated').length <= 1, true, 'and the session ended at most once');
+    assert.ok(recorder.stops().length >= 1, 'the debuggee was paused for the write');
+    assert.ok(recorder.events('terminated').length <= 1, 'and the session ended at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
 
@@ -216,10 +204,7 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop with the decorated object in scope.
-    armBreakpoints(fixture, 'main-inspect');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the call to Inspect');
+    const { session, stop } = await runToFirstStop(debuggee(), 'main-inspect');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'main-inspect', 'Main', 'the DebuggerDisplay frame');
 
@@ -271,18 +256,9 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     // asks the C# sidecar to evaluate the format and replaces the default
     // `toString()`. A failure falls back to the raw class name, never to a
     // broken session.
-    eq(
-      recorder.requests('variables').length >= 1,
-      true,
-      'the Variables panel really asked the adapter',
-    );
-    eq(
-      recorder.responses('variables').every((response) => response.success),
-      true,
-      'and every read was answered',
-    );
+    assertAnswered(recorder, 'variables', 'the Variables panel really asked the adapter');
     eq(recorder.stops().length, 1, 'reading variables never resumes the debuggee');
-    eq(recorder.events('terminated').length <= 1, true, 'and the session ends at most once');
+    assert.ok(recorder.events('terminated').length <= 1, 'and the session ends at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
 
@@ -295,16 +271,12 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
 
     // Interaction 1 — stop where an object, a string and a collection are all
     // in scope, so there is something to call a method ON.
-    armBreakpoints(fixture, 'inspect-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the print statement');
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'inspect-print', 'Inspect', 'the T2 evaluation frame');
     const locals = await localsOf(session, frame.id);
-    eq(
+    assert.ok(
       locals.map((local) => local.name).includes('box'),
-      true,
       'the frame really does hold the object whose method the watch will call',
     );
 
@@ -318,9 +290,8 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     ];
     for (const { expression, expected } of calls) {
       const watch = await evaluate(session, expression, frame.id, 'watch');
-      eq(
+      assert.ok(
         watch.value.includes(expected),
-        true,
         expression +
           ' is a T2 "method calls on locals" expression, marked Works for Phase 4; ' +
           'the Watch panel answered ' +
@@ -354,9 +325,8 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
       '7',
       'and so is a call chained onto the result of a call',
     );
-    eq(
+    assert.ok(
       (await evaluate(session, 'box.Label.ToUpper()', frame.id, 'watch')).value.includes('BOXED'),
-      true,
       'including a method on a property of a local',
     );
     await vscode.commands.executeCommand(CMD_CONTINUE);
@@ -369,22 +339,19 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     assertCleanSession(debuggee(), 'T2 method-call evaluation');
     // Interaction 4 - the whole T2 sweep happened inside ONE paused frame, and
     // the frame is still readable at the end of it.
-    eq(
+    assert.ok(
       recorder.requests('evaluate').length >= 9,
-      true,
       'three expressions in three contexts is nine round trips',
     );
-    eq(
+    assert.ok(
       recorder.responses('evaluate').filter((response) => response.success).length >= 9,
-      true,
       'every one of them answered successfully',
     );
-    eq(
+    assert.ok(
       recorder.requests('stackTrace').length >= 1,
-      true,
       'the frame was resolved before anything was evaluated in it',
     );
-    eq(recorder.events('terminated').length <= 1, true, 'and the session ended at most once');
+    assert.ok(recorder.events('terminated').length <= 1, 'and the session ended at most once');
     deepEq(recorder.exits, [], 'with the adapter process still alive throughout');
   });
 
@@ -394,16 +361,13 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
   // their whole session because they typed a LINQ query into the Watch panel.
   test('an expression Phase 4 cannot evaluate is refused without losing the session', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — a real stop, and a real frame to evaluate against.
-    armBreakpoints(fixture, 'inspect-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the print statement');
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
     const frame = await topFrame(session, stop.threadId);
     const before = await localsOf(session, frame.id);
-    eq(before.length >= 3, true, 'the frame holds the locals the T1 assertions rest on');
+    assert.ok(before.length >= 3, 'the frame holds the locals the T1 assertions rest on');
 
     // Interaction 2 — expressions that cannot resolve. Each must come back as a
     // FAILED response, not as a thrown transport error and not as a plausible
@@ -457,17 +421,15 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     // Interaction 4 - a refusal is a RESPONSE, not a transport failure. The
     // distinction is what keeps the session alive after a typo in the Watch
     // panel.
-    eq(
+    assert.ok(
       recorder.requests('evaluate').length >= 5,
-      true,
       'every refused expression really reached the adapter',
     );
-    eq(
+    assert.ok(
       recorder.responses('evaluate').some((response) => !response.success),
-      true,
       'and at least one came back as a FAILED response',
     );
-    eq(recorder.events('terminated').length <= 1, true, 'the session ended at most once');
+    assert.ok(recorder.events('terminated').length <= 1, 'the session ended at most once');
     deepEq(recorder.exits, [], 'and the adapter process never exited under it');
     eq(recorder.stops().length, 1, 'with the debuggee still parked where it was');
   });
@@ -478,16 +440,13 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
   // that makes the Watch panel useless the moment you click a caller.
   test('a watch expression is evaluated in the frame the user selected', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — stop three user frames deep, so there are three frames
     // with three different sets of locals.
-    armBreakpoints(fixture, 'add-body');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the helper body');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-body');
     const frames = await stackFrames(session, stop.threadId);
-    eq(frames.length >= 3, true, 'the stop is three user frames deep');
+    assert.ok(frames.length >= 3, 'the stop is three user frames deep');
     const callee = requireAt(frames, 0, 'the innermost frame');
     const caller = requireAt(frames, 1, 'the calling frame');
     neq(callee.id, caller.id, 'the two frames carry different handles');
@@ -550,15 +509,13 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     // Interaction 4 - per-frame evaluation is what makes the Call Stack panel
     // useful. Every read here addressed a specific frame id, and the adapter
     // answered each on its own terms.
-    eq(recorder.requests('scopes').length >= 1, true, 'scopes were read for a specific frame');
-    eq(
+    assert.ok(recorder.requests('scopes').length >= 1, 'scopes were read for a specific frame');
+    assert.ok(
       recorder.requests('evaluate').length >= 6,
-      true,
       'and several expressions evaluated against frame ids',
     );
-    eq(
+    assert.ok(
       recorder.responses('stackTrace').every((response) => response.success),
-      true,
       'every stack read was answered',
     );
     eq(recorder.stops().length, 1, 'without ever resuming the debuggee');
@@ -576,10 +533,7 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
 
     // Interaction 1 — a frame with a writable local, and the capability that
     // makes the panel offer editing at all.
-    armBreakpoints(fixture, 'accumulate-call');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the loop body');
+    const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-call');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'accumulate-call', 'Accumulate', 'the edit frame');
     eq(
@@ -654,22 +608,19 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     assertCleanSession(debuggee(), 'setVariable at its boundaries');
     // Interaction 4 - and the write survived every refusal that followed it,
     // which is the whole claim: a refused edit changes nothing at all.
-    eq(
+    assert.ok(
       recorder.requests('setVariable').length >= 4,
-      true,
       'one accepted write and three refusals reached the adapter',
     );
-    eq(
+    assert.ok(
       recorder.responses('setVariable').some((response) => response.success),
-      true,
       'at least one succeeded',
     );
-    eq(
+    assert.ok(
       recorder.responses('setVariable').some((response) => !response.success),
-      true,
       'and at least one was refused',
     );
-    eq(recorder.events('terminated').length <= 1, true, 'the session ended at most once');
+    assert.ok(recorder.events('terminated').length <= 1, 'the session ended at most once');
     deepEq(recorder.exits, [], 'with the adapter process alive throughout');
   });
 });

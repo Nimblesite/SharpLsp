@@ -41,6 +41,7 @@ import { parseFailureMessage, parseRunSummary } from '../../test-run-output.js';
 import { isRunError, parseTrx, parseTrxDuration, parseTrxReport } from '../../test-trx.js';
 import { fixtureFor } from './test-explorer-fixtures';
 import { FAST_MS } from './test-timeouts';
+import { assertContainsAll, assertContainsNone } from './test-helpers';
 
 const CS = fixtureFor('xunit-csharp');
 
@@ -171,17 +172,9 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
       results,
       'a BOM and CRLF must not change a single parsed field',
     );
-    assert.strictEqual(
-      WINDOWS_TRX.startsWith('\uFEFF'),
-      true,
-      'the Windows fixture really does carry a BOM',
-    );
-    assert.strictEqual(
-      WINDOWS_TRX.includes('\r\n'),
-      true,
-      'the Windows fixture really does use CRLF',
-    );
-    assert.strictEqual(PLAIN_TRX.includes('\r'), false, 'the Unix fixture really does not');
+    assert.ok(WINDOWS_TRX.startsWith('\uFEFF'), 'the Windows fixture really does carry a BOM');
+    assert.ok(WINDOWS_TRX.includes('\r\n'), 'the Windows fixture really does use CRLF');
+    assert.ok(!PLAIN_TRX.includes('\r'), 'the Unix fixture really does not');
 
     const byName = new Map(results.map((result) => [result.fullyQualifiedName, result]));
     assert.strictEqual(byName.size, 6, 'every result keys to a DISTINCT fully-qualified name');
@@ -333,12 +326,8 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     const error = rejected.runInfos[0];
     assert.ok(error, 'the run info must be readable');
     assert.strictEqual(error.outcome, 'Error', 'a refusal is recorded as an Error');
-    assert.strictEqual(isRunError(error), true, 'and is classified as one');
-    assert.ok(
-      error.text.includes('selection expression'),
-      `the adapter's own words are kept: ${error.text}`,
-    );
-    assert.ok(error.text.includes('nunit3testexecutor'), 'including which adapter refused');
+    assert.ok(isRunError(error), 'and is classified as one');
+    assertContainsAll(error.text, ['selection expression', 'nunit3testexecutor'], 'error.text');
 
     const noMatch = parseTrxReport(NO_MATCH_TRX);
     assert.strictEqual(noMatch.results.length, 0, 'an unmatched filter also produces no results');
@@ -346,9 +335,8 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     const warning = noMatch.runInfos[0];
     assert.ok(warning, 'the run info must be readable');
     assert.strictEqual(warning.outcome, 'Warning', 'but it is a WARNING, not an error');
-    assert.strictEqual(
-      isRunError(warning),
-      false,
+    assert.ok(
+      !isRunError(warning),
       'so it must NOT trigger a retry — the filter simply matched nothing',
     );
     assert.ok(
@@ -364,11 +352,7 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
       'the healthy report still parses its six results',
     );
     assert.deepStrictEqual([...healthy.runInfos], [], 'and records no run-level message');
-    assert.strictEqual(
-      healthy.runInfos.some(isRunError),
-      false,
-      'so nothing would trigger a retry',
-    );
+    assert.ok(!healthy.runInfos.some(isRunError), 'so nothing would trigger a retry');
     assert.deepStrictEqual(parseTrxReport('').runInfos, [], 'empty input yields no run info');
     assert.deepStrictEqual(
       parseTrxReport('<not-trx/>').runInfos,
@@ -478,14 +462,8 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
       message.startsWith('Assert.Equal() Failure'),
       `the message starts at the assertion text: ${message}`,
     );
-    assert.ok(message.includes('Expected: 4'), 'and keeps the expected value');
-    assert.ok(message.includes('Actual:   3'), 'and the actual value');
-    assert.strictEqual(message.includes('Stack Trace'), false, 'and stops before the stack trace');
-    assert.strictEqual(
-      message.includes('at Cs.Xunit'),
-      false,
-      'so no stack frame leaks into the message',
-    );
+    assertContainsAll(message, ['Expected: 4', 'Actual:   3'], 'message');
+    assertContainsNone(message, ['Stack Trace', 'at Cs.Xunit'], 'message');
     assert.strictEqual(
       parseFailureMessage('Passed!  - Failed: 0'),
       undefined,
@@ -529,22 +507,14 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
       DOTNET_MAX_BUFFER >= 16 * 1024 * 1024,
       `a full build log needs far more than Node's 1 MiB default, got ${String(DOTNET_MAX_BUFFER)}`,
     );
-    assert.strictEqual(
-      DOTNET_MAX_BUFFER > 1024 * 1024,
-      true,
-      "and strictly more than Node's default",
-    );
+    assert.ok(DOTNET_MAX_BUFFER > 1024 * 1024, "and strictly more than Node's default");
     assert.strictEqual(DOTNET_TIMEOUT_MS, 600_000, 'the ceiling is ten minutes');
     assert.ok(
       DOTNET_TIMEOUT_MS >= 300_000,
       `a cold Windows restore needs minutes, got ${String(DOTNET_TIMEOUT_MS)}ms`,
     );
     assert.strictEqual(DOTNET_TIMEOUT_MS / 60_000, 10, 'the ceiling is a whole number of minutes');
-    assert.strictEqual(
-      Number.isInteger(DOTNET_TIMEOUT_MS),
-      true,
-      'the timeout is whole milliseconds',
-    );
+    assert.ok(Number.isInteger(DOTNET_TIMEOUT_MS), 'the timeout is whole milliseconds');
 
     // The executable itself is resolved, not assumed: [DIST-RUNTIME-ACQUIRE] can
     // install an SDK that is not on PATH, and the controller tracks that signal.

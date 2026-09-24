@@ -26,6 +26,9 @@ import {
   closeAllEditors,
   setupLspTestSuite,
   teardownLspTestSuite,
+  assertContainsAll,
+  removeDirRecursive,
+  assertContainsNone,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import {
@@ -57,7 +60,6 @@ import {
   type LeakSuspect,
 } from '../../profiler-diff.js';
 import { ObjectGraphPanel, promptAndOpenGraph } from '../../profiler-graph.js';
-import { removeDirRecursive } from './test-helpers.js';
 import { ACTIVATION_MS, COMMAND_MS } from './test-timeouts';
 
 // ── Extension API access ─────────────────────────────────────────
@@ -338,8 +340,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // whitespace makes the paste fail with a parse error
     // ([PROFILER-PROCESS-LIST]).
     assert.strictEqual(clip, clip.trim(), 'the clipboard text is not padded');
-    assert.strictEqual(clip.includes('WebApi'), false, 'and carries no process name');
-    assert.strictEqual(clip.includes('PID'), false, 'and no label');
+    assertContainsNone(clip, ['WebApi', 'PID'], 'clip');
     assert.strictEqual(Number(clip), 778899, 'so it parses back as the number it came from');
 
     // Interaction 3 — a SECOND process copies its own PID over the first. A
@@ -499,11 +500,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       'counter panel title carries the PID',
     );
     const html = panelSpy.created[0]?.webview.html ?? '';
-    assert.ok(html.includes('Live .NET Performance Counters'), 'counter panel shows its heading');
-    assert.ok(
-      html.includes('Waiting for counter data'),
-      'fresh panel shows the waiting placeholder',
-    );
+    assertContainsAll(html, ['Live .NET Performance Counters', 'Waiting for counter data'], 'html');
 
     // stopSession with no session (unknown id) is a safe no-op (no extra panel).
     const orphan = new ProfilerTreeItem('x', 'session', vscode.TreeItemCollapsibleState.None, {
@@ -716,9 +713,8 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       0,
       'no phantom counters session for a non-existent PID',
     );
-    assert.strictEqual(
-      provider.getActiveSessions('Trace').some((s) => s.pid === 999999),
-      false,
+    assert.ok(
+      !provider.getActiveSessions('Trace').some((s) => s.pid === 999999),
       'and none among the trace sessions',
     );
     assert.deepEqual(
@@ -844,8 +840,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
         // so inspect with skipEncoding to assert the raw query the source builds
         // (profiler.ts: https://www.speedscope.app/#localProfilePath=<encoded path>).
         const url = captured[0]?.toString(true) ?? '';
-        assert.ok(url.includes('speedscope.app'), 'speedscope viewer URL is opened externally');
-        assert.ok(url.includes('localProfilePath='), 'URL carries the local profile path');
+        assertContainsAll(url, ['speedscope.app', 'localProfilePath='], 'url');
       } else {
         // openExternal is not reassignable: accept EITHER a clean resolve OR a
         // reject whose message is the host's external-open refusal (which proves
@@ -916,7 +911,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     const dialog = stubs.log.openDialogOptions[0];
     if (dialog) {
       assert.strictEqual(dialog.canSelectMany, false, 'one input file, not many');
-      assert.strictEqual(dialog.canSelectFolders !== true, true, 'a file, never a folder');
+      assert.ok(dialog.canSelectFolders !== true, 'a file, never a folder');
       assert.ok(dialog.filters, 'and the picker filters by extension');
       assert.ok(
         JSON.stringify(dialog.filters).includes('nettrace'),
@@ -1027,13 +1022,16 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('<h2>Heap Snapshot Diff</h2>'), 'rendered the diff document');
     assert.ok(!html.includes('Comparing heap snapshots'), 'loading shell replaced');
-    assert.ok(html.includes('<h3>Leak Suspects (1)</h3>'), 'suspect count rendered');
-    assert.ok(html.includes(severityBadge('high')), 'high-severity badge present');
-    assert.ok(html.includes('Leaky&lt;T&gt;'), 'suspect type name HTML-escaped');
-    assert.ok(html.includes('+1.0 MB'), 'positive MB size delta formatted on the growing row');
-    assert.ok(
-      html.includes((2500).toLocaleString()),
-      'comparison object count uses locale grouping',
+    assertContainsAll(
+      html,
+      [
+        '<h3>Leak Suspects (1)</h3>',
+        severityBadge('high'),
+        'Leaky&lt;T&gt;',
+        '+1.0 MB',
+        (2500).toLocaleString(),
+      ],
+      'html',
     );
 
     // (d) Pure-helper assertions inside this same flow.
@@ -1093,8 +1091,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     assert.strictEqual(payload.baseline_dump_path, baseline.fsPath);
     assert.strictEqual(payload.comparison_dump_path, comparison.fsPath);
     const html = panelSpy.created[0]?.webview.html ?? '';
-    assert.ok(html.includes('<h2>Heap Snapshot Diff</h2>'));
-    assert.ok(html.includes(severityBadge('medium')), 'medium-severity suspect rendered');
+    assertContainsAll(html, ['<h2>Heap Snapshot Diff</h2>', severityBadge('medium')], 'html');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -1120,17 +1117,25 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       'panel titled "Heap Diff #n"',
     );
     const html = panelSpy.created[0]?.webview.html ?? '';
-    assert.ok(html.includes('<title>Heap Diff — Error</title>'), 'error document shown');
-    assert.ok(html.includes('<strong>Heap diff failed:</strong>'));
-    assert.ok(html.includes('diff sidecar exploded &lt;boom&gt;'), 'error message HTML-escaped');
+    assertContainsAll(
+      html,
+      [
+        '<title>Heap Diff — Error</title>',
+        '<strong>Heap diff failed:</strong>',
+        'diff sidecar exploded &lt;boom&gt;',
+      ],
+      'html',
+    );
     assert.ok(!html.includes('<h2>Heap Snapshot Diff</h2>'), 'no successful diff layout');
 
     // Direct pure-builder assertions in the same flow.
     const loading = buildLoadingHtml('/a&b.dmp', '/c"d.dmp');
     assert.ok(loading.startsWith('<!DOCTYPE html>'));
-    assert.ok(loading.includes('Comparing heap snapshots'));
-    assert.ok(loading.includes('/a&amp;b.dmp'), 'loading escapes the baseline path');
-    assert.ok(loading.includes('/c&quot;d.dmp'), 'loading escapes the comparison path');
+    assertContainsAll(
+      loading,
+      ['Comparing heap snapshots', '/a&amp;b.dmp', '/c&quot;d.dmp'],
+      'loading',
+    );
 
     const errorHtml = buildErrorHtml('bad <input> & "q"');
     assert.ok(errorHtml.includes('bad &lt;input&gt; &amp; &quot;q&quot;'));
@@ -1138,8 +1143,11 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
 
     // buildDiffHtml: zero-suspect + zero-diff scaffolding and sign rules.
     const empty = buildDiffHtml(makeResult(), '/b.dmp', '/c.dmp');
-    assert.ok(empty.includes('No leak suspects detected.'));
-    assert.ok(empty.includes('<h3>All Growing Types (0)</h3>'));
+    assertContainsAll(
+      empty,
+      ['No leak suspects detected.', '<h3>All Growing Types (0)</h3>'],
+      'empty',
+    );
     const signed = buildDiffHtml(
       makeResult({
         diffs: [makeDiff({ count_delta: -8, size_delta_bytes: 2048, growth_percent: 12.34 })],
@@ -1147,14 +1155,10 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       '/b',
       '/c',
     );
-    assert.ok(signed.includes('class="mono neg">-8</td>'), 'negative count delta gets neg class');
-    assert.ok(
-      signed.includes('class="mono pos">+2.0 KB</td>'),
-      'positive size delta gets + and pos',
-    );
-    assert.ok(
-      signed.includes('class="mono pos">+12.3%</td>'),
-      'growth percent + sign, one decimal',
+    assertContainsAll(
+      signed,
+      ['class="mono neg">-8</td>', 'class="mono pos">+2.0 KB</td>', 'class="mono pos">+12.3%</td>'],
+      'signed',
     );
   });
 
@@ -1227,10 +1231,16 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('Root: 00007ff8CAFE'), 'trimmed root address echoed');
     assert.ok(!html.includes('  00007ff8CAFE'), 'untrimmed address must not leak');
-    assert.ok(html.includes('Nodes: 2, Edges: 1, Max depth: 1'), 'stats line from stats object');
-    assert.ok(html.includes('root (My.Type) depth=0'), 'first node line rendered');
-    assert.ok(html.includes('leaf (Child) depth=1'), 'second node line rendered');
-    assert.ok(html.includes('WARNING: graph truncated'), 'truncated flag surfaces a warning');
+    assertContainsAll(
+      html,
+      [
+        'Nodes: 2, Edges: 1, Max depth: 1',
+        'root (My.Type) depth=0',
+        'leaf (Child) depth=1',
+        'WARNING: graph truncated',
+      ],
+      'html',
+    );
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -1256,8 +1266,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     );
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('Error: graph boom'), 'error message surfaced');
-    assert.ok(!html.includes('<pre>'), 'error page does not use the summary layout');
-    assert.ok(!html.includes('Nodes:'), 'error page renders no stats line');
+    assertContainsNone(html, ['<pre>', 'Nodes:'], 'error page');
 
     // Interaction 2 — the error page is a PAGE. A bare error string with no
     // document around it renders as unstyled text in the webview, which reads
@@ -1267,15 +1276,14 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       /<html|<body|<div/i.test(html),
       `the error page is real markup: ${html.slice(0, 120)}`,
     );
-    assert.strictEqual(html.includes('undefined'), false, 'and leaks no undefined into the text');
+    assert.ok(!html.includes('undefined'), 'and leaks no undefined into the text');
 
     // Interaction 3 — [PROFILER-GRAPH] renders a retention graph; a failed
     // request must render NONE of it. A page that shows an error banner above
     // an empty graph invites the user to interpret the emptiness as a result.
     for (const artefact of ['Max depth', 'depth=0', 'Edges:', 'Root:']) {
-      assert.strictEqual(
-        html.includes(artefact),
-        false,
+      assert.ok(
+        !html.includes(artefact),
         `the error page must not render '${artefact}' from a request that failed`,
       );
     }
@@ -1311,9 +1319,11 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // buildCounterHtml: empty placeholder.
     const emptyHtml = buildCounterHtml([]);
     assert.ok(emptyHtml.startsWith('<!DOCTYPE html>'));
-    assert.ok(emptyHtml.includes('<title>Live Counters</title>'));
-    assert.ok(emptyHtml.includes('Waiting for counter data'));
-    assert.ok(emptyHtml.includes('colspan="4"'));
+    assertContainsAll(
+      emptyHtml,
+      ['<title>Live Counters</title>', 'Waiting for counter data', 'colspan="4"'],
+      'emptyHtml',
+    );
     assert.ok(!emptyHtml.includes('<td class="provider">'), 'no data row when empty');
 
     // buildCounterHtml: data rows, sorted by provider/name, escaped, formatted.
@@ -1323,13 +1333,16 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       counter({ provider: 'Alpha', name: 'a', display_name: 'Aa', value: 3.14159, unit: 'ratio' }),
     ]);
     // Byte-unit value is byte-formatted; integer uses locale grouping; fraction → 2dp.
-    assert.ok(rowsHtml.includes('<td class="value">2.0 KB</td>'), 'byte counter byte-formatted');
-    assert.ok(
-      rowsHtml.includes(`<td class="value">${(1234).toLocaleString()}</td>`),
-      'int locale grouped',
+    assertContainsAll(
+      rowsHtml,
+      [
+        '<td class="value">2.0 KB</td>',
+        `<td class="value">${(1234).toLocaleString()}</td>`,
+        '<td class="value">3.14</td>',
+        '<td class="name">&lt;n&gt;</td>',
+      ],
+      'rowsHtml',
     );
-    assert.ok(rowsHtml.includes('<td class="value">3.14</td>'), 'fraction → two decimals');
-    assert.ok(rowsHtml.includes('<td class="name">&lt;n&gt;</td>'), 'display name HTML-escaped');
     // Sort order: Alpha/a < Alpha/b < Zeta/a.
     const idxAa = rowsHtml.indexOf('>Aa<');
     const idxAb = rowsHtml.indexOf('&lt;n&gt;');

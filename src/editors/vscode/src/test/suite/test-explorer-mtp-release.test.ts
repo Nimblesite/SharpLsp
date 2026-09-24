@@ -2,7 +2,6 @@
 // Implements [TEST-MTP-RUN], [TEST-MTP-MODULES], [TEST-MTP-DISCOVERY].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension';
@@ -17,12 +16,12 @@ import {
   writeProject,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   findItem,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import { removeDirRecursive, requireAt } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -66,8 +65,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
 
     suiteSetup(async function () {
       this.timeout(FIXTURE_BUILD_MS);
-      api = await activateTestExplorer();
-      root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-release-'));
+      ({ api, root } = await activateWithScratch('sharplsp-mtp-release-'));
       writeMtpGlobalJson(root);
       solution = await createSolution(root, 'ReleaseMtp', [write(3, 'bin/Original/')]);
       assert.equal(

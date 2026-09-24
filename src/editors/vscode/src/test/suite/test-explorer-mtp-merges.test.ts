@@ -26,7 +26,7 @@ import { COVERAGE_DIR, freshCoverageDir } from '../../test-reporting.js';
 import { runnersFor, splitByRunner, VSTEST_ONLY } from '../../test-run-routes.js';
 import type { TestOutcome, TestRunSummary } from '../../test-run-output.js';
 import type { TrxTestResult } from '../../test-trx.js';
-import { removeDirRecursive } from './test-helpers';
+import { removeDirRecursive, assertContainsAll } from './test-helpers';
 
 /** One TRX result for `id`. */
 function result(id: string, outcome: TestOutcome, durationMs = 5): TrxTestResult {
@@ -272,10 +272,10 @@ suite('Test Explorer MTP — the merge, routing and resolution rules', () => {
       write(path.join('run-3', 'coverage.cobertura.xml'));
       write(path.join('run-4', '5e6f.cobertura.xml'));
       const every = findCoberturaFiles(dir);
-      assert.ok(every.includes(path.join(dir, '9b1c.cobertura.xml')), 'the second MTP report');
-      assert.ok(
-        every.includes(path.join(dir, 'run-3', 'coverage.cobertura.xml')),
-        'the second run',
+      assertContainsAll(
+        every,
+        [path.join(dir, '9b1c.cobertura.xml'), path.join(dir, 'run-3', 'coverage.cobertura.xml')],
+        'the second',
       );
       assert.ok(
         !every.includes(path.join(dir, 'run-4', '5e6f.cobertura.xml')),

@@ -9,10 +9,11 @@ use lsp_types::{
     SymbolKind, TypeHierarchyItem, TypeHierarchyPrepareParams, TypeHierarchySubtypesParams,
     TypeHierarchySupertypesParams,
 };
-use tracing::{debug, warn};
+use tracing::debug;
 
+use crate::hierarchy::{hierarchy_item_location, prepare_hierarchy, SidecarHierarchyItem};
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{hierarchy_item_location, SidecarHierarchyItem};
+use crate::utils::{request_sidecar, with_sidecar, SidecarPositionReq};
 
 /// Handle `textDocument/prepareTypeHierarchy`.
 pub fn handle_prepare(
@@ -20,38 +21,19 @@ pub fn handle_prepare(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        return Ok(serde_json::Value::Null);
-    };
-    let params: TypeHierarchyPrepareParams = serde_json::from_value(req.params)?;
-    let file_path =
-        crate::semantic::uri_to_path(&params.text_document_position_params.text_document.uri)?;
-    let pos = &params.text_document_position_params.position;
-
-    let request = SidecarPositionReq {
-        file_path,
-        line: pos.line,
-        character: pos.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/prepareTypeHierarchy", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar prepareTypeHierarchy unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
-
-    let item: Option<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got type hierarchy item from sidecar: {}", item.is_some());
-
-    let result: Vec<TypeHierarchyItem> = item
-        .as_ref()
-        .and_then(map_type_hierarchy_item)
-        .into_iter()
-        .collect();
-    Ok(serde_json::to_value(result)?)
+    with_sidecar(
+        req,
+        sidecar,
+        |sidecar, params: TypeHierarchyPrepareParams| {
+            prepare_hierarchy(
+                runtime,
+                sidecar,
+                "textDocument/prepareTypeHierarchy",
+                &params.text_document_position_params,
+                map_type_hierarchy_item,
+            )
+        },
+    )
 }
 
 /// Handle `typeHierarchy/supertypes`.
@@ -60,33 +42,13 @@ pub fn handle_supertypes(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        return Ok(serde_json::Value::Null);
-    };
-    let params: TypeHierarchySupertypesParams = serde_json::from_value(req.params)?;
-    let item = &params.item;
-    let file_path = crate::semantic::uri_to_path(&item.uri)?;
-
-    let request = SidecarPositionReq {
-        file_path,
-        line: item.selection_range.start.line,
-        character: item.selection_range.start.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("typeHierarchy/supertypes", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar supertypes unavailable: {err:#}");
-                return Ok(serde_json::to_value(Vec::<TypeHierarchyItem>::new())?);
-            }
-        };
-
-    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} supertypes from sidecar", items.len());
-
-    let result: Vec<TypeHierarchyItem> = items.iter().filter_map(map_type_hierarchy_item).collect();
-    Ok(serde_json::to_value(result)?)
+    with_sidecar(
+        req,
+        sidecar,
+        |sidecar, params: TypeHierarchySupertypesParams| {
+            related_types(runtime, sidecar, "typeHierarchy/supertypes", &params.item)
+        },
+    )
 }
 
 /// Handle `typeHierarchy/subtypes`.
@@ -95,31 +57,29 @@ pub fn handle_subtypes(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        return Ok(serde_json::Value::Null);
-    };
-    let params: TypeHierarchySubtypesParams = serde_json::from_value(req.params)?;
-    let item = &params.item;
-    let file_path = crate::semantic::uri_to_path(&item.uri)?;
+    with_sidecar(
+        req,
+        sidecar,
+        |sidecar, params: TypeHierarchySubtypesParams| {
+            related_types(runtime, sidecar, "typeHierarchy/subtypes", &params.item)
+        },
+    )
+}
 
-    let request = SidecarPositionReq {
-        file_path,
-        line: item.selection_range.start.line,
-        character: item.selection_range.start.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("typeHierarchy/subtypes", payload))
-    {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar subtypes unavailable: {err:#}");
-            return Ok(serde_json::to_value(Vec::<TypeHierarchyItem>::new())?);
-        }
-    };
-
-    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} subtypes from sidecar", items.len());
-
+/// The types the sidecar relates to `item` via `method` (super- or subtypes).
+///
+/// An unreachable sidecar answers an empty list, the same as a type with no
+/// relatives: the tree shows nothing rather than an error.
+fn related_types(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &SidecarManager,
+    method: &str,
+    item: &TypeHierarchyItem,
+) -> Result<serde_json::Value> {
+    let request = SidecarPositionReq::at(&item.uri, item.selection_range.start)?;
+    let items: Vec<SidecarHierarchyItem> =
+        request_sidecar(runtime, sidecar, method, &request)?.unwrap_or_default();
+    debug!(method, count = items.len(), "related types from sidecar");
     let result: Vec<TypeHierarchyItem> = items.iter().filter_map(map_type_hierarchy_item).collect();
     Ok(serde_json::to_value(result)?)
 }
@@ -150,17 +110,4 @@ fn parse_symbol_kind(kind: &str) -> SymbolKind {
         "Module" | "Namespace" => SymbolKind::MODULE,
         _ => SymbolKind::CLASS,
     }
-}
-
-// ── Wire types ────────────────────────────────────────────────────
-
-/// Request sent to the sidecar identifying a position in a file.
-#[derive(serde::Serialize)]
-struct SidecarPositionReq {
-    /// Absolute path to the source file.
-    file_path: String,
-    /// Zero-based line number.
-    line: u32,
-    /// Zero-based character offset within the line.
-    character: u32,
 }

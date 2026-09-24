@@ -21,7 +21,7 @@ import {
   useDebuggee,
 } from './debug-suite-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
-import { deepEq, eq, pollUntilResult, requireAt } from './test-helpers';
+import { deepEq, eq, pollUntilResult, requireAt, assertContainsAll } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
 
 /** DAP output categories a debuggee's own writes may legitimately carry. */
@@ -92,9 +92,8 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     // the reverse-request channel must stay silent and the session must end on
     // its own.
     deepEq(recorder.reverseRequests('runInTerminal'), [], 'no terminal was ever requested');
-    eq(
+    assert.ok(
       recorder.events('output').length > 0,
-      true,
       'while the program output really arrived as events',
     );
     eq(recorder.events('terminated').length, 1, 'and the session ended exactly once');
@@ -161,9 +160,8 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
 
     // Interaction 4 — the program's stdout must NOT be duplicated into the
     // Debug Console: two copies of every line is the routing bug this prevents.
-    eq(
-      recorder.outputText().includes('done plain 45'),
-      false,
+    assert.ok(
+      !recorder.outputText().includes('done plain 45'),
       'with the terminal hosting the process, its stdout belongs to the terminal. Emitting it ' +
         'as DAP output as well means the routing table is decorative and every line is shown ' +
         'twice',
@@ -172,11 +170,13 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     assertCleanSession(debuggee(), 'integratedTerminal routing');
     // Interaction 5 - a terminal-hosted launch still runs under the DEBUGGER:
     // the handshake happens either way, and only the OUTPUT channel differs.
-    eq(recorder.requestedCommands().includes('initialize'), true, 'the handshake happened');
-    eq(recorder.requestedCommands().includes('launch'), true, 'and the launch was requested');
-    eq(
+    assertContainsAll(
+      recorder.requestedCommands(),
+      ['initialize', 'launch'],
+      'recorder.requestedCommands()',
+    );
+    assert.ok(
       recorder.responses('launch').every((response) => response.success),
-      true,
       'and answered successfully',
     );
     eq(recorder.events('initialized').length, 1, 'behind exactly one initialized event');
@@ -229,9 +229,8 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
 
     // Interaction 3 — nothing may be routed to the Debug Console, and no
     // INTEGRATED terminal may be opened for an external launch.
-    eq(
-      recorder.outputText().includes('done plain 45'),
-      false,
+    assert.ok(
+      !recorder.outputText().includes('done plain 45'),
       'an externally hosted process writes to the OS terminal; emitting its stdout as DAP ' +
         'output as well shows the user every line twice',
     );
@@ -244,11 +243,10 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     assertCleanSession(debuggee(), 'externalTerminal routing');
     // Interaction 5 - and an external launch is still a SharpLsp session with a
     // complete handshake behind it.
-    eq(recorder.requestedCommands().includes('initialize'), true, 'the handshake happened');
+    assert.ok(recorder.requestedCommands().includes('initialize'), 'the handshake happened');
     eq(recorder.events('initialized').length, 1, 'exactly once');
-    eq(
+    assert.ok(
       recorder.responses('launch').every((response) => response.success),
-      true,
       'and the launch was answered successfully',
     );
     eq(recorder.reverseRequests('runInTerminal').length, 1, 'with exactly one terminal request');
@@ -270,10 +268,9 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     assert.ok(stop, 'the debuggee must reach the statement after its first print');
     await recorder.waitForOutput('total=8');
     const paused = recorder.outputText();
-    eq(paused.includes('total=8'), true, 'the line printed before the stop is already delivered');
-    eq(
-      paused.includes('done plain 45'),
-      false,
+    assert.ok(paused.includes('total=8'), 'the line printed before the stop is already delivered');
+    assert.ok(
+      !paused.includes('done plain 45'),
       'and the line the program has not reached yet is not',
     );
 
@@ -282,9 +279,8 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     await vscode.commands.executeCommand(CMD_CONTINUE);
     await recorder.waitForOutput('done plain 45');
     const finished = recorder.outputText();
-    eq(
+    assert.ok(
       finished.indexOf('total=8') < finished.indexOf('done plain 45'),
-      true,
       'output must stay in program order across a pause',
     );
     eq(
@@ -298,7 +294,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     // Interaction 3 — every event carries a routable category, and the session
     // ends without an error.
     const events = recorder.events('output');
-    eq(events.length > 0, true, 'a debuggee that prints produces output events');
+    assert.ok(events.length > 0, 'a debuggee that prints produces output events');
     deepEq(
       events
         .map((event) => String(event.body['category'] ?? ''))
@@ -306,9 +302,8 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
       [],
       'an output event with an unroutable category is dropped by the Debug Console',
     );
-    eq(
+    assert.ok(
       events.every((event) => typeof event.body['output'] === 'string'),
-      true,
       'and every one of them carries the text it is meant to show',
     );
     await assertRanToCompletion(recorder, 0, 'a paused-then-resumed internalConsole launch');
@@ -319,7 +314,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     eq(recorder.stops().length, 1, 'exactly one pause happened');
     eq(recorder.events('terminated').length, 1, 'and the session ended once');
     eq(recorder.events('exited').length, 1, 'with the debuggee exiting once');
-    eq(recorder.events('output').length > 0, true, 'and the output arriving as events throughout');
+    assert.ok(recorder.events('output').length > 0, 'and the output arriving as events throughout');
     deepEq(recorder.exits, [], 'with the adapter process alive');
   });
 
@@ -344,9 +339,8 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
       'and a launch, which is the only request kind `console` applies to',
     );
     const declared = String(session.configuration['console'] ?? '');
-    eq(
+    assert.ok(
       ['internalConsole', 'integratedTerminal', 'externalTerminal', ''].includes(declared),
-      true,
       'the console attribute may only ever hold one of the three declared values',
     );
 
@@ -357,28 +351,25 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     const askedForTerminal = recorder.reverseRequests('runInTerminal').length;
     const consoleText = recorder.outputText();
     const wroteToConsole = consoleText.includes('done plain 45');
-    eq(
+    assert.ok(
       askedForTerminal === 0 || !wroteToConsole,
-      true,
       'a debuggee hosted in a terminal must not ALSO have its stdout emitted as DAP output; ' +
         'the user would see every line twice',
     );
-    eq(
+    assert.ok(
       askedForTerminal > 0 || wroteToConsole,
-      true,
       'and it must reach one of them - a program whose output goes nowhere is a run the user ' +
         'cannot read',
     );
-    eq(askedForTerminal <= 1, true, 'one process is at most ONE terminal request');
+    assert.ok(askedForTerminal <= 1, 'one process is at most ONE terminal request');
 
     // Interaction 3 — the events themselves. Every output event must carry text
     // and a routable category, and the ordering must be the program's.
     const events = recorder.events('output');
     for (const event of events) {
       eq(typeof event.body['output'], 'string', 'every output event carries its text');
-      eq(
+      assert.ok(
         PROGRAM_CATEGORIES.includes(String(event.body['category'] ?? '')),
-        true,
         'and a category the Debug Console can route; an unknown one is silently dropped',
       );
     }
@@ -388,9 +379,8 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
       '[DEBUG-PROTOCOL-CAPABILITIES] marks supportsANSIStyling a Phase 4 Yes - without it a ' +
         'coloured console application renders its escape codes as literal text',
     );
-    eq(
+    assert.ok(
       vscode.window.terminals.length >= terminalsBefore,
-      true,
       'a launch never CLOSES a terminal the user already had open',
     );
     await assertRanToCompletion(recorder, 0, 'a launch on the default routing row');
@@ -398,14 +388,12 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     assertCleanSession(debuggee(), 'the default routing row');
     // Interaction 4 - whichever routing row was in force, the session itself
     // must have been complete.
-    eq(
+    assert.ok(
       recorder.requestedCommands().includes('configurationDone'),
-      true,
       'configuration was finished',
     );
-    eq(
+    assert.ok(
       recorder.responses('configurationDone').every((response) => response.success),
-      true,
       'and answered successfully',
     );
     eq(recorder.events('initialized').length, 1, 'behind one initialized event');

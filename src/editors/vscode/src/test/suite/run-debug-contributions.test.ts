@@ -24,7 +24,7 @@ import {
   menuItems,
   packageJson,
 } from './run-debug-kit';
-import { EXTENSION_ID, pollUntilResult } from './test-helpers';
+import { EXTENSION_ID, pollUntilResult, assertContainsAll } from './test-helpers';
 import { ACTIVATION_MS, COMMAND_MS } from './test-timeouts';
 import {
   ACCIDENT,
@@ -63,7 +63,7 @@ suite('Run/Debug manifest contributions', () => {
     const extension = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(extension, `${EXTENSION_ID} must be installed in the test host`);
     await extension.activate();
-    assert.strictEqual(extension.isActive, true, 'must be active before reading the registry');
+    assert.ok(extension.isActive, 'must be active before reading the registry');
   });
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION], [DEBUG-FEATURES-LAUNCH-OUTPUT] r4.
@@ -84,7 +84,7 @@ suite('Run/Debug manifest contributions', () => {
     //    contributes.breakpoints through canSetBreakpointsIn. B56
     const declared = Object.prototype.hasOwnProperty.call(block, 'breakpoints');
     const noGutter = `breakpoints become impossible in every language; keys: ${blockKeys}`;
-    assert.strictEqual(declared, true, `contributes.breakpoints must exist — ${noGutter}`);
+    assert.ok(declared, `contributes.breakpoints must exist — ${noGutter}`);
     const breakpoints: unknown = block.breakpoints;
     assert.ok(Array.isArray(breakpoints), 'contributes.breakpoints must be an array');
     assert.strictEqual(breakpoints.length, 2, 'exactly csharp and fsharp, no duplicate entries');
@@ -203,8 +203,7 @@ suite('Run/Debug manifest contributions', () => {
     assert.strictEqual(ours.length, 2, 'exactly one tree entry per command');
     for (const item of ours) {
       const when = String(item.when);
-      assert.ok(when.includes('viewItem == project'), `project nodes only; when: ${when}`);
-      assert.ok(when.includes('view == sharplsp.solutionExplorer'), `one tree only: ${when}`);
+      assertContainsAll(when, ['viewItem == project', 'view == sharplsp.solutionExplorer'], 'when');
     }
 
     // 5. The user right-clicks the SAME node expecting what already worked.
@@ -356,8 +355,7 @@ suite('Run/Debug manifest contributions', () => {
     const declared = events.join(', ');
     const resolveEvent = `onDebugResolve:${DEBUG_TYPE}`;
     const dynamicEvent = `onDebugDynamicConfigurations:${DEBUG_TYPE}`;
-    assert.ok(events.includes(resolveEvent), `'${resolveEvent}' declared; have: ${declared}`);
-    assert.ok(events.includes(dynamicEvent), `'${dynamicEvent}' declared; have: ${declared}`);
+    assertContainsAll(events, [resolveEvent, dynamicEvent], 'events');
     const debugEvents = events.filter((e) => e === resolveEvent || e === dynamicEvent);
     assert.strictEqual(debugEvents.length, 2, 'each debug activation event appears once');
     assert.strictEqual(new Set(events).size, events.length, 'no activation event is duplicated');
@@ -467,11 +465,7 @@ suite('Run/Debug manifest contributions', () => {
       'errors reach the Problems panel',
     );
     const shells = provided.every((task) => task.execution instanceof vscode.ProcessExecution);
-    assert.strictEqual(
-      shells,
-      true,
-      'each build task is a ProcessExecution: a spaced path stays one argument',
-    );
+    assert.ok(shells, 'each build task is a ProcessExecution: a spaced path stays one argument');
     const runs = provided.map((task) => task.execution as vscode.ProcessExecution);
     assert.deepStrictEqual(
       runs.map((run) => run.process),

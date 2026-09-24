@@ -73,3 +73,39 @@ export async function warmCodeLensPath(...uris: readonly vscode.Uri[]): Promise<
     await codeLensesFor(uri);
   }
 }
+
+/** The test-lens toggle, `sharplsp.testLens.enabled`, as a section and a key. */
+export const TEST_LENS_SECTION = 'sharplsp.testLens';
+export const TEST_LENS_KEY = 'enabled';
+
+/** Write the test-lens toggle at `target` scope; `undefined` removes the key. */
+export async function setTestLens(
+  enabled: boolean | undefined,
+  target: vscode.ConfigurationTarget = vscode.ConfigurationTarget.Workspace,
+): Promise<void> {
+  await vscode.workspace.getConfiguration(TEST_LENS_SECTION).update(TEST_LENS_KEY, enabled, target);
+}
+
+/**
+ * Run `body`, then restore the EXACT prior workspace value of the toggle —
+ * `undefined` when it was unset, so the key is removed rather than persisted
+ * into the fixture settings.
+ */
+export async function withTestLensRestored(body: () => Promise<void>): Promise<void> {
+  const saved = vscode.workspace
+    .getConfiguration(TEST_LENS_SECTION)
+    .inspect<boolean>(TEST_LENS_KEY)?.workspaceValue;
+  try {
+    await body();
+  } finally {
+    await setTestLens(saved);
+  }
+}
+
+/** The method names `lenses` hand their command, sorted. */
+export function lensTargets(lenses: readonly vscode.CodeLens[]): string[] {
+  return lenses
+    .map((lens) => lens.command?.arguments?.[1])
+    .filter((name): name is string => typeof name === 'string')
+    .sort();
+}

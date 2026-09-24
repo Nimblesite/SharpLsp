@@ -12,7 +12,7 @@
 // armed set — the same probe run-to-cursor ([DEBUG-FEATURES-STEPPING], P2)
 // needs to retire its temporary breakpoint.
 import { interpolateLog, isRecord } from './dap-emulate';
-import type { DapMessage, LogToken } from './dap-emulate';
+import type { DapMessage, LogToken, RouterChannel } from './dap-emulate';
 import type { BreakpointEmulator, StopVerdict } from './dap-breakpoints';
 import type { GotoEmulator } from './dap-goto';
 import type { HandleNamespace } from './dap-namespace';
@@ -28,11 +28,7 @@ interface LocatedBreakpoint {
 }
 
 /** What the stop judge needs from its owning router. */
-export interface StopHost {
-  /** Request in the router's own name and await the response. */
-  request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
-  /** Emit one message towards VS Code. */
-  fire(message: Record<string, unknown> & { seq?: unknown }): void;
+export interface StopHost extends RouterChannel {
   /** True while a respawn replays the handshake; stale stops are swallowed. */
   isTransitioning(): boolean;
   /** Offer a stop to the step coalescer; true when it took ownership of it. */

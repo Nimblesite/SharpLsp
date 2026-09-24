@@ -25,7 +25,7 @@ import {
   type WorkspaceEditSnapshot,
   waitForMatchingDiagnostics,
 } from './refactor-test-helpers';
-import { closeAllEditors } from './test-helpers';
+import { closeAllEditors, assertContainsAll } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Project-wide matrix through the shipped client. [RENAME-FSHARP-PREPARE] [RENAME-FSHARP-APPLY]
@@ -252,8 +252,11 @@ function sourceWithoutSentinels(source: string): string {
 }
 
 function assertSentinels(source: string): void {
-  assert.ok(source.includes(`// ${RENAME_SENTINEL}`));
-  assert.ok(source.includes(`let textSentinel = "${RENAME_SENTINEL}"`));
+  assertContainsAll(
+    source,
+    [`// ${RENAME_SENTINEL}`, `let textSentinel = "${RENAME_SENTINEL}"`],
+    'source',
+  );
   assert.strictEqual(countOccurrences(source, RENAME_SENTINEL), 2);
 }
 

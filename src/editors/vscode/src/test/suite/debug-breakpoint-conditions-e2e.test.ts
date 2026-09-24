@@ -284,17 +284,15 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
       'trace running=3 index=2',
       'trace running=5 index=3',
     ]) {
-      eq(
+      assert.ok(
         output.includes(expected),
-        true,
         `the logpoint must emit '${expected}' as a DAP output event; the emulation rule is to ` +
           'evaluate the interpolated string against frame locals and surface it as output. ' +
           `Output seen: ${JSON.stringify(output)}`,
       );
     }
-    eq(
-      output.includes('{running}'),
-      false,
+    assert.ok(
+      !output.includes('{running}'),
       'an un-interpolated placeholder means the message was logged verbatim instead of evaluated',
     );
     await recorder.waitForOutput('done plain 45');

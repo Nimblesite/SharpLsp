@@ -7,7 +7,7 @@
 
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
-import { getErrorMessage } from './utils.js';
+import { escapeHtml, getErrorMessage } from './utils.js';
 import { ObjectGraphPanel } from './profiler-graph.js';
 
 // ── LSP types ─────────────────────────────────────────────────────
@@ -414,13 +414,7 @@ export function formatBytes(bytes: number): string {
   return `${sign}${mb.toFixed(1)} MB`;
 }
 
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+export { escapeHtml };
 
 /** Prompt for two dump files and open the diff panel. */
 export async function promptAndOpenDiff(

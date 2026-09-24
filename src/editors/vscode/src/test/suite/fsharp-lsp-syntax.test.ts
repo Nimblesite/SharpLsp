@@ -1,6 +1,12 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { closeAllEditors, flattenSymbolNames, pollUntilResult } from './test-helpers';
+import {
+  closeAllEditors,
+  flattenSymbolNames,
+  pollProvider,
+  pollSymbols,
+  assertContainsAll,
+} from './test-helpers';
 import { openFSharpFixture } from './fsharp-helpers';
 import { COMMAND_MS } from './test-timeouts';
 
@@ -21,35 +27,15 @@ suite('F# LSP — Document Symbols', () => {
   test('returns type, module, and member symbols for an F# file', async function () {
     this.timeout(COMMAND_MS + 5_000);
     const domain = await openFSharpFixture('Domain.fs');
-    const symbols = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          domain.uri,
-        )) ?? [],
-      (items) => items.length > 0,
-      COMMAND_MS,
-      2_000,
-    );
+    const symbols = await pollSymbols(domain.uri, (items) => items.length > 0, COMMAND_MS, 2_000);
     const names = flattenSymbolNames(symbols);
-    assert.ok(names.includes('Shape'), 'document symbols must include the Shape type');
-    assert.ok(names.includes('Person'), 'document symbols must include the Person record');
-    assert.ok(names.includes('IAnimal'), 'document symbols must include the IAnimal interface');
+    assertContainsAll(names, ['Shape', 'Person', 'IAnimal'], 'document symbols must include the');
   });
 
   test('returns module and nested function symbols', async function () {
     this.timeout(COMMAND_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
-    const symbols = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          library.uri,
-        )) ?? [],
-      (items) => items.length > 0,
-      COMMAND_MS,
-      2_000,
-    );
+    const symbols = await pollSymbols(library.uri, (items) => items.length > 0, COMMAND_MS, 2_000);
     const names = flattenSymbolNames(symbols);
     assert.ok(names.includes('Geometry'), 'document symbols must include the Geometry module');
     assert.ok(
@@ -67,12 +53,9 @@ suite('F# LSP — Folding Ranges', () => {
   test('returns folding ranges for type and module bodies', async function () {
     this.timeout(COMMAND_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
-    const ranges = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.FoldingRange[]>(
-          'vscode.executeFoldingRangeProvider',
-          library.uri,
-        )) ?? [],
+    const ranges = await pollProvider<vscode.FoldingRange>(
+      'vscode.executeFoldingRangeProvider',
+      [library.uri],
       (items) => items.length >= 2,
       COMMAND_MS,
       2_000,
@@ -94,13 +77,9 @@ suite('F# LSP — Selection Ranges', () => {
     const library = await openFSharpFixture('Library.fs');
     const text = library.doc.getText();
     const position = library.doc.positionAt(text.indexOf('Math.PI'));
-    const ranges = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.SelectionRange[]>(
-          'vscode.executeSelectionRangeProvider',
-          library.uri,
-          [position],
-        )) ?? [],
+    const ranges = await pollProvider<vscode.SelectionRange>(
+      'vscode.executeSelectionRangeProvider',
+      [library.uri, [position]],
       (items) => items.length > 0,
       COMMAND_MS,
       2_000,

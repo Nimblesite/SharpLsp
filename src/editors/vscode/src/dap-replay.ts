@@ -7,7 +7,7 @@
 // ([DEBUG-ADAPTER-GAPS]: netcoredbg never issues the `runInTerminal` reverse
 // request and cannot attach mid-session, so the router hosts the debuggee via
 // the client and attaches a fresh adapter to it with `--attach`).
-import type { DapMessage } from './dap-emulate';
+import type { DapMessage, RouterChannel } from './dap-emulate';
 import { isRecord } from './dap-emulate';
 import { signalPid } from './child-signal';
 import { info } from './log';
@@ -24,13 +24,9 @@ const TERMINAL_KINDS = new Map<string, 'integrated' | 'external'>([
 ]);
 
 /** What the replayer needs from its owning router. */
-export interface ReplayHost {
+export interface ReplayHost extends RouterChannel {
   /** Write one message to the live child (DAP framing applied by the host). */
   write(message: DapMessage): void;
-  /** Request in the router's own name and await the response. */
-  request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
-  /** Emit one message towards VS Code. */
-  fire(message: Record<string, unknown> & { seq?: unknown }): void;
   /** Swap the child process; `attachArgs` are extra CLI arguments. */
   respawn(attachArgs: readonly string[], onReady?: () => void): void;
   /** The seq of a recorded client message, for response correlation. */

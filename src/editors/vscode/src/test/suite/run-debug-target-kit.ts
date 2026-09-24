@@ -134,9 +134,9 @@ function assertProjectOutput(program: string, cwd: string, of: ConsoleProject, a
   const dll = `${of.assemblyName}.dll`;
   assert.strictEqual(path.basename(program), dll, `${at}: must be ${dll}, not a neighbour's`);
   const under = comparablePath(program).startsWith(comparablePath(of.dir + path.sep));
-  assert.strictEqual(under, true, `${at}: the program must sit under ${of.dir}; got ${program}`);
+  assert.ok(under, `${at}: the program must sit under ${of.dir}; got ${program}`);
   assert.strictEqual(comparablePath(cwd), comparablePath(of.dir), `${at}: cwd is the project dir`);
-  assert.strictEqual(path.isAbsolute(cwd), true, `${at}: cwd must be an absolute path`);
+  assert.ok(path.isAbsolute(cwd), `${at}: cwd must be an absolute path`);
 }
 
 /** Assert `outcome` targets `project`'s assembly; returns the resolved program. */
@@ -144,7 +144,7 @@ function assertTargets(outcome: Resolved, project: ConsoleProject, at: string): 
   assertLaunchShape(outcome, at);
   assert.strictEqual(typeof outcome.program, 'string', `${at}: program must resolve to a path`);
   const program = String(outcome.program);
-  assert.strictEqual(path.isAbsolute(program), true, `${at}: the program must be absolute`);
+  assert.ok(path.isAbsolute(program), `${at}: the program must be absolute`);
   assert.strictEqual(path.extname(program), '.dll', `${at}: a managed launch target is a .dll`);
   assertProjectOutput(program, String(outcome.cwd), project, at);
   return program;
@@ -193,16 +193,12 @@ function assertNoEscape(start: string, stop: string, decoy: ConsoleProject, at: 
 /** Assert a class library was refused as a launch target. */
 function assertNotRunnable(outcome: Resolved, built: string, at: string): void {
   assert.strictEqual(outcome.threw, '', `${at}: refusing a library must not throw`);
-  assert.strictEqual(fs.existsSync(built), true, `${at}: the fixture library must really be built`);
+  assert.ok(fs.existsSync(built), `${at}: the fixture library must really be built`);
   const evidence = fs.existsSync(runtimeConfigFor(built));
-  assert.strictEqual(
-    evidence,
-    false,
-    `${at}: a library emits no runtimeconfig — the discriminator`,
-  );
+  assert.ok(!evidence, `${at}: a library emits no runtimeconfig — the discriminator`);
   const program = outcome.program;
   const runnable = program === undefined || fs.existsSync(runtimeConfigFor(program));
-  assert.strictEqual(runnable, true, `${at}: ${String(program)} has no runtimeconfig.json`);
+  assert.ok(runnable, `${at}: ${String(program)} has no runtimeconfig.json`);
   const chosen = comparablePath(String(program));
   assert.notStrictEqual(chosen, comparablePath(built), `${at}: the library dll is unlaunchable`);
 }
@@ -314,7 +310,7 @@ export async function assertNestedTarget(
   const outcome = await resolveTarget(root, bareF5Config());
   const dll = assertTargets(outcome, app, at);
   const nested = comparablePath(dll).includes(comparablePath(path.join('src', 'App')));
-  assert.strictEqual(nested, true, `${at}: the program sits under src/App, the universal layout`);
+  assert.ok(nested, `${at}: the program sits under src/App, the universal layout`);
   const entry = comparablePath(findEntryProject(root)?.dll ?? '');
   assert.strictEqual(entry, comparablePath(dll), `${at}: findEntryProject must descend`);
   assertWalkersAgree(app.dir, root, app, dll);
@@ -360,7 +356,7 @@ export async function assertFocusFlips(
   );
   const stale = `${path.sep}${path.basename(from.dir)}${path.sep}`;
   const leaked = comparablePath(dll).includes(comparablePath(stale));
-  assert.strictEqual(leaked, false, `${at}: ${path.basename(from.dir)} must not be selected`);
+  assert.ok(!leaked, `${at}: ${path.basename(from.dir)} must not be selected`);
   assertWalkersAgree(path.dirname(to.sourceFile), root, to, dll);
   return dll;
 }
@@ -440,9 +436,9 @@ export async function assertLibraryRefused(root: string, lang: LangKit, q: Quiet
   const runner = lang.console(path.join(root, 'runner'), `${lang.tag}Runner`);
   await buildProject(runner);
   const runnerDll = assertTargets(await resolveTarget(runner.dir, bareF5Config()), runner, at);
-  assert.strictEqual(fs.existsSync(runnerDll), true, `${at}: a resolved program must exist`);
+  assert.ok(fs.existsSync(runnerDll), `${at}: a resolved program must exist`);
   const evidence = fs.existsSync(runtimeConfigFor(runnerDll));
-  assert.strictEqual(evidence, true, `${at}: an executable assembly ships a runtimeconfig.json`);
+  assert.ok(evidence, `${at}: an executable assembly ships a runtimeconfig.json`);
   const lib = lang.library(path.join(root, 'lib'), `${lang.tag}Calc`);
   await buildProject(lib);
   const libDll = path.join(lib.dir, 'bin', 'Debug', TFM, `${lang.tag}Calc.dll`);
@@ -461,9 +457,9 @@ export async function assertOrphanRefused(file: string, q: Quiet, expected: numb
   const owner = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(file));
   assert.strictEqual(owner, undefined, `${at}: the fixture must lie outside every folder`);
   const folders = vscode.workspace.workspaceFolders ?? [];
-  assert.strictEqual(folders.length > 0, true, `${at}: a folder must exist to be wrongly used`);
+  assert.ok(folders.length > 0, `${at}: a folder must exist to be wrongly used`);
   const outcome = await invokeCommand(CMD_DEBUG_PROGRAM);
-  assert.strictEqual(outcome.rejected, false, `${at}: the command must exist: ${outcome.message}`);
+  assert.ok(!outcome.rejected, `${at}: the command must exist: ${outcome.message}`);
   await q.sessions.assertNoSession(`${at}: an orphan document must start no session`);
   await q.tasks.assertNoTask(`${at}: an orphan document must run no build task`, 0);
   const warnings = q.stubs.log.warningMessages;
@@ -480,10 +476,10 @@ export async function assertOrphanRefused(file: string, q: Quiet, expected: numb
 /** The refusal must describe the boundary that was hit, not a missing project. */
 function assertRefusalNamesBoundary(message: string, at: string): void {
   assert.strictEqual(typeof message, 'string', `${at}: the refusal must be text`);
-  assert.strictEqual(message.length > 0, true, `${at}: an empty warning tells the user nothing`);
+  assert.ok(message.length > 0, `${at}: an empty warning tells the user nothing`);
   const lower = message.toLowerCase();
   const names = lower.includes('workspace') || lower.includes('active document');
-  assert.strictEqual(names, true, `${at}: name the boundary that was hit; got "${message}"`);
+  assert.ok(names, `${at}: name the boundary that was hit; got "${message}"`);
   const misdescribes = lower.includes('directory tree');
-  assert.strictEqual(misdescribes, false, `${at}: the file's directory tree is not the reason`);
+  assert.ok(!misdescribes, `${at}: the file's directory tree is not the reason`);
 }

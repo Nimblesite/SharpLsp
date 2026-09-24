@@ -8,7 +8,7 @@ import {
   waitForCodeActions,
   waitForResolvedCodeActions,
 } from './refactor-test-helpers';
-import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { closeAllEditors, pollUntilResult, assertContainsAll } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Real-LSP analyzer fixes for [ANALYZERS-FSAC-PARITY] and [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB].
@@ -152,8 +152,7 @@ async function applyRemove(fixture: Fixture, action: vscode.CodeAction): Promise
   assert.ok(await vscode.workspace.applyEdit(action.edit));
   const after = fixture.doc.getText();
   assert.ok(!after.includes('open System.Text'));
-  assert.ok(after.includes('open System\n'));
-  assert.ok(after.includes('DateTime.Now'));
+  assertContainsAll(after, ['open System\n', 'DateTime.Now'], 'after');
 }
 
 function assertSimplifyEdit(fixture: Fixture, action: vscode.CodeAction): void {
@@ -212,9 +211,7 @@ async function applyInterface(fixture: Fixture, action: vscode.CodeAction): Prom
   assert.ok(await vscode.workspace.applyEdit(action.edit));
   const after = fixture.doc.getText();
   assert.ok(after.length > before.length);
-  assert.ok(after.includes('Area'));
-  assert.ok(after.includes('Name'));
-  assert.ok(after.includes('member'));
+  assertContainsAll(after, ['Area', 'Name', 'member'], 'after');
 }
 
 function codeOf(diagnostic: vscode.Diagnostic): string {

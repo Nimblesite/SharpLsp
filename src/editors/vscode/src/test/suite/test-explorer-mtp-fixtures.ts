@@ -33,6 +33,7 @@ import {
   MTP_XUNIT_PACKAGES,
   type PackageRef,
 } from './dotnet-project-kit';
+import { fixtureNames } from './test-explorer-fixtures';
 
 /** One buildable MTP fixture project plus the ids it is expected to expose. */
 export interface MtpFixture {
@@ -204,13 +205,10 @@ const CS_NUNIT_SOURCE = [
  */
 export const MTP_FIXTURES: readonly MtpFixture[] = [
   {
-    key: 'xunit-fsharp',
+    ...fixtureNames('xunit', 'fsharp', 'Mtp'),
     framework: 'xunit',
     language: 'fsharp',
     packages: MTP_XUNIT_PACKAGES,
-    projectName: 'XunitMtpFs',
-    projectFileName: 'XunitMtpFs.fsproj',
-    sourceFileName: 'Tests.fs',
     source: FS_XUNIT_SOURCE,
     passing: 'Fs.XunitMtp.Fixtures.adds two numbers with spaces',
     failing: 'Fs.XunitMtp.Fixtures.fails on purpose',
@@ -220,13 +218,10 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     failureText: 'Assert.Equal() Failure',
   },
   {
-    key: 'xunit-csharp',
+    ...fixtureNames('xunit', 'csharp', 'Mtp'),
     framework: 'xunit',
     language: 'csharp',
     packages: MTP_XUNIT_PACKAGES,
-    projectName: 'XunitMtpCs',
-    projectFileName: 'XunitMtpCs.csproj',
-    sourceFileName: 'Tests.cs',
     source: CS_XUNIT_SOURCE,
     passing: 'Cs.XunitMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.XunitMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
@@ -237,13 +232,10 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     failureText: 'Assert.Equal() Failure',
   },
   {
-    key: 'mstest-fsharp',
+    ...fixtureNames('mstest', 'fsharp', 'Mtp'),
     framework: 'mstest',
     language: 'fsharp',
     packages: MTP_MSTEST_PACKAGES,
-    projectName: 'MstestMtpFs',
-    projectFileName: 'MstestMtpFs.fsproj',
-    sourceFileName: 'Tests.fs',
     source: FS_MSTEST_SOURCE,
     passing: 'Fs.MstestMtp.Fixtures+CalculatorTests.AddsTwoNumbers',
     failing: 'Fs.MstestMtp.Fixtures+CalculatorTests.FailsOnPurpose',
@@ -253,13 +245,10 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     failureText: 'Assertion failed. Expected values to be equal.',
   },
   {
-    key: 'mstest-csharp',
+    ...fixtureNames('mstest', 'csharp', 'Mtp'),
     framework: 'mstest',
     language: 'csharp',
     packages: MTP_MSTEST_PACKAGES,
-    projectName: 'MstestMtpCs',
-    projectFileName: 'MstestMtpCs.csproj',
-    sourceFileName: 'Tests.cs',
     source: CS_MSTEST_SOURCE,
     passing: 'Cs.MstestMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.MstestMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
@@ -269,13 +258,10 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     failureText: 'Assertion failed. Expected values to be equal.',
   },
   {
-    key: 'nunit-fsharp',
+    ...fixtureNames('nunit', 'fsharp', 'Mtp'),
     framework: 'nunit',
     language: 'fsharp',
     packages: MTP_NUNIT_PACKAGES,
-    projectName: 'NunitMtpFs',
-    projectFileName: 'NunitMtpFs.fsproj',
-    sourceFileName: 'Tests.fs',
     source: FS_NUNIT_SOURCE,
     passing: 'Fs.NunitMtp.Fixtures.adds two numbers with spaces',
     failing: 'Fs.NunitMtp.Fixtures.fails on purpose',
@@ -285,13 +271,10 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     failureText: 'Assert.That(',
   },
   {
-    key: 'nunit-csharp',
+    ...fixtureNames('nunit', 'csharp', 'Mtp'),
     framework: 'nunit',
     language: 'csharp',
     packages: MTP_NUNIT_PACKAGES,
-    projectName: 'NunitMtpCs',
-    projectFileName: 'NunitMtpCs.csproj',
-    sourceFileName: 'Tests.cs',
     source: CS_NUNIT_SOURCE,
     passing: 'Cs.NunitMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.NunitMtp.Fixtures.CalculatorTests.Fails_OnPurpose',

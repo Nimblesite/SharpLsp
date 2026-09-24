@@ -41,11 +41,11 @@ import {
 } from './dotnet-project-kit';
 import { idsOf, mtpFixtureFor, writeMtpProject } from './test-explorer-mtp-fixtures';
 import {
-  activateTestExplorer,
   discoverSolution,
   rootsOf,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import {
   assertFailed,
@@ -161,8 +161,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform across several modules',
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-modules-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-modules-'));
     frameworks = await installedFrameworkPair(root);
     slnPath = await createFixture(root, frameworks);
     expected = [EDITED, ...frameworks.map(frameworkId), ...NO_TRX_IDS];

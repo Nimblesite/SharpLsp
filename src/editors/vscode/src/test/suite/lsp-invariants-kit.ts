@@ -75,6 +75,30 @@ export function symbolNamed(
   return found;
 }
 
+/**
+ * The DIRECT child of `parent` (a symbol, or the outline's root list) named
+ * `name`, asserted to exist — and to be `kind`, when given. Nesting is the
+ * claim: a type the outline hoisted to the wrong level fails here.
+ */
+export function childNamed(
+  parent: vscode.DocumentSymbol | readonly vscode.DocumentSymbol[],
+  name: string,
+  kind?: vscode.SymbolKind,
+): vscode.DocumentSymbol {
+  const [children, owner] =
+    'children' in parent ? [parent.children, `'${parent.name}'`] : [parent, 'the outline root'];
+  const found = children.find((symbol) => symbol.name === name);
+  assert.ok(found, `'${name}' must be a direct child of ${owner}`);
+  if (kind !== undefined) {
+    assert.strictEqual(
+      found.kind,
+      kind,
+      `'${name}' must be ${vscode.SymbolKind[kind]}, got ${vscode.SymbolKind[found.kind]}`,
+    );
+  }
+  return found;
+}
+
 function findSymbol(
   symbols: readonly vscode.DocumentSymbol[],
   name: string,
@@ -141,7 +165,7 @@ export function assertFoldingRanges(
       `${where} must end inside the document (${document.lineCount} lines)`,
     );
     const key = `${range.start}:${range.end}:${String(range.kind)}`;
-    assert.strictEqual(seen.has(key), false, `${where} is reported twice`);
+    assert.ok(!seen.has(key), `${where} is reported twice`);
     seen.add(key);
   }
 }
@@ -169,9 +193,8 @@ export function assertSelectionChain(
       parent.range.contains(current.range),
       `selection level ${depth} must sit inside level ${depth + 1}`,
     );
-    assert.strictEqual(
-      parent.range.isEqual(current.range),
-      false,
+    assert.ok(
+      !parent.range.isEqual(current.range),
       `selection level ${depth + 1} must be STRICTLY larger, or expand-selection stalls`,
     );
     current = parent;

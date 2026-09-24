@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+use super::object_inspection::read_dumpobj;
 use super::{dump_cmd, tool_discovery};
 
 /// Default maximum traversal depth for the object graph.
@@ -206,46 +207,14 @@ struct ParsedNode {
 
 /// Parse `dumpobj` output to extract a graph node and its outgoing references.
 fn parse_dumpobj_for_graph(output: &str, address: &str, depth: usize) -> ParsedNode {
-    let mut type_name = String::new();
-    let mut size_bytes: u64 = 0;
-    let mut references: Vec<(String, String)> = Vec::new();
-    let mut in_fields = false;
-    let mut fields_header_seen = false;
-
-    for line in output.lines() {
-        let trimmed = line.trim();
-
-        if trimmed.starts_with("Name:") {
-            type_name = trimmed
-                .strip_prefix("Name:")
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            continue;
-        }
-
-        if trimmed.starts_with("Size:") {
-            size_bytes = parse_size(trimmed);
-            continue;
-        }
-
-        if trimmed.starts_with("Fields:") {
-            in_fields = true;
-            continue;
-        }
-
-        if in_fields {
-            if !fields_header_seen && trimmed.contains("MT") && trimmed.contains("Name") {
-                fields_header_seen = true;
-                continue;
-            }
-            if fields_header_seen {
-                if let Some((field_name, ref_addr)) = extract_reference_field(trimmed) {
-                    references.push((field_name, ref_addr));
-                }
-            }
-        }
-    }
+    let listing = read_dumpobj(output);
+    let type_name = listing.type_name;
+    let size_bytes = listing.size_bytes;
+    let references: Vec<(String, String)> = listing
+        .field_rows
+        .iter()
+        .filter_map(|row| extract_reference_field(row))
+        .collect();
 
     if type_name.is_empty() {
         return ParsedNode {
@@ -355,17 +324,6 @@ async fn annotate_roots(
     }
 }
 
-/// Parse the Size field: `Size: 52(0x34) bytes` → 52.
-fn parse_size(line: &str) -> u64 {
-    let after_colon = line.strip_prefix("Size:").unwrap_or(line).trim();
-    after_colon
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>()
-        .parse()
-        .unwrap_or(0)
-}
-
 /// Extract the last segment of a fully-qualified type name.
 fn short_type_name(full: &str) -> String {
     // For generic types like "System.Collections.Generic.List`1[[System.String]]",
@@ -382,6 +340,7 @@ fn short_type_name(full: &str) -> String {
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests {
+    use super::super::object_inspection::parse_size_field;
     use super::*;
 
     const DUMPOBJ_OUTPUT: &str = "\
@@ -433,8 +392,8 @@ Fields:
 
     #[test]
     fn test_parse_size() {
-        assert_eq!(parse_size("Size:        52(0x34) bytes"), 52);
-        assert_eq!(parse_size("Size:        1024(0x400) bytes"), 1024);
+        assert_eq!(parse_size_field("Size:        52(0x34) bytes"), 52);
+        assert_eq!(parse_size_field("Size:        1024(0x400) bytes"), 1024);
     }
 
     #[test]
@@ -541,9 +500,9 @@ Size:        24(0x18) bytes
 
     #[test]
     fn test_parse_size_edge_cases() {
-        assert_eq!(parse_size("Size: 0(0x0) bytes"), 0);
-        assert_eq!(parse_size("Size: bytes"), 0);
-        assert_eq!(parse_size("not a size line"), 0);
+        assert_eq!(parse_size_field("Size: 0(0x0) bytes"), 0);
+        assert_eq!(parse_size_field("Size: bytes"), 0);
+        assert_eq!(parse_size_field("not a size line"), 0);
     }
 
     #[test]

@@ -10,7 +10,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 internal static class CallHierarchyResolver
 {
     /// <summary>Prepare a call hierarchy item at the given position.</summary>
-    public static async Task<CallHierarchyItem?> PrepareAsync(
+    public static async Task<HierarchyItem?> PrepareAsync(
         Document document,
         int line,
         int character,
@@ -171,27 +171,9 @@ internal static class CallHierarchyResolver
         return null;
     }
 
-    private static CallHierarchyItem? ToCallHierarchyItem(ISymbol symbol)
+    private static HierarchyItem? ToCallHierarchyItem(ISymbol symbol)
     {
-        var loc = symbol.Locations.FirstOrDefault(l => l.IsInSource);
-        if (loc is null)
-        {
-            return null;
-        }
-
-        var (path, line, character, endLine, endCharacter) = DocumentPosition.Coordinates(
-            loc.GetMappedLineSpan()
-        );
-        return new CallHierarchyItem
-        {
-            Name = symbol.Name,
-            Kind = MapSymbolKind(symbol),
-            FilePath = path,
-            Line = line,
-            Character = character,
-            EndLine = endLine,
-            EndCharacter = endCharacter,
-        };
+        return DocumentPosition.ToHierarchyItem(symbol, MapSymbolKind(symbol));
     }
 
     /// <summary>

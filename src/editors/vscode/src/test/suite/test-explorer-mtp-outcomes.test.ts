@@ -29,12 +29,12 @@ import {
   mtpFixtureFor,
 } from './test-explorer-mtp-fixtures';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   runAlreadyCancelled,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import {
   assertFailed,
@@ -67,8 +67,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-run-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-run-'));
     slnPath = await createMtpSolution(root);
     await discoverSolution(api, slnPath, ALL_MTP_IDS);
   });
@@ -339,8 +338,7 @@ suite('Test Explorer e2e — built-in xUnit reporting', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-xunit-report-'));
+    ({ api, root } = await activateWithScratch('sharplsp-xunit-report-'));
     slnPath = await createMtpSolution(root, fixtures);
     await discoverSolution(api, slnPath, fixtures.flatMap(idsOf));
   });

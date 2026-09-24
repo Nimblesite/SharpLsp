@@ -23,16 +23,13 @@ import {
   type RawCodeAction,
 } from './csharp-refactor-test-kit';
 import {
-  activateRealSharpLsp,
-  openFixtureDocument,
   replaceDocumentText,
-  revertDocument,
   waitForCodeActions,
   waitForMatchingDiagnostics,
-  warmSemanticEngine,
   type OpenFixture,
+  useRefactorFixture,
 } from './refactor-test-helpers';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const HEADER = 'namespace SharpLsp.TestFixtures.AddUsing;\n';
 
@@ -110,137 +107,123 @@ const STATIC_MEMBER = body(`public class StaticMemberTarget
  * `caretOnly` drives the literal user story - a bare caret on the type, no
  * selection, which is what Ctrl-. sends.
  */
+/** One missing-using row, carrying only what varies between rows. */
+interface MissingUsing {
+  readonly label: string;
+  readonly source: string;
+  readonly snippet: string;
+  readonly focus: string;
+  /** The namespace the fix imports. */
+  readonly namespace: string;
+  /** The row's own marker, which must survive the edit. */
+  readonly sentinel: string;
+  /** The unresolved-symbol diagnostic; CS0246 unless the row says otherwise. */
+  readonly code?: string;
+  readonly alsoPresent?: readonly string[];
+}
+
+/** The row every case shares: the exact `using` as a caret-only quickfix that clears the error. */
+function missingUsing(row: MissingUsing): ActionLifecycleCase {
+  const title = `using ${row.namespace};`;
+  return {
+    label: row.label,
+    source: row.source,
+    snippet: row.snippet,
+    focus: row.focus,
+    diagnosticCode: row.code ?? 'CS0246',
+    title,
+    kind: 'quickfix',
+    caretOnly: true,
+    mustDisappear: true,
+    presentAfter: [title, ...(row.alsoPresent ?? []), row.sentinel],
+    absentAfter: [],
+  };
+}
+
 const CASES: readonly ActionLifecycleCase[] = [
-  {
+  missingUsing({
     label: 'object-creation type',
     source: NEW_EXPRESSION,
     snippet: 'new Stopwatch()',
     focus: 'Stopwatch',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Diagnostics;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Diagnostics;', 'new Stopwatch()', 'new-expression-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Diagnostics',
+    sentinel: 'new-expression-sentinel',
+    alsoPresent: ['new Stopwatch()'],
+  }),
+  missingUsing({
     label: 'local-variable type annotation',
     source: LOCAL_ANNOTATION,
     snippet: 'Regex pattern',
     focus: 'Regex',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Text.RegularExpressions;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Text.RegularExpressions;', 'local-annotation-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Text.RegularExpressions',
+    sentinel: 'local-annotation-sentinel',
+  }),
+  missingUsing({
     label: 'generic type argument',
     source: GENERIC_ARGUMENT,
     snippet: 'new List<int>()',
     focus: 'List',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Collections.Generic;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Collections.Generic;', 'generic-argument-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Collections.Generic',
+    sentinel: 'generic-argument-sentinel',
+  }),
+  missingUsing({
     label: 'field declaration type',
     source: FIELD_DECLARATION,
     snippet: 'private Encoding _encoding',
     focus: 'Encoding',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Text;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Text;', 'field-declaration-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Text',
+    sentinel: 'field-declaration-sentinel',
+  }),
+  missingUsing({
     label: 'method return type',
     source: RETURN_TYPE,
     snippet: 'public CultureInfo Culture()',
     focus: 'CultureInfo',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Globalization;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Globalization;', 'return-type-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Globalization',
+    sentinel: 'return-type-sentinel',
+  }),
+  missingUsing({
     label: 'method parameter type',
     source: PARAMETER_TYPE,
     snippet: 'Length(StringBuilder builder)',
     focus: 'StringBuilder',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Text;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Text;', 'parameter-type-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Text',
+    sentinel: 'parameter-type-sentinel',
+  }),
+  missingUsing({
     label: 'base type in the class declaration',
     source: BASE_TYPE,
     snippet: 'BaseTypeTarget : EventArgs',
     focus: 'EventArgs',
-    diagnosticCode: 'CS0246',
-    title: 'using System;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System;', 'base-type-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System',
+    sentinel: 'base-type-sentinel',
+  }),
+  missingUsing({
     label: 'attribute usage',
     source: ATTRIBUTE_USAGE,
     snippet: '[Obsolete("retired")]',
     focus: 'Obsolete',
-    diagnosticCode: 'CS0246',
-    title: 'using System;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System;', 'attribute-usage-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System',
+    sentinel: 'attribute-usage-sentinel',
+  }),
+  missingUsing({
     label: 'extension-method receiver',
     source: EXTENSION_METHOD,
     snippet: 'values.Select(value => value)',
     focus: 'Select',
-    diagnosticCode: 'CS1061',
-    title: 'using System.Linq;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Linq;', 'extension-method-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Linq',
+    sentinel: 'extension-method-sentinel',
+    code: 'CS1061',
+  }),
+  missingUsing({
     label: 'static member access on an unimported type',
     source: STATIC_MEMBER,
     snippet: 'File.ReadAllText(path)',
     focus: 'File',
-    diagnosticCode: 'CS0103',
-    title: 'using System.IO;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.IO;', 'static-member-sentinel'],
-    absentAfter: [],
-  },
+    namespace: 'System.IO',
+    sentinel: 'static-member-sentinel',
+    code: 'CS0103',
+  }),
 ];
 
 const UNKNOWN_TYPE = body(`public class UnknownTypeTarget
@@ -277,17 +260,10 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
   let fixture: OpenFixture;
   let committedText = '';
 
-  suiteSetup(async function () {
-    // ONE initialization for the suite: activation, fixture open and the Roslyn
-    // project load are paid here so no test body carries a build tier.
-    this.timeout(FIXTURE_BUILD_MS);
-    await activateRealSharpLsp();
-    fixture = await openFixtureDocument('RefactorCore.cs');
-    await warmSemanticEngine(fixture.uri);
-    committedText = fixture.document.getText();
+  const refactor = useRefactorFixture('RefactorCore.cs');
+  setup(() => {
+    ({ fixture, committedText } = refactor());
   });
-
-  teardown(async () => revertDocument(fixture.document));
 
   for (const actionCase of CASES) {
     const label = `${actionCase.label}: Ctrl-. offers ${actionCase.title} and clears ${actionCase.diagnosticCode}`;
@@ -381,9 +357,8 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
       offered.every((action) => !action.title.includes('NoSuchTypeAnywhere;')),
       'and nothing pretends the name is a namespace',
     );
-    assert.strictEqual(
-      fixture.document.getText().includes('using NoSuchTypeAnywhere'),
-      false,
+    assert.ok(
+      !fixture.document.getText().includes('using NoSuchTypeAnywhere'),
       'the buffer gains no invented directive',
     );
   });

@@ -48,7 +48,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     //    where the assembly is. [DEBUG-FEATURES-LAUNCH-BUILD] rule 3.
     await buildProject(project);
     const built = path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
-    assert.strictEqual(fs.existsSync(built), true, `dotnet build must produce ${built}`);
+    assert.ok(fs.existsSync(built), `dotnet build must produce ${built}`);
 
     // 2. The user opens Program.cs, then presses F5. The shape VS Code really
     //    builds has type/request/name ABSENT, not empty. B01
@@ -60,7 +60,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     assertSynthesised(bare, 'bare {}');
     assertBuildTaskContributed(bare, 'bare {}');
     assertSamePath(bare.program, built, 'B01: F5 targets the assembly MSBuild actually produced');
-    assert.strictEqual(fs.existsSync(String(bare.program)), true, 'B01: which exists on disk');
+    assert.ok(fs.existsSync(String(bare.program)), 'B01: which exists on disk');
     assertSamePath(bare.cwd, project.dir, 'B01: cwd is the project dir, not the workspace root');
     assertNoProfileValues(bare, 'B01: no launchSettings.json exists');
     assert.strictEqual(bare.noDebug, undefined, 'B01: plain F5 never invents noDebug');
@@ -109,7 +109,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     const folder = fakeFolder(project.dir);
     await buildProject(project);
     const built = path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
-    assert.strictEqual(fs.existsSync(built), true, 'the premise: the project really built');
+    assert.ok(fs.existsSync(built), 'the premise: the project really built');
 
     // 1. No program at all — the resolver must find the project's own output.
     const detected = await resolveConfig(folder, emptyF5Config());
@@ -141,7 +141,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     //    this stage; refusing it belongs to the post-substitution pass, which is
     //    the only place that can see the final expanded path.
     const absent = path.join(project.dir, 'bin', 'Debug', TFM, 'NeverBuilt.dll');
-    assert.strictEqual(fs.existsSync(absent), false, 'the premise: that path is absent');
+    assert.ok(!fs.existsSync(absent), 'the premise: that path is absent');
     const kept = await resolveConfig(folder, {
       type: DEBUG_TYPE_ID,
       request: 'launch',

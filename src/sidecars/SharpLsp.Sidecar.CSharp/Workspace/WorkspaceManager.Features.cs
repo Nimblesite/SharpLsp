@@ -23,59 +23,39 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 internal sealed partial class WorkspaceManager
 {
     /// <summary>Get code lenses for a document.</summary>
-    public async Task<CodeLensesResult> GetCodeLensesAsync(
+    public Task<CodeLensesResult> GetCodeLensesAsync(
         string filePath,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null || _solution is null)
-            {
-                return new CodeLensesResult.Ok<List<CodeLensResult>, string>([]);
-            }
-
-            var lenses = await CodeLensResolver
-                .GetLensesAsync(document, _solution, ct)
-                .ConfigureAwait(false);
-            return new CodeLensesResult.Ok<List<CodeLensResult>, string>(lenses);
-        }
-        catch (Exception ex)
-        {
-            return CodeLensesResult.Failure(ex.Message);
-        }
+        // A non-null document implies _solution was non-null at lookup time:
+        // FindDocumentAsync returns null whenever _solution is null.
+        return RunDocumentQueryAsync<List<CodeLensResult>>(
+            filePath,
+            [],
+            document => CodeLensResolver.GetLensesAsync(document, _solution!, ct),
+            ct
+        );
     }
 
     /// <summary>Format an entire document. SEQUESTERED — not called by the LSP server.</summary>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public async Task<FormattingResult> FormatDocumentAsync(
+    public Task<FormattingResult> FormatDocumentAsync(
         string filePath,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                return new FormattingResult.Ok<List<TextEditResult>, string>([]);
-            }
-
-            var edits = await FormattingResolver
-                .FormatDocumentAsync(document, ct)
-                .ConfigureAwait(false);
-            return new FormattingResult.Ok<List<TextEditResult>, string>(edits);
-        }
-        catch (Exception ex)
-        {
-            return FormattingResult.Failure(ex.Message);
-        }
+        return RunDocumentQueryAsync<List<TextEditResult>>(
+            filePath,
+            [],
+            document => FormattingResolver.FormatDocumentAsync(document, ct),
+            ct
+        );
     }
 
     /// <summary>Format a range within a document. SEQUESTERED — not called by the LSP server.</summary>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public async Task<FormattingResult> FormatRangeAsync(
+    public Task<FormattingResult> FormatRangeAsync(
         string filePath,
         int startLine,
         int startCharacter,
@@ -84,51 +64,37 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                return new FormattingResult.Ok<List<TextEditResult>, string>([]);
-            }
-
-            var edits = await FormattingResolver
-                .FormatRangeAsync(document, startLine, startCharacter, endLine, endCharacter, ct)
-                .ConfigureAwait(false);
-            return new FormattingResult.Ok<List<TextEditResult>, string>(edits);
-        }
-        catch (Exception ex)
-        {
-            return FormattingResult.Failure(ex.Message);
-        }
+        return RunDocumentQueryAsync<List<TextEditResult>>(
+            filePath,
+            [],
+            document =>
+                FormattingResolver.FormatRangeAsync(
+                    document,
+                    startLine,
+                    startCharacter,
+                    endLine,
+                    endCharacter,
+                    ct
+                ),
+            ct
+        );
     }
 
     /// <summary>Format after typing a trigger character. SEQUESTERED — not called by the LSP server.</summary>
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public async Task<FormattingResult> FormatOnTypeAsync(
+    public Task<FormattingResult> FormatOnTypeAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                return new FormattingResult.Ok<List<TextEditResult>, string>([]);
-            }
-
-            var edits = await FormattingResolver
-                .FormatOnTypeAsync(document, line, character, ct)
-                .ConfigureAwait(false);
-            return new FormattingResult.Ok<List<TextEditResult>, string>(edits);
-        }
-        catch (Exception ex)
-        {
-            return FormattingResult.Failure(ex.Message);
-        }
+        return RunDocumentQueryAsync<List<TextEditResult>>(
+            filePath,
+            [],
+            document => FormattingResolver.FormatOnTypeAsync(document, line, character, ct),
+            ct
+        );
     }
 
     /// <summary>Get semantic tokens for a full document.</summary>
@@ -174,29 +140,18 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>Get inlay hints for a range.</summary>
-    public async Task<InlayHintsResult> GetInlayHintsAsync(
+    public Task<InlayHintsResult> GetInlayHintsAsync(
         string filePath,
         int startLine,
         int endLine,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                return new InlayHintsResult.Ok<List<InlayHintResult>, string>([]);
-            }
-
-            var hints = await InlayHintResolver
-                .GetHintsAsync(document, startLine, endLine, ct)
-                .ConfigureAwait(false);
-            return new InlayHintsResult.Ok<List<InlayHintResult>, string>(hints);
-        }
-        catch (Exception ex)
-        {
-            return InlayHintsResult.Failure(ex.Message);
-        }
+        return RunDocumentQueryAsync<List<InlayHintResult>>(
+            filePath,
+            [],
+            document => InlayHintResolver.GetHintsAsync(document, startLine, endLine, ct),
+            ct
+        );
     }
 }

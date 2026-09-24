@@ -11,9 +11,7 @@ import {
   rawCodeActions,
 } from './csharp-refactor-test-kit';
 import {
-  activateRealSharpLsp,
   applyWorkspaceEdit,
-  openFixtureDocument,
   replaceDocumentText,
   revertDocument,
   waitForCodeActions,
@@ -21,9 +19,9 @@ import {
   waitForResolvedCodeActions,
   type OpenFixture,
   type WorkspaceEditSnapshot,
-  warmSemanticEngine,
+  useRefactorFixture,
 } from './refactor-test-helpers';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorQuickFixes.cs';
 
@@ -258,21 +256,10 @@ suite('C# real LSP - compiler quick fixes', () => {
   let fixture: OpenFixture;
   let committedText = '';
 
-  suiteSetup(async function () {
-    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
-    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    this.timeout(FIXTURE_BUILD_MS);
-    await activateRealSharpLsp();
-    fixture = await openFixtureDocument(FILE);
-    // This fixture is known to produce code actions, so an empty result
-    // means Roslyn has not loaded the project yet. Pay that load HERE,
-    // once, instead of inside the first test's ceiling
-    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    await warmSemanticEngine(fixture.uri);
-    committedText = fixture.document.getText();
+  const refactor = useRefactorFixture(FILE);
+  setup(() => {
+    ({ fixture, committedText } = refactor());
   });
-
-  teardown(async () => revertDocument(fixture.document));
 
   for (const scenario of SCENARIOS) {
     test(`${scenario.label}: list, resolve, apply, requery, and revert`, async function () {

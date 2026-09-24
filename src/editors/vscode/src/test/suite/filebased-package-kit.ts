@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { pollUntilResult } from './test-helpers';
+import { pollUntilResult, assertContainsNone } from './test-helpers';
 import { DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { loadSolutionInServer } from './real-repo-helpers';
 
@@ -133,8 +133,6 @@ async function hoverAt(uri: vscode.Uri, position: vscode.Position): Promise<vsco
 export function assertNoPackageBindingErrors(uri: vscode.Uri): void {
   const errors = errorsFor(uri);
   const codes = errors.map(diagnosticCode);
-  assert.ok(!codes.includes('CS0234'), `package namespace must bind; errors: ${codes.join(', ')}`);
-  assert.ok(!codes.includes('CS0246'), `package types must bind; errors: ${codes.join(', ')}`);
-  assert.ok(!codes.includes('CS0103'), `package values must bind; errors: ${codes.join(', ')}`);
+  assertContainsNone(codes, ['CS0234', 'CS0246', 'CS0103'], 'codes');
   assert.deepStrictEqual(errors, [], 'a restored package-backed file-based app has zero errors');
 }

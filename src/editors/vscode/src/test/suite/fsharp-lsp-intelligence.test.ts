@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { closeAllEditors, pollUntilResult, pollProvider, assertContainsAll } from './test-helpers';
 import { openFSharpFixture, positionOf } from './fsharp-helpers';
 import { IGNORE_SOURCE } from './fsharp-refactor-fixtures';
 import {
@@ -95,8 +95,7 @@ async function verifyRecordCompletion(this: Mocha.Context): Promise<void> {
     position,
     (set) => set.has('Name') && set.has('Age'),
   );
-  assert.ok(labels.has('Name'), 'record completion must include Name');
-  assert.ok(labels.has('Age'), 'record completion must include Age');
+  assertContainsAll(labels, ['Name', 'Age'], 'record completion must include');
 }
 
 async function verifyModuleCompletion(this: Mocha.Context): Promise<void> {
@@ -108,9 +107,11 @@ async function verifyModuleCompletion(this: Mocha.Context): Promise<void> {
     position,
     (set) => set.has('totalArea') && set.has('area'),
   );
-  assert.ok(labels.has('area'), 'module completion must include area');
-  assert.ok(labels.has('totalArea'), 'module completion must include totalArea');
-  assert.ok(labels.has('describeParity'), 'module completion must include describeParity');
+  assertContainsAll(
+    labels,
+    ['area', 'totalArea', 'describeParity'],
+    'module completion must include',
+  );
 }
 
 async function verifyCompletionKind(this: Mocha.Context): Promise<void> {
@@ -210,13 +211,9 @@ async function requestInlayHints(
   uri: vscode.Uri,
   range: vscode.Range,
 ): Promise<vscode.InlayHint[]> {
-  return pollUntilResult(
-    async () =>
-      (await vscode.commands.executeCommand<vscode.InlayHint[]>(
-        'vscode.executeInlayHintProvider',
-        uri,
-        range,
-      )) ?? [],
+  return pollProvider<vscode.InlayHint>(
+    'vscode.executeInlayHintProvider',
+    [uri, range],
     (items) => items.length >= 1,
     LSP_RESPONSE_MS,
     2_000,

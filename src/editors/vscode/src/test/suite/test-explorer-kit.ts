@@ -8,6 +8,7 @@
 // the shared `state.solutionPath` signal behind `loadSolution`.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -36,6 +37,14 @@ export async function activateTestExplorer(): Promise<SharpLspExtensionApi> {
   assert.ok(api.testController, 'the extension must expose its Test Explorer controller');
   assert.ok(api.explorerProvider, 'the extension must expose its Solution Explorer provider');
   return api;
+}
+
+/** Activate the Test Explorer and make the suite's scratch root under the OS temp dir. */
+export async function activateWithScratch(
+  prefix: string,
+): Promise<{ api: SharpLspExtensionApi; root: string }> {
+  const api = await activateTestExplorer();
+  return { api, root: fs.mkdtempSync(path.join(os.tmpdir(), prefix)) };
 }
 
 /**
@@ -83,6 +92,17 @@ export function collectLeafIds(items: vscode.TestItemCollection): string[] {
   return ids;
 }
 
+/** The controller's leaves are EXACTLY `expected`, as a set: nothing missing, nothing extra. */
+export function assertLeavesAre(
+  controller: SharpLspTestController,
+  expected: readonly string[],
+  why: string,
+): void {
+  const ordinal = (ids: readonly string[]): string[] =>
+    [...ids].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  assert.deepStrictEqual(ordinal(collectLeafIds(controller.items)), ordinal(expected), why);
+}
+
 /**
  * A test leaf reveals the SOURCE FILE that declares it, inside the discovery
  * target — never a directory, which Go to Test cannot open. [TEST-GOTO-SOURCE]
@@ -93,14 +113,12 @@ export function assertDeclaredInside(
   id: string,
 ): void {
   const file = uriPath ?? '';
-  assert.strictEqual(
+  assert.ok(
     comparablePath(file).startsWith(comparablePath(anchor) + path.sep),
-    true,
     `${id} must be anchored inside the discovery target's directory, not at ${file}`,
   );
-  assert.strictEqual(
+  assert.ok(
     fs.existsSync(file) && fs.statSync(file).isFile(),
-    true,
     `${id} must point at the source file that declares it, never a directory: ${file}`,
   );
   assert.ok(['.cs', '.fs'].includes(path.extname(file)), `${id} is declared in C# or F#: ${file}`);
@@ -138,6 +156,24 @@ export function findItem(
     found = findItem(item.children, id);
   });
   return found;
+}
+
+/** Every property one leaf item exposes, asserted against its own FQN. */
+export function assertLeafItem(items: vscode.TestItemCollection, id: string): vscode.TestItem {
+  const item = findItem(items, id);
+  assert.ok(item, `findItem must resolve ${id}`);
+  assert.strictEqual(item.id, id, `the id is the fully-qualified name, verbatim: ${id}`);
+  assert.strictEqual(
+    item.label,
+    id.split('.').at(-1),
+    `the label is the last dotted segment of ${id}`,
+  );
+  assert.strictEqual(item.description, id, `the description is the whole FQN for ${id}`);
+  assert.ok(!item.canResolveChildren, `a leaf test resolves no children: ${id}`);
+  assert.strictEqual(item.children.size, 0, `${id} must have no children`);
+  assert.strictEqual(item.error, undefined, `${id} must not carry a discovery error`);
+  assert.strictEqual(item.tags.length, 0, `${id} carries no framework tag`);
+  return item;
 }
 
 /**
