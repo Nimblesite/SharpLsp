@@ -159,9 +159,11 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
 - [ ] File ordering awareness + reorder suggestions (F# compilation order matters)
 - [ ] Type provider navigation support
 - [ ] Convert pipe to/from nested function calls (refactoring)
-- [ ] Multi-project F# workspace state (multiple `FSharpProjectOptions`). Unblocks
-      mixed C#/F# `.slnx` full-stack coverage (migrated from the completed-and-removed
-      SLNX-SUPPORT plan, whose only remaining item was gated on this).
+- [x] Multi-project F# workspace state (multiple `FSharpProjectOptions`). Every `.fsproj`
+      loads, F#→F# project references are in-memory, and project-wide queries span every
+      project ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES], #165; tests in
+      `FSharpMultiProjectTests.fs`). Mixed C#/F# `.slnx` full-stack coverage is
+      `definition_cross_language.rs`.
 
 ## TODO — parity pass
 

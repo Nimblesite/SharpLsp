@@ -362,23 +362,24 @@ let subtypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line charact
                 match entityAt checkResults source line character with
                 | None -> return []
                 | Some target ->
-                    let! proj = FSharpWorkspace.checkProject state
-                    match proj with
-                    | None -> return []
-                    | Some projResults ->
-                        let entities =
-                            projResults.GetAllUsesOfAllSymbols()
-                            |> Array.choose (fun u ->
-                                match u.Symbol with
-                                | :? FSharpEntity as ent when u.IsFromDefinition -> Some ent
-                                | _ -> None)
-                            |> Array.distinctBy (fun ent ->
-                                ent.TryFullName |> Option.defaultValue ent.DisplayName)
-                        return
-                            entities
-                            |> Array.filter (derivesFrom target)
-                            |> Array.choose (fun ent -> itemOfSymbol (ent :> FSharpSymbol))
-                            |> Array.toList
+                    // Every project: a type in one project may implement another's.
+                    let! projects = FSharpWorkspace.checkProjects state
+
+                    let entities =
+                        projects
+                        |> Seq.collect _.GetAllUsesOfAllSymbols()
+                        |> Seq.choose (fun u ->
+                            match u.Symbol with
+                            | :? FSharpEntity as ent when u.IsFromDefinition -> Some ent
+                            | _ -> None)
+                        |> Seq.distinctBy (fun ent ->
+                            ent.TryFullName |> Option.defaultValue ent.DisplayName)
+
+                    return
+                        entities
+                        |> Seq.filter (derivesFrom target)
+                        |> Seq.choose (fun ent -> itemOfSymbol (ent :> FSharpSymbol))
+                        |> List.ofSeq
         with ex ->
             Log.Debug(ex, "[F# Subtypes] failed")
             return []

@@ -150,9 +150,20 @@ let private projectReferenceArg projectPath =
     |> Option.ofObj
     |> Option.map (fun assemblyPath -> $"-r:{assemblyPath}")
 
-let private projectReferenceArgs fsprojPath =
+/// The projects `fsprojPath` references whose project file ends in `extension`.
+let referencedProjects (extension: string) (fsprojPath: string) =
     ProjectReferences.ReadReferencedProjects(fsprojPath)
-    |> Seq.filter (fun project -> project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+    |> Seq.filter (fun project -> project.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+
+/// The prefix among `prefixes` that compiler argument `arg` starts with, and its value.
+let flagValue (prefixes: string list) (arg: string) =
+    prefixes
+    |> List.tryFind (fun prefix -> arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+    |> Option.map (fun prefix -> prefix, arg.Substring prefix.Length)
+
+/// A C# project is referenced as its built assembly: FCS cannot read C# source.
+let private projectReferenceArgs fsprojPath =
+    referencedProjects ".csproj" fsprojPath
     |> Seq.choose projectReferenceArg
     |> Seq.toArray
 

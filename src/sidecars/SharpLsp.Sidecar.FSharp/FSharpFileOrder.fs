@@ -110,7 +110,9 @@ let analyzeFileOrder
                 let files = getCompileOrder fsprojPath
                 if files.Length < 2 then return []
                 else
-                    let options = state.ProjectOptions.Value
+                    // The analyzed project's options, not the workspace's first project's:
+                    // a loaded workspace always answers, with its own at worst.
+                    let options = (FSharpWorkspace.optionsFor state files[0]).Value
                     let! definitions = collectDefinitions state options files
                     let fileIndex =
                         files

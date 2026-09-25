@@ -47,6 +47,7 @@
     <Compile Include="FSharpWorkspaceRuntime.fs" />
     <Compile Include="FSharpProjectLoading.fs" />
     <Compile Include="FSharpDesignTime.fs" />
+    <Compile Include="FSharpProjectGraph.fs" />
     <Compile Include="FSharpSemanticNavigation.fs" />
     <Compile Include="FSharpWorkspace.fs" />
     <Compile Include="FSharpTargetFrameworks.fs" />

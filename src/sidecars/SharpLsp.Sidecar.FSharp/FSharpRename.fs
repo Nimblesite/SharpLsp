@@ -325,7 +325,7 @@ let private collectMatchingUses
     xmlDocSig =
     task {
         let collected = ResizeArray<FSharpSymbolUse>()
-        let files = state.ProjectOptions |> Option.map _.SourceFiles |> Option.defaultValue [||]
+        let files = FSharpWorkspace.allSourceFiles state
         for filePath in files do
             let! uses = matchingUsesInFile state assemblyName xmlDocSig filePath
             collected.AddRange(uses)
@@ -460,7 +460,7 @@ let private transientForeignEdits
         | Some currentName ->
             let staleXml = renameXmlDocSignature xmlDocSig currentName newName
             let edits = ResizeArray<FSharpCodeActions.RawEdit>()
-            let files = state.ProjectOptions |> Option.map _.SourceFiles |> Option.defaultValue [||]
+            let files = FSharpWorkspace.allSourceFiles state
             if String.IsNullOrWhiteSpace(staleXml) then return []
             else
                 for filePath in files do

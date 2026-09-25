@@ -30,6 +30,9 @@ type FSharpWorkspaceState =
         Overlays: ConcurrentDictionary<string, string>
         /// Every loaded project, keyed by its project file. [NETFX-PROJECTS-FSHARP]
         Projects: ConcurrentDictionary<string, FSharpDesignTime.FSharpProjectEntry>
+        /// The F# projects each loaded project references, read once at load.
+        /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+        References: ConcurrentDictionary<string, string list>
     }
 
 /// Create a new workspace with an overlay-aware FSharpChecker.
@@ -48,12 +51,25 @@ let create () : FSharpWorkspaceState =
       ProjectOptions = None
       IsLoaded = false
       Overlays = overlays
-      Projects = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer) }
+      Projects = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer)
+      References = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer) }
 
 /// The project that compiles `filePath`, if any loaded project does.
 let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =
     state.Projects.Values
     |> Seq.tryFind (fun entry -> (FSharpWorkspaceRuntime.tryProjectSourcePath entry.Options filePath).IsSome)
+
+/// `options` with the loaded F# projects it references wired in, in memory.
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+let internal wired (state: FSharpWorkspaceState) (options: FSharpProjectOptions) =
+    let lookup (table: ConcurrentDictionary<string, 'T>) (project: string) =
+        match table.TryGetValue(FSharpWorkspaceRuntime.overlayKey project) with
+        | true, value -> Some value
+        | _ -> None
+
+    let current = lookup state.Projects >> Option.map _.Options
+    let referencesOf = lookup state.References >> Option.defaultValue []
+    FSharpProjectGraph.wire current referencesOf options
 
 /// The options that compile `filePath`: the workspace's when they do, which keeps them
 /// authoritative for the primary project; else the owning project's; else the workspace's.
@@ -61,9 +77,32 @@ let internal optionsFor (state: FSharpWorkspaceState) (filePath: string) =
     let compiles (options: FSharpProjectOptions) =
         (FSharpWorkspaceRuntime.tryProjectSourcePath options filePath).IsSome
 
-    match state.ProjectOptions with
-    | Some primary when compiles primary -> Some primary
-    | primary -> projectOf state filePath |> Option.map _.Options |> Option.orElse primary
+    let own =
+        match state.ProjectOptions with
+        | Some primary when compiles primary -> Some primary
+        | primary -> projectOf state filePath |> Option.map _.Options |> Option.orElse primary
+
+    own |> Option.map (wired state)
+
+/// Every loaded project's own options but the workspace's — a script or a lone
+/// project has no other.
+let private otherProjectOptions (state: FSharpWorkspaceState) =
+    let isWorkspaces (options: FSharpProjectOptions) =
+        state.ProjectOptions
+        |> Option.exists (fun own -> SharpLsp.Sidecar.Common.NativePaths.AreEqual(own.ProjectFileName, options.ProjectFileName))
+
+    state.Projects.Values |> Seq.map _.Options |> Seq.filter (isWorkspaces >> not) |> List.ofSeq
+
+/// Every source file of every loaded project, the workspace's first, each once: what a
+/// project-wide query — references, rename — walks, since a use in one project of a
+/// symbol from another counts there ([REFERENCES-FSHARP-FIND]).
+let internal allSourceFiles (state: FSharpWorkspaceState) : string array =
+    let files =
+        Option.toList state.ProjectOptions @ otherProjectOptions state
+        |> Seq.collect _.SourceFiles
+
+    Linq.Enumerable.DistinctBy(files, FSharpWorkspaceRuntime.overlayKey, FSharpWorkspaceRuntime.overlayComparer)
+    |> Array.ofSeq
 
 /// Record the editor's in-memory buffer and invalidate the corresponding FCS file.
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
@@ -186,9 +225,12 @@ let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string arra
                 let fallback = buildProjectOptions state
                 let! entries = fsprojFiles |> Array.map (fun path -> FSharpDesignTime.loadEntry state.Checker fallback path ct) |> Task.WhenAll
                 state.Projects.Clear()
+                state.References.Clear()
 
                 for entry in entries do
-                    state.Projects[entry.Path] <- entry
+                    let key = FSharpWorkspaceRuntime.overlayKey entry.Path
+                    state.Projects[key] <- entry
+                    state.References[key] <- FSharpProjectGraph.fsharpReferences entry.Path
 
                 Log.Debug("F# workspace loaded {Count} project(s); {Path} is primary", entries.Length, fsprojFiles[0])
                 activateWorkspace state entries[0].Options fsprojFiles[0] "workspace"
@@ -245,13 +287,31 @@ let loadProject (state: FSharpWorkspaceState) (path: string) =
 let getHover state filePath line character =
     FSharpSemanticNavigation.getHover (checkFileWithParse state) filePath line character
 
+/// Whole-project results of the workspace's own project; none until one loads.
 let internal checkProject (state: FSharpWorkspaceState) =
     task {
         if not state.IsLoaded then
             return None
         else
-            let! results = state.Checker.ParseAndCheckProject(state.ProjectOptions.Value)
+            let! results = state.Checker.ParseAndCheckProject(wired state state.ProjectOptions.Value)
             return Some results
+    }
+
+/// Whole-project results of every loaded project, the workspace's own first: code
+/// lens counts, subtypes and dead code read them all, since a use in one project of a
+/// symbol from another counts there. Empty until a workspace loads.
+let internal checkProjects (state: FSharpWorkspaceState) =
+    task {
+        match! checkProject state with
+        | None -> return []
+        | Some own ->
+            let results = ResizeArray [ own ]
+
+            for (options: FSharpProjectOptions) in otherProjectOptions state do
+                let! checkedProject = state.Checker.ParseAndCheckProject(wired state options)
+                results.Add checkedProject
+
+            return List.ofSeq results
     }
 
 let internal isSymbolInProject (state: FSharpWorkspaceState) (symbol: FSharpSymbol) =

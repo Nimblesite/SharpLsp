@@ -173,9 +173,8 @@ let private absolute (directory: string) (path: string) =
 
 /// A path-valued flag with its path made absolute; any other flag unchanged.
 let private absoluteFlag (directory: string) (arg: string) =
-    pathFlags
-    |> List.tryFind (fun flag -> arg.StartsWith(flag, StringComparison.OrdinalIgnoreCase))
-    |> Option.map (fun flag -> flag + absolute directory (arg.Substring flag.Length))
+    FSharpProjectLoading.flagValue pathFlags arg
+    |> Option.map (fun (flag, path) -> flag + absolute directory path)
     |> Option.defaultValue arg
 
 /// FCS options from a compiler command line: flags stay options, the rest are sources.

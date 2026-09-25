@@ -28,11 +28,14 @@ let private isLensable (su: FSharpSymbolUse) : bool =
         | :? FSharpMemberOrFunctionOrValue as mfv -> mfv.IsModuleValueOrMember
         | _ -> false)
 
-/// References to one definition symbol, excluding the definition itself.
-let private referenceCount (projResults: FSharpCheckProjectResults) (symbol: FSharpSymbol) : int =
-    projResults.GetUsesOfSymbol(symbol)
-    |> Array.filter (fun u -> not u.IsFromDefinition)
-    |> Array.length
+/// References to one definition symbol in every project, excluding the definition
+/// itself: a use in one project of a symbol from another counts there.
+let private referenceCount (projects: FSharpCheckProjectResults list) (symbol: FSharpSymbol) : int =
+    projects
+    |> List.sumBy (fun project ->
+        project.GetUsesOfSymbol(symbol)
+        |> Array.filter (fun u -> not u.IsFromDefinition)
+        |> Array.length)
 
 /// One lens per ANCHOR, summing the counts of every definition that shares it.
 ///
@@ -41,7 +44,7 @@ let private referenceCount (projResults: FSharpCheckProjectResults) (symbol: FSh
 /// "0 references | 1 reference" above a single declaration. Summing them is
 /// what Roslyn's count for a class already is: uses of the name and
 /// constructions of it, together.
-let private lensesByAnchor (projResults: FSharpCheckProjectResults) (definitions: FSharpSymbolUse[]) =
+let private lensesByAnchor (projects: FSharpCheckProjectResults list) (definitions: FSharpSymbolUse[]) =
     definitions
     |> Array.filter (fun su ->
         let anchor = su.Range
@@ -52,7 +55,7 @@ let private lensesByAnchor (projResults: FSharpCheckProjectResults) (definitions
     |> Array.map (fun ((line, column), group) ->
         { Line = line - 1
           Character = column
-          Title = group |> Array.sumBy (fun su -> referenceCount projResults su.Symbol) |> formatTitle })
+          Title = group |> Array.sumBy (fun su -> referenceCount projects su.Symbol) |> formatTitle })
     |> Array.toList
 
 /// Get reference-count lenses for every top-level definition in a file.
@@ -63,15 +66,13 @@ let getCodeLenses (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: strin
             match fileCheck with
             | None -> return []
             | Some(checkResults, _source) ->
-                let! proj = FSharpWorkspace.checkProject state
-                match proj with
-                | None -> return []
-                | Some projResults ->
-                    return
-                        checkResults.GetAllUsesOfAllSymbolsInFile()
-                        |> Seq.filter isLensable
-                        |> Seq.toArray
-                        |> lensesByAnchor projResults
+                let! projects = FSharpWorkspace.checkProjects state
+
+                return
+                    checkResults.GetAllUsesOfAllSymbolsInFile()
+                    |> Seq.filter isLensable
+                    |> Seq.toArray
+                    |> lensesByAnchor projects
         with ex ->
             Log.Debug(ex, "[F# CodeLens] failed")
             return []

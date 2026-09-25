@@ -120,6 +120,20 @@ solution_path = "app/App.sln"
 
 The host resolves the setting and sends the **solution file** rather than the root, so the sidecar opens it without running discovery at all. The setting falls back to workspace-root discovery when unset, and when it names a path that is not an existing file — a stale or misspelled entry degrades to auto-discovery instead of wedging the workspace on a path that cannot load.
 
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES] F# Projects That Reference F# Projects
+
+The F# sidecar loads every `.fsproj` of the solution, and each file answers from the project that compiles it, with that project's defines and references. The first project stays the workspace's own for anything that needs one project.
+
+A `<ProjectReference>` from one loaded F# project to another is an FCS in-memory reference (`FSharpReferencedProject.FSharpReference`) to the referenced project's **current** options, never its built DLL:
+
+- a solution nobody has built still checks clean;
+- an unsaved edit in the referenced project reaches the project that uses it;
+- go-to-definition lands in the referenced project's source.
+
+A `-r:` to a file of the same name, which is the DLL MSBuild resolved on a multi-targeted project's design-time command line, gives way to the in-memory reference. References are wired transitively. A cycle, which MSBuild refuses anyway, stops at the project already being wired. The reference graph is read once per load, and the options are wired where they are used, so a framework switch ([NETFX-CONTEXT]) is followed without reloading.
+
+Project-wide queries span every loaded project, because a use in one project of a symbol from another counts there: references, rename, code lens counts, subtypes and dead code. A reference into the other language stays a binary reference ([DEFINITION-CROSSLANG]).
+
 ### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation
 
 Every per-platform VSIX MUST bundle `sharplsp`.

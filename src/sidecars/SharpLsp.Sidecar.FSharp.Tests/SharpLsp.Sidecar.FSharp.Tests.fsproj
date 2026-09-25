@@ -30,6 +30,7 @@
     <Compile Include="FSharpMetadataDefinitionTests.fs" />
     <Compile Include="FSharpUnloadedWorkspaceTests.fs" />
     <Compile Include="FSharpDesignTimeTests.fs" />
+    <Compile Include="FSharpMultiProjectTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

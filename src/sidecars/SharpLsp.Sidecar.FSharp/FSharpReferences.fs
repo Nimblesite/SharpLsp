@@ -87,7 +87,7 @@ let private getOverlayAwareProjectUsages
     task {
         let uses = ResizeArray<FSharpSymbolUse>()
 
-        for filePath in state.ProjectOptions.Value.SourceFiles do
+        for filePath in FSharpWorkspace.allSourceFiles state do
             let! fileUses = getFileUsages state symbol filePath
             uses.AddRange(fileUses)
 
