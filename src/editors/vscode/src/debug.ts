@@ -11,6 +11,11 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { sharedDebugConfiguration } from './debug-configuration';
 import { CMD_DEBUG_PROGRAM, CMD_RUN_PROGRAM, DEBUG_TYPE } from './constants';
+import {
+  debuggableTarget,
+  runUnderFramework,
+  type ActiveFrameworkReader,
+} from './launch-framework-run';
 import { findNetcoredbg, getNetcoredbgCandidates } from './netcoredbg';
 import { info, warn } from './log';
 import { DapRouter } from './dap-router';
@@ -498,7 +503,14 @@ function namedResource(argument: LaunchArgument): string | undefined {
 }
 
 /** Register the adapter, the configuration providers and both commands. */
-export function registerDebugAdapter(context: vscode.ExtensionContext): void {
+/** Reads a document's active framework for Run; set when the adapter registers. [NETFX-DEBUG] */
+let activeFrameworkReader: ActiveFrameworkReader | undefined;
+
+export function registerDebugAdapter(
+  context: vscode.ExtensionContext,
+  readActiveFramework?: ActiveFrameworkReader,
+): void {
+  activeFrameworkReader = readActiveFramework;
   const provider = new SharpLspLaunchProvider();
   context.subscriptions.push(
     // Both trigger kinds: `Initial` fills a generated launch.json, `Dynamic`
@@ -546,7 +558,7 @@ export async function launch(argument: LaunchArgument, noDebug: boolean): Promis
     if (resolved.error.length > 0) void vscode.window.showWarningMessage(resolved.error);
     return;
   }
-  await dispatch(resolved.value, folder, noDebug);
+  await dispatch(resolved.value, folder, noDebug, document);
 }
 
 /** Send a resolved target to the runner or the debugger. */
@@ -554,18 +566,38 @@ async function dispatch(
   target: LaunchTarget,
   folder: vscode.WorkspaceFolder,
   noDebug: boolean,
+  document?: string,
 ): Promise<void> {
+  if (noDebug && target.kind === 'project' && target.frameworks !== undefined) {
+    await runUnderFramework(target, target.frameworks, folder, document, activeFrameworkReader);
+    return;
+  }
   if (noDebug && target.kind !== 'project') {
     await runWithoutDebugger(target, folder);
     return;
   }
-  const plan = await planLaunch(target, folder, noDebug);
+  const launchable = await debuggable(target, noDebug, document);
+  if (launchable === undefined) return;
+  const plan = await planLaunch(launchable, folder, noDebug);
   if (plan === undefined) return;
   const started = await vscode.debug.startDebugging(plan.folder, plan.configuration, { noDebug });
   if (!started) {
     warn(`startDebugging refused ${plan.configuration.name}`);
     void vscode.window.showWarningMessage(`Could not start ${plan.configuration.name}.`);
   }
+}
+
+/** The target to debug: a multi-targeted project moves onto a .NET framework. [NETFX-DEBUG] */
+async function debuggable(
+  target: LaunchTarget,
+  noDebug: boolean,
+  document: string | undefined,
+): Promise<LaunchTarget | undefined> {
+  if (noDebug || target.kind !== 'project' || target.frameworks === undefined) return target;
+  const moved = await debuggableTarget(target, target.frameworks, document, activeFrameworkReader);
+  if (moved.ok) return moved.value;
+  void vscode.window.showWarningMessage(moved.error);
+  return undefined;
 }
 
 /** Run a script or file-based app as a task, with no adapter involved. */

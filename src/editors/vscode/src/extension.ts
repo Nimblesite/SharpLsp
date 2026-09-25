@@ -196,9 +196,9 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   registerScaffoldingCommands(context);
   registerFsiCommands(context);
   registerHotReloadCommands(context);
-  registerDebugAdapter(context);
-  testController = registerTestExplorer(context);
   targetFrameworks = registerTargetFramework(context, () => lspClient);
+  registerDebugAdapter(context, targetFrameworks.answerFor);
+  testController = registerTestExplorer(context);
   registerTestStatusLens(context, testController);
   log.info('step 10: wireDocumentChangeRefresh');
   wireDocumentChangeRefresh(context);

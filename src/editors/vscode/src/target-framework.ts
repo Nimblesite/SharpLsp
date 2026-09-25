@@ -24,7 +24,7 @@ const LANGUAGES: ReadonlySet<string> = new Set(['csharp', 'fsharp']);
 const RETRY_MS = [500, 1000, 2000, 4000, 8000, 15000, 30000];
 
 /** What both `sharplsp/*TargetFramework` requests answer. */
-interface FrameworkContext {
+export interface FrameworkContext {
   readonly active: string | undefined;
   readonly available: readonly string[];
   readonly project: string | undefined;
@@ -43,6 +43,8 @@ export interface TargetFrameworkUi {
   readonly status: TargetFrameworkStatus;
   /** Re-read on the server's announcement of a switch, and now the client is up. */
   readonly attach: (client: LanguageClient) => void;
+  /** The framework context of `file`'s project, read from the server now. */
+  readonly answerFor: (file: string) => Promise<FrameworkContext | undefined>;
 }
 
 /** The live view the extension API exposes. */
@@ -186,7 +188,7 @@ class FrameworkView {
     return (await vscode.window.showQuickPick(pickItems(shown), { placeHolder }))?.label;
   }
 
-  private async read(uri: vscode.Uri): Promise<FrameworkContext | undefined> {
+  public async read(uri: vscode.Uri): Promise<FrameworkContext | undefined> {
     return await this.send('sharplsp/targetFramework', uri);
   }
 
@@ -243,5 +245,7 @@ export function registerTargetFramework(
     });
     view.refresh();
   };
-  return { status: view.status(), attach };
+  const answerFor = async (file: string): Promise<FrameworkContext | undefined> =>
+    await view.read(vscode.Uri.file(file));
+  return { status: view.status(), attach, answerFor };
 }

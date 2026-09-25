@@ -47,6 +47,8 @@ export interface ProjectTarget {
   readonly cwd: string;
   /** The TFM this target resolved to; the build must be pinned to it. */
   readonly framework?: string;
+  /** Every framework a MULTI-targeted project declares, in order. [NETFX-DEBUG] */
+  readonly frameworks?: readonly string[];
   readonly args?: readonly string[];
   readonly env?: Readonly<Record<string, string>>;
 }
@@ -205,6 +207,7 @@ async function projectTarget(
     program: properties.targetPath,
     cwd: path.dirname(projectFile),
     ...(properties.targetFramework === '' ? {} : { framework: properties.targetFramework }),
+    ...(properties.targetFrameworks.length > 1 ? { frameworks: properties.targetFrameworks } : {}),
   };
   return await withProfile(base, projectFile, options);
 }

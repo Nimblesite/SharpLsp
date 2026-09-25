@@ -111,8 +111,16 @@ would wait forever. The Debug profile runs only the selection's .NET frameworks;
 with none fails at once: "`<X>` runs on .NET Framework, and no .NET Framework debugger is
 bundled: Debug attaches to .NET only. Use Run, or debug the test under one of its .NET target
 frameworks." `<X>` is the project (its assembly name) for VSTest and `<Name>.exe` for MTP; each
-refusal is logged once, on one line, as `Test debug: <refusal>`. Run without debugging uses
-`dotnet run --framework <tfm>`.
+refusal is logged once, on one line, as `Test debug: <refusal>`.
+
+Run without debugging (`sharplsp.runProgram`, Ctrl+F5) of a MULTI-targeted project runs the
+task `Run <Project> (<tfm>)` (type `sharplsp-run`): `dotnet run --project <proj> --framework
+<tfm> [-- <profile args>]`, with no debug adapter, so a .NET Framework build runs on the desktop
+CLR. `<tfm>` is the project's active framework ([NETFX-CONTEXT]) when launched from one of its
+documents, else its first declared; the channel logs `Run: <Project> under <tfm>`. Debug (F5)
+of a multi-targeted project debugs its active framework when that is .NET, else the first .NET
+framework it declares, and refuses with the message above when it declares none. A
+single-target project runs and debugs as before.
 
 ## Real-world corpus `[NETFX-CORPUS]`
 
