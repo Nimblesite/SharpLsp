@@ -281,7 +281,7 @@ Both C# and F# columns require full support unless noted.
 | Completion resolve | `completionItem/resolve` | [CompletionService.GetDescriptionAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdescriptionasync) | GetDeclarationListInfo (detail) | P0 |
 | Completion edit semantics | `textDocument/completion` | `GetDefaultCompletionListSpan` + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | `QuickParse.GetPartialLongNameEx` island + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | P0 |
 | Hover / Quick Info | `textDocument/hover` | See [HOVER-SPEC.md](HOVER-SPEC.md) | See [HOVER-SPEC.md](HOVER-SPEC.md) | P0 |
-| Signature help | `textDocument/signatureHelp` | SignatureHelpService.GetItemsAsync() | GetMethods() | P0 |
+| Signature help | `textDocument/signatureHelp` | Semantic model: member group + bound symbol — `[SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]` | GetMethods() | P0 |
 | Parameter hints | `textDocument/signatureHelp` | Same (active parameter tracking) | Same (active parameter tracking) | P0 |
 | Inlay hints (types) | `textDocument/inlayHint` | Type inference display | Type inference display | P1 |
 | Inlay hints (params) | `textDocument/inlayHint` | Parameter name hints | Parameter name hints | P1 |
@@ -292,6 +292,18 @@ Both C# and F# columns require full support unless noted.
 Every completion item returned by either sidecar carries an explicit LSP `textEdit`, not just an `insertText`. Its range is the identifier span **at the caret** — the typed prefix to the left of the cursor *plus any identifier characters that already follow it on the same line*. Accepting an item therefore **replaces** that identifier instead of being appended to it: completing `WriteLine` at `Console.|WriteLine` yields `Console.WriteLine`, never `Console.WriteLineWriteLine` (GitHub #178). Without a `textEdit` the editor falls back to its own word-boundary heuristic, which appends after a member-access trigger character and duplicates the identifier.
 
 The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/sharplsp/src/semantic.rs`.
+
+#### [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP] Signature Help
+
+Inside a call's argument list, both sidecars answer `textDocument/signatureHelp` with every overload the call could bind to. The Rust host (`src/sharplsp/src/signature_help.rs`) forwards the request to the document's sidecar and maps the positional wire shape — `signatures[{ label, parameters[] }]`, `activeSignature`, `activeParameter` — onto LSP `SignatureHelp`. F# resolves the overloads with FCS `GetMethods` ([FS-SIGHELP]). C# builds them from the semantic model (`SignatureHelpResolver`), because Roslyn's own signature-help providers are MEF components a headless workspace does not have; until it did, C# answered `null` for every call (GitHub #174).
+
+1. **Where.** The innermost argument list the caret sits in: after its `(` and not past its `)`, or anywhere after the `(` while the call is still being typed. The token left of the caret decides, because the token at the caret may already belong to what follows an unfinished call. Anywhere else the answer is `null`.
+2. **What.** Method groups (every accessible overload), delegate values (their `Invoke`), object creations — explicit and target-typed `new(…)` — (the created type's constructors) and `: base(…)`/`: this(…)` initializers.
+3. **Which overload.** The one the call binds to; while it binds to none, the first that takes as many arguments as are typed.
+4. **Which parameter.** The one a named argument names; otherwise the argument's position, counted by the commas before the caret, with every extra argument of a `params` array on its last parameter.
+5. **Labels.** C# labels read `string Greeter.Greet(string name, int times)`, `Point(int x, int y)`, `string Func<int, string>(int arg)`. Every parameter label appears verbatim in its signature's label, because an editor highlights the active parameter by finding that text.
+
+Tests: `SignatureHelpEndToEndTests` drives the real `WorkspaceManager` over a real program for overloads, the active parameter across commas and while typing, named arguments, constructors, delegates, framework overloads and the `null` cases. The host session e2e (`user_session_csharp.rs`) asserts the shape through real IPC.
 
 ### [SHARPLSP-FEATURES-NAVIGATION] Navigation
 

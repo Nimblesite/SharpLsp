@@ -41,7 +41,7 @@ that feature — that is the parity gap.
 | `textDocument/semanticTokens/{full,range}` | [semantic_tokens.rs](../../src/sharplsp/src/semantic_tokens.rs) | ✅ | ✅ | — |
 | `textDocument/documentSymbol` | [document_symbols.rs:20](../../src/sharplsp/src/document_symbols.rs#L20) | ✅ tree-sitter (host) | ✅ **FCS nav items (this plan)** | [FS-DOCSYMBOL] |
 | `workspace/symbol` | [main.rs](../../src/sharplsp/src/main.rs) `handle_standard_workspace_symbol` | ✅ tree-sitter (host) | ✅ **FCS document symbols** | [FS-WORKSPACE-SYMBOL] |
-| `textDocument/signatureHelp` | [signature_help.rs:21](../../src/sharplsp/src/signature_help.rs#L21) | — | ✅ **FCS GetMethods (this plan)** | [FS-SIGHELP] |
+| `textDocument/signatureHelp` | [signature_help.rs](../../src/sharplsp/src/signature_help.rs) | ✅ semantic model ([SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]) | ✅ **FCS GetMethods (this plan)** | [FS-SIGHELP] |
 | `textDocument/inlayHint` | [inlay_hints.rs](../../src/sharplsp/src/inlay_hints.rs) | ✅ | ✅ | — |
 | `workspace/diagnostics` (pull) | [pull_diagnostics.rs](../../src/sharplsp/src/pull_diagnostics.rs) | ✅ | ✅ | — |
 | `project/unusedPackages` | [nuget](../../src/sharplsp/src/nuget) | ✅ | ✅ | — |

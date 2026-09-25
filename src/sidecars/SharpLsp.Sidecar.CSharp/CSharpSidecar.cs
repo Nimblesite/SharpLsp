@@ -25,6 +25,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/completion", HandleCompletionAsync);
         Register("completionItem/resolve", HandleCompletionResolveAsync);
         Register("textDocument/hover", HandleHoverAsync);
+        Register("textDocument/signatureHelp", HandleSignatureHelpAsync);
         Register("textDocument/definition", HandleDefinitionAsync);
         Register("textDocument/typeDefinition", HandleTypeDefinitionAsync);
         Register("textDocument/declaration", HandleDeclarationAsync);
@@ -194,6 +195,12 @@ internal sealed partial class CSharpSidecar : SidecarHost
     private Task<ByteResult> HandleHoverAsync(byte[] payload, CancellationToken ct)
     {
         return HandleNullableRequestAsync(payload, _workspace.GetHoverAsync, ct);
+    }
+
+    /// <summary>Implements [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP] (GitHub #174).</summary>
+    private Task<ByteResult> HandleSignatureHelpAsync(byte[] payload, CancellationToken ct)
+    {
+        return HandleNullableRequestAsync(payload, _workspace.GetSignatureHelpAsync, ct);
     }
 
     private Task<ByteResult> HandleImplementationAsync(byte[] payload, CancellationToken ct)
