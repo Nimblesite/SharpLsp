@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -97,7 +98,13 @@ internal static class DocumentClosure
     )
     {
         var full = Path.GetFullPath(path);
-        if (!state.Visited.Add(full) || state.Files.Count >= MaxFiles || depth > MaxDepth)
+        // A path already visited names a file already in the closure: skipping it drops
+        // nothing, so it is no issue. Identity follows the directory's own case rules.
+        if (
+            !state.Visited.Add(state.IdentityOf(full))
+            || state.Files.Count >= MaxFiles
+            || depth > MaxDepth
+        )
         {
             RecordBound(full, depth, state);
             return;
@@ -237,16 +244,54 @@ internal static class DocumentClosure
     {
         private readonly string? _livePath = live is null ? null : Path.GetFullPath(live.Path);
 
+        /// <summary>Probed case rules, per directory, for this one expansion.</summary>
+        private readonly Dictionary<string, bool> _caseSensitive = new(StringComparer.Ordinal);
+
         /// <summary>The unsaved text for <paramref name="fullPath"/>, or null to read disk.</summary>
         public string? LiveTextFor(string fullPath)
         {
-            return string.Equals(_livePath, fullPath, StringComparison.OrdinalIgnoreCase)
+            return
+                _livePath is not null
+                && string.Equals(
+                    IdentityOf(_livePath),
+                    IdentityOf(fullPath),
+                    StringComparison.Ordinal
+                )
                 ? live!.Text
                 : null;
         }
 
+        /// <summary>
+        /// <paramref name="fullPath"/> as its directory tells files apart. Two names that differ
+        /// only in case are one file in a case-insensitive directory and two in a case-sensitive
+        /// one; folding case everywhere dropped the second of two such files from the closure
+        /// without a word (GitHub #190). A directory that cannot be probed — the file is
+        /// missing — keeps every spelling apart, so a missing file is reported, never merged.
+        /// </summary>
+        public string IdentityOf(string fullPath)
+        {
+            return CaseSensitive(fullPath) ? fullPath : fullPath.ToUpperInvariant();
+        }
+
+        private bool CaseSensitive(string fullPath)
+        {
+            var directory = Path.GetDirectoryName(fullPath) ?? fullPath;
+            if (_caseSensitive.TryGetValue(directory, out var known))
+            {
+                return known;
+            }
+
+            var probed = NativePaths.IsCaseSensitive(fullPath);
+            if (probed is { } sensitive)
+            {
+                _caseSensitive[directory] = sensitive;
+            }
+
+            return probed ?? true;
+        }
+
         public ChildResolver Children { get; } = children;
-        public HashSet<string> Visited { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Visited { get; } = new(StringComparer.Ordinal);
         public List<ClosureFile> Files { get; } = [];
         public List<PackageRef> Packages { get; } = [];
         public List<FileDirective> Directives { get; } = [];

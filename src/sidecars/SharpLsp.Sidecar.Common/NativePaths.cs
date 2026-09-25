@@ -54,6 +54,49 @@ public static class NativePaths
             );
     }
 
+    /// <summary>
+    /// Whether the directory holding <paramref name="existingFile"/> tells names apart by
+    /// case, probed rather than assumed from the OS: a macOS volume and a Windows directory
+    /// can each be either. Read-only: the name with its case flipped must not open the same
+    /// file, unless the directory stores that spelling as an entry of its own, which only a
+    /// case-sensitive directory can. <c>null</c> when the file does not exist or its name has
+    /// no letter to flip. [SCRIPT-CLOSURE] (GitHub #190)
+    /// </summary>
+    public static bool? IsCaseSensitive(string existingFile)
+    {
+        var directory = Path.GetDirectoryName(existingFile);
+        var name = Path.GetFileName(existingFile);
+        var flipped = FlipCase(name);
+        return
+            directory is null
+            || string.Equals(flipped, name, StringComparison.Ordinal)
+            || !File.Exists(existingFile)
+            ? null
+            : !File.Exists(Path.Combine(directory, flipped)) || Stores(directory, flipped);
+    }
+
+    /// <summary>Whether <paramref name="directory"/> holds an entry spelled exactly <paramref name="name"/>.</summary>
+    private static bool Stores(string directory, string name)
+    {
+        var exactly = new EnumerationOptions
+        {
+            MatchCasing = MatchCasing.CaseSensitive,
+            MatchType = MatchType.Simple,
+        };
+        return Directory
+            .EnumerateFileSystemEntries(directory, name, exactly)
+            .Any(entry => string.Equals(Path.GetFileName(entry), name, StringComparison.Ordinal));
+    }
+
+    private static string FlipCase(string name)
+    {
+        return string.Concat(
+            name.Select(letter =>
+                char.IsUpper(letter) ? char.ToLowerInvariant(letter) : char.ToUpperInvariant(letter)
+            )
+        );
+    }
+
     private static string StripVerbatim(string path)
     {
         return path.StartsWith(VerbatimUncPrefix, StringComparison.Ordinal)
