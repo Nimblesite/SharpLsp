@@ -130,7 +130,7 @@ A `<ProjectReference>` from one loaded F# project to another is an FCS in-memory
 - an unsaved edit in the referenced project reaches the project that uses it;
 - go-to-definition lands in the referenced project's source.
 
-A `-r:` to a file of the same name, which is the DLL MSBuild resolved on a multi-targeted project's design-time command line, gives way to the in-memory reference. References are wired transitively. A cycle, which MSBuild refuses anyway, stops at the project already being wired. The reference graph is read once per load, and the options are wired where they are used, so a framework switch ([NETFX-CONTEXT]) is followed without reloading.
+Only a reference the project's options do not already carry is wired in memory, and hand-built options never carry an F# one. A reference MSBuild resolved stands: a multi-targeted project's design-time command line names the build of the referenced project that ITS framework compiles against, and that need not be the referenced project's own active framework. References are wired transitively. A cycle, which MSBuild refuses anyway, stops at the project already being wired. The reference graph is read once per load, and the options are wired where they are used, so a framework switch ([NETFX-CONTEXT]) is followed without reloading.
 
 Project-wide queries span every loaded project, because a use in one project of a symbol from another counts there: references, rename, code lens counts, subtypes and dead code. A reference into the other language stays a binary reference ([DEFINITION-CROSSLANG]).
 

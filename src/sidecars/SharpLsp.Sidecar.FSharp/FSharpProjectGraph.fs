@@ -1,7 +1,11 @@
-/// F# projects that reference F# projects. A referenced project reaches the one that
-/// uses it as an FCS in-memory reference to its CURRENT options — never its built
-/// DLL — so an unsaved edit crosses the reference, navigation lands in the referenced
-/// source, and a solution nobody built still checks clean. A reference into the other
+/// F# projects that reference F# projects. A reference the project's options do not
+/// already carry — hand-built options never carry an F# one — reaches it as an FCS
+/// in-memory reference to the referenced project's CURRENT options, never its built
+/// DLL. So an unsaved edit crosses the reference, navigation lands in the referenced
+/// source, and a solution nobody built still checks clean. A reference MSBuild already
+/// resolved stands: a multi-targeted project's design-time command line names the
+/// build of the referenced project ITS framework compiles against, which the
+/// referenced project's own active framework need not be. A reference into the other
 /// language stays a binary reference ([DEFINITION-CROSSLANG]).
 /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES] (GitHub #165).
 module SharpLsp.Sidecar.FSharp.FSharpProjectGraph
@@ -34,31 +38,30 @@ let private fileKey (path: string) =
     let name = Path.GetFileName path |> string
     if OperatingSystem.IsWindows() then name.ToUpperInvariant() else name
 
-/// True when `flag` references a file named like one of `names`.
-let private referencesOneOf (names: Set<string>) (flag: string) =
-    valueOf [ "-r:"; "--reference:" ] flag
-    |> Option.exists (fileKey >> names.Contains)
+/// True when `options` already reference `referenced`'s assembly by name: MSBuild
+/// resolved that project reference itself.
+let private alreadyReferences (options: FSharpProjectOptions) (referenced: FSharpProjectOptions) =
+    let name = fileKey (outputOf referenced)
 
-/// `options` referencing each of `references` in memory. A `-r:` to a file of the same
-/// name — the DLL MSBuild resolved for that project reference — gives way to it.
+    options.OtherOptions
+    |> Array.exists (valueOf [ "-r:"; "--reference:" ] >> Option.exists (fun path -> fileKey path = name))
+
+/// `options` referencing each of `references` in memory.
 let withReferences (options: FSharpProjectOptions) (references: FSharpProjectOptions list) =
     let outputs = references |> List.map outputOf
-    let names = outputs |> List.map fileKey |> Set.ofList
 
     { options with
-        OtherOptions =
-            Array.append
-                (options.OtherOptions |> Array.filter (referencesOneOf names >> not))
-                (outputs |> List.map (fun output -> $"-r:{output}") |> Array.ofList)
+        OtherOptions = Array.append options.OtherOptions (outputs |> List.map (fun output -> $"-r:{output}") |> Array.ofList)
         ReferencedProjects =
             Array.append
                 options.ReferencedProjects
                 (List.map2 (fun output referenced -> FSharpReferencedProject.FSharpReference(output, referenced)) outputs references
                  |> Array.ofList) }
 
-/// `options` with every F# project it references wired in, transitively. `current` is a
-/// loaded project's own options and `referencesOf` its F# references; a cycle — which
-/// MSBuild refuses anyway — stops at the project already being wired.
+/// `options` with every F# project it references, and its options do not, wired in
+/// transitively. `current` is a loaded project's own options and `referencesOf` its F#
+/// references; a cycle — which MSBuild refuses anyway — stops at the project already
+/// being wired.
 let wire
     (current: string -> FSharpProjectOptions option)
     (referencesOf: string -> string list)
@@ -71,6 +74,7 @@ let wire
             referencesOf options.ProjectFileName
             |> List.filter (fun reference -> not (trail |> List.exists (fun seen -> NativePaths.AreEqual(seen, reference))))
             |> List.choose current
+            |> List.filter (alreadyReferences options >> not)
         with
         | [] -> options
         | references -> withReferences options (references |> List.map (wireFrom trail))

@@ -188,3 +188,36 @@ let ``references, code lens and subtypes count what every project does`` () =
         finally
             cleanup root
     }
+
+/// Options for `project` from a compiler command line.
+let private commandLine (project: string) (args: string list) =
+    (FSharpWorkspace.create ()).Checker.GetProjectOptionsFromCommandLineArgs(project, Array.ofList args)
+
+/// A multi-targeted project's design-time command line already names the build of the
+/// referenced project ITS framework compiles against, which need not be that project's
+/// own active framework: that reference stands. Hand-built options carry no F# reference,
+/// so theirs is wired in memory.
+[<Fact>]
+let ``a reference MSBuild resolved stands, and one hand-built options drop is wired in memory`` () =
+    let root = Path.Combine(Path.GetTempPath(), "sharplsp-graph")
+    let shared = commandLine (Path.Combine(root, "Shared", "Shared.fsproj")) [ "--out:Shared.dll" ]
+    let resolvedDll = Path.Combine(root, "Shared", "bin", "netstandard2.1", "Shared.dll")
+    let flip = commandLine (Path.Combine(root, "Flip", "Flip.fsproj")) [ "--out:Flip.dll"; $"-r:{resolvedDll}" ]
+    let app = commandLine (Path.Combine(root, "App", "App.fsproj")) [ "--out:App.dll" ]
+    let current (project: string) = if NativePaths.AreEqual(project, shared.ProjectFileName) then Some shared else None
+    let referencesOf (_: string) = [ shared.ProjectFileName ]
+
+    let resolved = FSharpProjectGraph.wire current referencesOf flip
+    Assert.Empty(resolved.ReferencedProjects)
+    Assert.Equal<string array>(flip.OtherOptions, resolved.OtherOptions)
+
+    let output = FSharpProjectGraph.outputOf shared
+    Assert.Equal(Path.Combine(root, "Shared", "Shared.dll"), output)
+    let wired = FSharpProjectGraph.wire current referencesOf app
+    Assert.Contains($"-r:{output}", wired.OtherOptions)
+
+    match wired.ReferencedProjects with
+    | [| FSharp.Compiler.CodeAnalysis.FSharpReferencedProject.FSharpReference(file, options) |] ->
+        Assert.Equal(output, file)
+        Assert.Equal(shared.ProjectFileName, options.ProjectFileName)
+    | other -> failwith $"exactly one in-memory reference, to Shared: {other}"
