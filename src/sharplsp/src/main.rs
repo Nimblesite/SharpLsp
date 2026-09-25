@@ -10,6 +10,7 @@ mod config_debug;
 mod configuration;
 mod diagnostics;
 mod document_symbols;
+mod folding;
 // Formatting module is sequestered — not wired into the LSP server.
 // Use CSharpier (C#) / Fantomas via Ionide (F#). See docs/formatting/README.md.
 #[cfg(feature = "formatting")]
