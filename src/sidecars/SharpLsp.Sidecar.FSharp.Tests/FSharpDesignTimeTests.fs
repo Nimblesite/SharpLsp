@@ -75,7 +75,8 @@ let private restoredProbe () =
     let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-dt-{Guid.NewGuid():N}")
     let fsproj = writeFsproj dir "Probe" [ frameworks "net48;net10.0" ]
     let probe = Path.Combine(dir, "Src", "Probe.fs")
-    File.WriteAllText(probe, probeSource)
+    // CRLF, as a Windows checkout writes it: a `#if` line's `\r` must not hide the dead branch.
+    File.WriteAllText(probe, probeSource.Replace("\n", "\r\n"))
     dotnet dir $"restore \"{fsproj}\" --nologo -v q"
     dir, fsproj, probe
 

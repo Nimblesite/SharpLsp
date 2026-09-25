@@ -33,9 +33,11 @@ let private definesOf (checkResults: FSharpCheckFileResults) =
             None)
     |> List.ofArray
 
-/// Every token of one line, and the lexer state the next line starts in.
+/// Every token of one line, and the lexer state the next line starts in. A CRLF
+/// line's `\r` is dropped first: left on a `#if` line, it keeps the lexer from
+/// entering the inactive branch at all.
 let private scanLine (tokenizer: FSharpSourceTokenizer) (text: string) state =
-    let lineTokenizer = tokenizer.CreateLineTokenizer text
+    let lineTokenizer = tokenizer.CreateLineTokenizer(text.TrimEnd '\r')
 
     let rec scan state tokens =
         match lineTokenizer.ScanToken state with
