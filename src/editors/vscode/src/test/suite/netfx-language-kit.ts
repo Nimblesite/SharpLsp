@@ -55,13 +55,18 @@ export interface LanguageFixture {
   readonly probe: ProjectFrameworks;
   /** Shared's frameworks: both .NET Standard versions. */
   readonly shared: ProjectFrameworks;
-  /** Repo-relative source files. */
+  /** Root-relative source files; `loose` is compiled by NO project. */
   readonly files: {
     readonly probe: string;
     readonly flip: string;
     readonly shared: string;
     readonly single: string;
+    readonly loose: string;
   };
+  /** The absolute project file that compiles each project's sources. */
+  readonly projects: { readonly probe: string; readonly shared: string; readonly single: string };
+  /** A name in the single-target project, compiled from its <Compile> items. */
+  readonly singleName: Anchor;
   /** The `#if`-guarded name each framework alone compiles. */
   readonly nameOf: (tfm: string) => Anchor;
   /** Remoting, compiled only under `#if NETFRAMEWORK`. */
@@ -83,6 +88,8 @@ interface LanguageShape {
   readonly flipSource: string;
   readonly sharedSource: string;
   readonly singleSource: string;
+  readonly singleName: Anchor;
+  readonly looseSource: string;
   readonly remoting: Anchor;
   readonly greetCall: Anchor;
   readonly combineHash: Anchor;
@@ -126,6 +133,8 @@ const FSHARP: LanguageShape = {
     '',
   ].join('\n'),
   singleSource: ['module Fx.Single', '', 'let only = 1', ''].join('\n'),
+  singleName: ['let only = 1', 'only'],
+  looseSource: ['module Fx.Loose', '', 'let loose = 1', ''].join('\n'),
   remoting: ['System.Runtime.Remoting.RemotingServices.IsTransparentProxy o', 'RemotingServices'],
   greetCall: ['Fx.Shared.greet "probe"', 'greet'],
   combineHash: ['let combineHash (a: int) (b: int)', 'combineHash'],
@@ -170,6 +179,8 @@ const CSHARP: LanguageShape = {
     ]),
   ]),
   singleSource: csharpClass('Single', ['        public const int Only = 1;']),
+  singleName: ['public const int Only = 1;', 'Only'],
+  looseSource: csharpClass('Loose', ['        public const int Free = 1;']),
   remoting: ['System.Runtime.Remoting.RemotingServices.IsTransparentProxy(o)', 'RemotingServices'],
   greetCall: ['Shared.Greet("probe")', 'Greet'],
   combineHash: ['public static int CombineHash(int a, int b)', 'CombineHash'],
@@ -232,6 +243,8 @@ async function writeLanguageFixture(
   const dirs = projectSpecs(shape, probe.available, net).map((spec) =>
     writeFixtureProject(root, shape, spec),
   );
+  // A source at the root, outside every project's directory and Compile list.
+  fs.writeFileSync(path.join(root, `Loose.${shape.extension}`), shape.looseSource, 'utf8');
   const solution = await createSolution(root, 'NetfxLanguage', dirs);
   await dotnet(['restore', solution], root);
   await dotnet(['build', path.join(root, 'Shared', `Shared.${shape.extension}proj`)], root);
@@ -256,7 +269,14 @@ function fixtureOf(
       flip: `Probe/Flip.${ext}`,
       shared: `Shared/Shared.${ext}`,
       single: `Single/Single.${ext}`,
+      loose: `Loose.${ext}`,
     },
+    projects: {
+      probe: path.join(root, 'Probe', `Probe.${ext}proj`),
+      shared: path.join(root, 'Shared', `Shared.${ext}proj`),
+      single: path.join(root, 'Single', `Single.${ext}proj`),
+    },
+    singleName: shape.singleName,
     nameOf: (tfm) => [shape.guardedName(tfm)[1]?.trim() ?? '', shape.nameOf(tfm)],
     remoting: shape.remoting,
     greetCall: shape.greetCall,

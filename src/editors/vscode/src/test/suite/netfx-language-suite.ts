@@ -16,6 +16,8 @@ import type { SharpLspExtensionApi } from '../../extension.js';
 import {
   assertBranches,
   assertContext,
+  assertHoverResolves,
+  assertOwnedBy,
   assertStatusHidden,
   assertStatusShows,
   frameworkContextOf,
@@ -95,6 +97,7 @@ export function defineNetfxLanguageSuite(language: NetfxLanguage, title: string)
       const { probe, doc, uri } = await openProbe(fixture());
       const context = await frameworkContextOf(uri);
       assertContext(context, probe.first, probe.available, 'Probe');
+      assertOwnedBy(context, fixture().projects.probe, 'Probe answers for its own project');
       const families = {
         netfx: ['net462', 'net472', 'net48'],
         standards: ['netstandard2.0', 'netstandard2.1'],
@@ -159,7 +162,9 @@ export function defineNetfxLanguageSuite(language: NetfxLanguage, title: string)
       const { probe, uri: probeUri } = await openProbe(fixture());
       const { shared, combineHash } = fixture();
       const { doc, uri } = await openIn(fixture(), 'shared');
-      assertContext(await frameworkContextOf(uri), shared.first, shared.available, 'Shared');
+      const sharedContext = await frameworkContextOf(uri);
+      assertContext(sharedContext, shared.first, shared.available, 'Shared');
+      assertOwnedBy(sharedContext, fixture().projects.shared, 'Shared.fs/Shared.cs');
       await assertStatusShows(api, shared.first, shared.available);
       await assertBranches(doc, shared.first, { live: [], inert: [combineHash] });
       await underFramework(uri, 'netstandard2.1', shared, async () => {
@@ -171,7 +176,16 @@ export function defineNetfxLanguageSuite(language: NetfxLanguage, title: string)
     test('a single-target project answers available: [] and hides the item; focus brings it back', async function () {
       this.timeout(LSP_RESPONSE_MS * 6);
       const single = await openIn(fixture(), 'single');
-      assertContext(await frameworkContextOf(single.uri), null, [], 'the single-target project');
+      const singleContext = await frameworkContextOf(single.uri);
+      assertContext(singleContext, null, [], 'the single-target project');
+      assertOwnedBy(
+        singleContext,
+        fixture().projects.single,
+        'a single-target project still owns it',
+      );
+      const [snippet, focus] = fixture().singleName;
+      const at = positionOf(single.doc, snippet, focus);
+      await assertHoverResolves(single.uri, at, focus, 'a single-target project keeps its sources');
       await assertStatusHidden(api, 'a single-target document is focused');
       const { probe } = await openProbe(fixture());
       await assertStatusShows(api, probe.first, probe.available);
@@ -181,6 +195,22 @@ export function defineNetfxLanguageSuite(language: NetfxLanguage, title: string)
       });
       await vscode.window.showTextDocument(plain);
       await assertStatusHidden(api, 'a plain-text document is focused');
+    });
+
+    test('a document NO loaded project compiles answers no framework and no project, and switching it is an error', async function () {
+      this.timeout(LSP_RESPONSE_MS * 4);
+      const loose = await openIn(fixture(), 'loose');
+      const context = await frameworkContextOf(loose.uri);
+      assertContext(context, null, [], 'the loose file');
+      assertOwnedBy(context, null, 'the loose file');
+      await assert.rejects(switchFramework(loose.uri, 'net48'), (error: unknown) => {
+        assert.ok(
+          error instanceof Error,
+          `switching a file no project compiles fails: ${String(error)}`,
+        );
+        return true;
+      });
+      await assertStatusHidden(api, 'a document no project compiles is focused');
     });
 
     test('the pick lists all six frameworks; choosing netstandard2.1 switches every file of the project', async function () {

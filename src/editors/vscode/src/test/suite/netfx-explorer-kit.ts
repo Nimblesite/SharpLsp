@@ -22,7 +22,8 @@ import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import type { fixtureNames } from './test-explorer-fixtures';
 import { discoverSolution, rootsOf, runViaProfile } from './test-explorer-kit';
 import { assertPassed, assertReported } from './test-explorer-outcome-assertions';
-import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { sleep } from './test-helpers';
+import { FIXTURE_BUILD_MS, QUIET_MS } from './test-timeouts';
 
 /**
  * The refusal [NETFX-DEBUG] quotes, after the name of what cannot be debugged:
@@ -37,6 +38,8 @@ export interface MultiTargetFixture extends ReturnType<typeof fixtureNames> {
   readonly language: 'fsharp' | 'csharp';
   readonly packages: readonly PackageRef[];
   readonly source: string;
+  /** Its OWN project properties, replacing the solution's — a single-target neighbour. */
+  readonly properties?: Readonly<Record<string, string>>;
 }
 
 /** A fixture solution: its projects, the properties they share, and every id they expose. */
@@ -57,7 +60,7 @@ export async function writeAndDiscover(
   solution: MultiTargetSolution,
 ): Promise<void> {
   const dirs = solution.fixtures.map((fixture) =>
-    writeMultiTargetProject(root, fixture, solution.properties),
+    writeMultiTargetProject(root, fixture, fixture.properties ?? solution.properties),
   );
   const file = await createSolution(root, solution.name, dirs);
   await discoverSolution(api, file, solution.expected, FIXTURE_BUILD_MS * 2);
@@ -151,6 +154,13 @@ export async function assertDebugRefused(
         lines.every((line) => line.includes('Test debug:')),
         `a debug refusal: ${lines.join(' | ')}`,
       );
+    }
+    // [NETFX-DEBUG]: "each refusal is logged once, on one line" — give a
+    // duplicate every chance to land before counting.
+    await sleep(QUIET_MS);
+    for (const refusal of refusals) {
+      const lines = loggedSince(api, mark, refusal);
+      assert.strictEqual(lines.length, 1, `logged ONCE: ${lines.join(' | ')}`);
     }
   });
 }

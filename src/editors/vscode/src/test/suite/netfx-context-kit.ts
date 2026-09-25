@@ -17,7 +17,7 @@ import { hoverText } from './fsharp-helpers';
 import { positionOf } from './real-repo-helpers';
 import type { Anchor } from './real-repo-kit';
 import { sendRealLspRequest } from './refactor-test-helpers';
-import { pollUntilResult } from './test-helpers';
+import { comparablePath, pollUntilResult } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 import type { UiStubs } from './ui-stubs';
 
@@ -30,6 +30,8 @@ export interface FrameworkContext {
   readonly active: string | null;
   /** The project's `<TargetFrameworks>`, in declared order; empty when single. */
   readonly available: readonly string[];
+  /** The project file that compiles the document; `null` when none does. */
+  readonly project: string | null;
 }
 
 /** The live status-bar view the extension API exposes ([NETFX-CONTEXT]). */
@@ -46,13 +48,35 @@ type NetfxApi = SharpLspExtensionApi & { readonly targetFrameworkStatus?: Framew
 /** Parse a request's reply, failing on any shape [NETFX-CONTEXT] does not allow. */
 function contextOf(reply: unknown, method: string): FrameworkContext {
   assert.ok(isRecord(reply), `${method} must answer an object, got ${JSON.stringify(reply)}`);
-  const { active, available } = reply;
+  const { active, available, project } = reply;
   assert.ok(active === null || typeof active === 'string', `${method}: active is a tfm or null`);
   assert.ok(Array.isArray(available), `${method}: available must be an array`);
+  assert.ok(
+    project === null || typeof project === 'string',
+    `${method}: project is a file or null`,
+  );
   const values: unknown[] = available;
   const tfms = values.filter((value): value is string => typeof value === 'string');
   assert.strictEqual(tfms.length, values.length, `${method}: available holds only tfms`);
-  return { active, available: tfms };
+  return { active, available: tfms, project };
+}
+
+/** `context` names `projectFile` as the project compiling its document, or no project at all. */
+export function assertOwnedBy(
+  context: FrameworkContext,
+  projectFile: string | null,
+  why: string,
+): void {
+  if (projectFile === null) {
+    assert.strictEqual(context.project, null, `${why}: no loaded project compiles it`);
+    return;
+  }
+  assert.ok(context.project !== null, `${why}: a loaded project compiles it`);
+  assert.strictEqual(
+    comparablePath(context.project),
+    comparablePath(projectFile),
+    `${why}: that project`,
+  );
 }
 
 /** The `TextDocumentIdentifier` both requests take. */

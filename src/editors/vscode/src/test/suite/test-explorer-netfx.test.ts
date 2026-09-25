@@ -171,6 +171,25 @@ const CSHARP: NetfxFixture = {
 /** F# FIRST, always. */
 const FIXTURES = [FSHARP, CSHARP];
 
+/** A SINGLE-target neighbour in the same solution, whose rows [NETFX] must leave alone. */
+const SINGLE: MultiTargetFixture = {
+  ...fixtureNames('xunit', 'fsharp', 'Single'),
+  language: 'fsharp',
+  packages: XUNIT_PACKAGES,
+  source: [
+    'module Fs.Single.Tests',
+    '',
+    'open Xunit',
+    '',
+    '[<Fact>]',
+    'let ``passes on one framework`` () = Assert.Equal(1, 1)',
+    '',
+  ].join('\n'),
+};
+
+/** Its one test, under its plain fully-qualified name. */
+const SINGLE_ID = 'Fs.Single.Tests.passes on one framework';
+
 suite('Test Explorer — one project built for .NET Framework AND .NET', () => {
   let api: SharpLspExtensionApi;
   let root: string;
@@ -184,11 +203,13 @@ suite('Test Explorer — one project built for .NET Framework AND .NET', () => {
     ({ api, root } = await activateWithScratch('sharplsp-netfx-te-'));
     modern = await installedFrameworkPair(root);
     declared = [...NET_FRAMEWORK_TARGETS, ...modern];
+    const [, newest = ''] = modern;
+    const single = { ...SINGLE, properties: { TargetFramework: newest } };
     await writeAndDiscover(api, root, {
       name: 'NetfxTests',
-      fixtures: FIXTURES,
+      fixtures: [...FIXTURES, single],
       properties: { TargetFrameworks: declared.join(';') },
-      expected: FIXTURES.flatMap((fixture) => Object.values(fixture.ids)),
+      expected: [...FIXTURES.flatMap((fixture) => Object.values(fixture.ids)), SINGLE_ID],
     });
   });
 
@@ -197,8 +218,21 @@ suite('Test Explorer — one project built for .NET Framework AND .NET', () => {
     await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
+  test('a SINGLE-target neighbour keeps its rows unchanged: no framework description, no tfm tag', function () {
+    const singleRoot = rootLabelled(api, SINGLE.projectName);
+    assert.strictEqual(
+      singleRoot.description,
+      undefined,
+      'a single-target root describes no frameworks',
+    );
+    const [item] = itemsFor(api, [SINGLE_ID]);
+    assert.ok(item, `${SINGLE_ID} is a row`);
+    assertTaggedFor(item, []);
+    assert.strictEqual(item.description, SINGLE_ID, 'its description is its plain FQN, as before');
+  });
+
   test('ONE root per project, each describing all five frameworks, .NET Framework first', function () {
-    assertOneRootPerProject(api, FIXTURES);
+    assertOneRootPerProject(api, [...FIXTURES, SINGLE]);
     for (const fixture of FIXTURES) {
       assertFrameworkRoot(rootLabelled(api, fixture.projectName), declared, modern);
     }

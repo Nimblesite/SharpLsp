@@ -27,12 +27,13 @@ import {
   buildProjectXml,
   createSolution,
   dotnet,
+  installedFrameworkPair,
   installedNetCoreTargets,
 } from './dotnet-project-kit';
 import { declared, type ProjectFrameworks } from './netfx-context-kit';
 import type { LoadedFixture } from './netfx-language-kit';
 import type { Anchor } from './real-repo-kit';
-import { isolateFromRepoMsbuild } from './run-debug-fixtures';
+import { isolateFromRepoMsbuild, writeLaunchSettings } from './run-debug-fixtures';
 
 // `XMLBuilder` is marked deprecated in fast-xml-parser 5 in favour of the
 // days-old `fast-xml-builder` package — the same trade dotnet-project-kit makes:
@@ -246,54 +247,78 @@ export interface RunnableProject {
   readonly projectFile: string;
   /** Root-relative path of its Program.fs. */
   readonly program: string;
+  /** The arguments its launch profile passes; empty when it has no profile. */
+  readonly profileArgs: readonly string[];
 }
 
 /** Both runnable projects, in one solution. */
 export interface RunFixture extends LoadedFixture {
-  /** net48 FIRST, then the newest .NET: debuggable, on its .NET framework. */
+  /** net48 FIRST, then TWO .NET versions: F5's first-.NET and active-.NET cases differ. */
   readonly probe: RunnableProject;
-  /** .NET Framework alone: runnable, never debuggable. */
+  /** .NET Framework alone, with a launch profile: runnable, never debuggable. */
   readonly netfxOnly: RunnableProject;
 }
 
-/** A console program named `name` returning 48 on .NET Framework and 10 on .NET. */
-function writeConsole(root: string, name: string, frameworks: ProjectFrameworks): RunnableProject {
+/**
+ * A console program named `name` returning 48 on .NET Framework and 10 on
+ * .NET, PLUS the number of arguments it received — so an exit code proves both
+ * the framework that ran and the arguments that reached it.
+ */
+function writeConsole(root: string, name: string, frameworks: ProjectFrameworks): string {
   const program = `${name}/Program.fs`;
   const exits = [
     '#if NETFRAMEWORK',
-    `    ${String(EXIT_ON_NETFX)}`,
+    `    ${String(EXIT_ON_NETFX)} + argv.Length`,
     '#else',
-    `    ${String(EXIT_ON_NET)}`,
+    `    ${String(EXIT_ON_NET)} + argv.Length`,
     '#endif',
   ];
   writeFiles(root, {
-    [program]: [`module Fx.${name}`, '', '[<EntryPoint>]', 'let main _ =', ...exits, ''].join('\n'),
+    [program]: [`module Fx.${name}`, '', '[<EntryPoint>]', 'let main argv =', ...exits, ''].join(
+      '\n',
+    ),
   });
   const properties = { OutputType: 'Exe' };
-  const projectFile = writeFsharpProject(root, {
-    name,
-    frameworks,
-    compile: ['Program.fs'],
-    properties,
-  });
-  return { name, frameworks, projectFile, program };
+  return writeFsharpProject(root, { name, frameworks, compile: ['Program.fs'], properties });
 }
 
+/** The arguments NetfxOnly's launch profile passes. */
+const PROFILE_ARGS = ['alpha', 'beta'];
+
 /**
- * Write RunProbe (net48 + .NET) and NetfxOnly (net462 + net48) into one
- * solution. Launching needs the fixture inside a workspace folder — inside the
- * SharpLsp repository — so the root first stops every upward MSBuild and
- * `.editorconfig` walk, or the repo's analyzers would fail the build.
+ * Write RunProbe (net48 + the two newest .NET) and NetfxOnly (net462 + net48,
+ * with a launch profile) into one solution. Launching needs the fixture inside
+ * a workspace folder — inside the SharpLsp repository — so the root first stops
+ * every upward MSBuild and `.editorconfig` walk, or the repo's analyzers would
+ * fail the build.
  */
 export async function writeRunFixture(root: string): Promise<RunFixture> {
   isolateFromRepoMsbuild(root);
-  const probe = writeConsole(root, 'RunProbe', declared('net48', await newestNet(root)));
-  const netfxOnly = writeConsole(root, 'NetfxOnly', declared('net462', 'net48'));
-  const solution = await restoredSolution(root, 'Launch', [
-    probe.projectFile,
-    netfxOnly.projectFile,
-  ]);
-  const ready: LoadedFixture['ready'] = { file: probe.program, anchor: ['let main _ =', 'main'] };
+  const probeFrameworks = declared('net48', ...(await installedFrameworkPair(root)));
+  const probeFile = writeConsole(root, 'RunProbe', probeFrameworks);
+  const netfxFrameworks = declared('net462', 'net48');
+  const netfxFile = writeConsole(root, 'NetfxOnly', netfxFrameworks);
+  const profile = { commandName: 'Project', commandLineArgs: PROFILE_ARGS.join(' ') };
+  writeLaunchSettings(path.dirname(netfxFile), { profiles: { NetfxOnly: profile } });
+  const solution = await restoredSolution(root, 'Launch', [probeFile, netfxFile]);
+  const project = (
+    name: string,
+    frameworks: ProjectFrameworks,
+    projectFile: string,
+    profileArgs: readonly string[],
+  ): RunnableProject => ({
+    name,
+    frameworks,
+    projectFile,
+    program: `${name}/Program.fs`,
+    profileArgs,
+  });
+  const probe = project('RunProbe', probeFrameworks, probeFile, []);
+  const netfxOnly = project('NetfxOnly', netfxFrameworks, netfxFile, PROFILE_ARGS);
+  const ready: LoadedFixture['ready'] = {
+    file: probe.program,
+    anchor: ['let main argv =', 'main'],
+  };
   return { root, solution, probe, netfxOnly, ready };
 }
 
