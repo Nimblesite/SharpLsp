@@ -48,6 +48,9 @@ let switch (state: FSharpWorkspaceState) (filePath: string) (framework: string) 
         | Some entry when not (List.contains framework entry.Frameworks) ->
             return Error $"{framework} is not a target framework of {Path.GetFileName entry.Path}"
         | Some entry ->
-            let! options = optionsForFramework state.Checker entry framework ct
-            return options |> Result.map (activate state entry framework)
+            match! optionsForFramework state.Checker entry framework ct with
+            | Error reason -> return Error reason
+            | Ok options ->
+                do! prepareReferencedBuilds state entry framework ct
+                return Ok(activate state entry framework options)
     }

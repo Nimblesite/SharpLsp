@@ -1,12 +1,12 @@
-/// F# projects that reference F# projects. A reference the project's options do not
-/// already carry — hand-built options never carry an F# one — reaches it as an FCS
-/// in-memory reference to the referenced project's CURRENT options, never its built
-/// DLL. So an unsaved edit crosses the reference, navigation lands in the referenced
-/// source, and a solution nobody built still checks clean. A reference MSBuild already
-/// resolved stands: a multi-targeted project's design-time command line names the
-/// build of the referenced project ITS framework compiles against, which the
-/// referenced project's own active framework need not be. A reference into the other
-/// language stays a binary reference ([DEFINITION-CROSSLANG]).
+/// F# projects that reference F# projects. Every such reference reaches the referenced
+/// project as an FCS in-memory reference, never its built DLL: an unsaved edit crosses the
+/// reference, navigation lands in the referenced source, and a solution nobody built still
+/// checks clean. A reference MSBuild resolved reads the build of the referenced project
+/// MSBuild picked for it — a multi-targeted project's framework names that build, which
+/// the referenced project's own active framework need not be — under the `-r:` MSBuild
+/// wrote. A reference the options do not carry — hand-built options never carry an F# one
+/// — reads the referenced project's CURRENT options. A reference into the other language
+/// stays a binary reference ([DEFINITION-CROSSLANG]).
 /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES] (GitHub #165).
 module SharpLsp.Sidecar.FSharp.FSharpProjectGraph
 
@@ -58,25 +58,54 @@ let withReferences (options: FSharpProjectOptions) (references: FSharpProjectOpt
                 (List.map2 (fun output referenced -> FSharpReferencedProject.FSharpReference(output, referenced)) outputs references
                  |> Array.ofList) }
 
-/// `options` with every F# project it references, and its options do not, wired in
-/// transitively. `current` is a loaded project's own options and `referencesOf` its F#
-/// references; a cycle — which MSBuild refuses anyway — stops at the project already
+/// A build of a referenced F# project, and the assembly path a referencing `-r:` names it by.
+[<NoComparison; NoEquality>]
+type ReferencedBuild =
+    { Reference: string
+      Options: FSharpProjectOptions }
+
+/// The value of `options`' own `-r:` naming `path`. FCS reads an in-memory reference in
+/// place of the `-r:` whose value is that reference's file name, character for character.
+let private argumentNaming (options: FSharpProjectOptions) (path: string) =
+    options.OtherOptions
+    |> Array.tryPick (valueOf [ "-r:"; "--reference:" ] >> Option.filter (fun value -> NativePaths.AreEqual(value, path)))
+
+/// `options` reading each build in memory under the `-r:` value that already names it.
+let private readingBuilds (options: FSharpProjectOptions) (builds: (string * FSharpProjectOptions) list) =
+    { options with
+        ReferencedProjects =
+            Array.append options.ReferencedProjects (builds |> List.map FSharpReferencedProject.FSharpReference |> Array.ofList) }
+
+/// `options` with every F# project it references wired in memory, transitively: a
+/// reference MSBuild resolved to the build `builtFor` names for it, one the options do not
+/// carry to the referenced project's `current` options. `referencesOf` is a project's F#
+/// references. A cycle — which MSBuild refuses anyway — stops at the project already
 /// being wired.
-let wire
+let wireAll
     (current: string -> FSharpProjectOptions option)
     (referencesOf: string -> string list)
+    (builtFor: FSharpProjectOptions -> ReferencedBuild list)
     (options: FSharpProjectOptions)
     =
     let rec wireFrom (trail: string list) (options: FSharpProjectOptions) =
         let trail = options.ProjectFileName :: trail
+        let unseen (project: string) = trail |> List.exists (fun seen -> NativePaths.AreEqual(seen, project)) |> not
 
-        match
-            referencesOf options.ProjectFileName
-            |> List.filter (fun reference -> not (trail |> List.exists (fun seen -> NativePaths.AreEqual(seen, reference))))
-            |> List.choose current
-            |> List.filter (alreadyReferences options >> not)
-        with
-        | [] -> options
-        | references -> withReferences options (references |> List.map (wireFrom trail))
+        let resolved =
+            builtFor options
+            |> List.filter (fun build -> unseen build.Options.ProjectFileName)
+            |> List.choose (fun build -> argumentNaming options build.Reference |> Option.map (fun argument -> argument, wireFrom trail build.Options))
+
+        let dropped =
+            referencesOf options.ProjectFileName |> List.filter unseen |> List.choose current |> List.filter (alreadyReferences options >> not)
+
+        match resolved, dropped with
+        | [], [] -> options
+        | _ -> withReferences (readingBuilds options resolved) (dropped |> List.map (wireFrom trail))
 
     wireFrom [] options
+
+/// `options` wired with nothing known of the builds MSBuild picked: a reference it
+/// resolved stands, and one the options do not carry reads its project's `current` options.
+let wire (current: string -> FSharpProjectOptions option) (referencesOf: string -> string list) (options: FSharpProjectOptions) =
+    wireAll current referencesOf (fun _ -> []) options

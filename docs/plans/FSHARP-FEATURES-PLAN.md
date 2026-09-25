@@ -160,10 +160,12 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
 - [ ] Type provider navigation support
 - [ ] Convert pipe to/from nested function calls (refactoring)
 - [x] Multi-project F# workspace state (multiple `FSharpProjectOptions`). Every `.fsproj`
-      loads, F#→F# project references are in-memory, and project-wide queries span every
-      project ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES], #165; tests in
-      `FSharpMultiProjectTests.fs`). Mixed C#/F# `.slnx` full-stack coverage is
-      `definition_cross_language.rs`.
+      loads; every F#→F# project reference is read in memory — a multi-targeted project's
+      from the build MSBuild picked for its framework — and a project-wide query spans the
+      declaring project and its in-memory readers
+      ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES], #165; tests in
+      `FSharpMultiProjectTests.fs` and `FSharpResolvedReferenceTests.fs`). Mixed C#/F#
+      `.slnx` full-stack coverage is `definition_cross_language.rs`.
 
 ## TODO — parity pass
 

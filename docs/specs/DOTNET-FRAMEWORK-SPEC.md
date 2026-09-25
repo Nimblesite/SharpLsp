@@ -35,7 +35,7 @@ dotnet msbuild <fsproj> -p:TargetFramework=<tfm> -p:DesignTimeBuild=true
   -t:ResolveAssemblyReferencesDesignTime;ResolveProjectReferencesDesignTime;
      ResolvePackageDependenciesDesignTime;FindReferenceAssembliesForReferences;
      _GenerateCompileDependencyCache;BeforeBuild;BeforeCompile;CoreCompile
-  -getItem:FscCommandLineArgs
+  -getItem:FscCommandLineArgs -getItem:ReferencePathWithRefAssemblies
 ```
 
 `net48` therefore compiles with `--targetprofile:mscorlib`, the 4.8 reference assemblies and
@@ -46,7 +46,10 @@ why. Every `.fsproj` of the solution loads and a file answers from the project t
 the first is the workspace's for project-wide queries. MSBuild is asked only when the project
 file declares `<TargetFrameworks>` and evaluates to two or more: the first framework's options
 are built at load, each other's on its first switch, then kept. A single-target project keeps
-its `<Compile>` items.
+its `<Compile>` items. Each project reference MSBuild resolved names the framework of the
+referenced project it picked, and an F# one is read in memory from that framework's options,
+built at load or at the switch that needs them
+([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]).
 
 ## Active framework `[NETFX-CONTEXT]`
 

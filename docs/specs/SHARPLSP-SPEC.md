@@ -124,15 +124,20 @@ The host resolves the setting and sends the **solution file** rather than the ro
 
 The F# sidecar loads every `.fsproj` of the solution, and each file answers from the project that compiles it, with that project's defines and references. The first project stays the workspace's own for anything that needs one project.
 
-A `<ProjectReference>` from one loaded F# project to another is an FCS in-memory reference (`FSharpReferencedProject.FSharpReference`) to the referenced project's **current** options, never its built DLL:
+A `<ProjectReference>` from one loaded F# project to another is an FCS in-memory reference (`FSharpReferencedProject.FSharpReference`), never its built DLL:
 
 - a solution nobody has built still checks clean;
 - an unsaved edit in the referenced project reaches the project that uses it;
 - go-to-definition lands in the referenced project's source.
 
-Only a reference the project's options do not already carry is wired in memory, and hand-built options never carry an F# one. A reference MSBuild resolved stands: a multi-targeted project's design-time command line names the build of the referenced project that ITS framework compiles against, and that need not be the referenced project's own active framework. References are wired transitively. A cycle, which MSBuild refuses anyway, stops at the project already being wired. The reference graph is read once per load, and the options are wired where they are used, so a framework switch ([NETFX-CONTEXT]) is followed without reloading.
+Which build of the referenced project is read depends on where the reference comes from:
 
-A project-wide query spans the project that declares its subject and every loaded project that reads that one in memory, because a use there of a symbol from the declaring project counts. This covers references, rename, code lens counts and subtypes. A project that reads it as the DLL MSBuild resolved sees it as last built and is not searched. Checking every project of a large solution on every request stalled the whole server. Dead code is judged by the file's own project: a symbol that is not public cannot be used from another project, and a public one is reported only in monorepo mode, where the in-memory readers count too. A rename that comes from the other language has no F# file to anchor on, so it walks every loaded project. A reference into the other language stays a binary reference ([DEFINITION-CROSSLANG]).
+- **MSBuild resolved it**, on a multi-targeted project's design-time command line ([NETFX-PROJECTS-FSHARP]). MSBuild picks the build of the referenced project that the referencing project's framework compiles against, and that need not be the referenced project's own active framework. Its `ReferencePathWithRefAssemblies` item names that build: the `-r:` path, the project (`MSBuildSourceProjectFile`) and the framework (`NearestTargetFramework`). The referenced project's design-time options for that framework are read in memory under that exact `-r:`, and no `-r:` is added. They are built once, at load or at the switch that needs them. When MSBuild cannot report them, the reference stands on its DLL.
+- **The options do not carry it**, because hand-built options never carry an F# one. It reads the referenced project's current options under a `-r:` added for it.
+
+References are wired transitively. A cycle, which MSBuild refuses anyway, stops at the project already being wired. The reference graph is read once per load, and the options are wired where they are used, so a framework switch ([NETFX-CONTEXT]) is followed without reloading. FCS keeps one builder per project file, so a build that another project reads and the build the project answers from replace each other and neither goes stale.
+
+A project-wide query spans the project that declares its subject and every loaded project that reads that one in memory, because a use there of a symbol from the declaring project counts. This covers references, rename, code lens counts and subtypes. A project that still reads it as a DLL, because its build could not be produced, sees it as last built and is not searched. Checking every project of a large solution on every request stalled the whole server. Dead code is judged by the file's own project: a symbol that is not public cannot be used from another project, and a public one is reported only in monorepo mode, where the in-memory readers count too. A rename that comes from the other language has no F# file to anchor on, so it walks every loaded project. A reference into the other language stays a binary reference ([DEFINITION-CROSSLANG]).
 
 ### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation
 
