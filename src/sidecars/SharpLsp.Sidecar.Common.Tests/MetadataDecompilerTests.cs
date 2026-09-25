@@ -83,6 +83,109 @@ public sealed class MetadataDecompilerTests
     }
 
     [Fact]
+    public void Types_sharing_a_display_name_never_overwrite_each_others_source()
+    {
+        // Every sidecar process — C# and F#, in every editor window — decompiles
+        // into one shared temp directory. Keyed by display name alone, the second
+        // type overwrote the first one's file, and navigating into the first then
+        // showed the second's code (GitHub #173).
+        var guid = MetadataDecompiler.DecompileTypeToFile(CoreLib, "System.Guid", "Shared173");
+        var version = MetadataDecompiler.DecompileTypeToFile(
+            CoreLib,
+            "System.Version",
+            "Shared173"
+        );
+
+        Assert.NotNull(guid);
+        Assert.NotNull(version);
+        Assert.NotEqual(guid, version);
+        Assert.Equal("Shared173.cs", Path.GetFileName(guid!));
+        Assert.Contains("struct Guid", File.ReadAllText(guid!), StringComparison.Ordinal);
+        Assert.Contains("class Version", File.ReadAllText(version!), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_decompiled_file_deleted_behind_the_cache_is_written_again()
+    {
+        // Temp cleaners, and other sidecars, can remove the shared file at any
+        // time; a remembered path to a file that no longer exists navigates
+        // nowhere (GitHub #173).
+        var first = MetadataDecompiler.DecompileTypeToFile(CoreLib, "System.TimeSpan", "TimeSpan");
+        Assert.NotNull(first);
+        File.Delete(first!);
+
+        var second = MetadataDecompiler.DecompileTypeToFile(CoreLib, "System.TimeSpan", "TimeSpan");
+
+        Assert.Equal(first, second);
+        Assert.True(File.Exists(second), "the file is written again, not a dangling path");
+        Assert.Contains("struct TimeSpan", File.ReadAllText(second!), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_file_another_process_holds_open_is_reused_and_left_whole()
+    {
+        // Another sidecar reading the published file must neither make this one
+        // fail on a sharing violation nor let it rewrite the file under the
+        // reader (GitHub #173).
+        var path = MetadataDecompiler.DecompileTypeToFile(
+            CoreLib,
+            "System.DateTimeOffset",
+            "DateTimeOffset"
+        );
+        Assert.NotNull(path);
+        var complete = File.ReadAllText(path!);
+
+        using (new FileStream(path!, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            var again = MetadataDecompiler.DecompileTypeToFile(
+                CoreLib,
+                "System.DateTimeOffset",
+                "DateTimeOffset"
+            );
+            Assert.Equal(path, again);
+        }
+
+        Assert.Equal(complete, File.ReadAllText(path!));
+        Assert.Contains("struct DateTimeOffset", complete, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Losing_the_publish_race_keeps_the_winners_file_and_no_staging_file()
+    {
+        // Two sidecars decompiling one type both stage a file; the second rename
+        // finds the first one's published file. It must keep that file, succeed,
+        // and leave no staging file behind (GitHub #173).
+        var directory = Path.Combine(Path.GetTempPath(), $"sharplsp-publish-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var target = Path.Combine(directory, "Winner.cs");
+            File.WriteAllText(target, "// published first");
+
+            MetadataDecompiler.PublishAtomically(target, "// published second");
+
+            Assert.Equal("// published first", File.ReadAllText(target));
+            Assert.Equal([target], Directory.GetFiles(directory));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_type_the_assembly_does_not_define_publishes_nothing()
+    {
+        var path = MetadataDecompiler.DecompileTypeToFile(
+            CoreLib,
+            "System.NoSuchType173",
+            "NoSuchType173"
+        );
+
+        Assert.Null(path);
+    }
+
+    [Fact]
     public void DecompileTypeToFile_returns_null_for_a_missing_assembly()
     {
         var path = MetadataDecompiler.DecompileTypeToFile(

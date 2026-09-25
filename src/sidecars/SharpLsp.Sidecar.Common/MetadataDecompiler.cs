@@ -1,4 +1,5 @@
-using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using ICSharpCode.Decompiler;
 using ICSharpCode.Decompiler.CSharp;
 using ICSharpCode.Decompiler.TypeSystem;
@@ -14,20 +15,24 @@ public sealed record DecompiledPosition(int Line, int Character);
 /// the result. Shared by the C# and F# sidecars so metadata-as-source
 /// navigation — into the BCL, NuGet dependencies, and the *other language's*
 /// compiled assemblies (cross-language go-to-definition) — is implemented once.
-/// Decompiled types are cached by (assembly, type) so repeat navigations reuse
-/// the same temp file. Implements [DEFINITION-CROSSLANG].
+/// Implements [DEFINITION-CROSSLANG].
+/// <para>
+/// Every sidecar process on the machine decompiles into one temp directory, so
+/// the disk is the cache: a type decompiles into a directory keyed by the
+/// assembly build and the type, and is published by renaming a finished file
+/// into place. Another process — the other language's sidecar, another editor
+/// window — therefore never overwrites a different type's source, never trips a
+/// sharing violation on the same one, and never reads a half-written file; a
+/// file removed behind the cache is simply written again (GitHub #173).
+/// </para>
 /// </summary>
 public static class MetadataDecompiler
 {
-    /// <summary>Cache key: <c>assemblyPath|typeFullName</c> -> temp file path.</summary>
-    private static readonly ConcurrentDictionary<string, string> Cache = new(
-        StringComparer.Ordinal
-    );
-
     /// <summary>
     /// Decompile <paramref name="typeFullName"/> from <paramref name="assemblyPath"/>
     /// to a temp <c>.cs</c> file named after <paramref name="displayName"/>. Returns
-    /// the file path, or <see langword="null"/> on failure. Results are cached.
+    /// the file path, or <see langword="null"/> on failure. A type already on disk
+    /// is reused rather than decompiled again.
     /// </summary>
     public static string? DecompileTypeToFile(
         string assemblyPath,
@@ -35,49 +40,105 @@ public static class MetadataDecompiler
         string displayName
     )
     {
-        var cacheKey = $"{assemblyPath}|{typeFullName}";
-        var filePath = Cache.GetOrAdd(
-            cacheKey,
-            _ => DecompileCore(assemblyPath, typeFullName, displayName)
-        );
-        return string.IsNullOrEmpty(filePath) ? null : filePath;
+        var target = DecompiledPath(assemblyPath, typeFullName, displayName);
+        return
+            target is not null
+            && (File.Exists(target) || Publish(assemblyPath, typeFullName, target))
+            ? target
+            : null;
     }
 
-    private static string DecompileCore(
+    /// <summary>
+    /// Where a type decompiles to: one directory per assembly build and type, so
+    /// no two types — or two builds of one assembly — ever share a file, and a
+    /// rebuilt assembly is decompiled afresh. <see langword="null"/> when the
+    /// assembly is not on disk.
+    /// </summary>
+    private static string? DecompiledPath(
         string assemblyPath,
         string typeFullName,
         string displayName
     )
     {
+        var assembly = new FileInfo(assemblyPath);
+        if (!assembly.Exists)
+        {
+            return null;
+        }
+
+        var identity =
+            $"{assembly.FullName}|{assembly.Length}|{assembly.LastWriteTimeUtc.Ticks}|{typeFullName}";
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)), 0, 8);
+        var fileName = $"{SanitizeFileName(displayName)}.cs";
+        return Path.Combine(Path.GetTempPath(), "sharplsp-decompiled", key, fileName);
+    }
+
+    /// <summary>
+    /// Decompile and publish to <paramref name="target"/>. True when the file is
+    /// there afterwards — including when another process published it first.
+    /// </summary>
+    private static bool Publish(string assemblyPath, string typeFullName, string target)
+    {
         try
         {
-            var decompiler = new CSharpDecompiler(
-                assemblyPath,
-                new DecompilerSettings { ThrowOnAssemblyResolveErrors = false }
-            );
             Log.Debug(
                 "[MetadataDecompiler] Decompiling {Type} from {Assembly}",
                 typeFullName,
                 assemblyPath
             );
-            var source = decompiler.DecompileTypeAsString(new FullTypeName(typeFullName));
-            return WriteToTempFile(displayName, source);
+            PublishAtomically(target, Decompile(assemblyPath, typeFullName));
+            return true;
         }
         catch (Exception ex)
         {
             Log.Debug(ex, "[MetadataDecompiler] Decompilation failed for {Type}", typeFullName);
-            return "";
+            return File.Exists(target);
         }
     }
 
-    private static string WriteToTempFile(string displayName, string source)
+    private static string Decompile(string assemblyPath, string typeFullName)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "sharplsp-decompiled");
-        _ = Directory.CreateDirectory(dir);
-        var filePath = Path.Combine(dir, $"{SanitizeFileName(displayName)}.cs");
-        File.WriteAllText(filePath, source);
-        Log.Debug("[MetadataDecompiler] Wrote decompiled source to {FilePath}", filePath);
-        return filePath;
+        var decompiler = new CSharpDecompiler(
+            assemblyPath,
+            new DecompilerSettings { ThrowOnAssemblyResolveErrors = false }
+        );
+        return decompiler.DecompileTypeAsString(new FullTypeName(typeFullName));
+    }
+
+    /// <summary>
+    /// Write to a private staging file beside <paramref name="target"/>, then
+    /// rename it into place: a reader sees no file or the whole file, never a
+    /// partial one. Losing the race to another process's identical file is
+    /// success.
+    /// </summary>
+    internal static void PublishAtomically(string target, string source)
+    {
+        var directory = Path.GetDirectoryName(target) ?? Path.GetTempPath();
+        _ = Directory.CreateDirectory(directory);
+        var staging = Path.Combine(directory, $"{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(staging, source);
+            MoveUnlessPublished(staging, target);
+        }
+        finally
+        {
+            // A no-op once the rename has consumed it.
+            File.Delete(staging);
+        }
+    }
+
+    private static void MoveUnlessPublished(string staging, string target)
+    {
+        try
+        {
+            File.Move(staging, target, overwrite: false);
+            Log.Debug("[MetadataDecompiler] Published decompiled source to {FilePath}", target);
+        }
+        catch (IOException) when (File.Exists(target))
+        {
+            Log.Debug("[MetadataDecompiler] {FilePath} was published by another process", target);
+        }
     }
 
     /// <summary>

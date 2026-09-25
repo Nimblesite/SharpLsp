@@ -18,6 +18,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="SharpLsp.Sidecar.Common.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="ICSharpCode.Decompiler" Version="11.0.0.9375" />
         <PackageReference Include="MessagePack" Version="3.1.9" />
         <PackageReference Include="Microsoft.VisualStudio.SolutionPersistence" Version="1.0.52" />
