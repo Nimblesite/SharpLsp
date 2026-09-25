@@ -265,24 +265,36 @@ function fixtureOf(
   };
 }
 
+/** A fixture written to a scratch root, and where it first answers semantically. */
+export interface LoadedFixture {
+  readonly root: string;
+  readonly solution: string;
+  /** A root-relative file, and an anchor in it that must answer SEMANTIC hover. */
+  readonly ready: { readonly file: string; readonly anchor: Anchor };
+}
+
 /**
- * Build `language`'s fixture for the suite and load it through the real
- * extension, waiting until Probe answers SEMANTIC hover under its first
- * framework. Teardown puts the default fixture solution back.
+ * Write a fixture with `write` into a fresh scratch root under `parent` and load
+ * it through the real extension, waiting until its `ready` anchor answers
+ * SEMANTIC hover. Teardown puts the default fixture solution back and deletes
+ * the root.
+ *
+ * `parent` is the OS temp directory unless a gesture needs the fixture INSIDE
+ * a workspace folder: launching refuses a document outside every folder rather
+ * than silently borrowing the first one ([DEBUG-FEATURES-LAUNCH-TARGET]).
  */
-export function useLanguageFixture(language: NetfxLanguage): () => LanguageFixture {
-  let fixture: LanguageFixture | undefined;
+export function useLoadedFixture<T extends LoadedFixture>(
+  prefix: string,
+  write: (root: string) => Promise<T>,
+  parent: () => string = () => os.tmpdir(),
+): () => T {
+  let fixture: T | undefined;
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS + REAL_REPO_WARMUP_MS);
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), `sharplsp-netfx-${language}-`));
-    fixture = await writeLanguageFixture(language, root);
+    fixture = await write(fs.mkdtempSync(path.join(parent(), prefix)));
     await loadSolutionInServer(fixture.solution);
-    const { doc, uri } = await openRepoFile(root, fixture.files.probe);
-    await waitForSemanticReady(
-      uri,
-      positionOf(doc, ...fixture.nameOf(fixture.probe.first)),
-      REAL_REPO_WARMUP_MS,
-    );
+    const { doc, uri } = await openRepoFile(fixture.root, fixture.ready.file);
+    await waitForSemanticReady(uri, positionOf(doc, ...fixture.ready.anchor), REAL_REPO_WARMUP_MS);
   });
   suiteTeardown(async function () {
     this.timeout(ACTIVATION_MS);
@@ -291,9 +303,22 @@ export function useLanguageFixture(language: NetfxLanguage): () => LanguageFixtu
     if (fixture !== undefined) removeDirRecursive(fixture.root);
   });
   return () => {
-    assert.ok(fixture, 'the language fixture is built in suiteSetup');
+    assert.ok(fixture, 'the fixture is built in suiteSetup');
     return fixture;
   };
+}
+
+/**
+ * Build `language`'s fixture for the suite and load it through the real
+ * extension, waiting until Probe answers SEMANTIC hover under its first
+ * framework.
+ */
+export function useLanguageFixture(language: NetfxLanguage): () => LanguageFixture {
+  return useLoadedFixture(`sharplsp-netfx-${language}-`, async (root) => {
+    const fixture = await writeLanguageFixture(language, root);
+    const ready = { file: fixture.files.probe, anchor: fixture.nameOf(fixture.probe.first) };
+    return { ...fixture, ready };
+  });
 }
 
 /**
