@@ -17,12 +17,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  delay,
   isRecord,
   RETRYING_RM,
   removeDirRecursive,
   singleLine,
   splitTrimmed,
 } from '../../utils.js';
+import { SETTLE_MS } from './test-timeouts.js';
 
 /** A temp tree two levels deep with a file at each level. */
 function makeTree(): string {
@@ -58,6 +60,34 @@ suite('utils — removeDirRecursive and RETRYING_RM', () => {
     const root = makeTree();
     removeDirRecursive(root);
     assert.equal(fs.existsSync(root), false, 'a later delete still works after a swallowed one');
+  });
+
+  test('frees the path at once and deletes the tree in the background, never the reused path', async function () {
+    // A synchronous delete of a copied .NET SDK held the extension host's event
+    // loop for 41 s on a Windows runner (GitHub #311). The tree is moved aside
+    // in one rename and deleted off the loop, so the path is reusable at once.
+    this.timeout(SETTLE_MS + 5_000);
+    const root = makeTree();
+    const parent = path.dirname(root);
+    const aside = (): string[] =>
+      fs
+        .readdirSync(parent)
+        .filter((name) => name.startsWith(`${path.basename(root)}.`) && name.endsWith('.deleting'));
+
+    removeDirRecursive(root);
+    assert.equal(fs.existsSync(root), false, 'the path is free the moment the call returns');
+    fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, 'reused.txt'), 'kept', 'utf8');
+
+    const deadline = Date.now() + SETTLE_MS;
+    while (aside().length > 0 && Date.now() < deadline) await delay(50);
+    assert.deepEqual(aside(), [], 'the tree moved aside is deleted in the background');
+    assert.equal(
+      fs.readFileSync(path.join(root, 'reused.txt'), 'utf8'),
+      'kept',
+      'the background delete never touches a path the caller reused',
+    );
+    removeDirRecursive(root);
   });
 
   test('carries the Windows retry policy every call site shares', () => {

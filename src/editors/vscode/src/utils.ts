@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 
 /**
@@ -80,14 +81,40 @@ export const RETRYING_RM: fs.RmOptions = {
 };
 
 /**
- * Best-effort recursive delete. Once the retries are exhausted, a handle a
- * child process leaked must not fail the caller: thrown from a `finally`, it
- * would discard a result that was already complete.
+ * Best-effort recursive delete that never holds the extension host's event loop.
+ *
+ * The tree is RENAMED aside first — one operation, and the path is free the
+ * moment this returns — and then deleted in the background, on libuv's thread
+ * pool. Deleting a copied .NET SDK (tens of thousands of files) synchronously
+ * held the event loop for 41 s on a Windows runner, long enough for VS Code to
+ * report the extension host unresponsive (GitHub #311). The background delete
+ * only ever touches the renamed tree, so a caller may recreate the path at once.
+ *
+ * When the rename fails — the path is already gone, or a child still holds a
+ * file in it — the delete runs in place, with the Windows retry policy. Once the
+ * retries are exhausted, a handle a child process leaked must not fail the
+ * caller: thrown from a `finally`, it would discard a result already complete.
  */
 export function removeDirRecursive(target: string): void {
+  const aside = moveAside(target);
+  if (aside !== undefined) {
+    void fs.promises.rm(aside, RETRYING_RM).catch(() => undefined);
+    return;
+  }
   try {
     fs.rmSync(target, RETRYING_RM);
   } catch {
     // Best-effort by contract: the caller's result stands without the delete.
+  }
+}
+
+/** Rename `target` to a unique sibling on the same volume; `undefined` when it cannot move. */
+function moveAside(target: string): string | undefined {
+  const aside = `${target}.${randomUUID()}.deleting`;
+  try {
+    fs.renameSync(target, aside);
+    return aside;
+  } catch {
+    return undefined;
   }
 }
