@@ -18,20 +18,38 @@ internal sealed record SearchScope(
     IImmutableSet<Document>? Documents
 )
 {
-    /// <summary>The active frameworks of the solution <paramref name="document"/> belongs to.</summary>
-    internal static SearchScope Of(Document document, ConcurrentDictionary<string, string> chosen)
+    /// <summary>
+    /// The active frameworks of the solution <paramref name="document"/> belongs to: every
+    /// document of theirs, the ones their source generators produce included.
+    /// </summary>
+    internal static async Task<SearchScope> OfAsync(
+        Document document,
+        ConcurrentDictionary<string, string> chosen,
+        CancellationToken ct
+    )
     {
         var solution = document.Project.Solution;
         var active = solution
             .Projects.Where(project => TargetFrameworks.IsActive(solution, project, chosen))
             .ToImmutableHashSet();
-        return active.Count == solution.ProjectIds.Count
-            ? new SearchScope(solution, null, null)
-            : new SearchScope(
-                solution,
-                active,
-                active.SelectMany(project => project.Documents).ToImmutableHashSet()
-            );
+        if (active.Count == solution.ProjectIds.Count)
+        {
+            return new SearchScope(solution, null, null);
+        }
+
+        var generated = await Task.WhenAll(
+                active.Select(project => project.GetSourceGeneratedDocumentsAsync(ct).AsTask())
+            )
+            .ConfigureAwait(false);
+        return new SearchScope(
+            solution,
+            active,
+            [
+                .. active
+                    .SelectMany(project => project.Documents)
+                    .Concat(generated.SelectMany(documents => documents)),
+            ]
+        );
     }
 
     /// <summary>

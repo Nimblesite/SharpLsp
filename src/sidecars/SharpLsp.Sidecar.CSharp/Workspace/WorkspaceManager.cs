@@ -262,7 +262,9 @@ internal sealed partial class WorkspaceManager : IDisposable
                 var dead = await DeadCodeAnalyzer
                     .AnalyzeAsync(
                         state.Document,
-                        SearchScope.Of(state.Document, _activeFrameworks),
+                        await SearchScope
+                            .OfAsync(state.Document, _activeFrameworks, ct)
+                            .ConfigureAwait(false),
                         _monorepo,
                         ct
                     )

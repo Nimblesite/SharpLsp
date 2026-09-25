@@ -344,7 +344,14 @@ internal sealed partial class WorkspaceManager
         return RunDocumentQueryAsync(
             filePath,
             emptyValue,
-            document => resolve(document, SearchScope.Of(document, _activeFrameworks)),
+            async document =>
+                await resolve(
+                        document,
+                        await SearchScope
+                            .OfAsync(document, _activeFrameworks, ct)
+                            .ConfigureAwait(false)
+                    )
+                    .ConfigureAwait(false),
             ct
         );
     }
