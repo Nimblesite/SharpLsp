@@ -27,6 +27,7 @@
     <Compile Include="FSharpProjectCrackingTests.fs" />
     <Compile Include="FSharpDeclarationKindTests.fs" />
     <Compile Include="FSharpNavigationEdgeTests.fs" />
+    <Compile Include="FSharpMetadataDefinitionTests.fs" />
     <Compile Include="FSharpUnloadedWorkspaceTests.fs" />
     <Compile Include="FSharpDesignTimeTests.fs" />
   </ItemGroup>

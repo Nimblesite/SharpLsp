@@ -188,6 +188,14 @@ let private declarationLocationFallback (checkResults: FSharpCheckFileResults) (
             checkResults.GetDeclarationLocation(line + 1, endColumn, lineText, [ name ]))
         |> Option.bind declarationResultLocation
 
+/// A declaration in a file this machine has. FCS gives imported entities a
+/// phantom range — `startup` for a framework type, the build server's path for
+/// FSharp.Core — which must defer to metadata-as-source rather than open a file
+/// the user does not have (GitHub #220). A referenced project's real source
+/// still wins, because that file exists.
+let private onDisk (location: NavigationLocation) =
+    if File.Exists location.FilePath then Some location else None
+
 let private extractDefinition checkResults source line character =
     let symbolUse = getSymbolUse checkResults source line character
 
@@ -195,6 +203,7 @@ let private extractDefinition checkResults source line character =
         symbolUse
         |> Option.bind (fun useInfo -> useInfo.Symbol.DeclarationLocation)
         |> Option.bind rangeToLocation
+        |> Option.bind onDisk
 
     fromSource
     |> Option.orElseWith (fun () -> fromMetadata symbolUse)
