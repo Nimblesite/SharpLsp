@@ -128,12 +128,17 @@ let private fsharpCoreReferenceArgs () =
     else
         [| $"-r:{assemblyPath}" |]
 
+/// The sidecar runtime's references never change within a process, and reading every
+/// runtime assembly's header is paid once, however many projects load.
+let private runtimeReferences =
+    lazy
+        [| yield "--noframework"
+           yield "--targetprofile:netcore"
+           yield! runtimeReferenceArgs ()
+           yield! fsharpCoreReferenceArgs () |]
+
 /// Compiler references shared by project loading and package analysis.
-let frameworkReferenceArgs () : string array =
-    [| yield "--noframework"
-       yield "--targetprofile:netcore"
-       yield! runtimeReferenceArgs ()
-       yield! fsharpCoreReferenceArgs () |]
+let frameworkReferenceArgs () : string array = Array.copy runtimeReferences.Value
 
 let private packageReferenceArgs fsprojPath =
     FSharpAssets.parseAssets fsprojPath
