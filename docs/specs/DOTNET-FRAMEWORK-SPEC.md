@@ -39,7 +39,7 @@ dotnet msbuild <fsproj> -p:TargetFramework=<tfm> -p:DesignTimeBuild=true
 ```
 
 `net48` therefore compiles with `--targetprofile:mscorlib`, the 4.8 reference assemblies and
-`NETFRAMEWORK;NET48;…_OR_GREATER`; source order, globs, conditions and `Directory.Build.*` are
+`NETFRAMEWORK;NET48;…_OR_GREATER` (about 1 s per framework on SDK 10.0.303); source order, globs, conditions and `Directory.Build.*` are
 MSBuild's. Relative arguments resolve against the project directory. If the design-time compile
 fails, the project degrades to its `<Compile>` items against the sidecar runtime and the log says
 why. Every `.fsproj` of the solution loads and a file answers from the project that compiles it;
@@ -124,7 +124,8 @@ single-target project runs and debugs as before.
 
 ## Real-world corpus `[NETFX-CORPUS]`
 
-Windows-only chunk. Every repo targets several .NET Framework AND several .NET Standard versions.
+Windows-only chunk. Every repo targets several .NET Framework AND several .NET Standard versions,
+and builds on Windows in 23–54 s.
 Pinned commits, cloned at test time into `src/fixtures/real-world/` (gitignored), `global.json` removed.
 `src/fixtures/` ends the `Directory.Build.*` and `.editorconfig` lookups, so each repo builds under its
 own configuration, never SharpLsp's.
