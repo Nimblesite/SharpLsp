@@ -75,6 +75,7 @@ pub mod sort_members_extra;
 pub mod standalone_csproj;
 pub mod statement_stop;
 pub mod symbols;
+pub mod target_framework;
 pub mod type_hierarchy_tests;
 pub mod user_session_csharp;
 pub mod user_session_fsharp;
