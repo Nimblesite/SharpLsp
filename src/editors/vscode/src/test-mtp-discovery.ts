@@ -173,8 +173,7 @@ export async function listMtpTests(
   cwd: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<TestListing> {
-  const sweep: SweepContext = { target, cwd, timeoutMs };
-  return await listScanned(await scanMtpProjects(target, cwd, timeoutMs), sweep);
+  return await listFound(scanMtpProjects, { target, cwd, timeoutMs });
 }
 
 /**
@@ -191,8 +190,15 @@ export async function probeMtpTests(
   cwd: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<TestListing> {
-  const sweep: SweepContext = { target, cwd, timeoutMs };
-  return await listScanned(await probeMtpProjects(target, cwd, timeoutMs), sweep);
+  return await listFound(probeMtpProjects, { target, cwd, timeoutMs });
+}
+
+/** List every test the MTP projects `scan` finds in the sweep's target. */
+async function listFound(
+  scan: (target: string, cwd: string, timeoutMs: number) => Promise<MtpProjectScan>,
+  sweep: SweepContext,
+): Promise<TestListing> {
+  return await listScanned(await scan(sweep.target, sweep.cwd, sweep.timeoutMs), sweep);
 }
 
 /** What every module of a sweep reported, gathered for the tree and the run. */
