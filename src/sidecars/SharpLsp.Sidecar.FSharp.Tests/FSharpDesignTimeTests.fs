@@ -70,15 +70,17 @@ let private dotnet (dir: string) (args: string) =
         proc.WaitForExit()
         Assert.True((proc.ExitCode = 0), $"dotnet {args} failed: {output}")
 
-/// A restored `net48;net10.0` project; returns its directory, project file and probe.
-let private restoredProbe () =
+/// A restored `net48;net10.0` project holding `source`; its directory, project file and probe.
+let private restoredProbeOf (source: string) =
     let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-dt-{Guid.NewGuid():N}")
     let fsproj = writeFsproj dir "Probe" [ frameworks "net48;net10.0" ]
     let probe = Path.Combine(dir, "Src", "Probe.fs")
     // CRLF, as a Windows checkout writes it: a `#if` line's `\r` must not hide the dead branch.
-    File.WriteAllText(probe, probeSource.Replace("\n", "\r\n"))
+    File.WriteAllText(probe, source.Replace("\n", "\r\n"))
     dotnet dir $"restore \"{fsproj}\" --nologo -v q"
     dir, fsproj, probe
+
+let private restoredProbe () = restoredProbeOf probeSource
 
 let private hoverNames (state: FSharpWorkspace.FSharpWorkspaceState) probe (line: int, column: int) =
     task {
@@ -220,6 +222,33 @@ let ``a lone framework, a framework MSBuild cannot compile, and a broken evaluat
         Assert.Empty(brokenEntry.Frameworks)
         let! cancelled = FSharpDesignTime.evaluateTargetFrameworks lone (CancellationToken(true))
         Assert.Equal(Error "MSBuild did not finish in time", cancelled)
+    finally
+        cleanup dir
+}
+
+/// The same unchanged text answers from whichever framework is active NOW: a check
+/// the checker remembered from the previous framework must not answer for the new one.
+[<Fact>]
+let ``completion on unchanged text follows the switch: File.WriteAllTextAsync only under net10.0`` () = task {
+    let source = String.Join("\n", [ "module Fx.Completion"; ""; "let probe () = System.IO.File."; "" ])
+    let dir, _, probe = restoredProbeOf source
+
+    try
+        let state = FSharpWorkspace.create ()
+        let! _ = FSharpWorkspace.loadProject state dir
+        let labels () =
+            task {
+                let! entries = FSharpCompletion.getCompletions state probe 2 30
+                return entries |> List.map _.Label |> Set.ofList
+            }
+
+        let! onFramework = labels ()
+        Assert.Contains("ReadAllText", onFramework)
+        Assert.DoesNotContain("WriteAllTextAsync", onFramework)
+
+        let! _ = FSharpTargetFrameworks.switch state probe "net10.0" CancellationToken.None
+        let! onModern = labels ()
+        Assert.Contains("WriteAllTextAsync", onModern)
     finally
         cleanup dir
 }
