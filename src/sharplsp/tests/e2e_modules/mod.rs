@@ -70,6 +70,7 @@ pub mod references;
 pub mod selection;
 pub mod semantic_coverage;
 pub mod semantic_tokens_tests;
+pub mod sidecar_shutdown;
 pub mod sort_members;
 pub mod sort_members_extra;
 pub mod standalone_csproj;

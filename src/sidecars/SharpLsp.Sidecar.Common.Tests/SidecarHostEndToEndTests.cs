@@ -150,6 +150,50 @@ public sealed class SidecarHostEndToEndTests
     }
 
     [Fact]
+    public async Task Shutdown_is_acknowledged_before_the_host_stops()
+    {
+        // GitHub #172 / [SIDECAR-SHUTDOWN-ACK]: the Rust host waits for a
+        // correlated "ok" before it lets the process exit on its own
+        // ([SIDECAR-SHUTDOWN-PROTOCOL]). A handler that cancels the token the
+        // response is written with never sends one, so every shutdown ended in
+        // a hard kill.
+        var socketPath = IpcConnection.GenerateSocketPath($"host-ack-{Guid.NewGuid():N}");
+        var host = new TestHost();
+        await using (host.ConfigureAwait(false))
+        {
+            var runTask = host.RunAsync(socketPath);
+
+            var stream = await ConnectWithRetryAsync(socketPath).ConfigureAwait(true);
+            var client = new FramedTransport(stream);
+            await using (client.ConfigureAwait(false))
+            {
+                var pong = await RoundTripAsync(client, Request(1, "ping")).ConfigureAwait(true);
+                Assert.Equal(1u, pong.Id);
+                Assert.Null(pong.Error);
+                Assert.False(runTask.IsCompleted, "the host serves until it is asked to stop");
+
+                var ack = await RoundTripAsync(client, Request(2, "shutdown"))
+                    .WaitAsync(TimeSpan.FromSeconds(10))
+                    .ConfigureAwait(true);
+                Assert.Equal(2u, ack.Id);
+                Assert.Null(ack.Error);
+                Assert.Equal("ok", MessagePackSerializer.Deserialize<string>(ack.Payload));
+
+                // Only after the flushed ack does the host stop: it closes its
+                // end, and RunAsync returns for a zero exit.
+                await runTask.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(true);
+                Assert.True(runTask.IsCompletedSuccessfully);
+                Assert.False(host.StartupFailed, "an acknowledged shutdown exits zero");
+                var afterAck = await client
+                    .ReadFrameAsync()
+                    .WaitAsync(TimeSpan.FromSeconds(10))
+                    .ConfigureAwait(true);
+                Assert.Null(afterAck);
+            }
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_returns_when_listener_cannot_bind()
     {
         // Bind must fail so RunAsync logs the listener failure and returns cleanly.

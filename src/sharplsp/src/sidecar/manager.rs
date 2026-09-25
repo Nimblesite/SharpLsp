@@ -14,6 +14,8 @@ use tracing::{debug, error, info, warn};
 use super::protocol::Envelope;
 use super::transport::FramedTransport;
 
+mod shutdown;
+
 /// Maximum backoff delay for crash recovery. `[SIDECAR-RECOVERY-BACKOFF]`
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// Initial backoff delay.
@@ -424,29 +426,6 @@ impl SidecarManager {
     /// Must be called from within a tokio runtime (e.g. via `runtime.spawn`).
     pub async fn start_health_monitor(self: Arc<Self>) -> ! {
         health_loop(self).await
-    }
-
-    /// TODO `[SIDECAR-SHUTDOWN-PROTOCOL]`: validate the acknowledgement and await clean exit before hard kill.
-    pub async fn shutdown(&self) {
-        self.shutting_down.store(true, Ordering::Release);
-        info!(sidecar = %self.name, "Shutting down sidecar");
-        if let Ok(mut transport_guard) = self.transport.try_lock() {
-            if let Some(transport) = transport_guard.as_mut() {
-                let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-                let payload = rmp_serde::to_vec("shutdown").unwrap_or_default();
-                let envelope = Envelope::request(id, "shutdown", payload);
-                let _ = tokio::time::timeout(Duration::from_secs(1), async {
-                    transport.write_envelope(&envelope).await?;
-                    transport.read_envelope().await
-                })
-                .await;
-            }
-            *transport_guard = None;
-        }
-
-        if let Some(mut child) = self.child.lock().await.take() {
-            let _ = child.kill().await;
-        }
     }
 }
 

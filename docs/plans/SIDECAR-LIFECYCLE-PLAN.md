@@ -511,15 +511,15 @@ item and its required evidence are complete.
 - [ ] Bound recoverable decode/dispatch failures and reset the counter only after a complete valid
       message/response cycle.
 - [ ] Emit one structured terminal error and exit; do not retry the same permanently broken stream.
-- [ ] Change the shutdown handler to create the `ok` payload without cancelling `_shutdownCts`.
-- [ ] Write and flush the correlated shutdown response with a bounded write token.
-- [ ] Cancel dispatch and dispose listener/transport only after the response flush succeeds.
+- [x] Change the shutdown handler to create the `ok` payload without cancelling `_shutdownCts`.
+- [x] Write and flush the correlated shutdown response with a bounded write token.
+- [x] Cancel dispatch and dispose listener/transport only after the response flush succeeds.
 - [ ] In the supervisor, stop admission, cancel unwritten commands, send shutdown, and wait 1 second
       for the exact acknowledgement.
-- [ ] After acknowledgement, wait within the remaining 5-second graceful budget for zero process exit.
+- [x] After acknowledgement, wait within the remaining 5-second graceful budget for zero process exit.
 - [ ] On ack/exit timeout, hard-terminate only the current generation's contained process tree and reap
       the direct child.
-- [ ] Add a real-process test that observes the matching ack before process exit and asserts the hard
+- [x] Add a real-process test that observes the matching ack before process exit and asserts the hard
       kill path was not used.
 - [ ] Add a persistent broken-stream/decode-storm test that exits within a bound and produces bounded
       logs rather than a hot loop.

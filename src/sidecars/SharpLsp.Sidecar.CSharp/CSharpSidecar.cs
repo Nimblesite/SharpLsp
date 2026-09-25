@@ -417,19 +417,8 @@ internal sealed partial class CSharpSidecar : SidecarHost
 
     private static ByteResult SerializeResult<T>(Result<T, string> result, CancellationToken ct)
     {
-        if (result is not Result<T, string>.Ok<T, string> { Value: var value })
-        {
-            return ByteResult.Failure(!result ?? "Unknown error");
-        }
-
-        try
-        {
-            var bytes = MessagePackSerializer.Serialize(value, cancellationToken: ct);
-            return new ByteResult.Ok<byte[], string>(bytes);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return result is Result<T, string>.Ok<T, string> { Value: var value }
+            ? Serialized(value, ct)
+            : ByteResult.Failure(!result ?? "Unknown error");
     }
 }
