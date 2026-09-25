@@ -18,7 +18,8 @@
  */
 
 import * as path from 'node:path';
-import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
+import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
+import { runModule } from './test-mtp-report.js';
 import {
   mergeMultiTargeted,
   type MtpModuleRun,
@@ -41,9 +42,12 @@ import {
   type MtpProjectScan,
 } from './test-mtp-modules.js';
 
-/** Ask a module for its tests as JSON, and nothing else. */
+/** The module's own arguments asking for its tests as JSON, and nothing else. */
+const LIST_OPTIONS: readonly string[] = ['--list-tests', 'json', '--no-banner', '--no-ansi'];
+
+/** The `dotnet exec` argument vector that lists a module's tests. */
 export function listArgs(modulePath: string): string[] {
-  return ['exec', modulePath, '--list-tests', 'json', '--no-banner', '--no-ansi'];
+  return ['exec', modulePath, ...LIST_OPTIONS];
 }
 
 /** One module's tests, plus whatever went wrong asking for them. */
@@ -58,7 +62,7 @@ async function listModule(
   cwd: string,
   timeoutMs: number,
 ): Promise<ModuleListing> {
-  const run = await runDotnet(listArgs(modulePath), cwd, timeoutMs);
+  const run = await runModule(modulePath, LIST_OPTIONS, cwd, { timeoutMs });
   const output = `${run.stdout}\n${run.stderr}`;
   const rejected = rejectedMtpOption(output);
   if (rejected !== undefined) {
@@ -83,7 +87,7 @@ function moduleListing(modulePath: string, run: DotnetRun): ModuleListing {
     listing.tests.length === 0 &&
     listing.warnings.length === 0 &&
     !run.killed &&
-    (!run.failed || run.errorMessage === 'dotnet exited with code 8');
+    (!run.failed || run.exitCode === 8);
   const failure =
     listing.tests.length === 0 && run.failed && !empty
       ? [`${path.basename(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]

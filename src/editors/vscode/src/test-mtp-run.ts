@@ -25,7 +25,7 @@ import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
 import { relistModule } from './test-mtp-discovery.js';
-import { runReported } from './test-mtp-report.js';
+import { isNetFrameworkModule, runReported } from './test-mtp-report.js';
 import { buildTarget, builtMtpProjects, dirOf, type MtpProjectScan } from './test-mtp-modules.js';
 import { err, ok, type Result } from './result.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
@@ -393,13 +393,28 @@ async function runModules(
   context: RunContext,
 ): Promise<TestRunOutcome | undefined> {
   let merged: TestRunOutcome | undefined;
-  for (const module of modules) {
+  for (const module of startable(modules, context.options)) {
     if (context.options.signal?.aborted === true) break;
     const one = await runModule(module, testIds, context);
     if (one === undefined) continue;
     merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
   }
   return merged;
+}
+
+/**
+ * The modules a run starts. Under Debug, a .NET Framework module whose tests a
+ * .NET module of the same project also carries is left out: those tests are
+ * debugged under .NET, and nothing could attach to the desktop CLR
+ * ([NETFX-DEBUG]). A .NET Framework-only module still starts — into its refusal.
+ */
+function startable(modules: readonly MtpModuleRun[], options: TestRunOptions): MtpModuleRun[] {
+  if (options.debug !== true) return [...modules];
+  const net = modules.filter((module) => !isNetFrameworkModule(module.modulePath));
+  const netIds = new Set(net.flatMap((module) => [...module.uidsById.keys()]));
+  const covered = (module: MtpModuleRun): boolean =>
+    [...module.uidsById.keys()].some((id) => netIds.has(id));
+  return modules.filter((module) => !isNetFrameworkModule(module.modulePath) || !covered(module));
 }
 
 /**

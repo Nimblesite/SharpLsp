@@ -66,10 +66,11 @@ Extends [TEST-EXPLORER]; ids, filters and one-root-per-project are unchanged.
   `dotnet build <target>`, then `dotnet vstest <that framework's assemblies>
   [--TestCaseFilter:<expr>] --logger:trx --ResultsDirectory:<dir>`. Never
   `dotnet test <solution> --framework <tfm>`: every project lacking the framework fails NETSDK1005.
-- `[NETFX-TEST-MTP]` A .NET Framework MTP module is `<Name>.exe` (MSBuild
-  `TargetFrameworkIdentifier` `.NETFramework`) and is executed directly; `dotnet exec` cannot host
-  it. On a non-Windows host it is not spawned: "`<X>.exe` targets .NET Framework, which runs only
-  on Windows".
+- `[NETFX-TEST-MTP]` A .NET Framework MTP module is executed directly — MSBuild's `TargetPath` is
+  its `<Name>.exe`, where a .NET module's is its `.dll` — because `dotnet exec` cannot host the
+  desktop CLR. Off Windows it is not spawned: "`<X>.exe` targets .NET Framework, which runs only
+  on Windows". Under Debug it is skipped when a .NET module of the same project carries its
+  tests, and refused otherwise ([NETFX-DEBUG]).
 
 ## Debug `[NETFX-DEBUG]`
 
