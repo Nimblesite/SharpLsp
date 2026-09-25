@@ -98,6 +98,13 @@ impl NavCache {
         let _ = self.entries.insert(key, CacheEntry { version, value });
     }
 
+    /// Forget every entry: a target-framework switch changes the answer at
+    /// every position of the project without changing any document version.
+    /// [NETFX-CONTEXT]
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     /// Invalidate all cached entries for a document.
     pub fn invalidate(&mut self, uri: &Uri) {
         let uri_str = uri.as_str();

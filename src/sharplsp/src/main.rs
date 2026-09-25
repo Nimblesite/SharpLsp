@@ -30,6 +30,7 @@ mod signature_help;
 mod sort_members;
 mod statement_stop;
 mod syntax;
+mod target_framework;
 mod tree_sitter_parse;
 mod type_hierarchy;
 mod utils;
@@ -160,6 +161,7 @@ fn run_server() -> Result<()> {
     let init_params: InitializeParams =
         serde_json::from_value(init_params).context("deserialize InitializeParams")?;
     let server_capabilities = build_capabilities(&init_params.capabilities);
+    target_framework::remember_client(&init_params.capabilities);
     let capabilities_json = serde_json::json!({
         "capabilities": serde_json::to_value(server_capabilities).context("serialize capabilities")?,
     });
@@ -909,6 +911,26 @@ fn handle_request(
         WorkspaceSymbolRequest::METHOD => {
             handle_standard_workspace_symbol(req, parsers, vfs, runtime, fsharp_sidecar)
         }
+        // Active target framework [NETFX-CONTEXT]
+        "sharplsp/targetFramework" => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            target_framework::handle_get(req, runtime, sidecar)
+        }
+        "sharplsp/setTargetFramework" => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            let switched = target_framework::handle_set(req, runtime, sidecar, &connection.sender);
+            if switched.is_ok() {
+                nav_cache.clear();
+                republish_open_diagnostics(
+                    vfs,
+                    runtime,
+                    csharp_sidecar,
+                    fsharp_sidecar,
+                    connection,
+                );
+            }
+            switched
+        }
         // Solution loading
         "sharplsp/loadSolution" => handle_load_solution(
             req,
@@ -1568,6 +1590,21 @@ fn handle_notification(
         _ => {
             // Ignore unknown notifications per LSP spec.
         }
+    }
+}
+
+/// Re-publish every open document's diagnostics: a framework switch changes
+/// which `#if` branches compile. [NETFX-CONTEXT]
+fn republish_open_diagnostics(
+    vfs: &Vfs,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+    connection: &Connection,
+) {
+    let open: Vec<Uri> = vfs.iter().map(|entry| entry.key().clone()).collect();
+    for uri in &open {
+        trigger_diagnostics(uri, runtime, csharp_sidecar, fsharp_sidecar, connection);
     }
 }
 
