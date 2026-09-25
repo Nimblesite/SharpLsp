@@ -19,12 +19,14 @@ import { AnchoredSource } from './debug-anchors';
 import type { DapRecorder } from './debug-dap-kit';
 import {
   MTP_XUNIT_PACKAGES,
+  XUNIT_DECORATING_PACKAGES,
   XUNIT_PACKAGES,
   createSolution,
   dotnet,
   mtpProjectXml,
   projectXml,
   writeMtpGlobalJson,
+  type PackageRef,
 } from './dotnet-project-kit';
 import { isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { DEBUG_TYPE_ID, type DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
@@ -208,14 +210,23 @@ export type FixtureLanguage = 'csharp' | 'fsharp';
  * already uses — opted in with `global.json`, so the Debug profile debugs a
  * Microsoft.Testing.Platform MODULE rather than a VSTest host ([TEST-MTP-DEBUG]).
  */
-export type FixtureRunner = 'vstest' | 'mtp';
+export type FixtureRunner = 'vstest' | 'mtp' | 'vstest-decorating';
 
 /** The project file for one language on one runner. */
 function fixtureProjectXml(csharp: boolean, runner: FixtureRunner, sourceName: string): string {
   const compile = csharp ? [] : [sourceName];
   return runner === 'mtp'
     ? mtpProjectXml(MTP_XUNIT_PACKAGES, ...compile)
-    : projectXml(XUNIT_PACKAGES, ...compile);
+    : projectXml(vstestPackages(runner), ...compile);
+}
+
+/**
+ * The VSTest packages of a runner. `vstest-decorating` builds the SAME source on
+ * xUnit's 2.2.0 adapter, which appends each test's unique ID to the name it
+ * reports — the adapter FluentValidation still pins, where issue #233 was found.
+ */
+function vstestPackages(runner: FixtureRunner): readonly PackageRef[] {
+  return runner === 'vstest-decorating' ? XUNIT_DECORATING_PACKAGES : XUNIT_PACKAGES;
 }
 
 /**

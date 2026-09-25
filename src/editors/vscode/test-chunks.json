@@ -94,6 +94,7 @@
       "files": [
         "debug-test-fsharp-e2e.test.js",
         "debug-test-debugging-e2e.test.js",
+        "debug-test-decorated-e2e.test.js",
         "debug-test-stop-e2e.test.js",
         "debug-test-groups-e2e.test.js",
         "debug-test-mtp-e2e.test.js",
