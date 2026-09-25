@@ -703,7 +703,7 @@ async function selectAndLoadSolution(): Promise<void> {
   const generation = ++solutionSelectionGeneration;
   const initialSolution = sharedState.solutionPath.value;
 
-  // [SE-LOAD-FEEDBACK]: without this the explorer sits blank while the
+  // [SE-LOADING-FEEDBACK]: without this the explorer sits blank while the
   // workspace scan (up to 5s) and then the solution load run, and the user
   // has no signal that anything is happening. `window.withProgress` puts a
   // native progress bar in the Solution Explorer view title with a status
@@ -751,13 +751,13 @@ async function loadSolution(selected: solution.SolutionSelection): Promise<void>
 
   // Cover the whole load — the LSP reload below runs BEFORE
   // state.loadSolution begins its own phase, and the tree must not sit on a
-  // stale/blank view meanwhile ([SE-LOAD-FEEDBACK]).
+  // stale/blank view meanwhile ([SE-LOADING-FEEDBACK]).
   const phase = sharedState.beginLoading(selected.path);
 
   // `finally`, never a trailing statement: a throw out of the explorer load
   // would otherwise leave the phase set forever, and the tree renders a
   // spinner for as long as a phase is active — a permanently "loading"
-  // Solution Explorer with no way back ([SE-LOAD-FEEDBACK]).
+  // Solution Explorer with no way back ([SE-LOADING-FEEDBACK]).
   try {
     // Tell the LSP server to reload sidecars with this specific solution.
     // Without this, the sidecar uses the workspace root and may pick the

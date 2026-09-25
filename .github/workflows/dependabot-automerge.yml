@@ -1,7 +1,7 @@
 # agent-pmo:a72c926
 ---
 # Sweeps EVERY Dependabot PR into the long-lived `dependabot-upgrades` staging
-# branch, unattended. Implements [GITHUB-DEPENDABOT].
+# branch, unattended. Implements [DIST-CI-DEPENDABOT].
 #
 # TWO CHANNELS, because Dependabot splits its output across two base branches:
 #   * VERSION updates  -> opened against `dependabot-upgrades` directly, via

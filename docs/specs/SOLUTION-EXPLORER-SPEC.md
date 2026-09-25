@@ -162,6 +162,28 @@ flowchart LR
 
 Symbols from multiple files sharing the same namespace within a project are merged into a single namespace node.
 
+### Loading Feedback `[SE-LOADING-FEEDBACK]`
+
+The tree MUST never sit blank or stale while the solution pipeline works. An empty
+tree reads as "broken" and a stale one as "done", and opening a folder used to show
+both: nothing while the solution list was discovered (a workspace scan of up to
+five seconds), then nothing again while the chosen solution loaded.
+
+1. A reactive `loadPhase` signal (`state.ts`) holds the pipeline's phase:
+   `discovering` while solutions are found, `loading` (with the solution path)
+   while one is loaded — the LSP `sharplsp/loadSolution` reload and the workspace
+   symbols walk — and `idle` otherwise.
+2. While the phase is not `idle`, the tree's only root is a spinner node
+   (`loading~spin`, `contextValue: feedback`) reading `Searching for solutions…`
+   or `Loading <solution file name>…`. It replaces whatever the tree held.
+3. The view title shows VS Code's native progress bar for the same span
+   (`window.withProgress` on the Solution Explorer view).
+4. The `loading` phase covers the WHOLE load, starting before the LSP reload,
+   which runs before the explorer's own refresh begins.
+5. A phase is ended in `finally`, never by a trailing statement: a failed scan or
+   load clears it, so the tree cannot spin forever on work that already gave up.
+   Ending is identity-checked — a superseded run leaves the phase a newer run set.
+
 ## Sort Order `[SE-SORT]`
 
 Three sort modes are available, cycled via a toolbar button:

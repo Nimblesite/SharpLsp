@@ -70,7 +70,7 @@ unopened namespaces expose `NamespaceToOpen`, surfaced as an `(open <ns>)` detai
 hint (mirrors C#'s `(import) <ns>`). `completionItem/resolve` returns the wire-empty
 `AdditionalEdits` for now; **auto-`open` insertion is a follow-up** (see below).
 
-### [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY] / [REFERENCES-FSHARP-FIND]
+### Rename and references ([RENAME-FSHARP-PREPARE], [RENAME-FSHARP-APPLY], [REFERENCES-FSHARP-FIND])
 Rename and references both need **project-wide** symbol uses, not just the current
 file. A shared `getProjectUsages` helper runs `ParseAndCheckProject` and
 `GetUsesOfSymbol` so `textDocument/references` becomes project-wide (was current-file
@@ -92,6 +92,21 @@ match the host's `parse_symbol_kind`.
 ### Type hierarchy — [FS-TYPEHIER-PREPARE], [FS-TYPEHIER-SUPER], [FS-TYPEHIER-SUB]
 Supertypes come from `FSharpEntity.BaseType` + `AllInterfaces`. Subtypes are found by
 scanning project entities for any whose base type or interfaces include the target.
+
+### [FS-DOCSYMBOL]
+`textDocument/documentSymbol` for `.fs` is served by the F# sidecar from FCS
+`GetNavigationItems` — a parse, never a type check, so it stays within the host's
+syntax-only latency budget. `.cs` stays on the host's tree-sitter path.
+
+### [FS-SIGHELP]
+`textDocument/signatureHelp` uses FCS `GetMethods` at the call site and surfaces every
+overload.
+
+### [FS-WORKSPACE-SYMBOL]
+The host's standard `workspace/symbol` handler matches C# files with tree-sitter and
+routes each open F# file to the F# sidecar's document symbols
+(`collect_fsharp_ws_symbols` in `main.rs`, `fsharp_workspace_symbols` in
+`document_symbols.rs`), filtering both by the same lower-cased query.
 
 ## Known limitations / follow-ups
 

@@ -350,6 +350,31 @@ SharpLsp also owns custom static analyzers that run through the same workspace d
 | Convert auto-prop ↔ full prop | `textDocument/codeAction` | Roslyn property conversion | N/A | P1 |
 | Convert method ↔ property | `textDocument/codeAction` | Custom implementation | N/A | P2 |
 
+#### [REFACTOR-OVERRIDE-HEADLESS] Headless Override Generation
+
+Roslyn's own "Generate overrides" is an editor feature: its member picker and the
+implement/override services behind it are MEF components a headless host does not
+have. The C# sidecar therefore builds the declarations itself
+(`HeadlessOverrideCodeAction`, `HeadlessOverrideSyntax`).
+
+1. **Where it is offered.** `Generate overrides...` is offered when the requested
+   range touches a type declaration's identifier and at least one member is left
+   to override.
+2. **What it generates.** One override for every abstract, non-static, non-sealed
+   member of every base class, walking the whole base chain, that the type does not
+   already override. Each body throws `System.NotImplementedException`.
+3. **Every member shape compiles.** Methods, generic methods with the constraint
+   clauses their nullability annotations require (including nullability inside a
+   constructed generic argument), read/write, get-only and init-only properties
+   (an init accessor stays `init`), indexers, events, and unsafe pointer members.
+   A non-public member keeps its accessibility.
+4. **All or nothing.** If a required member is inaccessible from the type, or one
+   of its accessors is, the action is not offered: a partial set of overrides
+   would leave the type as uncompilable as before.
+
+The action is verified by APPLYING it to a real MSBuild project and compiling the
+result (`HeadlessOverrideGenerationTests`), not by checking that it is offered.
+
 ### [SHARPLSP-FEATURES-FORMATTING] Formatting
 
 SharpLsp does **not** provide document formatting. Use dedicated formatters:

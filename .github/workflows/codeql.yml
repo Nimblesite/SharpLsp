@@ -47,7 +47,7 @@ jobs:
     # `github.actor` guard: Dependabot PRs are swept into the staging branch by
     # dependabot-automerge.yml without ever being merged to main, so scanning
     # them burns the matrix for nothing. The batch is scanned once, at the
-    # consolidation PR. [GITHUB-DEPENDABOT]
+    # consolidation PR. [DIST-CI-DEPENDABOT]
     if: github.event.repository.visibility == 'public' && github.actor != 'dependabot[bot]'
     permissions:
       security-events: write

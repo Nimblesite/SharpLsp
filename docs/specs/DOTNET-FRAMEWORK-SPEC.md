@@ -17,11 +17,15 @@ unrunnable by name, never as a failing or missing test.
 
 ## Project model `[NETFX-PROJECTS]`
 
-**C#** `[NETFX-PROJECTS-CSHARP]`: `MSBuildWorkspace` yields one Roslyn project per framework,
+### C# `[NETFX-PROJECTS-CSHARP]`
+
+`MSBuildWorkspace` yields one Roslyn project per framework,
 named `Name(tfm)`, so a document has one context per framework. Every request answers from the
 ACTIVE context ([NETFX-CONTEXT]).
 
-**F#** `[NETFX-PROJECTS-FSHARP]`: FCS options come from the project's design-time compile, per
+### F# `[NETFX-PROJECTS-FSHARP]`
+
+FCS options come from the project's design-time compile, per
 framework — never from the sidecar's own runtime:
 
 ```
@@ -55,18 +59,29 @@ why.
 
 Extends [TEST-EXPLORER]; ids, filters and one-root-per-project are unchanged.
 
-- `[NETFX-TEST-DISCOVERY]` Each `Test run for <dll> (<FrameworkName>)` banner names that
+### Discovery `[NETFX-TEST-DISCOVERY]`
+
+Each `Test run for <dll> (<FrameworkName>)` banner names that
   assembly's framework (`.NETFramework,Version=v4.8` → `net48`,
   `.NETCoreApp,Version=v8.0` → `net8.0`). A project root's description lists its frameworks;
   each test carries a `framework:<tfm>` tag per framework whose assembly lists it.
-- `[NETFX-TEST-RESULTS]` TRX `TestMethod/@codeBase` ties each result to its assembly, hence its
+
+### Results `[NETFX-TEST-RESULTS]`
+
+TRX `TestMethod/@codeBase` ties each result to its assembly, hence its
   framework. The merged outcome stays the worst row ([TEST-RUN-TRX]); a failure carries one
   message per failing framework, prefixed `[net48]`.
-- `[NETFX-TEST-PROFILES]` One `Run on <tfm>` profile per discovered framework, scoped by its tag:
+
+### Run profiles `[NETFX-TEST-PROFILES]`
+
+One `Run on <tfm>` profile per discovered framework, scoped by its tag:
   `dotnet build <target>`, then `dotnet vstest <that framework's assemblies>
   [--TestCaseFilter:<expr>] --logger:trx --ResultsDirectory:<dir>`. Never
   `dotnet test <solution> --framework <tfm>`: every project lacking the framework fails NETSDK1005.
-- `[NETFX-TEST-MTP]` A .NET Framework MTP module is executed directly — MSBuild's `TargetPath` is
+
+### MTP modules `[NETFX-TEST-MTP]`
+
+A .NET Framework MTP module is executed directly — MSBuild's `TargetPath` is
   its `<Name>.exe`, where a .NET module's is its `.dll` — because `dotnet exec` cannot host the
   desktop CLR. Off Windows it is not spawned: "`<X>.exe` targets .NET Framework, which runs only
   on Windows". Under Debug it is skipped when a .NET module of the same project carries its

@@ -54,7 +54,7 @@ jobs:
     # on a bump that is about to be swept away is pure waste — the batch is
     # tested exactly once, at the `dependabot-upgrades -> main` consolidation PR.
     # This is the cascade root: every job below `needs:` it, so skipping here
-    # skips the entire pipeline. [GITHUB-DEPENDABOT]
+    # skips the entire pipeline. [DIST-CI-DEPENDABOT]
     if: github.actor != 'dependabot[bot]'
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
@@ -259,7 +259,7 @@ jobs:
   # ratchet via the reviewed PR diff, not a bot commit.
 
   # ══ TERMINAL GATE ═══════════════════════════════════════════════════
-  # The single status check `main`'s ruleset requires ([GITHUB-PROTECTION]).
+  # The single status check `main`'s ruleset requires ([DIST-CI-PROTECTION]).
   # Everything above fans out into per-shard, per-chunk check names that change
   # whenever the matrix changes — and the VS Code chunks are computed at runtime,
   # so they cannot be named in a ruleset at all. This job collapses all of them

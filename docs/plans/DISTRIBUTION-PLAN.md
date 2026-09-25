@@ -262,7 +262,7 @@ Two further failure classes were investigated and turned out **not** to be defec
 - [x] Create `docs/plans/DISTRIBUTION-PLAN.md`
 - [x] Add Distribution section to `docs/specs/SHARPLSP-SPEC.md`
 
-### SDK pin (global.json) — [DIST-RUNTIME-ACQUIRE]
+### SDK pin (global.json) ([DIST-RUNTIME-ACQUIRE])
 
 Fixes the defect where every `dotnet` entry point failed with exit code 155 on a
 machine whose installed .NET 10 SDK sat in a different feature band from the one

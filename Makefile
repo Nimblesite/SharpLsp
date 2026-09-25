@@ -131,7 +131,7 @@ KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
         _test-rust _prepare-rust-tests _test-rust-shard \
         _test-zed _test-rider \
         _gate-rust-coverage _test-vsix _run-vsix-suite _test-vsix-shard \
-        _gate-vsix-coverage _build-vsix-suite _check-vsix-chunks \
+        _gate-vsix-coverage _build-vsix-suite _check-vsix-chunks _check-spec-citations \
         _verify-vsix-payload _verify-staged-vsix-payload _rebuild-vsix-binaries _copy-vsix-binaries \
         _test-dotnet _test-dotnet-win-transport _test-tooling _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
@@ -750,8 +750,9 @@ _lint-zed:
 	cargo fmt --manifest-path $(ZED_DIR)/Cargo.toml --check
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
-_lint-vsix: _check-vsix-chunks _check-sdk-pin
-	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs
+_lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
+	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs \
+		tools/ci/spec-citations.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
@@ -760,6 +761,12 @@ _lint-vsix: _check-vsix-chunks _check-sdk-pin
 # breaks every build on machines that lack the pinned band.
 _check-sdk-pin:
 	node tools/ci/check-sdk-pin.mjs
+
+# Every spec ID cited anywhere resolves to exactly one defining heading, so a
+# deleted section cannot leave its citations pointing at nothing
+# ([DIST-CI-SPEC-CITATIONS]).
+_check-spec-citations:
+	node tools/ci/spec-citations.mjs
 
 # Dash-form MSBuild switches only: Git Bash (MSYS) mangles slash-form switches
 # like `/p:...` on Windows (strips the `/`, MSBuild then reads it as a project

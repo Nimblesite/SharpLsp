@@ -3,7 +3,7 @@
 name: Deploy Pages
 # The site deploys ON RELEASE ONLY. release.yml calls this workflow at the
 # release ref once the GitHub release exists, so the published site can never
-# get ahead of the artifact it documents. [CI-WORKFLOWS]
+# get ahead of the artifact it documents. [DIST-RELEASE]
 #
 # There is deliberately NO `push: branches: [main]` trigger. It used to deploy
 # every website commit immediately, which meant main could advertise a version,
@@ -15,7 +15,7 @@ name: Deploy Pages
 # Default every job to read-only and let the two jobs below widen what they
 # actually need (`deploy` takes pages:write + id-token:write). Without this
 # default the workflow inherits the repository's default token scope, which may
-# be read/write on everything. [SWR-SEC-TOKEN-PRIVILEGE]
+# be read/write on everything. [DIST-CI-SECURITY]
 permissions:
   contents: read
 concurrency:

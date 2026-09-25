@@ -11,6 +11,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 
 /// <summary>
 /// Generates overrides without Roslyn's editor-only member picker service.
+/// Implements [REFACTOR-OVERRIDE-HEADLESS].
 /// </summary>
 internal static class HeadlessOverrideCodeAction
 {

@@ -203,7 +203,7 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
   private rebuildTree(): void {
     const phase = state.loadPhase.value;
     if (phase.kind !== 'idle') {
-      // [SE-LOAD-FEEDBACK]: while solutions are being discovered or a
+      // [SE-LOADING-FEEDBACK]: while solutions are being discovered or a
       // solution is loading, a spinner node replaces whatever the tree held —
       // an empty tree reads as "broken", a stale tree reads as "done".
       const message =
@@ -586,7 +586,7 @@ function makeErrorNode(message: string): ExplorerNode {
 
 /**
  * Transient node shown while the solution pipeline works — the tree must
- * never just sit blank ([SE-LOAD-FEEDBACK]). `loading~spin` is the same
+ * never just sit blank ([SE-LOADING-FEEDBACK]). `loading~spin` is the same
  * codicon the status bar uses while the LSP is connecting.
  */
 function makeFeedbackNode(message: string): ExplorerNode {
