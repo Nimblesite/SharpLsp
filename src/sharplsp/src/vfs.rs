@@ -158,13 +158,30 @@ fn canonical_native_path(uri: &Uri) -> Option<String> {
 /// Compare two native paths for equality. Windows verbatim (`\\?\`) prefixes
 /// are ignored and the comparison is case-insensitive on Windows, where the
 /// filesystem is too: editors lowercase the drive letter (`c:`) while
-/// `std::fs::canonicalize` uppercases it (`\\?\C:`).
+/// `std::fs::canonicalize` uppercases it (`\\?\C:`). NTFS ignores case across
+/// Unicode, not only ASCII, so the fold is [`ntfs_upcase`] (GitHub #171).
 fn native_paths_equal(left: &str, right: &str) -> bool {
     let (left, right) = (strip_verbatim(left), strip_verbatim(right));
     if cfg!(windows) {
-        left.eq_ignore_ascii_case(&right)
+        left.chars()
+            .map(ntfs_upcase)
+            .eq(right.chars().map(ntfs_upcase))
     } else {
         left == right
+    }
+}
+
+/// One character upcased the way NTFS's `$UpCase` table upcases it: one UTF-16
+/// unit to one. A character whose uppercase is a single character in the Basic
+/// Multilingual Plane becomes it (`ä` → `Ä`, `σ` → `Σ`); any other stays itself
+/// — `ß`, whose uppercase is the two characters `SS`, and anything outside the
+/// BMP, which a table of UTF-16 units never maps. This approximates the
+/// volume's own table, which the OS fixes when it formats the volume.
+fn ntfs_upcase(character: char) -> char {
+    let mut upper = character.to_uppercase();
+    match (upper.next(), upper.next()) {
+        (Some(single), None) if character.len_utf16() == 1 && single.len_utf16() == 1 => single,
+        _ => character,
     }
 }
 
@@ -204,6 +221,41 @@ mod tests {
             r"\\?\UNC\server\share\F.cs",
             r"\\other\share\F.cs"
         ));
+    }
+
+    /// NTFS folds case across Unicode, not only ASCII: `Ärger` and `ärger` name
+    /// one directory. Canonicalizing cannot bridge the two spellings when the
+    /// file is not on disk — deleted since it was opened, or never saved — so
+    /// the comparison itself has to fold `Ä` and `ä`, or the open buffer is
+    /// missed and the caller reads a file that is not there. NTFS maps one
+    /// UTF-16 unit to one (its `$UpCase` table), so `ß` never equals `SS`.
+    /// Implements [SE-LIVE-BUFFER] (GitHub #171).
+    #[cfg(windows)]
+    #[test]
+    fn get_content_for_path_folds_case_beyond_ascii_like_ntfs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let opened = tmp.path().join("Ärger").join("Übersicht.cs");
+        let vfs = Vfs::new();
+        let uri: Uri = url::Url::from_file_path(&opened)
+            .unwrap()
+            .to_string()
+            .parse()
+            .unwrap();
+        vfs.open(uri, 1, "class InBuffer {}".to_string());
+
+        let respelled = tmp.path().join("ärger").join("ÜBERSICHT.cs");
+        assert_eq!(
+            vfs.get_content_for_path_canonical(&respelled.to_string_lossy())
+                .as_deref(),
+            Some("class InBuffer {}"),
+            "a buffer whose file is not on disk must be found under any NTFS casing"
+        );
+        assert!(native_paths_equal(
+            r"C:\ΣΟΦΙΑ\Ärger.cs",
+            r"c:\σοφια\ärger.cs"
+        ));
+        assert!(!native_paths_equal(r"C:\a\straße.cs", r"C:\a\STRASSE.cs"));
+        assert!(!native_paths_equal(r"C:\Ärger\a.cs", r"C:\Arger\a.cs"));
     }
 
     #[test]
