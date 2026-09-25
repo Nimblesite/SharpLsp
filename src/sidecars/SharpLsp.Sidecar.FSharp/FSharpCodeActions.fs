@@ -402,6 +402,31 @@ let private tryInterfaceAtPosition (parseResults: FSharpParseFileResults) line c
           Syntax = syntax
           EntityRange = entityRange })
 
+/// The property an accessor's compiled name — `get_Value`, `set_Value` — belongs to.
+let private accessorProperty (name: string) =
+    [ "get_"; "set_" ]
+    |> List.tryFind (fun prefix -> name.StartsWith(prefix, System.StringComparison.Ordinal))
+    |> Option.map (fun prefix -> name.Substring prefix.Length)
+
+/// The interface's own accessor slot compiled as `compiledName`.
+let private isInterfaceAccessor (compiledName: string) (symbolUse: FSharpSymbolUse) =
+    match symbolUse.Symbol with
+    | :? FSharpMemberOrFunctionOrValue as accessor ->
+        accessor.CompiledName = compiledName
+        && accessor.DeclaringEntity |> Option.exists _.IsInterface
+    | _ -> false
+
+/// The signatures of the interface members this implementation already has.
+///
+/// The stub generator scans an accessor binding as `get_Value` and compares the
+/// symbol found there with the interface's `Value: unit -> int`. At that location
+/// the name resolves to the CLASS's accessor, typed `BothAccessors -> unit -> int`
+/// with its instance argument, so an implemented property never matched: a
+/// `with get () = ... and set v = ...` implementation was offered again, and
+/// accepting it emitted a second member that does not compile (GitHub #206). The
+/// interface's own slot is at the same location, typed as the interface declares
+/// it; an accessor answers with that. One accessor implemented alone still leaves
+/// the other half offered.
 let private implementedMemberSignatures
     (checkResults: FSharpCheckFileResults)
     (source: string)
@@ -409,8 +434,12 @@ let private implementedMemberSignatures
     (interfaceData: InterfaceData) =
     let getLine = FSharpLocalAnalysis.lineGetter source
     let getMemberByLocation (name: string, range: Range) =
-        checkResults.GetSymbolUseAtLocation(
-            range.EndLine, range.EndColumn, getLine range.EndLine, [ name ])
+        match accessorProperty name with
+        | Some property ->
+            checkResults.GetSymbolUsesAtLocation(range.EndLine, range.EndColumn, getLine range.EndLine, [ property ])
+            |> List.tryFind (isInterfaceAccessor name)
+        | None ->
+            checkResults.GetSymbolUseAtLocation(range.EndLine, range.EndColumn, getLine range.EndLine, [ name ])
     InterfaceStubGenerator.GetImplementedMemberSignatures
         getMemberByLocation displayContext interfaceData
 
