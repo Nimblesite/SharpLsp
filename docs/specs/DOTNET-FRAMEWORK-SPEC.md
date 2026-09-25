@@ -111,7 +111,7 @@ would wait forever. The Debug profile runs only the selection's .NET frameworks;
 with none fails at once: "`<X>` runs on .NET Framework, and no .NET Framework debugger is
 bundled: Debug attaches to .NET only. Use Run, or debug the test under one of its .NET target
 frameworks." `<X>` is the project (its assembly name) for VSTest and `<Name>.exe` for MTP; each
-refusal is logged once, on one line, as `Test debug: <refusal>`.
+refusal is logged exactly once, on one `Test debug:` line.
 
 Run without debugging (`sharplsp.runProgram`, Ctrl+F5) of a MULTI-targeted project runs the
 task `Run <Project> (<tfm>)` (type `sharplsp-run`): `dotnet run --project <proj> --framework

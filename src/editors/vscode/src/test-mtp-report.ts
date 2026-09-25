@@ -4,7 +4,6 @@
  */
 import * as path from 'node:path';
 import { DOTNET_TIMEOUT_MS, runDotnet, runProcess, type DotnetRun } from './dotnet-process.js';
-import { info } from './log.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
 import { netFrameworkDebugRefusal } from './test-frameworks.js';
 import type { MtpModuleRun } from './test-listing-model.js';
@@ -65,10 +64,12 @@ export function startedModules(
   return { start: modules.filter(isNet), refused: modules.filter(netFrameworkOnly) };
 }
 
-/** A refused module's outcome: its refusal, logged, and nothing run. */
+/**
+ * A refused module's outcome: nothing ran, and the refusal is its failure. The
+ * debug run's closing `Test debug:` line logs it, so it is logged exactly once.
+ */
 export function refusedOutcome(module: MtpModuleRun): TestRunOutcome {
   const refusal = netFrameworkDebugRefusal(path.basename(module.modulePath));
-  info(`Test debug: ${refusal}`);
   return {
     results: new Map(),
     summary: undefined,
