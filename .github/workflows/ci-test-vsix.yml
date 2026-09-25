@@ -26,7 +26,8 @@
 #
 # The Windows leg (ci-test-vsix-windows.yml) owns win32 coverage; the chunks
 # marked `linuxOnly` in the manifest - the real-world-repository stress suites -
-# run only here.
+# run only here, and those marked `windowsOnly` - .NET Framework ([NETFX-SCOPE])
+# - only there.
 name: CI / Test / VS Code
 'on':
   workflow_call:

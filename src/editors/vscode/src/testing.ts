@@ -13,14 +13,13 @@ import {
   type TestRunOptions,
   type TestRunOutcome,
 } from './test-execution';
-import { debugSelectedTests, type TestDebugHost } from './test-debug';
+import { debugRequest, type DebugRequestHost } from './test-debug-request';
 import { registerRunProfiles, type RunProfileHandlers } from './test-profiles';
 import {
   addCoverage,
   cachedFrom,
   freshCoverageDir,
   reportAll,
-  reportDebugOutcome,
   reportOutcome,
   type CachedTestResult,
 } from './test-reporting';
@@ -28,6 +27,13 @@ import { DotnetQueue, NewestJob } from './test-queue';
 import { TestResultCache } from './test-result-cache';
 import { cancellationSignal, configureDotnet } from './dotnet-process';
 import { discoveryTargets, dirOf, filterIdsFor, runCwd, runTarget } from './test-targets';
+import { collectRequestedTests } from './test-tree';
+import { FrameworkIndex } from './test-frameworks';
+import {
+  FrameworkProfiles,
+  runFrameworkProfile,
+  type FrameworkRunHost,
+} from './test-framework-runs';
 
 export { buildFilterArgs } from './test-execution';
 export { isExpectoTest, isFsCheckTest } from './test-targets';
@@ -86,6 +92,10 @@ export class SharpLspTestController {
   private runners: RunnerMap = VSTEST_ONLY;
   /** The newest sweep: awaiting a superseded one waits for it. */
   private readonly sweeps = new NewestJob();
+  /** The tree's target frameworks; changes only with the tree ([NETFX-TEST]). */
+  private frameworks = new FrameworkIndex();
+  /** One `Run on <tfm>` profile per multi-targeted framework ([NETFX-TEST-PROFILES]). */
+  private readonly frameworkRuns: FrameworkProfiles;
 
   /** Fires after any test run completes and results are cached. */
   public readonly onResultsChanged = this.results.onChanged;
@@ -124,6 +134,11 @@ export class SharpLspTestController {
     return this.runProfiles;
   }
 
+  /** The `Run on <tfm>` profiles, in framework order ([NETFX-TEST-PROFILES]). */
+  public get frameworkProfiles(): readonly vscode.TestRunProfile[] {
+    return this.frameworkRuns.all;
+  }
+
   /** Create a TestItem for `fullName` without adding it to the tree. */
   public createItem(fullName: string, uri: vscode.Uri): vscode.TestItem {
     return makeTestItem({ controller: this.controller, uri, locations: undefined }, fullName);
@@ -135,6 +150,9 @@ export class SharpLspTestController {
       'SharpLsp Tests',
     );
     this.runProfiles.push(...registerRunProfiles(this.controller, this.profileHandlers()));
+    this.frameworkRuns = new FrameworkProfiles(this.controller, async (framework, request, token) => {
+      await runFrameworkProfile(this.frameworkHost(), framework, request, token);
+    });
     // `dotnet` is not necessarily on `$PATH`: [DIST-RUNTIME-ACQUIRE] resolves an
     // SDK that may live anywhere and publishes its path on a signal. Track it
     // reactively so discovery and runs follow a late or re-acquired SDK instead
@@ -178,6 +196,7 @@ export class SharpLspTestController {
     for (const profile of this.runProfiles) {
       profile.dispose();
     }
+    this.frameworkRuns.dispose();
     this.results.dispose();
     this.controller.dispose();
   }
@@ -213,6 +232,8 @@ export class SharpLspTestController {
       const anyOk = targets.length === 0 || sweep.listings.some((listing) => listing.ok);
       if (this.applyDiscovery(sweep.items, sweep.errors, anyOk, targets.length)) {
         this.runners = runnersFor(sweep.listings);
+        this.frameworks = new FrameworkIndex(sweep.listings.flatMap((each) => each.byAssembly));
+        this.frameworkRuns.update(this.frameworks.multiTargetFrameworks());
       }
     });
     await this.sweeps.settle(job);
@@ -340,7 +361,10 @@ export class SharpLspTestController {
     // the token has just killed mid-flight, so whatever they managed to write
     // is a TRUNCATED account of a run the user abandoned: never cache or paint it.
     if (cancelled(token)) return;
-    reportOutcome(run, tests, outcome, this.results.writer());
+    reportOutcome(run, tests, outcome, this.results.writer(), this.frameworks);
+    for (const framework of this.frameworks.unlistedFrameworks(tests.map((test) => test.id))) {
+      info(`Test run: ${framework} reported no result`);
+    }
     if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
   }
 
@@ -366,37 +390,6 @@ export class SharpLspTestController {
     return await runRouted(this.runners, ids, cwd, options);
   }
 
-  /**
-   * The Debug profile: run the selection under `VSTEST_HOST_DEBUG=1` and
-   * attach the debugger to the waiting TEST HOST child, never to the parent
-   * `dotnet test`. Resolves once the first attach settles or the run dies
-   * before any host waits ([DEBUG-FEATURES-TESTS]).
-   */
-  private async debugTests(
-    request: vscode.TestRunRequest,
-    token: vscode.CancellationToken,
-  ): Promise<void> {
-    const tests = this.collectTests(request);
-    if (tests.length === 0 || cancelled(token)) return;
-    const run = this.controller.createTestRun(request);
-    const cwd = runCwd();
-    if (cwd === undefined) {
-      // No cache writes: a debug gesture must never fabricate a run result.
-      reportAll(run, tests, 'No workspace folder or solution', () => undefined);
-      run.end();
-      return;
-    }
-    for (const test of tests) run.started(test);
-    await debugSelectedTests(
-      this.debugHost(),
-      run,
-      tests,
-      token,
-      cwd,
-      filterIdsFor(request, tests),
-    );
-  }
-
   /** The three handlers the Test Explorer's profiles invoke. */
   private profileHandlers(): RunProfileHandlers {
     return {
@@ -404,7 +397,7 @@ export class SharpLspTestController {
         await this.runProfileHandler(request, token, false);
       },
       debug: async (request, token) => {
-        await this.debugTests(request, token);
+        await debugRequest(this.debugRequestHost(), request, token);
       },
       coverage: async (request, token) => {
         await this.runProfileHandler(request, token, true);
@@ -412,44 +405,36 @@ export class SharpLspTestController {
     };
   }
 
-  /** The slice of this controller the test-debug flow needs. */
-  private debugHost(): TestDebugHost {
+  /** The slice of this controller a `Run on <tfm>` profile needs. */
+  private frameworkHost(): FrameworkRunHost {
     return {
+      controller: this.controller,
+      collect: (request) => this.collectTests(request),
       enqueue: async (work) => await this.enqueue(work),
-      runSelection: async (ids, cwd, options) => await this.dispatch(ids, cwd, options),
-      // Run-only reporting: a debug run neither caches results nor announces a
-      // results change — the last real run's outcome stands.
-      finish: (run, tests, outcome) => {
-        reportDebugOutcome(run, tests, outcome, this.runners.mtp);
+      frameworks: () => this.frameworks,
+      report: (run, tests, outcome) => {
+        reportOutcome(run, tests, outcome, this.results.writer(), this.frameworks);
+        this.results.fire();
       },
+      writer: () => this.results.writer(),
     };
   }
 
-  /**
-   * The tests a request selects: its `include` set (or the whole tree when it
-   * has none), minus everything the user explicitly EXCLUDED. Ignoring
-   * `exclude` runs tests the user just deselected in the Testing view. Group
-   * nodes expand to their leaf tests — a class or namespace ▶ runs its members
-   * — and discovery-error rows are never selectable as tests.
-   */
-  private collectTests(request: vscode.TestRunRequest): vscode.TestItem[] {
-    const excluded = new Set((request.exclude ?? []).map((item) => item.id));
-    const tests: vscode.TestItem[] = [];
-    const walk = (item: vscode.TestItem): void => {
-      if (excluded.has(item.id)) return;
-      if (item.error !== undefined) return;
-      if (item.children.size === 0) {
-        tests.push(item);
-        return;
-      }
-      item.children.forEach(walk);
+  /** The slice of this controller a Debug request needs, read at request time. */
+  private debugRequestHost(): DebugRequestHost {
+    return {
+      controller: this.controller,
+      frameworks: this.frameworks,
+      mtp: this.runners.mtp,
+      collect: (request) => this.collectTests(request),
+      enqueue: async (work) => await this.enqueue(work),
+      dispatch: async (ids, cwd, options) => await this.dispatch(ids, cwd, options),
     };
-    if (request.include !== undefined) {
-      for (const item of request.include) walk(item);
-      return tests;
-    }
-    this.controller.items.forEach(walk);
-    return tests;
+  }
+
+  /** The tests a request selects ({@link collectRequestedTests}). */
+  private collectTests(request: vscode.TestRunRequest): vscode.TestItem[] {
+    return collectRequestedTests(request, this.controller.items);
   }
 
   /**
@@ -477,7 +462,7 @@ export class SharpLspTestController {
     const options: TestRunOptions = target === undefined ? {} : { target };
     const outcome = await this.enqueue(async () => await this.dispatch([testId], cwd, options));
     const result = outcome.results.get(testId);
-    if (result !== undefined) return cachedFrom(result);
+    if (result !== undefined) return cachedFrom(result, this.frameworks);
     const message = outcome.failure ?? `No result reported for ${testId}`;
     info(`Test execution produced no result for ${testId}: ${message}`);
     return { outcome: 'notRun', passed: false, duration: outcome.durationMs, message };

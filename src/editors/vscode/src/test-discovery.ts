@@ -36,6 +36,7 @@ import {
   type TestAssemblyListing,
   type TestListing,
 } from './test-listing-model.js';
+import { frameworkMoniker } from './test-frameworks.js';
 import { listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
 import { usesMtpRunner } from './test-mtp.js';
 import { removeDirRecursive } from './utils.js';
@@ -76,6 +77,44 @@ function assemblyFromBanner(line: string): string | undefined {
   const suffix = rest.lastIndexOf(' (');
   const candidate = (suffix === -1 ? rest : rest.slice(0, suffix)).trim();
   return candidate.length === 0 ? undefined : candidate;
+}
+
+/**
+ * The framework a banner closes with — `(.NETFramework,Version=v4.8)` → `net48`
+ * — or `undefined`. Read from the RIGHT, like the path it follows.
+ * Spec: [NETFX-TEST-DISCOVERY].
+ */
+function frameworkFromBanner(line: string): string | undefined {
+  if (!line.startsWith(ASSEMBLY_BANNER) || !line.endsWith(')')) return undefined;
+  const open = line.lastIndexOf(' (');
+  return open === -1 ? undefined : frameworkMoniker(line.slice(open + 2, -1));
+}
+
+/** Each announced assembly's framework, keyed by its ON-DISK path. */
+export function parseAnnouncedFrameworks(output: string): Map<string, string> {
+  const frameworks = new Map<string, string>();
+  for (const raw of output.split('\n')) {
+    const line = raw.trim();
+    const announced = assemblyFromBanner(line);
+    const assembly = announced === undefined ? undefined : resolveAnnouncedAssembly(announced);
+    const framework = frameworkFromBanner(line);
+    if (assembly !== undefined && framework !== undefined) frameworks.set(assembly, framework);
+  }
+  return frameworks;
+}
+
+/** One assembly's listing, carrying the framework build it came from. */
+function assemblyListing(
+  assembly: string,
+  names: readonly string[],
+  framework: string | undefined,
+): TestAssemblyListing {
+  return {
+    name: path.basename(assembly, path.extname(assembly)),
+    path: assembly,
+    names,
+    ...(framework === undefined ? {} : { frameworks: [{ framework, path: assembly, names }] }),
+  };
 }
 
 /** Every assembly path a `dotnet test --list-tests` run announced, in order. */
@@ -273,6 +312,7 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
   const assemblies = parseTestAssemblies(output);
   const missing = announced.filter((one) => resolveAnnouncedAssembly(one) === undefined);
   const warnings = missing.map((assembly) => `Announced test assembly is missing: ${assembly}`);
+  const frameworks = parseAnnouncedFrameworks(output);
 
   if (assemblies.length > 0) {
     // One listing invocation PER assembly: the names a multi-assembly
@@ -285,11 +325,7 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
       const one = await listFqnBatch([assembly], cwd, timeoutMs);
       warnings.push(...one.warnings);
       all.push(...one.names);
-      byAssembly.push({
-        name: path.basename(assembly, path.extname(assembly)),
-        path: assembly,
-        names: one.names,
-      });
+      byAssembly.push(assemblyListing(assembly, one.names, frameworks.get(assembly)));
     }
     const names = [...new Set(all)];
     if (names.length > 0) {

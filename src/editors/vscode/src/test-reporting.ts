@@ -12,6 +12,7 @@ import * as vscode from 'vscode';
 import { info } from './log';
 import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
 import { ownedBy, type MtpRunPlan } from './test-listing-model';
+import { perFrameworkFailures, type FrameworkIndex } from './test-frameworks';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
 import { RETRYING_RM, singleLine } from './utils';
@@ -47,9 +48,12 @@ export const COVERAGE_DIR = '.sharplsp-coverage';
  * (see {@link reportOutcome}), so the expected/actual block keeps its layout
  * exactly where there is room to render it.
  */
-export function cachedFrom(result: TrxTestResult): CachedTestResult {
+export function cachedFrom(result: TrxTestResult, frameworks?: FrameworkIndex): CachedTestResult {
   const failure = result.outcome === 'failed' ? 'Test failed' : undefined;
-  const message = result.message === undefined ? failure : singleLine(result.message);
+  const text = result.message === undefined ? failure : singleLine(result.message);
+  const failing = frameworks === undefined ? undefined : perFrameworkFailures(result, frameworks);
+  const named = failing?.map((each) => each.framework).join(', ');
+  const message = named === undefined || named === '' ? text : `[${named}] ${text ?? ''}`;
   return {
     outcome: result.outcome,
     passed: result.outcome === 'passed',
@@ -69,6 +73,7 @@ export function reportOutcome(
   tests: readonly vscode.TestItem[],
   outcome: ReportableOutcome,
   cache: CacheWriter | undefined,
+  frameworks?: FrameworkIndex,
 ): void {
   if (outcome.failure !== undefined) {
     info(`Test run failed: ${outcome.failure}`);
@@ -79,8 +84,8 @@ export function reportOutcome(
       reportMissing(run, test, outcome, cache);
       continue;
     }
-    cache?.(test.id, cachedFrom(result));
-    reportResult(run, test, result);
+    cache?.(test.id, cachedFrom(result, frameworks));
+    reportResult(run, test, result, frameworks);
   }
 }
 
@@ -133,6 +138,7 @@ export function reportResult(
   run: vscode.TestRun,
   test: vscode.TestItem,
   result: TrxTestResult,
+  frameworks?: FrameworkIndex,
 ): void {
   if (result.outcome === 'passed') {
     run.passed(test, result.durationMs);
@@ -142,14 +148,22 @@ export function reportResult(
     run.skipped(test);
     return;
   }
+  run.failed(test, failureMessages(result, frameworks), result.durationMs);
+}
+
+/**
+ * The failure pane's messages: one per FAILING framework, `[net48] …`, when the
+ * rows came from several frameworks ([NETFX-TEST-RESULTS]); else the one text.
+ */
+function failureMessages(result: TrxTestResult, frameworks?: FrameworkIndex): vscode.TestMessage[] {
+  const failing = frameworks === undefined ? undefined : perFrameworkFailures(result, frameworks);
+  if (failing !== undefined && failing.length > 0) {
+    return failing.map((each) => new vscode.TestMessage(`[${each.framework}] ${each.text}`));
+  }
   const detail = [result.message, result.stackTrace]
     .filter((part) => part !== undefined)
     .join('\n');
-  run.failed(
-    test,
-    new vscode.TestMessage(detail === '' ? 'Test failed' : detail),
-    result.durationMs,
-  );
+  return [new vscode.TestMessage(detail === '' ? 'Test failed' : detail)];
 }
 
 /**

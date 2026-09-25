@@ -55,7 +55,10 @@ const OUTCOME_SEVERITY: Record<TestOutcome, number> = {
 export function worse(left: TrxTestResult, right: TrxTestResult): TrxTestResult {
   const durationMs = sumDurations(left.durationMs, right.durationMs);
   const dominant = OUTCOME_SEVERITY[right.outcome] > OUTCOME_SEVERITY[left.outcome] ? right : left;
-  return { ...dominant, durationMs };
+  // Every row is kept: the rows of one test may come from different target
+  // frameworks, and each failing framework is named ([NETFX-TEST-RESULTS]).
+  const sources = [...(left.sources ?? []), ...(right.sources ?? [])];
+  return { ...dominant, durationMs, ...(sources.length === 0 ? {} : { sources }) };
 }
 
 /** Add two optional durations, keeping `undefined` only when both are absent. */

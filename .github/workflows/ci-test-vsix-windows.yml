@@ -32,7 +32,7 @@
 # Chunk membership is declared in src/editors/vscode/test-chunks.json and
 # resolved once in PHASE 2 - never duplicated into this YAML. `make _lint-vsix`
 # fails if a suite belongs to no chunk. The `win` matrix drops only the chunks
-# marked `linuxOnly`, which clone and restore third-party repositories.
+# marked `linuxOnly`; the `windowsOnly` .NET Framework chunks run here alone.
 name: CI / Test / VS Code (Windows)
 'on':
   workflow_call:

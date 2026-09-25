@@ -38,18 +38,38 @@ function matchesShape(file: string): boolean {
   return (process.env['SHARPLSP_WORKSPACE_SHAPE'] === 'multiroot') === multiRoot;
 }
 
+/** The slice of `test-chunks.json` the platform guard reads. */
+interface ChunkManifest {
+  readonly chunks: Record<string, { readonly files: string[]; readonly windowsOnly?: boolean }>;
+}
+
+/**
+ * Suites of `windowsOnly` chunks: .NET Framework test hosts run only on Windows
+ * ([NETFX-SCOPE]), so they never load elsewhere — not even in a local full run.
+ */
+function windowsOnlySuites(): ReadonlySet<string> {
+  if (process.platform === 'win32') return new Set();
+  const manifest = path.resolve(__dirname, '..', '..', '..', 'test-chunks.json');
+  const { chunks } = JSON.parse(fs.readFileSync(manifest, 'utf8')) as ChunkManifest;
+  return new Set(
+    Object.values(chunks).flatMap((chunk) => (chunk.windowsOnly === true ? chunk.files : [])),
+  );
+}
+
 /**
  * A chunk that selects nothing must fail loudly: a mistyped file list would
  * otherwise report a green run that executed zero assertions.
  */
 function resolveSuiteFiles(testsRoot: string): string[] {
   const selected = new Set<string>();
+  const windowsOnly = windowsOnlySuites();
   for (const pattern of requestedGlobs()) {
     const matches = globSync(pattern, { cwd: testsRoot });
     if (matches.length === 0) {
       throw new Error(`MOCHA_FILES pattern matched no compiled suite: ${pattern}`);
     }
-    for (const match of matches.filter(matchesShape)) {
+    const runnable = matches.filter((match) => !windowsOnly.has(match.split(path.sep).join('/')));
+    for (const match of runnable.filter(matchesShape)) {
       selected.add(match);
     }
   }

@@ -15,7 +15,8 @@
  */
 
 import * as vscode from 'vscode';
-import type { TestAssemblyListing, TestLocation } from './test-listing-model.js';
+import { compareFrameworks, frameworkSummary, TFM_TAG_PREFIX } from './test-frameworks.js';
+import type { FrameworkBuild, TestAssemblyListing, TestLocation } from './test-listing-model.js';
 import { isExpectoTest, isFsCheckTest } from './test-targets.js';
 
 /**
@@ -47,17 +48,36 @@ function rangeFor(context: ItemContext, fullName: string): vscode.Range | undefi
   return new vscode.Range(zeroBased, 0, zeroBased, 0);
 }
 
-/** Build a TestItem for a fully-qualified name, tagging F# tests. */
-export function makeTestItem(context: ItemContext, fullName: string): vscode.TestItem {
+/**
+ * Build a TestItem for a fully-qualified name, tagging F# tests and, in a
+ * multi-targeted project, each framework it is built for ([NETFX-TEST-DISCOVERY]).
+ */
+export function makeTestItem(
+  context: ItemContext,
+  fullName: string,
+  frameworks: readonly string[] = [],
+): vscode.TestItem {
   const parts = fullName.split('.');
   const label = parts.at(-1) ?? fullName;
   const item = context.controller.createTestItem(fullName, label, uriFor(context, fullName));
   item.description = fullName;
   item.range = rangeFor(context, fullName);
-  if (isExpectoTest(fullName) || isFsCheckTest(fullName)) {
-    item.tags = [new vscode.TestTag('fsharp')];
-  }
+  const fsharp = isExpectoTest(fullName) || isFsCheckTest(fullName) ? ['fsharp'] : [];
+  item.tags = [...fsharp, ...frameworks.map((each) => `${TFM_TAG_PREFIX}${each}`)].map(
+    (id) => new vscode.TestTag(id),
+  );
   return item;
+}
+
+/** Per test, the frameworks whose build lists it — only when there are several builds. */
+function frameworksByTest(builds: readonly FrameworkBuild[]): Map<string, string[]> {
+  const byTest = new Map<string, string[]>();
+  if (builds.length < 2) return byTest;
+  const ordered = [...builds].sort((left, right) => compareFrameworks(left.framework, right.framework));
+  for (const build of ordered) {
+    for (const name of build.names) byTest.set(name, [...(byTest.get(name) ?? []), build.framework]);
+  }
+  return byTest;
 }
 
 /** A non-test group node: an assembly, a namespace or a class. */
@@ -105,6 +125,9 @@ export function makeAssemblyItem(
   assembly: TestAssemblyListing,
 ): vscode.TestItem {
   const root = makeGroupItem(context, `assembly:${assembly.path}`, assembly.name);
+  const builds = assembly.frameworks ?? [];
+  if (builds.length > 1) root.description = frameworkSummary(builds);
+  const frameworks = frameworksByTest(builds);
   const namespaces = new Map<string, vscode.TestItem>();
   const classes = new Map<string, vscode.TestItem>();
   for (const fqn of assembly.names) {
@@ -122,7 +145,7 @@ export function makeAssemblyItem(
         label: classLabel,
       });
     }
-    parent.children.add(makeTestItem(context, fqn));
+    parent.children.add(makeTestItem(context, fqn, frameworks.get(fqn)));
   }
   return root;
 }
