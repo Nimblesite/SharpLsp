@@ -90,9 +90,21 @@ public abstract class SidecarHost : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await CloseAsync().ConfigureAwait(false);
+        await DisposeCoreAsync().ConfigureAwait(false);
         _shutdownCts.Dispose();
         SidecarLog.Shutdown();
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Release what a concrete sidecar owns — a workspace, and any process it started
+    /// — once the connection is closed and before the log is. The process entry point
+    /// disposes the sidecar the moment its message loop ends, so anything not released
+    /// here outlives the sidecar.
+    /// </summary>
+    protected virtual ValueTask DisposeCoreAsync()
+    {
+        return ValueTask.CompletedTask;
     }
 
     /// <summary>

@@ -62,6 +62,9 @@ internal sealed partial class WorkspaceManager : IDisposable
     // log flood described in issue #78.
     private readonly HashSet<string> _loggedWorkspaceFailures = new(StringComparer.Ordinal);
 
+    /// <summary>Whether <see cref="Dispose" /> ran: the MSBuild workspace, and its BuildHost, are released.</summary>
+    internal bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposeState, 1) != 0)

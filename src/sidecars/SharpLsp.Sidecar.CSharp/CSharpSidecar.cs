@@ -80,6 +80,20 @@ internal sealed partial class CSharpSidecar : SidecarHost
 
     private readonly WorkspaceManager _workspace = new();
 
+    /// <summary>
+    /// The MSBuild workspace keeps its out-of-process BuildHost alive for as long as
+    /// the workspace lives. Left undisposed, every sidecar exit — a graceful one too —
+    /// left that BuildHost running with no parent. [SIDECAR-SHUTDOWN-ACK]
+    /// </summary>
+    protected override async ValueTask DisposeCoreAsync()
+    {
+        _workspace.Dispose();
+        await base.DisposeCoreAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Whether this sidecar's workspace has been released.</summary>
+    internal bool WorkspaceDisposed => _workspace.IsDisposed;
+
     private Task<ByteResult> HandleCodeActionAsync(byte[] payload, CancellationToken ct)
     {
         return HandleRequestAsync(
