@@ -75,6 +75,22 @@ let private stopProcess (proc: Process) =
     with ex ->
         Log.Debug(ex, "Could not stop an MSBuild design-time build")
 
+/// MSBuild's own account of a failure, on one line: the error lines it wrote, else
+/// everything it wrote. A warning printed first — a state-file race, say — is not why
+/// it failed, and a reason spread over several log lines hides the error behind it.
+let private failureReason (exitCode: int) (detail: string) (text: string) =
+    let lines =
+        $"{detail}\n{text}".Split([| '\r'; '\n' |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map _.Trim()
+        |> Array.filter (String.IsNullOrEmpty >> not)
+
+    let errors =
+        lines
+        |> Array.filter (fun line -> line.Contains(": error ", StringComparison.OrdinalIgnoreCase))
+
+    let shown = if errors.Length > 0 then errors else lines
+    $"exit {exitCode}: {String.Join(' ', shown)}"
+
 /// Wait for MSBuild, stopping it when it overruns or the caller gives up.
 let private awaitMsbuild (proc: Process) (ct: CancellationToken) =
     task {
@@ -87,7 +103,7 @@ let private awaitMsbuild (proc: Process) (ct: CancellationToken) =
             do! proc.WaitForExitAsync timeout.Token
             let! text = output
             let! detail = error
-            return if proc.ExitCode = 0 then Ok text else Error $"exit {proc.ExitCode}: {detail.Trim()} {text.Trim()}"
+            return if proc.ExitCode = 0 then Ok text else Error(failureReason proc.ExitCode detail text)
         with :? OperationCanceledException ->
             stopProcess proc
             return Error "MSBuild did not finish in time"

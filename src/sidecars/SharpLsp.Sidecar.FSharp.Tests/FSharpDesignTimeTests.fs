@@ -252,3 +252,41 @@ let ``completion on unchanged text follows the switch: File.WriteAllTextAsync on
     finally
         cleanup dir
 }
+
+/// MSBuild's reason for a failed design-time compile is its ERROR, on one line. A warning
+/// printed first — on CI, a state-file race — is not why it failed, and a reason spread
+/// over several log lines hid the error from the line that names the project.
+[<Fact>]
+let ``a failed design-time compile is reported by its error, on one line`` () = task {
+    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-why-{Guid.NewGuid():N}")
+
+    try
+        let attribute (name: string) (value: string) = XAttribute(XName.Get name, value) :> obj
+
+        let failsOnPurpose =
+            element
+                "Target"
+                [ attribute "Name" "FailOnPurpose"
+                  attribute "BeforeTargets" "CoreCompile"
+                  element "Warning" [ attribute "Text" "SharpLsp fixture: a warning printed first" ]
+                  element "Error" [ attribute "Text" "SharpLsp fixture: the compile fails on purpose" ] ]
+
+        let fsproj = writeProject dir "Why" [ frameworks "net48;net10.0" ] [ failsOnPurpose ]
+        File.WriteAllText(Path.Combine(dir, "Src", "Why.fs"), "module Why\nlet answer = 42\n")
+        dotnet dir $"restore \"{fsproj}\" --nologo -v q"
+
+        let state = FSharpWorkspace.create ()
+        let! entry = FSharpDesignTime.loadEntry state.Checker (FSharpWorkspace.buildProjectOptions state) fsproj CancellationToken.None
+        Assert.Equal(Some "net48", entry.Active)
+        Assert.Empty(entry.ByFramework)
+
+        match! FSharpDesignTime.optionsForFramework state.Checker entry "net10.0" CancellationToken.None with
+        | Ok _ -> failwith "the design-time compile fails on purpose"
+        | Error reason ->
+            Assert.StartsWith("exit ", reason)
+            Assert.Contains("SharpLsp fixture: the compile fails on purpose", reason)
+            Assert.DoesNotContain("a warning printed first", reason)
+            Assert.DoesNotContain("\n", reason)
+    finally
+        cleanup dir
+}
