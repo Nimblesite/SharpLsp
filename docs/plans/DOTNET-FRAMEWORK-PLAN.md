@@ -20,7 +20,7 @@ Spec: [DOTNET-FRAMEWORK-SPEC.md](../specs/DOTNET-FRAMEWORK-SPEC.md).
 - [x] [NETFX-TEST-PROFILES] `Run on <tfm>` profiles via `dotnet build` + `dotnet vstest`
 - [x] [NETFX-DEBUG] Debug profile runs .NET frameworks only; .NET Framework-only refusal
 - [x] [NETFX-TEST-MTP] .NET Framework MTP modules executed directly
-- [ ] [NETFX-PROJECTS-FSHARP] FCS options from the design-time compile, per framework
-- [ ] [NETFX-CONTEXT] active framework: sidecars, host requests + refreshes, VS Code status bar
-- [ ] Suites in [NETFX-TESTS]; Windows-only chunks registered in `test-chunks.json`
+- [x] [NETFX-PROJECTS-FSHARP] FCS options from the design-time compile, per framework
+- [x] [NETFX-CONTEXT] active framework: sidecars, host requests + refreshes, VS Code status bar
+- [x] Suites in [NETFX-TESTS]; Windows-only chunks registered in `test-chunks.json`
 - [ ] [NETFX-CORPUS] suites for GitReader, CsvHelper, NLog

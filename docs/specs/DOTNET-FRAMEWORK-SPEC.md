@@ -116,6 +116,8 @@ frameworks." Run without debugging uses `dotnet run --framework <tfm>`.
 
 Windows-only chunk. Every repo targets several .NET Framework AND several .NET Standard versions.
 Pinned commits, cloned at test time into `src/fixtures/real-world/` (gitignored), `global.json` removed.
+`src/fixtures/` ends the `Directory.Build.*` and `.editorconfig` lookups, so each repo builds under its
+own configuration, never SharpLsp's.
 
 | Repo @ commit | Lang | Library frameworks | Test frameworks | Runner |
 |---|---|---|---|---|
