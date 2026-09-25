@@ -71,6 +71,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         _packageResolutionGenerations.Clear();
         _packageResolutionCancellation.Cancel();
+        DrainPackageResolutions();
         _packageResolutionCancellation.Dispose();
         _workspace?.Dispose();
         _adhocWorkspace?.Dispose();
@@ -178,7 +179,11 @@ internal sealed partial class WorkspaceManager : IDisposable
                     return VoidResult.Failure($"Document not found: {filePath}");
                 }
 
-                _solution = _solution.WithDocumentText(document.Id, SourceText.From(newText));
+                _solution = TargetFrameworks.WithTextInEveryContext(
+                    _solution,
+                    document,
+                    SourceText.From(newText)
+                );
 
                 // Auto-update the closure and packages if they changed during a live edit
                 if (document.Project.Solution.Workspace is AdhocWorkspace)
@@ -687,10 +692,14 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         foreach (var (filePath, newText) in _pendingTextEdits)
         {
-            var documentId = SolutionPaths.FindDocument(_solution, filePath)?.Id;
-            if (documentId is not null)
+            var document = SolutionPaths.FindDocument(_solution, filePath);
+            if (document is not null)
             {
-                _solution = _solution.WithDocumentText(documentId, SourceText.From(newText));
+                _solution = TargetFrameworks.WithTextInEveryContext(
+                    _solution,
+                    document,
+                    SourceText.From(newText)
+                );
             }
         }
         _pendingTextEdits.Clear();

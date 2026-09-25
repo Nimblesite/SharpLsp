@@ -199,9 +199,14 @@ internal sealed partial class WorkspaceManager
 
     private IEnumerable<Project> FilterProjects(string[] filter)
     {
+        // Only each project's ACTIVE framework reports: every framework would
+        // publish the same file's diagnostics again ([NETFX-CONTEXT]).
+        var active = _solution!.Projects.Where(project =>
+            TargetFrameworks.IsActive(_solution, project, _activeFrameworks)
+        );
         return filter.Length == 0
-            ? _solution!.Projects
-            : _solution!.Projects.Where(project =>
+            ? active
+            : active.Where(project =>
                 filter.Any(pattern =>
                     project.Name.Contains(pattern, StringComparison.OrdinalIgnoreCase)
                 )
@@ -265,7 +270,7 @@ internal sealed partial class WorkspaceManager
 
         try
         {
-            return SolutionPaths.FindDocument(_solution, filePath)
+            return TargetFrameworks.FindActiveDocument(_solution, filePath, _activeFrameworks)
                 ?? await FindSourceGeneratedDocumentByPathAsync(filePath, ct).ConfigureAwait(false);
         }
         catch (Exception)

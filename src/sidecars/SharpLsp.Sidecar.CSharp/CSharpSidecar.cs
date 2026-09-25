@@ -55,6 +55,8 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("project/removePackage", HandleRemovePackageAsync);
         Register("analyzers/configure", HandleConfigureAnalyzersAsync);
         Register("debug/hotReload", HandleHotReloadAsync);
+        Register("workspace/targetFramework", HandleTargetFrameworkAsync);
+        Register("workspace/setTargetFramework", HandleSetTargetFrameworkAsync);
     }
 
     private Task<ByteResult> HandleConfigureAnalyzersAsync(byte[] payload, CancellationToken ct)

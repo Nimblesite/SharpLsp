@@ -31,6 +31,7 @@ internal static class FileBasedPackageResolver
 {
     private static readonly string DefaultTargetFramework = $"net{Environment.Version.Major}.0";
     private static readonly TimeSpan RestoreLockTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(10);
 
     public static async Task<FileBasedProjectResult> ResolveAsync(
         Closure closure,
@@ -315,6 +316,9 @@ internal static class FileBasedPackageResolver
         try
         {
             process.Kill(entireProcessTree: true);
+            // Kill only STARTS termination. Until the restore has exited it still stands in the
+            // app's folder, which Windows refuses to delete. [SCRIPT-LIFECYCLE]
+            _ = process.WaitForExit(KillWait);
         }
         catch (Exception exception)
         {

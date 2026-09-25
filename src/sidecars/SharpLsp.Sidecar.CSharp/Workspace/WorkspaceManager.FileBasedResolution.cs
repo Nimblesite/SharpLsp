@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -20,6 +21,12 @@ internal sealed record ProjectlessDegradation(string Reason, bool IsPending);
 /// </summary>
 internal sealed partial class WorkspaceManager
 {
+    /// <summary>How long Dispose waits for cancelled restores to exit.</summary>
+    private static readonly TimeSpan ResolutionDrainTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>Background resolutions still running; the value is unused.</summary>
+    private readonly ConcurrentDictionary<Task, byte> _packageResolutions = new();
+
     private async Task PrepareProjectlessRootAsync(string rootPath, CancellationToken ct)
     {
         rootPath = NormalizeRootPath(rootPath);
@@ -144,7 +151,38 @@ internal sealed partial class WorkspaceManager
             generation,
             closure.Packages.Count
         );
-        _ = ResolveAndUpgradeAsync(rootPath, projectId, closure, generation);
+        TrackPackageResolution(ResolveAndUpgradeAsync(rootPath, projectId, closure, generation));
+    }
+
+    private void TrackPackageResolution(Task resolution)
+    {
+        _packageResolutions[resolution] = 0;
+        _ = resolution.ContinueWith(
+            finished => _packageResolutions.TryRemove(finished, out _),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
+    /// <summary>
+    /// Wait out every cancelled resolution. Its <c>dotnet restore</c> runs in the app's folder,
+    /// and Windows refuses to delete a folder a live process stands in, so returning before
+    /// the restore exits leaves the user's folder locked. Implements [SCRIPT-LIFECYCLE].
+    /// </summary>
+    private void DrainPackageResolutions()
+    {
+        var pending = _packageResolutions.Keys.ToArray();
+        var drained = Task.WhenAll(pending)
+            .ContinueWith(static _ => { }, TaskScheduler.Default)
+            .Wait(ResolutionDrainTimeout);
+        if (!drained)
+        {
+            Log.Warning(
+                "Disposed with {Count} file-based package resolution(s) still running",
+                pending.Length
+            );
+        }
     }
 
     private async Task ResolveAndUpgradeAsync(
