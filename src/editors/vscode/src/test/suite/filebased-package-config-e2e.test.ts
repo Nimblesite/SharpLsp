@@ -8,13 +8,13 @@ import {
   replaceDocumentContent,
   setupLspTestSuite,
   teardownLspTestSuite,
+  assertContainsAll,
 } from './test-helpers';
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import {
   PACKAGE,
   assertNoPackageBindingErrors,
   completionList,
-  diagnosticCode,
   errorsFor,
   hoverText,
   itemNamed,
@@ -24,6 +24,7 @@ import {
   waitForErrorCode,
   waitForHoverText,
 } from './filebased-package-kit';
+import { diagnosticCode } from './document-anchors';
 import { ACTIVATION_MS, DOTNET_CLI_MS } from './test-timeouts';
 
 function writeFixture(tmpDir: string, filename: string, content: string): string {
@@ -103,14 +104,13 @@ Console.WriteLine(payload.Count);
     const { doc, uri } = await openFileBasedApp(tmpDir, 'CentralPackageApp.cs', source);
 
     assert.strictEqual(doc.lineAt(0).text, '#:package Newtonsoft.Json');
-    assert.strictEqual(fs.existsSync(propsPath), true, 'central package file remains present');
+    assert.ok(fs.existsSync(propsPath), 'central package file remains present');
     assert.strictEqual(fs.readFileSync(propsPath, 'utf8'), centralPackages);
-    assert.strictEqual(fs.existsSync(path.join(tmpDir, 'CentralPackageApp.csproj')), false);
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'CentralPackageApp.csproj')));
     const hover = hoverText(
       await waitForHoverText(uri, positionInside(source, 'JObject'), 'Newtonsoft.Json.Linq'),
     );
-    assert.ok(hover.includes('JObject'), 'CPM-backed package type binds');
-    assert.ok(hover.includes('Newtonsoft.Json.Linq'), 'CPM preserves the package namespace');
+    assertContainsAll(hover, ['JObject', 'Newtonsoft.Json.Linq'], 'hover');
     const members = await completionList(uri, positionAfter(source, 'payload.'), 'Properties');
     assert.strictEqual(itemNamed(members, 'Properties').kind, vscode.CompletionItemKind.Method);
     assertNoPackageBindingErrors(uri);
@@ -195,7 +195,7 @@ Console.WriteLine(text.Length);
       'the baseline contains exactly one active #error',
     );
 
-    assert.strictEqual(await replaceDocumentContent(doc, withProperty), true);
+    assert.ok(await replaceDocumentContent(doc, withProperty));
     assert.ok(doc.isDirty, 'the directive change is delivered through didChange, not disk reload');
     assert.ok(doc.version > initialVersion, 'adding the property advances document version');
     assert.strictEqual(doc.lineAt(0).text, '#:property DefineConstants=LIVE_DIRECTIVE');
@@ -207,9 +207,9 @@ Console.WriteLine(text.Length);
     assert.deepStrictEqual(afterAdd, [], 'adding the property disables the #error branch');
 
     const versionWithProperty = doc.version;
-    assert.strictEqual(await replaceDocumentContent(doc, body), true);
+    assert.ok(await replaceDocumentContent(doc, body));
     assert.ok(doc.version > versionWithProperty, 'removal is a separate didChange generation');
-    assert.strictEqual(doc.getText().startsWith('#:property'), false);
+    assert.ok(!doc.getText().startsWith('#:property'));
     const removed = await waitForErrorCode(uri, 'CS1029');
     assert.strictEqual(
       removed.filter((diagnostic) => diagnosticCode(diagnostic) === 'CS1029').length,
@@ -217,7 +217,7 @@ Console.WriteLine(text.Length);
       'removing the property reactivates exactly one #error',
     );
 
-    assert.strictEqual(await replaceDocumentContent(doc, withProperty), true);
+    assert.ok(await replaceDocumentContent(doc, withProperty));
     const members = await completionList(uri, positionAfter(withProperty, 'text.'), 'Length');
     assert.strictEqual(itemNamed(members, 'Length').kind, vscode.CompletionItemKind.Property);
     const afterReAdd = await pollUntilResult(

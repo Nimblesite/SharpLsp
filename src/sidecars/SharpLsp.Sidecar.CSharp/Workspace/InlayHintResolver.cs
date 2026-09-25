@@ -175,21 +175,7 @@ internal static class InlayHintResolver
             return;
         }
 
-        var typeName = symbol.Type.ToMinimalDisplayString(
-            model,
-            param.SpanStart,
-            SymbolDisplayFormat.MinimallyQualifiedFormat
-        );
-        var endPos = text.Lines.GetLinePosition(param.Identifier.Span.End);
-        hints.Add(
-            new InlayHintResult
-            {
-                Line = endPos.Line,
-                Character = endPos.Character,
-                Label = $": {typeName}",
-                Kind = 1, // Type
-            }
-        );
+        hints.Add(TypeHint(symbol.Type, model, text, param.Identifier));
     }
 
     private static void CollectTypeHints(
@@ -215,22 +201,33 @@ internal static class InlayHintResolver
                 continue;
             }
 
-            var typeName = typeInfo.Type.ToMinimalDisplayString(
-                model,
-                varId.SpanStart,
-                SymbolDisplayFormat.MinimallyQualifiedFormat
-            );
-
-            var endPos = text.Lines.GetLinePosition(varId.Span.End);
-            hints.Add(
-                new InlayHintResult
-                {
-                    Line = endPos.Line,
-                    Character = endPos.Character,
-                    Label = $": {typeName}",
-                    Kind = 1, // Type
-                }
-            );
+            hints.Add(TypeHint(typeInfo.Type, model, text, varId.Identifier));
         }
+    }
+
+    /// <summary>
+    /// A `: Type` hint after <paramref name="identifier"/>, naming
+    /// <paramref name="type"/> as briefly as is unambiguous at that position.
+    /// </summary>
+    private static InlayHintResult TypeHint(
+        ITypeSymbol type,
+        SemanticModel model,
+        SourceText text,
+        SyntaxToken identifier
+    )
+    {
+        var typeName = type.ToMinimalDisplayString(
+            model,
+            identifier.SpanStart,
+            SymbolDisplayFormat.MinimallyQualifiedFormat
+        );
+        var endPos = text.Lines.GetLinePosition(identifier.Span.End);
+        return new InlayHintResult
+        {
+            Line = endPos.Line,
+            Character = endPos.Character,
+            Label = $": {typeName}",
+            Kind = 1, // Type
+        };
     }
 }

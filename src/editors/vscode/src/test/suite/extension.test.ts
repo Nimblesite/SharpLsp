@@ -14,16 +14,15 @@ import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
-  closeAllEditors,
   flattenSymbolNames,
   loadFixtureSolution,
   openCSharpFile,
   openSharpLspPanel,
-  setupLspTestSuite,
   settleForScreenshot,
   takeScreenshot,
-  teardownLspTestSuite,
   waitForDocumentSymbols,
+  assertContainsAll,
+  openCSharpOutline,
 } from './test-helpers';
 import { authoredPackageJson, invokeCommand, packageJson } from './run-debug-kit';
 import {
@@ -50,24 +49,10 @@ import {
   SETTINGS_WRITE_MS,
   SETTLE_MS,
 } from './test-timeouts';
+import { useLspTestSuite } from './lsp-suite-kit';
 
 suite('Extension Activation & Configuration', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('ext-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
+  const tmpDir = useLspTestSuite('ext-');
 
   // ── Activation ───────────────────────────────────────────────
 
@@ -104,7 +89,7 @@ suite('Extension Activation & Configuration', () => {
     // yields the SAME exports. [DIST-FAILURE-UX] rule 1: activate() resolves.
     const first = await ext.activate();
     const second = await ext.activate();
-    assert.strictEqual(ext.isActive, true, 'the extension is active once activate() resolves');
+    assert.ok(ext.isActive, 'the extension is active once activate() resolves');
     assert.strictEqual(first, second, 'a second activate() must hand back the same exports');
     assert.notStrictEqual(ext.exports, undefined, 'activation must publish an API object');
   });
@@ -112,19 +97,19 @@ suite('Extension Activation & Configuration', () => {
   test('extension activates when a C# file is opened', async function () {
     this.timeout(COMMAND_MS);
     // Interaction 1 — opening a .cs file is the activation event a user hits first.
-    const { doc, uri } = await openCSharpFile(tmpDir, 'activation.cs', 'class Activation { }');
+    const { doc, uri } = await openCSharpFile(tmpDir(), 'activation.cs', 'class Activation { }');
     assert.strictEqual(doc.languageId, 'csharp', '.cs must resolve to the csharp language');
     assert.strictEqual(uri.scheme, 'file', 'a workspace file opens on the file scheme');
-    assert.strictEqual(doc.isClosed, false, 'the opened document stays open');
+    assert.ok(!doc.isClosed, 'the opened document stays open');
 
     // Interaction 2 — and it activated the extension, not merely opened a buffer.
     const ext = sharpLspExtension();
-    assert.strictEqual(ext.isActive, true, 'opening .cs must activate SharpLsp');
+    assert.ok(ext.isActive, 'opening .cs must activate SharpLsp');
     assert.ok(ext.packageJSON.activationEvents, 'the manifest must declare activation events');
     assert.notStrictEqual(ext.exports, undefined, 'an active extension publishes its API');
 
     // Interaction 3 — .csx is the same language and must not need a second activation.
-    const { doc: script } = await openCSharpFile(tmpDir, 'activation.csx', 'var x = 1;\n');
+    const { doc: script } = await openCSharpFile(tmpDir(), 'activation.csx', 'var x = 1;\n');
     assert.strictEqual(script.languageId, 'csharp', '.csx must resolve to csharp too');
     assert.strictEqual(ext.isActive, true, 'the extension stays active across both files');
     assert.notStrictEqual(script.uri.fsPath, doc.uri.fsPath, 'the two buffers are distinct files');
@@ -135,25 +120,29 @@ suite('Extension Activation & Configuration', () => {
     // F# is a first-class citizen: .fs resolves to fsharp, never to a C#
     // fallback. A .fs buffer reported as csharp is a buffer the FCS sidecar
     // never sees ([SHARPLSP-FEATURES-FSHARP]).
-    const { doc } = await openCSharpFile(tmpDir, 'activation.fs', 'module Activation\nlet x = 1\n');
+    const { doc } = await openCSharpFile(
+      tmpDir(),
+      'activation.fs',
+      'module Activation\nlet x = 1\n',
+    );
     assert.strictEqual(
       doc.languageId,
       'fsharp',
       '.fs must resolve to fsharp, not to a C# fallback',
     );
-    assert.strictEqual(doc.isClosed, false, 'the F# buffer stays open');
-    assert.strictEqual(doc.lineCount >= 2, true, 'the written module reached the buffer');
+    assert.ok(!doc.isClosed, 'the F# buffer stays open');
+    assert.ok(doc.lineCount >= 2, 'the written module reached the buffer');
 
     // Interaction 2 — the extension is active off the back of an F# file ALONE.
     const ext = sharpLspExtension();
-    assert.strictEqual(ext.isActive, true, 'opening .fs must activate SharpLsp');
+    assert.ok(ext.isActive, 'opening .fs must activate SharpLsp');
     assert.notStrictEqual(ext.exports, undefined, 'an active extension publishes its API');
     assert.strictEqual(languageNamed('fsharp').id, 'fsharp', 'fsharp is a contributed language');
 
     // Interaction 3 — script and signature files are F# as well, all three shapes.
-    const { doc: script } = await openCSharpFile(tmpDir, 'activation.fsx', 'let y = 2\n');
+    const { doc: script } = await openCSharpFile(tmpDir(), 'activation.fsx', 'let y = 2\n');
     const { doc: signature } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'activation.fsi',
       'module Activation\n',
     );
@@ -204,7 +193,7 @@ suite('Extension Activation & Configuration', () => {
     // Interaction 2 — [DIST-FAILURE-UX] rule 3 makes the log reachable from
     // every error toast, so the command backing [Show Log] must answer.
     const outcome = await invokeCommand('sharplsp.showOutput');
-    assert.strictEqual(outcome.rejected, false, `showOutput must not reject: ${outcome.message}`);
+    assert.ok(!outcome.rejected, `showOutput must not reject: ${outcome.message}`);
     assert.strictEqual(outcome.message, '', 'a clean invocation reports no failure message');
 
     // Interaction 3 — its title names the log in plain language; a user
@@ -230,11 +219,7 @@ suite('Extension Activation & Configuration', () => {
 
     // Interaction 3 — it answers.
     const outcome = await invokeCommand('sharplsp.showTraceOutput');
-    assert.strictEqual(
-      outcome.rejected,
-      false,
-      `showTraceOutput must not reject: ${outcome.message}`,
-    );
+    assert.ok(!outcome.rejected, `showTraceOutput must not reject: ${outcome.message}`);
     assert.match(entry.title ?? '', /trace/i, 'the title must name the trace channel');
   });
 
@@ -291,7 +276,7 @@ suite('Extension Activation & Configuration', () => {
     // clean install never injects an argument nobody asked for.
     const read = vscode.workspace.getConfiguration('sharplsp').get<string[]>('server.extraArgs');
     assert.deepStrictEqual(read, [], 'an unset extraArgs must read back as no arguments');
-    assert.strictEqual(Array.isArray(read), true, 'and as an array, not a string');
+    assert.ok(Array.isArray(read), 'and as an array, not a string');
   });
 
   test('sharplsp.trace.server setting is contributed', async function () {
@@ -301,8 +286,7 @@ suite('Extension Activation & Configuration', () => {
     const property = assertContributedSetting('sharplsp.trace.server', 'off');
     assert.strictEqual(property.type, 'string', 'trace.server is an enum of strings');
     assert.ok(Array.isArray(property.enum), 'trace.server must offer a closed enum');
-    assert.ok(property.enum.includes('off'), "the enum must include 'off'");
-    assert.ok(property.enum.includes('verbose'), "and 'verbose' for a bug report");
+    assertContainsAll(property.enum, ['off', 'verbose'], 'property.enum');
 
     // Interaction 2 — the user turns tracing up, and it reads back.
     const config = () => vscode.workspace.getConfiguration('sharplsp');
@@ -392,7 +376,7 @@ suite('Extension Activation & Configuration', () => {
     // server answers for it. A contributed language nothing serves is a
     // syntax-highlighting stub, not C# support.
     const { uri: csUri, doc } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'editors-shot.cs',
       `namespace Demo\n{\n    public class Calculator\n    {\n        public int Add(int a, int b) => a + b;\n    }\n}`,
     );
@@ -408,7 +392,7 @@ suite('Extension Activation & Configuration', () => {
     // language, which is the split-editor case a .NET solution hits constantly.
     await vscode.commands.executeCommand('workbench.action.splitEditorRight');
     const { doc: fsDoc } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'editors-shot.fs',
       'module Demo\n\nlet greet name = sprintf "Hello, %s!" name\n',
     );
@@ -437,9 +421,9 @@ suite('Extension Activation & Configuration', () => {
     }
 
     // Interaction 3 — and a real F# buffer resolves to it.
-    const { doc } = await openCSharpFile(tmpDir, 'contributes.fsx', 'let square x = x * x\n');
+    const { doc } = await openCSharpFile(tmpDir(), 'contributes.fsx', 'let square x = x * x\n');
     assert.strictEqual(doc.languageId, 'fsharp', 'a script buffer resolves to fsharp');
-    assert.strictEqual(doc.isClosed, false, 'and stays open');
+    assert.ok(!doc.isClosed, 'and stays open');
   });
 
   // ── Command Handler Invocation ─────────────────────────────
@@ -449,13 +433,13 @@ suite('Extension Activation & Configuration', () => {
     // Interaction 1 — [DIST-FAILURE-UX] rule 3: the [Show Log] path must never
     // throw, because it is the path a user takes when something ALREADY broke.
     const first = await invokeCommand('sharplsp.showOutput');
-    assert.strictEqual(first.rejected, false, `showOutput must not throw: ${first.message}`);
+    assert.ok(!first.rejected, `showOutput must not throw: ${first.message}`);
     assert.strictEqual(first.message, '', 'a clean invocation reports nothing');
 
     // Interaction 2 — and it is idempotent: showing an already-shown channel is
     // a no-op, not a second panel or a rejection.
     const second = await invokeCommand('sharplsp.showOutput');
-    assert.strictEqual(second.rejected, false, 'a second showOutput must not throw');
+    assert.ok(!second.rejected, 'a second showOutput must not throw');
     assert.deepStrictEqual(second, first, 'the second invocation reports the same outcome');
 
     // Interaction 3 — it stays reachable afterwards; showing a channel must not
@@ -468,15 +452,15 @@ suite('Extension Activation & Configuration', () => {
     this.timeout(COMMAND_MS);
     // Interaction 1 — the trace channel opens without throwing.
     const first = await invokeCommand('sharplsp.showTraceOutput');
-    assert.strictEqual(first.rejected, false, `showTraceOutput must not throw: ${first.message}`);
+    assert.ok(!first.rejected, `showTraceOutput must not throw: ${first.message}`);
     assert.strictEqual(first.message, '', 'a clean invocation reports nothing');
 
     // Interaction 2 — opening the trace channel does not disturb the plain one:
     // [DIST-CLEAN-OUTPUT] keeps per-request chatter and user-facing output apart.
     const plain = await invokeCommand('sharplsp.showOutput');
-    assert.strictEqual(plain.rejected, false, 'the plain channel still opens afterwards');
+    assert.ok(!plain.rejected, 'the plain channel still opens afterwards');
     const again = await invokeCommand('sharplsp.showTraceOutput');
-    assert.strictEqual(again.rejected, false, 'and the trace channel re-opens after it');
+    assert.ok(!again.rejected, 'and the trace channel re-opens after it');
 
     // Interaction 3 — both remain reachable from the palette.
     const palette = await vscode.commands.getCommands(true);
@@ -488,15 +472,18 @@ suite('Extension Activation & Configuration', () => {
     this.timeout(ACTIVATION_MS);
     // Interaction 1 — the server is serving BEFORE the restart, so the
     // post-restart assertion below means something.
-    const { uri } = await openCSharpFile(tmpDir, 'pre-restart.cs', 'class PreRestart { }');
-    const before = await waitForDocumentSymbols(uri);
+    const { uri, symbols: before } = await openCSharpOutline(
+      tmpDir(),
+      'pre-restart.cs',
+      'class PreRestart { }',
+    );
     assert.ok(before.length > 0, 'the server must be serving before the restart');
     assert.strictEqual(before[0]?.name, 'PreRestart', 'and serving THIS document');
 
     // Interaction 2 — [DIST-FAILURE-UX] rule 6: the recovery command runs
     // without throwing, however the server was behaving beforehand.
     const outcome = await invokeCommand('sharplsp.restartServer');
-    assert.strictEqual(outcome.rejected, false, `restartServer must not throw: ${outcome.message}`);
+    assert.ok(!outcome.rejected, `restartServer must not throw: ${outcome.message}`);
     assert.strictEqual(outcome.message, '', 'a clean restart reports nothing');
 
     // Interaction 3 — and the server is serving AGAIN. A restart that leaves
@@ -508,11 +495,7 @@ suite('Extension Activation & Configuration', () => {
       before.map((symbol) => symbol.name),
       'and answer identically — a restart changes nothing about the document',
     );
-    assert.strictEqual(
-      sharpLspExtension().isActive,
-      true,
-      'the extension survives its own restart',
-    );
+    assert.ok(sharpLspExtension().isActive, 'the extension survives its own restart');
 
     if (process.env['SHARPLSP_SCREENSHOTS']) {
       const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -537,9 +520,9 @@ suite('Extension Activation & Configuration', () => {
     assertLanguageOwnsExtension('csharp', '.cs');
 
     // Interaction 2 — the claim is honoured by the editor for a real file.
-    const { doc } = await openCSharpFile(tmpDir, 'owns-cs.cs', 'class OwnsCs { }');
+    const { doc } = await openCSharpFile(tmpDir(), 'owns-cs.cs', 'class OwnsCs { }');
     assert.strictEqual(doc.languageId, 'csharp', 'a .cs file opens as csharp');
-    assert.strictEqual(doc.uri.fsPath.endsWith('.cs'), true, 'and it really is a .cs path');
+    assert.ok(doc.uri.fsPath.endsWith('.cs'), 'and it really is a .cs path');
 
     // Interaction 3 — the language-configuration file backing it is real JSON
     // with the bracket pairs a C# editor needs, not an empty placeholder.
@@ -556,9 +539,9 @@ suite('Extension Activation & Configuration', () => {
 
     // Interaction 2 — a .csx buffer opens as csharp, so scripts get the same
     // editor behaviour as compiled sources ([SCRIPTING-FILEBASED-SPEC]).
-    const { doc } = await openCSharpFile(tmpDir, 'owns-csx.csx', 'var value = 41 + 1;\n');
+    const { doc } = await openCSharpFile(tmpDir(), 'owns-csx.csx', 'var value = 41 + 1;\n');
     assert.strictEqual(doc.languageId, 'csharp', 'a .csx file opens as csharp');
-    assert.strictEqual(doc.isClosed, false, 'and stays open');
+    assert.ok(!doc.isClosed, 'and stays open');
 
     // Interaction 3 — .cs and .csx are the SAME language entry, not two.
     const entry = languageNamed('csharp');
@@ -579,9 +562,9 @@ suite('Extension Activation & Configuration', () => {
     assertLanguageOwnsExtension('fsharp', '.fs');
 
     // Interaction 2 — a real .fs buffer resolves to fsharp.
-    const { doc } = await openCSharpFile(tmpDir, 'owns-fs.fs', 'module OwnsFs\nlet value = 1\n');
+    const { doc } = await openCSharpFile(tmpDir(), 'owns-fs.fs', 'module OwnsFs\nlet value = 1\n');
     assert.strictEqual(doc.languageId, 'fsharp', 'a .fs file opens as fsharp');
-    assert.strictEqual(doc.lineCount >= 2, true, 'and carries the module we wrote');
+    assert.ok(doc.lineCount >= 2, 'and carries the module we wrote');
 
     // Interaction 3 — its language configuration is real, with F# comment
     // tokens. F# comments are `//` and `(* *)`, not C#'s `/* */`.
@@ -597,9 +580,9 @@ suite('Extension Activation & Configuration', () => {
 
     // Interaction 2 — an .fsx buffer opens as fsharp, which is what routes it
     // to FSI rather than to a C# handler.
-    const { doc } = await openCSharpFile(tmpDir, 'owns-fsx.fsx', 'printfn "hello"\n');
+    const { doc } = await openCSharpFile(tmpDir(), 'owns-fsx.fsx', 'printfn "hello"\n');
     assert.strictEqual(doc.languageId, 'fsharp', 'a .fsx file opens as fsharp');
-    assert.strictEqual(doc.isClosed, false, 'and stays open');
+    assert.ok(!doc.isClosed, 'and stays open');
 
     // Interaction 3 — no C# entry claims it, and the fsharp entry claims it once.
     const claims = languageEntries().filter((language) =>
@@ -621,12 +604,12 @@ suite('Extension Activation & Configuration', () => {
     // Interaction 2 — a signature file opens as fsharp. Signature files are
     // first-class F#: dropping them leaves a real F# project half-served.
     const { doc } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'owns-fsi.fsi',
       'module OwnsFsi\nval value: int\n',
     );
     assert.strictEqual(doc.languageId, 'fsharp', 'a .fsi file opens as fsharp');
-    assert.strictEqual(doc.lineCount >= 2, true, 'and carries the signature we wrote');
+    assert.ok(doc.lineCount >= 2, 'and carries the signature we wrote');
 
     // Interaction 3 — all three F# shapes land on ONE entry, so they share the
     // same language configuration and the same server routing.
@@ -731,7 +714,7 @@ suite('Extension Activation & Configuration', () => {
     // Interaction 2 — rule 2: SharpLsp activates it explicitly, so a disabled
     // dependency becomes a clear message instead of "command not found".
     await installTool.activate();
-    assert.strictEqual(installTool.isActive, true, 'the Install Tool must activate on demand');
+    assert.ok(installTool.isActive, 'the Install Tool must activate on demand');
 
     // Interaction 3 — rules 3 and 4: the commands SharpLsp calls are really
     // registered by it. A renamed upstream command breaks SDK acquisition
@@ -749,7 +732,7 @@ suite('Extension Activation & Configuration', () => {
     // active SharpLsp beside a dormant Install Tool means the
     // `extensionDependencies` declaration is not being honoured, and rule 3's
     // acquisition call would fail at the worst possible moment: first launch.
-    assert.strictEqual(sharpLspExtension().isActive, true, 'SharpLsp is active here');
+    assert.ok(sharpLspExtension().isActive, 'SharpLsp is active here');
     assert.strictEqual(installTool.isActive, true, 'so its declared dependency must be too');
     assert.notStrictEqual(installTool.id, EXTENSION_ID, 'the dependency is a separate extension');
     assert.ok(
@@ -848,8 +831,8 @@ suite('Extension Activation & Configuration', () => {
     assert.ok(fsharp.size >= 3, 'fsharp claims at least .fs, .fsx and .fsi');
 
     // Interaction 3 — and both are live: the editor resolves a file of each.
-    const { doc: cs } = await openCSharpFile(tmpDir, 'exactly-two.cs', 'class Two { }');
-    const { doc: fsx } = await openCSharpFile(tmpDir, 'exactly-two.fsx', 'let two = 2\n');
+    const { doc: cs } = await openCSharpFile(tmpDir(), 'exactly-two.cs', 'class Two { }');
+    const { doc: fsx } = await openCSharpFile(tmpDir(), 'exactly-two.fsx', 'let two = 2\n');
     assert.strictEqual(cs.languageId, 'csharp', 'the C# half resolves');
     assert.strictEqual(fsx.languageId, 'fsharp', 'and the F# half resolves');
   });
@@ -1006,7 +989,7 @@ suite('Extension Activation & Configuration', () => {
     // Interaction 2 — every project shape is a `workspaceContains:` event, and
     // none is the `*` blanket. A blanket event activates SharpLsp in every
     // window, which is exactly the startup cost [SHARPLSP-PERFORMANCE] avoids.
-    assert.strictEqual(events.includes('*'), false, 'SharpLsp must never activate unconditionally');
+    assert.ok(!events.includes('*'), 'SharpLsp must never activate unconditionally');
     assert.ok(
       events.some((event) => event.startsWith('workspaceContains:')),
       'project detection must use workspaceContains:',
@@ -1015,7 +998,7 @@ suite('Extension Activation & Configuration', () => {
 
     // Interaction 3 — and it is ALREADY active here, because this workspace
     // contains a solution: the declaration and the behaviour agree.
-    assert.strictEqual(sharpLspExtension().isActive, true, 'the fixture workspace activated it');
+    assert.ok(sharpLspExtension().isActive, 'the fixture workspace activated it');
     assert.deepStrictEqual(
       authoredPackageJson().activationEvents ?? [],
       events,

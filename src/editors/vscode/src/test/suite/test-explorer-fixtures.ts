@@ -185,94 +185,84 @@ const FS_MSTEST_SOURCE = [
   '',
 ].join('\n');
 
+/** The names a framework × language fixture exposes, one per outcome. */
+type FixtureTests = Pick<
+  FrameworkFixture,
+  'passing' | 'failing' | 'skipped' | 'parameterized' | 'mixedParameterized'
+>;
+
+/**
+ * The key, project directory, project file and source file a framework ×
+ * language fixture derives from the pair — `XunitFs/XunitFs.fsproj` with
+ * `Tests.fs`; `flavour` sits between the two (`XunitMtpFs`).
+ */
+export function fixtureNames(
+  framework: FrameworkFixture['framework'],
+  language: FrameworkFixture['language'],
+  flavour = '',
+): Pick<FrameworkFixture, 'key' | 'projectName' | 'projectFileName' | 'sourceFileName'> {
+  const title = `${framework[0]?.toUpperCase() ?? ''}${framework.slice(1)}`;
+  const projectName = `${title}${flavour}${language === 'fsharp' ? 'Fs' : 'Cs'}`;
+  const ext = language === 'fsharp' ? 'fs' : 'cs';
+  return {
+    key: `${framework}-${language}`,
+    projectName,
+    projectFileName: `${projectName}.${ext}proj`,
+    sourceFileName: `Tests.${ext}`,
+  };
+}
+
+/** A framework × language fixture, its names derived by {@link fixtureNames}. */
+function frameworkFixture(
+  framework: FrameworkFixture['framework'],
+  language: FrameworkFixture['language'],
+  packages: readonly PackageRef[],
+  source: string,
+  tests: FixtureTests,
+): FrameworkFixture {
+  return { ...fixtureNames(framework, language), framework, language, packages, source, ...tests };
+}
+
 /** Every framework × language fixture, in build order. */
 export const FRAMEWORK_FIXTURES: readonly FrameworkFixture[] = [
-  {
-    key: 'xunit-fsharp',
-    framework: 'xunit',
-    language: 'fsharp',
-    packages: XUNIT_PACKAGES,
-    projectName: 'XunitFs',
-    projectFileName: 'XunitFs.fsproj',
-    sourceFileName: 'Tests.fs',
-    source: FS_XUNIT_SOURCE,
+  frameworkFixture('xunit', 'fsharp', XUNIT_PACKAGES, FS_XUNIT_SOURCE, {
     passing: 'Fs.Xunit.Fixtures.addsTwoNumbers',
     failing: 'Fs.Xunit.Fixtures.fails on purpose',
     skipped: 'Fs.Xunit.Fixtures.skipped on purpose',
     parameterized: 'Fs.Xunit.Fixtures.adds theory',
     mixedParameterized: 'Fs.Xunit.Fixtures.mixed theory',
-  },
-  {
-    key: 'nunit-fsharp',
-    framework: 'nunit',
-    language: 'fsharp',
-    packages: NUNIT_PACKAGES,
-    projectName: 'NunitFs',
-    projectFileName: 'NunitFs.fsproj',
-    sourceFileName: 'Tests.fs',
-    source: FS_NUNIT_SOURCE,
+  }),
+  frameworkFixture('nunit', 'fsharp', NUNIT_PACKAGES, FS_NUNIT_SOURCE, {
     passing: 'Fs.Nunit.Fixtures.addsTwoNumbers',
     failing: 'Fs.Nunit.Fixtures.fails on purpose',
     skipped: 'Fs.Nunit.Fixtures.skipped on purpose',
     parameterized: 'Fs.Nunit.Fixtures.adds case(2,2,4)',
-  },
-  {
-    key: 'mstest-fsharp',
-    framework: 'mstest',
-    language: 'fsharp',
-    packages: MSTEST_PACKAGES,
-    projectName: 'MstestFs',
-    projectFileName: 'MstestFs.fsproj',
-    sourceFileName: 'Tests.fs',
-    source: FS_MSTEST_SOURCE,
+  }),
+  frameworkFixture('mstest', 'fsharp', MSTEST_PACKAGES, FS_MSTEST_SOURCE, {
     passing: 'Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers',
     failing: 'Fs.Mstest.Fixtures+CalculatorTests.FailsOnPurpose',
     skipped: 'Fs.Mstest.Fixtures+CalculatorTests.SkippedOnPurpose',
     parameterized: 'Fs.Mstest.Fixtures+CalculatorTests.AddsRow',
-  },
-  {
-    key: 'xunit-csharp',
-    framework: 'xunit',
-    language: 'csharp',
-    packages: XUNIT_PACKAGES,
-    projectName: 'XunitCs',
-    projectFileName: 'XunitCs.csproj',
-    sourceFileName: 'Tests.cs',
-    source: CS_XUNIT_SOURCE,
+  }),
+  frameworkFixture('xunit', 'csharp', XUNIT_PACKAGES, CS_XUNIT_SOURCE, {
     passing: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.Xunit.Fixtures.CalculatorTests.Fails_OnPurpose',
     skipped: 'Cs.Xunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
     parameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_Theory',
     mixedParameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Mixed_Theory',
-  },
-  {
-    key: 'nunit-csharp',
-    framework: 'nunit',
-    language: 'csharp',
-    packages: NUNIT_PACKAGES,
-    projectName: 'NunitCs',
-    projectFileName: 'NunitCs.csproj',
-    sourceFileName: 'Tests.cs',
-    source: CS_NUNIT_SOURCE,
+  }),
+  frameworkFixture('nunit', 'csharp', NUNIT_PACKAGES, CS_NUNIT_SOURCE, {
     passing: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.Nunit.Fixtures.CalculatorTests.Fails_OnPurpose',
     skipped: 'Cs.Nunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
     parameterized: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)',
-  },
-  {
-    key: 'mstest-csharp',
-    framework: 'mstest',
-    language: 'csharp',
-    packages: MSTEST_PACKAGES,
-    projectName: 'MstestCs',
-    projectFileName: 'MstestCs.csproj',
-    sourceFileName: 'Tests.cs',
-    source: CS_MSTEST_SOURCE,
+  }),
+  frameworkFixture('mstest', 'csharp', MSTEST_PACKAGES, CS_MSTEST_SOURCE, {
     passing: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.Mstest.Fixtures.CalculatorTests.Fails_OnPurpose',
     skipped: 'Cs.Mstest.Fixtures.CalculatorTests.Skipped_OnPurpose',
     parameterized: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
-  },
+  }),
 ];
 
 /**

@@ -71,7 +71,7 @@ function assertTaskIdentity(task: ObservedTask, why: string): void {
   assert.strictEqual(typeof task.source, 'string', `${why}: a task carries a source`);
   assert.notStrictEqual(task.definitionType, 'dotnet', `${why}: 'dotnet' is the proprietary type`);
   const type = task.definitionType;
-  assert.strictEqual(type.startsWith('sharplsp'), true, `${why}: SharpLsp must own type '${type}'`);
+  assert.ok(type.startsWith('sharplsp'), `${why}: SharpLsp must own type '${type}'`);
 }
 
 /** Assert the exact `dotnet` argument vector a script run must produce. */
@@ -82,7 +82,7 @@ function assertRunArgs(task: ObservedTask, expected: readonly string[], why: str
   assert.deepStrictEqual(actual, expected.map(comparablePath), `${why}: exact argument vector`);
   assert.strictEqual(task.args.length, expected.length, `${why}: no extra arguments`);
   const last = task.args[task.args.length - 1] ?? '';
-  assert.strictEqual(path.isAbsolute(last), true, `${why}: the target must be an absolute path`);
+  assert.ok(path.isAbsolute(last), `${why}: the target must be an absolute path`);
   assertTaskIdentity(task, why);
 }
 function projectFilesIn(dir: string): string[] {
@@ -97,7 +97,7 @@ function assertNoOwningProject(dir: string, why: string): void {
   assert.strictEqual(findProjectFile(dir, root), undefined, `${why}: the cone walk finds none`);
   assert.deepStrictEqual(projectFilesIn(dir), [], `${why}: the entry dir holds no project file`);
   assert.deepStrictEqual(projectFilesIn(root), [], `${why}: the fenced root holds no project file`);
-  assert.strictEqual(fs.existsSync(path.join(root, '.git')), true, `${why}: the root is fenced`);
+  assert.ok(fs.existsSync(path.join(root, '.git')), `${why}: the root is fenced`);
 }
 
 function assertOwningProject(dir: string, name: string, why: string): void {
@@ -118,15 +118,15 @@ function writeFixtureFile(dir: string, name: string, body: string): string {
 /** `bin/<config-lowercased>/<name>.dll`, with NO TFM segment (rule 4). */
 function assertFileBasedProgram(program: string, name: string, why: string): void {
   assert.strictEqual(typeof program, 'string', `${why}: the launch config needs a program`);
-  assert.strictEqual(path.isAbsolute(program), true, `${why}: the program must be absolute`);
+  assert.ok(path.isAbsolute(program), `${why}: the program must be absolute`);
   assert.strictEqual(path.extname(program), '.dll', `${why}: netcoredbg launches a managed dll`);
   assert.strictEqual(path.basename(program), `${name}.dll`, `${why}: named after the entry file`);
   const tail = comparablePath(path.join('bin', 'debug', `${name}.dll`));
   const laidOut = comparablePath(program).endsWith(tail);
-  assert.strictEqual(laidOut, true, `${why}: bin/debug/<name>.dll, got '${program}'`);
+  assert.ok(laidOut, `${why}: bin/debug/<name>.dll, got '${program}'`);
   const tfms = program.split(/[\\/]/).filter((segment) => /^net\d/i.test(segment));
   assert.deepStrictEqual(tfms, [], `${why}: file-based output carries NO TFM segment`);
-  assert.strictEqual(fs.existsSync(program), true, `${why}: the built program must exist on disk`);
+  assert.ok(fs.existsSync(program), `${why}: the built program must exist on disk`);
 }
 
 /** Every shape [DIST-RUNTIME-ACQUIRE] can resolve `dotnet` to, on any host. */
@@ -150,7 +150,7 @@ async function focusScript(file: string, ext: string, dir: string, why: string):
   assertSamePath(editor.document.uri.fsPath, file, `${why}: it is the active document`);
   assertSamePath(activePath(), file, `${why}: the workbench agrees on the active editor`);
   assert.strictEqual(path.extname(file), ext, `${why}: the fixture extension is ${ext}`);
-  assert.strictEqual(editor.document.isUntitled, false, `${why}: it is a real file on disk`);
+  assert.ok(!editor.document.isUntitled, `${why}: it is a real file on disk`);
   assertNoOwningProject(dir, why);
 }
 
@@ -333,7 +333,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     assert.deepStrictEqual(beside, [], "B43: the script's OWN directory holds no project");
     assertOtherPath(besideDir, neighbourDir, 'B43: the project is a sibling, not the same dir');
     const explicit = await invokeCommand(CMD_RUN_PROGRAM, vscode.Uri.file(neighbourScript));
-    assert.strictEqual(explicit.rejected, false, `an explicit target runs: ${explicit.message}`);
+    assert.ok(!explicit.rejected, `an explicit target runs: ${explicit.message}`);
     const mixedTasks = await probe.tasks.waitForDotnetTasks(2);
     assert.strictEqual(mixedTasks.length, 2, 'the second run is a second observable task');
     const mixed = mixedTasks[1]!;
@@ -373,7 +373,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
 
     // 2 — debug it. B44: a real session on the built assembly.
     const outcome = await invokeCommand(CMD_DEBUG_PROGRAM);
-    assert.strictEqual(outcome.rejected, false, `debugging must succeed: ${outcome.message}`);
+    assert.ok(!outcome.rejected, `debugging must succeed: ${outcome.message}`);
     const sessions = await probe.sessions.waitForSessions(1);
     assert.strictEqual(sessions.length, 1, 'exactly one SharpLsp debug session starts'); // B44
     const session = sessions[0]!;
@@ -385,9 +385,9 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     assertFileBasedProgram(String(session.configuration.program), 'FileApp', 'the program'); // B44
     const cwd = String(session.configuration.cwd);
     assert.strictEqual(typeof session.configuration.cwd, 'string', 'the launch cwd is a path');
-    assert.strictEqual(path.isAbsolute(cwd), true, `the launch cwd is absolute: '${cwd}'`);
-    assert.strictEqual(fs.existsSync(cwd), true, `the launch cwd exists: '${cwd}'`);
-    assert.strictEqual(fs.statSync(cwd).isDirectory(), true, 'the launch cwd is a directory');
+    assert.ok(path.isAbsolute(cwd), `the launch cwd is absolute: '${cwd}'`);
+    assert.ok(fs.existsSync(cwd), `the launch cwd exists: '${cwd}'`);
+    assert.ok(fs.statSync(cwd).isDirectory(), 'the launch cwd is a directory');
     assertOtherPath(cwd, String(session.configuration.program), 'cwd is a directory, not the dll');
     assert.deepStrictEqual(messagesOf(stubs), [], 'a successful launch warns about nothing');
     assertNoPrompts(stubs, 'an unambiguous debug launch');
@@ -410,7 +410,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
       DEBUG_SESSION_MS,
       100,
     );
-    assert.strictEqual(terminated.includes(session.id), true, 'stopping terminates our session');
+    assert.ok(terminated.includes(session.id), 'stopping terminates our session');
     assert.strictEqual(probe.sessions.ours.length, 1, 'stopping must not start a second session');
     assert.deepStrictEqual(messagesOf(stubs), [], 'a clean stop shows the user nothing');
   });

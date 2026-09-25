@@ -401,118 +401,81 @@ internal sealed partial class WorkspaceManager : IDisposable
     }
 
     /// <summary>Go to definition at a position (returns all locations for partial types).</summary>
-    public async Task<ImplementationsResult> GetDefinitionAsync(
+    public Task<ImplementationsResult> GetDefinitionAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                return new ImplementationsResult.Ok<LocationListResult, string>(
-                    new LocationListResult()
-                );
-            }
-
-            var result = await DefinitionResolver
-                .ResolveDefinitionLocationsAsync(document, line, character, ct)
-                .ConfigureAwait(false);
-            return new ImplementationsResult.Ok<LocationListResult, string>(result);
-        }
-        catch (Exception ex)
-        {
-            return ImplementationsResult.Failure(ex.Message);
-        }
+        return RunDocumentQueryAsync(
+            filePath,
+            new LocationListResult(),
+            document =>
+                DefinitionResolver.ResolveDefinitionLocationsAsync(document, line, character, ct),
+            ct
+        );
     }
 
     /// <summary>Go to type definition at a position.</summary>
-    public async Task<DefinitionResult> GetTypeDefinitionAsync(
+    public Task<DefinitionResult> GetTypeDefinitionAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                return new DefinitionResult.Ok<LocationResult?, string>(null);
-            }
-
-            var location = await DefinitionResolver
-                .ResolveTypeDefinitionAsync(document, line, character, ct)
-                .ConfigureAwait(false);
-            return new DefinitionResult.Ok<LocationResult?, string>(location);
-        }
-        catch (Exception ex)
-        {
-            return DefinitionResult.Failure(ex.Message);
-        }
+        return RunDocumentQueryAsync<LocationResult?>(
+            filePath,
+            null,
+            document =>
+                DefinitionResolver.ResolveTypeDefinitionAsync(document, line, character, ct),
+            ct
+        );
     }
 
     /// <summary>Go to declaration (interface/base member) at a position.</summary>
-    public async Task<DefinitionResult> GetDeclarationAsync(
+    public Task<DefinitionResult> GetDeclarationAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                return new DefinitionResult.Ok<LocationResult?, string>(null);
-            }
-
-            var location = await DefinitionResolver
-                .ResolveDeclarationAsync(document, line, character, ct)
-                .ConfigureAwait(false);
-            return new DefinitionResult.Ok<LocationResult?, string>(location);
-        }
-        catch (Exception ex)
-        {
-            return DefinitionResult.Failure(ex.Message);
-        }
+        return RunDocumentQueryAsync<LocationResult?>(
+            filePath,
+            null,
+            document => DefinitionResolver.ResolveDeclarationAsync(document, line, character, ct),
+            ct
+        );
     }
 
     /// <summary>Find all implementations of symbol at a position.</summary>
-    public async Task<ImplementationsResult> GetImplementationsAsync(
+    public Task<ImplementationsResult> GetImplementationsAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null || _solution is null)
-            {
-                return new ImplementationsResult.Ok<LocationListResult, string>(
-                    new LocationListResult()
-                );
-            }
-
-            var result = await DefinitionResolver
-                .ResolveImplementationsAsync(document, _solution, line, character, ct)
-                .ConfigureAwait(false);
-            return new ImplementationsResult.Ok<LocationListResult, string>(result);
-        }
-        catch (Exception ex)
-        {
-            return ImplementationsResult.Failure(ex.Message);
-        }
+        // A non-null document implies _solution was non-null at lookup time:
+        // FindDocumentAsync returns null whenever _solution is null.
+        return RunDocumentQueryAsync(
+            filePath,
+            new LocationListResult(),
+            document =>
+                DefinitionResolver.ResolveImplementationsAsync(
+                    document,
+                    _solution!,
+                    line,
+                    character,
+                    ct
+                ),
+            ct
+        );
     }
 
-    public async Task<ReferencesResult> GetReferencesAsync(
+    public Task<ReferencesResult> GetReferencesAsync(
         string filePath,
         int line,
         int character,
@@ -520,36 +483,25 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null || _solution is null)
-            {
-                return new ReferencesResult.Ok<LocationListResult, string>(
-                    new LocationListResult()
-                );
-            }
-
-            var result = await DefinitionResolver
-                .ResolveReferencesAsync(
+        // As above: a found document means a loaded solution.
+        return RunDocumentQueryAsync(
+            filePath,
+            new LocationListResult(),
+            document =>
+                DefinitionResolver.ResolveReferencesAsync(
                     document,
-                    _solution,
+                    _solution!,
                     line,
                     character,
                     includeDeclaration,
                     ct
-                )
-                .ConfigureAwait(false);
-            return new ReferencesResult.Ok<LocationListResult, string>(result);
-        }
-        catch (Exception ex)
-        {
-            return ReferencesResult.Failure(ex.Message);
-        }
+                ),
+            ct
+        );
     }
 
     /// <summary>Get available code actions (fixes + refactorings) for a range.</summary>
-    public async Task<CodeActionsResult> GetCodeActionsAsync(
+    public Task<CodeActionsResult> GetCodeActionsAsync(
         string filePath,
         int startLine,
         int startCharacter,
@@ -558,28 +510,21 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
+        return RunDocumentQueryAsync<List<CodeActionItem>>(
+            filePath,
+            [],
+            async document =>
             {
-                return new CodeActionsResult.Ok<List<CodeActionItem>, string>([]);
-            }
-
-            var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-            var startPos = text.Lines.GetPosition(new LinePosition(startLine, startCharacter));
-            var endPos = text.Lines.GetPosition(new LinePosition(endLine, endCharacter));
-            var span = TextSpan.FromBounds(startPos, Math.Max(startPos, endPos));
-
-            var items = await _codeActionResolver
-                .GetCodeActionsAsync(document, span, ct)
-                .ConfigureAwait(false);
-            return new CodeActionsResult.Ok<List<CodeActionItem>, string>(items);
-        }
-        catch (Exception ex)
-        {
-            return CodeActionsResult.Failure(ex.Message);
-        }
+                var text = await document.GetTextAsync(ct).ConfigureAwait(false);
+                var startPos = text.Lines.GetPosition(new LinePosition(startLine, startCharacter));
+                var endPos = text.Lines.GetPosition(new LinePosition(endLine, endCharacter));
+                var span = TextSpan.FromBounds(startPos, Math.Max(startPos, endPos));
+                return await _codeActionResolver
+                    .GetCodeActionsAsync(document, span, ct)
+                    .ConfigureAwait(false);
+            },
+            ct
+        );
     }
 
     /// <summary>Resolve a code action by ID to a workspace edit.</summary>

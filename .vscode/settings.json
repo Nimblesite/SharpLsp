@@ -7,5 +7,6 @@
   },
   "deslop.topOffenders.splitByLanguage": true,
   "makefile.makefilePath": "${workspaceFolder}/Makefile",
-  "makefile.phonyOnlyTargets": true
+  "makefile.phonyOnlyTargets": true,
+  "deslop.topOffenders.groupBy": "kind"
 }

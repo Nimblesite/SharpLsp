@@ -26,6 +26,14 @@ export interface DapMessage {
   [field: string]: unknown;
 }
 
+/** What every emulator asks of its owning router, whatever else it needs. */
+export interface RouterChannel {
+  /** Request in the router's own name and await the response. */
+  request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
+  /** Emit one message towards VS Code. */
+  fire(message: Record<string, unknown> & { seq?: unknown }): void;
+}
+
 /** Narrow an unknown to a list of plain objects, dropping anything else. */
 export function recordList(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];

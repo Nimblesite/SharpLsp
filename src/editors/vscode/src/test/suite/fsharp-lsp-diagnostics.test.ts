@@ -4,6 +4,12 @@ import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult } from './test-helpers';
 import { fsharpFixturePath, openFSharpFixture } from './fsharp-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
+import { waitForMatchingDiagnostics } from './refactor-test-helpers';
+
+/** Whether any diagnostic is an error. */
+function hasError(items: readonly vscode.Diagnostic[]): boolean {
+  return items.some((d) => d.severity === vscode.DiagnosticSeverity.Error);
+}
 
 /**
  * Blanket end-to-end coverage for F# diagnostics via the REAL release LSP and
@@ -50,12 +56,7 @@ suite('F# LSP — Diagnostics', () => {
       );
 
       const { uri } = await openFSharpFixture('DiagnosticsTarget.fs');
-      const diagnostics = await pollUntilResult(
-        async () => vscode.languages.getDiagnostics(uri),
-        (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
-        LSP_RESPONSE_MS,
-        2_000,
-      );
+      const diagnostics = await waitForMatchingDiagnostics(uri, hasError);
       const errors = diagnostics.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
       assert.ok(errors.length > 0, 'a type-mismatched F# binding must produce an error diagnostic');
       assert.ok(
@@ -82,12 +83,7 @@ suite('F# LSP — Diagnostics', () => {
         'utf8',
       );
       const { uri } = await openFSharpFixture('DiagnosticsTarget.fs');
-      await pollUntilResult(
-        async () => vscode.languages.getDiagnostics(uri),
-        (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
-        LSP_RESPONSE_MS,
-        2_000,
-      );
+      await waitForMatchingDiagnostics(uri, hasError);
 
       // Correct the file on disk and re-open to force a fresh pull.
       restoreDiagnosticsTarget();

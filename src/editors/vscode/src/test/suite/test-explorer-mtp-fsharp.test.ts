@@ -44,20 +44,20 @@ import {
   XUNIT_PACKAGES,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   findItem,
   rootsOf,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import {
   assertFailed,
   assertPassed,
   cachedFor,
-  itemsFor,
   sorted,
+  runAndSettle,
 } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -161,12 +161,6 @@ function writeMigrated(dir: string, mtp: boolean): void {
   writeProject(dir, `${MIGRATED}.fsproj`, xml, CALCULATOR_FILE, MIGRATED_SOURCE.text);
 }
 
-/** Press ▶ on `ids` and wait for the run to finish. */
-async function run(api: SharpLspExtensionApi, ids: readonly string[]): Promise<void> {
-  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
-  await api.testController.whenIdle();
-}
-
 /** The 0-based line the tree row for `id` starts on, asserted present. */
 function rowLine(api: SharpLspExtensionApi, id: string): number {
   const item = findItem(api.testController.items, id);
@@ -184,8 +178,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform on F# modules', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-fsharp-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-fsharp-'));
     migrateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-fsharp-migrate-'));
     frameworks = await installedFrameworkPair(root);
     slnPath = await createModulesFixture(root, frameworks);
@@ -275,7 +268,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform on F# modules', () => {
     try {
       // 1. As discovered: green, and each row points at the F# attribute the
       //    listing reported — 1-based there, 0-based in the tree.
-      await run(api, [ADDS, ROWS]);
+      await runAndSettle(api, [ADDS, ROWS]);
       assertPassed(cachedFor(api, ADDS), ADDS);
       assertPassed(cachedFor(api, ROWS), ROWS);
       assert.equal(rowLine(api, ADDS), GREEN.line('adds-fact'), 'the [<Fact>] line');
@@ -287,7 +280,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform on F# modules', () => {
       //    so only the RUN can see the edit; the theory is judged by its worst
       //    row, and the status CodeLens run sees the same.
       fs.writeFileSync(source, calculatorSource(CALCULATOR, 4, 5).text, 'utf8');
-      await run(api, [ADDS, ROWS]);
+      await runAndSettle(api, [ADDS, ROWS]);
       assertFailed(cachedFor(api, ADDS), ADDS);
       assertFailed(cachedFor(api, ROWS), ROWS);
       const lens = await api.testController.runSingle(ROWS);
@@ -300,7 +293,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform on F# modules', () => {
       // 3. Put it back: the next ▶ is green again, so the rebuild tracks the
       //    source both ways rather than latching the first change.
       fs.writeFileSync(source, GREEN.text, 'utf8');
-      await run(api, [ADDS, ROWS]);
+      await runAndSettle(api, [ADDS, ROWS]);
       assertPassed(cachedFor(api, ADDS), ADDS);
       assertPassed(cachedFor(api, ROWS), ROWS);
       const again = await api.testController.runSingle(ADDS);
@@ -322,7 +315,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform on F# modules', () => {
       sorted(await discoverSolution(api, sln, MIGRATED_IDS)),
       sorted(MIGRATED_IDS),
     );
-    await run(api, MIGRATED_IDS);
+    await runAndSettle(api, MIGRATED_IDS);
     for (const id of MIGRATED_IDS) assertPassed(cachedFor(api, id), id);
     const onVsTest = MIGRATED_IDS.map((id) => cachedFor(api, id));
     assert.deepStrictEqual(
@@ -355,7 +348,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform on F# modules', () => {
     assert.equal(plan.modules[0]?.uidsById.get(MIGRATED_ROWS)?.length, 2, 'one uid per row');
 
     // 3. ▶ runs on MTP: fresh green results, and the status CodeLens agrees.
-    await run(api, MIGRATED_IDS);
+    await runAndSettle(api, MIGRATED_IDS);
     MIGRATED_IDS.forEach((id, index) => {
       assertPassed(cachedFor(api, id), id);
       assert.notStrictEqual(cachedFor(api, id), onVsTest[index], `${id}: a fresh result`);

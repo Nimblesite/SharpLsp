@@ -391,14 +391,12 @@ export function assertOneTestSession(sessions: DebugSessionRecorder, why: string
 export function assertHandshakeOrder(recorder: DapRecorder, why: string): void {
   const order = recorder.requestOrder();
   eq(order[0], 'initialize', `${why}: the DAP conversation opens with initialize (${order[0]})`);
-  eq(
+  assert.ok(
     order.includes('configurationDone'),
-    true,
     `${why}: the workbench must finish configuration; observed ${order.join(' -> ')}`,
   );
-  eq(
+  assert.ok(
     order.indexOf('setBreakpoints') < order.indexOf('configurationDone'),
-    true,
     `${why}: breakpoints are configured BEFORE configurationDone; observed ${order.join(' -> ')}`,
   );
   eq(recorder.events('initialized').length, 1, `${why}: 'initialized' is announced exactly once`);

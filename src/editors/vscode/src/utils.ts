@@ -38,3 +38,17 @@ export function singleLine(text: string): string {
     .filter((part) => part.length > 0)
     .join(' ');
 }
+
+/**
+ * Escape `text` for the profiler panels, which place it only in element text
+ * and double-quoted attributes. A single quote is deliberately left alone —
+ * the profiler suite pins that — so do not use this for a single-quoted
+ * attribute or a JS string; the NuGet browser's `esc`/`escAttr` cover those.
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

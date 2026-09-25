@@ -159,7 +159,7 @@ export function assertAdapterAvailable(why: string): string {
         `Searched, in order:\n  ${searched.join('\n  ')}`,
     );
   }
-  assert.strictEqual(fs.existsSync(resolved), true, `${why}: the adapter exists at ${resolved}`);
+  assert.ok(fs.existsSync(resolved), `${why}: the adapter exists at ${resolved}`);
   return resolved;
 }
 

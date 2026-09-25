@@ -309,7 +309,6 @@ internal sealed partial class WorkspaceManager
         Func<Document, Task<TValue>> resolve,
         CancellationToken ct
     )
-        where TValue : notnull
     {
         try
         {

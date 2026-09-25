@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { info } from './log';
+import { getErrorMessage } from './utils';
 
 /**
  * NuGet package management: search, add, update packages.
@@ -27,9 +28,10 @@ interface NuGetPackage {
 }
 
 /**
- * Search NuGet.org for packages and let the user pick one to add.
+ * Search NuGet.org, let the user pick a package, and add it to the project
+ * `target` names — or asks for, only once a package has been chosen.
  */
-export async function addNuGetPackage(): Promise<void> {
+async function searchAndAdd(target: string | (() => Promise<string | undefined>)): Promise<void> {
   const query = await vscode.window.showInputBox({
     prompt: 'Search NuGet packages',
     placeHolder: 'e.g. Newtonsoft.Json',
@@ -39,36 +41,40 @@ export async function addNuGetPackage(): Promise<void> {
   }
 
   try {
-    const packages = await searchNuGet(query);
-    if (packages.length === 0) {
-      void vscode.window.showInformationMessage('No packages found.');
+    const pick = await pickPackage(await searchNuGet(query));
+    const projectFile =
+      pick === undefined ? undefined : typeof target === 'string' ? target : await target();
+    if (pick === undefined || projectFile === undefined) {
       return;
     }
-
-    const pick = await vscode.window.showQuickPick(
-      packages.map((p) => ({
-        label: p.id,
-        description: p.version,
-        detail: p.description,
-        package: p,
-      })),
-      { placeHolder: 'Select a package to add' },
-    );
-    if (pick === undefined) {
-      return;
-    }
-
-    const projectFile = await pickProjectFile();
-    if (projectFile === undefined) {
-      return;
-    }
-
-    await addPackageToProject(projectFile, pick.package.id, pick.package.version);
-    void vscode.window.showInformationMessage(`Added ${pick.package.id} ${pick.package.version}`);
+    await addPackageToProject(projectFile, pick.id, pick.version);
+    void vscode.window.showInformationMessage(`Added ${pick.id} ${pick.version}`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(`NuGet search failed: ${message}`);
+    void vscode.window.showErrorMessage(`NuGet search failed: ${getErrorMessage(err)}`);
   }
+}
+
+/** The package the user picks from `packages`, or undefined (with a notice when there were none). */
+async function pickPackage(packages: NuGetPackage[]): Promise<NuGetPackage | undefined> {
+  if (packages.length === 0) {
+    void vscode.window.showInformationMessage('No packages found.');
+    return undefined;
+  }
+  const pick = await vscode.window.showQuickPick(
+    packages.map((p) => ({
+      label: p.id,
+      description: p.version,
+      detail: p.description,
+      package: p,
+    })),
+    { placeHolder: 'Select a package to add' },
+  );
+  return pick?.package;
+}
+
+/** Search NuGet.org for packages and let the user pick one, then the project to add it to. */
+export async function addNuGetPackage(): Promise<void> {
+  await searchAndAdd(pickProjectFile);
 }
 
 /**
@@ -91,8 +97,7 @@ export async function updateNuGetPackage(): Promise<void> {
     await runDotnet(['add', projectFile, 'package', packageName]);
     void vscode.window.showInformationMessage(`Updated ${packageName}`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(`Update failed: ${message}`);
+    void vscode.window.showErrorMessage(`Update failed: ${getErrorMessage(err)}`);
   }
 }
 
@@ -109,47 +114,13 @@ export async function restorePackages(): Promise<void> {
     void vscode.window.showInformationMessage('NuGet packages restored.');
     info('NuGet restore completed');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(`Restore failed: ${message}`);
+    void vscode.window.showErrorMessage(`Restore failed: ${getErrorMessage(err)}`);
   }
 }
 
 /** Add NuGet package from explorer context (project node). */
 export async function addNuGetPackageToProject(projectPath: string): Promise<void> {
-  const query = await vscode.window.showInputBox({
-    prompt: 'Search NuGet packages',
-    placeHolder: 'e.g. Newtonsoft.Json',
-  });
-  if (query === undefined || query === '') {
-    return;
-  }
-
-  try {
-    const packages = await searchNuGet(query);
-    if (packages.length === 0) {
-      void vscode.window.showInformationMessage('No packages found.');
-      return;
-    }
-
-    const pick = await vscode.window.showQuickPick(
-      packages.map((p) => ({
-        label: p.id,
-        description: p.version,
-        detail: p.description,
-        package: p,
-      })),
-      { placeHolder: 'Select a package to add' },
-    );
-    if (pick === undefined) {
-      return;
-    }
-
-    await addPackageToProject(projectPath, pick.package.id, pick.package.version);
-    void vscode.window.showInformationMessage(`Added ${pick.package.id} ${pick.package.version}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(`NuGet search failed: ${message}`);
-  }
+  await searchAndAdd(projectPath);
 }
 
 /** Whether prerelease packages should be included in NuGet searches (config-driven, defaults false). */

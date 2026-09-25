@@ -7,49 +7,30 @@ import {
   assertRawTitles,
   assertSingleDocumentEdit,
   onlyAction,
-  rangeOf,
   rawCodeActions,
   type RawCodeAction,
 } from './csharp-refactor-test-kit';
+import { rangeOf } from './document-anchors';
 import {
-  activateRealSharpLsp,
   applyWorkspaceEdit,
-  openFixtureDocument,
   replaceDocumentText,
-  revertDocument,
   waitForResolvedCodeActions,
   type OpenFixture,
-  warmSemanticEngine,
+  useRefactorFixture,
+  restoreCommitted,
 } from './refactor-test-helpers';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorCore.cs';
 const TITLE = 'Sort Usings';
 const SOURCE = 'using System.Text;\nusing System;\nnamespace SharpLsp.TestFixtures.Refactors;\n';
 
 suite('C# real LSP - organize imports', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
-  suiteSetup(async function () {
-    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
-    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    this.timeout(FIXTURE_BUILD_MS);
-    await activateRealSharpLsp();
-    fixture = await openFixtureDocument(FILE);
-    // This fixture is known to produce code actions, so an empty result
-    // means Roslyn has not loaded the project yet. Pay that load HERE,
-    // once, instead of inside the first test's ceiling
-    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    await warmSemanticEngine(fixture.uri);
-    committedText = fixture.document.getText();
-  });
-
-  teardown(async () => revertDocument(fixture.document));
+  const refactor = useRefactorFixture(FILE);
 
   test('advertised action is listed, resolved, applied, requeried, and reverted', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await runOrganizeImports(fixture, committedText);
+    await runOrganizeImports(refactor.fixture, refactor.committedText);
   });
 });
 
@@ -92,7 +73,5 @@ async function runOrganizeImports(fixture: OpenFixture, committedText: string): 
   const after = await rawCodeActions(fixture.uri, rangeOf(fixture.document, 'using System;'));
   assertRawActionData(after, fixture.uri);
   assertFreshActionDataIds(after, discovered.raw);
-  await revertDocument(fixture.document);
-  assert.strictEqual(fixture.document.getText(), committedText);
-  assert.ok(!fixture.document.isDirty);
+  await restoreCommitted(fixture, committedText);
 }

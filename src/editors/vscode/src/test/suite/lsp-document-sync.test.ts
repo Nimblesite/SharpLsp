@@ -4,41 +4,45 @@ import {
   closeAllEditors,
   openCSharpFile,
   replaceDocumentContent,
-  setupLspTestSuite,
-  teardownLspTestSuite,
   waitForDocumentSymbols,
   waitForFoldingRanges,
-  pollUntilResult,
+  pollProvider,
+  pollSymbols,
+  assertContainsAll,
+  openCSharpOutline,
+  flattenSymbolNames,
 } from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS } from './test-timeouts';
+import { useLspTestSuite } from './lsp-suite-kit';
+
+// The baseline file must itself be FOLDABLE. A single-line
+// `class C { void M() { } }` has no multi-line region, so the folding
+// provider correctly returns nothing and a poll for a non-empty result can
+// never succeed — it just burned its whole budget and then compared against
+// a baseline of 0 ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+const CHANGE_FOLD_CS = `class C {
+  void M() {
+    var a = 1;
+  }
+}`;
+
+const REMOVE_TEST_CS = `class A { void X() { } }
+class B { void Y() { } }`;
 
 suite('LSP Document Synchronization', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('docsync-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
+  const tmpDir = useLspTestSuite('docsync-');
 
   // ── didOpen ──────────────────────────────────────────────────
 
   test('opening a C# file makes it available to the LSP server', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri } = await openCSharpFile(tmpDir, 'open-test.cs', 'class OpenTest { void M() { } }');
-
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenNames(symbols);
+    const { symbols } = await openCSharpOutline(
+      tmpDir(),
+      'open-test.cs',
+      'class OpenTest { void M() { } }',
+    );
+    const names = flattenSymbolNames(symbols);
     assert.ok(names.includes('OpenTest'), 'Should find OpenTest symbol');
   });
 
@@ -48,14 +52,14 @@ suite('LSP Document Synchronization', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { doc, uri } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'change-test.cs',
       'class Original { void OldMethod() { } }',
     );
 
     // Verify initial symbols.
     let symbols = await waitForDocumentSymbols(uri);
-    let names = flattenNames(symbols);
+    let names = flattenSymbolNames(symbols);
     assert.ok(names.includes('Original'), 'Should find Original initially');
 
     // Edit the document — add a new class.
@@ -65,38 +69,19 @@ class Added { void NewMethod() { } }`;
     assert.ok(editApplied, 'Edit should be applied');
 
     // Wait for the server to pick up the change.
-    symbols = await pollUntilResult(
-      async () => {
-        const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          uri,
-        );
-        return result ?? [];
-      },
-      (syms) => flattenNames(syms).includes('Added'),
+    symbols = await pollSymbols(
+      uri,
+      (syms) => flattenSymbolNames(syms).includes('Added'),
       LSP_RESPONSE_MS,
     );
 
-    names = flattenNames(symbols);
-    assert.ok(names.includes('Original'), 'Should still find Original');
-    assert.ok(names.includes('Added'), 'Should find Added after edit');
-    assert.ok(names.includes('NewMethod'), 'Should find NewMethod after edit');
+    names = flattenSymbolNames(symbols);
+    assertContainsAll(names, ['Original', 'Added', 'NewMethod'], 'names');
   });
 
   test('editing a document updates folding ranges', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-
-    // The baseline file must itself be FOLDABLE. A single-line
-    // `class C { void M() { } }` has no multi-line region, so the folding
-    // provider correctly returns nothing and a poll for a non-empty result can
-    // never succeed — it just burned its whole budget and then compared against
-    // a baseline of 0 ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    const baseline = `class C {
-  void M() {
-    var a = 1;
-  }
-}`;
-    const { doc, uri } = await openCSharpFile(tmpDir, 'change-fold.cs', baseline);
+    const { doc, uri } = await openCSharpFile(tmpDir(), 'change-fold.cs', CHANGE_FOLD_CS);
 
     // Initial folding — the class body and the one method body.
     const initial = await waitForFoldingRanges(uri);
@@ -117,14 +102,9 @@ class Added { void NewMethod() { } }`;
     await replaceDocumentContent(doc, expanded);
 
     // Wait for more folding ranges to appear.
-    const updated = await pollUntilResult(
-      async () => {
-        const result = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
-          'vscode.executeFoldingRangeProvider',
-          uri,
-        );
-        return result ?? [];
-      },
+    const updated = await pollProvider<vscode.FoldingRange>(
+      'vscode.executeFoldingRangeProvider',
+      [uri],
       (ranges) => ranges.length > initialCount,
       LSP_RESPONSE_MS,
     );
@@ -137,32 +117,22 @@ class Added { void NewMethod() { } }`;
 
   test('removing content updates symbols accordingly', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-
-    const initial = `class A { void X() { } }
-class B { void Y() { } }`;
-    const { doc, uri } = await openCSharpFile(tmpDir, 'remove-test.cs', initial);
+    const { doc, uri } = await openCSharpFile(tmpDir(), 'remove-test.cs', REMOVE_TEST_CS);
 
     let symbols = await waitForDocumentSymbols(uri);
-    let names = flattenNames(symbols);
-    assert.ok(names.includes('A'), 'Should find A initially');
-    assert.ok(names.includes('B'), 'Should find B initially');
+    let names = flattenSymbolNames(symbols);
+    assertContainsAll(names, ['A', 'B'], 'Should find');
 
     // Remove class B.
     await replaceDocumentContent(doc, 'class A { void X() { } }');
 
-    symbols = await pollUntilResult(
-      async () => {
-        const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          uri,
-        );
-        return result ?? [];
-      },
-      (syms) => !flattenNames(syms).includes('B'),
+    symbols = await pollSymbols(
+      uri,
+      (syms) => !flattenSymbolNames(syms).includes('B'),
       LSP_RESPONSE_MS,
     );
 
-    names = flattenNames(symbols);
+    names = flattenSymbolNames(symbols);
     assert.ok(names.includes('A'), 'Should still find A');
     assert.ok(!names.includes('B'), 'B should be gone after removal');
   });
@@ -172,7 +142,7 @@ class B { void Y() { } }`;
   test('closing a document frees it from the server', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri } = await openCSharpFile(tmpDir, 'close-test.cs', 'class CloseTest { }');
+    const { uri } = await openCSharpFile(tmpDir(), 'close-test.cs', 'class CloseTest { }');
     await waitForDocumentSymbols(uri);
 
     // Close the file.
@@ -180,7 +150,7 @@ class B { void Y() { } }`;
 
     // Opening a different file should still work — server didn't crash.
     const { uri: uri2 } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'after-close.cs',
       'class AfterClose { void M() { } }',
     );
@@ -194,33 +164,30 @@ class B { void Y() { } }`;
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Open.
-    const { doc, uri } = await openCSharpFile(tmpDir, 'full-cycle.cs', 'class Step1 { }');
+    const { doc, uri } = await openCSharpFile(tmpDir(), 'full-cycle.cs', 'class Step1 { }');
     let symbols = await waitForDocumentSymbols(uri);
-    assert.ok(flattenNames(symbols).includes('Step1'), 'Step 1: Should find Step1');
+    assert.ok(flattenSymbolNames(symbols).includes('Step1'), 'Step 1: Should find Step1');
 
     // Edit.
     await replaceDocumentContent(doc, 'class Step1 { }\nclass Step2 { void M() { } }');
-    symbols = await pollUntilResult(
-      async () => {
-        const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          uri,
-        );
-        return result ?? [];
-      },
-      (syms) => flattenNames(syms).includes('Step2'),
+    symbols = await pollSymbols(
+      uri,
+      (syms) => flattenSymbolNames(syms).includes('Step2'),
       LSP_RESPONSE_MS,
     );
-    assert.ok(flattenNames(symbols).includes('Step2'), 'Step 2: Should find Step2 after edit');
+    assert.ok(
+      flattenSymbolNames(symbols).includes('Step2'),
+      'Step 2: Should find Step2 after edit',
+    );
 
     // Close.
     await closeAllEditors();
 
     // Verify server is still responsive.
-    const { uri: finalUri } = await openCSharpFile(tmpDir, 'final.cs', 'class Final { }');
+    const { uri: finalUri } = await openCSharpFile(tmpDir(), 'final.cs', 'class Final { }');
     const finalSymbols = await waitForDocumentSymbols(finalUri);
     assert.ok(
-      flattenNames(finalSymbols).includes('Final'),
+      flattenSymbolNames(finalSymbols).includes('Final'),
       'Step 3: Server should respond after full cycle',
     );
   });
@@ -230,7 +197,7 @@ class B { void Y() { } }`;
   test('rapid successive edits resolve correctly', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { doc, uri } = await openCSharpFile(tmpDir, 'rapid-edit.cs', 'class V0 { }');
+    const { doc, uri } = await openCSharpFile(tmpDir(), 'rapid-edit.cs', 'class V0 { }');
 
     // Fire off several rapid edits.
     for (let i = 1; i <= 5; i++) {
@@ -238,34 +205,15 @@ class B { void Y() { } }`;
     }
 
     // The server should eventually settle on the final version.
-    const symbols = await pollUntilResult(
-      async () => {
-        const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          uri,
-        );
-        return result ?? [];
-      },
-      (syms) => flattenNames(syms).includes('V5'),
+    const symbols = await pollSymbols(
+      uri,
+      (syms) => flattenSymbolNames(syms).includes('V5'),
       LSP_RESPONSE_MS,
     );
 
-    const names = flattenNames(symbols);
-    assert.ok(names.includes('V5'), 'Should settle on V5 after rapid edits');
-    assert.ok(names.includes('M5'), 'Should settle on M5 after rapid edits');
+    const names = flattenSymbolNames(symbols);
+    assertContainsAll(names, ['V5', 'M5'], 'Should settle on');
   });
 });
 
 // ── Helpers ──────────────────────────────────────────────────────
-
-function flattenNames(symbols: vscode.DocumentSymbol[]): string[] {
-  const names: string[] = [];
-  function walk(list: vscode.DocumentSymbol[]): void {
-    for (const sym of list) {
-      names.push(sym.name);
-      walk(sym.children);
-    }
-  }
-  walk(symbols);
-  return names;
-}

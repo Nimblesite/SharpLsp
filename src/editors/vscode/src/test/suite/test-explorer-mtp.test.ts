@@ -19,7 +19,6 @@
 // Covers [TEST-MTP-DETECT], [TEST-MTP-MODULES] and [TEST-MTP-DISCOVERY].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { listMtpTests } from '../../test-mtp-discovery.js';
@@ -34,15 +33,15 @@ import {
   type MtpFixture,
 } from './test-explorer-mtp-fixtures';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   findItem,
   rootsOf,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import { sorted } from './test-explorer-outcome-assertions';
-import { removeDirRecursive } from './test-helpers';
+import { removeDirRecursive, assertContainsAll } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** The awkward id shapes, the label each renders as, and why it is hard. */
@@ -89,8 +88,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform discovery', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-'));
     slnPath = await createMtpSolution(root);
   });
 
@@ -151,14 +149,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform discovery', () => {
         sorted(idsOf(fixture)),
         `${fixture.key} must expose exactly its own tests`,
       );
-      assert.ok(
-        ids.includes(fixture.failing),
-        `${fixture.key}: a failing test is still discovered`,
-      );
-      assert.ok(
-        ids.includes(fixture.skipped),
-        `${fixture.key}: a skipped test is still discovered`,
-      );
+      assertContainsAll(ids, [fixture.failing, fixture.skipped], 'ids');
     }
 
     // 2. A data-driven test appears ONCE, under an id carrying no row data.

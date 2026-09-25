@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { pollUntilResult } from './test-helpers';
+import { pollUntilResult, pollProvider } from './test-helpers';
 import { SIDECAR_COLD_MS } from './test-timeouts';
 
 /**
@@ -79,15 +79,9 @@ export async function pollHover(
   position: vscode.Position,
   timeoutMs: number = SIDECAR_COLD_MS,
 ): Promise<vscode.Hover[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.Hover[]>(
-        'vscode.executeHoverProvider',
-        uri,
-        position,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.Hover>(
+    'vscode.executeHoverProvider',
+    [uri, position],
     (hovers) => hovers.length > 0 && hoverText(hovers).trim().length > 0,
     timeoutMs,
     2_000,
@@ -120,15 +114,9 @@ export async function pollReferences(
   min: number,
   timeoutMs: number = SIDECAR_COLD_MS,
 ): Promise<vscode.Location[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.Location[]>(
-        'vscode.executeReferenceProvider',
-        uri,
-        position,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.Location>(
+    'vscode.executeReferenceProvider',
+    [uri, position],
     (locations) => locations.length >= min,
     timeoutMs,
     2_000,

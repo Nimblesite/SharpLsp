@@ -2,9 +2,10 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { pollUntilResult } from './test-helpers';
+import { pollUntilResult, assertContainsNone } from './test-helpers';
 import { DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { loadSolutionInServer } from './real-repo-helpers';
+import { diagnosticCode } from './document-anchors';
 
 export const PACKAGE = '#:package Newtonsoft.Json@13.0.3';
 
@@ -20,13 +21,6 @@ export function positionInside(text: string, marker: string): vscode.Position {
   const after = positionAfter(text, marker);
   assert.ok(after.character > 0, `fixture token ${JSON.stringify(marker)} must be non-empty`);
   return after.translate(0, -1);
-}
-
-export function diagnosticCode(diagnostic: vscode.Diagnostic): string {
-  const code = diagnostic.code;
-  if (code === undefined) return '';
-  if (typeof code === 'object') return String(code.value);
-  return String(code);
 }
 
 export function errorsFor(uri: vscode.Uri): vscode.Diagnostic[] {
@@ -133,8 +127,6 @@ async function hoverAt(uri: vscode.Uri, position: vscode.Position): Promise<vsco
 export function assertNoPackageBindingErrors(uri: vscode.Uri): void {
   const errors = errorsFor(uri);
   const codes = errors.map(diagnosticCode);
-  assert.ok(!codes.includes('CS0234'), `package namespace must bind; errors: ${codes.join(', ')}`);
-  assert.ok(!codes.includes('CS0246'), `package types must bind; errors: ${codes.join(', ')}`);
-  assert.ok(!codes.includes('CS0103'), `package values must bind; errors: ${codes.join(', ')}`);
+  assertContainsNone(codes, ['CS0234', 'CS0246', 'CS0103'], 'codes');
   assert.deepStrictEqual(errors, [], 'a restored package-backed file-based app has zero errors');
 }

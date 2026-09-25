@@ -10,7 +10,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 internal static class CallHierarchyResolver
 {
     /// <summary>Prepare a call hierarchy item at the given position.</summary>
-    public static async Task<CallHierarchyItem?> PrepareAsync(
+    public static async Task<HierarchyItem?> PrepareAsync(
         Document document,
         int line,
         int character,
@@ -144,54 +144,15 @@ internal static class CallHierarchyResolver
         CancellationToken ct
     )
     {
-        if (token.Parent is null)
-        {
-            return null;
-        }
-
-        var info = model.GetSymbolInfo(token.Parent, ct);
-        var symbol = info.Symbol;
-        if (symbol is not null)
-        {
-            return symbol;
-        }
-
-        var node = token.Parent;
-        while (node is not null)
-        {
-            var declared = model.GetDeclaredSymbol(node, ct);
-            if (declared is not null)
-            {
-                return declared;
-            }
-
-            node = node.Parent;
-        }
-
-        return null;
+        return token.Parent is not { } parent
+            ? null
+            : model.GetSymbolInfo(parent, ct).Symbol
+                ?? DocumentPosition.EnclosingDeclaredSymbol(parent, model, ct);
     }
 
-    private static CallHierarchyItem? ToCallHierarchyItem(ISymbol symbol)
+    private static HierarchyItem? ToCallHierarchyItem(ISymbol symbol)
     {
-        var loc = symbol.Locations.FirstOrDefault(l => l.IsInSource);
-        if (loc is null)
-        {
-            return null;
-        }
-
-        var (path, line, character, endLine, endCharacter) = DocumentPosition.Coordinates(
-            loc.GetMappedLineSpan()
-        );
-        return new CallHierarchyItem
-        {
-            Name = symbol.Name,
-            Kind = MapSymbolKind(symbol),
-            FilePath = path,
-            Line = line,
-            Character = character,
-            EndLine = endLine,
-            EndCharacter = endCharacter,
-        };
+        return DocumentPosition.ToHierarchyItem<HierarchyItem>(symbol, MapSymbolKind(symbol));
     }
 
     /// <summary>
@@ -231,20 +192,12 @@ internal static class CallHierarchyResolver
         IEnumerable<Location> callSites
     )
     {
-        var item = ToCallHierarchyItem(symbol);
-        return item is null
-            ? null
-            : new CallHierarchyCallResult
-            {
-                Name = item.Name,
-                Kind = item.Kind,
-                FilePath = item.FilePath,
-                Line = item.Line,
-                Character = item.Character,
-                EndLine = item.EndLine,
-                EndCharacter = item.EndCharacter,
-                FromRanges = [.. callSites.Where(l => l.IsInSource).Select(ToCallSite)],
-            };
+        var result = DocumentPosition.ToHierarchyItem<CallHierarchyCallResult>(
+            symbol,
+            MapSymbolKind(symbol)
+        );
+        result?.FromRanges.AddRange(callSites.Where(l => l.IsInSource).Select(ToCallSite));
+        return result;
     }
 
     /// <summary>One source location as the range the host publishes.</summary>

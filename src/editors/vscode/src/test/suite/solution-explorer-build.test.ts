@@ -139,7 +139,7 @@ suite('Solution Explorer build presentation [SE-ACTIONS-BUILD]', () => {
     try {
       // 2 — the user presses Build on that node.
       const outcome = await invokeCommand(CMD_BUILD, { projectFilePath: project.projectFile });
-      assert.strictEqual(outcome.rejected, false, `Build must resolve: ${outcome.message}`);
+      assert.ok(!outcome.rejected, `Build must resolve: ${outcome.message}`);
 
       // 3 — a notification was raised, and it named the build.
       assert.strictEqual(progress.calls.length, 1, 'exactly one progress notification per build');

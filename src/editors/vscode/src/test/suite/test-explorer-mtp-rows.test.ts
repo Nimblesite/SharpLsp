@@ -15,7 +15,6 @@
 // Covers [TEST-MTP-RUN] and [TEST-MTP-DISCOVERY].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -30,18 +29,19 @@ import {
   writeProject,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
+  assertLeavesAre,
 } from './test-explorer-kit';
 import {
   assertFailed,
   assertPassed,
   cachedFor,
-  itemsFor,
   sorted,
+  runAndSettle,
 } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -153,12 +153,6 @@ function writeRows(root: string, rows: readonly Row[]): void {
   for (const module of MODULES) fs.writeFileSync(sourceFile(root, module), sourceOf(module, rows));
 }
 
-/** Press ▶ on `ids` and wait for the run to finish. */
-async function run(api: SharpLspExtensionApi, ids: readonly string[]): Promise<void> {
-  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
-  await api.testController.whenIdle();
-}
-
 /** Each data-driven test is red, in its own framework's words. */
 function assertRowsFailed(api: SharpLspExtensionApi): void {
   for (const module of MODULES) {
@@ -183,8 +177,7 @@ suite('Test Explorer e2e — MTP data rows edited between discovery and ▶', ()
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-rows-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-rows-'));
     writeMtpGlobalJson(root);
     const dirs = MODULES.map((module) =>
       writeProject(
@@ -216,28 +209,28 @@ suite('Test Explorer e2e — MTP data rows edited between discovery and ▶', ()
     // 1. As discovered: one uid per row, one leaf per test, all green.
     assert.deepStrictEqual(await uidCounts(slnPath, root), [2, 2], 'two rows each');
     assert.deepStrictEqual(sorted(collectLeafIds(api.testController.items)), sorted(allIds));
-    await run(api, allIds);
+    await runAndSettle(api, allIds);
     for (const id of allIds) assertPassed(cachedFor(api, id), id);
 
     // 2. ADD a red row to each and press ▶ on the data-driven tests only. The
     //    new row's uid is one discovery never saw — in BOTH frameworks — and the
     //    run must still run it: the test is as bad as its worst row.
     writeRows(root, [...GREEN_ROWS, [2, 2, 5]]);
-    await run(api, ROWS_IDS);
+    await runAndSettle(api, ROWS_IDS);
     assertRowsFailed(api);
     const lens = await api.testController.runSingle(rowsId(MSTEST));
     assert.equal(lens.outcome, 'failed', `the lens runs the new row: ${lens.message ?? ''}`);
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(allIds),
+    assertLeavesAre(
+      api.testController,
+      allIds,
       'a row is never a leaf of its own: the tree is unchanged',
     );
-    await run(api, PLAIN_IDS);
+    await runAndSettle(api, PLAIN_IDS);
     for (const id of PLAIN_IDS) assertPassed(cachedFor(api, id), id);
 
     // 3. Make the added row green: all three rows run and all pass.
     writeRows(root, [...GREEN_ROWS, [3, 3, 6]]);
-    await run(api, ROWS_IDS);
+    await runAndSettle(api, ROWS_IDS);
     for (const id of ROWS_IDS) assertPassed(cachedFor(api, id), id);
     assert.deepStrictEqual(await uidCounts(slnPath, root), [3, 3], 'three rows each now');
     const green = await api.testController.runSingle(rowsId(XUNIT));
@@ -250,7 +243,7 @@ suite('Test Explorer e2e — MTP data rows edited between discovery and ▶', ()
     // 1. Edit the second row of each to expect 5 from 2 + 2. xUnit hashes the
     //    data into the uid, so only a re-read uid reaches the edited row.
     writeRows(root, [FIRST_ROW, [2, 2, 5]]);
-    await run(api, ROWS_IDS);
+    await runAndSettle(api, ROWS_IDS);
     assertRowsFailed(api);
     const xunit = cachedFor(api, rowsId(XUNIT)).message ?? '';
     assert.ok(xunit.includes('Expected: 5'), `the EDITED row failed, with its data: ${xunit}`);
@@ -258,7 +251,7 @@ suite('Test Explorer e2e — MTP data rows edited between discovery and ▶', ()
 
     // 2. Put it back: green again, both ways.
     writeRows(root, GREEN_ROWS);
-    await run(api, ROWS_IDS);
+    await runAndSettle(api, ROWS_IDS);
     for (const id of ROWS_IDS) assertPassed(cachedFor(api, id), id);
     const lens = await api.testController.runSingle(rowsId(XUNIT));
     assert.equal(lens.outcome, 'passed', `the lens run: ${lens.message ?? '(none)'}`);

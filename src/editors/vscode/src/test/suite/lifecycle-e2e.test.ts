@@ -12,6 +12,9 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
   waitForDocumentSymbols,
+  assertContainsAll,
+  removeDirRecursive,
+  openCSharpOutline,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { effect } from '../../signals.js';
@@ -37,7 +40,6 @@ import {
   client as clientSignal,
 } from '../../state.js';
 import { notifyActivationFailure } from '../../extension.js';
-import { removeDirRecursive } from './test-helpers.js';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
 /**
@@ -92,8 +94,7 @@ suite('Lifecycle E2E', () => {
     this.timeout(ACTIVATION_MS);
     const filename = 'lifecycle-restart.cs';
     const content = 'namespace L { class Restartable { void Run() { } } }';
-    const { uri } = await openCSharpFile(tmpDir, filename, content);
-    const before = await waitForDocumentSymbols(uri);
+    const { symbols: before } = await openCSharpOutline(tmpDir, filename, content);
     assert.ok(before.length > 0, 'Server should serve symbols before restart');
 
     // The live client is exposed through the extension API.
@@ -241,8 +242,7 @@ suite('Lifecycle E2E', () => {
     );
     assert.strictEqual(stubs.log.errorMessages.length, 1, 'Exactly one error notification shown');
     const shown = stubs.log.errorMessages[0] ?? '';
-    assert.ok(shown.includes('.NET 10 SDK'), 'Notification mentions the .NET 10 SDK');
-    assert.ok(shown.includes('disk full'), 'Notification includes the failure detail');
+    assertContainsAll(shown, ['.NET 10 SDK', 'disk full'], 'shown');
   });
 
   test('showAcquireFailureNotification Retry dispatches the retry command', async function () {
@@ -407,8 +407,7 @@ suite('Lifecycle E2E', () => {
 
     disposePath();
     disposeState();
-    assert.ok(paths.includes(fakeSolution), 'solutionPath signal emitted the loaded path');
-    assert.ok(paths.includes(undefined), 'solutionPath signal emitted the cleared value');
+    assertContainsAll(paths, [fakeSolution, undefined], 'solutionPath signal emitted the');
     assert.ok(states.includes('empty'), 'symbolsState signal emitted the empty state');
   });
 

@@ -27,6 +27,7 @@ import {
   startDebuggee,
   stopDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { comparablePath, deepEq, eq, neq, pollUntilResult, requireAt, sleep } from './test-helpers';
@@ -63,9 +64,8 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
     neq(stop.reason, 'breakpoint', 'no breakpoint was armed, so this is not a breakpoint stop');
     const frame = await topFrame(session, stop.threadId);
     eq(methodOf(frame), 'Main', 'the entry stop must be in the entry point');
-    eq(
-      recorder.outputText().includes(ENV_UNSET),
-      false,
+    assert.ok(
+      !recorder.outputText().includes(ENV_UNSET),
       'stopping at ENTRY means before the first statement: any output already emitted proves ' +
         'the program ran first and the stop came too late to be useful',
     );
@@ -112,16 +112,14 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
 
     // Interaction 3 — the DEBUGGEE must observe both.
     await recorder.waitForOutput(`env=${probeValue}`);
-    eq(
-      recorder.outputText().includes(ENV_UNSET),
-      false,
+    assert.ok(
+      !recorder.outputText().includes(ENV_UNSET),
       '"Launch with environment variables" is P1: a configured variable that never reaches the ' +
         'debuggee makes every ASPNETCORE_* / DOTNET_* workflow impossible to debug',
     );
     await recorder.waitForOutput('done plain 45');
-    eq(
+    assert.ok(
       recorder.outputText().includes('total=8'),
-      true,
       'argv[0] selected the `plain` branch, so the program ran its full body',
     );
     await assertRanToCompletion(recorder, 0, 'an env-carrying launch');
@@ -172,10 +170,7 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
     const { fixture, recorder, sessions } = debuggee();
 
     // Interaction 1 — reach a breakpoint in the first run.
-    armBreakpoints(fixture, 'main-accumulate');
-    const first = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [firstStop] = await recorder.waitForStops(1);
-    assert.ok(firstStop, 'the first run must reach the breakpoint');
+    const { session: first, stop: firstStop } = await runToFirstStop(debuggee(), 'main-accumulate');
     assertStoppedAt(
       await topFrame(first, firstStop.threadId),
       fixture,
@@ -284,9 +279,8 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
       'Stop must terminate the session and clear `activeDebugSession`; a session the workbench ' +
         'still believes is running leaves the debug toolbar stuck and blocks the next F5',
     );
-    eq(
+    assert.ok(
       recorder.events('terminated').length >= 1,
-      true,
       'the adapter must report `terminated` so the workbench can tear the session down',
     );
     await stopDebuggee();

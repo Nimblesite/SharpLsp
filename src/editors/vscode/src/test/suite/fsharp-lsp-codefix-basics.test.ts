@@ -10,13 +10,10 @@ import {
 } from './fsharp-refactor-fixtures';
 import {
   activateWarmFSharp,
-  applyAction,
   assertInsertion,
   assertNoAction,
   assertQuickFix,
   assertReplacement,
-  diagnosticCode,
-  diagnosticGone,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
@@ -25,7 +22,9 @@ import {
   tokenRange,
   undoAction,
   uniqueAction,
+  assertFixApplied,
 } from './fsharp-refactor-test-kit';
+import { diagnosticCode } from './document-anchors';
 import { revertDocument } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
 import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
@@ -270,19 +269,10 @@ async function applyAndRecheck(
   action: vscode.CodeAction,
   spec: BasicFixSpec,
 ): Promise<void> {
-  const version = fixture.document.version;
-  const snapshots = await applyAction(action);
-  assert.strictEqual(snapshots.length, 1);
-  assert.ok(fixture.document.version > version);
-  assert.strictEqual(fixture.document.getText(), spec.expected);
+  assert.strictEqual(action.title, spec.title);
+  const target = spec.postTarget ?? spec.target;
+  await assertFixApplied(fixture, action, spec.expected, spec.diagnostic, target);
   assert.ok(fixture.document.getText().includes('sentinel'));
-  assert.ok(fixture.document.isDirty);
-  await diagnosticGone(fixture.uri, spec.diagnostic);
-  const actions = await quickFixes(
-    fixture.uri,
-    tokenRange(fixture.document, spec.postTarget ?? spec.target),
-  );
-  assertNoAction(actions, spec.title);
 }
 
 async function undoAndRequery(

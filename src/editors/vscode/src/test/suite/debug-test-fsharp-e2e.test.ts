@@ -25,7 +25,7 @@ import {
   topFrame,
   variableNamed,
 } from './debug-drive-kit';
-import { assertBoundAtLines, clearAllBreakpoints, stopDebuggee } from './debug-suite-kit';
+import { assertBoundAtLines } from './debug-suite-kit';
 import {
   FS_ALL,
   FS_MODULE,
@@ -38,20 +38,19 @@ import {
   assertOneTestSession,
   breakpointAt,
   requireActive,
-  disposeDebugTestFixture,
-  writeDebugTestFixture,
   type TestDebugFixture,
 } from './debug-test-kit';
-import { DebugSessionRecorder } from './run-debug-kit';
 import {
-  activateTestExplorer,
-  discoverSolution,
-  findItem,
-  runViaProfile,
-} from './test-explorer-kit';
-import { closeAllEditors, comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-import { installUiStubs, type UiStubs } from './ui-stubs';
+  debugRun,
+  useDebugTestFixture,
+  firstBreakpointStop,
+  caretInSource,
+} from './debug-test-harness';
+import { DebugSessionRecorder } from './run-debug-kit';
+import { activateTestExplorer, discoverSolution, findItem } from './test-explorer-kit';
+import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
+import { type UiStubs } from './ui-stubs';
 
 suite('Debug an F# test — backtick names, modules and the at-cursor gesture', () => {
   let fixture: TestDebugFixture;
@@ -59,50 +58,22 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
   let sessions: DebugSessionRecorder;
   let stubs: UiStubs;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    fixture = await writeDebugTestFixture('debug-testfs-', 'fsharp');
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    await disposeDebugTestFixture(fixture);
-  });
-
+  const harness = useDebugTestFixture('debug-testfs-', 'fsharp');
   setup(() => {
-    clearAllBreakpoints();
-    recorder = new DapRecorder();
-    sessions = new DebugSessionRecorder();
-    stubs = installUiStubs();
-  });
-
-  teardown(async () => {
-    await stopDebuggee();
-    clearAllBreakpoints();
-    sessions.dispose();
-    recorder.dispose();
-    stubs.restore();
-    await closeAllEditors();
+    ({ fixture, recorder, sessions, stubs } = harness());
   });
 
   /** Discover the F# fixture and return the tree row for `fqn`. */
   async function rowFor(fqn: string): Promise<vscode.TestItem> {
     const api = await activateTestExplorer();
     const discovered = await discoverSolution(api, fixture.solutionPath, FS_ALL);
-    eq(
+    assert.ok(
       discovered.includes(fqn),
-      true,
       `${fqn} must be discovered before it can be debugged; found: ${discovered.join(', ')}`,
     );
     const item = findItem(api.testController.items, fqn);
     assert.ok(item, `the TestItem for ${fqn} must exist`);
     return item;
-  }
-
-  /** Press the Debug button on `items`. */
-  async function debugRun(items: readonly vscode.TestItem[]): Promise<void> {
-    const api = await activateTestExplorer();
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Debug, items);
   }
 
   test('an F# backtick test whose FQN contains SPACES debugs and breaks in its body', async function () {
@@ -113,7 +84,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // escaped or truncated name selects no test and the Debug press ends in
     // silence.
     const item = await rowFor(FS_SPACED);
-    eq(FS_SPACED.includes(' '), true, 'the fixture name really does contain spaces');
+    assert.ok(FS_SPACED.includes(' '), 'the fixture name really does contain spaces');
     eq(item.id, FS_SPACED, 'and the tree carries it verbatim as the id');
     eq(item.label, 'adds two numbers with spaces', 'labelled with the backtick binding');
     eq(item.children.size, 0, 'an F# module-level test is a LEAF, like any other test');
@@ -124,17 +95,10 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     await debugRun([item]);
     assertOneTestSession(sessions, 'debugging an F# test');
     assertHandshakeOrder(recorder, 'debugging an F# test');
-    assertBoundAtLines(
-      recorder,
-      [FS_SOURCE.dapLine('fs-call')],
-      'a breakpoint inside an F# test binding',
-    );
-
     // Interaction 3 — it stops IN the F# source, with F# locals readable. The
     // F# compiler's PDB gaps ([DEBUG-FSHARP-PDB]) are about state machines, not
     // about plain `let` bindings: these must be inspectable.
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop in the F# test');
-    assertStopReason(stop, 'breakpoint', 'a breakpoint inside an F# test');
+    const stop = await firstBreakpointStop(recorder, FS_SOURCE, 'fs-call');
     neq(stop.hitBreakpointIds.length, 0, 'naming the breakpoint it hit');
     const active = requireActive('an F# breakpoint stop');
     const frame = await topFrame(active, stop.threadId);
@@ -162,9 +126,8 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // capability table, the same single termination.
     eq(recorder.events('initialized').length, 1, 'one `initialized` event for the F# session');
     eq(recorder.events('terminated').length, 1, 'and exactly one termination');
-    eq(
+    assert.ok(
       recorder.responses('configurationDone').length >= 1,
-      true,
       'configurationDone was ANSWERED before the gesture settled ([DEBUG-FEATURES-TESTS] rule 2)',
     );
     eq(
@@ -206,9 +169,8 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       frames.length >= 2,
       `the F# stack must carry the caller too; got ${names.join(' <- ')}`,
     );
-    eq(
+    assert.ok(
       names.some((name) => name.includes('add')),
-      true,
       `the innermost frame is the helper; frames: ${names.join(' <- ')}`,
     );
     const helperFrame = requireAt(frames, 0, 'the F# helper frame');
@@ -237,12 +199,11 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // runner, so the frames beneath must be there and must be distinguishable
     // from the user's. After the step-out the helper frame is gone by design.
     const wholeStack = frames;
-    eq(wholeStack.length >= 2, true, 'an F# helper called from a test is at least two deep');
-    eq(
+    assert.ok(wholeStack.length >= 2, 'an F# helper called from a test is at least two deep');
+    assert.ok(
       wholeStack.filter(
         (entry) => comparablePath(entry.sourcePath) === comparablePath(fixture.sourceFile),
       ).length >= 2,
-      true,
       'both user frames resolve to the .fs file the user wrote',
     );
     eq(
@@ -250,14 +211,12 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       wholeStack.length,
       'every frame carries its own handle, or selecting a caller reads the callee',
     );
-    eq(
+    assert.ok(
       wholeStack.every((entry) => entry.line >= 0),
-      true,
       'and a line the editor can point at',
     );
-    eq(
+    assert.ok(
       wholeStack.length > 2,
-      true,
       'the xUnit runner frames sit beneath both - a stack that stopped at the test method is ' +
         'truncated, not filtered',
     );
@@ -271,8 +230,8 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // Interaction 1 — the F# theory is ONE row in the tree, under one name.
     const item = await rowFor(FS_ROWS);
     eq(item.id, FS_ROWS, 'one fully-qualified name for both rows');
-    eq(item.id.startsWith(`${FS_MODULE}.`), true, 'qualified by the F# MODULE, not by a class');
-    eq(item.id.includes('('), false, 'and carrying no row data into the filter grammar');
+    assert.ok(item.id.startsWith(`${FS_MODULE}.`), 'qualified by the F# MODULE, not by a class');
+    assert.ok(!item.id.includes('('), 'and carrying no row data into the filter grammar');
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-rows-body')]);
     await debugRun([item]);
     assertOneTestSession(sessions, 'debugging an F# theory');
@@ -311,14 +270,12 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     eq(theoryRow.id, FS_ROWS, 'the theory is addressed by the single name its rows share');
     eq(theoryRow.children.size, 0, 'and is a LEAF - one row per [<InlineData>] is two tests');
     eq(recorder.stops().length, 2, 'two rows, two stops, and no third');
-    eq(
+    assert.ok(
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
-      true,
       'each of them a breakpoint stop, never a step the user never asked for',
     );
-    eq(
+    assert.ok(
       recorder.stops().every((entry) => entry.threadId !== 0),
-      true,
       'each naming the thread it stopped',
     );
     eq(vscode.debug.breakpoints.length, 1, 'one breakpoint served both rows');
@@ -335,17 +292,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // a command that resolves nothing is exactly how "Debug Test does nothing"
     // presents (issue #233).
     await rowFor(FS_SPACED);
-    const document = await vscode.workspace.openTextDocument(fixture.sourceUri);
-    const editor = await vscode.window.showTextDocument(document);
-    const caret = FS_SOURCE.line('fs-call');
-    editor.selection = new vscode.Selection(caret, 4, caret, 4);
-    eq(editor.selection.active.line, caret, 'the caret sits inside the F# test binding');
-    eq(
-      comparablePath(document.uri.fsPath),
-      comparablePath(fixture.sourceFile),
-      'in the fixture the tests were discovered from',
-    );
-    eq(document.languageId, 'fsharp', 'and the editor knows it is F#');
+    await caretInSource(fixture, FS_SOURCE, 'fs-call', 'fsharp');
 
     // Interaction 2 — arm a breakpoint and fire the at-cursor command.
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-call')]);
@@ -380,7 +327,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     assertHandshakeOrder(recorder, 'the at-cursor F# gesture');
     assertBoundAtLines(recorder, [FS_SOURCE.dapLine('fs-call')], 'the at-cursor F# breakpoint');
     eq(sessions.ours.length, 1, 'the editor gesture starts ONE session, exactly as the tree does');
-    eq(recorder.events('terminated').length <= 1, true, 'and terminates it at most once');
+    assert.ok(recorder.events('terminated').length <= 1, 'and terminates it at most once');
     const api = await activateTestExplorer();
     const stillThere = findItem(api.testController.items, FS_SPACED);
     assert.ok(stillThere, 'the binding is still a row after being debugged from the editor');
@@ -415,7 +362,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       'so namespace and class rejoin to exactly the F# module the fixture declares',
     );
     eq(moduleRow.children.size, FS_ALL.length, 'holding every binding the fixture declares');
-    eq(moduleRow.canResolveChildren, true, 'and declaring them, so the row expands');
+    assert.ok(moduleRow.canResolveChildren, 'and declaring them, so the row expands');
     neq(moduleRow.id, FS_SPACED, 'a group id is never a fully-qualified test name');
 
     // Interaction 2 — arm the spaced binding and the module HELPER both
@@ -450,9 +397,9 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // Interaction 4 - the module row is a GROUP, and a group is one invocation
     // ([TEST-RUN-TRX]). Its id must never be a test name, and every binding
     // under it must still be addressable afterwards.
-    eq(moduleRow.id.includes(FS_MODULE_TYPE), true, 'the group id names the module');
-    eq(FS_MODULE.startsWith(FS_MODULE_NAMESPACE), true, 'which sits under its own namespace');
-    eq(recorder.events('terminated').length <= 1, true, 'one group is at most one termination');
+    assert.ok(moduleRow.id.includes(FS_MODULE_TYPE), 'the group id names the module');
+    assert.ok(FS_MODULE.startsWith(FS_MODULE_NAMESPACE), 'which sits under its own namespace');
+    assert.ok(recorder.events('terminated').length <= 1, 'one group is at most one termination');
     eq(sessions.ours.length, 1, 'and exactly one session throughout');
     for (const fqn of FS_ALL) {
       const item = findItem((await activateTestExplorer()).testController.items, fqn);
@@ -479,9 +426,8 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       [...FS_ALL],
       'each under its own fully-qualified name, spaces and all',
     );
-    eq(
+    assert.ok(
       FS_SPACED.includes(' '),
-      true,
       'the fixture really does declare an idiomatic backtick binding',
     );
 
@@ -491,16 +437,9 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     eq(vscode.debug.breakpoints.length, 1, 'one breakpoint, in the helper both bindings call');
     await debugRun(rows);
     assertOneTestSession(sessions, 'debugging an F# multi-select');
-    assertBoundAtLines(
-      recorder,
-      [FS_SOURCE.dapLine('fs-add-body')],
-      'the shared helper of an F# multi-select',
-    );
-
     // Interaction 3 — the helper is reached more than once, because more than
     // one selected binding called it, and all of it happens in ONE session.
-    const first = requireAt(await recorder.waitForStops(1), 0, 'the first helper stop');
-    assertStopReason(first, 'breakpoint', 'an F# multi-select debug');
+    const first = await firstBreakpointStop(recorder, FS_SOURCE, 'fs-add-body');
     eq(
       methodOf(await topFrame(requireActive('the first helper stop'), first.threadId)),
       'add',
@@ -508,9 +447,8 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     );
     await gesture(CMD_CONTINUE);
     const stops = await recorder.waitForStops(2);
-    eq(
+    assert.ok(
       stops.length >= 2,
-      true,
       'both selected bindings call the helper, so it is reached more than once in the one run',
     );
     eq(sessions.ours.length, 1, 'and a selection is ONE session, never one per test');
@@ -519,21 +457,18 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // makes SPACES not grammar and the joining pipe UNESCAPED, and a
     // multi-select of two F# bindings is where both rules meet.
     eq(rows.length, 2, 'exactly the two bindings the fixture declares were selected');
-    eq(
+    assert.ok(
       rows.every((row) => row.children.size === 0),
-      true,
       'both of them leaves',
     );
-    eq(
+    assert.ok(
       rows.every((row) => row.id.startsWith(FS_MODULE)),
-      true,
       'both under the module the fixture declares',
     );
     eq(sessions.ours.length, 1, 'a selection is ONE session, never one per test');
-    eq(recorder.events('terminated').length <= 1, true, 'and at most one termination');
-    eq(
+    assert.ok(recorder.events('terminated').length <= 1, 'and at most one termination');
+    assert.ok(
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
-      true,
       'every stop was the armed helper breakpoint, not a step or an exception',
     );
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');

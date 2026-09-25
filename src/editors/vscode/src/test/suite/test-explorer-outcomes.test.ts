@@ -18,7 +18,6 @@
 // [TEST-COVERAGE].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -31,21 +30,18 @@ import {
 import { escapeFilterValue, filterExpression } from '../../test-filter.js';
 import { formatDuration, statusLensTitle } from '../../test-lens.js';
 import { buildFilterArgs } from '../../testing.js';
-import { createSolution, warmDiscovery } from './dotnet-project-kit';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import { fixtureFor, LIBRARY_TEST, writeCoverageFixture } from './test-explorer-fixtures';
 import {
   assertDeclaredInside,
-  activateTestExplorer,
   collectLeafIds,
-  drainDiscovery,
   findItem,
   nextResultsChange,
-  pollUntilDiscovered,
-  profileOfKind,
   runViaProfile,
+  assertLeavesAre,
+  profilesOf,
 } from './test-explorer-kit';
-import { pollUntilResult, removeDirRecursive } from './test-helpers.js';
+import { pollUntilResult, assertContainsAll, assertContainsNone } from './test-helpers.js';
 import {
   assertEveryOutcome,
   assertFailed,
@@ -56,7 +52,9 @@ import {
   itemsFor,
   sorted,
 } from './test-explorer-outcome-assertions';
-import { DEBUG_SESSION_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, DOTNET_CLI_MS } from './test-timeouts';
+import { useWarmFixture } from './test-explorer-harness';
+import { COVERAGE_DIR_NAME } from './test-coverage-fixtures';
 
 const CS = fixtureFor('xunit-csharp');
 const FSX = fixtureFor('xunit-fsharp');
@@ -87,8 +85,6 @@ const ALL_TESTS: readonly string[] = [...PASSING, ...FAILING, ...SKIPPED];
 /** The same partition, handed to the shared outcome assertions. */
 const OUTCOME_GROUPS = { passing: PASSING, failing: FAILING, skipped: SKIPPED };
 
-/** Where the Coverage profile drops TRX + Cobertura, next to the solution. */
-const COVERAGE_DIR_NAME = '.sharplsp-coverage';
 /** The terminal the Debug profile opens for the user to attach to. */
 const DEBUG_TERMINAL = 'SharpLsp Test Debug';
 
@@ -97,38 +93,15 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   let root: string;
   let slnPath: string;
   let coverageDir: string;
-  suiteSetup(async function () {
-    // Cold restore + build of both fixture projects plus the adapter JIT.
-    this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-testoutcomes-'));
-    coverageDir = path.join(root, COVERAGE_DIR_NAME);
-    slnPath = await createSolution(root, 'Outcomes', writeCoverageFixture(root));
-
-    // Build BOTH projects and pay the adapter JIT once, so runs measure a WARM
-    // `dotnet test` rather than a cold restore.
-    await warmDiscovery(slnPath, root);
-    await api.explorerProvider.loadSolution(slnPath);
-    await api.testController.activateAndDiscover();
-    // A solution load also schedules a DEBOUNCED sweep; let it land first.
-    await drainDiscovery(() => undefined, api.testController);
-    await pollUntilDiscovered(api.testController, ALL_TESTS);
-  });
-  teardown(async function () {
-    this.timeout(DOTNET_CLI_MS);
-    // Never touch the fixture while a `dotnet` invocation is still in flight.
-    await api.testController.whenIdle();
-    removeDirRecursive(coverageDir);
-  });
-  suiteTeardown(async function () {
-    this.timeout(DOTNET_CLI_MS);
-    // Drain re-discovery first: `dotnet test` pointed at a removed directory
-    // hangs and poisons the whole host.
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-    removeDirRecursive(root);
+  // Cold restore + build of both fixture projects plus the adapter JIT, once.
+  const warm = useWarmFixture(
+    'sharplsp-testoutcomes-',
+    'Outcomes',
+    writeCoverageFixture,
+    ALL_TESTS,
+  );
+  setup(() => {
+    ({ api, root, slnPath, coverageDir } = warm());
   });
 
   test('pressing ▶ on the whole tree attributes a pass, a failure and a SKIP to each own test', async function () {
@@ -168,9 +141,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       12,
       'and the expectation list itself holds no duplicate',
     );
-    assert.strictEqual(
+    assert.ok(
       PASSING.includes(LIBRARY_TEST),
-      true,
       'the library test is a real pass, not a fixture prop',
     );
     const treeIds = collectLeafIds(api.testController.items);
@@ -224,9 +196,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'passed',
       'a theory whose rows ALL pass stays green through the worst-row merge',
     );
-    assert.strictEqual(
+    assert.ok(
       (cachedFor(api, CS.parameterized).duration ?? -1) >= 0,
-      true,
       "a theory's row durations are summed into one number",
     );
     assert.deepStrictEqual(
@@ -244,11 +215,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       ALL_TESTS.length,
       'and the cache is keyed by FQN, so no key repeats',
     );
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(ALL_TESTS),
-      'running tests must not mutate the tree',
-    );
+    assertLeavesAre(api.testController, ALL_TESTS, 'running tests must not mutate the tree');
   });
 
   test('the whole tree runs in ONE dotnet invocation, not one per selected test', async function () {
@@ -259,11 +226,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       ALL_TESTS.length,
       'the whole tree is selected, exactly as ▶ on the root does',
     );
-    assert.strictEqual(
-      items.length >= 8,
-      true,
-      `the timing argument needs a real selection, got ${items.length}`,
-    );
+    assert.ok(items.length >= 8, `the timing argument needs a real selection, got ${items.length}`);
     assert.deepStrictEqual(
       buildFilterArgs([{ id: CS.passing }]),
       ['--filter', `FullyQualifiedName=${CS.passing}`],
@@ -281,14 +244,9 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'passed',
       'the timed baseline is the green C# fact, not an error path',
     );
-    assert.strictEqual(
-      singleMs > 0,
-      true,
-      'a real dotnet invocation takes measurable wall-clock time',
-    );
-    assert.strictEqual(
+    assert.ok(singleMs > 0, 'a real dotnet invocation takes measurable wall-clock time');
+    assert.ok(
       singleMs < DOTNET_CLI_MS,
-      true,
       `a warm single-test invocation must finish well inside the CLI ceiling, took ${singleMs}ms`,
     );
     assert.strictEqual(
@@ -304,17 +262,15 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     // plus the other tests' execution. The 60% margin proves "not per-test", it
     // does not benchmark the machine.
     const ceiling = Math.round(items.length * singleMs * 0.6);
-    assert.strictEqual(
+    assert.ok(
       ceiling > 0,
-      true,
       `the ceiling must be a real budget, got ${ceiling}ms from a ${singleMs}ms baseline`,
     );
-    assert.strictEqual(
+    assert.ok(
       wholeMs < ceiling,
-      true,
       `${items.length} tests took ${wholeMs}ms; one invocation each would cost about ${items.length * singleMs}ms, so ${ceiling}ms or more means the run is still per-test`,
     );
-    assert.strictEqual(wholeMs > 0, true, 'the whole-tree run really executed');
+    assert.ok(wholeMs > 0, 'the whole-tree run really executed');
     assertEveryOutcome(api, OUTCOME_GROUPS);
     assert.strictEqual(
       fixtureKeys(api, ALL_TESTS).length,
@@ -336,9 +292,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       single,
       'the whole-tree run rewrote the entry runSingle had cached',
     );
-    assert.strictEqual(
+    assert.ok(
       cachedFor(api, FS_SPACED).passed,
-      true,
       'the spaced F# name is green in the one-invocation run too',
     );
     assert.strictEqual(
@@ -346,11 +301,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'skipped',
       'and a skip stays a skip when twelve tests share one invocation',
     );
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(ALL_TESTS),
-      'neither invocation mutated the tree',
-    );
+    assertLeavesAre(api.testController, ALL_TESTS, 'neither invocation mutated the tree');
   });
 
   test('onResultsChanged fires exactly once for a profile run and once for a single re-run', async function () {
@@ -371,11 +322,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     assert.strictEqual(firings, 0, 'subscribing must not itself fire a notification');
     const profileChange = nextResultsChange(api.testController, DOTNET_CLI_MS);
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
-    assert.strictEqual(
-      await profileChange,
-      true,
-      'the ▶ profile must fire onResultsChanged when it ends',
-    );
+    assert.ok(await profileChange, 'the ▶ profile must fire onResultsChanged when it ends');
     assert.strictEqual(
       firings,
       1,
@@ -385,20 +332,15 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     const failed = cachedFor(api, FSX.failing);
     assertPassed(passed, CS.passing);
     assertFailed(failed, FSX.failing);
-    assert.strictEqual(
+    assert.ok(
       (failed.message ?? '').includes('Assert.Equal() Failure'),
-      true,
       `listeners see the REAL assertion text: ${failed.message ?? 'none'}`,
     );
     const singleChange = nextResultsChange(api.testController, DOTNET_CLI_MS);
     const single = await api.testController.runSingle(FSX.skipped);
-    assert.strictEqual(await singleChange, true, 'runSingle must fire onResultsChanged as well');
+    assert.ok(await singleChange, 'runSingle must fire onResultsChanged as well');
     assertSkipped(single, FSX.skipped);
-    assert.strictEqual(
-      single.passed,
-      false,
-      'a skipped test is not a pass, whichever entry point ran it',
-    );
+    assert.ok(!single.passed, 'a skipped test is not a pass, whichever entry point ran it');
     assert.strictEqual(
       single.outcome,
       'skipped',
@@ -433,9 +375,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       failed,
       'nor the failure the profile run recorded',
     );
-    assert.strictEqual(
+    assert.ok(
       fixtureKeys(api, ALL_TESTS).length >= 3,
-      true,
       `the three tests driven here are all cached, got ${fixtureKeys(api, ALL_TESTS).length}`,
     );
     assert.notStrictEqual(
@@ -460,9 +401,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       ALL_TESTS.length,
       'the baseline run cached every test',
     );
-    assert.strictEqual(
+    assert.ok(
       snapshot.size >= ALL_TESTS.length,
-      true,
       `the baseline snapshot covers the whole tree, got ${snapshot.size}`,
     );
     assert.strictEqual(
@@ -471,9 +411,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'the baseline already had the red test red, so "refreshed" means identity, not a changed outcome',
     );
     const subset = [CS.failing, FSX.skipped] as const;
-    assert.strictEqual(
+    assert.ok(
       subset.every((id) => snapshot.has(id)),
-      true,
       'the baseline cached every test the subset re-runs',
     );
     const subsetItems = itemsFor(api, subset);
@@ -513,9 +452,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'skipped',
       'a re-run skip is still a skip — never promoted to a failure by a smaller selection',
     );
-    assert.strictEqual(
+    assert.ok(
       cachedFor(api, CS.passing).passed,
-      true,
       'and an unselected pass keeps the green result it already had',
     );
     assert.deepStrictEqual(
@@ -533,18 +471,13 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       ALL_TESTS.length,
       'and still holds no duplicate key',
     );
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(ALL_TESTS),
-      'a subset run leaves the whole tree standing',
-    );
+    assertLeavesAre(api.testController, ALL_TESTS, 'a subset run leaves the whole tree standing');
   });
 
   test('the Coverage profile writes a Cobertura report beside the solution and still attributes outcomes', async function () {
     this.timeout(DOTNET_CLI_MS);
-    assert.strictEqual(
-      fs.existsSync(coverageDir),
-      false,
+    assert.ok(
+      !fs.existsSync(coverageDir),
       `${COVERAGE_DIR_NAME} must not exist before the run — teardown removes it`,
     );
     assert.strictEqual(
@@ -568,11 +501,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'the coverage selection spans BOTH fixture projects',
     );
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Coverage, items);
-    assert.strictEqual(
-      fs.existsSync(coverageDir),
-      true,
-      `the coverage run must create ${coverageDir}`,
-    );
+    assert.ok(fs.existsSync(coverageDir), `the coverage run must create ${coverageDir}`);
     const entries = fs.readdirSync(coverageDir);
     const trx = entries.filter((entry) => entry.toLowerCase().endsWith('.trx'));
     const dirs = entries.filter((entry) =>
@@ -583,9 +512,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       2,
       `a coverage run is still a test run: one TRX per project: ${entries.join(' | ')}`,
     );
-    assert.strictEqual(
+    assert.ok(
       dirs.length >= 1,
-      true,
       `the collector writes its report into its own folder: ${entries.join(' | ')}`,
     );
     assert.deepStrictEqual(
@@ -597,9 +525,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     // the first silently drops every other project's coverage — and which one is
     // "first" is directory order, so the bug is invisible half the time.
     const reports = findCoberturaFiles(coverageDir);
-    assert.strictEqual(
+    assert.ok(
       reports.length >= 1,
-      true,
       `at least one report must be written under ${coverageDir}; found: ${entries.join(' | ')}`,
     );
     assert.deepStrictEqual([...reports].sort(), reports, 'the reports come back in a stable order');
@@ -635,50 +562,39 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       coverageDir,
       'written exactly one directory down',
     );
-    assert.strictEqual(
+    assert.ok(
       fs.readFileSync(report, 'utf8').includes('<coverage'),
-      true,
       'the report really is Cobertura XML',
     );
     const files = reports.flatMap((each) => parseCoberturaXml(each));
     // An empty <packages/> is the tell that nothing the run LOADED was
     // instrumented, so name the report in the failure rather than just the count.
-    assert.strictEqual(
+    assert.ok(
       files.length >= 1,
-      true,
       `at least one covered file must be parsed across ${reports.length} report(s), got ${files.length}`,
     );
-    assert.strictEqual(
+    assert.ok(
       files.some((file) => path.basename(file.uri.fsPath) === 'Calculator.cs'),
-      true,
       `the library the tests exercise must be the thing covered; got ${files.map((file) => path.basename(file.uri.fsPath)).join(' | ')}`,
     );
     const library = files.find((file) => path.basename(file.uri.fsPath) === 'Calculator.cs');
     assert.ok(library, 'the library FileCoverage is readable');
-    assert.strictEqual(
+    assert.ok(
       library.statementCoverage.covered > 0,
-      true,
       'Add/Subtract/Multiply were called, so covered lines are non-zero',
     );
-    assert.strictEqual(
+    assert.ok(
       library.statementCoverage.covered < library.statementCoverage.total,
-      true,
       `NeverCalled is never called, so coverage must be PARTIAL: ${library.statementCoverage.covered}/${library.statementCoverage.total}`,
     );
     for (const file of files) {
-      assert.strictEqual(
-        file.statementCoverage.total > 0,
-        true,
-        `${file.uri.fsPath} must count statements`,
-      );
-      assert.strictEqual(
+      assert.ok(file.statementCoverage.total > 0, `${file.uri.fsPath} must count statements`);
+      assert.ok(
         file.statementCoverage.covered <= file.statementCoverage.total,
-        true,
         `${file.uri.fsPath}: covered ${file.statementCoverage.covered} cannot exceed total ${file.statementCoverage.total}`,
       );
-      assert.strictEqual(
+      assert.ok(
         path.isAbsolute(file.uri.fsPath),
-        true,
         `every FileCoverage names a real source file, got '${file.uri.fsPath}'`,
       );
     }
@@ -706,11 +622,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       ALL_TESTS.length,
       'the coverage run updated results without dropping any',
     );
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(ALL_TESTS),
-      'and it left the tree exactly as it was',
-    );
+    assertLeavesAre(api.testController, ALL_TESTS, 'and it left the tree exactly as it was');
   });
 
   test('the profiles are Run/Debug/Coverage and Debug opens a terminal instead of caching a result', async function () {
@@ -744,10 +656,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       profiles.length,
       'each kind has exactly one profile, so each is the default for its own button',
     );
-    const runProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Run);
-    const debugProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Debug);
-    const coverageProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage);
-    assert.strictEqual(runProfile.isDefault, true, '▶ must map to Run, not to Debug or Coverage');
+    const { runProfile, debugProfile, coverageProfile } = profilesOf(api.testController);
+    assert.ok(runProfile.isDefault, '▶ must map to Run, not to Debug or Coverage');
     assert.strictEqual(
       debugProfile.kind,
       vscode.TestRunProfileKind.Debug,
@@ -831,9 +741,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       1,
       'and a debug request never stacks up duplicates of it',
     );
-    assert.strictEqual(
-      await noChange,
-      false,
+    assert.ok(
+      !(await noChange),
       'debugging caches nothing, so no listener may be told results changed',
     );
     assert.strictEqual(
@@ -846,11 +755,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       sizeBefore,
       'the Debug profile must not add cache entries',
     );
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(ALL_TESTS),
-      'nor touch the tree',
-    );
+    assertLeavesAre(api.testController, ALL_TESTS, 'nor touch the tree');
 
     // Interaction 3 — a terminal is not a debugger. [DEBUG-FEATURES-TESTS] makes
     // "Debug individual test" a P1 row carried over DAP, and closes with the
@@ -904,11 +809,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     assertSkipped(cachedFor(api, FSX.skipped), FSX.skipped);
     const baseline = new Map(api.testController.cachedResults);
     const treeBefore = collectLeafIds(api.testController.items);
-    assert.strictEqual(
-      baseline.size > 0,
-      true,
-      'the baseline run cached something to compare against',
-    );
+    assert.ok(baseline.size > 0, 'the baseline run cached something to compare against');
     assert.strictEqual(
       treeBefore.length,
       ALL_TESTS.length,
@@ -937,14 +838,9 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
         'passed',
         `${id} must never be marked passed by a cancelled run`,
       );
-      assert.strictEqual(
-        result.passed,
-        false,
-        `${id} must not carry a pass flag after cancellation`,
-      );
-      assert.strictEqual(
+      assert.ok(!result.passed, `${id} must not carry a pass flag after cancellation`);
+      assert.ok(
         ['failed', 'skipped', 'notRun'].includes(result.outcome),
-        true,
         `${id} must keep an honest outcome after cancellation, got '${result.outcome}'`,
       );
     }
@@ -958,7 +854,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       '$(debug-step-over) Skipped',
       'and the lens still renders it as a skip',
     );
-    assert.strictEqual(cachedFor(api, CS.failing).passed, false, 'nor a failure into a pass');
+    assert.ok(!cachedFor(api, CS.failing).passed, 'nor a failure into a pass');
     assert.notStrictEqual(
       cachedFor(api, CS.failing).message,
       undefined,
@@ -969,9 +865,9 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       baseline.size,
       'a cancelled run invents no cache entries',
     );
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(treeBefore),
+    assertLeavesAre(
+      api.testController,
+      treeBefore,
       'a cancelled run leaves the tree exactly as it was',
     );
     assert.strictEqual(
@@ -990,11 +886,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     this.timeout(DOTNET_CLI_MS);
     const ghost = 'Ghost.Namespace.NoSuchClass.NoSuchTest';
     const treeBefore = collectLeafIds(api.testController.items);
-    assert.strictEqual(
-      treeBefore.includes(ghost),
-      false,
-      'the ghost id must not be in the tree to begin with',
-    );
+    assert.ok(!treeBefore.includes(ghost), 'the ghost id must not be in the tree to begin with');
     assert.strictEqual(
       findItem(api.testController.items, ghost),
       undefined,
@@ -1022,15 +914,14 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'passed',
       'and reporting it as a pass would be worse still',
     );
-    assert.strictEqual(result.passed, false, 'an unmatched filter is certainly not a pass');
+    assert.ok(!result.passed, 'an unmatched filter is certainly not a pass');
     assert.strictEqual(
       result.message,
       `No result reported for ${ghost}`,
       `the user is told exactly which id matched nothing, got: ${result.message ?? 'none'}`,
     );
-    assert.strictEqual(
+    assert.ok(
       (result.message ?? '').includes(ghost),
-      true,
       'the message names the id verbatim, spaces and all',
     );
     assert.strictEqual(
@@ -1038,9 +929,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'number',
       'the invocation still took wall-clock time, and that is reported',
     );
-    assert.strictEqual(
+    assert.ok(
       (result.duration ?? -1) >= 0,
-      true,
       `a real invocation was made and timed, got ${String(result.duration)}`,
     );
     assert.strictEqual(
@@ -1058,14 +948,10 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       `$(circle-slash) Not run: No result reported for ${ghost}`,
       'the lens renders a not-run state carrying the reason',
     );
-    assert.strictEqual(
-      statusLensTitle(result).startsWith('$(error)'),
-      false,
-      'and never the error icon',
-    );
-    assert.deepStrictEqual(
-      sorted(collectLeafIds(api.testController.items)),
-      sorted(treeBefore),
+    assert.ok(!statusLensTitle(result).startsWith('$(error)'), 'and never the error icon');
+    assertLeavesAre(
+      api.testController,
+      treeBefore,
       'an unknown id must not add, remove or reorder tree items',
     );
     assert.strictEqual(
@@ -1103,12 +989,11 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       `$(pass) Passed${formatDuration(passed.duration)}`,
       'a pass renders the pass icon and the duration the cache holds',
     );
-    assert.strictEqual(
+    assert.ok(
       /^\$\(pass\) Passed \((?:\d+ms|\d+\.\ds)\)$/.test(passTitle),
-      true,
       `a pass renders ms under a second and seconds above it: ${passTitle}`,
     );
-    assert.strictEqual(passTitle.includes('Failed'), false, 'a passing test never says Failed');
+    assert.ok(!passTitle.includes('Failed'), 'a passing test never says Failed');
     const skip = cachedFor(api, CS.skipped);
     assertSkipped(skip, CS.skipped);
     const skipTitle = statusLensTitle(skip);
@@ -1122,22 +1007,12 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       '$(debug-step-over) Skipped',
       'and an F# skip renders identically',
     );
-    assert.strictEqual(
-      skipTitle.includes('$(error)'),
-      false,
-      'a skip never carries the error icon',
-    );
-    assert.strictEqual(
-      skipTitle.includes('$(pass)'),
-      false,
-      'a skip never carries the pass icon either',
-    );
+    assertContainsNone(skipTitle, ['$(error)', '$(pass)'], 'a skip never carries the');
     const failure = cachedFor(api, CS.failing);
     assertFailed(failure, CS.failing);
     const failTitle = statusLensTitle(failure);
-    assert.strictEqual(
+    assert.ok(
       failTitle.startsWith('$(error) Failed: '),
-      true,
       `a failure renders the error icon: ${failTitle}`,
     );
     assert.strictEqual(
@@ -1145,16 +1020,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       `$(error) Failed: ${failure.message ?? ''}`,
       'the lens shows the cached message verbatim, with nothing summarised away',
     );
-    assert.strictEqual(
-      failTitle.includes('Assert.Equal() Failure'),
-      true,
-      `the lens must carry the real assertion text: ${failTitle}`,
-    );
-    assert.strictEqual(
-      failTitle.includes('Expected'),
-      true,
-      `including the Expected detail: ${failTitle}`,
-    );
+    assertContainsAll(failTitle, ['Assert.Equal() Failure', 'Expected'], 'failTitle');
     assert.notStrictEqual(
       failTitle,
       '$(error) Failed: Test failed',
@@ -1166,17 +1032,15 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       `$(error) Failed: ${fsFailure.message ?? ''}`,
       'an F# failure renders its own cached text, not the C# one',
     );
-    assert.strictEqual(
+    assert.ok(
       statusLensTitle(fsFailure).includes('Assert.Equal() Failure'),
-      true,
       'and it carries its assertion text just as a C# failure does',
     );
-    assert.strictEqual(
+    assert.ok(
       statusLensTitle(fsFailure).startsWith('$(error) Failed: '),
-      true,
       'an F# failure renders the error icon exactly as a C# one does',
     );
-    assert.strictEqual(fsFailure.passed, false, 'and an F# failure is never a pass');
+    assert.ok(!fsFailure.passed, 'and an F# failure is never a pass');
     const item = itemsFor(api, [FS_SPACED])[0];
     assert.ok(item, 'the spaced F# fact is still in the tree after the run');
     assert.strictEqual(

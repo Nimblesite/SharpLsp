@@ -8,8 +8,9 @@ import {
   waitForCodeActions,
   waitForResolvedCodeActions,
 } from './refactor-test-helpers';
-import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { closeAllEditors, pollUntilResult, assertContainsAll } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
+import { singleEdit } from './fsharp-refactor-test-kit';
 
 // Real-LSP analyzer fixes for [ANALYZERS-FSAC-PARITY] and [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB].
 const CODEFIX_FILE = 'CodeFixes.fs';
@@ -136,14 +137,12 @@ function assertActionMetadata(
 }
 
 function assertRemoveEdit(action: vscode.CodeAction, uri: vscode.Uri, line: number): void {
-  assert.ok(action.edit);
-  const edits = action.edit.get(uri);
-  assert.strictEqual(edits.length, 1);
-  assert.strictEqual(edits[0]?.newText, '');
-  assert.strictEqual(edits[0]?.range.start.line, line);
-  assert.strictEqual(edits[0]?.range.start.character, 0);
-  assert.strictEqual(edits[0]?.range.end.line, line + 1);
-  assert.strictEqual(edits[0]?.range.end.character, 0);
+  const edit = singleEdit(action, uri);
+  assert.strictEqual(edit.newText, '');
+  assert.strictEqual(edit.range.start.line, line);
+  assert.strictEqual(edit.range.start.character, 0);
+  assert.strictEqual(edit.range.end.line, line + 1);
+  assert.strictEqual(edit.range.end.character, 0);
 }
 
 async function applyRemove(fixture: Fixture, action: vscode.CodeAction): Promise<void> {
@@ -152,8 +151,7 @@ async function applyRemove(fixture: Fixture, action: vscode.CodeAction): Promise
   assert.ok(await vscode.workspace.applyEdit(action.edit));
   const after = fixture.doc.getText();
   assert.ok(!after.includes('open System.Text'));
-  assert.ok(after.includes('open System\n'));
-  assert.ok(after.includes('DateTime.Now'));
+  assertContainsAll(after, ['open System\n', 'DateTime.Now'], 'after');
 }
 
 function assertSimplifyEdit(fixture: Fixture, action: vscode.CodeAction): void {
@@ -196,14 +194,11 @@ function assertAnalyzerHints(
 }
 
 function assertInterfaceEdit(action: vscode.CodeAction, uri: vscode.Uri): void {
-  assert.ok(action.edit);
-  const edits = action.edit.get(uri);
-  assert.strictEqual(edits.length, 1);
-  const text = edits[0]?.newText ?? '';
-  assert.match(text, /member/);
-  assert.match(text, /Area/);
-  assert.match(text, /Name/);
-  assert.ok(edits[0]?.range.isEmpty);
+  const edit = singleEdit(action, uri);
+  assert.match(edit.newText, /member/);
+  assert.match(edit.newText, /Area/);
+  assert.match(edit.newText, /Name/);
+  assert.ok(edit.range.isEmpty);
 }
 
 async function applyInterface(fixture: Fixture, action: vscode.CodeAction): Promise<void> {
@@ -212,9 +207,7 @@ async function applyInterface(fixture: Fixture, action: vscode.CodeAction): Prom
   assert.ok(await vscode.workspace.applyEdit(action.edit));
   const after = fixture.doc.getText();
   assert.ok(after.length > before.length);
-  assert.ok(after.includes('Area'));
-  assert.ok(after.includes('Name'));
-  assert.ok(after.includes('member'));
+  assertContainsAll(after, ['Area', 'Name', 'member'], 'after');
 }
 
 function codeOf(diagnostic: vscode.Diagnostic): string {

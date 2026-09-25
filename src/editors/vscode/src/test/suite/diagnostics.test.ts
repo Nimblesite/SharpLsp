@@ -60,6 +60,49 @@ const CLEAN_CONTENT = `namespace DiagTest
     }
 }`;
 
+const TYPE_ERROR_CS = `namespace DiagTest
+{
+    public class DiagTarget
+    {
+        public int Foo() { return "not an int"; }
+    }
+}`;
+
+const MISSING_TYPE_CS = `namespace DiagTest
+{
+    public class DiagTarget
+    {
+        public NonExistentType Foo() { return null; }
+    }
+}`;
+
+const BAD_RETURN_CS = `namespace DiagTest
+{
+    public class DiagTarget
+    {
+        public int Foo() { return "bad"; }
+    }
+}`;
+
+const BAD_AGAIN_CS = `namespace DiagTest
+{
+    public class DiagTarget
+    {
+        public int Foo() { return "bad again"; }
+    }
+}`;
+
+const WRONG_LOCAL_CS = `namespace DiagTest
+{
+    public class DiagTarget
+    {
+        public void Foo()
+        {
+            int x = "wrong";
+        }
+    }
+}`;
+
 suite('Diagnostics / Problems Panel', () => {
   let tmpDir: string;
   let workspaceRoot: string;
@@ -106,16 +149,7 @@ suite('Diagnostics / Problems Panel', () => {
 
   test('file with type error shows diagnostics', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(
-      diagDoc,
-      `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return "not an int"; }
-    }
-}`,
-    );
+    await replaceDocumentContent(diagDoc, TYPE_ERROR_CS);
 
     const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have at least one diagnostic');
@@ -184,16 +218,7 @@ suite('Diagnostics / Problems Panel', () => {
 
   test('file with missing type shows diagnostics', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(
-      diagDoc,
-      `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public NonExistentType Foo() { return null; }
-    }
-}`,
-    );
+    await replaceDocumentContent(diagDoc, MISSING_TYPE_CS);
 
     const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics for missing type');
@@ -250,9 +275,8 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 2 - and no phantom CS0246. [DIAG-RESTORE] exists because a
     // workspace analysed before NuGet restore finishes reports every reference
     // as missing; a clean file showing one means the gate did not hold.
-    assert.strictEqual(
-      cleared.some((diagnostic) => codeOf(diagnostic) === 'CS0246'),
-      false,
+    assert.ok(
+      !cleared.some((diagnostic) => codeOf(diagnostic) === 'CS0246'),
       `no phantom unresolved-reference errors: ${cleared.map((d) => codeOf(d)).join(', ')}`,
     );
     for (const diagnostic of cleared) {
@@ -274,23 +298,14 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 4 - the buffer really is the clean one, so this is a
     // statement about the analyser rather than about the fixture.
     assert.ok(diagDoc.getText().includes('return 42'), 'the clean content is in the buffer');
-    assert.strictEqual(diagDoc.getText().includes('not an int'), false, 'with no leftover error');
+    assert.ok(!diagDoc.getText().includes('not an int'), 'with no leftover error');
   });
 
   // ── Edit Cycle ────────────────────────────────────────────────
 
   test('fixing an error clears the diagnostic', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(
-      diagDoc,
-      `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return "bad"; }
-    }
-}`,
-    );
+    await replaceDocumentContent(diagDoc, BAD_RETURN_CS);
 
     const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics for broken code');
@@ -319,26 +334,16 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 3 - the specific code is GONE, not merely outnumbered. A
     // stale squiggle on a line the user already fixed is the single most
     // corrosive diagnostics defect there is ([DIAG-CATEGORIES-LIVE]).
-    assert.strictEqual(
-      cleared.some((diagnostic) => codeOf(diagnostic) === 'CS0029'),
-      false,
+    assert.ok(
+      !cleared.some((diagnostic) => codeOf(diagnostic) === 'CS0029'),
       `CS0029 must be gone; still reported: ${cleared.map((d) => codeOf(d)).join(', ')}`,
     );
     assert.ok(diagDoc.getText().includes('return 42'), 'and the fix really is in the buffer');
-    assert.strictEqual(diagDoc.getText().includes('"bad"'), false, 'with the bad literal removed');
+    assert.ok(!diagDoc.getText().includes('"bad"'), 'with the bad literal removed');
 
     // Interaction 4 - breaking it AGAIN reports again. A pipeline that clears
     // once and then goes quiet is worse than one that never cleared.
-    await replaceDocumentContent(
-      diagDoc,
-      `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return "bad again"; }
-    }
-}`,
-    );
+    await replaceDocumentContent(diagDoc, BAD_AGAIN_CS);
     const again = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(again.length > 0, 'reintroducing the error must report it again');
     assert.ok(
@@ -351,19 +356,7 @@ suite('Diagnostics / Problems Panel', () => {
 
   test('diagnostics have correct severity and range', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(
-      diagDoc,
-      `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public void Foo()
-        {
-            int x = "wrong";
-        }
-    }
-}`,
-    );
+    await replaceDocumentContent(diagDoc, WRONG_LOCAL_CS);
 
     const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics');
@@ -393,16 +386,7 @@ suite('Diagnostics / Problems Panel', () => {
 
   test('closing a document clears its diagnostics', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(
-      diagDoc,
-      `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return "bad"; }
-    }
-}`,
-    );
+    await replaceDocumentContent(diagDoc, BAD_RETURN_CS);
 
     const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics before close');
@@ -435,11 +419,10 @@ suite('Diagnostics / Problems Panel', () => {
       0,
       'and the language service agrees it has none',
     );
-    assert.strictEqual(
-      vscode.window.visibleTextEditors.some(
+    assert.ok(
+      !vscode.window.visibleTextEditors.some(
         (editor) => editor.document.uri.toString() === diagUri.toString(),
       ),
-      false,
       'with no editor still showing the file',
     );
 

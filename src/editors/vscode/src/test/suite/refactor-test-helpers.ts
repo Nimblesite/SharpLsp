@@ -3,11 +3,16 @@ import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
-import { EXTENSION_ID, comparableText, pollUntilResult } from './test-helpers';
+import { EXTENSION_ID, comparableText, pollUntilResult, warmSemanticEngine } from './test-helpers';
 
 /** Re-exported so the refactor suites warm via their existing import. */
 export { warmSemanticEngine } from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS } from './test-timeouts';
+import {
+  ACTIVATION_MS,
+  FIXTURE_BUILD_MS,
+  LSP_RESPONSE_MS,
+  POLL_INTERVAL_MS,
+} from './test-timeouts';
 
 const FIXTURE_ROOT = path.resolve(__dirname, '../../../test-fixtures/workspace');
 const RESOLVE_COUNT = 1_000;
@@ -375,7 +380,8 @@ async function waitForDocumentText(
   assert.strictEqual(comparableText(text), comparableText(expectedText));
 }
 
-function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
+/** The range covering every character of `document`. */
+export function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
   return new vscode.Range(
     new vscode.Position(0, 0),
     document.positionAt(document.getText().length),
@@ -388,4 +394,52 @@ export async function revertDocument(document: vscode.TextDocument): Promise<voi
   await vscode.window.showTextDocument(document, { preview: false });
   await vscode.commands.executeCommand('workbench.action.files.revert');
   assert.ok(!document.isDirty, `document must be clean after revert: ${document.uri.fsPath}`);
+}
+
+/** A refactor suite's fixture, and the text every test starts from. */
+export interface RefactorFixture {
+  readonly fixture: OpenFixture;
+  readonly committedText: string;
+}
+
+/**
+ * ONE initialization for a suite that refactors `file`: activation, the fixture
+ * open and the Roslyn project load are paid in `suiteSetup`, above
+ * openFixtureDocument's SIDECAR_COLD_MS warm-up so the warm-up reports rather
+ * than the hook. The fixture is known to produce code actions, so an empty
+ * answer there means Roslyn has not loaded the project yet — paying that load
+ * once keeps it out of every test's ceiling ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ * Each test's edits are reverted after it.
+ */
+export function useRefactorFixture(file: string): RefactorFixture {
+  let state: RefactorFixture | undefined;
+  suiteSetup(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    await activateRealSharpLsp();
+    const fixture = await openFixtureDocument(file);
+    await warmSemanticEngine(fixture.uri);
+    state = { fixture, committedText: fixture.document.getText() };
+  });
+  teardown(async () => {
+    if (state !== undefined) await revertDocument(state.fixture.document);
+  });
+  const opened = (): RefactorFixture => {
+    assert.ok(state, 'the refactor fixture must be opened in suiteSetup');
+    return state;
+  };
+  return {
+    get fixture() {
+      return opened().fixture;
+    },
+    get committedText() {
+      return opened().committedText;
+    },
+  };
+}
+
+/** Reverts the fixture and proves the committed text is back, unsaved edits gone. */
+export async function restoreCommitted(fixture: OpenFixture, committedText: string): Promise<void> {
+  await revertDocument(fixture.document);
+  assert.strictEqual(fixture.document.getText(), committedText);
+  assert.ok(!fixture.document.isDirty);
 }

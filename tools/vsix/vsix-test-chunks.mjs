@@ -22,6 +22,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runMain } from "./run-main.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MANIFEST = join(REPO_ROOT, "src", "editors", "vscode", "test-chunks.json");
@@ -220,9 +221,4 @@ function main() {
     }
 }
 
-try {
-    main();
-} catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    process.exit(1);
-}
+runMain(main);

@@ -6,35 +6,16 @@ import {
   closeAllEditors,
   findSharpLspBinary,
   openCSharpFile,
-  setupLspTestSuite,
-  teardownLspTestSuite,
   waitForDocumentSymbols,
+  assertContainsAll,
+  openCSharpOutline,
+  flattenSymbolNames,
 } from './test-helpers';
-import {
-  ACTIVATION_MS,
-  COMMAND_MS,
-  LSP_RESPONSE_MS,
-  SERVER_RESTART_MS,
-  SIDECAR_COLD_MS,
-} from './test-timeouts';
+import { COMMAND_MS, LSP_RESPONSE_MS, SERVER_RESTART_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { useLspTestSuite } from './lsp-suite-kit';
 
 suite('LSP Lifecycle', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('lifecycle-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
+  const tmpDir = useLspTestSuite('lifecycle-');
 
   // ── Restart ──────────────────────────────────────────────────
 
@@ -43,7 +24,7 @@ suite('LSP Lifecycle', () => {
 
     // Open a file to ensure server is running.
     const { uri } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'restart-test.cs',
       'class Restart { void M() { } }',
     );
@@ -74,7 +55,7 @@ suite('LSP Lifecycle', () => {
     this.timeout(COMMAND_MS);
 
     // Open a file to guarantee activation.
-    await openCSharpFile(tmpDir, 'status.cs', 'class Status { }');
+    await openCSharpFile(tmpDir(), 'status.cs', 'class Status { }');
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension should be active');
@@ -92,7 +73,7 @@ suite('LSP Lifecycle', () => {
 
     // Open first file.
     const { uri: uri1 } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'cycle1.cs',
       'class Cycle1 { void A() { } }',
     );
@@ -103,19 +84,22 @@ suite('LSP Lifecycle', () => {
 
     // Open second file.
     const { uri: uri2 } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'cycle2.cs',
       'class Cycle2 { void B() { } }',
     );
     const symbols2 = await waitForDocumentSymbols(uri2);
     assert.ok(symbols2.length > 0, 'File 2 should produce symbols');
-    assert.ok(flattenNames(symbols2).includes('Cycle2'), 'File 2 symbols should contain Cycle2');
+    assert.ok(
+      flattenSymbolNames(symbols2).includes('Cycle2'),
+      'File 2 symbols should contain Cycle2',
+    );
 
     await closeAllEditors();
 
     // Open third file.
     const { uri: uri3 } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'cycle3.cs',
       'class Cycle3 { void C() { } }',
     );
@@ -126,15 +110,15 @@ suite('LSP Lifecycle', () => {
   test('multiple files open simultaneously get independent symbols', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri: uriA } = await openCSharpFile(tmpDir, 'simA.cs', 'class Alpha { void X() { } }');
+    const { uri: uriA } = await openCSharpFile(tmpDir(), 'simA.cs', 'class Alpha { void X() { } }');
 
-    const { uri: uriB } = await openCSharpFile(tmpDir, 'simB.cs', 'class Beta { void Y() { } }');
+    const { uri: uriB } = await openCSharpFile(tmpDir(), 'simB.cs', 'class Beta { void Y() { } }');
 
     const symbolsA = await waitForDocumentSymbols(uriA);
     const symbolsB = await waitForDocumentSymbols(uriB);
 
-    const namesA = flattenNames(symbolsA);
-    const namesB = flattenNames(symbolsB);
+    const namesA = flattenSymbolNames(symbolsA);
+    const namesB = flattenSymbolNames(symbolsB);
 
     assert.ok(namesA.includes('Alpha'), 'File A should contain Alpha');
     assert.ok(namesB.includes('Beta'), 'File B should contain Beta');
@@ -149,17 +133,16 @@ suite('LSP Lifecycle', () => {
 
     // Rapidly open and close several files.
     for (let i = 0; i < 5; i++) {
-      await openCSharpFile(tmpDir, `rapid${i}.cs`, `class Rapid${i} { }`);
+      await openCSharpFile(tmpDir(), `rapid${i}.cs`, `class Rapid${i} { }`);
       await closeAllEditors();
     }
 
     // Now open a file and verify the server still works.
-    const { uri } = await openCSharpFile(
-      tmpDir,
+    const { symbols } = await openCSharpOutline(
+      tmpDir(),
       'after-rapid.cs',
       'class AfterRapid { void M() { } }',
     );
-    const symbols = await waitForDocumentSymbols(uri);
     assert.ok(symbols.length > 0, 'Server should still respond after rapid open/close');
   });
 
@@ -185,7 +168,7 @@ suite('LSP Lifecycle', () => {
 
     // Confirm the server is up and serving before we kill it.
     const { uri } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'sigkill-recovery.cs',
       'class BeforeKill { void M() { } }',
     );
@@ -213,7 +196,7 @@ suite('LSP Lifecycle', () => {
     this.timeout(SERVER_RESTART_MS);
 
     const { uri } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'double-restart.cs',
       'class DoubleRestart { void M() { } }',
     );
@@ -236,7 +219,7 @@ suite('LSP Lifecycle', () => {
 
     // Start with one file.
     const { uri: uri1 } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'before-restart.cs',
       'class BeforeRestart { }',
     );
@@ -247,14 +230,13 @@ suite('LSP Lifecycle', () => {
     // After restart, open a NEW file.
     await closeAllEditors();
     const { uri: uri2 } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'after-restart.cs',
       'class AfterRestart { void NewMethod() { } }',
     );
     const symbols = await waitForDocumentSymbols(uri2, SIDECAR_COLD_MS);
-    const names = flattenNames(symbols);
-    assert.ok(names.includes('AfterRestart'), 'New file after restart should be served');
-    assert.ok(names.includes('NewMethod'), 'New file methods should be resolved');
+    const names = flattenSymbolNames(symbols);
+    assertContainsAll(names, ['AfterRestart', 'NewMethod'], 'New file');
   });
 
   // ── Large File Handling ────────────────────────────────────
@@ -271,14 +253,12 @@ suite('LSP Lifecycle', () => {
     ).join('\n');
     const content = `namespace BigFile {\n  public class BigClass {\n${methods}\n  }\n}`;
 
-    const { uri } = await openCSharpFile(tmpDir, 'big.cs', content);
-    const symbols = await waitForDocumentSymbols(uri, SIDECAR_COLD_MS);
-    const names = flattenNames(symbols);
+    const { symbols } = await openCSharpOutline(tmpDir(), 'big.cs', content, SIDECAR_COLD_MS);
+    const names = flattenSymbolNames(symbols);
 
     assert.ok(names.includes('BigClass'), 'Should find BigClass');
     // Verify at least some methods are found.
-    assert.ok(names.includes('Method0'), 'Should find Method0');
-    assert.ok(names.includes('Method19'), 'Should find Method19');
+    assertContainsAll(names, ['Method0', 'Method19'], 'Should find');
     assert.ok(names.length >= 21, `Expected ≥21 symbols, got ${names.length}`);
   });
 
@@ -287,7 +267,7 @@ suite('LSP Lifecycle', () => {
   test('server handles empty file without crashing', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri } = await openCSharpFile(tmpDir, 'empty.cs', '');
+    const { uri } = await openCSharpFile(tmpDir(), 'empty.cs', '');
 
     // Should not crash; may return null or empty array.
     const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
@@ -304,7 +284,7 @@ suite('LSP Lifecycle', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'malformed.cs',
       'class { this is not valid C# code }{{{',
     );
@@ -390,16 +370,4 @@ function killLspServerProcesses(binaryPath: string): number {
     }
   }
   return killed;
-}
-
-function flattenNames(symbols: vscode.DocumentSymbol[]): string[] {
-  const names: string[] = [];
-  function walk(list: vscode.DocumentSymbol[]): void {
-    for (const sym of list) {
-      names.push(sym.name);
-      walk(sym.children);
-    }
-  }
-  walk(symbols);
-  return names;
 }

@@ -1,6 +1,8 @@
 // Assertion library for real [SE-CONTEXT-SORT-MEMBERS] interactions.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { assertContainsAll, assertContainsNone } from './test-helpers';
+import { type LspRange } from './sort-members-types';
 
 export const CLASS_ANCHORS: Readonly<Record<string, string>> = {
   Alpha: 'public string Alpha()',
@@ -11,11 +13,6 @@ export const CLASS_ANCHORS: Readonly<Record<string, string>> = {
   Zebra: 'private string Zebra()',
   _zeta: 'private readonly int _zeta',
 };
-
-interface LspRange {
-  readonly start: { readonly line: number; readonly character: number };
-  readonly end: { readonly line: number; readonly character: number };
-}
 
 interface TreeNodeShape {
   readonly children: readonly TreeNodeShape[];
@@ -33,8 +30,11 @@ export function assertClassRange(document: vscode.TextDocument, range: LspRange)
   assert.ok(range.end.character >= 1, 'class range includes its closing brace');
   const text = document.getText(toRange(range));
   assert.ok(text.startsWith('public sealed class SortMembersCommand'));
-  assert.ok(text.includes(CLASS_ANCHORS.AlphaConstant ?? 'missing-anchor'));
-  assert.ok(text.includes(CLASS_ANCHORS.Zebra ?? 'missing-anchor'));
+  assertContainsAll(
+    text,
+    [CLASS_ANCHORS.AlphaConstant ?? 'missing-anchor', CLASS_ANCHORS.Zebra ?? 'missing-anchor'],
+    'text',
+  );
   assert.ok(text.trimEnd().endsWith('}'));
 }
 
@@ -125,11 +125,12 @@ export function assertBlankLineBetween(text: string, left: string, right: string
 }
 
 export function assertLiveSentinels(text: string): void {
-  assert.ok(text.includes('return "LIVE-ZEBRA";'));
-  assert.ok(text.includes('_zeta = 99;'));
-  assert.ok(text.includes('Unsaved helper must travel'));
-  assert.ok(!text.includes('return "ZEBRA";'));
-  assert.ok(!text.includes('_zeta = 7;'));
+  assertContainsAll(
+    text,
+    ['return "LIVE-ZEBRA";', '_zeta = 99;', 'Unsaved helper must travel'],
+    'text',
+  );
+  assertContainsNone(text, ['return "ZEBRA";', '_zeta = 7;'], 'text');
   assert.strictEqual(occurrences(text, 'LIVE-ZEBRA'), 1);
   assert.strictEqual(occurrences(text, '_zeta = 99'), 1);
 }
@@ -138,7 +139,8 @@ function occurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
 }
 
-function toRange(range: LspRange): vscode.Range {
+/** The editor range for a wire range. */
+export function toRange(range: LspRange): vscode.Range {
   return new vscode.Range(
     range.start.line,
     range.start.character,

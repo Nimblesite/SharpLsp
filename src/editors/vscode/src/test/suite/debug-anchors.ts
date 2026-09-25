@@ -78,7 +78,7 @@ function indexAnchors(lines: readonly string[]): ReadonlyMap<string, number> {
     const marker = line.lastIndexOf(ANCHOR_MARKER);
     if (marker < 0) return;
     const name = line.slice(marker + ANCHOR_MARKER.length).trim();
-    assert.strictEqual(anchors.has(name), false, `fixture anchor '${name}' is declared twice`);
+    assert.ok(!anchors.has(name), `fixture anchor '${name}' is declared twice`);
     assert.notStrictEqual(name, '', `an empty anchor name on line ${String(index + 1)}`);
     anchors.set(name, index);
   });

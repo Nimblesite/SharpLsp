@@ -11,18 +11,18 @@ import {
   assertNoAction,
   assertQuickFix,
   assertReplacement,
-  diagnosticCode,
   diagnosticsSettled,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
-  requestPrepareRename,
+  assertPrepareAcrossToken,
   resolvedQuickFixes,
   singleEdit,
   tokenRange,
   undoAction,
   uniqueAction,
 } from './fsharp-refactor-test-kit';
+import { diagnosticCode } from './document-anchors';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
@@ -67,7 +67,7 @@ async function runImplicitConversion(scenario: CodeFixScenario): Promise<void> {
     const diagnostics = await diagnosticsSettled(fixture.uri, scenario.diagnostic);
     assert.ok(diagnostics.every((item) => diagnosticCode(item) !== scenario.diagnostic));
     assert.ok(diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error));
-    await assertPrepareAcrossRange(fixture.uri, range, scenario.target);
+    await assertPrepareAcrossToken(fixture.uri, range, scenario.target);
     await assertNoImplicitConversionActions(fixture, range, scenario);
     assert.strictEqual(fixture.document.version, version);
     assert.strictEqual(fixture.document.getText(), scenario.source);
@@ -75,23 +75,6 @@ async function runImplicitConversion(scenario: CodeFixScenario): Promise<void> {
   } finally {
     await revertDocument(fixture.document);
     assert.ok(!fixture.document.isDirty);
-  }
-}
-
-async function assertPrepareAcrossRange(
-  uri: vscode.Uri,
-  range: vscode.Range,
-  placeholder: string,
-): Promise<void> {
-  assert.ok(range.isSingleLine && !range.isEmpty);
-  for (let offset = 0; offset < range.end.character - range.start.character; offset += 1) {
-    const prepare = await requestPrepareRename(uri, range.start.translate(0, offset));
-    assert.ok(prepare);
-    assert.strictEqual(prepare.placeholder, placeholder);
-    assert.strictEqual(prepare.range.start.line, range.start.line);
-    assert.strictEqual(prepare.range.start.character, range.start.character);
-    assert.strictEqual(prepare.range.end.line, range.end.line);
-    assert.strictEqual(prepare.range.end.character, range.end.character);
   }
 }
 

@@ -1,11 +1,10 @@
 // Adversarial real-LSP rename coverage for [RENAME-TESTS] and [RENAME-COVERAGE].
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { positionOf, rangeOf } from './csharp-refactor-test-kit';
+import { positionOf, rangeOf } from './document-anchors';
 import {
   exerciseRename,
   fixtureOf,
-  openRenameFixtures,
   prepareAt,
   providerRename,
   rawRenameAt,
@@ -13,13 +12,10 @@ import {
   waitForPrepare,
   type RenameCase,
   type RenameFixtureSet,
+  useRenameFixtures,
 } from './csharp-rename-test-kit';
-import {
-  activateRealSharpLsp,
-  replaceDocumentText,
-  type OpenFixture,
-} from './refactor-test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { replaceDocumentText, type OpenFixture } from './refactor-test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const EDGE_ONLY = ['edge'] as const;
 
@@ -304,18 +300,9 @@ function registerOverlayTests(getFixtures: () => RenameFixtureSet): void {
 }
 
 suite('C# real LSP - rename boundaries, rejection, and overlays [RENAME-TESTS]', () => {
-  let fixtures: RenameFixtureSet;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    await activateRealSharpLsp();
-    fixtures = await openRenameFixtures();
-  });
-
-  teardown(async () => revertRenameFixtures(fixtures));
-  suiteTeardown(async () => revertRenameFixtures(fixtures));
-  registerPositiveTests(() => fixtures);
-  registerBoundaryTests(() => fixtures);
-  registerInvalidNameTests(() => fixtures);
-  registerOverlayTests(() => fixtures);
+  const fixtures = useRenameFixtures();
+  registerPositiveTests(fixtures);
+  registerBoundaryTests(fixtures);
+  registerInvalidNameTests(fixtures);
+  registerOverlayTests(fixtures);
 });

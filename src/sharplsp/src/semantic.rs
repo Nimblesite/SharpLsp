@@ -20,7 +20,10 @@ use tracing::{debug, info, warn};
 
 use crate::nav_cache::is_empty_nav_result;
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{map_text_edit, map_text_edits, SidecarTextEdit};
+use crate::utils::{
+    map_text_edit, map_text_edits, request_sidecar, with_sidecar, SidecarPositionReq,
+    SidecarTextEdit,
+};
 
 /// Handle `textDocument/completion` via the .NET sidecar + postfix templates.
 pub fn handle_completion(
@@ -292,19 +295,11 @@ pub fn handle_implementation(
     sidecar: Option<&Arc<SidecarManager>>,
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let value =
-        handle_multi_location_nav(req.clone(), runtime, sidecar, "textDocument/implementation")?;
-    if is_empty_nav_result(&value) {
-        if let Some(fb) = fallback {
-            debug!("Cross-language fallback for textDocument/implementation");
-            match handle_multi_location_nav(req, runtime, Some(fb), "textDocument/implementation") {
-                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
-                Ok(_) => debug!("Cross-language fallback returned empty for implementation"),
-                Err(err) => debug!("Cross-language fallback failed for implementation: {err:#}"),
-            }
-        }
-    }
-    Ok(value)
+    let method = "textDocument/implementation";
+    let value = handle_multi_location_nav(req.clone(), runtime, sidecar, method)?;
+    Ok(or_fallback(value, fallback, method, |fb| {
+        handle_multi_location_nav(req, runtime, Some(fb), method)
+    }))
 }
 
 /// Handle `textDocument/references` with caching and cross-language fallback. [REFERENCES-ROUTING]
@@ -317,60 +312,20 @@ pub fn handle_references(
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let params: ReferenceParams = serde_json::from_value(req.params.clone())?;
-    let uri = &params.text_document_position.text_document.uri;
-    let line = params.text_document_position.position.line;
-    let character = params.text_document_position.position.character;
-    let include_decl = params.context.include_declaration;
-    let version = vfs.get_version(uri).unwrap_or(0);
-    let cache_method = if include_decl {
+    let cache_method = if params.context.include_declaration {
         "textDocument/references:decl"
     } else {
         "textDocument/references:nodecl"
     };
-
-    if let Some(cached) = cached_nav_hit(
-        nav_cache,
-        uri.as_str(),
-        version,
-        line,
-        character,
-        cache_method,
-        "References",
-    ) {
-        return Ok(cached);
-    }
-
-    let value = handle_references_nav(req.clone(), runtime, sidecar)?;
-    let value = if is_empty_nav_result(&value) {
-        if let Some(fb) = fallback {
-            debug!("Cross-language fallback for textDocument/references");
-            match handle_references_nav(req, runtime, Some(fb)) {
-                Ok(fb_value) if !is_empty_nav_result(&fb_value) => fb_value,
-                Ok(_) => {
-                    debug!("Cross-language fallback returned empty for references");
-                    value
-                }
-                Err(err) => {
-                    debug!("Cross-language fallback failed for references: {err:#}");
-                    value
-                }
-            }
-        } else {
-            value
-        }
-    } else {
-        value
-    };
-
-    nav_cache.insert(
-        uri.as_str(),
-        version,
-        line,
-        character,
-        cache_method,
-        value.clone(),
-    );
-    Ok(value)
+    cached_at_position(req, vfs, nav_cache, cache_method, |req| {
+        let value = handle_references_nav(req.clone(), runtime, sidecar)?;
+        Ok(or_fallback(
+            value,
+            fallback,
+            "textDocument/references",
+            |fb| handle_references_nav(req, runtime, Some(fb)),
+        ))
+    })
 }
 
 /// Handle `textDocument/documentHighlight` with caching via the sidecar.
@@ -381,35 +336,13 @@ pub fn handle_document_highlight(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let params: DocumentHighlightParams = serde_json::from_value(req.params.clone())?;
-    let uri = &params.text_document_position_params.text_document.uri;
-    let line = params.text_document_position_params.position.line;
-    let character = params.text_document_position_params.position.character;
-    let version = vfs.get_version(uri).unwrap_or(0);
-    let method = "textDocument/documentHighlight";
-
-    if let Some(cached) = cached_nav_hit(
+    cached_at_position(
+        req,
+        vfs,
         nav_cache,
-        uri.as_str(),
-        version,
-        line,
-        character,
-        method,
-        "DocumentHighlight",
-    ) {
-        return Ok(cached);
-    }
-
-    let value = dispatch_document_highlight(req, runtime, sidecar)?;
-    nav_cache.insert(
-        uri.as_str(),
-        version,
-        line,
-        character,
-        method,
-        value.clone(),
-    );
-    Ok(value)
+        "textDocument/documentHighlight",
+        |req| dispatch_document_highlight(req, runtime, sidecar),
+    )
 }
 
 /// Dispatch document highlight request to the sidecar.
@@ -418,55 +351,44 @@ fn dispatch_document_highlight(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        debug!("DocumentHighlight: no sidecar available");
-        return Ok(serde_json::Value::Null);
-    };
-    let params: DocumentHighlightParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
-    let line = params.text_document_position_params.position.line;
-    let character = params.text_document_position_params.position.character;
-
-    debug!(
-        file = %file_path,
-        line = line,
-        character = character,
-        "DocumentHighlight request dispatching to sidecar"
-    );
-
-    let request = SidecarPositionReq {
-        file_path,
-        line,
-        character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/documentHighlight", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar documentHighlight unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
+    with_sidecar(req, sidecar, |sidecar, params: DocumentHighlightParams| {
+        let at = &params.text_document_position_params;
+        let request = SidecarPositionReq::at(&at.text_document.uri, at.position)?;
+        debug!(
+            file = %request.file_path,
+            line = request.line,
+            character = request.character,
+            "DocumentHighlight request dispatching to sidecar"
+        );
+        let method = "textDocument/documentHighlight";
+        let Some(result) = request_sidecar::<SidecarDocumentHighlightListResult, _>(
+            runtime, sidecar, method, &request,
+        )?
+        else {
+            return Ok(serde_json::Value::Null);
         };
+        let highlights: Vec<DocumentHighlight> = result
+            .highlights
+            .iter()
+            .map(to_document_highlight)
+            .collect();
+        Ok(serde_json::to_value(highlights)?)
+    })
+}
 
-    let result: SidecarDocumentHighlightListResult = rmp_serde::from_slice(&response_bytes)?;
-    let highlights: Vec<DocumentHighlight> = result
-        .highlights
-        .into_iter()
-        .map(|h| DocumentHighlight {
-            range: Range::new(
-                Position::new(h.start_line, h.start_character),
-                Position::new(h.end_line, h.end_character),
-            ),
-            kind: Some(match h.kind {
-                3 => DocumentHighlightKind::WRITE,
-                2 => DocumentHighlightKind::READ,
-                _ => DocumentHighlightKind::TEXT,
-            }),
-        })
-        .collect();
-
-    Ok(serde_json::to_value(highlights)?)
+/// One sidecar highlight as an LSP `DocumentHighlight`; kind 3 writes, 2 reads.
+fn to_document_highlight(h: &SidecarDocumentHighlightResult) -> DocumentHighlight {
+    DocumentHighlight {
+        range: Range::new(
+            Position::new(h.start_line, h.start_character),
+            Position::new(h.end_line, h.end_character),
+        ),
+        kind: Some(match h.kind {
+            3 => DocumentHighlightKind::WRITE,
+            2 => DocumentHighlightKind::READ,
+            _ => DocumentHighlightKind::TEXT,
+        }),
+    }
 }
 
 /// Inner handler for references (serializes `ReferencesRequest` with `include_declaration`).
@@ -475,48 +397,38 @@ fn handle_references_nav(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        debug!("References: no sidecar available");
-        return Ok(serde_json::Value::Null);
-    };
-    let params: ReferenceParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(&params.text_document_position.text_document.uri)?;
-    let line = params.text_document_position.position.line;
-    let character = params.text_document_position.position.character;
-    let include_declaration = params.context.include_declaration;
-
-    debug!(
-        file = %file_path,
-        line = line,
-        character = character,
-        include_declaration = include_declaration,
-        "References request dispatching to sidecar"
-    );
-
-    let request = SidecarReferencesReq {
-        file_path,
-        line,
-        character,
-        include_declaration,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("textDocument/references", payload))
-    {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar references unavailable: {err:#}");
+    with_sidecar(req, sidecar, |sidecar, params: ReferenceParams| {
+        let at = SidecarPositionReq::at(
+            &params.text_document_position.text_document.uri,
+            params.text_document_position.position,
+        )?;
+        let include_declaration = params.context.include_declaration;
+        debug!(
+            file = %at.file_path,
+            line = at.line,
+            character = at.character,
+            include_declaration,
+            "References request dispatching to sidecar"
+        );
+        let request = SidecarReferencesReq {
+            file_path: at.file_path,
+            line: at.line,
+            character: at.character,
+            include_declaration,
+        };
+        let method = "textDocument/references";
+        let Some(result) =
+            request_sidecar::<SidecarLocationListResult, _>(runtime, sidecar, method, &request)?
+        else {
             return Ok(serde_json::Value::Null);
-        }
-    };
-
-    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
-    let locations: Vec<Location> = result
-        .locations
-        .into_iter()
-        .filter_map(|loc| sidecar_location_to_lsp(&loc))
-        .collect();
-
-    Ok(serde_json::to_value(locations)?)
+        };
+        let locations: Vec<Location> = result
+            .locations
+            .iter()
+            .filter_map(sidecar_location_to_lsp)
+            .collect();
+        Ok(serde_json::to_value(locations)?)
+    })
 }
 
 // ── Shared Helpers ────────────────────────────────────────────────
@@ -535,32 +447,16 @@ fn dispatch_position_request(
         return Ok(None);
     };
     let params: GotoDefinitionParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
-    let line = params.text_document_position_params.position.line;
-    let character = params.text_document_position_params.position.character;
-
+    let at = &params.text_document_position_params;
+    let request = SidecarPositionReq::at(&at.text_document.uri, at.position)?;
     debug!(
-        file = %file_path,
-        line = line,
-        character = character,
-        "{method} request dispatching to sidecar"
+        method,
+        file = %request.file_path,
+        line = request.line,
+        character = request.character,
+        "request dispatching to sidecar"
     );
-
-    let request = SidecarPositionReq {
-        file_path,
-        line,
-        character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar {method} unavailable: {err:#}");
-            return Ok(None);
-        }
-    };
-
-    Ok(Some(rmp_serde::from_slice(&response_bytes)?))
+    request_sidecar(runtime, sidecar, method, &request)
 }
 
 /// Shared handler for multi-location navigation requests
@@ -605,16 +501,56 @@ fn handle_cached_nav_with_fallback(
     multi: bool,
 ) -> Result<serde_json::Value> {
     let value = handle_cached_nav(req.clone(), vfs, nav_cache, runtime, sidecar, method, multi)?;
-    if is_empty_nav_result(&value) {
-        if let Some(fb) = fallback {
-            debug!("Cross-language fallback for {method}");
-            match handle_cached_nav(req, vfs, nav_cache, runtime, Some(fb), method, multi) {
-                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
-                Ok(_) => debug!("Cross-language fallback returned empty for {method}"),
-                Err(err) => debug!("Cross-language fallback failed for {method}: {err:#}"),
-            }
+    Ok(or_fallback(value, fallback, method, |fb| {
+        handle_cached_nav(req, vfs, nav_cache, runtime, Some(fb), method, multi)
+    }))
+}
+
+/// `value`, unless it is empty and the cross-language `fallback` sidecar
+/// (C# ↔ F#) answers instead. A fallback that fails or answers empty leaves
+/// `value` standing: it never blocks the primary answer.
+fn or_fallback(
+    value: serde_json::Value,
+    fallback: Option<&Arc<SidecarManager>>,
+    method: &str,
+    ask: impl FnOnce(&Arc<SidecarManager>) -> Result<serde_json::Value>,
+) -> serde_json::Value {
+    let Some(fb) = fallback.filter(|_| is_empty_nav_result(&value)) else {
+        return value;
+    };
+    debug!(method, "cross-language fallback");
+    match ask(fb) {
+        Ok(fb_value) if !is_empty_nav_result(&fb_value) => fb_value,
+        Ok(_) => {
+            debug!(method, "cross-language fallback returned empty");
+            value
+        }
+        Err(err) => {
+            debug!(method, error = %format_args!("{err:#}"), "cross-language fallback failed");
+            value
         }
     }
+}
+
+/// Answer `req` from the navigation cache when the document's version and the
+/// request position match an earlier answer under `method`; otherwise
+/// `dispatch` it and remember the answer.
+fn cached_at_position(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    method: &str,
+    dispatch: impl FnOnce(Request) -> Result<serde_json::Value>,
+) -> Result<serde_json::Value> {
+    let at: TextDocumentPositionParams = serde_json::from_value(req.params.clone())?;
+    let uri = at.text_document.uri.as_str();
+    let version = vfs.get_version(&at.text_document.uri).unwrap_or(0);
+    let (line, character) = (at.position.line, at.position.character);
+    if let Some(cached) = cached_nav_hit(nav_cache, uri, version, line, character, method, method) {
+        return Ok(cached);
+    }
+    let value = dispatch(req)?;
+    nav_cache.insert(uri, version, line, character, method, value.clone());
     Ok(value)
 }
 
@@ -648,39 +584,13 @@ fn handle_cached_nav(
     method: &str,
     multi: bool,
 ) -> Result<serde_json::Value> {
-    let params: GotoDefinitionParams = serde_json::from_value(req.params.clone())?;
-    let uri = &params.text_document_position_params.text_document.uri;
-    let line = params.text_document_position_params.position.line;
-    let character = params.text_document_position_params.position.character;
-    let version = vfs.get_version(uri).unwrap_or(0);
-
-    if let Some(cached) = cached_nav_hit(
-        nav_cache,
-        uri.as_str(),
-        version,
-        line,
-        character,
-        method,
-        method,
-    ) {
-        return Ok(cached);
-    }
-
-    let value = if multi {
-        handle_multi_location_nav(req, runtime, sidecar, method)?
-    } else {
-        handle_single_location_nav(req, runtime, sidecar, method)?
-    };
-
-    nav_cache.insert(
-        uri.as_str(),
-        version,
-        line,
-        character,
-        method,
-        value.clone(),
-    );
-    Ok(value)
+    cached_at_position(req, vfs, nav_cache, method, |req| {
+        if multi {
+            handle_multi_location_nav(req, runtime, sidecar, method)
+        } else {
+            handle_single_location_nav(req, runtime, sidecar, method)
+        }
+    })
 }
 
 /// Shared handler for single-location navigation requests
@@ -798,17 +708,6 @@ pub(crate) struct SidecarDidChangeReq {
     pub(crate) file_path: String,
     /// Full replacement text of the document.
     pub(crate) new_text: String,
-}
-
-/// Sidecar request for a position-based query (hover, definition, etc.).
-#[derive(serde::Serialize)]
-struct SidecarPositionReq {
-    /// Absolute filesystem path of the document.
-    file_path: String,
-    /// Zero-based line number.
-    line: u32,
-    /// Zero-based character offset.
-    character: u32,
 }
 
 /// A single completion item returned by the sidecar.

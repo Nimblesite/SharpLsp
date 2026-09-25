@@ -324,44 +324,58 @@ module internal Helpers =
     let serializeOk<'T> (value: 'T) (ct: CancellationToken) : ByteResult =
         Outcome.Result<byte[], string>.Ok<byte[], string>(MessagePackSerializer.Serialize(value, cancellationToken = ct)) :> ByteResult
 
+    /// MessagePack nil (0xC0) — the "no value" response shared by optional results.
+    let nilResult () : ByteResult =
+        Outcome.Result<byte[], string>.Ok<byte[], string>([| 0xC0uy |])
+
+    /// The skeleton every handler shares: decode a `'Request`, run `query` on it,
+    /// and answer with `respond`'s bytes. A payload that will not decode, or a
+    /// query that throws, becomes a failure carrying the message — never an
+    /// exception into the dispatcher, because a sidecar crash must never take
+    /// down the host.
+    let handle
+        (query: 'Request -> Task<'Result>)
+        (respond: 'Result -> CancellationToken -> ByteResult)
+        : Func<byte[], CancellationToken, Task<ByteResult>> =
+        Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<'Request>(payload, cancellationToken = ct)
+                    let! result = query request
+                    return respond result ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            })
+
+    /// `handle` for a query at one position of one file.
+    let atPosition (query: string -> int -> int -> Task<'Result>) (respond: 'Result -> CancellationToken -> ByteResult) =
+        handle (fun (request: PositionRequest) -> query request.FilePath request.Line request.Character) respond
+
+    /// Answer with every item mapped to its wire shape.
+    let listOf (toWire: 'Item -> 'Wire) (items: 'Item list) (ct: CancellationToken) : ByteResult =
+        serializeOk (items |> List.map toWire |> Array.ofList) ct
+
+    /// Answer with the item's wire shape, or MessagePack nil when there is none.
+    let optionOf (toWire: 'Item -> 'Wire) (item: 'Item option) (ct: CancellationToken) : ByteResult =
+        match item with
+        | Some value -> serializeOk (toWire value) ct
+        | None -> nilResult ()
+
     /// Build a location handler for workspace methods returning a single optional location.
     let locationOptionHandler
         (workspace: FSharpWorkspace.FSharpWorkspaceState)
         (getLocation: FSharpWorkspace.FSharpWorkspaceState -> string -> int -> int -> Task<FSharpWorkspace.DefinitionLocation option>)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
-        Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! result = getLocation workspace request.FilePath request.Line request.Character
-                    match result with
-                    | Some loc ->
-                        return serializeOk { Locations = [| toLocationResult loc |] } ct
-                    | None ->
-                        return serializeOk { Locations = [||] } ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            })
+        atPosition (getLocation workspace) (fun location ct ->
+            serializeOk { Locations = location |> Option.map toLocationResult |> Option.toArray } ct)
 
     /// Build a location handler for workspace methods returning a list of locations.
     let locationListHandler
         (workspace: FSharpWorkspace.FSharpWorkspaceState)
         (getLocations: FSharpWorkspace.FSharpWorkspaceState -> string -> int -> int -> Task<FSharpWorkspace.DefinitionLocation list>)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
-        Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! results = getLocations workspace request.FilePath request.Line request.Character
-                    let locations = results |> List.map toLocationResult |> Array.ofList
-                    return serializeOk { Locations = locations } ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            })
-
-    /// MessagePack nil (0xC0) — the "no value" response shared by optional results.
-    let nilResult () : ByteResult =
-        Outcome.Result<byte[], string>.Ok<byte[], string>([| 0xC0uy |])
+        atPosition (getLocations workspace) (fun locations ct ->
+            serializeOk { Locations = locations |> List.map toLocationResult |> Array.ofList } ct)
 
     /// Map a hierarchy domain item to its wire shape (call + type hierarchy).
     let toHierItem (item: FSharpHierarchy.HierItem) : HierarchyItemResult =
@@ -472,35 +486,19 @@ module internal Helpers =
           XmlDocSig = identity |> Option.map _.XmlDocSig |> Option.defaultValue "" }
 
     let private requestHandler
-        (handle: 'Request -> Task<'Result>)
+        (query: 'Request -> Task<'Result>)
         (toWire: 'Result -> 'Wire)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
-        Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<'Request>(payload, cancellationToken = ct)
-                    let! result = handle request
-                    return serializeOk (toWire result) ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            })
+        handle query (fun result ct -> serializeOk (toWire result) ct)
 
     let private resultRequestHandler
-        (handle: 'Request -> Task<Microsoft.FSharp.Core.Result<'Result, string>>)
+        (query: 'Request -> Task<Microsoft.FSharp.Core.Result<'Result, string>>)
         (toWire: 'Result -> 'Wire)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
-        Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<'Request>(payload, cancellationToken = ct)
-                    let! result = handle request
-                    return
-                        match result with
-                        | Ok value -> serializeOk (toWire value) ct
-                        | Error message -> ByteResult.Failure(message)
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            })
+        handle query (fun result ct ->
+            match result with
+            | Ok value -> serializeOk (toWire value) ct
+            | Error message -> ByteResult.Failure(message))
 
     let prepareRenameHandler workspace =
         requestHandler

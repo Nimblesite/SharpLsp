@@ -125,9 +125,8 @@ suite('Bundled sidecar resolution', () => {
       assert.strictEqual(name, sidecar, `the first token is the component id; got '${name}'`);
       assert.ok(version, `${sidecar} --version must print a version after its name`);
       assert.match(version, /^\d+\.\d+\.\d+/, `${sidecar} must report a semver, got '${version}'`);
-      assert.strictEqual(
-        output.includes('\u001b['),
-        false,
+      assert.ok(
+        !output.includes('\u001b['),
         `${sidecar} --version must emit no ANSI escapes ([DIST-CLEAN-OUTPUT] rule 1)`,
       );
     }

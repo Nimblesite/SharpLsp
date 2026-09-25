@@ -52,7 +52,9 @@ internal static class HeadlessOverrideCodeAction
             .Parent?.AncestorsAndSelf()
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault();
-        return declaration is not null && SpansTouch(declaration.Identifier.Span, span)
+        return
+            declaration is not null
+            && DocumentPosition.SpansTouch(declaration.Identifier.Span, span)
             ? declaration
             : null;
     }
@@ -331,13 +333,6 @@ internal static class HeadlessOverrideCodeAction
             .FormatAsync(simplified, annotation, null, ct)
             .ConfigureAwait(false);
         return formatted.Project.Solution;
-    }
-
-    private static bool SpansTouch(TextSpan candidate, TextSpan requested)
-    {
-        return requested.IsEmpty
-            ? candidate.Contains(requested.Start) || candidate.Start == requested.Start
-            : candidate.IntersectsWith(requested);
     }
 
     private sealed record OverridePlan(

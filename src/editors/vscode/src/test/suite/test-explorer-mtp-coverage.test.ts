@@ -17,7 +17,6 @@
 // Covers [TEST-MTP-RUN] and [TEST-COVERAGE].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -38,10 +37,10 @@ import {
 } from './dotnet-project-kit';
 import { COVERAGE_DIR_NAME } from './test-coverage-fixtures';
 import {
-  activateTestExplorer,
   discoverSolution,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
@@ -142,8 +141,7 @@ suite('Test Explorer e2e — Run with Coverage on a Microsoft.Testing.Platform m
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-coverage-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-coverage-'));
     slnPath = await writeCoverageFixture(root);
     await discoverSolution(api, slnPath, [COVERS_ADD]);
   });

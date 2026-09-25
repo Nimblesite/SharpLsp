@@ -15,6 +15,7 @@ mod document_symbols;
 #[cfg(feature = "formatting")]
 mod formatting;
 mod handlers;
+mod hierarchy;
 mod hot_reload;
 mod inlay_hints;
 mod nav_cache;

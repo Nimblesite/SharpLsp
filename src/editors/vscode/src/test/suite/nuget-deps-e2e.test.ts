@@ -42,8 +42,7 @@ import {
 } from '../../project-deps-store.js';
 import { effect } from '../../signals.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-import { closeAllEditors } from './test-helpers';
-import { removeDirRecursive } from './test-helpers.js';
+import { closeAllEditors, assertContainsAll, removeDirRecursive } from './test-helpers';
 import { COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
 
 // ── Fake nuget.org search responses ───────────────────────────────
@@ -101,6 +100,13 @@ interface RefSpec {
 }
 
 /** Write a .csproj/.fsproj with package + project references; return its path. */
+/** A `Library` project in its own `Lib` folder under `root`, for reference tests. */
+function writeLibrary(root: string): string {
+  const libDir = path.join(root, 'Lib');
+  fs.mkdirSync(libDir, { recursive: true });
+  return writeProjectFile(libDir, 'Library');
+}
+
 function writeProjectFile(
   dir: string,
   name: string,
@@ -422,9 +428,8 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     // that still rewrites the project is the worst possible outcome.
     const after = fs.readFileSync(projectPath, 'utf8');
     assert.ok(after.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the project is intact');
-    assert.strictEqual(
-      after.includes('<PackageReference'),
-      false,
+    assert.ok(
+      !after.includes('<PackageReference'),
       'and gained no package reference from a cancelled update',
     );
     assert.deepEqual(
@@ -460,7 +465,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     // Interaction 2 - EXACTLY ONE terminal toast. A restore that reports both
     // success and failure, or reports twice, leaves the user unable to tell
     // whether their packages are there.
-    assert.strictEqual(restored && failed, false, 'restore reports one outcome, not both');
+    assert.ok(!(restored && failed), 'restore reports one outcome, not both');
     assert.strictEqual(
       stubs.log.infoMessages.length + stubs.log.errorMessages.length,
       1,
@@ -638,14 +643,12 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
     // Interaction 3 - packages and project references are SEPARATE lists. A
     // parser that mixes them puts NuGet packages under the project-reference
     // node of the tree, where "remove" runs the wrong `dotnet` verb.
-    assert.strictEqual(
-      parsed.nugetPackages.some((pkg) => pkg.name.endsWith('.csproj')),
-      false,
+    assert.ok(
+      !parsed.nugetPackages.some((pkg) => pkg.name.endsWith('.csproj')),
       'no project reference leaked into the package list',
     );
-    assert.strictEqual(
-      parsed.projectReferences.some((reference) => reference.name === 'Serilog'),
-      false,
+    assert.ok(
+      !parsed.projectReferences.some((reference) => reference.name === 'Serilog'),
       'and no package leaked into the reference list',
     );
     assert.strictEqual(parsed.nugetPackages.length, 2, 'two packages');
@@ -924,7 +927,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
     const appeared = writeProjectFile(tmpDir, 'does-not-exist', {
       packages: [{ id: 'Appeared', version: '1.0.0' }],
     });
-    assert.strictEqual(appeared.endsWith('does-not-exist.csproj'), true, 'same path as before');
+    assert.ok(appeared.endsWith('does-not-exist.csproj'), 'same path as before');
     const now = parseProjectDependencies(appeared);
     assert.strictEqual(now.nugetPackages.length, 1, 'the newly written project parses');
     assert.strictEqual(now.nugetPackages[0]?.name, 'Appeared', 'and names its package');
@@ -937,7 +940,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
     const gone = parseProjectDependencies(appeared);
     assert.deepEqual(gone.nugetPackages, [], 'a deleted project reads empty again');
     assert.deepEqual(gone.projectReferences, [], 'with no cached references');
-    assert.strictEqual(fs.existsSync(appeared), false, 'and the file really is gone');
+    assert.ok(!fs.existsSync(appeared), 'and the file really is gone');
   });
 });
 
@@ -992,8 +995,11 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // parts of the project survive. A mutation done by string splicing loses
     // the SDK attribute or the TargetFramework the moment an element moves.
     const afterXml = fs.readFileSync(projectPath, 'utf8');
-    assert.ok(afterXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the SDK attribute survives');
-    assert.ok(afterXml.includes('<TargetFramework>net9.0</TargetFramework>'), 'and the TFM');
+    assertContainsAll(
+      afterXml,
+      ['<Project Sdk="Microsoft.NET.Sdk">', '<TargetFramework>net9.0</TargetFramework>'],
+      'afterXml',
+    );
     assert.ok(afterXml.trim().endsWith('</Project>'), 'and the document still closes');
 
     // Interaction 3 - [NUGET-ERRORS]: removing a package that is not there is
@@ -1005,9 +1011,8 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
       'removing an absent package resolves to a Result, never a throw',
     );
     const parsedAfter = parseProjectDependencies(projectPath);
-    assert.strictEqual(
-      parsedAfter.nugetPackages.some((pkg) => pkg.name === 'Never.Referenced.Package'),
-      false,
+    assert.ok(
+      !parsedAfter.nugetPackages.some((pkg) => pkg.name === 'Never.Referenced.Package'),
       'and the phantom package is certainly not present afterwards',
     );
     assert.ok(
@@ -1019,9 +1024,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   test('addProjectReference then removeProjectReference round-trips the <ProjectReference>', async function () {
     this.timeout(DOTNET_CLI_MS);
     const consumer = writeProjectFile(tmpDir, 'Consumer');
-    const libDir = path.join(tmpDir, 'Lib');
-    fs.mkdirSync(libDir, { recursive: true });
-    const library = writeProjectFile(libDir, 'Library');
+    const library = writeLibrary(tmpDir);
 
     // addProjectReference shells out to `dotnet add <consumer> reference <library>`
     // (src/dependencies.ts), which writes a <ProjectReference Include="..."> element
@@ -1032,14 +1035,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     const addError = await addProjectReference(consumer, library);
     if (addError === undefined) {
       const afterAddXml = fs.readFileSync(consumer, 'utf8');
-      assert.ok(
-        afterAddXml.includes('<ProjectReference'),
-        'dotnet wrote a <ProjectReference> element into the consumer project',
-      );
-      assert.ok(
-        afterAddXml.includes('Library.csproj'),
-        `the reference points at Library.csproj; got:\n${afterAddXml}`,
-      );
+      assertContainsAll(afterAddXml, ['<ProjectReference', 'Library.csproj'], 'afterAddXml');
 
       const removeError = await removeProjectReference(consumer, library);
       assert.strictEqual(removeError, undefined, 'removing the reference succeeds too');
@@ -1057,19 +1053,18 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // a well-formed SDK project with its TargetFramework intact. A round trip
     // that leaves the file unparseable breaks the build, not just the feature.
     const consumerXml = fs.readFileSync(consumer, 'utf8');
-    assert.ok(consumerXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the SDK attribute lives');
-    assert.ok(consumerXml.includes('<TargetFramework>net9.0</TargetFramework>'), 'and the TFM');
+    assertContainsAll(
+      consumerXml,
+      ['<Project Sdk="Microsoft.NET.Sdk">', '<TargetFramework>net9.0</TargetFramework>'],
+      'consumerXml',
+    );
     assert.ok(consumerXml.trim().endsWith('</Project>'), 'and the document closes');
 
     // Interaction 3 - the LIBRARY is untouched by either direction of the round
     // trip. Adding a reference edits the consumer alone.
     const libraryXml = fs.readFileSync(library, 'utf8');
     assert.ok(libraryXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the library is intact');
-    assert.strictEqual(
-      libraryXml.includes('<ProjectReference'),
-      false,
-      'and gained no reference of its own',
-    );
+    assert.ok(!libraryXml.includes('<ProjectReference'), 'and gained no reference of its own');
 
     // Interaction 4 - [NUGET-ERRORS]: removing a reference that is not there is
     // reported, never thrown.
@@ -1122,8 +1117,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // Interaction 3 - the project file survives the operation as a project.
     // [NUGET-XML-DOM] forbids the splice that would leave it unparseable.
     const afterXml = fs.readFileSync(projectPath, 'utf8');
-    assert.ok(afterXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'still an SDK project');
-    assert.ok(afterXml.includes('net9.0'), 'still targeting net9.0');
+    assertContainsAll(afterXml, ['<Project Sdk="Microsoft.NET.Sdk">', 'net9.0'], 'afterXml');
     assert.strictEqual(
       stubs.log.infoMessages.filter((m) => m.includes('Removed')).length +
         stubs.log.errorMessages.filter((m) => m.includes('Failed to remove')).length,
@@ -1136,8 +1130,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // Interaction 4 - the confirmation named BOTH the package and the action,
     // so the dialog is self-explanatory without the tree row behind it.
     const prompt = stubs.log.warningMessages[0] ?? '';
-    assert.ok(prompt.includes('Serilog'), `the prompt names the package: ${prompt}`);
-    assert.ok(prompt.includes('Remove'), 'and the action it is about to take');
+    assertContainsAll(prompt, ['Serilog', 'Remove'], 'prompt');
     assert.ok(prompt.length > 'Remove'.length, 'in a full sentence, not a bare verb');
   });
 
@@ -1194,9 +1187,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
 
   test('sharplsp.removeProjectReference command confirms then removes the reference', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const libDir = path.join(tmpDir, 'Lib');
-    fs.mkdirSync(libDir, { recursive: true });
-    const library = writeProjectFile(libDir, 'Library');
+    const library = writeLibrary(tmpDir);
     const consumer = writeProjectFile(tmpDir, 'CmdRemoveRef', {
       projects: [path.relative(tmpDir, library)],
     });
@@ -1333,9 +1324,8 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // picker is the only place it can be prevented.
     const candidates = stubs.log.quickPickItems[0] as { label?: string; uri?: vscode.Uri }[];
     assert.ok(candidates.length >= 1, 'at least one candidate was offered');
-    assert.strictEqual(
-      candidates.some((item) => item.uri?.fsPath === projectPath),
-      false,
+    assert.ok(
+      !candidates.some((item) => item.uri?.fsPath === projectPath),
       'the consumer must not be offered as its own reference',
     );
     assert.ok(
@@ -1369,9 +1359,8 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // Interaction 5 - F# projects are candidates too. A picker that only lists
     // .csproj cannot reference an F# library from a C# project, which is the
     // whole point of one server for both languages.
-    assert.strictEqual(
-      candidates.every((item) => (item.label ?? '').endsWith('.exe')),
-      false,
+    assert.ok(
+      !candidates.every((item) => (item.label ?? '').endsWith('.exe')),
       'candidates are projects, not executables',
     );
     assert.ok(
@@ -1514,11 +1503,11 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 2 - the store still holds the project tracked after dispose.
     // Disposing an observer must not unsubscribe the STORE from its own data.
     assert.strictEqual(projectDependencies.value.size, 3, 'all three projects are tracked');
-    assert.ok(
-      projectDependencies.value.has(path.resolve(c)),
-      'including the one added after dispose',
+    assertContainsAll(
+      projectDependencies.value,
+      [path.resolve(c), path.resolve(a)],
+      'projectDependencies.value',
     );
-    assert.ok(projectDependencies.value.has(path.resolve(a)), 'and the first');
 
     // Interaction 3 - a NEW effect starts from the current state, not from the
     // history the disposed one saw. That is what makes a late-mounting tree

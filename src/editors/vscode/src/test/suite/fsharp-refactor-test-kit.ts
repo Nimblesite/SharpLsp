@@ -16,6 +16,7 @@ import {
 } from './refactor-test-helpers';
 import { pollUntilResult } from './test-helpers';
 import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { diagnosticCode } from './document-anchors';
 
 // Assertion helpers shared by the real-LSP F# suites. [ANALYZERS-FSAC-PARITY]
 
@@ -142,6 +143,28 @@ export async function resolvedQuickFixes(
 export async function applyAction(action: vscode.CodeAction): Promise<WorkspaceEditSnapshot[]> {
   assert.ok(action.edit, `${action.title} must have an edit before application`);
   return applyWorkspaceEdit(action.edit);
+}
+
+/**
+ * Apply `action` to the unsaved overlay and prove the fix took: one file
+ * edited into exactly `expected`, still unsaved, `diagnostic` gone, and the
+ * fix no longer offered at `target`. [ANALYZERS-FSAC-PARITY]
+ */
+export async function assertFixApplied(
+  fixture: OpenFixture,
+  action: vscode.CodeAction,
+  expected: string,
+  diagnostic: string,
+  target: string,
+): Promise<void> {
+  const version = fixture.document.version;
+  const snapshots = await applyAction(action);
+  assert.strictEqual(snapshots.length, 1);
+  assert.ok(fixture.document.version > version);
+  assert.strictEqual(fixture.document.getText(), expected);
+  assert.ok(fixture.document.isDirty);
+  await diagnosticGone(fixture.uri, diagnostic);
+  assertNoAction(await quickFixes(fixture.uri, tokenRange(fixture.document, target)), action.title);
 }
 
 export async function undoAction(
@@ -285,20 +308,40 @@ export async function requestPrepareRename(
   return preparedRenameAt(uri, position);
 }
 
+// prepareRename at `position` answers exactly `expected` and `placeholder`. [RENAME-FSHARP-PREPARE]
+export async function assertPrepareRename(
+  uri: vscode.Uri,
+  expected: vscode.Range,
+  position: vscode.Position,
+  placeholder: string,
+): Promise<void> {
+  const prepare = await requestPrepareRename(uri, position);
+  assert.ok(prepare, `${placeholder} must support prepareRename`);
+  assert.strictEqual(prepare.placeholder, placeholder);
+  assert.strictEqual(prepare.range.start.line, expected.start.line);
+  assert.strictEqual(prepare.range.start.character, expected.start.character);
+  assert.strictEqual(prepare.range.end.line, expected.end.line);
+  assert.strictEqual(prepare.range.end.character, expected.end.character);
+}
+
+// Every caret offset inside the token prepares the whole token. [RENAME-FSHARP-PREPARE]
+export async function assertPrepareAcrossToken(
+  uri: vscode.Uri,
+  range: vscode.Range,
+  placeholder: string,
+): Promise<void> {
+  assert.ok(range.isSingleLine && !range.isEmpty);
+  for (let offset = 0; offset < range.end.character - range.start.character; offset += 1) {
+    await assertPrepareRename(uri, range, range.start.translate(0, offset), placeholder);
+  }
+}
+
 export function editCount(edit: vscode.WorkspaceEdit): number {
   return edit.entries().reduce((total, [, edits]) => total + edits.length, 0);
 }
 
 export function changedFileNames(edit: vscode.WorkspaceEdit): string[] {
   return edit.entries().map(([uri]) => uri.path.split('/').at(-1) ?? uri.path);
-}
-
-export function diagnosticCode(diagnostic: vscode.Diagnostic): string {
-  const code = diagnostic.code;
-  if (typeof code === 'object' && code !== null) {
-    return String(code.value);
-  }
-  return code === undefined ? '' : String(code);
 }
 
 export function countOccurrences(text: string, needle: string): number {

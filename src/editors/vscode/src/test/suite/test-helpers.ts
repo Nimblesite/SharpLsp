@@ -121,6 +121,28 @@ export async function pollUntilResult<T>(
 }
 
 /**
+ * Poll a `vscode.execute…Provider` command with `args` until `until` holds over
+ * its reply, an absent reply reading as `[]`. Fails as `pollUntilResult` does,
+ * naming the command, so a provider that never answers reports itself.
+ */
+export async function pollProvider<T>(
+  command: string,
+  args: readonly unknown[],
+  until: (reply: T[]) => boolean,
+  timeoutMs: number = LSP_RESPONSE_MS,
+  intervalMs: number = POLL_INTERVAL_MS,
+  waitingFor = `${command} to answer as expected`,
+): Promise<T[]> {
+  return pollUntilResult(
+    async () => (await vscode.commands.executeCommand<T[]>(command, ...args)) ?? [],
+    until,
+    timeoutMs,
+    intervalMs,
+    waitingFor,
+  );
+}
+
+/**
  * Block until the SEMANTIC engine can answer about `uri` — not just the syntax
  * one.
  *
@@ -146,16 +168,65 @@ export async function warmSemanticEngine(
   timeoutMs: number = SIDECAR_COLD_MS,
 ): Promise<void> {
   const start = new vscode.Position(0, 0);
-  await pollUntilResult(
-    async () =>
-      (await vscode.commands.executeCommand<vscode.CodeAction[]>(
-        'vscode.executeCodeActionProvider',
-        uri,
-        new vscode.Range(start, start),
-      )) ?? [],
+  await pollProvider<vscode.CodeAction>(
+    'vscode.executeCodeActionProvider',
+    [uri, new vscode.Range(start, start)],
     (actions) => actions.length > 0,
     timeoutMs,
   );
+}
+
+/** A text to search, or a set, map (by key) or list to look entries up in. */
+export type Haystack<T> = string | ReadonlySet<T> | ReadonlyMap<T, unknown> | readonly unknown[];
+
+/**
+ * Assert `haystack` holds EVERY one of `needles` — by substring in a string, by
+ * membership otherwise. One failure names every missing needle and what the
+ * haystack held, where a run of single asserts stops at the first miss.
+ */
+export function assertContainsAll<T>(
+  haystack: Haystack<NoInfer<T>>,
+  needles: readonly T[],
+  what: string,
+): void {
+  const entries = typeof haystack === 'string' ? undefined : entriesOf(haystack);
+  const missing = needles.filter((needle) =>
+    entries === undefined ? !String(haystack).includes(String(needle)) : !entries.includes(needle),
+  );
+  const held = entries === undefined ? String(haystack).slice(0, 400) : JSON.stringify(entries);
+  assert.deepStrictEqual(missing, [], `${what}: missing ${JSON.stringify(missing)} from ${held}`);
+}
+
+/**
+ * Assert `haystack` holds NONE of `needles`, naming every one that slipped in
+ * and what the haystack held.
+ */
+export function assertContainsNone<T>(
+  haystack: Haystack<NoInfer<T>>,
+  needles: readonly T[],
+  what: string,
+): void {
+  const entries = typeof haystack === 'string' ? undefined : entriesOf(haystack);
+  const present = needles.filter((needle) =>
+    entries === undefined ? String(haystack).includes(String(needle)) : entries.includes(needle),
+  );
+  const held = entries === undefined ? String(haystack).slice(0, 400) : JSON.stringify(entries);
+  assert.deepStrictEqual(present, [], `${what}: unexpected ${JSON.stringify(present)} in ${held}`);
+}
+
+/** What a set, map or list holds: a set's members, a map's keys, a list's items. */
+function entriesOf<T>(haystack: Exclude<Haystack<T>, string>): readonly unknown[] {
+  return Array.isArray(haystack) ? haystack : [...(haystack as ReadonlySet<T>).keys()];
+}
+
+/** Poll the document-symbol provider for `uri` until `until` holds over its reply. */
+export async function pollSymbols(
+  uri: vscode.Uri,
+  until: (symbols: vscode.DocumentSymbol[]) => boolean,
+  timeoutMs: number = LSP_RESPONSE_MS,
+  intervalMs: number = POLL_INTERVAL_MS,
+): Promise<vscode.DocumentSymbol[]> {
+  return pollProvider('vscode.executeDocumentSymbolProvider', [uri], until, timeoutMs, intervalMs);
 }
 
 /** Wait for document symbols to be returned by the LSP server. */
@@ -163,17 +234,7 @@ export async function waitForDocumentSymbols(
   uri: vscode.Uri,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.DocumentSymbol[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-        'vscode.executeDocumentSymbolProvider',
-        uri,
-      );
-      return result ?? [];
-    },
-    (symbols) => symbols.length > 0,
-    timeoutMs,
-  );
+  return pollSymbols(uri, (symbols) => symbols.length > 0, timeoutMs);
 }
 
 /**
@@ -199,14 +260,9 @@ export async function waitForFoldingRanges(
   uri: vscode.Uri,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.FoldingRange[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
-        'vscode.executeFoldingRangeProvider',
-        uri,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.FoldingRange>(
+    'vscode.executeFoldingRangeProvider',
+    [uri],
     (ranges) => ranges.length > 0,
     timeoutMs,
   );
@@ -218,15 +274,9 @@ export async function waitForSelectionRanges(
   positions: vscode.Position[],
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.SelectionRange[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.SelectionRange[]>(
-        'vscode.executeSelectionRangeProvider',
-        uri,
-        positions,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.SelectionRange>(
+    'vscode.executeSelectionRangeProvider',
+    [uri, positions],
     (ranges) => ranges.length > 0,
     timeoutMs,
   );
@@ -238,15 +288,9 @@ export async function waitForHoverResult(
   position: vscode.Position,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Hover[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.Hover[]>(
-        'vscode.executeHoverProvider',
-        uri,
-        position,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.Hover>(
+    'vscode.executeHoverProvider',
+    [uri, position],
     (hovers) => hovers.length > 0,
     timeoutMs,
   );
@@ -285,6 +329,17 @@ export async function openCSharpFile(
   content: string,
 ): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri }> {
   return openFile(tmpDir, filename, content);
+}
+
+/** Create and open a C# file, then wait for the outline the server reports for it. */
+export async function openCSharpOutline(
+  tmpDir: string,
+  filename: string,
+  content: string,
+  timeoutMs: number = LSP_RESPONSE_MS,
+): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri; symbols: vscode.DocumentSymbol[] }> {
+  const opened = await openCSharpFile(tmpDir, filename, content);
+  return { ...opened, symbols: await waitForDocumentSymbols(opened.uri, timeoutMs) };
 }
 
 /** Create a temporary F# file, open it in the editor, return doc + uri. */
@@ -382,14 +437,9 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
   // budget sits under the `ACTIVATION_MS` hook every caller runs this in, so a
   // server that never answers is reported HERE, by name, and not by mocha's
   // generic hook timeout ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-  await pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-        'vscode.executeDocumentSymbolProvider',
-        uri,
-      );
-      return result ?? [];
-    },
+  await pollProvider<vscode.DocumentSymbol>(
+    'vscode.executeDocumentSymbolProvider',
+    [uri],
     (symbols) => symbols.length > 0,
     READINESS_MS,
     500,

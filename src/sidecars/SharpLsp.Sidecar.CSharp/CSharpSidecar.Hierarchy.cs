@@ -1,130 +1,41 @@
-using MessagePack;
 using ByteResult = Outcome.Result<byte[], string>;
 
 namespace SharpLsp.Sidecar.CSharp;
 
 /// <summary>
-/// Handlers for call hierarchy and type hierarchy.
+/// Handlers for call hierarchy and type hierarchy. Every one of them takes a
+/// cursor position and answers with the workspace's result, so each is the
+/// shared position-request skeleton pointed at a different workspace method.
 /// </summary>
 internal sealed partial class CSharpSidecar
 {
-    private async Task<ByteResult> HandlePrepareCallHierarchyAsync(
-        byte[] payload,
-        CancellationToken ct
-    )
+    private Task<ByteResult> HandlePrepareCallHierarchyAsync(byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var req = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await _workspace
-                .PrepareCallHierarchyAsync(req.FilePath, req.Line, req.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(payload, _workspace.PrepareCallHierarchyAsync, ct);
     }
 
-    private async Task<ByteResult> HandleIncomingCallsAsync(byte[] payload, CancellationToken ct)
+    private Task<ByteResult> HandleIncomingCallsAsync(byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var req = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await _workspace
-                .GetIncomingCallsAsync(req.FilePath, req.Line, req.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(payload, _workspace.GetIncomingCallsAsync, ct);
     }
 
-    private async Task<ByteResult> HandleOutgoingCallsAsync(byte[] payload, CancellationToken ct)
+    private Task<ByteResult> HandleOutgoingCallsAsync(byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var req = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await _workspace
-                .GetOutgoingCallsAsync(req.FilePath, req.Line, req.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(payload, _workspace.GetOutgoingCallsAsync, ct);
     }
 
-    private async Task<ByteResult> HandlePrepareTypeHierarchyAsync(
-        byte[] payload,
-        CancellationToken ct
-    )
+    private Task<ByteResult> HandlePrepareTypeHierarchyAsync(byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var req = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await _workspace
-                .PrepareTypeHierarchyAsync(req.FilePath, req.Line, req.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(payload, _workspace.PrepareTypeHierarchyAsync, ct);
     }
 
-    private async Task<ByteResult> HandleSupertypesAsync(byte[] payload, CancellationToken ct)
+    private Task<ByteResult> HandleSupertypesAsync(byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var req = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await _workspace
-                .GetSupertypesAsync(req.FilePath, req.Line, req.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(payload, _workspace.GetSupertypesAsync, ct);
     }
 
-    private async Task<ByteResult> HandleSubtypesAsync(byte[] payload, CancellationToken ct)
+    private Task<ByteResult> HandleSubtypesAsync(byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var req = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await _workspace
-                .GetSubtypesAsync(req.FilePath, req.Line, req.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(payload, _workspace.GetSubtypesAsync, ct);
     }
 }

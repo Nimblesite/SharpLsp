@@ -31,13 +31,12 @@ import {
   stepToFrame,
 } from './debug-drive-kit';
 import {
-  armBreakpoints,
   assertCleanSession,
   assertRanToCompletion,
-  startDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
-import { deepEq, eq, neq } from './test-helpers';
+import { deepEq, eq, neq, assertContainsAll } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** A type the fixture never throws — the exclude half of every filter case. */
@@ -61,10 +60,7 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate before any throw.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.caught });
-    const [gate] = await recorder.waitForStops(1);
-    assert.ok(gate, 'the debuggee must reach the gate breakpoint');
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.caught });
     eq(
       recorder.capabilities()['supportsExceptionOptions'],
       true,
@@ -112,12 +108,10 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
   // Implements the EXCLUDE half of the same row.
   test('a type filter ignores every exception type it does not name', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — gate, then select a type the program NEVER throws.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.caught });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.caught });
     const beforeFilter = recorder.requests('setExceptionBreakpoints').length;
     await dap(session, 'setExceptionBreakpoints', onlyType(NEVER_THROWN_TYPE));
     const baseline = recorder.stops().length;
@@ -143,11 +137,11 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     // killing the session would satisfy "no stops" while proving the opposite
     // of what this test is about.
     eq(recorder.stops().length, baseline, 'no stop was added by the excluded type');
-    assert.ok(
-      recorder.outputText().includes(`handled ${CAUGHT_MESSAGE}`),
-      'the debuggee handled the exception itself, which is why the filter had to ignore it',
+    assertContainsAll(
+      recorder.outputText(),
+      [`handled ${CAUGHT_MESSAGE}`, 'done caught 45'],
+      'recorder.outputText()',
     );
-    assert.ok(recorder.outputText().includes('done caught 45'), 'and ran through to its own end');
 
     // Interaction 4 — the filter that WAS set is the one that was asked for.
     // A `setExceptionBreakpoints` whose type list is dropped on the way to the
@@ -166,9 +160,8 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
       JSON.stringify(applied).includes(NEVER_THROWN_TYPE),
       `the request names ${NEVER_THROWN_TYPE}`,
     );
-    eq(
-      JSON.stringify(applied).includes(CAUGHT_TYPE),
-      false,
+    assert.ok(
+      !JSON.stringify(applied).includes(CAUGHT_TYPE),
       `and must not name ${CAUGHT_TYPE}, which the program does throw`,
     );
 
@@ -183,9 +176,9 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
 
     // Interaction 1 — gate, arm a breakpoint after the FIRST throw, and turn
     // every exception filter OFF.
-    armBreakpoints(fixture, 'main-mode', 'main-unhandled');
-    const session = await startDebuggee(debuggee(), { mode: MODE.both });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), ['main-mode', 'main-unhandled'], {
+      mode: MODE.both,
+    });
     await dap(session, 'setExceptionBreakpoints', { filters: [] });
     const beforeFirstThrow = recorder.stops().length;
 
@@ -242,10 +235,7 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate before any throw, in the mode that throws BOTH types.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.both });
-    const [gate] = await recorder.waitForStops(1);
-    assert.ok(gate, 'the debuggee must reach the gate breakpoint');
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.both });
     neq(CAUGHT_TYPE, UNHANDLED_TYPE, 'the fixture really throws two DIFFERENT types');
 
     // Interaction 2 — select both thrown types AND one that is never thrown.
@@ -315,9 +305,7 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate, in the mode that throws both types.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.both });
-    await recorder.waitForStops(1);
+    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.both });
     eq(
       recorder.capabilities()['supportsExceptionOptions'],
       true,
@@ -368,9 +356,8 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
       1,
       'exactly ONE exception stop: the excluded throw produced none',
     );
-    eq(
+    assert.ok(
       recorder.outputText().includes('handled ' + CAUGHT_MESSAGE),
-      true,
       'and the excluded exception really was thrown and handled on the way past',
     );
   });

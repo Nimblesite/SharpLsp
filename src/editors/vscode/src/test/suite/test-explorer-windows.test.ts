@@ -24,15 +24,22 @@ import { createSolution, projectXml, warmDiscovery, writeProject } from './dotne
 import { fixtureFor } from './test-explorer-fixtures';
 import {
   assertDeclaredInside,
-  activateTestExplorer,
   collectItemIds,
   collectLeafIds,
   discoverSolution,
-  drainDiscovery,
   findItem,
   snapshotItems,
+  activateWithScratch,
+  teardownFixtureSolution,
+  assertPlainLeaf,
+  announcedPair,
 } from './test-explorer-kit';
-import { comparablePath, removeDirRecursive } from './test-helpers.js';
+import {
+  comparablePath,
+  removeDirRecursive,
+  assertContainsAll,
+  assertContainsNone,
+} from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
@@ -79,8 +86,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-testexplorer-win-'));
+    ({ api, root } = await activateWithScratch('sharplsp-testexplorer-win-'));
     // The most common real Windows path with a space followed by `(`.
     hostileDir = path.join(root, 'Program Files (x86) copy', 'My Tests');
     fs.mkdirSync(hostileDir, { recursive: true });
@@ -103,13 +109,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
 
   suiteTeardown(async function () {
     this.timeout(DOTNET_CLI_MS);
-    // A `dotnet test` pointed at a deleted directory hangs forever and poisons
-    // every later suite, so the debounced sweep lands BEFORE the fixture goes.
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-    removeDirRecursive(root);
+    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('discovery survives a solution directory carrying a space AND parentheses', async function () {
@@ -125,29 +125,15 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       'My Tests',
       'the leaf fixture directory carries a space of its own',
     );
-    assert.strictEqual(
-      hostileDir.includes(' ('),
-      true,
-      `the fixture path must contain the ' (' sequence the banner parser slices on: ${hostileDir}`,
-    );
-    assert.strictEqual(
-      hostileDir.includes(')'),
-      true,
-      `the fixture path must contain a closing paren: ${hostileDir}`,
-    );
+    assertContainsAll(hostileDir, [' (', ')'], 'the fixture path must contain');
     assert.strictEqual(
       path.dirname(slnPath),
       hostileDir,
       'the solution must live directly inside the hostile directory',
     );
-    assert.strictEqual(
-      fs.existsSync(slnPath),
-      true,
-      `dotnet new sln must have produced ${slnPath}`,
-    );
-    assert.strictEqual(
+    assert.ok(fs.existsSync(slnPath), `dotnet new sln must have produced ${slnPath}`);
+    assert.ok(
       slnPath.endsWith('.slnx') || slnPath.endsWith('.sln'),
-      true,
       `dotnet new sln produced an unexpected file: ${slnPath}`,
     );
     api.testController.items.replace([]);
@@ -165,9 +151,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
     await discoverSolution(api, slnPath, EXPECTED);
     const settled = collectLeafIds(api.testController.items);
     for (const expected of EXPECTED) {
-      assert.strictEqual(
+      assert.ok(
         settled.includes(expected),
-        true,
         `must be discovered from a hostile path: ${expected}\ngot: ${settled.join(', ')}`,
       );
       assert.strictEqual(
@@ -196,9 +181,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       settled.length,
       `the tree must carry no duplicate ids: ${settled.join(', ')}`,
     );
-    assert.strictEqual(
+    assert.ok(
       settled.includes(FS_FACT_SPACED),
-      true,
       `the spaced F# name must survive a spaced PATH too: ${FS_FACT_SPACED}`,
     );
     assert.strictEqual(
@@ -211,14 +195,12 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       5,
       'all five C# tests are discovered',
     );
-    assert.strictEqual(
-      settled.some((id) => id.includes('Test run for') || id.includes('Passed!')),
-      false,
+    assert.ok(
+      !settled.some((id) => id.includes('Test run for') || id.includes('Passed!')),
       'VSTest banner/summary chatter must never become a test item',
     );
-    assert.strictEqual(
-      settled.some((id) => id.includes('(a: 2')),
-      false,
+    assert.ok(
+      !settled.some((id) => id.includes('(a: 2')),
       "a theory's ROWS collapse into the one parameterless FQN VSTest filters on",
     );
     // Every item is anchored at the hostile dir — the uri the view reveals with.
@@ -241,9 +223,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       'the TEST snapshots are the discovered items, one for one',
     );
     for (const snapshot of groupSnapshots) {
-      assert.strictEqual(
-        EXPECTED.includes(snapshot.id),
-        false,
+      assert.ok(
+        !EXPECTED.includes(snapshot.id),
         `a group id is never an FQN, even under a hostile path: ${snapshot.id}`,
       );
       assert.strictEqual(
@@ -253,31 +234,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       );
     }
     for (const snapshot of testSnapshots) {
-      assertDeclaredInside(
-        snapshot.uriPath,
-        hostileDir,
-        `${snapshot.id}, under the hostile solution directory, parentheses and all,`,
-      );
-      assert.strictEqual(
-        snapshot.description,
-        snapshot.id,
-        'the description carries the full FQN so same-named methods disambiguate',
-      );
-      assert.strictEqual(
-        snapshot.label,
-        snapshot.id.split('.').at(-1),
-        `the label must be the last dotted segment of ${snapshot.id}`,
-      );
-      assert.strictEqual(
-        snapshot.childCount,
-        0,
-        'a discovered TEST is a leaf; groups sit above it',
-      );
-      assert.deepStrictEqual(
-        snapshot.tags,
-        [],
-        `${snapshot.id} is plain xUnit and must carry no framework tag`,
-      );
+      assertPlainLeaf(snapshot, hostileDir);
     }
     const spaced = findItem(api.testController.items, FS_FACT_SPACED);
     assert.ok(spaced, `${FS_FACT_SPACED} must resolve by id`);
@@ -296,7 +253,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       FS_FACT_SPACED,
       'the F# description is the whole FQN, spaces included',
     );
-    assert.strictEqual(spaced.canResolveChildren, false, 'a leaf test resolves no children');
+    assert.ok(!spaced.canResolveChildren, 'a leaf test resolves no children');
     assert.strictEqual(spaced.children.size, 0, 'a leaf test has no children');
     assertDeclaredInside(spaced.uri?.fsPath, hostileDir, 'the spaced F# test');
     assert.strictEqual(
@@ -326,23 +283,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   test('the assembly banner parser strips the framework suffix from the RIGHT of a hostile path', function () {
     this.timeout(FAST_MS);
     // The genuine listing for a path containing ` (` — why `lastIndexOf` exists.
-    assert.strictEqual(
-      listing.includes('Test run for '),
-      true,
-      'the captured listing must carry the banners this parser reads',
-    );
-    assert.strictEqual(
-      listing.includes('(.NETCoreApp,Version=v10.0)'),
-      true,
-      'the captured banners must carry the framework moniker that has to be stripped',
-    );
-    const announced = parseAnnouncedAssemblies(listing);
-    assert.strictEqual(announced.length, 2, `one banner per project: ${announced.join(', ')}`);
-    assert.strictEqual(
-      new Set(announced).size,
-      2,
-      'a repeated banner is de-duplicated, never double-counted',
-    );
+    const announced = announcedPair(listing);
 
     // The banner path comes through MSBuild, which PERCENT-ESCAPES the
     // characters it reserves — `(` becomes `%28`, `)` becomes `%29`. That is why
@@ -357,22 +298,13 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       `both projects must resolve to a real file: ${announced.join(', ')}`,
     );
     for (const assembly of announced) {
-      assert.strictEqual(path.isAbsolute(assembly), true, `${assembly} must be an absolute path`);
+      assert.ok(path.isAbsolute(assembly), `${assembly} must be an absolute path`);
       assert.strictEqual(
         path.extname(assembly),
         '.dll',
         `${assembly} must be an assembly, not a truncated prefix`,
       );
-      assert.strictEqual(
-        assembly.includes('(.NETCoreApp'),
-        false,
-        `the framework suffix must be stripped: ${assembly}`,
-      );
-      assert.strictEqual(
-        assembly.includes('Version=v'),
-        false,
-        `no part of the framework moniker may survive: ${assembly}`,
-      );
+      assertContainsNone(assembly, ['(.NETCoreApp', 'Version=v'], 'assembly');
       assert.strictEqual(
         path.basename(path.dirname(assembly)),
         'net10.0',
@@ -385,34 +317,14 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       );
     }
     for (const assembly of resolved) {
-      assert.strictEqual(
+      assert.ok(
         fs.existsSync(assembly),
-        true,
         `${assembly} must exist on disk — a truncated or still-escaped path never does`,
       );
-      assert.strictEqual(
-        assembly.includes('%28'),
-        false,
-        `${assembly} must not still carry MSBuild's escaping`,
-      );
-      assert.strictEqual(
-        assembly.includes(' ('),
-        true,
-        `the path's OWN ' (' must survive the strip: ${assembly}`,
-      );
-      assert.strictEqual(
-        assembly.includes('Program Files (x86) copy'),
-        true,
-        `${assembly} must keep the hostile directory name intact`,
-      );
-      assert.strictEqual(
-        assembly.includes('My Tests'),
-        true,
-        `${assembly} must keep the spaced leaf directory`,
-      );
-      assert.strictEqual(
+      assert.ok(!assembly.includes('%28'), `${assembly} must not still carry MSBuild's escaping`);
+      assertContainsAll(assembly, [' (', 'Program Files (x86) copy', 'My Tests'], 'assembly');
+      assert.ok(
         comparablePath(assembly).startsWith(comparablePath(hostileDir)),
-        true,
         `${assembly} must still be rooted in the hostile directory`,
       );
       assert.strictEqual(path.extname(assembly), '.dll', `${assembly} resolves to an assembly`);
@@ -447,9 +359,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
     // spelling, which genuinely carries ' (' inside a directory NAME.
     const assembly = resolved[0];
     assert.ok(assembly !== undefined, 'the listing must resolve at least one assembly');
-    assert.strictEqual(
+    assert.ok(
       assembly.includes(' ('),
-      true,
       `the resolved path must carry the hostile ' (': ${assembly}`,
     );
     const banner = `Test run for ${assembly} (.NETCoreApp,Version=v10.0)`;
@@ -475,9 +386,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
     );
     assert.deepStrictEqual(parseAnnouncedAssemblies(''), [], 'empty output announces no assembly');
     const rest = banner.slice('Test run for '.length);
-    assert.strictEqual(
+    assert.ok(
       rest.indexOf(' (') < rest.lastIndexOf(' ('),
-      true,
       "the banner must contain more than one ' (' or this test proves nothing",
     );
     const naive = rest.slice(0, rest.indexOf(' ('));
@@ -486,9 +396,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       comparablePath(path.join(root, 'Program Files')),
       "the FIRST ' (' lands inside the directory NAME, so a naive slice yields '<root>/Program Files'",
     );
-    assert.strictEqual(
-      fs.existsSync(naive),
-      false,
+    assert.ok(
+      !fs.existsSync(naive),
       'the naively sliced path is not on disk — which is how the tree silently emptied',
     );
     assert.notStrictEqual(
@@ -501,16 +410,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   test('running a C# and an F# test from a hostile directory reports real per-test outcomes', async function () {
     this.timeout(DOTNET_CLI_MS);
     const ids = await discoverSolution(api, slnPath, EXPECTED);
-    assert.strictEqual(
-      ids.includes(FS_FIXTURE.passing),
-      true,
-      'the F# test about to be run must be in the tree',
-    );
-    assert.strictEqual(
-      ids.includes(CS.skipped),
-      true,
-      'the skipped C# test about to be run must be in the tree',
-    );
+    assertContainsAll(ids, [FS_FIXTURE.passing, CS.skipped], 'ids');
     let resultEvents = 0;
     const subscription = api.testController.onResultsChanged(() => {
       resultEvents += 1;
@@ -523,7 +423,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'passed',
         `${FS_FIXTURE.passing} must pass when run from '${hostileDir}'`,
       );
-      assert.strictEqual(fsResult.passed, true, 'a passing F# test reports passed === true');
+      assert.ok(fsResult.passed, 'a passing F# test reports passed === true');
       assert.strictEqual(fsResult.message, undefined, 'a passing test carries no failure message');
       assert.deepStrictEqual(
         sorted(Object.keys(fsResult)),
@@ -535,9 +435,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'number',
         'TRX must yield a numeric duration for a test that really ran',
       );
-      assert.strictEqual(
+      assert.ok(
         (fsResult.duration ?? -1) >= 0,
-        true,
         `a duration must never be negative: ${String(fsResult.duration)}`,
       );
       // SPACES in the FQN, run from a path with spaces: one `--filter` argument.
@@ -547,7 +446,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'passed',
         `${FS_FACT_SPACED} must run and pass — a space is not a filter delimiter`,
       );
-      assert.strictEqual(spacedResult.passed, true, 'the spaced F# test reports a genuine pass');
+      assert.ok(spacedResult.passed, 'the spaced F# test reports a genuine pass');
       assert.strictEqual(
         spacedResult.message,
         undefined,
@@ -560,11 +459,10 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'failed',
         `${FS_FIXTURE.failing} must be reported as a failure`,
       );
-      assert.strictEqual(failedResult.passed, false, 'a failing test is never reported as passed');
+      assert.ok(!failedResult.passed, 'a failing test is never reported as passed');
       assert.ok(failedResult.message, 'a failure must carry the assertion text VSTest reported');
-      assert.strictEqual(
+      assert.ok(
         failedResult.message.includes('Assert.Equal()'),
-        true,
         `the xUnit assertion text must reach the user: ${failedResult.message}`,
       );
       assert.notStrictEqual(
@@ -579,7 +477,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'skipped',
         `${CS.skipped} must be reported as SKIPPED, not failed`,
       );
-      assert.strictEqual(skippedResult.passed, false, 'a skip is not a pass either');
+      assert.ok(!skippedResult.passed, 'a skip is not a pass either');
       assert.notStrictEqual(
         skippedResult.outcome,
         'failed',
@@ -591,7 +489,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'passed',
         `${CS.passing} must pass when run from '${hostileDir}'`,
       );
-      assert.strictEqual(csResult.passed, true, 'a passing C# test reports passed === true');
+      assert.ok(csResult.passed, 'a passing C# test reports passed === true');
       assert.strictEqual(csResult.message, undefined, 'a passing test carries no failure message');
       assert.strictEqual(
         typeof csResult.duration,
@@ -630,21 +528,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'the C# result is cached verbatim',
       );
       const cached = api.testController.cachedResults;
-      assert.strictEqual(
-        cached.has(FS_FIXTURE.passing),
-        true,
-        'the cache is keyed by fully-qualified name for F#',
-      );
-      assert.strictEqual(
-        cached.has(FS_FACT_SPACED),
-        true,
-        'a name with spaces is a valid cache key',
-      );
-      assert.strictEqual(
-        cached.has(CS.passing),
-        true,
-        'the cache is keyed by fully-qualified name for C#',
-      );
+      assertContainsAll(cached, [FS_FIXTURE.passing, FS_FACT_SPACED, CS.passing], 'cached');
       assert.strictEqual(
         cached.get(CS.skipped)?.outcome,
         'skipped',
@@ -655,11 +539,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         false,
         'the cache keeps a failure a failure',
       );
-      assert.strictEqual(
-        cached.has(FS_MSTEST_NESTED),
-        false,
-        'a test that was never run has no cache entry',
-      );
+      assert.ok(!cached.has(FS_MSTEST_NESTED), 'a test that was never run has no cache entry');
       assert.strictEqual(
         api.testController.getResult('Ns.Nope.Missing'),
         undefined,
@@ -792,9 +672,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       `FullyQualifiedName=${FS_FACT_SPACED}`,
       'one name produces one clause with no separator',
     );
-    assert.strictEqual(
-      filterExpression([FS_FACT_SPACED]).includes('|'),
-      false,
+    assert.ok(
+      !filterExpression([FS_FACT_SPACED]).includes('|'),
       'a single clause carries no union operator',
     );
     assert.strictEqual(
@@ -859,9 +738,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         `Serilog.Tests.Formatting.Display.MessageTemplateTextFormatterqc.CanRenderLevel_${String(index)}`,
       );
     }
-    assert.strictEqual(
+    assert.ok(
       filterExpression(many).length > 32_767,
-      true,
       'premise: the un-batched filter expression for 816 real-shaped FQNs exceeds the Windows command-line ceiling',
     );
     // A directory with NO project: `dotnet test` fails fast in the run itself,

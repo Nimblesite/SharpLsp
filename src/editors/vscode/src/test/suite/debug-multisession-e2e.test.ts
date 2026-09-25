@@ -28,9 +28,9 @@ import {
   breakpointAt,
   clearAllBreakpoints,
   launchConfigFor,
-  startDebuggee,
   stopDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import { deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
@@ -70,10 +70,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
     const { fixture, folder, recorder, sessions } = debuggee();
 
     // Interaction 1 — session one stops deep inside the loop.
-    armBreakpoints(fixture, 'add-body');
-    const first = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [firstStop] = await recorder.waitForStops(1);
-    assert.ok(firstStop, 'the first debuggee must reach its breakpoint');
+    const { session: first, stop: firstStop } = await runToFirstStop(debuggee(), 'add-body');
     assertStoppedAt(
       await topFrame(first, firstStop.threadId),
       fixture,
@@ -89,7 +86,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
       folder,
       launchConfigFor(fixture, { mode: MODE.caught }),
     );
-    eq(started, true, 'a second launch must be accepted while the first session is paused');
+    assert.ok(started, 'a second launch must be accepted while the first session is paused');
     const second = await waitForSecondSession(sessions, first.id);
     neq(second.id, first.id, 'the two sessions must be distinct objects');
     eq(second.type, DEBUG_TYPE_ID, 'both are SharpLsp sessions');
@@ -136,10 +133,9 @@ suite('Debug multi-session — two debuggees paused at once', () => {
       'the second session is in a method with no `left`; seeing one means the adapter answered ' +
         'from the wrong session',
     );
-    eq(
+    assert.ok(
       (await stackFrames(first, firstStop.threadId)).length >
         (await stackFrames(second, secondStop.threadId)).length,
-      true,
       'the two call stacks must be genuinely different depths',
     );
 
@@ -203,13 +199,10 @@ suite('Debug multi-session — two debuggees paused at once', () => {
 
     // Interaction 1 — session one, gated on the line that reads the
     // environment, launched with its OWN probe value.
-    armBreakpoints(fixture, 'main-env');
-    const first = await startDebuggee(debuggee(), {
+    const { session: first } = await runToFirstStop(debuggee(), 'main-env', {
       mode: MODE.plain,
       env: { [ENV_PROBE]: 'session-one' },
     });
-    const [firstStop] = await recorder.waitForStops(1);
-    assert.ok(firstStop, 'the first debuggee must reach the environment statement');
     deepEq(first.configuration['args'], [MODE.plain], 'the first session carries its own argv');
     eq(
       (first.configuration['env'] as Record<string, unknown>)[ENV_PROBE],
@@ -223,7 +216,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
       folder,
       launchConfigFor(fixture, { mode: MODE.caught, env: { [ENV_PROBE]: 'session-two' } }),
     );
-    eq(started, true, 'a second launch must be accepted while the first session is paused');
+    assert.ok(started, 'a second launch must be accepted while the first session is paused');
     const second = await waitForSecondSession(sessions, first.id);
     neq(second.id, first.id, 'the two sessions are distinct');
     deepEq(
@@ -246,16 +239,15 @@ suite('Debug multi-session — two debuggees paused at once', () => {
     // half a configuration comparison cannot prove: an env block the adapter
     // accepted and dropped looks identical until the process reads it.
     const stops = await recorder.waitForStops(2);
-    eq(stops.length >= 2, true, 'both sessions reached their gate');
+    assert.ok(stops.length >= 2, 'both sessions reached their gate');
     await vscode.commands.executeCommand(CMD_CONTINUE);
     await recorder.waitForOutput('env=session-');
     const text = recorder.outputText();
-    eq(
+    assert.ok(
       text.includes('env=session-one') || text.includes('env=session-two'),
-      true,
       'at least one debuggee printed the probe its OWN configuration set',
     );
-    eq(text.includes(ENV_UNSET), false, 'and neither ran with the fixture default');
+    assert.ok(!text.includes(ENV_UNSET), 'and neither ran with the fixture default');
     eq(sessions.ours.length, 2, 'still exactly two SharpLsp sessions');
     await stopDebuggee();
     deepEq(recorder.errors, [], 'two configurations must not error the transport');
@@ -270,10 +262,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
     const { fixture, folder, recorder, sessions } = debuggee();
 
     // Interaction 1 — session one, paused deep in the loop.
-    armBreakpoints(fixture, 'add-body');
-    const first = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [firstStop] = await recorder.waitForStops(1);
-    assert.ok(firstStop, 'the first debuggee must reach its breakpoint');
+    const { session: first, stop: firstStop } = await runToFirstStop(debuggee(), 'add-body');
     assertStoppedAt(
       await topFrame(first, firstStop.threadId),
       fixture,
@@ -285,9 +274,8 @@ suite('Debug multi-session — two debuggees paused at once', () => {
     // Interaction 2 — session two, paused somewhere else.
     clearAllBreakpoints();
     vscode.debug.addBreakpoints([breakpointAt(fixture, 'inspect-list')]);
-    eq(
+    assert.ok(
       await vscode.debug.startDebugging(folder, launchConfigFor(fixture, { mode: MODE.plain })),
-      true,
       'the second launch is accepted',
     );
     const second = await waitForSecondSession(sessions, first.id);
@@ -311,9 +299,8 @@ suite('Debug multi-session — two debuggees paused at once', () => {
       DEBUG_SESSION_MS,
       50,
     );
-    eq(
+    assert.ok(
       sessions.liveOurs.some((live) => live.id === second.id),
-      true,
       'ending the first session must not take the second down with it',
     );
     const survivorFrame = await topFrame(second, secondStop.threadId);
@@ -324,9 +311,8 @@ suite('Debug multi-session — two debuggees paused at once', () => {
       'Inspect',
       'the surviving session must still be paused where it was, and answer for ITSELF',
     );
-    eq(
+    assert.ok(
       variableNamed(await localsOf(second, survivorFrame.id), 'numbers').value.trim() !== '',
-      true,
       'with its own frame locals still readable',
     );
     eq(

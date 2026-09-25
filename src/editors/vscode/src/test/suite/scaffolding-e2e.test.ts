@@ -26,6 +26,7 @@ import {
   comparableText,
   EXTENSION_ID,
   removeDirRecursive,
+  assertContainsAll,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import {
@@ -209,8 +210,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
         assert.ok(onDisk.includes(`public record ${name};`));
         assert.ok(onDisk.endsWith(';\n'), 'record has no brace body');
       } else {
-        assert.ok(onDisk.includes(`public ${snippet} ${name}`));
-        assert.ok(onDisk.includes('{\n}\n'), `${snippet} must have a brace body`);
+        assertContainsAll(onDisk, [`public ${snippet} ${name}`, '{\n}\n'], 'onDisk');
       }
       assert.ok(onDisk.startsWith('namespace MyNamespace;\n\n'));
 
@@ -319,7 +319,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     assert.ok(projFile.endsWith(`${name}.csproj`), 'the project file must be a .csproj');
     assert.ok(fs.existsSync(projFile), 'the located project file must exist on disk');
     // No F# project file should appear for a C# template.
-    assert.strictEqual(fs.existsSync(path.join(projDir, `${name}.fsproj`)), false);
+    assert.ok(!fs.existsSync(path.join(projDir, `${name}.fsproj`)));
 
     // The template QuickPick was offered with both C# and F# entries.
     const labels = (stubs.log.quickPickItems[0] as { label: string }[]).map((i) => i.label);
@@ -342,7 +342,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     assert.ok(fs.existsSync(projDir), 'the F# project directory must be created');
     const projFile = findProjectFile(projDir, name);
     assert.ok(projFile?.endsWith(`${name}.fsproj`), 'an F# .fsproj must be found');
-    assert.strictEqual(fs.existsSync(path.join(projDir, `${name}.csproj`)), false);
+    assert.ok(!fs.existsSync(path.join(projDir, `${name}.csproj`)));
   });
 
   test('newProject cancels cleanly when no template is picked', async function () {
@@ -355,7 +355,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     stubs.queueInput(name);
     await vscode.commands.executeCommand(CMD_NEW_PROJECT);
 
-    assert.strictEqual(fs.existsSync(projDir), false, 'no project dir on template cancel');
+    assert.ok(!fs.existsSync(projDir), 'no project dir on template cancel');
     assert.strictEqual(stubs.log.quickPickItems.length, 1, 'the template picker was shown');
     assert.strictEqual(stubs.log.inputBoxOptions.length, 0, 'the name prompt was NOT reached');
   });
@@ -369,7 +369,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     stubs.queuePick('Class Library').queueInput('');
     await vscode.commands.executeCommand(CMD_NEW_PROJECT);
 
-    assert.strictEqual(fs.existsSync(projDir), false, 'no project dir when name is empty');
+    assert.ok(!fs.existsSync(projDir), 'no project dir when name is empty');
     assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'the name prompt WAS reached');
   });
 
@@ -454,8 +454,8 @@ suite('Scaffolding E2E (drive real commands)', () => {
     stubs.queueInput('');
     await vscode.commands.executeCommand(CMD_NEW_SOLUTION);
 
-    assert.strictEqual(fs.existsSync(path.join(folder, `${name}.sln`)), false);
-    assert.strictEqual(fs.existsSync(path.join(folder, `${name}.slnx`)), false);
+    assert.ok(!fs.existsSync(path.join(folder, `${name}.sln`)));
+    assert.ok(!fs.existsSync(path.join(folder, `${name}.slnx`)));
     // The name prompt was shown but the first-project offer was never reached.
     assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'name prompt was shown');
     assert.ok(

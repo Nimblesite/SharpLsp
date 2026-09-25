@@ -16,7 +16,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { DapRecorder } from './debug-dap-kit';
+import { DapRecorder, type StopRecord } from './debug-dap-kit';
 import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts';
 import {
   MODE,
@@ -170,12 +170,28 @@ export async function startDebuggee(
   options: LaunchOptions = {},
 ): Promise<vscode.DebugSession> {
   const config = launchConfigFor(debuggee.fixture, options);
-  assert.strictEqual(fs.existsSync(String(config['program'])), true, missingProgram(config));
+  assert.ok(fs.existsSync(String(config['program'])), missingProgram(config));
   const started = await vscode.debug.startDebugging(debuggee.folder, config, {
     noDebug: options.noDebug ?? false,
   });
-  assert.strictEqual(started, true, refusedLaunch(debuggee));
+  assert.ok(started, refusedLaunch(debuggee));
   return waitForSession();
+}
+
+/**
+ * Arm `anchors`, launch, and wait for the first stop: the opening almost every
+ * test in this family shares. The stop is asserted, not assumed.
+ */
+export async function runToFirstStop(
+  debuggee: Debuggee,
+  anchors: string | readonly string[],
+  options: LaunchOptions = {},
+): Promise<{ session: vscode.DebugSession; stop: StopRecord }> {
+  armBreakpoints(debuggee.fixture, ...[anchors].flat());
+  const session = await startDebuggee(debuggee, options);
+  const [stop] = await debuggee.recorder.waitForStops(1);
+  assert.ok(stop, `the debuggee must stop at ${[anchors].flat().join(', ')}`);
+  return { session, stop };
 }
 
 /** The message a missing build produces — a fixture bug, not a product bug. */
@@ -228,7 +244,7 @@ async function materialise(scratchDir: string, language: Language): Promise<Debu
   const dir = path.join(scratchDir, language === 'fsharp' ? 'FsStepTarget' : 'StepTarget');
   const fixture = language === 'fsharp' ? writeFSharpStepTarget(dir) : writeCSharpStepTarget(dir);
   await buildProject(fixture);
-  assert.strictEqual(fs.existsSync(fixture.dll), true, `the debuggee must build to ${fixture.dll}`);
+  assert.ok(fs.existsSync(fixture.dll), `the debuggee must build to ${fixture.dll}`);
   return fixture;
 }
 
@@ -385,7 +401,7 @@ export async function assertRanToCompletion(
     `${why}: the debuggee must exit ${String(expectedExitCode)}`,
   );
   const terminated = await recorder.waitForEvents('terminated', 1);
-  assert.strictEqual(terminated.length >= 1, true, `${why}: the session must report termination`);
+  assert.ok(terminated.length >= 1, `${why}: the session must report termination`);
 }
 
 /** Every user-visible refusal the extension issued while a case ran. */

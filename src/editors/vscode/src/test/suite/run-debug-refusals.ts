@@ -56,7 +56,7 @@ export function messagesOf(stubs: UiStubs): string[] {
 /** A refusal must name its own reason, not borrow an unrelated one. */
 export function assertOmits(message: string, forbidden: string, why: string): void {
   const mentions = message.includes(forbidden);
-  assert.strictEqual(mentions, false, `${why}: must not mention '${forbidden}': '${message}'`);
+  assert.ok(!mentions, `${why}: must not mention '${forbidden}': '${message}'`);
 }
 
 export function assertNamedRefusal(message: string, needles: readonly string[], why: string): void {
@@ -66,7 +66,7 @@ export function assertNamedRefusal(message: string, needles: readonly string[], 
   const lowered = message.toLowerCase();
   for (const needle of needles) {
     const named = lowered.includes(needle);
-    assert.strictEqual(named, true, `${why}: must name '${needle}': '${message}'`);
+    assert.ok(named, `${why}: must name '${needle}': '${message}'`);
   }
 }
 

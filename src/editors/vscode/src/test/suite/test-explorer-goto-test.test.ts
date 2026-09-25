@@ -18,7 +18,6 @@
 // `[Fact]` resolves to its line in the `.cs` file.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -32,12 +31,18 @@ import {
   XUNIT_PACKAGES,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   discoverSolution,
   drainDiscovery,
   findItem,
+  activateWithScratch,
+  teardownFixtureSolution,
 } from './test-explorer-kit';
-import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
+import {
+  closeAllEditors,
+  comparablePath,
+  removeDirRecursive,
+  assertContainsAll,
+} from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 /**
@@ -176,14 +181,12 @@ function gotoUri(item: vscode.TestItem): vscode.Uri {
     `Go to Test is menu-gated on 'testItemHasUri'; '${item.label}' carries no URI, so the ` +
       'action is not even offered',
   );
-  assert.strictEqual(
+  assert.ok(
     fs.existsSync(uri.fsPath),
-    true,
     `Go to Test on '${item.label}' would open ${uri.fsPath}, which does not exist`,
   );
-  assert.strictEqual(
+  assert.ok(
     fs.statSync(uri.fsPath).isFile(),
-    true,
     `Go to Test on '${item.label}' must open the SOURCE FILE that declares it; ` +
       `${uri.fsPath} is a directory, so the editor never moves`,
   );
@@ -241,9 +244,8 @@ function assertRevealed(
     `Go to Test on '${expectation.fqn}' must land on its declaration (0-based line ` +
       `${String(expectation.line)}), not line ${String(line)}`,
   );
-  assert.strictEqual(
+  assert.ok(
     editor.document.lineAt(line).text.includes(expectation.declares),
-    true,
     `the revealed line must DECLARE the test; line ${String(line)} of ${expectation.fileName} ` +
       `reads: ${editor.document.lineAt(line).text.trim()}`,
   );
@@ -270,8 +272,7 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-goto-test-'));
+    ({ api, root } = await activateWithScratch('sharplsp-goto-test-'));
     fsProjDir = writeProject(
       path.join(root, FS_PROJECT),
       `${FS_PROJECT}.fsproj`,
@@ -300,18 +301,13 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
   suiteTeardown(async function () {
     this.timeout(DOTNET_CLI_MS);
     await closeAllEditors();
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-    removeDirRecursive(root);
+    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('Go to Test on an F# backtick test opens its .fs file at the binding', async function () {
     this.timeout(DOTNET_CLI_MS);
     const ids = await discoverSolution(api, slnPath, EXPECTED);
-    assert.strictEqual(ids.includes(FS_FACT), true, `discovery must surface ${FS_FACT}`);
-    assert.strictEqual(ids.includes(FS_THEORY), true, `discovery must surface ${FS_THEORY}`);
+    assertContainsAll(ids, [FS_FACT, FS_THEORY], 'discovery must surface');
 
     const fact = leafFor(api, FS_FACT);
     const factUri = gotoUri(fact);
@@ -338,7 +334,7 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
     );
 
     // A test in a NESTED module reveals at its own binding, in the same file.
-    assert.strictEqual(ids.includes(FS_NESTED), true, `discovery must surface ${FS_NESTED}`);
+    assert.ok(ids.includes(FS_NESTED), `discovery must surface ${FS_NESTED}`);
     const nested = leafFor(api, FS_NESTED);
     const nestedEditor = await goToTest(nested);
     assertRevealed(nestedEditor, nested, expectationFor(FS_NESTED), fsProjDir);
@@ -347,7 +343,7 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
   test('Go to Test on a C# test opens its .cs file at the method', async function () {
     this.timeout(DOTNET_CLI_MS);
     const ids = await discoverSolution(api, slnPath, EXPECTED);
-    assert.strictEqual(ids.includes(CS_FACT), true, `discovery must surface ${CS_FACT}`);
+    assert.ok(ids.includes(CS_FACT), `discovery must surface ${CS_FACT}`);
 
     const fact = leafFor(api, CS_FACT);
     const factUri = gotoUri(fact);

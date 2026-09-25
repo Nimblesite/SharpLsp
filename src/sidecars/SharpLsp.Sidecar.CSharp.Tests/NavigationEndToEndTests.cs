@@ -53,7 +53,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task PrepareTypeHierarchy_on_abstract_class_returns_item()
     {
-        var item = await fixture.SendAndDeserializeAsync<TypeHierarchyItem>(
+        var item = await fixture.SendAndDeserializeAsync<HierarchyItem>(
             "textDocument/prepareTypeHierarchy",
             fixture.PosPayload(100, 22)
         );
@@ -63,7 +63,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Subtypes_of_abstract_Shape_includes_derived_classes()
     {
-        var items = await fixture.SendAndDeserializeAsync<TypeHierarchyItem[]>(
+        var items = await fixture.SendAndDeserializeAsync<HierarchyItem[]>(
             "typeHierarchy/subtypes",
             fixture.PosPayload(100, 22)
         );
@@ -74,7 +74,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Supertypes_of_Circle_includes_Shape()
     {
-        var items = await fixture.SendAndDeserializeAsync<TypeHierarchyItem[]>(
+        var items = await fixture.SendAndDeserializeAsync<HierarchyItem[]>(
             "typeHierarchy/supertypes",
             fixture.PosPayload(105, 13)
         );
@@ -106,7 +106,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task PrepareCallHierarchy_on_Use_returns_method_item()
     {
-        var item = await fixture.SendAndDeserializeAsync<CallHierarchyItem>(
+        var item = await fixture.SendAndDeserializeAsync<HierarchyItem>(
             "textDocument/prepareCallHierarchy",
             fixture.PosPayload(119, 20)
         );

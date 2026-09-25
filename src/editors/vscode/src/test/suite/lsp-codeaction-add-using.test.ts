@@ -14,25 +14,20 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
-  codeOf,
   exerciseCodeAction,
-  positionOf,
-  rangeOf,
   rawCodeActions,
   type ActionLifecycleCase,
   type RawCodeAction,
 } from './csharp-refactor-test-kit';
+import { diagnosticCode, positionOf, rangeOf } from './document-anchors';
 import {
-  activateRealSharpLsp,
-  openFixtureDocument,
   replaceDocumentText,
-  revertDocument,
   waitForCodeActions,
   waitForMatchingDiagnostics,
-  warmSemanticEngine,
   type OpenFixture,
+  useRefactorFixture,
 } from './refactor-test-helpers';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const HEADER = 'namespace SharpLsp.TestFixtures.AddUsing;\n';
 
@@ -110,137 +105,123 @@ const STATIC_MEMBER = body(`public class StaticMemberTarget
  * `caretOnly` drives the literal user story - a bare caret on the type, no
  * selection, which is what Ctrl-. sends.
  */
+/** One missing-using row, carrying only what varies between rows. */
+interface MissingUsing {
+  readonly label: string;
+  readonly source: string;
+  readonly snippet: string;
+  readonly focus: string;
+  /** The namespace the fix imports. */
+  readonly namespace: string;
+  /** The row's own marker, which must survive the edit. */
+  readonly sentinel: string;
+  /** The unresolved-symbol diagnostic; CS0246 unless the row says otherwise. */
+  readonly code?: string;
+  readonly alsoPresent?: readonly string[];
+}
+
+/** The row every case shares: the exact `using` as a caret-only quickfix that clears the error. */
+function missingUsing(row: MissingUsing): ActionLifecycleCase {
+  const title = `using ${row.namespace};`;
+  return {
+    label: row.label,
+    source: row.source,
+    snippet: row.snippet,
+    focus: row.focus,
+    diagnosticCode: row.code ?? 'CS0246',
+    title,
+    kind: 'quickfix',
+    caretOnly: true,
+    mustDisappear: true,
+    presentAfter: [title, ...(row.alsoPresent ?? []), row.sentinel],
+    absentAfter: [],
+  };
+}
+
 const CASES: readonly ActionLifecycleCase[] = [
-  {
+  missingUsing({
     label: 'object-creation type',
     source: NEW_EXPRESSION,
     snippet: 'new Stopwatch()',
     focus: 'Stopwatch',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Diagnostics;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Diagnostics;', 'new Stopwatch()', 'new-expression-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Diagnostics',
+    sentinel: 'new-expression-sentinel',
+    alsoPresent: ['new Stopwatch()'],
+  }),
+  missingUsing({
     label: 'local-variable type annotation',
     source: LOCAL_ANNOTATION,
     snippet: 'Regex pattern',
     focus: 'Regex',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Text.RegularExpressions;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Text.RegularExpressions;', 'local-annotation-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Text.RegularExpressions',
+    sentinel: 'local-annotation-sentinel',
+  }),
+  missingUsing({
     label: 'generic type argument',
     source: GENERIC_ARGUMENT,
     snippet: 'new List<int>()',
     focus: 'List',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Collections.Generic;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Collections.Generic;', 'generic-argument-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Collections.Generic',
+    sentinel: 'generic-argument-sentinel',
+  }),
+  missingUsing({
     label: 'field declaration type',
     source: FIELD_DECLARATION,
     snippet: 'private Encoding _encoding',
     focus: 'Encoding',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Text;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Text;', 'field-declaration-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Text',
+    sentinel: 'field-declaration-sentinel',
+  }),
+  missingUsing({
     label: 'method return type',
     source: RETURN_TYPE,
     snippet: 'public CultureInfo Culture()',
     focus: 'CultureInfo',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Globalization;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Globalization;', 'return-type-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Globalization',
+    sentinel: 'return-type-sentinel',
+  }),
+  missingUsing({
     label: 'method parameter type',
     source: PARAMETER_TYPE,
     snippet: 'Length(StringBuilder builder)',
     focus: 'StringBuilder',
-    diagnosticCode: 'CS0246',
-    title: 'using System.Text;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Text;', 'parameter-type-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Text',
+    sentinel: 'parameter-type-sentinel',
+  }),
+  missingUsing({
     label: 'base type in the class declaration',
     source: BASE_TYPE,
     snippet: 'BaseTypeTarget : EventArgs',
     focus: 'EventArgs',
-    diagnosticCode: 'CS0246',
-    title: 'using System;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System;', 'base-type-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System',
+    sentinel: 'base-type-sentinel',
+  }),
+  missingUsing({
     label: 'attribute usage',
     source: ATTRIBUTE_USAGE,
     snippet: '[Obsolete("retired")]',
     focus: 'Obsolete',
-    diagnosticCode: 'CS0246',
-    title: 'using System;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System;', 'attribute-usage-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System',
+    sentinel: 'attribute-usage-sentinel',
+  }),
+  missingUsing({
     label: 'extension-method receiver',
     source: EXTENSION_METHOD,
     snippet: 'values.Select(value => value)',
     focus: 'Select',
-    diagnosticCode: 'CS1061',
-    title: 'using System.Linq;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.Linq;', 'extension-method-sentinel'],
-    absentAfter: [],
-  },
-  {
+    namespace: 'System.Linq',
+    sentinel: 'extension-method-sentinel',
+    code: 'CS1061',
+  }),
+  missingUsing({
     label: 'static member access on an unimported type',
     source: STATIC_MEMBER,
     snippet: 'File.ReadAllText(path)',
     focus: 'File',
-    diagnosticCode: 'CS0103',
-    title: 'using System.IO;',
-    kind: 'quickfix',
-    caretOnly: true,
-    mustDisappear: true,
-    presentAfter: ['using System.IO;', 'static-member-sentinel'],
-    absentAfter: [],
-  },
+    namespace: 'System.IO',
+    sentinel: 'static-member-sentinel',
+    code: 'CS0103',
+  }),
 ];
 
 const UNKNOWN_TYPE = body(`public class UnknownTypeTarget
@@ -274,39 +255,26 @@ async function caretActions(
 }
 
 suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORING]', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
-  suiteSetup(async function () {
-    // ONE initialization for the suite: activation, fixture open and the Roslyn
-    // project load are paid here so no test body carries a build tier.
-    this.timeout(FIXTURE_BUILD_MS);
-    await activateRealSharpLsp();
-    fixture = await openFixtureDocument('RefactorCore.cs');
-    await warmSemanticEngine(fixture.uri);
-    committedText = fixture.document.getText();
-  });
-
-  teardown(async () => revertDocument(fixture.document));
+  const refactor = useRefactorFixture('RefactorCore.cs');
 
   for (const actionCase of CASES) {
     const label = `${actionCase.label}: Ctrl-. offers ${actionCase.title} and clears ${actionCase.diagnosticCode}`;
     test(label, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseCodeAction(fixture, committedText, actionCase);
+      await exerciseCodeAction(refactor.fixture, refactor.committedText, actionCase);
     });
   }
 
   test('the import is the PREFERRED action, so Ctrl-. lands on it first', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentText(fixture.document, NEW_EXPRESSION);
+    await replaceDocumentText(refactor.fixture.document, NEW_EXPRESSION);
 
     // Interaction 1 - the developer types the unimported type and the compiler
     // reports it. Without the diagnostic there is nothing for Ctrl-. to fix.
-    const before = await waitForMatchingDiagnostics(fixture.uri, (items) =>
-      items.some((item) => codeOf(item) === UNRESOLVED),
+    const before = await waitForMatchingDiagnostics(refactor.fixture.uri, (items) =>
+      items.some((item) => diagnosticCode(item) === UNRESOLVED),
     );
-    const unresolved = before.filter((item) => codeOf(item) === UNRESOLVED);
+    const unresolved = before.filter((item) => diagnosticCode(item) === UNRESOLVED);
     assert.strictEqual(unresolved.length, 1, 'exactly one unresolved-type error');
     assert.strictEqual(unresolved[0]?.severity, vscode.DiagnosticSeverity.Error, 'it is an error');
     assert.ok(
@@ -317,7 +285,7 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
     // Interaction 2 - the caret goes on the type name, nothing is selected, and
     // Ctrl-. is pressed. The import must be offered, and offered FIRST: an
     // import buried under "Generate class Stopwatch" is a broken lightbulb.
-    const offered = await caretActions(fixture, 'new Stopwatch()', 'Stopwatch');
+    const offered = await caretActions(refactor.fixture, 'new Stopwatch()', 'Stopwatch');
     const imports = usingActions(offered);
     assert.strictEqual(imports.length, 1, 'exactly one using directive is offered');
     assert.strictEqual(imports[0]?.title, 'using System.Diagnostics;', 'naming the namespace');
@@ -336,8 +304,8 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
     // Interaction 3 - the same request through VS Code's own provider, because
     // the lightbulb the developer actually sees is the editor's, not the wire's.
     const uiActions = await waitForCodeActions({
-      uri: fixture.uri,
-      range: rangeOf(fixture.document, 'new Stopwatch()', 'Stopwatch'),
+      uri: refactor.fixture.uri,
+      range: rangeOf(refactor.fixture.document, 'new Stopwatch()', 'Stopwatch'),
       kind: vscode.CodeActionKind.QuickFix,
       predicate: (items) => items.some((item) => item.title === 'using System.Diagnostics;'),
     });
@@ -356,15 +324,16 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
 
   test('a type that exists in no namespace offers no import at all', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentText(fixture.document, UNKNOWN_TYPE);
+    await replaceDocumentText(refactor.fixture.document, UNKNOWN_TYPE);
 
     // Interaction 1 - an unresolvable name still reports CS0246; the import fix
     // must not invent a namespace for a type no assembly contains. The wait
     // names the type: the previous scenario's CS0246 can still be published
     // for the text this one replaced.
-    const diagnostics = await waitForMatchingDiagnostics(fixture.uri, (items) =>
+    const diagnostics = await waitForMatchingDiagnostics(refactor.fixture.uri, (items) =>
       items.some(
-        (item) => codeOf(item) === UNRESOLVED && item.message.includes('NoSuchTypeAnywhere'),
+        (item) =>
+          diagnosticCode(item) === UNRESOLVED && item.message.includes('NoSuchTypeAnywhere'),
       ),
     );
     assert.ok(diagnostics.length >= 1, 'the unresolvable type is reported');
@@ -375,48 +344,51 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
 
     // Interaction 2 - Ctrl-. on it may offer generation, but never a fabricated
     // import: a using for a namespace that does not exist compiles to nothing.
-    const offered = await caretActions(fixture, 'new NoSuchTypeAnywhere()', 'NoSuchTypeAnywhere');
+    const offered = await caretActions(
+      refactor.fixture,
+      'new NoSuchTypeAnywhere()',
+      'NoSuchTypeAnywhere',
+    );
     assert.deepStrictEqual(usingActions(offered), [], 'no using directive is offered');
     assert.ok(
       offered.every((action) => !action.title.includes('NoSuchTypeAnywhere;')),
       'and nothing pretends the name is a namespace',
     );
-    assert.strictEqual(
-      fixture.document.getText().includes('using NoSuchTypeAnywhere'),
-      false,
+    assert.ok(
+      !refactor.fixture.document.getText().includes('using NoSuchTypeAnywhere'),
       'the buffer gains no invented directive',
     );
   });
 
   test('a type whose namespace is already imported offers no second import', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentText(fixture.document, ALREADY_IMPORTED);
+    await replaceDocumentText(refactor.fixture.document, ALREADY_IMPORTED);
 
     // Interaction 1 - with the using present the type resolves, so there is no
     // unresolved-symbol error left to fix.
     const diagnostics = await waitForMatchingDiagnostics(
-      fixture.uri,
-      (items) => !items.some((item) => codeOf(item) === UNRESOLVED),
+      refactor.fixture.uri,
+      (items) => !items.some((item) => diagnosticCode(item) === UNRESOLVED),
     );
     assert.ok(
-      diagnostics.every((item) => codeOf(item) !== UNRESOLVED),
+      diagnostics.every((item) => diagnosticCode(item) !== UNRESOLVED),
       'an imported type reports no unresolved-type error',
     );
     assert.ok(
-      fixture.document.getText().includes('using System.Text;'),
+      refactor.fixture.document.getText().includes('using System.Text;'),
       'because the directive is already in the buffer',
     );
 
     // Interaction 2 - Ctrl-. on the resolved type must not offer to import it
     // a second time; a duplicate directive is a compile error of its own.
-    const offered = await caretActions(fixture, 'new StringBuilder()', 'StringBuilder');
+    const offered = await caretActions(refactor.fixture, 'new StringBuilder()', 'StringBuilder');
     assert.deepStrictEqual(
       usingActions(offered).map((action) => action.title),
       [],
       'no redundant import is offered for an already-imported type',
     );
     assert.strictEqual(
-      fixture.document.getText().split('using System.Text;').length - 1,
+      refactor.fixture.document.getText().split('using System.Text;').length - 1,
       1,
       'and the buffer still carries exactly one such directive',
     );

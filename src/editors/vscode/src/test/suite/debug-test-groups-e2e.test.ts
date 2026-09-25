@@ -10,9 +10,9 @@
 // One test at a time lives in `debug-test-debugging-e2e.test.ts`.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { DapRecorder } from './debug-dap-kit';
+import { DapRecorder, assertAnswered } from './debug-dap-kit';
 import { CMD_CONTINUE, assertStopReason, gesture, methodOf, topFrame } from './debug-drive-kit';
-import { assertBoundAtLines, clearAllBreakpoints, stopDebuggee } from './debug-suite-kit';
+import { assertBoundAtLines } from './debug-suite-kit';
 import {
   CS_ADDS,
   CS_ALL,
@@ -27,10 +27,9 @@ import {
   breakpointAt,
   disabledBreakpointAt,
   requireActive,
-  disposeDebugTestFixture,
-  writeDebugTestFixture,
   type TestDebugFixture,
 } from './debug-test-kit';
+import { debugRun, useDebugTestFixture, firstBreakpointStop } from './debug-test-harness';
 import { DebugSessionRecorder } from './run-debug-kit';
 import {
   activateTestExplorer,
@@ -38,11 +37,10 @@ import {
   discoverSolution,
   findItem,
   rootsOf,
-  runViaProfile,
 } from './test-explorer-kit';
-import { closeAllEditors, deepEq, eq, neq, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-import { installUiStubs, type UiStubs } from './ui-stubs';
+import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
+import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
+import { type UiStubs } from './ui-stubs';
 
 /** How many tests the fixture declares in its first class. */
 const MATH_CLASS_TESTS = 5;
@@ -53,30 +51,9 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
   let sessions: DebugSessionRecorder;
   let stubs: UiStubs;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    fixture = await writeDebugTestFixture('debug-testgroups-', 'csharp');
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    await disposeDebugTestFixture(fixture);
-  });
-
+  const harness = useDebugTestFixture('debug-testgroups-', 'csharp');
   setup(() => {
-    clearAllBreakpoints();
-    recorder = new DapRecorder();
-    sessions = new DebugSessionRecorder();
-    stubs = installUiStubs();
-  });
-
-  teardown(async () => {
-    await stopDebuggee();
-    clearAllBreakpoints();
-    sessions.dispose();
-    recorder.dispose();
-    stubs.restore();
-    await closeAllEditors();
+    ({ fixture, recorder, sessions, stubs } = harness());
   });
 
   /** Discover the fixture and hand back the settled assembly root. */
@@ -99,12 +76,6 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
         .join(' | ')}`,
     );
     return child;
-  }
-
-  /** Press the Debug button on `items`. */
-  async function debugRun(items: readonly vscode.TestItem[]): Promise<void> {
-    const api = await activateTestExplorer();
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Debug, items);
   }
 
   /** The method names of the first `count` stops, sorted. */
@@ -131,7 +102,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     const classRow = groupUnder(namespaceRow, 'CalculatorTests');
     eq(classRow.label, 'CalculatorTests', 'the group above a test is its CLASS');
     eq(classRow.children.size, MATH_CLASS_TESTS, 'holding every test declared in that class');
-    eq(classRow.canResolveChildren, true, 'and declaring them, so the row expands');
+    assert.ok(classRow.canResolveChildren, 'and declaring them, so the row expands');
     neq(classRow.id, classRow.label, 'a group id is qualified by the assembly it belongs to');
 
     // Interaction 2 — arm one breakpoint in each of two of its tests, then
@@ -164,24 +135,22 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // Interaction 4 - a class is ONE invocation ([TEST-RUN-TRX]) however many
     // tests it holds, and the tree row itself must stay a GROUP the whole time.
     eq(sessions.ours.length, 1, 'a class of five tests is ONE session, never five');
-    eq(recorder.events('terminated').length <= 1, true, 'and at most one termination');
+    assert.ok(recorder.events('terminated').length <= 1, 'and at most one termination');
     eq(recorder.events('initialized').length, 1, 'behind exactly one handshake');
     eq(classRow.children.size, MATH_CLASS_TESTS, 'the class still holds every test it declares');
-    eq(classRow.canResolveChildren, true, 'and still declares them, so the row stays expandable');
+    assert.ok(classRow.canResolveChildren, 'and still declares them, so the row stays expandable');
     neq(classRow.id, CS_ADDS, 'a group id is never a fully-qualified test name');
-    eq(
+    assert.ok(
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
-      true,
       'every stop was an armed breakpoint - a step or entry stop is a pause nobody asked for',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
-    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the breakpoints were synced');
-    eq(recorder.responses('attach').length >= 1, true, 'and the attach was answered');
-    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
-    eq(
+    assert.ok(recorder.requests('setBreakpoints').length >= 1, 'the breakpoints were synced');
+    assert.ok(recorder.responses('attach').length >= 1, 'and the attach was answered');
+    assert.ok(recorder.events('exited').length <= 1, 'with at most one process exit');
+    assert.ok(
       vscode.debug.activeDebugSession === undefined || sessions.ours.length === 1,
-      true,
       'and no stray session left focused',
     );
   });
@@ -196,7 +165,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     const textRow = groupUnder(root, CS_TEXT_NAMESPACE);
     neq(mathRow.id, textRow.id, 'two namespaces, two distinct group rows');
     eq(rootsOf(root.children).length, 2, 'and the assembly holds exactly those two');
-    eq(mathRow.canResolveChildren, true, 'each is expandable');
+    assert.ok(mathRow.canResolveChildren, 'each is expandable');
 
     // Interaction 2 — arm a breakpoint in BOTH namespaces, then debug only one
     // of them. The other namespace's breakpoint is the control.
@@ -232,30 +201,19 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(recorder.events('initialized').length, 1, 'behind one handshake');
     const other = groupUnder(await assemblyRoot(), CS_TEXT_NAMESPACE);
     neq(other.children.size, 0, 'the other namespace still holds tests of its own');
-    eq(other.canResolveChildren, true, 'and still declares them');
+    assert.ok(other.canResolveChildren, 'and still declares them');
     neq(other.id, CS_TEXT, 'its id is a group id, not a test name');
-    eq(
+    assert.ok(
       collectLeafIds(other.children).every((id) => id.startsWith(CS_TEXT_NAMESPACE)),
-      true,
       'every leaf beneath it belongs to that namespace and no other',
     );
-    eq(
+    assert.ok(
       recorder.stops().every((entry) => entry.threadId !== 0),
-      true,
       'every stop named the thread it stopped',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
-    eq(
-      recorder.requests('setBreakpoints').length >= 1,
-      true,
-      'the namespace debug synced its breakpoints',
-    );
-    eq(
-      recorder.responses('setBreakpoints').every((response) => response.success),
-      true,
-      'and every sync was answered successfully',
-    );
-    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
+    assertAnswered(recorder, 'setBreakpoints', 'the namespace debug synced its breakpoints');
+    assert.ok(recorder.events('exited').length <= 1, 'with at most one process exit');
     eq(
       collectLeafIds((await assemblyRoot()).children).length,
       CS_ALL.length,
@@ -268,9 +226,8 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
 
     // Interaction 1 — the top row of the Testing view: the whole project.
     const root = await assemblyRoot();
-    eq(
+    assert.ok(
       root.id.startsWith('assembly:'),
-      true,
       `the top row is an ASSEMBLY group, never an FQN; got ${root.id}`,
     );
     eq(root.label, CS_PROJECT, 'labelled with the project it was built from');
@@ -317,17 +274,15 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(settled.label, CS_PROJECT, 'labelled with the project the user recognises');
     neq(settled.id, CS_ADDS, 'and identified by a group id, never a test name');
     deepEq(stubs.log.errorMessages, [], 'with nothing reported to the user as a failure');
-    eq(
+    assert.ok(
       recorder.responses('configurationDone').every((response) => response.success),
-      true,
       'configurationDone was answered successfully',
     );
-    eq(
+    assert.ok(
       recorder.requestedCommands().includes('attach'),
-      true,
       'the assembly debug really attached to a test host',
     );
-    eq(recorder.events('exited').length <= 1, true, 'which exited at most once');
+    assert.ok(recorder.events('exited').length <= 1, 'which exited at most once');
     eq(
       collectLeafIds((await assemblyRoot()).children).length,
       CS_ALL.length,
@@ -394,28 +349,25 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // user did NOT select must be untouched in the tree.
     eq(sessions.ours.length, 1, 'two selected classes are ONE session, not two');
     eq(recorder.events('initialized').length, 1, 'behind one handshake');
-    eq(recorder.events('terminated').length <= 1, true, 'and at most one termination');
+    assert.ok(recorder.events('terminated').length <= 1, 'and at most one termination');
     const root = await assemblyRoot();
     eq(
       collectLeafIds(root.children).length,
       CS_ALL.length,
       'every test is still discovered after a multi-select debug',
     );
-    eq(
+    assert.ok(
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
-      true,
       'every stop was an armed breakpoint',
     );
-    eq(
+    assert.ok(
       new Set(recorder.stops().map((entry) => entry.threadId)).size >= 1,
-      true,
       'and every stop named a thread',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
-    eq(
+    assert.ok(
       recorder.responses('attach').length >= 1,
-      true,
       'the multi-select attached to exactly one test host',
     );
     eq(
@@ -424,7 +376,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       'one attach request, not one per selected class',
     );
     eq(recorder.events('initialized').length, 1, 'behind one handshake');
-    eq(recorder.events('exited').length <= 1, true, 'and at most one exit');
+    assert.ok(recorder.events('exited').length <= 1, 'and at most one exit');
   });
 
   test('debugging a group with no breakpoints runs every test in it to completion', async function () {
@@ -456,9 +408,8 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // breakpoints armed is armed as soon as configurationDone is answered").
     eq(vscode.debug.breakpoints.length, 0, 'the user armed nothing');
     deepEq(recorder.stops(), [], 'so the debuggee must never stop');
-    eq(
+    assert.ok(
       recorder.responses('configurationDone').length >= 1,
-      true,
       'configurationDone was still ANSWERED - a run with nothing to bind is armed there',
     );
     eq(recorder.events('initialized').length, 1, 'the handshake still happened in full');
@@ -466,12 +417,11 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(sessions.ours.length, 1, 'one group, one session, breakpoints or not');
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
-    eq(
+    assert.ok(
       recorder.requestedCommands().includes('configurationDone'),
-      true,
       'the handshake completed even with nothing to bind',
     );
-    eq(recorder.responses('attach').length >= 1, true, 'the attach was answered');
+    assert.ok(recorder.responses('attach').length >= 1, 'the attach was answered');
     eq(recorder.events('exited').length, 1, 'and the debuggee exited exactly once');
     eq(vscode.debug.breakpoints.length, 0, 'with the Breakpoints view still empty');
   });
@@ -527,15 +477,13 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(sessions.ours.length, 1, 'exactly one session was started');
     deepEq(stubs.log.warningMessages, [], 'and the user was warned about nothing');
     eq(recorder.events('initialized').length, 1, 'one handshake for the whole group');
-    eq(
+    assert.ok(
       recorder.responses('attach').every((response) => response.success),
-      true,
       'answered successfully',
     );
     eq(sessions.ours.length, 1, 'and one session');
-    eq(
+    assert.ok(
       recorder.stops().every((entry) => entry.threadId !== 0),
-      true,
       'every stop naming its thread',
     );
   });
@@ -559,13 +507,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     await debugRun([classRow]);
     assertOneTestSession(sessions, 'debugging a class with one armed test');
     assertHandshakeOrder(recorder, 'debugging a class with one armed test');
-    assertBoundAtLines(
-      recorder,
-      [CS_SOURCE.dapLine('multiplies-seed')],
-      'the single armed body of a class-level debug',
-    );
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop in the armed test');
-    assertStopReason(stop, 'breakpoint', 'a class debug with one armed test');
+    const stop = await firstBreakpointStop(recorder, CS_SOURCE, 'multiplies-seed');
     const frame = await topFrame(requireActive('the armed stop'), stop.threadId);
     eq(methodOf(frame), 'Multiplies_Two_Numbers', 'in the test the user armed, and no other');
 
@@ -586,24 +528,17 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(classRow.children.size, MATH_CLASS_TESTS, 'the class still holds all five tests');
     eq(sessions.ours.length, 1, 'in ONE session');
     eq(recorder.events('terminated').length, 1, 'which ended exactly once');
-    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
+    assert.ok(recorder.events('exited').length <= 1, 'with at most one process exit');
     eq(vscode.debug.breakpoints.length, 1, 'the single breakpoint survives the session');
-    eq(
+    assert.ok(
       recorder.requests('setBreakpoints').length >= 1,
-      true,
       'and it really was synced to the adapter rather than kept client-side',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
-    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the one armed line was synced');
-    eq(
-      recorder.responses('setBreakpoints').every((response) => response.success),
-      true,
-      'and the sync was answered',
-    );
+    assertAnswered(recorder, 'setBreakpoints', 'the one armed line was synced');
     eq(recorder.events('initialized').length, 1, 'behind one handshake');
-    eq(
+    assert.ok(
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
-      true,
       'and every stop was that breakpoint',
     );
   });
@@ -634,16 +569,9 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // adapter, so only it can bind.
     await debugRun([classRow]);
     assertOneTestSession(sessions, 'debugging a class with a disabled breakpoint');
-    assertBoundAtLines(
-      recorder,
-      [CS_SOURCE.dapLine('adds-seed')],
-      'only the ENABLED breakpoint of a group debug',
-    );
-
     // Interaction 3 — exactly one stop, in the enabled test, and the session
     // ends without ever visiting the disabled line.
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop at the enabled line');
-    assertStopReason(stop, 'breakpoint', 'a group debug with one line disabled');
+    const stop = await firstBreakpointStop(recorder, CS_SOURCE, 'adds-seed');
     eq(
       methodOf(await topFrame(requireActive('the enabled stop'), stop.threadId)),
       'Adds_Two_Numbers',
@@ -670,12 +598,11 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(sessions.ours.length, 1, 'one class, one session');
     eq(recorder.events('terminated').length, 1, 'ended exactly once');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
-    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the enabled line was synced');
+    assert.ok(recorder.requests('setBreakpoints').length >= 1, 'the enabled line was synced');
     eq(recorder.events('initialized').length, 1, 'behind one handshake');
-    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
-    eq(
+    assert.ok(recorder.events('exited').length <= 1, 'with at most one process exit');
+    assert.ok(
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
-      true,
       'and every stop was a breakpoint stop',
     );
   });
@@ -701,13 +628,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(vscode.debug.breakpoints.length, 1, 'one breakpoint, in the namespace being debugged');
     await debugRun([textRow]);
     assertOneTestSession(sessions, 'debugging the text namespace');
-    assertBoundAtLines(
-      recorder,
-      [CS_SOURCE.dapLine('text-seed')],
-      'the armed body of the text namespace',
-    );
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop in the text namespace');
-    assertStopReason(stop, 'breakpoint', 'debugging the text namespace');
+    const stop = await firstBreakpointStop(recorder, CS_SOURCE, 'text-seed');
     eq(
       methodOf(await topFrame(requireActive('the text stop'), stop.threadId)),
       'Joins_Two_Words',
@@ -731,22 +652,20 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // their own fully-qualified names, which is what makes them runnable.
     const finalRoot = await assemblyRoot();
     const mathRow = groupUnder(finalRoot, CS_MATH_NAMESPACE);
-    eq(mathRow.children.size >= 1, true, 'the untouched namespace still holds its class');
-    eq(
-      collectLeafIds(mathRow.children).includes(CS_ADDS),
-      true,
-      'and that class still holds the test the user never selected',
+    assert.ok(mathRow.children.size >= 1, 'the untouched namespace still holds its class');
+    assertContainsAll(
+      collectLeafIds(mathRow.children),
+      [CS_ADDS, CS_MULTIPLIES],
+      'collectLeafIds(mathRow.children)',
     );
-    eq(collectLeafIds(mathRow.children).includes(CS_MULTIPLIES), true, 'and its sibling');
-    eq(
+    assert.ok(
       collectLeafIds(finalRoot.children).includes(CS_TEXT),
-      true,
       'while the debugged namespace keeps its own test too',
     );
     eq(sessions.ours.length, 1, 'exactly one session for the whole gesture');
     deepEq(recorder.errors, [], 'with no adapter transport error');
     eq(recorder.events('initialized').length, 1, 'one handshake for the namespace debug');
-    eq(recorder.responses('attach').length >= 1, true, 'the attach was answered');
+    assert.ok(recorder.responses('attach').length >= 1, 'the attach was answered');
     eq(recorder.events('terminated').length, 1, 'and the session ended exactly once');
     eq(sessions.ours.length, 1, 'with one session for the whole gesture');
   });

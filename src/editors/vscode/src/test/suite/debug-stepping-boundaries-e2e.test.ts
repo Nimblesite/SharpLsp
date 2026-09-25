@@ -32,12 +32,11 @@ import {
   walk,
 } from './debug-drive-kit';
 import {
-  armBreakpoints,
   assertCleanSession,
   assertRanToCompletion,
   settleBreakpointCount,
-  startDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
@@ -52,10 +51,10 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — one breakpoint on the call, one INSIDE the callee.
-    armBreakpoints(fixture, 'main-accumulate', 'add-body');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [first] = await recorder.waitForStops(1);
-    assert.ok(first, 'the debuggee must reach the call statement');
+    const { session, stop: first } = await runToFirstStop(debuggee(), [
+      'main-accumulate',
+      'add-body',
+    ]);
     assertStoppedAt(
       await topFrame(session, first.threadId),
       fixture,
@@ -110,10 +109,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on the `return` of the innermost method.
-    armBreakpoints(fixture, 'add-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the return statement');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-return');
     const deep = await stackFrames(session, stop.threadId);
     eq(methodOf(requireAt(deep, 0, 'the stopped frame')), 'Add', 'the walk starts in Add');
 
@@ -162,10 +158,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on the entry point's `return`.
-    armBreakpoints(fixture, 'main-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the final return');
+    const { session, stop } = await runToFirstStop(debuggee(), 'main-return');
     assertStoppedAt(
       await topFrame(session, stop.threadId),
       fixture,
@@ -201,10 +194,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 - stop on the call statement inside the loop.
-    armBreakpoints(fixture, 'accumulate-call');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the call inside the loop');
+    const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-call');
     assertStopReason(stop, 'breakpoint', 'the call statement');
     const before = await stackFrames(session, stop.threadId);
     assertStoppedAt(
@@ -214,9 +204,8 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       'Accumulate',
       'the call statement inside the loop',
     );
-    eq(
+    assert.ok(
       trace(before).includes('Main@' + String(fixture.source.dapLine('main-accumulate'))),
-      true,
       'and Main is parked on the call that reached it',
     );
 
@@ -252,9 +241,8 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       before.length,
       'popping exactly the frame the step into pushed, and no more',
     );
-    eq(
+    assert.ok(
       out.frame.line >= fixture.source.dapLine('accumulate-call'),
-      true,
       'at or past the call it returned from, never before it',
     );
     eq(recorder.stops().length, 3, 'three stops: the breakpoint, the step in, the step out');
@@ -270,10 +258,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 - stop on a plain assignment: no call on the line.
-    armBreakpoints(fixture, 'accumulate-entry');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the assignment');
+    const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-entry');
     const before = await stackFrames(session, stop.threadId);
     assertStoppedAt(
       requireAt(before, 0, 'the stopped frame'),
@@ -282,9 +267,8 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       'Accumulate',
       'a statement with no call in it',
     );
-    eq(
-      fixture.source.code('accumulate-entry').includes('('),
-      false,
+    assert.ok(
+      !fixture.source.code('accumulate-entry').includes('('),
       'the fixture line really does contain no call for a step into to enter',
     );
 
@@ -310,17 +294,15 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     // never about the gesture being broken.
     const further = await walk(recorder, [CMD_STEP_INTO, CMD_STEP_INTO]);
     eq(further.frames.length, 2, 'both gestures landed somewhere');
-    eq(
+    assert.ok(
       further.frames.every((frame) => {
         return comparablePath(frame.sourcePath) === comparablePath(fixture.sourceFile);
       }),
-      true,
       'every landing is in the user own file - Just My Code, [DEBUG-FEATURES-STEPPING] P1',
     );
     const last = requireAt(further.frames, 1, 'the second further step');
-    eq(
+    assert.ok(
       ['Accumulate', 'Add'].includes(methodOf(last)),
-      true,
       'walking on from the loop header reaches the call and then the callee, and nothing else',
     );
     deepEq(
@@ -340,10 +322,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
 
     // Interaction 1 - stop early, so there is a running session for the
     // editor-scoped gesture to act on.
-    armBreakpoints(fixture, 'main-mode');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the first statement of Main');
+    const { session, stop } = await runToFirstStop(debuggee(), 'main-mode');
     assertStoppedAt(
       await topFrame(session, stop.threadId),
       fixture,
@@ -375,9 +354,8 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       'Main',
       'run to cursor must come to rest on the line under the caret',
     );
-    eq(
+    assert.ok(
       recorder.outputText().includes('env='),
-      true,
       'and the statements between the two points really ran on the way',
     );
 
@@ -418,10 +396,10 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 - stop at the top of Main with Just My Code explicitly on.
-    armBreakpoints(fixture, 'main-accumulate');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain, justMyCode: true });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the call in Main');
+    const { session, stop } = await runToFirstStop(debuggee(), 'main-accumulate', {
+      mode: MODE.plain,
+      justMyCode: true,
+    });
     assertStoppedAt(
       await topFrame(session, stop.threadId),
       fixture,
@@ -452,12 +430,11 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
         comparablePath(fixture.sourceFile),
         'a step came to rest in ' + frame.name + ', which is not the user own file',
       );
-      eq(
+      assert.ok(
         declared.includes(methodOf(frame)),
-        true,
         methodOf(frame) + ' is not a method this fixture declares',
       );
-      eq(frame.line > 0, true, 'every landing carries a 1-based line the editor can point at');
+      assert.ok(frame.line > 0, 'every landing carries a 1-based line the editor can point at');
       neq(frame.id, undefined, 'and a frame id its locals can be read from');
     }
 
@@ -468,9 +445,8 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       ['step'],
       'a walk with no breakpoint armed ahead of it produces step stops and nothing else',
     );
-    eq(
+    assert.ok(
       walked.stops.every((entry) => entry.threadId !== 0),
-      true,
       'each naming the thread it stopped',
     );
     eq(

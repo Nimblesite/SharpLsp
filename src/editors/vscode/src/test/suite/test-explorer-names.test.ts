@@ -33,7 +33,7 @@ import * as assert from 'node:assert/strict';
 import { parseFullyQualifiedTestList, withoutAdapterUniqueId } from '../../test-discovery.js';
 import { HEX_DIGITS, dedupeLines } from '../../test-names.js';
 import { fixtureFor } from './test-explorer-fixtures';
-import { eq, deepEq } from './test-helpers';
+import { eq, deepEq, assertContainsAll, assertContainsNone } from './test-helpers';
 import { FAST_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
@@ -108,9 +108,8 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
           'escapes to a filter that matches nothing, and cannot be reconciled with the TRX report',
       );
     }
-    assert.strictEqual(
+    assert.ok(
       withoutAdapterUniqueId(`${FS_FACT_SPACED} (${UNIQUE_ID})`).includes(' '),
-      true,
       'stripping an F# name removes the ID and NOT the spaces the binding legitimately carries',
     );
     assert.strictEqual(
@@ -213,10 +212,9 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     // BOM left on the first name makes that one test unrunnable and nothing
     // else, which is why it hid for so long.
     for (const id of parseFullyQualifiedTestList(listing)) {
-      assert.strictEqual(id.includes('\uFEFF'), false, `${id} must carry no byte-order mark`);
-      assert.strictEqual(id.includes('\r'), false, `${id} must carry no carriage return`);
+      assertContainsNone(id, ['\uFEFF', '\r'], 'id');
       assert.strictEqual(id.trim(), id, `${id} must carry no padding`);
-      assert.strictEqual(id.length > 0, true, 'and no blank line becomes an id');
+      assert.ok(id.length > 0, 'and no blank line becomes an id');
     }
 
     // Interaction 3 — blank lines, padding and repeats are all absorbed, and the
@@ -274,26 +272,23 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     // A reader that trims, escapes or normalises ANY of them produces an id no
     // `--filter` will match and no TRX report can be reconciled with.
     const names = everyFixtureName();
-    eq(names.length >= 24, true, 'all six framework fixtures contribute their four names');
+    assert.ok(names.length >= 24, 'all six framework fixtures contribute their four names');
     for (const name of names) {
       eq(withoutAdapterUniqueId(name), name, name + ' must survive the stripper verbatim');
       deepEq(parseFullyQualifiedTestList(name), [name], name + ' must survive the listing reader');
       eq(name.trim(), name, name + ' carries no padding to begin with');
-      eq(name.includes('.'), true, name + ' is a dotted fully-qualified name');
+      assert.ok(name.includes('.'), name + ' is a dotted fully-qualified name');
     }
-    eq(
+    assert.ok(
       names.filter((name) => name.includes(' ')).length >= 1,
-      true,
       'at least one shape carries SPACES - the idiomatic F# backtick binding',
     );
-    eq(
+    assert.ok(
       names.filter((name) => name.includes('(')).length >= 1,
-      true,
       'at least one carries PARENTHESES - the NUnit [TestCase] row data',
     );
-    eq(
+    assert.ok(
       names.filter((name) => name.includes('+')).length >= 1,
-      true,
       'and at least one a CLR nested-type + - the F# MSTest shape',
     );
 
@@ -327,9 +322,7 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     deepEq(parsed, names, 'the whole decorated listing reduces to the bare names, in order');
     eq(parsed.length, new Set(parsed).size, 'with no id appearing twice');
     for (const id of parsed) {
-      eq(id.includes('﻿'), false, id + ' must carry no byte-order mark');
-      eq(id.includes('\r'), false, id + ' must carry no carriage return');
-      eq(id.includes(UNIQUE_ID), false, id + ' must carry no adapter unique ID');
+      assertContainsNone(id, ['﻿', '\r', UNIQUE_ID], 'id');
     }
     // Interaction 4 - and the reader is stable under REPETITION. VSTest writes
     // one line per theory row, so the same bare name arrives many times over,
@@ -386,7 +379,7 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     // Interaction 2 — CASE and ALPHABET. Every hex digit is admissible in
     // either case; nothing else is, wherever it sits in the forty.
     for (const digit of '0123456789abcdefABCDEF'.split('')) {
-      eq(HEX_DIGITS.has(digit), true, digit + ' is a hex digit');
+      assert.ok(HEX_DIGITS.has(digit), digit + ' is a hex digit');
       const payload = digit.repeat(40);
       eq(
         withoutAdapterUniqueId(base + ' (' + payload + ')'),
@@ -395,7 +388,7 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
       );
     }
     for (const digit of 'gzGZ -_.+*'.split('')) {
-      eq(HEX_DIGITS.has(digit), false, JSON.stringify(digit) + ' is not a hex digit');
+      assert.ok(!HEX_DIGITS.has(digit), JSON.stringify(digit) + ' is not a hex digit');
     }
     for (const position of [0, 1, 20, 38, 39]) {
       const payload = UNIQUE_ID.slice(0, position) + 'z' + UNIQUE_ID.slice(position + 1);
@@ -454,12 +447,8 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     // Interaction 4 - the alphabet itself. `HEX_DIGITS` is the set both halves
     // of the rule are decided by, so its membership is the rule.
     assert.strictEqual(HEX_DIGITS.size, 22, 'ten digits plus a-f in both cases');
-    assert.strictEqual(HEX_DIGITS.has('0'), true, 'zero is hex');
-    assert.strictEqual(HEX_DIGITS.has('9'), true, 'and nine');
-    assert.strictEqual(HEX_DIGITS.has('a'), true, 'and lower-case a');
-    assert.strictEqual(HEX_DIGITS.has('F'), true, 'and upper-case F');
-    assert.strictEqual(HEX_DIGITS.has(' '), false, 'a space is not');
-    assert.strictEqual(HEX_DIGITS.has(''), false, 'nor the empty string');
+    assertContainsAll(HEX_DIGITS, ['0', '9', 'a', 'F'], 'HEX_DIGITS');
+    assertContainsNone(HEX_DIGITS, [' ', ''], 'HEX_DIGITS');
   });
 
   // [TEST-DISCOVERY-FQN]'s table, row by row, spelled out. Every one of the six
@@ -562,19 +551,16 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
       fsMstest.passing,
       'decorated F# nested type',
     );
-    eq(
+    assert.ok(
       withoutAdapterUniqueId(dress(fsXunit.failing)).includes(' '),
-      true,
       'and the F# spaces survive the stripping that removed the ID',
     );
-    eq(
+    assert.ok(
       withoutAdapterUniqueId(dress(csNunit.parameterized)).endsWith(')'),
-      true,
       'as do the NUnit parentheses',
     );
-    eq(
+    assert.ok(
       withoutAdapterUniqueId(dress(fsMstest.passing)).includes('+'),
-      true,
       'and the CLR nested-type separator',
     );
 
@@ -585,24 +571,17 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     eq(parsed.length, every.length, 'one id per listed name');
     deepEq(parsed, every, 'in listing order, bare');
     eq(new Set(parsed).size, parsed.length, 'with no duplicates');
-    eq(
-      parsed.some((id) => id.includes(UNIQUE_ID)),
-      false,
-      'and no unique ID anywhere',
-    );
-    eq(
+    assert.ok(!parsed.some((id) => id.includes(UNIQUE_ID)), 'and no unique ID anywhere');
+    assert.ok(
       parsed.some((id) => id.includes(' ')),
-      true,
       'the spaced F# names are still spaced',
     );
-    eq(
+    assert.ok(
       parsed.some((id) => id.includes('(')),
-      true,
       'the NUnit cases still carry their rows',
     );
-    eq(
+    assert.ok(
       parsed.some((id) => id.includes('+')),
-      true,
       'and the nested-type names their separator',
     );
     // Interaction 5 - and the whole table survives the LISTING reader as well

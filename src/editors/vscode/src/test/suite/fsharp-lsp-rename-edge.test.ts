@@ -11,6 +11,7 @@ import {
   changedFileNames,
   editCount,
   openOverlay,
+  assertPrepareAcrossToken,
   requestPrepareRename,
   requestRename,
   tokenRange,
@@ -23,7 +24,7 @@ import {
   revertDocument,
   waitForMatchingDiagnostics,
 } from './refactor-test-helpers';
-import { closeAllEditors } from './test-helpers';
+import { closeAllEditors, assertContainsAll } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Real-LSP rejection/live-overlay boundaries. [RENAME-FSHARP-PREPARE] [RENAME-FSHARP-APPLY]
@@ -95,7 +96,7 @@ async function runUnsavedRename(newName: string): Promise<void> {
   const fixture = await openOverlay(TARGET_FILE, RENAME_EDGE_SOURCE);
   try {
     const range = tokenRange(fixture.document, 'unsavedName');
-    await assertPrepareAtEveryTokenPosition(fixture.uri, range, 'unsavedName');
+    await assertPrepareAcrossToken(fixture.uri, range, 'unsavedName');
     const edit = await requestRename(
       fixture.uri,
       range.start.translate(0, 1),
@@ -107,24 +108,6 @@ async function runUnsavedRename(newName: string): Promise<void> {
     await undoUnsavedEdit(fixture, newName);
   } finally {
     await revertDocument(fixture.document);
-  }
-}
-
-async function assertPrepareAtEveryTokenPosition(
-  uri: vscode.Uri,
-  range: vscode.Range,
-  placeholder: string,
-): Promise<void> {
-  assert.ok(range.isSingleLine && !range.isEmpty);
-  for (let offset = 0; offset < range.end.character - range.start.character; offset += 1) {
-    const position = range.start.translate(0, offset);
-    const prepare = await requestPrepareRename(uri, position);
-    assert.ok(prepare);
-    assert.strictEqual(prepare.placeholder, placeholder);
-    assert.strictEqual(prepare.range.start.line, range.start.line);
-    assert.strictEqual(prepare.range.start.character, range.start.character);
-    assert.strictEqual(prepare.range.end.line, range.end.line);
-    assert.strictEqual(prepare.range.end.character, range.end.character);
   }
 }
 
@@ -153,12 +136,15 @@ async function applyUnsavedEdit(
   await applyWorkspaceEdit(edit);
   assert.ok(fixture.document.version > version);
   assert.strictEqual(fixture.document.getText(), renamedEdgeSource(newName));
-  assert.ok(fixture.document.getText().includes('// unsavedName in a comment'));
-  assert.ok(fixture.document.getText().includes('let stringValue = "unsavedName"'));
+  assertContainsAll(
+    fixture.document.getText(),
+    ['// unsavedName in a comment', 'let stringValue = "unsavedName"'],
+    'fixture.document.getText()',
+  );
   assert.ok(fixture.document.isDirty);
   await assertNoErrors(fixture.uri);
   const renamedRange = tokenRange(fixture.document, newName);
-  await assertPrepareAtEveryTokenPosition(fixture.uri, renamedRange, newName);
+  await assertPrepareAcrossToken(fixture.uri, renamedRange, newName);
   await assertReverseRenameAtBoundaries(fixture.uri, renamedRange, newName);
 }
 
@@ -273,7 +259,7 @@ async function assertIndexerRename(): Promise<void> {
 
 async function runIndexerLifecycle(declarations: OpenOverlay, usages: OpenOverlay): Promise<void> {
   const range = tokenRange(declarations.document, 'Item');
-  await assertPrepareAtEveryTokenPosition(declarations.uri, range, 'Item');
+  await assertPrepareAcrossToken(declarations.uri, range, 'Item');
   const edit = await requestRename(
     declarations.uri,
     range.start.translate(0, 1),
@@ -288,7 +274,7 @@ async function runIndexerLifecycle(declarations: OpenOverlay, usages: OpenOverla
   await assertNoErrors(declarations.uri);
   await assertNoErrors(usages.uri);
   await undoAction(declarations.document, RENAME_DECLARATIONS_SOURCE);
-  await assertPrepareAtEveryTokenPosition(declarations.uri, range, 'Item');
+  await assertPrepareAcrossToken(declarations.uri, range, 'Item');
 }
 
 function renamedIndexerSource(): string {
@@ -311,7 +297,7 @@ async function assertNamespaceRename(): Promise<void> {
 
 async function runNamespaceLifecycle(definition: OpenOverlay, usage: OpenOverlay): Promise<void> {
   const range = tokenRange(definition.document, 'RenameNamespace');
-  await assertPrepareAtEveryTokenPosition(definition.uri, range, 'RenameNamespace');
+  await assertPrepareAcrossToken(definition.uri, range, 'RenameNamespace');
   const edit = await requestRename(
     definition.uri,
     range.start.translate(0, 1),
@@ -365,7 +351,7 @@ async function reverseNamespaceRename(
   usage: Awaited<ReturnType<typeof openOverlay>>,
 ): Promise<void> {
   const range = tokenRange(definition.document, 'RenamedNamespace');
-  await assertPrepareAtEveryTokenPosition(definition.uri, range, 'RenamedNamespace');
+  await assertPrepareAcrossToken(definition.uri, range, 'RenamedNamespace');
   const reverse = await requestRename(
     definition.uri,
     range.start.translate(0, 1),
@@ -376,7 +362,7 @@ async function reverseNamespaceRename(
   await applyWorkspaceEdit(reverse);
   assertNamespaceTexts(definition.document, usage.document, 'RenameNamespace');
   const restored = tokenRange(definition.document, 'RenameNamespace');
-  await assertPrepareAtEveryTokenPosition(definition.uri, restored, 'RenameNamespace');
+  await assertPrepareAcrossToken(definition.uri, restored, 'RenameNamespace');
 }
 
 async function executeRenameWithoutEdit(

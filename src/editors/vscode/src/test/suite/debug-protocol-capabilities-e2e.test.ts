@@ -23,7 +23,13 @@ import {
   variableNamed,
   variablesOf,
 } from './debug-drive-kit';
-import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
+import {
+  armBreakpoints,
+  assertCleanSession,
+  startDebuggee,
+  useDebuggee,
+  runToFirstStop,
+} from './debug-suite-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
@@ -111,15 +117,13 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'reading the Yes column');
     // Interaction 5 - the capability body must be a real object with real
     // flags, not an empty bag that trivially satisfies every "No" assertion.
-    eq(
+    assert.ok(
       Object.keys(recorder.capabilities()).length >= 10,
-      true,
       'the initialize response carries a populated capability body',
     );
     eq(recorder.responses('initialize').length, 1, 'answered exactly once');
-    eq(
+    assert.ok(
       recorder.responses('initialize').every((response) => response.success),
-      true,
       'and successfully',
     );
     eq(
@@ -157,9 +161,8 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
       0,
       'and not one of the No rows is over-claimed',
     );
-    eq(
-      PHASE_FOUR_NO.some(({ flag }) => PHASE_FOUR_YES.some((row) => row.flag === flag)),
-      false,
+    assert.ok(
+      !PHASE_FOUR_NO.some(({ flag }) => PHASE_FOUR_YES.some((row) => row.flag === flag)),
       'no flag may appear in both columns — the table would then assert nothing at all',
     );
 
@@ -179,9 +182,8 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
       PHASE_FOUR_YES.length,
       'every Yes row really is advertised',
     );
-    eq(
+    assert.ok(
       Object.keys(recorder.capabilities()).length >= 10,
-      true,
       'so the capability body is genuinely populated',
     );
     eq(recorder.responses('initialize').length, 1, 'from one initialize response');
@@ -230,15 +232,13 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
       [...HANDSHAKE_PREFIX],
       `the DAP launch sequence begins with initialize then launch; observed: ${order.join(' -> ')}`,
     );
-    eq(
+    assert.ok(
       order.includes('configurationDone'),
-      true,
       'the workbench must finish configuration with `configurationDone`; without it the ' +
         'adapter never learns that breakpoint setup is complete and may resume too early',
     );
-    eq(
+    assert.ok(
       order.indexOf('configurationDone') > order.indexOf('setBreakpoints'),
-      true,
       'breakpoints must be configured BEFORE configurationDone, or the debuggee races past ' +
         `them on startup; observed: ${order.join(' -> ')}`,
     );
@@ -251,24 +251,20 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'the DAP handshake');
     // Interaction 5 - the handshake is a SEQUENCE, and every step of it was
     // answered. An unanswered step leaves the session half-configured.
-    eq(
+    assert.ok(
       recorder.responses('initialize').every((response) => response.success),
-      true,
       'initialize was answered successfully',
     );
-    eq(
+    assert.ok(
       recorder.responses('launch').every((response) => response.success),
-      true,
       'and launch',
     );
-    eq(
+    assert.ok(
       recorder.responses('setBreakpoints').every((response) => response.success),
-      true,
       'and every breakpoint sync',
     );
-    eq(
+    assert.ok(
       recorder.responses('configurationDone').every((response) => response.success),
-      true,
       'and configurationDone',
     );
     deepEq(recorder.exits, [], 'with the adapter process alive throughout');
@@ -321,14 +317,12 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     // until the program reads the variable.
     await vscode.commands.executeCommand(CMD_CONTINUE);
     await recorder.waitForOutput('env=capabilities-probe');
-    eq(
+    assert.ok(
       recorder.outputText().includes('env=capabilities-probe'),
-      true,
       'the launched process really ran with the environment the user configured',
     );
-    eq(
-      recorder.outputText().includes(ENV_UNSET),
-      false,
+    assert.ok(
+      !recorder.outputText().includes(ENV_UNSET),
       'and not with the fixture default, which is what a dropped env block would show',
     );
     assertCleanSession(debuggee(), 'a launch carrying every attribute');
@@ -336,12 +330,11 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     // request, and the session that carried them was a complete one.
     eq(recorder.requests('launch').length, 1, 'exactly one launch request for one session');
     eq(recorder.events('initialized').length, 1, 'behind one initialized event');
-    eq(
+    assert.ok(
       recorder.requestedCommands().includes('configurationDone'),
-      true,
       'with configuration finished',
     );
-    eq(recorder.stops().length >= 1, true, 'and the debuggee really reached the gate');
+    assert.ok(recorder.stops().length >= 1, 'and the debuggee really reached the gate');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
 
@@ -350,46 +343,40 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
   // are the round trips that say it does.
   test('the adapter answers threads, stackTrace, scopes, variables and evaluate', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — one real stop, which is what every panel renders from.
-    armBreakpoints(fixture, 'accumulate-store');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the statement');
+    const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-store');
     neq(stop.threadId, 0, 'the stop names a thread, which is what the Call Stack view keys on');
-    eq(stop.allThreadsStopped, true, 'and a full stop, not a single-thread one Phase 4 disclaims');
+    assert.ok(stop.allThreadsStopped, 'and a full stop, not a single-thread one Phase 4 disclaims');
 
     // Interaction 2 — Call Stack: threads, then frames, then scopes.
     const threads = await threadsOf(session);
-    eq(threads.length >= 1, true, 'a stopped process has at least one thread to show');
-    eq(
+    assert.ok(threads.length >= 1, 'a stopped process has at least one thread to show');
+    assert.ok(
       threads.some((thread) => Number(thread['id']) === stop.threadId),
-      true,
       'and the stopped thread is among them - a Call Stack view cannot render otherwise',
     );
     const frames = await stackFrames(session, stop.threadId);
-    eq(frames.length >= 2, true, 'the stop is inside a call, so there are frames beneath it');
+    assert.ok(frames.length >= 2, 'the stop is inside a call, so there are frames beneath it');
     const frame = requireAt(frames, 0, 'the top frame');
-    eq(frame.line > 0, true, 'the top frame carries a 1-based line');
-    eq(frame.column > 0, true, 'and a 1-based column');
+    assert.ok(frame.line > 0, 'the top frame carries a 1-based line');
+    assert.ok(frame.column > 0, 'and a 1-based column');
     const scopes = await scopesOf(session, frame.id);
-    eq(scopes.length >= 1, true, 'the Variables panel needs at least one scope');
+    assert.ok(scopes.length >= 1, 'the Variables panel needs at least one scope');
     const locals = scopes.find((scope) => scope.name.toLowerCase().includes('local'));
     assert.ok(locals, 'and one of them must be Locals');
-    eq(locals.expensive, false, 'which must not be marked expensive, or the panel will not open');
+    assert.ok(!locals.expensive, 'which must not be marked expensive, or the panel will not open');
 
     // Interaction 3 — Variables and Watch, over the SAME frame.
     const variables = await variablesOf(session, locals.reference);
-    eq(variables.length >= 1, true, 'the locals scope holds the variables in scope');
-    eq(
+    assert.ok(variables.length >= 1, 'the locals scope holds the variables in scope');
+    assert.ok(
       variables.every((variable) => variable.name !== ''),
-      true,
       'every variable is named - an unnamed row is a row the panel cannot label',
     );
-    eq(
+    assert.ok(
       variables.some((variable) => variable.type !== ''),
-      true,
       'and at least one carries a type, which supportsVariableType promises',
     );
     const running = variableNamed(variables, 'running');
@@ -407,29 +394,24 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'the five panel requests');
     // Interaction 4 - the five panel requests were each answered, which is what
     // makes the panels render at all.
-    eq(
+    assert.ok(
       recorder.responses('threads').every((response) => response.success),
-      true,
       'threads was answered',
     );
-    eq(
+    assert.ok(
       recorder.responses('stackTrace').every((response) => response.success),
-      true,
       'and stackTrace',
     );
-    eq(
+    assert.ok(
       recorder.responses('scopes').every((response) => response.success),
-      true,
       'and scopes',
     );
-    eq(
+    assert.ok(
       recorder.responses('variables').every((response) => response.success),
-      true,
       'and variables',
     );
-    eq(
+    assert.ok(
       recorder.responses('evaluate').every((response) => response.success),
-      true,
       'and evaluate',
     );
   });
@@ -457,9 +439,8 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     // session rather than severing the pipe under it.
     await vscode.commands.executeCommand(CMD_STOP);
     await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
-    eq(
+    assert.ok(
       recorder.requests('terminate').length + recorder.requests('disconnect').length >= 1,
-      true,
       'Stop must reach the adapter as a terminate or disconnect request, not as a killed pipe',
     );
     eq(
@@ -481,13 +462,12 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     );
     // Interaction 4 - Stop is a request, not a kill, and the adapter answered
     // it before the session ended.
-    eq(
+    assert.ok(
       recorder.responses('terminate').length + recorder.responses('disconnect').length >= 1,
-      true,
       'the stop request was answered',
     );
     eq(recorder.events('terminated').length, 1, 'and the session terminated once');
-    eq(recorder.requestedCommands().includes('initialize'), true, 'behind a real handshake');
+    assert.ok(recorder.requestedCommands().includes('initialize'), 'behind a real handshake');
     eq(recorder.events('initialized').length, 1, 'with one initialized event');
     deepEq(recorder.exits, [], 'and the adapter process alive until the end');
   });
@@ -513,21 +493,22 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     // An unanswered request is a spinner that never stops, and DAP has no
     // timeout of its own.
     const commands = [...new Set(recorder.requestedCommands())];
-    eq(commands.length >= 5, true, 'a real session exchanges more than a handful of commands');
+    assert.ok(commands.length >= 5, 'a real session exchanges more than a handful of commands');
     for (const command of commands) {
-      eq(
+      assert.ok(
         recorder.responses(command).length >= 1,
-        true,
         command +
           ' was sent and must be ANSWERED; an unanswered DAP request hangs the ' +
           'workbench with no timeout of its own',
       );
     }
     for (const required of ['initialize', 'launch', 'setBreakpoints', 'configurationDone']) {
-      eq(commands.includes(required), true, required + ' must appear in every launch conversation');
-      eq(
+      assert.ok(
+        commands.includes(required),
+        required + ' must appear in every launch conversation',
+      );
+      assert.ok(
         recorder.responses(required).every((response) => response.success),
-        true,
         required +
           ' must be answered SUCCESSFULLY - a failed handshake step leaves the ' +
           'session half-configured and the user with no diagnosis',
@@ -539,9 +520,8 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     eq(recorder.events('initialized').length, 1, 'exactly one `initialized` event');
     eq(recorder.events('terminated').length, 1, 'exactly one `terminated` event');
     eq(recorder.events('exited').length, 1, 'and exactly one `exited` event');
-    eq(
+    assert.ok(
       recorder.events('exited').every((event) => Number(event.body['exitCode'] ?? -1) === 0),
-      true,
       'a program that ran to completion exits zero',
     );
     for (const stop of recorder.stops()) {
@@ -553,8 +533,11 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'a whole DAP conversation');
     // Interaction 4 - the conversation is the specification made observable:
     // every command sent, every one answered, every lifecycle event once.
-    eq(recorder.requestedCommands().length >= 5, true, 'a real session exchanges several commands');
-    eq(new Set(recorder.requestedCommands()).size >= 4, true, 'of more than one kind');
+    assert.ok(
+      recorder.requestedCommands().length >= 5,
+      'a real session exchanges several commands',
+    );
+    assert.ok(new Set(recorder.requestedCommands()).size >= 4, 'of more than one kind');
     eq(recorder.responses('initialize').length, 1, 'with exactly one initialize response');
     eq(recorder.events('initialized').length, 1, 'one initialized event');
     eq(recorder.events('terminated').length, 1, 'and one termination');

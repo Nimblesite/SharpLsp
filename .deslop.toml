@@ -1,41 +1,8 @@
 # agent-pmo:a72c926
 [threshold]
-# Maximum duplication percent for the PRODUCTION (shipped) codebase. CI runs
-# `deslop .`, which reads this value and exits non-zero (deslop exit code 3)
-# the moment measured duplication exceeds it. [CI-DESLOP]
-#
-# SCOPE: the [defaults].exclude list below removes test suites, test-input
-# fixtures, and example projects from analysis, so this score tracks duplication
-# in code we actually ship — not the inherently repetitive end-to-end
-# request/response scaffolding. Test-helper duplication is still aggressively
-# reduced via shared modules (e.g. nav_helpers' assert_no_sidecar_request /
-# open_no_sidecar / position_params / range_params / code_action_params /
-# hierarchy_item_params / sort_members_new_text, fixtures' shared project
-# builders, the CSharpSidecarFixture.SendAndDeserializeAsync<TRequest,TResult>
-# overloads, and the AssertOk test helper) — that work simply isn't counted
-# against the production gate.
-#
-# RATCHET DOWN ONLY — never raise this without written PR justification.
-#
-# 2026-09-12: measured 15.57% with deslop CLI 0.34.0 — the exact version the CI
-# gate pins (.github/workflows/ci-analyse.yml). 1555 clusters, 21,372 duplicated
-# LOC of 137,221 analysed. Ratcheted 20.0 -> 15.9.
-#
-# MEASURE WITH THE PINNED CLI, NOT THE EDITOR EXTENSION. The deslop-live VS Code
-# extension's dev build reports 19.04% on this same tree: identical file set
-# (137,221 analysed LOC, so the excludes below agree) but 1821 clusters and
-# 26,129 duplicated LOC, because its detection engine is ahead of the 0.34.0
-# release. Only the pinned CLI's number can breach the gate, so only the pinned
-# CLI's number belongs in this file. Setting 19.5 off the extension reading
-# would have left the gate 3.9 points looser than the code actually is.
-#
-# The 0.33pp gap over measured is the rounding buffer [CI-DESLOP] allows for
-# cross-runner jitter — this reading is macos-arm64, CI measures on linux-x64.
-max_duplication_percent = 15.9
+max_duplication_percent = 13
 
 [defaults]
-# Excluded from duplication analysis: not part of the shipped product.
-# gitignore-style globs, matched relative to this file.
 exclude = [
     # Example / sample projects (test input, not codebase).
     "src/examples/**",

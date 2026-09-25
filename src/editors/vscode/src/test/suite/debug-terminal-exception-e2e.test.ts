@@ -2,7 +2,7 @@
 import * as assert from 'node:assert/strict';
 import { MODE } from './debug-fixture-programs';
 import { useDebuggee } from './debug-suite-kit';
-import { LiveRouter } from './debug-router-kit';
+import { withRouter } from './debug-router-kit';
 import { DEBUG_TEST_MS } from './test-timeouts';
 import { isRecord } from '../../dap-emulate';
 
@@ -11,8 +11,7 @@ suite('Debug terminal exception visibility', () => {
 
   test('Just My Code and exclusions preserve genuinely unhandled framework exceptions', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const driver = new LiveRouter();
-    try {
+    await withRouter(async (driver) => {
       await driver.launch(debuggee().fixture, MODE.missingAssembly, {
         break_on: 'all',
         just_my_code: true,
@@ -27,8 +26,6 @@ suite('Debug terminal exception visibility', () => {
       assert.ok(isRecord(info.body.details));
       assert.equal(info.body.details.fullTypeName, 'System.IO.FileNotFoundException');
       assert.deepEqual((await driver.request('exceptionInfo', { threadId })).body, info.body);
-    } finally {
-      driver.dispose();
-    }
+    });
   });
 });

@@ -115,9 +115,8 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     session: vscode.DebugSession,
   ): vscode.DebugAdapterDescriptor | undefined {
     const result = target.createDebugAdapterDescriptor(session);
-    assert.strictEqual(
-      result instanceof Promise,
-      false,
+    assert.ok(
+      !(result instanceof Promise),
       'adapter discovery is a filesystem probe and must not defer the launch round-trip',
     );
     return result as vscode.DebugAdapterDescriptor | undefined;
@@ -180,14 +179,12 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
       { stdio: 'pipe' },
       'B59: no cwd/env override is imposed on netcoredbg — it is spawned verbatim',
     );
-    assert.strictEqual(
-      Object.prototype.hasOwnProperty.call(first.spawnOptions, 'cwd'),
-      false,
+    assert.ok(
+      !Object.prototype.hasOwnProperty.call(first.spawnOptions, 'cwd'),
       'B59: a cwd would silently relocate the debuggee',
     );
-    assert.strictEqual(
-      Object.prototype.hasOwnProperty.call(first.spawnOptions, 'env'),
-      false,
+    assert.ok(
+      !Object.prototype.hasOwnProperty.call(first.spawnOptions, 'env'),
       'B59: an env override would drop the extension host environment',
     );
     assert.deepStrictEqual(stubs.log.errorMessages, [], 'a resolvable adapter reports nothing');
@@ -330,7 +327,7 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
 
     // A configured path that does not exist must not be spawned either.
     const ghost = path.join(tmpDir, 'ghost', EXE);
-    assert.strictEqual(fs.existsSync(ghost), false, 'the ghost path must not exist');
+    assert.ok(!fs.existsSync(ghost), 'the ghost path must not exist');
     await setNetcoredbgPath(ghost);
     assert.strictEqual(
       descriptorOf(factory, session),

@@ -24,12 +24,14 @@ import {
   takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
+  pollProvider,
+  assertContainsAll,
 } from './test-helpers';
 import { assertCompletionEditSpans } from './lsp-invariants-kit';
 import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { useLspTestSuite } from './lsp-suite-kit';
+import { assertShotMembers, MEMBER_CARET } from './completion-shot-kit';
 
-/** The caret inside `CompletionShot.cs` that sits after a member-access dot. */
-const MEMBER_CARET = new vscode.Position(11, 24);
 /** The `Add(...)` call site in the same fixture. */
 const ADD_CALL = new vscode.Position(10, 26);
 /** The line `Add` is declared on. */
@@ -63,10 +65,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
     const { uri } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
     const completions = await completionsAt(uri, MEMBER_CARET);
-    const items = new Map(completions.items.map((item) => [item.label.toString(), item]));
-    assert.strictEqual(items.get('Name')?.kind, vscode.CompletionItemKind.Property);
-    assert.strictEqual(items.get('Add')?.kind, vscode.CompletionItemKind.Method);
-    assert.strictEqual(items.get('_count')?.kind, vscode.CompletionItemKind.Field);
+    assertShotMembers(completions);
 
     // Interaction 2 — [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]: every
     // item carries an explicit edit span covering the identifier AT the caret.
@@ -112,9 +111,8 @@ suite('LSP Integration — Real Semantic LSP', () => {
     const invoked = await completionsAt(uri, MEMBER_CARET);
     const invokedLabels = new Set(invoked.items.map((item) => item.label.toString()));
     for (const member of ['Add', 'Name', '_count']) {
-      assert.strictEqual(
+      assert.ok(
         labels.has(member) && invokedLabels.has(member),
-        true,
         `${member} must appear whether completion was typed or invoked`,
       );
     }
@@ -134,13 +132,9 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // Interaction 1 — F12 on the call lands on the declaration, in this file.
     const { uri, doc } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
-    const definitions = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.Location[]>(
-          'vscode.executeDefinitionProvider',
-          uri,
-          ADD_CALL,
-        )) ?? [],
+    const definitions = await pollProvider<vscode.Location>(
+      'vscode.executeDefinitionProvider',
+      [uri, ADD_CALL],
       (locations) => locations.length > 0,
       LSP_RESPONSE_MS,
       2_000,
@@ -162,13 +156,9 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // Interaction 2 — Shift-F12 finds the call site AND the declaration.
     // References that omit the declaration make Rename miss the very symbol
     // being renamed.
-    const references = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.Location[]>(
-          'vscode.executeReferenceProvider',
-          uri,
-          ADD_CALL,
-        )) ?? [],
+    const references = await pollProvider<vscode.Location>(
+      'vscode.executeReferenceProvider',
+      [uri, ADD_CALL],
       (locations) => locations.length > 0,
       LSP_RESPONSE_MS,
       2_000,
@@ -194,7 +184,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
     const seen = new Set<string>();
     for (const location of references) {
       const key = `${location.uri.toString()}:${location.range.start.line}:${location.range.start.character}`;
-      assert.strictEqual(seen.has(key), false, `reference ${key} is reported twice`);
+      assert.ok(!seen.has(key), `reference ${key} is reported twice`);
       seen.add(key);
       assert.ok(location.range.start.line < doc.lineCount, `${key} must lie inside the document`);
       assert.strictEqual(
@@ -210,13 +200,9 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // Interaction 1 — resting on `Add` highlights it.
     const { uri, doc } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
-    const highlights = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.DocumentHighlight[]>(
-          'vscode.executeDocumentHighlights',
-          uri,
-          ADD_CALL,
-        )) ?? [],
+    const highlights = await pollProvider<vscode.DocumentHighlight>(
+      'vscode.executeDocumentHighlights',
+      [uri, ADD_CALL],
       (items) => items.length > 0,
       LSP_RESPONSE_MS,
       2_000,
@@ -250,8 +236,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // Interaction 3 — the occurrence under the caret is among them, they are
     // all distinct, and both the declaration and the call are covered.
     const lines = highlights.map((highlight) => highlight.range.start.line);
-    assert.ok(lines.includes(ADD_CALL.line), 'the occurrence under the caret must be highlighted');
-    assert.ok(lines.includes(ADD_DECLARATION_LINE), 'and so must the declaration');
+    assertContainsAll(lines, [ADD_CALL.line, ADD_DECLARATION_LINE], 'lines');
     assert.strictEqual(new Set(lines).size, lines.length, 'no occurrence is highlighted twice');
 
     // Interaction 4 - highlighting is SYMMETRIC. Resting on the declaration
@@ -261,13 +246,9 @@ suite('LSP Integration — Real Semantic LSP', () => {
       ADD_DECLARATION_LINE,
       doc.lineAt(ADD_DECLARATION_LINE).text.indexOf('Add') + 1,
     );
-    const fromDeclaration = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.DocumentHighlight[]>(
-          'vscode.executeDocumentHighlights',
-          uri,
-          declarationCaret,
-        )) ?? [],
+    const fromDeclaration = await pollProvider<vscode.DocumentHighlight>(
+      'vscode.executeDocumentHighlights',
+      [uri, declarationCaret],
       (items) => items.length > 0,
       LSP_RESPONSE_MS,
       2_000,
@@ -293,13 +274,9 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // Interaction 1 — the call site gets a hint per argument.
     const { doc, uri } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
-    const hints = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.InlayHint[]>(
-          'vscode.executeInlayHintProvider',
-          uri,
-          new vscode.Range(new vscode.Position(0, 0), new vscode.Position(doc.lineCount, 0)),
-        )) ?? [],
+    const hints = await pollProvider<vscode.InlayHint>(
+      'vscode.executeInlayHintProvider',
+      [uri, new vscode.Range(new vscode.Position(0, 0), new vscode.Position(doc.lineCount, 0))],
       (items) => items.length >= 2,
       LSP_RESPONSE_MS,
       2_000,
@@ -355,22 +332,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
 // ── Code Actions / Refactoring ────────────────────────────────────
 
 suite('LSP Integration — Code Actions & Refactoring', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('refactor-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
+  useLspTestSuite('refactor-');
 
   test('code actions returned for unused variable', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
@@ -401,13 +363,9 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     // is the "lightbulb never appears" defect [SHARPLSP-FEATURES-REFACTORING]
     // makes a P0.
     const range = new vscode.Range(new vscode.Position(6, 19), new vscode.Position(6, 25));
-    const actions = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.CodeAction[]>(
-          'vscode.executeCodeActionProvider',
-          uri,
-          range,
-        )) ?? [],
+    const actions = await pollProvider<vscode.CodeAction>(
+      'vscode.executeCodeActionProvider',
+      [uri, range],
       (offered) => offered.length > 0,
       LSP_RESPONSE_MS,
       2_000,

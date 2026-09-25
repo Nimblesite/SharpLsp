@@ -1,21 +1,22 @@
 // Shared real-LSP rename driver for [RENAME-TESTS] and [RENAME-COVERAGE].
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { positionOf, rangeOf } from './csharp-refactor-test-kit';
+import { positionOf, rangeOf } from './document-anchors';
 import {
   applyWorkspaceEdit,
   openFixtureDocument,
   preparedRenameAt,
-  revertDocument,
   sendRealLspRequest,
   type LspPosition,
   type LspRange,
   type OpenFixture,
   type PrepareRenameResult,
   type WorkspaceEditSnapshot,
+  activateRealSharpLsp,
+  restoreCommitted,
 } from './refactor-test-helpers';
-import { pollUntilResult } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { pollUntilResult, assertContainsAll } from './test-helpers';
+import { LSP_RESPONSE_MS, ACTIVATION_MS } from './test-timeouts';
 
 export type RenameFixtureKey = 'symbols' | 'usage' | 'edge';
 
@@ -233,15 +234,23 @@ function assertAppliedVersions(
 
 function assertLiteralAndCommentSentinels(fixtures: RenameFixtureSet): void {
   const symbols = fixtures.symbols.document.getText();
-  assert.ok(symbols.includes('"RenameClass RenameMethod renameLocal"'));
-  assert.ok(
-    symbols.includes('// RenameClass RenameMethod renameLocal must remain untouched in comments.'),
+  assertContainsAll(
+    symbols,
+    [
+      '"RenameClass RenameMethod renameLocal"',
+      '// RenameClass RenameMethod renameLocal must remain untouched in comments.',
+    ],
+    'symbols',
   );
   const edge = fixtures.edge.document.getText();
   if (fixtures.baselines.edge.includes('"PartialRenameTarget PartialMember"')) {
-    assert.ok(edge.includes('"PartialRenameTarget PartialMember"'));
-    assert.ok(
-      edge.includes('// PartialRenameTarget and PartialMember stay unchanged in this comment.'),
+    assertContainsAll(
+      edge,
+      [
+        '"PartialRenameTarget PartialMember"',
+        '// PartialRenameTarget and PartialMember stay unchanged in this comment.',
+      ],
+      'edge',
     );
   }
 }
@@ -314,11 +323,27 @@ async function reverseRename(
 
 export async function revertRenameFixtures(fixtures: RenameFixtureSet): Promise<void> {
   for (const key of ['symbols', 'usage', 'edge'] as const) {
-    const fixture = fixtureOf(fixtures, key);
-    await revertDocument(fixture.document);
-    assert.strictEqual(fixture.document.getText(), fixtures.baselines[key]);
-    assert.ok(!fixture.document.isDirty);
+    await restoreCommitted(fixtureOf(fixtures, key), fixtures.baselines[key]);
   }
+}
+
+/** ONE activation and fixture open per suite; every test's edits reverted after it. */
+export function useRenameFixtures(): () => RenameFixtureSet {
+  let fixtures: RenameFixtureSet | undefined;
+  suiteSetup(async function () {
+    this.timeout(ACTIVATION_MS);
+    await activateRealSharpLsp();
+    fixtures = await openRenameFixtures();
+  });
+  const revert = async (): Promise<void> => {
+    if (fixtures !== undefined) await revertRenameFixtures(fixtures);
+  };
+  teardown(revert);
+  suiteTeardown(revert);
+  return () => {
+    assert.ok(fixtures, 'the rename fixtures must be opened in suiteSetup');
+    return fixtures;
+  };
 }
 
 export async function exerciseRename(

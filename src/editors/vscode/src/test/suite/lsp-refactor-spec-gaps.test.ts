@@ -5,14 +5,8 @@
 // priority. A row that fails is not a broken test -- it is the spec's P0/P1
 // column reporting that the family is not wired up yet.
 import { exerciseCodeAction, type ActionLifecycleCase } from './csharp-refactor-test-kit';
-import {
-  activateRealSharpLsp,
-  openFixtureDocument,
-  revertDocument,
-  warmSemanticEngine,
-  type OpenFixture,
-} from './refactor-test-helpers';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { useRefactorFixture } from './refactor-test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const INTRODUCE_LOCAL_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
 public class IntroduceLocalTarget
@@ -188,25 +182,12 @@ const CASES: readonly ActionLifecycleCase[] = [
 ];
 
 suite('C# real LSP - refactoring families the spec table requires', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
-  suiteSetup(async function () {
-    // ONE initialization for the whole suite: activation, fixture open, and the
-    // Roslyn project load are paid here so no test body carries a build tier.
-    this.timeout(FIXTURE_BUILD_MS);
-    await activateRealSharpLsp();
-    fixture = await openFixtureDocument('RefactorCore.cs');
-    await warmSemanticEngine(fixture.uri);
-    committedText = fixture.document.getText();
-  });
-
-  teardown(async () => revertDocument(fixture.document));
+  const refactor = useRefactorFixture('RefactorCore.cs');
 
   for (const actionCase of CASES) {
     test(`${actionCase.label}: list, resolve, apply, requery, undo, redo, retry`, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseCodeAction(fixture, committedText, actionCase);
+      await exerciseCodeAction(refactor.fixture, refactor.committedText, actionCase);
     });
   }
 });

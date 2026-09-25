@@ -26,13 +26,13 @@ import {
   openSharpLspPanel,
   pollUntilResult,
   replaceDocumentContent,
-  setupLspTestSuite,
   settleForScreenshot,
   takeScreenshot,
-  teardownLspTestSuite,
   waitForDocumentSymbols,
   waitForFoldingRanges,
   waitForSelectionRanges,
+  assertContainsAll,
+  openCSharpOutline,
 } from './test-helpers';
 import {
   assertFoldingRanges,
@@ -42,41 +42,46 @@ import {
   symbolNamed,
 } from './lsp-invariants-kit';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { useLspTestSuite } from './lsp-suite-kit';
 
-suite('LSP Integration — Document Symbols', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('symbols-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
-
-  test('returns class and method symbols for a C# file', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace Test {
+const SYMBOLS_CS = `namespace Test {
   public class Foo {
     public void Bar() { }
     public int Baz { get; set; }
   }
 }`;
+
+const NESTED_CS = `namespace N {
+  public class Outer {
+    public class Inner {
+      public void InnerMethod() { }
+    }
+    public void OuterMethod() { }
+  }
+}`;
+
+const IFACE_ENUM_CS = `namespace T {
+  public interface IService { void Execute(); }
+  public enum Color { Red, Green, Blue }
+}`;
+
+const STRUCT_CS = `namespace T {
+  public struct Point {
+    public int X;
+    public int Y;
+  }
+}`;
+
+suite('LSP Integration — Document Symbols', () => {
+  const tmpDir = useLspTestSuite('symbols-');
+
+  test('returns class and method symbols for a C# file', async function () {
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — the outline names every declaration in the file.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'symbols.cs', content);
-    const symbols = await waitForDocumentSymbols(uri);
+    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'symbols.cs', SYMBOLS_CS);
     assert.ok(symbols.length > 0, 'Should return at least one symbol');
     const names = flattenSymbolNames(symbols);
-    assert.ok(names.includes('Foo'), 'Should contain class Foo');
-    assert.ok(names.includes('Bar'), 'Should contain method Bar');
-    assert.ok(names.includes('Baz'), 'Should contain property Baz');
+    assertContainsAll(names, ['Foo', 'Bar', 'Baz'], 'Should contain');
 
     // Interaction 2 — every reply obeys the protocol: selectionRange inside
     // range, range inside the document, child inside parent.
@@ -102,8 +107,7 @@ suite('LSP Integration — Document Symbols', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = 'namespace MyApp.Models { public class Item { } }';
     // Interaction 1 — the dotted namespace reaches the outline.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'ns.cs', content);
-    const symbols = await waitForDocumentSymbols(uri);
+    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'ns.cs', content);
     const names = flattenSymbolNames(symbols);
     assert.ok(
       names.some((name) => name.includes('MyApp')),
@@ -129,22 +133,12 @@ suite('LSP Integration — Document Symbols', () => {
 
   test('returns nested class symbols with hierarchy', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace N {
-  public class Outer {
-    public class Inner {
-      public void InnerMethod() { }
-    }
-    public void OuterMethod() { }
-  }
-}`;
     // Interaction 1 — Outer owns its members.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'nested.cs', content);
-    const symbols = await waitForDocumentSymbols(uri);
+    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'nested.cs', NESTED_CS);
     const outer = symbolNamed(symbols, 'Outer');
     assert.ok(outer.children.length > 0, 'Outer should have child symbols');
     const innerNames = outer.children.map((child) => child.name);
-    assert.ok(innerNames.includes('Inner'), 'Outer should contain Inner');
-    assert.ok(innerNames.includes('OuterMethod'), 'Outer should contain OuterMethod');
+    assertContainsAll(innerNames, ['Inner', 'OuterMethod'], 'Outer should contain');
 
     // Interaction 2 — the nesting goes all the way down. A tree that flattens
     // Inner's method to Outer gives the wrong breadcrumb trail.
@@ -167,16 +161,10 @@ suite('LSP Integration — Document Symbols', () => {
 
   test('returns interface and enum symbols', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace T {
-  public interface IService { void Execute(); }
-  public enum Color { Red, Green, Blue }
-}`;
     // Interaction 1 — both type shapes reach the outline.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'iface-enum.cs', content);
-    const symbols = await waitForDocumentSymbols(uri);
+    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'iface-enum.cs', IFACE_ENUM_CS);
     const names = flattenSymbolNames(symbols);
-    assert.ok(names.includes('IService'), 'Should contain interface');
-    assert.ok(names.includes('Color'), 'Should contain enum');
+    assertContainsAll(names, ['IService', 'Color'], 'Should contain');
     assertSymbolTree(symbols, doc);
 
     // Interaction 2 — an interface is not a class and an enum is not either.
@@ -205,7 +193,7 @@ suite('LSP Integration — Document Symbols', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — a comment-only file declares nothing, so the outline is
     // empty rather than carrying a phantom root.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'empty-decl.cs', '// Just a comment\n');
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'empty-decl.cs', '// Just a comment\n');
     const empty = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
       'vscode.executeDocumentSymbolProvider',
       uri,
@@ -229,24 +217,16 @@ suite('LSP Integration — Document Symbols', () => {
       uri,
     );
     assert.strictEqual(cleared?.length ?? 0, 0, 'removing the declaration must empty the outline');
-    assert.strictEqual(
-      flattenSymbolNames(cleared ?? []).includes('Appears'),
-      false,
+    assert.ok(
+      !flattenSymbolNames(cleared ?? []).includes('Appears'),
       'and leave no stale symbol behind',
     );
   });
 
   test('returns struct symbol', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace T {
-  public struct Point {
-    public int X;
-    public int Y;
-  }
-}`;
     // Interaction 1 — the struct reaches the outline.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'struct.cs', content);
-    const symbols = await waitForDocumentSymbols(uri);
+    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'struct.cs', STRUCT_CS);
     assert.ok(flattenSymbolNames(symbols).includes('Point'), 'Should contain struct Point');
     assertSymbolTree(symbols, doc);
 
@@ -270,8 +250,7 @@ suite('LSP Integration — Document Symbols', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = 'namespace T { public record Person(string Name, int Age); }';
     // Interaction 1 — the record reaches the outline.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'record.cs', content);
-    const symbols = await waitForDocumentSymbols(uri);
+    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'record.cs', content);
     assert.ok(flattenSymbolNames(symbols).includes('Person'), 'Should contain record Person');
     assertSymbolTree(symbols, doc);
 
@@ -289,36 +268,14 @@ suite('LSP Integration — Document Symbols', () => {
     // Interaction 3 — its selectionRange covers `Person` and not the whole
     // positional parameter list, so Go to Symbol lands on the name.
     assertSymbolShape(person, person.kind, doc);
-    assert.strictEqual(
-      doc.getText(person.selectionRange).includes('('),
-      false,
+    assert.ok(
+      !doc.getText(person.selectionRange).includes('('),
       'the identifier span must stop before the positional parameter list',
     );
     assert.ok(person.range.contains(person.selectionRange), 'and sit inside the declaration');
   });
 });
-
-suite('LSP Integration — Folding Ranges', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('folding-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
-
-  test('returns folding ranges for class and method bodies', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace Test {
+const FOLD_CS = `namespace Test {
   public class Foo {
     public void Bar() {
       var x = 1;
@@ -330,8 +287,39 @@ suite('LSP Integration — Folding Ranges', () => {
     }
   }
 }`;
+
+const REGION_CS = `public class C {
+  #region Methods
+  public void A() { }
+  public void B() { }
+  #endregion
+}`;
+
+const USINGS_CS = `using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Test {
+  public class C { }
+}`;
+
+const NESTED_FOLD_CS = `namespace N {
+  class Outer {
+    class Inner {
+      void Method() {
+        var x = 1;
+      }
+    }
+  }
+}`;
+
+suite('LSP Integration — Folding Ranges', () => {
+  const tmpDir = useLspTestSuite('folding-');
+
+  test('returns folding ranges for class and method bodies', async function () {
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — one chevron per block: namespace, class, two methods.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'fold.cs', content);
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'fold.cs', FOLD_CS);
     const ranges = await waitForFoldingRanges(uri);
     assert.ok(ranges.length >= 3, `Expected ≥3 folding ranges, got ${ranges.length}`);
     assertFoldingRanges(ranges, doc);
@@ -366,14 +354,8 @@ suite('LSP Integration — Folding Ranges', () => {
 
   test('returns folding ranges for region directives', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `public class C {
-  #region Methods
-  public void A() { }
-  public void B() { }
-  #endregion
-}`;
     // Interaction 1 — a #region is foldable, and it is tagged as a Region.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'region.cs', content);
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'region.cs', REGION_CS);
     const ranges = await waitForFoldingRanges(uri);
     assert.ok(ranges.length >= 1, 'Should have at least one folding range');
     assertFoldingRanges(ranges, doc);
@@ -384,14 +366,12 @@ suite('LSP Integration — Folding Ranges', () => {
     // that starts on the class swallows members the user meant to keep open.
     assert.strictEqual(regionRange.start, 1, 'the region starts on the #region line');
     assert.strictEqual(regionRange.end, 4, 'and ends on the #endregion line');
-    assert.strictEqual(
+    assert.ok(
       doc.lineAt(regionRange.start).text.trim().startsWith('#region'),
-      true,
       'the start line really is the directive',
     );
-    assert.strictEqual(
+    assert.ok(
       doc.lineAt(regionRange.end).text.trim().startsWith('#endregion'),
-      true,
       'and the end line closes it',
     );
 
@@ -408,15 +388,8 @@ suite('LSP Integration — Folding Ranges', () => {
 
   test('returns folding ranges for using directives', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `using System;
-using System.Collections.Generic;
-using System.Linq;
-
-namespace Test {
-  public class C { }
-}`;
     // Interaction 1 — the file folds at all, and every range is well formed.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'usings.cs', content);
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'usings.cs', USINGS_CS);
     const ranges = await waitForFoldingRanges(uri);
     assert.ok(ranges.length >= 1, `Expected ≥1 folding ranges, got ${String(ranges.length)}`);
     assertFoldingRanges(ranges, doc);
@@ -444,17 +417,8 @@ namespace Test {
 
   test('nested classes produce nested folding ranges', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace N {
-  class Outer {
-    class Inner {
-      void Method() {
-        var x = 1;
-      }
-    }
-  }
-}`;
     // Interaction 1 — one chevron per level of nesting.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'nested-fold.cs', content);
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'nested-fold.cs', NESTED_FOLD_CS);
     const ranges = await waitForFoldingRanges(uri);
     assert.ok(
       ranges.length >= 4,
@@ -486,36 +450,32 @@ namespace Test {
     assert.ok(visible() <= 3, `a fully folded nest shows the namespace line, got ${visible()}`);
   });
 });
-
-suite('LSP Integration — Selection Ranges', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('selection-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
-
-  test('returns selection ranges expanding from cursor position', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace Test {
+const SEL_CS = `namespace Test {
   public class Foo {
     public void Bar() {
       var x = 42;
     }
   }
 }`;
+
+const SEL_MULTI_CS = `class C {
+  int a = 1;
+  int b = 2;
+}`;
+
+const SEL_CLASS_CS = `namespace N {
+  class MyClass {
+    void M() { }
+  }
+}`;
+
+suite('LSP Integration — Selection Ranges', () => {
+  const tmpDir = useLspTestSuite('selection-');
+
+  test('returns selection ranges expanding from cursor position', async function () {
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — the caret on `x` yields a chain that expands outward.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'sel.cs', content);
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'sel.cs', SEL_CS);
     const position = new vscode.Position(3, 10);
     const ranges = await waitForSelectionRanges(uri, [position]);
     assert.ok(ranges.length > 0, 'Should return at least one selection range');
@@ -554,12 +514,8 @@ suite('LSP Integration — Selection Ranges', () => {
 
   test('returns selection ranges for multiple positions', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `class C {
-  int a = 1;
-  int b = 2;
-}`;
     // Interaction 1 — one chain per requested position, in request order.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'sel-multi.cs', content);
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'sel-multi.cs', SEL_MULTI_CS);
     const positions = [new vscode.Position(1, 6), new vscode.Position(2, 6)];
     const ranges = await waitForSelectionRanges(uri, positions);
     assert.strictEqual(ranges.length, 2, 'Should return one selection range per position');
@@ -572,7 +528,7 @@ suite('LSP Integration — Selection Ranges', () => {
     const secondDepth = assertSelectionChain(second, positions[1]!, doc);
     assert.strictEqual(doc.getText(first.range), 'a', 'the first chain selects a');
     assert.strictEqual(doc.getText(second.range), 'b', 'and the second selects b');
-    assert.strictEqual(first.range.isEqual(second.range), false, 'the two chains are distinct');
+    assert.ok(!first.range.isEqual(second.range), 'the two chains are distinct');
 
     // Interaction 3 — both chains reach the same enclosing class, so a
     // multi-cursor expand ends with both selections on the same construct.
@@ -582,22 +538,16 @@ suite('LSP Integration — Selection Ranges', () => {
       while (current.parent) current = current.parent;
       return current;
     };
-    assert.strictEqual(
+    assert.ok(
       outermostOf(first).range.isEqual(outermostOf(second).range),
-      true,
       'both carets expand to the same outermost construct',
     );
   });
 
   test('selection ranges at class level expand to file', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const content = `namespace N {
-  class MyClass {
-    void M() { }
-  }
-}`;
     // Interaction 1 — a caret on the class name yields a chain.
-    const { uri, doc } = await openCSharpFile(tmpDir, 'sel-class.cs', content);
+    const { uri, doc } = await openCSharpFile(tmpDir(), 'sel-class.cs', SEL_CLASS_CS);
     const position = new vscode.Position(1, 8);
     const ranges = await waitForSelectionRanges(uri, [position]);
     assert.ok(ranges.length > 0, 'Should return selection ranges');
@@ -789,13 +739,8 @@ suite('LSP Integration — Fixture Files', () => {
     assertSymbolTree(symbols, doc);
     const outer = symbolNamed(symbols, 'Outer');
     const outerChildren = outer.children.map((child) => child.name);
-    assert.ok(outerChildren.includes('Inner'), `Outer owns Inner, got ${outerChildren.join(', ')}`);
-    assert.ok(outerChildren.includes('AnotherInner'), 'and AnotherInner');
-    assert.strictEqual(
-      outerChildren.includes('InnerMethod'),
-      false,
-      'InnerMethod belongs to Inner, not to Outer',
-    );
+    assertContainsAll(outerChildren, ['Inner', 'AnotherInner'], 'outerChildren');
+    assert.ok(!outerChildren.includes('InnerMethod'), 'InnerMethod belongs to Inner, not to Outer');
 
     // Interaction 3 — kinds, so the outline draws a class icon at every level.
     assertSymbolShape(outer, vscode.SymbolKind.Class, doc);
@@ -815,9 +760,8 @@ suite('LSP Integration — Fixture Files', () => {
     // assertion below is about the provider and not about the fixture.
     const { uri, doc } = await openExistingFile(fixtureDir, 'Empty.cs');
     assert.strictEqual(doc.languageId, 'csharp', 'Empty.cs still opens as C#');
-    assert.strictEqual(
-      doc.getText().includes('class'),
-      false,
+    assert.ok(
+      !doc.getText().includes('class'),
       'the fixture declares no type — otherwise this test proves nothing',
     );
 
@@ -839,6 +783,6 @@ suite('LSP Integration — Fixture Files', () => {
     );
     assertFoldingRanges(folds ?? [], doc);
     assert.strictEqual(folds?.length ?? 0, 0, 'a declaration-free file folds nowhere');
-    assert.strictEqual(doc.isDirty, false, 'and reading it left the buffer untouched');
+    assert.ok(!doc.isDirty, 'and reading it left the buffer untouched');
   });
 });

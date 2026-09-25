@@ -14,11 +14,12 @@ import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { formatDuration, statusLensTitle } from '../../test-lens.js';
 import type { CachedTestResult } from '../../testing.js';
-import { collectItemIds, findItem } from './test-explorer-kit';
+import { collectItemIds, findItem, runViaProfile } from './test-explorer-kit';
+import { assertContainsAll } from './test-helpers';
 
 /** Sorted copy, so set-equality assertions do not depend on discovery order. */
 export function sorted(ids: readonly string[]): string[] {
-  return [...ids].sort((left, right) => left.localeCompare(right));
+  return [...ids].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
 /** The cached result for `id`, failing with what WAS cached when absent. */
@@ -40,6 +41,15 @@ export function itemsFor(api: SharpLspExtensionApi, ids: readonly string[]): vsc
   });
 }
 
+/** ▶ on `ids` exactly as the Testing view's Run button does, then settle. */
+export async function runAndSettle(
+  api: SharpLspExtensionApi,
+  ids: readonly string[],
+): Promise<void> {
+  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
+  await api.testController.whenIdle();
+}
+
 /** Cached ids belonging to THIS suite's fixtures (the cache outlives a suite). */
 export function fixtureKeys(api: SharpLspExtensionApi, known: readonly string[]): string[] {
   // Intersect with the caller's OWN expected ids rather than matching a
@@ -51,6 +61,28 @@ export function fixtureKeys(api: SharpLspExtensionApi, known: readonly string[])
   return [...api.testController.cachedResults.keys()].filter((id) => wanted.has(id));
 }
 
+/** What a result says when its id could not be reconciled with the TRX report. */
+export const NO_RESULT = 'No result reported';
+
+/**
+ * `id` REALLY reported after a run that selected it: a cached result, a real
+ * outcome, and no "No result reported" note — the text an id the TRX report
+ * could not reconcile produces ([TEST-RUN-TRX]).
+ */
+export function assertReported(api: SharpLspExtensionApi, id: string): CachedTestResult {
+  const result = cachedFor(api, id);
+  assert.notStrictEqual(
+    result.outcome,
+    'notRun',
+    `${id} was selected and run, so it has an outcome`,
+  );
+  assert.ok(
+    !(result.message ?? '').includes(NO_RESULT),
+    `${id} ran, so it must not report "${NO_RESULT}"; got ${result.message ?? '(none)'}`,
+  );
+  return result;
+}
+
 /** A genuine pass: outcome, flag, a real measured duration AND its rendering. */
 export function assertPassed(result: CachedTestResult, id: string): void {
   const detail = `got '${result.outcome}': ${result.message ?? 'no message'}`;
@@ -59,15 +91,14 @@ export function assertPassed(result: CachedTestResult, id: string): void {
     'passed',
     `${id} passes in the fixture, so TRX must say so (${detail})`,
   );
-  assert.strictEqual(result.passed, true, `${id} passed, so the pass flag must be true`);
+  assert.ok(result.passed, `${id} passed, so the pass flag must be true`);
   assert.strictEqual(
     typeof result.duration,
     'number',
     `${id} must carry the duration TRX recorded`,
   );
-  assert.strictEqual(
+  assert.ok(
     (result.duration ?? -1) >= 0,
-    true,
     `${id} duration must be non-negative, got ${String(result.duration)}`,
   );
   assert.strictEqual(
@@ -100,23 +131,14 @@ export function assertFailed(
     'failed',
     `${id} fails in the fixture, got '${result.outcome}'`,
   );
-  assert.strictEqual(result.passed, false, `${id} failed, so the pass flag must be false`);
+  assert.ok(!result.passed, `${id} failed, so the pass flag must be false`);
   assert.notStrictEqual(
     result.message,
     undefined,
     `${id} must carry the failure message TRX recorded`,
   );
   const message = result.message ?? '';
-  assert.strictEqual(
-    message.includes(failureText),
-    true,
-    `${id} must surface the framework's own text ('${failureText}'): ${message}`,
-  );
-  assert.strictEqual(
-    message.includes('Expected'),
-    true,
-    `${id} must surface the Expected/Actual detail: ${message}`,
-  );
+  assertContainsAll(message, [failureText, 'Expected'], 'message');
   assert.notStrictEqual(message, 'Test failed', `${id} must not fall back to the generic message`);
   assert.strictEqual(
     statusLensTitle(result),
@@ -137,11 +159,10 @@ export function assertSkipped(result: CachedTestResult, id: string): void {
     'failed',
     `${id} is skipped and must NEVER be a failure — the original bug`,
   );
-  assert.strictEqual(result.passed, false, `${id} was not executed, so it is not a pass either`);
+  assert.ok(!result.passed, `${id} was not executed, so it is not a pass either`);
   const message = result.message ?? 'none';
-  assert.strictEqual(
-    message.includes('Assert'),
-    false,
+  assert.ok(
+    !message.includes('Assert'),
     `${id} is skipped, so no assertion text may attach: ${message}`,
   );
   assert.strictEqual(

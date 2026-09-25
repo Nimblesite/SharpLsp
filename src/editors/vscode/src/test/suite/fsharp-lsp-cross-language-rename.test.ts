@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import {
   changedFileNames,
   editCount,
-  requestPrepareRename,
+  assertPrepareRename,
   requestRename,
   tokenRange,
 } from './fsharp-refactor-test-kit';
@@ -19,6 +19,7 @@ import {
   waitForMatchingDiagnostics,
   workspaceFixturePath,
   type OpenFixture,
+  fullDocumentRange,
 } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
@@ -182,13 +183,7 @@ async function assertPrepare(
   range: vscode.Range,
   placeholder: string,
 ): Promise<void> {
-  const prepare = await requestPrepareRename(uri, range.start.translate(0, 1));
-  assert.ok(prepare);
-  assert.strictEqual(prepare.placeholder, placeholder);
-  assert.strictEqual(prepare.range.start.line, range.start.line);
-  assert.strictEqual(prepare.range.start.character, range.start.character);
-  assert.strictEqual(prepare.range.end.line, range.end.line);
-  assert.strictEqual(prepare.range.end.character, range.end.character);
+  await assertPrepareRename(uri, range, range.start.translate(0, 1), placeholder);
 }
 
 async function assertCrossLanguageEdit(
@@ -303,9 +298,14 @@ async function assertOriginalPrepare(
   );
 }
 
-function assertOriginalTexts(fixture: CrossRenameFixture, spec: CrossRenameSpec): void {
+/** Both documents hold exactly the text they were opened with. */
+function assertOriginalContent(fixture: CrossRenameFixture): void {
   assert.strictEqual(fixture.origin.document.getText(), fixture.originalOrigin);
   assert.strictEqual(fixture.foreign.document.getText(), fixture.originalForeign);
+}
+
+function assertOriginalTexts(fixture: CrossRenameFixture, spec: CrossRenameSpec): void {
+  assertOriginalContent(fixture);
   assert.ok(fixture.origin.document.isDirty);
   assert.ok(fixture.foreign.document.isDirty);
   assert.strictEqual(count(fixture.origin.document.getText(), spec.newName), 0);
@@ -442,16 +442,8 @@ async function restoreOriginalFixture(fixture: CrossRenameFixture): Promise<void
     fixture.originalForeign,
   );
   await applyWorkspaceEdit(restoration);
-  assert.strictEqual(fixture.origin.document.getText(), fixture.originalOrigin);
-  assert.strictEqual(fixture.foreign.document.getText(), fixture.originalForeign);
+  assertOriginalContent(fixture);
   await persistFixtureState(fixture);
-}
-
-function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
-  return new vscode.Range(
-    new vscode.Position(0, 0),
-    document.positionAt(document.getText().length),
-  );
 }
 
 function count(source: string, needle: string): number {

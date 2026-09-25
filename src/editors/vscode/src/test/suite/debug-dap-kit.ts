@@ -18,7 +18,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
-import { pollUntilResult, requireAt, sleep } from './test-helpers';
+import { deepEq, eq, pollUntilResult, requireAt, sleep } from './test-helpers';
 import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
 /** How long a launch, a step or a stop may take before a suite gives up. */
@@ -409,4 +409,20 @@ export async function tryDap(
   } catch (error) {
     return { body: {}, failure: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/** `command` really reached the adapter, and every reply to it succeeded. */
+export function assertAnswered(recorder: DapRecorder, command: string, why: string): void {
+  assert.ok(recorder.requests(command).length >= 1, `${why}: '${command}' must reach the adapter`);
+  assert.ok(
+    recorder.responses(command).every((response) => response.success),
+    `${why}: every '${command}' reply must succeed`,
+  );
+}
+
+/** One handshake, one termination, and the adapter process alive throughout. */
+export function assertOneWholeSession(recorder: DapRecorder): void {
+  eq(recorder.events('initialized').length, 1, 'behind one initialized event');
+  eq(recorder.events('terminated').length, 1, 'and one termination');
+  deepEq(recorder.exits, [], 'with the adapter process alive throughout');
 }

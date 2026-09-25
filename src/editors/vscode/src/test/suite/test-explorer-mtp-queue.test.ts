@@ -33,13 +33,13 @@ import {
   XUNIT_PACKAGES,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   findItem,
   rootsOf,
   runViaProfile,
   teardownFixtureSolution,
+  activateWithScratch,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
@@ -91,8 +91,7 @@ suite('Test Explorer e2e — a run queued behind a discovery sweep', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-queue-'));
+    ({ api, root } = await activateWithScratch('sharplsp-mtp-queue-'));
     const xml = projectXml(XUNIT_PACKAGES);
     projectDir = writeProject(
       path.join(root, PROJECT),

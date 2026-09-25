@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { closeAllEditors, pollUntilResult, pollProvider } from './test-helpers';
 import { codeLensesFor } from './code-lens-kit';
 import { openFSharpFixture, positionOf } from './fsharp-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
@@ -102,13 +102,9 @@ suite('F# LSP — Call Hierarchy', () => {
     // is rooted at.
     const usage = await openFSharpFixture('Usage.fs');
     const position = positionOf(usage.doc, 'let double (value', 'let '.length);
-    const items = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>(
-          'vscode.prepareCallHierarchy',
-          usage.uri,
-          position,
-        )) ?? [],
+    const items = await pollProvider<vscode.CallHierarchyItem>(
+      'vscode.prepareCallHierarchy',
+      [usage.uri, position],
       (list) => list.length > 0,
       LSP_RESPONSE_MS,
       2_000,

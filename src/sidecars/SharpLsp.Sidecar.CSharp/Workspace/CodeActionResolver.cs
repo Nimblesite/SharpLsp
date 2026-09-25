@@ -27,14 +27,6 @@ internal sealed class CodeActionResolver
     private static readonly Lazy<ImmutableArray<DiagnosticAnalyzer>> CachedDiagnosticAnalyzers =
         new(() => AnalyzerDiagnosticResolver.DiscoverFixableAnalyzers(CachedFixProviders.Value));
 
-    private static readonly ImmutableHashSet<string> RewriteDiagnosticIds = ImmutableHashSet.Create(
-        StringComparer.Ordinal,
-        "IDE0007",
-        "IDE0008",
-        "IDE0160",
-        "IDE0161"
-    );
-
     private readonly ConcurrentDictionary<int, CodeAction> _pendingActions = new();
     private int _nextId;
 
@@ -252,7 +244,9 @@ internal sealed class CodeActionResolver
 
     private static string FixKind(string diagnosticId)
     {
-        return RewriteDiagnosticIds.Contains(diagnosticId) ? "refactor.rewrite" : "quickfix";
+        return AnalyzerDiagnosticResolver.RewriteDiagnosticIds.Contains(diagnosticId)
+            ? "refactor.rewrite"
+            : "quickfix";
     }
 
     private async Task CollectRefactoringsAsync(

@@ -12,6 +12,8 @@ import {
   takeScreenshot,
 } from './test-helpers';
 import { ACTIVATION_MS, COMMAND_MS, FAST_MS } from './test-timeouts';
+import { commandEntries } from './extension-manifest-kit';
+import { nodeLabel } from './tree-node-kit';
 
 interface ProfilerTreeNode {
   readonly label?: string | { label: string };
@@ -32,11 +34,6 @@ interface ProfilerProviderApi {
 
 interface ProfilerExtensionApi {
   readonly profilerProvider: ProfilerProviderApi;
-}
-
-function nodeLabel(node: ProfilerTreeNode): string {
-  if (typeof node.label === 'string') return node.label;
-  return node.label?.label ?? '';
 }
 
 function findByLabel(nodes: ProfilerTreeNode[], substring: string): ProfilerTreeNode | undefined {
@@ -390,45 +387,15 @@ suite('Profiler', () => {
 
   // ── Package contribution: new commands declared ───────────────
 
-  test('package.json declares diffSnapshots command', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension must exist');
-    const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
-    assert.ok(
-      commands.some((c) => c.command === 'sharplsp.profiler.diffSnapshots'),
-      'package.json must declare sharplsp.profiler.diffSnapshots',
-    );
-  });
-
-  test('package.json declares detectLeaks command', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension must exist');
-    const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
-    assert.ok(
-      commands.some((c) => c.command === 'sharplsp.profiler.detectLeaks'),
-      'package.json must declare sharplsp.profiler.detectLeaks',
-    );
-  });
-
-  test('package.json declares showObjectGraph command', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension must exist');
-    const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
-    assert.ok(
-      commands.some((c) => c.command === 'sharplsp.profiler.showObjectGraph'),
-      'package.json must declare sharplsp.profiler.showObjectGraph',
-    );
-  });
-
-  test('package.json declares inspectObject command', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension must exist');
-    const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
-    assert.ok(
-      commands.some((c) => c.command === 'sharplsp.profiler.inspectObject'),
-      'package.json must declare sharplsp.profiler.inspectObject',
-    );
-  });
+  for (const command of ['diffSnapshots', 'detectLeaks', 'showObjectGraph', 'inspectObject']) {
+    test(`package.json declares ${command} command`, () => {
+      const id = `sharplsp.profiler.${command}`;
+      assert.ok(
+        commandEntries().some((entry) => entry.command === id),
+        `package.json must declare ${id}`,
+      );
+    });
+  }
 
   // ── Tree: mixed sessions with heap diff flow ──────────────────
 

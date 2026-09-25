@@ -378,10 +378,15 @@ internal sealed class CodeLensResult
     public string Title { get; set; } = "";
 }
 
-// ── Call Hierarchy Types ─────────────────────────────────────────
+// ── Hierarchy Types (call + type hierarchy share this layout) ────
 
+/// <summary>
+/// One call- or type-hierarchy item. Both hierarchies answer `prepare` with the
+/// same positional shape, so one type serves both — as `HierarchyItemResult`
+/// does in the F# sidecar.
+/// </summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class CallHierarchyItem
+internal class HierarchyItem
 {
     [Key(0)]
     public string Name { get; set; } = "";
@@ -422,62 +427,18 @@ internal sealed class CallSiteResult
     public int EndCharacter { get; set; }
 }
 
+/// <summary>
+/// One incoming or outgoing call: the <see cref="HierarchyItem"/> at keys 0-6,
+/// then the ranges the call appears at.
+/// </summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class CallHierarchyCallResult
+internal sealed class CallHierarchyCallResult : HierarchyItem
 {
-    [Key(0)]
-    public string Name { get; set; } = "";
-
-    [Key(1)]
-    public string Kind { get; set; } = "";
-
-    [Key(2)]
-    public string FilePath { get; set; } = "";
-
-    [Key(3)]
-    public int Line { get; set; }
-
-    [Key(4)]
-    public int Character { get; set; }
-
-    [Key(5)]
-    public int EndLine { get; set; }
-
-    [Key(6)]
-    public int EndCharacter { get; set; }
-
     /// <summary>
     /// Every range at which the call appears, per LSP 3.17 `fromRanges`.
     /// </summary>
     [Key(7)]
     public List<CallSiteResult> FromRanges { get; set; } = [];
-}
-
-// ── Type Hierarchy Types ─────────────────────────────────────────
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class TypeHierarchyItem
-{
-    [Key(0)]
-    public string Name { get; set; } = "";
-
-    [Key(1)]
-    public string Kind { get; set; } = "";
-
-    [Key(2)]
-    public string FilePath { get; set; } = "";
-
-    [Key(3)]
-    public int Line { get; set; }
-
-    [Key(4)]
-    public int Character { get; set; }
-
-    [Key(5)]
-    public int EndLine { get; set; }
-
-    [Key(6)]
-    public int EndCharacter { get; set; }
 }
 
 // ── Rename Types ──────────────────────────────────────────────────

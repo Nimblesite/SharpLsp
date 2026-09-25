@@ -28,9 +28,10 @@ import {
   variableNamed,
 } from './debug-drive-kit';
 import { waitForActiveFrame } from './debug-thread-kit';
-import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
+import { assertCleanSession, useDebuggee, runToFirstStop } from './debug-suite-kit';
 import { comparablePath, deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
 import { DEBUG_TEST_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { assertAnswered } from './debug-dap-kit';
 
 /** The logical await chain the sidecar must reconstruct, innermost first. */
 const ASYNC_CHAIN = ['LeafAsync', 'MiddleAsync', 'RootAsync'] as const;
@@ -48,10 +49,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop three user frames deep.
-    armBreakpoints(fixture, 'add-body');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside Add');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-body');
     assertStoppedAt(
       await topFrame(session, stop.threadId),
       fixture,
@@ -96,9 +94,8 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // path that really exists, so clicking it opens the file.
     for (const frame of frames.slice(0, 3)) {
       assertFrameSource(frame, fixture, `the ${methodOf(frame)} frame`);
-      eq(
+      assert.ok(
         fs.existsSync(frame.sourcePath),
-        true,
         `"Navigate to source from frame" is P1: ${frame.sourcePath} must exist on disk, or ` +
           'clicking the frame opens an empty editor',
       );
@@ -117,19 +114,9 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     assertCleanSession(debuggee(), 'reading the call stack');
     // Interaction 5 - the stack was READ, not inferred: the request went out
     // and came back, and the workbench focused a frame off the back of it.
-    eq(
-      recorder.requests('stackTrace').length >= 1,
-      true,
-      'the workbench really asked for the stack',
-    );
-    eq(
-      recorder.responses('stackTrace').every((response) => response.success),
-      true,
-      'and the adapter answered',
-    );
-    eq(
+    assertAnswered(recorder, 'stackTrace', 'the workbench really asked for the stack');
+    assert.ok(
       recorder.requests('threads').length >= 1,
-      true,
       'after enumerating the threads it belongs to',
     );
     eq(recorder.stops().length, 1, 'with the debuggee paused exactly once');
@@ -139,13 +126,10 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
   // Implements [DEBUG-FEATURES-STACK] — selecting a frame is per-frame state.
   test('selecting a caller frame reads that frame’s own locals', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — stop in the innermost frame.
-    armBreakpoints(fixture, 'add-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-return');
     const frames = await stackFrames(session, stop.threadId);
 
     // Interaction 2 — the innermost frame's locals are Add's.
@@ -178,22 +162,16 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // Interaction 4 — the outermost frame's locals are Main's.
     const outer = requireAt(frames, 2, 'the Main frame');
     const outerLocals = await localsOf(session, outer.id);
-    eq(
+    assert.ok(
       variableNamed(outerLocals, 'mode').value.includes(MODE.plain),
-      true,
       'Main’s locals must include the argument it parsed',
     );
     eq(new Set([inner.id, caller.id, outer.id]).size, 3, 'three frames, three distinct handles');
     assertCleanSession(debuggee(), 'selecting frames');
     // Interaction 4 - selecting a caller is `scopes` + `variables` against THAT
     // frame id, and nothing else changes.
-    eq(recorder.requests('scopes').length >= 1, true, 'the caller frame scopes were read');
-    eq(recorder.requests('variables').length >= 1, true, 'and its variables');
-    eq(
-      recorder.responses('variables').every((response) => response.success),
-      true,
-      'each answered successfully',
-    );
+    assert.ok(recorder.requests('scopes').length >= 1, 'the caller frame scopes were read');
+    assertAnswered(recorder, 'variables', 'and its variables');
     eq(recorder.stops().length, 1, 'without resuming the debuggee');
     deepEq(recorder.errors, [], 'and with no adapter transport error');
   });
@@ -205,10 +183,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop at the bottom of a three-deep await chain.
-    armBreakpoints(fixture, 'leaf-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.async });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside LeafAsync');
+    const { session, stop } = await runToFirstStop(debuggee(), 'leaf-return', { mode: MODE.async });
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'leaf-return', 'LeafAsync', 'the innermost async frame');
 
@@ -237,15 +212,13 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
         'DapRouter and the C# sidecar MUST reconstruct the logical chain and inject the ' +
         `awaiting frames before forwarding \`stackTrace\`. Frames reported: ${names.join(' <- ')}`,
     );
-    eq(
+    assert.ok(
       names.indexOf('MiddleAsync') > names.indexOf('LeafAsync'),
-      true,
       'the awaiter must sit BELOW the awaited frame: a chain in the wrong order tells the ' +
         'user the opposite of what happened',
     );
-    eq(
+    assert.ok(
       names.indexOf('RootAsync') > names.indexOf('MiddleAsync'),
-      true,
       'and the whole chain must be ordered, not just its first pair',
     );
 
@@ -273,35 +246,26 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     assertCleanSession(debuggee(), 'an async call stack');
     // Interaction 4 - the async reconstruction happens on the STACK response,
     // so the request must have gone out and been answered.
-    eq(recorder.requests('stackTrace').length >= 1, true, 'the async stack was read');
-    eq(
-      recorder.responses('stackTrace').every((response) => response.success),
-      true,
-      'and answered',
-    );
-    eq(recorder.stops().length >= 1, true, 'from a real stop');
-    eq(recorder.events('terminated').length <= 1, true, 'in a session that ended at most once');
+    assertAnswered(recorder, 'stackTrace', 'the async stack was read');
+    assert.ok(recorder.stops().length >= 1, 'from a real stop');
+    assert.ok(recorder.events('terminated').length <= 1, 'in a session that ended at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
 
   // Implements [DEBUG-FEATURES-STACK] — the thread list the panel groups by.
   test('threads are enumerated and the stopped thread is identified', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — stop anywhere.
-    armBreakpoints(fixture, 'main-accumulate');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint');
+    const { session, stop } = await runToFirstStop(debuggee(), 'main-accumulate');
 
     // Interaction 2 — `threads` must list the thread the stop named.
     const threads = await threadsOf(session);
     assert.ok(threads.length > 0, 'a running .NET process has at least a main thread');
     const ids = threads.map((thread) => Number(thread['id']));
-    eq(
+    assert.ok(
       ids.includes(stop.threadId),
-      true,
       `the stopped thread ${stop.threadId} must appear in the \`threads\` response; the Call ` +
         `Stack panel groups by it. Reported: ${ids.join(', ')}`,
     );
@@ -323,18 +287,12 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     assertCleanSession(debuggee(), 'enumerating threads');
     // Interaction 4 - threads are what the Call Stack panel groups by, so the
     // enumeration is load-bearing rather than incidental.
-    eq(recorder.requests('threads').length >= 1, true, 'the threads were enumerated');
-    eq(
-      recorder.responses('threads').every((response) => response.success),
-      true,
-      'and the request answered',
-    );
-    eq(
+    assertAnswered(recorder, 'threads', 'the threads were enumerated');
+    assert.ok(
       recorder.stops().every((entry) => entry.threadId !== 0),
-      true,
       'every stop named a thread',
     );
-    eq(recorder.events('terminated').length <= 1, true, 'and the session ended at most once');
+    assert.ok(recorder.events('terminated').length <= 1, 'and the session ended at most once');
     deepEq(recorder.exits, [], 'with the adapter process alive throughout');
   });
 
@@ -348,12 +306,12 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop three user frames deep.
-    armBreakpoints(fixture, 'add-body');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain, justMyCode: true });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside Add');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-body', {
+      mode: MODE.plain,
+      justMyCode: true,
+    });
     const frames = await stackFrames(session, stop.threadId);
-    eq(frames.length >= 3, true, 'at least the three user frames are reported');
+    assert.ok(frames.length >= 3, 'at least the three user frames are reported');
 
     // Interaction 2 — the user frames: all in the fixture file, all named after
     // a method the fixture declares, all with a real line.
@@ -361,12 +319,12 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     const userFrames = frames.filter((frame) => {
       return comparablePath(frame.sourcePath) === comparablePath(fixture.sourceFile);
     });
-    eq(userFrames.length >= 3, true, 'three frames resolve to the file the user wrote');
+    assert.ok(userFrames.length >= 3, 'three frames resolve to the file the user wrote');
     for (const frame of userFrames) {
-      eq(declared.includes(methodOf(frame)), true, methodOf(frame) + ' is a fixture method');
-      eq(frame.line > 0, true, methodOf(frame) + ' carries a 1-based line to navigate to');
-      eq(fs.existsSync(frame.sourcePath), true, methodOf(frame) + ' source exists on disk');
-      eq(frame.id > 0, true, methodOf(frame) + ' carries a usable frame handle');
+      assert.ok(declared.includes(methodOf(frame)), methodOf(frame) + ' is a fixture method');
+      assert.ok(frame.line > 0, methodOf(frame) + ' carries a 1-based line to navigate to');
+      assert.ok(fs.existsSync(frame.sourcePath), methodOf(frame) + ' source exists on disk');
+      assert.ok(frame.id > 0, methodOf(frame) + ' carries a usable frame handle');
     }
 
     // Interaction 3 — and no frame the user is shown may be named after a
@@ -374,9 +332,8 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // specification calls out by name.
     for (const frame of userFrames) {
       for (const hint of GENERATED_HINTS) {
-        eq(
-          frame.name.includes(hint),
-          false,
+        assert.ok(
+          !frame.name.includes(hint),
           'a frame the user reads must not be named after the compiler-generated shape ' +
             hint +
             '; DAP reported ' +
@@ -399,21 +356,19 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       'Main',
       'the walk reaches the entry point - a stack short of Main is truncated',
     );
-    eq(
+    assert.ok(
       userFrames.every((frame) => frame.presentationHint !== 'subtle'),
-      true,
       'and no user frame is presented as subtle runtime code',
     );
     assertCleanSession(debuggee(), 'distinguishing user frames');
     // Interaction 4 - Just My Code is a LAUNCH attribute, so it has to have
     // travelled with the launch this stack belongs to.
     eq(recorder.requests('launch').length, 1, 'one launch request for one session');
-    eq(
+    assert.ok(
       recorder.responses('launch').every((response) => response.success),
-      true,
       'answered successfully',
     );
-    eq(recorder.requests('stackTrace').length >= 1, true, 'and the stack really was read from it');
+    assert.ok(recorder.requests('stackTrace').length >= 1, 'and the stack really was read from it');
     eq(recorder.stops().length, 1, 'with the debuggee paused once');
     deepEq(recorder.errors, [], 'and no adapter transport error');
   });
@@ -427,10 +382,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop at the top of the loop body.
-    armBreakpoints(fixture, 'accumulate-call');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the call inside the loop');
+    const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-call');
     const before = await stackFrames(session, stop.threadId);
     eq(methodOf(requireAt(before, 0, 'the first frame')), 'Accumulate', 'stopped in the caller');
     eq(
@@ -487,14 +439,13 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     assertCleanSession(debuggee(), 're-reading the stack after each step');
     // Interaction 4 - three stack reads, one per stop, each its own round trip.
     // A cached stack would show as fewer requests than stops.
-    eq(recorder.requests('stackTrace').length >= 3, true, 'the stack was re-read after each step');
-    eq(
+    assert.ok(recorder.requests('stackTrace').length >= 3, 'the stack was re-read after each step');
+    assert.ok(
       recorder.responses('stackTrace').every((response) => response.success),
-      true,
       'each read answered',
     );
-    eq(recorder.requests('stepIn').length >= 1, true, 'the step into really reached the adapter');
-    eq(recorder.requests('stepOut').length >= 1, true, 'and so did the step out');
+    assert.ok(recorder.requests('stepIn').length >= 1, 'the step into really reached the adapter');
+    assert.ok(recorder.requests('stepOut').length >= 1, 'and so did the step out');
     eq(recorder.stops().length, 3, 'with exactly three stops behind them');
   });
 
@@ -504,15 +455,12 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
   // something other than the process.
   test('reading the same stopped stack twice answers identically, frame for frame', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { recorder } = debuggee();
 
     // Interaction 1 — one deep stop.
-    armBreakpoints(fixture, 'add-body');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside Add');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-body');
     const first = await stackFrames(session, stop.threadId);
-    eq(first.length >= 3, true, 'the stop is at least three user frames deep');
+    assert.ok(first.length >= 3, 'the stop is at least three user frames deep');
 
     // Interaction 2 — read it again. Names, lines and sources must match.
     const second = await stackFrames(session, stop.threadId);
@@ -543,25 +491,22 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       'and reading either handle gives the same locals',
     );
     const threads = await threadsOf(session);
-    eq(threads.length >= 1, true, 'the stopped process reports its threads');
-    eq(
+    assert.ok(threads.length >= 1, 'the stopped process reports its threads');
+    assert.ok(
       threads.some((thread) => Number(thread['id']) === stop.threadId),
-      true,
       'including the one that stopped, which is what the panel groups the stack under',
     );
-    eq(
+    assert.ok(
       threads.every((thread) => String(thread['name'] ?? '') !== ''),
-      true,
       'and every thread is named, or the Call Stack panel shows an unlabelled group',
     );
     assertCleanSession(debuggee(), 'reading a stopped stack twice');
     // Interaction 4 - two reads of one stopped stack are two REQUESTS, and both
     // were answered. A cached second read would show as one.
-    eq(recorder.requests('stackTrace').length >= 2, true, 'the stack really was read twice');
-    eq(recorder.responses('stackTrace').length >= 2, true, 'and answered twice');
-    eq(
+    assert.ok(recorder.requests('stackTrace').length >= 2, 'the stack really was read twice');
+    assert.ok(recorder.responses('stackTrace').length >= 2, 'and answered twice');
+    assert.ok(
       recorder.responses('stackTrace').every((response) => response.success),
-      true,
       'both successfully',
     );
     eq(recorder.stops().length, 1, 'from the one stop');

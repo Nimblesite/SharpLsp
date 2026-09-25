@@ -136,7 +136,7 @@ suite('Debug adapter startup is total', () => {
     // the factory on every F5, so a one-shot guard is not a guard.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const again = DapRouter.start(UNSPAWNABLE);
-      assert.strictEqual(again.ok, false, `attempt ${String(attempt)} must also fail cleanly`);
+      assert.ok(!again.ok, `attempt ${String(attempt)} must also fail cleanly`);
     }
   });
 
@@ -178,7 +178,7 @@ suite('Debug adapter startup is total', () => {
   // Implements [DEBUG-ARCHITECTURE-ROUTER].
   test('disposing a router whose adapter never started signals only that adapter', async () => {
     const missing = path.join(tmpDir, 'never-started', EXE);
-    assert.strictEqual(fs.existsSync(missing), false, 'the premise: nothing is at that path');
+    assert.ok(!fs.existsSync(missing), 'the premise: nothing is at that path');
 
     const canary = processGroupCanary();
     assert.ok(
@@ -188,15 +188,14 @@ suite('Debug adapter startup is total', () => {
     const host = catchHostSigterm();
     try {
       const outcome = DapRouter.start(missing);
-      assert.strictEqual(outcome.ok, true, 'ENOENT fails asynchronously, not at construction');
+      assert.ok(outcome.ok, 'ENOENT fails asynchronously, not at construction');
       if (!outcome.ok) return;
       outcome.value.dispose();
       await new Promise<void>((resolve) => setTimeout(resolve, 750));
 
       assert.strictEqual(host.count(), 0, 'the extension host must never signal ITSELF');
-      assert.strictEqual(
+      assert.ok(
         stillAlive(canary),
-        true,
         `disposing an unstarted adapter killed an unrelated sibling (signal ${String(
           canary.signalCode,
         )}): the kill reached our whole process group instead of the adapter`,
@@ -212,7 +211,7 @@ suite('Debug adapter startup is total', () => {
   // group cannot be caught, logged or survived by anything in it.
   test('respawning a router whose adapter never started signals only that adapter', async () => {
     const missing = path.join(tmpDir, 'never-respawned', EXE);
-    assert.strictEqual(fs.existsSync(missing), false, 'the premise: nothing is at that path');
+    assert.ok(!fs.existsSync(missing), 'the premise: nothing is at that path');
 
     const canary = processGroupCanary();
     assert.ok(
@@ -222,7 +221,7 @@ suite('Debug adapter startup is total', () => {
     const host = catchHostSigterm();
     try {
       const outcome = DapRouter.start(missing);
-      assert.strictEqual(outcome.ok, true, 'ENOENT fails asynchronously, not at construction');
+      assert.ok(outcome.ok, 'ENOENT fails asynchronously, not at construction');
       if (!outcome.ok) return;
       outcome.value.respawn([]);
       // Past the SIGKILL escalation, so BOTH signals have had their chance.
@@ -230,9 +229,8 @@ suite('Debug adapter startup is total', () => {
       outcome.value.dispose();
 
       assert.strictEqual(host.count(), 0, 'the extension host must never signal ITSELF');
-      assert.strictEqual(
+      assert.ok(
         stillAlive(canary),
-        true,
         `respawning past an unstarted adapter killed an unrelated sibling (signal ${String(
           canary.signalCode,
         )}): the kill reached our whole process group instead of the adapter`,
@@ -247,7 +245,7 @@ suite('Debug adapter startup is total', () => {
     const good = writeSpawnableAdapter(path.join(tmpDir, 'good', EXE));
 
     const outcome = DapRouter.start(good);
-    assert.strictEqual(outcome.ok, true, 'a spawnable adapter must still produce a router');
+    assert.ok(outcome.ok, 'a spawnable adapter must still produce a router');
     if (!outcome.ok) return;
     assert.ok(outcome.value instanceof DapRouter, 'the value IS the router');
     assert.strictEqual(outcome.value.adapterPath, good, 'and it spawned the path it was given');
@@ -270,7 +268,7 @@ suite('Debug adapter startup is total', () => {
     const dying = writeSpawnableAdapter(path.join(tmpDir, 'dying', EXE));
 
     const outcome = DapRouter.start(dying);
-    assert.strictEqual(outcome.ok, true, 'the premise: this adapter does start');
+    assert.ok(outcome.ok, 'the premise: this adapter does start');
     if (!outcome.ok) return;
     const router = outcome.value;
 
@@ -311,16 +309,12 @@ suite('Debug adapter startup is total', () => {
 
   test('an asynchronous spawn failure still terminates the session honestly', async () => {
     const missing = path.join(tmpDir, 'absent', EXE);
-    assert.strictEqual(fs.existsSync(missing), false, 'the premise: nothing is at that path');
+    assert.ok(!fs.existsSync(missing), 'the premise: nothing is at that path');
 
     // ENOENT is inside Node's allowlist, so this failure arrives as an `error`
     // EVENT rather than a throw — the other half of [DEBUG-ADAPTER-GAPS].
     const outcome = DapRouter.start(missing);
-    assert.strictEqual(
-      outcome.ok,
-      true,
-      'an absent path fails asynchronously, not at construction',
-    );
+    assert.ok(outcome.ok, 'an absent path fails asynchronously, not at construction');
     if (!outcome.ok) return;
     const router = outcome.value;
 
@@ -350,9 +344,8 @@ suite('Debug adapter startup is total', () => {
     subscription.dispose();
     router.dispose();
 
-    assert.strictEqual(
+    assert.ok(
       terminated,
-      true,
       `a dead adapter must end the session; events seen: ${JSON.stringify(events())}`,
     );
     // EXACTLY one of each. A failed spawn emits `error` and then `exit`, so a

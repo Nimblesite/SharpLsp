@@ -6,14 +6,11 @@ import {
   type NuGetTarget,
   uninstallKey,
 } from './types.js';
+import { escapeHtml } from '../utils.js';
 
+/** `escapeHtml`, plus the single quote, so the text is safe in any attribute. */
 export function esc(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  return escapeHtml(text).replace(/'/g, '&#039;');
 }
 
 export function escAttr(text: string): string {

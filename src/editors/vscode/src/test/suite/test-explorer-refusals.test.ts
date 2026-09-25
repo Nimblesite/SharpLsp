@@ -23,7 +23,6 @@
 // tree, is owned by `test-explorer-mtp-sweeps.test.ts`.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { listTests } from '../../test-discovery.js';
@@ -37,12 +36,13 @@ import {
   XUNIT_PACKAGES,
 } from './dotnet-project-kit';
 import {
-  activateTestExplorer,
   collectLeafIds,
   discoverSolution,
   drainDiscovery,
   errorTextOf,
   rootsOf,
+  activateWithScratch,
+  clearTestTree,
 } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
@@ -101,16 +101,10 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    parent = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-refusals-'));
+    ({ api, root: parent } = await activateWithScratch('sharplsp-refusals-'));
   });
 
-  teardown(async () => {
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-  });
+  teardown(() => clearTestTree(api));
 
   suiteTeardown(() => {
     removeDirRecursive(parent);
@@ -216,16 +210,10 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    parent = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-refusal-kinds-'));
+    ({ api, root: parent } = await activateWithScratch('sharplsp-refusal-kinds-'));
   });
 
-  teardown(async () => {
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-  });
+  teardown(() => clearTestTree(api));
 
   suiteTeardown(() => {
     removeDirRecursive(parent);

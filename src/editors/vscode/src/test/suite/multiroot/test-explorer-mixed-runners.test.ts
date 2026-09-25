@@ -47,6 +47,7 @@ import {
   itemsFor,
   sorted,
   XUNIT_FAILURE_TEXT,
+  runAndSettle,
 } from '../test-explorer-outcome-assertions';
 import { comparablePath } from '../test-helpers';
 import { FIXTURE_BUILD_MS } from '../test-timeouts';
@@ -124,12 +125,6 @@ function emptyFolder(dir: string): void {
   for (const entry of fs.readdirSync(dir)) {
     fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
   }
-}
-
-/** ▶ on `ids` exactly as the Testing view's Run button does, then settle. */
-async function run(api: SharpLspExtensionApi, ids: readonly string[]): Promise<void> {
-  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
-  await api.testController.whenIdle();
 }
 
 /** Every fixture test carries its true verdict in the result cache. */
@@ -239,7 +234,7 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
     // 1. A selection from the VSTest folder only: `dotnet test` must run it.
     const untouchedMtp = api.testController.getResult(MTP_PASS);
     const untouchedMtpFail = api.testController.getResult(MTP_FAIL);
-    await run(api, [VSTEST_PASS, VSTEST_FAIL]);
+    await runAndSettle(api, [VSTEST_PASS, VSTEST_FAIL]);
     assertPassed(cachedFor(api, VSTEST_PASS), VSTEST_PASS);
     assertFailed(cachedFor(api, VSTEST_FAIL), VSTEST_FAIL);
     // [TEST-MTP-ROUTING] a runner left with no id is not started: neither MTP
@@ -249,14 +244,14 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
 
     // 2. A selection from the MTP folder only: its module must run it.
     const vstestAfterOne = api.testController.getResult(VSTEST_PASS);
-    await run(api, [MTP_PASS, MTP_FAIL]);
+    await runAndSettle(api, [MTP_PASS, MTP_FAIL]);
     assertPassed(cachedFor(api, MTP_PASS), MTP_PASS);
     assertFailed(cachedFor(api, MTP_FAIL), MTP_FAIL);
     assert.equal(api.testController.getResult(VSTEST_PASS), vstestAfterOne, 'VSTest not started');
 
     // 3. ONE selection spanning both runners: each half reaches its runner.
     const unselected = [VSTEST_PASS, MTP_FAIL].map((id) => api.testController.getResult(id));
-    await run(api, [VSTEST_FAIL, MTP_PASS]);
+    await runAndSettle(api, [VSTEST_FAIL, MTP_PASS]);
     assertFailed(cachedFor(api, VSTEST_FAIL), VSTEST_FAIL);
     assertPassed(cachedFor(api, MTP_PASS), MTP_PASS);
     // A selection is split by ownership: what was not selected was not run …
@@ -323,7 +318,7 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
       //    only a rebuild of the MTP folder itself can pick the edit up.
       fs.writeFileSync(source, mtpSource(4), 'utf8');
       const untouched = api.testController.getResult(MTP_FAIL);
-      await run(api, [MTP_PASS]);
+      await runAndSettle(api, [MTP_PASS]);
       assertFailed(cachedFor(api, MTP_PASS), MTP_PASS);
       // The module was BUILT after the edit, and the failure is the edit's own.
       assert.ok(mtimeOf(module) >= mtimeOf(source), 'the module was rebuilt after the edit');
@@ -334,14 +329,14 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
       // 2. A selection spanning both folders sees the edit too, and the VSTest
       //    half is unaffected by it.
       const vstestFail = api.testController.getResult(VSTEST_FAIL);
-      await run(api, [VSTEST_PASS, MTP_PASS]);
+      await runAndSettle(api, [VSTEST_PASS, MTP_PASS]);
       assertPassed(cachedFor(api, VSTEST_PASS), VSTEST_PASS);
       assertFailed(cachedFor(api, MTP_PASS), MTP_PASS);
       assert.equal(api.testController.getResult(VSTEST_FAIL), vstestFail, 'VSTest ran its one');
 
       // 3. Put it back: green again, so the rebuild tracks the source both ways.
       fs.writeFileSync(source, mtpSource(3), 'utf8');
-      await run(api, [MTP_PASS]);
+      await runAndSettle(api, [MTP_PASS]);
       assertPassed(cachedFor(api, MTP_PASS), MTP_PASS);
       assert.ok(mtimeOf(module) >= mtimeOf(source), 'rebuilt after the second edit too');
     } finally {
