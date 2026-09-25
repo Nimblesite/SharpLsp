@@ -41,6 +41,7 @@
   "cmd.showOutput": "Show Output Channel",
   "cmd.showTraceOutput": "Show Trace Output",
   "cmd.selectSolution": "Select Solution",
+  "cmd.selectTargetFramework": "Select Target Framework",
   "cmd.openSolution": "Open Solution",
   "cmd.refreshExplorer": "Refresh Explorer",
   "cmd.sortNatural": "Sort: Source Order",

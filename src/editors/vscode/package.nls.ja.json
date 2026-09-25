@@ -44,6 +44,7 @@
   "cmd.showOutput": "出力チャネルを表示",
   "cmd.showTraceOutput": "トレース出力を表示",
   "cmd.selectSolution": "ソリューションを選択",
+  "cmd.selectTargetFramework": "ターゲット フレームワークを選択",
   "cmd.openSolution": "ソリューションを開く",
   "cmd.refreshExplorer": "エクスプローラーを更新",
   "cmd.sortNatural": "並べ替え: ソース順",

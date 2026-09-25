@@ -50,6 +50,11 @@ import { registerHotReloadCommands } from './hot-reload.js';
 import { registerDebugAdapter } from './debug.js';
 import { registerTestExplorer, SharpLspTestController } from './testing.js';
 import { registerTestStatusLens } from './test-lens.js';
+import {
+  registerTargetFramework,
+  type TargetFrameworkStatus,
+  type TargetFrameworkUi,
+} from './target-framework.js';
 import { initProjectDepsStore } from './project-deps-store.js';
 import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
 
@@ -66,6 +71,8 @@ export interface SharpLspExtensionApi {
    * Exposed so tests can read the SharpLsp channel back ([DIST-CLEAN-OUTPUT]).
    */
   readonly logUri: vscode.Uri;
+  /** The focused project's active target framework, as the status bar shows it. [NETFX-CONTEXT] */
+  readonly targetFrameworkStatus?: TargetFrameworkStatus;
 }
 
 let lspClient: LanguageClient | undefined;
@@ -73,6 +80,7 @@ let statusBar: SharpLspStatusBar | undefined;
 let explorerProvider: SolutionExplorerProvider | undefined;
 let profilerProvider: profiler.ProfilerTreeProvider | undefined;
 let testController: SharpLspTestController | undefined;
+let targetFrameworks: TargetFrameworkUi | undefined;
 
 interface DeploymentDiagnostic {
   readonly componentId: string;
@@ -190,6 +198,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   registerHotReloadCommands(context);
   registerDebugAdapter(context);
   testController = registerTestExplorer(context);
+  targetFrameworks = registerTargetFramework(context, () => lspClient);
   registerTestStatusLens(context, testController);
   log.info('step 10: wireDocumentChangeRefresh');
   wireDocumentChangeRefresh(context);
@@ -250,6 +259,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   if (lspClient !== undefined) {
     explorerProvider.setClient(lspClient);
     profilerProvider.setClient(lspClient);
+    targetFrameworks.attach(lspClient);
     // Fire-and-forget — don't block activation on solution loading.
     void selectAndLoadSolution().catch((err: unknown) => {
       const msg = getErrorMessage(err);
@@ -279,6 +289,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     getLspClient: () => lspClient,
     testController,
     logUri: context.logUri,
+    targetFrameworkStatus: targetFrameworks.status,
   };
 }
 
@@ -311,6 +322,7 @@ function degradedApi(context: ExtensionContext): SharpLspExtensionApi {
     getLspClient: () => lspClient,
     testController: testController ?? new SharpLspTestController(),
     logUri: context.logUri,
+    ...(targetFrameworks === undefined ? {} : { targetFrameworkStatus: targetFrameworks.status }),
   };
 }
 

@@ -18,6 +18,7 @@ export const CMD_RETRY_DOTNET_ACQUISITION = 'sharplsp.retryDotnetAcquisition';
 export const CMD_SHOW_OUTPUT = 'sharplsp.showOutput';
 export const CMD_SHOW_TRACE = 'sharplsp.showTraceOutput';
 export const CMD_SELECT_SOLUTION = 'sharplsp.selectSolution';
+export const CMD_SELECT_TARGET_FRAMEWORK = 'sharplsp.selectTargetFramework';
 export const CMD_REFRESH_EXPLORER = 'sharplsp.refreshExplorer';
 export const CMD_SORT_NATURAL = 'sharplsp.sortNatural';
 export const CMD_SORT_ALPHABETICAL = 'sharplsp.sortAlphabetical';

@@ -15,18 +15,15 @@ import { info } from './log';
 import { debugSelectedTests, type TestDebugHost } from './test-debug';
 import { cancelled, type TestRunOptions, type TestRunOutcome } from './test-execution';
 import { debugPlan, netFrameworkDebugRefusal, type FrameworkIndex } from './test-frameworks';
-import { assembliesOf, runAssemblies } from './test-framework-runs';
+import { assembliesOf, runAssemblies, type ControllerAccess } from './test-framework-runs';
 import type { MtpRunPlan } from './test-listing-model';
 import { reportAll, reportDebugOutcome } from './test-reporting';
 import { filterIdsFor, runCwd } from './test-targets';
 
 /** What a Debug request needs from the controller, read at request time. */
-export interface DebugRequestHost {
-  readonly controller: vscode.TestController;
+export interface DebugRequestHost extends ControllerAccess {
   readonly frameworks: FrameworkIndex;
   readonly mtp: MtpRunPlan | undefined;
-  collect(request: vscode.TestRunRequest): vscode.TestItem[];
-  enqueue<T>(work: () => Promise<T>): Promise<T>;
   dispatch(ids: readonly string[], cwd: string, options: TestRunOptions): Promise<TestRunOutcome>;
 }
 
@@ -43,7 +40,7 @@ export async function debugRequest(
     selected.map((test) => test.id),
     host.frameworks,
   );
-  const tests = refuseNetFrameworkOnly(run, selected, plan.refused);
+  const tests = refuseNetFrameworkOnly(run, selected, plan.refused, host.frameworks);
   const cwd = runCwd();
   if (cwd === undefined || tests.length === 0) {
     // No cache writes: a debug gesture must never fabricate a run result.
@@ -57,15 +54,21 @@ export async function debugRequest(
   await debugSelectedTests(debugHost(host, plan.frameworks), run, tests, token, cwd, ids);
 }
 
-/** Mark every refused test errored with the reason; return the rest. */
+/**
+ * Mark every refused test errored with its PROJECT's refusal, logged once per
+ * project; return the rest.
+ */
 function refuseNetFrameworkOnly(
   run: vscode.TestRun,
   selected: readonly vscode.TestItem[],
   refused: readonly string[],
+  index: FrameworkIndex,
 ): vscode.TestItem[] {
+  const logged = new Set<string>();
   for (const test of selected.filter((each) => refused.includes(each.id))) {
-    const refusal = netFrameworkDebugRefusal(test.id);
-    info(`Test debug: ${refusal}`);
+    const refusal = netFrameworkDebugRefusal(index.projectOf(test.id) ?? test.id);
+    if (!logged.has(refusal)) info(`Test debug: ${refusal}`);
+    logged.add(refusal);
     run.errored(test, new vscode.TestMessage(refusal));
   }
   return selected.filter((test) => !refused.includes(test.id));

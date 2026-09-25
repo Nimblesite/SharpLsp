@@ -28,6 +28,7 @@ import type { TestRunOptions, TestRunOutcome } from './test-execution';
 import { TestHostWatcher } from './test-host-announce';
 import { filterBatches } from './test-filter';
 import { runTarget } from './test-targets';
+import { singleLine } from './utils';
 
 /**
  * The child environment of a test DEBUG run.
@@ -206,7 +207,8 @@ class DebugRunFlow {
   private async settle(): Promise<void> {
     try {
       const outcome = await this.invoke();
-      const failure = outcome.failure === undefined ? '' : `; failure: ${outcome.failure}`;
+      const failure =
+        outcome.failure === undefined ? '' : `; failure: ${singleLine(outcome.failure)}`;
       info(`Test debug: the run ended with ${String(outcome.results.size)} result(s)${failure}`);
       this.host.finish(this.run, this.tests, outcome);
     } catch (cause) {

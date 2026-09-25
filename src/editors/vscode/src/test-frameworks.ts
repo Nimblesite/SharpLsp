@@ -154,6 +154,7 @@ export class FrameworkIndex {
   private readonly assemblies = new Map<string, string[]>();
   private readonly multiTargeted = new Set<string>();
   private readonly unlistedByTest = new Map<string, readonly string[]>();
+  private readonly projectByTest = new Map<string, string>();
 
   /** Index every framework build the listings reported. */
   constructor(listings: readonly TestAssemblyListing[] = []) {
@@ -163,7 +164,10 @@ export class FrameworkIndex {
   private add(listing: TestAssemblyListing): void {
     const builds = listing.frameworks ?? [];
     const unlisted = builds.filter((build) => build.names.length === 0).map((b) => b.framework);
-    for (const name of listing.names) this.unlistedByTest.set(name, unlisted);
+    for (const name of listing.names) {
+      this.unlistedByTest.set(name, unlisted);
+      this.projectByTest.set(name, listing.name);
+    }
     for (const build of builds) {
       this.byAssembly.set(pathKey(build.path), build.framework);
       this.assemblies.set(build.framework, [
@@ -180,6 +184,11 @@ export class FrameworkIndex {
   /** The frameworks whose assembly lists `testId`, in discovery order. */
   public frameworksOf(testId: string): string[] {
     return [...(this.byTest.get(testId) ?? [])];
+  }
+
+  /** The project that builds `testId`: its assembly name, the root row's label. */
+  public projectOf(testId: string): string | undefined {
+    return this.projectByTest.get(testId);
   }
 
   /** Every built assembly of `framework`. */

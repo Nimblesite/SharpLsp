@@ -147,11 +147,15 @@ export function assembliesOf(index: FrameworkIndex, frameworks: readonly string[
   return [...frameworks].sort(compareFrameworks).flatMap((each) => index.assembliesFor(each));
 }
 
-/** What a `Run on <tfm>` profile needs from the controller. */
-export interface FrameworkRunHost {
+/** What every profile's request reads from the controller. */
+export interface ControllerAccess {
   readonly controller: vscode.TestController;
   collect(request: vscode.TestRunRequest): vscode.TestItem[];
   enqueue<T>(work: () => Promise<T>): Promise<T>;
+}
+
+/** What a `Run on <tfm>` profile needs from the controller. */
+export interface FrameworkRunHost extends ControllerAccess {
   frameworks(): FrameworkIndex;
   /** Report onto the run AND the result cache, then announce the change. */
   report(run: vscode.TestRun, tests: readonly vscode.TestItem[], outcome: TestRunOutcome): void;

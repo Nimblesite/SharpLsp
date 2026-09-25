@@ -4,8 +4,10 @@
  */
 import * as path from 'node:path';
 import { DOTNET_TIMEOUT_MS, runDotnet, runProcess, type DotnetRun } from './dotnet-process.js';
-import type { TestRunOptions } from './test-execution.js';
+import { info } from './log.js';
+import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
 import { netFrameworkDebugRefusal } from './test-frameworks.js';
+import type { MtpModuleRun } from './test-listing-model.js';
 import { rejectedMtpOption } from './test-mtp.js';
 
 type Reporter = 'trx' | 'xunit-trx';
@@ -27,12 +29,55 @@ export function isNetFrameworkModule(modulePath: string): boolean {
   return path.extname(modulePath).toLowerCase() === '.exe';
 }
 
-/** Why a .NET Framework module must not start: off Windows, or under Debug. */
-function netFrameworkRefusal(modulePath: string, options: TestRunOptions): string | undefined {
-  const name = path.basename(modulePath);
-  if (process.platform !== 'win32')
-    return `${name} targets .NET Framework, which runs only on Windows`;
-  return options.debug === true ? netFrameworkDebugRefusal(name) : undefined;
+/** Why a .NET Framework module must not start: it runs only on Windows. */
+function netFrameworkRefusal(modulePath: string): string | undefined {
+  return process.platform === 'win32'
+    ? undefined
+    : `${path.basename(modulePath)} targets .NET Framework, which runs only on Windows`;
+}
+
+/** A run's modules: those it starts, and the .NET Framework ones Debug refuses. */
+export interface StartedModules {
+  readonly start: readonly MtpModuleRun[];
+  readonly refused: readonly MtpModuleRun[];
+}
+
+/**
+ * The modules a run starts. Under Debug only .NET modules start: nothing can
+ * attach to the desktop CLR. A .NET Framework module is REFUSED when a selected
+ * test it carries has no .NET module; otherwise its tests are debugged under
+ * .NET and it is left out ([NETFX-DEBUG]).
+ */
+export function startedModules(
+  modules: readonly MtpModuleRun[],
+  testIds: readonly string[],
+  options: TestRunOptions,
+): StartedModules {
+  if (options.debug !== true) return { start: modules, refused: [] };
+  const isNet = (module: MtpModuleRun): boolean => !isNetFrameworkModule(module.modulePath);
+  const netIds = new Set(modules.filter(isNet).flatMap((module) => [...module.uidsById.keys()]));
+  const selected = (module: MtpModuleRun): string[] =>
+    testIds.length === 0
+      ? [...module.uidsById.keys()]
+      : testIds.filter((id) => module.uidsById.has(id));
+  const netFrameworkOnly = (module: MtpModuleRun): boolean =>
+    !isNet(module) && selected(module).some((id) => !netIds.has(id));
+  return { start: modules.filter(isNet), refused: modules.filter(netFrameworkOnly) };
+}
+
+/** A refused module's outcome: its refusal, logged, and nothing run. */
+export function refusedOutcome(module: MtpModuleRun): TestRunOutcome {
+  const refusal = netFrameworkDebugRefusal(path.basename(module.modulePath));
+  info(`Test debug: ${refusal}`);
+  return {
+    results: new Map(),
+    summary: undefined,
+    failure: refusal,
+    runInfos: [],
+    retriedUnfiltered: false,
+    durationMs: 0,
+    output: '',
+  };
 }
 
 /**
@@ -51,7 +96,7 @@ export async function runModule(
   if (!isNetFrameworkModule(modulePath)) {
     return await runDotnet(['exec', modulePath, ...moduleArgs], cwd, timeoutMs, signal, hooks);
   }
-  const refusal = netFrameworkRefusal(modulePath, options);
+  const refusal = netFrameworkRefusal(modulePath);
   if (refusal === undefined)
     return await runProcess(modulePath, moduleArgs, cwd, timeoutMs, signal, hooks);
   return {

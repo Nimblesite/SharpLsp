@@ -76,8 +76,19 @@ export function reportOutcome(
   frameworks?: FrameworkIndex,
 ): void {
   if (outcome.failure !== undefined) {
-    info(`Test run failed: ${outcome.failure}`);
+    info(`Test run failed: ${singleLine(outcome.failure)}`);
   }
+  reportResults(run, tests, outcome, cache, frameworks);
+}
+
+/** Map the outcome onto each test, logging nothing. */
+function reportResults(
+  run: vscode.TestRun,
+  tests: readonly vscode.TestItem[],
+  outcome: ReportableOutcome,
+  cache: CacheWriter | undefined,
+  frameworks?: FrameworkIndex,
+): void {
   for (const test of tests) {
     const result = outcome.results.get(test.id);
     if (result === undefined) {
@@ -94,6 +105,7 @@ export function reportOutcome(
  * BY DESIGN is left without a verdict. An MTP module is debugged without a TRX
  * report ([TEST-MTP-DEBUG]), so its tests stay unmarked instead of painted
  * "No result reported"; a run that FAILED still reports that on every test.
+ * The debug flow has already logged the failure as a debug run's.
  */
 export function reportDebugOutcome(
   run: vscode.TestRun,
@@ -105,7 +117,7 @@ export function reportDebugOutcome(
     mtp !== undefined && ownedBy(mtp, test.id) && !outcome.results.has(test.id);
   const reportable =
     outcome.failure === undefined ? tests.filter((test) => !unreported(test)) : tests;
-  reportOutcome(run, reportable, outcome, undefined);
+  reportResults(run, reportable, outcome, undefined);
 }
 
 /** A selected test the run never reported on: build failure or no match. */
