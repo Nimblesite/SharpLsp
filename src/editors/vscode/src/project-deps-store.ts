@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
 import { Signal } from './signals.js';
+import { getErrorMessage } from './utils.js';
 
 const WATCH_GLOB = '**/{*.csproj,*.fsproj,Directory.Packages.props}';
 const DEBOUNCE_MS = 150;
@@ -157,7 +158,7 @@ function watchTrackedProjectWithNode(projectPath: string): vscode.Disposable | u
       nodeWatcher.close();
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     log.traceInfo(`project-deps-store: node watcher unavailable for ${projectPath}: ${msg}`);
     return undefined;
   }

@@ -38,6 +38,7 @@ import {
 } from './test-listing-model.js';
 import { listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
 import { usesMtpRunner } from './test-mtp.js';
+import { removeDirRecursive } from './utils.js';
 
 export { parseFullyQualifiedTestList, withoutAdapterUniqueId } from './test-names.js';
 export { isDiscoveredTestLine, parseTestList } from './test-listing.js';
@@ -379,20 +380,6 @@ function readAndRemove(listPath: string, dir: string): string[] {
   } catch {
     return [];
   } finally {
-    removeTempDir(dir);
-  }
-}
-
-/**
- * Best-effort delete. `force: true` swallows ENOENT but does NOT retry, and on
- * Windows a directory whose file a just-exited `dotnet` still holds open fails
- * with EPERM/EBUSY — which, thrown from a `finally`, would discard a listing
- * that parsed perfectly well.
- */
-function removeTempDir(dir: string): void {
-  try {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  } catch {
-    // A leaked handle in a child process must not fail discovery.
+    removeDirRecursive(dir);
   }
 }

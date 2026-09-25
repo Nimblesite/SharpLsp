@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import Mocha from 'mocha';
 import { globSync } from 'glob';
+import { splitTrimmed } from '../../utils';
 import { DEFAULT_TEST_MS } from './test-timeouts';
 
 /** Every compiled suite — the default when no chunk filter is supplied. */
@@ -18,10 +19,7 @@ function requestedGlobs(): string[] {
   if (!raw) {
     return [ALL_SUITES];
   }
-  return raw
-    .split(',')
-    .map((pattern) => pattern.trim())
-    .filter((pattern) => pattern.length > 0);
+  return splitTrimmed(raw, ',');
 }
 
 /** The directory of the suites that need a MULTI-ROOT workspace. */

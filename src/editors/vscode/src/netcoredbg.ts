@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { exeName } from './platform';
+import { splitTrimmed } from './utils';
 
 /**
  * The netcoredbg the adapter factory will spawn, or undefined when there is none.
@@ -47,10 +48,7 @@ function findOnPath(name: string): string | undefined {
 
 /** The executable suffixes Windows treats as runnable. */
 function windowsPathExt(): string[] {
-  return (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
-    .split(';')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+  return splitTrimmed(process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD', ';');
 }
 
 /**

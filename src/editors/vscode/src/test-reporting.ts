@@ -14,7 +14,7 @@ import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
 import { ownedBy, type MtpRunPlan } from './test-listing-model';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
-import { singleLine } from './utils';
+import { RETRYING_RM, singleLine } from './utils';
 
 /** Writes one result into the controller's status-lens cache. */
 export type CacheWriter = (testId: string, result: CachedTestResult) => void;
@@ -159,7 +159,7 @@ export function reportResult(
  */
 export function freshCoverageDir(cwd: string): string {
   const dir = path.join(cwd, COVERAGE_DIR);
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  fs.rmSync(dir, RETRYING_RM);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

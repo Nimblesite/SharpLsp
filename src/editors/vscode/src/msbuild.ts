@@ -14,7 +14,7 @@
 import * as path from 'node:path';
 import { runDotnet } from './dotnet-process';
 import { err, ok, type Result } from './result';
-import { isRecord } from './utils';
+import { getErrorMessage, isRecord, splitTrimmed } from './utils';
 
 /** The properties a launch needs from MSBuild. */
 export interface ProjectProperties {
@@ -78,16 +78,13 @@ function parseProperties(stdout: string): Result<Map<string, string>> {
     if (!isRecord(bag)) return err('MSBuild JSON had no Properties');
     return ok(stringEntries(bag));
   } catch (error) {
-    return err(error instanceof Error ? error.message : String(error));
+    return err(getErrorMessage(error));
   }
 }
 
 /** Split a `;`-separated MSBuild list, dropping empties. */
 function splitList(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(';')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+  return splitTrimmed(value ?? '', ';');
 }
 
 /** Evaluate `projectFile`, optionally pinned to a single target framework. */

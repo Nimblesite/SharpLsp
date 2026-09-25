@@ -187,7 +187,8 @@
         "nuget-deps-e2e.test.js",
         "profiler.test.js",
         "profiler-e2e.test.js",
-        "fsi-build-output-e2e.test.js"
+        "fsi-build-output-e2e.test.js",
+        "utils.test.js"
       ]
     },
     "realrepo": {

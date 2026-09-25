@@ -2,6 +2,7 @@
 import * as assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
+import { splitTrimmed } from '../../utils';
 
 export interface ProcessSample {
   pid: number;
@@ -95,10 +96,7 @@ function samplePosix(): ProcessSample[] {
     encoding: 'utf8',
     timeout: 30_000,
   });
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
+  return splitTrimmed(raw, '\n')
     .map(parsePosixSample)
     .filter((sample): sample is ProcessSample => sample !== undefined);
 }

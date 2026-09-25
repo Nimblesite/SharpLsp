@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+
 /**
  * A plain, non-null object — the only shape a parsed JSON node, an MSBuild
  * property bag or a DAP message body can take.
@@ -15,6 +17,13 @@ export function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Resolve after `ms` milliseconds — the one delay every poller waits on. */
+export async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 /**
  * `text` collapsed onto ONE line, for somewhere that can only render one.
  *
@@ -24,19 +33,20 @@ export function getErrorMessage(err: unknown): string {
  * part before joining also disposes of the `\r` half of a CRLF, so the result
  * is the same on either platform.
  */
-/** Resolve after `ms` milliseconds — the one delay every poller waits on. */
-export async function delay(ms: number): Promise<void> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+export function singleLine(text: string): string {
+  return splitTrimmed(text, '\n').join(' ');
 }
 
-export function singleLine(text: string): string {
+/**
+ * The non-blank parts of `text` split on `separator`, each trimmed: a `;`
+ * MSBuild list or `PATHEXT`, a `,` glob list, the lines of a listing. Trimming
+ * also disposes of the `\r` half of a CRLF line.
+ */
+export function splitTrimmed(text: string, separator: string): string[] {
   return text
-    .split('\n')
+    .split(separator)
     .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .join(' ');
+    .filter((part) => part.length > 0);
 }
 
 /**
@@ -51,4 +61,33 @@ export function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * `rmSync` options for a recursive delete that survives Windows file-handle races.
+ *
+ * `force: true` only swallows ENOENT — it does NOT retry. On Windows a directory
+ * whose file a just-exited child (dotnet, VBCSCompiler, a sidecar) still holds
+ * open fails with EPERM/EBUSY; Node retries exactly those codes when given
+ * `maxRetries`/`retryDelay`. One home, so the retry policy cannot drift between
+ * call sites. Implements [DIST-CI-WIN-VSIX].
+ */
+export const RETRYING_RM: fs.RmOptions = {
+  recursive: true,
+  force: true,
+  maxRetries: 10,
+  retryDelay: 100,
+};
+
+/**
+ * Best-effort recursive delete. Once the retries are exhausted, a handle a
+ * child process leaked must not fail the caller: thrown from a `finally`, it
+ * would discard a result that was already complete.
+ */
+export function removeDirRecursive(target: string): void {
+  try {
+    fs.rmSync(target, RETRYING_RM);
+  } catch {
+    // Best-effort by contract: the caller's result stands without the delete.
+  }
 }

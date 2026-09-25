@@ -5,6 +5,7 @@ import * as path from 'path';
 import { info } from './log';
 import { findSolutions } from './solution.js';
 import * as state from './state.js';
+import { getErrorMessage } from './utils.js';
 import {
   CMD_NEW_SOLUTION,
   CMD_NEW_PROJECT,
@@ -111,8 +112,7 @@ function workspaceFolder(): string | undefined {
 }
 
 function reportFailure(err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  void vscode.window.showErrorMessage(`Failed: ${message}`);
+  void vscode.window.showErrorMessage(`Failed: ${getErrorMessage(err)}`);
 }
 
 async function pickProjectTemplate(): Promise<
@@ -301,8 +301,7 @@ async function autoAddFileToProject(filePath: string): Promise<void> {
     fs.writeFileSync(projPath, newContent, 'utf-8');
     info(`Auto-added ${fileName} to ${path.basename(projPath)}`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    info(`Auto-add to project skipped: ${message}`);
+    info(`Auto-add to project skipped: ${getErrorMessage(err)}`);
   }
 }
 
