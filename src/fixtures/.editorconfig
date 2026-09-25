@@ -1,0 +1,5 @@
+# Third-party repositories are cloned beneath this folder for the real-world
+# suites. SharpLsp's root .editorconfig raises every analyzer to an error, and a
+# clone without an .editorconfig of its own would build under those rules and
+# fail. Each clone is analysed under its OWN configuration, as its users see it.
+root = true

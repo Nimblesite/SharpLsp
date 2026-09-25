@@ -1,0 +1,9 @@
+<Project>
+  <!--
+    Third-party repositories are cloned beneath this folder for the real-world
+    suites. MSBuild imports the nearest Directory.Build.props above a project, so
+    without this empty one a clone that ships none would inherit SharpLsp's own
+    packages, analyzers and warnings-as-errors, and fail to restore or build as
+    its authors never would. Each clone must build under its OWN configuration.
+  -->
+</Project>
