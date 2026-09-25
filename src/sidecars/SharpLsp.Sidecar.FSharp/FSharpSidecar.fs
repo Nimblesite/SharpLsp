@@ -230,8 +230,14 @@ type FSharpSidecar() =
                     // [ANALYZERS-DEADCODE-SEVERITY] Merge project-wide dead-code diagnostics
                     // for this file (monorepo mode promotes public deadness to errors).
                     if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then
-                        // Every project's uses: a symbol another project uses is not dead.
-                        let! projects = FSharpWorkspace.checkProjects workspace
+                        // The file's own project decides: a symbol that is not public cannot
+                        // be used from another project, and a public one is reported only in
+                        // monorepo mode, where the projects reading this one in memory count.
+                        let scope = FSharpWorkspace.queryScope workspace filePath
+                        let! projects =
+                            FSharpWorkspace.checkAll
+                                workspace
+                                (if analyzerConfig.Monorepo then scope else List.truncate 1 scope)
                         let allUses = projects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
                         FSharpAnalyzers.deadCodeDiagnosticsForFile analyzerConfig allUses filePath
                         |> List.iter results.Add

@@ -93,16 +93,59 @@ let private otherProjectOptions (state: FSharpWorkspaceState) =
 
     state.Projects.Values |> Seq.map _.Options |> Seq.filter (isWorkspaces >> not) |> List.ofSeq
 
-/// Every source file of every loaded project, the workspace's first, each once: what a
-/// project-wide query — references, rename — walks, since a use in one project of a
-/// symbol from another counts there ([REFERENCES-FSHARP-FIND]).
-let internal allSourceFiles (state: FSharpWorkspaceState) : string array =
-    let files =
-        Option.toList state.ProjectOptions @ otherProjectOptions state
-        |> Seq.collect _.SourceFiles
-
+/// Each file once, in the order given.
+let private distinctFiles (files: string seq) =
     Linq.Enumerable.DistinctBy(files, FSharpWorkspaceRuntime.overlayKey, FSharpWorkspaceRuntime.overlayComparer)
     |> Array.ofSeq
+
+/// Every source file of every loaded project, the workspace's first, each once. Only a
+/// rename by identity — from the other language, with no F# file to anchor on — walks
+/// them all.
+let internal allSourceFiles (state: FSharpWorkspaceState) : string array =
+    Option.toList state.ProjectOptions @ otherProjectOptions state
+    |> Seq.collect _.SourceFiles
+    |> distinctFiles
+
+/// True when `options` read `project` in memory, directly or through another project.
+let rec private readsInMemory (project: string) (options: FSharpProjectOptions) =
+    options.ReferencedProjects
+    |> Array.exists (function
+        | FSharpReferencedProject.FSharpReference(_, referenced) ->
+            SharpLsp.Sidecar.Common.NativePaths.AreEqual(referenced.ProjectFileName, project)
+            || readsInMemory project referenced
+        | _ -> false)
+
+/// The projects a project-wide query anchored on `filePath` spans: the project that
+/// compiles it, then every loaded project that reads that one IN MEMORY, which sees its
+/// current source. A project reading it as the DLL MSBuild resolved sees it as last
+/// built, and checking every project of a large solution on every request stalled the
+/// whole server. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+let internal queryScope (state: FSharpWorkspaceState) (filePath: string) : FSharpProjectOptions list =
+    match optionsFor state filePath with
+    | None -> []
+    | Some own ->
+        let dependents =
+            state.Projects.Values
+            |> Seq.map (fun entry -> wired state entry.Options)
+            |> Seq.toList
+            |> List.filter (fun options ->
+                not (SharpLsp.Sidecar.Common.NativePaths.AreEqual(options.ProjectFileName, own.ProjectFileName))
+                && readsInMemory own.ProjectFileName options)
+
+        own :: dependents
+
+/// Every source file of the scope anchored on `filePath`, each once: what references and
+/// rename walk ([REFERENCES-FSHARP-FIND]).
+let internal scopeSourceFiles (state: FSharpWorkspaceState) (filePath: string) : string array =
+    queryScope state filePath |> Seq.collect _.SourceFiles |> distinctFiles
+
+/// The file a query about `symbol` anchors on: its declaration, when a loaded project
+/// compiles that file; otherwise the file it was used in.
+let internal anchorOf (state: FSharpWorkspaceState) (symbol: FSharpSymbol) (usedIn: string) =
+    symbol.DeclarationLocation
+    |> Option.map (fun range -> range.FileName)
+    |> Option.filter (fun declared -> (projectOf state declared).IsSome)
+    |> Option.defaultValue usedIn
 
 /// Record the editor's in-memory buffer and invalidate the corresponding FCS file.
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
@@ -297,21 +340,18 @@ let internal checkProject (state: FSharpWorkspaceState) =
             return Some results
     }
 
-/// Whole-project results of every loaded project, the workspace's own first: code
-/// lens counts, subtypes and dead code read them all, since a use in one project of a
-/// symbol from another counts there. Empty until a workspace loads.
-let internal checkProjects (state: FSharpWorkspaceState) =
+/// Whole-project results for `projects` — a query's scope, or its head alone. Empty
+/// until a workspace loads.
+let internal checkAll (state: FSharpWorkspaceState) (projects: FSharpProjectOptions list) =
     task {
-        match! checkProject state with
-        | None -> return []
-        | Some own ->
-            let results = ResizeArray [ own ]
+        let results = ResizeArray<FSharpCheckProjectResults>()
 
-            for (options: FSharpProjectOptions) in otherProjectOptions state do
-                let! checkedProject = state.Checker.ParseAndCheckProject(wired state options)
+        if state.IsLoaded then
+            for (options: FSharpProjectOptions) in projects do
+                let! checkedProject = state.Checker.ParseAndCheckProject options
                 results.Add checkedProject
 
-            return List.ofSeq results
+        return List.ofSeq results
     }
 
 let internal isSymbolInProject (state: FSharpWorkspaceState) (symbol: FSharpSymbol) =

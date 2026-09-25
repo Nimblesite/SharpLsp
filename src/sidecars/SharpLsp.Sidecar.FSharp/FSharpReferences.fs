@@ -82,12 +82,13 @@ let private getFileUsages
 
 let private getOverlayAwareProjectUsages
     (state: FSharpWorkspace.FSharpWorkspaceState)
+    (anchor: string)
     (symbol: FSharpSymbol)
     =
     task {
         let uses = ResizeArray<FSharpSymbolUse>()
 
-        for filePath in FSharpWorkspace.allSourceFiles state do
+        for filePath in FSharpWorkspace.scopeSourceFiles state anchor do
             let! fileUses = getFileUsages state symbol filePath
             uses.AddRange(fileUses)
 
@@ -99,12 +100,13 @@ let private getOverlayAwareProjectUsages
 /// resolve the symbol again from a token-normalized source position.
 let internal getProjectUsagesForSymbol
     (state: FSharpWorkspace.FSharpWorkspaceState)
+    (usedIn: string)
     (symbol: FSharpSymbol)
     =
     task {
         match state.ProjectOptions with
         | None -> return [||]
-        | Some _ -> return! getOverlayAwareProjectUsages state symbol
+        | Some _ -> return! getOverlayAwareProjectUsages state (FSharpWorkspace.anchorOf state symbol usedIn) symbol
     }
 
 /// Resolve the symbol at a position and return all of its uses across the
@@ -132,7 +134,7 @@ let getProjectUsages
                             | None -> projectUsageSymbols symbolUse.Symbol |> Array.collect checkResults.GetUsesOfSymbolInFile
                             |> deduplicateSemanticRanges
                     else
-                        return! getProjectUsagesForSymbol state symbolUse.Symbol
+                        return! getProjectUsagesForSymbol state filePath symbolUse.Symbol
         with ex ->
             Log.Debug(ex, "[F# ProjectUsages] failed")
             return [||]

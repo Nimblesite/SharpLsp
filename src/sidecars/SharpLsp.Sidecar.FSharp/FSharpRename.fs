@@ -277,11 +277,12 @@ let private combineEdits first second =
 let private standardRename state newName (resolved: ResolvedRename) =
     task {
         let symbol = normalizeSymbol resolved.SymbolUse.Symbol
-        let! aliases = FSharpRenameAliases.collectProject state
+        let usedIn = resolved.SymbolUse.FileName
+        let! aliases = FSharpRenameAliases.collectProject state (FSharpWorkspace.anchorOf state symbol usedIn)
         match aliases with
         | Error message -> return Error message
         | Ok aliases ->
-            let! uses = FSharpReferences.getProjectUsagesForSymbol state symbol
+            let! uses = FSharpReferences.getProjectUsagesForSymbol state usedIn symbol
             let! located = tryEditsForUses state newName (withoutAliasUses symbol aliases uses)
             match located with
             | None -> return Error "F# rename could not classify every semantic use"

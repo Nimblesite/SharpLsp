@@ -182,11 +182,11 @@ let keysForTarget (symbol: FSharpSymbol) (aliases: ResolvedAlias array) =
     |> Array.choose _.SemanticKey
     |> Set.ofArray
 
-let collectProject state =
+let collectProject state (anchor: string) =
     task {
         let collected = ResizeArray<ResolvedAlias>()
         let mutable failure = None
-        for filePath in FSharpWorkspace.allSourceFiles state do
+        for filePath in FSharpWorkspace.scopeSourceFiles state anchor do
             let! checkedFile = FSharpWorkspace.checkFileWithParse state filePath
             match checkedFile with
             | Some(parseResults, checkResults, source) ->

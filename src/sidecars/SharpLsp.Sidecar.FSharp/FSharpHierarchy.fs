@@ -362,8 +362,10 @@ let subtypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line charact
                 match entityAt checkResults source line character with
                 | None -> return []
                 | Some target ->
-                    // Every project: a type in one project may implement another's.
-                    let! projects = FSharpWorkspace.checkProjects state
+                    // The target's project and those that read it in memory: a type in one
+                    // project may implement another's.
+                    let anchor = FSharpWorkspace.anchorOf state target filePath
+                    let! projects = FSharpWorkspace.checkAll state (FSharpWorkspace.queryScope state anchor)
 
                     let entities =
                         projects

@@ -66,7 +66,7 @@ let getCodeLenses (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: strin
             match fileCheck with
             | None -> return []
             | Some(checkResults, _source) ->
-                let! projects = FSharpWorkspace.checkProjects state
+                let! projects = FSharpWorkspace.checkAll state (FSharpWorkspace.queryScope state filePath)
 
                 return
                     checkResults.GetAllUsesOfAllSymbolsInFile()
