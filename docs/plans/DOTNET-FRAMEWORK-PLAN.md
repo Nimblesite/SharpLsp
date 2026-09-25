@@ -10,17 +10,17 @@ Spec: [DOTNET-FRAMEWORK-SPEC.md](../specs/DOTNET-FRAMEWORK-SPEC.md).
 - `dotnet test <sln> --framework net48` fails NETSDK1005 on projects without `net48`.
 - F# design-time `FscCommandLineArgs` per framework: `net48` → `--targetprofile:mscorlib`, 4.8
   reference assemblies, `NETFRAMEWORK;NET48` (~1 s each).
-- The four [NETFX-CORPUS] repos build on Windows in 23–71 s.
+- The three [NETFX-CORPUS] repos build on Windows in 23–54 s.
 
 ## TODO
 
 - [x] Spec, research links, corpus selection
-- [ ] [NETFX-TEST-DISCOVERY] framework per banner, root description, `framework:<tfm>` tags
-- [ ] [NETFX-TEST-RESULTS] codeBase → framework; one message per failing framework
-- [ ] [NETFX-TEST-PROFILES] `Run on <tfm>` profiles via `dotnet build` + `dotnet vstest`
-- [ ] [NETFX-DEBUG] Debug profile runs .NET frameworks only; .NET Framework-only refusal
-- [ ] [NETFX-TEST-MTP] .NET Framework MTP modules executed directly (Windows Helper)
+- [x] [NETFX-TEST-DISCOVERY] framework per banner, root description, `tfm:<tfm>` tags
+- [x] [NETFX-TEST-RESULTS] codeBase → framework; one message per failing framework
+- [x] [NETFX-TEST-PROFILES] `Run on <tfm>` profiles via `dotnet build` + `dotnet vstest`
+- [x] [NETFX-DEBUG] Debug profile runs .NET frameworks only; .NET Framework-only refusal
+- [x] [NETFX-TEST-MTP] .NET Framework MTP modules executed directly
 - [ ] [NETFX-PROJECTS-FSHARP] FCS options from the design-time compile, per framework
 - [ ] [NETFX-CONTEXT] active framework: sidecars, host requests + refreshes, VS Code status bar
 - [ ] Suites in [NETFX-TESTS]; Windows-only chunks registered in `test-chunks.json`
-- [ ] [NETFX-CORPUS] suites for CsvHelper, Castle.Core, FSharpx.Extras, Expecto
+- [ ] [NETFX-CORPUS] suites for GitReader, CsvHelper, NLog

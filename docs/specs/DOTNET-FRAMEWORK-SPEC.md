@@ -42,18 +42,31 @@ dotnet msbuild <fsproj> -p:TargetFramework=<tfm> -p:DesignTimeBuild=true
 `NETFRAMEWORK;NET48;…_OR_GREATER`; source order, globs, conditions and `Directory.Build.*` are
 MSBuild's. Relative arguments resolve against the project directory. If the design-time compile
 fails, the project degrades to its `<Compile>` items against the sidecar runtime and the log says
-why.
+why. Every `.fsproj` of the solution loads and a file answers from the project that compiles it;
+the first is the workspace's for project-wide queries. MSBuild is asked only when the project
+file declares `<TargetFrameworks>` and evaluates to two or more: the first framework's options
+are built at load, each other's on its first switch, then kept. A single-target project keeps
+its `<Compile>` items.
 
 ## Active framework `[NETFX-CONTEXT]`
 
 - Default: the first entry of `<TargetFrameworks>`, as in Visual Studio.
-- `sharplsp/targetFramework` `{ textDocument }` → `{ active, available }`;
+- `sharplsp/targetFramework` `{ textDocument }` → `{ active, available, project }`;
   `sharplsp/setTargetFramework` `{ textDocument, targetFramework }` switches the whole PROJECT in
-  both languages, then the server sends `workspace/diagnostic/refresh`,
-  `workspace/semanticTokens/refresh` and `workspace/inlayHint/refresh`. A single-target project
-  answers `available: []`.
-- VS Code: a status-bar item shows the focused document's active framework when `available` has
-  more than one entry; clicking it opens a quick pick. It follows the active editor reactively.
+  both languages and answers the same shape. A single-target project answers
+  `{ active: null, available: [] }`; a document no project compiles is an error.
+- After a switch the host clears its navigation cache, re-publishes every open document's
+  diagnostics, sends `sharplsp/targetFrameworkChanged` `{ textDocument, active, available,
+  project }`, then each of `workspace/semanticTokens/refresh`, `workspace/inlayHint/refresh`,
+  `workspace/codeLens/refresh` and `workspace/diagnostic/refresh` whose `refreshSupport` the
+  client declared.
+- VS Code: a status-bar item `$(versions) <tfm>` shows the focused document's active framework
+  when its project is multi-targeted, and runs `sharplsp.selectTargetFramework [tfm]`. Without
+  an argument the command opens a pick placeheld `Target framework for <Project>` (file name, no
+  extension) listing `available` in order, the active one described `active` and pre-picked.
+  The item re-reads on active-editor change, on `sharplsp/targetFrameworkChanged`, and while the
+  workspace is still loading; the extension API exposes it live as
+  `targetFrameworkStatus { item, visible, active, available }`.
 
 ## Test Explorer `[NETFX-TEST]`
 
@@ -63,8 +76,11 @@ Extends [TEST-EXPLORER]; ids, filters and one-root-per-project are unchanged.
 
 Each `Test run for <dll> (<FrameworkName>)` banner names that
   assembly's framework (`.NETFramework,Version=v4.8` → `net48`,
-  `.NETCoreApp,Version=v8.0` → `net8.0`). A project root's description lists its frameworks;
-  each test carries a `framework:<tfm>` tag per framework whose assembly lists it.
+  `.NETCoreApp,Version=v8.0` → `net8.0`). For a MULTI-targeted project only, the root's
+  description joins its frameworks with ` · `, a build that listed nothing reading
+  `<tfm> (nothing listed)`, and each test carries a `tfm:<tfm>` tag per framework whose assembly
+  lists it. A single-target project's rows are unchanged. A framework whose run wrote no result
+  logs `Test run: <tfm> reported no result`.
 
 ### Results `[NETFX-TEST-RESULTS]`
 
@@ -97,15 +113,14 @@ frameworks." Run without debugging uses `dotnet run --framework <tfm>`.
 
 ## Real-world corpus `[NETFX-CORPUS]`
 
-Windows-only chunk. Pinned commits, cloned at test time into `src/fixtures/real-world/`
-(gitignored), `global.json` removed, `dotnet tool restore` for Paket repos.
+Windows-only chunk. Every repo targets several .NET Framework AND several .NET Standard versions.
+Pinned commits, cloned at test time into `src/fixtures/real-world/` (gitignored), `global.json` removed.
 
-| Repo @ commit | Lang | Test frameworks | Runner |
-|---|---|---|---|
-| JoshClose/CsvHelper @ `33970e5` | C# | `net462;net47;net48;net8.0;net9.0` | xUnit 2 |
-| castleproject/Core @ `9631074` | C# | `net462;net8.0;net9.0;net10.0` | NUnit 3 |
-| fsprojects/FSharpx.Extras @ `4a0378a` | F#, Paket | `net48;net8;net9;net10.0` | NUnit |
-| haf/expecto @ `cec2c63` | F#, Paket | `net481;net10.0` | Expecto |
+| Repo @ commit | Lang | Library frameworks | Test frameworks | Runner |
+|---|---|---|---|---|
+| kekyo/GitReader @ `079ea85` | F#, C# (F# + C# tests) | F#: `net461;net462;net48;net481;netstandard2.0;netstandard2.1`+.NET · C#: `net35`..`net481` (7), `netstandard1.6;2.0;2.1` | `net48;net8.0;net9.0;net10.0` | NUnit 4 |
+| JoshClose/CsvHelper @ `33970e5` | C# | `net462;net47;net48;netstandard2.0;2.1;net8.0;net9.0` | `net462;net47;net48;net8.0;net9.0` | xUnit 2 |
+| NLog/NLog @ `73c7945` (`src/NLog.sln`) | C# | `net35;net46;netstandard2.0;netstandard2.1` | `net462;net10.0` | xUnit 2 |
 
 Each loads through the real extension; LSP answers inside `#if NETFRAMEWORK` code; discovery lists
 .NET Framework assemblies; a run reports per-framework outcomes.
