@@ -468,6 +468,28 @@ verdict, never painted "No result reported", and it is never re-run unfiltered, 
 start another waiting module. A run that FAILED — a build error, a refused option, a kill —
 still reports that failure on every selected test.
 
+## Microsoft.Testing.Platform: measured packages `[TEST-MTP-MEASURED]`
+
+The [TEST-MTP-DETECT] through [TEST-MTP-DEBUG] rules come from real probe projects on the
+pinned SDK (10.0.303), not from documentation. A package set that changes any cell below
+changes a rule above, so this table is re-measured whenever the fixtures' pinned packages move.
+
+| Package set | MTP | `--list-tests json` | `--filter-uid` | `--report-trx` |
+|---|---|---|---|---|
+| `xunit.v3` 4.0.0 | 2.3.3 | yes | yes | optional extension; the built-in `--report-xunit-trx` also works |
+| `MSTest` 4.4.0 | 2.x | yes | yes | built in |
+| `NUnit` 4.4.0 + `NUnit3TestAdapter` 6.3.0 | 2.x | yes | yes | needs `Microsoft.Testing.Extensions.TrxReport` |
+| `MSTest` 3.11.0 | 1.9.0 | no: "expects no arguments" | yes | built in |
+
+The fixtures therefore pin MSTest 4.4.0, NUnit3TestAdapter 6.3.0 and `xunit.v3` 4.0.0, which
+all carry MTP 2.3 or later.
+
+SharpLsp drives modules through the command line, not MTP's server mode (`--server jsonrpc`),
+which Visual Studio and Rider use. Server mode would stream results, cancel in-process and carry
+locations without extension packages. The command line reuses the whole TRX pipeline both
+runners share. Revisit server mode if requiring `Microsoft.Testing.Extensions.TrxReport` proves
+a burden for users.
+
 ## Reactivity `[TEST-REACTIVITY]`
 
 Discovery runs a full build, so it is NOT a side effect of merely loading a solution. Only

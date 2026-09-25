@@ -396,7 +396,10 @@ These projects are semantic-test libraries, not .NET test projects. An empty tes
 listing for these libraries is correct; their names do not imply test-framework
 references. Actual Test Explorer discovery is covered by [TEST-DISCOVERY-FQN] and
 [TEST-MTP-DISCOVERY]. `fixture-solutions.test.ts` protects the build contract in
-both platform workspace chunks. See [the plan](../plans/SOLUTION-FIXTURES-PLAN.md).
+both platform workspace chunks. It exists because a `.sln` with no configuration
+mappings made `dotnet build` warn "Unable to find a project to restore!", build
+nothing and still exit zero with "Build succeeded"
+([#273](https://github.com/Nimblesite/SharpLsp/issues/273)).
 
 ### Run and Debug `[SE-ACTIONS-RUN-DEBUG]`
 
