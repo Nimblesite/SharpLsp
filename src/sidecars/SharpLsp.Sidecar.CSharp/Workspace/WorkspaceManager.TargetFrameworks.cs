@@ -15,7 +15,10 @@ internal sealed partial class WorkspaceManager
         StringComparer.OrdinalIgnoreCase
     );
 
-    /// <summary>The active framework and the frameworks of the project owning a document.</summary>
+    /// <summary>
+    /// The active framework and the frameworks of the project owning a document; nothing to
+    /// choose, and no project, for a document no loaded project compiles.
+    /// </summary>
     public async Task<FrameworkResult> GetTargetFrameworksAsync(
         string filePath,
         CancellationToken ct
@@ -24,7 +27,9 @@ internal sealed partial class WorkspaceManager
         var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
         if (document is null || _solution is null)
         {
-            return FrameworkResult.Failure($"Document not found: {filePath}");
+            return new FrameworkResult.Ok<TargetFrameworkResult, string>(
+                new TargetFrameworkResult()
+            );
         }
 
         var available = TargetFrameworks

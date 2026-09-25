@@ -23,10 +23,48 @@ type NavigationLocation =
 type private CheckedFile = FSharpCheckFileResults * string
 type private ParsedFile = FSharpParseFileResults * FSharpCheckFileResults * string
 
+/// The `--define:` symbols the file was checked with.
+let private definesOf (checkResults: FSharpCheckFileResults) =
+    checkResults.ProjectContext.ProjectOptions.OtherOptions
+    |> Array.choose (fun option ->
+        if option.StartsWith("--define:", StringComparison.Ordinal) then
+            Some(option.Substring "--define:".Length)
+        else
+            None)
+    |> List.ofArray
+
+/// Every token of one line, and the lexer state the next line starts in.
+let private scanLine (tokenizer: FSharpSourceTokenizer) (text: string) state =
+    let lineTokenizer = tokenizer.CreateLineTokenizer text
+
+    let rec scan state tokens =
+        match lineTokenizer.ScanToken state with
+        | Some token, next -> scan next (token :: tokens)
+        | None, next -> List.rev tokens, next
+
+    scan state []
+
+/// True inside code an inactive `#if` branch holds: the active framework's defines
+/// do not compile it, so nothing there may resolve — though a name lookup at the
+/// position would still find a same-named symbol that IS compiled. [NETFX-CONTEXT]
+let private isInactiveCode (checkResults: FSharpCheckFileResults) (lines: string array) line character =
+    let tokenizer = FSharpSourceTokenizer(definesOf checkResults, None, None, None)
+
+    let atLine =
+        lines
+        |> Array.take line
+        |> Array.fold (fun state text -> snd (scanLine tokenizer text state)) FSharpTokenizerLexState.Initial
+
+    fst (scanLine tokenizer lines[line] atLine)
+    |> List.exists (fun token ->
+        token.ColorClass = FSharpTokenColorKind.InactiveCode
+        && token.LeftColumn <= character
+        && character <= token.RightColumn)
+
 let private extractToolTip (checkResults: FSharpCheckFileResults) (source: string) line character =
     let lines = source.Split('\n')
 
-    if line < 0 || line >= lines.Length then
+    if line < 0 || line >= lines.Length || isInactiveCode checkResults lines line character then
         None
     else
         let lineText = lines[line]

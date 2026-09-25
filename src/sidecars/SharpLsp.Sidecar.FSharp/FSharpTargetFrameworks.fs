@@ -18,11 +18,13 @@ let private resultOf (entry: FSharpProjectEntry) =
 
 let private notFound (filePath: string) = Error $"Document not found: {filePath}"
 
-/// The active framework and every framework of the project that compiles `filePath`.
-let current (state: FSharpWorkspaceState) (filePath: string) =
+/// The active framework and every framework of the project that compiles `filePath`;
+/// nothing to choose, and no project, when no loaded project compiles it.
+let current (state: FSharpWorkspaceState) (filePath: string) : Result<TargetFrameworkResult, string> =
     projectOf state filePath
-    |> Option.map (resultOf >> Ok)
-    |> Option.defaultWith (fun () -> notFound filePath)
+    |> Option.map resultOf
+    |> Option.defaultWith TargetFrameworkResult
+    |> Ok
 
 let private isPrimary (state: FSharpWorkspaceState) (entry: FSharpProjectEntry) =
     state.ProjectOptions

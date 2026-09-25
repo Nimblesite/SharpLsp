@@ -54,7 +54,8 @@ its `<Compile>` items.
 - `sharplsp/targetFramework` `{ textDocument }` → `{ active, available, project }`;
   `sharplsp/setTargetFramework` `{ textDocument, targetFramework }` switches the whole PROJECT in
   both languages and answers the same shape. A single-target project answers
-  `{ active: null, available: [] }`; a document no project compiles is an error.
+  `{ active: null, available: [] }`; a document no loaded project compiles answers
+  `{ active: null, available: [], project: null }`, and switching it is an error.
 - After a switch the host clears its navigation cache, re-publishes every open document's
   diagnostics, sends `sharplsp/targetFrameworkChanged` `{ textDocument, active, available,
   project }`, then each of `workspace/semanticTokens/refresh`, `workspace/inlayHint/refresh`,

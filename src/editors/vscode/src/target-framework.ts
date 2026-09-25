@@ -140,8 +140,9 @@ class FrameworkView {
     void this.read(uri).then((context) => {
       if (generation !== this.generation) return;
       this.shown.value = context === undefined ? undefined : { ...context, uri };
+      // No project compiles it YET while the workspace loads: read again.
       const delay = RETRY_MS[attempt];
-      if (context === undefined && delay !== undefined) {
+      if (context?.project === undefined && delay !== undefined) {
         this.retry = setTimeout(() => {
           this.refresh(attempt + 1);
         }, delay);
@@ -151,7 +152,7 @@ class FrameworkView {
 
   /** Switch the focused document's project: to `tfm`, or to what the user picks. */
   public async select(tfm?: string): Promise<void> {
-    const shown = this.shown.value;
+    const shown = await this.focused();
     if (!isVisible(shown)) {
       void vscode.window.showInformationMessage('This file belongs to a single-target project.');
       return;
@@ -162,6 +163,18 @@ class FrameworkView {
     if (switched !== undefined && this.shown.value?.uri.toString() === shown.uri.toString()) {
       this.shown.value = { ...switched, uri: shown.uri };
     }
+  }
+
+  /**
+   * The focused document's context, read NOW: the item's last read may still
+   * describe the editor focused before this one.
+   */
+  private async focused(): Promise<Shown | undefined> {
+    const uri = focusedDocument();
+    const context = uri === undefined ? undefined : await this.read(uri);
+    const shown = uri === undefined || context === undefined ? undefined : { ...context, uri };
+    this.shown.value = shown;
+    return shown;
   }
 
   public dispose(): void {

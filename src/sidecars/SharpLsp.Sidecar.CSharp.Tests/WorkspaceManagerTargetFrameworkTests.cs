@@ -95,7 +95,7 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
     }
 
     [Fact]
-    public async Task An_undeclared_framework_or_a_file_no_project_compiles_fails_by_name()
+    public async Task An_undeclared_framework_fails_by_name_and_a_file_no_project_compiles_has_none()
     {
         using var manager = await OpenAsync(_project);
         var unknown = await manager.SetTargetFrameworkAsync(_probe, "net99.0", default);
@@ -110,8 +110,10 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
             Path.Combine(_root, "Nowhere.cs"),
             default
         );
-        Assert.True(foreign.IsError);
-        Assert.Contains("Document not found", !foreign ?? "", StringComparison.Ordinal);
+        var none = AssertOk(foreign);
+        Assert.Null(none.Active);
+        Assert.Empty(none.Available);
+        Assert.Null(none.Project);
         Assert.Equal(
             "net48",
             AssertOk(await manager.GetTargetFrameworksAsync(_probe, default)).Active

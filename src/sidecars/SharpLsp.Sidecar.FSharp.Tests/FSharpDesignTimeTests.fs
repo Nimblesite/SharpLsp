@@ -39,18 +39,25 @@ let private writeProject (dir: string) (name: string) (properties: obj list) (ex
 let private writeFsproj dir name properties = writeProject dir name properties []
 
 /// The probe: one binding per `#if` branch, so the active framework decides which exists.
+/// Both branches use `shared`, which IS compiled: a name lookup inside the dead branch
+/// would find it, so only the dead branch's own inactivity keeps its hover empty.
 let private probeSource =
     String.Join(
         "\n",
         [ "module Fx.Probe"
           ""
+          "let shared = \"shared\""
+          ""
           "#if NETFRAMEWORK"
-          "let onFramework = \"framework\""
+          "let onFramework = shared"
           "#else"
-          "let onModern = \"modern\""
+          "let onModern = shared"
           "#endif"
           "" ]
     )
+
+/// Line and column of `onFramework`, `onModern`, and `shared` in each branch.
+let private onFramework, onModern, sharedInFramework, sharedInModern = (5, 6), (7, 6), (5, 20), (7, 17)
 
 let private frameworks (value: string) = element "TargetFrameworks" [ value ]
 
@@ -72,7 +79,7 @@ let private restoredProbe () =
     dotnet dir $"restore \"{fsproj}\" --nologo -v q"
     dir, fsproj, probe
 
-let private hoverNames (state: FSharpWorkspace.FSharpWorkspaceState) probe (line: int) (column: int) =
+let private hoverNames (state: FSharpWorkspace.FSharpWorkspaceState) probe (line: int, column: int) =
     task {
         let! hover = FSharpWorkspace.getHover state probe line column
         return hover |> Option.map (fun (markdown, _, _, _, _) -> markdown)
@@ -138,24 +145,30 @@ let ``a project answers from its first framework until the whole project is swit
         Assert.Equal("net48", string context.Active)
         Assert.Equal<string seq>([ "net48"; "net10.0" ], context.Available)
         Assert.Equal(fsproj, string context.Project)
-        let! framework = hoverNames state probe 3 6
+        let! framework = hoverNames state probe onFramework
         Assert.Contains("onFramework", framework.Value)
-        let! inert = hoverNames state probe 5 6
+        let! live = hoverNames state probe sharedInFramework
+        Assert.Contains("shared", live.Value)
+        let! inert = hoverNames state probe onModern
         Assert.True(inert.IsNone, "code an inactive #if branch holds must not resolve")
+        let! inertShared = hoverNames state probe sharedInModern
+        Assert.True(inertShared.IsNone, "not even a name the active branch does compile")
 
         let! switched = FSharpTargetFrameworks.switch state probe "net10.0" CancellationToken.None
         Assert.Equal("net10.0", string (ok switched).Active)
         Assert.Equal("net10.0", string (ok (FSharpTargetFrameworks.current state probe)).Active)
-        let! modern = hoverNames state probe 5 6
+        let! modern = hoverNames state probe onModern
         Assert.Contains("onModern", modern.Value)
-        let! nowInert = hoverNames state probe 3 6
+        let! nowInert = hoverNames state probe onFramework
         Assert.True(nowInert.IsNone, "the .NET Framework branch is dead under net10.0")
+        let! nowInertShared = hoverNames state probe sharedInFramework
+        Assert.True(nowInertShared.IsNone, "and so is its use of shared")
     finally
         cleanup dir
 }
 
 [<Fact>]
-let ``switching to an undeclared framework or asking about a foreign file fails by name`` () = task {
+let ``an undeclared framework fails by name, and a file no project compiles has none`` () = task {
     let dir, _, probe = restoredProbe ()
 
     try
@@ -169,9 +182,10 @@ let ``switching to an undeclared framework or asking about a foreign file fails 
 
         let foreign = Path.Combine(dir, "Elsewhere.fs")
 
-        match FSharpTargetFrameworks.current state foreign with
-        | Error reason -> Assert.Contains("Document not found", reason)
-        | Ok _ -> failwith "a file no project compiles has no framework"
+        let none = ok (FSharpTargetFrameworks.current state foreign)
+        Assert.Null(none.Active)
+        Assert.Empty(none.Available)
+        Assert.Null(none.Project)
 
         let! foreignSwitch = FSharpTargetFrameworks.switch state foreign "net48" CancellationToken.None
         Assert.True(Result.isError foreignSwitch)
