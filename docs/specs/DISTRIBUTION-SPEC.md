@@ -912,11 +912,16 @@ each platform's VSIX carries no other platform's host ([DIST-RELEASE]).
 
 ## [DIST-CI-NODE] Node.js Toolchain
 
-**Minimum: Node.js 20.x.x.** This is the minimum required by `@vscode/vsce` v3.x.
+**Minimum: Node.js 22.** `@vscode/vsce` 4.x, which the extension pins, declares
+`engines.node >= 22`.
 
 Ground truth: <https://github.com/microsoft/vscode-vsce>
 
-All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '20'` or higher. Do not upgrade beyond what vsce requires without checking the above URL first.
+All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '22'` or
+higher. `npm` reports a lower runtime only as an `EBADENGINE` warning, so the
+workflows, not `npm`, have to hold the line (GitHub #310 tracks moving them off
+Node 20). Do not upgrade beyond what vsce requires without checking the above URL
+first.
 
 ## [DIST-CI-DOTNET] .NET Toolchain
 
