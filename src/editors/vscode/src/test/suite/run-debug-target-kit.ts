@@ -34,7 +34,7 @@ import {
   fakeFolder,
   focusDocument,
   invokeCommand,
-  legacyF5Config,
+  bareF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
 import { closeAllEditors, comparablePath, pollUntilResult } from './test-helpers';
@@ -134,9 +134,9 @@ function assertProjectOutput(program: string, cwd: string, of: ConsoleProject, a
   const dll = `${of.assemblyName}.dll`;
   assert.strictEqual(path.basename(program), dll, `${at}: must be ${dll}, not a neighbour's`);
   const under = comparablePath(program).startsWith(comparablePath(of.dir + path.sep));
-  assert.strictEqual(under, true, `${at}: the program must sit under ${of.dir}; got ${program}`);
+  assert.ok(under, `${at}: the program must sit under ${of.dir}; got ${program}`);
   assert.strictEqual(comparablePath(cwd), comparablePath(of.dir), `${at}: cwd is the project dir`);
-  assert.strictEqual(path.isAbsolute(cwd), true, `${at}: cwd must be an absolute path`);
+  assert.ok(path.isAbsolute(cwd), `${at}: cwd must be an absolute path`);
 }
 
 /** Assert `outcome` targets `project`'s assembly; returns the resolved program. */
@@ -144,7 +144,7 @@ function assertTargets(outcome: Resolved, project: ConsoleProject, at: string): 
   assertLaunchShape(outcome, at);
   assert.strictEqual(typeof outcome.program, 'string', `${at}: program must resolve to a path`);
   const program = String(outcome.program);
-  assert.strictEqual(path.isAbsolute(program), true, `${at}: the program must be absolute`);
+  assert.ok(path.isAbsolute(program), `${at}: the program must be absolute`);
   assert.strictEqual(path.extname(program), '.dll', `${at}: a managed launch target is a .dll`);
   assertProjectOutput(program, String(outcome.cwd), project, at);
   return program;
@@ -193,16 +193,12 @@ function assertNoEscape(start: string, stop: string, decoy: ConsoleProject, at: 
 /** Assert a class library was refused as a launch target. */
 function assertNotRunnable(outcome: Resolved, built: string, at: string): void {
   assert.strictEqual(outcome.threw, '', `${at}: refusing a library must not throw`);
-  assert.strictEqual(fs.existsSync(built), true, `${at}: the fixture library must really be built`);
+  assert.ok(fs.existsSync(built), `${at}: the fixture library must really be built`);
   const evidence = fs.existsSync(runtimeConfigFor(built));
-  assert.strictEqual(
-    evidence,
-    false,
-    `${at}: a library emits no runtimeconfig — the discriminator`,
-  );
+  assert.ok(!evidence, `${at}: a library emits no runtimeconfig — the discriminator`);
   const program = outcome.program;
   const runnable = program === undefined || fs.existsSync(runtimeConfigFor(program));
-  assert.strictEqual(runnable, true, `${at}: ${String(program)} has no runtimeconfig.json`);
+  assert.ok(runnable, `${at}: ${String(program)} has no runtimeconfig.json`);
   const chosen = comparablePath(String(program));
   assert.notStrictEqual(chosen, comparablePath(built), `${at}: the library dll is unlaunchable`);
 }
@@ -311,10 +307,10 @@ export async function assertNestedTarget(
   q: Quiet,
 ): Promise<string> {
   const at = 'B18 nested single project';
-  const outcome = await resolveTarget(root, legacyF5Config());
+  const outcome = await resolveTarget(root, bareF5Config());
   const dll = assertTargets(outcome, app, at);
   const nested = comparablePath(dll).includes(comparablePath(path.join('src', 'App')));
-  assert.strictEqual(nested, true, `${at}: the program sits under src/App, the universal layout`);
+  assert.ok(nested, `${at}: the program sits under src/App, the universal layout`);
   const entry = comparablePath(findEntryProject(root)?.dll ?? '');
   assert.strictEqual(entry, comparablePath(dll), `${at}: findEntryProject must descend`);
   assertWalkersAgree(app.dir, root, app, dll);
@@ -352,7 +348,7 @@ export async function assertFocusFlips(
   await focusDocument(to.sourceFile);
   const active = comparablePath(vscode.window.activeTextEditor?.document.uri.fsPath ?? '');
   assert.strictEqual(active, comparablePath(to.sourceFile), `${at}: the document must be focused`);
-  const dll = assertTargets(await resolveTarget(root, legacyF5Config()), to, at);
+  const dll = assertTargets(await resolveTarget(root, bareF5Config()), to, at);
   assert.notStrictEqual(
     comparablePath(dll),
     comparablePath(fromDll),
@@ -360,7 +356,7 @@ export async function assertFocusFlips(
   );
   const stale = `${path.sep}${path.basename(from.dir)}${path.sep}`;
   const leaked = comparablePath(dll).includes(comparablePath(stale));
-  assert.strictEqual(leaked, false, `${at}: ${path.basename(from.dir)} must not be selected`);
+  assert.ok(!leaked, `${at}: ${path.basename(from.dir)} must not be selected`);
   assertWalkersAgree(path.dirname(to.sourceFile), root, to, dll);
   return dll;
 }
@@ -377,7 +373,7 @@ export async function assertConeStops(layout: ConeLayout, q: Quiet, at: string):
   assertNoEscape(layout.repoSub, above, decoy, `${at} .git stop`);
   assert.strictEqual(findEntryProject(ws), undefined, `${at}: an empty cone has no entry project`);
   await clearFocus();
-  const refused = await resolveTarget(ws, legacyF5Config());
+  const refused = await resolveTarget(ws, bareF5Config());
   assert.strictEqual(refused.threw, '', `${at}: refusing a target must not throw`);
   assert.strictEqual(refused.config, undefined, `${at}: an unserviceable request returns nothing`);
   assert.strictEqual(refused.program, undefined, `${at}: nothing above the cone may be launched`);
@@ -396,7 +392,7 @@ export async function assertAmbiguityPrompts(
   const at = `B24 ${path.extname(winner.projectFile)}`;
   const seen = q.stubs.log.quickPickItems.length;
   q.stubs.queuePick(undefined);
-  const cancelled = await resolveTarget(dir, legacyF5Config());
+  const cancelled = await resolveTarget(dir, bareF5Config());
   assert.strictEqual(q.stubs.log.quickPickItems.length, seen + 1, `${at}: prompts exactly once`);
   assertOffered(q.stubs.log.quickPickItems[seen] ?? [], names, `${at} first prompt`);
   assert.strictEqual(cancelled.config, undefined, `${at}: cancelling resolves no configuration`);
@@ -422,7 +418,7 @@ async function assertPickDecides(
 ): Promise<void> {
   const chosenName = path.basename(winner.projectFile);
   q.stubs.queuePick(chooses(chosenName));
-  const chosen = await resolveTarget(dir, legacyF5Config());
+  const chosen = await resolveTarget(dir, bareF5Config());
   const prompts = q.stubs.log.quickPickItems.length;
   assert.strictEqual(prompts, seen + 2, `${at}: a cancelled choice must not be cached`);
   assertOffered(q.stubs.log.quickPickItems[seen + 1] ?? [], names, `${at} second prompt`);
@@ -439,14 +435,14 @@ export async function assertLibraryRefused(root: string, lang: LangKit, q: Quiet
   const at = `B27 ${lang.projectExt}`;
   const runner = lang.console(path.join(root, 'runner'), `${lang.tag}Runner`);
   await buildProject(runner);
-  const runnerDll = assertTargets(await resolveTarget(runner.dir, legacyF5Config()), runner, at);
-  assert.strictEqual(fs.existsSync(runnerDll), true, `${at}: a resolved program must exist`);
+  const runnerDll = assertTargets(await resolveTarget(runner.dir, bareF5Config()), runner, at);
+  assert.ok(fs.existsSync(runnerDll), `${at}: a resolved program must exist`);
   const evidence = fs.existsSync(runtimeConfigFor(runnerDll));
-  assert.strictEqual(evidence, true, `${at}: an executable assembly ships a runtimeconfig.json`);
+  assert.ok(evidence, `${at}: an executable assembly ships a runtimeconfig.json`);
   const lib = lang.library(path.join(root, 'lib'), `${lang.tag}Calc`);
   await buildProject(lib);
   const libDll = path.join(lib.dir, 'bin', 'Debug', TFM, `${lang.tag}Calc.dll`);
-  const refused = await resolveTarget(lib.dir, legacyF5Config());
+  const refused = await resolveTarget(lib.dir, bareF5Config());
   assertNotRunnable(refused, libDll, `${at} library`);
   const fell = comparablePath(String(refused.program));
   assert.notStrictEqual(fell, comparablePath(runnerDll), `${at}: no fallback to the last target`);
@@ -461,9 +457,9 @@ export async function assertOrphanRefused(file: string, q: Quiet, expected: numb
   const owner = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(file));
   assert.strictEqual(owner, undefined, `${at}: the fixture must lie outside every folder`);
   const folders = vscode.workspace.workspaceFolders ?? [];
-  assert.strictEqual(folders.length > 0, true, `${at}: a folder must exist to be wrongly used`);
+  assert.ok(folders.length > 0, `${at}: a folder must exist to be wrongly used`);
   const outcome = await invokeCommand(CMD_DEBUG_PROGRAM);
-  assert.strictEqual(outcome.rejected, false, `${at}: the command must exist: ${outcome.message}`);
+  assert.ok(!outcome.rejected, `${at}: the command must exist: ${outcome.message}`);
   await q.sessions.assertNoSession(`${at}: an orphan document must start no session`);
   await q.tasks.assertNoTask(`${at}: an orphan document must run no build task`, 0);
   const warnings = q.stubs.log.warningMessages;
@@ -480,10 +476,10 @@ export async function assertOrphanRefused(file: string, q: Quiet, expected: numb
 /** The refusal must describe the boundary that was hit, not a missing project. */
 function assertRefusalNamesBoundary(message: string, at: string): void {
   assert.strictEqual(typeof message, 'string', `${at}: the refusal must be text`);
-  assert.strictEqual(message.length > 0, true, `${at}: an empty warning tells the user nothing`);
+  assert.ok(message.length > 0, `${at}: an empty warning tells the user nothing`);
   const lower = message.toLowerCase();
   const names = lower.includes('workspace') || lower.includes('active document');
-  assert.strictEqual(names, true, `${at}: name the boundary that was hit; got "${message}"`);
+  assert.ok(names, `${at}: name the boundary that was hit; got "${message}"`);
   const misdescribes = lower.includes('directory tree');
-  assert.strictEqual(misdescribes, false, `${at}: the file's directory tree is not the reason`);
+  assert.ok(!misdescribes, `${at}: the file's directory tree is not the reason`);
 }

@@ -240,11 +240,145 @@ internal static class MSBuildInstanceSelector
                 .Select(c => $"{c.SdkVersion}=>Roslyn {Describe(c.RoslynVersion)}")
         );
         diagnostics.WriteLine(
-            $"[sharplsp] WARNING: no installed .NET SDK ships Roslyn {Describe(bundled)} bundled by this "
-                + $"sidecar; project load may fail with a Roslyn version mismatch. Installed: {available}. "
+            $"[sharplsp] WARNING: no .NET SDK under the active root ships Roslyn {Describe(bundled)} "
+                + $"bundled by this sidecar; project load may fail with a Roslyn version mismatch. "
+                + $"Installed: {available}.{ElsewhereHint(bundled)} "
                 + "Install a matching SDK or align the bundled Roslyn version."
         );
     }
+
+    /// <summary>
+    /// Names a .NET root that DOES ship <paramref name="bundled"/> when the
+    /// active root does not.
+    ///
+    /// Discovery enumerates the SDKs of a SINGLE root - the one hostfxr picks
+    /// from <c>DOTNET_ROOT</c> or the running host - so on a machine carrying two
+    /// roots (a <c>dotnet-install.sh</c> copy in <c>~/.dotnet</c> beside an
+    /// installer or Homebrew copy in <c>/usr/local/share/dotnet</c>, the ordinary
+    /// state of a dev box) the matching SDK can be installed and still be
+    /// invisible. Saying "no installed .NET SDK ships Roslyn X" is then simply
+    /// FALSE, and it points the user at an install they have already done.
+    ///
+    /// Registering the SDK from the other root is NOT the remedy: an SDK must be
+    /// coherent with the runtime hosting this process, and registering a foreign
+    /// one degrades project load rather than repairing it (measured - see
+    /// [DIST-SDK-DISCOVERY] rule 3). The misconfiguration is therefore reported
+    /// so it can be corrected, never worked around. (#295)
+    /// </summary>
+    internal static string ElsewhereHint(Version? bundled)
+    {
+        return bundled is null ? string.Empty : DescribeElsewhere(RootsShipping(bundled));
+    }
+
+    /// <summary>
+    /// The sentence naming roots that ship the bundled Roslyn, or nothing when
+    /// there are none. Split from the scan so the wording is asserted over a
+    /// fixed list instead of over however the running machine is installed.
+    /// </summary>
+    internal static string DescribeElsewhere(IReadOnlyList<string> roots)
+    {
+        return roots.Count == 0
+            ? string.Empty
+            : $" A matching SDK IS installed under {string.Join(", ", roots)}, which the active "
+                + "DOTNET_ROOT does not select - point DOTNET_ROOT at it rather than installing again.";
+    }
+
+    /// <summary>.NET roots, other than the active one, shipping this Roslyn.</summary>
+    private static IReadOnlyList<string> RootsShipping(Version bundled)
+    {
+        var active = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        return
+        [
+            .. CandidateDotnetRoots()
+                .Where(root => !PathComparer.Equals(root, active))
+                .Where(root => SdkCandidatesUnder(root).Any(sdk => sdk.RoslynVersion == bundled)),
+        ];
+    }
+
+    /// <summary>
+    /// Directories that may be a .NET root: the explicit <c>DOTNET_ROOT</c>, the
+    /// muxer PATH resolves, then each platform's per-user and machine-wide
+    /// install locations. [DIST-SDK-DISCOVERY]
+    /// </summary>
+    internal static IReadOnlyList<string> CandidateDotnetRoots()
+    {
+        string?[] roots =
+        [
+            Environment.GetEnvironmentVariable("DOTNET_ROOT"),
+            MuxerDirectory(),
+            UnderHome(".dotnet"),
+            "/usr/local/share/dotnet",
+            "/usr/share/dotnet",
+            Combine(Environment.GetEnvironmentVariable("ProgramFiles"), "dotnet"),
+            Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA"), "Microsoft", "dotnet"),
+        ];
+        return [.. roots.OfType<string>().Where(Directory.Exists).Distinct(PathComparer)];
+    }
+
+    /// <summary>The directory of the first <c>dotnet</c> muxer on PATH, if any.</summary>
+    private static string? MuxerDirectory()
+    {
+        var muxer = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+        return (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(directory => File.Exists(Path.Combine(directory, muxer)));
+    }
+
+    /// <summary>Every <c>sdk/&lt;version&gt;</c> directory beneath one .NET root.</summary>
+    internal static IReadOnlyList<SdkCandidate> SdkCandidatesUnder(string root)
+    {
+        var sdkDirectory = Path.Combine(root, "sdk");
+        try
+        {
+            return Directory.Exists(sdkDirectory) ? ScanSdkDirectory(sdkDirectory) : [];
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // An unreadable root degrades to "this root contributes nothing"; a
+            // diagnostic may never take the sidecar down.
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<SdkCandidate> ScanSdkDirectory(string sdkDirectory)
+    {
+        return
+        [
+            .. Directory
+                .EnumerateDirectories(sdkDirectory)
+                .Select(path => (path, version: ParseSdkVersion(Path.GetFileName(path))))
+                .Where(entry => entry.version is not null)
+                .Select(entry => new SdkCandidate(
+                    entry.version!,
+                    entry.path,
+                    ReadRoslynVersion(entry.path)
+                )),
+        ];
+    }
+
+    /// <summary>
+    /// The version an SDK directory name carries. A prerelease band ships as
+    /// <c>10.0.100-preview.1.25080.5</c>, which <c>Version.TryParse</c> rejects
+    /// outright, so only the release part is read.
+    /// </summary>
+    private static Version? ParseSdkVersion(string name)
+    {
+        return Version.TryParse(name.Split('-', 2)[0], out var version) ? version : null;
+    }
+
+    private static string? UnderHome(string child)
+    {
+        return Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), child);
+    }
+
+    private static string? Combine(string? root, params string[] parts)
+    {
+        return string.IsNullOrEmpty(root) ? null : Path.Combine([root, .. parts]);
+    }
+
+    /// <summary>Path equality: case-insensitive on Windows, exact elsewhere.</summary>
+    private static StringComparer PathComparer =>
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     private static string Describe(Version? version)
     {

@@ -5,7 +5,7 @@ export function buildCss(): string {
 .spinner { display: inline-flex; align-items: center; gap: 6px; color: #9FCAFF; }
 .spinner-label { font-size: 12px; color: #C0C7D3; }
 
-.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+.material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: #E5E2E1; background: #131313; height: 100vh; overflow: hidden; display: flex; }
 

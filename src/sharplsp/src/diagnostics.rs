@@ -515,6 +515,16 @@ fn publish(
         diagnostics,
         version: None,
     };
+    info!(
+        uri = params.uri.as_str(),
+        count = params.diagnostics.len(),
+        codes = ?params
+            .diagnostics
+            .iter()
+            .filter_map(|diagnostic| diagnostic.code.as_ref())
+            .collect::<Vec<_>>(),
+        "Publishing diagnostics"
+    );
     let notification = Notification {
         method: "textDocument/publishDiagnostics".to_string(),
         params: serde_json::to_value(params).context("serialize diagnostics params")?,
@@ -625,18 +635,11 @@ mod tests {
 
         publish(&sender, uri.clone(), vec![diag]).unwrap();
 
-        let msg = receiver.recv().unwrap();
-        match msg {
-            Message::Notification(n) => {
-                assert_eq!(n.method, "textDocument/publishDiagnostics");
-                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).unwrap();
-                assert_eq!(params.uri, uri);
-                assert_eq!(params.diagnostics.len(), 1);
-                assert_eq!(params.diagnostics[0].message, "test diagnostic");
-                assert!(params.version.is_none());
-            }
-            _ => panic!("expected Notification, got {msg:?}"),
-        }
+        let params = next_publish(&receiver);
+        assert_eq!(params.uri, uri);
+        assert_eq!(params.diagnostics.len(), 1);
+        assert_eq!(params.diagnostics[0].message, "test diagnostic");
+        assert!(params.version.is_none());
     }
 
     /// [GitHub #160] Phantom-diagnostics repro at the push-pipeline level.
@@ -652,15 +655,6 @@ mod tests {
     /// symptom of #160.
     #[test]
     fn failed_fetch_after_revert_must_not_strand_stale_published_diagnostics() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let (host_side, sidecar_side) = tokio::io::duplex(64 * 1024);
-        let manager = runtime.block_on(async {
-            Arc::new(
-                crate::sidecar::manager::SidecarManager::connected_to_stream_for_tests(host_side)
-                    .await,
-            )
-        });
-
         // Scripted sidecar: #1 → error diagnostic (broken text), #2 → transient
         // failure (the post-revert fetch), #3.. → clean (the reverted text).
         let error_payload = rmp_serde::to_vec(&vec![(
@@ -674,14 +668,12 @@ mod tests {
             "FS0001".to_string(),
         )])
         .unwrap();
-        let clean_payload = rmp_serde::to_vec::<Vec<i32>>(&vec![]).unwrap();
-        let _sidecar_task = runtime.spawn(fake_scripted_sidecar(
-            sidecar_side,
-            error_payload,
-            clean_payload,
-        ));
-
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        let ScriptedHost {
+            runtime,
+            manager,
+            sender,
+            receiver,
+        } = scripted_host(Some(error_payload));
         let uri: Uri = "file:///x.fs".parse().unwrap();
 
         // Edit 1: broken text — the error surfaces (repro precondition).
@@ -728,15 +720,6 @@ mod tests {
     /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
     #[test]
     fn provisional_filebased_set_must_be_republished_once_restore_settles() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let (host_side, sidecar_side) = tokio::io::duplex(64 * 1024);
-        let manager = runtime.block_on(async {
-            Arc::new(
-                crate::sidecar::manager::SidecarManager::connected_to_stream_for_tests(host_side)
-                    .await,
-            )
-        });
-
         let pending_payload = rmp_serde::to_vec(&vec![
             (
                 "App.cs".to_string(),
@@ -762,14 +745,12 @@ mod tests {
             ),
         ])
         .unwrap();
-        let clean_payload = rmp_serde::to_vec::<Vec<i32>>(&vec![]).unwrap();
-        let _sidecar_task = runtime.spawn(fake_scripted_sidecar(
-            sidecar_side,
-            pending_payload,
-            clean_payload,
-        ));
-
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        let ScriptedHost {
+            runtime,
+            manager,
+            sender,
+            receiver,
+        } = scripted_host(Some(pending_payload));
         let uri: Uri = "file:///app.cs".parse().unwrap();
 
         // One didOpen — the only client event this document ever gets.
@@ -809,22 +790,12 @@ mod tests {
     /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK] and [DIAG-PUSH-GATE].
     #[test]
     fn provisional_publication_is_converged_before_a_semantic_response() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let (host_side, sidecar_side) = tokio::io::duplex(64 * 1024);
-        let manager = runtime.block_on(async {
-            Arc::new(
-                crate::sidecar::manager::SidecarManager::connected_to_stream_for_tests(host_side)
-                    .await,
-            )
-        });
-        let clean_payload = rmp_serde::to_vec::<Vec<i32>>(&vec![]).unwrap();
-        let _sidecar_task = runtime.spawn(fake_scripted_sidecar(
-            sidecar_side,
-            clean_payload.clone(),
-            clean_payload,
-        ));
-
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        let ScriptedHost {
+            runtime,
+            manager,
+            sender,
+            receiver,
+        } = scripted_host(None);
         let uri: Uri = "file:///converge.cs".parse().unwrap();
         let generation = next_generation(&uri);
         let provisional = vec![Diagnostic {
@@ -858,6 +829,38 @@ mod tests {
                 .is_err(),
             "convergence after a settled publication must be a no-op"
         );
+    }
+
+    /// A host connected to a scripted fake sidecar, and the channel the push
+    /// pipeline publishes on.
+    struct ScriptedHost {
+        runtime: tokio::runtime::Runtime,
+        manager: Arc<crate::sidecar::manager::SidecarManager>,
+        sender: crossbeam_channel::Sender<Message>,
+        receiver: crossbeam_channel::Receiver<Message>,
+    }
+
+    /// Connect a host to [`fake_scripted_sidecar`], whose first answer is
+    /// `first` (a clean set when `None`) and whose later answers are clean.
+    fn scripted_host(first: Option<Vec<u8>>) -> ScriptedHost {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (host_side, sidecar_side) = tokio::io::duplex(64 * 1024);
+        let manager = runtime.block_on(async {
+            Arc::new(
+                crate::sidecar::manager::SidecarManager::connected_to_stream_for_tests(host_side)
+                    .await,
+            )
+        });
+        let clean = rmp_serde::to_vec::<Vec<i32>>(&vec![]).unwrap();
+        let first = first.unwrap_or_else(|| clean.clone());
+        drop(runtime.spawn(fake_scripted_sidecar(sidecar_side, first, clean)));
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        ScriptedHost {
+            runtime,
+            manager,
+            sender,
+            receiver,
+        }
     }
 
     /// Scripted in-memory sidecar: response #1 carries `error_payload`,
@@ -923,15 +926,19 @@ mod tests {
 
         clear(&sender, uri.clone()).unwrap();
 
-        let msg = receiver.recv().unwrap();
-        match msg {
+        let params = next_publish(&receiver);
+        assert_eq!(params.uri, uri);
+        assert!(params.diagnostics.is_empty());
+    }
+
+    /// The next message on the wire, proven to be a `publishDiagnostics` push.
+    fn next_publish(receiver: &crossbeam_channel::Receiver<Message>) -> PublishDiagnosticsParams {
+        match receiver.recv().unwrap() {
             Message::Notification(n) => {
                 assert_eq!(n.method, "textDocument/publishDiagnostics");
-                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).unwrap();
-                assert_eq!(params.uri, uri);
-                assert!(params.diagnostics.is_empty());
+                serde_json::from_value(n.params).unwrap()
             }
-            _ => panic!("expected Notification, got {msg:?}"),
+            msg => panic!("expected Notification, got {msg:?}"),
         }
     }
 }

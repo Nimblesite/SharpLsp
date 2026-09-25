@@ -26,7 +26,7 @@ import { type NuGetSearchResult, type NuGetTarget } from '../../nuget-browser/ty
 import { Signal, effect } from '../../signals.js';
 import { findSolutions, toSolutionSelections } from '../../solution.js';
 import { isHotReloadRunning } from '../../hot-reload.js';
-import { removeDirRecursive } from './test-helpers.js';
+import { removeDirRecursive, assertContainsAll } from './test-helpers.js';
 import { COMMAND_MS } from './test-timeouts';
 
 suite('Extension Workflow Coverage', () => {
@@ -69,9 +69,11 @@ suite('Extension Workflow Coverage', () => {
     // F# sidecar may not be available in all CI environments — only assert if the file was created.
     if (fs.existsSync(signaturePath)) {
       const signature = fs.readFileSync(signaturePath, 'utf8');
-      assert.ok(signature.includes('namespace Workflow'));
-      assert.ok(signature.includes('type Greeter'));
-      assert.ok(signature.includes('val publicValue :'));
+      assertContainsAll(
+        signature,
+        ['namespace Workflow', 'type Greeter', 'val publicValue :'],
+        'signature',
+      );
       assert.ok(!signature.includes('hidden'));
     }
   });
@@ -88,25 +90,25 @@ suite('Extension Workflow Coverage', () => {
       'the extension host must have opened the fixture workspace; it did not',
     );
 
-    assert.strictEqual(isHotReloadRunning(), false);
+    assert.ok(!isHotReloadRunning());
 
     await vscode.commands.executeCommand('sharplsp.hotReload.start');
-    assert.strictEqual(isHotReloadRunning(), true);
+    assert.ok(isHotReloadRunning());
 
     await vscode.commands.executeCommand('sharplsp.hotReload.start');
-    assert.strictEqual(isHotReloadRunning(), true);
+    assert.ok(isHotReloadRunning());
 
     await vscode.commands.executeCommand('sharplsp.hotReload.toggle');
-    assert.strictEqual(isHotReloadRunning(), false);
+    assert.ok(!isHotReloadRunning());
 
     await vscode.commands.executeCommand('sharplsp.hotReload.toggle');
-    assert.strictEqual(isHotReloadRunning(), true);
+    assert.ok(isHotReloadRunning());
 
     await vscode.commands.executeCommand('sharplsp.hotReload.stop');
-    assert.strictEqual(isHotReloadRunning(), false);
+    assert.ok(!isHotReloadRunning());
 
     await vscode.commands.executeCommand('sharplsp.hotReload.stop');
-    assert.strictEqual(isHotReloadRunning(), false);
+    assert.ok(!isHotReloadRunning());
   });
 
   test('discovers and sorts real solution selections', async function () {
@@ -170,7 +172,7 @@ suite('Extension Workflow Coverage', () => {
     );
 
     revertOptimisticInstall(installed, 'New.Package', installSnapshot);
-    assert.strictEqual(installed.has('New.Package'), false);
+    assert.ok(!installed.has('New.Package'));
     assert.strictEqual(searchResults[1]?.isInstalled, false);
 
     const uninstallSnapshot = applyOptimisticUninstall(
@@ -178,7 +180,7 @@ suite('Extension Workflow Coverage', () => {
       searchResults,
       'Existing.Package',
     );
-    assert.strictEqual(installed.has('Existing.Package'), false);
+    assert.ok(!installed.has('Existing.Package'));
     assert.strictEqual(searchResults[0]?.isInstalled, false);
     assert.strictEqual(
       buildUninstallToast(target, 'Existing.Package'),
@@ -210,18 +212,15 @@ suite('Extension Workflow Coverage', () => {
       throw new Error('sidecar unavailable');
     });
 
-    assert.strictEqual((await fetchTargets(successful, tmpDir)).ok, true);
-    assert.strictEqual((await fetchInstalled(successful, target)).ok, true);
-    assert.strictEqual((await searchPackages(successful, target, 'json', 1)).ok, true);
-    assert.strictEqual((await fetchVersions(successful, 'Newtonsoft.Json')).ok, true);
-    assert.strictEqual(
-      (await installPackage(successful, target, 'Newtonsoft.Json', '13.0.3')).ok,
-      true,
-    );
-    assert.strictEqual((await uninstallPackage(successful, target, 'Newtonsoft.Json')).ok, true);
+    assert.ok((await fetchTargets(successful, tmpDir)).ok);
+    assert.ok((await fetchInstalled(successful, target)).ok);
+    assert.ok((await searchPackages(successful, target, 'json', 1)).ok);
+    assert.ok((await fetchVersions(successful, 'Newtonsoft.Json')).ok);
+    assert.ok((await installPackage(successful, target, 'Newtonsoft.Json', '13.0.3')).ok);
+    assert.ok((await uninstallPackage(successful, target, 'Newtonsoft.Json')).ok);
 
     const failed = await searchPackages(failing, target, 'json');
-    assert.strictEqual(failed.ok, false);
+    assert.ok(!failed.ok);
     assert.ok(!failed.ok && failed.error.includes('sidecar unavailable'));
   });
 
@@ -250,7 +249,7 @@ suite('Extension Workflow Coverage', () => {
       'Other.Package',
     ]);
     assert.strictEqual(installed.get('Newtonsoft.Json')?.version, '13.0.3');
-    assert.strictEqual(installed.has('Other.Package'), false);
+    assert.ok(!installed.has('Other.Package'));
   });
 });
 

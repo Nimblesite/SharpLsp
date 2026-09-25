@@ -102,7 +102,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task PrepareCallHierarchy_on_method_returns_item()
     {
-        var item = await fixture.SendAndDeserializeAsync<CallHierarchyItem>(
+        var item = await fixture.SendAndDeserializeAsync<HierarchyItem>(
             "textDocument/prepareCallHierarchy",
             fixture.PosPayload(9, 15)
         );
@@ -132,7 +132,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task PrepareTypeHierarchy_on_class_returns_item()
     {
-        var item = await fixture.SendAndDeserializeAsync<TypeHierarchyItem>(
+        var item = await fixture.SendAndDeserializeAsync<HierarchyItem>(
             "textDocument/prepareTypeHierarchy",
             fixture.PosPayload(3, 13)
         );
@@ -142,7 +142,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Supertypes_of_SimpleGreeter_includes_IGreeter()
     {
-        var items = await fixture.SendAndDeserializeAsync<TypeHierarchyItem[]>(
+        var items = await fixture.SendAndDeserializeAsync<HierarchyItem[]>(
             "typeHierarchy/supertypes",
             fixture.PosPayload(22, 13)
         );
@@ -153,7 +153,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Subtypes_of_IGreeter_includes_SimpleGreeter()
     {
-        var items = await fixture.SendAndDeserializeAsync<TypeHierarchyItem[]>(
+        var items = await fixture.SendAndDeserializeAsync<HierarchyItem[]>(
             "typeHierarchy/subtypes",
             fixture.PosPayload(17, 17)
         );

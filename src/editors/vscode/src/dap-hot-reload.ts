@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
 import type { DapMessage } from './dap-emulate';
 import { error, traceInfo } from './log';
 import * as state from './state';
-import { getErrorMessage } from './utils';
+import { getErrorMessage, isRecord } from './utils';
 
 interface HotReloadHost {
   request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
@@ -544,8 +544,4 @@ function projectsAt(directory: string): string[] {
   } catch {
     return [];
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

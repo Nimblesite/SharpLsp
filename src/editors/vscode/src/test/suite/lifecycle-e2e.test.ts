@@ -12,6 +12,9 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
   waitForDocumentSymbols,
+  assertContainsAll,
+  removeDirRecursive,
+  openCSharpOutline,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { effect } from '../../signals.js';
@@ -23,6 +26,7 @@ import {
   INSTALL_TOOL_EXTENSION_ID,
 } from '../../dotnetRuntime.js';
 import { SharpLspStatusBar, ServerState } from '../../status.js';
+import { start as startClient } from '../../client.js';
 import {
   SortOrder,
   SORT_CYCLE,
@@ -36,8 +40,7 @@ import {
   client as clientSignal,
 } from '../../state.js';
 import { notifyActivationFailure } from '../../extension.js';
-import { removeDirRecursive } from './test-helpers.js';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
 /**
  * Coarse end-to-end coverage for the extension lifecycle plumbing:
@@ -91,8 +94,7 @@ suite('Lifecycle E2E', () => {
     this.timeout(ACTIVATION_MS);
     const filename = 'lifecycle-restart.cs';
     const content = 'namespace L { class Restartable { void Run() { } } }';
-    const { uri } = await openCSharpFile(tmpDir, filename, content);
-    const before = await waitForDocumentSymbols(uri);
+    const { symbols: before } = await openCSharpOutline(tmpDir, filename, content);
     assert.ok(before.length > 0, 'Server should serve symbols before restart');
 
     // The live client is exposed through the extension API.
@@ -105,9 +107,9 @@ suite('Lifecycle E2E', () => {
       await vscode.commands.executeCommand('sharplsp.restartServer');
     }, 'restartServer must not throw');
 
-    // Give the respawned server a moment to settle, then re-open the document so
-    // it is active and definitely synced to the fresh server instance.
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    // Re-open the document so it is active and synced to the fresh server
+    // instance. No settling pause first: the poll below waits for the state a
+    // recovered server produces, and a fixed second only guessed at it.
     const { uri: reopened } = await openCSharpFile(tmpDir, filename, content);
 
     // CRITICAL: restart MUST recover — poll generously until symbols return so
@@ -240,8 +242,7 @@ suite('Lifecycle E2E', () => {
     );
     assert.strictEqual(stubs.log.errorMessages.length, 1, 'Exactly one error notification shown');
     const shown = stubs.log.errorMessages[0] ?? '';
-    assert.ok(shown.includes('.NET 10 SDK'), 'Notification mentions the .NET 10 SDK');
-    assert.ok(shown.includes('disk full'), 'Notification includes the failure detail');
+    assertContainsAll(shown, ['.NET 10 SDK', 'disk full'], 'shown');
   });
 
   test('showAcquireFailureNotification Retry dispatches the retry command', async function () {
@@ -284,6 +285,35 @@ suite('Lifecycle E2E', () => {
     assert.doesNotThrow(() => {
       bar.dispose();
     }, 'Double dispose must not throw');
+  });
+
+  test('a server that cannot launch leaves the status bar in Error, never Running', async function () {
+    this.timeout(PROCESS_START_MS);
+    const bar = new SharpLspStatusBar();
+    const states: ServerState[] = [];
+    const setState = bar.setState.bind(bar);
+    bar.setState = (state: ServerState): void => {
+      states.push(state);
+      setState(state);
+    };
+    const context = {
+      subscriptions: [] as vscode.Disposable[],
+    } as unknown as vscode.ExtensionContext;
+    try {
+      await assert.rejects(
+        startClient(context, bar, { serverPath: path.join(scratchDir, 'no-such-sharplsp') }),
+        'start() must reject when the server binary cannot be spawned',
+      );
+      assert.strictEqual(states[0], ServerState.Starting, 'start() announces Starting first');
+      assert.strictEqual(states.at(-1), ServerState.Error, 'A failed start ends in Error');
+      assert.ok(!states.includes(ServerState.Running), 'A failed start never reports Running');
+      assert.strictEqual(context.subscriptions.length, 1, 'The state listener is disposable');
+    } finally {
+      context.subscriptions.forEach((d) => {
+        d.dispose();
+      });
+      bar.dispose();
+    }
   });
 
   test('restartServer drives the live status bar through Starting and back to Running', async function () {
@@ -377,8 +407,7 @@ suite('Lifecycle E2E', () => {
 
     disposePath();
     disposeState();
-    assert.ok(paths.includes(fakeSolution), 'solutionPath signal emitted the loaded path');
-    assert.ok(paths.includes(undefined), 'solutionPath signal emitted the cleared value');
+    assertContainsAll(paths, [fakeSolution, undefined], 'solutionPath signal emitted the');
     assert.ok(states.includes('empty'), 'symbolsState signal emitted the empty state');
   });
 

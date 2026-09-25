@@ -26,9 +26,16 @@ import { createBuildTask, dotnetArgs, targetFromNode } from '../../build.js';
 import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from '../../constants.js';
 import { extractSignature, isFSharpSourceDocument, fsiTerminalOptions } from '../../fsi.js';
 import { isRelevantLanguage, isHotReloadRunning } from '../../hot-reload.js';
-import { openFSharpFile, openCSharpFile, closeAllEditors, pollUntilResult } from './test-helpers';
+import {
+  openFSharpFile,
+  openCSharpFile,
+  closeAllEditors,
+  pollUntilResult,
+  assertContainsAll,
+  removeDirRecursive,
+  sleep,
+} from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-import { removeDirRecursive, sleep } from './test-helpers.js';
 import { TaskRecorder } from './run-debug-kit.js';
 import { libraryProjectXml, writeProject } from './dotnet-project-kit.js';
 import {
@@ -372,7 +379,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     );
     // No .fsi file should be written next to the C# document.
     const fsiSibling = uri.fsPath.replace(/\.cs$/, '.fsi');
-    assert.strictEqual(fs.existsSync(fsiSibling), false, 'No .fsi must be created for a C# file');
+    assert.ok(!fs.existsSync(fsiSibling), 'No .fsi must be created for a C# file');
   });
 
   test('extractSignature, isFSharpSourceDocument, and fsiTerminalOptions behave correctly', function () {
@@ -388,23 +395,18 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
         'member _.Speak () = "hi"',
       ].join('\n'),
     );
-    assert.ok(signature.includes('namespace Demo'));
-    assert.ok(signature.includes('type Widget'));
-    assert.ok(signature.includes("val publicValue : 'a"));
-    assert.ok(signature.includes('member _.Speak'));
+    assertContainsAll(
+      signature,
+      ['namespace Demo', 'type Widget', "val publicValue : 'a", 'member _.Speak'],
+      'signature',
+    );
     // private bindings are excluded from the public signature.
     assert.ok(!signature.includes('secret'));
 
     // isFSharpSourceDocument keys off the .fs extension.
-    assert.strictEqual(
-      isFSharpSourceDocument({ uri: { fsPath: '/x/A.fs' } } as vscode.TextDocument),
-      true,
-    );
-    assert.strictEqual(
-      isFSharpSourceDocument({ uri: { fsPath: '/x/A.cs' } } as vscode.TextDocument),
-      false,
-    );
-    assert.strictEqual(isFSharpSourceDocument(undefined), false);
+    assert.ok(isFSharpSourceDocument({ uri: { fsPath: '/x/A.fs' } } as vscode.TextDocument));
+    assert.ok(!isFSharpSourceDocument({ uri: { fsPath: '/x/A.cs' } } as vscode.TextDocument));
+    assert.ok(!isFSharpSourceDocument(undefined));
 
     // fsiTerminalOptions falls back to `dotnet` when no explicit SDK path.
     const fallback = fsiTerminalOptions(undefined, []);
@@ -421,10 +423,10 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   test('isRelevantLanguage classifies C#/F# vs other languages within a save flow', async function () {
     this.timeout(COMMAND_MS);
 
-    assert.strictEqual(isRelevantLanguage('csharp'), true);
-    assert.strictEqual(isRelevantLanguage('fsharp'), true);
-    assert.strictEqual(isRelevantLanguage('json'), false);
-    assert.strictEqual(isRelevantLanguage('plaintext'), false);
+    assert.ok(isRelevantLanguage('csharp'));
+    assert.ok(isRelevantLanguage('fsharp'));
+    assert.ok(!isRelevantLanguage('json'));
+    assert.ok(!isRelevantLanguage('plaintext'));
 
     // A PREMISE, not a skip. The harness always opens `test-fixtures/workspace`,
     // so an absent folder means the RUNNER is broken — and skipping there turns
@@ -438,7 +440,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
 
     // Start hot reload so the onSave handler has a live watch terminal.
     await vscode.commands.executeCommand('sharplsp.hotReload.start');
-    assert.strictEqual(isHotReloadRunning(), true);
+    assert.ok(isHotReloadRunning());
 
     // Enable onSave and save a C# document — the relevant-language path runs.
     await vscode.workspace
@@ -455,7 +457,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     await assert.doesNotReject(async () => {
       await csDoc.save();
     }, 'Saving a C# doc during hot reload must not throw');
-    assert.strictEqual(isHotReloadRunning(), true, 'Hot reload must remain running after save');
+    assert.ok(isHotReloadRunning(), 'Hot reload must remain running after save');
 
     // Saving a non-relevant document must also be harmless (early-return branch).
     const txtPath = path.join(tmpDir, 'notes.txt');
@@ -468,17 +470,17 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     await assert.doesNotReject(async () => {
       await txtDoc.save();
     }, 'Saving a non-relevant doc during hot reload must not throw');
-    assert.strictEqual(isRelevantLanguage(txtDoc.languageId), false);
-    assert.strictEqual(isHotReloadRunning(), true);
+    assert.ok(!isRelevantLanguage(txtDoc.languageId));
+    assert.ok(isHotReloadRunning());
 
     await vscode.commands.executeCommand('sharplsp.hotReload.stop');
-    assert.strictEqual(isHotReloadRunning(), false);
+    assert.ok(!isHotReloadRunning());
   });
 
   test('handleDocumentSave is inert when hot reload is not running', async function () {
     this.timeout(COMMAND_MS);
 
-    assert.strictEqual(isHotReloadRunning(), false);
+    assert.ok(!isHotReloadRunning());
 
     // Enable onSave but DO NOT start hot reload — the save handler must early-return.
     await vscode.workspace
@@ -496,9 +498,8 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     await assert.doesNotReject(async () => {
       await doc.save();
     }, 'Saving with no watch terminal must not throw');
-    assert.strictEqual(
-      isHotReloadRunning(),
-      false,
+    assert.ok(
+      !isHotReloadRunning(),
       'Saving must not start hot reload when no watch terminal exists',
     );
   });

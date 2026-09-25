@@ -39,6 +39,8 @@ import {
   pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
+  pollSymbols,
+  assertContainsAll,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { buildQualifiedName } from '../../tree.js';
@@ -52,6 +54,7 @@ import { ok, err, type Result } from '../../result.js';
 import { detectRuntimePlatform } from '../../platform.js';
 import { CONFIG_SECTION } from '../../constants.js';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { nodeLabel, findNode, findByLabel, findByContext, walkTree } from './tree-node-kit';
 
 // ── Shared tree-node shape (the real ExplorerNode, viewed structurally) ──────
 
@@ -73,6 +76,7 @@ interface ExplorerApi {
     clear(): void;
     getChildren(element?: unknown): TreeNode[] | undefined;
     getTreeItem(element: TreeNode): vscode.TreeItem;
+    onDidChangeTreeData: vscode.Event<unknown>;
   };
 }
 
@@ -85,40 +89,6 @@ function getProvider(): ExplorerApi['explorerProvider'] {
   const api = ext.exports as ExplorerApi | undefined;
   assert.ok(api?.explorerProvider, 'Extension must export explorerProvider');
   return api.explorerProvider;
-}
-
-function nodeLabel(node: TreeNode): string {
-  return typeof node.label === 'string' ? node.label : (node.label?.label ?? '');
-}
-
-function findNode(
-  nodes: TreeNode[] | undefined,
-  predicate: (node: TreeNode) => boolean,
-): TreeNode | undefined {
-  if (nodes === undefined) return undefined;
-  for (const node of nodes) {
-    if (predicate(node)) return node;
-    const found = findNode(node.children, predicate);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-function findByLabel(nodes: TreeNode[] | undefined, label: string): TreeNode | undefined {
-  return findNode(nodes, (node) => nodeLabel(node).includes(label));
-}
-
-function findByContext(nodes: TreeNode[] | undefined, contextValue: string): TreeNode | undefined {
-  return findNode(nodes, (node) => node.contextValue === contextValue);
-}
-
-/** Walk every node in the tree (roots → leaves), invoking `visit`. */
-function walkTree(nodes: TreeNode[] | undefined, visit: (node: TreeNode) => void): void {
-  if (nodes === undefined) return;
-  for (const node of nodes) {
-    visit(node);
-    walkTree(node.children, visit);
-  }
 }
 
 /** Load the committed fixture solution and wait until its symbols populate. */
@@ -379,15 +349,7 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
       'Program.cs',
       'namespace TipApp { public class Program { public void Run() { } } }',
     );
-    await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          uri,
-        )) ?? [],
-      (syms) => syms.length > 0,
-      30_000,
-    );
+    await pollSymbols(uri, (syms) => syms.length > 0, 30_000);
 
     await provider.loadSolution(slnPath);
     await provider.refresh();
@@ -415,9 +377,11 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
 
     const tooltip = buildNonSymbolTooltip(pkg as never);
     assert.ok(tooltip instanceof vscode.MarkdownString, 'package tooltip must be a MarkdownString');
-    assert.ok(tooltip.value.includes('**NuGet Package**'), 'tooltip has bold header');
-    assert.ok(tooltip.value.includes('Newtonsoft.Json'), 'tooltip names the package');
-    assert.ok(tooltip.value.includes('13.0.3'), 'tooltip carries the version');
+    assertContainsAll(
+      tooltip.value,
+      ['**NuGet Package**', 'Newtonsoft.Json', '13.0.3'],
+      'tooltip.value',
+    );
   });
 
   test('symbol and structural nodes get NO non-symbol tooltip (symbols use LSP hover)', () => {
@@ -662,13 +626,28 @@ suite('Config E2E — every getter, with workspace round-trips', () => {
     assert.ok(config.loggingLevel().length > 0, 'loggingLevel is a non-empty string');
 
     // Round-trip an override and confirm the getter reflects it, then restore.
+    // The committed fixture pins NOTHING at workspace scope — a pin there would
+    // hide every user-scope write behind it — so restoring "verbatim" means the
+    // key is removed again, not parked at a default.
+    const committed = ws().inspect('logging.level')?.workspaceValue;
+    assert.strictEqual(committed, undefined, 'the fixture workspace pins no logging.level');
     await withSetting('logging.level', 'debug', () => {
       assert.strictEqual(config.loggingLevel(), 'debug', 'loggingLevel reflects the override');
+      assert.strictEqual(
+        ws().inspect('logging.level')?.workspaceValue,
+        'debug',
+        'and the override landed at workspace scope',
+      );
     });
     assert.strictEqual(
       ws().inspect('logging.level')?.workspaceValue,
-      'info',
-      'committed fixture logging.level (info) is restored verbatim',
+      committed,
+      'the committed fixture workspace value is restored verbatim',
+    );
+    assert.strictEqual(
+      config.loggingLevel(),
+      ws().inspect('logging.level')?.defaultValue,
+      'and the getter reads the manifest default again',
     );
 
     await withSetting('server.extraArgs', ['--verbose', '--port=9091'], () => {
@@ -682,31 +661,31 @@ suite('Config E2E — every getter, with workspace round-trips', () => {
 
   test('inlay-hint flags default to true and reflect explicit false overrides', async function () {
     this.timeout(COMMAND_MS);
-    assert.strictEqual(config.inlayHintsParameterNames(), true, 'parameter hints default on');
-    assert.strictEqual(config.inlayHintsTypeInference(), true, 'type-inference hints default on');
-    assert.strictEqual(config.inlayHintsPipelineTypes(), true, 'pipeline hints default on');
+    assert.ok(config.inlayHintsParameterNames(), 'parameter hints default on');
+    assert.ok(config.inlayHintsTypeInference(), 'type-inference hints default on');
+    assert.ok(config.inlayHintsPipelineTypes(), 'pipeline hints default on');
 
     await withSetting('inlayHints.parameterNames', false, () => {
-      assert.strictEqual(config.inlayHintsParameterNames(), false);
+      assert.ok(!config.inlayHintsParameterNames());
     });
     await withSetting('inlayHints.typeInference', false, () => {
-      assert.strictEqual(config.inlayHintsTypeInference(), false);
+      assert.ok(!config.inlayHintsTypeInference());
     });
     await withSetting('inlayHints.pipelineTypes', false, () => {
-      assert.strictEqual(config.inlayHintsPipelineTypes(), false);
+      assert.ok(!config.inlayHintsPipelineTypes());
     });
   });
 
   test('nuget + hot-reload booleans default false and reflect a true override', async function () {
     this.timeout(COMMAND_MS);
-    assert.strictEqual(config.nugetIncludePrerelease(), false, 'prerelease off by default');
-    assert.strictEqual(config.hotReloadOnSave(), false, 'hot reload on save off by default');
+    assert.ok(!config.nugetIncludePrerelease(), 'prerelease off by default');
+    assert.ok(!config.hotReloadOnSave(), 'hot reload on save off by default');
 
     await withSetting('nuget.includePrerelease', true, () => {
-      assert.strictEqual(config.nugetIncludePrerelease(), true);
+      assert.ok(config.nugetIncludePrerelease());
     });
     await withSetting('hotReload.onSave', true, () => {
-      assert.strictEqual(config.hotReloadOnSave(), true);
+      assert.ok(config.hotReloadOnSave());
     });
 
     // Every boolean getter returns a real boolean primitive.
@@ -810,8 +789,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     assert.strictEqual(stubs.log.quickPickItems.length, 1, 'selectSolution prompts exactly once');
     const items = stubs.log.quickPickItems[0] as { label: string }[];
     const labels = items.map((item) => item.label);
-    assert.ok(labels.includes('TestFixtures.sln'), 'quick pick offers the .sln');
-    assert.ok(labels.includes('TestFixtures.slnx'), 'quick pick offers the .slnx');
+    assertContainsAll(labels, ['TestFixtures.sln', 'TestFixtures.slnx'], 'quick pick offers the');
 
     // The command drives the live (bundled) provider, so assert the OBSERVABLE
     // result: a solution root labelled exactly 'TestFixtures.sln' appears in the
@@ -838,6 +816,99 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     provider.clear();
   });
 
+  // ── Loading feedback [SE-LOADING-FEEDBACK] ─────────────────────
+
+  /**
+   * BUG: opening a folder left the Solution Explorer blank while the
+   * solution list was discovered, and again (after picking a solution) while
+   * the solution loaded — the user had no idea anything was happening.
+   *
+   * The tree MUST show a spinner + message during BOTH phases: while the
+   * solution list loads ("Searching for solutions…") and while the selected
+   * solution loads ("Loading <name>…"). Transient states are captured by
+   * snapshotting the live roots on every tree-change event fired while the
+   * real command runs, so the assertions hold however fast the phases pass.
+   */
+  test('tree shows spinner feedback while discovering and loading a solution', async function () {
+    this.timeout(LSP_RESPONSE_MS + 10_000);
+
+    // Self-contained activation: in an isolated run no earlier suite has
+    // activated the extension yet (Suite 5 has no suiteSetup by design).
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, 'Extension must be found');
+    await ext.activate();
+
+    const provider = getProvider();
+    provider.clear();
+
+    // The fixture workspace has BOTH TestFixtures.sln and .slnx → the command
+    // prompts a quickPick; answer with the exact .sln label. Two picks are
+    // queued: if activation just fired the auto-run, its quickPick consumes
+    // the first, and this command's quickPick still gets a real answer.
+    stubs = installUiStubs();
+    const pickSln = (items: readonly unknown[]): unknown =>
+      (items as { label?: string }[]).find((item) => item.label === 'TestFixtures.sln');
+    stubs.queuePick(pickSln).queuePick(pickSln);
+
+    const snapshots: TreeNode[][] = [];
+    const disposable = provider.onDidChangeTreeData(() => {
+      snapshots.push(provider.getChildren() ?? []);
+    });
+
+    try {
+      await vscode.commands.executeCommand('sharplsp.selectSolution');
+
+      // Final state: the real solution root (not a stuck spinner).
+      await pollUntilResult(
+        async () => findByContext(provider.getChildren(), 'solution') !== undefined,
+        (found) => found,
+        LSP_RESPONSE_MS,
+        500,
+      );
+      const finalRoot = findByContext(provider.getChildren(), 'solution');
+      assert.ok(finalRoot, 'solution root must exist after the command completes');
+      assert.strictEqual(
+        nodeLabel(finalRoot),
+        'TestFixtures.sln',
+        'command must finish with the selected solution loaded',
+      );
+    } finally {
+      disposable.dispose();
+      provider.clear();
+    }
+
+    const seen = snapshots.map((nodes) => nodes.map(nodeLabel).join(' | '));
+    const seenText = seen.join('] / [');
+
+    // a) feedback while the solution LIST loads
+    assert.ok(
+      seen.some((labels) => labels.includes('Searching for solutions')),
+      `tree must show a discovery message while solutions load; saw: [${seenText}]`,
+    );
+    // b) feedback while the selected SOLUTION loads
+    assert.ok(
+      seen.some((labels) => labels.includes('Loading TestFixtures.sln')),
+      `tree must show a loading message while the solution loads; saw: [${seenText}]`,
+    );
+
+    // Both feedback nodes must carry the spinning icon.
+    const spinners = snapshots
+      .flat()
+      .filter(
+        (node) =>
+          nodeLabel(node).includes('Searching for solutions') ||
+          nodeLabel(node).includes('Loading TestFixtures.sln'),
+      );
+    assert.ok(spinners.length > 0, 'feedback nodes must exist');
+    for (const spinner of spinners) {
+      assert.strictEqual(
+        (spinner.iconPath as { id?: string } | undefined)?.id,
+        'loading~spin',
+        `feedback node '${nodeLabel(spinner)}' must use the spinning icon`,
+      );
+    }
+  });
+
   test('a findSolutions-backed flow produces and consumes a Result<T,E> via ok()/err()', async function () {
     this.timeout(COMMAND_MS);
 
@@ -852,14 +923,14 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     }
 
     const result = await discover();
-    assert.strictEqual(result.ok, true, 'discovery must succeed against the fixture workspace');
+    assert.ok(result.ok, 'discovery must succeed against the fixture workspace');
     if (result.ok) {
       assert.ok(result.value >= 2, 'fixture workspace exposes at least .sln + .slnx');
     }
 
     // The error arm narrows correctly too.
     const failure: Result<number> = err('boom');
-    assert.strictEqual(failure.ok, false);
+    assert.ok(!failure.ok);
     if (!failure.ok) {
       assert.strictEqual(failure.error, 'boom', 'err() carries its message; discriminant narrows');
     }

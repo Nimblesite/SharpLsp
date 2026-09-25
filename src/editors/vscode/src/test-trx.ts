@@ -24,6 +24,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import type { TestOutcome } from './test-run-output.js';
+import { withoutAdapterUniqueId } from './test-names.js';
 
 /** A run-level message VSTest recorded, outside any individual test. */
 export interface TrxRunInfo {
@@ -161,8 +162,18 @@ function toTestResult(
   const displayName = result['@_testName'] ?? '';
   const resolved = namesById.get(result['@_testId'] ?? '');
   const error = result.Output?.ErrorInfo;
+  const qualified = resolved === undefined || resolved === '' ? displayName : resolved;
   return {
-    fullyQualifiedName: resolved === undefined || resolved === '' ? displayName : resolved,
+    // Stripped with the SAME rule discovery applies, because this is the other
+    // half of one id: `parseFullyQualifiedTestList` removes an adapter's
+    // appended unique ID when it builds the tree, so a report that keeps it
+    // keys on a name no tree item carries and every test of a decorated project
+    // errors with "No result reported" (issue #232). `xunit.runner.visualstudio`
+    // 2.2.0 stamps `TestMethod/@name` with it, and a THEORY carries a different
+    // one per row — stripping is also what collapses those rows back onto the
+    // single id they share, which `worse()` in test-execution.ts then judges by
+    // its worst row. `displayName` keeps the decoration: it is a label, not a key.
+    fullyQualifiedName: withoutAdapterUniqueId(qualified),
     displayName,
     outcome: OUTCOMES.get((result['@_outcome'] ?? '').toLowerCase()) ?? 'notRun',
     durationMs: parseTrxDuration(result['@_duration']),

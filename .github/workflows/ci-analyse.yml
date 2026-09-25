@@ -1,0 +1,111 @@
+---
+# PHASE 1 — ANALYSE. [DIST-CI-LAYOUT]
+#
+# Lint, format checks and static analysis, for every language in the repo.
+# Nothing else in the pipeline runs until this is green, and it builds nothing
+# that any later phase consumes: whatever clippy and the .NET analysers compile
+# on the way to a verdict is thrown away with the runner.
+#
+# This used to be the first half of a combined "Checks + Build" job. Fusing the
+# two meant the Windows build could not start until Ubuntu had finished linting
+# AND finished a full Ubuntu release build it does not use - 6m45 of dead wait
+# before the slowest leg of the pipeline began. Splitting them is what lets
+# PHASE 2 fan out across platforms the moment analysis passes.
+name: CI / Analyse
+'on':
+  workflow_call: {}
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  analyse:
+    name: Lint + Format + Analysis
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.303
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: "~/.nuget/packages"
+          key: >-
+            ${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj',
+            'src/sidecars/Directory.Build.props') }}
+          restore-keys: "${{ runner.os }}-nuget-"
+      - name: Install VS Code extension deps
+        uses: ./.github/actions/vsix-node-deps
+      - name: Restore the .NET tool manifest
+        run: dotnet tool restore
+
+      # ── Rust ───────────────────────────────────────────────────────
+      - name: Format + lint (Rust)
+        run: make _lint-rust PROFILE=debug
+      - name: Format + lint (Zed)
+        run: make _lint-zed
+
+      # ── .NET ───────────────────────────────────────────────────────
+      - name: Format check (.NET)
+        run: dotnet csharpier check src/sidecars/
+      - name: Lint (.NET)
+        run: make _lint-dotnet
+
+      # ── TypeScript ─────────────────────────────────────────────────
+      - name: Format check (VS Code)
+        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
+      - name: Lint (VS Code)
+        # Also asserts every test suite belongs to a declared feature chunk, so
+        # a new suite cannot silently drop out of the PHASE 4 matrix.
+        run: make _lint-vsix
+
+      # ── Duplication ────────────────────────────────────────────────
+      # [CI-DESLOP] The duplication ratchet. `deslop .` reads the committed
+      # .deslop.toml — which owns BOTH the threshold (max_duplication_percent)
+      # and the exclude list — and exits 3 the moment measured duplication over
+      # the SHIPPED code exceeds it. The threshold is deliberately NOT passed on
+      # the command line: a `--fail-over` number in this file would be a second
+      # source of truth that drifts from the one under review in the PR diff.
+      #
+      # Ratchets DOWN only. When a PR reduces duplication, lower the number in
+      # .deslop.toml in that same PR; raising it needs written justification.
+      #
+      # PHASE 1 because it is analysis: it parses the tree and builds nothing
+      # that any later phase consumes.
+      - name: Duplication gate (Deslop)
+        env:
+          # Pinned — https://github.com/Nimblesite/Deslop/releases
+          DESLOP_VERSION: "0.34.0"
+        run: |-
+          set -euo pipefail
+          base="https://github.com/Nimblesite/Deslop/releases/download/v${DESLOP_VERSION}"
+          tarball="deslop-${DESLOP_VERSION}-linux-x64.tar.gz"
+          tmp="$(mktemp -d)"
+          # Download the archive AND its published checksum, and verify before
+          # unpacking: this step runs a downloaded binary over the whole tree, so
+          # an unverified tarball would be a supply-chain hole in the gate that
+          # exists to protect the codebase. [DIST-SECRETS]
+          curl -sSfL --retry 3 -o "$tmp/$tarball" "$base/$tarball"
+          curl -sSfL --retry 3 -o "$tmp/$tarball.sha256" "$base/$tarball.sha256"
+          ( cd "$tmp" && awk '{print $1"  '"$tarball"'"}' "$tarball.sha256" | sha256sum -c - )
+          tar -xzf "$tmp/$tarball" -C "$tmp"
+          # Locate the binary rather than assuming the archive's directory layout,
+          # so a repackaging upstream fails loudly here instead of silently
+          # skipping the gate.
+          bin="$(find "$tmp" -maxdepth 3 -type f -name deslop -perm -u+x | head -1)"
+          if [ -z "$bin" ]; then
+            echo "::error::deslop binary not found in $tarball — gate cannot run."
+            exit 1
+          fi
+          "$bin" .

@@ -1,17 +1,33 @@
 # agent-pmo:0b21609
 ---
-# Single sequential gate that runs every check, analysis and format guard, and
-# then builds the release artifacts ONCE so the parallel test legs can consume
-# them without rebuilding. Called by ci.yml as the only `needs:` prerequisite of
-# every test leg: modified-files -> checks+build -> parallel tests.
+# PHASE 2 (FULL BUILD) + PHASE 3 (CACHE). [DIST-CI-LAYOUT]
 #
-# Lint and build are one job here on purpose ([DIST-CI-LAYOUT]): the test legs
-# are gated on this job, so a format/analysis failure fails the pipeline before
-# any test machine spins up, and the release binaries produced here are the
-# ONLY build of the host and sidecars on Ubuntu — no test leg may rebuild them.
+# Everything the pipeline needs, built for Linux and Windows ONCE and published.
+# The three jobs below are SIBLINGS: no `needs:` between them, so the focused
+# macOS debugger check cannot delay the other platform builds.
+#
+# That is the fix for the pipeline's largest structural defect. The Windows
+# build used to live in the TEST phase, gated on the Ubuntu build - which it
+# consumes nothing from - so it began 6m45 after the run started and every
+# Windows test chunk began 11m02 after that. 18 minutes of a 41-minute pipeline
+# was builds waiting on other builds.
+#
+# Linux and Windows run the SAME composite action (../actions/build-platform).
+# macOS checks only the native debugger build that those platforms cannot test.
+#
+# PHASE 3 is the handoff boundary. Every artifact a test job needs is uploaded
+# here, and NOTHING downstream of this workflow is permitted to compile
+# anything. A test leg that invokes cargo, dotnet build or tsc is a bug.
 name: CI / Build
 'on':
-  workflow_call: {}
+  workflow_call:
+    outputs:
+      linux-chunks:
+        description: JSON array of VS Code feature chunks to run on Ubuntu.
+        value: ${{ jobs.build-linux.outputs.chunks }}
+      win-chunks:
+        description: JSON array of VS Code feature chunks to run on Windows.
+        value: ${{ jobs.build-windows.outputs.chunks }}
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -20,80 +36,70 @@ env:
 permissions:
   contents: read
 jobs:
-  build:
-    name: Checks + Build
+  build-linux:
+    name: Linux
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    outputs:
+      chunks: ${{ steps.build.outputs.chunks }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build every Linux artifact
+        id: build
+        uses: ./.github/actions/build-platform
+        with:
+          platform: linux
+          vsix-platform: linux-x64
+          host-binary: target/release/sharplsp
+          suite-artifact: vsix-suite-linux
+          binaries-artifact: linux-lsp-binaries
+          debugger-artifact: linux-netcoredbg
+          # One platform is enough to catch a layout regression in the
+          # standalone archive and the package-manager manifests.
+          archive: 'true'
+
+  build-windows:
+    name: Windows
+    # NO `needs:`. This is a sibling of build-linux, not its successor - it
+    # consumes nothing Ubuntu produces, and gating it on Ubuntu bought the
+    # pipeline nothing but 6m45 of idle Windows runner.
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 40
+    outputs:
+      chunks: ${{ steps.build.outputs.chunks }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build every Windows artifact
+        id: build
+        uses: ./.github/actions/build-platform
+        with:
+          platform: win
+          vsix-platform: win32-x64
+          host-binary: target/release/sharplsp.exe
+          suite-artifact: vsix-suite-win
+          binaries-artifact: win-lsp-binaries
+          debugger-artifact: win-netcoredbg
+
+  build-macos:
+    name: macOS debugger build check
+    # [DIST-CI-SMOKE] [DIST-DEBUGGER-BUNDLE] Linux/Windows cannot catch a
+    # macOS clang or linker failure in the patched debugger before release.
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.303
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: "~/.nuget/packages"
-          key: "${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj', 'src/sidecars/Directory.Build.props') }}"
-          restore-keys: "${{ runner.os }}-nuget-"
+          dotnet-version: 10.0.303
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
-          cache: npm
-          cache-dependency-path: src/editors/vscode/package-lock.json
-      - name: Install dependencies
-        run: |
-          dotnet tool restore
-          npm ci --prefix src/editors/vscode
-
-      # ── Checks, format and analysis ────────────────────────────────
-      - name: Format + lint (Rust)
-        run: make _lint-rust PROFILE=debug
-      - name: Format + lint (Zed)
-        run: make _lint-zed
-      - name: Format check (.NET)
-        run: dotnet csharpier check src/sidecars/
-      - name: Lint (.NET)
-        run: make _lint-dotnet
-      - name: Sidecar pack smoke test
-        run: |
-          dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          dotnet pack src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          ls -la /tmp/nupkg-smoke/*.nupkg
-      - name: Format check (VS Code)
-        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
-      - name: Lint (VS Code)
-        run: make _lint-vsix
-
-      # ── Build release artifacts once ───────────────────────────────
-      - name: Build sharplsp host (release)
-        run: make _build-rust
-      - name: Build .NET sidecars (release)
-        run: make _build-dotnet
-      - name: Build patched netcoredbg
-        run: bash tools/vsix/build-netcoredbg.sh linux-x64
-
-      # ── Cache the build for the parallel test legs ─────────────────
-      - name: Upload Linux LSP artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: linux-lsp-binaries
-          retention-days: 1
-          path: |
-            target/release/sharplsp
-            target/sidecar-csharp
-            target/sidecar-fsharp
-      - name: Upload patched Linux debugger
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: linux-netcoredbg
-          retention-days: 1
-          include-hidden-files: true
-          path: target/netcoredbg/linux-x64/netcoredbg
+      - name: Build the patched macOS debugger once
+        shell: bash
+        run: bash tools/vsix/build-netcoredbg.sh darwin-arm64 --rebuild
+      - name: Verify the built debugger runs
+        shell: bash
+        run: |-
+          set -euo pipefail
+          test -f target/netcoredbg/darwin-arm64/netcoredbg/ManagedPart.dll
+          target/netcoredbg/darwin-arm64/netcoredbg/netcoredbg --version

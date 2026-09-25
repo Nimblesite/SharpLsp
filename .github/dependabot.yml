@@ -1,31 +1,33 @@
-# Dependabot configuration.
+# agent-pmo:a72c926
 #
-# Goal: routine version bumps NEVER bother you and NEVER burn CI on `main`,
-# while genuine security fixes still reach you automatically.
+# Dependabot — supply-chain defence without PR spam, and without burning CI on
+# `main` for routine bumps. Implements [GITHUB-DEPENDABOT].
 #
-# How this achieves that:
-#   * VERSION updates -> `target-branch: dependabot-upgrades`. Every routine bump
-#     PR is opened against the long-lived `dependabot-upgrades` staging branch,
-#     not main. ci.yml / codeql.yml only trigger on `pull_request: [main]`
-#     (the filter matches the PR *base*), so these PRs run NO build/test/CodeQL.
-#     They are auto-merged into the staging branch by
-#     .github/workflows/dependabot-automerge.yml. When you want the batch in
-#     main, open ONE `dependabot-upgrades -> main` PR (CI runs once).
-#   * SECURITY updates -> still raised automatically against `main`, untouched by
-#     this file. Per GitHub docs, `target-branch` only redirects *version*
-#     updates; "security updates always use the default branch for the
-#     repository." So a real CVE still opens a PR against main where you see it
-#     and CI runs. This is the "only bother me for genuine security" channel, and
-#     it is controlled by the repo's "Dependabot security updates" setting (ON),
-#     NOT by this file.
-#   * groups with no update-types filter -> each ecosystem collapses ALL bumps
-#     (minor, patch AND major) into ONE grouped PR per run.
-#   * interval: weekly -> one grouped PR per ecosystem each week (not 50).
+# EVERY bump ends up on the long-lived `dependabot-upgrades` STAGING branch,
+# swept there by .github/workflows/dependabot-automerge.yml:
 #
-# REQUIREMENT: the `dependabot-upgrades` branch must exist (create it from main
-# AFTER this file + the auto-merge workflow are merged to main, so the staging
-# branch contains the auto-merge workflow).
+#   * VERSION updates -> `target-branch: dependabot-upgrades`, so Dependabot
+#     opens them against staging directly. ci.yml / codeql.yml trigger only on
+#     `pull_request: [main]` (the filter matches the PR *base*), so these PRs run
+#     NO build, NO test, NO CodeQL.
+#   * SECURITY updates -> GitHub IGNORES `target-branch` for these and ALWAYS
+#     opens them against the default branch (`main`). The auto-merge workflow
+#     therefore also fires on `main` and folds the security bump into the SAME
+#     staging branch, then retires the PR — so a CVE bump never sits on `main`
+#     waiting for a human either, and never burns the 40-minute matrix on a
+#     change that is about to be superseded.
+#   * groups -> each ecosystem collapses ALL version bumps (patch, minor AND
+#     major) into ONE PR, and a parallel `*-security` group does the same for
+#     CVE bumps. Majors do not need their own review PR because nothing reaches
+#     `main` unattended — review happens once, at the
+#     `dependabot-upgrades -> main` consolidation PR, where CI runs exactly once.
+#   * interval: weekly -> one grouped PR per ecosystem per week, not fifty.
+#
+# REQUIREMENT: the `dependabot-upgrades` branch must exist and stay UNPROTECTED,
+# and both it and `main` must carry dependabot-automerge.yml (for
+# `pull_request`, the workflow is read from the PR's BASE branch).
 version: 2
+
 updates:
   # ── Rust: host crate ────────────────────────────────────────────────
   - package-ecosystem: cargo
@@ -33,9 +35,14 @@ updates:
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
     groups:
       rust-host:
+        applies-to: version-updates
+        patterns: ["*"]
+      rust-host-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   # ── Rust: Zed extension crate ───────────────────────────────────────
@@ -45,8 +52,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    labels: ["dependencies"]
     groups:
       rust-zed:
+        applies-to: version-updates
+        patterns: ["*"]
+      rust-zed-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   # ── .NET: C#/F# sidecars solution ───────────────────────────────────
@@ -55,9 +67,14 @@ updates:
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
     groups:
       dotnet-sidecars:
+        applies-to: version-updates
+        patterns: ["*"]
+      dotnet-sidecars-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   # ── npm: VS Code extension ──────────────────────────────────────────
@@ -66,9 +83,14 @@ updates:
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
     groups:
       vscode-extension:
+        applies-to: version-updates
+        patterns: ["*"]
+      vscode-extension-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   # ── npm: website ────────────────────────────────────────────────────
@@ -77,24 +99,32 @@ updates:
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
     groups:
       website:
+        applies-to: version-updates
+        patterns: ["*"]
+      website-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   # ── GitHub Actions: all workflows ───────────────────────────────────
+  # Version-only: GitHub publishes no Dependabot security advisories for
+  # actions, so there is no security channel to group.
   - package-ecosystem: github-actions
     directory: "/"
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
     groups:
       github-actions:
         patterns: ["*"]
     # dtolnay/rust-toolchain publishes no semver releases (only rolling
-    # stable/nightly/per-version branches), so Dependabot's pinned-ref
-    # resolver throws and fails the ENTIRE github-actions group update
-    # (run 28865233155). Bump this action's SHA manually instead.
+    # stable/nightly/per-version branches), so Dependabot's pinned-ref resolver
+    # throws and fails the ENTIRE github-actions group update (run 28865233155).
+    # Bump this action's SHA manually instead.
     ignore:
       - dependency-name: "dtolnay/rust-toolchain"

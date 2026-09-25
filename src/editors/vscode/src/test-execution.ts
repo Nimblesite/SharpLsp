@@ -23,14 +23,10 @@ import * as path from 'node:path';
 import type * as vscode from 'vscode';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetHooks } from './dotnet-process.js';
 import { runTarget } from './test-targets.js';
-import { filterExpression } from './test-filter.js';
-import {
-  parseFailureMessage,
-  parseRunSummary,
-  type TestOutcome,
-  type TestRunSummary,
-} from './test-run-output.js';
-import { isRunError, parseTrxReport, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
+import { filterBatches, filterExpression } from './test-filter.js';
+import { parseFailureMessage, parseRunSummary, type TestRunSummary } from './test-run-output.js';
+import { isRunError, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
+import { collectReport, trxFiles } from './test-trx-collect.js';
 
 /** What one `dotnet test` invocation produced. */
 export interface TestRunOutcome {
@@ -76,6 +72,12 @@ export interface TestRunOptions {
    * Spec: [DEBUG-FEATURES-TESTS].
    */
   readonly hooks?: DotnetHooks;
+  /**
+   * A Debug-profile run: every test host WAITS for a debugger. An MTP module
+   * then runs without `--report-trx`, whose host controller would wait too.
+   * Spec: [TEST-MTP-DEBUG].
+   */
+  readonly debug?: boolean;
 }
 
 /**
@@ -89,7 +91,8 @@ export function buildFilterArgs(tests: readonly { readonly id: string }[]): stri
 
 /** Everything one batched `dotnet test` invocation needs. */
 export interface RunInvocation {
-  readonly tests: readonly vscode.TestItem[];
+  /** The ids the run filters on — empty means "run everything". */
+  readonly filterIds: readonly string[];
   readonly cwd: string;
   readonly token: vscode.CancellationToken;
   readonly coverage: boolean;
@@ -140,7 +143,13 @@ function freshTempDir(): string {
 }
 
 /**
- * The invocation, plus a single recovery attempt.
+ * The invocation, plus a single recovery attempt per batch.
+ *
+ * A selection whose filter would exceed the Windows command-line ceiling is
+ * split into batches (see `filterBatches`) — 816 selected tests used to reach
+ * `spawn` as ONE ~73 000-character argument and die with `spawn ENAMETOOLONG`
+ * before `dotnet` ever ran. Batches run sequentially and merge, so ⏹ and the
+ * TRX collection both keep their per-invocation meaning.
  *
  * A test adapter can REJECT the `--filter` expression rather than merely
  * matching nothing: the NUnit adapter's own filter parser refuses any
@@ -148,7 +157,7 @@ function freshTempDir(): string {
  * test (`Unexpected Word 'on' at position 43 in selection expression`). The run
  * then reports no result for a test that is perfectly runnable, and the Testing
  * view shows a phantom failure. TRX records that refusal as a run-level
- * `RunInfo` with `outcome="Error"`, so when it happens the selection is re-run
+ * `RunInfo` with `outcome="Error"`, so when it happens the batch is re-run
  * WITHOUT a filter and the per-test outcomes are picked out of the report by
  * name — slower, but correct, and only ever on the adapter's say-so.
  */
@@ -158,10 +167,42 @@ async function runInto(
   resultsDirectory: string,
   options: TestRunOptions,
 ): Promise<TestRunOutcome> {
+  // [] means "run everything" — a single unfiltered invocation, as before.
+  const batches = testIds.length === 0 ? [[]] : filterBatches(testIds);
+  let merged: TestRunOutcome | undefined;
+  for (const batch of batches) {
+    // ⏹ between batches: stop starting new invocations; what already ran is a
+    // truncated account the caller drops (see `cancelled` re-checks upstream).
+    if (options.signal?.aborted === true) break;
+    const one = await runBatch(batch, cwd, resultsDirectory, options);
+    merged = merged === undefined ? one : mergeRuns(merged, one);
+  }
+  return (
+    merged ?? {
+      results: new Map(),
+      summary: undefined,
+      failure:
+        options.signal?.aborted === true ? 'Run cancelled before any batch started' : undefined,
+      runInfos: [],
+      retriedUnfiltered: false,
+      durationMs: 0,
+      output: '',
+    }
+  );
+}
+
+/** One filter batch: the invocation, plus its unfiltered recovery attempt. */
+async function runBatch(
+  testIds: readonly string[],
+  cwd: string,
+  resultsDirectory: string,
+  options: TestRunOptions,
+): Promise<TestRunOutcome> {
   const filtered = await invoke(testIds, cwd, resultsDirectory, options);
-  // A cancelled run gets no recovery attempt: the user asked for the tests to
-  // STOP, and an unfiltered retry would start every one of them over again.
-  if (options.signal?.aborted === true) return filtered;
+  // A stopped debug host reports a run error, not a rejected filter. Retrying
+  // would start another waiting host after Stop. Debug and cancelled runs get
+  // no recovery attempt ([DEBUG-FEATURES-TESTS]), as on the MTP path.
+  if (options.debug === true || options.signal?.aborted === true) return filtered;
   if (!needsUnfilteredRetry(filtered, testIds)) return filtered;
   const unfiltered = await invoke([], cwd, resultsDirectory, options);
   return mergeRuns(filtered, unfiltered);
@@ -256,79 +297,4 @@ function runFailure(
   if (killed) return `dotnet test was killed (timeout or signal): ${errorMessage ?? 'no detail'}`;
   if (!failed || resultCount > 0) return undefined;
   return parseFailureMessage(output) ?? errorMessage ?? 'dotnet test failed';
-}
-
-/** Every `.trx` this run created, merged: results keyed by FQN, plus run info. */
-function collectReport(
-  dir: string,
-  before: ReadonlySet<string>,
-): { results: Map<string, TrxTestResult>; runInfos: TrxRunInfo[] } {
-  const results = new Map<string, TrxTestResult>();
-  const runInfos: TrxRunInfo[] = [];
-  for (const file of trxFiles(dir)) {
-    if (before.has(file)) continue;
-    const report = readTrx(file);
-    runInfos.push(...report.runInfos);
-    for (const result of report.results) {
-      const existing = results.get(result.fullyQualifiedName);
-      results.set(
-        result.fullyQualifiedName,
-        existing === undefined ? result : worse(existing, result),
-      );
-    }
-  }
-  return { results, runInfos };
-}
-
-/** Severity order, so a data-driven test is judged by its WORST row. */
-const OUTCOME_SEVERITY: Record<TestOutcome, number> = {
-  passed: 0,
-  skipped: 1,
-  notRun: 2,
-  failed: 3,
-};
-
-/**
- * Merge two results reported under the SAME fully-qualified name.
- *
- * A theory or `[TestCase]` with several rows writes one TRX entry PER ROW, all
- * carrying the same FQN. Keeping the last one seen would report a green tree for
- * a theory whose second row failed, purely because of the order VSTest happened
- * to write them. The worst outcome wins and the durations add up.
- */
-function worse(left: TrxTestResult, right: TrxTestResult): TrxTestResult {
-  const durationMs = sumDurations(left.durationMs, right.durationMs);
-  const dominant = OUTCOME_SEVERITY[right.outcome] > OUTCOME_SEVERITY[left.outcome] ? right : left;
-  return { ...dominant, durationMs };
-}
-
-/** Add two optional durations, keeping `undefined` only when both are absent. */
-function sumDurations(left: number | undefined, right: number | undefined): number | undefined {
-  if (left === undefined) return right;
-  if (right === undefined) return left;
-  return left + right;
-}
-
-/** Absolute paths of the `.trx` reports directly inside `dir`. */
-function trxFiles(dir: string): string[] {
-  try {
-    return fs
-      .readdirSync(dir)
-      .filter((entry) => entry.toLowerCase().endsWith('.trx'))
-      .map((entry) => path.join(dir, entry));
-  } catch {
-    return [];
-  }
-}
-
-/** Parse one TRX file, tolerating a truncated or unreadable report. */
-function readTrx(file: string): {
-  results: readonly TrxTestResult[];
-  runInfos: readonly TrxRunInfo[];
-} {
-  try {
-    return parseTrxReport(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return { results: [], runInfos: [] };
-  }
 }

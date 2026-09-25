@@ -179,13 +179,19 @@ impl SidecarManager {
         Ok(())
     }
 
-    /// Record a spawn-time failure: grow the shared backoff (as crashes do) and
-    /// arm the retry gate so the next respawn waits out the delay (#152).
-    async fn record_spawn_failure(&self) {
+    /// Double the shared backoff, capped at `MAX_BACKOFF`, and return the delay
+    /// it held before: the one this failure must wait out.
+    async fn grow_backoff(&self) -> Duration {
         let mut backoff = self.backoff.lock().await;
         let delay = *backoff;
         *backoff = (*backoff * 2).min(MAX_BACKOFF);
-        drop(backoff);
+        delay
+    }
+
+    /// Record a spawn-time failure: grow the shared backoff (as crashes do) and
+    /// arm the retry gate so the next respawn waits out the delay (#152).
+    async fn record_spawn_failure(&self) {
+        let delay = self.grow_backoff().await;
         *self.spawn_retry_after.lock().await = Some(Instant::now() + delay);
         warn!(
             sidecar = %self.name,
@@ -403,10 +409,7 @@ impl SidecarManager {
         }
 
         // Apply backoff.
-        let mut backoff = self.backoff.lock().await;
-        let delay = *backoff;
-        *backoff = (*backoff * 2).min(MAX_BACKOFF);
-        drop(backoff);
+        let delay = self.grow_backoff().await;
 
         warn!(
             sidecar = %self.name,
@@ -965,12 +968,17 @@ mod tests {
         assert!(installed_sidecar_exe(&subdir, &name).is_none());
     }
 
-    fn create_vsix_sidecar(subdir: &str, name: &str) -> Result<PathBuf> {
-        let exe_dir = std::env::current_exe()
+    /// The directory the test executable runs from, where a VSIX lays sidecars.
+    fn test_exe_dir() -> Result<PathBuf> {
+        Ok(std::env::current_exe()
             .context("current test executable")?
             .parent()
             .context("test executable directory")?
-            .to_path_buf();
+            .to_path_buf())
+    }
+
+    fn create_vsix_sidecar(subdir: &str, name: &str) -> Result<PathBuf> {
+        let exe_dir = test_exe_dir()?;
         let exe = exe_dir.join(subdir).join(sidecar_exe_name(name));
         let parent = exe.parent().context("sidecar executable parent")?;
         std::fs::create_dir_all(parent).context("create sidecar test directory")?;
@@ -979,11 +987,7 @@ mod tests {
     }
 
     fn remove_vsix_sidecar(subdir: &str, name: &str) -> Result<()> {
-        let exe_dir = std::env::current_exe()
-            .context("current test executable")?
-            .parent()
-            .context("test executable directory")?
-            .to_path_buf();
+        let exe_dir = test_exe_dir()?;
         let dir = exe_dir.join(subdir);
         let exe = dir.join(sidecar_exe_name(name));
         if exe.exists() {

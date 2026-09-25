@@ -118,7 +118,27 @@ export async function runDotnet(
   if (signal?.aborted === true) return terminated(EMPTY, CANCELLED);
   return await new Promise<DotnetRun>((resolve) => {
     const capture: Capture = { stdout: '', stderr: '', reason: undefined };
-    const child = spawn(dotnetExecutable, [...args], spawnOptions(cwd, hooks?.env));
+    // `spawn` can THROW SYNCHRONOUSLY — most violently when the argument
+    // vector exceeds the Windows command-line ceiling, where it throws
+    // `spawn ENAMETOOLONG` before any 'error' event could fire. This function's
+    // contract is "never rejects", so the throw is settled as a failed run the
+    // caller can report, instead of blowing the run handler out of VS Code's
+    // Testing view with "An error occurred attempting to run tests".
+    let child: ChildProcess;
+    try {
+      child = spawn(dotnetExecutable, [...args], spawnOptions(cwd, hooks?.env));
+    } catch (spawnError: unknown) {
+      resolve({
+        ...EMPTY,
+        failed: true,
+        killed: false,
+        errorMessage:
+          spawnError instanceof Error
+            ? spawnError.message
+            : `dotnet failed to start: ${String(spawnError)}`,
+      });
+      return;
+    }
     absorbOutput(capture, child, hooks?.onOutput);
     const timer = setTimeout(() => {
       kill(capture, child, `timed out after ${String(timeoutMs)}ms`);
@@ -259,7 +279,7 @@ function terminateTree(child: ChildProcess): void {
     return;
   }
   if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true }).unref();
+    terminateWindowsTree(pid);
     return;
   }
   report(killGroup(pid, 'SIGTERM'), pid);
@@ -282,6 +302,35 @@ function killGroup(pid: number, signal: NodeJS.Signals): Result<void> {
 /** Log a failed kill; an already-reaped tree is the ordinary reason. */
 function report(outcome: Result<void>, pid: number): void {
   if (!outcome.ok) info(`Could not signal dotnet process group ${String(pid)}: ${outcome.error}`);
+}
+
+/**
+ * `taskkill /t /f` over the whole tree, REPORTING what it actually did.
+ *
+ * The POSIX branch reports every signal it fails to deliver. This one used to
+ * spawn `taskkill`, `unref` it, and discard both its exit code and its stderr —
+ * so a kill that never happened (access denied, a pid already gone, a tree
+ * re-parented out from under it) was indistinguishable in the log from one that
+ * worked. A testhost that survived then went on writing results for a run the
+ * user had already stopped, with nothing recorded to say why.
+ */
+function terminateWindowsTree(pid: number): void {
+  const child = spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+  child.on('error', (error: Error) => {
+    info(`taskkill could not run for pid ${String(pid)}: ${error.message}`);
+  });
+  child.on('exit', (code: number | null) => {
+    if (code === 0) return;
+    info(
+      `taskkill left tree ${String(pid)} alive (exit ${String(code)}): ${stderr.trim() || 'no detail'}`,
+    );
+  });
+  child.unref();
 }
 
 /** Shape a finished child into a {@link DotnetRun}. */

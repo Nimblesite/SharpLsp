@@ -39,7 +39,7 @@ The current Phase Four factory and resolver in [`debug.ts`](../../src/editors/vs
 
 Target `DapRouter` responsibilities:
 
-- **Adapter lifecycle**: spawn and monitor netcoredbg or the Debug Sidecar; restart crashes with exponential backoff
+- **Adapter lifecycle**: spawn and monitor netcoredbg or the Debug Sidecar; restart crashes with exponential backoff. A launched debuggee never outlives its adapter: when the adapter dies before ending it, the router ends the process that the adapter's DAP `process` event named with `startMethod: "launch"`. An attached process is never ended. A stop request is owed an end: once the editor sends `terminate` or `disconnect`, the adapter has `SHUTDOWN_DEADLINE_MS` (15s) to send `terminated` or exit. An adapter that answers the request and then does neither — netcoredbg wedges this way on the non-crash side of its terminate race — is treated exactly as a dead one: the child is signalled (SIGTERM, then SIGKILL if it lingers), the launched debuggee is ended — even when the stop was a `disconnect` that asked to keep it, because the invariant above is that a launched debuggee never outlives its adapter — the user is told on the debug console, and `terminated` is fired once so the session leaves the debug toolbar. The deadline is armed by the first stop request only, disarmed by `terminated`, by adapter death, or by a `restart`, `launch` or `attach` that retires the adapter it was owed by — a replaced adapter's death is ordered, not reported, so the debt must be cancelled where the new session begins — and it never fires for a session nobody asked to stop
 - **DAP proxy**: forward messages between the editor and active adapter
 - **Capability augmentation**: amend `initialize` responses for proxy-layer features
 - **Logpoint emulation**: translates DAP `setBreakpoints` logpoint requests into conditional breakpoints that evaluate + log + continue (Phase 4)
@@ -122,6 +122,7 @@ SharpLsp targets **DAP specification version 1.71.0**.
 | Remote attach via SSH tunnel | `attach` (remote) | P2 | SharpLsp manages SSH tunnel transparently |
 | Launch with environment variables | `launch` (env) | P1 | |
 | Launch with custom working directory | `launch` (cwd) | P1 | |
+| Restart the same configuration | `restart` | P1 | Emulated by respawning netcoredbg. The outgoing adapter is retired with `disconnect` (`restart: true`) before any signal, so a launched debuggee is terminated and an attached one only detached; a restart never leaves the previous run behind |
 | Launch browser for Blazor WASM | `launch` (browser) | P3 | Requires browser devtools bridge |
 | Hot Reload enabled launch | `launch` (hotReload: true) | P2 | See [DEBUG-FEATURES-HOT-RELOAD] |
 | Child process auto-attach | `launch` event | P2 | Phase 5: `ICorDebugManagedCallback::CreateProcess` |
@@ -377,10 +378,11 @@ The profile file belongs to the **resolved project**, not the workspace root. A 
 
 1. `console` MUST be declared in `contributes.debuggers[].configurationAttributes.launch.properties` with those three values and a default of `integratedTerminal`. A console application that reads from stdin is unusable under `internalConsole`.
 2. Every attribute the resolver writes MUST be declared in `configurationAttributes`. Writing `justMyCode` while leaving it undeclared makes `launch.json` IntelliSense flag a valid, extension-authored attribute as an error.
-3. The launch schema declared in the manifest MUST match this specification's schema: `program`, `args`, `cwd`, `env`, `stopAtEntry`, `console`, `hotReload`, `justMyCode`, `requireExactSource`, `symbolOptions`. The manifest's own `required` list MUST name only `program`.
-4. The attach schema MUST declare `processId` and `justMyCode`, and its own `required` list MUST name only `processId`. `processId` is a `["number", "string"]` union, not a number: attaching via `${command:pickProcess}` is the normal path and a number-only schema flags the picker's own substituted value as a schema error. `justMyCode` belongs on attach because the resolver writes `config.justMyCode ??= true` **before** it branches on the request kind, so an attach configuration receives it too — and rule 2 then requires the schema to declare it.
+3. The launch schema declared in the manifest MUST match this specification's schema: `program`, `args`, `cwd`, `env`, `stopAtEntry`, `console`, `hotReload`, `justMyCode`, `requireExactSource`, `symbolOptions`, `exceptionPolicy`. The manifest's own `required` list MUST name only `program`. `exceptionPolicy` carries optional shared configuration overrides defined by [CONFIG-EDITOR-BRIDGE]; its properties inherit TOML settings instead of declaring editor defaults.
+4. The attach schema MUST declare `processId`, `justMyCode`, and `exceptionPolicy`, and its own `required` list MUST name only `processId`. `processId` is a `["number", "string"]` union, not a number: attaching via `${command:pickProcess}` is the normal path and a number-only schema flags the picker's own substituted value as a schema error. `justMyCode` belongs on attach because the resolver writes `config.justMyCode ??= true` **before** it branches on the request kind, so an attach configuration receives it too — and rule 2 then requires the schema to declare it.
 5. **VS Code core injects its own attributes into every debugger contribution it loads, and does so into `properties` as well as `required`.** Core owns `name`, `type`, `request`, `preLaunchTask`, `postDebugTask`, `presentation`, `internalConsoleOptions`, `debugServer`, `suppressMultipleSessionWarning` and `serverReadyAction`; `serverReadyAction` is merged into `launch` only, the rest into both request kinds. The manifest MUST NOT re-declare any of them — core overwrites the declaration, so a hand-rolled copy only misdescribes the attribute in `launch.json` IntelliSense. Because the injection is invisible in the source tree but present on `extension.packageJSON`, a conformance check MUST read the manifest **from disk** to assert what this repository authors, and assert the merge separately. Comparing the loaded `properties` against the authored list alone is a false failure.
 6. The debug type MUST be a single value across the manifest, the constants module and this specification.
+7. Stop MUST cancel a terminal launch even while its `runInTerminal` response is pending. Retire the empty adapter, answer `terminate`/`disconnect`, and announce `terminated` exactly once. A late response MUST NOT start a fallback launch or attach a replacement adapter. If it positively identifies a launch-owned debuggee, end that process; never signal a Windows terminal shell or an unrelated attach target.
 
 ### Dynamic and initial configurations `[DEBUG-FEATURES-LAUNCH-DYNAMIC]`
 
@@ -526,6 +528,8 @@ netcoredbg reports physical `MoveNext` frames. `DapRouter` and the C# sidecar re
 
 If compiler-generated fields cannot be resolved, the response retains the physical stack unchanged.
 
+Phase Four performs steps 2–5 through netcoredbg itself ([`dap-async-chain.ts`](../../src/editors/vscode/src/dap-async-chain.ts)). `DapRouter` sets `Task.s_asyncDebuggingEnabled` at the entry stop, so every suspended builder box registers in `Task.s_currentActiveTasks`. The router then follows each box's `m_continuationObject` to the box that awaits it. Every hop (`Action._target`, `ContinuationWrapper._continuation`, `AwaitTaskContinuation.m_action`) is a field read by `evaluate`, never a `variables` expansion. netcoredbg runs an expanded object's property getters as func-evals inside the stopped debuggee, and a getter deadlocked on a runtime lock costs the 5 s evaluation timeout and the chain. A refused hop cuts the chain, and the router still stitches the physical stacks. Only a continuation that carries no box ends the chain.
+
 Phase Five reads continuation chains directly through `ICorDebugProcess::ReadMemory`, without a Roslyn compilation model.
 
 ### Variables and Inspection `[DEBUG-FEATURES-VARIABLES]`
@@ -571,6 +575,10 @@ For T3, the Debug Sidecar loads C#-sidecar `CSharpScriptCompilation` output into
 
 ### Exception Handling `[DEBUG-FEATURES-EXCEPTIONS]`
 
+Shared exception policy is resolved by the LSP from `sharplsp.toml`; see
+[CONFIG-DEBUG-EXCEPTIONS](CONFIGURATION-SPEC.md#exceptions-config-debug-exceptions)
+for break modes, excluded types and presentation at the user-code boundary.
+
 | Feature | Priority |
 |---|---|
 | Break on all CLR exceptions | P1 |
@@ -581,7 +589,7 @@ For T3, the Debug Sidecar loads C#-sidecar `CSharpScriptCompilation` output into
 | Inner exception chain traversal | P2 |
 | Exception conditions (break only if message matches) | P2 — Phase 5 |
 
-Configuration via `setExceptionBreakpoints` with `filterOptions` and `exceptionOptions` per the DAP 1.71.0 specification.
+Configuration via `setExceptionBreakpoints` with `filterOptions` and `exceptionOptions` per the DAP 1.71.0 specification. An unhandled exception always breaks, whatever the filters say: there is nothing after it to continue to.
 
 ### Hot Reload During Debug `[DEBUG-FEATURES-HOT-RELOAD]`
 
@@ -662,6 +670,13 @@ SharpLsp creates the SSH tunnel; DapRouter connects to its local forwarded socke
 | Expecto/FsCheck test debugging | DAP + `sharplsp/testDebug` | P1 (F# parity) |
 
 For test debugging, SharpLsp sets `VSTEST_HOST_DEBUG=1` and attaches to the waiting `testhost.exe`/`dotnet-testhost` child, not the parent `dotnet test` process.
+
+**Rules**
+
+1. The debugger MUST resume the `Debugger.Break()` a `VSTEST_HOST_DEBUG` test host issues the moment it observes an attach, so the first stop the user sees is their own breakpoint rather than VSTest's wait loop.
+2. The Debug gesture MUST NOT report the attach settled until the session is **armed**: `configurationDone` has been ANSWERED by the adapter and every breakpoint it accepted has bound. `startDebugging` resolving means the session EXISTS — breakpoints are still in flight — and even the `configurationDone` REQUEST precedes the adapter finishing the attach. A waiting test host has not loaded the test assembly when the attach lands, so every breakpoint in the user's own test starts out `verified: false` and binds later by a `breakpoint` event ([DEBUG-FEATURES-BREAKPOINTS-VERIFY]). Reporting "attached" before that is the Debug press that ends in silence.
+3. A run with NO breakpoints armed is armed as soon as `configurationDone` is answered; there is nothing to bind, and the run must still proceed to completion.
+4. Stopping a Test Explorer debug session MUST terminate the test host SharpLsp started, so its runner and output terminal can finish. Neither runner may retry a debug invocation unfiltered: a stopped host is not a rejected filter, and retrying would start another waiting host after Stop. This owned-host attach is distinct from attaching to an existing user process: stopping an ordinary attach MUST only detach, leaving that process alive.
 
 ### Diagnostic Tools Integration `[DEBUG-FEATURES-DIAGNOSTICS]`
 

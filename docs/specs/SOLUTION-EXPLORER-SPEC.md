@@ -43,6 +43,11 @@ Editor URIs and project models can name one file differently: for example, Windo
 { "solution": "/path/to/Solution.slnx" }
 ```
 
+`solution` may also name a single `.csproj`/`.fsproj`, which stands for itself, or a folder,
+which stands for every C# and F# project under it (build output skipped, in path order). Both
+answer with no `solutionFolders`. This is what a workspace without a solution discovers its tests
+from ([TEST-GOTO-SOURCE]).
+
 **Response:**
 ```json
 {
@@ -68,6 +73,7 @@ Editor URIs and project models can name one file differently: for example, Windo
               "detail": null,
               "access": null,
               "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 10, "character": 1 } },
+              "selectionRange": { "start": { "line": 0, "character": 10 }, "end": { "line": 0, "character": 21 } },
               "children": [
                 {
                   "name": "MyClass",
@@ -86,6 +92,13 @@ Editor URIs and project models can name one file differently: for example, Windo
   ]
 }
 ```
+
+`range` spans the whole declaration, attributes included. `selectionRange` is the declared name
+alone: the C# tree-sitter name node, or the F# identifier FCS reports. An F# namespace has kind
+`Namespace` and a module `Module`, since they compile differently; F# lists each module and type as
+its own top-level entry, named relative to the file's root namespace or module (`Inner.Deeper`). A reveal lands on
+`selectionRange`, so an attributed member opens on its name, not on its `[Fact]` line
+([TEST-GOTO-SOURCE]).
 
 ### Symbol Kinds `[SE-SYMBOL-KINDS]`
 
@@ -370,6 +383,20 @@ Solution and project nodes expose **Build** and **Rebuild**.
 - On project: runs `dotnet build <project.csproj>` with configured extra args
 - Output appears in VS Code terminal
 - Progress notification shown during build
+
+### Buildable Fixture Solutions `[SE-ACTIONS-BUILD-FIXTURES]`
+
+Every solution offered by the checked-in VS Code fixture workspace MUST build all
+three declared projects in Debug and Release. `.sln` and `.slnx` must produce the
+same F# and C# assemblies from a copy without `bin` or `obj`; a zero exit code
+without those assemblies is not a successful build. The `.sln` MUST declare both
+solution configurations and each project's active/build mapping.
+
+These projects are semantic-test libraries, not .NET test projects. An empty test
+listing for these libraries is correct; their names do not imply test-framework
+references. Actual Test Explorer discovery is covered by [TEST-DISCOVERY-FQN] and
+[TEST-MTP-DISCOVERY]. `fixture-solutions.test.ts` protects the build contract in
+both platform workspace chunks. See [the plan](../plans/SOLUTION-FIXTURES-PLAN.md).
 
 ### Run and Debug `[SE-ACTIONS-RUN-DEBUG]`
 

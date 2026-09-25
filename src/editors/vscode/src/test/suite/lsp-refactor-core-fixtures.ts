@@ -102,8 +102,14 @@ export const IF_OPTIONS = [
   "Convert to 'switch' expression",
 ] as const;
 
+/**
+ * Roslyn nests the three introduce-parameter variants under one container and
+ * titles each child as a CONTINUATION of it. Flattened for the lightbulb, a
+ * child keeps the container's words — "and update call sites directly" alone
+ * is not a title a user could act on, and not one the server offers.
+ */
 export const PARAMETER_OPTIONS = [
-  'and update call sites directly',
-  'into extracted method to invoke at call sites',
-  'into new overload',
+  "Introduce parameter for 'input * 2' and update call sites directly",
+  "Introduce parameter for 'input * 2' into extracted method to invoke at call sites",
+  "Introduce parameter for 'input * 2' into new overload",
 ] as const;

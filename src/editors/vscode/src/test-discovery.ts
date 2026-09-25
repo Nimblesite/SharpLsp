@@ -11,10 +11,11 @@
  *
  * So the listing pass is used only to BUILD the projects and to learn which test
  * assemblies they produced; the names themselves come from
- * `dotnet vstest ... --ListFullyQualifiedTests`, which writes
- * `TestCase.FullyQualifiedName` verbatim — identical in shape for xUnit, NUnit
- * and MSTest, in both C# and F#, including idiomatic F# backtick names whose FQN
- * contains SPACES (e.g. `Ns.Module.adds two numbers`).
+ * `dotnet vstest ... --ListFullyQualifiedTests`, which reports
+ * `TestCase.FullyQualifiedName` — identical in shape for xUnit, NUnit and MSTest,
+ * in both C# and F#, including idiomatic F# backtick names whose FQN contains
+ * SPACES (e.g. `Ns.Module.adds two numbers`). Reading that listing back into ids
+ * — including stripping the unique ID some adapters append — is `test-names.ts`.
  *
  * Nothing here throws: a listing that could not be produced comes back as an
  * empty name list plus warnings, so a discovery sweep can decide whether to
@@ -27,26 +28,21 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
+import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
+import { parseListingDiagnostics, parseTestList } from './test-listing.js';
+import { HEX_DIGITS, parseFullyQualifiedTestList } from './test-names.js';
+import {
+  mergeMultiTargeted,
+  type TestAssemblyListing,
+  type TestListing,
+} from './test-listing-model.js';
+import { listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
+import { usesMtpRunner } from './test-mtp.js';
 
-/** Lower-cased prefixes of VSTest/MSBuild output lines that are never tests. */
-const NOISE_PREFIXES = [
-  'the following',
-  'test run for',
-  'no test',
-  'starting test',
-  'a total of',
-  'passed!',
-  'failed!',
-  'skipped!',
-  'microsoft',
-  'copyright',
-  'vstest',
-  'determining',
-  'restored',
-  'restore complete',
-  'build succeeded',
-  'build started',
-];
+export { parseFullyQualifiedTestList, withoutAdapterUniqueId } from './test-names.js';
+export { isDiscoveredTestLine, parseTestList } from './test-listing.js';
+export { mergeMultiTargeted } from './test-listing-model.js';
+export type { TestAssemblyListing, TestListing } from './test-listing-model.js';
 
 /** VSTest prints one of these per test assembly it was handed. */
 const ASSEMBLY_BANNER = 'Test run for ';
@@ -60,79 +56,13 @@ const ASSEMBLY_BANNER = 'Test run for ';
  */
 const VSTEST_LISTING_OUTPUT = '-p:VsTestUseMSBuildOutput=false';
 
-/** Byte-order mark VSTest may prepend to the fully-qualified test listing. */
-const BOM = '﻿';
-
 /**
  * Ceiling on the assembly arguments handed to a single `dotnet vstest`.
- * Windows caps a process command line at 32 767 characters, and a solution with
- * many test projects — each contributing a long `bin/Debug/netX/Name.dll` path —
- * reaches that, at which point the spawn fails outright instead of enumerating.
+ * A solution with many test projects — each contributing a long
+ * `bin/Debug/netX/Name.dll` path — reaches the Windows command-line limit, at
+ * which point the spawn fails outright instead of enumerating.
  */
-const MAX_ASSEMBLY_ARG_CHARS = 24_000;
-
-/** The outcome of enumerating one target. Never an exception. */
-export interface TestListing {
-  /** Fully-qualified names, in discovery order, de-duplicated. */
-  readonly names: readonly string[];
-  /** True when the enumeration ran to completion (so an empty list is real). */
-  readonly ok: boolean;
-  /** Diagnostics worth writing to the extension log. */
-  readonly warnings: readonly string[];
-}
-
-/** Punctuation a display name never contains but a diagnostic or stack frame does. */
-const NON_NAME_CHARACTERS = ['\\', '/', ':', '(', ')', ',', '"', "'", '<', '>', '='];
-
-/** A managed stack frame starts with this, and is otherwise dotted-identifier shaped. */
-const STACK_FRAME_PREFIX = 'at ';
-
-/**
- * True when `line` is a discovered test's DISPLAY name. Display names are dotted
- * identifiers (F# allows embedded spaces) and never contain path, scope or
- * argument punctuation, so path lines, the `Proj -> out.dll` mapping, version
- * banners, the summary — and, critically, managed STACK FRAMES like
- * `at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, …)` —
- * are all excluded. A stack frame slipping through would make a crashed
- * `dotnet test` look like a successful enumeration to `salvageable`. Used only
- * by the legacy fallback listing.
- */
-export function isDiscoveredTestLine(line: string): boolean {
-  if (!line.includes('.')) return false;
-  if (NON_NAME_CHARACTERS.some((character) => line.includes(character))) return false;
-  if (line.includes(' -> ')) return false;
-  const lower = line.toLowerCase();
-  if (lower.startsWith(STACK_FRAME_PREFIX)) return false;
-  return !NOISE_PREFIXES.some((prefix) => lower.startsWith(prefix));
-}
-
-/** Parse `dotnet test --list-tests` output into a de-duplicated list of names. */
-export function parseTestList(output: string): string[] {
-  return dedupeLines(output, isDiscoveredTestLine);
-}
-
-/**
- * Parse the file `--ListTestsTargetPath` wrote: one `TestCase.FullyQualifiedName`
- * per line, verbatim. Names may contain spaces, so no shape filter is applied —
- * only blank lines and a leading BOM are dropped.
- */
-export function parseFullyQualifiedTestList(content: string): string[] {
-  const body = content.startsWith(BOM) ? content.slice(BOM.length) : content;
-  return dedupeLines(body, () => true);
-}
-
-/** Trim, drop blanks, keep `accept`ed lines, preserve order, de-duplicate. */
-function dedupeLines(text: string, accept: (line: string) => boolean): string[] {
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (line.length === 0 || seen.has(line) || !accept(line)) continue;
-    seen.add(line);
-    lines.push(line);
-  }
-  return lines;
-}
+const MAX_ASSEMBLY_ARG_CHARS = MAX_ARG_CHARS;
 
 /**
  * Extract the assembly path from a `Test run for <path> (<framework>)` banner.
@@ -198,8 +128,6 @@ function isHexPair(candidate: string): boolean {
   return HEX_DIGITS.has(candidate[0] ?? '') && HEX_DIGITS.has(candidate[1] ?? '');
 }
 
-const HEX_DIGITS = new Set('0123456789abcdefABCDEF'.split(''));
-
 /** The on-disk spelling of an announced assembly, escaped or not. */
 export function resolveAnnouncedAssembly(announced: string): string | undefined {
   if (fs.existsSync(announced)) return announced;
@@ -223,21 +151,7 @@ export function batchAssemblies(
   assemblies: readonly string[],
   maxChars: number = MAX_ASSEMBLY_ARG_CHARS,
 ): string[][] {
-  const batches: string[][] = [];
-  let current: string[] = [];
-  let width = 0;
-  for (const assembly of assemblies) {
-    const cost = assembly.length + 3;
-    if (current.length > 0 && width + cost > maxChars) {
-      batches.push(current);
-      current = [];
-      width = 0;
-    }
-    current.push(assembly);
-    width += cost;
-  }
-  if (current.length > 0) batches.push(current);
-  return batches;
+  return batchByWidth(assemblies, (assembly) => assembly.length + 3, maxChars);
 }
 
 /**
@@ -250,9 +164,51 @@ export async function listTests(
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<TestListing> {
   const cwd = targetCwd(target);
-  if (cwd === undefined) {
-    return { names: [], ok: false, warnings: [`Discovery target does not exist: ${target}`] };
-  }
+  if (cwd === undefined) return missingTarget(target);
+  // [TEST-MTP-DETECT]: a `global.json` opt-in makes the whole target MTP, and
+  // every VSTest command below would fail against it — `--nologo` alone exits
+  // with code 5 and lists nothing. Go straight to the runner that can answer.
+  if (usesMtpRunner(cwd)) return await listMtpTests(target, cwd, timeoutMs);
+  const vstest = await listWithVsTest(target, cwd, timeoutMs);
+  if (vstest.byAssembly.length > 0) return vstest;
+  return await withMtpProbe(vstest, target, cwd, timeoutMs);
+}
+
+/** A target that is not on disk: nothing to enumerate, and the reason why. */
+function missingTarget(target: string): TestListing {
+  return {
+    names: [],
+    ok: false,
+    warnings: [`Discovery target does not exist: ${target}`],
+    byAssembly: [],
+  };
+}
+
+/**
+ * VSTest attributed no assembly: either a genuinely empty solution, or an MTP
+ * project with no opt-in — which MTP v2 on the .NET 10 SDK makes ordinary,
+ * because it removed the VSTest shim. Ask MSBuild before settling for the
+ * display-name fallback, which cannot run anything it lists. The probe builds
+ * nothing unless MSBuild names an MTP project: the VSTest passes have already
+ * restored the target, and a solution with no MTP project must not pay twice.
+ */
+async function withMtpProbe(
+  vstest: TestListing,
+  target: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<TestListing> {
+  const mtp = await probeMtpTests(target, cwd, timeoutMs);
+  const warnings = [...vstest.warnings, ...mtp.warnings];
+  return mtp.names.length === 0 ? { ...vstest, warnings } : { ...mtp, warnings };
+}
+
+/** The two VSTest passes: build and announce, then ask for the real names. */
+async function listWithVsTest(
+  target: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<TestListing> {
   const positional = cwd === target ? [] : [target];
   const args = [
     'test',
@@ -266,7 +222,7 @@ export async function listTests(
   const run = await runDotnet(args, cwd, timeoutMs);
   const output = usableStdout(run);
   if (output === undefined) {
-    return { names: [], ok: false, warnings: [listFailure(run)] };
+    return { names: [], ok: false, warnings: [listFailure(run)], byAssembly: [] };
   }
   return await namesFrom(output, cwd, timeoutMs);
 }
@@ -317,48 +273,61 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
   const missing = announced.filter((one) => resolveAnnouncedAssembly(one) === undefined);
   const warnings = missing.map((assembly) => `Announced test assembly is missing: ${assembly}`);
 
-  const fqn = assemblies.length === 0 ? emptyFqns() : await listFqns(assemblies, cwd, timeoutMs);
-  warnings.push(...fqn.warnings);
-  if (fqn.names.length > 0) return { names: fqn.names, ok: true, warnings };
+  if (assemblies.length > 0) {
+    // One listing invocation PER assembly: the names a multi-assembly
+    // `--ListFullyQualifiedTests` writes are combined with no attribution, and
+    // attribution is exactly what the tree's Assembly level needs. A single
+    // assembly path is far below the command-line ceiling on its own.
+    const byAssembly: TestAssemblyListing[] = [];
+    const all: string[] = [];
+    for (const assembly of assemblies) {
+      const one = await listFqnBatch([assembly], cwd, timeoutMs);
+      warnings.push(...one.warnings);
+      all.push(...one.names);
+      byAssembly.push({
+        name: path.basename(assembly, path.extname(assembly)),
+        path: assembly,
+        names: one.names,
+      });
+    }
+    const names = [...new Set(all)];
+    if (names.length > 0) {
+      return { names, ok: true, warnings, byAssembly: mergeMultiTargeted(byAssembly) };
+    }
+  }
 
   // Fallback: no assembly reported a test case (a Microsoft.Testing.Platform
   // project VSTest cannot load, or a genuinely empty solution). The DisplayName
-  // listing is strictly weaker but never worse than returning nothing.
+  // listing is strictly weaker — it cannot attribute names to assemblies, so
+  // the tree falls back to flat rows — but never worse than returning nothing.
   //
   // `ok` says whether an EMPTY result can be trusted, because that is what
   // decides whether the caller blanks the Testing view. An enumeration that
   // announced assemblies and then produced nothing at all did not run to
   // completion, whatever the exit code claimed.
   const fallback = parseTestList(output);
-  const ok = fallback.length > 0 || (assemblies.length === 0 && warnings.length === 0);
-  return { names: fallback, ok, warnings };
+  if (fallback.length > 0) return { names: fallback, ok: true, warnings, byAssembly: [] };
+
+  // Nothing at all: no assembly, no name. A target `dotnet` REFUSED and still
+  // exited 0 lands here, and its diagnostic is the whole answer — the one thing
+  // that separates it from a solution that really holds no test
+  // ([TEST-MTP-MODULES]). Consulted only here, so a build warning over a
+  // solution that did enumerate is never mistaken for a failure.
+  const refusals = parseListingDiagnostics(output);
+  const ok = assemblies.length === 0 && warnings.length === 0 && refusals.length === 0;
+  return { names: [], ok, warnings: [...warnings, ...refusals], byAssembly: [] };
 }
 
-/** An FQN pass that was never attempted. */
-function emptyFqns(): { names: string[]; warnings: string[] } {
-  return { names: [], warnings: [] };
-}
+// Batched multi-assembly listing is intentionally no longer used by discovery:
+// per-assembly invocations are what attribute names to assemblies
+// (`namesFrom`). `batchAssemblies` stays exported — it documents and tests the
+// command-line ceiling that every argument vector built here must respect.
 
 /**
  * Ask VSTest for `TestCase.FullyQualifiedName` on the built assemblies. VSTest
  * writes them to `--ListTestsTargetPath` rather than stdout, so the file is the
  * source of truth: a non-zero exit with a populated file still counts.
  */
-async function listFqns(
-  assemblies: readonly string[],
-  cwd: string,
-  timeoutMs: number,
-): Promise<{ names: string[]; warnings: string[] }> {
-  const names: string[] = [];
-  const warnings: string[] = [];
-  for (const batch of batchAssemblies(assemblies)) {
-    const batchResult = await listFqnBatch(batch, cwd, timeoutMs);
-    names.push(...batchResult.names);
-    warnings.push(...batchResult.warnings);
-  }
-  return { names: [...new Set(names)], warnings };
-}
-
 /** One `dotnet vstest --ListFullyQualifiedTests` invocation. */
 async function listFqnBatch(
   assemblies: readonly string[],

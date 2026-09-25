@@ -11,6 +11,8 @@
  * Implements [TEST-FILTER-ESCAPE].
  */
 
+import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
+
 /** Characters VSTest's filter grammar reserves; each is escaped with a backslash. */
 const FILTER_METACHARACTERS = new Set(['\\', '(', ')', '&', '|', '=', '!', '~']);
 
@@ -37,4 +39,28 @@ export function filterClause(fullyQualifiedName: string): string {
 /** OR the per-test clauses together; `|` is the grammar's union operator. */
 export function filterExpression(fullyQualifiedNames: readonly string[]): string {
   return fullyQualifiedNames.map(filterClause).join('|');
+}
+
+/**
+ * Ceiling on the joined `--filter` expression handed to ONE `dotnet test`.
+ *
+ * Windows caps a process command line at 32 767 characters, and past it
+ * Node's `spawn` THROWS SYNCHRONOUSLY (issue: 816 discovered tests, ▶ on the
+ * root of the Testing view, `spawn ENAMETOOLONG` rejected the run handler).
+ */
+export const MAX_FILTER_ARG_CHARS = MAX_ARG_CHARS;
+
+/**
+ * Split fully-qualified names into batches whose joined filter expression
+ * stays under the Windows command-line ceiling.
+ *
+ * The cost of a name is its escaped clause plus the joining `|` — escaping can
+ * GROW the text (every `(` gains a backslash), so the clause is measured, not
+ * the raw name.
+ */
+export function filterBatches(
+  fullyQualifiedNames: readonly string[],
+  maxChars: number = MAX_FILTER_ARG_CHARS,
+): string[][] {
+  return batchByWidth(fullyQualifiedNames, (name) => filterClause(name).length + 1, maxChars);
 }

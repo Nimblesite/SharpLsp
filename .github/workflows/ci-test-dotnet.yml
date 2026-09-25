@@ -1,0 +1,83 @@
+# agent-pmo:0b21609
+---
+# PHASE 4 — TEST. The .NET sidecar leg.
+#
+# EVERY TEST RUNS EXACTLY ONCE. The Ubuntu job runs the whole sidecar solution.
+# The Windows job runs ONLY the classes whose behaviour is platform-dependent -
+# named-pipe connection setup and the real sidecar handshake over those pipes
+# ([DIST-CI-WIN-TRANSPORT]).
+#
+# It used to run the entire SharpLsp.Sidecar.Common.Tests project instead, which
+# re-executed about a dozen files of platform-agnostic assertions - XML doc
+# rendering, solution-file reading, metadata decompilation, log formatting - that
+# the Ubuntu job had already run. The filter lives in the root Makefile beside
+# the target, not in this YAML.
+name: CI / Test / .NET
+'on':
+  workflow_call: {}
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  test-dotnet:
+    name: Sidecars
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.303
+      - name: Download prebuilt sidecars
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-lsp-binaries
+          path: target
+      - name: Restore executable bit
+        # download-artifact does not restore the +x the publish produced, so
+        # the version probes would fail with "Permission denied".
+        shell: bash
+        run: chmod +x target/sidecar-csharp/SharpLsp.Sidecar.CSharp target/sidecar-fsharp/SharpLsp.Sidecar.FSharp
+      - name: Test .NET sidecars with coverage
+        env:
+          # PHASE 2 already published both sidecars; stage the downloaded
+          # artifacts instead of rebuilding them.
+          VSIX_PREBUILT: '1'
+        # PHASE 5 for this leg is the ratchet inside `_test-dotnet`. The suite is
+        # not sharded, so the gate has a complete tracefile in-job and needs no
+        # separate merge - unlike the Rust and VS Code legs (ci-coverage.yml).
+        run: make _test-dotnet
+      - name: Verify sidecar version flags
+        shell: bash
+        run: |-
+          set -euo pipefail
+          CS_VERSION="$(dotnet msbuild src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj -getProperty:Version -nologo)"
+          FS_VERSION="$(dotnet msbuild src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
+          target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
+          target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
+
+  test-dotnet-windows:
+    name: Named-Pipe Transport (Windows)
+    # Implements [DIST-CI-WIN-TRANSPORT]: the named-pipe arm of the sidecar IPC
+    # transport only executes on Windows. An ubuntu-only matrix never runs it,
+    # which is how GitHub #110 (sidecars exit before READY on Windows) shipped.
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.303
+      - name: Test the win32 named-pipe transport
+        # Only the platform-dependent classes. The full-solution `dotnet restore`
+        # that used to precede this existed to cache the FCS nuspec for the
+        # dependency-consistency tests, which are platform-agnostic and now run
+        # only on Ubuntu.
+        shell: bash
+        run: make _test-dotnet-win-transport

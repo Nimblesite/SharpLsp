@@ -114,13 +114,9 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
       const layout = await buildConeLayout(tmpDir, lang);
       const solution = await createSolution(layout.solutionRoot, `${lang.tag}Cone`, []);
       const kind = path.extname(solution);
-      assert.strictEqual(fs.existsSync(solution), true, `${lang.tag}: the solution must exist`);
-      assert.strictEqual(
-        ['.sln', '.slnx'].includes(kind),
-        true,
-        `${lang.tag}: sln/slnx; got ${kind}`,
-      );
-      assert.strictEqual(fs.existsSync(layout.gitDir), true, `${lang.tag}: the .git marker exists`);
+      assert.ok(fs.existsSync(solution), `${lang.tag}: the solution must exist`);
+      assert.ok(['.sln', '.slnx'].includes(kind), `${lang.tag}: sln/slnx; got ${kind}`);
+      assert.ok(fs.existsSync(layout.gitDir), `${lang.tag}: the .git marker exists`);
       const decoyExt = path.extname(layout.decoy.projectFile);
       assert.strictEqual(
         decoyExt,
@@ -128,12 +124,8 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
         `${lang.tag}: the decoy is a ${lang.projectExt}`,
       );
       const decoyThere = fs.existsSync(layout.decoy.projectFile);
-      assert.strictEqual(decoyThere, true, `${lang.tag}: without the decoy nothing is proved`);
-      assert.strictEqual(
-        fs.existsSync(layout.note),
-        true,
-        `${lang.tag}: the projectless doc exists`,
-      );
+      assert.ok(decoyThere, `${lang.tag}: without the decoy nothing is proved`);
+      assert.ok(fs.existsSync(layout.note), `${lang.tag}: the projectless doc exists`);
       await assertConeStops(layout, q, `B21/B22/B23 ${lang.projectExt}`);
     }
   });
@@ -179,14 +171,14 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
     const picksBefore = stubs.log.quickPickItems.length;
     const warnsBefore = stubs.log.warningMessages.length;
     const blind = await invokeCommand(CMD_DEBUG_PROGRAM);
-    assert.strictEqual(blind.rejected, false, `B26: the command must not reject: ${blind.message}`);
+    assert.ok(!blind.rejected, `B26: the command must not reject: ${blind.message}`);
     await sessions.assertNoSession('B26: with no editor, no arbitrary project may be launched');
     await tasks.assertNoTask('B26: with no editor, no build task may run', 0);
     const picks = stubs.log.quickPickItems.length - picksBefore;
     const warns = stubs.log.warningMessages.length - warnsBefore;
     assert.strictEqual(picks + warns, 1, `B26: one prompt or one warning; ${picks} and ${warns}`);
-    assert.strictEqual(picks <= 1, true, `B26: never more than one prompt; got ${picks}`);
-    assert.strictEqual(warns <= 1, true, `B26: never more than one warning; got ${warns}`);
+    assert.ok(picks <= 1, `B26: never more than one prompt; got ${picks}`);
+    assert.ok(warns <= 1, `B26: never more than one warning; got ${warns}`);
     assert.deepStrictEqual(stubs.log.errorMessages, [], 'B26: no error dialog may be shown');
     const anySession = sessions.started.map((session) => `${session.type}:${session.name}`);
     assert.deepStrictEqual(anySession, [], 'B26: no session of ANY type started in this test');

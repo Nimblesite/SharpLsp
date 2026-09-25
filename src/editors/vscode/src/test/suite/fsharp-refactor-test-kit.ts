@@ -1,10 +1,12 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
+  activateRealSharpLsp,
   applyWorkspaceEdit,
   openFixtureDocument,
   preparedRenameAt,
   replaceDocumentText,
+  revertDocument,
   waitForCodeActions,
   waitForMatchingDiagnostics,
   waitForResolvedCodeActions,
@@ -13,7 +15,8 @@ import {
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
 import { pollUntilResult } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { diagnosticCode } from './document-anchors';
 
 // Assertion helpers shared by the real-LSP F# suites. [ANALYZERS-FSAC-PARITY]
 
@@ -31,6 +34,7 @@ export async function diagnosticWithCode(
   uri: vscode.Uri,
   code: string,
   range?: vscode.Range,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Diagnostic[]> {
   // `range` exists so the WAIT can be as strong as the caller's assertion.
   // Waiting only for the code and then asserting on the location is a race FCS
@@ -46,6 +50,57 @@ export async function diagnosticWithCode(
           diagnosticCode(diagnostic) === code &&
           (range === undefined || diagnostic.range.intersection(range) !== undefined),
       ),
+    timeoutMs,
+  );
+}
+
+/**
+ * Activate SharpLsp and pay FCS's cold start ONCE, on an overlay known to
+ * produce `code`. The first F# check of the process cracks the project and can
+ * outrun `LSP_RESPONSE_MS` on a CI agent; charged to a test body it fails the
+ * first scenario on timing alone ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ */
+export async function activateWarmFSharp(
+  relativePath: string,
+  source: string,
+  code: string,
+): Promise<void> {
+  await activateRealSharpLsp();
+  const fixture = await openOverlay(relativePath, source);
+  try {
+    await diagnosticWithCode(fixture.uri, code, undefined, SIDECAR_COLD_MS);
+  } finally {
+    await revertDocument(fixture.document);
+  }
+}
+
+/**
+ * Wait until `code` has cleared AND the document carries no error diagnostics.
+ *
+ * `diagnosticGone` is satisfied the instant ONE code disappears - which is not
+ * the same as the server having finished republishing for the content it was
+ * just handed. Every generation and conversion spec overlays the SAME file
+ * (`fsharp/DiagnosticsTarget.fs`), so a caller that then asserts the document is
+ * error-free can read a STALE error belonging to the PREVIOUS overlay.
+ *
+ * That is what failed on Windows: the exhaustive-DU spec, whose source is a
+ * two-case union and a complete match, was charged with
+ * `FS0366 No implementation was given for 'abstract IShape.Area'` - a
+ * diagnostic for an interface its own source does not contain. Ubuntu
+ * republished fast enough to hide it.
+ *
+ * The named code is still required to clear, because it is often a WARNING
+ * (FS0025) that the error filter alone would not catch.
+ */
+export async function diagnosticsSettled(
+  uri: vscode.Uri,
+  code: string,
+): Promise<vscode.Diagnostic[]> {
+  return waitForMatchingDiagnostics(
+    uri,
+    (diagnostics) =>
+      diagnostics.every((diagnostic) => diagnosticCode(diagnostic) !== code) &&
+      diagnostics.every((diagnostic) => diagnostic.severity !== vscode.DiagnosticSeverity.Error),
     LSP_RESPONSE_MS,
   );
 }
@@ -88,6 +143,28 @@ export async function resolvedQuickFixes(
 export async function applyAction(action: vscode.CodeAction): Promise<WorkspaceEditSnapshot[]> {
   assert.ok(action.edit, `${action.title} must have an edit before application`);
   return applyWorkspaceEdit(action.edit);
+}
+
+/**
+ * Apply `action` to the unsaved overlay and prove the fix took: one file
+ * edited into exactly `expected`, still unsaved, `diagnostic` gone, and the
+ * fix no longer offered at `target`. [ANALYZERS-FSAC-PARITY]
+ */
+export async function assertFixApplied(
+  fixture: OpenFixture,
+  action: vscode.CodeAction,
+  expected: string,
+  diagnostic: string,
+  target: string,
+): Promise<void> {
+  const version = fixture.document.version;
+  const snapshots = await applyAction(action);
+  assert.strictEqual(snapshots.length, 1);
+  assert.ok(fixture.document.version > version);
+  assert.strictEqual(fixture.document.getText(), expected);
+  assert.ok(fixture.document.isDirty);
+  await diagnosticGone(fixture.uri, diagnostic);
+  assertNoAction(await quickFixes(fixture.uri, tokenRange(fixture.document, target)), action.title);
 }
 
 export async function undoAction(
@@ -231,20 +308,40 @@ export async function requestPrepareRename(
   return preparedRenameAt(uri, position);
 }
 
+// prepareRename at `position` answers exactly `expected` and `placeholder`. [RENAME-FSHARP-PREPARE]
+export async function assertPrepareRename(
+  uri: vscode.Uri,
+  expected: vscode.Range,
+  position: vscode.Position,
+  placeholder: string,
+): Promise<void> {
+  const prepare = await requestPrepareRename(uri, position);
+  assert.ok(prepare, `${placeholder} must support prepareRename`);
+  assert.strictEqual(prepare.placeholder, placeholder);
+  assert.strictEqual(prepare.range.start.line, expected.start.line);
+  assert.strictEqual(prepare.range.start.character, expected.start.character);
+  assert.strictEqual(prepare.range.end.line, expected.end.line);
+  assert.strictEqual(prepare.range.end.character, expected.end.character);
+}
+
+// Every caret offset inside the token prepares the whole token. [RENAME-FSHARP-PREPARE]
+export async function assertPrepareAcrossToken(
+  uri: vscode.Uri,
+  range: vscode.Range,
+  placeholder: string,
+): Promise<void> {
+  assert.ok(range.isSingleLine && !range.isEmpty);
+  for (let offset = 0; offset < range.end.character - range.start.character; offset += 1) {
+    await assertPrepareRename(uri, range, range.start.translate(0, offset), placeholder);
+  }
+}
+
 export function editCount(edit: vscode.WorkspaceEdit): number {
   return edit.entries().reduce((total, [, edits]) => total + edits.length, 0);
 }
 
 export function changedFileNames(edit: vscode.WorkspaceEdit): string[] {
   return edit.entries().map(([uri]) => uri.path.split('/').at(-1) ?? uri.path);
-}
-
-export function diagnosticCode(diagnostic: vscode.Diagnostic): string {
-  const code = diagnostic.code;
-  if (typeof code === 'object' && code !== null) {
-    return String(code.value);
-  }
-  return code === undefined ? '' : String(code);
 }
 
 export function countOccurrences(text: string, needle: string): number {

@@ -10,9 +10,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { info } from './log';
-import { findCoberturaFiles, parseCoberturaXml } from './test-coverage';
+import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
+import { ownedBy, type MtpRunPlan } from './test-listing-model';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
+import { singleLine } from './utils';
 
 /** Writes one result into the controller's status-lens cache. */
 export type CacheWriter = (testId: string, result: CachedTestResult) => void;
@@ -36,13 +38,23 @@ export interface CachedTestResult {
 /** Sub-directory of the solution folder where a coverage run drops artefacts. */
 export const COVERAGE_DIR = '.sharplsp-coverage';
 
-/** Translate a TRX result into the cache's shape. */
+/**
+ * Translate a TRX result into the cache's shape.
+ *
+ * The cached message is flattened onto ONE line, because the cache exists to
+ * feed the status LENS ([TEST-STATUS-LENS]) and a lens title is one line. The
+ * raw `TrxTestResult` is what the Testing view's failure pane is built from
+ * (see {@link reportOutcome}), so the expected/actual block keeps its layout
+ * exactly where there is room to render it.
+ */
 export function cachedFrom(result: TrxTestResult): CachedTestResult {
+  const failure = result.outcome === 'failed' ? 'Test failed' : undefined;
+  const message = result.message === undefined ? failure : singleLine(result.message);
   return {
     outcome: result.outcome,
     passed: result.outcome === 'passed',
     duration: result.durationMs,
-    message: result.message ?? (result.outcome === 'failed' ? 'Test failed' : undefined),
+    message,
   };
 }
 
@@ -70,6 +82,25 @@ export function reportOutcome(
     cache?.(test.id, cachedFrom(result));
     reportResult(run, test, result);
   }
+}
+
+/**
+ * Report a finished DEBUG run: nothing is cached, and a test no report covers
+ * BY DESIGN is left without a verdict. An MTP module is debugged without a TRX
+ * report ([TEST-MTP-DEBUG]), so its tests stay unmarked instead of painted
+ * "No result reported"; a run that FAILED still reports that on every test.
+ */
+export function reportDebugOutcome(
+  run: vscode.TestRun,
+  tests: readonly vscode.TestItem[],
+  outcome: ReportableOutcome,
+  mtp: MtpRunPlan | undefined,
+): void {
+  const unreported = (test: vscode.TestItem): boolean =>
+    mtp !== undefined && ownedBy(mtp, test.id) && !outcome.results.has(test.id);
+  const reportable =
+    outcome.failure === undefined ? tests.filter((test) => !unreported(test)) : tests;
+  reportOutcome(run, reportable, outcome, undefined);
 }
 
 /** A selected test the run never reported on: build failure or no match. */
@@ -133,15 +164,20 @@ export function freshCoverageDir(cwd: string): string {
   return dir;
 }
 
-/** Attach any Cobertura report the coverage run produced to the test run. */
+/**
+ * Attach any Cobertura report the coverage run produced to the test run.
+ *
+ * The reports are MERGED per file rather than attached one by one. Two test
+ * projects covering one library each report that library, and the per-line
+ * detail behind an entry is stashed by file URI — so attaching both entries
+ * left the last report parsed answering for both, and a function the other
+ * project executed came back uncovered ([TEST-COVERAGE]).
+ */
 export function addCoverage(run: vscode.TestRun, resultsDirectory: string): void {
   const reports = findCoberturaFiles(resultsDirectory);
-  let attached = 0;
-  for (const report of reports) {
-    for (const fileCoverage of parseCoberturaXml(report)) {
-      run.addCoverage(fileCoverage);
-      attached += 1;
-    }
+  const files = mergeCoberturaReports(reports);
+  for (const fileCoverage of files) {
+    run.addCoverage(fileCoverage);
   }
-  info(`Coverage loaded: ${String(attached)} files from ${String(reports.length)} report(s)`);
+  info(`Coverage loaded: ${String(files.length)} files from ${String(reports.length)} report(s)`);
 }

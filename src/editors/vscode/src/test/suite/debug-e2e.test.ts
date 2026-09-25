@@ -8,7 +8,7 @@ import {
   emptyF5Config,
   fakeFolder,
   focusDocument,
-  legacyF5Config,
+  bareF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
 import {
@@ -34,6 +34,18 @@ import {
   useHarness,
 } from './debug-e2e-kit';
 
+/** An IISExpress profile the adapter must skip, and one eligible `Project` profile. */
+const IIS_AND_WEB = {
+  profiles: {
+    IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
+    Web: {
+      commandName: 'Project',
+      environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
+      commandLineArgs: '--port 5000',
+    },
+  },
+};
+
 suite('Debug E2E — F5 with no launch.json', () => {
   const harness = useHarness('sharplsp-debug-noconfig-e2e-');
 
@@ -48,7 +60,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     //    where the assembly is. [DEBUG-FEATURES-LAUNCH-BUILD] rule 3.
     await buildProject(project);
     const built = path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
-    assert.strictEqual(fs.existsSync(built), true, `dotnet build must produce ${built}`);
+    assert.ok(fs.existsSync(built), `dotnet build must produce ${built}`);
 
     // 2. The user opens Program.cs, then presses F5. The shape VS Code really
     //    builds has type/request/name ABSENT, not empty. B01
@@ -60,7 +72,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     assertSynthesised(bare, 'bare {}');
     assertBuildTaskContributed(bare, 'bare {}');
     assertSamePath(bare.program, built, 'B01: F5 targets the assembly MSBuild actually produced');
-    assert.strictEqual(fs.existsSync(String(bare.program)), true, 'B01: which exists on disk');
+    assert.ok(fs.existsSync(String(bare.program)), 'B01: which exists on disk');
     assertSamePath(bare.cwd, project.dir, 'B01: cwd is the project dir, not the workspace root');
     assertNoProfileValues(bare, 'B01: no launchSettings.json exists');
     assert.strictEqual(bare.noDebug, undefined, 'B01: plain F5 never invents noDebug');
@@ -74,11 +86,11 @@ suite('Debug E2E — F5 with no launch.json', () => {
     assertSamePath(transported.program, built, 'B02: same target as the bare shape');
     assert.deepStrictEqual(transported, bare, 'B02: transport must not change what F5 gives');
 
-    // 4. The legacy empty-string shape stays accepted — the absence guard must
+    // 4. The empty-string shape stays accepted — the absence guard must
     //    not NARROW the input set the provider already handles. B03
-    const legacy = await resolveConfig(folder, legacyF5Config());
-    assertSynthesised(legacy, "{type:''}");
-    assert.deepStrictEqual(legacy, bare, 'B03: the absence guard must not narrow the input set');
+    const emptyType = await resolveConfig(folder, bareF5Config());
+    assertSynthesised(emptyType, "{type:''}");
+    assert.deepStrictEqual(emptyType, bare, 'B03: the absence guard must not narrow the input set');
 
     // 5. VS Code changed `type`, so it re-enters the chain with what the
     //    provider just produced. That pass must be a fixed point. B04
@@ -109,7 +121,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     const folder = fakeFolder(project.dir);
     await buildProject(project);
     const built = path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
-    assert.strictEqual(fs.existsSync(built), true, 'the premise: the project really built');
+    assert.ok(fs.existsSync(built), 'the premise: the project really built');
 
     // 1. No program at all — the resolver must find the project's own output.
     const detected = await resolveConfig(folder, emptyF5Config());
@@ -141,7 +153,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     //    this stage; refusing it belongs to the post-substitution pass, which is
     //    the only place that can see the final expanded path.
     const absent = path.join(project.dir, 'bin', 'Debug', TFM, 'NeverBuilt.dll');
-    assert.strictEqual(fs.existsSync(absent), false, 'the premise: that path is absent');
+    assert.ok(!fs.existsSync(absent), 'the premise: that path is absent');
     const kept = await resolveConfig(folder, {
       type: DEBUG_TYPE_ID,
       request: 'launch',
@@ -166,16 +178,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'ExplicitProfile'), 'ExplicitProfile');
     const folder = fakeFolder(project.dir);
-    writeLaunchSettings(project.dir, {
-      profiles: {
-        IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
-        Web: {
-          commandName: 'Project',
-          environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
-          commandLineArgs: '--port 5000',
-        },
-      },
-    });
+    writeLaunchSettings(project.dir, IIS_AND_WEB);
 
     // 1. The user's own program, plus the project's profile. Both must survive.
     const chosen = path.join(project.dir, 'bin', 'Debug', TFM, 'HandPicked.dll');
@@ -272,16 +275,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
     // 4. The user repairs the document. One `Project` profile is eligible; the
     //    IISExpress one is not. [DEBUG-FEATURES-LAUNCH-PROFILES] mapping table.
-    writeLaunchSettings(project.dir, {
-      profiles: {
-        IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
-        Web: {
-          commandName: 'Project',
-          environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
-          commandLineArgs: '--port 5000',
-        },
-      },
-    });
+    writeLaunchSettings(project.dir, IIS_AND_WEB);
     const launch = await resolveConfig(folder, {
       type: DEBUG_TYPE_ID,
       name: 'L',

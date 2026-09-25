@@ -8,7 +8,7 @@ import {
   revertDocument,
   workspaceFixturePath,
 } from './refactor-test-helpers';
-import { EXTENSION_ID, closeAllEditors, pollUntilResult } from './test-helpers';
+import { EXTENSION_ID, closeAllEditors, pollUntilResult, assertContainsNone } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 import {
   CLASS_ANCHORS,
@@ -21,17 +21,18 @@ import {
   assertLiveSentinels,
   assertOrderedSymbols,
   assertTreeChildren,
+  toRange,
 } from './sort-members-assertions';
 import type {
   ExplorerProvider,
   ExtensionApi,
-  LspRange,
   SavedSettings,
   SortOutcome,
   SortPolicy,
   SurfaceCase,
   TreeNode,
 } from './sort-members-types';
+import { nodeLabel, findNode } from './tree-node-kit';
 
 export type { SortOutcome, SortPolicy, SurfaceCase } from './sort-members-types';
 
@@ -147,23 +148,13 @@ function assertConfigured(policy: SortPolicy): void {
 async function refreshNode(name: string): Promise<TreeNode> {
   await provider.refresh();
   const node = await pollUntilResult(
-    async () => findNode(provider.getChildren(), name),
+    async () => findNode(provider.getChildren(), (node) => node.sortName === name),
     (candidate) => candidate !== undefined,
     LSP_RESPONSE_MS,
     1_000,
   );
   assert.ok(node, `the live explorer must expose ${name}`);
   return node;
-}
-
-function findNode(nodes: TreeNode[] | undefined, name: string): TreeNode | undefined {
-  if (nodes === undefined) return undefined;
-  for (const node of nodes) {
-    if (node.sortName === name) return node;
-    const child = findNode(node.children, name);
-    if (child !== undefined) return child;
-  }
-  return undefined;
 }
 
 function assertClassNodeContract(node: TreeNode, expected: readonly string[]): void {
@@ -184,19 +175,6 @@ function assertCommonNode(node: TreeNode, name: string): void {
   assert.strictEqual(
     vscode.Uri.parse(node.symbolUri).fsPath.toLowerCase(),
     document.uri.fsPath.toLowerCase(),
-  );
-}
-
-function nodeLabel(node: TreeNode): string {
-  return typeof node.label === 'string' ? node.label : (node.label?.label ?? '');
-}
-
-function toRange(range: LspRange): vscode.Range {
-  return new vscode.Range(
-    range.start.line,
-    range.start.character,
-    range.end.line,
-    range.end.character,
   );
 }
 
@@ -380,8 +358,7 @@ export async function installLiveBuffer(
   assert.notStrictEqual(liveText, originalText);
   assert.strictEqual(document.getText(), liveText);
   assert.ok(document.isDirty, 'the user-edited VFS buffer must be dirty');
-  assert.ok(!originalText.includes('LIVE-ZEBRA'));
-  assert.ok(!originalText.includes('_zeta = 99'));
+  assertContainsNone(originalText, ['LIVE-ZEBRA', '_zeta = 99'], 'originalText');
   assert.ok(document.getText().includes('Unsaved helper must travel'));
   await waitForTypeOrder(CLASS_NAME, initial);
   assertClassNodeContract(await refreshNode(CLASS_NAME), initial);

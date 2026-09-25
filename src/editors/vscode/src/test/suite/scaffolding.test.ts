@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { EXTENSION_ID, removeDirRecursive } from './test-helpers';
+import { EXTENSION_ID, removeDirRecursive, assertContainsAll } from './test-helpers';
 import {
   newSolutionArgs,
   newProjectArgs,
@@ -82,13 +82,10 @@ suite('Scaffolding (Create Solution / Project)', () => {
       const nls = readNls(nlsFile);
       const welcome = nls['viewWelcome.solutionExplorer.contents'];
       assert.ok(welcome, `${nlsFile} must define the welcome view contents`);
-      assert.ok(
-        welcome.includes('command:sharplsp.newSolution'),
-        `${nlsFile} welcome view must offer a New Solution button`,
-      );
-      assert.ok(
-        welcome.includes('command:sharplsp.newProject'),
-        `${nlsFile} welcome view must offer a New Project button`,
+      assertContainsAll(
+        welcome,
+        ['command:sharplsp.newSolution', 'command:sharplsp.newProject'],
+        'welcome',
       );
     });
   }
@@ -156,8 +153,7 @@ suite('Scaffolding (Create Solution / Project)', () => {
 
       // 4. The solution must now reference both projects.
       const slnText = fs.readFileSync(slnPath, 'utf-8');
-      assert.ok(slnText.includes('Api.csproj'), 'solution must reference the C# project');
-      assert.ok(slnText.includes('Core.fsproj'), 'solution must reference the F# project');
+      assertContainsAll(slnText, ['Api.csproj', 'Core.fsproj'], 'solution must reference the');
     } finally {
       removeDirRecursive(work);
     }

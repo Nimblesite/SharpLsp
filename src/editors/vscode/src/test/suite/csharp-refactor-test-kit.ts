@@ -3,7 +3,6 @@ import * as vscode from 'vscode';
 import {
   applyWorkspaceEdit,
   replaceDocumentText,
-  revertDocument,
   runEditorHistory,
   sendRealLspRequest,
   waitForCodeActions,
@@ -11,7 +10,9 @@ import {
   waitForResolvedCodeActions,
   type OpenFixture,
   type WorkspaceEditSnapshot,
+  restoreCommitted,
 } from './refactor-test-helpers';
+import { diagnosticCode, rangeOf, rangeAfterAction } from './document-anchors';
 
 export interface RawCodeAction {
   readonly title: string;
@@ -68,12 +69,6 @@ export interface ActionLifecycleCase {
   readonly caretOnly?: boolean;
 }
 
-export function codeOf(diagnostic: vscode.Diagnostic): string {
-  const code = diagnostic.code;
-  if (typeof code === 'object' && code !== null) return String(code.value);
-  return code === undefined ? '' : String(code);
-}
-
 function rawCodeOf(diagnostic: RawDiagnostic): string {
   const code = diagnostic.code;
   if (typeof code === 'object' && code !== null) return String(code.value ?? '');
@@ -85,47 +80,6 @@ function errorSignatures(diagnostics: readonly RawDiagnostic[]): string[] {
     .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error + 1)
     .map((diagnostic) => `${rawCodeOf(diagnostic)}\u001f${diagnostic.message}`)
     .sort();
-}
-
-function nthIndex(source: string, needle: string, occurrence: number): number {
-  let index = -1;
-  for (let count = 0; count <= occurrence; count += 1) {
-    index = source.indexOf(needle, index + 1);
-    if (index < 0) break;
-  }
-  assert.notStrictEqual(index, -1, `missing occurrence ${occurrence} of ${needle}`);
-  return index;
-}
-
-export function positionOf(
-  document: vscode.TextDocument,
-  snippet: string,
-  focus: string = snippet,
-  occurrence = 0,
-): vscode.Position {
-  const snippetIndex = nthIndex(document.getText(), snippet, occurrence);
-  const focusIndex = snippet.indexOf(focus);
-  assert.notStrictEqual(focusIndex, -1, `missing focus ${focus} in ${snippet}`);
-  return document.positionAt(snippetIndex + focusIndex);
-}
-
-export function rangeOf(
-  document: vscode.TextDocument,
-  snippet: string,
-  focus: string = snippet,
-  occurrence = 0,
-): vscode.Range {
-  const start = positionOf(document, snippet, focus, occurrence);
-  return new vscode.Range(start, start.translate(0, focus.length));
-}
-
-export function rangeAfterAction(
-  fixture: OpenFixture,
-  original: vscode.Range,
-  snippet?: string,
-  focus?: string,
-): vscode.Range {
-  return snippet ? rangeOf(fixture.document, snippet, focus ?? snippet) : original;
 }
 
 function toLspPosition(position: vscode.Position): {
@@ -266,9 +220,9 @@ async function assertRequiredDiagnostic(
 ): Promise<void> {
   if (actionCase.diagnosticCode === undefined) return;
   const diagnostics = await waitForMatchingDiagnostics(fixture.uri, (items) =>
-    items.some((item) => codeOf(item) === actionCase.diagnosticCode),
+    items.some((item) => diagnosticCode(item) === actionCase.diagnosticCode),
   );
-  const matches = diagnostics.filter((item) => codeOf(item) === actionCase.diagnosticCode);
+  const matches = diagnostics.filter((item) => diagnosticCode(item) === actionCase.diagnosticCode);
   assert.ok(matches.length >= 1, `missing ${actionCase.diagnosticCode}`);
   assert.ok(matches.every((item) => item.message.length > 0));
   assert.ok(matches.every((item) => !item.range.isEmpty));
@@ -484,12 +438,6 @@ async function prepareSource(
   const baseline = await captureErrorBaseline(fixture);
   await assertOutsideActionRange(fixture, actionCase);
   return baseline;
-}
-
-async function restoreCommitted(fixture: OpenFixture, committedText: string): Promise<void> {
-  await revertDocument(fixture.document);
-  assert.strictEqual(fixture.document.getText(), committedText);
-  assert.ok(!fixture.document.isDirty);
 }
 
 export async function exerciseCodeAction(

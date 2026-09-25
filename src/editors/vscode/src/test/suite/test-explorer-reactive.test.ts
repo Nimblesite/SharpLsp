@@ -22,16 +22,19 @@ import {
 } from './dotnet-project-kit';
 import { fixtureFor } from './test-explorer-fixtures';
 import {
+  assertDeclaredInside,
   activateTestExplorer,
-  collectItemIds,
+  collectLeafIds,
   discoverSolution,
   drainDiscovery,
   findItem,
   pollForIds,
   pollUntilDiscovered,
   snapshotItems,
+  teardownFixtureSolution,
+  assertLeavesAre,
 } from './test-explorer-kit';
-import { comparablePath, removeDirRecursive } from './test-helpers.js';
+import { comparablePath, removeDirRecursive, assertContainsAll } from './test-helpers.js';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
@@ -113,20 +116,29 @@ function assertTree(
   expected: readonly string[],
   why: string,
 ): string[] {
-  const ids = collectItemIds(ctl.items);
+  const ids = collectLeafIds(ctl.items);
   for (const name of expected) {
-    assert.strictEqual(ids.includes(name), true, `${why}: missing ${name}\ngot: ${ids.join(', ')}`);
+    assert.ok(ids.includes(name), `${why}: missing ${name}\ngot: ${ids.join(', ')}`);
   }
   assert.strictEqual(new Set(ids).size, ids.length, `${why}: duplicate ids: ${ids.join(', ')}`);
   assert.strictEqual(ids.length, expected.length, `${why}: wrong size: ${ids.join(', ')}`);
   assert.deepStrictEqual(sorted(ids), sorted(expected), `${why}: the set must match exactly`);
-  assert.strictEqual(
-    ctl.items.size,
-    expected.length,
-    `${why}: the root holds each test exactly once`,
-  );
+  // Every root is an assembly GROUP — a test never sits at the tree's root.
+  const roots: vscode.TestItem[] = [];
+  ctl.items.forEach((item) => roots.push(item));
+  assert.ok(roots.length > 0, `${why}: the tree must have roots`);
+  for (const root of roots) {
+    assert.ok(
+      root.children.size > 0,
+      `${why}: a root is an assembly group, never a bare test: ${root.label}`,
+    );
+    assert.ok(
+      !expected.includes(root.id),
+      `${why}: a root id is a group id, never an FQN: ${root.id}`,
+    );
+  }
   assert.deepStrictEqual(
-    collectItemIds(ctl.items),
+    collectLeafIds(ctl.items),
     ids,
     `${why}: two reads of a settled tree must agree`,
   );
@@ -136,18 +148,34 @@ function assertTree(
 function assertRows(controller: SharpLspTestController, solutionDir: string, why: string): void {
   const snapshots = snapshotItems(controller.items);
   assert.notStrictEqual(snapshots.length, 0, `${why}: there must be rows to assert on`);
-  for (const row of snapshots) {
-    assert.strictEqual(row.description, row.id, `${why}: ${row.id} must show its full FQN`);
-    assert.strictEqual(row.label, labelOf(row.id), `${why}: ${row.id} label is the leaf segment`);
-    assert.notStrictEqual(row.label, '', `${why}: ${row.id} must render a non-empty label`);
-    assert.strictEqual(row.uriPath !== undefined, true, `${why}: ${row.id} must carry a uri`);
-    // Anchored at the discovery TARGET — the loaded solution — not the project.
+  // Groups and tests have different row shapes — the hierarchy renders BOTH.
+  const groups = snapshots.filter((row) => row.childCount > 0);
+  const tests = snapshots.filter((row) => row.childCount === 0);
+  assert.ok(
+    groups.length > 0,
+    `${why}: the Assembly → Namespace → Class groups must render as rows`,
+  );
+  for (const row of groups) {
+    assert.strictEqual(
+      row.description,
+      undefined,
+      `${why}: a group row carries no FQN description: ${row.id}`,
+    );
+    assert.deepStrictEqual(row.tags, [], `${why}: a group row carries no tag: ${row.id}`);
     assert.strictEqual(
       comparablePath(row.uriPath ?? ''),
       comparablePath(solutionDir),
-      `${why}: ${row.id} anchored`,
+      `${why}: group row anchored: ${row.id}`,
     );
-    assert.strictEqual(row.childCount, 0, `${why}: discovery renders a flat list`);
+  }
+  for (const row of tests) {
+    assert.strictEqual(row.description, row.id, `${why}: ${row.id} must show its full FQN`);
+    assert.strictEqual(row.label, labelOf(row.id), `${why}: ${row.id} label is the leaf segment`);
+    assert.notStrictEqual(row.label, '', `${why}: ${row.id} must render a non-empty label`);
+    assert.ok(row.uriPath !== undefined, `${why}: ${row.id} must carry a uri`);
+    // Inside the discovery TARGET — the loaded solution — at its declaring file.
+    assertDeclaredInside(row.uriPath, solutionDir, `${why}: ${row.id}`);
+    assert.strictEqual(row.childCount, 0, `${why}: a TEST row is a leaf; groups carry children`);
     assert.deepStrictEqual(
       row.tags,
       [],
@@ -160,24 +188,12 @@ function assertRows(controller: SharpLspTestController, solutionDir: string, why
 function assertFqnShape(ids: readonly string[], why: string): void {
   for (const id of ids) {
     assert.strictEqual(id.trim(), id, `${why}: '${id}' carries stray whitespace`);
-    assert.strictEqual(
-      id.includes('.'),
-      true,
-      `${why}: '${id}' is not a dotted fully-qualified name`,
-    );
-    assert.strictEqual(
-      id.includes('('),
-      false,
-      `${why}: '${id}' — an xUnit theory FQN carries no row data`,
-    );
-    assert.strictEqual(
-      id.startsWith('Cs.'),
-      true,
-      `${why}: '${id}' is outside the fixture's namespaces`,
-    );
+    assert.ok(id.includes('.'), `${why}: '${id}' is not a dotted fully-qualified name`);
+    assert.ok(!id.includes('('), `${why}: '${id}' — an xUnit theory FQN carries no row data`);
+    assert.ok(id.startsWith('Cs.'), `${why}: '${id}' is outside the fixture's namespaces`);
   }
   const noise = ids.some((id) => id.includes('Test run for') || id.includes('Passed!'));
-  assert.strictEqual(noise, false, `${why}: VSTest banner chatter must never become a test item`);
+  assert.ok(!noise, `${why}: VSTest banner chatter must never become a test item`);
 }
 
 function assertLeaf(ctl: SharpLspTestController, id: string, why: string): vscode.TestItem {
@@ -187,7 +203,7 @@ function assertLeaf(ctl: SharpLspTestController, id: string, why: string): vscod
   assert.strictEqual(item.label, labelOf(id), `${why}: the label is the last dotted segment`);
   assert.strictEqual(item.description, id, `${why}: the description carries the whole FQN`);
   assert.strictEqual(item.children.size, 0, `${why}: discovery produces leaves, not a hierarchy`);
-  assert.strictEqual(item.canResolveChildren, false, `${why}: a leaf test resolves no children`);
+  assert.ok(!item.canResolveChildren, `${why}: a leaf test resolves no children`);
   assert.deepStrictEqual(
     item.tags.map((tag) => tag.id),
     [],
@@ -265,12 +281,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
 
   suiteTeardown(async function () {
     this.timeout(DOTNET_CLI_MS);
-    // Drain first: `dotnet test` pointed at a removed directory hangs forever.
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-    removeDirRecursive(root);
+    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('loading a solution repopulates the tree with no discover() call from this test', async function () {
@@ -283,11 +294,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       baseline.length,
       'the baseline itself carries no duplicates',
     );
-    assert.strictEqual(
-      baseline.includes(CS_MIXED_THEORY),
-      true,
-      'including the theory whose rows disagree',
-    );
+    assert.ok(baseline.includes(CS_MIXED_THEORY), 'including the theory whose rows disagree');
     const cached = api.testController.cachedResults.size;
     // From here the body touches ONLY the solution signal; the spy records who swept.
     const spy = spyOnDiscover(api.testController);
@@ -295,7 +302,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       api.testController.items.replace([]);
       api.explorerProvider.clear();
       assert.deepStrictEqual(
-        collectItemIds(api.testController.items),
+        collectLeafIds(api.testController.items),
         [],
         'empty before the reactive load',
       );
@@ -314,30 +321,26 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       assertLeaf(api.testController, CS.passing, 'reactive reload');
       assertLeaf(api.testController, CS_MIXED_THEORY, 'reactive reload');
       assert.strictEqual(
-        api.testController.items.get(CS.failing)?.id,
+        findItem(api.testController.items, CS.failing)?.id,
         CS.failing,
-        'the root resolves by FQN id',
+        'every FQN resolves to its leaf anywhere in the tree',
       );
       assert.strictEqual(
-        spy.stacks.length >= 1,
-        true,
-        'the subscription must have run at least one sweep',
+        api.testController.items.get(CS.failing),
+        undefined,
+        'a test never sits at the ROOT level — only assembly groups do',
       );
+      assert.ok(spy.stacks.length >= 1, 'the subscription must have run at least one sweep');
       assert.strictEqual(
         typeof spy.stacks[0],
         'string',
         "and the spy recorded that sweep's call site",
       );
-      assert.strictEqual(
+      assert.ok(
         spy.stacks.every(fromController),
-        true,
         `not the controller's own:\n${spy.stacks.join('\n')}`,
       );
-      assert.strictEqual(
-        spy.stacks.join('\n').includes(THIS_FILE),
-        false,
-        'no sweep was requested by this test',
-      );
+      assert.ok(!spy.stacks.join('\n').includes(THIS_FILE), 'no sweep was requested by this test');
       assertCacheUntouched(api.testController, cached, 'reactive reload');
     } finally {
       spy.restore();
@@ -381,11 +384,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
         false,
         "and that sweep is the controller's own",
       );
-      assert.strictEqual(
-        spy.stacks.every(fromController),
-        true,
-        'and it ran inside the extension, not this test',
-      );
+      assert.ok(spy.stacks.every(fromController), 'and it ran inside the extension, not this test');
       const ids = await pollUntilDiscovered(api.testController, EXPECTED);
       assert.deepStrictEqual(
         sorted(ids),
@@ -408,16 +407,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
         'the burst produced one tree, not two',
       );
       assert.strictEqual(ids.length, EXPECTED.length, 'and appended nothing to it');
-      assert.strictEqual(
-        ids.includes(CS.failing),
-        true,
-        'a failing test is discovered like any other',
-      );
-      assert.strictEqual(
-        api.testController.items.size,
-        EXPECTED.length,
-        'the root holds each once',
-      );
+      assert.ok(ids.includes(CS.failing), 'a failing test is discovered like any other');
+      assertTree(api.testController, EXPECTED, 'the root holds each test exactly once');
       // A non-coalesced burst gets the NAMES right; it leaves duplicates and a
       // wrong size, which `assertTree` catches.
       assertTree(api.testController, EXPECTED, 'settled tree after a coalesced burst');
@@ -450,13 +441,13 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     this.timeout(DOTNET_CLI_MS);
     const before = await discoverSolution(api, slnPath, EXPECTED);
     assert.strictEqual(before.length, EXPECTED.length, 'the round trip starts from the fixture');
-    assert.strictEqual(before.includes(ADDED_FQN), false, `${ADDED_FQN} must not exist yet`);
+    assert.ok(!before.includes(ADDED_FQN), `${ADDED_FQN} must not exist yet`);
     // The user types a new test into the file. A REAL edit, on disk.
     const originalText = fs.readFileSync(csSourcePath, 'utf8');
     assert.strictEqual(originalText, CS.source, 'the fixture source is pristine before the edit');
     insertMethod(csSourcePath, ADDED_FACT);
     const editedText = fs.readFileSync(csSourcePath, 'utf8');
-    assert.strictEqual(editedText.includes(ADDED_FACT), true, 'the new [Fact] is on disk');
+    assert.ok(editedText.includes(ADDED_FACT), 'the new [Fact] is on disk');
     assert.notStrictEqual(editedText, originalText, 'the file really changed');
     assert.strictEqual(
       editedText.split('\n').length,
@@ -466,9 +457,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     // The user presses ⟳ in the Testing view.
     await vscode.commands.executeCommand('testing.refreshTests');
     const grown = await pollForIds(api.testController, (ids) => ids.includes(ADDED_FQN));
-    assert.strictEqual(
+    assert.ok(
       grown.includes(ADDED_FQN),
-      true,
       `the new test must appear: ${ADDED_FQN}\ngot: ${grown.join(', ')}`,
     );
     assert.strictEqual(grown.length, before.length + 1, 'the tree grew by exactly one');
@@ -488,8 +478,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     );
     assert.strictEqual(
       comparablePath(added.uri?.fsPath ?? ''),
-      comparablePath(solutionDir),
-      'anchored at the solution',
+      comparablePath(csSourcePath),
+      'Go to Test reveals the very file the user typed the test into',
     );
     // …and the user deletes it again.
     fs.writeFileSync(csSourcePath, originalText, 'utf8');
@@ -500,9 +490,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     );
     await vscode.commands.executeCommand('testing.refreshTests');
     const shrunk = await pollForIds(api.testController, (ids) => !ids.includes(ADDED_FQN));
-    assert.strictEqual(
-      shrunk.includes(ADDED_FQN),
-      false,
+    assert.ok(
+      !shrunk.includes(ADDED_FQN),
       `a deleted test must leave: ${ADDED_FQN}\ngot: ${shrunk.join(', ')}`,
     );
     assert.strictEqual(
@@ -527,23 +516,13 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     const before = await discoverSolution(api, slnPath, EXPECTED);
     assert.strictEqual(before.length, EXPECTED.length, 'the solution starts with one project');
     for (const extra of EXTRA_TESTS) {
-      assert.strictEqual(before.includes(extra), false, `${extra} must not be discoverable yet`);
+      assert.ok(!before.includes(extra), `${extra} must not be discoverable yet`);
     }
     await dotnet(['sln', slnPath, 'add', extraProjDir], root);
     const listed = await dotnet(['sln', slnPath, 'list'], root);
-    assert.strictEqual(
-      listed.includes(`${EXTRA_PROJECT}.csproj`),
-      true,
-      'the CLI reports the added project',
-    );
-    assert.strictEqual(
-      listed.includes(CS.projectFileName),
-      true,
-      'and still reports the original one',
-    );
-    assert.strictEqual(
+    assertContainsAll(listed, [`${EXTRA_PROJECT}.csproj`, CS.projectFileName], 'listed');
+    assert.ok(
       fs.readFileSync(slnPath, 'utf8').includes(`${EXTRA_PROJECT}.csproj`),
-      true,
       'the sln carries it',
     );
     await vscode.commands.executeCommand('testing.refreshTests');
@@ -583,11 +562,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       comparablePath(extraProjDir),
       'the projects are distinct dirs',
     );
-    assert.strictEqual(
-      comparablePath(joined.uri?.fsPath ?? ''),
-      comparablePath(solutionDir),
-      'anchored at the solution',
-    );
+    assertDeclaredInside(joined.uri?.fsPath, extraProjDir, "the joined project's test");
     assert.notStrictEqual(
       comparablePath(joined.uri?.fsPath ?? ''),
       comparablePath(extraProjDir),
@@ -597,19 +572,10 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     assert.strictEqual(path.dirname(extraProjDir), root, 'including the added one');
     await dotnet(['sln', slnPath, 'remove', extraProjDir], root);
     const listedAfter = await dotnet(['sln', slnPath, 'list'], root);
-    assert.strictEqual(
-      listedAfter.includes(`${EXTRA_PROJECT}.csproj`),
-      false,
-      'the CLI no longer reports it',
-    );
-    assert.strictEqual(
-      listedAfter.includes(CS.projectFileName),
-      true,
-      'while the original project stays',
-    );
-    assert.strictEqual(
-      fs.readFileSync(slnPath, 'utf8').includes(`${EXTRA_PROJECT}.csproj`),
-      false,
+    assert.ok(!listedAfter.includes(`${EXTRA_PROJECT}.csproj`), 'the CLI no longer reports it');
+    assert.ok(listedAfter.includes(CS.projectFileName), 'while the original project stays');
+    assert.ok(
+      !fs.readFileSync(slnPath, 'utf8').includes(`${EXTRA_PROJECT}.csproj`),
       'the sln dropped it',
     );
     await vscode.commands.executeCommand('testing.refreshTests');
@@ -618,17 +584,15 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       (ids) => !EXTRA_TESTS.some((n) => ids.includes(n)),
     );
     for (const extra of EXTRA_TESTS) {
-      assert.strictEqual(
-        after.includes(extra),
-        false,
+      assert.ok(
+        !after.includes(extra),
         `removed project's tests must go: ${extra}\n${after.join()}`,
       );
     }
     assert.strictEqual(after.length, before.length, 'back to the original size');
     assert.deepStrictEqual(sorted(after), sorted(EXPECTED), 'and to the original set');
-    assert.strictEqual(
+    assert.ok(
       fs.existsSync(path.join(extraProjDir, 'ExtraTests.cs')),
-      true,
       'the project is still on disk',
     );
     assertTree(api.testController, EXPECTED, 'tree after the second project was removed');
@@ -641,28 +605,20 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     assert.strictEqual(good.length, EXPECTED.length, 'a populated tree is the precondition');
     const cached = api.testController.cachedResults.size;
     const ghost = path.join(root, 'Vanished.slnx');
-    assert.strictEqual(fs.existsSync(ghost), false, 'the ghost target must genuinely not exist');
+    assert.ok(!fs.existsSync(ghost), 'the ghost target must genuinely not exist');
     await api.explorerProvider.loadSolution(ghost);
     await assert.doesNotReject(
       async () => api.testController.discover(),
       'a missing target must not reject',
     );
     await drainDiscovery(() => undefined, api.testController);
-    const kept = collectItemIds(api.testController.items);
+    const kept = collectLeafIds(api.testController.items);
     assert.strictEqual(kept.length, good.length, 'a failed sweep must not blank the view');
     assert.deepStrictEqual(sorted(kept), sorted(good), 'the kept tree is the previous tree');
     assert.strictEqual(new Set(kept).size, kept.length, 'and it is kept once, not re-appended');
-    assert.strictEqual(
-      kept.includes(CS_MIXED_THEORY),
-      true,
-      'the kept tree keeps even the mixed theory',
-    );
-    assert.strictEqual(
-      api.testController.items.size,
-      good.length,
-      'and the root collection kept its rows',
-    );
-    assert.strictEqual(fs.existsSync(ghost), false, 'and the failed sweep created nothing on disk');
+    assert.ok(kept.includes(CS_MIXED_THEORY), 'the kept tree keeps even the mixed theory');
+    assertTree(api.testController, EXPECTED, 'and the root collection kept its rows');
+    assert.ok(!fs.existsSync(ghost), 'and the failed sweep created nothing on disk');
     assertTree(api.testController, EXPECTED, 'tree kept across a total discovery failure');
     assertFqnShape(kept, 'tree kept across a total discovery failure');
     const survivor = assertLeaf(
@@ -682,11 +638,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       sorted(EXPECTED),
       'and rediscovers exactly the fixture',
     );
-    assert.strictEqual(
-      recovered.includes(CS.skipped),
-      true,
-      'including the skipped test the sweep lost',
-    );
+    assert.ok(recovered.includes(CS.skipped), 'including the skipped test the sweep lost');
     assert.strictEqual(new Set(recovered).size, recovered.length, 'without doubling what it kept');
     assertTree(api.testController, EXPECTED, 'tree after recovering from a missing target');
     assertRows(api.testController, solutionDir, 'tree after recovering from a missing target');
@@ -704,11 +656,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     const idleStart = Date.now();
     await api.testController.whenIdle();
     const idleMs = Date.now() - idleStart;
-    assert.strictEqual(
-      idleMs < 1_000,
-      true,
-      `a drained queue must settle at once, took ${idleMs}ms`,
-    );
+    assert.ok(idleMs < 1_000, `a drained queue must settle at once, took ${idleMs}ms`);
     const settled = await pollUntilDiscovered(api.testController, EXPECTED);
     assert.strictEqual(settled.length, EXPECTED.length, 'complete the moment whenIdle() returns');
     assert.deepStrictEqual(sorted(settled), sorted(EXPECTED), 'with exactly the fixture in it');
@@ -717,11 +665,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       settled.length,
       'a drained tree carries no duplicates',
     );
-    assert.strictEqual(
-      settled.includes(CS.parameterized),
-      true,
-      'a theory is one drained item, not two',
-    );
+    assert.ok(settled.includes(CS.parameterized), 'a theory is one drained item, not two');
     assert.strictEqual(
       findItem(api.testController.items, CS.skipped)?.label,
       'Skipped_OnPurpose',
@@ -736,28 +680,19 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       'a sweep after whenIdle() must not reject',
     );
     const sweepMs = Date.now() - sweepStart;
-    assert.strictEqual(
-      sweepMs < 240_000,
-      true,
-      `a warm sweep must finish inside its window, took ${sweepMs}ms`,
-    );
+    assert.ok(sweepMs < 240_000, `a warm sweep must finish inside its window, took ${sweepMs}ms`);
     const secondIdleStart = Date.now();
     await api.testController.whenIdle();
     const secondIdleMs = Date.now() - secondIdleStart;
-    assert.strictEqual(
+    assert.ok(
       secondIdleMs < 1_000,
-      true,
       `whenIdle() must resolve at once after its sweep, ${secondIdleMs}ms`,
     );
     assertTree(api.testController, EXPECTED, 'the tree is unchanged by an idempotent re-sweep');
-    assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
-      sorted(settled),
-      'same as the drained read',
-    );
-    assert.strictEqual(api.testController.items.size, EXPECTED.length, 'the root count agrees');
+    assertLeavesAre(api.testController, settled, 'same as the drained read');
+    assertTree(api.testController, EXPECTED, 'the root count agrees');
     assert.strictEqual(
-      new Set(collectItemIds(api.testController.items)).size,
+      new Set(collectLeafIds(api.testController.items)).size,
       EXPECTED.length,
       'replaced, not appended',
     );
@@ -773,15 +708,10 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   test('revealing the Testing view leaves a populated tree behind the refresh affordance', async function () {
     this.timeout(DOTNET_CLI_MS);
     const commands = await vscode.commands.getCommands(true);
-    assert.strictEqual(
-      commands.includes('testing.refreshTests'),
-      true,
-      'the workbench exposes the ⟳ refresh command',
-    );
-    assert.strictEqual(
-      commands.includes('workbench.view.testing.focus'),
-      true,
-      'the workbench reveals the Testing view',
+    assertContainsAll(
+      commands,
+      ['testing.refreshTests', 'workbench.view.testing.focus'],
+      'the workbench',
     );
     assert.strictEqual(
       commands.filter((id) => id === 'testing.refreshTests').length,
@@ -802,10 +732,16 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     assertTree(api.testController, EXPECTED, 'tree behind a revealed Testing view');
     assertRows(api.testController, solutionDir, 'tree behind a revealed Testing view');
     assertFqnShape(ids, 'tree behind a revealed Testing view');
+    const revealedSnapshots = snapshotItems(api.testController.items);
     assert.strictEqual(
-      snapshotItems(api.testController.items).length,
+      revealedSnapshots.filter((row) => row.childCount === 0).length,
       EXPECTED.length,
-      'one rendered row per test',
+      'one rendered TEST row per test',
+    );
+    assert.strictEqual(
+      revealedSnapshots.filter((row) => row.childCount > 0).length,
+      3,
+      'the fixture assembly, its namespace and its class render as GROUP rows',
     );
     // The buttons the revealed view draws come from the registered profiles.
     const profiles = api.testController.profiles;
@@ -844,17 +780,13 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       sorted(EXPECTED),
       'refresh after a reveal repopulates the same set',
     );
-    assert.strictEqual(
-      refreshed.includes(CS.skipped),
-      true,
-      'a skipped test is still a discovered test',
-    );
+    assert.ok(refreshed.includes(CS.skipped), 'a skipped test is still a discovered test');
     assert.strictEqual(
       refreshed.length,
       EXPECTED.length,
       'and refresh replaced the tree rather than growing it',
     );
-    assert.strictEqual(api.testController.items.size, EXPECTED.length, 'the root holds each once');
+    assertTree(api.testController, EXPECTED, 'the root holds each test exactly once');
     assertLeaf(api.testController, CS.skipped, 'tree after refreshing a revealed view');
     assertTree(api.testController, EXPECTED, 'tree after refreshing a revealed view');
   });
@@ -864,7 +796,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     await api.explorerProvider.loadSolution(slnPath);
     api.testController.items.replace([]);
     assert.deepStrictEqual(
-      collectItemIds(api.testController.items),
+      collectLeafIds(api.testController.items),
       [],
       'the race starts from an empty tree',
     );
@@ -885,18 +817,14 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     );
     assert.strictEqual(ids.length, EXPECTED.length, 'a lost `replace` would have doubled this');
     assert.strictEqual(new Set(ids).size, ids.length, 'and would have duplicated these ids');
-    assert.strictEqual(
-      ids.includes(CS_MIXED_THEORY),
-      true,
-      'the mixed theory survives the race exactly once',
-    );
+    assert.ok(ids.includes(CS_MIXED_THEORY), 'the mixed theory survives the race exactly once');
     assertTree(api.testController, EXPECTED, 'tree after two concurrent sweeps');
-    assert.strictEqual(api.testController.items.size, EXPECTED.length, 'the root holds each once');
+    assertTree(api.testController, EXPECTED, 'the root holds each test exactly once');
     assertRows(api.testController, solutionDir, 'tree after two concurrent sweeps');
     assertFqnShape(ids, 'tree after two concurrent sweeps');
     assertCacheUntouched(api.testController, cached, 'two concurrent sweeps');
     // Stability: two consecutive reads of a settled tree must agree, in order.
-    const read = (): string[] => collectItemIds(api.testController.items);
+    const read = (): string[] => collectLeafIds(api.testController.items);
     assert.deepStrictEqual(read(), read(), 'a settled tree must not change between two reads');
     assert.deepStrictEqual(sorted(read()), sorted(ids), 'and must still be what the poll observed');
     assert.strictEqual(
@@ -907,9 +835,9 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     for (const expected of EXPECTED) {
       assertLeaf(api.testController, expected, 'tree after two concurrent sweeps');
       assert.strictEqual(
-        api.testController.items.get(expected)?.id,
+        findItem(api.testController.items, expected)?.id,
         expected,
-        'and is reachable from the root',
+        'and is reachable from the root, through its group path',
       );
     }
     await assert.doesNotReject(

@@ -54,16 +54,14 @@ suite('VSIX dev binary staging', () => {
     // own shape instead.
     if (NO_PREBUILT.includes(platform)) {
       const absent = path.join(extensionRoot, 'bin', platform, 'netcoredbg', exeName('netcoredbg'));
-      assert.strictEqual(
-        fs.existsSync(absent),
-        false,
+      assert.ok(
+        !fs.existsSync(absent),
         `${platform} has no upstream prebuilt, so the VSIX must not claim to bundle one at ${absent}`,
       );
       const fallbacks = getNetcoredbgCandidates(extensionRoot);
       assert.ok(fallbacks.length > 0, 'the launch path must still have somewhere to look');
-      assert.strictEqual(
-        fallbacks.includes(absent),
-        false,
+      assert.ok(
+        !fallbacks.includes(absent),
         'and must not offer a bundled path that was never staged',
       );
       assert.ok(
@@ -95,11 +93,11 @@ suite('VSIX dev binary staging', () => {
 
     // AppleDouble forks from the macOS zip must never reach a user's VSIX.
     const junk = path.join(extensionRoot, 'bin', platform, '__MACOSX');
-    assert.strictEqual(fs.existsSync(junk), false, `${junk} is archive junk and must be stripped`);
+    assert.ok(!fs.existsSync(junk), `${junk} is archive junk and must be stripped`);
 
     if (process.platform !== 'win32') {
       const mode = fs.statSync(bundled).mode;
-      assert.strictEqual((mode & 0o111) !== 0, true, 'the staged adapter must be executable');
+      assert.ok((mode & 0o111) !== 0, 'the staged adapter must be executable');
     }
   });
 });

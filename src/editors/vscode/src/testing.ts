@@ -2,38 +2,43 @@ import * as vscode from 'vscode';
 import { effect } from './signals';
 import { info } from './log';
 import * as state from './state';
-import { listTests, type TestListing } from './test-discovery';
+import type { TestListing } from './test-listing-model';
+import { listLocatedTests, onDiscoveryInputs } from './test-source-locations';
+import { runnersFor, runRouted, VSTEST_ONLY, type RunnerMap } from './test-run-routes';
+import { makeAssemblyItem, makeErrorItem, makeTestItem, type ItemContext } from './test-items';
 import {
   cancelled,
   runOptions,
-  runTests,
   type RunInvocation,
+  type TestRunOptions,
   type TestRunOutcome,
 } from './test-execution';
 import { debugSelectedTests, type TestDebugHost } from './test-debug';
-import { loadDetailedCoverage } from './test-coverage';
+import { registerRunProfiles, type RunProfileHandlers } from './test-profiles';
 import {
   addCoverage,
   cachedFrom,
   freshCoverageDir,
   reportAll,
+  reportDebugOutcome,
   reportOutcome,
-  type CacheWriter,
   type CachedTestResult,
 } from './test-reporting';
+import { DotnetQueue, NewestJob } from './test-queue';
+import { TestResultCache } from './test-result-cache';
 import { cancellationSignal, configureDotnet } from './dotnet-process';
-import {
-  discoveryTargets,
-  dirOf,
-  isExpectoTest,
-  isFsCheckTest,
-  runCwd,
-  runTarget,
-} from './test-targets';
+import { discoveryTargets, dirOf, filterIdsFor, runCwd, runTarget } from './test-targets';
 
 export { buildFilterArgs } from './test-execution';
 export { isExpectoTest, isFsCheckTest } from './test-targets';
 export type { CachedTestResult } from './test-reporting';
+
+/** What one discovery sweep collected across every target. */
+interface Sweep {
+  readonly items: vscode.TestItem[];
+  readonly errors: vscode.TestItem[];
+  readonly listings: TestListing[];
+}
 
 /**
  * Debounce for reactive re-discovery. Loading a solution can churn the
@@ -44,8 +49,10 @@ const DISCOVERY_DEBOUNCE_MS = 1_000;
 
 /**
  * Test controller integrating with VS Code's Testing API.
- * Discovers tests by fully-qualified name (see `test-discovery.ts`) and runs
- * them in a single `dotnet test` invocation, reading per-test outcomes back out
+ * Discovers tests by fully-qualified name (see `test-discovery.ts`), renders
+ * them grouped per the documented hierarchy — **Assembly → Namespace → Class →
+ * Test** — and runs them in `dotnet test` invocations whose `--filter` stays
+ * under the Windows command-line ceiling, reading per-test outcomes back out
  * of the TRX report (see `test-execution.ts`).
  * Supports xUnit, NUnit, MSTest, Expecto, and FsCheck.
  *
@@ -54,8 +61,7 @@ const DISCOVERY_DEBOUNCE_MS = 1_000;
 export class SharpLspTestController {
   private readonly controller: vscode.TestController;
   private readonly runProfiles: vscode.TestRunProfile[] = [];
-  private readonly results = new Map<string, CachedTestResult>();
-  private readonly resultsChangedEmitter = new vscode.EventEmitter<void>();
+  private readonly results = new TestResultCache();
   /** Cancels the reactive solution-change subscription. */
   private readonly solutionSubscription: () => void;
   /** Cancels the reactive `dotnet` executable subscription. */
@@ -71,37 +77,27 @@ export class SharpLspTestController {
    * being shown does a solution change reactively re-discover.
    */
   private active = false;
+  /** One `dotnet` invocation at a time, discovery and runs alike. */
+  private readonly dotnetQueue = new DotnetQueue();
   /**
-   * Serializes every `dotnet` invocation this controller makes. Discovery BUILDS
-   * the solution and a run rebuilds the same projects, so two overlapping
-   * invocations race on the shared `bin/`/`obj/` output — VSTest then dies with
-   * "The application to execute does not exist: ...testhost.dll". Reactive
-   * re-discovery is debounced, not cancelled, so that overlap is reachable
-   * whenever a user runs a test while a sweep is still building. One at a time.
+   * How to RUN the tree on view — the MTP plan, and whether any target was
+   * VSTest. It changes only with the tree. Spec: [TEST-MTP-ROUTING].
    */
-  private dotnetQueue: Promise<unknown> = Promise.resolve();
+  private runners: RunnerMap = VSTEST_ONLY;
+  /** The newest sweep: awaiting a superseded one waits for it. */
+  private readonly sweeps = new NewestJob();
 
   /** Fires after any test run completes and results are cached. */
-  public readonly onResultsChanged = this.resultsChangedEmitter.event;
+  public readonly onResultsChanged = this.results.onChanged;
 
   /** Queue `work` behind any `dotnet` invocation already in flight. */
   private async enqueue<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.dotnetQueue.then(work, work);
-    this.dotnetQueue = next.catch(() => undefined);
-    return await next;
+    return await this.dotnetQueue.enqueue(work);
   }
 
-  /**
-   * Resolve once no `dotnet` invocation is outstanding. Tests use this to settle
-   * reactive re-discovery before touching the fixture on disk; a `dotnet test`
-   * left pointing at a deleted directory hangs and poisons the next run.
-   */
+  /** Resolve once no `dotnet` invocation is outstanding. */
   public async whenIdle(): Promise<void> {
-    let tail: Promise<unknown> | undefined;
-    while (tail !== this.dotnetQueue) {
-      tail = this.dotnetQueue;
-      await tail;
-    }
+    await this.dotnetQueue.whenIdle();
   }
 
   /** Look up the last known result for a fully qualified test name. */
@@ -111,7 +107,7 @@ export class SharpLspTestController {
 
   /** All cached results keyed by fully qualified test name. */
   public get cachedResults(): ReadonlyMap<string, CachedTestResult> {
-    return this.results;
+    return this.results.all;
   }
 
   /** Discovered test items (delegates to the underlying TestController). */
@@ -130,7 +126,7 @@ export class SharpLspTestController {
 
   /** Create a TestItem for `fullName` without adding it to the tree. */
   public createItem(fullName: string, uri: vscode.Uri): vscode.TestItem {
-    return this.makeTestItem(fullName, uri);
+    return makeTestItem({ controller: this.controller, uri, locations: undefined }, fullName);
   }
 
   constructor() {
@@ -138,7 +134,7 @@ export class SharpLspTestController {
       'sharplsp.testController',
       'SharpLsp Tests',
     );
-    this.registerProfiles();
+    this.runProfiles.push(...registerRunProfiles(this.controller, this.profileHandlers()));
     // `dotnet` is not necessarily on `$PATH`: [DIST-RUNTIME-ACQUIRE] resolves an
     // SDK that may live anywhere and publishes its path on a signal. Track it
     // reactively so discovery and runs follow a late or re-acquired SDK instead
@@ -156,47 +152,15 @@ export class SharpLspTestController {
         await this.activateAndDiscover();
       }
     };
-    // Reactive: once tests are being shown, a change to the loaded solution must
-    // reactively re-discover with no manual refresh. Debounced to collapse the
-    // burst a solution load emits. Gated on `active` so merely loading a solution
-    // never triggers a background build before the user looks at tests.
-    this.solutionSubscription = state.solutionPath.subscribe(() => {
+    // Reactive: once tests are being shown, a change to the loaded solution (or the
+    // server that locates its tests coming up) must re-discover with no manual
+    // refresh. Debounced to collapse the burst a solution load emits. Gated on
+    // `active` so loading a solution never builds before the user looks at tests.
+    this.solutionSubscription = onDiscoveryInputs(() => {
       if (this.active) {
         this.scheduleDiscovery();
       }
     });
-  }
-
-  /** Run, Debug and Coverage, in the order the Test Explorer shows them. */
-  private registerProfiles(): void {
-    this.runProfiles.push(
-      this.controller.createRunProfile(
-        'Run',
-        vscode.TestRunProfileKind.Run,
-        async (request, token) => {
-          await this.runProfileHandler(request, token, false);
-        },
-        true,
-      ),
-      this.controller.createRunProfile(
-        'Debug',
-        vscode.TestRunProfileKind.Debug,
-        async (request, token) => {
-          await this.debugTests(request, token);
-        },
-      ),
-    );
-    const coverage = this.controller.createRunProfile(
-      'Run with Coverage',
-      vscode.TestRunProfileKind.Coverage,
-      async (request, token) => {
-        await this.runProfileHandler(request, token, true);
-      },
-    );
-    coverage.loadDetailedCoverage =
-      // eslint-disable-next-line @typescript-eslint/require-await -- VS Code API requires Thenable return but lookup is synchronous
-      async (_run, fileCoverage, _token) => loadDetailedCoverage(fileCoverage);
-    this.runProfiles.push(coverage);
   }
 
   /** Mark the Test Explorer active and run a discovery sweep. */
@@ -214,7 +178,7 @@ export class SharpLspTestController {
     for (const profile of this.runProfiles) {
       profile.dispose();
     }
-    this.resultsChangedEmitter.dispose();
+    this.results.dispose();
     this.controller.dispose();
   }
 
@@ -233,77 +197,107 @@ export class SharpLspTestController {
    * Discover every test in the loaded solution (or, absent one, each workspace
    * folder) and replace the tree. A superseded sweep never clobbers a newer one,
    * and a sweep where NO target could be enumerated leaves the previous tree
-   * standing rather than blanking the view on a transient `dotnet` failure.
+   * standing — with an error row appended saying why — rather than blanking the
+   * view on a transient `dotnet` failure.
+   *
+   * The sweep AND its result are ONE queued job, so a run queued behind it runs
+   * with the runners it found, and a superseded sweep resolves only once the
+   * newest one has applied ([TEST-REACTIVITY], [TEST-MTP-ROUTING]).
    */
   public async discover(): Promise<void> {
     const generation = ++this.discoverGeneration;
     const targets = discoveryTargets();
-    const items: vscode.TestItem[] = [];
-    let anyOk = targets.length === 0;
+    const job = this.enqueue(async () => {
+      const sweep = await this.sweep(targets, generation);
+      if (sweep === undefined || generation !== this.discoverGeneration) return;
+      const anyOk = targets.length === 0 || sweep.listings.some((listing) => listing.ok);
+      if (this.applyDiscovery(sweep.items, sweep.errors, anyOk, targets.length)) {
+        this.runners = runnersFor(sweep.listings);
+      }
+    });
+    await this.sweeps.settle(job);
+  }
+
+  /** Enumerate every target; `undefined` once a newer sweep supersedes this one. */
+  private async sweep(targets: readonly string[], generation: number): Promise<Sweep | undefined> {
+    const sweep: Sweep = { items: [], errors: [], listings: [] };
     for (const target of targets) {
       // A newer sweep supersedes this one: stop before paying for another build
       // rather than enumerating targets whose results will be thrown away.
-      if (generation !== this.discoverGeneration) return;
+      if (generation !== this.discoverGeneration) return undefined;
       const listing = await this.safeList(target);
-      anyOk = anyOk || listing.ok;
-      const uri = vscode.Uri.file(dirOf(target));
-      for (const fqn of listing.names) {
-        items.push(this.makeTestItem(fqn, uri));
-      }
+      sweep.listings.push(listing);
+      this.rowsFor(target, listing, sweep.items, sweep.errors);
     }
-    if (generation !== this.discoverGeneration) return;
-    this.applyDiscovery(items, anyOk, targets.length);
+    return sweep;
   }
 
-  /** Replace the tree, unless nothing could be enumerated and one already exists. */
-  private applyDiscovery(items: vscode.TestItem[], anyOk: boolean, targetCount: number): void {
-    if (!anyOk && this.controller.items.size > 0) {
-      info(
-        `Test discovery: every target failed; keeping ${String(this.controller.items.size)} item(s)`,
-      );
+  /** Turn one target's listing into tree rows, or into the row that explains it. */
+  private rowsFor(
+    target: string,
+    listing: TestListing,
+    items: vscode.TestItem[],
+    errors: vscode.TestItem[],
+  ): void {
+    const context: ItemContext = {
+      controller: this.controller,
+      uri: vscode.Uri.file(dirOf(target)),
+      locations: listing.locations,
+    };
+    if (!listing.ok && listing.names.length === 0) {
+      // The enumeration itself failed: surface the real diagnostic as a row,
+      // never a silent blank view (MSB1011 ambiguity, build errors, missing
+      // target — the cases the extension log showed going unnoticed).
+      errors.push(makeErrorItem(context, target, listing.warnings));
       return;
     }
-    this.controller.items.replace(items);
-    this.pruneResults(new Set(items.map((item) => item.id)));
-    info(`Test discovery: ${String(items.length)} test(s) from ${String(targetCount)} target(s)`);
+    if (listing.byAssembly.length > 0) {
+      for (const assembly of listing.byAssembly) items.push(makeAssemblyItem(context, assembly));
+      return;
+    }
+    // Display-name fallback: no attribution, so flat rows — weaker, but never
+    // worse than dropping the tests outright.
+    for (const fqn of listing.names) items.push(makeTestItem(context, fqn));
   }
 
   /**
-   * Drop cached outcomes for tests no longer in the tree. The cache is keyed
-   * by fully-qualified name and outlives sweeps, so after the loaded solution
-   * changes it would paint an outcome for a test that was never run here —
-   * [TEST-REACTIVITY]: a result must not outlive the test it belongs to.
-   * Listeners hear about it only when something was actually dropped.
+   * Replace the tree, unless nothing could be enumerated and one already exists
+   * — a transient failure (a `dotnet` file lock mid-sweep) then keeps the
+   * standing tree, logged but not perturbed, so a good view never flaps. Error
+   * rows appear only when a tree is actually (re)built: a total failure over an
+   * EMPTY view surfaces the real diagnostic instead of silent blankness.
+   * Returns whether the tree was replaced.
    */
-  private pruneResults(alive: ReadonlySet<string>): void {
-    let dropped = 0;
-    for (const id of [...this.results.keys()]) {
-      if (alive.has(id)) continue;
-      this.results.delete(id);
-      dropped += 1;
+  private applyDiscovery(
+    items: vscode.TestItem[],
+    errors: vscode.TestItem[],
+    anyOk: boolean,
+    targetCount: number,
+  ): boolean {
+    if (!anyOk && items.length === 0 && this.controller.items.size > 0) {
+      info(
+        `Test discovery: every target failed; keeping ${String(
+          this.controller.items.size,
+        )} item(s) standing`,
+      );
+      return false;
     }
-    if (dropped > 0) this.resultsChangedEmitter.fire();
+    this.controller.items.replace([...items, ...errors]);
+    this.results.pruneTo([...items, ...errors]);
+    info(
+      `Test discovery: ${String(items.length)} item(s) from ${String(targetCount)} target(s)` +
+        (errors.length > 0 ? `; ${String(errors.length)} error row(s)` : ''),
+    );
+    return true;
   }
 
-  /** List one target, logging whatever diagnostics the enumeration produced. */
+  /** List one target (inside the sweep's queued job), logging its diagnostics. */
   private async safeList(target: string): Promise<TestListing> {
-    const listing = await this.enqueue(async () => await listTests(target));
+    const listing = await listLocatedTests(target);
     for (const warning of listing.warnings) {
       info(`Test discovery (${target}): ${warning}`);
     }
     return listing;
-  }
-
-  /** Build a flat TestItem for a fully-qualified name, tagging F# tests. */
-  private makeTestItem(fullName: string, uri: vscode.Uri): vscode.TestItem {
-    const parts = fullName.split('.');
-    const label = parts.at(-1) ?? fullName;
-    const item = this.controller.createTestItem(fullName, label, uri);
-    item.description = fullName;
-    if (isExpectoTest(fullName) || isFsCheckTest(fullName)) {
-      item.tags = [new vscode.TestTag('fsharp')];
-    }
-    return item;
   }
 
   /** The Run and Run-with-Coverage profiles share every step but collection. */
@@ -316,10 +310,12 @@ export class SharpLspTestController {
     const tests = this.collectTests(request);
     for (const test of tests) run.enqueued(test);
     try {
-      await this.executeInto(run, tests, token, coverage);
+      const filterIds = filterIdsFor(request, tests);
+      if (request.include !== undefined && tests.length === 0) return;
+      await this.executeInto(run, tests, token, coverage, filterIds);
     } finally {
       run.end();
-      this.resultsChangedEmitter.fire();
+      this.results.fire();
     }
   }
 
@@ -329,45 +325,45 @@ export class SharpLspTestController {
     tests: readonly vscode.TestItem[],
     token: vscode.CancellationToken,
     coverage: boolean,
+    filterIds: readonly string[],
   ): Promise<void> {
     const cwd = runCwd();
     if (cwd === undefined) {
-      reportAll(run, tests, 'No workspace folder or solution', this.cacheWriter());
+      reportAll(run, tests, 'No workspace folder or solution', this.results.writer());
       return;
     }
     if (cancelled(token)) return;
     for (const test of tests) run.started(test);
     const resultsDirectory = coverage ? freshCoverageDir(cwd) : undefined;
-    const outcome = await this.invoke({ tests, cwd, token, coverage, resultsDirectory });
-    // ⏹ means STOP. The whole selection runs in ONE `dotnet test`, which the
-    // token has just killed mid-flight, so whatever it managed to write is a
-    // TRUNCATED account of a run the user abandoned: never cache or paint it.
+    const outcome = await this.invoke({ filterIds, cwd, token, coverage, resultsDirectory });
+    // ⏹ means STOP. The whole selection runs in `dotnet test` invocations which
+    // the token has just killed mid-flight, so whatever they managed to write
+    // is a TRUNCATED account of a run the user abandoned: never cache or paint it.
     if (cancelled(token)) return;
-    reportOutcome(run, tests, outcome, this.cacheWriter());
+    reportOutcome(run, tests, outcome, this.results.writer());
     if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
   }
 
   /** One queued, CANCELLABLE `dotnet test` over the whole selection. */
   private async invoke(request: RunInvocation): Promise<TestRunOutcome> {
-    const ids = request.tests.map((test) => test.id);
     const cancellation = cancellationSignal(request.token);
     const options = runOptions(request, cancellation.signal);
     try {
-      return await this.enqueue(async () => await runTests(ids, request.cwd, options));
+      return await this.enqueue(
+        async () => await this.dispatch(request.filterIds, request.cwd, options),
+      );
     } finally {
       cancellation.dispose();
     }
   }
 
-  private cache(testId: string, result: CachedTestResult): void {
-    this.results.set(testId, result);
-  }
-
-  /** The cache writer a real RUN reports through; a debug run passes none. */
-  private cacheWriter(): CacheWriter {
-    return (id, result) => {
-      this.cache(id, result);
-    };
+  /** Send each test of one invocation to the runner that discovered it. */
+  private async dispatch(
+    ids: readonly string[],
+    cwd: string,
+    options: TestRunOptions,
+  ): Promise<TestRunOutcome> {
+    return await runRouted(this.runners, ids, cwd, options);
   }
 
   /**
@@ -391,17 +387,40 @@ export class SharpLspTestController {
       return;
     }
     for (const test of tests) run.started(test);
-    await debugSelectedTests(this.debugHost(), run, tests, token, cwd);
+    await debugSelectedTests(
+      this.debugHost(),
+      run,
+      tests,
+      token,
+      cwd,
+      filterIdsFor(request, tests),
+    );
+  }
+
+  /** The three handlers the Test Explorer's profiles invoke. */
+  private profileHandlers(): RunProfileHandlers {
+    return {
+      run: async (request, token) => {
+        await this.runProfileHandler(request, token, false);
+      },
+      debug: async (request, token) => {
+        await this.debugTests(request, token);
+      },
+      coverage: async (request, token) => {
+        await this.runProfileHandler(request, token, true);
+      },
+    };
   }
 
   /** The slice of this controller the test-debug flow needs. */
   private debugHost(): TestDebugHost {
     return {
       enqueue: async (work) => await this.enqueue(work),
+      runSelection: async (ids, cwd, options) => await this.dispatch(ids, cwd, options),
       // Run-only reporting: a debug run neither caches results nor announces a
       // results change — the last real run's outcome stands.
       finish: (run, tests, outcome) => {
-        reportOutcome(run, tests, outcome, undefined);
+        reportDebugOutcome(run, tests, outcome, this.runners.mtp);
       },
     };
   }
@@ -409,20 +428,27 @@ export class SharpLspTestController {
   /**
    * The tests a request selects: its `include` set (or the whole tree when it
    * has none), minus everything the user explicitly EXCLUDED. Ignoring
-   * `exclude` runs tests the user just deselected in the Testing view.
+   * `exclude` runs tests the user just deselected in the Testing view. Group
+   * nodes expand to their leaf tests — a class or namespace ▶ runs its members
+   * — and discovery-error rows are never selectable as tests.
    */
   private collectTests(request: vscode.TestRunRequest): vscode.TestItem[] {
     const excluded = new Set((request.exclude ?? []).map((item) => item.id));
     const tests: vscode.TestItem[] = [];
-    if (request.include !== undefined) {
-      for (const item of request.include) {
-        if (!excluded.has(item.id)) tests.push(item);
+    const walk = (item: vscode.TestItem): void => {
+      if (excluded.has(item.id)) return;
+      if (item.error !== undefined) return;
+      if (item.children.size === 0) {
+        tests.push(item);
+        return;
       }
+      item.children.forEach(walk);
+    };
+    if (request.include !== undefined) {
+      for (const item of request.include) walk(item);
       return tests;
     }
-    this.controller.items.forEach((item) => {
-      if (!excluded.has(item.id)) tests.push(item);
-    });
+    this.controller.items.forEach(walk);
     return tests;
   }
 
@@ -437,8 +463,8 @@ export class SharpLspTestController {
       folder === undefined
         ? { outcome: 'notRun' as const, passed: false, message: 'No workspace folder or solution' }
         : await this.runOne(testId, folder, cwd === undefined);
-    this.cache(testId, result);
-    this.resultsChangedEmitter.fire();
+    this.results.set(testId, result);
+    this.results.fire();
     return result;
   }
 
@@ -448,9 +474,8 @@ export class SharpLspTestController {
     // that overrode `cwd` is pointing at a specific project, and naming the
     // solution as well would run the wrong thing.
     const target = useTarget ? runTarget() : undefined;
-    const outcome = await this.enqueue(
-      async () => await runTests([testId], cwd, target === undefined ? {} : { target }),
-    );
+    const options: TestRunOptions = target === undefined ? {} : { target };
+    const outcome = await this.enqueue(async () => await this.dispatch([testId], cwd, options));
     const result = outcome.results.get(testId);
     if (result !== undefined) return cachedFrom(result);
     const message = outcome.failure ?? `No result reported for ${testId}`;

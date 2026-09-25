@@ -21,9 +21,12 @@
 // debugger that never comes would wedge the controller's queue forever.
 import * as vscode from 'vscode';
 import { DEBUG_TYPE } from './constants';
+import { whenDebugSessionArmed } from './debug';
 import { TEST_HOST_ATTACH_FLAG } from './dap-attach';
 import { error, info, warn } from './log';
-import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execution';
+import type { TestRunOptions, TestRunOutcome } from './test-execution';
+import { TestHostWatcher } from './test-host-announce';
+import { filterBatches } from './test-filter';
 import { runTarget } from './test-targets';
 
 /**
@@ -38,10 +41,18 @@ import { runTarget } from './test-targets';
 export const TEST_HOST_DEBUG_ENV: Readonly<Record<string, string>> = {
   VSTEST_HOST_DEBUG: '1',
   VSTEST_RUNNER_DEBUG: '0',
+  // A Microsoft.Testing.Platform module IS the test host — there is no
+  // `testhost.dll` child — and it waits on its OWN variable. Both are set
+  // because each runner ignores the other's, so one environment serves both
+  // and no runner flag has to be threaded through this flow.
+  // Spec: [TEST-MTP-DEBUG].
+  TESTINGPLATFORM_WAIT_ATTACH_DEBUGGER: '1',
 };
 
 /** The terminal the Debug profile mirrors the run's output into. */
 export const TEST_DEBUG_TERMINAL_NAME = 'SharpLsp Test Debug';
+
+export { announcedTestHostPid, TestHostWatcher } from './test-host-announce';
 
 /**
  * How long a debug run may live. A debuggee parked on a breakpoint is the
@@ -51,71 +62,22 @@ export const TEST_DEBUG_TERMINAL_NAME = 'SharpLsp Test Debug';
  */
 const DEBUG_RUN_CEILING_MS = 24 * 60 * 60 * 1_000;
 
-/** The stable prefix of VSTest's waiting-host announcement, en-US pinned. */
-const PROCESS_ID_PREFIX = 'Process Id:';
-
 /** What the debug flow needs from the owning test controller. */
 export interface TestDebugHost {
   /** Serialise behind every other `dotnet` invocation the controller makes. */
   enqueue<T>(work: () => Promise<T>): Promise<T>;
+  /**
+   * Start the selection with whichever runner the last discovery sweep chose.
+   * The debug flow is identical for both; only the command differs.
+   * Spec: [TEST-MTP-DEBUG].
+   */
+  runSelection(
+    ids: readonly string[],
+    cwd: string,
+    options: TestRunOptions,
+  ): Promise<TestRunOutcome>;
   /** Report a finished invocation onto the RUN — never onto the result cache. */
   finish(run: vscode.TestRun, tests: readonly vscode.TestItem[], outcome: TestRunOutcome): void;
-}
-
-/** ASCII digits only, checked per UTF-16 unit — a pid is never a surrogate. */
-function isAllDigits(candidate: string): boolean {
-  for (let index = 0; index < candidate.length; index += 1) {
-    const code = candidate.charCodeAt(index);
-    if (code < 0x30 || code > 0x39) return false;
-  }
-  return true;
-}
-
-/**
- * The pid a waiting test host announced on `line`, or undefined.
- *
- * The contract is VSTest's own console line, `Process Id: {0}, Name: {1}`,
- * printed by the HOST about itself — the parent never prints it with
- * `VSTEST_RUNNER_DEBUG` pinned off. The digits are validated whole: a partial
- * `parseInt` would accept a corrupted line and aim the debugger at noise.
- */
-export function announcedTestHostPid(line: string): number | undefined {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith(PROCESS_ID_PREFIX)) return undefined;
-  const rest = trimmed.slice(PROCESS_ID_PREFIX.length);
-  const comma = rest.indexOf(',');
-  const digits = (comma === -1 ? rest : rest.slice(0, comma)).trim();
-  if (digits.length === 0 || !isAllDigits(digits)) return undefined;
-  const pid = Number.parseInt(digits, 10);
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
-}
-
-/**
- * Watches a debug run's live output for waiting test hosts, once each.
- *
- * Chunk boundaries fall anywhere, so lines are reassembled before parsing; a
- * solution with several test projects announces one host PER ASSEMBLY, and
- * every one of them is waiting — each new pid is handed on exactly once.
- */
-export class TestHostWatcher {
-  private tail = '';
-  private readonly announced = new Set<number>();
-
-  constructor(private readonly onHost: (pid: number) => void) {}
-
-  /** Feed one raw output chunk; complete lines are scanned for announcements. */
-  public absorb(chunk: string): void {
-    const lines = (this.tail + chunk).split('\n');
-    this.tail = lines.pop() ?? '';
-    for (const line of lines) this.offer(line);
-  }
-
-  private offer(line: string): void {
-    const pid = announcedTestHostPid(line);
-    if (pid === undefined || this.announced.has(pid)) return;
-    this.announced.add(pid);
-    this.onHost(pid);
-  }
 }
 
 /** The attach configuration aimed at one waiting test host. */
@@ -158,7 +120,13 @@ class DebugRunTerminal implements vscode.Pseudoterminal {
 
   /** VS Code's notice that the USER disposed the terminal. */
   public close(): void {
-    if (!this.ended) this.onUserClose();
+    if (this.ended) return;
+    // Closing the terminal is a STOP gesture: it aborts the `dotnet test` tree
+    // and with it the host being debugged. Said out loud, because the symptom
+    // otherwise is a debug session that dies seconds after it attached with
+    // nothing anywhere explaining why.
+    info('Test debug: the run terminal was closed; aborting the run');
+    this.onUserClose();
   }
 
   /** Mirror one output chunk, normalised to the CRLF terminals require. */
@@ -192,8 +160,9 @@ export async function debugSelectedTests(
   tests: readonly vscode.TestItem[],
   token: vscode.CancellationToken,
   cwd: string,
+  filterIds: readonly string[] = tests.map((test) => test.id),
 ): Promise<void> {
-  await new DebugRunFlow(host, run, tests, cwd).start(token);
+  await new DebugRunFlow(host, run, tests, cwd, filterIds).start(token);
 }
 
 /** One Debug-profile gesture: the run, its terminal, and its attaches. */
@@ -216,6 +185,7 @@ class DebugRunFlow {
     private readonly run: vscode.TestRun,
     private readonly tests: readonly vscode.TestItem[],
     private readonly cwd: string,
+    private readonly filterIds: readonly string[],
   ) {}
 
   /** Race "a session exists" against "the run died before any host waited". */
@@ -236,6 +206,8 @@ class DebugRunFlow {
   private async settle(): Promise<void> {
     try {
       const outcome = await this.invoke();
+      const failure = outcome.failure === undefined ? '' : `; failure: ${outcome.failure}`;
+      info(`Test debug: the run ended with ${String(outcome.results.size)} result(s)${failure}`);
       this.host.finish(this.run, this.tests, outcome);
     } catch (cause) {
       error(`Test debug run failed to settle: ${String(cause)}`);
@@ -247,11 +219,26 @@ class DebugRunFlow {
 
   /** One queued, cancellable `dotnet test` with the host-debug environment. */
   private async invoke(): Promise<TestRunOutcome> {
-    const ids = this.tests.map((test) => test.id);
+    // A debug run is ALWAYS one invocation: every VSTest host under
+    // `VSTEST_HOST_DEBUG=1` WAITS for a debugger attach, so chunking a huge
+    // selection into batches would strand the second host's tests. A selection
+    // too big for one command line runs UNFILTERED instead — every test in the
+    // project runs, breakpoints in the selection still hit, and the run never
+    // dies with `spawn ENAMETOOLONG` before a host can wait.
+    const oversized = filterBatches(this.filterIds).length > 1;
+    if (oversized) {
+      warn(
+        `Test debug: selection exceeds one command line; running unfiltered instead of ${String(
+          this.filterIds.length,
+        )} filtered tests`,
+      );
+    }
+    const ids = oversized ? [] : this.filterIds;
     const target = runTarget();
     const options: TestRunOptions = {
       signal: this.stop.signal,
       timeoutMs: DEBUG_RUN_CEILING_MS,
+      debug: true,
       hooks: {
         env: TEST_HOST_DEBUG_ENV,
         onOutput: (chunk) => {
@@ -261,7 +248,34 @@ class DebugRunFlow {
       },
       ...(target === undefined ? {} : { target }),
     };
-    return await this.host.enqueue(async () => await runTests(ids, this.cwd, options));
+    return await this.releasingQueueOnAttach(ids, options);
+  }
+
+  /**
+   * Run `dotnet test`, holding the shared `dotnet` queue only for the BUILD.
+   *
+   * The queue exists so a discovery sweep and a run cannot rebuild the same
+   * `bin/`/`obj/` at once. A debug run is different in kind: under
+   * VSTEST_HOST_DEBUG its `dotnet test` does not exit until the user has
+   * finished debugging, so holding the queue for the whole invocation froze
+   * the Test Explorer for as long as a breakpoint was held -- no discovery, no
+   * other run, for minutes or hours. MEASURED: a sweep requested while a
+   * debuggee was paused waited 39s and completed 2.7s after the session ended.
+   *
+   * The queue is released the moment a host is waiting and its attach has
+   * settled, which is strictly after the build the queue is there to protect.
+   * A run that dies before any host waits releases it just the same.
+   */
+  private async releasingQueueOnAttach(
+    ids: readonly string[],
+    options: TestRunOptions,
+  ): Promise<TestRunOutcome> {
+    const { started } = await this.host.enqueue(async () => {
+      const running = this.host.runSelection(ids, this.cwd, options);
+      await Promise.race([this.attached, running]);
+      return { started: running };
+    });
+    return await started;
   }
 
   /**
@@ -274,10 +288,16 @@ class DebugRunFlow {
     info(`Test debug: attaching to waiting test host pid ${String(pid)}`);
     try {
       const config = testHostAttachConfig(pid, this.label());
+      // Latched BEFORE the session can start: `onDidStartDebugSession` fires
+      // while `startDebugging` is still resolving, so a listener registered
+      // afterwards would miss its own session.
+      const session = this.captureSession(pid);
       const started = await vscode.debug.startDebugging(this.folder(), config);
       if (!started) {
         warn(`Test debug: the workbench refused the attach to pid ${String(pid)}`);
         this.stop.abort();
+      } else {
+        await this.settleSession(await session, pid);
       }
     } catch (cause) {
       warn(`Test debug: attach to pid ${String(pid)} threw: ${String(cause)}`);
@@ -285,6 +305,54 @@ class DebugRunFlow {
     } finally {
       this.onFirstAttach();
     }
+  }
+
+  /**
+   * The session the next `startDebugging` produces, matched by the pid this
+   * flow aimed it at.
+   *
+   * Never rejects and never leaks the listener: the caller always awaits it,
+   * and {@link settleSession} tolerates `undefined` for the case where the
+   * workbench started something this flow cannot identify.
+   */
+  private async captureSession(pid: number): Promise<vscode.DebugSession | undefined> {
+    return await new Promise((resolve) => {
+      const listener = vscode.debug.onDidStartDebugSession((candidate) => {
+        // Matched on the pid, not the session NAME: two hosts of one solution
+        // are attached under labels that differ only by the tests selected, and
+        // the workbench is free to decorate a name it displays. The pid is the
+        // identity this flow actually chose.
+        if (Number(candidate.configuration.processId) !== pid) return;
+        listener.dispose();
+        resolve(candidate);
+      });
+      // The workbench refusing the attach resolves `startDebugging` without
+      // ever starting a session; the caller's `await` must not hang on that.
+      this.stop.signal.addEventListener('abort', () => {
+        listener.dispose();
+        resolve(undefined);
+      });
+    });
+  }
+
+  /**
+   * Wait for the session to be ARMED, not merely to have been created.
+   *
+   * `startDebugging` resolves once the session exists — before the breakpoints
+   * it is about to send have been acknowledged, before `configurationDone`, and
+   * long before the waiting host has loaded the test assembly those breakpoints
+   * bind into. Reporting the attach as settled there is what makes the Debug
+   * press look like it did nothing: the run hands control back while the
+   * debugger is still coming up, so the user's breakpoint is not armed when the
+   * host resumes (issue #233). Spec: [DEBUG-FEATURES-TESTS].
+   */
+  private async settleSession(
+    session: vscode.DebugSession | undefined,
+    pid: number,
+  ): Promise<void> {
+    if (session === undefined) return;
+    await whenDebugSessionArmed(session);
+    info(`Test debug: session for pid ${String(pid)} is armed and running`);
   }
 
   /** The workspace folder the debug session is scoped to. */

@@ -116,28 +116,33 @@ internal sealed partial class WorkspaceManager
         _adhocWorkspace ??= new AdhocWorkspace();
         await PrepareProjectlessRootAsync(rootPath, ct).ConfigureAwait(false);
 
-        var project = _adhocWorkspace.AddProject(BuildProjectInfo(kind, rootPath));
-        foreach (var file in closure.Files)
-        {
-            var docInfo = BuildDocumentInfo(project.Id, file, kind);
-            _ = _adhocWorkspace.AddDocument(docInfo);
-        }
-
-        if (kind == ProjectlessKind.FileBasedApp)
-        {
-            _ = _adhocWorkspace.AddDocument(BuildGlobalUsingsInfo(project.Id, rootPath));
-        }
+        var projectInfo = BuildProjectInfo(kind, rootPath);
 
         await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            _solution = _adhocWorkspace.CurrentSolution;
+            // ADDED TO the live solution, never read back out of _adhocWorkspace.
+            //
+            // `_solution` is the only authority on what is loaded. It accumulates
+            // everything that happens after a root opens: live document text, closure
+            // reconciliation, and the tier-1 metadata references a settled restore
+            // swaps in. `_adhocWorkspace.CurrentSolution` accumulates none of that —
+            // it forks away the first time a document's text changes.
+            //
+            // Publishing `_adhocWorkspace.CurrentSolution` here therefore did not open
+            // a root, it RESET every root: each new file-based app discarded the
+            // resolved `#:package` references of every app already open, which went
+            // red with CS0246 about 20ms after the neighbour loaded and stayed red
+            // until something happened to re-resolve them. Two roots were not isolated
+            // but serially destructive — only the most recently opened one had a valid
+            // package context. Issue #294, [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
+            _solution = AddProjectlessRoot(kind, rootPath, projectInfo, closure);
             ReplayPendingTextEdits();
             // Under the same lock as the solution publication: a diagnostics state
             // capture must never see the tier-2 solution without its pending notice.
             // The didChange path already starts resolution under this lock; the open
             // path must match it. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            StartPackageResolution(kind, rootPath, project.Id, closure);
+            StartPackageResolution(kind, rootPath, projectInfo.Id, closure);
         }
         finally
         {
@@ -146,6 +151,48 @@ internal sealed partial class WorkspaceManager
 
         LogClosure(kind, rootPath, closure);
         return new VoidResult.Ok<Unit, string>(Unit.Value);
+    }
+
+    /// <summary>
+    /// Add one projectless root's project and closure documents to the live solution.
+    /// </summary>
+    /// <remarks>
+    /// The baseline is <c>_solution</c> whenever it is one of this adhoc workspace's
+    /// own forks, so roots accumulate instead of replacing each other. Implements
+    /// [SCRIPT-CLOSURE].
+    /// </remarks>
+    private Solution AddProjectlessRoot(
+        ProjectlessKind kind,
+        string rootPath,
+        ProjectInfo projectInfo,
+        Closure closure
+    )
+    {
+        var next = ProjectlessBaseline().AddProject(projectInfo);
+        foreach (var file in closure.Files)
+        {
+            next = next.AddDocument(BuildDocumentInfo(projectInfo.Id, file, kind));
+        }
+
+        return kind == ProjectlessKind.FileBasedApp
+            ? next.AddDocument(BuildGlobalUsingsInfo(projectInfo.Id, rootPath))
+            : next;
+    }
+
+    /// <summary>The solution a newly opened projectless root is added to.</summary>
+    /// <remarks>
+    /// Projectless projects must descend from <c>_adhocWorkspace</c>: a live edit is
+    /// routed to closure re-expansion by testing its document's
+    /// <c>Solution.Workspace</c> for <c>AdhocWorkspace</c>, so a root forked off an
+    /// MSBuild solution would silently stop re-expanding its own closure. When a
+    /// previously loaded <c>.sln</c> still owns <c>_solution</c>, this starts a fresh
+    /// adhoc fork rather than grafting a file-based app onto it.
+    /// </remarks>
+    private Solution ProjectlessBaseline()
+    {
+        return _solution is not null && ReferenceEquals(_solution.Workspace, _adhocWorkspace)
+            ? _solution
+            : _adhocWorkspace!.CurrentSolution;
     }
 
     /// <summary>

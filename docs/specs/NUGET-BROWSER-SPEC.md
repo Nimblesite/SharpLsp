@@ -232,6 +232,30 @@ interface NuGetInstallResponse {
 - On success, trigger sidecar workspace reload for every project that transitively imports the modified file.
 - Return `modifiedFiles` so the UI can show a toast like `Updated Directory.Build.props`.
 
+### [NUGET-REQUESTS-UPDATE] Bounded, Explicit Package Updates
+
+Product decision for [#270](https://github.com/Nimblesite/SharpLsp/issues/270): **latest is a proposal, never an unbounded mutation**. This contract applies equally to `sharplsp.nuget.update` and the browser's Update action, for F# and C#.
+
+#### [NUGET-REQUESTS-UPDATE-BOUNDS] Default Candidate
+
+- Start from an explicitly selected target and one of its installed direct packages, not an arbitrary typed package name. Update MUST NOT silently install a previously absent package or select a different project.
+- Propose the highest stable NuGet version strictly greater than the currently resolved version within the same major. For major zero, stay within the same minor: `0.4.2` may propose `0.4.9`, never `0.5.0`. `3.0.0` may propose `3.9.0`, never `4.0.0`.
+- Order using NuGet version semantics, never lexicographic order or publication date. A major/minor bound reduces surprise; it is not a guarantee of source compatibility.
+- No candidate means an "Already up to date within this version line" result with no edit. Lookup failure, cancellation, an unavailable source, or ambiguous installed versions MUST leave files unchanged; never retry without a version or broaden the bound.
+- A floating/ranged, property-based, conditional, or differently resolved multi-target declaration MUST NOT be silently flattened into one version. Show the ambiguity and require the explicit version-selection flow; preserve conditions and existing constraints unless the user explicitly approves changing them.
+
+#### [NUGET-REQUESTS-UPDATE-CONFIRM] Exact Selection and Application
+
+- Before mutation, display the target, package, current version, and exact proposed version. Require confirmation. Keep the selected version fixed from preview through apply; if the declaration changes meanwhile, refresh the preview instead of applying a stale choice.
+- The browser's explicit version picker can cross a major (or a `0.x` minor), but MUST identify that boundary and require confirmation of the exact version. Prereleases are excluded from the default update proposal; enabling `nuget.includePrerelease` only exposes them in the explicit picker, never authorizes installing one automatically.
+- Apply via the existing `sharplsp/nuget/install` request with a concrete version and [NUGET-XML-DOM]. A missing version, `latest`, wildcard, or an unbounded `dotnet add package` invocation is forbidden for this action. Do not persist the candidate-search range as the new declaration.
+- Reuse host-side installed/version lookup, restore feedback and reactive reload. Editor commands MUST NOT introduce a second CLI/HTTP/XML path. With CPM or shared props, preview the actual version-owning file and affected projects before confirmation.
+- An incompatible or failed restore MUST be reported as failure, not "Updated" success. Retain the exact attempted version in the error; do not silently choose another release. A known security fix outside the default bound may be highlighted, but still requires explicit selection.
+
+#### [NUGET-REQUESTS-UPDATE-TESTS] Deterministic Regression Contract
+
+Use disposable, real `.fsproj` and `.csproj` workspaces with a controlled package source/version inventory. Assert within-line selection, major and prerelease opt-in, cancellation, unavailable feeds, ambiguity, CPM ownership, and exact-version apply. Test selection MUST fail if its expected project is absent; no fallback to the first workspace project. Assert unrelated files and checked-in fixtures remain byte-for-byte unchanged, including on failure. Implementation progress is tracked in [NUGET-UPDATE-PLAN.md](../plans/NUGET-UPDATE-PLAN.md); documenting this decision does not close #270.
+
 ### [NUGET-REQUESTS-UNINSTALL] `sharplsp/nuget/uninstall`
 
 Remove a NuGet package from a target.

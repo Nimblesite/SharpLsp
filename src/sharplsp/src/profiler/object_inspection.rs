@@ -107,64 +107,61 @@ pub async fn inspect(params: InspectObjectParams) -> Result<ObjectInspection> {
 /// 00007ff8abcd  4001  c          System.Char  1 instance               48 m_firstChar
 /// ```
 fn parse_dumpobj_output(output: &str, address: &str) -> Result<ObjectInspection> {
-    let mut type_name = String::new();
-    let mut size_bytes: u64 = 0;
-    let mut fields = Vec::new();
-    let mut in_fields_section = false;
-    let mut fields_header_seen = false;
-
-    for line in output.lines() {
-        let trimmed = line.trim();
-
-        if trimmed.starts_with("Name:") {
-            type_name = trimmed
-                .strip_prefix("Name:")
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            continue;
-        }
-
-        if trimmed.starts_with("Size:") {
-            size_bytes = parse_size_field(trimmed);
-            continue;
-        }
-
-        if trimmed.starts_with("Fields:") {
-            in_fields_section = true;
-            continue;
-        }
-
-        if in_fields_section {
-            // Skip the header row.
-            if !fields_header_seen && trimmed.contains("MT") && trimmed.contains("Name") {
-                fields_header_seen = true;
-                continue;
-            }
-
-            if fields_header_seen {
-                if let Some(field) = parse_field_line(trimmed) {
-                    fields.push(field);
-                }
-            }
-        }
-    }
-
-    if type_name.is_empty() {
+    let listing = read_dumpobj(output);
+    if listing.type_name.is_empty() {
         anyhow::bail!(
             "could not parse dumpobj output for address {address}: \
              no 'Name:' line found"
         );
     }
-
     Ok(ObjectInspection {
         address: address.to_string(),
-        type_name,
-        size_bytes,
-        fields,
+        type_name: listing.type_name,
+        size_bytes: listing.size_bytes,
+        fields: listing
+            .field_rows
+            .iter()
+            .filter_map(|row| parse_field_line(row))
+            .collect(),
         generation: "unknown".to_string(),
         is_pinned: false,
     })
+}
+
+/// The parts of one SOS `dumpobj` listing that inspection and graph walking
+/// both read.
+pub(super) struct DumpObjListing<'a> {
+    /// The object's full type name (the `Name:` line); empty when absent.
+    pub type_name: String,
+    /// The `Size:` line's byte count; 0 when absent.
+    pub size_bytes: u64,
+    /// The rows of the `Fields:` table, its header row excluded.
+    pub field_rows: Vec<&'a str>,
+}
+
+/// Split `dumpobj` output into its type name, size and field rows.
+pub(super) fn read_dumpobj(output: &str) -> DumpObjListing<'_> {
+    let mut listing = DumpObjListing {
+        type_name: String::new(),
+        size_bytes: 0,
+        field_rows: Vec::new(),
+    };
+    let mut in_fields = false;
+    let mut header_seen = false;
+    for trimmed in output.lines().map(str::trim) {
+        if let Some(name) = trimmed.strip_prefix("Name:") {
+            listing.type_name = name.trim().to_string();
+        } else if trimmed.starts_with("Size:") {
+            listing.size_bytes = parse_size_field(trimmed);
+        } else if trimmed.starts_with("Fields:") {
+            in_fields = true;
+        } else if in_fields && !header_seen && trimmed.contains("MT") && trimmed.contains("Name") {
+            header_seen = true;
+        } else if header_seen {
+            listing.field_rows.push(trimmed);
+        }
+    }
+    listing
 }
 
 /// Parse a field line from `dumpobj` output.
@@ -175,17 +172,7 @@ fn parse_dumpobj_output(output: &str, address: &str) -> Result<ObjectInspection>
 /// two tokens are always Value and Name. The Type column can contain spaces
 /// (e.g. `System.Collections.Generic.List'1`).
 fn parse_field_line(line: &str) -> Option<ObjectField> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with("---") {
-        return None;
-    }
-
-    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-
-    // Need at least: MT, FieldToken, Offset, Type, VT, Attr, Value, Name
-    if tokens.len() < 8 {
-        return None;
-    }
+    let tokens = field_tokens(line)?;
 
     // Name is always the last token.
     let name = (*tokens.last()?).to_string();
@@ -231,8 +218,20 @@ fn parse_field_line(line: &str) -> Option<ObjectField> {
     })
 }
 
+/// The whitespace-separated columns of a `dumpobj` field line, or `None` for
+/// a blank line, the `---` separator, or a line too short to be a field row
+/// (`MT  FieldToken  Offset  Type  VT  Attr  Value  Name`).
+pub(super) fn field_tokens(line: &str) -> Option<Vec<&str>> {
+    let trimmed = line.trim();
+    if trimmed.starts_with("---") {
+        return None;
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    (tokens.len() >= 8).then_some(tokens)
+}
+
 /// Parse the Size field: `Size: 52(0x34) bytes` → 52.
-fn parse_size_field(line: &str) -> u64 {
+pub(super) fn parse_size_field(line: &str) -> u64 {
     let after_colon = line.strip_prefix("Size:").unwrap_or(line).trim();
 
     // Take digits before the first non-digit character.

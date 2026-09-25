@@ -1,0 +1,111 @@
+// Driving the CodeLens surface from an end-to-end test.
+//
+// `vscode.executeCodeLensProvider` is a FAN-OUT, not a call to one provider:
+// VS Code asks EVERY provider registered for the document and resolves only
+// once the SLOWEST of them has answered. On a `csharp`/`fsharp` file that is
+// two providers, not one:
+//
+//   • `TestStatusLensProvider` (`src/test-lens.ts`) — pure, in-process, sub-ms;
+//   • the LSP client's server-backed provider — `textDocument/codeLens` to the
+//     Rust host, which forwards it to the Roslyn or FCS sidecar.
+//
+// So a test that asserts ONLY on this extension's own lenses still pays the
+// sidecar's latency, and the FIRST such call for a language pays that sidecar's
+// COLD START. Measured on a warm dev box: 96ms for C# (Roslyn already loaded by
+// an earlier suite) against 1967ms for the first F# call in the process — a
+// twentyfold gap, and a CI agent cracking FCS for the first time is slower
+// again.
+//
+// Charging that cold start to a test body is what failed three tests at once in
+// the Windows `testexplorer` chunk: the first F# lens call blew its ceiling,
+// and because the Rust host serves LSP requests one at a time on a single
+// dispatch loop, the two C# lens tests queued behind it burned their whole
+// ceilings too, without ever being served.
+//
+// Hence this module: request lenses through `codeLensesFor`, and pay the cold
+// start ONCE in `suiteSetup` via `warmCodeLensPath` — the same discipline
+// `warmSemanticEngine` applies to code actions ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+
+import * as vscode from 'vscode';
+
+/**
+ * Every CodeLens contributed for `uri`, from every registered provider.
+ *
+ * Resolves only when the slowest provider has answered, so a caller belongs on
+ * a tier that accounts for a SIDECAR reply (`LSP_RESPONSE_MS` or above), never
+ * on `COMMAND_MS` — that tier is defined as an editor round trip which never
+ * reaches a sidecar.
+ *
+ * The document is opened first. Unlike most `execute*Provider` commands,
+ * `vscode.executeCodeLensProvider` does NOT create a model reference of its
+ * own: it looks the URI up among the text models the editor already holds and
+ * throws a bare `Illegal argument` when there is none. A caller passing a file
+ * that is merely ON DISK therefore gets an error naming neither the file nor
+ * the reason, which reads like a broken provider rather than an unopened
+ * document. Opening it here is what every caller already means by "the lenses
+ * on this file", and is a no-op for a file some editor is showing.
+ */
+export async function codeLensesFor(uri: vscode.Uri): Promise<vscode.CodeLens[]> {
+  await vscode.workspace.openTextDocument(uri);
+  const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+    'vscode.executeCodeLensProvider',
+    uri,
+  );
+  return lenses ?? [];
+}
+
+/**
+ * Pay the code-lens cold start for each `uri` up front. Call from `suiteSetup`
+ * on a tier that admits a cold sidecar (`SIDECAR_COLD_MS`), passing ONE file
+ * per language the suite goes on to exercise.
+ *
+ * Sequential on purpose. The host dispatches one request at a time, so issuing
+ * them together buys nothing and only makes a hook failure ambiguous about
+ * which language never warmed.
+ *
+ * The result is discarded and nothing is polled for. A loose fixture outside
+ * any project may legitimately carry no server-side lenses at all, and a
+ * warm-up that can fail on a healthy file is worse than no warm-up — the same
+ * trap documented on `warmSemanticEngine`.
+ */
+export async function warmCodeLensPath(...uris: readonly vscode.Uri[]): Promise<void> {
+  for (const uri of uris) {
+    await codeLensesFor(uri);
+  }
+}
+
+/** The test-lens toggle, `sharplsp.testLens.enabled`, as a section and a key. */
+export const TEST_LENS_SECTION = 'sharplsp.testLens';
+export const TEST_LENS_KEY = 'enabled';
+
+/** Write the test-lens toggle at `target` scope; `undefined` removes the key. */
+export async function setTestLens(
+  enabled: boolean | undefined,
+  target: vscode.ConfigurationTarget = vscode.ConfigurationTarget.Workspace,
+): Promise<void> {
+  await vscode.workspace.getConfiguration(TEST_LENS_SECTION).update(TEST_LENS_KEY, enabled, target);
+}
+
+/**
+ * Run `body`, then restore the EXACT prior workspace value of the toggle —
+ * `undefined` when it was unset, so the key is removed rather than persisted
+ * into the fixture settings.
+ */
+export async function withTestLensRestored(body: () => Promise<void>): Promise<void> {
+  const saved = vscode.workspace
+    .getConfiguration(TEST_LENS_SECTION)
+    .inspect<boolean>(TEST_LENS_KEY)?.workspaceValue;
+  try {
+    await body();
+  } finally {
+    await setTestLens(saved);
+  }
+}
+
+/** The method names `lenses` hand their command, sorted. */
+export function lensTargets(lenses: readonly vscode.CodeLens[]): string[] {
+  return lenses
+    .map((lens) => lens.command?.arguments?.[1])
+    .filter((name): name is string => typeof name === 'string')
+    .sort();
+}

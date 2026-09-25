@@ -4,8 +4,9 @@
 // [DEBUG-FEATURES-LAUNCH-DYNAMIC], [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION].
 //
 // Split out of run-debug-contributions.test.ts so both files clear the 500-line
-// ceiling. Everything here reads the LIVE manifest through the run/debug kit, so
-// an expectation can never drift from what VS Code actually parsed.
+// ceiling. Everything here reads the LIVE manifest through the run/debug kit, or
+// the launch.json schema VS Code built from it, so an expectation can never drift
+// from what VS Code actually parsed.
 // Manifest conformance for RUN and DEBUG.
 //
 // Spec: [DEBUG-FEATURES-LAUNCH-CONTRIBUTIONS], [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION],
@@ -18,11 +19,15 @@
 // ([DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rule 4) — so the manifest VS Code itself parsed,
 // the constants module and the live command registry are the only honest assertion surfaces.
 import * as assert from 'node:assert/strict';
+import * as vscode from 'vscode';
 import { SharpLspBuildTaskProvider } from '../../build.js';
 import * as constants from '../../constants.js';
+import { isRecord } from '../../utils.js';
 import {
   CMD_DEBUG_PROGRAM,
   CMD_RUN_PROGRAM,
+  DEBUG_TYPE_ID,
+  authoredConfigurationAttributes,
   contributes,
   debuggerContribution,
   menuItems,
@@ -55,7 +60,7 @@ export const CORE_INJECTED = (
 ).split(' ');
 /** The launch schema of [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 3, sorted. */
 export const LAUNCH_SCHEMA = (
-  'args console cwd env hotReload justMyCode program ' +
+  'args console cwd env exceptionPolicy hotReload justMyCode program ' +
   'requireExactSource stopAtEntry symbolOptions'
 ).split(' ');
 /**
@@ -65,7 +70,7 @@ export const LAUNCH_SCHEMA = (
  * `config.justMyCode ??= true` BEFORE it checks the request kind, so an attach
  * configuration receives it too, and rule 3 requires the schema to say so.
  */
-export const ATTACH_SCHEMA = 'justMyCode processId'.split(' ');
+export const ATTACH_SCHEMA = 'exceptionPolicy justMyCode processId'.split(' ');
 export const ACCIDENT =
   'both must be listed: C# breakpoints are impossible today, and F# works only by accident ' +
   'because the built-in ms-vscode.js-debug happens to contribute fsharp (rule 3)';
@@ -150,11 +155,111 @@ export function expectedPairs(group: string): string[][] {
   return RUN_DEBUG.map((id, index) => [id, `${group}@${index + 1}`]);
 }
 
-/** The `configurationAttributes` block of the debugger contribution. */
-export function configurationAttributes(): Record<string, any> {
-  const attributes = debuggerContribution().configurationAttributes;
-  assert.ok(attributes?.launch, 'the debugger must declare configurationAttributes.launch');
-  return attributes;
+/** The launch.json schema core's debug service registers, the one IntelliSense serves. */
+const LAUNCH_JSON_SCHEMA = vscode.Uri.parse('vscode://schemas/launch');
+
+/** How a served schema refers to a subschema it factored out into `$defs`. */
+const DEFS_REF = '#/$defs/';
+
+/** What core prepends to every request's `required`, in core's order. */
+const CORE_REQUIRED = ['name', 'type', 'request'];
+
+/**
+ * The debugger's `configurationAttributes` as core's merge leaves them: the
+ * `<type>:<request>` definitions of the launch.json schema core builds from the
+ * contribution, the schema IntelliSense serves.
+ *
+ * NOT `extension.packageJSON` (#261). Core merges in the RENDERER, mutating the
+ * contribution it holds, and the extension host received its copy of the manifest
+ * once, at startup. Whether that copy shows the merge depends on which of the two
+ * ran first, and no amount of polling in the extension host changes it.
+ *
+ * Core registers the schema empty at startup and adds these definitions when it
+ * handles the `debuggers` contribution, which the extension host does not wait
+ * for. Until then this is `{}`, and a caller polling for the merge keeps waiting.
+ */
+export async function configurationAttributes(): Promise<Record<string, any>> {
+  const authored = authoredConfigurationAttributes();
+  assert.ok(authored.launch, 'the debugger must declare configurationAttributes.launch');
+  const definitions = launchDefinitions(await servedSchema(LAUNCH_JSON_SCHEMA));
+  return Object.fromEntries(
+    Object.entries(definitions).map(([request, definition]) => {
+      const required = mergedOnce(definition.required, authored[request]?.required);
+      return [request, { ...definition, required }];
+    }),
+  );
+}
+
+/** This debugger's `<type>:<request>` definitions in the launch schema, by request. */
+function launchDefinitions(
+  schema: Record<string, unknown>,
+): Record<string, Record<string, unknown>> {
+  const definitions = isRecord(schema.definitions) ? schema.definitions : {};
+  const prefix = `${DEBUG_TYPE_ID}:`;
+  // `<type>:<request>` only: each request also has a `<type>:<request>:platform`.
+  return Object.fromEntries(
+    Object.entries(definitions).flatMap(([id, definition]): [string, Record<string, unknown>][] => {
+      const request = id.startsWith(prefix) ? id.slice(prefix.length) : '';
+      const own = request !== '' && !request.includes(':') && isRecord(definition);
+      return own ? [[request, definition]] : [];
+    }),
+  );
+}
+
+/**
+ * `required` as ONE merge leaves it: core's three, then the authored list.
+ *
+ * Core does not merge idempotently. Every rebuild of the launch schema prepends
+ * its three again - the debuggers handler, then task-label and `when`-key
+ * changes - so the live schema carries one copy per rebuild. Anything in front
+ * of the authored list other than whole copies of core's three is not core's
+ * doing, and fails here.
+ */
+function mergedOnce(live: unknown, authored: unknown): string[] {
+  const own = Array.isArray(authored) ? authored.map(String) : [];
+  const listed = Array.isArray(live) ? live.map(String) : [];
+  const prepended = listed.slice(0, Math.max(0, listed.length - own.length));
+  const copies = prepended.length / CORE_REQUIRED.length;
+  const coreOnly = prepended.every(
+    (name, index) => name === CORE_REQUIRED[index % CORE_REQUIRED.length],
+  );
+  const shown = `'required' is ${JSON.stringify(listed)}`;
+  assert.ok(
+    Number.isInteger(copies) && copies >= 1 && coreOnly,
+    `core prepends its three: ${shown}`,
+  );
+  assert.deepStrictEqual(listed.slice(prepended.length), own, `then the authored list: ${shown}`);
+  return [...CORE_REQUIRED, ...own];
+}
+
+/** A schema as VS Code serves it, with every subschema it factored into `$defs` put back. */
+async function servedSchema(uri: vscode.Uri): Promise<Record<string, unknown>> {
+  const served: unknown = JSON.parse(
+    new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)),
+  );
+  assert.ok(isRecord(served), `${uri.toString()} must serve a JSON object`);
+  const inflated = inflate(served, isRecord(served.$defs) ? served.$defs : {});
+  return isRecord(inflated) ? inflated : {};
+}
+
+/**
+ * Replace each `#/$defs/<id>` reference with the subschema it stands for.
+ *
+ * VS Code serves a schema compressed: a subschema that occurs more than once is
+ * written once under `$defs` and referenced everywhere it occurred. The launch
+ * schema repeats every attribute (the `<type>:<request>` definition and the
+ * `configurations` entry share them), so read raw, `console` would be a `$ref`.
+ */
+function inflate(node: unknown, defs: Record<string, unknown>): unknown {
+  if (Array.isArray(node)) return node.map((item) => inflate(item, defs));
+  if (!isRecord(node)) return node;
+  const ref = node.$ref;
+  if (typeof ref === 'string' && ref.startsWith(DEFS_REF)) {
+    return inflate(defs[ref.slice(DEFS_REF.length)], defs);
+  }
+  return Object.fromEntries(
+    Object.entries(node).map(([key, value]) => [key, inflate(value, defs)]),
+  );
 }
 
 /** The `configurationSnippets` array of the debugger contribution. */

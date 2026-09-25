@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import * as log from './log.js';
-import { getErrorMessage } from './utils.js';
+import { escapeHtml, getErrorMessage } from './utils.js';
 import {
   CMD_PROFILER_LIST_PROCESSES,
   CMD_PROFILER_START_TRACE,
@@ -482,13 +482,7 @@ export function formatCounterValue(value: number, unit: string): string {
   return value.toFixed(2);
 }
 
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+export { escapeHtml };
 
 // ── Status Bar ────────────────────────────────────────────────────
 
@@ -730,33 +724,35 @@ export function registerCommands(
     }),
   );
 
+  /** The live session a tree item stands for, with its id. */
+  const sessionOf = (item?: ProfilerTreeItem): { id: string; session: SessionInfo } | undefined => {
+    const id = item?.sessionId;
+    const session = id === undefined ? undefined : provider.findSession(id);
+    return id === undefined || session === undefined ? undefined : { id, session };
+  };
+  const showCounters = (id: string, pid: number): void => {
+    counterPanels.set(id, CounterWebviewPanel.open(id, pid, context));
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_SHOW_COUNTERS_PANEL, (item?: ProfilerTreeItem) => {
-      const sessionId = item?.sessionId;
-      if (sessionId === undefined) return;
-      const session = provider.findSession(sessionId);
-      if (session === undefined) return;
-      const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
-      counterPanels.set(sessionId, panel);
+      const found = sessionOf(item);
+      if (found !== undefined) showCounters(found.id, found.session.pid);
     }),
   );
 
   // Default click on a session tree item: dispatch to the right "stop" by kind.
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_STOP_SESSION, async (item?: ProfilerTreeItem) => {
-      const sessionId = item?.sessionId;
-      if (sessionId === undefined) return;
-      const session = provider.findSession(sessionId);
-      if (session === undefined) return;
-      if (session.kind === 'Trace') {
-        const outputPath = await stopTraceById(sessionId);
+      const found = sessionOf(item);
+      if (found?.session.kind === 'Trace') {
+        const outputPath = await stopTraceById(found.id);
         if (outputPath !== undefined) {
           await openTraceFile(getClient(), outputPath);
         }
-      } else if (session.kind === 'Counters') {
+      } else if (found?.session.kind === 'Counters') {
         // Clicking a counters session reveals the live panel rather than stopping it.
-        const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
-        counterPanels.set(sessionId, panel);
+        showCounters(found.id, found.session.pid);
       }
     }),
   );
@@ -795,15 +791,31 @@ export function registerCommands(
     }),
   );
 
+  /**
+   * The output file a profiler row points at, or `undefined` once the user has
+   * been told why nothing happened.
+   *
+   * The Command Palette invokes these row commands with NO argument, and a notice
+   * about a session's trace file says nothing to a user who selected no session -
+   * so an absent row is a silent no-op, and only a real row whose trace has not
+   * been written yet earns the message.
+   */
+  function outputPathOf(item: ProfilerTreeItem | undefined): string | undefined {
+    if (item === undefined) return undefined;
+    const path = item.outputPath;
+    if (path === undefined || path.length === 0) {
+      void vscode.window.showInformationMessage('Session has no output file yet.');
+      return undefined;
+    }
+    return path;
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD_PROFILER_COPY_OUTPUT_PATH,
       async (item?: ProfilerTreeItem) => {
-        const path = item?.outputPath;
-        if (path === undefined || path.length === 0) {
-          void vscode.window.showInformationMessage('Session has no output file yet.');
-          return;
-        }
+        const path = outputPathOf(item);
+        if (path === undefined) return;
         await vscode.env.clipboard.writeText(path);
         void vscode.window.showInformationMessage(`Copied: ${path}`);
       },
@@ -812,11 +824,8 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_REVEAL_OUTPUT, async (item?: ProfilerTreeItem) => {
-      const path = item?.outputPath;
-      if (path === undefined || path.length === 0) {
-        void vscode.window.showInformationMessage('Session has no output file yet.');
-        return;
-      }
+      const path = outputPathOf(item);
+      if (path === undefined) return;
       await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(path));
     }),
   );

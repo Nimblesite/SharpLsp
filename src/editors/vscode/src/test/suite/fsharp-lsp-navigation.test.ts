@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { closeAllEditors, pollUntilResult, pollProvider } from './test-helpers';
 import {
   hoverText,
   normalizeLocation,
@@ -238,13 +238,5 @@ async function pollUntilArray<T>(
   predicate: (items: T[]) => boolean,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<T[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<T[]>(command, uri, position);
-      return result ?? [];
-    },
-    predicate,
-    timeoutMs,
-    2_000,
-  );
+  return pollProvider<T>(command, [uri, position], predicate, timeoutMs, 2_000);
 }

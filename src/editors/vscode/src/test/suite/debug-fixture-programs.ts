@@ -17,11 +17,16 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AnchoredSource } from './debug-anchors';
+import { writeExceptionLibrary } from './debug-library-fixture';
 import { buildProjectXml, writeProject } from './dotnet-project-kit';
 import { TFM, builtDll, isolateFromRepoMsbuild, type ConsoleProject } from './run-debug-fixtures';
 
 /** `argv[0]` values the fixtures understand. A launch config passes one in `args`. */
 export const MODE = {
+  /** A library handles its own throw before returning to user code. */
+  libraryCaught: 'library-caught',
+  /** Throws inside a framework method, matching a missing Assembly.Load dependency. */
+  missingAssembly: 'missing-assembly',
   /** Runs to completion, throws nothing. */
   plain: 'plain',
   /** Throws an `InvalidOperationException` and CATCHES it. */
@@ -150,9 +155,18 @@ public static class Program
         return numbers.Count + maybe.Value;                            // @anchor:inspect-return
     }
 
+    // Opened by Main only after RootAsync has returned its Task, so by the time
+    // the leaf resumes every awaiter in the chain has registered its
+    // continuation. A leaf that yields to the thread pool instead resumes WHILE
+    // the caller is still unwinding through its awaits, and a breakpoint in it
+    // stops the world mid-registration: the heap then holds a chain with no
+    // continuations to follow, on whichever runs the pool thread wins.
+    private static readonly TaskCompletionSource LeafGate =
+        new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public static async Task<int> LeafAsync(int seed)
     {
-        await Task.Yield();                                            // @anchor:leaf-await
+        await LeafGate.Task;                                           // @anchor:leaf-await
         return seed + 1;                                               // @anchor:leaf-return
     }
 
@@ -183,7 +197,9 @@ public static class Program
 
         if (mode == "async" || mode == "both")
         {
-            Console.WriteLine(RootAsync(1).GetAwaiter().GetResult());  // @anchor:main-async
+            var root = RootAsync(1);                                   // @anchor:main-async
+            LeafGate.SetResult();                                      // @anchor:main-release
+            Console.WriteLine(root.GetAwaiter().GetResult());          // @anchor:main-await
         }
 
         if (mode == "unhandled" || mode == "both")
@@ -191,6 +207,14 @@ public static class Program
             ThrowUnhandled();                                          // @anchor:main-unhandled
         }
 
+        if (mode == "library-caught") {
+            var recovered = ExternalExceptions.Recover();              // @anchor:before-library
+            Console.WriteLine(recovered);                              // @anchor:after-library
+            var checkpoint = recovered + 1;                            // @anchor:step-after-library
+            Console.WriteLine(checkpoint);
+            ThrowCaught();
+        }
+        if (mode == "missing-assembly") System.Reflection.Assembly.Load("SharpLsp.MissingAssembly");
         if (mode == "wait")
         {
             // Mostly-managed spin: a pause that lands inside the native
@@ -254,9 +278,13 @@ let throwCaught () =
 let throwUnhandled () =
     raise (ApplicationException("unhandled-by-design", FormatException("inner-cause"))) // @anchor:throw-unhandled
 
+// Opened by main only after rootTask has returned its Task: see LeafGate in the
+// C# debuggee for why the leaf must not resume before the chain is registered.
+let leafGate = TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+
 let leafTask seed =
     task {
-        do! Task.Yield()                                               // @anchor:leaf-await
+        do! leafGate.Task                                              // @anchor:leaf-await
         return seed + 1                                                // @anchor:leaf-return
     }
 
@@ -279,8 +307,18 @@ let main argv =
     let numbers = [ 10; 20; 30 ]                                       // @anchor:main-list
     printfn "total=%d y=%d" total point.Y                              // @anchor:main-print
     if mode = "caught" || mode = "both" then throwCaught ()            // @anchor:main-caught
-    if mode = "async" || mode = "both" then printfn "%d" ((rootTask 1).Result) // @anchor:main-async
+    if mode = "async" || mode = "both" then
+        let root = rootTask 1                                          // @anchor:main-async
+        leafGate.SetResult()                                           // @anchor:main-release
+        printfn "%d" root.Result                                       // @anchor:main-await
     if mode = "unhandled" || mode = "both" then throwUnhandled ()      // @anchor:main-unhandled
+    if mode = "missing-assembly" then System.Reflection.Assembly.Load("SharpLsp.MissingAssembly") |> ignore
+    if mode = "library-caught" then
+        let recovered = ExternalExceptions.Recover()                   // @anchor:before-library
+        printfn "%d" recovered                                       // @anchor:after-library
+        let checkpoint = recovered + 1                                // @anchor:step-after-library
+        printfn "%d" checkpoint
+        throwCaught ()
     if mode = "wait" then
         // Mostly-managed spin — see the C# fixture for why not a bare Sleep.
         let waitUntil = System.DateTime.UtcNow.AddSeconds 30.0
@@ -352,7 +390,7 @@ export function writeCSharpStepTarget(dir: string): DebugFixture {
   writeProject(
     dir,
     `${CSHARP_NAME}.csproj`,
-    buildProjectXml({ properties: DEBUGGABLE }),
+    buildProjectXml({ properties: DEBUGGABLE, projectReferences: [writeExceptionLibrary(dir)] }),
     'Program.cs',
     CSHARP_SOURCE.text,
   );
@@ -367,6 +405,7 @@ export function writeFSharpStepTarget(dir: string): DebugFixture {
     `${FSHARP_NAME}.fsproj`,
     buildProjectXml({
       properties: DEBUGGABLE,
+      projectReferences: [writeExceptionLibrary(dir)],
       compileIncludes: ['Program.fs'],
       // The F# SDK floats FSharp.Core to the newest 10.1.x, and `task {}`
       // lowering (sequence points, continuation-wrapper shapes) differs

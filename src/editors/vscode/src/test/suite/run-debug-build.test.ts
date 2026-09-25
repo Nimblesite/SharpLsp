@@ -28,7 +28,7 @@ import {
   fakeFolder,
   focusDocument,
   invokeCommand,
-  legacyF5Config,
+  bareF5Config,
   stopAnyDebugSession,
 } from './run-debug-kit';
 import {
@@ -76,7 +76,7 @@ async function targetPathOf(project: ConsoleProject, tfm?: string): Promise<stri
 async function resolveFor(root: string): Promise<vscode.DebugConfiguration | undefined> {
   const provider = new SharpLspLaunchProvider();
   const resolved = await Promise.resolve(
-    provider.resolveDebugConfiguration(fakeFolder(root), legacyF5Config()),
+    provider.resolveDebugConfiguration(fakeFolder(root), bareF5Config()),
   );
   return resolved ?? undefined;
 }
@@ -119,9 +119,9 @@ async function resolveProgram(project: ConsoleProject): Promise<string | undefin
 function definedProgram(label: string, program: string | undefined): string {
   assert.notStrictEqual(program, undefined, `${label}: a built project must resolve a program`);
   const resolved = String(program);
-  assert.strictEqual(path.isAbsolute(resolved), true, `${label}: program must be absolute`);
+  assert.ok(path.isAbsolute(resolved), `${label}: program must be absolute`);
   assert.strictEqual(path.extname(resolved), '.dll', `${label}: launch the assembly, not apphost`);
-  assert.strictEqual(fs.existsSync(resolved), true, `${label}: ${resolved} must be on disk`);
+  assert.ok(fs.existsSync(resolved), `${label}: ${resolved} must be on disk`);
   return resolved;
 }
 
@@ -129,17 +129,17 @@ function definedProgram(label: string, program: string | undefined): string {
 async function assertMatchesMsbuild(project: ConsoleProject, program: string, tfm?: string) {
   const target = await targetPathOf(project, tfm);
   assert.notStrictEqual(target, '', `msbuild must report a TargetPath for ${project.projectFile}`);
-  assert.strictEqual(fs.existsSync(target), true, `msbuild's TargetPath must exist: ${target}`);
+  assert.ok(fs.existsSync(target), `msbuild's TargetPath must exist: ${target}`);
   const same = comparablePath(program) === comparablePath(target);
-  assert.strictEqual(same, true, `program must be MSBuild's TargetPath, not a guess: ${program}`);
-  assert.strictEqual(fs.existsSync(program), true, `the resolved program must exist: ${program}`);
+  assert.ok(same, `program must be MSBuild's TargetPath, not a guess: ${program}`);
+  assert.ok(fs.existsSync(program), `the resolved program must exist: ${program}`);
   return target;
 }
 
 /** Assert the resolver produced no path at all, or one that really exists. */
 function assertNeverFabricated(label: string, program: string | undefined): void {
   const honest = program === undefined || fs.existsSync(program);
-  assert.strictEqual(honest, true, `${label}: never return a missing path (${String(program)})`);
+  assert.ok(honest, `${label}: never return a missing path (${String(program)})`);
 }
 
 /**
@@ -154,7 +154,7 @@ function assertResolutionOutcome(
 ): void {
   const shown = JSON.stringify(complaints);
   if (program !== undefined) {
-    assert.strictEqual(fs.existsSync(program), true, `never return a missing path: ${program}`);
+    assert.ok(fs.existsSync(program), `never return a missing path: ${program}`);
     assert.deepStrictEqual(
       complaints,
       [],
@@ -177,7 +177,7 @@ async function assertPreLaunchTask(project: ConsoleProject): Promise<void> {
   const task: unknown = (await resolveFor(project.dir))?.preLaunchTask;
   assert.notStrictEqual(task, FOREIGN_TASK, `'${FOREIGN_TASK}' is the C# extension's task type`);
   const own = task === undefined || !String(task).startsWith('dotnet: ');
-  assert.strictEqual(own, true, `preLaunchTask must be a SharpLsp task; got ${String(task)}`);
+  assert.ok(own, `preLaunchTask must be a SharpLsp task; got ${String(task)}`);
 }
 
 /**
@@ -213,7 +213,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
   let sessions: DebugSessionRecorder;
   let tasks: TaskRecorder;
 
-  let legacy7: ConsoleProject;
+  let net7Console: ConsoleProject;
   let renamedCs: ConsoleProject;
   let renamedFs: ConsoleProject;
   let customOut: ConsoleProject;
@@ -238,7 +238,9 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     const at = (name: string): string => path.join(tmpRoot, 'shared', name);
     const multi = { TargetFrameworks: 'net8.0;net10.0' };
     const cs = writeCSharpConsole;
-    legacy7 = cs(at('Legacy7'), 'Legacy7', { properties: { TargetFramework: 'net7.0' } });
+    net7Console = cs(at('Net7Console'), 'Net7Console', {
+      properties: { TargetFramework: 'net7.0' },
+    });
     renamedFs = writeFSharpConsole(at('OriginalFs'), 'OriginalFs', {
       properties: { AssemblyName: 'RenamedFs' },
     });
@@ -246,7 +248,8 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     customOut = cs(at('CustomOut'), 'CustomOut', { properties: { OutputPath: 'out/' } });
     multiBuilt = cs(at('MultiBuilt'), 'MultiBuilt', { properties: multi });
     multiUnbuilt = cs(at('MultiUnbuilt'), 'MultiUnbuilt', { properties: multi });
-    for (const project of [legacy7, renamedFs, renamedCs, customOut]) await buildProject(project);
+    for (const project of [net7Console, renamedFs, renamedCs, customOut])
+      await buildProject(project);
     // Only ONE of the two target frameworks is built, on purpose.
     await dotnet(['build', multiBuilt.projectFile, '-c', 'Debug', '-f', 'net8.0'], multiBuilt.dir);
   });
@@ -297,9 +300,8 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     assertNeverFabricated('unbuilt projectEntryFromFile', entry.dll); // B28
     const entryCwd = comparablePath(entry.cwd);
     assert.strictEqual(entryCwd, comparablePath(project.dir), 'cwd is the project dir regardless');
-    assert.strictEqual(
+    assert.ok(
       entry.dll === undefined || path.isAbsolute(entry.dll),
-      true,
       `an unbuilt project resolves to nothing, or to an absolute path (${String(entry.dll)})`,
     );
     assert.strictEqual(entry.dll, undefined, 'and nothing is built yet, so it resolves to nothing');
@@ -318,9 +320,9 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     const target = await targetPathOf(project);
     assert.strictEqual(path.basename(target), 'Unbuilt.dll', 'MSBuild names the assembly');
     assert.strictEqual(relativeOutput(project, target), rel, 'the default single-TFM SDK layout');
-    assert.strictEqual(fs.existsSync(symbolsFor(target)), true, 'Debug emits the .pdb beside it');
+    assert.ok(fs.existsSync(symbolsFor(target)), 'Debug emits the .pdb beside it');
     const madeBin = fs.readdirSync(project.dir).includes('bin');
-    assert.strictEqual(madeBin, true, 'the build changed the directory step 1 proved was empty');
+    assert.ok(madeBin, 'the build changed the directory step 1 proved was empty');
 
     // 5 — resolve again. The answer must now be MSBuild's, and only MSBuild's.
     // An implicit build in step 3 is allowed, but only if it produced THIS file.
@@ -329,11 +331,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     assert.deepStrictEqual(complaintsSince(builtMark), [], 'success must show the user nothing');
     assert.strictEqual(comparablePath(built), comparablePath(target), 'and it is MSBuild’s answer');
     const implicit = comparablePath(String(unbuilt)) === comparablePath(target);
-    assert.strictEqual(
-      unbuilt === undefined || implicit,
-      true,
-      `step 3 must refuse or build ${rel}`,
-    );
+    assert.ok(unbuilt === undefined || implicit, `step 3 must refuse or build ${rel}`);
     await sessions.assertNoSession('a second resolution still starts nothing');
     await tasks.assertNoTask('a second resolution still runs nothing');
     assert.deepStrictEqual(stubs.log.infoMessages, [], 'a successful resolution informs nobody');
@@ -346,10 +344,18 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
 
     // 1 — a project whose ONLY target framework is outside the hardcoded list.
     // B29: a resolver restricted to net10.0/net9.0/net8.0 can never see it.
-    assertDirEntries(path.join(legacy7.dir, 'bin', 'Debug'), ['net7.0'], 'B29: net7.0 was built');
-    const legacy = await resolveFocused('net7.0', legacy7, 'bin/Debug/net7.0/Legacy7.dll'); // B29
-    const substituted = legacy.includes('net10.0');
-    assert.strictEqual(substituted, false, 'B29: never substitute an untargeted framework');
+    assertDirEntries(
+      path.join(net7Console.dir, 'bin', 'Debug'),
+      ['net7.0'],
+      'B29: net7.0 was built',
+    );
+    const net7Program = await resolveFocused(
+      'net7.0',
+      net7Console,
+      'bin/Debug/net7.0/Net7Console.dll',
+    ); // B29
+    const substituted = net7Program.includes('net10.0');
+    assert.ok(!substituted, 'B29: never substitute an untargeted framework');
 
     // 2 — F# FIRST: <AssemblyName> renames the output, the .fsproj name does not.
     const fsFile = path.basename(renamedFs.projectFile);
@@ -360,9 +366,9 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     const lang = vscode.window.activeTextEditor?.document.languageId;
     assert.strictEqual(lang, 'fsharp', 'F# is a first-class launch target, resolved before C#');
     const ghost = path.join(renamedFs.dir, 'bin', 'Debug', 'net10.0', 'OriginalFs.dll');
-    assert.strictEqual(fs.existsSync(ghost), false, 'B30: the project-file name names no file');
-    const moved = comparablePath(fsProgram) !== comparablePath(legacy);
-    assert.strictEqual(moved, true, 'focusing another project must change the resolved target');
+    assert.ok(!fs.existsSync(ghost), 'B30: the project-file name names no file');
+    const moved = comparablePath(fsProgram) !== comparablePath(net7Program);
+    assert.ok(moved, 'focusing another project must change the resolved target');
 
     // 3 — the same rule in C#, so neither language is special-cased.
     const csRel = 'bin/Debug/net10.0/RenamedCs.dll';
@@ -372,14 +378,14 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     // 4 — <OutputPath> moves the whole tree out from under bin/.
     const outProgram = await resolveFocused('OutputPath', customOut, 'out/net10.0/CustomOut.dll');
     const underBin = fs.existsSync(path.join(customOut.dir, 'bin'));
-    assert.strictEqual(underBin, false, 'B32: probing bin/ finds nothing once OutputPath moves it');
+    assert.ok(!underBin, 'B32: probing bin/ finds nothing once OutputPath moves it');
 
     // 5 — four projects, four distinct real assemblies, nothing else happened.
-    const programs = [legacy, fsProgram, csProgram, outProgram];
+    const programs = [net7Program, fsProgram, csProgram, outProgram];
     const onDisk = programs.map((program) => fs.existsSync(program));
     assert.deepStrictEqual(onDisk, [true, true, true, true], 'all four programs are real files');
     const names = programs.map((program) => path.basename(program));
-    const expected = ['Legacy7.dll', 'RenamedFs.dll', 'RenamedCs.dll', 'CustomOut.dll'];
+    const expected = ['Net7Console.dll', 'RenamedFs.dll', 'RenamedCs.dll', 'CustomOut.dll'];
     assert.deepStrictEqual(names, expected, 'each focus resolved its OWN project, in order');
     assert.strictEqual(
       new Set(programs.map(comparablePath)).size,
@@ -410,8 +416,8 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     const rel = 'bin/Debug/net8.0/MultiBuilt.dll';
     const builtProgram = await resolveFocused('multi-TFM', multiBuilt, rel, 'net8.0'); // B31
     const net10 = fs.existsSync(path.join(outputs, 'net10.0'));
-    assert.strictEqual(net10, false, 'the net10.0 output must be absent for this case to mean it');
-    assert.strictEqual(fs.existsSync(symbolsFor(builtProgram)), true, 'the TFM chosen has symbols');
+    assert.ok(!net10, 'the net10.0 output must be absent for this case to mean it');
+    assert.ok(fs.existsSync(symbolsFor(builtProgram)), 'the TFM chosen has symbols');
 
     // 3 — the same shape with NOTHING built: no TFM output exists at all.
     await focusDocument(multiUnbuilt.sourceFile);
@@ -423,9 +429,9 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     const unbuilt = await resolveProgram(multiUnbuilt);
     assertResolutionOutcome(multiUnbuilt, unbuilt, complaintsSince(unbuiltMark)); // B31
     const guessed = String(unbuilt).includes('net10.0');
-    assert.strictEqual(guessed, false, 'B31: fall back to the FIRST TFM (net8.0), never net10.0');
+    assert.ok(!guessed, 'B31: fall back to the FIRST TFM (net8.0), never net10.0');
     const distinct = comparablePath(String(unbuilt)) !== comparablePath(builtProgram);
-    assert.strictEqual(distinct, true, 'two projects must not resolve to the same program');
+    assert.ok(distinct, 'two projects must not resolve to the same program');
 
     // 4 — neither resolution ran, started or opened anything.
     await sessions.assertNoSession('multi-TFM resolution must not start a debug session');
@@ -453,7 +459,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
 
     // 2 — invoke the real command against the fixture project node.
     const outcome = await invokeCommand(CMD_BUILD, { projectFilePath: project.projectFile });
-    assert.strictEqual(outcome.rejected, false, `'${CMD_BUILD}' must resolve: ${outcome.message}`);
+    assert.ok(!outcome.rejected, `'${CMD_BUILD}' must resolve: ${outcome.message}`);
     assert.strictEqual(outcome.message, '', 'a successful build reports no failure message');
 
     // 3 — exactly one build, and it is a SharpLsp task with observable args.
@@ -494,10 +500,10 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     assert.deepStrictEqual(exits, [0], 'B33: exactly one build process ran, and it succeeded');
     assert.strictEqual(tasks.dotnetTasks.length, 1, 'B33: still one build once it finished');
     const target = await targetPathOf(project);
-    assert.strictEqual(fs.existsSync(target), true, `the build must produce ${target}`);
-    assert.strictEqual(fs.existsSync(symbolsFor(target)), true, 'and the symbols beside it');
+    assert.ok(fs.existsSync(target), `the build must produce ${target}`);
+    assert.ok(fs.existsSync(symbolsFor(target)), 'and the symbols beside it');
     const madeBin = fs.readdirSync(project.dir).includes('bin');
-    assert.strictEqual(madeBin, true, 'the task built the project it was handed, in its own dir');
+    assert.ok(madeBin, 'the task built the project it was handed, in its own dir');
 
     // 6 — the freshly built project now resolves to that same assembly.
     const rel = 'bin/Debug/net10.0/BuildOnce.dll';

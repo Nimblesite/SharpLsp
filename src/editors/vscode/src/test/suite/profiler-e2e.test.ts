@@ -26,6 +26,9 @@ import {
   closeAllEditors,
   setupLspTestSuite,
   teardownLspTestSuite,
+  assertContainsAll,
+  removeDirRecursive,
+  assertContainsNone,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import {
@@ -57,7 +60,6 @@ import {
   type LeakSuspect,
 } from '../../profiler-diff.js';
 import { ObjectGraphPanel, promptAndOpenGraph } from '../../profiler-graph.js';
-import { removeDirRecursive } from './test-helpers.js';
 import { ACTIVATION_MS, COMMAND_MS } from './test-timeouts';
 
 // ── Extension API access ─────────────────────────────────────────
@@ -141,10 +143,20 @@ function spyWebviewPanels(): PanelSpy {
 
 // ── Fake LanguageClient stubs (for workflow functions, no LSP needed) ──
 
-function resolvingDiffClient(
-  result: HeapDiffResult,
-  sink?: { method?: string; payload?: unknown },
-) {
+interface DiffSink {
+  method?: string;
+  payload?: unknown;
+}
+
+/** The client was asked to diff exactly the two dumps the user picked. */
+function assertDiffRequested(sink: DiffSink, baseline: vscode.Uri, comparison: vscode.Uri): void {
+  assert.strictEqual(sink.method, 'sharplsp/profiler/diffHeapSnapshots', 'correct LSP method');
+  const payload = sink.payload as { baseline_dump_path: string; comparison_dump_path: string };
+  assert.strictEqual(payload.baseline_dump_path, baseline.fsPath);
+  assert.strictEqual(payload.comparison_dump_path, comparison.fsPath);
+}
+
+function resolvingDiffClient(result: HeapDiffResult, sink?: DiffSink) {
   return {
     sendRequest: async (method: string, payload: unknown): Promise<unknown> => {
       if (sink) {
@@ -327,6 +339,35 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // No-arg invocation is a safe no-op (no pid → early return, clipboard intact).
     await vscode.commands.executeCommand('sharplsp.profiler.copyPid');
     assert.strictEqual(await vscode.env.clipboard.readText(), '778899');
+    assert.strictEqual(
+      stubs.log.infoMessages.length,
+      1,
+      'a no-op copy shows no second toast — one copy, one confirmation',
+    );
+
+    // Interaction 2 — the clipboard carries the PID ALONE. A user pastes it
+    // straight into `dotnet-trace collect -p`, so a label, a name or trailing
+    // whitespace makes the paste fail with a parse error
+    // ([PROFILER-PROCESS-LIST]).
+    assert.strictEqual(clip, clip.trim(), 'the clipboard text is not padded');
+    assertContainsNone(clip, ['WebApi', 'PID'], 'clip');
+    assert.strictEqual(Number(clip), 778899, 'so it parses back as the number it came from');
+
+    // Interaction 3 — a SECOND process copies its own PID over the first. A
+    // command that caches the first node it saw copies the wrong process for
+    // the rest of the session.
+    const other = buildProcessNode(proc({ pid: 112233, name: 'Worker', command_line: 'w.dll' }));
+    assert.strictEqual(other.processPid, 112233, 'the second node carries its own pid');
+    await vscode.commands.executeCommand('sharplsp.profiler.copyPid', other);
+    assert.strictEqual(
+      await vscode.env.clipboard.readText(),
+      '112233',
+      'the clipboard follows the node that was clicked',
+    );
+    assert.ok(
+      stubs.log.infoMessages.some((message) => message.includes('112233')),
+      'and the toast names the second pid too',
+    );
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -362,6 +403,34 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       stubs.log.infoMessages.some((m) => m.includes('no output file')),
       'missing output path surfaces the "no output file yet" message',
     );
+
+    // Interaction 3 — "no output yet" is INFORMATION, not an error. A trace
+    // that has not flushed its file is the normal state of a running session
+    // ([PROFILER-SESSIONS-LIFECYCLE]: Created -> Running -> Stopped), so a red
+    // toast for it trains the user to ignore red toasts.
+    assert.deepEqual(stubs.log.errorMessages, [], 'a pending output file is not an error');
+    assert.deepEqual(stubs.log.warningMessages, [], 'nor a warning');
+    assert.strictEqual(stubs.log.infoMessages.length, 2, 'one toast per invocation, no more');
+
+    // Interaction 4 — the copied path is the session's OWN output, verbatim.
+    // A path rewritten on the way to the clipboard cannot be opened, and
+    // [PROFILER-TRACE-CONVERSION] makes the sibling name load-bearing.
+    assert.strictEqual(withPath.outputPath, tracePath, 'the node still carries its own path');
+    assert.ok(tracePath.endsWith('.nettrace'), 'the fixture really is a trace file');
+    assert.strictEqual(
+      (await vscode.env.clipboard.readText()).trim(),
+      tracePath,
+      'and the clipboard holds it untrimmed and unrewritten',
+    );
+
+    // Interaction 5 — a no-arg invocation copies nothing at all, so a command
+    // run from the palette with no selection cannot clobber the clipboard.
+    await vscode.commands.executeCommand('sharplsp.profiler.copyOutputPath');
+    assert.strictEqual(
+      await vscode.env.clipboard.readText(),
+      tracePath,
+      'a no-arg copy leaves the clipboard untouched',
+    );
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -390,6 +459,16 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       'warning explains the destructive, irreversible action',
     );
     stubs.restore();
+
+    // Interaction 2 - [PROFILER-PROCESS-LIST] terminates a process the user
+    // does not own the lifetime of. The confirmation must therefore be MODAL
+    // and offer exactly the destructive verb: a non-modal toast can be swept
+    // away by the next notification before it is read, and an extra button is
+    // one more thing to mis-click.
+    assert.strictEqual(stubs.log.warningOptions[0]?.modal, true, 'the kill prompt is modal');
+    assert.deepEqual(stubs.log.warningActions[0], ['Kill'], "offering only 'Kill'");
+    assert.deepEqual(stubs.log.errorMessages, [], 'and a dismissed prompt is not an error');
+    assert.deepEqual(stubs.log.infoMessages, [], 'nor does it report a termination');
 
     // (b) Confirm "Kill": the real command sends the LSP request for a PID that
     //     does not exist. It must not throw; either an error toast or a refresh
@@ -431,11 +510,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       'counter panel title carries the PID',
     );
     const html = panelSpy.created[0]?.webview.html ?? '';
-    assert.ok(html.includes('Live .NET Performance Counters'), 'counter panel shows its heading');
-    assert.ok(
-      html.includes('Waiting for counter data'),
-      'fresh panel shows the waiting placeholder',
-    );
+    assertContainsAll(html, ['Live .NET Performance Counters', 'Waiting for counter data'], 'html');
 
     // stopSession with no session (unknown id) is a safe no-op (no extra panel).
     const orphan = new ProfilerTreeItem('x', 'session', vscode.TreeItemCollapsibleState.None, {
@@ -475,6 +550,36 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // No-arg invocation is a safe no-op.
     await vscode.commands.executeCommand('sharplsp.profiler.showCountersPanel');
     assert.strictEqual(panelSpy.created.length, 1);
+
+    // Interaction 2 — the panel is TITLED for its session. [PROFILER-EDITOR-VSCODE]
+    // lists one webview per counter session; two identically-titled tabs leave
+    // the user unable to tell which process they are watching.
+    const title = panelSpy.titles[0] ?? '';
+    assert.ok(title.length > 0, 'the counters panel carries a title');
+    assert.ok(
+      title.includes('9090') || title.includes('PanelProc') || /counter/i.test(title),
+      `the title identifies the session; got '${title}'`,
+    );
+    assert.strictEqual(panelSpy.titles.length, 1, 'and there is exactly one panel title');
+
+    // Interaction 3 — a SECOND session gets its OWN panel. Re-use is keyed by
+    // session id, not by "a counters panel exists"; sharing one panel across
+    // sessions overwrites the first process's live counters with the second's.
+    addTracked(provider, 'cnt-panel-2', 'Counters', 9091, undefined, 'OtherProc');
+    const second = buildSessionNode(provider.findSession('cnt-panel-2')!);
+    assert.notStrictEqual(second.sessionId, node.sessionId, 'the two nodes are different sessions');
+    await vscode.commands.executeCommand('sharplsp.profiler.showCountersPanel', second);
+    assert.strictEqual(panelSpy.created.length, 2, 'a second session opens a second panel');
+    assert.strictEqual(
+      new Set(panelSpy.titles).size,
+      2,
+      `the two panels are distinctly titled; got: ${panelSpy.titles.join(' | ')}`,
+    );
+
+    // Interaction 4 — and re-revealing the FIRST session still re-uses its own
+    // panel rather than the one that was opened most recently.
+    await vscode.commands.executeCommand('sharplsp.profiler.showCountersPanel', node);
+    assert.strictEqual(panelSpy.created.length, 2, 'no third panel for a session already shown');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -509,6 +614,46 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       stubs.log.infoMessages.some((m) => m.includes('No active Counters sessions')),
       'stopCounters with none active shows "No active Counters sessions"',
     );
+
+    // Interaction 2 — the two messages name their OWN session kind. A shared
+    // "no active sessions" string leaves the user unable to tell whether the
+    // trace they started is still running ([PROFILER-SESSIONS-LIFECYCLE]).
+    assert.strictEqual(stubs.log.infoMessages.length, 2, 'one message per command');
+    assert.strictEqual(
+      new Set(stubs.log.infoMessages).size,
+      2,
+      `the two messages differ; got: ${stubs.log.infoMessages.join(' | ')}`,
+    );
+    assert.deepEqual(stubs.log.errorMessages, [], 'having nothing to stop is not an error');
+
+    // Interaction 3 — nothing was picked and nothing was started. A stop with
+    // no candidates must not fall back to a picker the user then has to
+    // dismiss, and must not leave a phantom session behind.
+    assert.deepEqual(
+      stubs.log.quickPickItems,
+      [],
+      'no picker is shown when there is nothing to stop',
+    );
+    assert.strictEqual(provider.getActiveSessions('Trace').length, 0, 'still no trace sessions');
+    assert.strictEqual(
+      provider.getActiveSessions('Counters').length,
+      0,
+      'still no counter sessions',
+    );
+
+    // Interaction 4 — with a session PRESENT the same command reaches the
+    // picker instead, so the message above is a guard and not a dead command.
+    addTracked(provider, 'stop-guard-1', 'Trace', 5150, undefined, 'GuardProc');
+    assert.strictEqual(provider.getActiveSessions('Trace').length, 1, 'one trace session now');
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.profiler.stopTrace');
+    }, 'stopTrace with a live session must not throw');
+    assert.strictEqual(
+      stubs.log.infoMessages.filter((m) => m.includes('No active Trace sessions')).length,
+      1,
+      'and must not repeat the "nothing to stop" message when there IS something',
+    );
+    provider.removeSession('stop-guard-1');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -518,7 +663,12 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('per-process commands are safe no-ops without a PID and do not throw with one', async function () {
-    this.timeout(COMMAND_MS);
+    // Every other test in this suite drives ONE command, which is what `COMMAND_MS`
+    // budgets. This one drives five: three no-arg early-return commands, then
+    // traceProcess and countersProcess against a PID that does not exist - and
+    // those two reach the live LSP host and wait for it to answer that the process
+    // is gone. Five round trips cost five round trips, so it declares them.
+    this.timeout(5 * COMMAND_MS);
     stubs = installUiStubs();
     const provider = getProvider();
 
@@ -555,6 +705,33 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       'no phantom trace session for a non-existent PID',
     );
     assert.ok(provider.sessionCount >= sessionsBefore);
+
+    // Interaction 4 — [PROFILER-EDITOR-VSCODE-TREE] requires a process row to
+    // be profilable FROM the row. That means the node carries the command, the
+    // pid it acts on, and the context value its menu is scoped by — a node
+    // missing any of them renders a row with no actions.
+    assert.strictEqual(node.processPid, 999999, 'the node carries the pid it will act on');
+    assert.strictEqual(node.contextValue, 'profiler-process', 'and the menu scope');
+    assert.strictEqual(node.nodeKind, 'process', 'and identifies itself as a process row');
+    assert.ok(String(node.label).includes('Ghost'), `and names the process: ${String(node.label)}`);
+
+    // Interaction 5 — a dead PID produces no counters session either, and the
+    // failures are REPORTED rather than swallowed: [PROFILER-SESSIONS-LIFECYCLE]
+    // has a Failed state precisely so the tree does not show a phantom Running.
+    assert.strictEqual(
+      provider.getActiveSessions('Counters').filter((s) => s.pid === 999999).length,
+      0,
+      'no phantom counters session for a non-existent PID',
+    );
+    assert.ok(
+      !provider.getActiveSessions('Trace').some((s) => s.pid === 999999),
+      'and none among the trace sessions',
+    );
+    assert.deepEqual(
+      stubs.log.quickPickItems,
+      [],
+      'a per-process command acts on ITS row and never falls back to a picker',
+    );
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -586,6 +763,30 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       typeof first.label === 'string' || typeof first.label === 'object',
       'first node has a label',
     );
+
+    // Interaction 2 — every row is well formed. A row with no label renders
+    // blank; one with no collapsible state renders an arrow that expands to
+    // nothing ([PROFILER-EDITOR-VSCODE-TREE]).
+    for (const item of nodes) {
+      assert.notStrictEqual(item.label, undefined, 'every tree row carries a label');
+      assert.notStrictEqual(item.collapsibleState, undefined, 'and a collapsible state');
+      assert.strictEqual(
+        item.collapsibleState,
+        vscode.TreeItemCollapsibleState.None,
+        'and the profiler tree is flat, so no row claims children',
+      );
+    }
+
+    // Interaction 3 — refreshing is REPEATABLE and idempotent in shape. A
+    // refresh that duplicates rows turns a busy machine's process list into a
+    // list of the same process ten times over.
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.profiler.refresh');
+    }, 'a second refresh must not throw');
+    const after = provider.getChildren();
+    assert.ok(after.length >= 1, 'the tree still renders after a second refresh');
+    const labels = after.map((item) => String(item.label));
+    assert.deepEqual([...new Set(labels)], labels, 'and renders no row twice');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -649,8 +850,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
         // so inspect with skipEncoding to assert the raw query the source builds
         // (profiler.ts: https://www.speedscope.app/#localProfilePath=<encoded path>).
         const url = captured[0]?.toString(true) ?? '';
-        assert.ok(url.includes('speedscope.app'), 'speedscope viewer URL is opened externally');
-        assert.ok(url.includes('localProfilePath='), 'URL carries the local profile path');
+        assertContainsAll(url, ['speedscope.app', 'localProfilePath='], 'url');
       } else {
         // openExternal is not reassignable: accept EITHER a clean resolve OR a
         // reject whose message is the host's external-open refusal (which proves
@@ -705,6 +905,36 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     if (stubs.log.openDialogOptions.length > 0) {
       assert.strictEqual(stubs.log.openDialogOptions[0]?.title, 'Convert .nettrace File');
     }
+
+    // Interaction 2 — a cancelled dialog is SILENT. The user pressed Escape;
+    // an error toast for that is noise, and a success toast is a lie about a
+    // conversion that never ran ([PROFILER-TRACE-CONVERSION]).
+    assert.deepEqual(stubs.log.errorMessages, [], 'cancelling the picker is not an error');
+    assert.deepEqual(stubs.log.infoMessages, [], 'and reports no conversion');
+    assert.deepEqual(stubs.log.warningMessages, [], 'and no warning');
+    assert.ok(stubs.log.openDialogOptions.length <= 1, 'at most one dialog was shown');
+
+    // Interaction 3 — the dialog it WOULD have shown is scoped to trace files.
+    // `convertTrace` takes "any trace file on disk", so an unfiltered picker
+    // lets the user choose a .json and get a conversion error instead of a
+    // greyed-out entry.
+    const dialog = stubs.log.openDialogOptions[0];
+    if (dialog) {
+      assert.strictEqual(dialog.canSelectMany, false, 'one input file, not many');
+      assert.ok(dialog.canSelectFolders !== true, 'a file, never a folder');
+      assert.ok(dialog.filters, 'and the picker filters by extension');
+      assert.ok(
+        JSON.stringify(dialog.filters).includes('nettrace'),
+        `filtering to .nettrace; got ${JSON.stringify(dialog.filters)}`,
+      );
+    }
+
+    // Interaction 4 — cancelling twice is still a no-op, so a user who
+    // dismisses the picker can simply run the command again.
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.profiler.convertTrace');
+    }, 'a second cancelled conversion must not throw');
+    assert.deepEqual(stubs.log.errorMessages, [], 'and still reports nothing');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -727,6 +957,30 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.revealOutput');
     });
+    assert.deepEqual(stubs.log.errorMessages, [], 'and neither path is an error');
+
+    // Interaction 2 — the node really has no path, so the message above is
+    // about the session state and not about a node the test built wrong.
+    assert.strictEqual(noPath.outputPath, undefined, 'the session carries no output path');
+    assert.strictEqual(noPath.nodeKind, 'session', 'and it is a session row');
+    assert.strictEqual(stubs.log.infoMessages.length, 1, 'one message, from the one node');
+
+    // Interaction 3 — a session that HAS produced a file behaves differently.
+    // A command that shows "no output file yet" whatever it is given is a
+    // command that never reveals anything ([PROFILER-EDITOR-VSCODE]).
+    const revealPath = path.join(dumpDir, 'revealed.nettrace');
+    fs.writeFileSync(revealPath, 'FAKE-TRACE', 'utf8');
+    const withPath = buildSessionNode(session({ outputPath: revealPath, id: 'rv-2' }));
+    assert.strictEqual(withPath.outputPath, revealPath, 'the second node carries its path');
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.profiler.revealOutput', withPath);
+    }, 'revealing a real file must not throw');
+    assert.strictEqual(
+      stubs.log.infoMessages.filter((m) => m.includes('no output file')).length,
+      1,
+      'and must NOT repeat the "no output file yet" message for a file that exists',
+    );
+    assert.ok(fs.existsSync(revealPath), 'the file it revealed is still on disk');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -766,25 +1020,25 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // (c) Both files chosen → one diff panel rendered with the result.
     panelSpy = spyWebviewPanels();
     stubs = installUiStubs().queueOpenDialog([baseline], [comparison]);
-    const sink: { method?: string; payload?: unknown } = {};
+    const sink: DiffSink = {};
     await promptAndOpenDiff(fakeContext(), resolvingDiffClient(result, sink));
 
     assert.strictEqual(panelSpy.created.length, 1, 'both files selected → one diff panel');
-    assert.strictEqual(sink.method, 'sharplsp/profiler/diffHeapSnapshots', 'correct LSP method');
-    const payload = sink.payload as { baseline_dump_path: string; comparison_dump_path: string };
-    assert.strictEqual(payload.baseline_dump_path, baseline.fsPath);
-    assert.strictEqual(payload.comparison_dump_path, comparison.fsPath);
+    assertDiffRequested(sink, baseline, comparison);
 
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('<h2>Heap Snapshot Diff</h2>'), 'rendered the diff document');
     assert.ok(!html.includes('Comparing heap snapshots'), 'loading shell replaced');
-    assert.ok(html.includes('<h3>Leak Suspects (1)</h3>'), 'suspect count rendered');
-    assert.ok(html.includes(severityBadge('high')), 'high-severity badge present');
-    assert.ok(html.includes('Leaky&lt;T&gt;'), 'suspect type name HTML-escaped');
-    assert.ok(html.includes('+1.0 MB'), 'positive MB size delta formatted on the growing row');
-    assert.ok(
-      html.includes((2500).toLocaleString()),
-      'comparison object count uses locale grouping',
+    assertContainsAll(
+      html,
+      [
+        '<h3>Leak Suspects (1)</h3>',
+        severityBadge('high'),
+        'Leaky&lt;T&gt;',
+        '+1.0 MB',
+        (2500).toLocaleString(),
+      ],
+      'html',
     );
 
     // (d) Pure-helper assertions inside this same flow.
@@ -830,7 +1084,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     stubs = installUiStubs()
       .queueInfo('Select Baseline', 'Select Comparison Dump')
       .queueOpenDialog([baseline], [comparison]);
-    const sink: { method?: string; payload?: unknown } = {};
+    const sink: DiffSink = {};
     await detectLeaksWorkflow(fakeContext(), resolvingDiffClient(result, sink));
 
     assert.strictEqual(panelSpy.created.length, 1, 'happy path opens exactly one diff panel');
@@ -839,13 +1093,9 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       stubs.log.infoMessages[1]?.includes('exercise the suspected leak path'),
       'second guided step prompts the user to exercise the leak path',
     );
-    assert.strictEqual(sink.method, 'sharplsp/profiler/diffHeapSnapshots');
-    const payload = sink.payload as { baseline_dump_path: string; comparison_dump_path: string };
-    assert.strictEqual(payload.baseline_dump_path, baseline.fsPath);
-    assert.strictEqual(payload.comparison_dump_path, comparison.fsPath);
+    assertDiffRequested(sink, baseline, comparison);
     const html = panelSpy.created[0]?.webview.html ?? '';
-    assert.ok(html.includes('<h2>Heap Snapshot Diff</h2>'));
-    assert.ok(html.includes(severityBadge('medium')), 'medium-severity suspect rendered');
+    assertContainsAll(html, ['<h2>Heap Snapshot Diff</h2>', severityBadge('medium')], 'html');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -871,17 +1121,25 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       'panel titled "Heap Diff #n"',
     );
     const html = panelSpy.created[0]?.webview.html ?? '';
-    assert.ok(html.includes('<title>Heap Diff — Error</title>'), 'error document shown');
-    assert.ok(html.includes('<strong>Heap diff failed:</strong>'));
-    assert.ok(html.includes('diff sidecar exploded &lt;boom&gt;'), 'error message HTML-escaped');
+    assertContainsAll(
+      html,
+      [
+        '<title>Heap Diff — Error</title>',
+        '<strong>Heap diff failed:</strong>',
+        'diff sidecar exploded &lt;boom&gt;',
+      ],
+      'html',
+    );
     assert.ok(!html.includes('<h2>Heap Snapshot Diff</h2>'), 'no successful diff layout');
 
     // Direct pure-builder assertions in the same flow.
     const loading = buildLoadingHtml('/a&b.dmp', '/c"d.dmp');
     assert.ok(loading.startsWith('<!DOCTYPE html>'));
-    assert.ok(loading.includes('Comparing heap snapshots'));
-    assert.ok(loading.includes('/a&amp;b.dmp'), 'loading escapes the baseline path');
-    assert.ok(loading.includes('/c&quot;d.dmp'), 'loading escapes the comparison path');
+    assertContainsAll(
+      loading,
+      ['Comparing heap snapshots', '/a&amp;b.dmp', '/c&quot;d.dmp'],
+      'loading',
+    );
 
     const errorHtml = buildErrorHtml('bad <input> & "q"');
     assert.ok(errorHtml.includes('bad &lt;input&gt; &amp; &quot;q&quot;'));
@@ -889,8 +1147,11 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
 
     // buildDiffHtml: zero-suspect + zero-diff scaffolding and sign rules.
     const empty = buildDiffHtml(makeResult(), '/b.dmp', '/c.dmp');
-    assert.ok(empty.includes('No leak suspects detected.'));
-    assert.ok(empty.includes('<h3>All Growing Types (0)</h3>'));
+    assertContainsAll(
+      empty,
+      ['No leak suspects detected.', '<h3>All Growing Types (0)</h3>'],
+      'empty',
+    );
     const signed = buildDiffHtml(
       makeResult({
         diffs: [makeDiff({ count_delta: -8, size_delta_bytes: 2048, growth_percent: 12.34 })],
@@ -898,14 +1159,10 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       '/b',
       '/c',
     );
-    assert.ok(signed.includes('class="mono neg">-8</td>'), 'negative count delta gets neg class');
-    assert.ok(
-      signed.includes('class="mono pos">+2.0 KB</td>'),
-      'positive size delta gets + and pos',
-    );
-    assert.ok(
-      signed.includes('class="mono pos">+12.3%</td>'),
-      'growth percent + sign, one decimal',
+    assertContainsAll(
+      signed,
+      ['class="mono neg">-8</td>', 'class="mono pos">+2.0 KB</td>', 'class="mono pos">+12.3%</td>'],
+      'signed',
     );
   });
 
@@ -978,10 +1235,16 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('Root: 00007ff8CAFE'), 'trimmed root address echoed');
     assert.ok(!html.includes('  00007ff8CAFE'), 'untrimmed address must not leak');
-    assert.ok(html.includes('Nodes: 2, Edges: 1, Max depth: 1'), 'stats line from stats object');
-    assert.ok(html.includes('root (My.Type) depth=0'), 'first node line rendered');
-    assert.ok(html.includes('leaf (Child) depth=1'), 'second node line rendered');
-    assert.ok(html.includes('WARNING: graph truncated'), 'truncated flag surfaces a warning');
+    assertContainsAll(
+      html,
+      [
+        'Nodes: 2, Edges: 1, Max depth: 1',
+        'root (My.Type) depth=0',
+        'leaf (Child) depth=1',
+        'WARNING: graph truncated',
+      ],
+      'html',
+    );
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -1007,8 +1270,33 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     );
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('Error: graph boom'), 'error message surfaced');
-    assert.ok(!html.includes('<pre>'), 'error page does not use the summary layout');
-    assert.ok(!html.includes('Nodes:'), 'error page renders no stats line');
+    assertContainsNone(html, ['<pre>', 'Nodes:'], 'error page');
+
+    // Interaction 2 — the error page is a PAGE. A bare error string with no
+    // document around it renders as unstyled text in the webview, which reads
+    // as a rendering failure rather than as a reported error.
+    assert.ok(html.length > 0, 'the panel really has content');
+    assert.ok(
+      /<html|<body|<div/i.test(html),
+      `the error page is real markup: ${html.slice(0, 120)}`,
+    );
+    assert.ok(!html.includes('undefined'), 'and leaks no undefined into the text');
+
+    // Interaction 3 — [PROFILER-GRAPH] renders a retention graph; a failed
+    // request must render NONE of it. A page that shows an error banner above
+    // an empty graph invites the user to interpret the emptiness as a result.
+    for (const artefact of ['Max depth', 'depth=0', 'Edges:', 'Root:']) {
+      assert.ok(
+        !html.includes(artefact),
+        `the error page must not render '${artefact}' from a request that failed`,
+      );
+    }
+
+    // Interaction 4 — the panel is still titled by the address that was asked
+    // for, so the user can tell WHICH inspection failed when several are open.
+    assert.strictEqual(panelSpy.titles.length, 1, 'one title for the one panel');
+    const errorTitles: readonly string[] = panelSpy.titles;
+    assert.ok(errorTitles[0]?.includes('addr-123'), 'naming the address that failed');
   });
 
   // ───────────────────────────────────────────────────────────────
@@ -1035,9 +1323,11 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // buildCounterHtml: empty placeholder.
     const emptyHtml = buildCounterHtml([]);
     assert.ok(emptyHtml.startsWith('<!DOCTYPE html>'));
-    assert.ok(emptyHtml.includes('<title>Live Counters</title>'));
-    assert.ok(emptyHtml.includes('Waiting for counter data'));
-    assert.ok(emptyHtml.includes('colspan="4"'));
+    assertContainsAll(
+      emptyHtml,
+      ['<title>Live Counters</title>', 'Waiting for counter data', 'colspan="4"'],
+      'emptyHtml',
+    );
     assert.ok(!emptyHtml.includes('<td class="provider">'), 'no data row when empty');
 
     // buildCounterHtml: data rows, sorted by provider/name, escaped, formatted.
@@ -1047,13 +1337,16 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
       counter({ provider: 'Alpha', name: 'a', display_name: 'Aa', value: 3.14159, unit: 'ratio' }),
     ]);
     // Byte-unit value is byte-formatted; integer uses locale grouping; fraction → 2dp.
-    assert.ok(rowsHtml.includes('<td class="value">2.0 KB</td>'), 'byte counter byte-formatted');
-    assert.ok(
-      rowsHtml.includes(`<td class="value">${(1234).toLocaleString()}</td>`),
-      'int locale grouped',
+    assertContainsAll(
+      rowsHtml,
+      [
+        '<td class="value">2.0 KB</td>',
+        `<td class="value">${(1234).toLocaleString()}</td>`,
+        '<td class="value">3.14</td>',
+        '<td class="name">&lt;n&gt;</td>',
+      ],
+      'rowsHtml',
     );
-    assert.ok(rowsHtml.includes('<td class="value">3.14</td>'), 'fraction → two decimals');
-    assert.ok(rowsHtml.includes('<td class="name">&lt;n&gt;</td>'), 'display name HTML-escaped');
     // Sort order: Alpha/a < Alpha/b < Zeta/a.
     const idxAa = rowsHtml.indexOf('>Aa<');
     const idxAb = rowsHtml.indexOf('&lt;n&gt;');
@@ -1111,6 +1404,36 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
         bar.update(1);
       });
       assert.strictEqual(item.text, '$(pulse) 1 profiling');
+
+      // Interaction 2 — the count is SINGULAR-agnostic but always present, and
+      // it is the count the caller passed. [PROFILER-EDITOR-VSCODE] lists the
+      // status bar as "show active profiling session count", so a stale number
+      // is worse than a hidden bar: it says work is running when it is not.
+      bar.update(12);
+      const twoDigits: string = item.text;
+      assert.strictEqual(twoDigits, '$(pulse) 12 profiling', 'a two-digit count renders in full');
+      assert.ok(twoDigits.includes('$(pulse)'), 'and keeps the codicon that identifies it');
+      bar.update(1);
+      const oneAgain: string = item.text;
+      assert.strictEqual(oneAgain, '$(pulse) 1 profiling', 'and drops back to one');
+
+      // Interaction 3 — the item stays CLICKABLE across every transition. A
+      // status bar whose command is cleared on hide becomes decorative the
+      // first time the session count reaches zero.
+      bar.update(0);
+      assert.strictEqual(
+        item.command,
+        'sharplsp.profiler.listProcesses',
+        'the click target survives being hidden',
+      );
+      bar.update(4);
+      assert.strictEqual(item.command, 'sharplsp.profiler.listProcesses', 'and being shown again');
+      const fourNow: string = item.text;
+      assert.strictEqual(fourNow, '$(pulse) 4 profiling', 'with the new count');
+
+      // Interaction 4 — one item, registered once. A status bar that registers
+      // per update leaks an item into the bar on every session change.
+      assert.strictEqual(ctx.subscriptions.length, 1, 'still exactly one registered disposable');
     } finally {
       for (const d of ctx.subscriptions) d.dispose();
     }

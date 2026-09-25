@@ -29,6 +29,22 @@ export const XUNIT_PACKAGES: readonly PackageRef[] = [
   { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
 ];
 
+/**
+ * xUnit on its 2.2.0 VSTest adapter — the version real-world projects still pin
+ * (FluentValidation among them).
+ *
+ * This adapter does NOT write a bare `TestCase.FullyQualifiedName`: it appends
+ * the test case's 40-hex unique ID, so `--ListFullyQualifiedTests` emits
+ * `Ns.Class.Method (d87517d9…)`. Modern adapters do not, which is why every
+ * fixture built on {@link XUNIT_PACKAGES} is blind to the whole class of defect
+ * that suffix causes. Pinned deliberately; do NOT "upgrade" it.
+ */
+export const XUNIT_DECORATING_PACKAGES: readonly PackageRef[] = [
+  { id: 'xunit', version: '2.2.0' },
+  { id: 'xunit.runner.visualstudio', version: '2.2.0' },
+  { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
+];
+
 /** NUnit. Its `[TestCase]` names carry parentheses — the filter-escaping case. */
 export const NUNIT_PACKAGES: readonly PackageRef[] = [
   { id: 'NUnit', version: '4.2.2' },
@@ -42,6 +58,91 @@ export const MSTEST_PACKAGES: readonly PackageRef[] = [
   { id: 'MSTest.TestAdapter', version: '3.6.4' },
   { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
 ];
+
+/**
+ * The TRX report extension every Microsoft.Testing.Platform fixture references.
+ *
+ * `--report-trx` is NOT part of MTP: a module that does not register this
+ * extension rejects the option and exits with code 5 ([TEST-MTP-RUN]). MSTest
+ * carries it already, `xunit.v3` and NUnit do not. One version is pinned for
+ * every fixture, because a TrxReport built against a newer platform than the
+ * framework brought in fails at load with a `TypeLoadException`.
+ */
+export const MTP_TRX_REPORT: PackageRef = {
+  id: 'Microsoft.Testing.Extensions.TrxReport',
+  version: '2.4.0',
+};
+
+/**
+ * `xunit.v3` on Microsoft.Testing.Platform — the reported case (issue #249).
+ *
+ * From 4.0.0 the package supports MTP v2 ONLY. It carries no VSTest adapter at
+ * all, so `dotnet vstest` cannot load the module and the whole VSTest discovery
+ * path reports nothing for it.
+ */
+export const MTP_XUNIT_PACKAGES: readonly PackageRef[] = [
+  { id: 'xunit.v3', version: '4.0.0' },
+  MTP_TRX_REPORT,
+];
+
+/**
+ * MSTest on its own runner. Its listed DISPLAY name is the BARE method name, so
+ * this fixture is what proves an MTP id comes from the listing's `type` block
+ * and never from the display name ([TEST-MTP-DISCOVERY]).
+ */
+export const MTP_MSTEST_PACKAGES: readonly PackageRef[] = [{ id: 'MSTest', version: '4.4.0' }];
+
+/**
+ * NUnit on its own runner. Its uid is a DECORATED name carrying parentheses and
+ * commas — `Ns.Class.Adds_Case(2,2,4)` — which is what proves `--filter-uid`
+ * takes literal values and must never be escaped. It also reports no source
+ * location, which is what proves the location is optional.
+ */
+export const MTP_NUNIT_PACKAGES: readonly PackageRef[] = [
+  { id: 'NUnit', version: '4.4.0' },
+  { id: 'NUnit3TestAdapter', version: '6.3.0' },
+  MTP_TRX_REPORT,
+];
+
+/**
+ * The project properties that put a fixture on the MTP runner.
+ *
+ * `OutputType` is `Exe` because an MTP test project builds an EXECUTABLE test
+ * module — that module is what discovery and runs talk to. Each framework has
+ * its own switch, and setting a framework's switch on another framework does
+ * nothing, so one bag serves all three.
+ */
+export const MTP_PROPERTIES: Readonly<Record<string, string>> = {
+  OutputType: 'Exe',
+  UseMicrosoftTestingPlatformRunner: 'true',
+  EnableMSTestRunner: 'true',
+  EnableNUnitRunner: 'true',
+};
+
+/**
+ * Opt a fixture solution into the MTP mode of `dotnet test`.
+ *
+ * This is the switch a real user throws, and it is what [TEST-MTP-DETECT] reads
+ * first. The SDK version is pinned to whatever built the fixture, so the file
+ * never changes which SDK the agent resolves.
+ */
+export function writeMtpGlobalJson(root: string): string {
+  const file = path.join(root, 'global.json');
+  fs.writeFileSync(
+    file,
+    `${JSON.stringify({ test: { runner: 'Microsoft.Testing.Platform' } }, null, 2)}\n`,
+    'utf8',
+  );
+  return file;
+}
+
+/** Project XML for an MTP test project: the runner switches plus its packages. */
+export function mtpProjectXml(
+  packages: readonly PackageRef[],
+  ...compileIncludes: readonly string[]
+): string {
+  return buildProjectXml({ packages, compileIncludes, properties: MTP_PROPERTIES });
+}
 
 /** Every framework the Test Explorer claims to support, for table-driven suites. */
 export const TEST_FRAMEWORKS = {
@@ -166,6 +267,43 @@ export function libraryProjectXml(...compileIncludes: readonly string[]): string
   return buildProjectXml({ compileIncludes });
 }
 
+/**
+ * Count the builds a discovery sweep costs, instead of guessing from timings.
+ *
+ * Writes a `Directory.Build.props` into `root` whose target appends the
+ * project's name to a log at the START of every build — before `BeforeBuild`,
+ * the first step of `Build`, and so before anything compiles. A hook on `Build`
+ * itself would run only AFTER the compile and never count a build that fails.
+ * MSBuild imports the file into every project below `root`, so each line is
+ * one build of one project. Returns the log's path; {@link buildsLogged} reads
+ * it back.
+ */
+export function writeBuildCounter(root: string): string {
+  const log = path.join(root, 'builds.log');
+  const xml: string = projectBuilder.build({
+    Project: {
+      Target: {
+        '@_Name': 'SharpLspCountBuild',
+        '@_BeforeTargets': 'BeforeBuild',
+        WriteLinesToFile: { '@_File': log, '@_Lines': '$(MSBuildProjectName)' },
+      },
+    },
+  });
+  fs.writeFileSync(path.join(root, 'Directory.Build.props'), xml.trimStart(), 'utf8');
+  return log;
+}
+
+/** The project names {@link writeBuildCounter}'s log recorded, one per build. */
+export function buildsLogged(log: string): string[] {
+  if (!fs.existsSync(log)) return [];
+  return fs
+    .readFileSync(log, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .sort();
+}
+
 /** Write a fixture project (project file + single source file); returns its dir. */
 export function writeProject(
   dir: string,
@@ -234,4 +372,60 @@ export async function createSolution(
 /** Warm the FULL VSTest discovery path (restore + build + adapter JIT) once. */
 export async function warmDiscovery(solutionPath: string, cwd: string): Promise<string> {
   return dotnet(['test', solutionPath, '--list-tests', '--nologo', '--verbosity', 'quiet'], cwd);
+}
+
+/**
+ * The compilation symbol the SDK defines implicitly for a target framework.
+ *
+ * `net10.0` → `NET10_0`. Derived rather than pinned, because the frameworks
+ * themselves are read off the agent by {@link installedFrameworkPair}.
+ */
+export function symbolFor(framework: string): string {
+  return framework.toUpperCase().replace(/[.-]/gu, '_');
+}
+
+/** The shared framework whose installed runtimes decide what a test host can run. */
+const NETCORE_APP = 'Microsoft.NETCore.App';
+
+/**
+ * The MAJOR version of a `Microsoft.NETCore.App <version> [<path>]` line, or
+ * `undefined` for any other line `dotnet --list-runtimes` prints (ASP.NET Core
+ * and the Windows Desktop pack announce themselves the same way).
+ */
+function netCoreAppMajor(line: string): number | undefined {
+  if (!line.startsWith(`${NETCORE_APP} `)) return undefined;
+  const version = line.slice(NETCORE_APP.length + 1).split(' ')[0] ?? '';
+  const major = Number.parseInt(version.split('.')[0] ?? '', 10);
+  return Number.isNaN(major) ? undefined : major;
+}
+
+/**
+ * The two NEWEST target-framework monikers this agent can actually RUN, oldest
+ * first — the `<TargetFrameworks>` a multi-targeted fixture must declare.
+ *
+ * Pinning the pair does not work: a fixture whose second framework has no
+ * installed runtime never gets a test host, so VSTest never announces its
+ * assembly and the project silently degrades to a single target — which would
+ * make a multi-targeting regression suite pass vacuously. Agents disagree about
+ * which runtimes they carry (a developer box and a CI runner rarely match), so
+ * the pair is READ off the machine. The two NEWEST are taken rather than the
+ * oldest and the newest because an out-of-support moniker makes the SDK
+ * complain about the fixture instead of building it.
+ */
+export async function installedFrameworkPair(cwd: string): Promise<string[]> {
+  const output = await dotnet(['--list-runtimes'], cwd);
+  const majors = new Set<number>();
+  for (const raw of output.split('\n')) {
+    const major = netCoreAppMajor(raw.trim());
+    if (major !== undefined) majors.add(major);
+  }
+  const newest = [...majors].sort((left, right) => right - left).slice(0, 2);
+  if (newest.length < 2) {
+    throw new Error(
+      `multi-targeting needs two runnable ${NETCORE_APP} runtimes; this agent has: ${
+        [...majors].join(', ') || '(none)'
+      }`,
+    );
+  }
+  return newest.sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
 }

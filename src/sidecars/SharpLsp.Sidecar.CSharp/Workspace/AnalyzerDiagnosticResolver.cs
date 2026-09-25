@@ -16,13 +16,9 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class AnalyzerDiagnosticResolver
 {
-    private static readonly ImmutableHashSet<string> RewriteDiagnosticIds = ImmutableHashSet.Create(
-        StringComparer.Ordinal,
-        "IDE0007",
-        "IDE0008",
-        "IDE0160",
-        "IDE0161"
-    );
+    /// <summary>Style diagnostics whose fix is offered as a rewrite, not a quick fix.</summary>
+    internal static readonly ImmutableHashSet<string> RewriteDiagnosticIds =
+        ImmutableHashSet.Create(StringComparer.Ordinal, "IDE0007", "IDE0008", "IDE0160", "IDE0161");
 
     private static readonly ImmutableArray<string> FeatureAssemblyNames =
     [
@@ -159,7 +155,7 @@ internal static class AnalyzerDiagnosticResolver
     private static bool MatchesLocation(Location location, SyntaxTree tree, TextSpan requested)
     {
         return ReferenceEquals(location.SourceTree, tree)
-            && SpansTouch(location.SourceSpan, requested);
+            && DocumentPosition.SpansTouch(location.SourceSpan, requested);
     }
 
     private static bool MatchesNamespaceKeyword(
@@ -174,7 +170,8 @@ internal static class AnalyzerDiagnosticResolver
         }
 
         var declaration = FindNamespaceDeclaration(tree, location.SourceSpan);
-        return declaration is not null && SpansTouch(declaration.NamespaceKeyword.Span, requested);
+        return declaration is not null
+            && DocumentPosition.SpansTouch(declaration.NamespaceKeyword.Span, requested);
     }
 
     private static BaseNamespaceDeclarationSyntax? FindNamespaceDeclaration(
@@ -184,13 +181,6 @@ internal static class AnalyzerDiagnosticResolver
     {
         var node = tree.GetRoot().FindNode(span, getInnermostNodeForTie: true);
         return node.AncestorsAndSelf().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault();
-    }
-
-    private static bool SpansTouch(TextSpan candidate, TextSpan requested)
-    {
-        return requested.IsEmpty
-            ? candidate.Contains(requested.Start) || candidate.Start == requested.Start
-            : candidate.IntersectsWith(requested);
     }
 
     private static bool IsNamespaceStyle(string diagnosticId)

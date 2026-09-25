@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS, POLL_INTERVAL_MS, READINESS_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ export function comparableText(text: string): string {
  * Priority:
  *   1. `SHARPLSP_EXECUTABLE_PATH` env var
  *   2. Bundled binary under `bin/<platform>/`
- *   3. Legacy bundled binary under `bin/`
+ *   3. Bundled binary under `bin/`
  */
 export function findSharpLspBinary(): string | undefined {
   const envPath = process.env['SHARPLSP_EXECUTABLE_PATH'];
@@ -69,9 +69,9 @@ export function findSharpLspBinary(): string | undefined {
     return bundled;
   }
 
-  const legacyBundled = path.join(extensionRoot, 'bin', binaryName);
-  if (fs.existsSync(legacyBundled)) {
-    return legacyBundled;
+  const bundledBinary = path.join(extensionRoot, 'bin', binaryName);
+  if (fs.existsSync(bundledBinary)) {
+    return bundledBinary;
   }
 
   return undefined;
@@ -101,6 +101,7 @@ export async function pollUntilResult<T>(
   predicate: (result: T) => boolean,
   timeoutMs: number = LSP_RESPONSE_MS,
   intervalMs: number = POLL_INTERVAL_MS,
+  waitingFor = 'a condition',
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   let last: T = await fn();
@@ -112,11 +113,33 @@ export async function pollUntilResult<T>(
 
   if (!predicate(last)) {
     assert.fail(
-      `Timed out after ${String(timeoutMs)}ms polling for a condition that never held. ` +
+      `Timed out after ${String(timeoutMs)}ms polling for ${waitingFor}, which never held. ` +
         `Last observed value: ${describePolled(last)}`,
     );
   }
   return last;
+}
+
+/**
+ * Poll a `vscode.execute…Provider` command with `args` until `until` holds over
+ * its reply, an absent reply reading as `[]`. Fails as `pollUntilResult` does,
+ * naming the command, so a provider that never answers reports itself.
+ */
+export async function pollProvider<T>(
+  command: string,
+  args: readonly unknown[],
+  until: (reply: T[]) => boolean,
+  timeoutMs: number = LSP_RESPONSE_MS,
+  intervalMs: number = POLL_INTERVAL_MS,
+  waitingFor = `${command} to answer as expected`,
+): Promise<T[]> {
+  return pollUntilResult(
+    async () => (await vscode.commands.executeCommand<T[]>(command, ...args)) ?? [],
+    until,
+    timeoutMs,
+    intervalMs,
+    waitingFor,
+  );
 }
 
 /**
@@ -145,16 +168,65 @@ export async function warmSemanticEngine(
   timeoutMs: number = SIDECAR_COLD_MS,
 ): Promise<void> {
   const start = new vscode.Position(0, 0);
-  await pollUntilResult(
-    async () =>
-      (await vscode.commands.executeCommand<vscode.CodeAction[]>(
-        'vscode.executeCodeActionProvider',
-        uri,
-        new vscode.Range(start, start),
-      )) ?? [],
+  await pollProvider<vscode.CodeAction>(
+    'vscode.executeCodeActionProvider',
+    [uri, new vscode.Range(start, start)],
     (actions) => actions.length > 0,
     timeoutMs,
   );
+}
+
+/** A text to search, or a set, map (by key) or list to look entries up in. */
+export type Haystack<T> = string | ReadonlySet<T> | ReadonlyMap<T, unknown> | readonly unknown[];
+
+/**
+ * Assert `haystack` holds EVERY one of `needles` — by substring in a string, by
+ * membership otherwise. One failure names every missing needle and what the
+ * haystack held, where a run of single asserts stops at the first miss.
+ */
+export function assertContainsAll<T>(
+  haystack: Haystack<NoInfer<T>>,
+  needles: readonly T[],
+  what: string,
+): void {
+  const entries = typeof haystack === 'string' ? undefined : entriesOf(haystack);
+  const missing = needles.filter((needle) =>
+    entries === undefined ? !String(haystack).includes(String(needle)) : !entries.includes(needle),
+  );
+  const held = entries === undefined ? String(haystack).slice(0, 400) : JSON.stringify(entries);
+  assert.deepStrictEqual(missing, [], `${what}: missing ${JSON.stringify(missing)} from ${held}`);
+}
+
+/**
+ * Assert `haystack` holds NONE of `needles`, naming every one that slipped in
+ * and what the haystack held.
+ */
+export function assertContainsNone<T>(
+  haystack: Haystack<NoInfer<T>>,
+  needles: readonly T[],
+  what: string,
+): void {
+  const entries = typeof haystack === 'string' ? undefined : entriesOf(haystack);
+  const present = needles.filter((needle) =>
+    entries === undefined ? String(haystack).includes(String(needle)) : entries.includes(needle),
+  );
+  const held = entries === undefined ? String(haystack).slice(0, 400) : JSON.stringify(entries);
+  assert.deepStrictEqual(present, [], `${what}: unexpected ${JSON.stringify(present)} in ${held}`);
+}
+
+/** What a set, map or list holds: a set's members, a map's keys, a list's items. */
+function entriesOf<T>(haystack: Exclude<Haystack<T>, string>): readonly unknown[] {
+  return Array.isArray(haystack) ? haystack : [...(haystack as ReadonlySet<T>).keys()];
+}
+
+/** Poll the document-symbol provider for `uri` until `until` holds over its reply. */
+export async function pollSymbols(
+  uri: vscode.Uri,
+  until: (symbols: vscode.DocumentSymbol[]) => boolean,
+  timeoutMs: number = LSP_RESPONSE_MS,
+  intervalMs: number = POLL_INTERVAL_MS,
+): Promise<vscode.DocumentSymbol[]> {
+  return pollProvider('vscode.executeDocumentSymbolProvider', [uri], until, timeoutMs, intervalMs);
 }
 
 /** Wait for document symbols to be returned by the LSP server. */
@@ -162,17 +234,7 @@ export async function waitForDocumentSymbols(
   uri: vscode.Uri,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.DocumentSymbol[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-        'vscode.executeDocumentSymbolProvider',
-        uri,
-      );
-      return result ?? [];
-    },
-    (symbols) => symbols.length > 0,
-    timeoutMs,
-  );
+  return pollSymbols(uri, (symbols) => symbols.length > 0, timeoutMs);
 }
 
 /**
@@ -198,14 +260,9 @@ export async function waitForFoldingRanges(
   uri: vscode.Uri,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.FoldingRange[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
-        'vscode.executeFoldingRangeProvider',
-        uri,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.FoldingRange>(
+    'vscode.executeFoldingRangeProvider',
+    [uri],
     (ranges) => ranges.length > 0,
     timeoutMs,
   );
@@ -217,15 +274,9 @@ export async function waitForSelectionRanges(
   positions: vscode.Position[],
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.SelectionRange[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.SelectionRange[]>(
-        'vscode.executeSelectionRangeProvider',
-        uri,
-        positions,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.SelectionRange>(
+    'vscode.executeSelectionRangeProvider',
+    [uri, positions],
     (ranges) => ranges.length > 0,
     timeoutMs,
   );
@@ -237,15 +288,9 @@ export async function waitForHoverResult(
   position: vscode.Position,
   timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Hover[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.Hover[]>(
-        'vscode.executeHoverProvider',
-        uri,
-        position,
-      );
-      return result ?? [];
-    },
+  return pollProvider<vscode.Hover>(
+    'vscode.executeHoverProvider',
+    [uri, position],
     (hovers) => hovers.length > 0,
     timeoutMs,
   );
@@ -286,6 +331,17 @@ export async function openCSharpFile(
   return openFile(tmpDir, filename, content);
 }
 
+/** Create and open a C# file, then wait for the outline the server reports for it. */
+export async function openCSharpOutline(
+  tmpDir: string,
+  filename: string,
+  content: string,
+  timeoutMs: number = LSP_RESPONSE_MS,
+): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri; symbols: vscode.DocumentSymbol[] }> {
+  const opened = await openCSharpFile(tmpDir, filename, content);
+  return { ...opened, symbols: await waitForDocumentSymbols(opened.uri, timeoutMs) };
+}
+
 /** Create a temporary F# file, open it in the editor, return doc + uri. */
 export async function openFSharpFile(
   tmpDir: string,
@@ -303,6 +359,22 @@ async function openFile(
   const filePath = path.join(tmpDir, filename);
   fs.writeFileSync(filePath, content, 'utf8');
   const uri = vscode.Uri.file(filePath);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc);
+  return { doc, uri };
+}
+
+/**
+ * Open a file that ALREADY exists on disk and show it.
+ *
+ * The committed fixture workspace is the input to every semantic suite; a
+ * helper that writes content first would overwrite the very fixture under test.
+ */
+export async function openExistingFile(
+  directory: string,
+  filename: string,
+): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri }> {
+  const uri = vscode.Uri.file(path.join(directory, filename));
   const doc = await vscode.workspace.openTextDocument(uri);
   await vscode.window.showTextDocument(doc);
   return { doc, uri };
@@ -361,18 +433,17 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
   const probeContent = 'namespace Probe { class Probe { } }\n';
   const { uri } = await openCSharpFile(tmpDir, 'probe.cs', probeContent);
 
-  // Poll until the server is ready — documentSymbol returns results.
-  await pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-        'vscode.executeDocumentSymbolProvider',
-        uri,
-      );
-      return result ?? [];
-    },
+  // Poll until the server is ready — documentSymbol returns results. The
+  // budget sits under the `ACTIVATION_MS` hook every caller runs this in, so a
+  // server that never answers is reported HERE, by name, and not by mocha's
+  // generic hook timeout ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+  await pollProvider<vscode.DocumentSymbol>(
+    'vscode.executeDocumentSymbolProvider',
+    [uri],
     (symbols) => symbols.length > 0,
-    ACTIVATION_MS,
+    READINESS_MS,
     500,
+    `the SharpLsp server (${sharplspBinary ?? 'no staged binary found'}) to answer documentSymbol for the probe file`,
   );
 
   await closeAllEditors();
@@ -409,6 +480,34 @@ export function teardownLspTestSuite(tmpDir: string): void {
 // ── Screenshots ──────────────────────────────────────────────────
 
 const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/assets/screenshots');
+
+/**
+ * Load the fixture solution into the Solution Explorer so a documentation
+ * screenshot has content.
+ *
+ * Screenshot-only plumbing: it resolves the explorer through the extension's
+ * published API and waits for the tree to populate. A no-op when the extension
+ * publishes no explorer.
+ */
+export async function loadFixtureSolution(workspaceRoot: string): Promise<void> {
+  const extension = vscode.extensions.getExtension(EXTENSION_ID);
+  const api = extension?.exports as
+    | {
+        explorerProvider?: {
+          loadSolution(solutionPath: string): Promise<void>;
+          getChildren(element?: unknown): unknown[] | undefined;
+        };
+      }
+    | undefined;
+  const provider = api?.explorerProvider;
+  if (!provider) return;
+  await provider.loadSolution(path.join(workspaceRoot, 'TestFixtures.sln'));
+  let waited = 0;
+  while ((provider.getChildren() ?? []).length === 0 && waited < 8000) {
+    await sleep(200);
+    waited += 200;
+  }
+}
 
 /**
  * Open the SharpLsp activity bar panel (shows Solution Explorer + Profiler).
@@ -460,6 +559,26 @@ export async function takeScreenshot(filename: string): Promise<void> {
 }
 
 // ── Utilities ────────────────────────────────────────────────────
+
+/**
+ * Pause for the workbench to RENDER, but only when a screenshot will actually
+ * be taken.
+ *
+ * {@link takeScreenshot} and {@link openSharpLspPanel} both return immediately
+ * unless `SHARPLSP_SCREENSHOTS` is set, so a bare `sleep` before one of them is
+ * time CI spends waiting for a picture it is never going to capture. Every such
+ * pause goes through here instead.
+ *
+ * This is deliberately a SLEEP and not a poll: what it waits for is the
+ * compositor painting a widget that is already open, which nothing in the
+ * extension API reports. That is also why it must never be load-bearing for an
+ * assertion - a test that needs a condition to hold polls for the condition
+ * with {@link pollUntilResult}, which fails loudly when it never does.
+ */
+export async function settleForScreenshot(ms: number): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  await sleep(ms);
+}
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

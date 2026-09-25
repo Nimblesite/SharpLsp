@@ -9,7 +9,7 @@ import { DebugSessionRecorder, TaskRecorder, invokeCommand } from './run-debug-k
 import type { UiStubs } from './ui-stubs';
 
 // The sentence `debugCurrentProject` emits today for EVERY unresolved target.
-const LEGACY_REFUSAL = 'No .csproj or .fsproj found';
+const GENERIC_REFUSAL = 'No .csproj or .fsproj found';
 
 // A task recorder plus a session recorder, armed together before one action.
 export interface Probe {
@@ -56,17 +56,17 @@ export function messagesOf(stubs: UiStubs): string[] {
 /** A refusal must name its own reason, not borrow an unrelated one. */
 export function assertOmits(message: string, forbidden: string, why: string): void {
   const mentions = message.includes(forbidden);
-  assert.strictEqual(mentions, false, `${why}: must not mention '${forbidden}': '${message}'`);
+  assert.ok(!mentions, `${why}: must not mention '${forbidden}': '${message}'`);
 }
 
 export function assertNamedRefusal(message: string, needles: readonly string[], why: string): void {
   assert.strictEqual(typeof message, 'string', `${why}: a refusal is a string message`);
   assert.notStrictEqual(message.trim().length, 0, `${why}: an empty message is a silent no-op`);
-  assertOmits(message, LEGACY_REFUSAL, `${why}: the generic project-not-found sentence`);
+  assertOmits(message, GENERIC_REFUSAL, `${why}: the generic project-not-found sentence`);
   const lowered = message.toLowerCase();
   for (const needle of needles) {
     const named = lowered.includes(needle);
-    assert.strictEqual(named, true, `${why}: must name '${needle}': '${message}'`);
+    assert.ok(named, `${why}: must name '${needle}': '${message}'`);
   }
 }
 

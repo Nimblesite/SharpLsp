@@ -16,7 +16,8 @@ import { AnchoredSource } from './debug-anchors';
 import { DapRecorder, dap, type StopRecord } from './debug-dap-kit';
 import { DEBUG_SESSION_MS } from './test-timeouts';
 import type { DebugFixture } from './debug-fixture-programs';
-import { comparablePath, pollUntilResult } from './test-helpers';
+import { assertSteppedThread, waitForFocusOn } from './debug-thread-kit';
+import { comparablePath } from './test-helpers';
 
 /** F10. */
 export const CMD_STEP_OVER = 'workbench.action.debug.stepOver';
@@ -211,10 +212,30 @@ export async function gesture(command: string, ...args: unknown[]): Promise<void
 }
 
 /**
+ * The DAP request each stepping gesture must put on the wire, so a test can
+ * check WHICH THREAD the workbench stepped rather than only that something
+ * stopped afterwards.
+ */
+const REQUEST_OF_GESTURE = new Map<string, string>([
+  [CMD_STEP_OVER, 'next'],
+  [CMD_STEP_INTO, 'stepIn'],
+  [CMD_STEP_OUT, 'stepOut'],
+  [CMD_CONTINUE, 'continue'],
+]);
+
+/**
  * Make one stepping gesture and wait for the debuggee to come to rest again.
  *
  * Returns the NEW stop, never a stale one: the baseline is taken before the
  * command is dispatched.
+ *
+ * The gesture is made only once the workbench has focused the thread that
+ * stopped. F10 acts on the FOCUSED thread, and VS Code focuses a stop's thread
+ * asynchronously — after it has fetched that thread's top frame — so a gesture
+ * dispatched the instant the `stopped` event is observed can land on the
+ * session's first thread instead. Inside a test host that is the runner's main
+ * thread, not the worker the breakpoint stopped, and the step resumes the
+ * debuggee for good ([DEBUG-FEATURES-STEPPING]).
  */
 export async function stepAndStop(
   recorder: DapRecorder,
@@ -222,9 +243,20 @@ export async function stepAndStop(
   timeoutMs = DEBUG_SESSION_MS,
 ): Promise<StopRecord> {
   const baseline = recorder.stops().length;
+  const resting = recorder.stops()[baseline - 1];
+  assert.ok(resting, `'${command}' needs a stopped debuggee; no stop has been recorded`);
+  await waitForFocusOn(activeSession(), resting.threadId);
+  const request = REQUEST_OF_GESTURE.get(command);
+  const sentBefore = request === undefined ? 0 : recorder.requests(request).length;
   await gesture(command);
+  if (request !== undefined) assertSteppedThread(recorder, request, sentBefore, resting.threadId);
   const stops = await recorder.waitForStops(baseline + 1, timeoutMs);
-  return stops[stops.length - 1]!;
+  // Positionally, NOT `stops[stops.length - 1]`. The wait is satisfied by one
+  // new stop, but nothing stops a second arriving before the array is read -
+  // a breakpoint immediately after the step, or an exception - and then the
+  // last entry is a stop this gesture did not cause. Index `baseline` is the
+  // first stop after the gesture on every machine, fast or slow.
+  return stops[baseline]!;
 }
 
 /** Step, then read the frame the debuggee came to rest in. One call, one step. */
@@ -300,25 +332,6 @@ export function assertStoppedAt(
     frame.name.includes(expectedName),
     `${why}: the frame must name ${expectedName}; DAP reported '${frame.name}'`,
   );
-}
-
-/** Wait until VS Code's own stack-item focus catches up with the adapter. */
-export async function waitForActiveFrame(
-  timeoutMs = DEBUG_SESSION_MS,
-): Promise<vscode.DebugStackFrame> {
-  const item = await pollUntilResult(
-    async () => vscode.debug.activeStackItem,
-    (current) => current instanceof vscode.DebugStackFrame,
-    timeoutMs,
-    50,
-  );
-  assert.ok(
-    item instanceof vscode.DebugStackFrame,
-    'a stopped session must focus a stack frame; `vscode.debug.activeStackItem` is what the ' +
-      'editor uses to place the yellow instruction pointer, so an unfocused stop leaves the ' +
-      'user staring at an unmarked file',
-  );
-  return item;
 }
 
 /** Open the debuggee's source and make it the active editor. */

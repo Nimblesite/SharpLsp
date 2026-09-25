@@ -9,6 +9,14 @@
 
 /** One DAP message. The index signature keeps fields this file never names
  *  surviving a spread when the router rewrites a message. */
+import { isRecord } from './utils';
+
+// The DAP modules have always reached for `isRecord` here, and it is genuinely
+// theirs: every wire message body is an untyped bag. The definition now lives in
+// `utils.ts`, because five modules outside DAP had written it out identically.
+// Re-exported so the ten DAP importers keep one obvious place to get it.
+export { isRecord } from './utils';
+
 export interface DapMessage {
   type?: unknown;
   command?: unknown;
@@ -18,9 +26,12 @@ export interface DapMessage {
   [field: string]: unknown;
 }
 
-/** Narrow an unknown to a plain non-null object. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** What every emulator asks of its owning router, whatever else it needs. */
+export interface RouterChannel {
+  /** Request in the router's own name and await the response. */
+  request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
+  /** Emit one message towards VS Code. */
+  fire(message: Record<string, unknown> & { seq?: unknown }): void;
 }
 
 /** Narrow an unknown to a list of plain objects, dropping anything else. */
@@ -140,7 +151,7 @@ function isVerbatimQuote(text: string, index: number): boolean {
  * strings (`@"..."`, `$@"..."`, `@$"..."`) treat backslash as literal text and
  * `""` as the one quote escape; every other literal escapes with backslash.
  */
-function skipLiteral(text: string, index: number): number {
+export function skipLiteral(text: string, index: number): number {
   const quote = text[index];
   const verbatim = isVerbatimQuote(text, index);
   for (let scan = index + 1; scan < text.length; scan += 1) {

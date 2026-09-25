@@ -334,10 +334,7 @@ fn apply_install(
     let outcome = edit::add_package(sidecar, runtime, &target.path, package_id, version, element)?;
 
     // For CPM projects, also update Directory.Packages.props.
-    let mut modified: Vec<String> = Vec::new();
-    if outcome.modified {
-        modified.push(target.path.clone());
-    }
+    let mut modified = modified_target(outcome.modified, target);
     if matches!(element, edit::PackageElement::ReferenceNoVersion) {
         if let Some(props_path) = targets::find_packages_props(path) {
             let props_str = props_path.to_string_lossy().to_string();
@@ -362,6 +359,11 @@ fn apply_install(
     })
 }
 
+/// The target's path, when the edit changed it: the start of `modified_files`.
+fn modified_target(modified: bool, target: &types::NuGetTarget) -> Vec<String> {
+    modified.then(|| target.path.clone()).into_iter().collect()
+}
+
 /// Apply uninstall by delegating the XML mutation to the C# sidecar.
 fn apply_uninstall(
     sidecar: &Arc<SidecarManager>,
@@ -381,15 +383,10 @@ fn apply_uninstall(
     let element = pick_install_element(target);
     let outcome = edit::remove_package(sidecar, runtime, &target.path, package_id, element)?;
 
-    let mut modified: Vec<String> = Vec::new();
-    if outcome.modified {
-        modified.push(target.path.clone());
-    }
-
     Ok(types::UninstallResponse {
         success: outcome.modified,
         message: outcome.message,
-        modified_files: modified,
+        modified_files: modified_target(outcome.modified, target),
     })
 }
 

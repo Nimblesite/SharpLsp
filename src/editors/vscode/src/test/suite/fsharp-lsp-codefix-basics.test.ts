@@ -9,13 +9,11 @@ import {
   type CodeFixScenario,
 } from './fsharp-refactor-fixtures';
 import {
-  applyAction,
+  activateWarmFSharp,
   assertInsertion,
   assertNoAction,
   assertQuickFix,
   assertReplacement,
-  diagnosticCode,
-  diagnosticGone,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
@@ -24,10 +22,12 @@ import {
   tokenRange,
   undoAction,
   uniqueAction,
+  assertFixApplied,
 } from './fsharp-refactor-test-kit';
-import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
+import { diagnosticCode } from './document-anchors';
+import { revertDocument } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // Full real-LSP lifecycle coverage for [ANALYZERS-FSAC-PARITY]. No mocked providers.
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
@@ -57,7 +57,12 @@ interface BasicFixSpec extends CodeFixScenario {
 suite('F# real LSP — diagnostic quick fixes', defineBasicFixSuite);
 
 function defineBasicFixSuite(): void {
-  suiteSetup(activateRealSharpLsp);
+  suiteSetup(async function () {
+    this.timeout(SIDECAR_COLD_MS);
+    const first = OPEN_SCENARIOS[0];
+    assert.ok(first, 'the open-directive scenarios must not be empty');
+    await activateWarmFSharp(TARGET_FILE, first.source, first.diagnostic);
+  });
   teardown(closeAllEditors);
   suiteTeardown(closeAllEditors);
   registerOpenTests();
@@ -264,19 +269,10 @@ async function applyAndRecheck(
   action: vscode.CodeAction,
   spec: BasicFixSpec,
 ): Promise<void> {
-  const version = fixture.document.version;
-  const snapshots = await applyAction(action);
-  assert.strictEqual(snapshots.length, 1);
-  assert.ok(fixture.document.version > version);
-  assert.strictEqual(fixture.document.getText(), spec.expected);
+  assert.strictEqual(action.title, spec.title);
+  const target = spec.postTarget ?? spec.target;
+  await assertFixApplied(fixture, action, spec.expected, spec.diagnostic, target);
   assert.ok(fixture.document.getText().includes('sentinel'));
-  assert.ok(fixture.document.isDirty);
-  await diagnosticGone(fixture.uri, spec.diagnostic);
-  const actions = await quickFixes(
-    fixture.uri,
-    tokenRange(fixture.document, spec.postTarget ?? spec.target),
-  );
-  assertNoAction(actions, spec.title);
 }
 
 async function undoAndRequery(

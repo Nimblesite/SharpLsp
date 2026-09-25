@@ -254,7 +254,7 @@ open and are called out as such, because nothing implements them.
 
 - [x] Stage netcoredbg into the VSIX for every platform with an upstream prebuilt, and prove it
       reached the package. `tools/vsix/fetch-netcoredbg.sh` (invoked from
-      `tools/make/main.mk:193` and `:607`), payload assertion in
+      `Makefile:231` and `:854`), payload assertion in
       `tools/vsix/verify-vsix-payload.mjs:42` for both `netcoredbg` and its `ManagedPart.dll`;
       test `00-vsix-dev-binary-staging.test.ts` *bundles the netcoredbg debug adapter the launch
       path resolves first* — which runs as the shared head of **every** Windows chunk
@@ -318,7 +318,7 @@ open and are called out as such, because nothing implements them.
       VS Code's stop gesture sends `disconnect {terminateDebuggee: true}` because the router
       advertises `supportTerminateDebuggee`, and netcoredbg then KILLED the attached process.
       `dap-attach.ts` `AttachRetrier.rewriteDisconnect` forces `terminateDebuggee: false` for
-      an attach-mode session (launch disconnects pass through untouched); the router's
+      a user-selected attach session (launch disconnects pass through untouched); the router's
       `disconnect` intercept routes through it. Test `debug-attach-e2e.test.ts` *attaching by
       pid pauses the live process and exposes its state* — green locally end to end,
       including "stopping an ATTACH session detaches".
@@ -589,6 +589,22 @@ waiting; a debug run never writes the result cache.
 - [x] Resolve test host child process PID — `test-debug.ts` `TestHostWatcher` /
       `announcedTestHostPid` over the live `dotnet test` output; `VSTEST_RUNNER_DEBUG=0`
       pins the PARENT runner so only hosts ever announce
+- [x] Terminate the owned test host on Stop ([DEBUG-FEATURES-TESTS]), while preserving
+      detach-only behavior for user-selected processes. `dap-attach.ts` retains ownership
+      independently of its one-shot initial-break flag. Existing tests *debugging the same
+      test twice in a row gives two clean, separate sessions* followed by *the profiles are
+      Run/Debug/Coverage and Debug opens a terminal instead of caching a result* reproduced
+      an orphaned runner and duplicate terminal before the production fix; both pass unchanged.
+- [x] Verify the complete Stop fix across ordinary attach and C#/F# VSTest/MTP debugging:
+      40 existing tests pass unchanged on macOS arm64. `test-execution.ts` prevents a stopped
+      debug host from triggering an unfiltered retry; the broader suites exposed that second
+      failure after the owned-host disconnect fix (#302).
+- [x] Four new `debug-test-stop-e2e.test.ts` cases fail against pre-fix production code and
+      pass with the complete fix (51 seconds). A breakpoint retains a 30-second wait after
+      detach; Stop must close the terminal within five seconds, terminate the owned PID,
+      preserve the cached verdict, never retry and permit a fresh explicit Debug. Reverting
+      only the VSTest retry guard independently makes both VSTest cases fail.
+- [ ] Obtain green Linux/Windows PR checks for the complete Stop fix and its new tests.
 - [x] Wire test filter (class/method) into `dotnet test --filter`, escaped for the VSTest
       grammar. `test-filter.ts`, `test-execution.ts` `buildFilterArgs`; test
       `test-explorer-e2e.test.ts` (VSTest filter grammar cases, `testexplorer` chunk, green)
@@ -663,6 +679,12 @@ code plus a regression test, and each test's chunk is green.
       `debug-session-lifecycle-e2e.test.ts` *Restart relaunches the same configuration and
       re-arms the breakpoints* and `debug-output-routing-e2e.test.ts` *integratedTerminal gives
       the debuggee a real terminal, so stdin works*. [DEBUG-FEATURES-LAUNCH-OUTPUT]
+- [x] **Pending terminal Stop (#290).** Real-netcoredbg regression failed before the fix
+      (45 seconds, no termination event). Router/replayer cancellation passes 10 targeted
+      C#/F# cases covering both terminal types, terminate/disconnect and a late owned PID
+      after disposal; full clean-build debug-tests shard passes 66/66 on macOS arm64.
+      [DEBUG-FEATURES-LAUNCH-OUTPUT]
+- [ ] Integrate #290 and verify the unchanged complete Windows/Linux PR matrix.
 - [x] **Every diagnostic was published twice.** The server advertised `diagnosticProvider`
       (pull) AND pushed `publishDiagnostics`; `vscode-languageclient` builds a second
       `DiagnosticCollection` for the pull model and `vscode.languages.getDiagnostics`

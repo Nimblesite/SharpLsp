@@ -133,6 +133,14 @@ interface RecognisedFrame {
   readonly viaInvoke: boolean;
 }
 
+/** A qualified frame name's segments, its last one and the type that owns it. */
+function ownedTail(name: string): { segments: string[]; last: string; owner: string } | undefined {
+  const segments = splitQualifiedName(name);
+  const last = segments[segments.length - 1];
+  const owner = segments[segments.length - 2];
+  return last === undefined || owner === undefined ? undefined : { segments, last, owner };
+}
+
 /**
  * Recognise `Ns.Type.<Method>d__N.MoveNext()`, `Ns.method@L.MoveNext()` and
  * the F# dynamic-mode `Ns.method@L-N.Invoke()`, yielding `Ns.Type.Method()`.
@@ -141,10 +149,9 @@ interface RecognisedFrame {
  * (`<>c.<Main>b__0_0`) also implements `Invoke` but is not an async frame.
  */
 function recogniseFrame(name: string): RecognisedFrame | undefined {
-  const segments = splitQualifiedName(name);
-  const last = segments[segments.length - 1];
-  const owner = segments[segments.length - 2];
-  if (last === undefined || owner === undefined) return undefined;
+  const split = ownedTail(name);
+  if (split === undefined) return undefined;
+  const { segments, last, owner } = split;
   const tail = withoutArguments(last);
   const method =
     tail === MOVE_NEXT
@@ -176,13 +183,10 @@ export function logicalFrameName(name: string): string {
  * the paused frame against the heap's active-task boxes.
  */
 export function frameStateMachineType(name: string): string | undefined {
-  const segments = splitQualifiedName(name);
-  const last = segments[segments.length - 1];
-  const owner = segments[segments.length - 2];
-  if (last === undefined || owner === undefined) return undefined;
-  if (withoutArguments(last) !== MOVE_NEXT) return undefined;
-  if (stateMachineMethod(owner) === undefined) return undefined;
-  return segments.slice(0, -1).join('.');
+  const split = ownedTail(name);
+  if (split === undefined || withoutArguments(split.last) !== MOVE_NEXT) return undefined;
+  if (stateMachineMethod(split.owner) === undefined) return undefined;
+  return split.segments.slice(0, -1).join('.');
 }
 
 /** Root namespaces that are never the user's own code. */

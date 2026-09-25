@@ -10,13 +10,14 @@ import {
   teardownLspTestSuite,
   waitForDiagnostics,
   waitForHoverResult,
+  assertContainsAll,
+  assertContainsNone,
 } from './test-helpers';
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import {
   PACKAGE,
   assertNoPackageBindingErrors,
   completionList,
-  diagnosticCode,
   errorsFor,
   hoverText,
   itemNamed,
@@ -26,6 +27,7 @@ import {
   waitForErrorCode,
   waitForHoverText,
 } from './filebased-package-kit';
+import { diagnosticCode } from './document-anchors';
 import { ACTIVATION_MS, DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 function insertionRange(item: vscode.CompletionItem): vscode.Range {
@@ -45,6 +47,58 @@ function insertionText(item: vscode.CompletionItem): string {
     assert.fail('resolved completion must insert plain text');
   }
   return inserted;
+}
+
+/**
+ * The provisional "restore pending" notice the host publishes while a
+ * `#:package` reference is still being resolved (`RESTORE_PENDING_CODE` in
+ * src/sharplsp/src/diagnostics.rs). Its REAPPEARANCE on an already-resolved root
+ * is the signature of that root's workspace being rebuilt underneath it.
+ */
+const RESTORE_PENDING = 'SLSPC0002';
+
+/**
+ * How long to keep watching the packaged root while a neighbour is loaded.
+ *
+ * The eviction of issue #294 lands ~22ms after the neighbouring `workspace/open`
+ * and is repaired some time later — 2.4s on a fast machine, over two minutes on
+ * a slow Windows runner. The window only has to be wide enough to contain the
+ * break; it deliberately does NOT wait for the repair, because the repair is
+ * what used to hide this.
+ */
+const EVICTION_WATCH_MS = 5_000;
+
+/**
+ * Every distinct error code seen on `uri` while `during` runs AND for
+ * {@link EVICTION_WATCH_MS} after it returns.
+ *
+ * Sampling starts before `during` does, because the eviction lands during the
+ * neighbour's `workspace/open`, and continues past it, because the republished
+ * diagnostics arrive asynchronously ~22ms later. A caller then asserts over the
+ * whole set rather than over the final state — which is the difference between
+ * "never broke" and "broke and recovered before anyone looked".
+ */
+async function codesSeenDuring(uri: vscode.Uri, during: () => Promise<void>): Promise<Set<string>> {
+  const seen = new Set<string>();
+  // Sampling runs until `during` returns and the tail window elapses. Infinity,
+  // not `undefined`: the poll loop below reads this from a nested closure, so a
+  // sentinel that is also the "not set yet" value keeps the deadline check a
+  // single comparison and keeps the variable genuinely reassigned exactly once.
+  let stopAt = Number.POSITIVE_INFINITY;
+  const sample = (): void => {
+    for (const diagnostic of errorsFor(uri)) seen.add(diagnosticCode(diagnostic));
+  };
+  const poll = (async () => {
+    for (;;) {
+      sample();
+      if (Date.now() >= stopAt) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  })();
+  await during();
+  stopAt = Date.now() + EVICTION_WATCH_MS;
+  await poll;
+  return seen;
 }
 
 suite('VSIX E2E — C# file-based #:package directives', () => {
@@ -80,15 +134,14 @@ Console.WriteLine(clone.ToString());
     assert.strictEqual(doc.languageId, 'csharp', 'the target is handled as C#');
     assert.strictEqual(doc.uri.toString(), uri.toString(), 'the opened URI is the requested file');
     assert.strictEqual(doc.lineAt(0).text, PACKAGE, 'the package directive remains verbatim');
-    assert.strictEqual(fs.existsSync(path.join(tmpDir, 'PackageApp.csproj')), false);
-    assert.strictEqual(fs.existsSync(path.join(tmpDir, 'Directory.Build.props')), false);
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'PackageApp.csproj')));
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'Directory.Build.props')));
 
     const typePosition = positionInside(source, 'JObject');
     const hovers = await waitForHoverText(uri, typePosition, 'Newtonsoft.Json.Linq');
     const markdown = hoverText(hovers);
     assert.ok(hovers.length > 0, 'restored JObject must return hover information');
-    assert.ok(markdown.includes('JObject'), 'hover must name the package type');
-    assert.ok(markdown.includes('Newtonsoft.Json.Linq'), 'hover must name the package namespace');
+    assertContainsAll(markdown, ['JObject', 'Newtonsoft.Json.Linq'], 'hover must name the package');
 
     const completions = await completionList(uri, positionAfter(source, 'payload.'), 'DeepClone');
     assert.ok(completions.items.length > 3, 'package member completion must be non-trivial');
@@ -121,7 +174,7 @@ Console.WriteLine(payload.Count);
     assert.ok(missing.some((diagnostic) => diagnostic.range.start.line <= 2));
 
     const withDirective = `${PACKAGE}\n${withoutDirective}`;
-    assert.strictEqual(await replaceDocumentContent(doc, withDirective), true);
+    assert.ok(await replaceDocumentContent(doc, withDirective));
     assert.ok(doc.isDirty, 'the package edit remains unsaved while didChange is exercised');
     assert.ok(doc.version > initialVersion, 'VS Code increments the document version');
     assert.strictEqual(doc.lineAt(0).text, PACKAGE, 'the in-memory directive is visible');
@@ -135,14 +188,14 @@ Console.WriteLine(payload.Count);
     assertNoPackageBindingErrors(uri);
 
     const versionWithPackage = doc.version;
-    assert.strictEqual(await replaceDocumentContent(doc, withoutDirective), true);
+    assert.ok(await replaceDocumentContent(doc, withoutDirective));
     assert.ok(doc.version > versionWithPackage, 'removal is a new didChange generation');
-    assert.strictEqual(doc.getText().startsWith('#:package'), false, 'directive was removed');
+    assert.ok(!doc.getText().startsWith('#:package'), 'directive was removed');
     const removed = await waitForErrorCode(uri, 'CS0246');
     assert.ok(removed.some((diagnostic) => diagnosticCode(diagnostic) === 'CS0246'));
     assert.ok(removed.some((diagnostic) => diagnostic.message.includes('JObject')));
 
-    assert.strictEqual(await replaceDocumentContent(doc, withDirective), true);
+    assert.ok(await replaceDocumentContent(doc, withDirective));
     const restored = await completionList(
       uri,
       positionAfter(withDirective, 'payload.'),
@@ -177,7 +230,7 @@ Console.WriteLine(payload.Count);
       included,
       'closure input is unchanged',
     );
-    assert.strictEqual(doc.getText().includes(PACKAGE), false, 'the root itself has no package');
+    assert.ok(!doc.getText().includes(PACKAGE), 'the root itself has no package');
 
     const factoryHover = hoverText(
       await waitForHoverText(uri, positionInside(root, 'PackageFactory'), 'PackageFactory'),
@@ -190,6 +243,21 @@ Console.WriteLine(payload.Count);
   });
 
   // Implements [SCRIPT-MULTIROOT] and guards package-reference leakage.
+  // Implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD] and [SCRIPT-CONE].
+  //
+  // Isolation between two file-based roots is TWO claims, not one: the package
+  // must not leak INTO the plain root, and opening the plain root must not evict
+  // it FROM the packaged one. Only the first was ever asserted, and the second is
+  // where issue #294 lived -- WorkspaceManager holds ONE `_solution`, so loading
+  // the neighbour replaces the packaged root's restored context outright.
+  //
+  // That defect was invisible to an end-state assertion. The binding is rebuilt
+  // some time later, so a test that polls until completion finally succeeds
+  // passes on a machine that rebinds quickly and times out only on one that does
+  // not: a green run meant "recovered in time", never "never broke". It was green
+  // on darwin and linux for exactly that reason while the bug was live. So every
+  // assertion here that matters is sampled ACROSS the neighbour's open rather
+  // than after it, and the recovery is treated as evidence, not as an alibi.
   test('a package reference never leaks into a neighboring file-based root', async function () {
     this.timeout(DOTNET_CLI_MS);
     const packageRoot = `${PACKAGE}
@@ -201,6 +269,9 @@ Console.WriteLine(owned.Count);
 var isolated = new JObject();
 Console.WriteLine(isolated.Count);
 `;
+
+    // 1 -- the packaged root binds, and binds CLEANLY. A restore-pending notice
+    //      left behind means the reference is provisional, not resolved.
     const packageFile = await openFileBasedApp(tmpDir, 'RootWithPackage.cs', packageRoot);
     const bound = await completionList(
       packageFile.uri,
@@ -208,20 +279,60 @@ Console.WriteLine(isolated.Count);
       'Properties',
     );
     assert.strictEqual(itemNamed(bound, 'Properties').kind, vscode.CompletionItemKind.Method);
+    assert.ok(itemNamed(bound, 'Properties').detail !== '', 'a bound symbol carries detail');
     assertNoPackageBindingErrors(packageFile.uri);
+    const settled = errorsFor(packageFile.uri).map(diagnosticCode);
+    assertContainsNone(settled, [RESTORE_PENDING, 'CS0246'], 'settled');
+    assert.deepStrictEqual(
+      settled,
+      [],
+      `the packaged root starts clean; got ${settled.join(', ')}`,
+    );
 
-    const plainFile = await openFileBasedApp(tmpDir, 'RootWithoutPackage.cs', plainRoot);
+    // 2 -- THE INVARIANT. Open the neighbour while watching the packaged root the
+    //      whole time. Nothing may appear on it at ANY sample: not CS0246 from a
+    //      discarded reference, not SLSPC0002 from a workspace being rebuilt
+    //      underneath it, not anything else.
+    let plainFile!: { doc: vscode.TextDocument; uri: vscode.Uri };
+    const duringOpen = await codesSeenDuring(packageFile.uri, async () => {
+      plainFile = await openFileBasedApp(tmpDir, 'RootWithoutPackage.cs', plainRoot);
+    });
+    const observed = [...duringOpen].sort().join(', ') || 'none';
+    assertContainsNone(duringOpen, ['CS0246', RESTORE_PENDING], 'duringOpen');
+    assert.deepStrictEqual(
+      [...duringOpen],
+      [],
+      `the packaged root must stay clean for every sample across a neighbour's ` +
+        `open; saw ${observed}`,
+    );
     assert.notStrictEqual(plainFile.uri.toString(), packageFile.uri.toString());
+
+    // 3 -- the direction this test always covered: the package does NOT leak into
+    //      the plain root, and the failure is attributed to our own server.
     const isolatedErrors = await waitForErrorCode(plainFile.uri, 'CS0246');
     assert.ok(isolatedErrors.some((diagnostic) => diagnostic.message.includes('JObject')));
     assert.ok(isolatedErrors.every((diagnostic) => diagnostic.source === 'sharplsp-csharp'));
+    assert.ok(
+      isolatedErrors.every((diagnostic) => diagnosticCode(diagnostic) !== RESTORE_PENDING),
+      'a root with no #:package is not pending a restore; it simply has no package',
+    );
 
+    // 4 -- and the packaged root is STILL bound afterwards, by both measures.
+    //      Diagnostics first: a completion poll can outlast a rebind and hide a
+    //      gap, so the cheap end-state check goes before the forgiving one.
+    const after = errorsFor(packageFile.uri).map(diagnosticCode);
+    assert.deepStrictEqual(after, [], `packaged root must remain clean; got ${after.join(', ')}`);
     const stillBound = await completionList(
       packageFile.uri,
       positionAfter(packageRoot, 'owned.'),
       'DeepClone',
     );
     assert.strictEqual(itemNamed(stillBound, 'DeepClone').kind, vscode.CompletionItemKind.Method);
+    assert.ok(
+      stillBound.items.length >= bound.items.length,
+      `the packaged root must not lose members to a neighbour's open: ` +
+        `${bound.items.length.toString()} before, ${stillBound.items.length.toString()} after`,
+    );
     assertNoPackageBindingErrors(packageFile.uri);
   });
 
@@ -239,8 +350,7 @@ Console.WriteLine(text.Length);
     const consoleHover = hoverText(
       await waitForHoverResult(uri, positionInside(source, 'Console'), DOTNET_CLI_MS),
     );
-    assert.ok(consoleHover.includes('Console'), 'tier 2 must retain BCL hover');
-    assert.ok(consoleHover.includes('System'), 'tier-2 hover must retain the BCL namespace');
+    assertContainsAll(consoleHover, ['Console', 'System'], 'consoleHover');
     const bclMembers = await completionList(uri, positionAfter(source, 'text.'), 'Length');
     assert.strictEqual(
       itemNamed(bclMembers, 'Length').kind,
@@ -269,11 +379,17 @@ Console.WriteLine(text.Length);
     assert.strictEqual(degraded[0]?.range.start.character, 0);
     assert.strictEqual(degraded[0]?.range.end.line, 0);
     assert.strictEqual(degraded[0]?.range.end.character, 1);
-    assert.ok(degraded[0]?.message.includes('BCL-only references'));
-    assert.ok(degraded[0]?.message.includes('Restore failed'));
+    assertContainsAll(
+      degraded[0]?.message,
+      ['BCL-only references', 'Restore failed'],
+      'degraded[0]?.message',
+    );
     assert.ok(!degraded[0]?.message.includes('pending'));
-    assert.ok(degraded[0]?.message.includes('SharpLsp.Package.That.Does.Not.Exist'));
-    assert.ok(degraded[0]?.message.includes('0.0.0'));
+    assertContainsAll(
+      degraded[0]?.message,
+      ['SharpLsp.Package.That.Does.Not.Exist', '0.0.0'],
+      'degraded[0]?.message',
+    );
     assert.deepStrictEqual(errorsFor(uri), [], 'restore failure must not kill BCL analysis');
   });
 
@@ -332,16 +448,15 @@ Console.WriteLine(json.Count + plural.Length);
     assert.ok(missingHumanizer.some((diagnostic) => diagnostic.message.includes('Pluralize')));
 
     const beforeSwapVersion = doc.version;
-    assert.strictEqual(await replaceDocumentContent(doc, second), true);
+    assert.ok(await replaceDocumentContent(doc, second));
     assert.ok(doc.version > beforeSwapVersion, 'package replacement is a new didChange generation');
     assert.strictEqual(doc.lineAt(0).text, humanizer, 'the new package identity is in memory');
-    assert.strictEqual(doc.getText().includes(PACKAGE), false, 'the old directive is gone');
+    assert.ok(!doc.getText().includes(PACKAGE), 'the old directive is gone');
 
     const humanizerHover = hoverText(
       await waitForHoverText(uri, positionInside(second, 'Pluralize'), 'Humanizer'),
     );
-    assert.ok(humanizerHover.includes('Pluralize'), 'the replacement package binds');
-    assert.ok(humanizerHover.includes('Humanizer'), 'hover identifies the replacement package');
+    assertContainsAll(humanizerHover, ['Pluralize', 'Humanizer'], 'humanizerHover');
     const staleReferenceErrors = await waitForErrorCode(uri, 'CS0246');
     assert.ok(staleReferenceErrors.some((diagnostic) => diagnostic.message.includes('JObject')));
     assert.ok(
@@ -380,7 +495,7 @@ Console.WriteLine(json.Count + plural.Length);
     const workspaceEdit = new vscode.WorkspaceEdit();
     workspaceEdit.replace(uri, primaryRange, primaryText);
     for (const edit of additional) workspaceEdit.replace(uri, edit.range, edit.newText);
-    assert.strictEqual(await vscode.workspace.applyEdit(workspaceEdit), true);
+    assert.ok(await vscode.workspace.applyEdit(workspaceEdit));
     assert.strictEqual(doc.getText(), 'var result = 42;\nresult.ToString');
     assert.strictEqual(doc.getText().split('ToString').length - 1, 1, 'text appears exactly once');
   });

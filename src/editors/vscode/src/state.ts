@@ -48,6 +48,8 @@ export interface SymbolNode {
   readonly detail: string | null;
   readonly access: string | null;
   readonly range: LspRange;
+  /** The declared name alone, where a reveal lands. [TEST-GOTO-SOURCE] */
+  readonly selectionRange: LspRange;
   readonly children: SymbolNode[];
 }
 
@@ -68,6 +70,22 @@ export type SymbolsState =
   | { readonly kind: 'loaded'; readonly response: WorkspaceSymbolsResponse }
   | { readonly kind: 'error'; readonly message: string };
 
+// ── Load-phase feedback ───────────────────────────────────────────
+
+/**
+ * What the solution-loading pipeline is currently doing.
+ *
+ * `discovering`: the workspace scan for .sln/.slnx files is running.
+ * `loading`: a specific solution is being loaded (sidecar reload + workspace
+ * symbols walk). `idle`: nothing in flight. The Solution Explorer subscribes
+ * to this and renders a spinner node instead of staying blank
+ * ([SE-LOAD-FEEDBACK]).
+ */
+export type LoadPhase =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'discovering' }
+  | { readonly kind: 'loading'; readonly solutionPath: string };
+
 // ── Centralized reactive state ──────────────────────────────────
 
 const MAX_RETRIES = 3;
@@ -75,6 +93,9 @@ const RETRY_DELAY_MS = 2_000;
 
 /** The active LSP language client. */
 export const client = new Signal<LanguageClient | undefined>(undefined);
+
+/** Whether that client's server is Running: what serves the tree and test locations. */
+export const serverRunning = new Signal<boolean>(false);
 
 /** Path to the currently loaded solution file. */
 export const solutionPath = new Signal<string | undefined>(undefined);
@@ -93,6 +114,9 @@ export const sortOrder = new Signal<SortOrder>(SortOrder.Alphabetical);
 /** Workspace symbols — empty, loaded, or error. */
 export const symbolsState = new Signal<SymbolsState>({ kind: 'empty' });
 
+/** What the solution-loading pipeline is currently doing. */
+export const loadPhase = new Signal<LoadPhase>({ kind: 'idle' });
+
 // ── Actions ─────────────────────────────────────────────────────
 
 /** Cycle: natural -> alphabetical -> accessibility -> natural. */
@@ -102,11 +126,48 @@ export function cycleSortOrder(): void {
   sortOrder.value = next;
 }
 
+/**
+ * Announce that the workspace scan for solutions has started. Returns the
+ * phase token to hand back to {@link endLoadPhase} — only that exact phase
+ * clears, so a stale scan finishing after a newer selection began never
+ * resets a phase it does not own.
+ */
+export function beginDiscovery(): LoadPhase {
+  const phase: LoadPhase = { kind: 'discovering' };
+  loadPhase.value = phase;
+  return phase;
+}
+
+/**
+ * Announce that a specific solution is being loaded. Same token contract as
+ * {@link beginDiscovery}.
+ */
+export function beginLoading(solutionFilePath: string): LoadPhase {
+  const phase: LoadPhase = { kind: 'loading', solutionPath: solutionFilePath };
+  loadPhase.value = phase;
+  return phase;
+}
+
+/**
+ * Clear a phase started by {@link beginDiscovery}/{@link beginLoading}.
+ * Identity-checked: a superseded run leaves whatever phase the newer run set.
+ */
+export function endLoadPhase(phase: LoadPhase): void {
+  if (loadPhase.value === phase) {
+    loadPhase.value = { kind: 'idle' };
+  }
+}
+
 /** Load a solution file path and fetch workspace symbols. */
 export async function loadSolution(solutionFilePath: string): Promise<void> {
   log.traceInfo(`Loading solution into state: ${solutionFilePath}`);
-  solutionPath.value = solutionFilePath;
-  await refresh();
+  const phase = beginLoading(solutionFilePath);
+  try {
+    solutionPath.value = solutionFilePath;
+    await refresh();
+  } finally {
+    endLoadPhase(phase);
+  }
 }
 
 /** Clear all solution state. */
@@ -114,6 +175,7 @@ export function clear(): void {
   log.traceInfo('Clearing solution state');
   solutionPath.value = undefined;
   symbolsState.value = { kind: 'empty' };
+  loadPhase.value = { kind: 'idle' };
 }
 
 /** Refresh workspace symbols from the LSP server. */

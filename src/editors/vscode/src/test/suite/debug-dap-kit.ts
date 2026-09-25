@@ -18,7 +18,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
-import { pollUntilResult, requireAt, sleep } from './test-helpers';
+import { deepEq, eq, pollUntilResult, requireAt, sleep } from './test-helpers';
 import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
 /** How long a launch, a step or a stop may take before a suite gives up. */
@@ -285,6 +285,41 @@ export class DapRecorder implements vscode.Disposable {
     return requireAt(seen, baseline, `the '${command}' request the suite sent`);
   }
 
+  /**
+   * Wait until the most recent `command` request satisfies `matches`.
+   *
+   * Reading `requests(command)` and taking the last entry asks what the wire
+   * holds RIGHT NOW, which is only the final state if nothing further is in
+   * flight. One user gesture is routinely several requests - enabling a
+   * breakpoint is a remove then an add, each syncing `setBreakpoints` - so the
+   * last entry at an arbitrary moment can be an INTERMEDIATE one carrying the
+   * state before the gesture completed.
+   *
+   * Waiting on a COUNT cannot fix that: `length >= n` is satisfied by the
+   * intermediate request, and `length >= n + 1` never arrives when the
+   * workbench coalesces the pair. The assertion is about content, so the wait
+   * must be about content too. A test that polls for a count and then asserts
+   * on the last entry passes or fails on how fast the machine is, which is the
+   * shape of every flake this suite has produced.
+   */
+  public async waitForRequestArgs(
+    command: string,
+    matches: (args: Record<string, any>) => boolean,
+    why: string,
+    timeoutMs = DEBUG_SESSION_MS,
+  ): Promise<Record<string, any>> {
+    const latest = (): Record<string, any> => {
+      const all = this.requests(command);
+      return all[all.length - 1]?.args ?? {};
+    };
+    const seen = await pollUntilResult(async () => latest(), matches, timeoutMs, 50);
+    assert.ok(
+      matches(seen),
+      `${why}; the last \`${command}\` the adapter received carried ${JSON.stringify(seen)}`,
+    );
+    return seen;
+  }
+
   /** Wait until at least `count` `name` events have arrived; returns them all. */
   public async waitForEvents(
     name: string,
@@ -374,4 +409,20 @@ export async function tryDap(
   } catch (error) {
     return { body: {}, failure: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/** `command` really reached the adapter, and every reply to it succeeded. */
+export function assertAnswered(recorder: DapRecorder, command: string, why: string): void {
+  assert.ok(recorder.requests(command).length >= 1, `${why}: '${command}' must reach the adapter`);
+  assert.ok(
+    recorder.responses(command).every((response) => response.success),
+    `${why}: every '${command}' reply must succeed`,
+  );
+}
+
+/** One handshake, one termination, and the adapter process alive throughout. */
+export function assertOneWholeSession(recorder: DapRecorder): void {
+  eq(recorder.events('initialized').length, 1, 'behind one initialized event');
+  eq(recorder.events('terminated').length, 1, 'and one termination');
+  deepEq(recorder.exits, [], 'with the adapter process alive throughout');
 }

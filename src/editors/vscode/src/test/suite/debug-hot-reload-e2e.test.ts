@@ -20,6 +20,7 @@ import {
   refusalsOf,
   startDebuggee,
   useDebuggee,
+  runToFirstStop,
 } from './debug-suite-kit';
 import { deepEq, eq, requireAt, sleep } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
@@ -36,11 +37,11 @@ async function rewriteLine(fixture: DebugFixture, anchor: string, code: string):
   const edit = new vscode.WorkspaceEdit();
   edit.replace(fixture.uri, document.lineAt(fixture.source.line(anchor)).range, code);
   const applied = await vscode.workspace.applyEdit(edit);
-  assert.strictEqual(applied, true, `the edit on '${anchor}' must apply to the open document`);
+  assert.ok(applied, `the edit on '${anchor}' must apply to the open document`);
   // Writing a line back over its own text leaves the document clean, and
   // `save()` answers false for a document with nothing to write.
   if (!document.isDirty) return;
-  assert.strictEqual(await document.save(), true, 'the document must save — that is the trigger');
+  assert.ok(await document.save(), 'the document must save — that is the trigger');
 }
 
 /** Put every editable line back to the text the fixture was built from. */
@@ -116,15 +117,13 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     await vscode.commands.executeCommand(CMD_CONTINUE);
     await assertRanToCompletion(recorder, 0, 'a hot-reloaded session');
     const output = recorder.outputText();
-    eq(
+    assert.ok(
       output.includes('total=308'),
-      true,
       'the reloaded body adds 100 per iteration: 2 -> 103 -> 205 -> 308. ' +
         `Output seen: ${JSON.stringify(output)}`,
     );
-    eq(
-      output.includes('total=8'),
-      false,
+    assert.ok(
+      !output.includes('total=8'),
       'the ORIGINAL IL must not have run: an edit that is accepted and then ignored is worse ' +
         'than one that is refused, because nothing tells the user their change did not apply',
     );
@@ -137,13 +136,10 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — pause before the type is used.
-    armBreakpoints(fixture, 'accumulate-entry');
-    const session = await startDebuggee(debuggee(), {
+    const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
       mode: MODE.plain,
       extra: { hotReload: true },
     });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must pause before the loop runs');
 
     // Interaction 2 — add a method to the existing type, and call it.
     await rewriteLine(
@@ -174,9 +170,8 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     // Interaction 4 — continue: the new method must be the one that runs.
     await vscode.commands.executeCommand(CMD_CONTINUE);
     await assertRanToCompletion(recorder, 0, 'a session with a newly added method');
-    eq(
+    assert.ok(
       recorder.outputText().includes('total=3008'),
-      true,
       'the new method adds 1000 per iteration: 2 -> 1003 -> 2005 -> 3008. ' +
         `Output seen: ${JSON.stringify(recorder.outputText())}`,
     );
@@ -189,12 +184,10 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     const { fixture, recorder, stubs, sessions } = debuggee();
 
     // Interaction 1 — pause.
-    armBreakpoints(fixture, 'accumulate-entry');
-    const session = await startDebuggee(debuggee(), {
+    const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
       mode: MODE.plain,
       extra: { hotReload: true },
     });
-    await recorder.waitForStops(1);
     deepEq(refusalsOf(debuggee().stubs), [], 'nothing has been reported before the edit');
 
     // Interaction 2 — change the method's SIGNATURE. The call site still
@@ -221,9 +214,8 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
         `they are reading. Messages seen: ${JSON.stringify(reported)}`,
     );
     const message = requireAt(reported, 0, 'the rude-edit message');
-    eq(
+    assert.ok(
       message.toLowerCase().includes('restart'),
-      true,
       `the message must prompt a restart, per step 5; it said: '${message}'`,
     );
     deepEq(stubs.log.infoMessages, [], 'a refused edit is not an informational notice');
@@ -238,9 +230,8 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     eq(sessions.ours.length, 1, 'and no second session was started behind their back');
     await vscode.commands.executeCommand(CMD_CONTINUE);
     await assertRanToCompletion(recorder, 0, 'a session after a refused rude edit');
-    eq(
+    assert.ok(
       recorder.outputText().includes('total=8'),
-      true,
       'a refused edit leaves the ORIGINAL IL running, so the original result must appear',
     );
   });

@@ -1,5 +1,4 @@
 /** Implements [SE-COMMANDS], [SE-ACTIONS], [SE-SOLUTION], and [SE-NAVIGATION]. */
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type ExtensionContext, commands, window, workspace } from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
@@ -30,7 +29,9 @@ import {
   VIEW_SOLUTION_EXPLORER,
   VIEW_PROFILER,
 } from './constants.js';
+import { configureDotnet } from './dotnet-process.js';
 import { acquireDotnet10Sdk, showAcquireFailureNotification } from './dotnetRuntime.js';
+import { verifyDeployment } from './deployment.js';
 import * as client from './client.js';
 import * as sharedState from './state.js';
 import * as deps from './dependencies.js';
@@ -50,6 +51,7 @@ import { registerDebugAdapter } from './debug.js';
 import { registerTestExplorer, SharpLspTestController } from './testing.js';
 import { registerTestStatusLens } from './test-lens.js';
 import { initProjectDepsStore } from './project-deps-store.js';
+import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface SharpLspExtensionApi {
@@ -59,6 +61,11 @@ export interface SharpLspExtensionApi {
   readonly getLspClient: () => LanguageClient | undefined;
   /** The Test Explorer controller. Exposed so tests can drive/observe discovery. */
   readonly testController: SharpLspTestController;
+  /**
+   * Where the workbench writes this extension's log channels (`<name>.log`).
+   * Exposed so tests can read the SharpLsp channel back ([DIST-CLEAN-OUTPUT]).
+   */
+  readonly logUri: vscode.Uri;
 }
 
 let lspClient: LanguageClient | undefined;
@@ -98,7 +105,7 @@ export async function activate(context: ExtensionContext): Promise<SharpLspExten
       'SharpLsp failed to activate. The language server will not start.',
       msg,
     );
-    return degradedApi();
+    return degradedApi(context);
   }
 }
 
@@ -196,20 +203,23 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   if (!dotnetResult.ok) {
     statusBar.setState(ServerState.Error);
     void showAcquireFailureNotification(dotnetResult.error, CMD_RETRY_DOTNET_ACQUISITION);
-    return degradedApi();
+    return degradedApi(context);
   }
   const dotnetPath = dotnetResult.value;
   // Publish the resolved SDK path so dotnet-spawning features (e.g. F#
   // Interactive) use it even when `dotnet` is not on $PATH. See
   // [DIST-RUNTIME-ACQUIRE].
   sharedState.dotnetPath.value = dotnetPath;
+  // Point builds, test discovery and test runs at the SDK that was actually
+  // resolved. Without this every `dotnet` child runs whatever is first on
+  // $PATH — which on a machine whose PATH SDK cannot satisfy the workspace
+  // `global.json` is precisely the SDK that fails with exit code 155.
+  configureDotnet(dotnetPath);
 
   log.info('step 11: activateShipwright');
   // Implements [DIST-FAILURE-UX] and [BINARY-VSCODE]: deployment-toolkit failures surface a toast
   // and return a degraded API instead of throwing out of activate().
-  const manifestPath = path.join(context.extensionPath, 'shipwright.json');
-  const { activateShipwright } = await import('@nimblesite/shipwright-vscode');
-  const deployResult = await activateShipwright(context, { manifestPath });
+  const deployResult = await verifyDeployment(context.extensionPath, dotnetPath);
   const blockingDiagnostics = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
   if (blockingDiagnostics.length > 0) {
     for (const diagnostic of blockingDiagnostics) {
@@ -221,7 +231,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
       'SharpLsp could not start: required binaries are missing or version-mismatched.',
       detail,
     );
-    return degradedApi();
+    return degradedApi(context);
   }
   log.info('step 11b: client.start (await)');
   // Implements [DIST-FAILURE-UX]: client.start failures also surface a toast.
@@ -233,7 +243,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     log.error(`Failed to start server: ${msg}`);
     statusBar.setState(ServerState.Error);
     void notifyActivationFailure('SharpLsp could not start the language server.', msg);
-    return degradedApi();
+    return degradedApi(context);
   }
 
   log.info('step 12: post-start wiring');
@@ -268,6 +278,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     profilerProvider,
     getLspClient: () => lspClient,
     testController,
+    logUri: context.logUri,
   };
 }
 
@@ -293,12 +304,13 @@ function resolvedComponentPath(
 }
 
 /** Implements [DIST-FAILURE-UX]: empty/inert API returned when activation fails. */
-function degradedApi(): SharpLspExtensionApi {
+function degradedApi(context: ExtensionContext): SharpLspExtensionApi {
   return {
     explorerProvider: explorerProvider ?? new SolutionExplorerProvider(),
     profilerProvider: profilerProvider ?? new profiler.ProfilerTreeProvider(),
     getLspClient: () => lspClient,
     testController: testController ?? new SharpLspTestController(),
+    logUri: context.logUri,
   };
 }
 
@@ -341,7 +353,7 @@ function registerCommands(context: ExtensionContext): void {
       log.info('Restarting server…');
       statusBar.setState(ServerState.Starting);
       try {
-        await lspClient?.restart();
+        if (lspClient !== undefined) await client.restart(lspClient);
         log.info('Server restarted.');
       } catch (err: unknown) {
         const msg = getErrorMessage(err);
@@ -454,59 +466,82 @@ function browseNuGetPackages(node: ExplorerNode | undefined, context: ExtensionC
   NuGetBrowserPanel.open(context, node.projectFilePath, projectName, () => lspClient);
 }
 
+/** Tell the user why a context-menu command invoked with no row did nothing. */
+function warnNoSelection(): void {
+  void window.showWarningMessage('Select an item in the Solution Explorer first.');
+}
+
 function registerContextMenuCommands(context: ExtensionContext): void {
   context.subscriptions.push(
-    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, async (node?: ExplorerNode) => {
+      if (node === undefined) {
+        warnNoSelection();
+        return;
+      }
       const name = buildQualifiedName(node);
       await vscode.env.clipboard.writeText(name);
       void window.showInformationMessage(`Copied: ${name}`);
     }),
-    commands.registerCommand(CMD_COPY_NAME, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_COPY_NAME, async (node?: ExplorerNode) => {
+      if (node === undefined) {
+        warnNoSelection();
+        return;
+      }
       await vscode.env.clipboard.writeText(node.sortName);
       void window.showInformationMessage(`Copied: ${node.sortName}`);
     }),
-    commands.registerCommand(CMD_REVEAL_IN_EXPLORER, (node: ExplorerNode) => {
-      if (node.symbolUri === undefined) return;
+    commands.registerCommand(CMD_REVEAL_IN_EXPLORER, (node?: ExplorerNode) => {
+      if (node?.symbolUri === undefined) return;
       const uri = vscode.Uri.parse(node.symbolUri);
       void commands.executeCommand('revealInExplorer', uri);
     }),
-    commands.registerCommand(CMD_SORT_MEMBERS, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_SORT_MEMBERS, async (node?: ExplorerNode) => {
       await sortMembers(node);
     }),
-    commands.registerCommand(CMD_OPEN_PROJECT_FILE, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_OPEN_PROJECT_FILE, async (node?: ExplorerNode) => {
       await openProjectFile(node);
     }),
-    commands.registerCommand(CMD_ADD_PROJECT_REFERENCE, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_ADD_PROJECT_REFERENCE, async (node?: ExplorerNode) => {
       await addProjectReference(node);
     }),
-    commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node: ExplorerNode) => {
-      if (node.projectFilePath === undefined) {
-        void window.showWarningMessage('No project file path available.');
-        return;
-      }
-      await addNuGetPackageToProject(node.projectFilePath);
+    commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node?: ExplorerNode) => {
+      const projectFilePath = projectPathOf(node);
+      if (projectFilePath === undefined) return;
+      await addNuGetPackageToProject(projectFilePath);
     }),
   );
 }
 
-async function openProjectFile(node: ExplorerNode): Promise<void> {
-  if (node.projectFilePath === undefined) {
+/**
+ * The project file a Solution Explorer command was invoked on, or `undefined`
+ * once the user has been told why nothing happened.
+ *
+ * The Command Palette invokes these commands with no argument at all
+ * ([SE-CONTEXT-VALUES]), so the node is genuinely optional and reading through
+ * it unguarded threw rather than explaining itself.
+ */
+function projectPathOf(node: ExplorerNode | undefined): string | undefined {
+  if (node?.projectFilePath === undefined) {
     void window.showWarningMessage('No project file path available.');
-    return;
+    return undefined;
   }
-  const uri = vscode.Uri.file(node.projectFilePath);
-  const doc = await workspace.openTextDocument(uri);
-  await window.showTextDocument(doc);
-  log.info(`Opened project file: ${node.projectFilePath}`);
+  return node.projectFilePath;
 }
 
-async function addProjectReference(node: ExplorerNode): Promise<void> {
-  if (node.projectFilePath === undefined) {
-    void window.showWarningMessage('No project file path available.');
-    return;
-  }
+async function openProjectFile(node: ExplorerNode | undefined): Promise<void> {
+  const projectFilePath = projectPathOf(node);
+  if (projectFilePath === undefined) return;
+  const uri = vscode.Uri.file(projectFilePath);
+  const doc = await workspace.openTextDocument(uri);
+  await window.showTextDocument(doc);
+  log.info(`Opened project file: ${projectFilePath}`);
+}
+
+async function addProjectReference(node: ExplorerNode | undefined): Promise<void> {
+  const projectFilePath = projectPathOf(node);
+  if (projectFilePath === undefined) return;
   const projectFiles = await workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
-  const candidates = projectFiles.filter((f) => f.fsPath !== node.projectFilePath);
+  const candidates = projectFiles.filter((f) => f.fsPath !== projectFilePath);
   if (candidates.length === 0) {
     void window.showWarningMessage('No other project files found to reference.');
     return;
@@ -519,7 +554,7 @@ async function addProjectReference(node: ExplorerNode): Promise<void> {
     { placeHolder: 'Select project to reference' },
   );
   if (pick === undefined) return;
-  const error = await deps.addProjectReference(node.projectFilePath, pick.uri.fsPath);
+  const error = await deps.addProjectReference(projectFilePath, pick.uri.fsPath);
   if (error !== undefined) {
     void window.showErrorMessage(`Failed to add project reference: ${error}`);
     return;
@@ -528,8 +563,8 @@ async function addProjectReference(node: ExplorerNode): Promise<void> {
   await explorerProvider?.refresh();
 }
 
-async function sortMembers(node: ExplorerNode): Promise<void> {
-  if (node.symbolUri === undefined || node.symbolRange === undefined) {
+async function sortMembers(node: ExplorerNode | undefined): Promise<void> {
+  if (node?.symbolUri === undefined || node.symbolRange === undefined) {
     void window.showWarningMessage('No symbol location available.');
     return;
   }
@@ -541,35 +576,12 @@ async function sortMembers(node: ExplorerNode): Promise<void> {
   }
 
   const config = workspace.getConfiguration('sharplsp.memberSortOrder');
-  const hierarchy = config.get<string[]>('hierarchy', [
-    'accessibility',
-    'category',
-    'alphabetical',
-  ]);
+  const hierarchy = config.get<string[]>('hierarchy', [...DEFAULT_SORT_POLICY.hierarchy]);
   const accessibilityOrder = config.get<string[]>('accessibilityOrder', [
-    'public',
-    'protected internal',
-    'internal',
-    'protected',
-    'private protected',
-    'private',
+    ...DEFAULT_SORT_POLICY.accessibilityOrder,
   ]);
   const categoryOrder = config.get<string[]>('categoryOrder', [
-    'constant',
-    'field',
-    'constructor',
-    'finalizer',
-    'delegate',
-    'event',
-    'enum',
-    'interface',
-    'property',
-    'indexer',
-    'operator',
-    'method',
-    'struct',
-    'class',
-    'record',
+    ...DEFAULT_SORT_POLICY.categoryOrder,
   ]);
 
   try {
@@ -690,17 +702,37 @@ function scheduleSolutionRefresh(solutionFilePath: string): void {
 async function selectAndLoadSolution(): Promise<void> {
   const generation = ++solutionSelectionGeneration;
   const initialSolution = sharedState.solutionPath.value;
-  const solutions = await solution.findSolutions();
-  if (!solutionSelectionIsCurrent(generation, initialSolution) || solutions.length === 0) return;
-  const picked =
-    solutions.length === 1 ? solutions[0] : await solution.promptUserSelection(solutions);
-  if (!solutionSelectionIsCurrent(generation, initialSolution)) return;
-  if (picked !== undefined) {
-    await loadSolution(picked);
-    return;
-  }
-  // User dismissed the QuickPick — show solutions as buttons in the tree.
-  explorerProvider?.showSolutionPicker(solutions);
+
+  // [SE-LOAD-FEEDBACK]: without this the explorer sits blank while the
+  // workspace scan (up to 5s) and then the solution load run, and the user
+  // has no signal that anything is happening. `window.withProgress` puts a
+  // native progress bar in the Solution Explorer view title with a status
+  // message; the `loadPhase` signal drives the in-tree spinner node.
+  await window.withProgress({ location: { viewId: VIEW_SOLUTION_EXPLORER } }, async (progress) => {
+    progress.report({ message: 'Searching for solutions…' });
+    const phase = sharedState.beginDiscovery();
+    // Same contract as `loadSolution` below: a failed scan must clear the
+    // phase, or the tree spins forever on a search that already gave up.
+    let solutions: readonly solution.SolutionSelection[];
+    try {
+      solutions = await solution.findSolutions();
+    } finally {
+      sharedState.endLoadPhase(phase);
+    }
+    if (!solutionSelectionIsCurrent(generation, initialSolution) || solutions.length === 0) {
+      return;
+    }
+    const picked =
+      solutions.length === 1 ? solutions[0] : await solution.promptUserSelection(solutions);
+    if (!solutionSelectionIsCurrent(generation, initialSolution)) return;
+    if (picked !== undefined) {
+      progress.report({ message: `Loading ${picked.name}…` });
+      await loadSolution(picked);
+      return;
+    }
+    // User dismissed the QuickPick — show solutions as buttons in the tree.
+    explorerProvider?.showSolutionPicker(solutions);
+  });
 }
 
 function solutionSelectionIsCurrent(
@@ -717,19 +749,32 @@ async function loadSolution(selected: solution.SolutionSelection): Promise<void>
   solutionSelectionGeneration += 1;
   log.info(`Loading solution: ${selected.path}`);
 
-  // Tell the LSP server to reload sidecars with this specific solution.
-  // Without this, the sidecar uses the workspace root and may pick the
-  // wrong solution when multiple exist — breaking hover, definition, etc.
-  if (lspClient !== undefined) {
-    try {
-      await lspClient.sendRequest('sharplsp/loadSolution', {
-        solutionPath: selected.path,
-      });
-    } catch (err: unknown) {
-      const msg = getErrorMessage(err);
-      log.error(`sharplsp/loadSolution failed: ${msg}`);
-    }
-  }
+  // Cover the whole load — the LSP reload below runs BEFORE
+  // state.loadSolution begins its own phase, and the tree must not sit on a
+  // stale/blank view meanwhile ([SE-LOAD-FEEDBACK]).
+  const phase = sharedState.beginLoading(selected.path);
 
-  await explorerProvider?.loadSolution(selected.path);
+  // `finally`, never a trailing statement: a throw out of the explorer load
+  // would otherwise leave the phase set forever, and the tree renders a
+  // spinner for as long as a phase is active — a permanently "loading"
+  // Solution Explorer with no way back ([SE-LOAD-FEEDBACK]).
+  try {
+    // Tell the LSP server to reload sidecars with this specific solution.
+    // Without this, the sidecar uses the workspace root and may pick the
+    // wrong solution when multiple exist — breaking hover, definition, etc.
+    if (lspClient !== undefined) {
+      try {
+        await lspClient.sendRequest('sharplsp/loadSolution', {
+          solutionPath: selected.path,
+        });
+      } catch (err: unknown) {
+        const msg = getErrorMessage(err);
+        log.error(`sharplsp/loadSolution failed: ${msg}`);
+      }
+    }
+
+    await explorerProvider?.loadSolution(selected.path);
+  } finally {
+    sharedState.endLoadPhase(phase);
+  }
 }

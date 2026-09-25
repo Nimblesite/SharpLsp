@@ -175,7 +175,7 @@ Before running any install command, run `getVersion("brew")` / `getVersion("scoo
 **Deletions:**
 
 - `downloadAndInstall`, `downloadToFile`, `extractTarGz`, `platformRid`, `bundledBinaryPath`, and the whole GitHub-release HTTPS path.
-- The `bin/` VSIX bundling path and the `~/.local/lib/sharplsp/` staging from both the Makefile `install` target and `.github/workflows/ci-vsix.yml` (recent commits `c6f29f0` and `e1dd2ca` become partially obsolete).
+- The `bin/` VSIX bundling path and the `~/.local/lib/sharplsp/` staging from both the Makefile `install` target and `.github/workflows/ci-test-vsix.yml` (recent commits `c6f29f0` and `e1dd2ca` become partially obsolete).
 
 **Forbidden patterns (encoded as lint / code review):**
 
@@ -185,7 +185,7 @@ Before running any install command, run `getVersion("brew")` / `getVersion("scoo
 
 ### Makefile installation targets `[BINARY-MAKEFILE]`
 
-`tools/make/main.mk:584-600` — the install targets currently stage sharplsp + sidecars into `$PREFIX`. Replace with:
+`Makefile:930-946` — the install targets currently stage sharplsp + sidecars into `$PREFIX`. Replace with:
 
 - `install-rust`: just copies `sharplsp` to `$PREFIX/bin` (for local dev)
 - `install-sidecars`: runs `dotnet tool install -g` from locally packed nupkgs so contributors can test the tool install flow end-to-end

@@ -21,8 +21,7 @@ import {
   assertInsertion,
   assertNoAction,
   assertQuickFix,
-  diagnosticCode,
-  diagnosticGone,
+  diagnosticsSettled,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
@@ -32,6 +31,7 @@ import {
   undoAction,
   uniqueAction,
 } from './fsharp-refactor-test-kit';
+import { diagnosticCode } from './document-anchors';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
 import { closeAllEditors, comparableText } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
@@ -431,7 +431,7 @@ async function applyGeneration(
 }
 
 async function assertAllErrorsGone(uri: vscode.Uri, diagnostic: string): Promise<void> {
-  const diagnostics = await diagnosticGone(uri, diagnostic);
+  const diagnostics = await diagnosticsSettled(uri, diagnostic);
   const errors = diagnostics.filter((item) => item.severity === vscode.DiagnosticSeverity.Error);
   assert.deepStrictEqual(
     errors.map((item) => `${item.range.start.line}:${diagnosticCode(item)} ${item.message}`),

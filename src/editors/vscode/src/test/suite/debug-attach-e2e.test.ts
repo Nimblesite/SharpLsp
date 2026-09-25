@@ -23,9 +23,14 @@ import {
 } from './debug-drive-kit';
 import { assertCleanSession, stopDebuggee, useDebuggee } from './debug-suite-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
-import { resolveAttachTarget } from '../../attach-target.js';
-import { deepEq, eq, pollUntilResult, requireAt, sleep } from './test-helpers';
-import { COMMAND_MS, DEBUG_TEST_MS, PROCESS_START_MS, QUIET_MS } from './test-timeouts';
+import {
+  commandTokens,
+  isProcessAlive,
+  matchesProcessName,
+  resolveAttachTarget,
+} from '../../attach-target.js';
+import { deepEq, eq, neq, pollUntilResult, requireAt, sleep } from './test-helpers';
+import { DEBUG_TEST_MS, PROCESS_START_MS, QUIET_MS, SETTLE_MS } from './test-timeouts';
 
 /** A running debuggee the test owns, plus the output it has produced. */
 interface RunningDebuggee {
@@ -166,7 +171,7 @@ suite('Debug attach — taking control of a process that is already running', ()
       await pollUntilResult(
         async () => isAlive(pid),
         (alive) => !alive,
-        COMMAND_MS,
+        SETTLE_MS,
         50,
       );
     }
@@ -179,7 +184,7 @@ suite('Debug attach — taking control of a process that is already running', ()
 
     // Interaction 1 — start the debuggee OUTSIDE the debugger.
     const running = await startOutsideDebugger(fixture.dll, fixture.dir);
-    eq(isAlive(running.pid), true, 'the process is alive before the attach');
+    assert.ok(isAlive(running.pid), 'the process is alive before the attach');
     eq(vscode.debug.activeDebugSession, undefined, 'and no session exists yet');
 
     // Interaction 2 — attach to it by pid.
@@ -187,9 +192,8 @@ suite('Debug attach — taking control of a process that is already running', ()
       folder,
       attachConfig({ processId: running.pid }),
     );
-    eq(
+    assert.ok(
       started,
-      true,
       '"Attach to running process by PID" is a P1 row. [DEBUG-GAPS] records the upstream ' +
         '`0x80070057` flakiness and commits SharpLsp to "Retry with exponential backoff", so a ' +
         'refusal here is a defect and not an accepted limitation',
@@ -223,16 +227,14 @@ suite('Debug attach — taking control of a process that is already running', ()
       this.skip();
     }
     const names = frames.map((frame) => methodOf(frame));
-    eq(
+    assert.ok(
       names.includes('Main'),
-      true,
       `the attached process's user frames must be walkable; frames: ${names.join(' <- ')}`,
     );
     const main = frames.find((frame) => methodOf(frame) === 'Main');
     assert.ok(main, 'the entry frame must be present');
-    eq(
+    assert.ok(
       variableNamed(await localsOf(session, main.id), 'mode').value.includes(MODE.wait),
-      true,
       'the attached process’s locals must carry the argv it was started with — proof the ' +
         'debugger is inspecting THAT process and not a fresh one it launched itself',
     );
@@ -241,9 +243,8 @@ suite('Debug attach — taking control of a process that is already running', ()
     await vscode.commands.executeCommand(CMD_STOP);
     await stopDebuggee();
     await sleep(QUIET_MS);
-    eq(
+    assert.ok(
       isAlive(running.pid),
-      true,
       'stopping an ATTACH session detaches; it must not kill a process the user did not start. ' +
         'Killing it is data loss on any long-running service the user attached to',
     );
@@ -257,7 +258,7 @@ suite('Debug attach — taking control of a process that is already running', ()
 
     // Interaction 1 — one process of that name is running.
     const running = await startOutsideDebugger(fixture.dll, fixture.dir);
-    eq(isAlive(running.pid), true, 'the named process is alive');
+    assert.ok(isAlive(running.pid), 'the named process is alive');
 
     // Interaction 2 — attach by NAME, never mentioning the pid.
     const config = attachConfig({ processName: fixture.assemblyName });
@@ -273,10 +274,25 @@ suite('Debug attach — taking control of a process that is already running', ()
       `the name '${fixture.assemblyName}' must resolve to exactly one live process; the ` +
         `resolver said: ${outcome?.kind === 'refused' ? outcome.reason : String(outcome?.kind)}`,
     );
-    const started = await vscode.debug.startDebugging(folder, config);
+    // ...and to the RIGHT process. `kind === 'attach'` only says the name
+    // matched exactly one thing; it does not say that thing is the process this
+    // test started. On Windows a `dotnet Foo.dll` debuggee runs as dotnet.exe,
+    // so a matcher keyed on the assembly name can land on another process in
+    // the same tree - a single match that is the wrong one, which resolution
+    // cannot refuse and the pause below reports only as `0x80004005`. Asserted
+    // BEFORE the attach so the pid is named in the failure rather than inferred
+    // from one 25 lines later that never runs. [DEBUG-FEATURES-LAUNCH]
+    const resolvedPid = outcome?.kind === 'attach' ? outcome.processId : undefined;
     eq(
+      resolvedPid,
+      running.pid,
+      `the name '${fixture.assemblyName}' must resolve to the process this test started ` +
+        `(pid ${String(running.pid)}), not another in its tree; it resolved ` +
+        String(resolvedPid),
+    );
+    const started = await vscode.debug.startDebugging(folder, config);
+    assert.ok(
       started,
-      true,
       '"Attach to running process by name | attach (processName) | P2 | SharpLsp resolves ' +
         `name -> PID". Attaching to '${fixture.assemblyName}' must work without the user ` +
         'hunting for a pid in a process list',
@@ -305,9 +321,8 @@ suite('Debug attach — taking control of a process that is already running', ()
     }
     const frame = walk[0]!;
     assert.ok(frame.id > 0, 'and must produce an inspectable frame');
-    eq(
+    assert.ok(
       isAlive(running.pid),
-      true,
       'the process the name resolved to must be the one still running',
     );
     await stopDebuggee();
@@ -323,12 +338,12 @@ suite('Debug attach — taking control of a process that is already running', ()
 
     // Interaction 1 — find a pid that is definitely not a process.
     const ghost = 2_147_483_646;
-    eq(isAlive(ghost), false, 'the ghost pid must not name a live process');
+    assert.ok(!isAlive(ghost), 'the ghost pid must not name a live process');
     deepEq(stubs.log.errorMessages, [], 'nothing has been reported yet');
 
     // Interaction 2 — attempt the attach.
     const started = await vscode.debug.startDebugging(folder, attachConfig({ processId: ghost }));
-    eq(started, false, 'an attach to a dead pid must be refused, not reported as started');
+    assert.ok(!started, 'an attach to a dead pid must be refused, not reported as started');
 
     // Interaction 3 — exactly one message must tell the user why.
     await sleep(QUIET_MS);
@@ -341,7 +356,7 @@ suite('Debug attach — taking control of a process that is already running', ()
         `pressing the button again. Messages seen: ${JSON.stringify(reported)}`,
     );
     const message = requireAt(reported, 0, 'the refusal message');
-    eq(message.includes('Cannot read properties'), false, 'a refusal is not a leaked TypeError');
+    assert.ok(!message.includes('Cannot read properties'), 'a refusal is not a leaked TypeError');
     assert.ok(message.trim() !== '', 'and it must have content');
 
     // Interaction 4 — nothing may be left behind.
@@ -351,5 +366,171 @@ suite('Debug attach — taking control of a process that is already running', ()
       [],
       'and starts no session at all',
     );
+
+    // Interaction 5 — the message NAMES the pid. A refusal that says only
+    // "attach failed" leaves the user unable to tell a dead pid from a
+    // permissions problem, and the fix for the two is entirely different.
+    assert.ok(
+      message.includes(String(ghost)),
+      `the refusal must name the pid it could not attach to; got: ${message}`,
+    );
+    assert.ok(!message.includes('undefined'), 'and must not leak an undefined into the text');
+    assert.ok(message.length > 10, 'a refusal is a sentence, not a token');
+
+    // Interaction 6 — the refusal is RECOVERABLE. A dead pid must not poison
+    // the resolver: the very next attach attempt has to be evaluated on its own
+    // merits, or one typo ends the debugging session for good.
+    const secondGhost = ghost - 1;
+    assert.ok(!isAlive(secondGhost), 'the second ghost pid is also dead');
+    const retried = await vscode.debug.startDebugging(
+      folder,
+      attachConfig({ processId: secondGhost }),
+    );
+    assert.ok(!retried, 'a second dead pid is refused the same way');
+    await sleep(QUIET_MS);
+    eq(
+      [...stubs.log.errorMessages, ...stubs.log.warningMessages].length,
+      2,
+      'two refused attaches, two messages — one per attempt, never a silent second failure',
+    );
+    eq(vscode.debug.activeDebugSession, undefined, 'and still no session');
+  });
+
+  // Implements [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 4 — "`processId` is a
+  // `["number", "string"]` union, not a number: attaching via
+  // `${command:pickProcess}` is the normal path" — and the two rows of
+  // [DEBUG-FEATURES-LAUNCH] the resolver serves: "Attach to running process by
+  // PID | P1" and "Attach to running process by name | P2 | SharpLsp resolves
+  // name -> PID".
+  //
+  // Every branch of that resolution is driven here against the REAL process
+  // table, with no debug session: attaching to the wrong process is worse than
+  // refusing, so the refusals matter as much as the successes.
+  test('the attach resolver decides every configuration shape the schema admits', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — a LAUNCH configuration must pass straight through
+    // untouched. The resolver runs on every configuration, so a launch it
+    // claimed would break F5 for every user who never attaches.
+    eq(
+      await resolveAttachTarget({ request: 'launch', program: '/tmp/App.dll' }),
+      undefined,
+      'a launch configuration is not an attach and must resolve to nothing at all',
+    );
+    eq(
+      await resolveAttachTarget({ program: '/tmp/App.dll' }),
+      undefined,
+      'and neither is a configuration with no request kind',
+    );
+
+    // Interaction 2 — `processId`, in BOTH halves of its declared union. This
+    // process is guaranteed alive, so it is the one pid the test can assert on.
+    const self = process.pid;
+    assert.ok(isProcessAlive(self), 'the test host itself is a live process');
+    const numeric = await resolveAttachTarget(attachConfig({ processId: self }));
+    deepEq(
+      numeric,
+      { kind: 'attach', processId: self },
+      'a NUMBER processId resolves to exactly that process',
+    );
+    const textual = await resolveAttachTarget(attachConfig({ processId: String(self) }));
+    deepEq(
+      textual,
+      { kind: 'attach', processId: self },
+      'and so does the STRING the ${command:pickProcess} picker substitutes - a number-only ' +
+        'reading of the schema breaks the normal attach path',
+    );
+    for (const bad of [0, -1, 1.5, '', 'not-a-pid', '12abc', null, undefined, {}]) {
+      const outcome = await resolveAttachTarget(attachConfig({ processId: bad }));
+      neq(
+        outcome?.kind,
+        'attach',
+        JSON.stringify(bad) + ' is not a pid and must never resolve to an attach',
+      );
+    }
+
+    // Interaction 3 — a pid that is not running must be REFUSED, with a reason
+    // naming it. Attaching to a recycled pid is how a debugger ends up
+    // inspecting an unrelated process.
+    const dead = 2147483646;
+    assert.ok(!isProcessAlive(dead), 'the chosen pid really is not running');
+    const refused = await resolveAttachTarget(attachConfig({ processId: dead }));
+    eq(refused?.kind, 'refused', 'a dead pid is refused rather than attached to');
+    assert.ok(
+      refused?.kind === 'refused' && refused.reason.includes(String(dead)),
+      'and the refusal names the pid, so the user can see what it looked for',
+    );
+    assert.ok(
+      refused?.kind === 'refused' && refused.reason.trim() !== '',
+      'a refusal with no reason is a dialog the user cannot act on',
+    );
+
+    // Interaction 4 — `processName`, which SharpLsp resolves to a pid itself. A
+    // .NET console app is launched as `dotnet Whatever.dll`, so the name is an
+    // ARGUMENT, not the executable: matching the executable resolves every such
+    // app to `dotnet` and attaches to whichever came first.
+    const rows: readonly { pid: number; commandLine: string }[] = [
+      { pid: 11, commandLine: 'dotnet /w/bin/Debug/net10.0/StepTarget.dll plain' },
+      { pid: 12, commandLine: '"C:\\Program Files\\dotnet\\dotnet.exe" "C:\\a b\\StepTarget.dll"' },
+      { pid: 13, commandLine: '/usr/bin/dotnet /w/Other.dll' },
+      { pid: 14, commandLine: 'StepTarget.exe' },
+    ];
+    for (const row of rows.slice(0, 2)) {
+      assert.ok(
+        matchesProcessName(row, 'StepTarget'),
+        'pid ' + String(row.pid) + ' runs StepTarget as an ARGUMENT and must match by name',
+      );
+    }
+    assert.ok(
+      !matchesProcessName(requireAt(rows, 2, 'the other process'), 'StepTarget'),
+      'a different assembly under the same `dotnet` host must NOT match',
+    );
+    assert.ok(
+      matchesProcessName(requireAt(rows, 3, 'the apphost process'), 'StepTarget'),
+      'and a self-contained apphost matches by its executable name',
+    );
+    assert.ok(
+      matchesProcessName(requireAt(rows, 0, 'the first process'), 'dotnet'),
+      'the host executable is still matchable by its own name',
+    );
+
+    // Interaction 5 — the tokeniser underneath it. A managed entry point
+    // routinely lives under a path with spaces, and a bare split shatters
+    // exactly the token the name has to be matched against.
+    deepEq(
+      commandTokens('dotnet /w/App.dll plain'),
+      ['dotnet', '/w/App.dll', 'plain'],
+      'an unquoted command line splits on whitespace',
+    );
+    deepEq(
+      commandTokens('"C:\\Program Files\\dotnet\\dotnet.exe" "C:\\a b\\App.dll" --flag'),
+      ['C:\\Program Files\\dotnet\\dotnet.exe', 'C:\\a b\\App.dll', '--flag'],
+      'a quoted path with SPACES is ONE token, quotes removed',
+    );
+    deepEq(commandTokens(''), [], 'an empty command line has no tokens');
+    deepEq(commandTokens('   '), [], 'and neither has one that is only whitespace');
+    deepEq(
+      commandTokens("'single quoted path' tail"),
+      ['single quoted path', 'tail'],
+      'single quotes group a token too',
+    );
+    deepEq(
+      commandTokens('dotnet\t/w/App.dll'),
+      ['dotnet', '/w/App.dll'],
+      'and a TAB separates tokens exactly as a space does',
+    );
+
+    // Interaction 6 — a name that matches nothing must be refused by name, and
+    // the refusal must be a sentence the user can act on.
+    const missing = await resolveAttachTarget(
+      attachConfig({ processName: 'NoSuchProcessAnywhere_' + String(self) }),
+    );
+    eq(missing?.kind, 'refused', 'a name matching no live process is refused');
+    assert.ok(
+      missing?.kind === 'refused' && missing.reason.includes('NoSuchProcessAnywhere_'),
+      'and the refusal quotes the name it searched for',
+    );
+    const neither = await resolveAttachTarget(attachConfig({}));
+    neq(neither?.kind, 'attach', 'an attach naming neither a pid nor a name cannot resolve');
   });
 });

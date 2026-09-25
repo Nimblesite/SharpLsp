@@ -6,6 +6,8 @@ mod call_hierarchy;
 mod code_actions;
 mod code_lens;
 mod config;
+mod config_debug;
+mod configuration;
 mod diagnostics;
 mod document_symbols;
 // Formatting module is sequestered — not wired into the LSP server.
@@ -13,6 +15,7 @@ mod document_symbols;
 #[cfg(feature = "formatting")]
 mod formatting;
 mod handlers;
+mod hierarchy;
 mod hot_reload;
 mod inlay_hints;
 mod nav_cache;
@@ -32,6 +35,7 @@ mod type_hierarchy;
 mod utils;
 mod vfs;
 mod workspace_symbols;
+mod workspace_targets;
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
@@ -263,10 +267,11 @@ fn run_server() -> Result<()> {
         );
     }
 
+    let mut configuration = configuration::Configuration::new(config_root.unwrap_or(fallback_root));
     main_loop(
         &connection,
         &runtime,
-        &sharplsp_config,
+        &mut configuration,
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
         &vfs,
@@ -315,6 +320,10 @@ async fn shutdown_sidecars(
 /// Build the server capabilities advertised during LSP initialization.
 fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilities {
     ServerCapabilities {
+        // Implements [CONFIG-RESOLUTION]: discoverable by every LSP client.
+        experimental: Some(
+            serde_json::json!({"configurationProvider": {"method": "sharplsp/configuration"}}),
+        ),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         document_symbol_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
@@ -601,7 +610,7 @@ async fn handle_csharp_event(
 fn main_loop(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
-    _sharplsp_config: &config::SharpLspConfig,
+    configuration: &mut configuration::Configuration,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
@@ -611,8 +620,9 @@ fn main_loop(
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
+    let inbound = spawn_shutdown_fast_path(connection);
 
-    for msg in &connection.receiver {
+    for msg in &inbound {
         match msg {
             Message::Request(req) => {
                 if shutdown_requested {
@@ -625,14 +635,10 @@ fn main_loop(
                     continue;
                 }
 
-                if req.method == Shutdown::METHOD {
-                    info!("Shutdown request received");
-                    shutdown_requested = true;
-                    let resp = Response::new_ok(req.id, serde_json::Value::Null);
-                    connection.sender.send(Message::Response(resp))?;
+                if req.method == "sharplsp/configuration" {
+                    configuration.respond(req, connection)?;
                     continue;
                 }
-
                 handle_request(
                     req,
                     vfs,
@@ -646,6 +652,21 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
+                if notif.method == "workspace/didChangeConfiguration" {
+                    if let Err(error) = configuration.update(
+                        notif
+                            .params
+                            .get("settings")
+                            .unwrap_or(&serde_json::Value::Null),
+                    ) {
+                        warn!("Configuration change rejected: {error:#}");
+                    }
+                    continue;
+                }
+                if notif.method == SHUTDOWN_ANSWERED {
+                    shutdown_requested = true;
+                    continue;
+                }
                 if notif.method == "exit" {
                     info!("Exit notification received");
                     return Ok(());
@@ -673,6 +694,52 @@ fn main_loop(
     }
 
     Ok(())
+}
+
+/// The loop-internal marker that stands in for a `shutdown` the fast path
+/// has already answered.
+const SHUTDOWN_ANSWERED: &str = "sharplsp/shutdownAnswered";
+
+/// Answer `shutdown` the moment it arrives, ahead of whatever the loop is
+/// busy with. Implements [SHARPLSP-ARCHITECTURE-TIERS].
+///
+/// The loop dispatches one message at a time and a semantic request holds it
+/// for the sidecar's whole round trip, so a `shutdown` queued behind one waited
+/// that long. vscode-languageclient gives a server two seconds to answer before
+/// it declares the stop failed and abandons the restart the user asked for —
+/// on a Windows agent an F# check ran past that and left the client dead.
+/// LSP 3.17 asks the server to answer `shutdown` and accept no further work;
+/// the answer does not have to wait for work already in flight. This thread
+/// reads the client stream ahead of the loop, answers `shutdown` itself, and
+/// hands the loop [`SHUTDOWN_ANSWERED`] in its place so the loop still refuses
+/// everything that follows.
+fn spawn_shutdown_fast_path(connection: &Connection) -> crossbeam_channel::Receiver<Message> {
+    let (to_loop, from_client) = crossbeam_channel::unbounded();
+    let inbound = connection.receiver.clone();
+    let outbound = connection.sender.clone();
+    // The thread ends with the client stream; nothing waits on it.
+    drop(std::thread::spawn(move || {
+        for msg in &inbound {
+            let forwarded = match msg {
+                Message::Request(req) if req.method == Shutdown::METHOD => {
+                    info!("Shutdown request received");
+                    let resp = Response::new_ok(req.id, serde_json::Value::Null);
+                    if outbound.send(Message::Response(resp)).is_err() {
+                        break;
+                    }
+                    Message::Notification(Notification::new(
+                        SHUTDOWN_ANSWERED.to_string(),
+                        serde_json::Value::Null,
+                    ))
+                }
+                other => other,
+            };
+            if to_loop.send(forwarded).is_err() {
+                break;
+            }
+        }
+    }));
+    from_client
 }
 
 // ── Request Handling ──────────────────────────────────────────────
@@ -734,8 +801,8 @@ fn handle_request(
             semantic::handle_completion_resolve(req, runtime, sidecar)
         }
         HoverRequest::METHOD => {
-            if handlers::is_hover_on_comment(&req, trees) {
-                info!("Hover: skipped (comment position)");
+            if handlers::hover_has_no_symbol(&req, trees) {
+                info!("Hover: skipped (whitespace or comment position)");
                 Ok(serde_json::Value::Null)
             } else {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);

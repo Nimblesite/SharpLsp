@@ -1,13 +1,7 @@
 // Full-lifecycle real-LSP matrix for remaining [SHARPLSP-FEATURES-REFACTORING] families.
 import { exerciseCodeAction, type ActionLifecycleCase } from './csharp-refactor-test-kit';
-import {
-  activateRealSharpLsp,
-  openFixtureDocument,
-  revertDocument,
-  type OpenFixture,
-  warmSemanticEngine,
-} from './refactor-test-helpers';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { useRefactorFixture } from './refactor-test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const CONSTANT_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
 public class ConstantTarget
@@ -171,27 +165,43 @@ const CONSTANT_OPTIONS = [
   "Introduce local constant for all occurrences of '1 + 2'",
 ] as const;
 
+const CONSTANT_SITE = {
+  source: CONSTANT_SOURCE,
+  snippet: '1 + 2',
+  focus: '1 + 2',
+  kind: 'refactor.extract',
+  options: CONSTANT_OPTIONS,
+};
+
+const INLINE_METHOD_SITE = {
+  source: INLINE_METHOD_SOURCE,
+  snippet: 'Double(3)',
+  focus: 'Double(3)',
+  kind: 'refactor.inline',
+  options: ["Inline 'Double(int value)'", "Inline and keep 'Double(int value)'"],
+};
+
+const EQUALITY_SITE = {
+  source: EQUALITY_SOURCE,
+  snippet: 'public int X;\n    public string Name',
+  focus: 'public int X;\n    public string Name',
+  kind: 'refactor.rewrite',
+  options: ['Generate Equals(...)', 'Generate Equals and GetHashCode'],
+};
+
 const CASES: readonly ActionLifecycleCase[] = [
   {
+    ...CONSTANT_SITE,
     label: 'introduce class constant',
-    source: CONSTANT_SOURCE,
-    snippet: '1 + 2',
-    focus: '1 + 2',
     title: CONSTANT_OPTIONS[0],
-    kind: 'refactor.extract',
-    options: CONSTANT_OPTIONS,
     presentAfter: ['constant-sentinel'],
     absentAfter: [],
     patternsAfter: [/const int \w+ = 1 \+ 2;/],
   },
   {
+    ...CONSTANT_SITE,
     label: 'introduce local constant',
-    source: CONSTANT_SOURCE,
-    snippet: '1 + 2',
-    focus: '1 + 2',
     title: CONSTANT_OPTIONS[2],
-    kind: 'refactor.extract',
-    options: CONSTANT_OPTIONS,
     presentAfter: ['constant-sentinel'],
     absentAfter: [],
     patternsAfter: [/const int \w+ = 1 \+ 2;/],
@@ -258,49 +268,33 @@ const CASES: readonly ActionLifecycleCase[] = [
     absentAfter: ['left + "-" + right'],
   },
   {
+    ...INLINE_METHOD_SITE,
     label: 'inline and remove method',
-    source: INLINE_METHOD_SOURCE,
-    snippet: 'Double(3)',
-    focus: 'Double(3)',
     title: "Inline 'Double(int value)'",
-    kind: 'refactor.inline',
-    options: ["Inline 'Double(int value)'", "Inline and keep 'Double(int value)'"],
     postApplySnippet: '3 * 2',
     presentAfter: ['3 * 2', 'inline-method-sentinel'],
     absentAfter: ['private int Double'],
   },
   {
+    ...INLINE_METHOD_SITE,
     label: 'inline and retain method',
-    source: INLINE_METHOD_SOURCE,
-    snippet: 'Double(3)',
-    focus: 'Double(3)',
     title: "Inline and keep 'Double(int value)'",
-    kind: 'refactor.inline',
-    options: ["Inline 'Double(int value)'", "Inline and keep 'Double(int value)'"],
     presentAfter: ['private int Double', '3 * 2', 'inline-method-sentinel'],
     absentAfter: [],
   },
   {
+    ...EQUALITY_SITE,
     label: 'generate Equals',
-    source: EQUALITY_SOURCE,
-    snippet: 'public int X;\n    public string Name',
-    focus: 'public int X;\n    public string Name',
     title: 'Generate Equals(...)',
-    kind: 'refactor.rewrite',
     caretOnly: true,
-    options: ['Generate Equals(...)', 'Generate Equals and GetHashCode'],
     presentAfter: ['override bool Equals', 'equality-sentinel'],
     absentAfter: [],
   },
   {
+    ...EQUALITY_SITE,
     label: 'generate Equals and GetHashCode',
-    source: EQUALITY_SOURCE,
-    snippet: 'public int X;\n    public string Name',
-    focus: 'public int X;\n    public string Name',
     title: 'Generate Equals and GetHashCode',
-    kind: 'refactor.rewrite',
     caretOnly: true,
-    options: ['Generate Equals(...)', 'Generate Equals and GetHashCode'],
     presentAfter: ['override bool Equals', 'override int GetHashCode', 'equality-sentinel'],
     absentAfter: [],
   },
@@ -448,29 +442,12 @@ const CASES: readonly ActionLifecycleCase[] = [
 ];
 
 suite('C# real LSP - extended Roslyn rewrite families', () => {
-  let fixture: OpenFixture;
-  let committedText = '';
-
-  suiteSetup(async function () {
-    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
-    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    this.timeout(FIXTURE_BUILD_MS);
-    await activateRealSharpLsp();
-    fixture = await openFixtureDocument('RefactorCore.cs');
-    // This fixture is known to produce code actions, so an empty result
-    // means Roslyn has not loaded the project yet. Pay that load HERE,
-    // once, instead of inside the first test's ceiling
-    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    await warmSemanticEngine(fixture.uri);
-    committedText = fixture.document.getText();
-  });
-
-  teardown(async () => revertDocument(fixture.document));
+  const refactor = useRefactorFixture('RefactorCore.cs');
 
   for (const actionCase of CASES) {
     test(`${actionCase.label}: list, resolve, apply, requery, and revert`, async function () {
       this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseCodeAction(fixture, committedText, actionCase);
+      await exerciseCodeAction(refactor.fixture, refactor.committedText, actionCase);
     });
   }
 });

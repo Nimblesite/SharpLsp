@@ -50,10 +50,36 @@ fn test_folding_ranges_using_directives() {
     );
     let ranges = resp["result"].as_array().unwrap();
 
-    // Using directives are single-line so they may not produce folds,
-    // but the class should.
-    let region = ranges.iter().find(|r| r["kind"] == "region");
-    assert!(region.is_some(), "should have region fold for class");
+    // LSP 3.17 gives the run of `using` directives the `imports` kind — that is
+    // the kind's whole purpose — and it must span both lines, not just one.
+    let imports = ranges
+        .iter()
+        .find(|r| r["kind"] == "imports")
+        .unwrap_or_else(|| panic!("the using header must fold as `imports`, got {ranges:?}"));
+    assert_eq!(
+        imports["startLine"], 0,
+        "the imports fold starts on the first using"
+    );
+    assert_eq!(
+        imports["endLine"], 1,
+        "the imports fold ends on the last using"
+    );
+
+    // The class body folds on its own shape and carries NO kind: LSP 3.17
+    // reserves `region` for a range the user marked with `#region`, and this
+    // source contains none.
+    let class_fold = ranges
+        .iter()
+        .find(|r| r["startLine"] == 3 && r["kind"].is_null())
+        .unwrap_or_else(|| panic!("the class must fold with no kind, got {ranges:?}"));
+    assert_eq!(
+        class_fold["endLine"], 5,
+        "the class fold runs to its closing brace"
+    );
+    assert!(
+        !ranges.iter().any(|r| r["kind"] == "region"),
+        "nothing may claim `region` in a source with no #region, got {ranges:?}",
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -192,10 +218,17 @@ fn test_folding_range_on_fsharp_file() {
         .map(|r| r["kind"].as_str().unwrap_or(""))
         .collect();
 
-    // The module declaration folds as a region.
+    // The module, the type and the let-binding each fold on their own shape and
+    // carry NO kind: LSP 3.17 reserves `region` for a `#region` the user wrote,
+    // and F# has no such directive at all.
+    let structural = kinds.iter().filter(|k| k.is_empty()).count();
     assert!(
-        kinds.contains(&"region"),
-        "module/type/let declarations must produce region folds, got {kinds:?}"
+        structural >= 3,
+        "module, type and let must each fold with no kind, got {kinds:?}"
+    );
+    assert!(
+        !kinds.contains(&"region"),
+        "no F# construct may be tagged `region`, got {kinds:?}"
     );
     // The (* ... *) comment folds as a comment.
     assert!(

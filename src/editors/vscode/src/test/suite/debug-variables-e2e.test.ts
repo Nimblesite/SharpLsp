@@ -11,9 +11,11 @@
 // "Local variables | variables | P1" says nothing about excluding `int?`, so the
 // nullable local is asserted like any other and this suite reports the gap.
 import * as assert from 'node:assert/strict';
-import { MODE } from './debug-fixture-programs';
+import * as vscode from 'vscode';
 import {
+  CMD_CONTINUE,
   assertStoppedAt,
+  evaluate,
   localsOf,
   scopesOf,
   topFrame,
@@ -21,8 +23,8 @@ import {
   variablesOf,
   type Variable,
 } from './debug-drive-kit';
-import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
-import { deepEq, eq, requireAt } from './test-helpers';
+import { assertCleanSession, useDebuggee, runToFirstStop } from './debug-suite-kit';
+import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** Assert a variable's rendered value CONTAINS `needle`, naming what it was. */
@@ -70,19 +72,15 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop inside a two-argument method, after its local is set.
-    armBreakpoints(fixture, 'add-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside Add');
+    const { session, stop } = await runToFirstStop(debuggee(), 'add-return');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'add-return', 'Add', 'the return statement of Add');
 
     // Interaction 2 — both arguments must be there, with their real values.
     const locals = await localsOf(session, frame.id);
     const names = locals.map((local) => local.name).sort();
-    eq(
+    assert.ok(
       ['left', 'right', 'sum'].every((wanted) => names.includes(wanted)),
-      true,
       '"Function arguments" and "Local variables" are separate P1 rows: `left`, `right` and ' +
         `\`sum\` must all be inspectable. The frame offered: ${names.join(', ')}`,
     );
@@ -110,13 +108,10 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // Implements [DEBUG-FEATURES-VARIABLES] "`this` / instance members | P1".
   test('an instance method exposes `this` and its members', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { fixture } = debuggee();
 
     // Interaction 1 — stop inside an INSTANCE method.
-    armBreakpoints(fixture, 'box-describe-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the breakpoint inside Box.Describe');
+    const { session, stop } = await runToFirstStop(debuggee(), 'box-describe-return');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(
       frame,
@@ -139,9 +134,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     // Interaction 3 — its members must carry the constructor's arguments.
     const members = await variablesOf(session, self.reference);
     const memberNames = members.map((member) => member.name);
-    eq(
+    assert.ok(
       ['Value', 'Label'].every((wanted) => memberNames.includes(wanted)),
-      true,
       `both auto-properties must be inspectable; \`this\` offered: ${memberNames.join(', ')}`,
     );
     eq(variableNamed(members, 'Value').value, '8', 'Accumulate produced 8, so Box.Value is 8');
@@ -160,20 +154,16 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // the `Nullable<T>` row of [DEBUG-ADAPTER-GAPS].
   test('collections, dictionaries, arrays and nullables all expand', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { fixture } = debuggee();
 
     // Interaction 1 — stop where every container is populated.
-    armBreakpoints(fixture, 'inspect-print');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the print statement in Inspect');
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'inspect-print', 'Inspect', 'the fully populated frame');
     const locals = await localsOf(session, frame.id);
     const names = locals.map((local) => local.name).sort();
-    eq(
+    assert.ok(
       ['box', 'letters', 'lookup', 'maybe', 'numbers', 'text'].every((w) => names.includes(w)),
-      true,
       `every local of Inspect must be listed; the panel offered: ${names.join(', ')}`,
     );
 
@@ -181,9 +171,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     const numbers = variableNamed(locals, 'numbers');
     assert.ok(numbers.reference > 0, 'a List<int> must be expandable');
     const elements = await variablesOf(session, numbers.reference);
-    eq(
+    assert.ok(
       elements.some((element) => element.value === '10'),
-      true,
       `the list's elements must be reachable; expansion produced: ${elements
         .map((element) => `${element.name}=${element.value}`)
         .join(', ')}`,
@@ -199,9 +188,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     const letters = variableNamed(locals, 'letters');
     assert.ok(letters.reference > 0, 'a char[] must be expandable');
     const chars = await variablesOf(session, letters.reference);
-    eq(
+    assert.ok(
       chars.filter((entry) => entry.value.includes("'a'") || entry.value.includes('a')).length > 0,
-      true,
       `the array elements must be reachable; expansion produced: ${chars
         .map((entry) => entry.value)
         .join(', ')}`,
@@ -229,13 +217,10 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // Implements [DEBUG-FEATURES-VARIABLES] "Static fields | variables | P1".
   test('a static field is reachable from the variables panel', async function () {
     this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+    const { fixture } = debuggee();
 
     // Interaction 1 — stop after the static has been assigned.
-    armBreakpoints(fixture, 'accumulate-return');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must reach the return statement of Accumulate');
+    const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-return');
     const frame = await topFrame(session, stop.threadId);
     assertStoppedAt(frame, fixture, 'accumulate-return', 'Accumulate', 'after the static is set');
 
@@ -250,9 +235,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
 
     // Interaction 3 — the static field must be among them.
     const offered = variables.map((variable) => variable.name).sort();
-    eq(
+    assert.ok(
       offered.includes('Total'),
-      true,
       '"Static fields | `variables` | P1": `Program.Total` was assigned on the previous ' +
         'statement and must be inspectable from the paused frame. Scopes offered ' +
         `[${scopes.map((scope) => scope.name).join(', ')}] holding [${offered.join(', ')}]`,
@@ -270,12 +254,194 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       '8',
       'the local the static was copied from must read the same',
     );
-    eq(
-      requireAt(scopes, 0, 'the first scope').expensive,
-      false,
+    assert.ok(
+      !requireAt(scopes, 0, 'the first scope').expensive,
       'the first scope must not be flagged expensive; VS Code refuses to auto-expand one, so ' +
         'the user sees an empty Variables panel until they click',
     );
     assertCleanSession(debuggee(), 'reading a static field');
+  });
+
+  // Implements [DEBUG-FEATURES-VARIABLES] "Local variables | variables | P1"
+  // and the `supportsVariableType` row, over EVERY local of one frame at once.
+  // A panel that renders three of five locals is a panel the user cannot rely
+  // on, and which five it drops is invisible from any single-variable test.
+  test('every local of a frame is present, named, valued and typed', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, recorder } = debuggee();
+
+    // Interaction 1 — stop on the last statement of the method that declares
+    // one of each interesting shape, so all of them are initialised.
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
+    const frame = await topFrame(session, stop.threadId);
+    assertStoppedAt(frame, fixture, 'inspect-print', 'Inspect', 'the inspection frame');
+    eq(
+      recorder.capabilities()['supportsVariableType'],
+      true,
+      'the type column is what makes the panel readable, and it is a Phase 4 Yes',
+    );
+
+    // Interaction 2 — every declared local must be there, with a value and a
+    // type. Asserted per variable so a failure names the one that vanished.
+    const expected: readonly { name: string; type: string; value: string }[] = [
+      { name: 'numbers', type: 'List', value: '3' },
+      { name: 'lookup', type: 'Dictionary', value: '1' },
+      { name: 'letters', type: 'char', value: '2' },
+      { name: 'maybe', type: 'int', value: '42' },
+      { name: 'text', type: 'string', value: 'boxed=8' },
+      { name: 'box', type: 'Box', value: '8' },
+    ];
+    const locals = await localsOf(session, frame.id);
+    for (const { name, type, value } of expected) {
+      const variable = variableNamed(locals, name);
+      neq(variable.value, '', name + ' must render a value, not an empty cell');
+      assertTyped(variable, type, 'the local ' + name);
+      assertValueHas(variable, value, 'the local ' + name);
+      assert.ok(
+        variable.evaluateName === '' || variable.evaluateName.includes(name),
+        name + ' must carry an evaluateName the Watch panel can re-evaluate it by',
+      );
+    }
+    assert.ok(
+      locals.length >= expected.length,
+      'the panel shows at least every local the method declares',
+    );
+    eq(
+      new Set(locals.map((local) => local.name)).size,
+      locals.length,
+      'and shows each of them ONCE - a duplicated row is a row the user cannot expand',
+    );
+
+    // Interaction 3 — reading the same frame twice must answer identically. A
+    // panel that changes between two reads of a stopped process is reporting
+    // something other than the process.
+    const again = await localsOf(session, frame.id);
+    deepEq(
+      again.map((local) => local.name + '=' + local.value),
+      locals.map((local) => local.name + '=' + local.value),
+      'a stopped frame read twice must answer identically',
+    );
+    const { scopes, variables } = await allScopeVariables(session, frame.id);
+    assert.ok(scopes.length >= 1, 'at least one scope backs the panel');
+    assert.ok(
+      variables.length >= locals.length,
+      'and reading every scope reaches at least the locals',
+    );
+    assertCleanSession(debuggee(), 'reading every local of a frame');
+  });
+
+  // Implements [DEBUG-FEATURES-VARIABLES] "`this` / instance members | P1" and
+  // "Collection/array expansion | variables (structured) | P1" one level
+  // deeper: an object local must EXPAND to its own members.
+  test('an object local expands to its members, each named, valued and re-evaluable', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — stop where the object is fully constructed.
+    const { session, stop } = await runToFirstStop(debuggee(), 'inspect-print');
+    const frame = await topFrame(session, stop.threadId);
+    const box = variableNamed(await localsOf(session, frame.id), 'box');
+    neq(
+      box.reference,
+      0,
+      'an object with members must carry a non-zero variablesReference, or the panel shows no ' +
+        'expansion arrow and its fields are unreachable',
+    );
+
+    // Interaction 2 — the members themselves.
+    const members = await variablesOf(session, box.reference);
+    const names = members.map((member) => member.name);
+    assertContainsAll(names, ['Value', 'Label'], 'names');
+    assertValueHas(variableNamed(members, 'Value'), '8', 'the expanded Value member');
+    assertValueHas(variableNamed(members, 'Label'), 'boxed', 'the expanded Label member');
+    for (const member of members) {
+      neq(member.name, '', 'every member row must be named');
+      assert.ok(
+        member.evaluateName === '' || member.evaluateName.includes('.'),
+        member.name +
+          ': an expanded member evaluateName must address it THROUGH its parent, ' +
+          'or adding it to the Watch panel resolves the wrong symbol',
+      );
+    }
+
+    // Interaction 3 — the expansion must agree with an evaluation of the same
+    // path, and expanding twice must answer the same. Two different answers for
+    // one field is the panel and the watch disagreeing about the same object.
+    eq(
+      (await evaluate(session, 'box.Value', frame.id, 'watch')).value,
+      variableNamed(members, 'Value').value,
+      'the expanded member and the equivalent watch expression must agree',
+    );
+    deepEq(
+      (await variablesOf(session, box.reference)).map((member) => member.name),
+      names,
+      'expanding the same object twice yields the same members',
+    );
+    const collection = variableNamed(await localsOf(session, frame.id), 'numbers');
+    neq(collection.reference, 0, 'a collection must expand too');
+    const items = await variablesOf(session, collection.reference);
+    assert.ok(
+      items.length >= 3,
+      'a three-element list must expose at least its three elements, or the user cannot see ' +
+        'what is in the collection they are debugging',
+    );
+    assert.ok(
+      items.some((item) => item.value === '10'),
+      'and the elements carry the values the program put in them',
+    );
+    assertCleanSession(debuggee(), 'expanding an object and a collection');
+  });
+
+  // The project HARD RULE: "All screens MUST BE 100% reactive. If underlying
+  // data changes, the screen must be listening and update accordingly." For the
+  // Variables panel that means: advance the program, read again, see the new
+  // value. A panel that caches the first read is a panel that lies after the
+  // first step.
+  test('the panel reports the NEW value after the program advances', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { recorder } = debuggee();
+
+    // Interaction 1 — stop inside the loop on its first pass.
+    const { session, stop: first } = await runToFirstStop(debuggee(), 'accumulate-call');
+    const firstFrame = await topFrame(session, first.threadId);
+    const firstLocals = await localsOf(session, firstFrame.id);
+    eq(variableNamed(firstLocals, 'running').value, '2', 'the accumulator starts at the seed');
+    eq(variableNamed(firstLocals, 'index').value, '1', 'and the loop is on its first pass');
+    eq(variableNamed(firstLocals, 'seed').value, '2', 'with the argument it was called with');
+
+    // Interaction 2 — continue to the SECOND pass. Both the accumulator and
+    // the loop variable must have moved on.
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    const stops = await recorder.waitForStops(2);
+    const second = requireAt(stops, 1, 'the second loop stop');
+    const secondFrame = await topFrame(session, second.threadId);
+    const secondLocals = await localsOf(session, secondFrame.id);
+    eq(
+      variableNamed(secondLocals, 'index').value,
+      '2',
+      'the loop variable must report its NEW value, not the value of the first read',
+    );
+    eq(variableNamed(secondLocals, 'running').value, '3', 'and the accumulator its new total');
+    neq(
+      variableNamed(secondLocals, 'running').value,
+      variableNamed(firstLocals, 'running').value,
+      'the two reads must differ - identical values across two passes is a cached panel',
+    );
+    neq(secondFrame.id, firstFrame.id, 'and each stop hands out its own frame handle');
+
+    // Interaction 3 — one more pass, and the static field the loop writes must
+    // change too, which is the same claim for a STATIC row.
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    const third = requireAt(await recorder.waitForStops(3), 2, 'the third loop stop');
+    const thirdFrame = await topFrame(session, third.threadId);
+    const thirdLocals = await localsOf(session, thirdFrame.id);
+    eq(variableNamed(thirdLocals, 'index').value, '3', 'the third pass reports the third index');
+    eq(variableNamed(thirdLocals, 'running').value, '5', 'and the running total to date');
+    eq(
+      (await evaluate(session, 'running + index', thirdFrame.id, 'watch')).value,
+      '8',
+      'a watch over the CURRENT values agrees with the panel over the current values',
+    );
+    eq(recorder.stops().length, 3, 'exactly three loop stops, one per pass');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
   });
 });

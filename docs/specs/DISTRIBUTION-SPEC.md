@@ -2,6 +2,51 @@
 
 This is the normative specification for SharpLsp distribution.
 
+## [DIST-CI-AUDIT] Dependency Vulnerability Gate
+
+`make audit` MUST scan both Cargo lockfiles (host and Zed), the sidecar NuGet solution including transitive packages, and both npm lockfiles (VS Code and website) against current advisory databases. Rust vulnerability findings fail the gate; NuGet and npm fail at moderate or higher by default, including every high/critical finding. Lower-severity findings remain visible. Scanner or restore failures MUST fail, not count as a clean result.
+
+CI and tagged releases MUST call the same reusable `ci-audit.yml` workflow. The final CI job MUST include `audit` in its dependencies and fail on its failure/cancellation. GitHub Release creation MUST depend on a successful audit of the tagged revision, and Marketplace/Open VSX publishing MUST depend on that release. No `continue-on-error` or publish bypass is permitted. New advisories require a fresh release-time scan even when the PR previously passed.
+
+Known vulnerabilities MUST be resolved by upgrading affected direct/transitive dependencies and testing compatibility, not by weakening thresholds or suppressing findings. A clean advisory scan is evidence about the scanned dependency inventory, not a guarantee that all bundled native binaries or runtime installations are vulnerability-free.
+
+Regression guards: `tools/audit/dotnet-vulnerable.test.mjs` tests real vulnerable and clean NuGet reports; `tools/ci/security-gates.test.mjs` parses workflow YAML and verifies CI/release dependency enforcement. Both MUST run in CI.
+
+## [DIST-CI-CLASSIFICATION] Fail-Closed Change Detection
+
+The PR workflow MUST successfully retrieve every page of changed files before deciding which checks can skip. An API error, including failure after partial output, or an empty response MUST fail `detect-changes` without publishing classification outputs. The terminal `CI` job MUST depend on every upstream job and fail on any failure or cancellation. The active main-branch ruleset MUST require this exact GitHub Actions check with no bypass actors; build/test failures and pending checks cannot be merged.
+
+Product tests MUST run on pull requests only, not on a push or merge to main. `tools/ci/changed-files.test.mjs` executes the workflow's actual Bash classifier, covering failed, partial, empty, docs-only, code and manifest responses, and guards the terminal dependency list and PR-only trigger. It MUST run through `make _lint-vsix` in CI.
+
+## [DIST-CI-VSIX-SHARDS] VS Code Suite Shards
+
+One runner, `make _test-vsix-shard CHUNK=<name>`, drives every slice of the VS Code end-to-end suite on every platform, always instrumented for coverage. The chunks are declared once, in `src/editors/vscode/test-chunks.json`, and the Ubuntu and Windows matrices both expand from it. Every shard uploads its extension-host logs (`vsix-logs-<platform>-<chunk>`) on every outcome, with the DAP trace enabled, so a green shard carries the evidence of WHICH path passed it — a fallback that fired leaves its line in those logs and nowhere else.
+
+### [DIST-CI-VSIX-SHARDS-TIMEOUTS] Test Timeout Tiers
+
+Every wait in the suite is a poll for the STATE the next step needs, never a count of events and never a fixed sleep, and every poll takes its budget from one tier in `src/editors/vscode/src/test/suite/test-timeouts.ts`. A test that needs longer names the slow process it waits on, in a comment, at the site.
+
+The one exception is a NEGATIVE assertion — that a stop never came, that a process was not killed, that the host never signalled itself. A state that must never arrive cannot be waited for, so a fixed quiet period (`QUIET_MS`) followed by the assertion is the correct structure there; the assertion fails if the forbidden thing happens inside the window, and the only judgement is whether the window is long enough. The test for a wait is therefore: does the assertion after it say something HAPPENED (poll for the state) or that something DIDN'T (quiet period)?
+
+The invariant: a poll's budget plus the work that precedes it MUST sit strictly below the ceiling of the test or hook it runs in. When the two are equal the runner kills the test first and reports its own generic timeout, which names nothing, in place of the poll's report, which names what never held and the last value it saw. Exhausting a poll budget FAILS; it never returns the last value.
+
+| Tier | Budget | Used for |
+|------|--------|----------|
+| `FAST_MS` | 1 s | Pure in-process work: no IPC, no editor round trip |
+| `COMMAND_MS` | 5 s | One command round trip through the extension host, never reaching a sidecar |
+| `SETTLE_MS` | 10 s | Workbench or OS settling; a healthy run never spends it |
+| `LSP_RESPONSE_MS` (`DEFAULT_TEST_MS`) | 15 s | One request to a warm language server; the ceiling a test inherits when it declares none |
+| `PROCESS_START_MS`, `SETTINGS_WRITE_MS` | 30 s | Starting a debuggee to attach to; a settings write propagating back through the extension host |
+| `DEBUG_SESSION_MS` | 45 s | One debug gesture: launch, stop, step, stop-session |
+| `DEBUG_TEST_MS` | 50 s | The ceiling of a test built on one `DEBUG_SESSION_MS` wait |
+| `ACTIVATION_MS`, `LSP_SWEEP_MS` | 60 s | Extension activation (hooks only); a sweep of sidecar round trips scaling with the fixture |
+| `READINESS_MS` | `ACTIVATION_MS − SETTLE_MS` | The readiness poll inside `setupLspTestSuite`, under the `ACTIVATION_MS` hook that calls it |
+| `SIDECAR_COLD_MS` | 90 s | The first semantic request against a freshly opened project |
+| `DOTNET_CLI_MS`, `SERVER_RESTART_MS` | 120 s | A `dotnet` CLI call; a server restart followed by its cold request |
+| `FIXTURE_BUILD_MS` | 240 s | `dotnet build` of a test fixture |
+| `REAL_REPO_MS`, `REAL_REPO_WARMUP_MS` | 600 s, 480 s | A real repository loaded end to end; its warm-up poll, under the hook that contains it |
+| `WHOLE_RUN_MS` | 20 min | The runner's ceiling for one shard; MUST stay below the job's `timeout-minutes` so a hang still gets a mocha report |
+
 ## [DIST-COMPONENTS] Required Components
 
 SharpLsp has three executable components. All three are REQUIRED and MUST be bundled in the VSIX. Missing any one of them puts activation into degraded mode with a user-facing error notification (see [DIST-FAILURE-UX]).
@@ -20,8 +65,8 @@ Debugging uses **netcoredbg**, the managed-code DAP adapter launched for the `sh
 
 | Aspect | Requirement |
 |---|---|
-| Source | `Samsung/netcoredbg`, pinned to `3.2.0-1092` / commit `9744e1f051866215611b8440c638042aa2aa2f72`, MIT-licensed; `tools/netcoredbg/dap-hot-reload.patch` exposes the existing debugger-side delta applier over DAP |
-| Staging | `tools/vsix/build-netcoredbg.sh <platform>` builds the pinned source and CoreCLR headers, then `tools/vsix/fetch-netcoredbg.sh <platform>` stages the result into `bin/<platform>/netcoredbg/`; both Makefile staging paths use it |
+| Source | `Samsung/netcoredbg`, pinned to `3.2.0-1092` / commit `9744e1f051866215611b8440c638042aa2aa2f72`, MIT-licensed; `tools/netcoredbg/dap-hot-reload.patch` exposes the existing debugger-side delta applier over DAP, and `tools/netcoredbg/exception-stepping.patch` lets a step start from a frame without symbols. Upstream mixes CRLF and LF sources while this repo stores patches LF, so the patches MUST be applied with `core.autocrlf=input` (line-ending-normalised), never under the runner's own git config |
+| Staging | `tools/vsix/build-netcoredbg.sh <platform>` builds the pinned source and CoreCLR headers, then `tools/vsix/fetch-netcoredbg.sh <platform>` stages the result into `bin/<platform>/netcoredbg/`; both Makefile staging paths use it. An adapter counts as current only when its `.sharplsp-dap-hot-reload` marker names the lock's build (`netcoredbgCommit:patchVersion`), so a build from an older lock is provided and staged again, never shipped |
 | Layout | `bin/<platform>/netcoredbg/netcoredbg[.exe]` **plus** its sibling managed assemblies (`ManagedPart.dll`, `dbgshim.dll`, `Microsoft.CodeAnalysis*.dll`) — the whole directory ships, since the executable loads them |
 | Resolution | `getNetcoredbgCandidates(extensionPath)` prefers the bundled binary; scan order is user-setting (`sharplsp.debug.netcoredbgPath`) → **bundled** → common install paths → `PATH` |
 | Platform coverage | SharpLsp source-builds `win32-x64`, `linux-x64`, `linux-arm64`, and `darwin-arm64` on matching native runners. On `win32-arm64` and `darwin-x64`, debugging falls back to a `PATH` copy / the setting. The staging script skips those platforms cleanly (exit 0). |
@@ -42,7 +87,18 @@ The framework-dependent `net10.0` sidecars require a .NET 10 SDK, not merely a r
 2. SharpLsp MUST explicitly activate the .NET Install Tool extension (`vscode.extensions.getExtension(...).activate()`) before invoking its commands. `extensionDependencies` activates it first, but the explicit await turns a missing/disabled dependency into a clear `[DIST-FAILURE-UX]` message instead of an opaque "command `dotnet.findPath` not found".
 3. On every activation SharpLsp MUST call the `dotnet.acquireGlobalSDK` command exposed by the .NET Install Tool with the parameter shape mandated in [DIST-API-PARAMETERS]. The command returns `{ dotnetPath: string }` pointing at the `dotnet` executable of a system-wide SDK install. A global SDK install runs the platform installer and **may prompt for elevation** — that UI belongs to the .NET Install Tool, and is the unavoidable cost of providing MSBuild; SharpLsp never shows the elevation prompt itself.
 4. Before `dotnet.acquireGlobalSDK`, SharpLsp MUST call `dotnet.findPath` with `mode: 'sdk'` and `versionSpecRequirement: 'greater_than_or_equal'` to skip acquisition when the user already has a compatible SDK (>= 10.0). The path returned by either call is the SDK SharpLsp uses.
-5. SharpLsp MUST set `DOTNET_ROOT` (the directory of `dotnetPath`) on the environment passed to the Rust LSP host so all spawned sidecars run on that SDK's runtime and so `MSBuildLocator` finds that SDK's MSBuild.
+5. **"Compatible" MUST be judged against the workspace `global.json`, not merely `>= 10.0`.** `greater_than_or_equal` on `10.0` is satisfied by *any* 10.0.x SDK, including a feature band the workspace pin forbids — `10.0.203` (band 200) against a `10.0.303` (band 300) pin under the default `latestPatch`. Accepting it makes SharpLsp report success while every subsequent `dotnet` invocation — builds, tests, and the C# sidecar's `hostfxr_resolve_sdk2` — fails with exit code 155. SharpLsp MUST therefore read the nearest `global.json` at or above the workspace root, evaluate the installed SDKs beside the returned `dotnetPath` against its `version`/`rollForward`, and treat an unsatisfiable result as "not found" so acquisition proceeds. `rollForward` defaults to `latestPatch` when a `version` is present.
+6. When the workspace pins an SDK, `dotnet.acquireGlobalSDK` MUST request that **exact pinned version** rather than the `10.0` band, so the install actually satisfies the pin instead of landing in a band `global.json` rejects. The pin does **not** replace the sidecars' independent SDK/runtime requirement: every selected host, including alternate roots and acquisition results, MUST carry an SDK >= 10 and report a `Microsoft.NETCore.App` runtime meeting the `10.0.0` floor through a successful, bounded `dotnet --list-runtimes` probe. Both sidecars use `LatestMajor`: a prerelease of the floor (`10.0.0-rc.2`) is below it, but a newer prerelease (`10.0.99-rc.1` or `11.0.0-preview.1`) can satisfy it. Blanket prerelease rejection is incorrect. If an older pinned SDK is acquired into a root lacking that capability, also acquire the `10.0` SDK and revalidate that one root satisfies **both** requirements. If no such root exists after acquisition, return an actionable failure, never success with a .NET 9-only host. An already-installed sidecar host that cannot satisfy the pin MUST NOT bypass automatic acquisition: request the exact pinned SDK through the Install Tool, rather than return a host with broken builds or require the user to click an Install button. Acquisition stays bounded and uses non-interactive progress; any OS elevation UI belongs to Microsoft's installer. Never modify or silently relax `global.json`. Regression #297 is covered by real SDK installations and execution of both staged release sidecars, not empty executable/directory fixtures. Runtime selection cases remap real runtime directories to exercise hostfxr ordering; they do not claim to install prerelease runtime builds.
+7. **Zero incompatible-SDK fallbacks.** If automatic acquisition fails, or its result cannot satisfy either requirement, return `Err` and surface it per [DIST-FAILURE-UX]. Never continue successfully on an existing unpinned host after an installer failure. An unsatisfiable pin diagnosis names the pinned version, the `rollForward` policy, the `global.json` that set it, and the SDKs actually installed. `dotnet` writes those facts to the build task's terminal, which the task's `close: true` presentation disposes on exit, leaving the user only VS Code's generic `failed to launch (exit code: 155)`.
+
+**Implementation reference:**
+- `src/editors/vscode/src/global-json.ts` — pin discovery (`readSdkPin`), `rollForward` evaluation (`sdkSatisfiesPin`), installed-SDK enumeration.
+- `src/editors/vscode/src/dotnetRuntime.ts` — `existingSdkSatisfiesWorkspace`, `describeSdkPinFailure`, pin-aware `tryFindExistingSdk` / `callAcquireSdk`.
+- `src/editors/vscode/src/dotnet-host.ts` — bounded runtime probe and joint workspace-pin / sidecar-host validation.
+- `src/editors/vscode/src/build.ts` — `diagnoseBuildFailure` turns a non-zero build exit into the pin diagnosis.
+- `src/editors/vscode/src/test/suite/sdk-pin.test.ts` — regression suite.
+- `src/editors/vscode/src/test/suite/sdk-sidecar-host.test.ts` — real-host acquisition and F#/C# startup regression suite for #297, run in the `workspace` chunk on Linux and Windows.
+8. SharpLsp MUST set `DOTNET_ROOT` (the directory of `dotnetPath`) and the matching `DOTNET_ROOT_<ARCH>` on the environments passed to **both Shipwright's startup probes and the Rust LSP host**. The [architecture-specific variable takes precedence](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-environment-variables#dotnet_root-dotnet_rootx86-dotnet_root_x86-dotnet_root_x64), so an inherited value MUST NOT override the acquired host. Verification and execution use the same root, without changing the editor's global environment. Setting the root only after verification leaves both sidecars falsely reported as missing even after successful SDK acquisition.
 
 **UX during acquisition — inform, never ask (SharpLsp's own UI):**
 
@@ -64,12 +120,21 @@ Discovery failure before the `READY:` handshake can cause an endless sidecar res
 
 1. **SDK discovery MUST NOT consult the opened workspace.** Query with an explicit `VisualStudioInstanceQueryOptions { DiscoveryTypes = DiscoveryType.DotNetSdk, WorkingDirectory = <neutral> }` where `<neutral>` is a directory guaranteed to have no `global.json` in its ancestry (a dedicated scratch directory under the temp root — *not* `AppContext.BaseDirectory`, which during development sits under the repo's own `global.json`). This enumerates every installed SDK regardless of the workspace pin, so the Roslyn-matching one can still be selected. Note `new VisualStudioInstanceQueryOptions()` defaults `DiscoveryTypes` to `None` (0) in Microsoft.Build.Locator 1.11.x — it MUST be set explicitly or discovery returns nothing.
 2. **`MSBuildLocator.RegisterDefaults()` MUST NOT be used.** It re-queries with the process working directory (the workspace) and re-triggers the same crash. Register a chosen instance by path instead — the Roslyn match, or the newest installed SDK as a fallback.
-3. **SDK-registration failure MUST degrade, never crash.** Neither discovery nor registration may take the sidecar down: on any failure it logs one actionable hint and leaves MSBuild unregistered. The process MUST still reach `READY` and serve MSBuild-free requests (`solution/read`, `ping`, `shutdown`). Roslyn-backed handlers then fail per-request with a clear error rather than the whole sidecar crash-looping. This is a specialization of [DIST-FAILURE-UX] for the sidecar process.
+3. **The registered SDK MUST come from the .NET root hosting this process — never from another root.** `QueryVisualStudioInstances` enumerates the SDKs of a SINGLE root: the one hostfxr picks from `DOTNET_ROOT` or the running host. Two roots is the ordinary state of a dev machine (a `dotnet-install.sh` copy in `~/.dotnet` beside an installer or Homebrew copy in `/usr/local/share/dotnet`), and they hold different SDKs — so the SDK satisfying `global.json` can be installed and still invisible to discovery (issue #295).
+
+   Registering the SDK found in the *other* root is **not** the remedy: an SDK must be coherent with the runtime hosting the process. Measured on a two-root machine — same binary, same tests, only `DOTNET_ROOT` differing — cross-root registration turned `FileBasedPackageSpecEndToEndTests` from passing in 3s into `filebased-degraded` after 45s each, while in-root registration passed. A foreign SDK degrades project load rather than repairing it.
+
+   The correct response to "the active root ships no Roslyn match" is therefore a **diagnostic, not a workaround**. The other roots MAY be scanned (`<root>/sdk/<version>` across `DOTNET_ROOT`, the `dotnet` muxer on `PATH`, and each platform's per-user and machine-wide install locations) for the sole purpose of naming a root that DOES ship the bundled Roslyn, so the user can repoint `DOTNET_ROOT` instead of reinstalling an SDK they already have. A prerelease directory (`10.0.100-preview.1.25080.5`) MUST still be read — `Version.Parse` rejects it outright. An unreadable root MUST contribute nothing rather than throw, because this runs on the diagnostic path.
+
+   The warning MUST NOT claim "no installed .NET SDK ships Roslyn X": that is a claim about the machine made from evidence about one root, and on a two-root box it is false.
+
+4. **SDK-registration failure MUST degrade, never crash.** Neither discovery nor registration may take the sidecar down: on any failure it logs one actionable hint and leaves MSBuild unregistered. The process MUST still reach `READY` and serve MSBuild-free requests (`solution/read`, `ping`, `shutdown`). Roslyn-backed handlers then fail per-request with a clear error rather than the whole sidecar crash-looping. This is a specialization of [DIST-FAILURE-UX] for the sidecar process.
 
 The one-shot startup hint emitted on the degraded path is a sanctioned sidecar stderr write per [DIST-CLEAN-OUTPUT] (alongside the Roslyn-mismatch hint) — it is actionable, level-appropriate, and fires at most once per process, never per request.
 
 **Implementation reference:**
-- `src/sidecars/SharpLsp.Sidecar.CSharp/MSBuildInstanceSelector.cs` — `QueryInstalledSdks` (explicit `DiscoveryType.DotNetSdk` + neutral `WorkingDirectory`), `NewestInstancePath` fallback, `BuildDiscoveryFailedHint`; `Register` no longer calls `RegisterDefaults()`.
+- `src/sidecars/SharpLsp.Sidecar.CSharp/MSBuildInstanceSelector.cs` — `QueryInstalledSdks` (explicit `DiscoveryType.DotNetSdk` + neutral `WorkingDirectory`), `NewestInstancePath` fallback, `BuildDiscoveryFailedHint`; `Register` no longer calls `RegisterDefaults()`. Rule 3's diagnostic scan is `CandidateDotnetRoots` / `SdkCandidatesUnder` / `ElsewhereHint`, reached only from `WarnNoMatch` — registration stays within the queried instances.
+- `src/sidecars/SharpLsp.Sidecar.CSharp.Tests/MSBuildInstanceSelectorTests.cs` — `DescribeElsewhere_points_at_DOTNET_ROOT_rather_than_a_reinstall` and `WarnNoMatch_does_not_claim_the_active_root_is_every_root` pin the wording; `Repo_pinned_sdk_ships_exactly_the_bundled_roslyn` names the active root's SDKs when the pin is unsatisfiable there, rather than asserting a bare non-null.
 - `src/sidecars/SharpLsp.Sidecar.CSharp/Program.cs` — MSBuild registration failure logs and continues instead of `Environment.Exit(1)`.
 - `src/sidecars/SharpLsp.Sidecar.CSharp.Tests/GlobalJsonSdkPinEndToEndTests.cs` — spawns the real sidecar apphost with a workspace whose `global.json` pins an uninstalled SDK and asserts it reaches `READY` and serves `solution/read`.
 
@@ -79,7 +144,7 @@ Every call SharpLsp makes to the .NET Install Tool MUST include all four require
 
 ```ts
 {
-  version: '10.0',                     // major.minor only — the docs require this exact format
+  version: '10.0',                     // major.minor band, OR the exact version global.json pins
   mode: 'sdk',                         // 'runtime' | 'sdk' | 'aspnetcore' — SharpLsp needs 'sdk' for MSBuild
   architecture: dotnetArchitecture(),  // 'x64' | 'arm64' | 'x86' — derived from process.arch
   requestingExtensionId: 'nimblesite.sharplsp',
@@ -88,6 +153,8 @@ Every call SharpLsp makes to the .NET Install Tool MUST include all four require
 ```
 
 `dotnet.findPath` takes the same four required fields nested under `acquireContext` (no `installType`), plus `versionSpecRequirement: 'greater_than_or_equal'`. `dotnet.acquireGlobalSDK` takes them flat, plus `installType: 'global'`.
+
+`dotnet.findPath` MUST use the `10.0` band — it is a discovery probe, and the pin is applied to its answer per [DIST-RUNTIME-ACQUIRE] rule 5. `dotnet.acquireGlobalSDK` MUST use the pinned version when acquiring the workspace SDK (rule 6); a global SDK install accepts a fully-qualified version. An additional acquisition of the sidecar SDK uses `10.0` when the older pinned installation lacks the required SDK/runtime.
 
 `architecture` is derived from Node's `process.arch` and mapped as: `x64` → `x64`, `arm64` → `arm64`, `ia32` → `x86`, default → `x64`. This mapping lives in `src/editors/vscode/src/dotnetRuntime.ts`.
 
@@ -104,7 +171,7 @@ Whenever activation cannot deliver a working language server — for any reason,
 3. **Every failure surfaces a non-modal `vscode.window.showErrorMessage(…)`** with at minimum a `[Show Log]` button that calls `log.output().show()`. Where applicable, additional informational links MAY be added (`[Open dot.net]`, `[Retry]`, `[Reinstall]`). Buttons are convenience links, never required actions.
 4. **The status bar MUST move to `ServerState.Error`** so the persistent indicator reflects the degraded state.
 5. **The error message MUST name the failure mode in plain language** ("required binaries are missing or version-mismatched", ".NET 10 install failed", "language server crashed during startup") — never just dump a stack trace into the toast. The full diagnostic text goes to the output channel reachable via `[Show Log]`.
-6. **Recovery commands MUST be registered** so the user can re-attempt without uninstalling. Examples: `sharplsp.retryDotnetAcquisition`, `sharplsp.restartServer`. These appear in the command palette under the `SharpLsp:` category.
+6. **Recovery commands MUST be registered** so the user can re-attempt without uninstalling. Examples: `sharplsp.retryDotnetAcquisition`, `sharplsp.restartServer`. These appear in the command palette under the `SharpLsp:` category. `sharplsp.restartServer` MUST start a fresh server even when the old one does not answer `shutdown` in time — a hung server is exactly when a user reaches for it. A restarted server MUST serve the documents the user already has open: a request about an open document waits until the CURRENT server has been sent its `didOpen`. A `didOpen` that failed to send, or that reached the server the restart replaced, does not count (`open-sync.ts`).
 
 **Implementation reference:**
 - `src/editors/vscode/src/result.ts` — `Result<T, E>`, `ok`, `err`.
@@ -121,10 +188,12 @@ Editors capture the language server's `stderr` into a user-facing Output panel (
 2. **Sidecars MUST NOT write routine diagnostics to `Console.Error` / `eprintfn`.** Per the project logging rule, sidecar diagnostics use structured logging (Serilog) routed to a per-sidecar rolling file under the system temp directory (`sharplsp-logs/sidecar-<name>.log`)—never the inherited stderr. The only legitimate sidecar `stdout`/`stderr` writes are the versioned `READY:` IPC handshake, the `--version` banner, the CLI usage message, one sanitized pre-READY `FATAL:` diagnostic required by [SIDECAR-STARTUP-FAILURE](SIDECAR-LIFECYCLE-SPEC.md), and the one-shot actionable SDK-resolution hints ([DIST-RUNTIME-ACQUIRE] portability, below, and [DIST-SDK-DISCOVERY])—the Roslyn-mismatch, missing-SDK, and unresolvable-`global.json` startup diagnostics, each emitted at most once per process.
 3. **Per-request chatter goes to the file log, not the panel.** Routine traces (e.g. the router's per-request `[Router] Handling …`) are logged at `Debug` to the rolling file. Genuinely user-facing failures still surface (via the host's `error!` on a failed sidecar request, or a `[Show Log]` action per [DIST-FAILURE-UX]).
 4. **A type-load failure is summarized once.** MSBuild surfaces a `ReflectionTypeLoadException` as a diagnostic carrying dozens of identical "Could not load file or assembly" lines, repeated once per project. Repeated lines MUST be collapsed (`SidecarLog.CollapseRepeatedLines`) and duplicate summaries de-duplicated so the log records one distinct, actionable line — not a flood.
+5. **A line is shown at the level the host wrote it.** The host's `tracing` stderr layer writes every level to the one stream (`<timestamp> <LEVEL> <target>: <message>`), and `vscode-languageclient`'s default `stdioOptions` files every stderr line under `error` — so the channel's level column carried no information and a leg's 1850 `[error]` lines held no error. The extension MUST read the level token off each line and write the remainder at that level (`serverStdioOptions`), dropping the timestamp and level the channel renders itself. A line with no level token (a panic, a backtrace frame, a sidecar `FATAL:`) is shown as written, at `error`: an unclassifiable stderr line is never made quieter than it arrived. A blank line is not shown.
 
 **Implementation reference:**
 - `src/sharplsp/src/main.rs` — `IsTerminal`-gated `.with_ansi(…)` on the stderr `tracing` layer.
 - `src/editors/vscode/src/output-filter.ts` — `stripAnsi` + `createAnsiStrippingChannel`, wired into the client's `outputChannel` in `src/editors/vscode/src/client.ts`.
+- `src/editors/vscode/src/server-stderr.ts` — `classifyServerLine` + `serverStdioOptions`, wired into the client's `stdioOptions` in `src/editors/vscode/src/client.ts`; observed end to end by `src/editors/vscode/src/test/suite/server-stderr.test.ts` through the channel's log file at the extension API's `logUri`.
 - `src/sidecars/SharpLsp.Sidecar.Common/Logging/SidecarLog.cs` — Serilog rolling-file configuration + `CollapseRepeatedLines`; initialized by `SidecarHost`.
 - `src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.cs` — `LogWorkspaceFailure` collapses and de-duplicates MSBuild workspace-load diagnostics.
 
@@ -137,6 +206,51 @@ The VSIX is self-contained. A user who installs the extension gets everything th
 - `sharplsp-sidecar-fsharp` — framework-dependent .NET assembly, bundled at `bin/all/`
 
 **No component is ever installed via `dotnet tool install`, package manager, or any mechanism outside the VSIX.** The `dotnet-tool` source type is NOT used for VSIX distribution.
+
+## [DIST-VSIX-REBUILD] Mandatory Clean Rebuild Before Packaging and Tests
+
+### [DIST-CI-ARTIFACT-TESTS] Build Once, Then Test the Cached Artifacts
+
+PR CI has an enforced handoff: **check/analyse/build → artifact-only tests**.
+Security and analysis gates complete before builds; all test jobs wait for the
+build workflow and download immutable artifacts from that same run/commit.
+
+- Each platform/target builds once. C#/F# sidecars and their tests compile in
+  Release together; publishing and testing use `--no-build --no-restore`.
+- Rust/Zed Release test binaries are built into nextest archives before fan-out.
+  Test jobs execute those archives with zero retries; they never compile them.
+- Rider builds its plugin and test classes before handoff. Test execution excludes
+  Java/Kotlin compilation, and a task-graph guard rejects new compiler dependencies.
+- VS Code tests execute the production JavaScript and native payload extracted
+  from the packaged VSIX, not a separately built development extension. Its matching
+  source map is a private test artifact and never ships inside the VSIX. Coverage
+  excludes vendor code after remapping, without lowering the existing ratchet.
+- Static test fixtures and coverage utilities are precompiled. Consumers may
+  restore NuGet metadata to rebase machine-local package paths, but not compile.
+  A feature test which deliberately builds/edits a user's fixture project still
+  exercises that operation; this is not permission to rebuild the LSP or harness.
+- Each suite has exactly one shard owner per platform. Platform coverage remains
+  intentional (Linux and Windows are distinct environments); shared executable
+  suites, automatic retries and full-suite reruns after sharding are forbidden.
+- Missing artifacts, mismatched package metadata, compilation attempts, failed
+  tests and failed coverage gates fail CI. Test execution remains PR-only.
+
+The default local/release entry points below still produce clean native binaries.
+An enclosing fresh build passes the prebuilt flag into npm's packaging lifecycle
+so that lifecycle cannot secretly rebuild the payload a second time.
+
+Every supported VSIX package and test entry point MUST rebuild its complete payload from clean compiler output by default. A successful incremental build, a cached binary, or a previous test run is not proof of freshness.
+
+The ONE exception is a consumer handed native output built by the same CI run from the same commit, which it declares by setting `VSIX_PREBUILT` (and `VSIX_SUITE_PREBUILT` for the compiled suite). Such output is not the stale incremental tree this section exists to refuse, and rebuilding it per shard would multiply the host, both sidecars and the debugger by the matrix width — hours added to every pull request ([DIST-CI-VSIX-SHARDS]). A prebuilt consumer MUST still stage and verify the payload; it MUST NOT skip staging. Release packaging ignores the flag: a tag never ships a binary its own run did not compile.
+
+1. Delete Rust objects for the selected profile/target before rebuilding the host. Delete generated `bin`/`obj` for all sidecar projects and both publish directories before publishing C# and F#. This includes Roslyn's BuildHost and transitive assemblies, not merely the apphost executable.
+2. Rebuild the patched netcoredbg native binary and its managed helper from clean CMake/MSBuild output on every supported debugger platform. Existing build-ID markers do not bypass this. Platforms explicitly without a bundled debugger retain their documented fallback.
+3. Run the Roslyn/pinned-SDK compatibility regression before staging. Failures in clean, build, compatibility verification, copy, or package verification MUST stop the consumer; never fall back to an old output tree.
+4. Stage only after all builds succeed, into an empty VSIX `bin` tree. Recompile the extension/test JavaScript before its consumer. Verify the production payload before packaging.
+5. `_build-vsix`, `_package-vsix` and every platform wrapper, `_test-vsix`, `_test-vsix-shard`, `_run-vsix-suite`, and `_verify-vsix-payload` MUST enforce this automatically. Prebuilt flags are only for the same-run handoff above, not stale local outputs. `npm test`, `npm run test:run`, and `vscode:prepublish` MUST enforce the same default and same-run exception.
+6. Clean/build/stage/consume steps MUST run in order. Parallel builds in the same checkout must not overwrite a payload while it is packaged or tested. A filesystem race is a failure, never a passing verification.
+
+Regression coverage: `tools/make/vsix-rebuild.test.mjs` exercises the actual expanded Make recipes, including prebuilt flags and all six release platforms. `tools/vsix/rebuild-contract.test.mjs` verifies npm lifecycle hooks and removal of real stale BuildHost files while preserving sources. Both run in `_test-tooling`; workflow wiring is also checked by `tools/ci/security-gates.test.mjs` in `_lint-vsix`.
 
 ## [DIST-VSIX-LAYOUT] VSIX Layout
 
@@ -163,6 +277,45 @@ bin/
 
 The sidecar binaries are identical across all platform VSIXs — they are managed assemblies and require no platform-specific build.
 
+## [DIST-VSIX-CONTENTS] VSIX Payload Verification
+
+[DIST-VSIX-LAYOUT] says where the payload goes. This says that it is actually there, and that nothing else is.
+
+Every staging step in the Makefile ends in `2>/dev/null || true`, so a stage that half-ran is indistinguishable from one that worked. Without a check, the first report of a missing payload is a user whose extension fails to activate, or a Windows CI chunk that spends forty minutes producing a wall of LSP timeouts whose cause is one absent file.
+
+1. A VSIX MUST NOT be produced unless it carries every entry below for the platform it targets. Each is fatal on its own:
+
+   | Entry | Consequence if absent |
+   |---|---|
+   | `bin/<platform>/sharplsp[.exe]` | the LSP host — nothing activates |
+   | `bin/all/sharplsp-sidecar-csharp[.exe]` | C# has no semantics |
+   | `bin/all/sharplsp-sidecar-fsharp[.exe]` | F# has no semantics |
+   | `bin/all/SharpLsp.Sidecar.CSharp.dll` | the Roslyn sidecar's managed half |
+   | `bin/all/SharpLsp.Sidecar.FSharp.dll` | the FCS sidecar's managed half |
+   | `dist/extension.js` | the bundle the manifest's `main` points at |
+   | `bin/<platform>/netcoredbg/netcoredbg[.exe]` | F5 fails with a spawn ENOENT |
+   | `bin/<platform>/netcoredbg/ManagedPart.dll` | the launcher alone cannot debug |
+
+   The two netcoredbg entries are REQUIRED except on the platforms [DIST-DEBUGGER-BUNDLE] names as having no upstream prebuilt, where they MUST be absent rather than stubbed. A stub that spawns and fails is worse than a missing file, because it defers the error to the user's first F5.
+
+2. A VSIX MUST NOT contain any of the following. Each is a packaging leak, not a harmless extra:
+
+   | Forbidden | Why |
+   |---|---|
+   | `__MACOSX/` | AppleDouble resource forks from a macOS archive |
+   | `src/` | TypeScript sources; the bundle already carries them |
+   | `out/` | the compiled test tree |
+   | `test-fixtures/` | test fixtures, tens of megabytes of them |
+   | `*.map` | source maps |
+
+3. The verification MUST read the file list `vsce` itself will write (`vsce ls`), not the working tree. A check that walks `bin/` proves a staging step ran; it does not prove the result survived `.vscodeignore`, which is the failure this exists to catch.
+
+4. The verification MUST run BEFORE packaging, while the staged `bin/` is still on disk, and its failure MUST stop the build. Verifying afterwards means a broken VSIX already exists and can be installed by anything that does not re-check.
+
+5. The platform MUST be overridable (`SHARPLSP_VSIX_PLATFORM`) so a cross-platform package can be verified for the platform it targets rather than the one building it.
+
+6. `tools/vsix/verify-vsix-payload.mjs` implements this. Both the release packaging path and the local install loop of [DIST-VSIX-DEV-INSTALL] MUST gate on it — a dev loop that installs an unverified VSIX reintroduces exactly the failure this section exists to prevent, one machine at a time.
+
 ## [DIST-VSIX-ASSET-INTEGRITY] VSIX Asset Integrity
 
 The extension's icon assets in `src/editors/vscode/icons/` are symlinks into `docs/designs/logo/`. With `core.symlinks=false`, Git materializes target paths as text files, which `vsce` would package as broken icons.
@@ -172,418 +325,72 @@ The extension's icon assets in `src/editors/vscode/icons/` are symlinks into `do
 3. The resolver MUST run automatically before packaging (`vscode:prepublish`) and before the e2e suite (`pretest`), so both the packaged VSIX and the extension-development host load real images. The e2e suite asserts the invariant (`bundled-binary.test.ts`).
 4. Resolved stubs modify the working tree and MUST NOT be committed — Git would record the binary content as the symlink's target text, corrupting the symlink for every other platform. Restore with `git restore src/editors/vscode/icons`.
 
-## [DIST-RESOLUTION] Binary Resolution
+## [DIST-VSIX-DEV-INSTALL] Local Install Loop
 
-Resolution is driven by the `sources` array per component in `shipwright.json`. The `activateDeploymentToolkit` call verifies all three on activation. Failure to resolve any required component triggers [DIST-FAILURE-UX] (degraded mode + toast), not a host-crashing throw.
+Building the VSIX is not installing it. A developer changing the Rust host, either
+sidecar or the extension needs one command that puts the result into their own VS
+Code, and it MUST be a **full** cycle — stale servers killed, every artifact
+cleaned, all three components rebuilt for the host platform, the extension
+uninstalled first, the fresh VSIX packaged and installed.
 
-### [DIST-RESOLUTION-LSP] LSP Host
+Anything less silently tests the previous build: a running `sharplsp` holds the
+binary open (fatally so on Windows), a partial `bin/` stage survives into the
+package, and `--install-extension` over an identical version is a no-op unless
+forced.
 
-`sharplsp` (LSP server — native binary).
+Every one of these targets lives in the **root `Makefile`**, which is the whole
+build system and not a shim that includes one: a developer who clones the repo
+and types `make` finds the actions where `make` looks for them.
 
-Sources: `["user-setting", "env", "bundled", "path", "pkgmgr"]`
-
-| Priority | Source | How |
-|---|---|---|
-| 1 | `user-setting` | `sharplsp.lspPath` VS Code setting — absolute path; version mismatch = hard error |
-| 2 | `env` | `SHARPLSP_LSP_PATH` (full path) or `SHARPLSP_BINARY_DIR` (directory); version drift = `ok-with-warning` |
-| 3 | **`bundled`** | `bin/<platform>/sharplsp[.exe]` inside `extensionPath` ← **DEFAULT for all users** |
-| 4 | `path` | `sharplsp` on `$PATH`; exact version match required |
-| 5 | `pkgmgr` | Shows modal prompt: `brew install nimblesite/tap/sharplsp` / `scoop install nimblesite/sharplsp` |
-
-### [DIST-RESOLUTION-CSHARP] C# Sidecar
-
-`sharplsp-sidecar-csharp` (C# Roslyn sidecar — .NET assembly).
-
-Sources: `["user-setting", "env", "bundled", "path"]`
-
-| Priority | Source | How |
-|---|---|---|
-| 1 | `user-setting` | `sharplsp.csharpSidecarPath` VS Code setting; version mismatch = hard error |
-| 2 | `env` | `SHARPLSP_CSHARP_SIDECAR_PATH` (full path) |
-| 3 | **`bundled`** | `bin/all/sharplsp-sidecar-csharp` inside `extensionPath` ← **DEFAULT for all users** |
-| 4 | `path` | `sharplsp-sidecar-csharp` on `$PATH`; exact version match required |
-
-**If bundled binary is missing the VSIX is broken — fix the build, not the resolution.** Surface per [DIST-FAILURE-UX].
-
-### [DIST-RESOLUTION-FSHARP] F# Sidecar
-
-`sharplsp-sidecar-fsharp` (F# FCS sidecar — .NET assembly).
-
-Sources: `["user-setting", "env", "bundled", "path"]`
-
-| Priority | Source | How |
-|---|---|---|
-| 1 | `user-setting` | `sharplsp.fsharpSidecarPath` VS Code setting; version mismatch = hard error |
-| 2 | `env` | `SHARPLSP_FSHARP_SIDECAR_PATH` (full path) |
-| 3 | **`bundled`** | `bin/all/sharplsp-sidecar-fsharp` inside `extensionPath` ← **DEFAULT for all users** |
-| 4 | `path` | `sharplsp-sidecar-fsharp` on `$PATH`; exact version match required |
-
-**F# is first-class. No SharpLsp without F# support. If bundled binary is missing the VSIX is broken — fix the build.** Surface per [DIST-FAILURE-UX].
-
-## [DIST-VERSION-MATCH] Version Mismatch Behavior
-
-| Source | Version mismatch behaviour |
+| Target | Contract |
 |---|---|
-| `user-setting` | Hard error — surfaced via [DIST-FAILURE-UX], degraded mode |
-| `env` | `ok-with-warning` — activation continues |
-| `bundled` | `ok-with-warning` — activation continues |
-| `path` | Skipped (no match) — falls through to next source |
-
-## [DIST-VERSION-INVARIANT] Release Version Invariant
-
-`Cargo.toml` `version` is the single source of truth. The release workflow stamps the tag version into `Cargo.toml` and `src/editors/vscode/package.json`, commits and pushes those changes, then builds all artifacts from that commit. Sidecar versions are set via `-p:PackageVersion` at publish time.
-
-All versions MUST match byte-for-byte for a release to be valid.
-
-## [DIST-VERSION-OUTPUT] Version Command Output
-
-| Binary | Expected stdout |
-|---|---|
-| `sharplsp --version` | `sharplsp <semver>` |
-| `sharplsp-sidecar-csharp --version` | `sharplsp-sidecar-csharp <semver>` |
-| `sharplsp-sidecar-fsharp --version` | `sharplsp-sidecar-fsharp <semver>` |
-
-The first whitespace-delimited token MUST exactly match the component `id` in `shipwright.json`.
-
-## [DIST-EDITOR-CONTRACT] Editor Activation Contract
-
-The VS Code extension uses `@nimblesite/shipwright-vscode` (`activateDeploymentToolkit`) to resolve all three components. The extension MUST:
-
-1. **Never hand-roll binary resolution** — use `activateDeploymentToolkit` exclusively.
-2. **Never download binaries over HTTPS** — all binaries ship in the VSIX, except .NET 10 itself which is acquired via the .NET Install Tool extension (see [DIST-RUNTIME-ACQUIRE]).
-3. **Never treat any sidecar as optional** — both sidecars are required, both crash activation if missing.
-4. **Surface every failure per [DIST-FAILURE-UX]** if any component returns `status: "error"`. The .NET 10 SDK is NOT a bundled component; failure to acquire it enters degraded mode per [DIST-RUNTIME-ACQUIRE].
-5. **Pass the Shipwright-resolved path** to `LanguageClient` — never hardcode a binary path.
-6. **Acquire the .NET 10 SDK at activation start** via `dotnet.acquireGlobalSDK` from the .NET Install Tool extension (see [DIST-RUNTIME-ACQUIRE]). Show a non-interactive progress notification + status-bar spinner. SharpLsp's own UI never prompts or blocks on user action.
-7. **Use `Result<T, E>` everywhere** per [DIST-FAILURE-UX]. No `throw` inside extension code; no unhandled rejections out of `activate()`.
-
-## [DIST-WORKSPACE-TRUST] Workspace Trust
-
-An untrusted workspace MUST NOT select an executable or inject process arguments. `src/editors/vscode/package.json` declares `capabilities.untrustedWorkspaces.supported: "limited"` and restricts `sharplsp.lspPath`, `sharplsp.csharpSidecarPath`, `sharplsp.fsharpSidecarPath`, `sharplsp.server.extraArgs`, `sharplsp.fsi.extraArgs`, and `sharplsp.debug.netcoredbgPath`.
-
-While `workspace.isTrusted` is false, the runtime guards in `src/editors/vscode/src/config.ts` MUST return no custom LSP path, server arguments, or FSI arguments, leaving Shipwright's bundled binaries in use. When `workspace.onDidGrantWorkspaceTrust` fires, `src/editors/vscode/src/extension.ts` MUST restart the language client so newly trusted path and argument settings take effect without a window reload.
-
-## [DIST-PATH-INSTALL] PATH Installation
-
-Users who want `sharplsp` on their system PATH outside VS Code may install via:
-
-- **macOS/Linux**: `brew install nimblesite/tap/sharplsp`
-- **Windows**: `scoop install nimblesite/sharplsp`
-
-This is entirely optional. The bundled VSIX binary is sufficient for VS Code users.
-
-## [DIST-RELEASE] Release Workflow
-
-Tag-triggered (`v*`). Jobs:
-
-1. **`build-sharplsp`** — matrix: 6 targets (darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64, win32-arm64). Produces one native binary per platform.
-2. **`publish-sidecars`** — single ubuntu job. `dotnet publish --no-self-contained` both sidecars. Produces the `bin/all/` assemblies staged for VSIX inclusion.
-3. **`build-vsix`** — for each platform: stages `bin/<platform>/sharplsp[.exe]` + `bin/all/sharplsp-sidecar-*`, runs `vsce package --target <platform>`. Produces 6 per-platform `.vsix` files, each fully self-contained.
-4. **`release`** — creates GitHub release with all archives and VSIXs, updates Homebrew tap, updates Scoop bucket, publishes VSIXs to VS Code Marketplace.
-
-## [DIST-CI-LAYOUT] CI Workflow Layout
-
-The PR pipeline uses reusable workflows (`on: workflow_call`):
-
-| Workflow | Leg |
-|---|---|
-| `ci.yml` | Orchestrator: `detect-changes`, dependency review, manifest validation, and one `uses:` job per leg |
-| `ci-lint.yml` | Rust / Zed / .NET / VS Code lint + format gates |
-| `ci-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the union coverage gate, the version contract |
-| `ci-dotnet.yml` | Sidecar tests (Ubuntu) + win32 named-pipe transport ([DIST-CI-WIN-TRANSPORT]) |
-| `ci-vsix.yml` | Sharded, instrumented VS Code suite + VSIX payload check (Ubuntu, [DIST-CI-VSIX-SHARDS]) |
-| `ci-vsix-coverage.yml` | THE VS Code coverage gate — one ratchet over every shard of both platforms ([DIST-CI-VSIX-COVERAGE]) |
-| `ci-vsix-windows.yml` | VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX]) |
-
-Invariants:
-
-- **`detect-changes` is the only gate.** Every leg is `needs: detect-changes` and guarded by `code_changed`; no leg `needs:` another. Lint and tests are independent required gates — serializing tests behind lint added ~3 minutes to every PR's critical path, and a lint failure still blocks the merge.
-- **Legs are called, never duplicated.** Shared VSIX shell logic lives in `tools/vsix/` (for example `purge-path-binaries.sh` and `vsix-test-chunks.mjs`) and shared build logic in the `Makefile`, so a step is written once and called from every workflow that needs it.
-
-### [DIST-CI-SECURITY] Security Gates
-
-[ci.yml](../../.github/workflows/ci.yml) MUST run dependency review for pull requests. [codeql.yml](../../.github/workflows/codeql.yml) MUST scan pull requests, weekly schedules, and tagged releases; `release.yml` calls it with `gate: true`, and any high or critical finding blocks release and publication. Workflow permissions default to `contents: read`; only jobs that publish security events or artifacts receive narrower write permissions.
-
-## [DIST-CI-NODE] Node.js Toolchain
-
-**Minimum: Node.js 20.x.x.** This is the minimum required by `@vscode/vsce` v3.x.
-
-Ground truth: <https://github.com/microsoft/vscode-vsce>
-
-All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '20'` or higher. Do not upgrade beyond what vsce requires without checking the above URL first.
-
-## [DIST-CI-DOTNET] .NET Toolchain
-
-**Required: .NET 10.** All sidecar publish steps use `dotnet publish --no-self-contained` targeting `net10.0`.
-
-### [DIST-CI-DOTNET-DEPSFILE] Dependency File Generation
-
-`src/sidecars/SharpLsp.Sidecar.Common/SharpLsp.Sidecar.Common.csproj` is a referenced-only class library and MUST set `<GenerateDependencyFile>false</GenerateDependencyFile>`. Its consumers generate their own runtime dependency files; emitting the unused `SharpLsp.Sidecar.Common.deps.json` lets concurrent builds or indexers lock the shared `bin/` artifact and fail `GenerateDepsFile` with MSB4018. `src/sharplsp/tests/build_deps_file_e2e.rs` MUST verify the evaluated MSBuild property, not project-file text (GitHub #111).
-
-## [DIST-CI-RUST] Rust Toolchain
-
-Stable toolchain. Cross-compilation targets must be added via `dtolnay/rust-toolchain@stable` with explicit `targets:`.
-
-### [DIST-CI-RUST-SHARDS] Rust Test Shards
-
-The Rust e2e suite runs single-threaded (`RUST_TEST_THREADS=1` — tests spawn real Roslyn/FCS sidecars), so its wall time scales with test count, not runner cores. CI therefore splits it into `SHARD_COUNT` nextest **hash partitions** (`make _test-rust-shard SHARD=<n>`, i.e. `--partition hash:<n>/<count>`), run as a `test-rust` job matrix.
-
-Invariants:
-
-- **Same tests, same serialization.** A shard changes only *which* slice of the suite runs, never how: `--no-fail-fast` and the `--test-threads` serialization apply to every shard. Sharding MUST NOT skip, filter, or reorder tests beyond the partition itself.
-- **One gate, over the union.** Each shard exports lcov (`target/coverage-rust-shard<n>.lcov`). No shard can meet the line threshold alone, so no shard runs the coverage gate; the `coverage-rust` job union-merges the tracefiles (`tools/coverage/merge-lcov.mjs`) and enforces the identical `tools/coverage/check-coverage.sh` ratchet a single-job run enforces. Every shard tracefile carries the full instrumented line set (unexecuted lines as `DA:<line>,0`), so the union reproduces exactly the line percentage of an unsharded run.
-- **Local runs stay unsharded.** `make test` / `make _test-rust` remain the single-invocation JSON + inline-gate path; sharding is a CI wall-clock concern only.
-- **Version contract is its own job.** The `--version` contract checks ([DIST-VERSION-OUTPUT]) run in the `version-contract` job: the release-profile build shares no artifacts with the instrumented test build, so bundling it into a test job serializes it onto the critical path for zero reuse.
-
-## [DIST-CI-WIN-TRANSPORT] Windows Sidecar Transport
-
-`tokio::net::UnixStream` is **unix-only** and MUST NOT be used unconditionally. All sidecar transport code MUST be gated:
-- `#[cfg(unix)]` — use `tokio::net::UnixStream`
-- `#[cfg(windows)]` — use `tokio::net::windows::named_pipe`; TCP loopback is not an IPC fallback
-
-Both the Rust host and the .NET sidecar MUST use the same transport on each platform. Win32 builds failing to compile due to `UnixStream` is a hard blocker.
-
-The .NET sidecars are platform-neutral assemblies shipped identically in every VSIX ([DIST-VSIX-LAYOUT]), so **their transport selection MUST be a runtime decision keyed on the endpoint shape**: an endpoint starting with `\\.\pipe\` selects a named pipe server/client; anything else selects a Unix domain socket. Compile-time gating (`#if WINDOWS`) is forbidden in sidecar transport code — the symbol is never defined for the platform-neutral `net10.0` build, which silently compiles the Unix branch into the Windows VSIX and makes the sidecars exit before READY (GitHub #110).
-
-Both listener flavors MUST restrict the endpoint to the current user: `0600` on the Unix domain socket, `PipeOptions.CurrentUserOnly` on the named pipe server. Endpoint names MUST also be unpredictable and unique per spawn per [SIDECAR-STARTUP-ENDPOINT](SIDECAR-LIFECYCLE-SPEC.md), preventing concurrent hosts or an orphaned prior generation from intentionally sharing a name. Current-user restriction remains mandatory defense in depth. CI MUST run the sidecar transport tests on a Windows runner—an Ubuntu-only matrix never executes the named-pipe arm, which is how GitHub #110 shipped.
-
-## [DIST-CI-WIN-VSIX] Windows VS Code End-to-End Tests
-
-CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-vsix-windows.yml` and `_test-vsix-shard` (the same target the Ubuntu leg runs): the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
-
-The suite is sliced into **feature chunks**, one CI job each on BOTH platform legs, run with `fail-fast: false` so one failing feature area never hides the state of the others. The manifest below is the single declaration; `linuxOnly` chunks are absent from the Windows matrix ([DIST-CI-VSIX-SHARDS]):
-
-| Chunk | Platforms | Feature surface |
-|---|---|---|
-| `lifecycle` | Both | Activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, cross-cutting command workflows. |
-| `lsp` | Both | C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, document sync and client lifecycle. |
-| `lsp-refactor` | Both | The C# refactoring surface: quick fixes, organize imports, the rewrite matrix, and rename across symbols and edge cases. Split from `lsp` so neither slice carries the other's wall clock ([DIST-CI-VSIX-SHARDS]). |
-| `lsp-filebased` | Both | File-based programs (`#:package`, `#:property`): restore, reload, isolation and configuration-cone parity. Its own chunk because every test shells out to a real `dotnet restore`. |
-| `fsharp` | Both | F# is a first-class citizen, so its whole LSP surface is gated: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement instead of silently inflating one job. |
-| `fsharp-codefix` | Both | The F# code-fix catalogue: basics, type conversions and generation. The slowest third of the F# surface, split out so it runs beside the rest instead of after it. |
-| `fsharp-rename` | Both | F# rename, including the cross-language case where an F# origin renames C# references and back — the single slowest suite in the whole VS Code matrix, because each test rebuilds both languages. |
-| `debug` | Both | Debugging and the launch surface, WITHOUT shelling out to dotnet: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, and manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions. |
-| `debug-stepping` | Both | Step through debugging over a live netcoredbg session on a real built assembly: F10/F11/Shift+F11 walks asserted line by line and frame by frame, Just My Code, run to cursor, continue between breakpoints, breakpoints encountered mid-step, stepping off the end of a method and of the program, and the physical/async call stack. Implements [DEBUG-FEATURES-STEPPING] and [DEBUG-FEATURES-STACK]. |
-| `debug-breakpoints` | Both | Breakpoints as a user sets them: F9 through the editor (the canSetBreakpointsIn gate the addBreakpoints API bypasses), binding and verification, mid-session add/remove/disable, function breakpoints, conditions, hit counts and logpoints. Implements [DEBUG-FEATURES-BREAKPOINTS] and the runtime half of [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION]. |
-| `debug-exceptions` | Both | Catching exceptions and ignoring them: the advertised exception filters, break-on-all catching a handled throw, the unhandled-only filter ignoring one, the exception info panel and inner-exception chain, and per-type include/exclude filters changed mid-session. Implements [DEBUG-FEATURES-EXCEPTIONS]. |
-| `debug-inspection` | Both | The Variables and Watch panels against a paused debuggee: locals, arguments, this, statics, collection/array/nullable expansion, hover/watch/REPL evaluation across the T1 and T2 tiers, setVariable changing what the program does next, and [DebuggerDisplay] rendering. Implements [DEBUG-FEATURES-VARIABLES]. |
-| `debug-fsharp` | Both | F# debugging at full density, never a reduced echo of the C# suites: F9 in an F# editor, stepping through F# functions, F# exceptions caught and ignored, discriminated unions/records/tuples/options rendered in F# syntax, and task {} logical stacks. Implements [DEBUG-FSHARP-UNIONS], [DEBUG-FSHARP-STEPPING] and [DEBUG-FSHARP-PDB]. |
-| `debug-session` | Both | The session and the protocol around it: the DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id. |
-| `debug-advanced` | Both | Hot Reload during an active session (method body, added method, rude edit), attaching to an already-running process by pid and by name, and debugging a single unit test through the Test Explorer Debug profile. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD], [DEBUG-FEATURES-LAUNCH] attach rows and [DEBUG-FEATURES-TESTS]. |
-| `rundebug` | Both | Launch-target resolution against real projects: the [SCRIPT-CONE] walk (.sln/.slnx, .git and workspace-root boundaries), active-document sensitivity across two projects, library rejection, and MSBuild output resolution for custom AssemblyName/OutputPath, non-listed and multi-targeted frameworks. Builds real C# and F# console projects. |
-| `rundebug-commands` | Both | The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets — C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target. |
-| `testexplorer` | Both | Discovery, the reactive tree, Windows path handling, TRX/console result parsing and the testing lens. |
-| `testexplorer-cancellation` | Both | Pressing Stop must terminate the whole `dotnet test` process TREE. Its own chunk: the suite builds a dedicated F# xUnit fixture whose long-running test deliberately sleeps, so it is both slow and the most likely place in the matrix to hang — isolating it keeps a hang from taking the rest of the Test Explorer surface with it. |
-| `testexplorer-frameworks` | Both | Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles. Split from the testexplorer chunk because it restores and builds six test projects. |
-| `profiler` | Both | Profiling end to end (dotnet-trace sessions, live counters, memory dumps, .nettrace conversion, profiler webviews) plus FSI, build, output filtering and hot reload. |
-| `explorer` | Both | Solution Explorer tree, reactive sort/state signals, tooltips and reveal, the full context-menu surface, and the project-dependency watcher. |
-| `packages` | Both | Scaffolding (create solution/project) and the NuGet surface: browser panel, search/add/update/restore commands, and real .csproj dependency edits. |
-| `realrepo-serilog` | Ubuntu only | Cold-loading the pinned real-world repository serilog/serilog: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal. |
-| `realrepo-fluentvalidation` | Ubuntu only | Cold-loading the pinned real-world repository FluentValidation: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal. |
-| `realrepo-fstoolkit` | Ubuntu only | Cold-loading the pinned real-world repository FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal. |
-
-Invariants:
-
-- **One declaration.** Chunk membership lives in `src/editors/vscode/test-chunks.json` and is read by `tools/vsix/vsix-test-chunks.mjs` (`files <chunk>` → `MOCHA_FILES` globs, `matrix` → the CI job matrix, `check` → the completeness guard). It MUST NOT be duplicated into CI YAML.
-- **Nothing escapes.** `make _lint-vsix` runs `vsix-test-chunks.mjs check`, which fails if any `*.test.ts` suite is claimed by no chunk or by more than one. A new suite is therefore gated on Windows by default; opting out requires an explicit entry under `excluded` with a written reason.
-- **Selection is by file, not by title.** The inner mocha runner selects suites via the `MOCHA_FILES` glob list. Title-regex selection (`MOCHA_GREP`) is a local debugging aid only — it silently drops tests when a suite is renamed. A glob matching zero compiled suites is a hard error, so a mistyped chunk fails instead of reporting a green run of nothing.
-- **Build once, fan out.** A single `build` job compiles the Rust host and both sidecars and publishes them as an artifact; each chunk job downloads and stages them (`_stage-vsix-binary-only`). Rebuilding per chunk would cost one cold Windows Rust build per feature area.
-- **Every shard is instrumented, on both platforms.** Windows chunks used to run **without** `--coverage`, which left the entire coverage number resting on Ubuntu and made win32-only code paths invisible to the ratchet. Both legs now run the same instrumented `_test-vsix-shard`, and one gate at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]). Chunks marked `linuxOnly` — the `real-repo-*` stress suites, each cloning and restoring a pinned third-party repository — are absent from the Windows matrix: that is repo ingestion, not platform behaviour.
-- **No PATH leakage.** Every VS Code job runs `tools/vsix/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
-
-- **Compare paths case-insensitively on Windows.** VS Code lowercases the drive letter whenever a path travels through `Uri.fsPath`, while `extensionPath` and `os.tmpdir()` preserve the original casing, so the same file legitimately has two spellings. Any assertion comparing a `Uri`-derived path against a directly-constructed one MUST go through `comparablePath()` (`test-helpers.ts`), which lowercases on win32 only — POSIX paths stay case-sensitive, because there `/tmp/A` and `/tmp/a` really are different files.
-- **Suites MUST be order-independent.** Chunking changes which suites share an extension host, so no suite may depend on state another suite left in a shared singleton. Fixture identifiers that feed a shared registry — notably test method names discovered into the `SharpLspTestController` — MUST be unique per suite, or a test asserting "nothing matches" passes or fails on whichever suite's discovery won the race.
-
-The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `/tmp`) so these suites run on Windows.
-
-## [DIST-CI-VSIX-SHARDS] VS Code Test Shards
-
-The Ubuntu VS Code leg MUST fan out over the same feature chunks the Windows leg
-uses ([DIST-CI-WIN-VSIX]), one chunk per job, and MUST NOT run the suite as a
-single job.
-
-Rationale: unsharded, that job was the pipeline's critical path at 50 minutes —
-18 spent executing tests and 30 spent burning two 15-minute mocha hook ceilings
-on one hung suite. Sharding makes the leg's wall time the slowest single chunk
-rather than the sum of all of them, and confines a hang to the chunk that hangs.
-
-Invariants:
-
-- **One declaration, both platforms.** `src/editors/vscode/test-chunks.json` is
-  the single chunk manifest; `tools/vsix/vsix-test-chunks.mjs matrix linux` and
-  `... matrix win` derive the two CI matrices from it. The only platform
-  distinction the manifest carries is `"linuxOnly": true`, which drops a chunk
-  from the Windows matrix. A chunk MUST NOT be declared in CI YAML.
-- **One runner, one shard target.** `make _run-vsix-suite` is the single recipe;
-  `CHUNK` selects the slice (empty runs every suite) and `VSIX_SUITE_PREBUILT`
-  says the suite is already compiled. Coverage is NOT a knob — the runner always
-  instruments. `_test-vsix` (local, whole suite, gated inline) and
-  `_test-vsix-shard` (ONE chunk on ANY platform) are thin wrappers and MUST NOT
-  re-implement the invocation. There is no Windows-only variant: the two had
-  already drifted to the point where one ran with coverage and one without.
-- **Neither leg re-implements the other.** The three things both platform legs
-  do live in `.github/actions/`: `vsix-suite` (install, resolve the matrix,
-  compile once, publish), `vsix-shard` (stage, run one instrumented chunk,
-  publish its tracefile) and `vsix-payload` (pack the VSIX, assert the platform
-  binary is in it). `ci-vsix.yml` and `ci-vsix-windows.yml` supply only what
-  genuinely differs — artifact names, where the debugger unpacks, the platform
-  tag, and whether the runner needs `xvfb`. Copying steps between the two YAMLs
-  is how they drifted apart the first time.
-- **Only the PORTABLE build is shared.** The suite artifact carries `out/` and
-  `dist/` — tsc and esbuild output, identical on every runner. It MUST NOT carry
-  `test-fixtures/`: `prepare:test-fixtures` runs `dotnet build`, and the
-  `obj/project.assets.json` it writes points at the building machine's
-  `~/.nuget/packages`. A shard handed those files loads a Roslyn workspace whose
-  references do not resolve, which surfaces as missing definitions, a reduced
-  refactor set and an empty unused-package report — failures that look like
-  product bugs and are really a missing restore. Each shard builds the fixtures
-  itself against a cached NuGet store.
-- **Nothing is compiled or built twice.** The Rust host, both sidecars and
-  netcoredbg are built once per platform and staged from artifacts
-  (`VSIX_PREBUILT=1`). The suite itself — clean, tsc, esbuild bundle, .NET test
-  fixtures — is compiled once per platform by `_build-vsix-suite`, published as
-  an artifact, and consumed by every shard (`VSIX_SUITE_PREBUILT=1`). The VS
-  Code test host download is cached per runner OS. A shard that recompiles
-  multiplies minutes of identical work by the width of the matrix.
-- **A shard MUST NOT verify the VSIX payload.** That is one production esbuild
-  and a `vsce ls` per shard for an answer that cannot vary by shard — and it
-  leaves the PRODUCTION bundle in `dist/`, whose missing sourcemap strips the
-  end-to-end coverage the shard exists to collect. Both legs verify the payload
-  in a dedicated job.
-- **Shard tracefiles are repo-relative.** `_test-vsix-shard` writes
-  `target/coverage-vsix-shard-<platform>-<chunk>.lcov` through
-  `tools/coverage/relativize-lcov.mjs`. c8 records absolute paths, so without
-  this the same source file keys twice in the union — once under
-  `C:\Code\SharpLsp\...` and once under `/home/runner/...` — doubling the
-  denominator and failing the gate for a reason unrelated to coverage.
-- **The denominator MUST NOT move.** Coverage runs with `includeAll` off. Every
-  shard instruments the same bundle, so a file loaded by any shard contributes
-  its whole line set to the union (unexecuted lines as `DA:<line>,0`) — which
-  reproduces exactly the file set, line set and percentage of one unsharded run.
-  Enabling `includeAll` would silently move the ratchet.
-- **Local runs stay unsharded.** `make test` / `make _test-vsix` remain the
-  single-invocation, inline-gate path; sharding is a CI wall-clock concern only.
-- **The payload check is its own job.** Verifying the packaged VSIX carries the
-  platform binary MUST NOT sit behind the test matrix: a `.vscodeignore` mistake
-  is knowable in minutes and must be reported in minutes.
-
-### [DIST-CI-VSIX-COVERAGE] The VS Code Coverage Gate
-
-There is exactly ONE coverage gate for the extension, it runs at the END of the
-pipeline, and it ratchets the union of every instrumented shard on every
-platform (`ci-vsix-coverage.yml`, `needs: [vsix, vsix-windows]`).
-
-Invariants:
-
-- **No leg gates on its own.** A single chunk cannot meet the line threshold, so
-  a per-leg gate can only be wrong. `_gate-vsix-coverage` union-merges every
-  `target/coverage-vsix-shard-*.lcov` with the same
-  `tools/coverage/merge-lcov.mjs` the Rust shards use ([DIST-CI-RUST-SHARDS])
-  and enforces the identical ratchet.
-- **The union is sound.** Every shard instruments the same bundle, so a file
-  loaded by any shard contributes its whole line set (unexecuted lines as
-  `DA:<line>,0`); summing hit counts per (file, line) reproduces the line
-  percentage of one unsharded run.
-- **The denominator MUST NOT move.** Coverage runs with `includeAll` off.
-  Enabling it would change the file set and silently move the ratchet.
-- **A missing shard fails the gate.** A shard that fails uploads no tracefile,
-  so the union shrinks and the ratchet catches it. Coverage is never computed
-  from "whatever shards happened to finish".
-
-### [DIST-CI-VSIX-SHARDS-TIMEOUTS] Test Timeout Budget
-
-A mocha timeout is a wall-clock ceiling, not a budget: nothing runs faster for
-having a larger one, and a hung test burns the whole ceiling before the suite
-can report. Every ceiling in the VS Code suite MUST therefore come from the
-named tiers in `src/editors/vscode/src/test/suite/test-timeouts.ts`, which are
-derived from measured behaviour on the CI agents.
-
-| Tier | Ceiling | For |
-|---|---|---|
-| `FAST_MS` | 1s | Pure in-process work — parsers, tree builders, HTML rendering, manifest conformance |
-| `COMMAND_MS` | 5s | One command round trip through the extension host; no sidecar |
-| `SETTINGS_WRITE_MS` | 30s | Several user-scoped `settings.json` writes, each awaiting its change event (measured 4.56s for four) |
-| `LSP_RESPONSE_MS` | 15s | One semantic request answered by a warm sidecar |
-| `DEBUG_SESSION_MS` | 45s | A live `netcoredbg` session — launch, bind, step, evaluate, detach |
-| `DEBUG_TEST_MS` | 50s | Ceiling for a TEST that awaits those waits; strictly above `DEBUG_SESSION_MS` |
-| `PROCESS_START_MS` | 30s | A spawned `dotnet` console process becoming ready; sits below `DEBUG_SESSION_MS` |
-| `DOTNET_CLI_MS` | 120s | Shelling out to the real `dotnet` CLI against an already-restored fixture |
-| `LSP_SWEEP_MS` | 60s | One semantic request PER SYMBOL swept across a loaded solution (measured 31.9s) |
-| `SERVER_RESTART_MS` | 120s | A test that deliberately kills or restarts the server and waits for it to serve again |
-| `ACTIVATION_MS` | 60s | *Initialization.* Extension activation, host and sidecar spawn |
-| `SIDECAR_COLD_MS` | 90s | *Initialization.* First semantic call while the sidecar cracks a project |
-| `FIXTURE_BUILD_MS` | 240s | *Initialization.* Cold `dotnet restore` + `build` of a fixture solution |
-| `REAL_REPO_MS` | 600s | *Initialization.* Clone + restore of a pinned third-party repository |
-| `REAL_REPO_WARMUP_MS` | 480s | A warmup *poll* inside a `REAL_REPO_MS` hook — never a ceiling of its own |
-
-Invariants:
-
-- **No numeric literal ceilings.** `this.timeout(<number>)` is forbidden in the
-  VS Code suite; a ceiling MUST name a tier. Arithmetic on a tier is forbidden
-  except the `+ 5_000` idiom that keeps a mocha ceiling just above a poll
-  timeout the test hands a helper, so the helper's message wins.
-- **Initialization tiers are for hooks.** `ACTIVATION_MS`, `SIDECAR_COLD_MS`,
-  `FIXTURE_BUILD_MS` and `REAL_REPO_MS` are legal in `suiteSetup` /
-  `suiteTeardown` only. A `test()` body claiming one means the suite is paying
-  restore or activation more than once, which per-suite setup exists to prevent.
-  The sole exception is a test whose subject IS a restart: it takes
-  `SERVER_RESTART_MS` as its ceiling and `SIDECAR_COLD_MS` for the poll that
-  follows the restart, because the cold start is the assertion rather than
-  setup. Such a test MUST leave the server warm — a restart test that gives up
-  early strands the next test in the file on a cold server.
-- **Initialization happens once per suite.** A suite MUST build its fixture
-  solution, activate the extension and warm discovery in `suiteSetup`, never per
-  test. Two suites in one chunk that build equivalent fixtures MUST share one.
-- **Raising a tier requires evidence.** The tiers encode observed p-max plus
-  headroom. A test that needs more time is a performance regression to
-  investigate, not a ceiling to raise.
-- **A poll that runs out of budget FAILS.** `pollUntilResult` and every helper
-  built on it throw when the predicate never holds. Returning the last observed
-  value instead is a silent pass wherever the caller discards the result, and an
-  unreadable downstream assertion wherever it does not. The same rule binds the
-  hand-rolled deadline loops: a loop that reaches its deadline MUST `assert.fail`
-  with what it actually saw, never fall out of the bottom.
-- **A poll budget sits strictly below the ceiling that contains it.** A budget
-  equal to or above its `this.timeout(...)` can never elapse — mocha kills the
-  test first and the helper's "what did it actually see" message is never
-  printed. In-test polls take `LSP_RESPONSE_MS`; a warmup poll inside a
-  `REAL_REPO_MS` hook takes `REAL_REPO_WARMUP_MS`.
-- **A shard that resolves to no suites fails.** `RUN_VSIX_SUITE` refuses to run
-  when `CHUNK` is set and the manifest yields nothing, rather than falling back
-  to the empty `MOCHA_FILES` that means "run everything".
-
-## [DIST-SECRETS] Publishing Credentials
-
-The VS Code Marketplace publishes **passwordless via Microsoft Entra ID OIDC** (workload identity federation) — there is **no** long-lived Marketplace PAT. The `release.yml` `publish-marketplace` job runs in the `release` GitHub Environment so its OIDC subject is the deterministic `repo:Nimblesite/SharpLsp:environment:release`, which one Entra federated credential trusts. Open VSX has **no** OIDC/trusted-publishing path (verified 2026), so it still requires a long-lived access token.
-
-| Secret / Variable | Scope | Purpose |
-|---|---|---|
-| `BREW_SCOOP_PAT` | repo | PAT with `contents:write` on `Nimblesite/homebrew-tap` and `Nimblesite/scoop-bucket` |
-| `AZURE_CLIENT_ID` | `release` env | Entra ID app (client) id — Marketplace OIDC publish. Not sensitive; no PAT involved. |
-| `AZURE_TENANT_ID` | `release` env | Entra ID tenant (directory) id — Marketplace OIDC publish. |
-| `OPEN_VSX_PAT` | repo | Open VSX access token. No OIDC path exists; long-lived token required (rotate on a schedule — post-2025 tokens expire by default). |
-
-## [DIST-CI-SMOKE] CI Smoke Checks
-
-Every PR:
-- Validates `shipwright.json` with `shipwright-validate-manifest`
-- Runs `dotnet publish --no-self-contained` on both sidecars
-- Verifies `bin/<platform>/sharplsp[.exe]` exists in the staged VSIX layout
-- Verifies `bin/all/sharplsp-sidecar-csharp` exists in the staged VSIX layout
-- Verifies `bin/all/sharplsp-sidecar-fsharp` exists in the staged VSIX layout
-- Runs `sharplsp --version`, `sharplsp-sidecar-csharp --version`, `sharplsp-sidecar-fsharp --version`
-
-## [DIST-FORBIDDEN] Forbidden Distribution Patterns
-
-- `https.get(...)` / `fetch(...)` / `child_process` spawning for downloading any binary, including .NET. The .NET runtime is delegated exclusively to the .NET Install Tool extension (see [DIST-RUNTIME-ACQUIRE]); other binaries ship in the VSIX.
-- `dotnet tool install` / `dotnet tool update` as a distribution mechanism for VSIX users.
-- Treating either sidecar as optional — both are required, both surface a degraded-mode toast if missing.
-- Writing any component binary into `~/.local/`, temp dirs, or paths not managed by Shipwright or the .NET Install Tool.
-- Hand-rolling binary resolution — use `activateDeploymentToolkit` exclusively.
-- Hand-rolling .NET runtime acquisition — `dotnet.acquire` from the .NET Install Tool is the only sanctioned mechanism.
-- Calling the .NET Install Tool without **all four required fields** of `IDotnetAcquireContext` (`version`, `mode`, `architecture`, `requestingExtensionId`) — see [DIST-API-PARAMETERS].
-- Skipping version verification on activation.
-- Shipping a single universal VSIX containing all platform binaries.
-- Modal prompts, dialogs, or any UI that *requires* user action during .NET runtime acquisition. The user must be informed (progress notification + status bar) but never asked to do anything.
-- **`throw` inside extension code, or any code path that allows `activate()` to reject** — see [DIST-FAILURE-UX]. Use `Result<T, E>` and surface a non-modal toast.
-- **Failing silently when activation cannot deliver a language server** — every failure mode MUST produce a visible notification with at least a `[Show Log]` action and a recovery command in the palette.
+| `make reinstall-vsix` | uninstall → kill → `clean` → `_build-vsix` (Rust host + both sidecars + extension, payload verified, packaged for the host platform) → install. The whole loop. |
+| `make install-vsix` | install `dist/sharplsp.vsix` as it stands. Fails if it is absent. |
+| `make uninstall-vsix` | remove the installed extension. Succeeds when nothing is installed. |
+
+Requirements:
+
+1. The loop MUST work identically on **macOS, Linux and Windows**. Windows runs
+   these recipes under Git Bash, where the VS Code CLI is a `.cmd` shim, so the
+   CLI MUST be resolved by probe — `code`, `code.cmd`, then the default per-user
+   and machine-wide install locations — and overridable with `CODE=/path/to/code`.
+   A missing CLI MUST fail loudly, never silently skip the install.
+2. The VSIX path passed to the CLI MUST stay repo-relative. Git Bash absolute
+   paths (`/c/...`) are not intelligible to a Windows `code.cmd`.
+3. The extension identifier MUST be derived from the extension manifest
+   (`publisher` + `name`), never hardcoded. A hardcoded copy drifts: the repo
+   carried a dead `_uninstall-vsix` naming `sharplsp.sharp-lsp` long after the
+   extension became `nimblesite.sharplsp`, so it could not have uninstalled
+   anything.
+4. Steps MUST be ordered explicitly as sub-makes, not as prerequisites of one
+   target. Under `make -j` prerequisites run concurrently, and `clean` racing the
+   build it feeds deletes that build's output.
+5. `install-vsix` MUST pass `--force`, so reinstalling the same version replaces
+   it instead of no-opping.
+6. The uninstall MUST run **before** the clean and rebuild, not after. A build
+   that fails midway then leaves no stale SharpLsp loaded in VS Code to be
+   mistaken for the change under test.
+7. The loop MUST resolve the host platform itself. There is ONE reinstall
+   target, not one per platform: the developer running it is on the machine
+   being installed into, and the dev VSIX carries that platform's host binary
+   and that platform's debug adapter. Building for a platform you are not on is
+   `_package-vsix-<platform>`, which packages and never installs.
+8. Every target above MUST live in the **root `Makefile`**, which is the build
+   system itself and not a shim that includes one, and every target that is not
+   in the table MUST be prefixed `_`. The prefix is the public/private boundary:
+   a tool that lists this file's targets shows the dozen a developer runs, not
+   the seventy the build is made of.
+9. The loop MUST verify the VSIX payload ([DIST-VSIX-CONTENTS]) **before** it
+   installs, and the verification MUST run while the staged `bin/` is still on
+   disk. Every copy and rename in the staging step ends in `2>/dev/null || true`,
+   so a stage that half-ran is indistinguishable from one that worked: packaging
+   proceeds, `--install-extension` succeeds, and the developer meets the missing
+   host, sidecar or debug adapter as activation failures instead of as a build
+   error. The test path has always gated on this; the path a developer actually
+   runs to install their own build MUST gate on it too, or the only unverified
+   VSIX the project produces is the one most likely to be broken.
+10. The dev VSIX MUST be packaged with `--target <host platform>`. Without it the
+    package carries no `TargetPlatform`, so VS Code treats a VSIX holding exactly
+    ONE platform's host binary and debug adapter as installable on every
+    platform. Every released VSIX is built with `--target`, so omitting it here
+    also means the loop never exercises the shape that ships.

@@ -42,7 +42,7 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 
 ### Verification (clean Windows machine, no .NET 10 installed)
 
-- [ ] `make package-vsix-win32-x64 VERSION=0.1.1` succeeds
+- [ ] `make _package-vsix-win32-x64 VERSION=0.1.1` succeeds
 - [ ] Uninstall SharpLsp: `code --uninstall-extension nimblesite.sharplsp`
 - [ ] Uninstall the .NET Install Tool: `code --uninstall-extension ms-dotnettools.vscode-dotnet-runtime`
 - [ ] `code --install-extension dist/sharplsp-win32-x64.vsix` — VS Code auto-installs the .NET Install Tool dependency without prompting
@@ -103,6 +103,25 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 - [ ] Stamp v0.1.1 and re-release once verification passes on all three platforms
 
+## TODO Checklist — clean VSIX payload ([DIST-VSIX-REBUILD])
+
+- [x] Reproduce missing full rebuilds with failing tests for six VSIX entry points and both prebuilt flags.
+- [x] Clean Rust objects and every sidecar bin/obj/publish directory before rebuilding; force clean native/managed netcoredbg compilation.
+- [x] Run the Roslyn/SDK compatibility regression before staging; make errors fatal.
+- [x] Wire package, full-suite, shard, direct-runner and npm lifecycle paths to the rebuild.
+- [x] Install the Rust toolchain in CI shards and remove the prebuilt bypass flags.
+- [x] Cover all six release target names; fix the internal underscore leaking into platform IDs.
+- [x] Complete an uncontended real package build and MTP VSIX feature runs: 22 main-chunk and 11 parity tests passing, each with both old prebuilt flags set; full tooling 39/39 and VS Code lint/type checking pass. Logs: `/tmp/sharplsp-vsix-rebuild.NsFxE8/`. Packaged VSIX SHA-256: `1f36e6117f6a0ed8a0958db833e0cfdfbcc18b3d1bd79510f058fd3afd629b2c`. The initial concurrent-build failure is superseded, not counted as a pass. Tracking: [#279](https://github.com/Nimblesite/SharpLsp/issues/279).
+- [ ] Land the changes and pass combined supported-platform CI; local macOS evidence does not certify Windows/Linux.
+
+## TODO Checklist — dependency vulnerability audit ([DIST-CI-AUDIT])
+
+- [x] `make audit` runs cargo audit, dotnet list package --vulnerable and npm audit over every lockfile/solution
+- [x] `tools/audit/dotnet-vulnerable.mjs` fails the .NET leg (dotnet list exits 0 on findings) + tests in `make _test-tooling`
+- [x] `ci-audit.yml` runs `make audit` on every PR (`ci.yml`), weekly on `main`, and as a release gate (`release` needs `audit`)
+- [x] Include `audit` in the final CI job's dependencies; YAML-based regression tests guard both CI and Marketplace/Open VSX release enforcement.
+- [ ] Upgrade `@vscode/test-cli` once a release drops mocha 11 (its nested `diff` 7.0.0 carries low-severity GHSA-73rr-hh4g-fpgx)
+
 ## TODO Checklist — original v0.1.0 work (status snapshot)
 
 ### Sidecar dotnet tool packaging
@@ -123,9 +142,30 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 ### Release workflow (`.github/workflows/release.yml`)
 
-- [x] Job: `build-sharplsp` — matrix build, single binary archives (no sidecars)
-- [x] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs
-- [x] Job: `release` — GitHub release, NuGet publish, Homebrew tap, Scoop bucket
+- [x] Job: `build-vsix` — matrix build; emits the per-platform VSIX AND the
+      standalone server archive ([DIST-ARCHIVE]) from one build
+- [x] Job: `build-rider` — `buildPlugin` on JDK 21, version-stamped zip
+      ([DIST-RIDER-RELEASE])
+- [x] Job: `release` — GitHub release with VSIXs + server archives + Rider zip,
+      `SHA256SUMS` over all of them, asset-count guard
+- [x] Verify the archive on every PR, not just on a tag (`ci-build.yml` runs
+      `tools/packaging/verify-archive.sh linux-x64`)
+- [ ] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs. NOT
+      BUILT. The `dotnet pack` smoke test in `ci-build.yml` proves the projects
+      pack; nothing publishes them to NuGet.
+- [ ] NuGet publish of the two sidecar tool packages. NOT BUILT.
+- [x] Job: `publish-homebrew` — renders `Formula/sharplsp.rb` from the published
+      archives and pushes to `Nimblesite/homebrew-tap` ([DIST-PATH-PUBLISH])
+- [x] Job: `publish-scoop` — renders `bucket/sharplsp.json` and pushes to
+      `Nimblesite/scoop-bucket`
+- [x] Both skipped on prerelease tags; both fail fast on a missing
+      `BREW_SCOOP_PAT`
+- [x] Renderer verified on every PR (`tools/packaging/verify-package-manifests.mjs`
+      in `ci-build.yml`), not only at tag time
+- [ ] Confirm `BREW_SCOOP_PAT` is granted to `Nimblesite/SharpLsp` — the secret
+      exists for Deslop; this repo's access has not been verified
+- [ ] First real tag: check `brew install nimblesite/tap/sharplsp` and
+      `scoop install nimblesite/sharplsp` end to end
 - [ ] Test with a `v*-rc*` tag on a fork
 
 ### CI smoke test
@@ -181,7 +221,17 @@ Two further failure classes were investigated and turned out **not** to be defec
 
 ### CI workflow layout ([DIST-CI-LAYOUT])
 
-- [x] Split `ci.yml` into reusable workflows: `ci-lint`, `ci-rust`, `ci-dotnet`, `ci-vsix`, `ci-vsix-windows`
+- [x] Fail closed on changed-file API failures, partial pagination and empty responses; execute the real YAML classifier in regression tests ([DIST-CI-CLASSIFICATION], #288). Three red cases before the fix; 12 classifier/security guards pass after it, including the PR-only trigger contract.
+- [ ] Verify the classifier fix in a full green PR run before merging; require terminal `CI` through the live main ruleset, with no bypass actors.
+- [x] Split `ci.yml` into reusable workflows, one per phase: `ci-analyse`,
+      `ci-build`, `ci-test-rust`, `ci-test-dotnet`, `ci-test-vsix`,
+      `ci-test-vsix-windows`, `ci-test-editors`, `ci-coverage`
+      ([DIST-CI-LAYOUT])
+- [x] Order those workflows into five strict phases: ANALYSE -> FULL BUILD
+      (both platforms in parallel) -> CACHE -> TEST (every suite exactly
+      once) -> COVERAGE CHECK. The Windows build used to sit in the test
+      phase gated on the Ubuntu build it consumes nothing from, which put
+      18 minutes of serialised building in front of the slowest tests
 - [x] De-duplicate the PATH-purge step into `tools/vsix/purge-path-binaries.sh` (was inline in three jobs)
 - [x] De-duplicate the test-host env scrubbing into the `VSIX_TEST_ENV` Make variable
 - [x] Fix the Rust test job's NuGet cache step (was `actions/setup-node` with `actions/cache` inputs, so it never cached)
@@ -201,12 +251,39 @@ Two further failure classes were investigated and turned out **not** to be defec
 - [x] Add `install-sidecars` target (dotnet tool install from local nupkgs)
 - [x] Keep `install-binaries` as alias for both
 - [x] Verify `test-vsix` still works with new install layout — `make test-vsix` stages binaries at `$(PREFIX)` and runs tests with coverage; all passing
+- [x] `reinstall-vsix` runs the whole local loop in order: uninstall → kill → `clean` → rebuild host + both sidecars + extension → verify payload → package → install ([DIST-VSIX-DEV-INSTALL])
+- [x] `_build-vsix` gates on `_verify-vsix-payload` before packaging, so a half-finished stage can never reach `--install-extension` ([DIST-VSIX-CONTENTS])
+- [x] the dev VSIX is packaged `--target $(HOST_PLATFORM)`, the same shape every released VSIX has ([DIST-VSIX-DEV-INSTALL])
+- [x] `tools/make/reinstall-loop.test.mjs` asserts that ordering and the CLI/`--force`/manifest-id contracts against the real Makefile, wired into `make _test-tooling`
 
 ### Documentation
 
 - [x] Create `docs/specs/DISTRIBUTION-SPEC.md`
 - [x] Create `docs/plans/DISTRIBUTION-PLAN.md`
 - [x] Add Distribution section to `docs/specs/SHARPLSP-SPEC.md`
+
+### SDK pin (global.json) — [DIST-RUNTIME-ACQUIRE]
+
+Fixes the defect where every `dotnet` entry point failed with exit code 155 on a
+machine whose installed .NET 10 SDK sat in a different feature band from the one
+`global.json` pins. Acquisition treated "any SDK >= 10.0" as compatible, so it
+reported success on an SDK the workspace could never use.
+
+- [x] `global-json.ts`: pin discovery, `rollForward` evaluation, installed-SDK enumeration
+- [x] Reject a found SDK that cannot satisfy the workspace pin, so acquisition proceeds
+- [x] Request the **pinned** version from `dotnet.acquireGlobalSDK`, not the `10.0` band
+- [x] Automatically acquire the exact pin through the .NET Install Tool when no installed host satisfies both workspace and sidecar requirements; a mismatched host plus a manual Install button is not success (#297).
+- [x] Surface the pin, its `global.json`, and the installed SDKs instead of a bare exit code 155
+- [x] Wire `configureDotnet()` at activation so builds/tests run the resolved SDK, not `$PATH`'s
+- [x] Bound Install Tool calls so a stalled elevation prompt cannot wedge the extension host
+- [x] Regression suite `sdk-pin.test.ts`, registered in the `workspace` chunk
+- [x] `tools/ci/check-sdk-pin.mjs` fails CI when `global.json` and the workflow `dotnet-version` pins diverge
+- [x] #297: validate the sidecar SDK/runtime independently of the workspace pin for existing, alternate-root and acquired hosts; never accept a .NET 9-only host for net10.0 sidecars.
+- [x] #297: on fresh installation of an older pin, also acquire the .NET 10 SDK when required and verify both capabilities coexist without relaxing `global.json`.
+- [x] #297: real-host tests reproduced exit 150 and the missing automatic SDK install request before the fixes. Cover separate roots, fresh acquisition, existing compatible installs and SDK files without the runtime, launching both staged F# and C# release sidecars. Register in the Linux/Windows `workspace` CI chunk.
+- [x] #297: replace blanket prerelease rejection with the runtime floor comparison after two real-sidecar regression cases failed; keep the below-floor rejection assertions unchanged.
+- [x] #297: propagate the selected host into Shipwright probes as well as the Rust host. The unchanged deployment test reproduced failures with inherited `DOTNET_ROOT` and `DOTNET_ROOT_ARM64` pointing at a .NET 9-only root before the respective production fixes.
+- [ ] #297: verify the new regression suite in green Linux and Windows PR checks before release.
 
 ### External prerequisites (manual, pre-merge)
 

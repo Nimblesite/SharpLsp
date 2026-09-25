@@ -16,8 +16,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { DapRecorder } from './debug-dap-kit';
-import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DapRecorder, type StopRecord } from './debug-dap-kit';
+import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts';
 import {
   MODE,
   writeCSharpStepTarget,
@@ -36,6 +36,7 @@ import {
   pollUntilResult,
   removeDirRecursive,
   requireWorkspaceRoot,
+  sleep,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
@@ -126,6 +127,26 @@ export function armBreakpoints(
   return breakpoints;
 }
 
+/**
+ * Resolve once the Breakpoints view holds `count` entries, or at `SETTLE_MS`.
+ *
+ * VS Code's own run to cursor puts its temporary breakpoint in the view and
+ * removes it when the RENDERER sees the session stop, after the adapter's
+ * `stopped` has already reached this host. A synchronous read races that
+ * removal; the caller's assertion still fails if the entry is never removed.
+ */
+export async function settleBreakpointCount(count: number): Promise<void> {
+  if (vscode.debug.breakpoints.length === count) return;
+  let listener: vscode.Disposable | undefined;
+  const settled = new Promise<void>((resolve) => {
+    listener = vscode.debug.onDidChangeBreakpoints(() => {
+      if (vscode.debug.breakpoints.length === count) resolve();
+    });
+  });
+  await Promise.race([settled, sleep(SETTLE_MS)]);
+  listener?.dispose();
+}
+
 /** Remove every breakpoint in the workbench. Leaking one poisons the next test. */
 export function clearAllBreakpoints(): void {
   vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
@@ -149,12 +170,28 @@ export async function startDebuggee(
   options: LaunchOptions = {},
 ): Promise<vscode.DebugSession> {
   const config = launchConfigFor(debuggee.fixture, options);
-  assert.strictEqual(fs.existsSync(String(config['program'])), true, missingProgram(config));
+  assert.ok(fs.existsSync(String(config['program'])), missingProgram(config));
   const started = await vscode.debug.startDebugging(debuggee.folder, config, {
     noDebug: options.noDebug ?? false,
   });
-  assert.strictEqual(started, true, refusedLaunch(debuggee));
+  assert.ok(started, refusedLaunch(debuggee));
   return waitForSession();
+}
+
+/**
+ * Arm `anchors`, launch, and wait for the first stop: the opening almost every
+ * test in this family shares. The stop is asserted, not assumed.
+ */
+export async function runToFirstStop(
+  debuggee: Debuggee,
+  anchors: string | readonly string[],
+  options: LaunchOptions = {},
+): Promise<{ session: vscode.DebugSession; stop: StopRecord }> {
+  armBreakpoints(debuggee.fixture, ...[anchors].flat());
+  const session = await startDebuggee(debuggee, options);
+  const [stop] = await debuggee.recorder.waitForStops(1);
+  assert.ok(stop, `the debuggee must stop at ${[anchors].flat().join(', ')}`);
+  return { session, stop };
 }
 
 /** The message a missing build produces — a fixture bug, not a product bug. */
@@ -190,12 +227,13 @@ async function waitForSession(): Promise<vscode.DebugSession> {
 export async function stopDebuggee(): Promise<void> {
   await stopAnyDebugSession();
   // Only reached once the terminate event has already fired, so the workbench
-  // clears the active session in milliseconds. A command-scale budget keeps
+  // clears the active session in milliseconds. `SETTLE_MS` is the tier for a
+  // wait the workbench owns rather than a command round trip, and it keeps
   // this pair of waits inside the teardown ceiling above.
   await pollUntilResult(
     async () => vscode.debug.activeDebugSession,
     (session) => session === undefined,
-    COMMAND_MS,
+    SETTLE_MS,
     50,
   );
 }
@@ -206,7 +244,7 @@ async function materialise(scratchDir: string, language: Language): Promise<Debu
   const dir = path.join(scratchDir, language === 'fsharp' ? 'FsStepTarget' : 'StepTarget');
   const fixture = language === 'fsharp' ? writeFSharpStepTarget(dir) : writeCSharpStepTarget(dir);
   await buildProject(fixture);
-  assert.strictEqual(fs.existsSync(fixture.dll), true, `the debuggee must build to ${fixture.dll}`);
+  assert.ok(fs.existsSync(fixture.dll), `the debuggee must build to ${fixture.dll}`);
   return fixture;
 }
 
@@ -280,10 +318,26 @@ export function assertBreakpointsBound(
   anchors: readonly string[],
   why: string,
 ): void {
+  assertBoundAtLines(
+    recorder,
+    anchors.map((anchor) => fixture.source.dapLine(anchor)),
+    why,
+  );
+}
+
+/**
+ * The same contract addressed by 1-based DAP LINE rather than by fixture anchor,
+ * for a source that is not a {@link DebugFixture} — a test project's own file, say.
+ */
+export function assertBoundAtLines(
+  recorder: DapRecorder,
+  lines: readonly number[],
+  why: string,
+): void {
   const responses = recorder.responses('setBreakpoints');
   assert.ok(responses.length > 0, `${why}: the workbench must send \`setBreakpoints\``);
   const bound = lastBoundBreakpoints(responses);
-  assert.strictEqual(bound.length, anchors.length, `${why}: one bound breakpoint per armed line`);
+  assert.strictEqual(bound.length, lines.length, `${why}: one bound breakpoint per armed line`);
 
   // [DEBUG-FEATURES-BREAKPOINTS-VERIFY]: a breakpoint armed before its module is
   // loaded answers `verified: false` and verifies later by a `breakpoint` event.
@@ -300,13 +354,19 @@ export function assertBreakpointsBound(
   );
   assert.deepStrictEqual(
     effective,
-    anchors.map(() => true),
+    lines.map(() => true),
     `${why}: every breakpoint must verify, in the response or by a later ` +
       `\`breakpoint\` event; unverified ones never stop the debuggee`,
   );
+  // Compared as a SET. DAP answers `setBreakpoints` in the order of the
+  // request, and the request is the WORKBENCH's breakpoint list — which it
+  // keeps sorted by line, not in the order a caller happened to arm them. The
+  // claim here is that every armed line came back bound to itself, and nothing
+  // drifted to a neighbouring line.
+  const ascending = (left: number, right: number): number => left - right;
   assert.deepStrictEqual(
-    bound.map((entry) => Number(entry['line'])),
-    anchors.map((anchor) => fixture.source.dapLine(anchor)),
+    bound.map((entry) => Number(entry['line'])).sort(ascending),
+    [...lines].sort(ascending),
     `${why}: a bound breakpoint must stay on the line the user set it on`,
   );
 }
@@ -341,7 +401,7 @@ export async function assertRanToCompletion(
     `${why}: the debuggee must exit ${String(expectedExitCode)}`,
   );
   const terminated = await recorder.waitForEvents('terminated', 1);
-  assert.strictEqual(terminated.length >= 1, true, `${why}: the session must report termination`);
+  assert.ok(terminated.length >= 1, `${why}: the session must report termination`);
 }
 
 /** Every user-visible refusal the extension issued while a case ran. */

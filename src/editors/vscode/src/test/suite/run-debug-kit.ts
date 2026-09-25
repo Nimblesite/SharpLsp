@@ -73,8 +73,8 @@ export function undefinedF5Config(): vscode.DebugConfiguration {
   } as unknown as vscode.DebugConfiguration;
 }
 
-/** The legacy empty-string shape earlier code was written against. */
-export function legacyF5Config(): vscode.DebugConfiguration {
+/** The empty-string shape a bare F5 sends. */
+export function bareF5Config(): vscode.DebugConfiguration {
   return { type: '', request: '', name: '' };
 }
 
@@ -159,7 +159,7 @@ export function assertAdapterAvailable(why: string): string {
         `Searched, in order:\n  ${searched.join('\n  ')}`,
     );
   }
-  assert.strictEqual(fs.existsSync(resolved), true, `${why}: the adapter exists at ${resolved}`);
+  assert.ok(fs.existsSync(resolved), `${why}: the adapter exists at ${resolved}`);
   return resolved;
 }
 
@@ -198,6 +198,8 @@ export class DebugSessionRecorder {
       }),
       vscode.debug.onDidTerminateDebugSession((session) => {
         this.terminatedIds.push(session.id);
+        const live = this.liveSessions.findIndex((known) => known.id === session.id);
+        if (live >= 0) this.liveSessions.splice(live, 1);
       }),
     );
   }

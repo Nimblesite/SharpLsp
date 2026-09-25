@@ -11,14 +11,15 @@
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import * as path from "node:path";
+import { runMain } from "./run-main.mjs";
 
 /** VS Code platform id: "<platform>-<arch>". */
-const PLATFORM = `${process.platform}-${process.arch}`;
+const PLATFORM = process.env.SHARPLSP_VSIX_PLATFORM ?? `${process.platform}-${process.arch}`;
 
 /** Platforms with no upstream netcoredbg prebuilt ([DIST-DEBUGGER-BUNDLE]). */
 const NO_DEBUGGER_PREBUILT = new Set(["win32-arm64", "darwin-x64"]);
 
-const EXE = process.platform === "win32" ? ".exe" : "";
+const EXE = PLATFORM.startsWith("win32-") ? ".exe" : "";
 
 /** Every path that MUST be inside the package, and why it matters. */
 function requiredEntries() {
@@ -125,9 +126,4 @@ function main() {
     );
 }
 
-try {
-    main();
-} catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    process.exit(1);
-}
+runMain(main);

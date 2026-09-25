@@ -24,6 +24,22 @@ function requestedGlobs(): string[] {
     .filter((pattern) => pattern.length > 0);
 }
 
+/** The directory of the suites that need a MULTI-ROOT workspace. */
+const MULTI_ROOT_DIR = 'multiroot';
+
+/**
+ * True when `file` belongs to the editor start running now.
+ *
+ * `.vscode-test.mjs` starts the editor once per workspace SHAPE — the fixture
+ * folder, and a two-folder workspace — and names the shape in the environment.
+ * Each start runs only its own suites, so a single-folder suite never sees a
+ * second folder and a multi-root suite never runs without one.
+ */
+function matchesShape(file: string): boolean {
+  const multiRoot = path.normalize(file).split(path.sep)[0] === MULTI_ROOT_DIR;
+  return (process.env['SHARPLSP_WORKSPACE_SHAPE'] === 'multiroot') === multiRoot;
+}
+
 /**
  * A chunk that selects nothing must fail loudly: a mistyped file list would
  * otherwise report a green run that executed zero assertions.
@@ -35,7 +51,7 @@ function resolveSuiteFiles(testsRoot: string): string[] {
     if (matches.length === 0) {
       throw new Error(`MOCHA_FILES pattern matched no compiled suite: ${pattern}`);
     }
-    for (const match of matches) {
+    for (const match of matches.filter(matchesShape)) {
       selected.add(match);
     }
   }

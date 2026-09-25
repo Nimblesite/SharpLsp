@@ -9,7 +9,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 internal static class TypeHierarchyResolver
 {
     /// <summary>Prepare a type hierarchy item at the given position.</summary>
-    public static async Task<TypeHierarchyItem?> PrepareAsync(
+    public static async Task<HierarchyItem?> PrepareAsync(
         Document document,
         int line,
         int character,
@@ -22,7 +22,7 @@ internal static class TypeHierarchyResolver
     }
 
     /// <summary>Get supertypes (base class + interfaces).</summary>
-    public static async Task<List<TypeHierarchyItem>> GetSupertypesAsync(
+    public static async Task<List<HierarchyItem>> GetSupertypesAsync(
         Document document,
         int line,
         int character,
@@ -36,7 +36,7 @@ internal static class TypeHierarchyResolver
             return [];
         }
 
-        var results = new List<TypeHierarchyItem>();
+        var results = new List<HierarchyItem>();
         if (symbol.BaseType is not null && symbol.BaseType.SpecialType != SpecialType.System_Object)
         {
             var item = ToItem(symbol.BaseType);
@@ -59,7 +59,7 @@ internal static class TypeHierarchyResolver
     }
 
     /// <summary>Get subtypes (derived classes + implementors).</summary>
-    public static async Task<List<TypeHierarchyItem>> GetSubtypesAsync(
+    public static async Task<List<HierarchyItem>> GetSubtypesAsync(
         Document document,
         Solution solution,
         int line,
@@ -74,7 +74,7 @@ internal static class TypeHierarchyResolver
             return [];
         }
 
-        var results = new List<TypeHierarchyItem>();
+        var results = new List<HierarchyItem>();
         var derived = await SymbolFinder
             .FindDerivedClassesAsync(symbol, solution, cancellationToken: ct)
             .ConfigureAwait(false);
@@ -151,27 +151,9 @@ internal static class TypeHierarchyResolver
         return null;
     }
 
-    private static TypeHierarchyItem? ToItem(INamedTypeSymbol symbol)
+    private static HierarchyItem? ToItem(INamedTypeSymbol symbol)
     {
-        var loc = symbol.Locations.FirstOrDefault(l => l.IsInSource);
-        if (loc is null)
-        {
-            return null;
-        }
-
-        var (path, line, character, endLine, endCharacter) = DocumentPosition.Coordinates(
-            loc.GetMappedLineSpan()
-        );
-        return new TypeHierarchyItem
-        {
-            Name = symbol.Name,
-            Kind = MapKind(symbol),
-            FilePath = path,
-            Line = line,
-            Character = character,
-            EndLine = endLine,
-            EndCharacter = endCharacter,
-        };
+        return DocumentPosition.ToHierarchyItem<HierarchyItem>(symbol, MapKind(symbol));
     }
 
     private static string MapKind(INamedTypeSymbol symbol)

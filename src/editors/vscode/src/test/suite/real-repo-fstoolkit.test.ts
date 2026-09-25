@@ -5,179 +5,80 @@
 // the C# suites: symbols, hover, navigation, completion, live edits,
 // diagnostics, plus server memory/CPU bounds.
 import * as assert from 'node:assert/strict';
-import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { hoverText } from './fsharp-helpers';
 import {
   FSTOOLKIT,
-  assertCpuSettles,
   assertSaneRange,
-  assertServerResourceBounds,
-  ensureRepoReady,
-  completionLabel,
-  firstLocation,
-  fixtureSolutionPath,
-  loadSolutionInServer,
   openRepoFile,
   positionOf,
-  sampleServerProcesses,
-  selectionDepth,
   waitForError,
   waitForErrorsCleared,
-  waitForSemanticReady,
 } from './real-repo-helpers';
 import {
-  closeAllEditors,
-  flattenSymbolNames,
-  pollUntilResult,
-  waitForDocumentSymbols,
-  waitForFoldingRanges,
-  waitForHoverResult,
-  waitForSelectionRanges,
-} from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, REAL_REPO_MS, REAL_REPO_WARMUP_MS } from './test-timeouts';
+  type Anchor,
+  assertHoverStorm,
+  assertStructure,
+  assertSurvivesStorm,
+  completeAfterProbe,
+  completionLabels,
+  useRealRepo,
+  assertSymbolSurface,
+  assertDefinitionIn,
+  assertReferencesSpan,
+} from './real-repo-kit';
+import { waitForDocumentSymbols } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const RESULT_FS = 'src/FsToolkit.ErrorHandling/Result.fs';
 const ASYNC_RESULT_FS = 'src/FsToolkit.ErrorHandling/AsyncResult.fs';
+const MAP: Anchor = ['let inline map', 'map'];
 
 suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
-  let repoDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(REAL_REPO_MS);
-    repoDir = ensureRepoReady(FSTOOLKIT);
-    await loadSolutionInServer(path.join(repoDir, FSTOOLKIT.sln));
-    const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
-    await waitForDocumentSymbols(uri, REAL_REPO_WARMUP_MS);
-    await waitForSemanticReady(uri, positionOf(doc, 'let inline map', 'map'), REAL_REPO_WARMUP_MS);
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(ACTIVATION_MS);
-    await closeAllEditors();
-    await loadSolutionInServer(fixtureSolutionPath());
-  });
+  const repoDir = useRealRepo(FSTOOLKIT, RESULT_FS, MAP);
 
   test('document symbols: the Result module maps its combinators', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
-    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
-    const names = flattenSymbolNames(symbols);
-
-    assert.ok(names.includes('Result'), 'Result module must be present');
-    for (const combinator of ['map', 'mapError', 'bind']) {
-      assert.ok(names.includes(combinator), `Result module must expose ${combinator}`);
-    }
-    assert.ok(names.length >= 15, `expected a rich F# symbol tree, got ${names.length.toString()}`);
-
-    const resultModule = symbols
-      .flatMap((symbol) => [symbol, ...symbol.children])
-      .find((symbol) => symbol.name === 'Result');
-    assert.ok(resultModule, 'Result module symbol resolvable');
-    assertSaneRange(doc, resultModule.range, 'Result module range');
-    assert.ok(resultModule.children.length >= 10, 'Result module must have many members');
-    for (const child of resultModule.children.slice(0, 10)) {
-      assert.ok(
-        resultModule.range.contains(child.range),
-        `member ${child.name} must nest inside the Result module`,
-      );
-    }
+    const { doc } = await openRepoFile(repoDir(), RESULT_FS);
+    await assertSymbolSurface(doc, {
+      container: 'Result',
+      members: ['map', 'mapError', 'bind'],
+      minNames: 15,
+      minChildren: 10,
+    });
   });
 
   test('hover storm: F# combinators produce signature-bearing markdown', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
-    const anchors: [string, string][] = [
-      ['let inline map', 'map'],
+    const { doc } = await openRepoFile(repoDir(), RESULT_FS);
+    await assertHoverStorm(doc, [
+      MAP,
       ['let inline mapError', 'mapError'],
       ['module Result =', 'Result'],
-    ];
-    for (const [snippet, focus] of anchors) {
-      const hover = await waitForHoverResult(uri, positionOf(doc, snippet, focus), LSP_RESPONSE_MS);
-      const text = hoverText(hover);
-      assert.ok(text.length > 0, `hover on '${focus}' must not be empty`);
-      assert.ok(
-        text.toLowerCase().includes(focus.toLowerCase()),
-        `hover on '${focus}' must mention it, got: ${text.slice(0, 200)}`,
-      );
-    }
+    ]);
   });
 
   test('navigation: AsyncResult.fs threads back into Result.fs across files', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { doc, uri } = await openRepoFile(repoDir, ASYNC_RESULT_FS);
+    const { doc, uri } = await openRepoFile(repoDir(), ASYNC_RESULT_FS);
     await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     const usage = positionOf(doc, 'Async.map (Result.map mapper) input', 'Result.map');
     const mapFocus = usage.with({ character: usage.character + 'Result.'.length });
-
-    const definitions = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.Location[]>(
-          'vscode.executeDefinitionProvider',
-          uri,
-          mapFocus,
-        )) ?? [],
-      (locations) => locations.length > 0,
-      LSP_RESPONSE_MS,
-      2_000,
-    );
-    const definition = firstLocation(definitions, 'Result.map definition');
-    const defPath = definition.uri.fsPath.replace(/\\/g, '/');
-    assert.ok(defPath.endsWith(RESULT_FS), `definition must land in Result.fs, got ${defPath}`);
-    const defDoc = await vscode.workspace.openTextDocument(definition.uri);
-    assertSaneRange(defDoc, definition.range, 'Result.map definition');
-
-    const references = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.Location[]>(
-          'vscode.executeReferenceProvider',
-          uri,
-          mapFocus,
-        )) ?? [],
-      (locations) => locations.length >= 2,
-      LSP_RESPONSE_MS,
-      2_000,
-    );
-    assert.ok(
-      references.length >= 2,
-      `Result.map must be referenced widely, got ${references.length.toString()}`,
-    );
-    const files = new Set(references.map((ref) => ref.uri.fsPath.replace(/\\/g, '/')));
-    assert.ok(files.size >= 2, 'references must span multiple F# files');
+    await assertDefinitionIn(uri, mapFocus, RESULT_FS, 'map');
+    // Result.map is referenced widely, across multiple F# files.
+    await assertReferencesSpan(uri, mapFocus, 2, 2);
   });
 
   test('live edit + completion: Result module members appear after typing', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);
+    const { doc, editor } = await openRepoFile(repoDir(), RESULT_FS);
     const probe = '\n    let __sharpLspProbe input = Result.';
-    const insertAt = doc.positionAt(doc.getText().length);
-    const applied = await editor.edit((edit) => {
-      edit.insert(insertAt, probe);
-    });
-    assert.ok(applied, 'probe edit must apply');
-
-    try {
-      const cursor = doc.positionAt(doc.getText().indexOf(probe) + probe.length);
-      const completions = await pollUntilResult(
-        async () =>
-          (await vscode.commands.executeCommand<vscode.CompletionList>(
-            'vscode.executeCompletionItemProvider',
-            uri,
-            cursor,
-            '.',
-          )) ?? new vscode.CompletionList(),
-        (list) => list.items.some((item) => completionLabel(item) === 'mapError'),
-        LSP_RESPONSE_MS,
-        2_000,
-      );
-      const labels = new Set(completions.items.map(completionLabel));
-      for (const expected of ['map', 'mapError', 'bind']) {
-        assert.ok(labels.has(expected), `completion after 'Result.' must offer ${expected}`);
-      }
-      assert.ok(completions.items.length >= 5, 'the module must offer a real member list');
-    } finally {
-      await vscode.commands.executeCommand('undo');
+    const end = doc.positionAt(doc.getText().length);
+    const completions = await completeAfterProbe(editor, end, probe, 'mapError');
+    const labels = completionLabels(completions);
+    for (const expected of ['map', 'mapError', 'bind']) {
+      assert.ok(labels.has(expected), `completion after 'Result.' must offer ${expected}`);
     }
+    assert.ok(completions.items.length >= 5, 'the module must offer a real member list');
     assert.ok(!doc.getText().includes('__sharpLspProbe'), 'undo must restore the pristine file');
   });
 
@@ -192,7 +93,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   // canonical overlay-aware check ([HOVER-FSHARP-OVERLAY]).
   test('diagnostics round-trip: an F# type error surfaces and clears', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);
+    const { doc, uri, editor } = await openRepoFile(repoDir(), RESULT_FS);
     const pristineLength = doc.getText().length;
     const probe = '\n    let __sharpLspBad: int = "not an int"\n';
     const applied = await editor.edit((edit) => {
@@ -225,72 +126,13 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
 
   test('structure storm: folding, selection ranges, workspace symbols for F#', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
-    const folding = await waitForFoldingRanges(uri, LSP_RESPONSE_MS);
-    assert.ok(folding.length >= 5, `Result.fs must fold, got ${folding.length.toString()}`);
-    for (const range of folding.slice(0, 10)) {
-      assert.ok(range.start <= range.end, 'folding range must be ordered');
-      assert.ok(range.end < doc.lineCount, 'folding range must stay in the file');
-    }
-
-    const selections = await waitForSelectionRanges(
-      uri,
-      [positionOf(doc, 'let inline map', 'map')],
-      LSP_RESPONSE_MS,
-    );
-    const depth = selectionDepth(selections[0], 'F# map selection');
-    assert.ok(depth >= 1, `selection range must expand at least once, depth ${depth.toString()}`);
-
-    const workspaceSymbols = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
-          'vscode.executeWorkspaceSymbolProvider',
-          'Result',
-        )) ?? [],
-      (symbols) => symbols.length > 0,
-      LSP_RESPONSE_MS,
-      2_000,
-    );
-    assert.ok(
-      workspaceSymbols.some((symbol) => symbol.name.includes('Result')),
-      'workspace symbol search must find Result symbols in F#',
-    );
+    const { doc } = await openRepoFile(repoDir(), RESULT_FS);
+    await assertStructure(doc, { minFolds: 5, anchor: MAP, minDepth: 1, query: 'Result' });
   });
 
   test('stress: rapid-fire mixed requests stay within memory/CPU bounds', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
-    const hoverAt = positionOf(doc, 'let inline map', 'map');
-
-    for (let round = 0; round < 10; round += 1) {
-      const [symbols, hover, folding] = await Promise.all([
-        vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-          'vscode.executeDocumentSymbolProvider',
-          uri,
-        ),
-        vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', uri, hoverAt),
-        vscode.commands.executeCommand<vscode.FoldingRange[]>(
-          'vscode.executeFoldingRangeProvider',
-          uri,
-        ),
-      ]);
-      assert.ok(
-        (symbols ?? []).length > 0,
-        `round ${round.toString()}: F# symbols must keep answering`,
-      );
-      assert.ok(
-        (hover ?? []).length > 0,
-        `round ${round.toString()}: F# hover must keep answering`,
-      );
-      assert.ok(
-        (folding ?? []).length > 0,
-        `round ${round.toString()}: F# folding must keep answering`,
-      );
-    }
-
-    assertServerResourceBounds(sampleServerProcesses());
-    await assertCpuSettles(5_000, 20);
-    const after = await waitForDocumentSymbols(uri, 15_000);
-    assert.ok(after.length > 0, 'F# server must stay responsive after the storm');
+    const { doc } = await openRepoFile(repoDir(), RESULT_FS);
+    await assertSurvivesStorm(doc, MAP, 15_000);
   });
 });

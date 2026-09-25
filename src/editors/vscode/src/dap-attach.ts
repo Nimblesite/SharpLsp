@@ -1,6 +1,7 @@
 // The router's attach semantics: the bounded retry for netcoredbg's transient
-// Windows invalid-argument failure, what "stop" means for an attached process,
-// and the VSTest host-debug handshake a test debug run attaches through.
+// Windows invalid-argument failure, what "stop" means for an attached process
+// (and for the adapter a restart retires), and the VSTest host-debug handshake
+// a test debug run attaches through.
 //
 // Implements [DEBUG-GAPS] "Attach error `0x80070057` | Retry with exponential
 // backoff" (the same upstream race can reject the first `evaluate` issued as a
@@ -13,7 +14,20 @@
 // first stop the user sees is their own breakpoint).
 import { isRecord, type DapMessage } from './dap-emulate';
 
-const RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
+/**
+ * Backoff for netcoredbg's transient `0x80070057`, PER COMMAND.
+ *
+ * No response reaches VS Code until the ladder is exhausted, so its total is a
+ * hard floor under how long the client can be left waiting. An attach must fit
+ * inside [DEBUG-PERFORMANCE] "Attach to running process | <3s", which is also
+ * the policy DEBUGGING-PLAN 4.3 states (three retries, 500 ms). A watch
+ * expression that answers late is an annoyance; an attach that answers late is
+ * a dead session, so the two no longer share one ladder.
+ */
+const RETRY_DELAYS_MS: Readonly<Record<'attach' | 'evaluate', readonly number[]>> = {
+  attach: [250, 500, 1_000],
+  evaluate: [500, 1_000, 2_000, 4_000],
+};
 
 /**
  * Attach-configuration marker a Test Explorer debug run sets so the router
@@ -58,7 +72,7 @@ class InvalidArgumentRetrier {
   private async run(clientRequest: DapMessage, args: Record<string, unknown>): Promise<void> {
     for (let attempt = 0; !this.host.isClosed(); attempt += 1) {
       const response = await this.host.request(this.command, args);
-      const wait = RETRY_DELAYS_MS[attempt];
+      const wait = RETRY_DELAYS_MS[this.command][attempt];
       if (!isTransientInvalidArgument(response) || wait === undefined) {
         this.deliver(clientRequest, response);
         return;
@@ -80,6 +94,8 @@ class InvalidArgumentRetrier {
 export class AttachRetrier extends InvalidArgumentRetrier {
   /** True once this session attached rather than launched. */
   private attachMode = false;
+  /** The Test Explorer owns this host, unlike a user-selected attach target. */
+  private testHost = false;
   /** One-shot: the next non-user stop is the test host's `Debugger.Break()`. */
   private pendingTestHostBreak = false;
 
@@ -89,7 +105,8 @@ export class AttachRetrier extends InvalidArgumentRetrier {
 
   public override start(clientRequest: DapMessage, args: Record<string, unknown>): void {
     this.attachMode = true;
-    this.pendingTestHostBreak = args[TEST_HOST_ATTACH_FLAG] === true;
+    this.testHost = args[TEST_HOST_ATTACH_FLAG] === true;
+    this.pendingTestHostBreak = this.testHost;
     super.start(clientRequest, args);
   }
 
@@ -99,15 +116,35 @@ export class AttachRetrier extends InvalidArgumentRetrier {
    * VS Code's stop gesture sends `terminateDebuggee: true` whenever the
    * adapter advertises `supportTerminateDebuggee`, and netcoredbg then KILLS
    * the debuggee — data loss on any long-running service the user merely
-   * attached to. An ATTACH session therefore always disconnects with
-   * `terminateDebuggee: false`; a LAUNCH session's disconnect passes through
-   * untouched, so stopping a launched debuggee still terminates it.
-   * Spec: [DEBUG-FEATURES-LAUNCH] attach rows.
+   * attached to. A user-selected ATTACH target therefore disconnects with
+   * `terminateDebuggee: false`. A test host belongs to the Test Explorer's
+   * run and must terminate on Stop, allowing its runner and terminal to end.
+   * Launch disconnects pass through untouched.
+   * Spec: [DEBUG-FEATURES-LAUNCH], [DEBUG-FEATURES-TESTS].
    */
   public rewriteDisconnect(message: DapMessage): DapMessage {
     if (!this.attachMode) return message;
     const args = isRecord(message.arguments) ? message.arguments : {};
-    return { ...message, arguments: { ...args, terminateDebuggee: false } };
+    return { ...message, arguments: { ...args, terminateDebuggee: this.testHost } };
+  }
+
+  /**
+   * The `disconnect` that retires this session's adapter before a respawn.
+   *
+   * A Restart replaces netcoredbg, and ending netcoredbg with a signal leaves
+   * the debuggee it owns behind: a program paused at a breakpoint stayed
+   * suspended, reparented to init, for good. Asked through DAP instead, the
+   * adapter ends the debuggee the way the user's own Stop would - a launched
+   * program is terminated, an attached one only detached - and then exits.
+   * Spec: [DEBUG-FEATURES-LAUNCH] restart row.
+   */
+  public farewell(seq: number): DapMessage {
+    return this.rewriteDisconnect({
+      seq,
+      type: 'request',
+      command: 'disconnect',
+      arguments: { restart: true, terminateDebuggee: true },
+    });
   }
 
   /**

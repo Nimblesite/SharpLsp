@@ -7,10 +7,14 @@
 // workbench does: the refresh/resolve handlers, the run profiles' handlers, and
 // the shared `state.solutionPath` signal behind `loadSolution`.
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import type { SharpLspTestController } from '../../testing.js';
-import { EXTENSION_ID, sleep } from './test-helpers';
+import { parseAnnouncedAssemblies } from '../../test-discovery.js';
+import { assertContainsAll, comparablePath, EXTENSION_ID, sleep } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** Longer than the controller's 1 s reactive-discovery debounce. */
@@ -36,6 +40,35 @@ export async function activateTestExplorer(): Promise<SharpLspExtensionApi> {
   return api;
 }
 
+/** Activate the Test Explorer and make the suite's scratch root under the OS temp dir. */
+export async function activateWithScratch(
+  prefix: string,
+): Promise<{ api: SharpLspExtensionApi; root: string }> {
+  const api = await activateTestExplorer();
+  return { api, root: fs.mkdtempSync(path.join(os.tmpdir(), prefix)) };
+}
+
+/**
+ * The TOP-LEVEL items of a controller collection, in tree order.
+ *
+ * `TestItemCollection` only exposes `forEach`, so every suite asserting what the
+ * Testing view shows at its root has to materialise the level first.
+ */
+export function rootsOf(items: vscode.TestItemCollection): vscode.TestItem[] {
+  const roots: vscode.TestItem[] = [];
+  items.forEach((item) => roots.push(item));
+  return roots;
+}
+
+/**
+ * The text an error row renders, whether it carries a `MarkdownString` or a
+ * plain one — and the word `undefined` when it carries no error at all, so an
+ * assertion on a row that should have failed reads as a miss, not as a throw.
+ */
+export function errorTextOf(item: vscode.TestItem | undefined): string {
+  return item?.error instanceof vscode.MarkdownString ? item.error.value : String(item?.error);
+}
+
 /** Recursively collect every TestItem id in a controller collection. */
 export function collectItemIds(items: vscode.TestItemCollection): string[] {
   const ids: string[] = [];
@@ -44,6 +77,66 @@ export function collectItemIds(items: vscode.TestItemCollection): string[] {
     ids.push(...collectItemIds(item.children));
   });
   return ids;
+}
+
+/**
+ * Recursively collect only the LEAF ids — the tests — skipping the Assembly →
+ * Namespace → Class group nodes above them. Set-equality assertions about
+ * "which tests are in the tree" want this; `collectItemIds` counts groups too.
+ */
+export function collectLeafIds(items: vscode.TestItemCollection): string[] {
+  const ids: string[] = [];
+  items.forEach((item) => {
+    if (item.children.size === 0) ids.push(item.id);
+    else ids.push(...collectLeafIds(item.children));
+  });
+  return ids;
+}
+
+/** The controller's leaves are EXACTLY `expected`, as a set: nothing missing, nothing extra. */
+export function assertLeavesAre(
+  controller: SharpLspTestController,
+  expected: readonly string[],
+  why: string,
+): void {
+  const ordinal = (ids: readonly string[]): string[] =>
+    [...ids].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  assert.deepStrictEqual(ordinal(collectLeafIds(controller.items)), ordinal(expected), why);
+}
+
+/**
+ * A test leaf reveals the SOURCE FILE that declares it, inside the discovery
+ * target — never a directory, which Go to Test cannot open. [TEST-GOTO-SOURCE]
+ */
+export function assertDeclaredInside(
+  uriPath: string | undefined,
+  anchor: string,
+  id: string,
+): void {
+  const file = uriPath ?? '';
+  assert.ok(
+    comparablePath(file).startsWith(comparablePath(anchor) + path.sep),
+    `${id} must be anchored inside the discovery target's directory, not at ${file}`,
+  );
+  assert.ok(
+    fs.existsSync(file) && fs.statSync(file).isFile(),
+    `${id} must point at the source file that declares it, never a directory: ${file}`,
+  );
+  assert.ok(['.cs', '.fs'].includes(path.extname(file)), `${id} is declared in C# or F#: ${file}`);
+}
+
+/**
+ * A plain (untagged) discovered test row: the FQN as description, the last
+ * dotted segment as label, a leaf, carrying a uri declared inside `anchor`.
+ */
+export function assertPlainLeaf(snapshot: TestItemSnapshot, anchor: string): void {
+  const { id, label } = snapshot;
+  assert.strictEqual(snapshot.description, id, `the description is the whole FQN: ${id}`);
+  assert.strictEqual(label, id.split('.').at(-1), `the label is the last dotted segment of ${id}`);
+  assert.ok(label.length > 0 && id.endsWith(label), `${id} must end with a non-empty label`);
+  assert.strictEqual(snapshot.childCount, 0, `a discovered TEST is a leaf: ${id}`);
+  assert.deepStrictEqual(snapshot.tags, [], `a plain test carries no framework tag: ${id}`);
+  assertDeclaredInside(snapshot.uriPath, anchor, id);
 }
 
 /** Recursively snapshot every TestItem, for shape assertions. */
@@ -80,10 +173,30 @@ export function findItem(
   return found;
 }
 
+/** Every property one leaf item exposes, asserted against its own FQN. */
+export function assertLeafItem(items: vscode.TestItemCollection, id: string): vscode.TestItem {
+  const item = findItem(items, id);
+  assert.ok(item, `findItem must resolve ${id}`);
+  assert.strictEqual(item.id, id, `the id is the fully-qualified name, verbatim: ${id}`);
+  assert.strictEqual(
+    item.label,
+    id.split('.').at(-1),
+    `the label is the last dotted segment of ${id}`,
+  );
+  assert.strictEqual(item.description, id, `the description is the whole FQN for ${id}`);
+  assert.ok(!item.canResolveChildren, `a leaf test resolves no children: ${id}`);
+  assert.strictEqual(item.children.size, 0, `${id} must have no children`);
+  assert.strictEqual(item.error, undefined, `${id} must not carry a discovery error`);
+  assert.strictEqual(item.tags.length, 0, `${id} carries no framework tag`);
+  return item;
+}
+
 /**
- * Poll the tree until `predicate` holds, then return the ids. Returns the last
- * read on timeout so the caller's assertions — not an opaque timeout — report
- * what was actually discovered.
+ * Poll the tree until `predicate` holds over the LEAF ids — the tests — then
+ * return them. Group nodes never appear, so set-equality against a fixture's
+ * expected names is what every caller gets. Returns the last read on timeout
+ * so the caller's assertions — not an opaque timeout — report what was
+ * actually discovered.
  */
 export async function pollForIds(
   controller: SharpLspTestController,
@@ -92,10 +205,10 @@ export async function pollForIds(
   intervalMs = 500,
 ): Promise<string[]> {
   const deadline = Date.now() + timeoutMs;
-  let ids = collectItemIds(controller.items);
+  let ids = collectLeafIds(controller.items);
   while (!predicate(ids) && Date.now() < deadline) {
     await sleep(intervalMs);
-    ids = collectItemIds(controller.items);
+    ids = collectLeafIds(controller.items);
   }
   return ids;
 }
@@ -145,6 +258,33 @@ export async function drainDiscovery(
   await controller.whenIdle();
 }
 
+/** Unload every solution and empty the tree, then let re-discovery settle. */
+export async function clearTestTree(api: SharpLspExtensionApi): Promise<void> {
+  await drainDiscovery(() => {
+    api.explorerProvider.clear();
+    api.testController.items.replace([]);
+  }, api.testController);
+}
+
+/**
+ * Tear one fixture solution down: unload it, empty the tree, let reactive
+ * re-discovery settle, and only THEN delete the fixture from disk.
+ *
+ * The order is the whole point. Discovery is debounced, not cancelled, so a
+ * teardown that deletes first leaves a `dotnet test` pointed at a removed
+ * directory, where it hangs forever and poisons every later run in the same
+ * extension host. Every Test Explorer suite needs exactly this, so it lives
+ * here rather than being written out once per suite.
+ */
+export async function teardownFixtureSolution(
+  api: SharpLspExtensionApi,
+  root: string,
+  removeDir: (dir: string) => void,
+): Promise<void> {
+  await clearTestTree(api);
+  removeDir(root);
+}
+
 /** Load a solution and force one discovery sweep, then wait for `expected`. */
 export async function discoverSolution(
   api: SharpLspExtensionApi,
@@ -165,6 +305,19 @@ export function profileOfKind(
   const profile = controller.profiles.find((candidate) => candidate.kind === kind);
   assert.ok(profile, `the controller must register a ${String(kind)} run profile`);
   return profile;
+}
+
+/** The Run, Debug and Coverage profiles, each asserted registered. */
+export function profilesOf(controller: SharpLspTestController): {
+  runProfile: vscode.TestRunProfile;
+  debugProfile: vscode.TestRunProfile;
+  coverageProfile: vscode.TestRunProfile;
+} {
+  return {
+    runProfile: profileOfKind(controller, vscode.TestRunProfileKind.Run),
+    debugProfile: profileOfKind(controller, vscode.TestRunProfileKind.Debug),
+    coverageProfile: profileOfKind(controller, vscode.TestRunProfileKind.Coverage),
+  };
 }
 
 /**
@@ -211,6 +364,24 @@ export async function runViaProfile(
 }
 
 /**
+ * Invoke the run handler with a token that is ALREADY cancelled.
+ *
+ * The workbench really does hand a handler a cancelled token — the user presses
+ * ⏹ between the run being queued and the handler starting — and the contract is
+ * the same as for any other cancellation: resolve, never reject, and do not
+ * spawn work whose results would have to be thrown away.
+ */
+export async function runAlreadyCancelled(
+  controller: SharpLspTestController,
+  kind: vscode.TestRunProfileKind,
+  items: readonly vscode.TestItem[],
+): Promise<void> {
+  await runWithToken(controller, kind, items, (source) => {
+    source.cancel();
+  });
+}
+
+/**
  * Press ▶ for `items`, then press ⏹ the moment `trigger` settles.
  *
  * A wall-clock delay cannot express "stop once the run is demonstrably under
@@ -247,4 +418,13 @@ export async function nextResultsChange(
       resolve(true);
     });
   });
+}
+
+/** The two assemblies a two-project `dotnet test` listing announces, once each. */
+export function announcedPair(listing: string): string[] {
+  assertContainsAll(listing, ['Test run for ', '(.NETCoreApp,Version=v10.0)'], 'the captured');
+  const announced = parseAnnouncedAssemblies(listing);
+  assert.strictEqual(announced.length, 2, `one banner per project: ${announced.join(', ')}`);
+  assert.strictEqual(new Set(announced).size, 2, 'a repeated banner is never double-counted');
+  return announced;
 }

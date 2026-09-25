@@ -17,7 +17,6 @@
 // Covers [TEST-DISCOVERY-FQN] and [TEST-FILTER-ESCAPE].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -37,17 +36,25 @@ import {
 import { createSolution, projectXml, warmDiscovery, writeProject } from './dotnet-project-kit';
 import { FRAMEWORK_FIXTURES, type FrameworkFixture } from './test-explorer-fixtures';
 import {
-  activateTestExplorer,
-  collectItemIds,
+  assertLeafItem,
+  collectLeafIds,
   discoverSolution,
-  drainDiscovery,
   findItem,
   nextResultsChange,
   snapshotItems,
   type TestItemSnapshot,
+  activateWithScratch,
+  teardownFixtureSolution,
+  assertPlainLeaf,
 } from './test-explorer-kit';
-import { comparablePath, removeDirRecursive } from './test-helpers';
+import {
+  comparablePath,
+  removeDirRecursive,
+  assertContainsAll,
+  assertContainsNone,
+} from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { sorted } from './test-explorer-outcome-assertions';
 
 /** The idiomatic F# backtick fact whose xUnit FQN literally contains spaces. */
 const FS_SPACED_FACT = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
@@ -108,11 +115,6 @@ function namespaceOf(fixture: FrameworkFixture): string {
   return fixture.passing.split('.').slice(0, 3).join('.');
 }
 
-/** Ordinal sort with an explicit comparator, for set-equality assertions. */
-function sorted(names: readonly string[]): string[] {
-  return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-}
-
 /** Project XML for a fixture: F# must declare its compile order, C# must not. */
 function xmlFor(fixture: FrameworkFixture): string {
   return fixture.language === 'fsharp'
@@ -145,15 +147,10 @@ function fixtureByKey(key: string): FrameworkFixture {
 function assertNoChatter(ids: readonly string[]): void {
   for (const id of ids) {
     assert.strictEqual(id.trim(), id, `a tree id never keeps the listing's indentation: '${id}'`);
-    assert.strictEqual(
-      id.length > 0,
-      true,
-      'an empty id would render as a blank row in the Testing view',
-    );
+    assert.ok(id.length > 0, 'an empty id would render as a blank row in the Testing view');
     for (const noise of CHATTER) {
-      assert.strictEqual(
-        id.includes(noise),
-        false,
+      assert.ok(
+        !id.includes(noise),
         `VSTest chatter '${noise}' must never become a test item: '${id}'`,
       );
     }
@@ -164,25 +161,10 @@ function assertNoChatter(ids: readonly string[]): void {
 function assertFixtureInTree(fixture: FrameworkFixture, ids: readonly string[]): void {
   const expected = fqnsOf(fixture);
   const mine = ids.filter((id) => id.startsWith(namespaceOf(fixture)));
-  assert.strictEqual(
-    ids.includes(fixture.passing),
-    true,
-    `${fixture.key}: the passing test must be discovered — ${fixture.passing}`,
-  );
-  assert.strictEqual(
-    ids.includes(fixture.failing),
-    true,
-    `${fixture.key}: a FAILING test must still be discovered — discovery is not a run`,
-  );
-  assert.strictEqual(
-    ids.includes(fixture.skipped),
-    true,
-    `${fixture.key}: a SKIPPED test must still appear in the tree, not be hidden`,
-  );
-  assert.strictEqual(
-    ids.includes(fixture.parameterized),
-    true,
-    `${fixture.key}: the data-driven test appears under its single FQN — ${fixture.parameterized}`,
+  assertContainsAll(
+    ids,
+    [fixture.passing, fixture.failing, fixture.skipped, fixture.parameterized],
+    'ids',
   );
   assert.deepStrictEqual(
     sorted(mine),
@@ -199,25 +181,19 @@ function assertFixtureInTree(fixture: FrameworkFixture, ids: readonly string[]):
     expected.length,
     `${fixture.key} contributes exactly ${expected.length} tests`,
   );
-  assert.strictEqual(
+  assert.ok(
     mine.length >= 4,
-    true,
     `${fixture.key} must contribute at least a passing, failing, skipped and data-driven test`,
   );
 }
 
 /** One `Test run for <dll>` banner, asserted to name a real built assembly. */
 function assertAnnouncedAssembly(assembly: string): void {
-  assert.strictEqual(path.isAbsolute(assembly), true, `${assembly} must be an absolute path`);
-  assert.strictEqual(
-    fs.existsSync(assembly),
-    true,
-    `${assembly} must exist on disk — the project really built`,
-  );
+  assert.ok(path.isAbsolute(assembly), `${assembly} must be an absolute path`);
+  assert.ok(fs.existsSync(assembly), `${assembly} must exist on disk — the project really built`);
   assert.strictEqual(path.extname(assembly), '.dll', `${assembly} must name a managed assembly`);
-  assert.strictEqual(
-    assembly.includes('(.NETCoreApp'),
-    false,
+  assert.ok(
+    !assembly.includes('(.NETCoreApp'),
     `the framework suffix must be stripped from ${assembly}`,
   );
   assert.strictEqual(assembly.trim(), assembly, `${assembly} must not carry banner padding`);
@@ -230,21 +206,8 @@ function assertInvisibleInListing(
   ids: readonly string[],
 ): void {
   for (const fqn of fqnsOf(fixture)) {
-    assert.strictEqual(
-      displayNames.includes(fqn),
-      false,
-      `${fixture.key}: ${fqn} is INVISIBLE in the display listing — that is issue #180`,
-    );
-    assert.strictEqual(
-      displayNames.includes(fqn.split('.').at(-1) ?? ''),
-      false,
-      `${fixture.key}: the BARE member name is not a usable id either`,
-    );
-    assert.strictEqual(
-      ids.includes(fqn),
-      true,
-      `${fixture.key}: the FQN pass must find ${fqn} anyway`,
-    );
+    assertContainsNone(displayNames, [fqn, fqn.split('.').at(-1) ?? ''], 'displayNames');
+    assert.ok(ids.includes(fqn), `${fixture.key}: the FQN pass must find ${fqn} anyway`);
     assert.strictEqual(
       ids.filter((id) => id === fqn).length,
       1,
@@ -255,30 +218,15 @@ function assertInvisibleInListing(
 
 /** xUnit is the one framework whose DisplayName equals its FQN — hence the bug's long life. */
 function assertXunitVisible(fixture: FrameworkFixture, displayNames: readonly string[]): void {
-  assert.strictEqual(
-    displayNames.includes(fixture.passing),
-    true,
-    `${fixture.key}: xUnit's DisplayName equals its FQN, so ${fixture.passing} appears`,
+  assertContainsAll(
+    displayNames,
+    [fixture.passing, fixture.failing, fixture.skipped],
+    'displayNames',
   );
-  assert.strictEqual(
-    displayNames.includes(fixture.failing),
-    true,
-    `${fixture.key}: the failing xUnit fact appears in the display listing too`,
-  );
-  assert.strictEqual(
-    displayNames.includes(fixture.skipped),
-    true,
-    `${fixture.key}: a skipped xUnit fact is still enumerated`,
-  );
-  assert.strictEqual(
-    displayNames.includes(fixture.parameterized),
-    false,
-    `${fixture.key}: a theory's display name carries ROW ARGUMENTS, so the bare ${fixture.parameterized} is absent`,
-  );
-  assert.strictEqual(
-    displayNames.includes(fixture.mixedParameterized ?? ''),
-    false,
-    `${fixture.key}: the mixed theory is likewise absent under its bare FQN`,
+  assertContainsNone(
+    displayNames,
+    [fixture.parameterized, fixture.mixedParameterized ?? ''],
+    'displayNames',
   );
   assert.strictEqual(
     displayNames.filter((name) => name === fixture.passing).length,
@@ -289,47 +237,14 @@ function assertXunitVisible(fixture: FrameworkFixture, displayNames: readonly st
 
 /** Every property a discovered item hands the Testing view. */
 function assertItemShape(snapshot: TestItemSnapshot, anchor: string): void {
-  assert.strictEqual(
-    snapshot.description,
-    snapshot.id,
-    'the description must carry the whole FQN so same-named methods stay distinct',
-  );
-  assert.strictEqual(
-    snapshot.label,
-    snapshot.id.split('.').at(-1),
-    `the label must be the last dotted segment of ${snapshot.id}`,
-  );
-  assert.strictEqual(snapshot.label.length > 0, true, `${snapshot.id} must have a non-empty label`);
-  assert.strictEqual(
-    snapshot.id.endsWith(snapshot.label),
-    true,
-    `${snapshot.id} must end with the label the tree renders`,
-  );
-  assert.strictEqual(snapshot.childCount, 0, `discovery produces a flat tree: ${snapshot.id}`);
-  assert.deepStrictEqual(
-    snapshot.tags,
-    [],
-    `plain xUnit/NUnit/MSTest tests carry no framework tag: ${snapshot.id}`,
-  );
-  assert.strictEqual(
-    isExpectoTest(snapshot.id),
-    false,
+  assertPlainLeaf(snapshot, anchor);
+  assert.ok(
+    !isExpectoTest(snapshot.id),
     `${snapshot.id} is not an Expecto name, which is WHY it is untagged`,
   );
-  assert.strictEqual(
-    isFsCheckTest(snapshot.id),
-    false,
+  assert.ok(
+    !isFsCheckTest(snapshot.id),
     `${snapshot.id} is not an FsCheck name, which is WHY it is untagged`,
-  );
-  assert.strictEqual(
-    typeof snapshot.uriPath,
-    'string',
-    `${snapshot.id} must carry a uri for the editor to open`,
-  );
-  assert.strictEqual(
-    comparablePath(snapshot.uriPath ?? ''),
-    comparablePath(anchor),
-    `${snapshot.id} must be anchored at the discovery target's directory`,
   );
 }
 
@@ -345,19 +260,16 @@ function assertProjectOnDisk(fixture: FrameworkFixture, dir: string, root: strin
     fixture.projectName,
     `${fixture.key}: the project directory is named after the project`,
   );
-  assert.strictEqual(
+  assert.ok(
     comparablePath(dir).startsWith(comparablePath(root) + path.sep),
-    true,
     `${fixture.key}: its project must live under the solution root ${root}`,
   );
-  assert.strictEqual(
+  assert.ok(
     fs.existsSync(path.join(dir, fixture.projectFileName)),
-    true,
     `${fixture.key}: ${fixture.projectFileName} must be on disk`,
   );
-  assert.strictEqual(
+  assert.ok(
     fs.existsSync(path.join(dir, fixture.sourceFileName)),
-    true,
     `${fixture.key}: ${fixture.sourceFileName} must be on disk`,
   );
   assert.strictEqual(
@@ -367,24 +279,6 @@ function assertProjectOnDisk(fixture: FrameworkFixture, dir: string, root: strin
   );
 }
 
-/** Every property one leaf item exposes, asserted against its own FQN. */
-function assertLeafItem(items: vscode.TestItemCollection, id: string): vscode.TestItem {
-  const item = findItem(items, id);
-  assert.ok(item, `findItem must resolve ${id}`);
-  assert.strictEqual(item.id, id, `the id is the fully-qualified name, verbatim: ${id}`);
-  assert.strictEqual(
-    item.label,
-    id.split('.').at(-1),
-    `the label is the last dotted segment of ${id}`,
-  );
-  assert.strictEqual(item.description, id, `the description is the whole FQN for ${id}`);
-  assert.strictEqual(item.canResolveChildren, false, `a leaf test resolves no children: ${id}`);
-  assert.strictEqual(item.children.size, 0, `${id} must have no children`);
-  assert.strictEqual(item.error, undefined, `${id} must not carry a discovery error`);
-  assert.strictEqual(item.tags.length, 0, `${id} carries no framework tag`);
-  return item;
-}
-
 /** One awkward FQN, from the listing to the rendered row to the filter value. */
 function assertShapeSurvives(
   items: vscode.TestItemCollection,
@@ -392,7 +286,7 @@ function assertShapeSurvives(
   shape: readonly [string, string, string],
 ): void {
   const [fqn, label, why] = shape;
-  assert.strictEqual(ids.includes(fqn), true, `${why}: ${fqn} must survive discovery verbatim`);
+  assert.ok(ids.includes(fqn), `${why}: ${fqn} must survive discovery verbatim`);
   assert.strictEqual(
     ids.filter((id) => id === fqn).length,
     1,
@@ -403,15 +297,10 @@ function assertShapeSurvives(
     label,
     `${why}: ${fqn} must render as '${label}'`,
   );
-  assert.strictEqual(
-    fqn.includes('`'),
-    false,
-    `${why}: F# backticks are source syntax, never part of the FQN`,
-  );
+  assert.ok(!fqn.includes('`'), `${why}: F# backticks are source syntax, never part of the FQN`);
   assert.strictEqual(fqn.trim(), fqn, `${why}: ${fqn} must not carry listing padding`);
-  assert.strictEqual(
+  assert.ok(
     escapeFilterValue(fqn).length >= fqn.length,
-    true,
     `${why}: escaping ${fqn} may only ever lengthen it`,
   );
 }
@@ -424,7 +313,7 @@ function assertGreen(result: CachedTestResult, fqn: string, key: string): void {
     'passed',
     `${key}: ${fqn} must run green — got '${result.outcome}': ${detail}`,
   );
-  assert.strictEqual(result.passed, true, `${key}: a pass must set passed=true, ${fqn}`);
+  assert.ok(result.passed, `${key}: a pass must set passed=true, ${fqn}`);
   assert.strictEqual(
     result.message,
     undefined,
@@ -435,11 +324,7 @@ function assertGreen(result: CachedTestResult, fqn: string, key: string): void {
     'number',
     `${key}: the TRX duration must reach the cache for ${fqn}`,
   );
-  assert.strictEqual(
-    (result.duration ?? -1) >= 0,
-    true,
-    `${key}: ${fqn} duration must not be negative`,
-  );
+  assert.ok((result.duration ?? -1) >= 0, `${key}: ${fqn} duration must not be negative`);
   assert.deepStrictEqual(
     Object.keys(result),
     RESULT_KEYS,
@@ -461,7 +346,7 @@ function assertNotRun(result: CachedTestResult, fqn: string): void {
     'notRun',
     'a filter that matches nothing is notRun, not failed',
   );
-  assert.strictEqual(result.passed, false, 'nothing ran, so nothing passed');
+  assert.ok(!result.passed, 'nothing ran, so nothing passed');
   assert.notStrictEqual(result.outcome, 'passed', 'a missing test must never read as green');
   assert.notStrictEqual(
     result.outcome,
@@ -478,11 +363,7 @@ function assertNotRun(result: CachedTestResult, fqn: string): void {
     'number',
     'the wall-clock duration of the invocation is still reported',
   );
-  assert.strictEqual(
-    (result.duration ?? -1) >= 0,
-    true,
-    'a run that matched nothing still took real time',
-  );
+  assert.ok((result.duration ?? -1) >= 0, 'a run that matched nothing still took real time');
   assert.deepStrictEqual(
     Object.keys(result),
     RESULT_KEYS,
@@ -506,7 +387,7 @@ async function runGreen(
   const before = controller.cachedResults.size;
   const result = await controller.runSingle(fqn, cwd);
   assertGreen(result, fqn, fixture.key);
-  assert.strictEqual(await notified, true, `runSingle must fire onResultsChanged for ${fqn}`);
+  assert.ok(await notified, `runSingle must fire onResultsChanged for ${fqn}`);
   assert.strictEqual(
     controller.getResult(fqn),
     result,
@@ -517,14 +398,12 @@ async function runGreen(
     result,
     `cachedResults must expose the same object getResult returns for ${fqn}`,
   );
-  assert.strictEqual(
+  assert.ok(
     controller.cachedResults.has(fqn),
-    true,
     `${fqn} must be keyed by its FQN in the result cache`,
   );
-  assert.strictEqual(
+  assert.ok(
     controller.cachedResults.size >= before,
-    true,
     `${fqn}: caching a result must never shrink the cache`,
   );
   assert.strictEqual(
@@ -541,24 +420,20 @@ function assertGhostAbsent(
   ids: readonly string[],
   ghost: string,
 ): void {
-  assert.strictEqual(
-    ids.includes(ghost),
-    false,
-    `the fixture must not accidentally define ${ghost}`,
-  );
-  assert.strictEqual(ALL_EXPECTED.includes(ghost), false, `no fixture declares ${ghost}`);
+  assert.ok(!ids.includes(ghost), `the fixture must not accidentally define ${ghost}`);
+  assert.ok(!ALL_EXPECTED.includes(ghost), `no fixture declares ${ghost}`);
   assert.strictEqual(
     findItem(items, ghost),
     undefined,
     'a name that does not exist must never become a tree item',
   );
   assert.strictEqual(
-    collectItemIds(items).length,
+    collectLeafIds(items).length,
     27,
     'a lookup that matched nothing must not disturb the discovered tree',
   );
   assert.deepStrictEqual(
-    sorted(collectItemIds(items)),
+    sorted(collectLeafIds(items)),
     sorted(ALL_EXPECTED),
     'and the tree still holds exactly the fixtures’ names',
   );
@@ -572,24 +447,15 @@ function assertEscaped(fqn: string, expected: string): void {
     `FullyQualifiedName=${expected}`,
     'the clause escapes the VALUE but never the FullyQualifiedName= key',
   );
-  assert.strictEqual(
-    /[^\\]\(/.test(filterClause(fqn)),
-    false,
-    `no bare '(' may reach VSTest for ${fqn}`,
-  );
-  assert.strictEqual(
-    /[^\\]\)/.test(filterClause(fqn)),
-    false,
-    `no bare ')' may reach VSTest for ${fqn}`,
-  );
+  assert.ok(!/[^\\]\(/.test(filterClause(fqn)), `no bare '(' may reach VSTest for ${fqn}`);
+  assert.ok(!/[^\\]\)/.test(filterClause(fqn)), `no bare ')' may reach VSTest for ${fqn}`);
   assert.strictEqual(
     expected.replace(/\\\(/g, '(').replace(/\\\)/g, ')'),
     fqn,
     `unescaping ${expected} must round-trip back to the FQN`,
   );
-  assert.strictEqual(
+  assert.ok(
     escapeFilterValue(expected).includes('\\\\'),
-    true,
     'escaping is not idempotent — the backslash is grammar too',
   );
 }
@@ -611,7 +477,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
 
   /** Discover the fixture solution unless the tree already holds every name. */
   async function ensureTree(): Promise<string[]> {
-    const current = collectItemIds(api.testController.items);
+    const current = collectLeafIds(api.testController.items);
     if (ALL_EXPECTED.every((name) => current.includes(name))) return current;
     const ids = await discoverSolution(api, slnPath, ALL_EXPECTED);
     await api.testController.whenIdle();
@@ -620,8 +486,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    api = await activateTestExplorer();
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-frameworks-'));
+    ({ api, root } = await activateWithScratch('sharplsp-frameworks-'));
     projectDirs = writeAllProjects(root);
     slnPath = await createSolution(root, 'Frameworks', [...projectDirs.values()]);
     // Warm the FULL discovery path once — six restores, six builds, three VSTest
@@ -638,19 +503,14 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
 
   suiteTeardown(async function () {
     this.timeout(DOTNET_CLI_MS);
-    // Drain reactive re-discovery BEFORE deleting the fixture.
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-      api.testController.items.replace([]);
-    }, api.testController);
-    removeDirRecursive(root);
+    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('discovery finds every test in all six framework × language fixtures', async function () {
     this.timeout(DOTNET_CLI_MS);
     api.testController.items.replace([]);
     assert.deepStrictEqual(
-      collectItemIds(api.testController.items),
+      collectLeafIds(api.testController.items),
       [],
       'the tree starts empty, so everything below was discovered HERE',
     );
@@ -741,19 +601,9 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       assertInvisibleInListing(fixture, displayNames, ids);
     for (const fixture of FRAMEWORK_FIXTURES.filter((one) => one.framework === 'xunit'))
       assertXunitVisible(fixture, displayNames);
-    assert.strictEqual(
-      displayNames.includes('Adds_TwoNumbers'),
-      false,
-      'a bare method name is not a discovered test line — it has no namespace',
-    );
-    assert.strictEqual(
-      displayNames.includes('AddsTwoNumbers'),
-      false,
-      'the F# MSTest bare member name is likewise dropped by the display listing',
-    );
-    assert.strictEqual(
+    assertContainsNone(displayNames, ['Adds_TwoNumbers', 'AddsTwoNumbers'], 'displayNames');
+    assert.ok(
       displayNames.includes(FS_SPACED_FACT),
-      true,
       'the spaced F# xUnit name survives the display filter — spaces are legal in an FQN',
     );
     assert.strictEqual(
@@ -771,9 +621,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       sorted(XUNIT_DISPLAY_NAMES),
       'ONLY the xUnit facts survive the DisplayName listing — that is the whole of issue #180',
     );
-    assert.strictEqual(
+    assert.ok(
       displayNames.length < ids.length,
-      true,
       `the display listing (${displayNames.length}) must be strictly WEAKER than the FQN tree (${ids.length})`,
     );
     assertNoChatter(ids);
@@ -783,34 +632,66 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     this.timeout(DOTNET_CLI_MS);
     await ensureTree();
     const snapshots = snapshotItems(api.testController.items);
-    const labels = snapshots.map((snapshot) => snapshot.label);
-    assert.strictEqual(snapshots.length, ALL_EXPECTED.length, 'one snapshot per discovered test');
-    assert.strictEqual(snapshots.length, 27, 'the Testing view renders exactly 27 rows');
-    assert.deepStrictEqual(
-      sorted(snapshots.map((snapshot) => snapshot.id)),
-      sorted(ALL_EXPECTED),
-      'the rendered ids are exactly the fixtures’ names',
+    // Groups and tests render different row shapes — the hierarchy has both.
+    const groupSnapshots = snapshots.filter((snapshot) => snapshot.childCount > 0);
+    const testSnapshots = snapshots.filter((snapshot) => snapshot.childCount === 0);
+    const labels = testSnapshots.map((snapshot) => snapshot.label);
+    assert.strictEqual(
+      testSnapshots.length,
+      ALL_EXPECTED.length,
+      'one snapshot per discovered test',
     );
-    for (const snapshot of snapshots) assertItemShape(snapshot, root);
+    assert.strictEqual(testSnapshots.length, 27, 'the Testing view renders exactly 27 TEST rows');
+    assert.strictEqual(
+      groupSnapshots.length,
+      18,
+      'six assemblies plus their namespace and class groups render 18 GROUP rows',
+    );
+    assert.strictEqual(
+      api.testController.items.size,
+      6,
+      'one root per fixture assembly — the 27 tests nest under them',
+    );
+    assert.deepStrictEqual(
+      sorted(testSnapshots.map((snapshot) => snapshot.id)),
+      sorted(ALL_EXPECTED),
+      'the rendered TEST ids are exactly the fixtures’ names',
+    );
+    for (const snapshot of groupSnapshots) {
+      assert.ok(snapshot.childCount > 0, `a group row carries its children: ${snapshot.id}`);
+      assert.ok(!ALL_EXPECTED.includes(snapshot.id), `a group id is never an FQN: ${snapshot.id}`);
+      assert.strictEqual(
+        snapshot.description,
+        undefined,
+        `a group row carries no FQN description: ${snapshot.id}`,
+      );
+      assert.deepStrictEqual(snapshot.tags, [], `a group row carries no tag: ${snapshot.id}`);
+    }
+    for (const snapshot of testSnapshots) assertItemShape(snapshot, root);
     assert.deepStrictEqual(
       snapshots.flatMap((snapshot) => snapshot.tags),
       [],
-      'plain xUnit/NUnit/MSTest tests carry no framework tag anywhere in the tree',
+      'plain xUnit/NUnit/MSTest tests AND their groups carry no framework tag anywhere in the tree',
     );
     assert.strictEqual(
-      new Set(snapshots.map((snapshot) => snapshot.uriPath)).size,
+      new Set(groupSnapshots.map((snapshot) => snapshot.uriPath)).size,
       1,
-      'every item shares the one discovery-target uri',
+      'every group shares the one discovery-target uri',
     );
     assert.strictEqual(
-      new Set(snapshots.map((snapshot) => snapshot.description)).size,
+      new Set(testSnapshots.map((snapshot) => snapshot.uriPath)).size,
+      6,
+      'every test points at its declaring file: one per fixture project',
+    );
+    assert.strictEqual(
+      new Set(testSnapshots.map((snapshot) => snapshot.description)).size,
       27,
       'descriptions stay unique even where labels collide',
     );
     assert.strictEqual(
-      snapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
+      testSnapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
       0,
-      'a flat tree has no children at all',
+      'only GROUP rows carry children — every TEST row is a leaf',
     );
     assert.strictEqual(
       labels.filter((label) => label === 'Adds_TwoNumbers').length,
@@ -901,14 +782,12 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       2,
       'and both keep the argument list verbatim',
     );
-    assert.strictEqual(
-      fixtureByKey('xunit-csharp').parameterized.includes('('),
-      false,
+    assert.ok(
+      !fixtureByKey('xunit-csharp').parameterized.includes('('),
       'an xUnit [Theory] FQN carries NO row data — that is NUnit-only',
     );
-    assert.strictEqual(
-      fixtureByKey('mstest-csharp').parameterized.includes('('),
-      false,
+    assert.ok(
+      !fixtureByKey('mstest-csharp').parameterized.includes('('),
       'an MSTest [DataRow] FQN carries no row data either',
     );
   });
@@ -935,9 +814,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     );
     for (const fixture of fsharp) {
       const result = await runGreen(api.testController, fixture, fixture.passing, dirFor(fixture));
-      assert.strictEqual(
+      assert.ok(
         fixture.passing.startsWith('Fs.'),
-        true,
         `${fixture.key}: an F# FQN starts at the F# module`,
       );
       assert.strictEqual(
@@ -961,9 +839,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
         `${fixture.key}: a run leaves the tree item untouched`,
       );
     }
-    assert.strictEqual(
+    assert.ok(
       api.testController.cachedResults.size >= 3,
-      true,
       'three F# runs leave at least three cached results',
     );
     for (const one of fsharp)
@@ -1002,9 +879,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     );
     for (const fixture of csharp) {
       const result = await runGreen(api.testController, fixture, fixture.passing, dirFor(fixture));
-      assert.strictEqual(
+      assert.ok(
         fixture.passing.startsWith('Cs.'),
-        true,
         `${fixture.key}: a C# FQN starts at the C# namespace`,
       );
       assert.strictEqual(
@@ -1028,9 +904,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
         `${fixture.key}: the failing sibling is never marked green by this run`,
       );
     }
-    assert.strictEqual(
+    assert.ok(
       api.testController.cachedResults.size >= 6,
-      true,
       'all six fixtures have now cached a passing result',
     );
     for (const one of FRAMEWORK_FIXTURES)
@@ -1040,9 +915,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
         `${one.key}: every fixture’s passing test is cached as a genuine pass`,
       );
     for (const one of FRAMEWORK_FIXTURES)
-      assert.strictEqual(
+      assert.ok(
         api.testController.cachedResults.has(one.passing),
-        true,
         `${one.key}: keyed by its FQN, not by label`,
       );
   });
@@ -1056,9 +930,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     // Unescaped, `(2,2,4)` is filter GRAMMAR: the NUnit adapter throws.
     assertEscaped(FS_NUNIT_CASE, 'Fs.Nunit.Fixtures.adds case\\(2,2,4\\)');
     assertEscaped(CS_NUNIT_CASE, 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case\\(2,2,4\\)');
-    assert.strictEqual(
+    assert.ok(
       escapeFilterValue(FS_NUNIT_CASE).includes(' '),
-      true,
       'a SPACE is not filter grammar, so it passes through unescaped',
     );
     assert.strictEqual(
@@ -1098,6 +971,40 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       undefined,
       'a green parenthesised run leaves no failure message',
     );
+
+    // Interaction 3 — the F# name the NUnit adapter REFUSES. [TEST-FILTER-ESCAPE]:
+    // NUnit's own filter parser rejects any fully-qualified name containing a
+    // SPACE, which is every idiomatic F# backtick test, and TRX records that as
+    // a run-level RunInfo with outcome="Error". SharpLsp must re-run the
+    // selection ONCE without a filter and pick the outcome out by name — so a
+    // correctly ESCAPED filter is still not enough to make this test pass.
+    assert.ok(
+      FS_NUNIT_CASE.includes(' '),
+      'the F# [<TestCase>] name really does contain a space, or this proves nothing',
+    );
+    const refused = api.testController.getResult(FS_NUNIT_CASE);
+    assert.ok(refused, 'the refused-filter path must still cache a result for the F# case');
+    assert.notStrictEqual(
+      refused.outcome,
+      'notRun',
+      'an adapter that refuses the filter must NOT leave the user with "No result reported": ' +
+        'the unfiltered re-run is what turns that refusal back into an outcome',
+    );
+    assert.ok(
+      (refused.duration ?? -1) >= 0,
+      'and the outcome carries the duration TRX recorded, not a fabricated zero',
+    );
+    assert.ok(refused.passed, 'the F# parenthesised, spaced case really passes in the fixture');
+    assert.notStrictEqual(
+      api.testController.getResult(fsNunit.failing)?.outcome,
+      'passed',
+      'the unfiltered re-run must attribute per test — it may not paint the project green',
+    );
+    assert.notStrictEqual(
+      api.testController.getResult(FS_NUNIT_CASE),
+      api.testController.getResult(CS_NUNIT_CASE),
+      'the F# and C# parenthesised cases hold their own distinct results',
+    );
   });
 
   test('a run of a name that does not exist reports notRun, names the test, and never reports a pass', async function () {
@@ -1112,7 +1019,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     const notified = nextResultsChange(api.testController, DOTNET_CLI_MS);
     const result = await api.testController.runSingle(ghost, dirFor(fixture));
     assertNotRun(result, ghost);
-    assert.strictEqual(await notified, true, 'a notRun result still notifies the lens listeners');
+    assert.ok(await notified, 'a notRun result still notifies the lens listeners');
     assert.strictEqual(
       api.testController.getResult(ghost),
       result,
@@ -1123,7 +1030,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       result,
       'cachedResults exposes the very object runSingle resolved',
     );
-    assertGhostAbsent(api.testController.items, collectItemIds(api.testController.items), ghost);
+    assertGhostAbsent(api.testController.items, collectLeafIds(api.testController.items), ghost);
     // The controller is not poisoned: a real test still runs green afterwards.
     await runGreen(api.testController, fixture, fixture.passing, dirFor(fixture));
     assert.strictEqual(

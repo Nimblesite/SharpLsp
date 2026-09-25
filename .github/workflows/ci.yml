@@ -1,25 +1,38 @@
-# agent-pmo:0b21609
+# agent-pmo:a72c926
 ---
-# PR pipeline orchestrator. Three stages, strictly ordered:
+# INVARIANT: This file is the orchestrator for the PR pipeline.
+# Phase 1 — ANALYSE. Lint, format checks, static analysis, every language. Nothing else runs until this is green. It builds nothing that later phases consume.
+# Phase 2 — FULL BUILD. Everything gets built, for every platform, once. Rust host, both .NET sidecars, netcoredbg, the VS Code suite, the VSIX. Gated on Phase 1 and nothing else. Platforms build in parallel with each other — Linux and Windows are siblings, not a chain.
+# Phase 3 — CACHE. Every artifact from Phase 2 is uploaded/cached. This is the handoff boundary: nothing downstream of here is ever permitted to compile anything.
+# Phase 4 — TEST. Every test job in the repo fans out in parallel, all gated on Phase 3 alone, each downloading from the cache. Every test runs exactly once — no test executes in two jobs. Every test job is instrumented and emits coverage.
+# Phase 5 — COVERAGE CHECK. Gated on Phase 4. Merges the tracefiles and applies the ratchet. This phase can be part of the test job itself. It doesn't need to be a separate job
 #
-#   detect-changes  ->  checks + build  ->  every test in parallel
+#   detect-changes -> analyse -> build (linux ‖ windows) -> tests -> coverage
 #
-# Each leg lives in its own reusable workflow so a single file never grows
-# past comprehension:
+# Each phase lives in its own reusable workflow so no single file grows past
+# comprehension:
 #
-#   ci-build.yml        ALL checks/format/analysis, then builds the release
-#                       host + sidecars + netcoredbg ONCE and caches them
-#   ci-rust.yml         sharded Rust e2e suite, coverage gate, version contract
-#   ci-dotnet.yml       sidecar tests (Ubuntu) + win32 named-pipe transport
-#   ci-vsix.yml         sharded VS Code suite, coverage gate, VSIX payload
-#                       (Ubuntu, [DIST-CI-VSIX-SHARDS])
-#   ci-vsix-windows.yml VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX])
-#   ci-editors.yml      Zed + Rider tests and coverage gates ([DIST-CI-EDITORS])
+#   ci-analyse.yml             PHASE 1  every lint, format and analysis check
+#   ci-audit.yml               PHASE 1  vulnerable dependencies already in the tree
+#   ci-build.yml               PHASE 2+3  both platforms, in parallel, published
+#   ci-test-rust.yml           PHASE 4  sharded Rust e2e suite, version contract
+#   ci-test-dotnet.yml         PHASE 4  sidecar tests + the win32 transport arm
+#   ci-test-vsix.yml           PHASE 4  VS Code feature chunks (Ubuntu)
+#   ci-test-vsix-windows.yml   PHASE 4  VS Code feature chunks (Windows)
+#   ci-test-editors.yml        PHASE 4  Zed + Rider
+#   ci-test-tooling.yml        PHASE 4  the repo's own build tooling
+#   ci-coverage.yml            PHASE 5  the two SHARDED ratchets
 #
-# Every test leg `needs:` `build`, so no test job spins up before checks and
-# the release build have passed, and the legs all run in parallel off the
-# cached artifacts — rebuilding the host/sidecars inside a test leg is
-# forbidden ([DIST-CI-LAYOUT]).
+# The two rules that keep this honest, and that the pipeline previously broke:
+#
+#   * EACH ARROW IS THE ONLY DEPENDENCY. A test leg needs the cache, never
+#     another test leg. A build needs analyse, never another build. The Windows
+#     build used to be a PHASE 4 job gated on the Ubuntu build it consumes
+#     nothing from, which put 18 minutes of serialised building in front of the
+#     slowest tests in a 41-minute run.
+#   * EVERY TEST RUNS EXACTLY ONCE. No suite executes in two jobs. The Windows
+#     transport job used to re-run the whole platform-agnostic Common test
+#     project that the Ubuntu sidecar job had already run.
 name: PR
 'on':
   pull_request:
@@ -34,6 +47,15 @@ permissions:
 jobs:
   detect-changes:
     name: Detect Changed Paths
+    # Dependabot PRs run NO CI. Version bumps target the `dependabot-upgrades`
+    # staging branch (which this workflow does not watch); security bumps are
+    # force-opened against `main` by GitHub and are swept into that same staging
+    # branch within seconds by dependabot-automerge.yml. Burning the full matrix
+    # on a bump that is about to be swept away is pure waste — the batch is
+    # tested exactly once, at the `dependabot-upgrades -> main` consolidation PR.
+    # This is the cascade root: every job below `needs:` it, so skipping here
+    # skips the entire pipeline. [GITHUB-DEPENDABOT]
+    if: github.actor != 'dependabot[bot]'
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
@@ -48,7 +70,14 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          mapfile -t files < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')
+          # [DIST-CI-CLASSIFICATION] Process substitution hides the API's exit
+          # status. Capture it first so a failed page cannot skip all tests.
+          changed_files="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')"
+          if [ -z "$changed_files" ]; then
+            echo "::error::Changed-file lookup returned no files; refusing to skip CI."
+            exit 1
+          fi
+          mapfile -t files <<< "$changed_files"
 
           code_changed=false
           manifest_changed=false
@@ -75,16 +104,27 @@ jobs:
           printf '  %s\n' "${files[@]}"
           echo "code_changed=${code_changed}"
           echo "manifest_changed=${manifest_changed}"
+
+  # ══ PHASE 1 — ANALYSE ═══════════════════════════════════════════════
+  analyse:
+    name: Analyse
+    needs:
+      - detect-changes
+    uses: ./.github/workflows/ci-analyse.yml
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+
   security:
     name: Dependency Review
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     needs:
       - detect-changes
-    # Owns vulnerable *dependencies* (Cargo, npm, NuGet). CodeQL (codeql.yml)
-    # owns vulnerable *code* and `make lint` owns style - no overlap. There is
-    # no native vuln-gate (cargo-deny/osv) in this repo, so dependency-review is
-    # the single dependency scanner. [DIST-CI-SECURITY]
+    # Analysis of the dependency graph, so PHASE 1 - and a sibling of `analyse`
+    # rather than a step inside it because it scans the PR diff and needs no
+    # toolchain at all. Owns vulnerable *dependencies* (Cargo, npm, NuGet).
+    # CodeQL (codeql.yml) owns vulnerable *code* and `make lint` owns style - no
+    # overlap. Dependency review sees only what this PR ADDS; `audit` below
+    # covers every dependency already in the tree. [DIST-CI-SECURITY]
     permissions:
       contents: read
     steps:
@@ -96,10 +136,23 @@ jobs:
         with:
           fail-on-severity: high
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+
+  # Every dependency ALREADY in the tree, checked with each ecosystem's own
+  # scanner via `make audit`. The same reusable job gates releases.
+  # [DIST-CI-AUDIT]
+  audit:
+    name: Audit
+    needs:
+      - detect-changes
+    uses: ./.github/workflows/ci-audit.yml
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+
   validate-manifest:
     name: Validate Shipwright Manifest
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
+    # Schema validation of a checked-in manifest: PHASE 1, and only when that
+    # manifest changed.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -117,65 +170,131 @@ jobs:
     needs:
       - detect-changes
     if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
+
+  # ══ PHASE 2 — FULL BUILD  +  PHASE 3 — CACHE ════════════════════════
+  # Gated on PHASE 1 and nothing else. Inside, Linux and Windows are siblings
+  # and build concurrently; both publish everything PHASE 4 consumes.
   build:
-    name: Checks + Build
+    name: Build
     needs:
       - detect-changes
+      - analyse
     uses: ./.github/workflows/ci-build.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  rust:
+
+  # ══ PHASE 4 — TEST ══════════════════════════════════════════════════
+  # Every leg gated on `build` ALONE. No leg depends on another leg, and no leg
+  # rebuilds a PHASE 2 artifact.
+  test-rust:
     name: Rust
     needs:
       - detect-changes
       - build
-    uses: ./.github/workflows/ci-rust.yml
+    uses: ./.github/workflows/ci-test-rust.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  dotnet:
+
+  test-dotnet:
     name: .NET
     needs:
       - detect-changes
       - build
-    uses: ./.github/workflows/ci-dotnet.yml
+    uses: ./.github/workflows/ci-test-dotnet.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  vsix:
+
+  test-vsix:
     name: VS Code
     needs:
       - detect-changes
       - build
-    uses: ./.github/workflows/ci-vsix.yml
+    uses: ./.github/workflows/ci-test-vsix.yml
+    with:
+      chunks: ${{ needs.build.outputs.linux-chunks }}
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  vsix-windows:
+
+  test-vsix-windows:
     name: VS Code (Windows)
     needs:
       - detect-changes
       - build
-    uses: ./.github/workflows/ci-vsix-windows.yml
+    uses: ./.github/workflows/ci-test-vsix-windows.yml
+    with:
+      chunks: ${{ needs.build.outputs.win-chunks }}
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  vsix-coverage:
-    # [DIST-CI-VSIX-COVERAGE] ONE coverage gate for the extension, at the END,
-    # over the shards of BOTH platforms. Neither VS Code leg gates on its own:
-    # no single chunk can meet the line threshold, and gating per leg would have
-    # let the Windows shards run uninstrumented while Ubuntu carried the whole
-    # number.
-    name: VS Code Coverage
-    needs:
-      - detect-changes
-      - vsix
-      - vsix-windows
-    uses: ./.github/workflows/ci-vsix-coverage.yml
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  editors:
+
+  test-editors:
     name: Editors
     needs:
       - detect-changes
       - build
-    uses: ./.github/workflows/ci-editors.yml
+    uses: ./.github/workflows/ci-test-editors.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+
+  test-tooling:
+    name: Tooling
+    needs:
+      - detect-changes
+      - build
+    uses: ./.github/workflows/ci-test-tooling.yml
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+
+  # ══ PHASE 5 — COVERAGE CHECK ════════════════════════════════════════
+  # Only the SHARDED suites need a job here: no Rust partition and no VS Code
+  # chunk holds a complete tracefile, so the ratchet runs over the union of all
+  # of them. The unsharded legs (.NET, Zed, Rider) gate inside their own test
+  # job, where the tracefile is already whole.
+  coverage:
+    name: Coverage
+    needs:
+      - detect-changes
+      - test-rust
+      - test-vsix
+      - test-vsix-windows
+    uses: ./.github/workflows/ci-coverage.yml
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
   # thresholds was removed. On a pull_request, actions/checkout is a detached
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
-  # and a direct push to a protected branch ([DIST-CI-LAYOUT]). Coverage is
-  # already enforced inside `make test` (tools/coverage/check-coverage.sh reads
-  # coverage-thresholds.json and fails below threshold in each test-* job).
-  # Thresholds ratchet via the reviewed PR diff, not a bot commit.
-  # [DIST-CI-RUST-SHARDS]
+  # and a direct push to a protected branch ([DIST-CI-LAYOUT]). Thresholds
+  # ratchet via the reviewed PR diff, not a bot commit.
+
+  # ══ TERMINAL GATE ═══════════════════════════════════════════════════
+  # The single status check `main`'s ruleset requires ([GITHUB-PROTECTION]).
+  # Everything above fans out into per-shard, per-chunk check names that change
+  # whenever the matrix changes — and the VS Code chunks are computed at runtime,
+  # so they cannot be named in a ruleset at all. This job collapses all of them
+  # into one fixed context, "CI", which is what branch protection pins.
+  #
+  # `always()` so it reports a real conclusion rather than inheriting a skip:
+  # on a docs-only PR every upstream job skips and this passes; on a Dependabot
+  # PR the whole pipeline skips and this passes; any failure or cancellation
+  # anywhere upstream fails it, and with it the merge.
+  ci:
+    name: CI
+    if: ${{ always() }}
+    needs:
+      - detect-changes
+      - analyse
+      - security
+      - audit
+      - validate-manifest
+      - build
+      - test-rust
+      - test-dotnet
+      - test-vsix
+      - test-vsix-windows
+      - test-editors
+      - test-tooling
+      - coverage
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        shell: bash
+        run: |-
+          echo "::error::A required CI job did not pass. See the failed job above."
+          exit 1
+      - name: Report
+        shell: bash
+        run: echo "All CI jobs passed or were skipped."

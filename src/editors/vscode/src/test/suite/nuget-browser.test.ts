@@ -6,14 +6,23 @@ import { type LanguageClient } from 'vscode-languageclient/node';
 import { NuGetBrowserPanel } from '../../nuget-browser.js';
 import {
   EXTENSION_ID,
-  closeAllEditors,
   openSharpLspPanel,
   pollUntilResult,
-  setupLspTestSuite,
   takeScreenshot,
-  teardownLspTestSuite,
+  assertContainsAll,
+  assertContainsNone,
 } from './test-helpers';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import {
+  BY_ID_PREFIX,
+  INSTALLED_FIXTURE_PACKAGE,
+  SEEDED_IDS,
+  SEEDED_PACKAGES,
+  stubSearchFeed,
+  type StubbedFeed,
+} from './nuget-stub-kit';
+import { COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { useLspTestSuite } from './lsp-suite-kit';
+import { commandEntries } from './extension-manifest-kit';
 
 interface SharpLspApiForNuGetTests {
   readonly getLspClient: () => LanguageClient | undefined;
@@ -26,23 +35,20 @@ function nugetTestProjectPath(): string {
   return path.join(sourceRoot, 'sharplsp', 'tests', 'fixtures', 'NuGetTest', 'NuGetTest.csproj');
 }
 
+type SendRequest = (method: string, params: unknown) => Promise<unknown>;
+
+/** Answer a method from `route` first; `undefined` falls through to the fake. */
+function interceptRequests(
+  handle: ReturnType<typeof makeFakeClient>,
+  route: (method: string) => unknown,
+): void {
+  const original = handle.client.sendRequest.bind(handle.client) as SendRequest;
+  const client = handle.client as unknown as { sendRequest: SendRequest };
+  client.sendRequest = async (method, params) => route(method) ?? original(method, params);
+}
+
 suite('NuGet Browser', () => {
-  let tmpDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('nuget-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
+  const tmpDir = useLspTestSuite('nuget-');
 
   // ── Command Registration ────────────────────────────────────
 
@@ -56,25 +62,14 @@ suite('NuGet Browser', () => {
 
   // ── Package Contributions ───────────────────────────────────
 
-  test('package.json declares browseNuGetPackages command', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension should exist');
-    const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
-    assert.ok(
-      commands.some((c) => c.command === 'sharplsp.browseNuGetPackages'),
-      'package.json must declare sharplsp.browseNuGetPackages',
-    );
-  });
-
-  test('package.json declares removeNuGetPackage command', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension should exist');
-    const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
-    assert.ok(
-      commands.some((c) => c.command === 'sharplsp.removeNuGetPackage'),
-      'package.json must declare sharplsp.removeNuGetPackage',
-    );
-  });
+  for (const id of ['sharplsp.browseNuGetPackages', 'sharplsp.removeNuGetPackage']) {
+    test(`package.json declares ${id}`, () => {
+      assert.ok(
+        commandEntries().some((entry) => entry.command === id),
+        `package.json must declare ${id}`,
+      );
+    });
+  }
 
   // ── NuGet Browser Panel ─────────────────────────────────────
 
@@ -221,6 +216,21 @@ suite('NuGet Browser', () => {
     return api.getLspClient;
   }
 
+  /**
+   * Open the browser panel on `projectPath` (shown as `name`) against the
+   * stubbed search feed, with a real LSP client behind it. The caller awaits
+   * the initial load inside its own try/finally, so the panel is always disposed.
+   */
+  function openPanel(
+    projectPath: string,
+    name: string,
+  ): { panel: NuGetBrowserPanel; feed: StubbedFeed; getClient: () => LanguageClient | undefined } {
+    const feed = stubSearchFeed(getLspClientGetter());
+    assert.ok(feed.getClient(), 'LSP client must be running for this test');
+    const panel = NuGetBrowserPanel.open(getExtensionContext(), projectPath, name, feed.getClient);
+    return { panel, feed, getClient: feed.getClient };
+  }
+
   async function takeNuGetScreenshot(filename: string): Promise<void> {
     await openSharpLspPanel();
     await takeScreenshot(filename);
@@ -237,7 +247,8 @@ suite('NuGet Browser', () => {
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
-    const getClient = getLspClientGetter();
+    const feed = stubSearchFeed(getLspClientGetter());
+    const getClient = feed.getClient;
 
     // Ensure we have a real LSP client before proceeding.
     assert.ok(getClient(), 'LSP client must be running for this test');
@@ -246,21 +257,77 @@ suite('NuGet Browser', () => {
 
     try {
       await panel.waitForInitialLoad();
-      const count = panel.getSearchResultsCount();
-      assert.ok(
-        count > 0,
-        `Browse tab must be populated after initial load (got ${count.toString()} results)`,
+
+      // 1 — the defect was that the initial load never searched at all. Assert the
+      //     request itself, not just its effect: an empty result set and a search
+      //     that was never issued look identical from the outside.
+      //
+      //     The initial load issues two KINDS of search. The browse list is the
+      //     empty query, and each installed package is enriched by a `packageid:`
+      //     lookup. Counting them together would pass on a load that enriched the
+      //     installed tab and never populated browse at all, which is the defect.
+      const browseSearches = feed.searches.filter((search) => search.query === '');
+      assert.strictEqual(
+        browseSearches.length,
+        1,
+        `initial load must issue exactly one browse search, issued ${browseSearches.length.toString()}` +
+          ` (all queries: ${feed.searches.map((search) => `"${search.query}"`).join(', ')})`,
       );
       assert.ok(
-        count >= 5,
-        `Browse tab must show at least 5 popular packages, got ${count.toString()}`,
+        feed.searches.some(
+          (search) => search.query === `${BY_ID_PREFIX}${INSTALLED_FIXTURE_PACKAGE.id}`,
+        ),
+        'the initial load must also enrich the installed package by id',
       );
+      const initial = browseSearches[0]!;
+      assert.strictEqual(
+        initial.query,
+        '',
+        'the initial search is the popular list: an empty query',
+      );
+      assert.strictEqual(initial.skip, 0, 'the initial search starts at the first page');
+      assert.ok(
+        initial.take > 0,
+        `the initial search must ask for packages, asked ${String(initial.take)}`,
+      );
+      assert.ok(!initial.prerelease, 'prerelease is off unless the user asks');
+      assert.strictEqual(
+        initial.projectPath,
+        projectPath,
+        'the search must be scoped to the project the panel was opened for',
+      );
+
+      // 2 — every package the feed returned reached the panel, in order and whole.
+      assert.strictEqual(
+        panel.getSearchResultsCount(),
+        SEEDED_PACKAGES.length,
+        'the panel must keep every package the feed returned',
+      );
+      assert.deepStrictEqual(
+        panel.getSearchResultIds(),
+        [...SEEDED_IDS],
+        'the panel must preserve the feed order rather than re-sorting it',
+      );
+
+      // 3 — and each one is actually rendered, with the version that came back.
       const html = panel.getRenderedHtml();
-      assert.ok(
-        html.includes('package-list') || html.includes('package-item') || html.includes('NuGet'),
-        'Browse HTML must contain package list markup',
+      for (const pkg of SEEDED_PACKAGES) {
+        assertContainsAll(html, [pkg.id, pkg.version], 'browse HTML must render');
+      }
+      const rendered = html.split('class="package-item').length - 1;
+      assert.strictEqual(
+        rendered,
+        SEEDED_PACKAGES.length,
+        `browse tab must render one row per package, rendered ${rendered.toString()}`,
       );
-      assert.ok(html.length > 500, 'Browse HTML must have substantial content');
+
+      // 4 — the browse tab is the one on screen, and nothing is still loading.
+      assert.strictEqual(panel.getCurrentTab(), 'browse', 'the panel opens on the browse tab');
+      assert.deepStrictEqual(
+        panel.getActiveLoadingKeys(),
+        [],
+        'no spinner may be left running once the initial load has resolved',
+      );
       await takeNuGetScreenshot('vscode-nuget-browse.png');
     } finally {
       panel.dispose();
@@ -278,12 +345,7 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-
-    assert.ok(getClient(), 'LSP client must be running for this test');
-
-    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+    const { panel } = openPanel(projectPath, 'NuGetTest');
 
     try {
       await panel.waitForInitialLoad();
@@ -341,12 +403,7 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-
-    assert.ok(getClient(), 'LSP client must be running for this test');
-
-    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+    const { panel } = openPanel(projectPath, 'NuGetTest');
 
     try {
       await panel.waitForInitialLoad();
@@ -369,26 +426,14 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-
-    assert.ok(getClient(), 'LSP client must be running for this test');
-
-    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+    const { panel } = openPanel(projectPath, 'NuGetTest');
 
     try {
       await panel.waitForInitialLoad();
       const html = panel.getRenderedHtml();
 
       // Status bar fake content.
-      assert.ok(
-        !html.includes('main*'),
-        'Rendered HTML must not include fake git status (`main*`) — VS Code provides the status bar',
-      );
-      assert.ok(
-        !html.includes('NuGet v6.8.0'),
-        'Rendered HTML must not include fake `NuGet v6.8.0` version label',
-      );
+      assertContainsNone(html, ['main*', 'NuGet v6.8.0'], 'Rendered HTML must not include fake');
       assert.ok(
         !/UTF-8\s*<\/span>/.exec(html),
         'Rendered HTML must not include fake UTF-8 encoding label',
@@ -399,24 +444,17 @@ suite('NuGet Browser', () => {
       );
 
       // Activity bar fake content.
-      assert.ok(
-        !html.includes('class="sidebar"'),
-        'Rendered HTML must not include sidebar (activity bar) — VS Code provides one',
+      assertContainsNone(
+        html,
+        ['class="sidebar"', 'sidebar-icon', 'sidebar-avatar'],
+        'Rendered HTML must not include',
       );
-      assert.ok(
-        !html.includes('sidebar-icon'),
-        'Rendered HTML must not include sidebar-icon class',
-      );
-      assert.ok(!html.includes('sidebar-avatar'), 'Rendered HTML must not include user avatar');
 
       // Hardcoded fake dependencies.
-      assert.ok(
-        !html.includes('.NETStandard 2.0'),
-        'Rendered HTML must not include hardcoded fake .NETStandard 2.0 dependency',
-      );
-      assert.ok(
-        !html.includes('.NETStandard 2.1'),
-        'Rendered HTML must not include hardcoded fake .NETStandard 2.1 dependency',
+      assertContainsNone(
+        html,
+        ['.NETStandard 2.0', '.NETStandard 2.1'],
+        'Rendered HTML must not include hardcoded fake .NETStandard',
       );
 
       // Broken Updates tab.
@@ -442,27 +480,53 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-
-    assert.ok(getClient(), 'LSP client must be running for this test');
-
-    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+    const { panel, feed } = openPanel(projectPath, 'NuGetTest');
 
     try {
       await panel.waitForInitialLoad();
 
+      const beforeSearch = feed.searches.length;
+
+      // 1 — the user types a query that matches some of the catalogue, not all of
+      //     it. A query matching everything could not tell filtering from a panel
+      //     that ignored the query and re-rendered the popular list.
       await panel.simulateWebviewMessage({
         command: 'search',
-        data: { query: 'Serilog' },
+        data: { query: 'Bravo' },
       });
 
-      const searchCount = panel.getSearchResultsCount();
-      assert.ok(searchCount > 0, "Search for 'Serilog' must return results");
-      assert.ok(searchCount >= 3, `Search must return ≥3 results, got ${searchCount.toString()}`);
+      assert.strictEqual(
+        feed.searches.length,
+        beforeSearch + 1,
+        'typing a query must issue exactly one more search',
+      );
+      assert.strictEqual(
+        feed.searches[feed.searches.length - 1]!.query,
+        'Bravo',
+        'the panel must send the query the user typed, verbatim',
+      );
+
+      // 2 — the results are exactly the matches, and the non-matches are gone.
+      const expected = SEEDED_PACKAGES.filter((pkg) => pkg.id.includes('Bravo')).map(
+        (pkg) => pkg.id,
+      );
+      assert.ok(expected.length > 0 && expected.length < SEEDED_PACKAGES.length, 'fixture sanity');
+      assert.deepStrictEqual(
+        panel.getSearchResultIds(),
+        expected,
+        'the browse list must show the matches and only the matches',
+      );
       const searchHtml = panel.getRenderedHtml();
-      assert.ok(searchHtml.toLowerCase().includes('serilog'), "HTML must contain 'Serilog'");
-      assert.ok(searchHtml.length > 300, 'Search results HTML must have content');
+      for (const id of expected) {
+        assert.ok(searchHtml.includes(id), `search HTML must render the match ${id}`);
+      }
+      for (const pkg of SEEDED_PACKAGES) {
+        if (expected.includes(pkg.id)) continue;
+        assert.ok(
+          !searchHtml.includes(pkg.id),
+          `${pkg.id} does not match the query and must not still be on screen`,
+        );
+      }
       await takeNuGetScreenshot('vscode-nuget-search.png');
     } finally {
       panel.dispose();
@@ -493,7 +557,7 @@ suite('NuGet Browser', () => {
   test('panel reacts to external csproj edit (package removed)', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const scratch = path.join(tmpDir, 'reactivity-panel');
+    const scratch = path.join(tmpDir(), 'reactivity-panel');
     const csprojPath = createScratchProject(
       scratch,
       `<Project Sdk="Microsoft.NET.Sdk">
@@ -504,11 +568,7 @@ suite('NuGet Browser', () => {
 </Project>`,
     );
 
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-    assert.ok(getClient(), 'LSP client must be running');
-
-    const panel = NuGetBrowserPanel.open(context, csprojPath, 'Scratch', getClient);
+    const { panel } = openPanel(csprojPath, 'Scratch');
 
     try {
       await panel.waitForInitialLoad();
@@ -566,7 +626,7 @@ suite('NuGet Browser', () => {
   test('panel reacts to external csproj edit (package added)', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const scratch = path.join(tmpDir, 'reactivity-panel-add');
+    const scratch = path.join(tmpDir(), 'reactivity-panel-add');
     const csprojPath = createScratchProject(
       scratch,
       `<Project Sdk="Microsoft.NET.Sdk">
@@ -575,10 +635,7 @@ suite('NuGet Browser', () => {
 </Project>`,
     );
 
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-
-    const panel = NuGetBrowserPanel.open(context, csprojPath, 'ScratchAdd', getClient);
+    const { panel } = openPanel(csprojPath, 'ScratchAdd');
 
     try {
       await panel.waitForInitialLoad();
@@ -622,31 +679,44 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const projectPath = nugetTestProjectPath();
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-
-    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+    const { panel, feed } = openPanel(projectPath, 'NuGetTest');
 
     try {
       await panel.waitForInitialLoad();
 
-      // Select Newtonsoft.Json — it definitely has an iconUrl on nuget.org.
+      // 1 — the user clicks the installed package. Its metadata is not on the
+      //     browse list, so the panel has to enrich it by id.
       await panel.simulateWebviewMessage({
         command: 'selectPackage',
-        data: { packageId: 'Newtonsoft.Json' },
+        data: { packageId: INSTALLED_FIXTURE_PACKAGE.id },
       });
 
-      // Allow enrichment HTTP fetch to complete.
       await pollUntilResult(
         () => Promise.resolve(panel.getRenderedHtml()),
         (html) => html.includes('class="package-icon-img"'),
         LSP_RESPONSE_MS,
       );
 
-      const html = panel.getRenderedHtml();
+      // 2 — it asked for exactly that package, by id.
+      const byId = feed.searches.filter((search) => search.query.startsWith(BY_ID_PREFIX));
       assert.ok(
-        html.includes('class="package-icon-img"'),
-        'Details panel must render an <img> with class package-icon-img when iconUrl is present',
+        byId.some((search) => search.query === `${BY_ID_PREFIX}${INSTALLED_FIXTURE_PACKAGE.id}`),
+        `enrichment must look the package up by id, sent: ${byId
+          .map((search) => search.query)
+          .join(', ')}`,
+      );
+
+      // 3 — and it rendered the icon the feed actually returned, not a placeholder.
+      const html = panel.getRenderedHtml();
+      assertContainsAll(
+        html,
+        ['class="package-icon-img"', INSTALLED_FIXTURE_PACKAGE.iconUrl!],
+        'html',
+      );
+      assert.strictEqual(
+        panel.getSelectedPackageId(),
+        INSTALLED_FIXTURE_PACKAGE.id,
+        'clicking a package must select it',
       );
       await takeNuGetScreenshot('vscode-nuget-package-details.png');
     } finally {
@@ -663,10 +733,7 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const projectPath = nugetTestProjectPath();
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-
-    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+    const { panel } = openPanel(projectPath, 'NuGetTest');
 
     try {
       await panel.waitForInitialLoad();
@@ -692,9 +759,15 @@ suite('NuGet Browser', () => {
       const html = panel.getRenderedHtml();
       const installedIdx = html.indexOf('Installed Packages');
       const section = installedIdx >= 0 ? html.slice(installedIdx) : '';
-      assert.ok(
-        section.includes('class="package-icon-img"'),
-        'Installed tab MUST render <img class="package-icon-img"> (DRY with browse tab)',
+      assertContainsAll(
+        section,
+        ['class="package-icon-img"', INSTALLED_FIXTURE_PACKAGE.iconUrl!],
+        'section',
+      );
+      assert.strictEqual(
+        panel.getCurrentTab(),
+        'installed',
+        'the installed tab must be the one on screen',
       );
     } finally {
       panel.dispose();
@@ -717,7 +790,7 @@ suite('NuGet Browser', () => {
   test('details panel button flips Remove→Install on external csproj edit (snapshot bug)', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const scratch = path.join(tmpDir, 'reactivity-details');
+    const scratch = path.join(tmpDir(), 'reactivity-details');
     const csprojPath = createScratchProject(
       scratch,
       `<Project Sdk="Microsoft.NET.Sdk">
@@ -728,11 +801,7 @@ suite('NuGet Browser', () => {
 </Project>`,
     );
 
-    const context = getExtensionContext();
-    const getClient = getLspClientGetter();
-    assert.ok(getClient(), 'LSP client must be running');
-
-    const panel = NuGetBrowserPanel.open(context, csprojPath, 'ReactivityDetails', getClient);
+    const { panel } = openPanel(csprojPath, 'ReactivityDetails');
 
     /** Extract just the right-hand details-panel HTML for tight assertions. */
     function detailsSection(html: string): string {
@@ -1014,29 +1083,44 @@ suite('NuGet Browser — pure html', () => {
 
   test('buildHtml escapes the project name and renders shell markup', () => {
     const html = buildHtml(baseState());
-    assert.ok(html.includes('NuGet - My&lt;Proj&gt;'), 'project name must be escaped in title');
-    assert.ok(html.includes('<main class="main">'), 'must render main shell');
-    assert.ok(html.includes('acquireVsCodeApi'), 'must include the webview bootstrap script');
-    assert.ok(html.includes('class="details-panel"'), 'must include the details panel');
+    assertContainsAll(
+      html,
+      [
+        'NuGet - My&lt;Proj&gt;',
+        '<main class="main">',
+        'acquireVsCodeApi',
+        'class="details-panel"',
+      ],
+      'html',
+    );
   });
 
   test('buildHtml browse empty state shows "No packages found"', () => {
     const html = buildHtml(baseState({ currentTab: 'browse', searchResults: [] }));
-    assert.ok(html.includes('No packages found'), 'empty browse list must show no-packages copy');
-    assert.ok(html.includes('Available Packages'), 'browse list header present');
-    assert.ok(html.includes('Select a package to view details'), 'details empty state present');
+    assertContainsAll(
+      html,
+      ['No packages found', 'Available Packages', 'Select a package to view details'],
+      'html',
+    );
   });
 
   test('buildHtml browse loading state renders skeletons', () => {
     const html = buildHtml(baseState({ searchResults: [], loading: new Set(['search']) }));
-    assert.ok(html.includes('class="skeleton"'), 'loading browse list must render skeleton rows');
-    assert.ok(html.includes('search-spinner'), 'search spinner must render while loading');
+    assertContainsAll(html, ['class="skeleton"', 'search-spinner'], 'html');
+  });
+
+  test('buildHtml loads the Material Symbols font for icon ligatures', () => {
+    const html = buildHtml(baseState({ searchResults: [], loading: new Set(['search']) }));
+    assert.match(
+      html,
+      /\.material-symbols-outlined\s*\{[^}]*font-family:\s*['"]Material Symbols Outlined['"]/s,
+      'icon ligatures must use the Material Symbols font instead of rendering as text',
+    );
   });
 
   test('buildHtml installed empty state shows "No packages installed"', () => {
     const html = buildHtml(baseState({ currentTab: 'installed', installedPackages: new Map() }));
-    assert.ok(html.includes('No packages installed'), 'empty installed copy must render');
-    assert.ok(html.includes('Installed Packages'), 'installed header must render');
+    assertContainsAll(html, ['No packages installed', 'Installed Packages'], 'html');
   });
 
   test('buildHtml installed loading row renders while loading installed', () => {
@@ -1066,13 +1150,19 @@ suite('NuGet Browser — pure html', () => {
         ],
       }),
     );
-    assert.ok(html.includes('Has.Metadata'), 'metadata-hydrated row renders');
-    assert.ok(html.includes('From metadata'), 'metadata description rendered');
-    assert.ok(html.includes('Has.Search'), 'search-hydrated row renders');
-    assert.ok(html.includes('From search'), 'search description rendered');
-    assert.ok(html.includes('Only.Fallback'), 'fallback row renders');
-    assert.ok(html.includes('Installed package'), 'fallback uses generic description');
-    assert.ok(html.includes('v3.0.0'), 'fallback row shows resolved version');
+    assertContainsAll(
+      html,
+      [
+        'Has.Metadata',
+        'From metadata',
+        'Has.Search',
+        'From search',
+        'Only.Fallback',
+        'Installed package',
+        'v3.0.0',
+      ],
+      'html',
+    );
   });
 
   test('buildHtml package item renders downloads, authors, and pending state', () => {
@@ -1083,10 +1173,11 @@ suite('NuGet Browser — pure html', () => {
         loading: new Set([installKey('Newtonsoft.Json')]),
       }),
     );
-    assert.ok(html.includes('2.5B Downloads'), 'billions formatting');
-    assert.ok(html.includes('James Newton-King'), 'authors rendered');
-    assert.ok(html.includes('pending'), 'pending class applied during install');
-    assert.ok(html.includes('package-icon-img'), 'icon img rendered when iconUrl present');
+    assertContainsAll(
+      html,
+      ['2.5B Downloads', 'James Newton-King', 'pending', 'package-icon-img'],
+      'html',
+    );
   });
 
   test('buildHtml details panel renders install button + info rows for not-installed pkg', () => {
@@ -1094,9 +1185,7 @@ suite('NuGet Browser — pure html', () => {
     const html = buildHtml(baseState({ selectedPackage: pkg }));
     assert.ok(html.includes('installPackage('), 'not-installed shows Install button');
     assert.ok(!html.includes('uninstallPackage'), 'not-installed must not show Remove');
-    assert.ok(html.includes('View License'), 'license info row rendered');
-    assert.ok(html.includes('Project URL'), 'project url info row rendered');
-    assert.ok(html.includes('Downloads'), 'downloads info row rendered');
+    assertContainsAll(html, ['View License', 'Project URL', 'Downloads'], 'html');
     assert.ok(html.includes('>JSON<') || html.includes('SERIALIZE'), 'tags upper-cased');
     assert.ok(html.includes('<option value="13.0.3"'), 'version option rendered');
   });
@@ -1120,8 +1209,7 @@ suite('NuGet Browser — pure html', () => {
         loading: new Set([installKey('Newtonsoft.Json'), 'versions']),
       }),
     );
-    assert.ok(installing.includes('Installing…'), 'install pending label');
-    assert.ok(installing.includes('progress_activity'), 'versions pending chevron');
+    assertContainsAll(installing, ['Installing…', 'progress_activity'], 'installing');
     const removing = buildHtml(
       baseState({
         selectedPackage: searchResult(),
@@ -1141,8 +1229,7 @@ suite('NuGet Browser — pure html', () => {
       tags: [],
     };
     const html = buildHtml(baseState({ selectedPackage: pkg }));
-    assert.ok(html.includes('Unknown author'), 'missing author fallback');
-    assert.ok(html.includes('No description available'), 'missing description fallback');
+    assertContainsAll(html, ['Unknown author', 'No description available'], 'html');
     assert.ok(!html.includes('Tags'), 'no tags section when tags empty');
   });
 
@@ -1153,16 +1240,16 @@ suite('NuGet Browser — pure html', () => {
         selectedTargetId: 'props-1',
       }),
     );
-    assert.ok(html.includes('optgroup label="Projects"'), 'projects optgroup');
-    assert.ok(html.includes('optgroup label="Build Props"'), 'build props optgroup');
-    assert.ok(html.includes('value="props-1" selected'), 'selected target marked');
+    assertContainsAll(
+      html,
+      ['optgroup label="Projects"', 'optgroup label="Build Props"', 'value="props-1" selected'],
+      'html',
+    );
   });
 
   test('buildHtml target dropdown shows loading + no-targets placeholders', () => {
     const loading = buildHtml(baseState({ targets: [], targetsLoading: true }));
-    assert.ok(loading.includes('Loading targets'), 'loading placeholder option');
-    assert.ok(loading.includes('target-spinner'), 'target spinner rendered');
-    assert.ok(loading.includes('disabled'), 'dropdown disabled while loading');
+    assertContainsAll(loading, ['Loading targets', 'target-spinner', 'disabled'], 'loading');
     const none = buildHtml(baseState({ targets: [], targetsLoading: false }));
     assert.ok(none.includes('No targets found'), 'no-targets placeholder option');
   });
@@ -1568,20 +1655,14 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       install: { success: true, message: 'ok' },
     });
     // Make the installed route reflect the package after install.
-    const original = handle.client.sendRequest.bind(handle.client) as (
-      m: string,
-      p: unknown,
-    ) => Promise<unknown>;
-    (handle.client as unknown as { sendRequest: typeof original }).sendRequest = async (m, p) => {
+    interceptRequests(handle, (m) => {
       if (m === 'sharplsp/nuget/installed') return installedPackages;
-      if (m === 'sharplsp/nuget/install') {
-        installedPackages = {
-          packages: [{ id: 'Good.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-        };
-        return { success: true, message: 'ok' };
-      }
-      return original(m, p);
-    };
+      if (m !== 'sharplsp/nuget/install') return undefined;
+      installedPackages = {
+        packages: [{ id: 'Good.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
+      };
+      return { success: true, message: 'ok' };
+    });
     NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
     const panel = NuGetBrowserPanel.open(
       fakeContextWithStore(),
@@ -1857,14 +1938,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     try {
       await panel.waitForInitialLoad();
       const html = panel.getRenderedHtml();
-      assert.ok(
-        html.includes('Failed to load targets:'),
-        'panel must surface the targets-load failure as an error toast',
-      );
-      assert.ok(
-        html.includes('targets endpoint exploded'),
-        'the underlying error message is included in the toast',
-      );
+      assertContainsAll(html, ['Failed to load targets:', 'targets endpoint exploded'], 'html');
       // A fallback target is still synthesized so the panel is usable.
       assert.deepStrictEqual(
         panel.getTargetIds().length >= 1,
@@ -1895,11 +1969,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     try {
       await panel.waitForInitialLoad();
       const html = panel.getRenderedHtml();
-      assert.ok(
-        html.includes('Failed to load installed:'),
-        'a rejected installed route must render an error toast',
-      );
-      assert.ok(html.includes('installed endpoint down'), 'the underlying error is included');
+      assertContainsAll(html, ['Failed to load installed:', 'installed endpoint down'], 'html');
       assert.deepStrictEqual(
         panel.getInstalledPackageIds(),
         [],
@@ -1923,22 +1993,16 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       targets: { targets: [buildPropsTarget()], defaultTargetId: 'props-1', cpmEnabled: false },
       search: { packages: [], totalHits: 0 },
     });
-    const original = handle.client.sendRequest.bind(handle.client) as (
-      m: string,
-      p: unknown,
-    ) => Promise<unknown>;
     // This override replaces the recording sendRequest, so `handle.calls` no
     // longer captures the uninstall — track it with a local flag instead.
     let uninstallSent = false;
-    (handle.client as unknown as { sendRequest: typeof original }).sendRequest = async (m, p) => {
+    interceptRequests(handle, (m) => {
       if (m === 'sharplsp/nuget/installed') return installed;
-      if (m === 'sharplsp/nuget/uninstall') {
-        uninstallSent = true;
-        installed = { packages: [] }; // server confirms removal
-        return { success: true, message: 'removed' };
-      }
-      return original(m, p);
-    };
+      if (m !== 'sharplsp/nuget/uninstall') return undefined;
+      uninstallSent = true;
+      installed = { packages: [] }; // server confirms removal
+      return { success: true, message: 'removed' };
+    });
     NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
     const panel = NuGetBrowserPanel.open(
       fakeContextWithStore(),
