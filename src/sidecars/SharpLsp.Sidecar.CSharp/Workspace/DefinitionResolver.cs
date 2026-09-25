@@ -1,15 +1,13 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Text;
 using Serilog;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
 /// <summary>
-/// Resolves symbol locations for go-to-definition, type definition,
-/// declaration, and implementation requests via Roslyn.
+/// Resolves symbol locations for go-to-definition, type definition and
+/// declaration requests via Roslyn; <see cref="ReferenceResolver"/> answers
+/// the requests that search beyond the declaration.
 /// </summary>
 internal static class DefinitionResolver
 {
@@ -44,7 +42,7 @@ internal static class DefinitionResolver
     /// via <paramref name="map"/>. Collapses the identical resolve-or-empty guard
     /// shared by the definition, implementation, and reference resolvers.
     /// </summary>
-    private static async Task<LocationListResult> ResolveSymbolLocationsAsync(
+    internal static async Task<LocationListResult> ResolveSymbolLocationsAsync(
         Document document,
         int line,
         int character,
@@ -145,215 +143,8 @@ internal static class DefinitionResolver
                 .ConfigureAwait(false);
     }
 
-    /// <summary>Find all implementations of the symbol at a position.</summary>
-    public static async Task<LocationListResult> ResolveImplementationsAsync(
-        Document document,
-        Solution solution,
-        int line,
-        int character,
-        CancellationToken ct
-    )
-    {
-        return await ResolveSymbolLocationsAsync(
-                document,
-                line,
-                character,
-                async symbol =>
-                {
-                    var locations = new List<LocationResult>();
-
-                    // FindImplementationsAsync handles interfaces and abstract members.
-                    var implementations = await SymbolFinder
-                        .FindImplementationsAsync(symbol, solution, cancellationToken: ct)
-                        .ConfigureAwait(false);
-                    foreach (var impl in implementations)
-                    {
-                        AddSourceLocation(locations, impl);
-                    }
-
-                    // For virtual/abstract methods/properties, find overrides via
-                    // derived classes (FindOverridesAsync is unreliable with
-                    // MSBuildWorkspace).
-                    if (
-                        symbol is IMethodSymbol or IPropertySymbol
-                        && (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride)
-                    )
-                    {
-                        await FindOverridesViaDerivedTypesAsync(symbol, solution, locations, ct)
-                            .ConfigureAwait(false);
-                    }
-
-                    // If no implementations found, include the symbol's own location.
-                    // Matches VS/Rider: "Go to Implementation" on a concrete type navigates
-                    // to itself when nothing derives from or implements it.
-                    if (locations.Count == 0)
-                    {
-                        AddSourceLocation(locations, symbol);
-                    }
-
-                    return new LocationListResult { Locations = locations };
-                },
-                ct
-            )
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>Find all references to the symbol at a position across the solution.</summary>
-    public static async Task<LocationListResult> ResolveReferencesAsync(
-        Document document,
-        Solution solution,
-        int line,
-        int character,
-        bool includeDeclaration,
-        CancellationToken ct
-    )
-    {
-        return await ResolveSymbolLocationsAsync(
-                document,
-                line,
-                character,
-                async symbol =>
-                {
-                    var locations = new List<LocationResult>();
-                    var referencedSymbols = await SymbolFinder
-                        .FindReferencesAsync(symbol, solution, cancellationToken: ct)
-                        .ConfigureAwait(false);
-
-                    foreach (var refSymbol in referencedSymbols)
-                    {
-                        if (includeDeclaration)
-                        {
-                            AddSourceLocation(locations, refSymbol.Definition);
-                        }
-
-                        foreach (var refLoc in refSymbol.Locations)
-                        {
-                            var span = refLoc.Location.GetMappedLineSpan();
-                            if (span.IsValid && refLoc.Location.IsInSource)
-                            {
-                                locations.Add(DocumentPosition.ToLocationResult(span));
-                            }
-                        }
-                    }
-
-                    return new LocationListResult { Locations = locations };
-                },
-                ct
-            )
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>Find document highlights for the symbol at a position (current doc only).</summary>
-    public static async Task<List<DocumentHighlightResult>> ResolveDocumentHighlightsAsync(
-        Document document,
-        Solution solution,
-        int line,
-        int character,
-        CancellationToken ct
-    )
-    {
-        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return [];
-        }
-
-        var highlights = new List<DocumentHighlightResult>();
-        var referencedSymbols = await SymbolFinder
-            .FindReferencesAsync(symbol, solution, cancellationToken: ct)
-            .ConfigureAwait(false);
-
-        foreach (var refSymbol in referencedSymbols)
-        {
-            // Include declaration as Write.
-            foreach (var loc in refSymbol.Definition.Locations)
-            {
-                if (!loc.IsInSource || loc.SourceTree?.FilePath != document.FilePath)
-                {
-                    continue;
-                }
-
-                var declSpan = loc.GetMappedLineSpan();
-                if (declSpan.IsValid)
-                {
-                    highlights.Add(
-                        new DocumentHighlightResult
-                        {
-                            StartLine = declSpan.StartLinePosition.Line,
-                            StartCharacter = declSpan.StartLinePosition.Character,
-                            EndLine = declSpan.EndLinePosition.Line,
-                            EndCharacter = declSpan.EndLinePosition.Character,
-                            Kind = 3, // Write
-                        }
-                    );
-                }
-            }
-
-            // Include references, classifying as Read vs Write.
-            foreach (var refLoc in refSymbol.Locations)
-            {
-                if (refLoc.Document.Id != document.Id)
-                {
-                    continue;
-                }
-
-                var span = refLoc.Location.GetMappedLineSpan();
-                if (!span.IsValid)
-                {
-                    continue;
-                }
-
-                var kind = IsWriteReference(refLoc) ? 3 : 2;
-                highlights.Add(
-                    new DocumentHighlightResult
-                    {
-                        StartLine = span.StartLinePosition.Line,
-                        StartCharacter = span.StartLinePosition.Character,
-                        EndLine = span.EndLinePosition.Line,
-                        EndCharacter = span.EndLinePosition.Character,
-                        Kind = kind,
-                    }
-                );
-            }
-        }
-
-        return highlights;
-    }
-
-    /// <summary>Check if a reference location is a write (assignment, out/ref, increment/decrement).</summary>
-    private static bool IsWriteReference(ReferenceLocation refLoc)
-    {
-        if (refLoc.IsImplicit)
-        {
-            return true;
-        }
-
-        var node = refLoc.Location.SourceTree?.GetRoot().FindNode(refLoc.Location.SourceSpan);
-        return node is not null && IsWriteContext(node);
-    }
-
-    /// <summary>Check if a syntax node is in a write context.</summary>
-    private static bool IsWriteContext(SyntaxNode node)
-    {
-        var parent = node.Parent;
-        return parent switch
-        {
-            // x = value
-            AssignmentExpressionSyntax assign => assign.Left == node,
-            // out x, ref x
-            ArgumentSyntax { RefKindKeyword.RawKind: var kind }
-                when kind is (int)SyntaxKind.OutKeyword or (int)SyntaxKind.RefKeyword => true,
-            // x++, x--, ++x, --x
-            PostfixUnaryExpressionSyntax => true,
-            PrefixUnaryExpressionSyntax prefix
-                when prefix.IsKind(SyntaxKind.PreIncrementExpression)
-                    || prefix.IsKind(SyntaxKind.PreDecrementExpression) => true,
-            _ => false,
-        };
-    }
-
     /// <summary>Resolve the symbol at a given document position.</summary>
-    private static async Task<ISymbol?> ResolveSymbolAsync(
+    internal static async Task<ISymbol?> ResolveSymbolAsync(
         Document document,
         int line,
         int character,
@@ -493,63 +284,6 @@ internal static class DefinitionResolver
     }
 
     /// <summary>
-    /// Find overrides of a virtual/abstract member by walking derived types.
-    /// This is more reliable than FindOverridesAsync with MSBuildWorkspace.
-    /// </summary>
-    private static async Task FindOverridesViaDerivedTypesAsync(
-        ISymbol symbol,
-        Solution solution,
-        List<LocationResult> locations,
-        CancellationToken ct
-    )
-    {
-        var containingType = symbol.ContainingType;
-        if (containingType is null)
-        {
-            return;
-        }
-
-        Log.Debug(
-            "[Override] Looking for overrides of {Type}.{Member}",
-            containingType.Name,
-            symbol.Name
-        );
-
-        var derivedTypes = await SymbolFinder
-            .FindDerivedClassesAsync(containingType, solution, cancellationToken: ct)
-            .ConfigureAwait(false);
-
-        Log.Debug("[Override] Found {Count} derived types", derivedTypes.Count());
-
-        foreach (var derived in derivedTypes)
-        {
-            Log.Debug("[Override] Checking {Type}", derived.Name);
-            foreach (var member in derived.GetMembers(symbol.Name))
-            {
-                Log.Debug(
-                    "[Override] Member {Member} override={IsOverride}",
-                    member.Name,
-                    member.IsOverride
-                );
-                if (member.IsOverride)
-                {
-                    AddSourceLocation(locations, member);
-                }
-            }
-        }
-    }
-
-    /// <summary>Add a symbol's source location to a list if in source.</summary>
-    private static void AddSourceLocation(List<LocationResult> locations, ISymbol symbol)
-    {
-        var loc = ToFirstSourceLocation(symbol);
-        if (loc is not null)
-        {
-            locations.Add(loc);
-        }
-    }
-
-    /// <summary>
     /// Map a symbol to all of its in-source locations.
     /// Source-generated symbols (e.g. from ISourceGenerator / IIncrementalGenerator)
     /// have IsInSource = true with a valid SourceTree, so this filter captures them.
@@ -572,7 +306,7 @@ internal static class DefinitionResolver
     /// Roslyn marks source-generated locations as IsInSource = true,
     /// so no special handling is needed for source generator output.
     /// </summary>
-    private static LocationResult? ToFirstSourceLocation(ISymbol symbol)
+    internal static LocationResult? ToFirstSourceLocation(ISymbol symbol)
     {
         var location = symbol.Locations.FirstOrDefault(l => l.IsInSource);
         return location is null

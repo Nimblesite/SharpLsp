@@ -21,7 +21,11 @@ unrunnable by name, never as a failing or missing test.
 
 `MSBuildWorkspace` yields one Roslyn project per framework,
 named `Name(tfm)`, so a document has one context per framework. Every request answers from the
-ACTIVE context ([NETFX-CONTEXT]).
+ACTIVE context ([NETFX-CONTEXT]). A project-wide query (references, code lens counts,
+implementations, highlights, call and type hierarchy, dead code) searches only each project's
+active framework. A project whose active framework compiles against another build of the
+symbol is still searched, through that build. Each place is reported once, so a use is never
+counted again per framework or through a property's accessor.
 
 ### F# `[NETFX-PROJECTS-FSHARP]`
 
@@ -148,9 +152,13 @@ Each loads through the real extension; LSP answers inside `#if NETFRAMEWORK` cod
 |---|---|
 | `netfx-language.test.ts` | C#: default context, framework-only APIs, `#if` regions and diagnostics flip on switch; `netstandard2.0` reference from both families ([NETFX-PROJECTS-CSHARP], [NETFX-CONTEXT]) |
 | `netfx-language-fsharp.test.ts` | the same for F#, against MSBuild's per-framework options ([NETFX-PROJECTS-FSHARP]) |
+| `netfx-msbuild-fsharp.test.ts` | F# options are MSBuild's: linked, conditioned and globbed sources, `Directory.Build.*` defines, project-relative paths ([NETFX-PROJECTS-FSHARP]) |
+| `netfx-degrade-fsharp.test.ts` | a failed design-time compile degrades to `<Compile>` items, a switch fails with MSBuild's reason, and the log says why ([NETFX-PROJECTS-FSHARP]) |
+| `netfx-run-fsharp.test.ts` | Run on the active framework, F5 on a .NET framework, refusal when there is none ([NETFX-DEBUG]) |
 | `test-explorer-netfx.test.ts` | C# and F# across `net462;net472;net48` + installed .NET: tags, per-framework messages, `Run on <tfm>`, framework-exclusive tests, debug refusal ([NETFX-TEST], [NETFX-DEBUG]) |
 | `test-explorer-mtp-netfx.test.ts` | MTP modules on `net48` + .NET, C# MSTest and F# `xunit.v3` ([NETFX-TEST-MTP]) |
 | `real-repo-netfx-*.test.ts` | [NETFX-CORPUS] |
+| `WorkspaceManagerTargetFrameworkTests.cs` · `FSharpDesignTimeTests.fs` · `FSharpResolvedReferenceTests.fs` · `e2e_modules/target_framework.rs` | each sidecar's contexts, switch and per-framework search on real unbuilt projects; the host's switch round trip ([NETFX-PROJECTS], [NETFX-CONTEXT]) |
 
 ## References `[NETFX-REFERENCES]`
 

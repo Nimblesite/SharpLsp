@@ -1,5 +1,4 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.FindSymbols;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -58,10 +57,10 @@ internal static class TypeHierarchyResolver
         return results;
     }
 
-    /// <summary>Get subtypes (derived classes + implementors).</summary>
+    /// <summary>Get subtypes (derived classes + implementors) from each project's active framework.</summary>
     public static async Task<List<HierarchyItem>> GetSubtypesAsync(
         Document document,
-        Solution solution,
+        SearchScope scope,
         int line,
         int character,
         CancellationToken ct
@@ -75,9 +74,7 @@ internal static class TypeHierarchyResolver
         }
 
         var results = new List<HierarchyItem>();
-        var derived = await SymbolFinder
-            .FindDerivedClassesAsync(symbol, solution, cancellationToken: ct)
-            .ConfigureAwait(false);
+        var derived = await scope.FindDerivedClassesAsync(symbol, ct).ConfigureAwait(false);
         foreach (var d in derived)
         {
             var item = ToItem(d);
@@ -89,9 +86,7 @@ internal static class TypeHierarchyResolver
 
         if (symbol.TypeKind == TypeKind.Interface)
         {
-            var impls = await SymbolFinder
-                .FindImplementationsAsync(symbol, solution, cancellationToken: ct)
-                .ConfigureAwait(false);
+            var impls = await scope.FindImplementationsAsync(symbol, ct).ConfigureAwait(false);
             foreach (var impl in impls.OfType<INamedTypeSymbol>())
             {
                 var item = ToItem(impl);

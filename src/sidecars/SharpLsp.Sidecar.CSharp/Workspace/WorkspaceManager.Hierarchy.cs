@@ -30,29 +30,20 @@ internal sealed partial class WorkspaceManager
         );
     }
 
-    public async Task<CallHierarchyListResult> GetIncomingCallsAsync(
+    public Task<CallHierarchyListResult> GetIncomingCallsAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            if (_solution is null)
-            {
-                return new CallHierarchyListResult.Ok<List<CallHierarchyCallResult>, string>([]);
-            }
-
-            var calls = await CallHierarchyResolver
-                .GetIncomingAsync(_solution, filePath, line, character, ct)
-                .ConfigureAwait(false);
-            return new CallHierarchyListResult.Ok<List<CallHierarchyCallResult>, string>(calls);
-        }
-        catch (Exception ex)
-        {
-            return CallHierarchyListResult.Failure(ex.Message);
-        }
+        return RunScopedQueryAsync(
+            filePath,
+            new List<CallHierarchyCallResult>(),
+            (document, scope) =>
+                CallHierarchyResolver.GetIncomingAsync(document, scope, line, character, ct),
+            ct
+        );
     }
 
     public Task<CallHierarchyListResult> GetOutgoingCallsAsync(
@@ -107,13 +98,11 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync(
+        return RunScopedQueryAsync(
             filePath,
             new List<HierarchyItem>(),
-            // A non-null document implies _solution was non-null at lookup time:
-            // FindDocumentAsync returns null whenever _solution is null.
-            document =>
-                TypeHierarchyResolver.GetSubtypesAsync(document, _solution!, line, character, ct),
+            (document, scope) =>
+                TypeHierarchyResolver.GetSubtypesAsync(document, scope, line, character, ct),
             ct
         );
     }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Xml.Linq;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1515 // xUnit requires public test classes
@@ -132,6 +133,152 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
         Assert.Null(context.Active);
         Assert.Empty(context.Available);
         Assert.Equal(single, context.Project);
+    }
+
+    private const string SharedSource = """
+        namespace Fx;
+
+        public static class Shared
+        {
+            public static string Value => "shared";
+        }
+
+        """;
+
+    private const string UserSource = """
+        namespace Fx;
+
+        public static class User
+        {
+            public static string Read() => Shared.Value;
+        }
+
+        """;
+
+    private const string ShapeSource = """
+        namespace Fx;
+
+        public interface IShape
+        {
+            string Name { get; }
+        }
+
+        """;
+
+    private const string CircleSource = """
+        namespace Fx;
+
+        public sealed class Circle : IShape
+        {
+            public string Name => Shared.Value;
+        }
+
+        """;
+
+    [Fact]
+    public async Task A_use_counts_once_however_many_frameworks_compile_it()
+    {
+        // Both frameworks compile User.cs, so each framework's copy holds its one use of
+        // Shared.Value. A project-wide query answers from the ACTIVE copy alone.
+        var shared = Path.Combine(_root, "Probe", "Shared.cs");
+        await File.WriteAllTextAsync(shared, SharedSource);
+        await File.WriteAllTextAsync(Path.Combine(_root, "Probe", "User.cs"), UserSource);
+        using var manager = await OpenAsync(_project);
+        await AssertOneUseAsync(manager, shared, "User.cs", "Read");
+
+        _ = AssertOk(await manager.SetTargetFrameworkAsync(shared, "net10.0", default));
+        await AssertOneUseAsync(manager, shared, "User.cs", "Read");
+    }
+
+    [Fact]
+    public async Task A_reader_on_another_framework_is_searched_through_the_build_it_compiles_against()
+    {
+        // App answers from net10.0 while Probe, which it references, answers from net48, so
+        // App compiles against Probe's net10.0 build. Queries from Probe still reach App.
+        var shared = Path.Combine(_root, "Probe", "Shared.cs");
+        var shape = Path.Combine(_root, "Probe", "Shape.cs");
+        await File.WriteAllTextAsync(shared, SharedSource);
+        await File.WriteAllTextAsync(shape, ShapeSource);
+        var circle = Path.Combine(_root, "App", "Circle.cs");
+        var app = WriteReader("App");
+        await File.WriteAllTextAsync(circle, CircleSource);
+        Restore(app);
+        using var manager = await OpenAsync(app);
+        _ = AssertOk(await manager.SetTargetFrameworkAsync(circle, "net10.0", default));
+        Assert.Equal(
+            "net48",
+            AssertOk(await manager.GetTargetFrameworksAsync(shared, default)).Active
+        );
+
+        await AssertOneUseAsync(manager, shared, "Circle.cs", "Name");
+        await AssertOneImplementationAsync(manager, shape);
+    }
+
+    private static async Task AssertOneUseAsync(
+        WorkspaceManager manager,
+        string shared,
+        string user,
+        string caller
+    )
+    {
+        var (line, character) = Locate(SharedSource, "Value");
+        var lenses = AssertOk(await manager.GetCodeLensesAsync(shared, default));
+        Assert.Equal("1 reference", Assert.Single(lenses, lens => lens.Line == line).Title);
+        Assert.Equal("1 reference", Assert.Single(lenses, lens => lens.Line == line - 2).Title);
+        var references = AssertOk(
+            await manager.GetReferencesAsync(shared, line, character, includeDeclaration: true)
+        );
+        Assert.Equal(
+            ["Shared.cs", user],
+            references.Locations.Select(location => Path.GetFileName(location.FilePath))
+        );
+        var calls = AssertOk(await manager.GetIncomingCallsAsync(shared, line, character));
+        var call = Assert.Single(calls);
+        Assert.Equal((caller, user), (call.Name, Path.GetFileName(call.FilePath)));
+        _ = Assert.Single(call.FromRanges);
+        var highlights = AssertOk(
+            await manager.GetDocumentHighlightsAsync(shared, line, character)
+        );
+        Assert.Equal(3, Assert.Single(highlights.Highlights).Kind);
+    }
+
+    private static async Task AssertOneImplementationAsync(WorkspaceManager manager, string shape)
+    {
+        var (line, character) = Locate(ShapeSource, "IShape");
+        var lenses = AssertOk(await manager.GetCodeLensesAsync(shape, default));
+        Assert.Equal(
+            ["1 reference", "1 implementation"],
+            lenses.Where(lens => lens.Line == line).Select(lens => lens.Title)
+        );
+        var found = AssertOk(await manager.GetImplementationsAsync(shape, line, character));
+        Assert.Equal("Circle.cs", Path.GetFileName(Assert.Single(found.Locations).FilePath));
+        var subtypes = AssertOk(await manager.GetSubtypesAsync(shape, line, character));
+        Assert.Equal("Circle", Assert.Single(subtypes).Name);
+    }
+
+    private static (int Line, int Character) Locate(string source, string identifier)
+    {
+        var lines = source.Split('\n');
+        var line = Array.FindIndex(
+            lines,
+            text => text.Contains(identifier, StringComparison.Ordinal)
+        );
+        return (line, lines[line].IndexOf(identifier, StringComparison.Ordinal) + 1);
+    }
+
+    /// <summary>A project on both frameworks that references the Probe project.</summary>
+    private string WriteReader(string name)
+    {
+        var path = WriteProject(name, "<TargetFrameworks>net48;net10.0</TargetFrameworks>");
+        var project = XDocument.Load(path);
+        project.Root!.Add(
+            new XElement(
+                "ItemGroup",
+                new XElement("ProjectReference", new XAttribute("Include", _project))
+            )
+        );
+        project.Save(path);
+        return path;
     }
 
     private async Task<string?> HoverAsync(

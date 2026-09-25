@@ -328,4 +328,24 @@ internal sealed partial class WorkspaceManager
             return Outcome.Result<TValue, string>.Failure(ex.Message);
         }
     }
+
+    /// <summary>
+    /// <see cref="RunDocumentQueryAsync{TValue}"/> for a query that searches beyond the
+    /// document: <paramref name="resolve"/> also gets each project's active framework to
+    /// search. [NETFX-PROJECTS-CSHARP]
+    /// </summary>
+    private Task<Outcome.Result<TValue, string>> RunScopedQueryAsync<TValue>(
+        string filePath,
+        TValue emptyValue,
+        Func<Document, SearchScope, Task<TValue>> resolve,
+        CancellationToken ct
+    )
+    {
+        return RunDocumentQueryAsync(
+            filePath,
+            emptyValue,
+            document => resolve(document, SearchScope.Of(document, _activeFrameworks)),
+            ct
+        );
+    }
 }

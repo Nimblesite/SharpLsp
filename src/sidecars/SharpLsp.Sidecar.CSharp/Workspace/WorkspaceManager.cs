@@ -260,7 +260,12 @@ internal sealed partial class WorkspaceManager : IDisposable
             if (_deadCodeEnabled && _solution is not null)
             {
                 var dead = await DeadCodeAnalyzer
-                    .AnalyzeAsync(state.Document, _solution, _monorepo, ct)
+                    .AnalyzeAsync(
+                        state.Document,
+                        SearchScope.Of(state.Document, _activeFrameworks),
+                        _monorepo,
+                        ct
+                    )
                     .ConfigureAwait(false);
                 diagnostics.AddRange(dead);
             }
@@ -466,19 +471,11 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        // A non-null document implies _solution was non-null at lookup time:
-        // FindDocumentAsync returns null whenever _solution is null.
-        return RunDocumentQueryAsync(
+        return RunScopedQueryAsync(
             filePath,
             new LocationListResult(),
-            document =>
-                DefinitionResolver.ResolveImplementationsAsync(
-                    document,
-                    _solution!,
-                    line,
-                    character,
-                    ct
-                ),
+            (document, scope) =>
+                ReferenceResolver.ResolveImplementationsAsync(document, scope, line, character, ct),
             ct
         );
     }
@@ -491,14 +488,13 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        // As above: a found document means a loaded solution.
-        return RunDocumentQueryAsync(
+        return RunScopedQueryAsync(
             filePath,
             new LocationListResult(),
-            document =>
-                DefinitionResolver.ResolveReferencesAsync(
+            (document, scope) =>
+                ReferenceResolver.ResolveReferencesAsync(
                     document,
-                    _solution!,
+                    scope,
                     line,
                     character,
                     includeDeclaration,
@@ -571,12 +567,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         return RunDocumentQueryAsync(
             filePath,
             new DocumentHighlightListResult(),
-            // A non-null document implies _solution was non-null at lookup time:
-            // FindDocumentAsync returns null whenever _solution is null.
             async document => new DocumentHighlightListResult
             {
-                Highlights = await DefinitionResolver
-                    .ResolveDocumentHighlightsAsync(document, _solution!, line, character, ct)
+                Highlights = await ReferenceResolver
+                    .ResolveDocumentHighlightsAsync(document, line, character, ct)
                     .ConfigureAwait(false),
             },
             ct

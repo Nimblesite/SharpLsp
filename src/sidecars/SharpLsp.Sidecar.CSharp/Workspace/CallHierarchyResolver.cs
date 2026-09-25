@@ -1,6 +1,5 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.FindSymbols;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -29,21 +28,15 @@ internal static class CallHierarchyResolver
         return symbol is null ? null : ToCallHierarchyItem(symbol);
     }
 
-    /// <summary>Get incoming calls for a symbol.</summary>
+    /// <summary>Get incoming calls for a symbol, from each project's active framework.</summary>
     public static async Task<List<CallHierarchyCallResult>> GetIncomingAsync(
-        Solution solution,
-        string filePath,
+        Document document,
+        SearchScope scope,
         int line,
         int character,
         CancellationToken ct
     )
     {
-        var document = SolutionPaths.FindDocument(solution, filePath);
-        if (document is null)
-        {
-            return [];
-        }
-
         var symbol = await ResolveAtPositionAsync(document, line, character, ct)
             .ConfigureAwait(false);
         if (symbol is null)
@@ -51,17 +44,13 @@ internal static class CallHierarchyResolver
             return [];
         }
 
-        var callers = await SymbolFinder
-            .FindCallersAsync(symbol, solution, cancellationToken: ct)
-            .ConfigureAwait(false);
-        return
-        [
-            .. callers
-                .Where(c => c.IsDirect)
-                .Select(c => ToCallResult(c.CallingSymbol, c.Locations))
-                .Where(c => c is not null)
-                .Cast<CallHierarchyCallResult>(),
-        ];
+        var results = new List<CallHierarchyCallResult>();
+        foreach (var caller in await scope.FindCallersAsync(symbol, ct).ConfigureAwait(false))
+        {
+            AddCall(caller.CallingSymbol, caller.Locations, results);
+        }
+
+        return results;
     }
 
     /// <summary>Get outgoing calls from a symbol.</summary>
@@ -118,7 +107,7 @@ internal static class CallHierarchyResolver
             var symbolInfo = model.GetSymbolInfo(invocation, ct);
             if (symbolInfo.Symbol is not null)
             {
-                AddOutgoingCall(symbolInfo.Symbol, invocation.GetLocation(), results);
+                AddCall(symbolInfo.Symbol, [invocation.GetLocation()], results);
             }
         }
     }
@@ -156,20 +145,20 @@ internal static class CallHierarchyResolver
     }
 
     /// <summary>
-    /// Record one call site against its callee, merging repeats.
+    /// Record call sites against the symbol they belong to, merging repeats.
     /// </summary>
     /// <remarks>
-    /// LSP wants ONE entry per callee carrying every range it is called at; a
-    /// second entry for the same method renders as a duplicate row in the tree
-    /// that expands to exactly the same children.
+    /// LSP wants ONE entry per symbol carrying every range it is called at, each once; a
+    /// second entry for the same method renders as a duplicate row in the tree that expands
+    /// to exactly the same children. A property read is found again through its getter.
     /// </remarks>
-    private static void AddOutgoingCall(
-        ISymbol callee,
-        Location site,
+    private static void AddCall(
+        ISymbol symbol,
+        IEnumerable<Location> sites,
         List<CallHierarchyCallResult> results
     )
     {
-        var result = ToCallResult(callee, [site]);
+        var result = ToCallResult(symbol, sites);
         if (result is null)
         {
             return;
@@ -184,7 +173,17 @@ internal static class CallHierarchyResolver
             return;
         }
 
-        existing.FromRanges.AddRange(result.FromRanges);
+        existing.FromRanges.AddRange(
+            result.FromRanges.Where(site =>
+                !existing.FromRanges.Exists(known => SameSite(known, site))
+            )
+        );
+    }
+
+    private static bool SameSite(CallSiteResult left, CallSiteResult right)
+    {
+        return (left.Line, left.Character, left.EndLine, left.EndCharacter)
+            == (right.Line, right.Character, right.EndLine, right.EndCharacter);
     }
 
     private static CallHierarchyCallResult? ToCallResult(

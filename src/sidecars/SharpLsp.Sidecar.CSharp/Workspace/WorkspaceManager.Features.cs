@@ -28,12 +28,10 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        // A non-null document implies _solution was non-null at lookup time:
-        // FindDocumentAsync returns null whenever _solution is null.
-        return RunDocumentQueryAsync<List<CodeLensResult>>(
+        return RunScopedQueryAsync<List<CodeLensResult>>(
             filePath,
             [],
-            document => CodeLensResolver.GetLensesAsync(document, _solution!, ct),
+            (document, scope) => CodeLensResolver.GetLensesAsync(document, scope, ct),
             ct
         );
     }

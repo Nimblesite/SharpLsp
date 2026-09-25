@@ -1,19 +1,19 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.FindSymbols;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
 /// <summary>
-/// Computes code lenses (reference counts, implementation counts) for types and members.
+/// Computes code lenses (reference counts, implementation counts) for types and members,
+/// counted in each project's active framework ([NETFX-PROJECTS-CSHARP]).
 /// </summary>
 internal static class CodeLensResolver
 {
     /// <summary>Get code lenses for a document.</summary>
     public static async Task<List<CodeLensResult>> GetLensesAsync(
         Document document,
-        Solution solution,
+        SearchScope scope,
         CancellationToken ct
     )
     {
@@ -25,14 +25,14 @@ internal static class CodeLensResolver
         }
 
         var lenses = new List<CodeLensResult>();
-        await CollectLensesAsync(root, model, solution, lenses, ct).ConfigureAwait(false);
+        await CollectLensesAsync(root, model, scope, lenses, ct).ConfigureAwait(false);
         return lenses;
     }
 
     private static async Task CollectLensesAsync(
         SyntaxNode root,
         SemanticModel model,
-        Solution solution,
+        SearchScope scope,
         List<CodeLensResult> lenses,
         CancellationToken ct
     )
@@ -65,7 +65,7 @@ internal static class CodeLensResolver
                 continue;
             }
 
-            var refCount = await CountReferencesAsync(symbol, solution, ct).ConfigureAwait(false);
+            var refCount = await CountReferencesAsync(symbol, scope, ct).ConfigureAwait(false);
             lenses.Add(
                 new CodeLensResult
                 {
@@ -81,7 +81,7 @@ internal static class CodeLensResolver
                 && (implSymbol.TypeKind is TypeKind.Interface || implSymbol.IsAbstract)
             )
             {
-                var implCount = await CountImplementationsAsync(implSymbol, solution, ct)
+                var implCount = await CountImplementationsAsync(implSymbol, scope, ct)
                     .ConfigureAwait(false);
                 lenses.Add(
                     new CodeLensResult
@@ -97,16 +97,14 @@ internal static class CodeLensResolver
 
     private static async Task<int> CountReferencesAsync(
         ISymbol symbol,
-        Solution solution,
+        SearchScope scope,
         CancellationToken ct
     )
     {
         try
         {
-            var refs = await SymbolFinder
-                .FindReferencesAsync(symbol, solution, cancellationToken: ct)
-                .ConfigureAwait(false);
-            return refs.Sum(r => r.Locations.Count());
+            var refs = await scope.FindReferencesAsync(symbol, ct).ConfigureAwait(false);
+            return SearchScope.DistinctLocations(refs).Count();
         }
         catch
         {
@@ -116,16 +114,14 @@ internal static class CodeLensResolver
 
     private static async Task<int> CountImplementationsAsync(
         INamedTypeSymbol typeSymbol,
-        Solution solution,
+        SearchScope scope,
         CancellationToken ct
     )
     {
         try
         {
-            var impls = await SymbolFinder
-                .FindImplementationsAsync(typeSymbol, solution, cancellationToken: ct)
-                .ConfigureAwait(false);
-            return impls.Count();
+            var impls = await scope.FindImplementationsAsync(typeSymbol, ct).ConfigureAwait(false);
+            return impls.Count;
         }
         catch
         {
