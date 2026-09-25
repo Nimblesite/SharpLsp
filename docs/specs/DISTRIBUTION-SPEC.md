@@ -1155,12 +1155,28 @@ the report's own totals, never one class's counters — and gates `sharplsp-ride
 
 1. **One JDK resolver.** Every Rider make target runs Gradle through
    `tools/rider/gradle.sh`, which finds a JDK 21+ (Rider 2026.1 runs on
-   JetBrains Runtime 21) even when an older JDK is first on `PATH`.
-2. **Never a silent skip in CI.** Locally, a machine with no JDK 21+ skips with a
-   message. CI sets `RIDER_REQUIRED=1`, which turns that into a failure: a
-   skipped gate that reports green is worse than none. The release's
-   `build-rider` job runs the same way ([DIST-RIDER-RELEASE]).
+   JetBrains Runtime 21) even when an older JDK is first on `PATH`: `JAVA_HOME`
+   first, then the Windows install locations, `/usr/lib/jvm`, and on macOS
+   `/Library/Java/JavaVirtualMachines` and both Homebrew prefixes
+   (`/opt/homebrew/opt/openjdk*`, `/usr/local/opt/openjdk*`, at the keg's
+   `libexec/openjdk.jdk/Contents/Home`). `/usr/libexec/java_home` is never asked:
+   it cannot see Homebrew JDKs, and asked for 21 it answers with a 17 and exits 0.
+   `gradle.sh --jdk` prints the JDK a build would use.
+2. **Never a silent skip.** In CI, `RIDER_REQUIRED=1` turns "no JDK 21+" into a
+   failure: a skipped gate that reports green is worse than none. The release's
+   `build-rider` job runs the same way ([DIST-RIDER-RELEASE]). Locally the task
+   skips, but records itself in `target/skipped-legs`, and `make test` and
+   `make ci` end by listing every recorded leg instead of a bare "passed"; a run
+   clears its own record. `_test-rider` deletes the previous Kover report first,
+   so a skipped run can never be gated on an old one.
 3. **The shippable zip is built too.** The same job runs `make _build-rider`,
    reusing the Gradle daemon and the IntelliJ Platform SDK it already resolved,
    so a Kotlin break cannot reach `main` behind a green pipeline. The multi-GB
    SDK download is cached, keyed on the Gradle build files.
+4. **The resolver is tested.** `tools/rider/gradle.test.mjs` (in
+   `make _test-tooling`) hands the script a fixture machine through
+   `RIDER_JDK_SYSROOT`, so the runner's own JDKs cannot decide the result. It
+   covers the Homebrew, Intel-Homebrew and `/Library` locations, a `JAVA_HOME`
+   that is too old and one that wins, a JDK below 21 never being chosen, and a
+   machine with none: a visible, recorded skip, and a failure under
+   `RIDER_REQUIRED`.

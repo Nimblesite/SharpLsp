@@ -113,6 +113,16 @@ BINDIR    = $(PREFIX)/bin
 CHECK_COV = node tools/coverage/check-coverage.mjs
 # Resolves a JDK 21+ and runs a Gradle task in the Rider project. [DIST-CI-RIDER]
 RIDER_GRADLE = sh tools/rider/gradle.sh
+# A leg this machine lacks the toolchain for records itself here when it skips
+# (tools/rider/gradle.sh), and clears itself when it runs. `make test` and
+# `make ci` list what is recorded LAST, where a green run is read, so "passed"
+# never quietly means "did not run" (GitHub #274).
+SKIPPED_LEGS_DIR = target/skipped-legs
+# $(1): the verdict when every leg ran.
+SUMMARISE = skipped="$$(cat $(SKIPPED_LEGS_DIR)/* 2>/dev/null)"; \
+	if [ -z "$$skipped" ]; then echo "==> $(1)"; \
+	else echo "==> Every leg that ran passed. These did NOT run on this machine:"; \
+	  printf '%s\n' "$$skipped"; fi
 MERGE_COBERTURA = $(DOTNET) run --file tools/coverage/merge-cobertura.cs --
 KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
 
@@ -369,7 +379,7 @@ _stage-sidecars:
 # ── CI ────────────────────────────────────────────────────────────
 
 ci: lint test build audit
-	@echo "==> CI pipeline passed."
+	@$(call SUMMARISE,CI pipeline passed.)
 
 # ── Audit ─────────────────────────────────────────────────────────
 #
@@ -439,7 +449,7 @@ _audit-npm:
 # ── Test ─────────────────────────────────────────────────────────
 
 test: _test-rust _test-zed _test-vsix _test-dotnet _test-rider _test-tooling _test-website
-	@echo "==> All tests passed."
+	@$(call SUMMARISE,All tests passed.)
 
 # The e2e tests spawn the real sidecars from these paths.
 RUST_E2E_SIDECARS = \
@@ -670,6 +680,8 @@ _verify-staged-vsix-payload:
 # locally when no JDK 21+ is installed; CI sets RIDER_REQUIRED=1 so it can never
 # silently skip there — a skipped gate that reports green is worse than none.
 _test-rider:
+	@# A report from an earlier run must never be gated as this one's.
+	@rm -f "$(RIDER_DIR)/build/reports/kover/report.xml"
 	@$(RIDER_GRADLE) koverXmlReport
 	@report="$(RIDER_DIR)/build/reports/kover/report.xml"; \
 	 if [ -f "$$report" ]; then \
@@ -719,7 +731,8 @@ _test-dotnet-win-transport:
 # needs no dependency of its own.
 _test-tooling:
 	@echo "==> Running repo tooling tests..."
-	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/audit/dotnet-vulnerable.test.mjs
+	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
+		tools/rider/gradle.test.mjs
 
 _website-build:
 	@echo "==> Building website..."
