@@ -28,6 +28,8 @@ type FSharpWorkspaceState =
         mutable IsLoaded: bool
         /// Live editor buffers keyed by canonical absolute file path.
         Overlays: ConcurrentDictionary<string, string>
+        /// Every loaded project, keyed by its project file. [NETFX-PROJECTS-FSHARP]
+        Projects: ConcurrentDictionary<string, FSharpDesignTime.FSharpProjectEntry>
     }
 
 /// Create a new workspace with an overlay-aware FSharpChecker.
@@ -45,14 +47,30 @@ let create () : FSharpWorkspaceState =
     { Checker = FSharpWorkspaceRuntime.createOverlayAwareChecker readDocument
       ProjectOptions = None
       IsLoaded = false
-      Overlays = overlays }
+      Overlays = overlays
+      Projects = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer) }
+
+/// The project that compiles `filePath`, if any loaded project does.
+let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =
+    state.Projects.Values
+    |> Seq.tryFind (fun entry -> (FSharpWorkspaceRuntime.tryProjectSourcePath entry.Options filePath).IsSome)
+
+/// The options that compile `filePath`: the workspace's when they do, which keeps them
+/// authoritative for the primary project; else the owning project's; else the workspace's.
+let internal optionsFor (state: FSharpWorkspaceState) (filePath: string) =
+    let compiles (options: FSharpProjectOptions) =
+        (FSharpWorkspaceRuntime.tryProjectSourcePath options filePath).IsSome
+
+    match state.ProjectOptions with
+    | Some primary when compiles primary -> Some primary
+    | primary -> projectOf state filePath |> Option.map _.Options |> Option.orElse primary
 
 /// Record the editor's in-memory buffer and invalidate the corresponding FCS file.
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
     let normalizedPath = FSharpWorkspaceRuntime.overlayKey filePath
     state.Overlays[normalizedPath] <- newText
 
-    match state.ProjectOptions with
+    match optionsFor state normalizedPath with
     | Some options ->
         match FSharpWorkspaceRuntime.tryProjectSourcePath options normalizedPath with
         | Some projectPath -> FSharpWorkspaceRuntime.notifyFileChanged state.Checker projectPath options
@@ -69,7 +87,7 @@ let internal readSource (state: FSharpWorkspaceState) (filePath: string) : strin
 
 /// Resolve a request path to the spelling held in project options.
 let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : string =
-    match state.ProjectOptions with
+    match optionsFor state filePath with
     | Some options -> FSharpWorkspaceRuntime.projectSourcePath options filePath
     | None -> FSharpWorkspaceRuntime.overlayKey filePath
 
@@ -102,7 +120,8 @@ let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string)
         else
             let projectPath = projectFilePath state filePath
 
-            let! parseResults, checkAnswer, source = parseAndCheckOnce state projectPath state.ProjectOptions.Value
+            let options = (optionsFor state projectPath).Value
+            let! parseResults, checkAnswer, source = parseAndCheckOnce state projectPath options
 
             return interpretAnswer parseResults checkAnswer source
     }
@@ -119,7 +138,7 @@ let internal checkFileWithSource state filePath source =
                     projectPath,
                     0,
                     SourceText.ofString source,
-                    state.ProjectOptions.Value
+                    (optionsFor state projectPath).Value
                 )
 
             return interpretAnswer parseResults checkAnswer source
@@ -157,20 +176,26 @@ let private activateWorkspace
     let files = String.Join(", ", options.SourceFiles |> Array.map Path.GetFileName)
     Log.Debug("F# {Kind} loaded from {Path} with files: [{Files}]", kind, path, files)
 
-let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string array) =
-    if fsprojFiles.Length = 0 then
-        Error "No .fsproj found"
-    else
-        try
-            let projectPath = Array.head fsprojFiles
+/// Load EVERY project; the first one is the workspace's for project-wide queries.
+let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string array) ct =
+    task {
+        if fsprojFiles.Length = 0 then
+            return Error "No .fsproj found"
+        else
+            try
+                let fallback = buildProjectOptions state
+                let! entries = fsprojFiles |> Array.map (fun path -> FSharpDesignTime.loadEntry state.Checker fallback path ct) |> Task.WhenAll
+                state.Projects.Clear()
 
-            if fsprojFiles.Length > 1 then
-                Log.Debug("F# workspace found {Count} projects; loading {Path}", fsprojFiles.Length, projectPath)
+                for entry in entries do
+                    state.Projects[entry.Path] <- entry
 
-            activateWorkspace state (buildProjectOptions state projectPath) projectPath "workspace"
-            Ok()
-        with ex ->
-            Error ex.Message
+                Log.Debug("F# workspace loaded {Count} project(s); {Path} is primary", entries.Length, fsprojFiles[0])
+                activateWorkspace state entries[0].Options fsprojFiles[0] "workspace"
+                return Ok()
+            with ex ->
+                return Error ex.Message
+    }
 
 let private logScriptDiagnostics (scriptPath: string) (diagnostics: FSharp.Compiler.Diagnostics.FSharpDiagnostic seq) =
     diagnostics
@@ -186,17 +211,19 @@ let private loadScript (state: FSharpWorkspaceState) scriptPath ct =
         return Ok()
     }
 
-let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Result<string array, string>) =
-    match discovered with
-    | Error message ->
-        Log.Debug("F# workspace diagnostic: {Message}", message)
-        Error message
-    | Ok projectFiles ->
-        match loadFirstProject state projectFiles with
-        | Ok() -> Ok()
+let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Result<string array, string>) ct =
+    task {
+        match discovered with
         | Error message ->
-            Log.Debug("F# workspace load failed: {Message}", message)
-            Error message
+            Log.Debug("F# workspace diagnostic: {Message}", message)
+            return Error message
+        | Ok projectFiles ->
+            match! loadProjects state projectFiles ct with
+            | Ok() -> return Ok()
+            | Error message ->
+                Log.Debug("F# workspace load failed: {Message}", message)
+                return Error message
+    }
 
 /// Load a project, solution, workspace directory, or self-describing script.
 let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct: CancellationToken) =
@@ -206,7 +233,7 @@ let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct
                 return! loadScript state (Path.GetFullPath path) ct
             else
                 let! discovered = FSharpProjectLoading.discoverFsprojFiles path ct
-                return loadDiscoveredProject state discovered
+                return! loadDiscoveredProject state discovered ct
         with ex ->
             Log.Debug(ex, "F# workspace load failed")
             return Error ex.Message

@@ -46,8 +46,10 @@
     <Compile Include="FSharpMetadataNavigator.fs" />
     <Compile Include="FSharpWorkspaceRuntime.fs" />
     <Compile Include="FSharpProjectLoading.fs" />
+    <Compile Include="FSharpDesignTime.fs" />
     <Compile Include="FSharpSemanticNavigation.fs" />
     <Compile Include="FSharpWorkspace.fs" />
+    <Compile Include="FSharpTargetFrameworks.fs" />
     <Compile Include="FSharpPackages.fs" />
     <Compile Include="FSharpReferences.fs" />
     <Compile Include="FSharpFeatures.fs" />

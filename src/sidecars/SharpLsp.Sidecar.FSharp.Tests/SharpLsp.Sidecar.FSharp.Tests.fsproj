@@ -28,6 +28,7 @@
     <Compile Include="FSharpDeclarationKindTests.fs" />
     <Compile Include="FSharpNavigationEdgeTests.fs" />
     <Compile Include="FSharpUnloadedWorkspaceTests.fs" />
+    <Compile Include="FSharpDesignTimeTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

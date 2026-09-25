@@ -57,6 +57,12 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
+        // The active target framework of a multi-targeted project. [NETFX-CONTEXT]
+        base.Register("workspace/targetFramework", Helpers.handle (fun (request: Messages.TargetFrameworkRequest) ->
+            Task.FromResult(FSharpTargetFrameworks.current workspace request.FilePath)) Helpers.resultOf)
+        base.Register("workspace/setTargetFramework", Helpers.handle (fun (request: Messages.TargetFrameworkRequest) ->
+            FSharpTargetFrameworks.switch workspace request.FilePath (string request.TargetFramework) CancellationToken.None) Helpers.resultOf)
+
         base.Register("workspace/status", Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
             try
                 let status = if workspace.IsLoaded then "loaded" else "not_loaded"

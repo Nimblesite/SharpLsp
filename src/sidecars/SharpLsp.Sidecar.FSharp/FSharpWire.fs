@@ -324,6 +324,12 @@ module internal Helpers =
     let serializeOk<'T> (value: 'T) (ct: CancellationToken) : ByteResult =
         Outcome.Result<byte[], string>.Ok<byte[], string>(MessagePackSerializer.Serialize(value, cancellationToken = ct)) :> ByteResult
 
+    /// Answer with the value, or fail with the reason.
+    let resultOf (result: Result<'T, string>) (ct: CancellationToken) : ByteResult =
+        match result with
+        | Ok value -> serializeOk value ct
+        | Error reason -> ByteResult.Failure(reason)
+
     /// MessagePack nil (0xC0) — the "no value" response shared by optional results.
     let nilResult () : ByteResult =
         Outcome.Result<byte[], string>.Ok<byte[], string>([| 0xC0uy |])
