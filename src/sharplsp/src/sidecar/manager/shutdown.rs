@@ -109,11 +109,16 @@ async fn reap(name: &str, child: &mut Child, acknowledged: bool, remaining: Dura
     }
 }
 
-/// Whether the child exits by itself within `remaining`.
+/// Whether the child exits by itself within `remaining`. An exit that is not
+/// clean is a failure, logged as one, though a process that is gone needs no kill.
 async fn exits_on_its_own(name: &str, child: &mut Child, remaining: Duration) -> bool {
     match tokio::time::timeout(remaining, child.wait()).await {
+        Ok(Ok(status)) if status.success() => {
+            info!(sidecar = %name, success = true, code = ?status.code(), "Sidecar acknowledged shutdown and exited on its own");
+            true
+        }
         Ok(Ok(status)) => {
-            info!(sidecar = %name, success = status.success(), code = ?status.code(), "Sidecar acknowledged shutdown and exited on its own");
+            warn!(sidecar = %name, code = ?status.code(), "Sidecar acknowledged shutdown but exited with a failure");
             true
         }
         Ok(Err(error)) => {
@@ -138,6 +143,36 @@ mod tests {
     use tokio::process::Command;
 
     use super::*;
+
+    /// A child that exits with `code` at once.
+    fn spawn_exiting(code: u8) -> Child {
+        let exit = format!("exit {code}");
+        let (program, flag) = if cfg!(windows) {
+            ("cmd", "/C")
+        } else {
+            ("sh", "-c")
+        };
+        Command::new(program)
+            .args([flag, exit.as_str()])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap()
+    }
+
+    /// A log sink the test reads back.
+    #[derive(Clone, Default)]
+    struct Captured(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
 
     /// A child that exits zero at once, or one that outlives every budget here.
     fn spawn(lingers: bool) -> Child {
@@ -241,6 +276,34 @@ mod tests {
             format!("{closed:#}").contains("without acknowledging"),
             "{closed:#}"
         );
+    }
+
+    /// Exiting after the acknowledgement is not enough: an exit that is not
+    /// clean is a failure, logged at warning level, and the gone process is
+    /// never killed. [SIDECAR-SHUTDOWN-PROTOCOL], [SIDECAR-OBSERVABILITY]
+    #[tokio::test]
+    async fn an_acknowledged_sidecar_that_exits_with_a_failure_is_warned_about_not_killed() {
+        let sink = Captured::default();
+        let writer = sink.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || writer.clone())
+            .with_ansi(false)
+            .finish();
+        let _logging = tracing::subscriber::set_default(subscriber);
+
+        let mut child = spawn_exiting(3);
+        reap("failing", &mut child, true, GRACEFUL_BUDGET).await;
+        let status = child.wait().await.unwrap();
+        let logged = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
+
+        assert_eq!(status.code(), Some(3), "it exited by itself: {status}");
+        assert!(
+            logged.contains("WARN") && logged.contains("exited with a failure"),
+            "an unclean exit is a warning: {logged}"
+        );
+        assert!(logged.contains("code=Some(3)"), "{logged}");
+        assert!(!logged.contains("Killing sidecar"), "{logged}");
+        assert!(!logged.contains("exited on its own"), "{logged}");
     }
 
     #[tokio::test]
