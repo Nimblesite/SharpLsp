@@ -101,8 +101,8 @@ One `Run on <tfm>` profile per discovered framework, scoped by its tag:
 A .NET Framework MTP module is executed directly — MSBuild's `TargetPath` is
   its `<Name>.exe`, where a .NET module's is its `.dll` — because `dotnet exec` cannot host the
   desktop CLR. Off Windows it is not spawned: "`<X>.exe` targets .NET Framework, which runs only
-  on Windows". Under Debug it is skipped when a .NET module of the same project carries its
-  tests, and refused otherwise ([NETFX-DEBUG]).
+  on Windows". Under Debug only .NET modules start: a .NET Framework module is refused when a
+  selected test it carries has no .NET module, and left out otherwise ([NETFX-DEBUG]).
 
 ## Debug `[NETFX-DEBUG]`
 
@@ -110,7 +110,9 @@ netcoredbg cannot attach to the desktop CLR, so a test host waiting under `VSTES
 would wait forever. The Debug profile runs only the selection's .NET frameworks; a selection
 with none fails at once: "`<X>` runs on .NET Framework, and no .NET Framework debugger is
 bundled: Debug attaches to .NET only. Use Run, or debug the test under one of its .NET target
-frameworks." Run without debugging uses `dotnet run --framework <tfm>`.
+frameworks." `<X>` is the project (its assembly name) for VSTest and `<Name>.exe` for MTP; each
+refusal is logged once, on one line, as `Test debug: <refusal>`. Run without debugging uses
+`dotnet run --framework <tfm>`.
 
 ## Real-world corpus `[NETFX-CORPUS]`
 
