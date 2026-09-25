@@ -4,7 +4,7 @@
 //! constructor call and returns its overloads: the F# sidecar with FCS
 //! `GetMethods`, the C# sidecar from the Roslyn semantic model. A sidecar
 //! without a handler still resolves to null. Implements
-//! `[SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]`.
+//! `[SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]` and, for F#, `[FS-SIGHELP]`.
 
 use std::sync::Arc;
 

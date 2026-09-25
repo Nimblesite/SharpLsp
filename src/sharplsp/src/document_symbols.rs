@@ -16,7 +16,7 @@ use tracing::warn;
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::SidecarFileReq;
 
-/// Handle `textDocument/documentSymbol` for an F# file via the sidecar.
+/// Handle `textDocument/documentSymbol` for an F# file via the sidecar. `[FS-DOCSYMBOL]`
 pub fn handle_fsharp(
     req: Request,
     runtime: &tokio::runtime::Runtime,
@@ -106,7 +106,7 @@ fn map_symbol(item: &SidecarDocumentSymbol) -> DocumentSymbol {
 /// editor's `workspace/symbol` (Go to Symbol in Workspace / Ctrl-T) search reaches
 /// F# symbols. The host has no F# tree-sitter grammar, so — like the outline and
 /// the Solution Explorer — these come from the FCS sidecar. Unfiltered; the caller
-/// applies the query match. `[SHARPLSP-FEATURES-NAVIGATION]`
+/// applies the query match. `[SHARPLSP-FEATURES-NAVIGATION]`, `[FS-WORKSPACE-SYMBOL]`
 pub(crate) fn fsharp_workspace_symbols(
     runtime: &tokio::runtime::Runtime,
     sidecar: &Arc<SidecarManager>,

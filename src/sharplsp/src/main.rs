@@ -1346,7 +1346,8 @@ fn handle_standard_workspace_symbol(
 
 /// Append the FCS-sourced workspace symbols matching `query` for one open F#
 /// document. No sidecar / unresolvable path / sidecar error → contributes
-/// nothing, never fails the whole search. `[SHARPLSP-FEATURES-NAVIGATION]`
+/// nothing, never fails the whole search. `[SHARPLSP-FEATURES-NAVIGATION]`,
+/// `[FS-WORKSPACE-SYMBOL]`
 fn collect_fsharp_ws_symbols(
     uri: &Uri,
     runtime: &tokio::runtime::Runtime,

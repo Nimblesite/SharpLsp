@@ -1,4 +1,4 @@
-/// Document symbols for the F# sidecar via FCS GetNavigationItems.
+/// Document symbols for the F# sidecar via FCS GetNavigationItems. Implements [FS-DOCSYMBOL].
 /// Purely syntactic (parse-only) so it responds without a cracked project —
 /// matching the host's "syntax-only" latency budget for textDocument/documentSymbol.
 /// F# symbol-extraction contract [SE-FSHARP-SYMBOLS].
