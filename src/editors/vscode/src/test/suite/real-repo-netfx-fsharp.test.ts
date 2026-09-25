@@ -224,12 +224,21 @@ suite('Real repo .NET Framework — GitReader (F#)', () => {
     this.timeout(LSP_RESPONSE_MS * 6);
     const { doc, editor, uri } = await openRepoFile(repoDir(), TESTS_UTILITIES);
     const end = (): vscode.Position => doc.positionAt(doc.getText().length);
-    const probe = '\nmodule SharpLspCompletionProbe =\n    let probe () = System.IO.File.';
+    // Written in the document's OWN line ending: VS Code turns an inserted "\n"
+    // into the document's EOL, and a probe that is no longer in the text verbatim
+    // would put the completion cursor somewhere other than after `File.`.
+    const eol = doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+    const probe = [
+      '',
+      'module SharpLspCompletionProbe =',
+      '    let probe () = System.IO.File.',
+    ].join(eol);
     const onNetfx = completionLabels(
       await completeAfterProbe(editor, end(), probe, 'WriteAllText'),
     );
     assert.ok(onNetfx.has('ReadAllText'), 'net48 offers File members');
     assert.ok(!onNetfx.has('WriteAllTextAsync'), 'net48 has no File.WriteAllTextAsync to offer');
+    assert.ok(!onNetfx.has('Utilities'), "a list of File's members, never the file's own modules");
     await underFramework(uri, 'net8.0', TESTS, async () => {
       const list = await completeAfterProbe(editor, end(), probe, 'WriteAllTextAsync');
       const onNet = completionLabels(list);
