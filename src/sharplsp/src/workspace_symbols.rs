@@ -14,6 +14,7 @@ use tracing::info;
 use tree_sitter::Node;
 
 use crate::sidecar::manager::SidecarManager;
+use crate::source_walk::collect_files;
 use crate::tree_sitter_parse::{parse_file, LangId, TsParsers};
 use crate::utils::usize_to_u32;
 use crate::vfs::Vfs;
@@ -537,30 +538,6 @@ fn find_source_files(dir: &Path) -> Vec<String> {
     let mut files = Vec::new();
     collect_files(dir, is_source_file, &mut files);
     files
-}
-
-/// Recursively collect the files `keep` accepts, skipping build output.
-pub(crate) fn collect_files(dir: &Path, keep: fn(&Path) -> bool, files: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = path.file_name().map(|n| n.to_string_lossy().to_string());
-            // Skip build output and hidden directories.
-            if matches!(
-                name.as_deref(),
-                Some("bin" | "obj" | ".git" | "node_modules")
-            ) {
-                continue;
-            }
-            collect_files(&path, keep, files);
-        } else if keep(&path) {
-            files.push(path.to_string_lossy().to_string());
-        }
-    }
 }
 
 /// Check whether the path has a `.cs` or `.fs` extension, in any casing —

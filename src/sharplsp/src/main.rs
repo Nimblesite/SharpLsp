@@ -29,6 +29,7 @@ mod semantic_tokens;
 mod sidecar;
 mod signature_help;
 mod sort_members;
+mod source_walk;
 mod statement_stop;
 mod syntax;
 mod target_framework;
