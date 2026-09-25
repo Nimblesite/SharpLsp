@@ -142,6 +142,26 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         Assert.Contains(actions, action => action.Title == "Generate overrides...");
     }
 
+    /// <summary>
+    /// Roslyn's own "Generate overrides..." needs a member picker a headless host does not
+    /// have, so resolving it throws, and it shares the headless action's title. On
+    /// <c>Shape</c>, whose base leaves nothing abstract, the headless action has nothing to
+    /// generate, so NO "Generate overrides..." may be offered there. Where there is
+    /// something to generate, exactly one is offered and it resolves (GitHub #201).
+    /// </summary>
+    [Fact]
+    public async Task Only_the_headless_override_action_is_ever_offered()
+    {
+        using var manager = await OpenAsync();
+        var onShape = Unwrap(await CodeActionsOnTypeAsync(manager, "abstract class Shape"));
+        Assert.DoesNotContain(onShape, action => action.Title == "Generate overrides...");
+
+        var onSquare = Unwrap(await CodeActionsOnTypeAsync(manager, "public class Square : Shape"));
+        var offered = Assert.Single(onSquare, action => action.Title == "Generate overrides...");
+        var resolved = await manager.ResolveCodeActionAsync(offered.Id);
+        Assert.False(resolved.IsError, resolved.Match(_ => "ok", error => error));
+    }
+
     [Fact]
     public async Task Members_the_type_already_overrides_are_not_generated_again()
     {

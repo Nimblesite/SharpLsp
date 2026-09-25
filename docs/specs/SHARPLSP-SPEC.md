@@ -376,6 +376,10 @@ SharpLsp also owns custom static analyzers that run through the same workspace d
 | Convert auto-prop ↔ full prop | `textDocument/codeAction` | Roslyn property conversion | N/A | P1 |
 | Convert method ↔ property | `textDocument/codeAction` | Custom implementation | N/A | P2 |
 
+#### [REFACTOR-NO-DIALOG] Actions That Need a Dialog
+
+An action whose options come from an IDE dialog is never offered. Roslyn models these as `CodeActionWithOptions`, for example its own `Generate overrides...`, `Extract interface...`, `Generate constructor from members...` and `Change signature...`. LSP has no dialog, and a headless `MSBuildWorkspace` has no options service, so resolving one throws. Offering it anyway handed the client an action that always failed. Where it shared a title with a working action, as Roslyn's `Generate overrides...` does with [REFACTOR-OVERRIDE-HEADLESS], ordering decided which one the client got (GitHub #201). A dialog feature is offered once it has a headless implementation, and not before.
+
 #### [REFACTOR-OVERRIDE-HEADLESS] Headless Override Generation
 
 Roslyn's own "Generate overrides" is an editor feature: its member picker and the
