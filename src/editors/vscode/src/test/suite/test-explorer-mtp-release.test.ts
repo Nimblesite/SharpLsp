@@ -16,6 +16,7 @@ import {
   writeProject,
 } from './dotnet-project-kit';
 import {
+  clearTestTree,
   collectLeafIds,
   discoverSolution,
   findItem,
@@ -49,9 +50,13 @@ for (const language of ['fsharp', 'csharp'] as const) {
         : `using Xunit; namespace Mtp.Release.Fixtures; public class Checks { [Fact] public void Passes() => Assert.Equal(${String(expected)}, 1 + 2); }\n`;
     }
 
-    function write(expected: number | undefined, outputPath: string): string {
+    function write(
+      expected: number | undefined,
+      outputPath: string,
+      dir: string = path.join(root, 'Tests'),
+    ): string {
       return writeProject(
-        path.join(root, 'Tests'),
+        dir,
         project,
         buildProjectXml({
           packages: MTP_XUNIT_PACKAGES,
@@ -171,6 +176,31 @@ for (const language of ['fsharp', 'csharp'] as const) {
         'refresh prunes the deleted test result',
       );
       assert.equal(api.testController.items.size, 0, 'no stale assembly or error row remains');
+    });
+
+    test('a valid project that NEVER had a test opens to an empty tree, not an error row', async function () {
+      this.timeout(DOTNET_CLI_MS);
+      const emptyRoot = path.join(root, 'NeverTested');
+      fs.mkdirSync(emptyRoot, { recursive: true });
+      const emptySolution = await createSolution(emptyRoot, 'NeverTested', [
+        write(undefined, 'bin/Original/', path.join(emptyRoot, 'Tests')),
+      ]);
+      const listing = await listMtpTests(emptySolution, emptyRoot);
+      assert.equal(listing.ok, true, 'the first discovery of an empty project succeeds');
+      assert.deepEqual(listing.names, [], 'the project really contains no tests');
+      assert.deepEqual(listing.warnings, [], 'zero tests on first open is not a discovery error');
+      assert.equal(listing.mtp?.modules.length, 1, 'its one module is still planned');
+
+      await clearTestTree(api);
+      await api.explorerProvider.loadSolution(emptySolution);
+      await api.testController.activateAndDiscover();
+      assert.deepEqual(collectLeafIds(api.testController.items), [], 'no test leaf appears');
+      assert.equal(
+        api.testController.items.size,
+        0,
+        'no error row explains a failure that never happened',
+      );
+      assert.equal(api.testController.getResult(id), undefined, 'no result exists to show');
     });
   });
 }
