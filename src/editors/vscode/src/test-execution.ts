@@ -21,7 +21,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type * as vscode from 'vscode';
-import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetHooks, type DotnetRun } from './dotnet-process.js';
+import {
+  DOTNET_TIMEOUT_MS,
+  runDotnet,
+  type DotnetHooks,
+  type DotnetRun,
+} from './dotnet-process.js';
 import { runTarget } from './test-targets.js';
 import { filterBatches, filterExpression } from './test-filter.js';
 import { parseFailureMessage, parseRunSummary, type TestRunSummary } from './test-run-output.js';

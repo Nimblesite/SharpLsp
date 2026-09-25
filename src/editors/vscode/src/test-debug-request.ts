@@ -47,7 +47,8 @@ export async function debugRequest(
   const cwd = runCwd();
   if (cwd === undefined || tests.length === 0) {
     // No cache writes: a debug gesture must never fabricate a run result.
-    if (cwd === undefined) reportAll(run, tests, 'No workspace folder or solution', () => undefined);
+    if (cwd === undefined)
+      reportAll(run, tests, 'No workspace folder or solution', () => undefined);
     run.end();
     return;
   }
@@ -75,7 +76,10 @@ function refuseNetFrameworkOnly(
  * those .NET frameworks' built assemblies only, never starting a .NET
  * Framework host; otherwise each test goes to the runner that discovered it.
  */
-function debugHost(host: DebugRequestHost, frameworks: readonly string[] | undefined): TestDebugHost {
+function debugHost(
+  host: DebugRequestHost,
+  frameworks: readonly string[] | undefined,
+): TestDebugHost {
   const assemblies = frameworks === undefined ? [] : assembliesOf(host.frameworks, frameworks);
   return {
     enqueue: async (work) => await host.enqueue(work),

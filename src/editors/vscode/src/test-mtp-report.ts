@@ -30,7 +30,8 @@ export function isNetFrameworkModule(modulePath: string): boolean {
 /** Why a .NET Framework module must not start: off Windows, or under Debug. */
 function netFrameworkRefusal(modulePath: string, options: TestRunOptions): string | undefined {
   const name = path.basename(modulePath);
-  if (process.platform !== 'win32') return `${name} targets .NET Framework, which runs only on Windows`;
+  if (process.platform !== 'win32')
+    return `${name} targets .NET Framework, which runs only on Windows`;
   return options.debug === true ? netFrameworkDebugRefusal(name) : undefined;
 }
 
@@ -51,8 +52,16 @@ export async function runModule(
     return await runDotnet(['exec', modulePath, ...moduleArgs], cwd, timeoutMs, signal, hooks);
   }
   const refusal = netFrameworkRefusal(modulePath, options);
-  if (refusal === undefined) return await runProcess(modulePath, moduleArgs, cwd, timeoutMs, signal, hooks);
-  return { stdout: '', stderr: '', failed: true, killed: false, exitCode: undefined, errorMessage: refusal };
+  if (refusal === undefined)
+    return await runProcess(modulePath, moduleArgs, cwd, timeoutMs, signal, hooks);
+  return {
+    stdout: '',
+    stderr: '',
+    failed: true,
+    killed: false,
+    exitCode: undefined,
+    errorMessage: refusal,
+  };
 }
 
 /** The `dotnet exec` argument vector for one module invocation. */

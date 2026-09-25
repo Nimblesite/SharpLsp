@@ -406,9 +406,7 @@ function netCoreAppMajor(line: string): number | undefined {
  */
 export async function installedNetCoreTargets(cwd: string): Promise<string[]> {
   const output = await dotnet(['--list-runtimes'], cwd);
-  const majors = new Set(
-    output.split('\n').flatMap((raw) => netCoreAppMajor(raw.trim()) ?? []),
-  );
+  const majors = new Set(output.split('\n').flatMap((raw) => netCoreAppMajor(raw.trim()) ?? []));
   return [...majors].sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
 }
 

@@ -418,7 +418,13 @@ function toRun(
   if (signalName !== null) return terminated(capture, `killed by ${signalName}`);
   const exitCode = code ?? undefined;
   if (exitCode === 0) {
-    return { ...outputOf(capture), failed: false, killed: false, exitCode, errorMessage: undefined };
+    return {
+      ...outputOf(capture),
+      failed: false,
+      killed: false,
+      exitCode,
+      errorMessage: undefined,
+    };
   }
   const trimmed = capture.stderr.trim();
   const exited = `${capture.program} exited with code ${String(exitCode ?? -1)}`;

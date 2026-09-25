@@ -75,7 +75,10 @@ function versionParts(moniker: string): number[] {
   const text = versionText(moniker);
   return isNetFramework(moniker)
     ? Array.from({ length: text.length }, (_, at) => Number(text.charAt(at)))
-    : text.split('.').filter((part) => part !== '').map(Number);
+    : text
+        .split('.')
+        .filter((part) => part !== '')
+        .map(Number);
 }
 
 /** Orders monikers by family, then version: `net462 < net48 < net481 < net8.0 < net10.0`. */
@@ -98,7 +101,9 @@ export function frameworkSummary(builds: readonly FrameworkBuild[]): string {
   return [...builds]
     .sort((left, right) => compareFrameworks(left.framework, right.framework))
     .map((build) =>
-      anyListed && build.names.length === 0 ? `${build.framework} (nothing listed)` : build.framework,
+      anyListed && build.names.length === 0
+        ? `${build.framework} (nothing listed)`
+        : build.framework,
     )
     .join(' · ');
 }

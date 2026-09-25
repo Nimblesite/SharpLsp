@@ -210,7 +210,9 @@ async function executeFramework(
   info(`Test run on ${framework}: ${String(tests.length)} test(s)`);
   try {
     const assemblies = host.frameworks().assembliesFor(framework);
-    const outcome = await host.enqueue(async () => await runAssemblies(assemblies, ids, cwd, options));
+    const outcome = await host.enqueue(
+      async () => await runAssemblies(assemblies, ids, cwd, options),
+    );
     if (!cancelled(token)) host.report(run, tests, outcome);
   } finally {
     cancellation.dispose();

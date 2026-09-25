@@ -73,9 +73,12 @@ export function makeTestItem(
 function frameworksByTest(builds: readonly FrameworkBuild[]): Map<string, string[]> {
   const byTest = new Map<string, string[]>();
   if (builds.length < 2) return byTest;
-  const ordered = [...builds].sort((left, right) => compareFrameworks(left.framework, right.framework));
+  const ordered = [...builds].sort((left, right) =>
+    compareFrameworks(left.framework, right.framework),
+  );
   for (const build of ordered) {
-    for (const name of build.names) byTest.set(name, [...(byTest.get(name) ?? []), build.framework]);
+    for (const name of build.names)
+      byTest.set(name, [...(byTest.get(name) ?? []), build.framework]);
   }
   return byTest;
 }

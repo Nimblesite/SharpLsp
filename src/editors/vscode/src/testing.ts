@@ -150,9 +150,12 @@ export class SharpLspTestController {
       'SharpLsp Tests',
     );
     this.runProfiles.push(...registerRunProfiles(this.controller, this.profileHandlers()));
-    this.frameworkRuns = new FrameworkProfiles(this.controller, async (framework, request, token) => {
-      await runFrameworkProfile(this.frameworkHost(), framework, request, token);
-    });
+    this.frameworkRuns = new FrameworkProfiles(
+      this.controller,
+      async (framework, request, token) => {
+        await runFrameworkProfile(this.frameworkHost(), framework, request, token);
+      },
+    );
     // `dotnet` is not necessarily on `$PATH`: [DIST-RUNTIME-ACQUIRE] resolves an
     // SDK that may live anywhere and publishes its path on a signal. Track it
     // reactively so discovery and runs follow a late or re-acquired SDK instead
