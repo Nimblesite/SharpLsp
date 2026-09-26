@@ -626,21 +626,13 @@ internal sealed partial class WorkspaceManager : IDisposable
         _pendingTextEdits.Clear();
     }
 
-    private async Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
+    /// <summary>
+    /// A .sln, .slnx or one project, loaded with no F# project design-time-built: the F#
+    /// sidecar owns those builds. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP].
+    /// </summary>
+    private Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
     {
-        // Roslyn 5.x's MSBuildWorkspace.OpenSolutionAsync handles both
-        // legacy .sln and the XML-based .slnx format.
-        if (NativePaths.HasExtension(target, ".sln") || NativePaths.HasExtension(target, ".slnx"))
-        {
-            return await _workspace!
-                .OpenSolutionAsync(target, cancellationToken: ct)
-                .ConfigureAwait(false);
-        }
-
-        var project = await _workspace!
-            .OpenProjectAsync(target, cancellationToken: ct)
-            .ConfigureAwait(false);
-        return project.Solution;
+        return RoslynProjectLoading.LoadAsync(_workspace!, target, ct);
     }
 
     /// <summary>

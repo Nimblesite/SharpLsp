@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -209,19 +208,7 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
     /// <summary>Build a project (and its project references) with the dotnet CLI.</summary>
     private static void BuildProject(string projectPath)
     {
-        var psi = new ProcessStartInfo(
-            "dotnet",
-            $"build \"{projectPath}\" -c Debug --nologo -v quiet"
-        )
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var process = new Process { StartInfo = psi };
-        process.Start();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        Assert.True(process.ExitCode == 0, $"dotnet build must succeed:\n{stdout}\n{stderr}");
+        var (exitCode, output) = DotnetBuild.Run(projectPath);
+        Assert.True(exitCode == 0, $"dotnet build must succeed:\n{output}");
     }
 }

@@ -1,11 +1,11 @@
 import * as assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as dotnetRoots from '../../dotnet-roots.js';
 import { candidateDotnetRoots, dotnetExecutable } from '../../dotnet-roots.js';
 import { installedSdkVersions, parseSdkVersion } from '../../global-json.js';
+import { directoryOf, fileNameOf, joinPath, resolvePath } from '../../paths.js';
 import { SETTLE_MS } from './test-timeouts.js';
 
 // Implements [DIST-RUNTIME-ACQUIRE]. Copy real installations, never empty SDK directories.
@@ -28,14 +28,14 @@ export const FRAMEWORK_MISSING_EXIT = process.platform === 'win32' ? 0x8000_8096
 export const FRAMEWORK_MISSING_MESSAGE = 'You must install or update .NET';
 
 /** Where hostfxr looks for shared frameworks, relative to a root. */
-export const FRAMEWORK = path.join('shared', 'Microsoft.NETCore.App');
+export const FRAMEWORK = joinPath('shared', 'Microsoft.NETCore.App');
 
-const FXR = path.join('host', 'fxr');
+const FXR = joinPath('host', 'fxr');
 
 /** Directory names under one component of a root, or nothing when unreadable. */
 export function namesUnder(root: string, component: string): string[] {
   try {
-    return fs.readdirSync(path.join(root, component));
+    return fs.readdirSync(joinPath(root, component));
   } catch {
     return [];
   }
@@ -103,46 +103,107 @@ export function realSource(): string {
   return found;
 }
 
+/**
+ * A clone only ever CREATES: it refuses any destination that already exists
+ * (Node refuses an existing directory as well as a file). An existing file may be
+ * a hard link to a suite's stored copy, and writing it would rewrite every root
+ * sharing it. Refusing is loud, where overwriting would be silent.
+ */
+const CLONE = {
+  recursive: true,
+  mode: fs.constants.COPYFILE_FICLONE,
+  force: false,
+  errorOnExist: true,
+} as const;
+
 export function cloneInto(source: string, relative: string, target: string): void {
-  fs.cpSync(path.join(source, relative), target, {
-    recursive: true,
-    mode: fs.constants.COPYFILE_FICLONE,
+  fs.cpSync(joinPath(source, relative), target, CLONE);
+}
+
+/**
+ * `cloneInto` without holding the event loop. The suites run INSIDE the extension
+ * host, so a synchronous copy freezes it: VS Code flags it unresponsive and mocha
+ * cannot fire the timeout that would have named the hook (Windows `workspace`).
+ */
+async function cloneAsync(source: string, relative: string, target: string): Promise<void> {
+  await fs.promises.cp(joinPath(source, relative), target, CLONE);
+}
+
+/** How a component reaches a root: cloned from anywhere, or linked from a suite's own copy. */
+type Place = (source: string, relative: string, target: string) => Promise<void>;
+
+/** `major`'s newest version of each component `source` ships, relative to the root. */
+function majorComponents(source: string, major: number): string[] {
+  return ['sdk', FXR, FRAMEWORK].map((component) => {
+    const version = newestVersion(namesUnder(source, component), `${String(major)}.`);
+    assert.ok(version, `${component} must supply .NET ${String(major)}`);
+    return joinPath(component, version);
   });
+}
+
+/** ONE version per component placed into `target`, which gets a muxer of its own. */
+async function placeSdkMajor(
+  source: string,
+  target: string,
+  major: number,
+  place: Place,
+): Promise<string> {
+  const components = majorComponents(source, major);
+  fs.mkdirSync(target, { recursive: true });
+  installMuxer(source, target);
+  await Promise.all(components.map((part) => place(source, part, joinPath(target, part))));
+  return dotnetExecutable(target);
 }
 
 /**
  * A launchable root carrying ONE real SDK, hostfxr and runtime of `major`.
  *
- * Exactly one version per component, never every installed one. `fs.cpSync` is
- * synchronous, so copying every 9.x and 10.x an agent ships blocks the event
- * loop for minutes and mocha cannot fire its own timeout until it returns: the
+ * Exactly one version per component, never every installed one, and off the event
+ * loop. A synchronous copy of every 9.x and 10.x an agent ships held the extension
+ * host for minutes and mocha could not fire its own timeout until it returned: the
  * hook reported `Timeout of 120000ms exceeded` after sixteen minutes of wall
  * clock, by which point the whole chunk had been killed and no failure was ever
  * printed (#297 CI, Windows `workspace`).
  */
-export function copySdkMajor(source: string, target: string, major: number): string {
-  fs.mkdirSync(target, { recursive: true });
-  fs.copyFileSync(dotnetExecutable(source), dotnetExecutable(target));
-  for (const component of ['sdk', FXR, FRAMEWORK]) {
-    const version = newestVersion(namesUnder(source, component), `${String(major)}.`);
-    assert.ok(version, `${component} must supply .NET ${String(major)}`);
-    cloneInto(source, path.join(component, version), path.join(target, component, version));
-  }
-  return dotnetExecutable(target);
+export async function copySdkMajor(source: string, target: string, major: number): Promise<string> {
+  return await placeSdkMajor(source, target, major, cloneAsync);
+}
+
+/**
+ * `copySdkMajor` from a root the SUITE already copied, in hard links: the same real
+ * bits for a few thousand link calls where a copy writes 400 MB per SDK. Copying
+ * both SDKs for every test cost 20-55 s a test warm and ran past the 120 s hook
+ * cold (#309 CI, Windows `workspace`), so a suite copies once and links per test.
+ *
+ * `stored` must be a copy the suite owns, never the machine's install, as
+ * `linkTree` requires. The muxer is the one file every root gets its own copy of:
+ * tests replace it, and it resolves the root from its own path.
+ */
+export async function linkSdkMajor(stored: string, target: string, major: number): Promise<string> {
+  return await placeSdkMajor(stored, target, major, (source, relative, into) =>
+    linkTree(joinPath(source, relative), into),
+  );
 }
 
 /** Every hostfxr the source ships: the muxer picks the newest it can find. */
-export function copyFxr(source: string, root: string): void {
-  for (const version of namesUnder(source, FXR)) {
-    cloneInto(source, path.join(FXR, version), path.join(root, FXR, version));
-  }
+async function copyFxr(source: string, root: string): Promise<void> {
+  const versions = namesUnder(source, FXR).map((version) => joinPath(FXR, version));
+  await Promise.all(versions.map((fxr) => cloneAsync(source, fxr, joinPath(root, fxr))));
 }
 
 /** Real runtime bits, advertised under the version name being tested. */
-export function copyRuntime(source: string, root: string, advertised: string): void {
+async function copyRuntime(source: string, root: string, advertised: string): Promise<void> {
   const real = newestVersion(realRuntimes(source), '10.') ?? realRuntimes(source)[0];
   assert.ok(real, 'the source install must carry a real runtime to compose from');
-  cloneInto(source, path.join(FRAMEWORK, real), path.join(root, FRAMEWORK, advertised));
+  await cloneAsync(source, joinPath(FRAMEWORK, real), joinPath(root, FRAMEWORK, advertised));
+}
+
+/** Where the machine's newest real SDK of `major` lives: its root and its `sdk/<version>`. */
+function realSdk(major: number): { source: string; relative: string } {
+  const source = sdkSource(major);
+  const real = newestVersion(realSdks(source), `${String(major)}.`);
+  assert.ok(real, `SDK ${String(major)} must be a real installed directory, never composed`);
+  return { source, relative: joinPath('sdk', real) };
 }
 
 /**
@@ -158,11 +219,76 @@ export function copyRuntime(source: string, root: string, advertised: string): v
  * carries 10.0.100 and 10.0.303 with no 9.x, while `/usr/local/share/dotnet`
  * carries 9.0.312 — so each major is sourced independently.
  */
-export function stageSdk(root: string, major: number): void {
-  const source = sdkSource(major);
-  const real = newestVersion(realSdks(source), `${String(major)}.`);
-  assert.ok(real, `SDK ${String(major)} must be a real installed directory, never composed`);
-  cloneInto(source, path.join('sdk', real), path.join(root, 'sdk', real));
+export async function stageSdk(root: string, major: number): Promise<void> {
+  const { source, relative } = realSdk(major);
+  const sibling = siblingCopy(root, relative);
+  const target = joinPath(root, relative);
+  await (sibling === undefined ? cloneAsync(source, relative, target) : linkTree(sibling, target));
+}
+
+/**
+ * The copy of `relative` a root composed beside `root` already holds. Seven roots
+ * share two SDKs, and on an agent without reflinks copying each SDK again took the
+ * floor suite's setup past its budget (Windows `workspace`).
+ */
+function siblingCopy(root: string, relative: string): string | undefined {
+  const scratch = directoryOf(root);
+  return fs
+    .readdirSync(scratch)
+    .map((name) => joinPath(scratch, name, relative))
+    .find((copy) => copy !== joinPath(root, relative) && fs.existsSync(copy));
+}
+
+/**
+ * `from` rebuilt at `to` from hard links: the same real bits at a third of a copy's
+ * cost. A link IS the file, so only a copy this scratch owns is ever linked — never
+ * the machine's install, where one write through a link would rewrite the SDK, and
+ * where a user who is not an administrator may not link at all.
+ */
+async function linkTree(from: string, to: string): Promise<void> {
+  await fs.promises.mkdir(to, { recursive: true });
+  const entries = await fs.promises.readdir(from, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      const [source, target] = [joinPath(from, entry.name), joinPath(to, entry.name)];
+      await (entry.isDirectory() ? linkTree(source, target) : fs.promises.link(source, target));
+    }),
+  );
+}
+
+/** Where a scratch keeps the one real SDK copy per major that its roots link. */
+const SDK_STORE = 'sdk-store';
+
+/** One copy per scratch and SDK, however many roots composed in parallel ask for it. */
+const storedSdks = new Map<string, Promise<string>>();
+
+/**
+ * The scratch's OWN copy of the machine's real SDK of `major`, made once, off the
+ * event loop. Roots link this copy and never the machine's install: the extension
+ * host's Node 24 `rmSync` descends through a Windows junction and empties what it
+ * points at, so a link into the install put it one fallen-back teardown from being
+ * wiped, on a runner that is an administrator. Only a copy this scratch owns is
+ * ever linked, as `linkTree` requires.
+ */
+function storedSdk(scratch: string, major: number): Promise<string> {
+  const { source, relative } = realSdk(major);
+  const stored = joinPath(scratch, SDK_STORE, relative);
+  const copied = storedSdks.get(stored) ?? cloneAsync(source, relative, stored).then(() => stored);
+  storedSdks.set(stored, copied);
+  return copied;
+}
+
+/**
+ * The scratch's real SDK of `major`, LINKED into `root`: one call per root, where
+ * a copy is 400 MB in ~3,800 files, and seven roots took the floor suite's setup
+ * past its budget (Windows `workspace`). hostfxr follows the link exactly as
+ * `installedSdkVersions` does. Only for roots that never RUN their SDK: a build
+ * resolves its packs and runtime through the link's target, not the root composed.
+ */
+async function linkSdk(scratch: string, root: string, major: number): Promise<void> {
+  const stored = await storedSdk(scratch, major);
+  fs.mkdirSync(joinPath(root, 'sdk'), { recursive: true });
+  fs.symlinkSync(stored, joinPath(root, 'sdk', fileNameOf(stored)), 'junction');
 }
 
 /**
@@ -177,19 +303,21 @@ export function stageSdk(root: string, major: number): void {
  * the binaries inside stay real, so the process genuinely starts whenever the
  * name says it may.
  */
-export function composeRoot(
+export async function composeRoot(
   scratch: string,
   source: string,
   name: string,
   sdkMajor: number,
   runtimeAs: string,
-): string {
-  const root = path.join(scratch, name);
+): Promise<string> {
+  const root = joinPath(scratch, name);
   fs.mkdirSync(root, { recursive: true });
   installMuxer(source, root);
-  stageSdk(root, sdkMajor);
-  copyFxr(source, root);
-  copyRuntime(source, root, runtimeAs);
+  await Promise.all([
+    linkSdk(scratch, root, sdkMajor),
+    copyFxr(source, root),
+    copyRuntime(source, root, runtimeAs),
+  ]);
   return dotnetExecutable(root);
 }
 
@@ -232,7 +360,7 @@ export function runHost(host: string, cwd: string, args: string[]) {
   );
   const env: NodeJS.ProcessEnv = {
     ...Object.fromEntries(inherited),
-    DOTNET_ROOT: path.dirname(host),
+    DOTNET_ROOT: directoryOf(host),
     DOTNET_MULTILEVEL_LOOKUP: '0',
   };
   return spawnSync(host, args, { cwd, encoding: 'utf8', timeout: SETTLE_MS, env });
@@ -240,7 +368,7 @@ export function runHost(host: string, cwd: string, args: string[]) {
 
 /** Launch one real staged sidecar on `host` and hand back everything it said. */
 export function launchSidecar(host: string, cwd: string, language: Language) {
-  const dll = path.resolve(__dirname, '../../../bin/all', `SharpLsp.Sidecar.${language}.dll`);
+  const dll = resolvePath(__dirname, '../../../bin/all', `SharpLsp.Sidecar.${language}.dll`);
   assert.ok(fs.existsSync(dll), `the test must execute the staged release sidecars: ${dll}`);
   return runHost(host, cwd, [dll, '--version']);
 }
@@ -260,13 +388,13 @@ export function describeRun(label: string, run: ReturnType<typeof runHost>): str
 
 /** Exercise hostfxr version selection with real runtime bits under one advertised version. */
 export function selectRuntimeVersion(root: string, version: string): void {
-  const parent = path.join(root, FRAMEWORK);
+  const parent = joinPath(root, FRAMEWORK);
   const versions = fs.readdirSync(parent);
   assert.ok(versions.length > 0);
-  const source = path.join(root, 'runtime-source');
+  const source = joinPath(root, 'runtime-source');
   fs.renameSync(parent, source);
   fs.mkdirSync(parent);
-  cloneInto(source, versions[0]!, path.join(parent, version));
+  cloneInto(source, versions[0]!, joinPath(parent, version));
 }
 
 export function assertSidecarsRun(host: string, cwd: string): void {
@@ -285,7 +413,7 @@ export function assertSidecarsRun(host: string, cwd: string): void {
 export function stubSdkWorkspace(
   root: string,
   find: () => string | undefined,
-  acquire: (version: string) => string,
+  acquire: (version: string) => string | Promise<string>,
 ): () => void {
   const folders = Object.getOwnPropertyDescriptor(vscode.workspace, 'workspaceFolders');
   const execute = vscode.commands.executeCommand;
@@ -303,7 +431,7 @@ export function stubSdkWorkspace(
     if (command === 'dotnet.acquireGlobalSDK') {
       const context = args[0] as { version: string; mode: string };
       assert.equal(context.mode, 'sdk', 'sidecars need MSBuild as well as the runtime');
-      return { dotnetPath: acquire(context.version) };
+      return { dotnetPath: await acquire(context.version) };
     }
     return await execute(command, ...args);
   }) as typeof execute;

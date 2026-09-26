@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
@@ -267,7 +266,7 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
             }
 
             var project = NativePaths.Join(workspace, "fsharp", "FSharpFixtures.fsproj");
-            var (exitCode, output) = await RunDotnetBuildAsync(project).ConfigureAwait(false);
+            var (exitCode, output) = DotnetBuild.Run(project);
             Assert.True(exitCode == 0, $"F# fixture build failed ({exitCode}):{output}");
             _fSharpFixtureBuilt = true;
         }
@@ -275,26 +274,6 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
         {
             FixtureBuildGate.Release();
         }
-    }
-
-    /// <summary>Build one project, returning its exit code and merged output.</summary>
-    private static async Task<(int ExitCode, string Output)> RunDotnetBuildAsync(string project)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            ArgumentList = { "build", project, "--configuration", "Debug", "--nologo" },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var build = Process.Start(startInfo);
-        Assert.NotNull(build);
-        // Drain both pipes concurrently: reading them in sequence deadlocks as soon
-        // as the un-read pipe fills its buffer.
-        var stdout = build.StandardOutput.ReadToEndAsync();
-        var stderr = build.StandardError.ReadToEndAsync();
-        await build.WaitForExitAsync().ConfigureAwait(false);
-        var text = await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false);
-        return (build.ExitCode, text);
     }
 
     private static string FindRepositoryFixture()
@@ -427,17 +406,8 @@ public sealed class ForeignRenameFixture : IDisposable
 
     private static void BuildProject(string projectPath)
     {
-        var startInfo = new ProcessStartInfo("dotnet", $"build \"{projectPath}\" --nologo -v quiet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var process =
-            Process.Start(startInfo) ?? throw new InvalidOperationException("dotnet did not start");
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        Assert.True(process.ExitCode == 0, $"real mixed build failed:\n{stdout}\n{stderr}");
+        var (exitCode, output) = DotnetBuild.Run(projectPath);
+        Assert.True(exitCode == 0, $"real mixed build failed:\n{output}");
     }
 
     private const string FSharpProject = """

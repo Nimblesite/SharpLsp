@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
 import type { DapMessage } from './dap-emulate';
 import { error, traceInfo } from './log';
 import * as state from './state';
-import { getErrorMessage, isRecord } from './utils';
+import { getErrorMessage, isRecord, removeDirRecursive } from './utils';
 
 interface HotReloadHost {
   request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
@@ -507,11 +507,8 @@ function isFileLockError(cause: unknown): boolean {
 
 function removeDirectory(directory: string | undefined): void {
   if (directory === undefined) return;
-  try {
-    fs.rmSync(directory, { recursive: true, force: true });
-  } catch (cause: unknown) {
-    error(`[hot-reload] could not remove ${directory}: ${getErrorMessage(cause)}`);
-  }
+  const removed = removeDirRecursive(directory);
+  if (!removed.ok) error(`[hot-reload] ${removed.error}`);
 }
 
 function findOwningProject(args: Record<string, unknown>): string | undefined {

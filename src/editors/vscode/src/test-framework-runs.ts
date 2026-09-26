@@ -33,7 +33,7 @@ import { mergeKeepingFailures } from './test-mtp-run.js';
 import { reportAll, type CacheWriter } from './test-reporting.js';
 import { filterIdsFor, runCwd, runTarget } from './test-targets.js';
 import { trxFiles } from './test-trx-collect.js';
-import { RETRYING_RM } from './utils.js';
+import { removeDirRecursive } from './utils.js';
 
 /** The `dotnet vstest` argument vector for one batch; no ids runs everything. */
 export function vstestArgs(
@@ -138,7 +138,7 @@ export async function runAssemblies(
   try {
     return await runBatches(assemblies, ids, cwd, dir, options);
   } finally {
-    if (owned) fs.rmSync(dir, RETRYING_RM);
+    if (owned) removeDirRecursive(dir);
   }
 }
 

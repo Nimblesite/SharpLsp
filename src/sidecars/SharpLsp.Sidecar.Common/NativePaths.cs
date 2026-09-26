@@ -35,6 +35,18 @@ public static class NativePaths
         return Path.GetDirectoryName(Portable(path)) ?? string.Empty;
     }
 
+    /// <summary>
+    /// <paramref name="directory"/> ending in the platform's separator, as MSBuild spells a
+    /// directory property such as <c>$(SolutionDir)</c>.
+    /// </summary>
+    public static string AsDirectory(string directory)
+    {
+        var portable = Portable(directory);
+        return Path.EndsInDirectorySeparator(portable)
+            ? portable
+            : portable + Path.DirectorySeparatorChar;
+    }
+
     /// <summary>The file name of <paramref name="path"/>, extension included.</summary>
     public static string NameOf(string path)
     {

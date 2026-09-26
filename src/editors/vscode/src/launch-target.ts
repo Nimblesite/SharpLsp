@@ -18,6 +18,7 @@ import {
   joinPath,
   resolvePath,
 } from './paths';
+import { isDirectory } from './utils';
 
 /** The [SCRIPT-DETECT] document kinds a launch can be built from. */
 export type DocumentKind =
@@ -172,14 +173,6 @@ function childProjectsOf(root: string, depth = CHILD_SCAN_DEPTH): string[] {
     if (depth > 1) found.push(...childProjectsOf(child, depth - 1));
   }
   return found.sort((left, right) => left.localeCompare(right));
-}
-
-function isDirectory(candidate: string): boolean {
-  try {
-    return fs.statSync(candidate).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /**

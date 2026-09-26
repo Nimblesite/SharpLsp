@@ -1,11 +1,11 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
 import { acquireDotnet10Sdk, existingSdkSatisfiesWorkspace } from '../../dotnetRuntime.js';
 import { supportsSidecars } from '../../dotnet-host.js';
 import { verifyDeployment } from '../../deployment.js';
 import { installedSdkVersions } from '../../global-json.js';
+import { directoryOf, joinPath, resolvePath } from '../../paths.js';
 import { SharpLspStatusBar } from '../../status.js';
 import { removeDirRecursive } from './test-helpers.js';
 import { installUiStubs, type UiStubs } from './ui-stubs.js';
@@ -15,19 +15,22 @@ import {
   copySdkMajor,
   describeRun,
   launchSidecar,
+  linkSdkMajor,
   runHost,
   sdkSource,
   selectRuntimeVersion,
   stageSdk,
   stubSdkWorkspace,
 } from './sdk-host-kit.js';
-import { DOTNET_CLI_MS } from './test-timeouts.js';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts.js';
 
 // #297: an older workspace SDK must never evict the runtime both sidecars require.
 // Implements [DIST-RUNTIME-ACQUIRE], exercising the actual acquisition entry point.
 suite('SDK pin preserves the sidecar host', () => {
+  let store: string;
+  let storedOld: string;
+  let storedModern: string;
   let scratch: string;
-  let modernSource: string;
   let oldHost: string;
   let modernHost: string;
   let pinnedVersion: string;
@@ -36,22 +39,37 @@ suite('SDK pin preserves the sidecar host', () => {
   let ui: UiStubs;
   let status: SharpLspStatusBar;
 
-  setup(function () {
+  // ONE real copy of each SDK root, paid once; every test links its own roots from
+  // it ([DIST-CI-VSIX-SHARDS-TIMEOUTS]: a suite pays one initialization).
+  suiteSetup(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    store = fs.mkdtempSync(joinPath(os.tmpdir(), 'slsp-sdk-host-store-'));
+    const [old, modern] = await Promise.all([
+      copySdkMajor(sdkSource(9), joinPath(store, 'old'), 9),
+      copySdkMajor(sdkSource(10), joinPath(store, 'modern'), 10),
+    ]);
+    storedOld = directoryOf(old);
+    storedModern = directoryOf(modern);
+  });
+
+  suiteTeardown(() => {
+    removeDirRecursive(store);
+  });
+
+  setup(async function () {
     this.timeout(DOTNET_CLI_MS);
-    modernSource = sdkSource(10);
-    const oldSource = sdkSource(9);
-    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-sdk-host-'));
-    oldHost = copySdkMajor(oldSource, path.join(scratch, 'old'), 9);
-    modernHost = copySdkMajor(modernSource, path.join(scratch, 'modern'), 10);
+    scratch = fs.mkdtempSync(joinPath(os.tmpdir(), 'slsp-sdk-host-'));
+    oldHost = await linkSdkMajor(storedOld, joinPath(scratch, 'old'), 9);
+    modernHost = await linkSdkMajor(storedModern, joinPath(scratch, 'modern'), 10);
     pinnedVersion = installedSdkVersions(oldHost)[0]!;
     fs.writeFileSync(
-      path.join(scratch, 'global.json'),
+      joinPath(scratch, 'global.json'),
       JSON.stringify({
         sdk: { version: pinnedVersion, rollForward: 'disable' },
       }),
     );
     previousRoot = process.env['DOTNET_ROOT'];
-    process.env['DOTNET_ROOT'] = path.dirname(oldHost);
+    process.env['DOTNET_ROOT'] = directoryOf(oldHost);
     ui = installUiStubs();
     status = new SharpLspStatusBar();
   });
@@ -75,7 +93,7 @@ suite('SDK pin preserves the sidecar host', () => {
 
   test('deployment verification uses the acquired SDK rather than inherited DOTNET_ROOT', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const selected = await verifyDeployment(path.resolve(__dirname, '../../..'), modernHost);
+    const selected = await verifyDeployment(resolvePath(__dirname, '../../..'), modernHost);
     assert.equal(selected.ok, true, JSON.stringify(selected.diagnostics));
     for (const language of ['fsharp', 'csharp']) {
       const diagnostic = selected.diagnostics.find(
@@ -84,7 +102,7 @@ suite('SDK pin preserves the sidecar host', () => {
       assert.equal(diagnostic?.blocking, false);
       assert.equal(diagnostic?.resolution.status, 'ok');
     }
-    assert.equal(process.env['DOTNET_ROOT'], path.dirname(oldHost), 'do not mutate the editor');
+    assert.equal(process.env['DOTNET_ROOT'], directoryOf(oldHost), 'do not mutate the editor');
   });
 
   for (const [version, compatible] of [
@@ -98,7 +116,7 @@ suite('SDK pin preserves the sidecar host', () => {
       this.timeout(DOTNET_CLI_MS);
       // These are real installed runtime bits with remapped directory versions,
       // testing hostfxr selection, not claiming preview SDKs were downloaded.
-      selectRuntimeVersion(path.dirname(modernHost), version);
+      selectRuntimeVersion(directoryOf(modernHost), version);
       for (const language of ['FSharp', 'CSharp'] as const) {
         const run = launchSidecar(modernHost, scratch, language);
         assert.equal(
@@ -118,9 +136,9 @@ suite('SDK pin preserves the sidecar host', () => {
     restore = stubSdkWorkspace(
       scratch,
       () => modernHost,
-      (version) => {
+      async (version) => {
         requested.push(version);
-        return copySdkMajor(path.dirname(oldHost), path.dirname(modernHost), 9);
+        return await linkSdkMajor(directoryOf(oldHost), directoryOf(modernHost), 9);
       },
     );
     assert.equal(runHost(oldHost, scratch, ['--version']).stdout.trim(), pinnedVersion);
@@ -137,9 +155,9 @@ suite('SDK pin preserves the sidecar host', () => {
     restore = stubSdkWorkspace(
       scratch,
       () => undefined,
-      (version) => {
+      async (version) => {
         requested.push(version);
-        if (version === '10.0') copySdkMajor(modernSource, path.dirname(oldHost), 10);
+        if (version === '10.0') await linkSdkMajor(storedModern, directoryOf(oldHost), 10);
         return oldHost;
       },
     );
@@ -151,7 +169,7 @@ suite('SDK pin preserves the sidecar host', () => {
 
   test('a root carrying both SDKs preserves the pin without acquisition or warnings', async function () {
     this.timeout(DOTNET_CLI_MS);
-    copySdkMajor(modernSource, path.dirname(oldHost), 10);
+    await linkSdkMajor(storedModern, directoryOf(oldHost), 10);
     restore = stubSdkWorkspace(
       scratch,
       () => modernHost,
@@ -165,10 +183,10 @@ suite('SDK pin preserves the sidecar host', () => {
 
   test('SDK files without the required runtime are rejected even when installation reports success', async function () {
     this.timeout(DOTNET_CLI_MS);
-    // ONE real 10 SDK, not every installed one: `fs.cpSync` is synchronous, so
-    // copying the whole `sdk` tree blocks the event loop past the point where
-    // mocha could even report the timeout it caused (#297 CI).
-    stageSdk(path.dirname(oldHost), 10);
+    // ONE real 10 SDK, not every installed one: copying the whole `sdk` tree held
+    // the event loop past the point where mocha could even report the timeout it
+    // caused (#297 CI). It is linked from the modern root this test already has.
+    await stageSdk(directoryOf(oldHost), 10);
     assert.ok(installedSdkVersions(oldHost).some((sdk) => sdk.startsWith('10.')));
     assert.equal(runHost(oldHost, scratch, ['--version']).stdout.trim(), pinnedVersion);
     restore = stubSdkWorkspace(

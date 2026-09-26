@@ -99,9 +99,9 @@ Two defects that only a real fixture could show:
 - [x] `test-explorer-mtp-outcomes.test.ts`
 - [x] `test-chunks.json` — the new `testexplorer-mtp` chunk
 - [x] `testing.ts` back under 500 lines (628 → 480)
-- [ ] Deslop rescan — the CLI and the MCP server were not available in the session that did
-      this work. The three command-line batchers were unified by hand into
-      `test-batching.ts`; run `rescan` and `top-offenders` before merge.
+- [x] Deslop rescan and top-offenders review — the verified CLI reports 10.710%
+      duplication, below the 11% CI limit. The three command-line batchers share
+      `test-batching.ts`; the remaining top offender is pre-existing `Messages.cs` code.
 - [x] Run the two new e2e suites in the real extension host.
 - [x] `test-explorer-mtp-modules.test.ts` — failing tests for three run defects found in
       review, committed before any fix: a stale module, a TRX collision, a lost failure
@@ -177,6 +177,15 @@ Two defects that only a real fixture could show:
 | `testexplorer` | 113 passing | 8 min |
 | `testexplorer-frameworks` | 51 passing | 5 min |
 | `debug-tests` | 54 passing | 5 min |
+
+Current Linux rerun after #298/#299 and the fixture/ownership review: `testexplorer-mtp`
+22 passing, `testexplorer-mtp-runners` 12 passing plus 4 in the second multi-root host,
+`testexplorer-mtp-parity` 19 passing, `testexplorer` 124 passing, and
+`testexplorer-frameworks` 54 passing plus 1 in its second host, and `debug-tests`
+79 passing plus 1 in its second host. These real extension-host tests include F# and C#
+Debug/Release execution, changed output paths, empty discovery, data-row edits,
+cancellation, breakpoint stepping, and multi-root runner routing. Windows CI and the
+final PR checks remain outstanding.
 
 The new chunk is well inside the 15-minute ceiling [DIST-CI-WIN-VSIX] sets. The other three
 are the chunks this work touched, and none regressed.

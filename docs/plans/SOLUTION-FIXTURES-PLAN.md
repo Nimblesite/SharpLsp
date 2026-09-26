@@ -17,4 +17,7 @@ and producing no assembly. This defect also exists at the release baseline
 - [x] Add Debug/Release solution and project mappings without changing the test.
 - [x] Pass all four format/configuration cases using SDK 10.0.303 on macOS (9s).
 - [x] Register the regression in the workspace chunk for both Linux and Windows.
+- [x] Pass the current Linux workspace chunk: 487 extension-host tests passing,
+  including the real `.sln` and `.slnx` Debug/Release fixture builds and linked-SDK
+  cleanup cases.
 - [ ] Pass the combined PR's Linux and Windows workspace chunks.

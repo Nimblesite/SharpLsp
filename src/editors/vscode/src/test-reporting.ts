@@ -15,7 +15,7 @@ import { ownedBy, type MtpRunPlan } from './test-listing-model';
 import { perFrameworkFailures, type FrameworkIndex } from './test-frameworks';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
-import { RETRYING_RM, singleLine } from './utils';
+import { removeDirRecursive, singleLine } from './utils';
 
 /** Writes one result into the controller's status-lens cache. */
 export type CacheWriter = (testId: string, result: CachedTestResult) => void;
@@ -181,11 +181,14 @@ function failureMessages(result: TrxTestResult, frameworks?: FrameworkIndex): vs
 /**
  * An EMPTY `.sharplsp-coverage` next to the solution. `findCoberturaFile` takes
  * the first report one level down, so a directory left over from an earlier run
- * makes the Testing view show yesterday's coverage for today's run.
+ * makes the Testing view show yesterday's coverage for today's run. It is the
+ * run's results directory in the user's repo, so a link in it, or the directory
+ * itself being one, loses the link and never what it names.
  */
 export function freshCoverageDir(cwd: string): string {
   const dir = joinPath(cwd, COVERAGE_DIR);
-  fs.rmSync(dir, RETRYING_RM);
+  const removed = removeDirRecursive(dir);
+  if (!removed.ok) throw new Error(removed.error);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

@@ -131,6 +131,14 @@ Project evaluation MUST handle SDK-style and legacy `.csproj`/`.fsproj` files, m
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. SharpLsp exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
 - **Project-less files:** A `.cs` [file-based app](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps), a `.csx` Roslyn script, and a `.fsx` F# script are all first-class editing targets with no owning project. Their compilation closure is derived from the root file — `#:include` for file-based apps, `#load` for scripts — and never from the containing directory. See [SCRIPTING-FILEBASED-SPEC.md](SCRIPTING-FILEBASED-SPEC.md).
 
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP] Each Sidecar Builds Only Its Own Projects
+
+A design-time build writes generated files under the project's `obj/<configuration>/<framework>/` — for F#, `<Name>.AssemblyInfo.fs` among them. Two builds of one project at once race on those files, and the loser fails with "being used by another process". So each project has exactly ONE owner that ever design-time-builds it:
+
+- The F# sidecar owns every `.fsproj`. The C# sidecar MUST NOT design-time-build one — neither because a solution lists it nor because a C# project references it. It knows an F# project only as the DLL that project last built, per [DEFINITION-CROSSLANG].
+- Roslyn's `MSBuildWorkspace` loads any `.fsproj` it meets, so the C# sidecar registers each reachable F# project as an empty placeholder in the `ProjectMap` Roslyn resolves projects through, before loading. Roslyn takes the placeholder instead of building, and the placeholder is then replaced by the F# DLL.
+- Violating this shows as an F# project that silently falls back to its `<Compile>` items — no references, no defines — whenever the two sidecars load the solution at the same moment.
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH] Choosing the Solution to Open
 
 The host sends one path to each sidecar's `workspace/open`. When that path is a directory, the C# sidecar discovers a target under it: an unambiguous `.sln`, `.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between several nested solutions — a monorepo root holding `app/App.sln` and `other/Other.sln` is ambiguous, and guessing would silently load the wrong half of the repository.
