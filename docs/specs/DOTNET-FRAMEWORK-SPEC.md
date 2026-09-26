@@ -44,7 +44,10 @@ dotnet msbuild <fsproj> -p:TargetFramework=<tfm> -p:DesignTimeBuild=true
 
 `net48` therefore compiles with `--targetprofile:mscorlib`, the 4.8 reference assemblies and
 `NETFRAMEWORK;NET48;…_OR_GREATER` (about 1 s per framework on SDK 10.0.303); source order, globs, conditions and `Directory.Build.*` are
-MSBuild's. Relative arguments resolve against the project directory. If the design-time compile
+MSBuild's. Relative arguments resolve against the project directory. Flags the build passes for
+its own console log and an editor must not, `--flaterrors` first (it folds each message onto one
+line with U+001D, and every published message and every quick fix that reads one loses its line
+breaks), are dropped. If the design-time compile
 fails, the project degrades to its `<Compile>` items against the sidecar runtime and the log says
 why. Every `.fsproj` of the solution loads and a file answers from the project that compiles it;
 the first is the workspace's for project-wide queries. MSBuild is asked only when the project
