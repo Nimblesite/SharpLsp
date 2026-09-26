@@ -65,7 +65,8 @@ public static class SolutionFileReader
                 + "Expected .sln or .slnx.";
     }
 
-    private static bool IsSolutionFile(string path)
+    /// <summary>Whether <paramref name="path"/> names a <c>.sln</c> or <c>.slnx</c> solution.</summary>
+    public static bool IsSolutionFile(string path)
     {
         return NativePaths.HasExtension(path, ".sln") || NativePaths.HasExtension(path, ".slnx");
     }
