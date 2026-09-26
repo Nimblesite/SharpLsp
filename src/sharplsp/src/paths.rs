@@ -4,6 +4,7 @@
 //! Implements [SHARPLSP-ARCHITECTURE-PATHS].
 
 use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use lsp_types::Uri;
@@ -115,14 +116,17 @@ pub fn canonical_native_path(uri: &Uri) -> Option<String> {
 /// Unicode, not only ASCII, so the fold is [`ntfs_upcase`] (GitHub #171).
 /// [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn native_paths_equal(left: &str, right: &str) -> bool {
-    let (left, right) = (strip_verbatim(left), strip_verbatim(right));
     if cfg!(windows) {
-        left.chars()
-            .map(ntfs_upcase)
-            .eq(right.chars().map(ntfs_upcase))
+        comparison_key(left) == comparison_key(right)
     } else {
-        left == right
+        strip_verbatim(left) == strip_verbatim(right)
     }
+}
+
+/// `text` folded the one way the host folds a path: [`ntfs_upcase`] per character.
+/// [SHARPLSP-ARCHITECTURE-PATHS] (GitHub #171)
+fn fold(text: &str) -> String {
+    text.chars().map(ntfs_upcase).collect()
 }
 
 /// One character upcased the way NTFS's `$UpCase` table upcases it: one UTF-16
@@ -158,12 +162,124 @@ fn strip_verbatim(path: &str) -> Cow<'_, str> {
 /// slashes, and case-folded on Windows. [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn normalized_rename_path(path: &str) -> String {
     let canonical = canonical_path(path).unwrap_or_else(|| path.to_string());
-    let normalized = strip_verbatim(&canonical).replace('\\', "/");
     if cfg!(windows) {
-        normalized.to_ascii_lowercase()
+        comparison_key(&canonical)
     } else {
-        normalized
+        slashed(&strip_verbatim(&canonical))
     }
+}
+
+/// The extension of `path` without its dot, through the one path [`fold`]
+/// (upper case); `None` when it has none. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn extension_key(path: impl AsRef<Path>) -> Option<String> {
+    path.as_ref()
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(fold)
+}
+
+/// Whether `path` ends in one of `extensions` (no dot), in any casing: Windows
+/// filesystems are case-insensitive, so `Program.CS` is a C# file.
+/// [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn has_extension(path: impl AsRef<Path>, extensions: &[&str]) -> bool {
+    extension_key(path).is_some_and(|key| extensions.iter().any(|wanted| fold(wanted) == key))
+}
+
+/// Whether `marker`, an extension written with its dot (`.csproj`), is one of
+/// `extensions` (no dot), in any casing. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn is_extension(marker: &str, extensions: &[&str]) -> bool {
+    marker.strip_prefix('.').is_some_and(|extension| {
+        extensions
+            .iter()
+            .any(|wanted| fold(wanted) == fold(extension))
+    })
+}
+
+/// The last segment of `path`, when it is valid UTF-8. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn file_name_of(path: &Path) -> Option<&str> {
+    path.file_name().and_then(|name| name.to_str())
+}
+
+/// The last segment of `path` without its extension. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn file_stem_of(path: impl AsRef<Path>) -> Option<String> {
+    path.as_ref()
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+}
+
+/// Whether the last segment of `path` is `name`, in any casing. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn has_file_name(path: impl AsRef<Path>, name: &str) -> bool {
+    file_name_of(path.as_ref()).is_some_and(|actual| fold(actual) == fold(name))
+}
+
+/// Whether the last segment of `path` ends in `suffix`, in any casing: a
+/// multi-dot suffix such as `.runtimeconfig.json`. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn has_name_suffix(path: impl AsRef<Path>, suffix: &str) -> bool {
+    file_name_of(path.as_ref()).is_some_and(|name| fold(name).ends_with(&fold(suffix)))
+}
+
+/// The directory holding `path`; `None` for a root or a bare file name.
+/// [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn directory_of(path: impl AsRef<Path>) -> Option<PathBuf> {
+    path.as_ref()
+        .parent()
+        .filter(|directory| !directory.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+}
+
+/// `path` relative to `root`, when it lies beneath it. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn relative_to(path: &Path, root: &Path) -> Option<String> {
+    path.strip_prefix(root)
+        .ok()
+        .map(|relative| relative.to_string_lossy().into_owned())
+}
+
+/// `path` spelled with forward slashes. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn slashed(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+/// The one key two spellings of a path compare by: no verbatim prefix, forward
+/// slashes, and the one path [`fold`], the NTFS upcase the VFS identity uses
+/// (GitHub #171). The only case fold on a path in the host.
+/// [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn comparison_key(path: &str) -> String {
+    fold(&slashed(&strip_verbatim(path)))
+}
+
+/// The canonical `PathBuf` of an existing `path`, as a visited-set key. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn canonical_buf(path: &Path) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
+}
+
+/// The file name of the `stem` executable on this platform. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn executable_name(stem: &str) -> String {
+    if cfg!(windows) {
+        format!("{stem}.exe")
+    } else {
+        stem.to_string()
+    }
+}
+
+/// The spellings a command resolves to on `PATH`: Windows adds its executable
+/// suffixes. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn command_file_names(command: &str) -> Vec<String> {
+    let suffixes: &[&str] = if cfg!(windows) {
+        &["", ".exe", ".cmd", ".bat"]
+    } else {
+        &[""]
+    };
+    suffixes
+        .iter()
+        .map(|suffix| format!("{command}{suffix}"))
+        .collect()
+}
+
+/// Whether `path` names the `stem` executable (`dotnet`, `dotnet.exe`), in any
+/// casing. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn names_executable(path: &str, stem: &str) -> bool {
+    let name = fold(file_name_of(Path::new(path)).unwrap_or(path));
+    name == fold(stem) || name == fold(&format!("{stem}.exe"))
 }
 
 /// Test-only fixtures shared by unit tests across modules that map between
@@ -187,180 +303,5 @@ pub mod test_paths {
 }
 
 #[cfg(test)]
-mod tests {
-    #![expect(
-        clippy::unwrap_used,
-        reason = "test code — panics are the correct failure mode"
-    )]
-
-    use super::*;
-
-    /// GitHub #110: a real VS Code file URI on Windows carries a drive letter and
-    /// often percent-encodes the drive colon (`%3A`) and spaces (`%20`). It must
-    /// convert to the native path the sidecar can actually open. A naive
-    /// `strip_prefix("file://")` leaves a leading slash and the raw `%3A`,
-    /// yielding `/e%3A/Pavo/Systems/Terrain.fs` — a path Roslyn/FCS cannot
-    /// resolve, so every semantic feature returns nothing on Windows even once
-    /// the sidecar transport is up ("no symbol support beyond colorization").
-    #[cfg(windows)]
-    #[test]
-    fn uri_to_path_yields_native_windows_paths() {
-        assert_eq!(
-            uri_to_path("file:///C:/Users/test/Program.cs").unwrap(),
-            r"C:\Users\test\Program.cs"
-        );
-        // Exact path from the #110 report, as VS Code percent-encodes it.
-        assert_eq!(
-            uri_to_path("file:///e%3A/Pavo/Systems/Terrain.fs").unwrap(),
-            r"e:\Pavo\Systems\Terrain.fs"
-        );
-        // Percent-encoded spaces must decode to real spaces.
-        assert_eq!(
-            uri_to_path("file:///C:/My%20Code/App.fs").unwrap(),
-            r"C:\My Code\App.fs"
-        );
-    }
-
-    /// A rooted `file://` URI without a drive letter (`file:///test/f.fs`) has
-    /// no native Windows representation, but it is still a valid LSP document
-    /// URI (in-memory test documents, non-local files). It must degrade to the
-    /// percent-decoded POSIX-style path — downstream consumers treat the
-    /// nonexistent path as "no semantic result" — never fail the request.
-    #[cfg(windows)]
-    #[test]
-    fn uri_to_path_degrades_driveless_uris_to_posix_paths() {
-        assert_eq!(
-            uri_to_path("file:///test/Library.fs").unwrap(),
-            "/test/Library.fs"
-        );
-        assert_eq!(
-            uri_to_path("file:///test/My%20Lib/App.fs").unwrap(),
-            "/test/My Lib/App.fs"
-        );
-    }
-
-    /// On Unix the same conversion keeps absolute POSIX paths intact and decodes
-    /// percent-encoding.
-    #[cfg(unix)]
-    #[test]
-    fn uri_to_path_yields_native_unix_paths() {
-        assert_eq!(
-            uri_to_path("file:///home/user/proj/Program.cs").unwrap(),
-            "/home/user/proj/Program.cs"
-        );
-        assert_eq!(
-            uri_to_path("file:///home/user/My%20Proj/App.fs").unwrap(),
-            "/home/user/My Proj/App.fs"
-        );
-    }
-
-    /// GitHub #110 (reverse direction): sidecar responses carry native Windows
-    /// paths (`C:\dir\f.cs`). They must become valid `file:///C:/dir/f.cs` URIs
-    /// or the client drops the location — go-to-definition, references, rename,
-    /// and hierarchy silently return null on Windows. The naive
-    /// `format!("file://{path}")` yields `file://C:\dir\f.cs`, which is not a
-    /// parseable URI.
-    #[cfg(windows)]
-    #[test]
-    fn path_to_uri_yields_valid_windows_file_uris() {
-        assert_eq!(
-            path_to_uri(r"C:\Users\test\Program.cs").unwrap(),
-            "file:///C:/Users/test/Program.cs"
-        );
-        // Spaces must be percent-encoded to form a valid URI.
-        assert_eq!(
-            path_to_uri(r"C:\My Code\App.fs").unwrap(),
-            "file:///C:/My%20Code/App.fs"
-        );
-        // Relative paths cannot form file URIs and must be rejected, not mangled.
-        assert!(path_to_uri(r"relative\App.fs").is_err());
-    }
-
-    /// On Unix the reverse conversion produces standard `file:///abs/path` URIs.
-    #[cfg(unix)]
-    #[test]
-    fn path_to_uri_yields_valid_unix_file_uris() {
-        assert_eq!(
-            path_to_uri("/home/user/proj/Program.cs").unwrap(),
-            "file:///home/user/proj/Program.cs"
-        );
-        assert_eq!(
-            path_to_uri("/home/user/My Proj/App.fs").unwrap(),
-            "file:///home/user/My%20Proj/App.fs"
-        );
-        assert!(path_to_uri("relative/App.fs").is_err());
-    }
-
-    /// Round-trip: a native path converted to a URI and back must be unchanged.
-    /// This is the invariant #110 depends on — the client sends URIs, the
-    /// sidecar speaks native paths, and every hop between them must be lossless.
-    #[test]
-    fn path_uri_round_trip_is_lossless() {
-        let native = if cfg!(windows) {
-            r"C:\Users\test\My Code\Program.cs"
-        } else {
-            "/home/user/My Code/Program.cs"
-        };
-        let uri = path_to_uri(native).unwrap();
-        assert_eq!(uri_to_path(&uri).unwrap(), native);
-    }
-
-    /// Some clients build workspace-folder URIs by concatenation and omit the
-    /// root slash (`file:///c:` instead of `file:///c:/`). The url crate
-    /// panics on these under debug assertions and yields a drive-RELATIVE
-    /// path (`c:`) in release — both catastrophic for a client-controlled
-    /// input. [GitHub #110]
-    #[cfg(windows)]
-    #[test]
-    fn uri_to_path_maps_bare_drive_root_uris_to_the_drive_root() {
-        assert_eq!(uri_to_path("file:///c:").unwrap(), r"c:\");
-        assert_eq!(uri_to_path("file:///c%3A").unwrap(), r"c:\");
-        assert_eq!(uri_to_path("file:///C%3a").unwrap(), r"C:\");
-    }
-
-    #[test]
-    fn uri_to_path_converts_to_native_path() {
-        // `uri_to_path` yields a NATIVE path per platform: a driveless POSIX URI
-        // is a valid path only on Unix, while Windows requires a drive letter
-        // (GitHub #110 — `file:///C:/…` must not become `/C:/…`).
-        #[cfg(unix)]
-        {
-            let path = uri_to_path("file:///home/user/test.cs").unwrap();
-            assert_eq!(path, "/home/user/test.cs");
-        }
-        #[cfg(windows)]
-        {
-            let path = uri_to_path("file:///C:/Users/test.cs").unwrap();
-            assert_eq!(path, r"C:\Users\test.cs");
-        }
-    }
-
-    #[test]
-    fn uri_to_path_rejects_non_file() {
-        assert!(uri_to_path("https://example.com").is_err());
-    }
-
-    #[test]
-    fn path_to_uri_valid_path() {
-        use super::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
-        let uri = path_to_lsp_uri(NATIVE_FILE).unwrap();
-        assert_eq!(uri.as_str(), NATIVE_FILE_URI);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn native_paths_equal_strips_verbatim_disk_and_unc_prefixes() {
-        // `std::fs::canonicalize` returns `\\?\C:\...` for local paths and
-        // `\\?\UNC\server\share\...` for network paths; both must compare
-        // equal to their plain spellings. [GitHub #110]
-        assert!(native_paths_equal(r"\\?\C:\dir\F.cs", r"c:\dir\f.cs"));
-        assert!(
-            native_paths_equal(r"\\?\UNC\server\share\F.cs", r"\\server\share\f.cs"),
-            "verbatim UNC must equal its plain UNC spelling"
-        );
-        assert!(!native_paths_equal(
-            r"\\?\UNC\server\share\F.cs",
-            r"\\other\share\F.cs"
-        ));
-    }
-}
+#[path = "paths_tests.rs"]
+mod tests;

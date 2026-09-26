@@ -33,10 +33,9 @@ impl LangId {
 
     /// Detect language from a file path.
     pub fn from_path(path: &Path) -> Option<Self> {
-        let ext = path.extension()?.to_str()?;
-        match ext.to_ascii_lowercase().as_str() {
-            "cs" => Some(Self::CSharp),
-            "fs" | "fsx" | "fsi" => Some(Self::FSharp),
+        match crate::paths::extension_key(path)?.as_str() {
+            "CS" => Some(Self::CSharp),
+            "FS" | "FSX" | "FSI" => Some(Self::FSharp),
             _ => None,
         }
     }

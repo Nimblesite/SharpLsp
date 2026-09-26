@@ -597,14 +597,10 @@ fn env_var_sidecar_override(subdir: &str) -> Option<std::path::PathBuf> {
 /// executable. On Windows, also tries `.exe` and `.cmd` suffixes.
 fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
     let path_var = std::env::var_os("PATH")?;
-    let suffixes: &[&str] = if cfg!(windows) {
-        &["", ".exe", ".cmd", ".bat"]
-    } else {
-        &[""]
-    };
+    let names = crate::paths::command_file_names(command);
     for dir in std::env::split_paths(&path_var) {
-        for suffix in suffixes {
-            let candidate = dir.join(format!("{command}{suffix}"));
+        for name in &names {
+            let candidate = dir.join(name);
             if candidate.is_file() {
                 return Some(candidate);
             }
@@ -626,11 +622,7 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
     let exe_dir = current.parent()?;
     debug!(current_exe = %current.display(), exe_dir = %exe_dir.display(), "Resolving installed sidecar");
 
-    let exe_name = if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    };
+    let exe_name = crate::paths::executable_name(name);
 
     // 1. VSIX layout: sidecar sits next to the binary.
     let vsix = exe_dir.join(subdir).join(&exe_name);
@@ -766,9 +758,7 @@ mod tests {
     fn ipc_path_unix_ends_with_sock_and_contains_name() {
         let path = ipc_path("sharplsp-csharp", &PathBuf::from("/some/workspace"));
         assert!(
-            std::path::Path::new(&path)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("sock")),
+            crate::paths::has_extension(&path, &["sock"]),
             "expected path ending in '.sock', got: {path}"
         );
         assert!(
@@ -979,11 +969,7 @@ mod tests {
     }
 
     fn sidecar_exe_name(name: &str) -> String {
-        if cfg!(windows) {
-            format!("{name}.exe")
-        } else {
-            name.to_string()
-        }
+        crate::paths::executable_name(name)
     }
 
     #[test]

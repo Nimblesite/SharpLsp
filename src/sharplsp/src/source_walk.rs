@@ -51,14 +51,12 @@ fn walk(
 /// Record `dir` by its canonical path; false when that path was walked before,
 /// or `dir` does not resolve at all.
 fn first_visit(dir: &Path, walked: &mut HashSet<PathBuf>) -> bool {
-    std::fs::canonicalize(dir).is_ok_and(|canonical| walked.insert(canonical))
+    crate::paths::canonical_buf(dir).is_some_and(|canonical| walked.insert(canonical))
 }
 
 /// Whether `dir` is build output or metadata the walk skips.
 fn is_skipped(dir: &Path) -> bool {
-    dir.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| SKIPPED.contains(&name))
+    crate::paths::file_name_of(dir).is_some_and(|name| SKIPPED.contains(&name))
 }
 
 #[cfg(test)]

@@ -190,7 +190,7 @@ fn pick_package_sidecar<'a>(
     csharp: Option<&'a Arc<SidecarManager>>,
     fsharp: Option<&'a Arc<SidecarManager>>,
 ) -> Option<&'a Arc<SidecarManager>> {
-    if project_path.to_lowercase().ends_with(".fsproj") {
+    if crate::paths::has_extension(project_path, &["fsproj"]) {
         fsharp
     } else {
         csharp
@@ -392,8 +392,7 @@ fn apply_uninstall(
 
 /// Decide which element flavour to write for the given target.
 fn pick_install_element(target: &types::NuGetTarget) -> edit::PackageElement {
-    let lower = target.path.to_lowercase();
-    if lower.ends_with("directory.packages.props") {
+    if crate::paths::has_file_name(&target.path, "Directory.Packages.props") {
         edit::PackageElement::Version
     } else if matches!(target.kind, types::TargetKind::BuildProps) {
         edit::PackageElement::Reference
@@ -414,9 +413,7 @@ fn spawn_restore(
     modified_files: Vec<String>,
 ) {
     let target_id = target.id.clone();
-    let target_dir = std::path::Path::new(&target.path)
-        .parent()
-        .map(std::path::Path::to_path_buf);
+    let target_dir = crate::paths::directory_of(&target.path);
 
     // Notify "started" synchronously so the UI sees it immediately.
     send_restore_progress(&sender, &target_id, types::RestorePhase::Started, None);

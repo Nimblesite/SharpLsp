@@ -51,11 +51,9 @@ impl NuGetTarget {
     /// Synthesize a project-kind target from a raw `.csproj` / `.fsproj` path
     /// (for backwards-compat with older clients that still send `projectPath`).
     pub fn from_project_path(path: &str) -> Self {
-        let display_name = std::path::Path::new(path)
-            .file_name()
-            .and_then(|n| n.to_str())
+        let display_name = crate::paths::file_name_of(std::path::Path::new(path))
             .map_or_else(|| path.to_string(), String::from);
-        let language = if path.ends_with(".fsproj") {
+        let language = if crate::paths::has_extension(path, &["fsproj"]) {
             Some(TargetLanguage::FSharp)
         } else {
             Some(TargetLanguage::CSharp)

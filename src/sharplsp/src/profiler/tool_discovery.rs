@@ -146,15 +146,8 @@ fn push_global_tool_root(roots: &mut Vec<PathBuf>, home: &Path) {
 }
 
 /// Return the platform-specific executable file name for a global tool shim.
-#[cfg(windows)]
 fn tool_file_name(name: &str) -> String {
-    format!("{name}.exe")
-}
-
-/// Return the platform-specific executable file name for a global tool shim.
-#[cfg(not(windows))]
-fn tool_file_name(name: &str) -> String {
-    name.to_string()
+    crate::paths::executable_name(name)
 }
 
 /// Log whether a diagnostic tool was found.

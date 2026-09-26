@@ -525,14 +525,9 @@ fn sidecar_for_path<'a>(
     csharp_sidecar: Option<&'a Arc<SidecarManager>>,
     fsharp_sidecar: Option<&'a Arc<SidecarManager>>,
 ) -> Option<&'a Arc<SidecarManager>> {
-    let extension = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    match extension.as_str() {
-        "cs" | "csx" => csharp_sidecar,
-        "fs" | "fsx" | "fsscript" => fsharp_sidecar,
+    match paths::extension_key(file_path).as_deref() {
+        Some("CS" | "CSX") => csharp_sidecar,
+        Some("FS" | "FSX" | "FSSCRIPT") => fsharp_sidecar,
         _ => None,
     }
 }

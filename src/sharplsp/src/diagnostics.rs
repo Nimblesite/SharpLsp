@@ -219,18 +219,7 @@ fn source_tag_for_uri(uri: &Uri) -> String {
 
 /// Determine the diagnostic source tag from a native document path.
 fn source_tag_for_path(file_path: &str) -> &'static str {
-    let Some(extension) = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-    else {
-        return "sharplsp-csharp";
-    };
-
-    if extension.eq_ignore_ascii_case("fs")
-        || extension.eq_ignore_ascii_case("fsx")
-        || extension.eq_ignore_ascii_case("fsi")
-        || extension.eq_ignore_ascii_case("fsscript")
-    {
+    if crate::paths::has_extension(file_path, &["fs", "fsx", "fsi", "fsscript"]) {
         "sharplsp-fsharp"
     } else {
         "sharplsp-csharp"
