@@ -90,7 +90,10 @@ let ``no symbol belongs to a workspace that has not been loaded`` () = task {
 [<Fact>]
 let ``a range that names no file never becomes a navigation target`` () =
     let anonymous = Range.mkRange "" (Position.mkPos 1 0) (Position.mkPos 1 4)
-    let real = Range.mkRange "/src/Real.fs" (Position.mkPos 3 2) (Position.mkPos 3 8)
+    // A full path on THIS platform: FCS normalizes every file it is given, so
+    // `/src/Real.fs` comes back as `C:\src\Real.fs` on Windows.
+    let realFile = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "src", "Real.fs"))
+    let real = Range.mkRange realFile (Position.mkPos 3 2) (Position.mkPos 3 8)
 
     Assert.True((FSharpWorkspace.rangeToLocation anonymous).IsNone)
 
@@ -98,7 +101,7 @@ let ``a range that names no file never becomes a navigation target`` () =
     | None -> failwith "a range with a real file must produce a location"
     | Some location ->
         // Ranges are 1-based, LSP locations are 0-based.
-        Assert.Equal("/src/Real.fs", location.FilePath)
+        Assert.Equal(realFile, location.FilePath)
         Assert.Equal(2, location.Line)
         Assert.Equal(2, location.Character)
         Assert.Equal(8, location.EndCharacter)
