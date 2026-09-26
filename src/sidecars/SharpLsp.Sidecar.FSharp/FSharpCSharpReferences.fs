@@ -15,7 +15,6 @@ open System.Collections.Immutable
 open System.IO
 open System.Threading
 open System.Threading.Tasks
-open FSharp.Compiler.AbstractIL.ILBinaryReader
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open Microsoft.CodeAnalysis
@@ -47,11 +46,10 @@ type CSharpBuild =
 type CSharpBuilds = ConcurrentDictionary<string, CSharpBuild>
 
 /// Whether `path` is a C# project file.
-let isCSharpProject (path: string) =
-    path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+let isCSharpProject (path: string) = NativePaths.HasExtension(path, ".csproj")
 
 let private keyOf (project: string) (framework: string) =
-    $"{FSharpWorkspaceRuntime.overlayKey project}|{framework}"
+    $"{NativePaths.NormalizeFullPath project}|{framework}"
 
 /// The build of `reference`'s project for the framework MSBuild picked, when prepared.
 let tryFind (builds: CSharpBuilds) (reference: ResolvedReference) =
@@ -73,12 +71,6 @@ let rec stampOf (build: CSharpBuild) : DateTime =
 /// A metadata-only image: the declarations FCS needs, however many method bodies fail.
 let private emitOptions =
     EmitOptions(metadataOnly = true, tolerateErrors = true, includePrivateMembers = false)
-
-let private readerOptions: ILReaderOptions =
-    { pdbDirPath = None
-      reduceMemoryUsage = ReduceMemoryFlag.Yes
-      metadataOnly = MetadataOnlyFlag.Yes
-      tryGetMetadataSnapshot = fun _ -> None }
 
 /// The syntax tree of each source the command line names and the disk has.
 let private syntaxTrees (arguments: CSharpCommandLineArguments) =
@@ -110,7 +102,7 @@ let private emit (compilation: CSharpCompilation) =
 
 /// The signing key a `/keyfile:` names is looked for beside the project.
 let private strongNaming (build: CSharpBuild) =
-    DesktopStrongNameProvider(ImmutableArray.Create(Path.GetDirectoryName build.Project |> string))
+    DesktopStrongNameProvider(ImmutableArray.Create(NativePaths.DirectoryOf build.Project))
 
 /// Each reference on the command line: a C# project compiled here is read from its
 /// compilation, a file the disk has from that file, and a file it lacks — an unbuilt
@@ -120,7 +112,8 @@ let rec private metadataReferences (build: CSharpBuild) : MetadataReference list
     |> Seq.choose (fun (reference: CommandLineReference) ->
         match build.References |> List.tryFind (fun inner -> NativePaths.AreEqual(inner.Reference, reference.Reference)) with
         | Some inner ->
-            Some((compilationOf inner).ToMetadataReference(reference.Properties.Aliases, reference.Properties.EmbedInteropTypes) :> MetadataReference)
+            let properties = reference.Properties
+            Some((compilationOf inner).ToMetadataReference(properties.Aliases, properties.EmbedInteropTypes) :> MetadataReference)
         | None when File.Exists reference.Reference ->
             Some(MetadataReference.CreateFromFile(reference.Reference, reference.Properties) :> MetadataReference)
         | None -> None)
@@ -131,7 +124,7 @@ and private compile (build: CSharpBuild) =
     let name =
         build.Arguments.CompilationName
         |> Option.ofObj
-        |> Option.defaultValue (Path.GetFileNameWithoutExtension build.Project |> string)
+        |> Option.defaultValue (NativePaths.StemOf build.Project)
 
     let options = build.Arguments.CompilationOptions.WithStrongNameProvider(strongNaming build)
     CSharpCompilation.Create(name, syntaxTrees build.Arguments, metadataReferences build, options)
@@ -157,26 +150,30 @@ and private emitted (build: CSharpBuild) =
             | Error reason, None -> Error reason)
 
 /// The compilation of `build` as its inputs stand now, whether or not it emits.
-and private compilationOf (build: CSharpBuild) =
+and private compilationOf (build: CSharpBuild) : CSharpCompilation =
     match emitted build with
     | Ok(compilation, _) -> compilation
     | Error _ -> compile build
 
-/// FCS's reader of the build's image now. A build is wired only once it has emitted, and
-/// keeps its last image after, so there is always one to read.
-let private reader (build: CSharpBuild) =
+/// The build's image now, as the stream FCS reads a PE from. A build is wired only once
+/// it has emitted, and keeps its last image after, so there is always one to read.
+let private imageStream (build: CSharpBuild) : Stream option =
     match emitted build with
-    | Ok(_, image) -> OpenILModuleReaderFromBytes build.Reference image readerOptions
-    | Error reason -> invalidOp $"C# project {build.Project} has no image to read: {reason}"
+    | Ok(_, image) -> Some(new MemoryStream(image, false))
+    | Error reason ->
+        Log.Warning("C# project {Path} has no image to read: {Reason}", build.Project, reason)
+        None
 
-/// FCS's reference to the build: read under the `-r:` MSBuild wrote, and read again
-/// whenever its inputs change.
+/// FCS's reference to the build: read under the `-r:` MSBuild wrote, through the reader
+/// FCS gives in-memory assemblies. The reader keeps the first image it opens, so this is
+/// made again on every wiring; FCS keeps the builder while the stamp stands and reads the
+/// new reference — the image as it stands then — once the stamp moves.
 let referencedProject (build: CSharpBuild) =
-    FSharpReferencedProject.ILModuleReference(build.Reference, (fun () -> stampOf build), (fun () -> reader build))
+    FSharpReferencedProject.PEReference((fun () -> stampOf build), DelayedILModuleReader(build.Reference, (fun _ -> imageStream build)))
 
 /// The build of `reference` from `args`, kept in `builds` once Roslyn has emitted it.
 let private validated (builds: CSharpBuilds) (reference: ResolvedReference) (args: string array) references =
-    let arguments = CSharpCommandLineParser.Default.Parse(args, Path.GetDirectoryName reference.Project |> string, null)
+    let arguments = CSharpCommandLineParser.Default.Parse(args, NativePaths.DirectoryOf reference.Project, null)
 
     let build =
         { Project = reference.Project

@@ -1,18 +1,104 @@
 namespace SharpLsp.Sidecar.Common;
 
 /// <summary>
-/// Native filesystem path identity shared by the sidecars. Windows
-/// extended-length prefixes (<c>\\?\</c>, <c>\\?\UNC\</c>) are transparent
-/// aliases of the unprefixed spelling: the Rust host canonicalizes paths
-/// (<c>std::fs::canonicalize</c>) which produces the prefixed form on
-/// Windows, while MSBuild, Roslyn, and FCS report normal-form paths — both
-/// spellings must compare equal. Mirrors <c>strip_verbatim</c> in the host
-/// (<c>src/sharplsp/src/vfs.rs</c>). [GitHub #110]
+/// The ONE place both sidecars handle paths: normalization, identity, the case rule,
+/// resolution against a directory, the pieces of a path and extension tests all live
+/// here and nowhere else. Windows extended-length prefixes (<c>\\?\</c>, <c>\\?\UNC\</c>)
+/// are transparent aliases of the unprefixed spelling: the Rust host canonicalizes paths
+/// (<c>std::fs::canonicalize</c>) which produces the prefixed form on Windows, while
+/// MSBuild, Roslyn, and FCS report normal-form paths — both spellings must compare equal.
+/// Mirrors the host's path module (<c>src/sharplsp/src/paths.rs</c>). [GitHub #110]
+/// Implements [SHARPLSP-ARCHITECTURE-PATHS].
 /// </summary>
 public static class NativePaths
 {
     private const string VerbatimUncPrefix = @"\\?\UNC\";
     private const string VerbatimPrefix = @"\\?\";
+
+    /// <summary>
+    /// The one case rule for path identity: names differing only in case are one file.
+    /// Windows and the default macOS volume tell names apart that way, and a directory
+    /// holding two names that differ only in case is a project no build tool tells apart
+    /// either. Decided once here; no caller picks a rule of its own.
+    /// </summary>
+    private const StringComparison Comparison = StringComparison.OrdinalIgnoreCase;
+
+    /// <summary>
+    /// The comparer every path-keyed collection is built with. Keys are
+    /// <see cref="NormalizeFullPath"/> spellings, so one file has one key.
+    /// </summary>
+    public static StringComparer Comparer { get; } = StringComparer.FromComparison(Comparison);
+
+    /// <summary>The directory holding <paramref name="path"/>; empty for a bare name or a root.</summary>
+    public static string DirectoryOf(string path)
+    {
+        return Path.GetDirectoryName(Portable(path)) ?? string.Empty;
+    }
+
+    /// <summary>The file name of <paramref name="path"/>, extension included.</summary>
+    public static string NameOf(string path)
+    {
+        return Path.GetFileName(Portable(path));
+    }
+
+    /// <summary>The file name of <paramref name="path"/> without its extension.</summary>
+    public static string StemOf(string path)
+    {
+        return Path.GetFileNameWithoutExtension(Portable(path));
+    }
+
+    /// <summary>The extension of <paramref name="path"/>, dot included; empty when it has none.</summary>
+    public static string ExtensionOf(string path)
+    {
+        return Path.GetExtension(Portable(path));
+    }
+
+    /// <summary>
+    /// <paramref name="segments"/> joined under <paramref name="baseDirectory"/>, fully
+    /// qualified and normalized: <c>..</c> segments collapse and separators unify. A
+    /// rooted segment starts over, so an absolute path resolves to its own normal form.
+    /// </summary>
+    public static string Resolve(string baseDirectory, params string[] segments)
+    {
+        return NormalizeFullPath(Path.Combine([Portable(baseDirectory), .. segments.Select(Portable)]));
+    }
+
+    /// <summary><paramref name="segments"/> resolved under the user's temporary directory.</summary>
+    public static string Temp(params string[] segments)
+    {
+        return Resolve(Path.GetTempPath(), segments);
+    }
+
+    /// <summary>
+    /// <paramref name="path"/> spelled with forward slashes: how solution files and NuGet
+    /// assets write a relative path on every platform.
+    /// </summary>
+    public static string Slashed(string path)
+    {
+        return path.Replace('\\', '/');
+    }
+
+    /// <summary>
+    /// <paramref name="path"/> with the platform's separator throughout: MSBuild project
+    /// files, solution files and NuGet assets spell a relative path with either slash on
+    /// every platform, and .NET on Unix splits on the forward slash alone.
+    /// </summary>
+    private static string Portable(string path)
+    {
+        return path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>Whether <paramref name="path"/> ends in <paramref name="extension"/> (dot included), by the case rule.</summary>
+    public static bool HasExtension(string path, string extension)
+    {
+        return path.EndsWith(extension, Comparison);
+    }
+
+    /// <summary>Whether two paths carry the same file name by the case rule, whatever their directories.</summary>
+    public static bool SameName(string left, string right)
+    {
+        return string.Equals(NameOf(left), NameOf(right), Comparison);
+    }
 
     /// <summary>
     /// Fully qualify <paramref name="path"/> and strip any Windows
@@ -40,18 +126,14 @@ public static class NativePaths
     }
 
     /// <summary>
-    /// Case-insensitive path identity after normalization. <c>null</c>
+    /// Path identity after normalization, by the case rule. <c>null</c>
     /// (e.g. Roslyn documents without a file path) never matches.
     /// </summary>
     public static bool AreEqual(string? left, string? right)
     {
         return left is not null
             && right is not null
-            && string.Equals(
-                NormalizeFullPath(left),
-                NormalizeFullPath(right),
-                StringComparison.OrdinalIgnoreCase
-            );
+            && string.Equals(NormalizeFullPath(left), NormalizeFullPath(right), Comparison);
     }
 
     /// <summary>

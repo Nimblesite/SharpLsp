@@ -15,6 +15,7 @@ open System.Threading.Tasks
 open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
 open Serilog
+open SharpLsp.Sidecar.Common
 
 /// A project reference MSBuild resolved for one framework: the assembly path its `-r:`
 /// gives the compiler, the project that assembly is built from, and the framework of that
@@ -68,7 +69,7 @@ let private pathFlags = [ "-o:"; "--out:"; "-r:"; "--reference:"; "--doc:"; "--p
 
 let private startInfo (fsprojPath: string) (arguments: string list) =
     let info = ProcessStartInfo("dotnet")
-    info.WorkingDirectory <- Path.GetDirectoryName fsprojPath |> string
+    info.WorkingDirectory <- NativePaths.DirectoryOf fsprojPath
     info.RedirectStandardOutput <- true
     info.RedirectStandardError <- true
     info.UseShellExecute <- false
@@ -174,9 +175,6 @@ let evaluateTargetFrameworks (fsprojPath: string) (ct: CancellationToken) =
                 | _ -> Error "MSBuild reported no TargetFrameworks")
     }
 
-let private absolute (directory: string) (path: string) =
-    if Path.IsPathRooted path then path else Path.GetFullPath(Path.Combine(directory, path))
-
 /// The `name` items MSBuild printed for `-getItem:<name>`.
 let private itemsNamed (name: string) (document: JsonDocument) =
     match document.RootElement.TryGetProperty "Items" with
@@ -204,8 +202,8 @@ let private resolvedReferences (directory: string) (document: JsonDocument) =
         | Some "ProjectReference", Some project, Some framework ->
             metadataOf item "Identity"
             |> Option.map (fun assembly ->
-                { Assembly = absolute directory assembly
-                  Project = absolute directory project
+                { Assembly = NativePaths.Resolve(directory, assembly)
+                  Project = NativePaths.Resolve(directory, project)
                   Framework = framework })
         | _ -> None)
 
@@ -222,7 +220,7 @@ let compilerArgs (item: string) (projectPath: string) (framework: string) (ct: C
               "-getItem:ReferencePathWithRefAssemblies" ]
 
         let! run = runMsbuild projectPath arguments ct
-        let directory = Path.GetDirectoryName projectPath |> string
+        let directory = NativePaths.DirectoryOf projectPath
 
         return
             run
@@ -239,7 +237,7 @@ let commandLineArgs (fsprojPath: string) (framework: string) (ct: CancellationTo
 /// A path-valued flag with its path made absolute; any other flag unchanged.
 let private absoluteFlag (directory: string) (arg: string) =
     FSharpProjectLoading.flagValue pathFlags arg
-    |> Option.map (fun (flag, path) -> flag + absolute directory path)
+    |> Option.map (fun (flag, path) -> flag + NativePaths.Resolve(directory, path))
     |> Option.defaultValue arg
 
 /// FCS options from `framework`'s compiler command line: flags stay options, the rest are
@@ -247,9 +245,9 @@ let private absoluteFlag (directory: string) (arg: string) =
 /// framework: the build another project reads and the build this one answers from coexist
 /// instead of evicting each other. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
 let optionsFromArgs (checker: FSharpChecker) (fsprojPath: string) (framework: string) (args: string array) =
-    let directory = Path.GetDirectoryName fsprojPath |> string
+    let directory = NativePaths.DirectoryOf fsprojPath
     let isSource (arg: string) = not (arg.StartsWith '-')
-    let sources = args |> Array.filter isSource |> Array.map (absolute directory)
+    let sources = args |> Array.filter isSource |> Array.map (fun source -> NativePaths.Resolve(directory, source))
     let flags = args |> Array.filter (isSource >> not) |> Array.map (absoluteFlag directory)
 
     { checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, flags) with

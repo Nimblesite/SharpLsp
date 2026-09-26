@@ -10,6 +10,7 @@ open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 open Serilog
+open SharpLsp.Sidecar.Common
 
 /// Definition result: file path + start line/col + end line/col (0-based).
 type DefinitionLocation =
@@ -41,7 +42,7 @@ type FSharpWorkspaceState =
 /// Create a new workspace with an overlay-aware FSharpChecker.
 let create () : FSharpWorkspaceState =
     let overlays =
-        ConcurrentDictionary<string, string>(FSharpWorkspaceRuntime.overlayComparer)
+        ConcurrentDictionary<string, string>(NativePaths.Comparer)
 
     let readDocument filePath =
         async {
@@ -54,9 +55,9 @@ let create () : FSharpWorkspaceState =
       ProjectOptions = None
       IsLoaded = false
       Overlays = overlays
-      Projects = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer)
-      References = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer)
-      CSharpBuilds = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer) }
+      Projects = ConcurrentDictionary(NativePaths.Comparer)
+      References = ConcurrentDictionary(NativePaths.Comparer)
+      CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer) }
 
 /// The project that compiles `filePath`, if any loaded project does.
 let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =
@@ -71,7 +72,7 @@ let private valueAt (table: ConcurrentDictionary<string, 'T>) (key: string) =
 
 /// The value `table` holds for the project file `project`, however it is spelled.
 let private lookup (table: ConcurrentDictionary<string, 'T>) (project: string) =
-    valueAt table (FSharpWorkspaceRuntime.overlayKey project)
+    valueAt table (NativePaths.NormalizeFullPath project)
 
 /// The project references MSBuild resolved for `options`, when they are one of their
 /// project's MSBuild builds.
@@ -151,13 +152,13 @@ let internal optionsFor (state: FSharpWorkspaceState) (filePath: string) =
 let private otherProjectOptions (state: FSharpWorkspaceState) =
     let isWorkspaces (options: FSharpProjectOptions) =
         state.ProjectOptions
-        |> Option.exists (fun own -> SharpLsp.Sidecar.Common.NativePaths.AreEqual(own.ProjectFileName, options.ProjectFileName))
+        |> Option.exists (fun own -> NativePaths.AreEqual(own.ProjectFileName, options.ProjectFileName))
 
     state.Projects.Values |> Seq.map _.Options |> Seq.filter (isWorkspaces >> not) |> List.ofSeq
 
 /// Each file once, in the order given.
 let private distinctFiles (files: string seq) =
-    Linq.Enumerable.DistinctBy(files, FSharpWorkspaceRuntime.overlayKey, FSharpWorkspaceRuntime.overlayComparer)
+    Linq.Enumerable.DistinctBy(files, (fun file -> NativePaths.NormalizeFullPath file), NativePaths.Comparer)
     |> Array.ofSeq
 
 /// Every source file of every loaded project, the workspace's first, each once. Only a
@@ -173,7 +174,7 @@ let rec private readsInMemory (project: string) (options: FSharpProjectOptions) 
     options.ReferencedProjects
     |> Array.exists (function
         | FSharpReferencedProject.FSharpReference(_, referenced) ->
-            SharpLsp.Sidecar.Common.NativePaths.AreEqual(referenced.ProjectFileName, project)
+            NativePaths.AreEqual(referenced.ProjectFileName, project)
             || readsInMemory project referenced
         | _ -> false)
 
@@ -189,7 +190,7 @@ let internal queryScope (state: FSharpWorkspaceState) (filePath: string) : FShar
     | None -> []
     | Some own ->
         let reads (options: FSharpProjectOptions) =
-            not (SharpLsp.Sidecar.Common.NativePaths.AreEqual(options.ProjectFileName, own.ProjectFileName))
+            not (NativePaths.AreEqual(options.ProjectFileName, own.ProjectFileName))
             && readsInMemory own.ProjectFileName options
 
         own :: (state.Projects.Values |> Seq.map (fun entry -> wired state entry.Options) |> Seq.filter reads |> List.ofSeq)
@@ -221,7 +222,7 @@ let private buildsCompiling (state: FSharpWorkspaceState) (filePath: string) =
 /// Record the editor's in-memory buffer and invalidate the file in every build that
 /// compiles it.
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
-    let normalizedPath = FSharpWorkspaceRuntime.overlayKey filePath
+    let normalizedPath = NativePaths.NormalizeFullPath filePath
     state.Overlays[normalizedPath] <- newText
 
     for options in buildsCompiling state normalizedPath do
@@ -234,14 +235,14 @@ let internal readSource (state: FSharpWorkspaceState) (filePath: string) : strin
     match FSharpWorkspaceRuntime.tryReadSource state.Overlays filePath with
     | Some text -> text
     | None ->
-        let normalizedPath = FSharpWorkspaceRuntime.overlayKey filePath
+        let normalizedPath = NativePaths.NormalizeFullPath filePath
         raise (FileNotFoundException("F# source file was not found.", normalizedPath))
 
 /// Resolve a request path to the spelling held in project options.
 let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : string =
     match optionsFor state filePath with
     | Some options -> FSharpWorkspaceRuntime.projectSourcePath options filePath
-    | None -> FSharpWorkspaceRuntime.overlayKey filePath
+    | None -> NativePaths.NormalizeFullPath filePath
 
 /// The one raw per-file FCS check; version deliberately remains the literal 0.
 let internal parseAndCheckOnce (state: FSharpWorkspaceState) filePath options =
@@ -325,7 +326,7 @@ let private activateWorkspace
     =
     state.ProjectOptions <- Some options
     state.IsLoaded <- true
-    let files = String.Join(", ", options.SourceFiles |> Array.map Path.GetFileName)
+    let files = String.Join(", ", options.SourceFiles |> Array.map NativePaths.NameOf)
     Log.Debug("F# {Kind} loaded from {Path} with files: [{Files}]", kind, path, files)
 
 /// Load EVERY project; the first one is the workspace's for project-wide queries.
@@ -341,7 +342,7 @@ let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string arra
                 state.References.Clear()
 
                 for entry in entries do
-                    let key = FSharpWorkspaceRuntime.overlayKey entry.Path
+                    let key = NativePaths.NormalizeFullPath entry.Path
                     state.Projects[key] <- entry
                     state.References[key] <- FSharpProjectGraph.fsharpReferences entry.Path
 
@@ -390,7 +391,7 @@ let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct
     task {
         try
             if File.Exists(path) && FSharpProjectLoading.isScriptPath path then
-                return! loadScript state (Path.GetFullPath path) ct
+                return! loadScript state (NativePaths.NormalizeFullPath path) ct
             else
                 let! discovered = FSharpProjectLoading.discoverFsprojFiles path ct
                 return! loadDiscoveredProject state discovered ct

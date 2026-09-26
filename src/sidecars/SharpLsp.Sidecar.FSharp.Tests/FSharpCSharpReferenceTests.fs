@@ -158,19 +158,23 @@ let private definitionOf state file line column =
 
 /// `location` is `file` at `line`, with `identifier` starting at the column.
 let private landsOn (file: string) (line: int) (identifier: string) (foundFile: string, foundLine: int, foundColumn: int) =
-    Assert.True(NativePaths.AreEqual(file, foundFile), $"`{identifier}` lands in {Path.GetFileName file}: {foundFile}")
+    Assert.True(NativePaths.AreEqual(file, foundFile), $"`{identifier}` lands in {NativePaths.NameOf file}: {foundFile}")
     Assert.Equal(line, foundLine)
-    Assert.Equal(identifier, (File.ReadAllLines file)[line].Substring(foundColumn, identifier.Length))
+    let text = (File.ReadAllLines file)[line]
+    Assert.Equal(identifier, text.Substring(foundColumn, identifier.Length))
 
 /// The reference to Core MSBuild resolved for `entry` under `framework`.
 let private resolvedCore (entry: FSharpDesignTime.FSharpProjectEntry) (framework: string) =
-    entry.Resolved[framework] |> List.find (fun reference -> Path.GetFileName reference.Project = "Core.csproj")
+    entry.Resolved[framework] |> List.find (fun reference -> NativePaths.NameOf reference.Project = "Core.csproj")
 
-/// The one C# assembly `options` read in memory, by the name it is read under.
-let private assemblyReadBy (options: FSharpProjectOptions) =
-    match options.ReferencedProjects with
-    | [| FSharpReferencedProject.ILModuleReference(file, _, _) |] -> file
-    | other -> failwith $"exactly one C# project read in memory: {other}"
+/// The C# assemblies `options` read in memory, by the name each is read under, sorted.
+let private assembliesReadBy (options: FSharpProjectOptions) =
+    options.ReferencedProjects
+    |> Array.map (fun referenced ->
+        match referenced with
+        | FSharpReferencedProject.PEReference(_, reader) -> reader.OutputFile
+        | other -> failwith $"only C# projects are read in memory here: {other}")
+    |> Array.sort
 
 [<Fact>]
 let ``a project reads the C# project it references in memory, never built, and navigates into its source`` () =
@@ -185,10 +189,14 @@ let ``a project reads the C# project it references in memory, never built, and n
             Assert.Equal("net48", reference.Framework)
             Assert.Contains($"-r:{reference.Assembly}", entry.Options.OtherOptions)
 
-            // The image is read under MSBuild's own -r:, and no second -r: is added.
+            // MSBuild passes App Core and, transitively, the Base it reads: each image is read
+            // under MSBuild's own -r:, and no second -r: is added.
             let wired = (FSharpWorkspace.optionsFor state app).Value
             Assert.Equal<string array>(entry.Options.OtherOptions, wired.OtherOptions)
-            Assert.Equal(reference.Assembly, assemblyReadBy wired)
+            let resolved = entry.Resolved["net48"] |> List.map _.Assembly |> List.sort |> Array.ofList
+            Assert.Equal(2, resolved.Length)
+            Assert.Contains(reference.Assembly, resolved)
+            Assert.Equal<string array>(resolved, assembliesReadBy wired)
             // Core and the Base it reads, both for net48; Roslyn tolerated Broken's body.
             Assert.Equal(2, state.CSharpBuilds.Count)
 

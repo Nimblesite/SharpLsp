@@ -6,12 +6,11 @@ namespace SharpLsp.Sidecar.Common.Solutions;
 /// Resolves a project's <c>&lt;ProjectReference&gt;</c> entries and their built
 /// output assemblies.
 ///
-/// Shared by the C# and F# sidecars: each engine sees the *other* language only
-/// as a compiled assembly, and neither Roslyn's <c>MSBuildWorkspace</c> nor FCS
-/// wires up a project reference that crosses the language boundary. Both
-/// sidecars use this to locate the referenced project's output DLL and add it as
-/// a metadata reference, which is what makes cross-language go-to-definition
-/// resolve. Implements [DEFINITION-CROSSLANG].
+/// Shared by the C# and F# sidecars. Roslyn's <c>MSBuildWorkspace</c> does not wire
+/// a project reference that crosses the language boundary, so the C# sidecar sees an
+/// F# project as its built DLL, located here; the F# sidecar compiles the C# projects
+/// it references in memory ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES])
+/// and falls back to the DLL located here when it cannot. Implements [DEFINITION-CROSSLANG].
 /// </summary>
 public static class ProjectReferences
 {
@@ -24,7 +23,7 @@ public static class ProjectReferences
     {
         try
         {
-            var projectDir = Path.GetDirectoryName(projectFilePath) ?? ".";
+            var projectDir = NativePaths.DirectoryOf(projectFilePath);
             var doc = XDocument.Load(projectFilePath);
             return
             [
@@ -32,9 +31,7 @@ public static class ProjectReferences
                     .Where(element => element.Name.LocalName == "ProjectReference")
                     .Select(element => element.Attribute("Include")?.Value)
                     .Where(include => !string.IsNullOrWhiteSpace(include))
-                    .Select(include =>
-                        Path.GetFullPath(Path.Combine(projectDir, NormalizeSeparators(include!)))
-                    ),
+                    .Select(include => NativePaths.Resolve(projectDir, include!)),
             ];
         }
         catch (Exception)
@@ -53,13 +50,7 @@ public static class ProjectReferences
     {
         try
         {
-            var projectDir = Path.GetDirectoryName(projectFilePath);
-            if (projectDir is null)
-            {
-                return null;
-            }
-
-            var binDir = Path.Combine(projectDir, "bin");
+            var binDir = NativePaths.Resolve(NativePaths.DirectoryOf(projectFilePath), "bin");
             if (!Directory.Exists(binDir))
             {
                 return null;
@@ -88,18 +79,12 @@ public static class ProjectReferences
                 .FirstOrDefault(element => element.Name.LocalName == "AssemblyName")
                 ?.Value;
             return string.IsNullOrWhiteSpace(explicitName)
-                ? Path.GetFileNameWithoutExtension(projectFilePath)
+                ? NativePaths.StemOf(projectFilePath)
                 : explicitName;
         }
         catch (Exception)
         {
-            return Path.GetFileNameWithoutExtension(projectFilePath);
+            return NativePaths.StemOf(projectFilePath);
         }
-    }
-
-    private static string NormalizeSeparators(string path)
-    {
-        return path.Replace('\\', Path.DirectorySeparatorChar)
-            .Replace('/', Path.DirectorySeparatorChar);
     }
 }

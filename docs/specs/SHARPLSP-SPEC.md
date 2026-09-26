@@ -52,6 +52,30 @@ Primary implementations: [main.rs](../../src/sharplsp/src/main.rs), [handlers.rs
 
 Rust-host salsa MUST be the only memoization mechanism. Sidecars and clients MAY retain authoritative compiler, document, protocol, and rendered UI state, but MUST NOT cache feature results. LRU, dictionary/map-backed, sidecar-local, client-local, and other ad-hoc result caches are forbidden.
 
+### [SHARPLSP-ARCHITECTURE-PATHS] Path Handling
+
+Every tier handles paths in exactly ONE module. All path logic lives there and nowhere else; code outside it calls the module and never repeats its logic.
+
+| Tier | Path module |
+|---|---|
+| Rust host | `src/sharplsp/src/paths.rs` |
+| C# and F# sidecars | `SharpLsp.Sidecar.Common.NativePaths` |
+| VS Code extension | `src/editors/vscode/src/paths.ts` |
+
+The module owns, for its tier:
+
+- **Normalisation:** fully qualifying a path, collapsing `.` and `..` segments, unifying separators, and stripping Windows extended-length prefixes (`\\?\`, `\\?\UNC\`, see [GitHub #110]).
+- **Identity:** whether two spellings name one file, and the comparer every path-keyed map, set and dictionary is built with. There is ONE case rule per tier, decided once in the module; no caller picks one.
+- **Resolution:** a relative path against a base directory.
+- **Pieces:** the directory, file name and stem of a path, and whether it carries a given extension (`.csproj`, `.fsproj`, `.sln`, `.fsx`, …).
+- **URIs:** conversion between native paths and LSP URIs, where the tier does it.
+
+Outside the module, code MUST NOT call the platform path API (`System.IO.Path`, `std::path` string operations, `node:path`), compare paths with `StringComparison.OrdinalIgnoreCase` or a case fold, branch on `OperatingSystem.IsWindows()` for a path rule, or test an extension with a string suffix. A second helper that does any of this, in any file, is a defect: it is deleted and its callers routed through the module.
+
+Rationale: MSBuild, Roslyn, FCS, the host's canonicaliser and the editor each spell one file differently (`..` segments, case, verbatim prefixes, separators), and every scattered comparison is a place where two of those spellings fail to match. [GitHub #110] and the F# reference wiring under [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] were both bugs of that class.
+
+Code implementing this section cites `[SHARPLSP-ARCHITECTURE-PATHS]`.
+
 ### [SHARPLSP-ARCHITECTURE-IPC] IPC Transport Protocol
 
 Communication between the Rust host and .NET sidecars uses a custom binary RPC protocol:

@@ -54,21 +54,20 @@ public static class SolutionFileReader
     {
         return string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("Solution path is required.", nameof(path))
-            : Path.GetFullPath(path);
+            : NativePaths.NormalizeFullPath(path);
     }
 
     private static string? ValidateSupportedFile(string fullPath)
     {
         return !File.Exists(fullPath) ? $"Solution file does not exist: {fullPath}"
             : IsSolutionFile(fullPath) ? null
-            : $"Unsupported solution file extension '{Path.GetExtension(fullPath)}'. "
+            : $"Unsupported solution file extension '{NativePaths.ExtensionOf(fullPath)}'. "
                 + "Expected .sln or .slnx.";
     }
 
     private static bool IsSolutionFile(string path)
     {
-        return path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);
+        return NativePaths.HasExtension(path, ".sln") || NativePaths.HasExtension(path, ".slnx");
     }
 
     private static SolutionFileModel MapSolution(string solutionPath, SolutionModel model)
@@ -175,7 +174,7 @@ public static class SolutionFileReader
 
     private static string FormatFromPath(string path)
     {
-        return path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase) ? "slnx" : "sln";
+        return NativePaths.HasExtension(path, ".slnx") ? "slnx" : "sln";
     }
 
     private static string DisplayName(SolutionProjectModel project)
@@ -194,28 +193,17 @@ public static class SolutionFileReader
 
     private static string ProjectNameFromPath(string path)
     {
-        var normalized = NormalizeSeparators(path);
-        return Path.GetFileNameWithoutExtension(normalized) ?? normalized;
+        return NativePaths.StemOf(path);
     }
 
+    /// <summary>A solution's project path, spelled with either slash, made absolute. [SHARPLSP-ARCHITECTURE-PATHS]</summary>
     private static string ResolveSolutionPath(string solutionPath, string relativePath)
     {
-        if (Path.IsPathRooted(relativePath))
-        {
-            return Path.GetFullPath(relativePath);
-        }
-
-        var solutionDir = Path.GetDirectoryName(solutionPath) ?? Directory.GetCurrentDirectory();
-        return Path.GetFullPath(Path.Combine(solutionDir, NormalizeSeparators(relativePath)));
-    }
-
-    private static string NormalizeSeparators(string path)
-    {
-        return path.Replace('\\', Path.DirectorySeparatorChar);
+        return NativePaths.Resolve(NativePaths.DirectoryOf(solutionPath), relativePath);
     }
 
     private static string ToPortableRelative(string path)
     {
-        return path.Replace('\\', '/');
+        return NativePaths.Slashed(path);
     }
 }

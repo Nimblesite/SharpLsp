@@ -70,7 +70,7 @@ public static class MetadataDecompiler
             $"{assembly.FullName}|{assembly.Length}|{assembly.LastWriteTimeUtc.Ticks}|{typeFullName}";
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)), 0, 8);
         var fileName = $"{SanitizeFileName(displayName)}.cs";
-        return Path.Combine(Path.GetTempPath(), "sharplsp-decompiled", key, fileName);
+        return NativePaths.Temp("sharplsp-decompiled", key, fileName);
     }
 
     /// <summary>
@@ -96,13 +96,35 @@ public static class MetadataDecompiler
         }
     }
 
+    private static readonly DecompilerSettings Settings = new()
+    {
+        ThrowOnAssemblyResolveErrors = false,
+    };
+
+    /// <summary>
+    /// Decompile <paramref name="typeFullName"/> from the assembly that declares it:
+    /// <paramref name="assemblyPath"/>, or the assembly a type forwarder there points
+    /// to. FCS names the facade an assembly was compiled against (<c>netstandard.dll</c>
+    /// for FSharp.Core's <c>string</c>), which only forwards the type to the runtime's
+    /// <c>System.Private.CoreLib</c>; the decompiler reads type definitions from one
+    /// module, so the forwarded-to file is opened in its place.
+    /// </summary>
     private static string Decompile(string assemblyPath, string typeFullName)
     {
-        var decompiler = new CSharpDecompiler(
-            assemblyPath,
-            new DecompilerSettings { ThrowOnAssemblyResolveErrors = false }
-        );
-        return decompiler.DecompileTypeAsString(new FullTypeName(typeFullName));
+        var typeName = new FullTypeName(typeFullName);
+        var decompiler = new CSharpDecompiler(assemblyPath, Settings);
+        var declaring = DeclaringAssembly(decompiler, typeName) ?? assemblyPath;
+        var declaringDecompiler = NativePaths.AreEqual(declaring, assemblyPath)
+            ? decompiler
+            : new CSharpDecompiler(declaring, Settings);
+        return declaringDecompiler.DecompileTypeAsString(typeName);
+    }
+
+    /// <summary>The file whose module defines <paramref name="typeName"/>, through any forwarder; null when unresolved.</summary>
+    private static string? DeclaringAssembly(CSharpDecompiler decompiler, FullTypeName typeName)
+    {
+        var declared = decompiler.TypeSystem.FindType(typeName).GetDefinition()?.ParentModule?.MetadataFile?.FileName;
+        return string.IsNullOrEmpty(declared) ? null : declared;
     }
 
     /// <summary>
@@ -113,9 +135,9 @@ public static class MetadataDecompiler
     /// </summary>
     internal static void PublishAtomically(string target, string source)
     {
-        var directory = Path.GetDirectoryName(target) ?? Path.GetTempPath();
+        var directory = NativePaths.DirectoryOf(target) is { Length: > 0 } holder ? holder : NativePaths.Temp();
         _ = Directory.CreateDirectory(directory);
-        var staging = Path.Combine(directory, $"{Guid.NewGuid():N}.tmp");
+        var staging = NativePaths.Resolve(directory, $"{Guid.NewGuid():N}.tmp");
         try
         {
             File.WriteAllText(staging, source);

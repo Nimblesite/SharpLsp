@@ -46,7 +46,7 @@ let switch (state: FSharpWorkspaceState) (filePath: string) (framework: string) 
         match projectOf state filePath with
         | None -> return notFound filePath
         | Some entry when not (List.contains framework entry.Frameworks) ->
-            return Error $"{framework} is not a target framework of {Path.GetFileName entry.Path}"
+            return Error $"{framework} is not a target framework of {NativePaths.NameOf entry.Path}"
         | Some entry ->
             match! optionsForFramework state.Checker entry framework ct with
             | Error reason -> return Error reason

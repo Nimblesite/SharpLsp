@@ -13,13 +13,13 @@ open SharpLsp.Sidecar.Common.Solutions
 
 let parseFsprojSourceFiles (fsprojPath: string) : string array =
     let document = XDocument.Load(fsprojPath)
-    let projectDirectory = Path.GetDirectoryName(fsprojPath) |> string
+    let projectDirectory = NativePaths.DirectoryOf fsprojPath
 
     document.Descendants(XName.Get("Compile"))
     |> Seq.choose (fun element ->
         element.Attribute(XName.Get("Include"))
         |> Option.ofObj
-        |> Option.map (fun attribute -> Path.GetFullPath(Path.Combine(projectDirectory, attribute.Value))))
+        |> Option.map (fun attribute -> NativePaths.Resolve(projectDirectory, attribute.Value)))
     |> Seq.toArray
 
 let parseFsprojOtherFlags (fsprojPath: string) : string array =
@@ -48,7 +48,7 @@ let parseFsprojAssemblyName (fsprojPath: string) =
         |> Seq.tryLast
 
     explicitName
-    |> Option.defaultValue (Path.GetFileNameWithoutExtension(fsprojPath) |> string)
+    |> Option.defaultValue (NativePaths.StemOf fsprojPath)
 
 let private isOutputFlag (value: string) =
     value.StartsWith("--out:", StringComparison.OrdinalIgnoreCase)
@@ -60,16 +60,13 @@ let private projectIdentityArgs fsprojPath projectFlags =
     else
         [| $"--out:{parseFsprojAssemblyName fsprojPath}.dll" |]
 
-let private isFsprojPath (path: string) =
-    path.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+let private isFsprojPath (path: string) = NativePaths.HasExtension(path, ".fsproj")
 
 let private isSolutionPath (path: string) =
-    path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
-    || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
+    NativePaths.HasExtension(path, ".sln") || NativePaths.HasExtension(path, ".slnx")
 
 let isScriptPath (path: string) =
-    path.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase)
-    || path.EndsWith(".fsscript", StringComparison.OrdinalIgnoreCase)
+    NativePaths.HasExtension(path, ".fsx") || NativePaths.HasExtension(path, ".fsscript")
 
 let private outcomeError (result: Outcome.Result<SolutionFileModel, string>) =
     result.Match((fun _ -> String.Empty), (fun error -> error))
@@ -95,7 +92,7 @@ let private fsprojFilesFromSolution (path: string) (ct: CancellationToken) =
 
 let discoverFsprojFiles (path: string) (ct: CancellationToken) =
     task {
-        let fullPath = Path.GetFullPath(path)
+        let fullPath = NativePaths.NormalizeFullPath path
 
         if File.Exists(fullPath) && isFsprojPath fullPath then
             return Ok [| fullPath |]
@@ -153,7 +150,7 @@ let private projectReferenceArg projectPath =
 /// The projects `fsprojPath` references whose project file ends in `extension`.
 let referencedProjects (extension: string) (fsprojPath: string) =
     ProjectReferences.ReadReferencedProjects(fsprojPath)
-    |> Seq.filter (fun project -> project.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+    |> Seq.filter (fun project -> NativePaths.HasExtension(project, extension))
 
 /// The prefix among `prefixes` that compiler argument `arg` starts with, and its value.
 let flagValue (prefixes: string list) (arg: string) =

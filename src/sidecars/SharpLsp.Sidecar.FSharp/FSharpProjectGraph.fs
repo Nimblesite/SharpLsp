@@ -5,13 +5,12 @@
 /// MSBuild picked for it — a multi-targeted project's framework names that build, which
 /// the referenced project's own active framework need not be — under the `-r:` MSBuild
 /// wrote. A reference the options do not carry — hand-built options never carry an F# one
-/// — reads the referenced project's CURRENT options. A reference into the other language
-/// stays a binary reference ([DEFINITION-CROSSLANG]).
+/// — reads the referenced project's CURRENT options. A reference to a C# project reads the
+/// assembly compiled for it in memory ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]);
+/// a C# project's reference to an F# one stays its built DLL ([DEFINITION-CROSSLANG]).
 /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES] (GitHub #165).
 module SharpLsp.Sidecar.FSharp.FSharpProjectGraph
 
-open System
-open System.IO
 open FSharp.Compiler.CodeAnalysis
 open SharpLsp.Sidecar.Common
 
@@ -25,26 +24,18 @@ let private valueOf (prefixes: string list) (flag: string) =
 
 /// Where `options` writes its assembly, absolute: the file a referencing `-r:` names.
 let outputOf (options: FSharpProjectOptions) =
-    let directory = Path.GetDirectoryName options.ProjectFileName |> string
-    let stem = Path.GetFileNameWithoutExtension options.ProjectFileName |> string
-
     options.OtherOptions
     |> Array.tryPick (valueOf [ "--out:"; "-o:" ])
-    |> Option.defaultValue $"{stem}.dll"
-    |> fun output -> Path.GetFullPath(Path.Combine(directory, output))
-
-/// A file name compared the way the file system compares it.
-let private fileKey (path: string) =
-    let name = Path.GetFileName path |> string
-    if OperatingSystem.IsWindows() then name.ToUpperInvariant() else name
+    |> Option.defaultValue $"{NativePaths.StemOf options.ProjectFileName}.dll"
+    |> fun output -> NativePaths.Resolve(NativePaths.DirectoryOf options.ProjectFileName, output)
 
 /// True when `options` already reference `referenced`'s assembly by name: MSBuild
-/// resolved that project reference itself.
+/// resolved that project reference itself. [SHARPLSP-ARCHITECTURE-PATHS]
 let private alreadyReferences (options: FSharpProjectOptions) (referenced: FSharpProjectOptions) =
-    let name = fileKey (outputOf referenced)
+    let output = outputOf referenced
 
     options.OtherOptions
-    |> Array.exists (valueOf [ "-r:"; "--reference:" ] >> Option.exists (fun path -> fileKey path = name))
+    |> Array.exists (valueOf [ "-r:"; "--reference:" ] >> Option.exists (fun path -> NativePaths.SameName(path, output)))
 
 /// `options` referencing each of `references` in memory.
 let withReferences (options: FSharpProjectOptions) (references: FSharpProjectOptions list) =

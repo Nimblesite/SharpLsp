@@ -26,7 +26,7 @@ public static class SidecarLog
     /// stderr) at the logs instead of failing opaquely. Implements
     /// [DIST-FAILURE-UX] (GitHub #150).
     /// </summary>
-    public static string LogDirectory { get; } = Path.Combine(Path.GetTempPath(), "sharplsp-logs");
+    public static string LogDirectory { get; } = NativePaths.Temp("sharplsp-logs");
 
     /// <summary>
     /// Configures the global <see cref="Log.Logger" /> exactly once. Subsequent
@@ -46,7 +46,7 @@ public static class SidecarLog
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.File(
-                Path.Combine(LogDirectory, $"sidecar-{name}.log"),
+                NativePaths.Resolve(LogDirectory, $"sidecar-{name}.log"),
                 rollingInterval: RollingInterval.Day,
                 shared: true,
                 outputTemplate: OutputTemplate,

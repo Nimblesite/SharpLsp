@@ -24,15 +24,7 @@ type FileOrderIssue =
 /// Parse .fsproj Compile entries and return full paths in order.
 let getCompileOrder (fsprojPath: string) : string array =
     try
-        let doc = XDocument.Load(fsprojPath)
-        let projDir = Path.GetDirectoryName(fsprojPath) |> string
-        doc.Descendants(XName.Get("Compile"))
-        |> Seq.choose (fun el ->
-            el.Attribute(XName.Get("Include"))
-            |> Option.ofObj
-            |> Option.map (fun attr ->
-                Path.GetFullPath(Path.Combine(projDir, string attr.Value))))
-        |> Seq.toArray
+        FSharpProjectLoading.parseFsprojSourceFiles fsprojPath
     with ex ->
         Log.Debug(ex, "[F# FileOrder] failed to parse .fsproj")
         [||]
@@ -143,7 +135,7 @@ let analyzeFileOrder
                                           Character = char
                                           DependencyFile = defFile
                                           Message =
-                                            $"'{symbolName}' is defined in '{Path.GetFileName(defFile)}' which comes after '{Path.GetFileName(filePath)}' in the compile order. Move '{Path.GetFileName(defFile)}' before '{Path.GetFileName(filePath)}' in the .fsproj." }
+                                            $"'{symbolName}' is defined in '{SharpLsp.Sidecar.Common.NativePaths.NameOf defFile}' which comes after '{SharpLsp.Sidecar.Common.NativePaths.NameOf filePath}' in the compile order. Move '{SharpLsp.Sidecar.Common.NativePaths.NameOf defFile}' before '{SharpLsp.Sidecar.Common.NativePaths.NameOf filePath}' in the .fsproj." }
                                     issues <- issue :: issues
                             | _ -> ()
                     return issues |> List.rev
@@ -161,8 +153,8 @@ let generateReorderEdit
          EndLine: int; EndCharacter: int; NewText: string |} option =
     try
         let lines = File.ReadAllLines(fsprojPath)
-        let depName = Path.GetFileName(dependencyFile)
-        let beforeName = Path.GetFileName(beforeFile)
+        let depName = SharpLsp.Sidecar.Common.NativePaths.NameOf dependencyFile
+        let beforeName = SharpLsp.Sidecar.Common.NativePaths.NameOf beforeFile
         let mutable depLineIdx = -1
         let mutable beforeLineIdx = -1
         for i in 0 .. lines.Length - 1 do

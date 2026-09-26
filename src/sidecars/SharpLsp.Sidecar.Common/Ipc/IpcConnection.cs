@@ -163,7 +163,7 @@ public static class IpcConnection
         var hex = Convert.ToHexString(hash).AsSpan(0, 8);
         return OperatingSystem.IsWindows()
             ? $@"{PipePrefix}sharplsp-{hex}"
-            : Path.Combine(Path.GetTempPath(), $"sharplsp-{hex}.sock");
+            : NativePaths.Temp($"sharplsp-{hex}.sock");
     }
 
     /// <summary>Start listening on the platform IPC endpoint.</summary>
@@ -283,7 +283,7 @@ public static class IpcConnection
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(socketPath));
         var hex = Convert.ToHexString(hash).AsSpan(0, 16);
-        return Path.Combine(Path.GetTempPath(), $"sharplsp-{hex}.sock");
+        return NativePaths.Temp($"sharplsp-{hex}.sock");
     }
 
     /// <summary>True when the endpoint addresses the Windows named-pipe namespace.</summary>

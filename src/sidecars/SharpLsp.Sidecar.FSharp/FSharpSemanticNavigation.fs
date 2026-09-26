@@ -100,8 +100,7 @@ let isSymbolInProject (options: FSharpProjectOptions option) (symbol: FSharpSymb
             |> Array.exists (fun file -> NativePaths.AreEqual(file, target))
 
         let isSource =
-            (target.EndsWith(".fs", StringComparison.OrdinalIgnoreCase)
-             || target.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase))
+            (NativePaths.HasExtension(target, ".fs") || NativePaths.HasExtension(target, ".fsi"))
             && File.Exists(target)
 
         inSourceFiles || isSource
@@ -153,9 +152,17 @@ let getSymbolUse (checkResults: FSharpCheckFileResults) (source: string) line ch
         quickSymbolUse checkResults line character lines[line]
         |> Option.orElseWith (fun () -> symbolUseCoveringPosition checkResults line character)
 
-let private getTypeEntity (valueType: FSharpType) =
+/// The entity `entity` stands for, through any abbreviation: `string` is `System.String`,
+/// and an abbreviation FSharp.Core declares has no source of its own to land in.
+let rec private definingEntity (entity: FSharpEntity) : FSharpEntity option =
+    if entity.IsFSharpAbbreviation then
+        getTypeEntity entity.AbbreviatedType
+    else
+        Some entity
+
+and private getTypeEntity (valueType: FSharpType) : FSharpEntity option =
     if valueType.HasTypeDefinition then
-        Some valueType.TypeDefinition
+        definingEntity valueType.TypeDefinition
     else
         None
 
@@ -244,7 +251,7 @@ let private symbolTypeEntity (symbol: FSharpSymbol) =
     match symbol with
     | :? FSharpMemberOrFunctionOrValue as memberValue -> memberValue.FullType |> getTypeEntity
     | :? FSharpField as field -> field.FieldType |> getTypeEntity
-    | :? FSharpEntity as entity -> Some entity
+    | :? FSharpEntity as entity -> definingEntity entity
     | _ -> None
 
 let private extractTypeDefinition (external: ExternalResolver) checkResults source line character =

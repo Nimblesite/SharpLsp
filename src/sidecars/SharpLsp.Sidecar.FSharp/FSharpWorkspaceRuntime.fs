@@ -9,31 +9,23 @@ open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Text
 open SharpLsp.Sidecar.Common
 
-let overlayComparer: StringComparer =
-    if OperatingSystem.IsWindows() then
-        StringComparer.OrdinalIgnoreCase
-    else
-        StringComparer.Ordinal
-
-let overlayKey (filePath: string) : string = NativePaths.NormalizeFullPath filePath
-
+/// The overlay text of `filePath`, else its text on disk. Overlays are keyed by the one
+/// normal spelling of a path ([SHARPLSP-ARCHITECTURE-PATHS]).
 let tryReadSource (overlays: ConcurrentDictionary<string, string>) (filePath: string) : string option =
-    let normalizedPath = overlayKey filePath
+    let normalizedPath = NativePaths.NormalizeFullPath filePath
 
     match overlays.TryGetValue normalizedPath with
     | true, text -> Some text
     | _ when File.Exists normalizedPath -> Some(File.ReadAllText normalizedPath)
     | _ -> None
 
+/// The spelling `options` compile `filePath` under, when they compile it.
 let tryProjectSourcePath (options: FSharpProjectOptions) (filePath: string) : string option =
-    let normalizedPath = overlayKey filePath
-
-    options.SourceFiles
-    |> Array.tryFind (fun sourceFile -> NativePaths.AreEqual(sourceFile, normalizedPath))
+    options.SourceFiles |> Array.tryFind (fun sourceFile -> NativePaths.AreEqual(sourceFile, filePath))
 
 let projectSourcePath (options: FSharpProjectOptions) (filePath: string) : string =
     tryProjectSourcePath options filePath
-    |> Option.defaultValue (overlayKey filePath)
+    |> Option.defaultValue (NativePaths.NormalizeFullPath filePath)
 
 let private requiredFcs (message: string) (value: 'T | null) : 'T =
     match value with
