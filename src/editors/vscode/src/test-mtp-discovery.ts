@@ -168,13 +168,7 @@ function collectLocations(
  * project at all is a truthful empty answer; a target whose modules all failed
  * to list, or whose build `dotnet` refused outright, is not.
  */
-export async function listMtpTests(
-  target: string,
-  cwd: string,
-  timeoutMs: number = DOTNET_TIMEOUT_MS,
-): Promise<TestListing> {
-  return await listFound(scanMtpProjects, { target, cwd, timeoutMs });
-}
+export const listMtpTests = sweepOf(scanMtpProjects);
 
 /**
  * Enumerate every MTP test of a target the VSTest passes have just restored.
@@ -185,20 +179,14 @@ export async function listMtpTests(
  * must not pay a second build for a probe that finds nothing. Spec:
  * [TEST-MTP-DETECT].
  */
-export async function probeMtpTests(
-  target: string,
-  cwd: string,
-  timeoutMs: number = DOTNET_TIMEOUT_MS,
-): Promise<TestListing> {
-  return await listFound(probeMtpProjects, { target, cwd, timeoutMs });
-}
+export const probeMtpTests = sweepOf(probeMtpProjects);
 
-/** List every test the MTP projects `scan` finds in the sweep's target. */
-async function listFound(
+/** A sweep that lists every test of the MTP projects `scan` finds in its target. */
+function sweepOf(
   scan: (target: string, cwd: string, timeoutMs: number) => Promise<MtpProjectScan>,
-  sweep: SweepContext,
-): Promise<TestListing> {
-  return await listScanned(await scan(sweep.target, sweep.cwd, sweep.timeoutMs), sweep);
+): (target: string, cwd: string, timeoutMs?: number) => Promise<TestListing> {
+  return async (target, cwd, timeoutMs = DOTNET_TIMEOUT_MS) =>
+    await listScanned(await scan(target, cwd, timeoutMs), { target, cwd, timeoutMs });
 }
 
 /** What every module of a sweep reported, gathered for the tree and the run. */
