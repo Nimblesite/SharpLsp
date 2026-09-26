@@ -94,6 +94,42 @@ public static class NativePaths
         return path.EndsWith(extension, Comparison);
     }
 
+    /// <summary>
+    /// Every character neutralised in a file name built from a display name. The leading literals
+    /// are replaced on <em>every</em> platform so the same type yields the same
+    /// file name everywhere: <see cref="Path.GetInvalidFileNameChars"/> is
+    /// platform-specific — on Unix it is only <c>{ '\0', '/' }</c> — so relying on
+    /// it alone would leave <c>&lt;</c>, <c>&gt;</c>, <c>:</c>, <c>,</c> and spaces
+    /// intact on Linux while stripping them on Windows.
+    /// </summary>
+    private static readonly char[] UnsafeNameChars =
+    [
+        '<',
+        '>',
+        ':',
+        ',',
+        ' ',
+        .. Path.GetInvalidFileNameChars(),
+    ];
+
+    /// <summary><paramref name="name"/> as a file name every platform accepts, one spelling everywhere.</summary>
+    public static string SafeName(string name)
+    {
+        return string.Create(
+            name.Length,
+            name,
+            static (destination, source) =>
+            {
+                for (var index = 0; index < source.Length; index++)
+                {
+                    var candidate = source[index];
+                    destination[index] =
+                        Array.IndexOf(UnsafeNameChars, candidate) >= 0 ? '_' : candidate;
+                }
+            }
+        );
+    }
+
     /// <summary>Whether two paths carry the same file name by the case rule, whatever their directories.</summary>
     public static bool SameName(string left, string right)
     {

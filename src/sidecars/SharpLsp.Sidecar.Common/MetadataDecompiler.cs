@@ -69,7 +69,7 @@ public static class MetadataDecompiler
         var identity =
             $"{assembly.FullName}|{assembly.Length}|{assembly.LastWriteTimeUtc.Ticks}|{typeFullName}";
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)), 0, 8);
-        var fileName = $"{SanitizeFileName(displayName)}.cs";
+        var fileName = $"{NativePaths.SafeName(displayName)}.cs";
         return NativePaths.Temp("sharplsp-decompiled", key, fileName);
     }
 
@@ -161,41 +161,6 @@ public static class MetadataDecompiler
         {
             Log.Debug("[MetadataDecompiler] {FilePath} was published by another process", target);
         }
-    }
-
-    /// <summary>
-    /// Every character neutralised in a decompiled file name. The leading literals
-    /// are replaced on <em>every</em> platform so the same type yields the same
-    /// file name everywhere: <see cref="Path.GetInvalidFileNameChars"/> is
-    /// platform-specific — on Unix it is only <c>{ '\0', '/' }</c> — so relying on
-    /// it alone would leave <c>&lt;</c>, <c>&gt;</c>, <c>:</c>, <c>,</c> and spaces
-    /// intact on Linux while stripping them on Windows.
-    /// </summary>
-    private static readonly char[] UnsafeNameChars =
-    [
-        '<',
-        '>',
-        ':',
-        ',',
-        ' ',
-        .. Path.GetInvalidFileNameChars(),
-    ];
-
-    private static string SanitizeFileName(string name)
-    {
-        return string.Create(
-            name.Length,
-            name,
-            static (destination, source) =>
-            {
-                for (var index = 0; index < source.Length; index++)
-                {
-                    var candidate = source[index];
-                    destination[index] =
-                        Array.IndexOf(UnsafeNameChars, candidate) >= 0 ? '_' : candidate;
-                }
-            }
-        );
     }
 
     /// <summary>

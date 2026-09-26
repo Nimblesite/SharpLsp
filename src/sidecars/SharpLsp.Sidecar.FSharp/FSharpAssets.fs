@@ -55,6 +55,7 @@ let private libraryPath (libraries: JsonElement option) (key: string) : string =
 
     match fromLibraries with
     | Some path when not (String.IsNullOrEmpty path) -> path
+    // NuGet lays a package out under its lower-cased id/version: a layout rule, not path identity.
     | _ -> key.ToLowerInvariant()
 
 /// Compile assemblies declared by one target-framework package entry.
