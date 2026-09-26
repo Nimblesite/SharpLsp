@@ -66,14 +66,7 @@ internal static class CodeLensResolver
             }
 
             var refCount = await CountReferencesAsync(symbol, scope, ct).ConfigureAwait(false);
-            lenses.Add(
-                new CodeLensResult
-                {
-                    Line = span.StartLinePosition.Line,
-                    Character = span.StartLinePosition.Character,
-                    Title = FormatRefTitle(refCount),
-                }
-            );
+            lenses.Add(LensAt(span, FormatRefTitle(refCount)));
 
             // Add implementation count for interfaces and abstract classes.
             if (
@@ -83,16 +76,20 @@ internal static class CodeLensResolver
             {
                 var implCount = await CountImplementationsAsync(implSymbol, scope, ct)
                     .ConfigureAwait(false);
-                lenses.Add(
-                    new CodeLensResult
-                    {
-                        Line = span.StartLinePosition.Line,
-                        Character = span.StartLinePosition.Character,
-                        Title = FormatImplTitle(implCount),
-                    }
-                );
+                lenses.Add(LensAt(span, FormatImplTitle(implCount)));
             }
         }
+    }
+
+    /// <summary>A lens titled <paramref name="title"/> at the start of <paramref name="span"/>.</summary>
+    private static CodeLensResult LensAt(FileLinePositionSpan span, string title)
+    {
+        return new CodeLensResult
+        {
+            Line = span.StartLinePosition.Line,
+            Character = span.StartLinePosition.Character,
+            Title = title,
+        };
     }
 
     private static async Task<int> CountReferencesAsync(

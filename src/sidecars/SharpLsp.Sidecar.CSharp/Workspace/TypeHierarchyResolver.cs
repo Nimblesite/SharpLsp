@@ -80,19 +80,19 @@ internal static class TypeHierarchyResolver
         results.AddRange(types.Select(ToItem).OfType<HierarchyItem>());
     }
 
-    private static async Task<INamedTypeSymbol?> ResolveTypeAtPositionAsync(
+    private static Task<INamedTypeSymbol?> ResolveTypeAtPositionAsync(
         Document document,
         int line,
         int character,
         CancellationToken ct
     )
     {
-        var resolved = await DocumentPosition
-            .ResolveTokenAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        return resolved is null
-            ? null
-            : ResolveNamedType(resolved.Value.Token, resolved.Value.Model, ct);
+        return DocumentPosition.ResolveSymbolAsync(
+            document,
+            (line, character),
+            ResolveNamedType,
+            ct
+        );
     }
 
     private static INamedTypeSymbol? ResolveNamedType(

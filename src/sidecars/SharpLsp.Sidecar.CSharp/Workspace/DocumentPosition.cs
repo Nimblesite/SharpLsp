@@ -36,6 +36,24 @@ internal static class DocumentPosition
     }
 
     /// <summary>
+    /// The symbol <paramref name="resolve"/> reads from the token at <paramref name="at"/>;
+    /// <see langword="null"/> when the document exposes no semantic model or syntax root,
+    /// or the token names no such symbol.
+    /// </summary>
+    public static async Task<TSymbol?> ResolveSymbolAsync<TSymbol>(
+        Document document,
+        (int Line, int Character) at,
+        Func<SyntaxToken, SemanticModel, CancellationToken, TSymbol?> resolve,
+        CancellationToken ct
+    )
+        where TSymbol : class
+    {
+        var resolved = await ResolveTokenAsync(document, at.Line, at.Character, ct)
+            .ConfigureAwait(false);
+        return resolved is null ? null : resolve(resolved.Value.Token, resolved.Value.Model, ct);
+    }
+
+    /// <summary>
     /// What <paramref name="collect"/> gathers about the symbol <paramref name="resolving"/>
     /// finds at a position; empty when there is none. Collapses the identical "resolve the
     /// symbol, answer empty without one, fill a list" preamble of every hierarchy query.

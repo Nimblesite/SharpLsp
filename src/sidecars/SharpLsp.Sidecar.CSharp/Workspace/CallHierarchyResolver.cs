@@ -16,15 +16,8 @@ internal static class CallHierarchyResolver
         CancellationToken ct
     )
     {
-        var resolved = await DocumentPosition
-            .ResolveTokenAsync(document, line, character, ct)
+        var symbol = await ResolveAtPositionAsync(document, line, character, ct)
             .ConfigureAwait(false);
-        if (resolved is null)
-        {
-            return null;
-        }
-
-        var symbol = ResolveSymbol(resolved.Value.Token, resolved.Value.Model, ct);
         return symbol is null ? null : ToCallHierarchyItem(symbol);
     }
 
@@ -113,19 +106,14 @@ internal static class CallHierarchyResolver
         }
     }
 
-    private static async Task<ISymbol?> ResolveAtPositionAsync(
+    private static Task<ISymbol?> ResolveAtPositionAsync(
         Document document,
         int line,
         int character,
         CancellationToken ct
     )
     {
-        var resolved = await DocumentPosition
-            .ResolveTokenAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        return resolved is null
-            ? null
-            : ResolveSymbol(resolved.Value.Token, resolved.Value.Model, ct);
+        return DocumentPosition.ResolveSymbolAsync(document, (line, character), ResolveSymbol, ct);
     }
 
     private static ISymbol? ResolveSymbol(
