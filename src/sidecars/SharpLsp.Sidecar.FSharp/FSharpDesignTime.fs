@@ -240,6 +240,11 @@ let private absoluteFlag (directory: string) (arg: string) =
     |> Option.map (fun (flag, path) -> flag + NativePaths.Resolve(directory, path))
     |> Option.defaultValue arg
 
+/// Flags the build passes for its console log that an editor must not: `--flaterrors`
+/// folds each message onto one line, joining its lines with U+001D, so every message the
+/// server publishes, and every quick fix that reads one, loses its line breaks.
+let private consoleOnlyFlags = set [ "--flaterrors" ]
+
 /// FCS options from `framework`'s compiler command line: flags stay options, the rest are
 /// sources. They carry a project id of their own, so FCS keeps one builder per project AND
 /// framework: the build another project reads and the build this one answers from coexist
@@ -247,8 +252,9 @@ let private absoluteFlag (directory: string) (arg: string) =
 let optionsFromArgs (checker: FSharpChecker) (fsprojPath: string) (framework: string) (args: string array) =
     let directory = NativePaths.DirectoryOf fsprojPath
     let isSource (arg: string) = not (arg.StartsWith '-')
+    let isFlag (arg: string) = not (isSource arg)
     let sources = args |> Array.filter isSource |> Array.map (fun source -> NativePaths.Resolve(directory, source))
-    let flags = args |> Array.filter (isSource >> not) |> Array.map (absoluteFlag directory)
+    let flags = args |> Array.filter isFlag |> Array.map (absoluteFlag directory)
 
     { checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, flags) with
         SourceFiles = sources

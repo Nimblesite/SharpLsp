@@ -338,3 +338,44 @@ let ``a build is stamped by the newest of its project, its sources and the build
         Assert.Equal(day 9.0, FSharpCSharpReferences.stampOf reading)
     finally
         cleanup root
+
+/// An F# project that reads a C# project in memory keeps every FS0001 quick fix: the
+/// mismatch names F#'s own primitives, so the conversion is offered and edits the use.
+/// [ANALYZERS-FSAC-PARITY]
+[<Fact>]
+let ``a project reading C# in memory still offers the FS0001 conversion`` () =
+    task {
+        let root = NativePaths.Temp($"sharplsp-fs-cs-fix-{Guid.NewGuid():N}")
+
+        try
+            let lib = "namespace Lib { public static class Thing { public static int Value = 1; } }\n"
+            writeProject root "Lib" "csproj" "net10.0" "Thing.cs" lib [] [] |> ignore
+            let source = "module App.Main\n\nlet accept (value: float) = value\nlet actualValue: decimal = 1M\nlet value = accept actualValue\nlet other = Lib.Thing.Value\n"
+            let app = writeProject root "App" "fsproj" "net10.0" "App.fs" source [ NativePaths.Join("..", "Lib", "Lib.csproj") ] []
+            restore (NativePaths.Resolve(root, "App", "App.fsproj"))
+            let state = FSharpWorkspace.create ()
+            let! loaded = FSharpWorkspace.loadProject state root
+            Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
+            Assert.Equal(1, state.CSharpBuilds.Count)
+
+            // The message keeps its line breaks: MSBuild's `--flaterrors` is for its console.
+            let! errors = errorsIn state app
+            let line, message = Assert.Single(errors)
+            Assert.Equal(4, line)
+            Assert.DoesNotContain('', message)
+            Assert.Contains("'float'", message)
+            Assert.Contains("'decimal'", message)
+            Assert.DoesNotContain("--flaterrors", (FSharpWorkspace.optionsFor state app).Value.OtherOptions)
+
+            let fixes = FSharpCodeFixes.createState ()
+            let! actions = FSharpCodeFixes.getCodeActions fixes state app 4 19 4 30
+            let conversion = actions |> List.filter (fun action -> action.Title = "Convert to float using 'float'")
+            let action = Assert.Single conversion
+            Assert.Equal("quickfix", action.Kind)
+            let edit = (FSharpCodeFixes.resolveCodeAction fixes action.Id).Value
+            let change = (Assert.Single edit.DocumentChanges).Edits |> Assert.Single
+            Assert.Equal((4, 19, 4, 30), (change.StartLine, change.StartCharacter, change.EndLine, change.EndCharacter))
+            Assert.Equal("(float actualValue)", change.NewText)
+        finally
+            cleanup root
+    }

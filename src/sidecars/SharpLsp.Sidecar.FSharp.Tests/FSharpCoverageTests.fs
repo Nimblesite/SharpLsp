@@ -2477,6 +2477,36 @@ let ``code fix offers a conversion for a numeric type mismatch`` () = task {
 }
 
 [<Fact>]
+let ``code fix converts a decimal passed where a float is expected`` () = task {
+    // [ANALYZERS-FSAC-PARITY] FS0001 on `actualValue` in the editor's unsaved buffer offers
+    // exactly one `float` conversion that wraps the argument, and nothing on the next line.
+    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", "module M\n\nlet sentinel = 48\n" ]
+    try
+        FSharpWorkspace.applyDidChange
+            state
+            paths[0]
+            ("module M\n\n"
+             + "let accept (value: float) = value\n"
+             + "let actualValue: decimal = 1M\n"
+             + "let value = accept actualValue\n"
+             + "let sentinel = 48\n")
+        let cf = FSharpCodeFixes.createState ()
+        let title = "Convert to float using 'float'"
+        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 4 19 4 30
+        let conversions = actions |> List.filter (fun a -> a.Title = title)
+        Assert.Single(conversions) |> ignore
+        let edit = (FSharpCodeFixes.resolveCodeAction cf conversions.Head.Id).Value
+        let change = Assert.Single(edit.DocumentChanges)
+        let text = Assert.Single(change.Edits)
+        Assert.Equal("(float actualValue)", text.NewText)
+        Assert.Equal((4, 19, 4, 30), (text.StartLine, text.StartCharacter, text.EndLine, text.EndCharacter))
+        let! after = FSharpCodeFixes.getCodeActions cf state paths[0] 5 4 5 12
+        Assert.DoesNotContain(after, fun a -> a.Title = title)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
 let ``code fix prefixes an unused value with underscore`` () = task {
     // FS1182 (unused value) is off by default; enable it via --warnon:1182 on the
     // live project options, then the unused-value fix (FS1182 dispatch arm) fires.
@@ -2692,4 +2722,28 @@ let ``formatRange returns no edits when the range is already formatted`` () = ta
         Assert.Empty(edits)
     finally
         cleanup dir
+}
+
+[<Fact>]
+let ``PROBE conversion in the VS Code fixture`` () = task {
+    let root = Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "editors", "vscode", "test-fixtures", "workspace", "fsharp"))
+    let file = Path.Combine(root, "DiagnosticsTarget.fs")
+    let state = FSharpWorkspace.create ()
+    let! _ = FSharpWorkspace.loadProjectWithCancellation state (Path.Combine(root, "FSharpFixtures.fsproj")) Threading.CancellationToken.None
+    let source = "module FSharpFixtures.RefactorConversion\n\nlet accept (value: float) = value\nlet actualValue: decimal = 1M\nlet value = accept actualValue\nlet sentinel = 48\n"
+    FSharpWorkspace.applyDidChange state file source
+    let! checkedFile = FSharpWorkspace.checkFileWithParse state file
+    let diags =
+        match checkedFile with
+        | Some(_, results, _) -> results.Diagnostics |> Array.map (fun d -> $"{d.ErrorNumber} {d.Range} [{d.Message}]") |> String.concat "\n"
+        | None -> "NO CHECK"
+    let events = Collections.Concurrent.ConcurrentQueue<string>()
+    let sink = { new Serilog.Core.ILogEventSink with member _.Emit e = events.Enqueue($"{e.RenderMessage()} {e.Exception}") }
+    Serilog.Log.Logger <- Serilog.LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger()
+    let cf = FSharpCodeFixes.createState ()
+    let! actions = FSharpCodeFixes.getCodeActions cf state file 4 19 4 30
+    let logged = events |> Seq.filter (fun e -> e.Contains "CodeFixes") |> String.concat "\n"
+    let diags = $"{diags}\nLOG:\n{logged}"
+    let titles = actions |> List.map _.Title |> String.concat " | "
+    Assert.Fail($"DIAGS:\n{diags}\nACTIONS: {titles}")
 }
