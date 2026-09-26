@@ -9,7 +9,7 @@
  */
 
 import * as fs from 'node:fs';
-import { directoryOf, fileNameOf, resolvePath } from './paths';
+import { directoryOf, fileNameOf, isProjectFile, resolvePath } from './paths';
 import * as vscode from 'vscode';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
@@ -260,9 +260,7 @@ function schedule(filePath: string): void {
 }
 
 function rescan(filePath: string): void {
-  const lower = filePath.toLowerCase();
-  const isProject = lower.endsWith('.csproj') || lower.endsWith('.fsproj');
-  if (isProject) {
+  if (isProjectFile(filePath)) {
     rescanOne(filePath);
     return;
   }

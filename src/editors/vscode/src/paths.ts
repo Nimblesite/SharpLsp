@@ -94,8 +94,35 @@ export function isLexicallyWithin(root: string, candidate: string): boolean {
   const relative = nodePath.relative(nodePath.resolve(root), nodePath.resolve(candidate));
   return (
     relative === '' ||
-    (relative !== '..' && !relative.startsWith(`..${nodePath.sep}`) && !nodePath.isAbsolute(relative))
+    (relative !== '..' &&
+      !relative.startsWith(`..${nodePath.sep}`) &&
+      !nodePath.isAbsolute(relative))
   );
+}
+
+/** The extension of `value`, lower-cased with its dot: the key every extension test compares. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function extensionKeyOf(value: string): string {
+  return nodePath.extname(value).toLowerCase();
+}
+
+/** True when `value` ends in one of `extensions` (lower-case, with their dot), in any case. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function hasExtension(value: string, ...extensions: readonly string[]): boolean {
+  return extensions.includes(extensionKeyOf(value));
+}
+
+/** True when `value` is a C# or F# project file. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function isProjectFile(value: string): boolean {
+  return hasExtension(value, '.csproj', '.fsproj');
+}
+
+/** True when one directory segment of `value` is `segment`, in any case. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function hasSegment(value: string, segment: string): boolean {
+  return value.split(nodePath.sep).some((part) => part.toLowerCase() === segment.toLowerCase());
+}
+
+/** True when `left` and `right` name the same file under {@link normalizePath}. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function samePath(left: string, right: string): boolean {
+  return normalizePath(left) === normalizePath(right);
 }
 
 /** Stable comparison key for a path that tools spell differently. [SHARPLSP-ARCHITECTURE-PATHS] */

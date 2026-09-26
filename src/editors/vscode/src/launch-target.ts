@@ -8,11 +8,14 @@
 import * as fs from 'node:fs';
 import {
   directoryOf,
+  extensionKeyOf,
   extensionOf,
   fileNameOf,
+  hasExtension,
+  hasSegment,
+  isProjectFile,
   isWithin,
   joinPath,
-  pathSeparator,
   resolvePath,
 } from './paths';
 
@@ -35,7 +38,6 @@ export interface ConeResult {
   readonly stoppedAt: ConeStop;
 }
 
-const PROJECT_EXTENSIONS = ['.csproj', '.fsproj'];
 const SOLUTION_EXTENSIONS = ['.sln', '.slnx'];
 
 /** Files in `dir`, or an empty list when it cannot be read. */
@@ -50,7 +52,7 @@ function entriesOf(dir: string): string[] {
 /** Project files directly inside `dir`, sorted for a stable prompt order. */
 export function projectFilesIn(dir: string): string[] {
   return entriesOf(dir)
-    .filter((entry) => PROJECT_EXTENSIONS.includes(extensionOf(entry).toLowerCase()))
+    .filter((entry) => isProjectFile(entry))
     .sort((left, right) => left.localeCompare(right))
     .map((entry) => joinPath(dir, entry));
 }
@@ -58,7 +60,7 @@ export function projectFilesIn(dir: string): string[] {
 /** Solution files directly inside `dir`. */
 export function solutionFilesIn(dir: string): string[] {
   return entriesOf(dir)
-    .filter((entry) => SOLUTION_EXTENSIONS.includes(extensionOf(entry).toLowerCase()))
+    .filter((entry) => hasExtension(entry, ...SOLUTION_EXTENSIONS))
     .sort((left, right) => left.localeCompare(right))
     .map((entry) => joinPath(dir, entry));
 }
@@ -105,7 +107,7 @@ export function walkCone(startDir: string, workspaceRoot: string | undefined): C
  * so their kind is decided by extension alone.
  */
 export function classifyDocument(file: string, workspaceRoot: string | undefined): DocumentKind {
-  const extension = extensionOf(file).toLowerCase();
+  const extension = extensionKeyOf(file);
   if (extension === '.csx') return 'csharpScript';
   if (extension === '.fsx' || extension === '.fsscript') return 'fsharpScript';
   if (extension !== '.cs' && extension !== '.fs') return 'unsupported';
@@ -254,7 +256,7 @@ function stemOf(candidate: string): string {
 
 /** A dll is an application when the SDK emitted a runtimeconfig beside it. */
 function isApplicationAssembly(candidate: string): boolean {
-  return extensionOf(candidate).toLowerCase() === '.dll' && hasRuntimeConfig(candidate);
+  return hasExtension(candidate, '.dll') && hasRuntimeConfig(candidate);
 }
 
 /** Debug output first, then most recently written. */
@@ -267,7 +269,7 @@ function preferDebug(candidates: readonly string[]): string[] {
 }
 
 function isDebugOutput(candidate: string): boolean {
-  return candidate.split(pathSeparator).some((segment) => segment.toLowerCase() === 'debug');
+  return hasSegment(candidate, 'debug');
 }
 
 function modifiedAt(candidate: string): number {

@@ -6,7 +6,7 @@
 // confirmed every delta, and discards whenever it did not.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import { directoryOf, isLexicallyWithin, joinPath, resolvePath } from './paths';
+import { directoryOf, hasExtension, isLexicallyWithin, joinPath, resolvePath } from './paths';
 import * as vscode from 'vscode';
 import type { DapMessage } from './dap-emulate';
 import { error, traceInfo } from './log';
@@ -417,7 +417,7 @@ export class DapHotReload implements vscode.Disposable {
   /** Hand one set of delta files to netcoredbg's `applyDeltas` request. */
   private async requestApplyDeltas(assemblyName: string, files: DeltaFiles): Promise<void> {
     const response = await this.host.request('applyDeltas', {
-      dllFileName: assemblyName.endsWith('.dll') ? assemblyName : `${assemblyName}.dll`,
+      dllFileName: hasExtension(assemblyName, '.dll') ? assemblyName : `${assemblyName}.dll`,
       ...files,
     });
     if (response.success !== true) {
@@ -538,7 +538,7 @@ function projectsAt(directory: string): string[] {
   try {
     return fs
       .readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.csproj'))
+      .filter((entry) => entry.isFile() && hasExtension(entry.name, '.csproj'))
       .map((entry) => entry.name);
   } catch {
     return [];

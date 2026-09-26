@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { directoryOf, fileNameOf, joinPath } from './paths';
+import { directoryOf, fileNameOf, hasExtension, joinPath } from './paths';
 import * as vscode from 'vscode';
 import { info } from './log';
 import * as config from './config.js';
@@ -13,7 +13,7 @@ let fsiTerminal: vscode.Terminal | undefined;
 export function isFSharpSourceDocument(
   document: vscode.TextDocument | undefined,
 ): document is vscode.TextDocument {
-  return document?.uri.fsPath.endsWith('.fs') === true;
+  return document !== undefined && hasExtension(document.uri.fsPath, '.fs');
 }
 
 /** VS Code terminal options for launching an F# Interactive session. */

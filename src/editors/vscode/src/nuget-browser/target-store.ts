@@ -4,7 +4,7 @@
 // know about the workspaceState key, fallback synthesis, or default-target
 // resolution rules.
 
-import { directoryOf, fileNameOf } from '../paths';
+import { directoryOf, fileNameOf, hasExtension } from '../paths';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { fetchTargets } from './lsp.js';
@@ -70,6 +70,6 @@ export function synthesizeFallback(projectPath: string): NuGetTarget {
     kind: 'project',
     displayName: file,
     path: projectPath,
-    language: file.endsWith('.fsproj') ? 'fsharp' : 'csharp',
+    language: hasExtension(file, '.fsproj') ? 'fsharp' : 'csharp',
   };
 }

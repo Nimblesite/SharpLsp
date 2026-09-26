@@ -57,6 +57,7 @@ import {
 } from './target-framework.js';
 import { initProjectDepsStore } from './project-deps-store.js';
 import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
+import { samePath } from './paths';
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface SharpLspExtensionApi {
@@ -553,7 +554,7 @@ async function addProjectReference(node: ExplorerNode | undefined): Promise<void
   const projectFilePath = projectPathOf(node);
   if (projectFilePath === undefined) return;
   const projectFiles = await workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
-  const candidates = projectFiles.filter((f) => f.fsPath !== projectFilePath);
+  const candidates = projectFiles.filter((f) => !samePath(f.fsPath, projectFilePath));
   if (candidates.length === 0) {
     void window.showWarningMessage('No other project files found to reference.');
     return;

@@ -10,7 +10,7 @@
  */
 
 import * as fs from 'node:fs';
-import { joinPath } from './paths';
+import { hasExtension, joinPath } from './paths';
 import type { TestOutcome } from './test-run-output.js';
 import { parseTrxReport, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
 
@@ -73,7 +73,7 @@ export function trxFiles(dir: string): string[] {
   try {
     return fs
       .readdirSync(dir)
-      .filter((entry) => entry.toLowerCase().endsWith('.trx'))
+      .filter((entry) => hasExtension(entry, '.trx'))
       .map((entry) => joinPath(dir, entry));
   } catch {
     return [];

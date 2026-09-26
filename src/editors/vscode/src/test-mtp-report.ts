@@ -2,7 +2,7 @@
  * MTP invocation and reporter negotiation, and how a module is STARTED.
  * Implements [TEST-MTP-RUN] and [NETFX-TEST-MTP].
  */
-import { extensionOf, fileNameOf } from './paths';
+import { fileNameOf, hasExtension } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet, runProcess, type DotnetRun } from './dotnet-process.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
 import { netFrameworkDebugRefusal } from './test-frameworks.js';
@@ -25,7 +25,7 @@ interface MtpInvocation {
  * `<Name>.exe` itself, while a .NET module's is always its `.dll`.
  */
 export function isNetFrameworkModule(modulePath: string): boolean {
-  return extensionOf(modulePath).toLowerCase() === '.exe';
+  return hasExtension(modulePath, '.exe');
 }
 
 /** Why a .NET Framework module must not start: it runs only on Windows. */

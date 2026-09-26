@@ -14,12 +14,9 @@
  */
 
 import * as fs from 'node:fs';
-import { directoryOf, extensionOf, joinPath, resolvePath } from './paths';
+import { directoryOf, hasExtension, isProjectFile, joinPath, resolvePath } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet } from './dotnet-process.js';
 import { evaluateProject, type ProjectProperties } from './msbuild.js';
-
-/** Project file extensions the Test Explorer knows. */
-const PROJECT_EXTENSIONS = ['.csproj', '.fsproj'];
 
 /** Solution file extensions `dotnet sln list` accepts. */
 const SOLUTION_EXTENSIONS = ['.sln', '.slnx', '.slnf'];
@@ -40,7 +37,7 @@ export interface MtpProjectScan {
 
 /** True when `target` is a solution file `dotnet sln list` understands. */
 export function isSolutionFile(target: string): boolean {
-  return SOLUTION_EXTENSIONS.includes(extensionOf(target).toLowerCase());
+  return hasExtension(target, ...SOLUTION_EXTENSIONS);
 }
 
 /**
@@ -55,7 +52,7 @@ export function parseSolutionProjects(output: string, solutionDir: string): stri
   const projects: string[] = [];
   for (const raw of output.split('\n')) {
     const line = raw.trim();
-    if (!PROJECT_EXTENSIONS.includes(extensionOf(line).toLowerCase())) continue;
+    if (!isProjectFile(line)) continue;
     projects.push(resolvePath(solutionDir, line));
   }
   return projects;
@@ -63,8 +60,7 @@ export function parseSolutionProjects(output: string, solutionDir: string): stri
 
 /** True when `name` is a file `dotnet build <folder>` would pick up. */
 function isBuildable(name: string): boolean {
-  const extension = extensionOf(name).toLowerCase();
-  return PROJECT_EXTENSIONS.includes(extension) || SOLUTION_EXTENSIONS.includes(extension);
+  return isProjectFile(name) || hasExtension(name, ...SOLUTION_EXTENSIONS);
 }
 
 /** The project and solution files DIRECTLY inside `dir`, never below it. */
