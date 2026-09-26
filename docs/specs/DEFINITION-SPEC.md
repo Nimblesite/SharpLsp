@@ -171,7 +171,7 @@ When a C# project references an F# project or vice versa, each engine sees the o
 | Scenario | Approach |
 |---|---|
 | C# code references F# type | Roslyn drops the F# `<ProjectReference>` (loads it as an empty stub); `WorkspaceManager.AddCrossLanguageMetadataReferences` re-attaches the built F# DLL as a metadata reference and removes the stub, then `MetadataNavigator` decompiles the resolved symbol |
-| F# code references C# type | `buildProjectOptions` wires each referenced C# project's output DLL into the FCS `-r:` options so the symbol resolves; `FSharpMetadataNavigator` decompiles the external symbol in `extractDefinition` |
+| F# code references C# type | The C# project is compiled in memory ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]), so the symbol resolves unbuilt, and definition lands in its C# source, found in Roslyn's compilation by documentation id. A reference that stands on its DLL keeps the DLL route: `buildProjectOptions` wires the output DLL into the FCS `-r:` options and `FSharpMetadataNavigator` decompiles the external symbol in `extractDefinition` |
 
 Both directions decompile through the shared `MetadataDecompiler` (`SharpLsp.Sidecar.Common`), and the referenced project must be built (its output DLL must exist) for resolution to succeed. Requirement: navigating from a use site in one language onto a symbol defined in the other resolves to a decompiled metadata-as-source location for that symbol's type.
 
