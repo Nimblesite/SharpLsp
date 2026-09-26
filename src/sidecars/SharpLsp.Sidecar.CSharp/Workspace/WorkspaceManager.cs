@@ -23,10 +23,6 @@ using CompletionsResult = Outcome.Result<
     string
 >;
 using DefinitionResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationResult?, string>;
-using DiagnosticsResult = Outcome.Result<
-    System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.DiagnosticResult>,
-    string
->;
 using HighlightsResult = Outcome.Result<
     SharpLsp.Sidecar.CSharp.DocumentHighlightListResult,
     string
@@ -209,79 +205,6 @@ internal sealed partial class WorkspaceManager : IDisposable
         catch (Exception ex)
         {
             return VoidResult.Failure(ex.Message);
-        }
-    }
-
-    private bool _deadCodeEnabled;
-    private bool _monorepo;
-
-    /// <summary>
-    /// Configure the static analyzers from the host's <c>analyzers/configure</c>
-    /// push ([ANALYZERS-CONFIG-IMPL]). Flags persist across workspace re-opens.
-    /// Defaults are off so direct test construction never gets dead-code diagnostics
-    /// unless explicitly enabled; the host always configures in production.
-    /// </summary>
-    public void ConfigureAnalyzers(bool deadCode, bool monorepo)
-    {
-        _deadCodeEnabled = deadCode;
-        _monorepo = monorepo;
-    }
-
-    /// <summary>
-    /// Get diagnostics for a file: FCS-style compiler diagnostics plus, when the
-    /// dead-code analyzer is enabled, project-wide unused-symbol diagnostics
-    /// (`SLSPC0101`, [ANALYZERS-UNUSED-PUBLIC]).
-    /// </summary>
-    public async Task<DiagnosticsResult> GetDiagnosticsAsync(
-        string filePath,
-        CancellationToken ct = default
-    )
-    {
-        try
-        {
-            // The document snapshot and the tier-2 degradation notice MUST come from
-            // the same instant, or a slow semantic-model computation can pair a
-            // pre-restore compilation with a post-restore notice state and present
-            // phantom package errors as final. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            var state = await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false);
-            if (state.Document is null)
-            {
-                return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
-            }
-
-            var model = await state.Document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-            if (model is null)
-            {
-                return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
-            }
-
-            var diagnostics = MapDiagnostics(filePath, model, ct);
-            AppendDegradation(filePath, state.Degradation, diagnostics);
-            if (_deadCodeEnabled && _solution is not null)
-            {
-                var dead = await DeadCodeAnalyzer
-                    .AnalyzeAsync(
-                        state.Document,
-                        await SearchScope
-                            .OfAsync(state.Document, _activeFrameworks, ct)
-                            .ConfigureAwait(false),
-                        _monorepo,
-                        ct
-                    )
-                    .ConfigureAwait(false);
-                diagnostics.AddRange(dead);
-            }
-
-            Log.Debug(
-                "Diagnostics answer for {File}: [{Codes}]",
-                filePath,
-                string.Join(",", diagnostics.Select(diagnostic => diagnostic.Code))
-            );
-            return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
-        }
-        catch (Exception ex)
-        {
-            return DiagnosticsResult.Failure(ex.Message);
         }
     }
 
