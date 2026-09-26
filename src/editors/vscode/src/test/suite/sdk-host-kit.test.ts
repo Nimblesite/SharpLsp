@@ -50,9 +50,9 @@ suite('SDK host fixture copy', () => {
     return { source, target };
   }
 
-  test('copies one newest version per component instead of every installed SDK', () => {
+  test('copies one newest version per component instead of every installed SDK', async () => {
     const { source, target } = stage(['10.0.100', '10.0.303']);
-    const host = copySdkMajor(source, target, 10);
+    const host = await copySdkMajor(source, target, 10);
 
     assert.equal(host, dotnetExecutable(target), 'the copier returns the muxer it wrote');
     assert.ok(fs.existsSync(host), 'and that muxer must really exist on disk');
@@ -70,11 +70,11 @@ suite('SDK host fixture copy', () => {
     }
   });
 
-  test('picks the newest by VERSION order, which a lexicographic sort gets wrong', () => {
+  test('picks the newest by VERSION order, which a lexicographic sort gets wrong', async () => {
     // `10.0.100` is a later feature band than `10.0.99`, and `9.0.14` a later
     // patch than `9.0.9` — both orderings a string sort reverses.
     const { source, target } = stage(['10.0.99', '10.0.100']);
-    copySdkMajor(source, target, 10);
+    await copySdkMajor(source, target, 10);
     for (const component of COMPONENTS) {
       assert.deepEqual(
         fs.readdirSync(path.join(target, component)),
@@ -115,10 +115,10 @@ suite('SDK host fixture copy', () => {
     );
   });
 
-  test('a major the source cannot supply fails the fixture rather than composing one', () => {
+  test('a major the source cannot supply fails the fixture rather than composing one', async () => {
     const { source, target } = stage(['10.0.303']);
-    assert.throws(
-      () => copySdkMajor(source, target, 9),
+    await assert.rejects(
+      copySdkMajor(source, target, 9),
       /must supply \.NET 9/,
       'a missing major is a fixture prerequisite, never an empty directory named 9.x',
     );

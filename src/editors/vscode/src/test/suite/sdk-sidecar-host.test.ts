@@ -36,13 +36,15 @@ suite('SDK pin preserves the sidecar host', () => {
   let ui: UiStubs;
   let status: SharpLspStatusBar;
 
-  setup(function () {
+  setup(async function () {
     this.timeout(DOTNET_CLI_MS);
     modernSource = sdkSource(10);
     const oldSource = sdkSource(9);
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-sdk-host-'));
-    oldHost = copySdkMajor(oldSource, path.join(scratch, 'old'), 9);
-    modernHost = copySdkMajor(modernSource, path.join(scratch, 'modern'), 10);
+    [oldHost, modernHost] = await Promise.all([
+      copySdkMajor(oldSource, path.join(scratch, 'old'), 9),
+      copySdkMajor(modernSource, path.join(scratch, 'modern'), 10),
+    ]);
     pinnedVersion = installedSdkVersions(oldHost)[0]!;
     fs.writeFileSync(
       path.join(scratch, 'global.json'),
@@ -118,9 +120,9 @@ suite('SDK pin preserves the sidecar host', () => {
     restore = stubSdkWorkspace(
       scratch,
       () => modernHost,
-      (version) => {
+      async (version) => {
         requested.push(version);
-        return copySdkMajor(path.dirname(oldHost), path.dirname(modernHost), 9);
+        return await copySdkMajor(path.dirname(oldHost), path.dirname(modernHost), 9);
       },
     );
     assert.equal(runHost(oldHost, scratch, ['--version']).stdout.trim(), pinnedVersion);
@@ -137,9 +139,9 @@ suite('SDK pin preserves the sidecar host', () => {
     restore = stubSdkWorkspace(
       scratch,
       () => undefined,
-      (version) => {
+      async (version) => {
         requested.push(version);
-        if (version === '10.0') copySdkMajor(modernSource, path.dirname(oldHost), 10);
+        if (version === '10.0') await copySdkMajor(modernSource, path.dirname(oldHost), 10);
         return oldHost;
       },
     );
@@ -151,7 +153,7 @@ suite('SDK pin preserves the sidecar host', () => {
 
   test('a root carrying both SDKs preserves the pin without acquisition or warnings', async function () {
     this.timeout(DOTNET_CLI_MS);
-    copySdkMajor(modernSource, path.dirname(oldHost), 10);
+    await copySdkMajor(modernSource, path.dirname(oldHost), 10);
     restore = stubSdkWorkspace(
       scratch,
       () => modernHost,

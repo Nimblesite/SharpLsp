@@ -121,20 +121,20 @@ async function cloneAsync(source: string, relative: string, target: string): Pro
 /**
  * A launchable root carrying ONE real SDK, hostfxr and runtime of `major`.
  *
- * Exactly one version per component, never every installed one. `fs.cpSync` is
- * synchronous, so copying every 9.x and 10.x an agent ships blocks the event
- * loop for minutes and mocha cannot fire its own timeout until it returns: the
+ * Exactly one version per component, never every installed one, and off the event
+ * loop. A synchronous copy of every 9.x and 10.x an agent ships held the extension
+ * host for minutes and mocha could not fire its own timeout until it returned: the
  * hook reported `Timeout of 120000ms exceeded` after sixteen minutes of wall
  * clock, by which point the whole chunk had been killed and no failure was ever
  * printed (#297 CI, Windows `workspace`).
  */
-export function copySdkMajor(source: string, target: string, major: number): string {
+export async function copySdkMajor(source: string, target: string, major: number): Promise<string> {
   fs.mkdirSync(target, { recursive: true });
   fs.copyFileSync(dotnetExecutable(source), dotnetExecutable(target));
   for (const component of ['sdk', FXR, FRAMEWORK]) {
     const version = newestVersion(namesUnder(source, component), `${String(major)}.`);
     assert.ok(version, `${component} must supply .NET ${String(major)}`);
-    cloneInto(source, path.join(component, version), path.join(target, component, version));
+    await cloneAsync(source, path.join(component, version), path.join(target, component, version));
   }
   return dotnetExecutable(target);
 }
@@ -364,7 +364,7 @@ export function assertSidecarsRun(host: string, cwd: string): void {
 export function stubSdkWorkspace(
   root: string,
   find: () => string | undefined,
-  acquire: (version: string) => string,
+  acquire: (version: string) => string | Promise<string>,
 ): () => void {
   const folders = Object.getOwnPropertyDescriptor(vscode.workspace, 'workspaceFolders');
   const execute = vscode.commands.executeCommand;
@@ -382,7 +382,7 @@ export function stubSdkWorkspace(
     if (command === 'dotnet.acquireGlobalSDK') {
       const context = args[0] as { version: string; mode: string };
       assert.equal(context.mode, 'sdk', 'sidecars need MSBuild as well as the runtime');
-      return { dotnetPath: acquire(context.version) };
+      return { dotnetPath: await acquire(context.version) };
     }
     return await execute(command, ...args);
   }) as typeof execute;
