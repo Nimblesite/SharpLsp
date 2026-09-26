@@ -153,7 +153,7 @@ let getSymbolUse (checkResults: FSharpCheckFileResults) (source: string) line ch
         |> Option.orElseWith (fun () -> symbolUseCoveringPosition checkResults line character)
 
 /// The entity `entity` stands for, through any abbreviation: `string` is `System.String`,
-/// and an abbreviation FSharp.Core declares has no source of its own to land in.
+/// and an abbreviation FSharp.Core declares has no source of its own to land in. [DEFINITION-CROSSLANG]
 let rec private definingEntity (entity: FSharpEntity) : FSharpEntity option =
     if entity.IsFSharpAbbreviation then
         getTypeEntity entity.AbbreviatedType
