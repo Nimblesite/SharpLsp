@@ -2,6 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using RenameEditResult = Outcome.Result<SharpLsp.Sidecar.CSharp.WorkspaceEditResult, string>;
 using RenameIdentityQueryResult = Outcome.Result<
     SharpLsp.Sidecar.CSharp.RenameIdentityResultWire,
@@ -294,7 +295,7 @@ internal sealed partial class WorkspaceManager
             }
         }
 
-        return [.. edits.OrderBy(edit => edit.FilePath, StringComparer.OrdinalIgnoreCase)];
+        return [.. edits.OrderBy(edit => edit.FilePath, NativePaths.Comparer)];
     }
 
     private static async Task<DocumentEditResult?> BuildForeignDocumentEditAsync(

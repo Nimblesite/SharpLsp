@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Outcome;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.Common.Solutions;
 using SharpLsp.Sidecar.CSharp.Hover;
@@ -81,24 +82,22 @@ internal sealed partial class WorkspaceManager : IDisposable
     // Pending text edits keyed by file path that arrived BEFORE the workspace
     // finished loading. We replay them after OpenAsync completes so live edits
     // sent during workspace warmup aren't silently lost.
-    private readonly Dictionary<string, string> _pendingTextEdits = new(
-        StringComparer.OrdinalIgnoreCase
-    );
+    private readonly Dictionary<string, string> _pendingTextEdits = new(NativePaths.Comparer);
 
     private readonly Dictionary<string, IReadOnlyList<PackageRef>> _documentPackages = new(
-        StringComparer.OrdinalIgnoreCase
+        NativePaths.Comparer
     );
     private readonly Dictionary<string, IReadOnlyList<FileDirective>> _documentDirectives = new(
-        StringComparer.OrdinalIgnoreCase
+        NativePaths.Comparer
     );
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
         string,
         ProjectlessDegradation
-    > _projectlessDegradations = new(StringComparer.OrdinalIgnoreCase);
+    > _projectlessDegradations = new(NativePaths.Comparer);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
         string,
         long
-    > _packageResolutionGenerations = new(StringComparer.OrdinalIgnoreCase);
+    > _packageResolutionGenerations = new(NativePaths.Comparer);
     private CancellationTokenSource _packageResolutionCancellation = new();
     private long _nextPackageResolutionGeneration;
 
@@ -121,7 +120,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             // MSBuild's solution loading and relative-path resolution.
             // Normalize at the boundary so every downstream consumer sees the
             // normal form. [GitHub #110]
-            var normalized = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath(path);
+            var normalized = NativePaths.NormalizeFullPath(path);
             return await OpenCoreAsync(normalized, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -507,7 +506,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     // Implements [SCRIPT-DEGRADE] and [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
     private static string AmbiguousSolutionMessage(string path, string[] candidates)
     {
-        var names = string.Join(", ", candidates.Select(Path.GetFileName));
+        var names = string.Join(", ", candidates.Select(NativePaths.NameOf));
         return $"Found {candidates.Length} solutions under '{path}' ({names}), so which one to "
             + "load is ambiguous. Set `csharp.solution_path` in sharplsp.toml to the solution "
             + "you want, relative to the workspace root.";
@@ -631,10 +630,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         // Roslyn 5.x's MSBuildWorkspace.OpenSolutionAsync handles both
         // legacy .sln and the XML-based .slnx format.
-        if (
-            target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
-            || target.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
-        )
+        if (NativePaths.HasExtension(target, ".sln") || NativePaths.HasExtension(target, ".slnx"))
         {
             return await _workspace!
                 .OpenSolutionAsync(target, cancellationToken: ct)
@@ -672,21 +668,21 @@ internal sealed partial class WorkspaceManager : IDisposable
         var fsharpStubs = solution
             .Projects.Where(project =>
                 project.FilePath is not null
-                && project.FilePath.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+                && NativePaths.HasExtension(project.FilePath, ".fsproj")
             )
             .ToLookup(project => NormalizedPath(project.FilePath!), project => project.Id);
 
         foreach (var projectId in solution.ProjectIds.ToList())
         {
             var project = solution.GetProject(projectId);
-            if (project?.FilePath?.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) != true)
+            if (project?.FilePath is null || !NativePaths.HasExtension(project.FilePath, ".csproj"))
             {
                 continue;
             }
 
             foreach (var referenced in ProjectReferences.ReadReferencedProjects(project.FilePath))
             {
-                if (!referenced.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase))
+                if (!NativePaths.HasExtension(referenced, ".fsproj"))
                 {
                     continue;
                 }
@@ -752,8 +748,8 @@ internal sealed partial class WorkspaceManager : IDisposable
         // those, Roslyn cannot fully load the F# type and the referenced symbol
         // stays unresolved. Dedup by simple name so framework assemblies already
         // in the compilation are never doubled.
-        var outputDir = Path.GetDirectoryName(dll);
-        if (outputDir is null)
+        var outputDir = NativePaths.DirectoryOf(dll);
+        if (outputDir.Length == 0)
         {
             return solution;
         }
@@ -771,7 +767,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         Log.Debug(
             "[CrossLang] Wired {Dll} (+ siblings from {Dir}) into project {Project}",
-            Path.GetFileName(dll),
+            NativePaths.NameOf(dll),
             outputDir,
             project.Name
         );
@@ -781,20 +777,17 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// <summary>Whether the project already references an assembly with the same simple name.</summary>
     private static bool AlreadyReferencesSimpleName(Project project, string dll)
     {
-        var simpleName = Path.GetFileNameWithoutExtension(dll);
+        var simpleName = NativePaths.StemOf(dll);
         return project
             .MetadataReferences.OfType<PortableExecutableReference>()
             .Any(reference =>
-                string.Equals(
-                    Path.GetFileNameWithoutExtension(reference.FilePath),
-                    simpleName,
-                    StringComparison.OrdinalIgnoreCase
-                )
+                reference.FilePath is { } path
+                && NativePaths.Comparer.Equals(NativePaths.StemOf(path), simpleName)
             );
     }
 
     private static string NormalizedPath(string path)
     {
-        return SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath(path);
+        return NativePaths.NormalizeFullPath(path);
     }
 }

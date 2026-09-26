@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -58,11 +59,7 @@ internal sealed partial class WorkspaceManager
     {
         var project = _solution?.Projects.FirstOrDefault(candidate =>
             candidate.FilePath is not null
-            && string.Equals(
-                NormalizeRootPath(candidate.FilePath),
-                rootPath,
-                StringComparison.OrdinalIgnoreCase
-            )
+            && NativePaths.Comparer.Equals(NormalizeRootPath(candidate.FilePath), rootPath)
         );
         if (project is null)
         {
@@ -332,7 +329,7 @@ internal sealed partial class WorkspaceManager
 
     private static string NormalizeRootPath(string path)
     {
-        return Path.GetFullPath(path);
+        return NativePaths.NormalizeFullPath(path);
     }
 
     private static string DescribePackages(IEnumerable<PackageRef> packages)

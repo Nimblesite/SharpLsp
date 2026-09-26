@@ -97,11 +97,11 @@ internal static class DocumentClosure
         CancellationToken ct
     )
     {
-        var full = Path.GetFullPath(path);
+        var full = NativePaths.NormalizeFullPath(path);
         // A path already visited names a file already in the closure: skipping it drops
         // nothing, so it is no issue. Identity follows the directory's own case rules.
         if (
-            !state.Visited.Add(state.IdentityOf(full))
+            !state.Visited.Add(NativePaths.IdentityOf(full))
             || state.Files.Count >= MaxFiles
             || depth > MaxDepth
         )
@@ -178,7 +178,7 @@ internal static class DocumentClosure
         ExpansionState state
     )
     {
-        var baseDir = Path.GetDirectoryName(filePath) ?? ".";
+        var baseDir = NativePaths.DirectoryOf(filePath);
         return directives
             .Where(d => d.Kind == FileDirectiveKind.Include)
             .SelectMany(d => ResolveInclude(d.Name, baseDir, state));
@@ -201,7 +201,7 @@ internal static class DocumentClosure
             || pattern.Contains('?', StringComparison.Ordinal);
         return usesMsBuildProperty ? []
             : isGlob ? ExpandGlob(pattern, baseDir, state)
-            : [Path.GetFullPath(Path.Combine(baseDir, pattern))];
+            : [NativePaths.Resolve(baseDir, pattern)];
     }
 
     private static string[] ExpandGlob(string pattern, string baseDir, ExpansionState state)
@@ -212,10 +212,8 @@ internal static class DocumentClosure
             var normalized = pattern
                 .Replace("**/", string.Empty, StringComparison.Ordinal)
                 .Replace("**\\", string.Empty, StringComparison.Ordinal);
-            var dir = Path.GetFullPath(
-                Path.Combine(baseDir, Path.GetDirectoryName(normalized) ?? string.Empty)
-            );
-            var mask = Path.GetFileName(normalized);
+            var dir = NativePaths.Resolve(baseDir, NativePaths.DirectoryOf(normalized));
+            var mask = NativePaths.NameOf(normalized);
             var option = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             return Directory.Exists(dir) ? Directory.GetFiles(dir, mask, option) : [];
         }
@@ -242,10 +240,9 @@ internal static class DocumentClosure
 
     private sealed class ExpansionState(ChildResolver children, LiveText? live)
     {
-        private readonly string? _livePath = live is null ? null : Path.GetFullPath(live.Path);
-
-        /// <summary>Probed case rules, per directory, for this one expansion.</summary>
-        private readonly Dictionary<string, bool> _caseSensitive = new(StringComparer.Ordinal);
+        private readonly string? _livePath = live is null
+            ? null
+            : NativePaths.NormalizeFullPath(live.Path);
 
         /// <summary>The unsaved text for <paramref name="fullPath"/>, or null to read disk.</summary>
         public string? LiveTextFor(string fullPath)
@@ -253,41 +250,12 @@ internal static class DocumentClosure
             return
                 _livePath is not null
                 && string.Equals(
-                    IdentityOf(_livePath),
-                    IdentityOf(fullPath),
+                    NativePaths.IdentityOf(_livePath),
+                    NativePaths.IdentityOf(fullPath),
                     StringComparison.Ordinal
                 )
                 ? live!.Text
                 : null;
-        }
-
-        /// <summary>
-        /// <paramref name="fullPath"/> as its directory tells files apart. Two names that differ
-        /// only in case are one file in a case-insensitive directory and two in a case-sensitive
-        /// one; folding case everywhere dropped the second of two such files from the closure
-        /// without a word (GitHub #190). A directory that cannot be probed — the file is
-        /// missing — keeps every spelling apart, so a missing file is reported, never merged.
-        /// </summary>
-        public string IdentityOf(string fullPath)
-        {
-            return CaseSensitive(fullPath) ? fullPath : fullPath.ToUpperInvariant();
-        }
-
-        private bool CaseSensitive(string fullPath)
-        {
-            var directory = Path.GetDirectoryName(fullPath) ?? fullPath;
-            if (_caseSensitive.TryGetValue(directory, out var known))
-            {
-                return known;
-            }
-
-            var probed = NativePaths.IsCaseSensitive(fullPath);
-            if (probed is { } sensitive)
-            {
-                _caseSensitive[directory] = sensitive;
-            }
-
-            return probed ?? true;
         }
 
         public ChildResolver Children { get; } = children;

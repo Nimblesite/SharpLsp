@@ -8,6 +8,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.MSBuild;
 using Outcome;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 using FileBasedProjectResult = Outcome.Result<
     SharpLsp.Sidecar.CSharp.Workspace.ResolvedFileBasedProject,
     string
@@ -77,17 +78,17 @@ internal static class FileBasedPackageResolver
 
     private static RestoreContext CreateContext(string rootPath, long generation)
     {
-        var appDirectory = Path.GetDirectoryName(Path.GetFullPath(rootPath)) ?? ".";
+        var appDirectory = NativePaths.DirectoryOf(NativePaths.NormalizeFullPath(rootPath));
         var workDirectory = WorkDirectory(rootPath);
         _ = Directory.CreateDirectory(workDirectory);
-        var resolutionDirectory = Path.Combine(
+        var resolutionDirectory = NativePaths.Resolve(
             workDirectory,
             "generations",
             $"{Environment.ProcessId}-{generation}"
         );
         return new RestoreContext(
-            Path.Combine(resolutionDirectory, "restore.csproj"),
-            Path.Combine(workDirectory, ".restore.lock"),
+            NativePaths.Resolve(resolutionDirectory, "restore.csproj"),
+            NativePaths.Resolve(workDirectory, ".restore.lock"),
             resolutionDirectory,
             appDirectory,
             EvaluationProperties(appDirectory)
@@ -155,11 +156,11 @@ internal static class FileBasedPackageResolver
 
     private static string WorkDirectory(string rootPath)
     {
-        var fullPath = Path.GetFullPath(rootPath);
+        var fullPath = NativePaths.NormalizeFullPath(rootPath);
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(fullPath));
         var hash = Convert.ToHexString(digest)[..16];
-        var appName = Path.GetFileNameWithoutExtension(fullPath);
-        return Path.Combine(Path.GetTempPath(), "dotnet", "runfile", $"{appName}-{hash}");
+        var appName = NativePaths.StemOf(fullPath);
+        return NativePaths.Temp("dotnet", "runfile", $"{appName}-{hash}");
     }
 
     private static void WriteProject(string projectPath, Closure closure)
@@ -421,7 +422,7 @@ internal static class FileBasedPackageResolver
         var directory = startDirectory;
         while (directory is not null)
         {
-            var candidate = Path.Combine(directory, fileName);
+            var candidate = NativePaths.Resolve(directory, fileName);
             if (File.Exists(candidate))
             {
                 return candidate;

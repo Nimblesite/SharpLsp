@@ -251,10 +251,7 @@ internal sealed partial class WorkspaceManager
     /// </summary>
     private static bool IsGeneratedBuildOutput(string filePath)
     {
-        return filePath.Contains(
-                $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal
-            ) || filePath.Contains("/obj/", StringComparison.Ordinal);
+        return NativePaths.HasDirectory(filePath, "obj");
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Messages;
 using FrameworkResult = Outcome.Result<
     SharpLsp.Sidecar.Common.Messages.TargetFrameworkResult,
@@ -12,7 +13,7 @@ internal sealed partial class WorkspaceManager
 {
     /// <summary>Project file path → the framework the user made active.</summary>
     private readonly ConcurrentDictionary<string, string> _activeFrameworks = new(
-        StringComparer.OrdinalIgnoreCase
+        NativePaths.Comparer
     );
 
     /// <summary>
@@ -70,7 +71,7 @@ internal sealed partial class WorkspaceManager
         if (projectFile is null || !ok.Value.Available.Contains(framework, StringComparer.Ordinal))
         {
             return FrameworkResult.Failure(
-                $"{framework} is not a target framework of {Path.GetFileName(projectFile) ?? filePath}"
+                $"{framework} is not a target framework of {(projectFile is null ? filePath : NativePaths.NameOf(projectFile))}"
             );
         }
 

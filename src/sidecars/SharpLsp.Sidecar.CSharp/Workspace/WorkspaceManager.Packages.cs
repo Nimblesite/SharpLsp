@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using SharpLsp.Sidecar.Common;
 using ReferenceUsageQueryResult = Outcome.Result<
     SharpLsp.Sidecar.CSharp.ReferenceUsageResult,
     string
@@ -78,6 +79,6 @@ internal sealed partial class WorkspaceManager
         }
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(home, ".nuget", "packages");
+        return NativePaths.Resolve(home, ".nuget", "packages");
     }
 }
