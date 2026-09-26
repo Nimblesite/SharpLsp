@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension';
+import type { MtpRunPlan } from '../../test-listing-model';
 import { listMtpTests } from '../../test-mtp-discovery';
 import { runMtpTests } from '../../test-mtp-run';
 import {
@@ -26,6 +27,9 @@ import {
 } from './test-explorer-kit';
 import { removeDirRecursive, requireAt } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+
+/** The output identity every test starts from. */
+const ORIGINAL: Readonly<Record<string, string>> = { OutputPath: 'bin/Original/' };
 
 for (const language of ['fsharp', 'csharp'] as const) {
   suite(`MTP release regressions — ${language}`, () => {
@@ -50,9 +54,10 @@ for (const language of ['fsharp', 'csharp'] as const) {
         : `using Xunit; namespace Mtp.Release.Fixtures; public class Checks { [Fact] public void Passes() => Assert.Equal(${String(expected)}, 1 + 2); }\n`;
     }
 
+    /** The whole project, rewritten: output identity in `properties`. */
     function write(
       expected: number | undefined,
-      outputPath: string,
+      properties: Readonly<Record<string, string>>,
       dir: string = path.join(root, 'Tests'),
     ): string {
       return writeProject(
@@ -61,18 +66,44 @@ for (const language of ['fsharp', 'csharp'] as const) {
         buildProjectXml({
           packages: MTP_XUNIT_PACKAGES,
           compileIncludes: fsharp ? [sourceFile] : [],
-          properties: { ...MTP_PROPERTIES, OutputPath: outputPath },
+          properties: { ...MTP_PROPERTIES, ...properties },
         }),
         sourceFile,
         source(expected),
       );
     }
 
+    /**
+     * Run `selection` through a plan discovered BEFORE the edit; the edited assertion must
+     * fail, and `obsoleteModule` checks what became of the module that plan names.
+     */
+    async function assertEditedAssertionRuns(
+      plan: MtpRunPlan,
+      why: string,
+      obsoleteModule: () => void,
+    ): Promise<void> {
+      for (const selection of [[id], []]) {
+        const result = await runMtpTests(plan, selection, root);
+        assert.equal(result.results.get(id)?.outcome, 'failed', why);
+        assert.match(
+          result.results.get(id)?.message ?? '',
+          /Expected: 4/,
+          'the new assertion, not a build failure, must explain the red result',
+        );
+        assert.equal(
+          result.retriedUnfiltered,
+          false,
+          'no retry is needed to select the current module',
+        );
+        obsoleteModule();
+      }
+    }
+
     suiteSetup(async function () {
       this.timeout(FIXTURE_BUILD_MS);
       ({ api, root } = await activateWithScratch('sharplsp-mtp-release-'));
       writeMtpGlobalJson(root);
-      solution = await createSolution(root, 'ReleaseMtp', [write(3, 'bin/Original/')]);
+      solution = await createSolution(root, 'ReleaseMtp', [write(3, ORIGINAL)]);
       assert.equal(
         (await listMtpTests(solution, root)).ok,
         true,
@@ -94,35 +125,23 @@ for (const language of ['fsharp', 'csharp'] as const) {
       const first = await runMtpTests(discovery.mtp, [id], root);
       assert.equal(first.results.get(id)?.outcome, 'passed', 'the original DLL really passes');
       const originalBytes = fs.readFileSync(obsolete);
-      write(4, 'bin/Changed/');
+      write(4, { OutputPath: 'bin/Changed/' });
       assert.equal(
         fs.existsSync(obsolete),
         true,
         'the obsolete DLL stays on disk throughout the repro',
       );
-      for (const selection of [[id], []]) {
-        const result = await runMtpTests(discovery.mtp, selection, root);
-        assert.equal(
-          result.results.get(id)?.outcome,
-          'failed',
-          'the OLD discovery plan must run the EDITED assertion after OutputPath changes',
-        );
-        assert.match(
-          result.results.get(id)?.message ?? '',
-          /Expected: 4/,
-          'the new assertion, not a build failure, must explain the red result',
-        );
-        assert.equal(
-          result.retriedUnfiltered,
-          false,
-          'no retry is needed to select the current module',
-        );
-        assert.deepEqual(
-          fs.readFileSync(obsolete),
-          originalBytes,
-          'the old DLL was not overwritten or removed to hide the bug',
-        );
-      }
+      await assertEditedAssertionRuns(
+        discovery.mtp,
+        'the OLD discovery plan must run the EDITED assertion after OutputPath changes',
+        () => {
+          assert.deepEqual(
+            fs.readFileSync(obsolete),
+            originalBytes,
+            'the old DLL was not overwritten or removed to hide the bug',
+          );
+        },
+      );
       const fresh = await listMtpTests(solution, root);
       assert.ok(fresh.mtp);
       assert.notEqual(
@@ -133,9 +152,40 @@ for (const language of ['fsharp', 'csharp'] as const) {
       assert.deepEqual(fresh.names, [id], 'moving the output never changes the test identity');
     });
 
+    test('an AssemblyName edit runs the renamed module, never the one the old plan names', async function () {
+      this.timeout(DOTNET_CLI_MS);
+      write(3, ORIGINAL);
+      const discovery = await listMtpTests(solution, root);
+      assert.ok(discovery.mtp, 'discovery returns an actual MTP run plan');
+      const obsolete = requireAt(discovery.mtp.modules, 0, 'the original module').modulePath;
+      const first = await runMtpTests(discovery.mtp, [id], root);
+      assert.equal(first.results.get(id)?.outcome, 'passed', 'the original DLL really passes');
+      write(4, { ...ORIGINAL, AssemblyName: 'RenamedReleaseMtp' });
+      await assertEditedAssertionRuns(
+        discovery.mtp,
+        'the OLD discovery plan must run the EDITED assertion after AssemblyName changes',
+        () => {
+          // Unlike a moved output, a renamed assembly shares its output folder with the old
+          // name, and MSBuild's incremental clean deletes that old name when it builds. The
+          // module the old plan names is gone, so only the renamed one can have run.
+          assert.equal(fs.existsSync(obsolete), false, 'the build removed the obsolete module');
+        },
+      );
+      const fresh = await listMtpTests(solution, root);
+      assert.ok(fresh.mtp);
+      const current = requireAt(fresh.mtp.modules, 0, 'the current module').modulePath;
+      assert.equal(
+        path.basename(current, path.extname(current)),
+        'RenamedReleaseMtp',
+        'MSBuild names the renamed DLL, in the SAME output directory as the obsolete one',
+      );
+      assert.equal(path.dirname(current), path.dirname(obsolete), 'only the file name moved');
+      assert.deepEqual(fresh.names, [id], 'renaming the assembly never changes the test identity');
+    });
+
     test('a valid empty listing clears removed tests and cached results, unlike failed discovery', async function () {
       this.timeout(DOTNET_CLI_MS);
-      write(3, 'bin/Original/');
+      write(3, ORIGINAL);
       await discoverSolution(api, solution, [id]);
       const item = findItem(api.testController.items, id);
       assert.ok(item, 'the tree is populated before deleting tests');
@@ -155,7 +205,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
         'a failed build preserves the previous result',
       );
 
-      write(undefined, 'bin/Original/');
+      write(undefined, ORIGINAL);
       const empty = await listMtpTests(solution, root);
       assert.equal(
         empty.ok,
@@ -183,7 +233,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
       const emptyRoot = path.join(root, 'NeverTested');
       fs.mkdirSync(emptyRoot, { recursive: true });
       const emptySolution = await createSolution(emptyRoot, 'NeverTested', [
-        write(undefined, 'bin/Original/', path.join(emptyRoot, 'Tests')),
+        write(undefined, ORIGINAL, path.join(emptyRoot, 'Tests')),
       ]);
       const listing = await listMtpTests(emptySolution, emptyRoot);
       assert.equal(listing.ok, true, 'the first discovery of an empty project succeeds');
