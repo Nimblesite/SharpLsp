@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1515 // Types can be internal
@@ -64,7 +65,7 @@ public sealed class WorkspaceManagerPackagesCoverageTests
         // as the same file. Non-Windows has no alternate spelling, so the
         // canonical path keeps the branch covered there. [GitHub #110]
         var verbatim = OperatingSystem.IsWindows()
-            ? @"\\?\" + Path.GetFullPath(_fixture.CsprojPath)
+            ? @"\\?\" + NativePaths.NormalizeFullPath(_fixture.CsprojPath)
             : _fixture.CsprojPath;
         var result = await _fixture.Manager.GetReferenceUsageAsync(verbatim);
         Assert.False(
@@ -83,7 +84,7 @@ public sealed class WorkspaceManagerPackagesCoverageTests
         // Windows no alternate spelling exists, so the canonical path keeps
         // the same pipeline covered. [GitHub #110]
         var openPath = OperatingSystem.IsWindows()
-            ? @"\\?\" + Path.GetFullPath(_fixture.CsprojPath)
+            ? @"\\?\" + NativePaths.NormalizeFullPath(_fixture.CsprojPath)
             : _fixture.CsprojPath;
         using var manager = new WorkspaceManager();
 #pragma warning disable CS0618 // Obsolete OpenAsync placeholder
@@ -105,7 +106,7 @@ public sealed class WorkspaceManagerPackagesCoverageTests
     public async Task GetReferenceUsageOnUnloadedProjectReturnsError()
     {
         // A real-looking path that no loaded project matches → "Project not loaded".
-        var ghost = Path.Combine(Path.GetTempPath(), "no-such-Ghost.csproj");
+        var ghost = NativePaths.Temp("no-such-Ghost.csproj");
         var result = await _fixture.Manager.GetReferenceUsageAsync(ghost);
         Assert.True(result.IsError);
     }
@@ -159,10 +160,7 @@ public sealed class WorkspaceManagerPackagesFixture : IAsyncLifetime, IDisposabl
         }
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wmp-tests-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wmp-tests-{Guid.NewGuid():N}");
 
     private WorkspaceManager? _manager;
 
@@ -176,9 +174,9 @@ public sealed class WorkspaceManagerPackagesFixture : IAsyncLifetime, IDisposabl
     public async Task InitializeAsync()
     {
         Directory.CreateDirectory(_root);
-        CsprojPath = Path.Combine(_root, "PkgDemo.csproj");
+        CsprojPath = NativePaths.Join(_root, "PkgDemo.csproj");
         await File.WriteAllTextAsync(CsprojPath, Csproj).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(_root, "Greeter.cs"), Source)
+        await File.WriteAllTextAsync(NativePaths.Join(_root, "Greeter.cs"), Source)
             .ConfigureAwait(false);
 
         Restore(_root);

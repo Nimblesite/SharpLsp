@@ -1,4 +1,5 @@
 using MessagePack;
+using SharpLsp.Sidecar.Common;
 
 // xunit test classes must be public, so CA1515 (types can be internal) cannot apply.
 #pragma warning disable CA1515
@@ -35,9 +36,9 @@ public sealed class PackageEditorEndToEndTests(CSharpSidecarFixture fixture)
     /// <summary>Writes <paramref name="content"/> to a unique project file and returns its path.</summary>
     private async Task<string> CreateProjectAsync(string fileName, string content)
     {
-        var dir = Path.Combine(fixture.TempDir, Guid.NewGuid().ToString("N"));
+        var dir = NativePaths.Join(fixture.TempDir, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, fileName);
+        var path = NativePaths.Join(dir, fileName);
         await File.WriteAllTextAsync(path, content).ConfigureAwait(false);
         return path;
     }
@@ -258,7 +259,7 @@ public sealed class PackageEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Edit_of_missing_file_surfaces_an_error()
     {
-        var missing = Path.Combine(fixture.TempDir, "does-not-exist.csproj");
+        var missing = NativePaths.Join(fixture.TempDir, "does-not-exist.csproj");
 
         var envelope = await fixture.SendAsync(
             AddPackage,

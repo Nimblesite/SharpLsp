@@ -1,4 +1,5 @@
 using MessagePack;
+using SharpLsp.Sidecar.Common;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
 #pragma warning disable CA1515 // Types can be internal
@@ -24,7 +25,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     : IClassFixture<CSharpSidecarFixture>
 {
-    private string MissingFile => Path.Combine(fixture.TempDir, "NotInWorkspace.cs");
+    private string MissingFile => NativePaths.Join(fixture.TempDir, "NotInWorkspace.cs");
 
     /// <summary>
     /// Send a request whose input is malformed and assert the sidecar handled it
@@ -237,7 +238,7 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     {
         // The loaded project's .csproj path drives the unused-packages handler
         // body end to end (a project with no PackageReferences yields empty usage).
-        var csproj = Path.Combine(fixture.TempDir, "TestProject.csproj");
+        var csproj = NativePaths.Join(fixture.TempDir, "TestProject.csproj");
         await AssertHandledGracefully(
             "project/unusedPackages",
             MessagePackSerializer.Serialize(csproj)

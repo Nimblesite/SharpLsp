@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 // CA1515: xunit requires public test classes. RS1035: these tests deliberately touch the real
@@ -18,7 +19,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 public sealed class DocumentClosureCaseTests : IDisposable
 {
     private readonly string _root = Directory
-        .CreateDirectory(Path.Combine(Path.GetTempPath(), $"sharplsp-case-{Guid.NewGuid():N}"))
+        .CreateDirectory(NativePaths.Temp($"sharplsp-case-{Guid.NewGuid():N}"))
         .FullName;
 
     public void Dispose()
@@ -39,8 +40,8 @@ public sealed class DocumentClosureCaseTests : IDisposable
     /// </summary>
     private (string App, string Helpers) AppIncludingBothSpellings()
     {
-        var helpers = Directory.CreateDirectory(Path.Combine(_root, "Helpers")).FullName;
-        var app = Path.Combine(_root, "App.cs");
+        var helpers = Directory.CreateDirectory(NativePaths.Join(_root, "Helpers")).FullName;
+        var app = NativePaths.Join(_root, "App.cs");
         File.WriteAllText(
             app,
             "#:include Helpers/Foo.cs\n#:include Helpers/foo.cs\nConsole.WriteLine(1);\n"
@@ -51,11 +52,11 @@ public sealed class DocumentClosureCaseTests : IDisposable
     /// <summary>Whether a file written under one case is missing under the other.</summary>
     private static bool TellsCaseApart(string directory)
     {
-        var probe = Path.Combine(directory, "Probe.txt");
+        var probe = NativePaths.Join(directory, "Probe.txt");
         File.WriteAllText(probe, string.Empty);
         try
         {
-            return !File.Exists(Path.Combine(directory, "PROBE.TXT"));
+            return !File.Exists(NativePaths.Join(directory, "PROBE.TXT"));
         }
         finally
         {
@@ -96,8 +97,8 @@ public sealed class DocumentClosureCaseTests : IDisposable
             return; // A default macOS volume cannot hold two such files at all.
         }
 
-        var upper = Path.Combine(helpers, "Foo.cs");
-        var lower = Path.Combine(helpers, "foo.cs");
+        var upper = NativePaths.Join(helpers, "Foo.cs");
+        var lower = NativePaths.Join(helpers, "foo.cs");
         await File.WriteAllTextAsync(upper, "internal static class Upper { }\n")
             .ConfigureAwait(true);
         await File.WriteAllTextAsync(lower, "internal static class Lower { }\n")
@@ -145,7 +146,7 @@ public sealed class DocumentClosureCaseTests : IDisposable
         }
 
         await File.WriteAllTextAsync(
-                Path.Combine(helpers, "Foo.cs"),
+                NativePaths.Join(helpers, "Foo.cs"),
                 "internal static class Upper { }\n"
             )
             .ConfigureAwait(true);
@@ -157,10 +158,7 @@ public sealed class DocumentClosureCaseTests : IDisposable
         );
 
         Assert.Equal(2, closure.Files.Count);
-        _ = Assert.Single(
-            closure.Files,
-            file => file.Path.EndsWith("Foo.cs", StringComparison.OrdinalIgnoreCase)
-        );
+        _ = Assert.Single(closure.Files, file => NativePaths.SameName(file.Path, "Foo.cs"));
         Assert.Empty(closure.Issues);
     }
 }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Xml.Linq;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 // CA1515: xUnit requires the public partial test class.
@@ -25,7 +26,7 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
             #endif
 
             """;
-        return _fixture.Write(Path.Combine("cone", "CpmApp.cs"), source);
+        return _fixture.Write(NativePaths.Join("cone", "CpmApp.cs"), source);
     }
 
     private string WriteFallbackApp(string package)
@@ -204,11 +205,11 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
     private void WriteAppCone()
     {
         _ = _fixture.Write(
-            Path.Combine("cone", "Directory.Build.props"),
+            NativePaths.Join("cone", "Directory.Build.props"),
             "<Project><PropertyGroup><DefineConstants>FROM_CONE;$(DefineConstants)</DefineConstants></PropertyGroup></Project>\n"
         );
         _ = _fixture.Write(
-            Path.Combine("cone", "Directory.Packages.props"),
+            NativePaths.Join("cone", "Directory.Packages.props"),
             "<Project><PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup><ItemGroup><PackageVersion Include=\"Newtonsoft.Json\" Version=\"13.0.3\" /></ItemGroup></Project>\n"
         );
     }
@@ -231,12 +232,12 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
         string projectPath
     )
     {
-        Assert.Equal(Path.GetFullPath(projectPath), projectPath);
-        Assert.Equal("restore.csproj", Path.GetFileName(projectPath));
+        Assert.Equal(NativePaths.NormalizeFullPath(projectPath), projectPath);
+        Assert.Equal("restore.csproj", NativePaths.NameOf(projectPath));
         AssertGenerationDirectory(restoreRoot, projectPath);
         Assert.StartsWith(
-            $"{Path.GetFileNameWithoutExtension(app)}-",
-            Path.GetFileName(restoreRoot),
+            $"{NativePaths.StemOf(app)}-",
+            NativePaths.NameOf(restoreRoot),
             StringComparison.Ordinal
         );
     }
@@ -244,7 +245,7 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
     private static void AssertGenerationCleaned(string projectPath)
     {
         Assert.False(File.Exists(projectPath));
-        var generationRoot = Assert.IsType<string>(Path.GetDirectoryName(projectPath));
+        var generationRoot = Assert.IsType<string>(NativePaths.DirectoryOf(projectPath));
         Assert.False(Directory.Exists(generationRoot));
     }
 
@@ -423,9 +424,9 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
             }
 
             """;
-        var memberPath = _fixture.Write(Path.Combine("closure", "PackageTypes.cs"), member);
+        var memberPath = _fixture.Write(NativePaths.Join("closure", "PackageTypes.cs"), member);
         var rootPath = _fixture.Write(
-            Path.Combine("closure", "IncludedPackageApp.cs"),
+            NativePaths.Join("closure", "IncludedPackageApp.cs"),
             "#:include PackageTypes.cs\nvar payload = PackageFactory.Create();\n"
                 + "Console.WriteLine(payload.Count);\n"
         );

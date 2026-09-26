@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Debugging;
 
 #pragma warning disable RS1035 // This end-to-end test deliberately creates and builds a real project.
@@ -71,17 +72,14 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
         return Calculator.Value() == 2 ? 0 : 11;
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-hot-reload-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-hot-reload-{Guid.NewGuid():N}");
 
     [Fact]
     public async Task Emits_real_deltas_and_preserves_baseline_after_rude_edit()
     {
         _ = Directory.CreateDirectory(_root);
-        var projectPath = Path.Combine(_root, "HotReloadFixture.csproj");
-        var sourcePath = Path.Combine(_root, "Calculator.cs");
+        var projectPath = NativePaths.Join(_root, "HotReloadFixture.csproj");
+        var sourcePath = NativePaths.Join(_root, "Calculator.cs");
         await File.WriteAllTextAsync(
                 projectPath,
                 """
@@ -97,7 +95,7 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
             )
             .ConfigureAwait(true);
         await File.WriteAllTextAsync(sourcePath, OriginalSource).ConfigureAwait(true);
-        await File.WriteAllTextAsync(Path.Combine(_root, "Program.cs"), VerifierSource)
+        await File.WriteAllTextAsync(NativePaths.Join(_root, "Program.cs"), VerifierSource)
             .ConfigureAwait(true);
         await BuildAsync(projectPath).ConfigureAwait(true);
 
@@ -254,8 +252,8 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
     )> StartFixtureAsync(HotReloadSessionRegistry registry)
     {
         _ = Directory.CreateDirectory(_root);
-        var projectPath = Path.Combine(_root, "HotReloadFixture.csproj");
-        var sourcePath = Path.Combine(_root, "Calculator.cs");
+        var projectPath = NativePaths.Join(_root, "HotReloadFixture.csproj");
+        var sourcePath = NativePaths.Join(_root, "Calculator.cs");
         await File.WriteAllTextAsync(
                 projectPath,
                 """
@@ -271,10 +269,10 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
             )
             .ConfigureAwait(true);
         await File.WriteAllTextAsync(sourcePath, OriginalSource).ConfigureAwait(true);
-        await File.WriteAllTextAsync(Path.Combine(_root, "Helper.cs"), HelperSource)
+        await File.WriteAllTextAsync(NativePaths.Join(_root, "Helper.cs"), HelperSource)
             .ConfigureAwait(true);
         await File.WriteAllTextAsync(
-                Path.Combine(_root, "Program.cs"),
+                NativePaths.Join(_root, "Program.cs"),
                 "return HotReloadFixture.Calculator.Value();"
             )
             .ConfigureAwait(true);
@@ -388,7 +386,7 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
                         new HotReloadDocument { FilePath = sourcePath, NewText = CallsBumpSource },
                         new HotReloadDocument
                         {
-                            FilePath = Path.Combine(_root, "Helper.cs"),
+                            FilePath = NativePaths.Join(_root, "Helper.cs"),
                             NewText = HelperWithBumpSource,
                         },
                     ],
@@ -456,7 +454,7 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
                         {
                             Action = "update",
                             SessionId = first.SessionId,
-                            FilePath = Path.Combine(_root, "Calculator.cs"),
+                            FilePath = NativePaths.Join(_root, "Calculator.cs"),
                             NewText = UpdatedSource,
                         }
                     )
@@ -516,9 +514,9 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
 
     private async Task VerifyDeltaAsync(HotReloadDelta update)
     {
-        var metadataPath = Path.Combine(_root, "update.metadata");
-        var ilPath = Path.Combine(_root, "update.il");
-        var pdbPath = Path.Combine(_root, "update.pdb");
+        var metadataPath = NativePaths.Join(_root, "update.metadata");
+        var ilPath = NativePaths.Join(_root, "update.il");
+        var pdbPath = NativePaths.Join(_root, "update.pdb");
         await File.WriteAllBytesAsync(metadataPath, Convert.FromBase64String(update.MetadataDelta))
             .ConfigureAwait(true);
         await File.WriteAllBytesAsync(ilPath, Convert.FromBase64String(update.IlDelta))
@@ -526,7 +524,13 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
         await File.WriteAllBytesAsync(pdbPath, Convert.FromBase64String(update.PdbDelta))
             .ConfigureAwait(true);
 
-        var assemblyPath = Path.Combine(_root, "bin", "Debug", "net10.0", "HotReloadFixture.dll");
+        var assemblyPath = NativePaths.Join(
+            _root,
+            "bin",
+            "Debug",
+            "net10.0",
+            "HotReloadFixture.dll"
+        );
         var startInfo = new ProcessStartInfo("dotnet")
         {
             ArgumentList = { assemblyPath, metadataPath, ilPath, pdbPath },

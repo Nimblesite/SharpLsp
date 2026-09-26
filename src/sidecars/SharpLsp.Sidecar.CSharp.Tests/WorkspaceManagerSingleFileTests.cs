@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 // CA1515: xunit requires public test classes. RS1035: these tests deliberately touch the real
@@ -13,10 +14,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// </summary>
 public sealed class WorkspaceManagerSingleFileTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-sf-tests-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-sf-tests-{Guid.NewGuid():N}");
 
     public WorkspaceManagerSingleFileTests()
     {
@@ -37,16 +35,16 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
 
     private string Write(string name, string text)
     {
-        var path = Path.Combine(_root, name);
+        var path = NativePaths.Join(_root, name);
         File.WriteAllText(path, text);
         return path;
     }
 
     private string WriteIn(string relativeDirectory, string name, string text)
     {
-        var directory = Path.Combine(_root, relativeDirectory);
+        var directory = NativePaths.Join(_root, relativeDirectory);
         _ = Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, name);
+        var path = NativePaths.Join(directory, name);
         File.WriteAllText(path, text);
         return path;
     }
@@ -197,7 +195,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
     public async Task Projectless_directory_rejects_update_for_a_missing_file()
     {
         using var manager = new WorkspaceManager();
-        var missing = Path.Combine(_root, "missing.cs");
+        var missing = NativePaths.Join(_root, "missing.cs");
         Assert.False((await OpenAsync(manager, _root)).IsError);
 
         var result = await manager.UpdateDocumentTextAsync(missing, "Console.WriteLine(1);");
@@ -220,7 +218,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         await cancellation.CancelAsync();
 
         var result = await manager.UpdateDocumentTextAsync(
-            Path.Combine(_root, "cancelled.cs"),
+            NativePaths.Join(_root, "cancelled.cs"),
             "Console.WriteLine(1);",
             cancellation.Token
         );
@@ -367,7 +365,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
     public async Task FileBasedApp_recursive_glob_include_reaches_nested_files()
     {
         _ = WriteIn(
-            Path.Combine("deep", "a", "b"),
+            NativePaths.Join("deep", "a", "b"),
             "Nested.cs",
             "internal static class Nested { public static int V() { return 3; } }\n"
         );

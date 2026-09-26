@@ -1,5 +1,6 @@
 using MessagePack;
 using Microsoft.Build.Locator;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
 using SharpLsp.Sidecar.Common.Solutions;
@@ -35,8 +36,8 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
     [Fact]
     public async Task SolutionRead_classic_sln_returns_sln_model()
     {
-        WriteCsproj(Path.Combine(fixture.TempDir, "src", "App", "App.csproj"));
-        var slnPath = Path.Combine(fixture.TempDir, "App.sln");
+        WriteCsproj(NativePaths.Join(fixture.TempDir, "src", "App", "App.csproj"));
+        var slnPath = NativePaths.Join(fixture.TempDir, "App.sln");
         await File.WriteAllTextAsync(
             slnPath,
             """
@@ -61,9 +62,9 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
     [Fact]
     public async Task SolutionRead_slnx_with_nested_folders_preserves_parents()
     {
-        WriteCsproj(Path.Combine(fixture.TempDir, "src", "App", "App.csproj"));
-        WriteCsproj(Path.Combine(fixture.TempDir, "tests", "App.Tests", "App.Tests.csproj"));
-        var slnxPath = Path.Combine(fixture.TempDir, "Nested.slnx");
+        WriteCsproj(NativePaths.Join(fixture.TempDir, "src", "App", "App.csproj"));
+        WriteCsproj(NativePaths.Join(fixture.TempDir, "tests", "App.Tests", "App.Tests.csproj"));
+        var slnxPath = NativePaths.Join(fixture.TempDir, "Nested.slnx");
         await File.WriteAllTextAsync(
             slnxPath,
             """
@@ -91,9 +92,9 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
     [Fact]
     public async Task SolutionRead_slnx_with_solution_items_maps_files()
     {
-        WriteCsproj(Path.Combine(fixture.TempDir, "src", "App", "App.csproj"));
-        await File.WriteAllTextAsync(Path.Combine(fixture.TempDir, "README.md"), "# App");
-        var slnxPath = Path.Combine(fixture.TempDir, "Items.slnx");
+        WriteCsproj(NativePaths.Join(fixture.TempDir, "src", "App", "App.csproj"));
+        await File.WriteAllTextAsync(NativePaths.Join(fixture.TempDir, "README.md"), "# App");
+        var slnxPath = NativePaths.Join(fixture.TempDir, "Items.slnx");
         await File.WriteAllTextAsync(
             slnxPath,
             """
@@ -119,7 +120,7 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
     [Fact]
     public async Task SolutionRead_missing_file_returns_error()
     {
-        var missing = Path.Combine(fixture.TempDir, "DoesNotExist.sln");
+        var missing = NativePaths.Join(fixture.TempDir, "DoesNotExist.sln");
         var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(missing));
         Assert.NotNull(r.Error);
         Assert.Contains("does not exist", r.Error);
@@ -128,7 +129,7 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
     [Fact]
     public async Task SolutionRead_unsupported_extension_returns_error()
     {
-        var bogus = Path.Combine(fixture.TempDir, "TestProject.csproj");
+        var bogus = NativePaths.Join(fixture.TempDir, "TestProject.csproj");
         var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(bogus));
         Assert.NotNull(r.Error);
         Assert.Contains("Unsupported", r.Error);
@@ -179,7 +180,7 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
 
     private static void WriteCsproj(string path)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        Directory.CreateDirectory(NativePaths.DirectoryOf(path));
         File.WriteAllText(
             path,
             """
@@ -226,10 +227,7 @@ internal sealed class StandaloneSidecar : IAsyncDisposable
     public static async Task<StandaloneSidecar> StartAsync()
     {
         EnsureMsBuildRegistered();
-        var socketPath = Path.Combine(
-            Path.GetTempPath(),
-            $"slsp-cs-shutdown-{Guid.NewGuid():N}.sock"
-        );
+        var socketPath = NativePaths.Temp($"slsp-cs-shutdown-{Guid.NewGuid():N}.sock");
         if (File.Exists(socketPath))
         {
             File.Delete(socketPath);

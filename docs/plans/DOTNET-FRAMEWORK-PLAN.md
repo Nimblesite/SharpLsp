@@ -23,4 +23,4 @@ Spec: [DOTNET-FRAMEWORK-SPEC.md](../specs/DOTNET-FRAMEWORK-SPEC.md).
 - [x] [NETFX-PROJECTS-FSHARP] FCS options from the design-time compile, per framework
 - [x] [NETFX-CONTEXT] active framework: sidecars, host requests + refreshes, VS Code status bar
 - [x] Suites in [NETFX-TESTS]; Windows-only chunks registered in `test-chunks.json`
-- [ ] [NETFX-CORPUS] suites for GitReader, CsvHelper, NLog
+- [x] [NETFX-CORPUS] suites for GitReader, CsvHelper, NLog

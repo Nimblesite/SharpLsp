@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using MessagePack;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
 using SharpLsp.Sidecar.Common.Solutions;
@@ -40,7 +41,7 @@ public sealed class GlobalJsonSdkPinEndToEndTests
     [Fact]
     public async Task Sidecar_reaches_ready_and_serves_solution_read_when_global_json_pins_an_uninstalled_sdk()
     {
-        var workspace = Path.Combine(Path.GetTempPath(), $"slsp-gj-{Guid.NewGuid():N}");
+        var workspace = NativePaths.Temp($"slsp-gj-{Guid.NewGuid():N}");
         Directory.CreateDirectory(workspace);
         try
         {
@@ -48,14 +49,14 @@ public sealed class GlobalJsonSdkPinEndToEndTests
             // keeps the pin inside its own (absent) feature band, so no installed
             // SDK satisfies it — the exact shape of the Fantomas failure.
             await File.WriteAllTextAsync(
-                Path.Combine(workspace, "global.json"),
+                NativePaths.Join(workspace, "global.json"),
                 /*lang=json,strict*/
                 """
                 { "sdk": { "version": "999.999.100", "rollForward": "latestPatch" } }
                 """
             );
-            var projectPath = Path.Combine(workspace, "src", "App", "App.fsproj");
-            Directory.CreateDirectory(Path.GetDirectoryName(projectPath)!);
+            var projectPath = NativePaths.Join(workspace, "src", "App", "App.fsproj");
+            Directory.CreateDirectory(NativePaths.DirectoryOf(projectPath));
             await File.WriteAllTextAsync(
                 projectPath,
                 """
@@ -66,7 +67,7 @@ public sealed class GlobalJsonSdkPinEndToEndTests
                 </Project>
                 """
             );
-            var slnxPath = Path.Combine(workspace, "Solo.slnx");
+            var slnxPath = NativePaths.Join(workspace, "Solo.slnx");
             await File.WriteAllTextAsync(
                 slnxPath,
                 """
@@ -134,7 +135,7 @@ internal sealed class ExternalSidecar : IAsyncDisposable
     public static async Task<ExternalSidecar> StartAsync(string workingDirectory)
     {
         var appHost = LocateAppHost();
-        var socketPath = Path.Combine(Path.GetTempPath(), $"slsp-gj-{Guid.NewGuid():N}.sock");
+        var socketPath = NativePaths.Temp($"slsp-gj-{Guid.NewGuid():N}.sock");
         if (File.Exists(socketPath))
         {
             File.Delete(socketPath);
@@ -309,10 +310,8 @@ internal sealed class ExternalSidecar : IAsyncDisposable
         var tfm = net.Name;
         var config = net.Parent!.Name;
         var sidecarsRoot = net.Parent!.Parent!.Parent!.Parent!;
-        var exeName = OperatingSystem.IsWindows()
-            ? "SharpLsp.Sidecar.CSharp.exe"
-            : "SharpLsp.Sidecar.CSharp";
-        var appHost = Path.Combine(
+        var exeName = NativePaths.ExecutableName("SharpLsp.Sidecar.CSharp");
+        var appHost = NativePaths.Join(
             sidecarsRoot.FullName,
             "SharpLsp.Sidecar.CSharp",
             "bin",

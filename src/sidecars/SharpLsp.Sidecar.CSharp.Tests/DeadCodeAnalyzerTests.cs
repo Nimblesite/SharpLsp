@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -14,10 +15,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// </summary>
 public sealed class DeadCodeAnalyzerTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-deadcode-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-deadcode-{Guid.NewGuid():N}");
 
     // A self-contained project with deliberate dead and live symbols:
     //   Helper   — called by Caller            → ALIVE
@@ -79,9 +77,9 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        var csprojPath = Path.Combine(_root, "Dead.csproj");
+        var csprojPath = NativePaths.Join(_root, "Dead.csproj");
         File.WriteAllText(csprojPath, csproj);
-        File.WriteAllText(Path.Combine(_root, "Dead.cs"), Source);
+        File.WriteAllText(NativePaths.Join(_root, "Dead.cs"), Source);
         return csprojPath;
     }
 
@@ -98,7 +96,7 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
 
     private async Task<List<DiagnosticResult>> DeadDiagnosticsAsync(WorkspaceManager manager)
     {
-        var sourcePath = Path.Combine(_root, "Dead.cs");
+        var sourcePath = NativePaths.Join(_root, "Dead.cs");
         var result = await manager.GetDiagnosticsAsync(sourcePath).ConfigureAwait(false);
         Assert.False(result.IsError, result.Match(_ => "ok", err => err));
         var all = result.Match(value => value, _ => new List<DiagnosticResult>());

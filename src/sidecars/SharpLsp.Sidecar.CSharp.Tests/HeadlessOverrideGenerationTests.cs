@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
@@ -98,10 +99,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         }
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-override-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-override-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -119,8 +117,8 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        _csprojPath = Path.Combine(_root, "Shapes.csproj");
-        _sourcePath = Path.Combine(_root, "Shapes.cs");
+        _csprojPath = NativePaths.Join(_root, "Shapes.csproj");
+        _sourcePath = NativePaths.Join(_root, "Shapes.cs");
         File.WriteAllText(_csprojPath, csproj);
         File.WriteAllText(_sourcePath, Source);
     }

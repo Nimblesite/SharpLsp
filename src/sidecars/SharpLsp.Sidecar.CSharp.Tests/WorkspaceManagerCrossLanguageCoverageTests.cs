@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -28,22 +29,19 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 )]
 public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wm-xlang-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wm-xlang-{Guid.NewGuid():N}");
     private readonly string _appCsprojPath;
     private readonly string _programPath;
 
     public WorkspaceManagerCrossLanguageCoverageTests()
     {
-        var libDir = Path.Combine(_root, "Lib");
-        var appDir = Path.Combine(_root, "App");
+        var libDir = NativePaths.Join(_root, "Lib");
+        var appDir = NativePaths.Join(_root, "App");
         Directory.CreateDirectory(libDir);
         Directory.CreateDirectory(appDir);
 
         File.WriteAllText(
-            Path.Combine(libDir, "Lib.fsproj"),
+            NativePaths.Join(libDir, "Lib.fsproj"),
             """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -56,11 +54,11 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
             """
         );
         File.WriteAllText(
-            Path.Combine(libDir, "Library.fs"),
+            NativePaths.Join(libDir, "Library.fs"),
             "namespace FsLib\n\ntype Widget() =\n    member _.Value = 42\n"
         );
 
-        _appCsprojPath = Path.Combine(appDir, "App.csproj");
+        _appCsprojPath = NativePaths.Join(appDir, "App.csproj");
         File.WriteAllText(
             _appCsprojPath,
             """
@@ -75,7 +73,7 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
             </Project>
             """
         );
-        _programPath = Path.Combine(appDir, "Program.cs");
+        _programPath = NativePaths.Join(appDir, "Program.cs");
         File.WriteAllText(
             _programPath,
             "namespace App;\n"
@@ -134,12 +132,12 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
     [Fact]
     public async Task A_multi_targeted_FSharp_reference_opens_and_resolves_from_CSharp()
     {
-        var libDir = Path.Combine(_root, "Multi", "Lib");
-        var appDir = Path.Combine(_root, "Multi", "App");
+        var libDir = NativePaths.Join(_root, "Multi", "Lib");
+        var appDir = NativePaths.Join(_root, "Multi", "App");
         Directory.CreateDirectory(libDir);
         Directory.CreateDirectory(appDir);
         await File.WriteAllTextAsync(
-            Path.Combine(libDir, "Lib.fsproj"),
+            NativePaths.Join(libDir, "Lib.fsproj"),
             """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -151,10 +149,13 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
             </Project>
             """
         );
-        File.Copy(Path.Combine(_root, "Lib", "Library.fs"), Path.Combine(libDir, "Library.fs"));
-        var appCsproj = Path.Combine(appDir, "App.csproj");
+        File.Copy(
+            NativePaths.Join(_root, "Lib", "Library.fs"),
+            NativePaths.Join(libDir, "Library.fs")
+        );
+        var appCsproj = NativePaths.Join(appDir, "App.csproj");
         File.Copy(_appCsprojPath, appCsproj);
-        var program = Path.Combine(appDir, "Program.cs");
+        var program = NativePaths.Join(appDir, "Program.cs");
         File.Copy(_programPath, program);
         BuildProject(appCsproj);
 

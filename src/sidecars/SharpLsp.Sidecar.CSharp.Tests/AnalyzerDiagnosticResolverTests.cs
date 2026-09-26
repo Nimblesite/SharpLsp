@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis.CodeFixes;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
@@ -44,10 +45,7 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
         }
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-analyzers-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-analyzers-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -77,10 +75,10 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
             csharp_style_var_elsewhere = true:warning
             """;
 
-        _csprojPath = Path.Combine(_root, "Styled.csproj");
-        _sourcePath = Path.Combine(_root, "Styled.cs");
+        _csprojPath = NativePaths.Join(_root, "Styled.csproj");
+        _sourcePath = NativePaths.Join(_root, "Styled.cs");
         File.WriteAllText(_csprojPath, csproj);
-        File.WriteAllText(Path.Combine(_root, ".editorconfig"), editorConfig);
+        File.WriteAllText(NativePaths.Join(_root, ".editorconfig"), editorConfig);
         File.WriteAllText(_sourcePath, Source);
     }
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Xml.Linq;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1515 // xUnit requires public test classes
@@ -37,17 +38,14 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
 
     private static readonly string[] Declared = ["net48", "net10.0"];
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wm-tfm-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wm-tfm-{Guid.NewGuid():N}");
     private readonly string _project;
     private readonly string _probe;
 
     public WorkspaceManagerTargetFrameworkTests()
     {
         _project = WriteProject("Probe", "<TargetFrameworks>net48;net10.0</TargetFrameworks>");
-        _probe = Path.Combine(_root, "Probe", "Probe.cs");
+        _probe = NativePaths.Join(_root, "Probe", "Probe.cs");
         File.WriteAllText(_probe, ProbeSource);
         Restore(_project);
     }
@@ -108,7 +106,7 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
         );
 
         var foreign = await manager.GetTargetFrameworksAsync(
-            Path.Combine(_root, "Nowhere.cs"),
+            NativePaths.Join(_root, "Nowhere.cs"),
             default
         );
         var none = AssertOk(foreign);
@@ -125,7 +123,7 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
     public async Task A_single_target_project_has_no_framework_to_choose()
     {
         var single = WriteProject("Single", "<TargetFramework>net10.0</TargetFramework>");
-        var source = Path.Combine(_root, "Single", "Single.cs");
+        var source = NativePaths.Join(_root, "Single", "Single.cs");
         await File.WriteAllTextAsync(source, "namespace Fx;\n\npublic static class Single { }\n");
         Restore(single);
         using var manager = await OpenAsync(single);
@@ -180,9 +178,9 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
     {
         // Both frameworks compile User.cs, so each framework's copy holds its one use of
         // Shared.Value. A project-wide query answers from the ACTIVE copy alone.
-        var shared = Path.Combine(_root, "Probe", "Shared.cs");
+        var shared = NativePaths.Join(_root, "Probe", "Shared.cs");
         await File.WriteAllTextAsync(shared, SharedSource);
-        await File.WriteAllTextAsync(Path.Combine(_root, "Probe", "User.cs"), UserSource);
+        await File.WriteAllTextAsync(NativePaths.Join(_root, "Probe", "User.cs"), UserSource);
         using var manager = await OpenAsync(_project);
         await AssertOneUseAsync(manager, shared, "User.cs", "Read");
 
@@ -195,11 +193,11 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
     {
         // App answers from net10.0 while Probe, which it references, answers from net48, so
         // App compiles against Probe's net10.0 build. Queries from Probe still reach App.
-        var shared = Path.Combine(_root, "Probe", "Shared.cs");
-        var shape = Path.Combine(_root, "Probe", "Shape.cs");
+        var shared = NativePaths.Join(_root, "Probe", "Shared.cs");
+        var shape = NativePaths.Join(_root, "Probe", "Shape.cs");
         await File.WriteAllTextAsync(shared, SharedSource);
         await File.WriteAllTextAsync(shape, ShapeSource);
-        var circle = Path.Combine(_root, "App", "Circle.cs");
+        var circle = NativePaths.Join(_root, "App", "Circle.cs");
         var app = WriteReader("App");
         await File.WriteAllTextAsync(circle, CircleSource);
         Restore(app);
@@ -230,11 +228,11 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
         );
         Assert.Equal(
             ["Shared.cs", user],
-            references.Locations.Select(location => Path.GetFileName(location.FilePath))
+            references.Locations.Select(location => NativePaths.NameOf(location.FilePath))
         );
         var calls = AssertOk(await manager.GetIncomingCallsAsync(shared, line, character));
         var call = Assert.Single(calls);
-        Assert.Equal((caller, user), (call.Name, Path.GetFileName(call.FilePath)));
+        Assert.Equal((caller, user), (call.Name, NativePaths.NameOf(call.FilePath)));
         _ = Assert.Single(call.FromRanges);
         var highlights = AssertOk(
             await manager.GetDocumentHighlightsAsync(shared, line, character)
@@ -251,7 +249,7 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
             lenses.Where(lens => lens.Line == line).Select(lens => lens.Title)
         );
         var found = AssertOk(await manager.GetImplementationsAsync(shape, line, character));
-        Assert.Equal("Circle.cs", Path.GetFileName(Assert.Single(found.Locations).FilePath));
+        Assert.Equal("Circle.cs", NativePaths.NameOf(Assert.Single(found.Locations).FilePath));
         var subtypes = AssertOk(await manager.GetSubtypesAsync(shape, line, character));
         Assert.Equal("Circle", Assert.Single(subtypes).Name);
     }
@@ -298,9 +296,9 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
 
     private string WriteProject(string name, string frameworks)
     {
-        var directory = Path.Combine(_root, name);
+        var directory = NativePaths.Join(_root, name);
         _ = Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"{name}.csproj");
+        var path = NativePaths.Join(directory, $"{name}.csproj");
         File.WriteAllText(
             path,
             $"<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    {frameworks}\n  </PropertyGroup>\n</Project>\n"

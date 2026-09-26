@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 // CA1515: xunit requires public test classes.
@@ -148,7 +149,7 @@ public sealed class FileBasedPackageRestoreEndToEndTests : IDisposable
         // A dedicated subdirectory: a Directory.Build.targets at the fixture root would be
         // inherited by every other app in this class.
         _ = _fixture.Write(
-            Path.Combine("cone", "Directory.Build.targets"),
+            NativePaths.Join("cone", "Directory.Build.targets"),
             """
             <Project>
               <Target Name="SharpLspConeProbe" BeforeTargets="Restore">
@@ -159,7 +160,7 @@ public sealed class FileBasedPackageRestoreEndToEndTests : IDisposable
             """
         );
         var app = _fixture.Write(
-            Path.Combine("cone", "Coned.cs"),
+            NativePaths.Join("cone", "Coned.cs"),
             "#:package Newtonsoft.Json@13.0.3\nConsole.WriteLine(1);\n"
         );
         using var manager = new WorkspaceManager();

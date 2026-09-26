@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Build.Locator;
+using SharpLsp.Sidecar.Common;
 
 #pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — we're tests
 #pragma warning disable IDE0058 // Expression value is never used
@@ -118,7 +119,7 @@ public class MSBuildInstanceSelectorTests
     private static Version ReadPinnedSdkVersion()
     {
         var globalJson = Ancestors(new DirectoryInfo(AppContext.BaseDirectory))
-            .Select(directory => Path.Combine(directory.FullName, "global.json"))
+            .Select(directory => NativePaths.Join(directory.FullName, "global.json"))
             .First(File.Exists);
         using var document = JsonDocument.Parse(File.ReadAllText(globalJson));
         var version = document.RootElement.GetProperty("sdk").GetProperty("version").GetString();
@@ -146,11 +147,11 @@ public class MSBuildInstanceSelectorTests
         // A Microsoft.CodeAnalysis.dll that exists but is not a valid PE image makes
         // AssemblyName.GetAssemblyName throw BadImageFormatException, which the reader
         // must swallow and report as an unknown version.
-        var root = Path.Combine(Path.GetTempPath(), $"slsp-msb-{Guid.NewGuid():N}");
-        var bincore = Path.Combine(root, "Roslyn", "bincore");
+        var root = NativePaths.Temp($"slsp-msb-{Guid.NewGuid():N}");
+        var bincore = NativePaths.Join(root, "Roslyn", "bincore");
         Directory.CreateDirectory(bincore);
         File.WriteAllText(
-            Path.Combine(bincore, "Microsoft.CodeAnalysis.dll"),
+            NativePaths.Join(bincore, "Microsoft.CodeAnalysis.dll"),
             "this is not a portable executable"
         );
         try
@@ -244,10 +245,10 @@ public class MSBuildInstanceSelectorTests
     /// <summary>A throwaway .NET root holding an `sdk/&lt;version&gt;` directory each.</summary>
     private static string FakeDotnetRoot(params string[] sdkVersions)
     {
-        var root = Path.Combine(Path.GetTempPath(), $"slsp-root-{Guid.NewGuid():N}");
+        var root = NativePaths.Temp($"slsp-root-{Guid.NewGuid():N}");
         foreach (var version in sdkVersions)
         {
-            Directory.CreateDirectory(Path.Combine(root, "sdk", version));
+            Directory.CreateDirectory(NativePaths.Join(root, "sdk", version));
         }
         return root;
     }

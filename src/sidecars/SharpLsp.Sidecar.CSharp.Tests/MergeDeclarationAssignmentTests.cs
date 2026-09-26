@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
@@ -97,10 +98,7 @@ public sealed class MergeDeclarationAssignmentTests : IDisposable
         }
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-merge-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-merge-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -117,8 +115,8 @@ public sealed class MergeDeclarationAssignmentTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        _csprojPath = Path.Combine(_root, "Merging.csproj");
-        _sourcePath = Path.Combine(_root, "Merging.cs");
+        _csprojPath = NativePaths.Join(_root, "Merging.csproj");
+        _sourcePath = NativePaths.Join(_root, "Merging.cs");
         File.WriteAllText(_csprojPath, csproj);
         File.WriteAllText(_sourcePath, Source);
     }

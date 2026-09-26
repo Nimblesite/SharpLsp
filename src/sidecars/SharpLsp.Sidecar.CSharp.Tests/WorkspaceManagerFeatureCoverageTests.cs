@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -57,10 +58,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
         + "    }\n"
         + "}\n";
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wm-feat-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wm-feat-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -76,8 +74,8 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        _csprojPath = Path.Combine(_root, "Calc.csproj");
-        _sourcePath = Path.Combine(_root, "Calculator.cs");
+        _csprojPath = NativePaths.Join(_root, "Calc.csproj");
+        _sourcePath = NativePaths.Join(_root, "Calculator.cs");
         File.WriteAllText(_csprojPath, csproj);
         File.WriteAllText(_sourcePath, Source);
     }
@@ -165,7 +163,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "Nope.cs");
+        var bogus = NativePaths.Join(_root, "Nope.cs");
         var result = await manager.PrepareRenameAsync(bogus, 0, 0);
 
         Assert.True(result.IsError, "missing document must surface an error");
@@ -244,7 +242,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "Missing.cs");
+        var bogus = NativePaths.Join(_root, "Missing.cs");
         var result = await manager.GetCodeActionsAsync(bogus, 0, 0, 0, 1);
 
         Assert.Empty(Unwrap(result));
@@ -360,7 +358,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "Ghost.cs");
+        var bogus = NativePaths.Join(_root, "Ghost.cs");
         var result = await manager.GetCodeLensesAsync(bogus);
 
         Assert.Empty(Unwrap(result));
@@ -403,7 +401,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     public async Task Format_methods_on_unknown_document_are_empty()
     {
         using var manager = await OpenAsync();
-        var bogus = Path.Combine(_root, "None.cs");
+        var bogus = NativePaths.Join(_root, "None.cs");
 
         Assert.Empty(Unwrap(await manager.FormatDocumentAsync(bogus)));
         Assert.Empty(Unwrap(await manager.FormatRangeAsync(bogus, 0, 0, 1, 0)));
@@ -439,7 +437,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     public async Task SemanticTokens_unknown_document_is_empty()
     {
         using var manager = await OpenAsync();
-        var bogus = Path.Combine(_root, "Absent.cs");
+        var bogus = NativePaths.Join(_root, "Absent.cs");
 
         Assert.Empty(Unwrap(await manager.GetSemanticTokensFullAsync(bogus)).Data);
         Assert.Empty(Unwrap(await manager.GetSemanticTokensRangeAsync(bogus, 0, 0, 1, 0)).Data);
@@ -462,7 +460,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "Void.cs");
+        var bogus = NativePaths.Join(_root, "Void.cs");
         var result = await manager.GetInlayHintsAsync(bogus, 0, 10);
 
         Assert.Empty(Unwrap(result));
@@ -487,7 +485,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "Gone.cs");
+        var bogus = NativePaths.Join(_root, "Gone.cs");
         var result = await manager.PrepareCallHierarchyAsync(bogus, 0, 0);
 
         Assert.Null(Unwrap(result));
@@ -511,7 +509,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "Empty.cs");
+        var bogus = NativePaths.Join(_root, "Empty.cs");
         var result = await manager.GetOutgoingCallsAsync(bogus, 0, 0);
 
         Assert.Empty(Unwrap(result));
@@ -550,7 +548,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "NoType.cs");
+        var bogus = NativePaths.Join(_root, "NoType.cs");
         var result = await manager.PrepareTypeHierarchyAsync(bogus, 0, 0);
 
         Assert.Null(Unwrap(result));
@@ -573,7 +571,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "NoSuper.cs");
+        var bogus = NativePaths.Join(_root, "NoSuper.cs");
         var result = await manager.GetSupertypesAsync(bogus, 0, 0);
 
         Assert.Empty(Unwrap(result));
@@ -596,7 +594,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         using var manager = await OpenAsync();
 
-        var bogus = Path.Combine(_root, "NoSub.cs");
+        var bogus = NativePaths.Join(_root, "NoSub.cs");
         var result = await manager.GetSubtypesAsync(bogus, 0, 0);
 
         Assert.Empty(Unwrap(result));
