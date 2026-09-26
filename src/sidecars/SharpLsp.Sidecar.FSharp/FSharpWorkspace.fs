@@ -397,8 +397,9 @@ let internal checkProject (state: FSharpWorkspaceState) =
             return Some results
     }
 
-/// Whole-project results for `projects` — a query's scope, or its head alone. Empty
-/// until a workspace loads.
+/// Whole-project results for `projects` — a query's scope, or its head alone — one after
+/// another: checking them concurrently starved the thread pool and took five times as
+/// long once the builders were warm. Empty until a workspace loads.
 let internal checkAll (state: FSharpWorkspaceState) (projects: FSharpProjectOptions list) =
     task {
         let results = ResizeArray<FSharpCheckProjectResults>()
