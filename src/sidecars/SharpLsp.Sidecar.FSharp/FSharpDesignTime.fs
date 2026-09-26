@@ -252,7 +252,7 @@ let private consoleOnlyFlags = set [ "--flaterrors" ]
 let optionsFromArgs (checker: FSharpChecker) (fsprojPath: string) (framework: string) (args: string array) =
     let directory = NativePaths.DirectoryOf fsprojPath
     let isSource (arg: string) = not (arg.StartsWith '-')
-    let isFlag (arg: string) = not (isSource arg)
+    let isFlag (arg: string) = not (isSource arg || consoleOnlyFlags.Contains arg)
     let sources = args |> Array.filter isSource |> Array.map (fun source -> NativePaths.Resolve(directory, source))
     let flags = args |> Array.filter isFlag |> Array.map (absoluteFlag directory)
 

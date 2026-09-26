@@ -362,7 +362,7 @@ let ``a project reading C# in memory still offers the FS0001 conversion`` () =
             let! errors = errorsIn state app
             let line, message = Assert.Single(errors)
             Assert.Equal(4, line)
-            Assert.DoesNotContain('', message)
+            Assert.DoesNotContain('\u001d', message)
             Assert.Contains("'float'", message)
             Assert.Contains("'decimal'", message)
             Assert.DoesNotContain("--flaterrors", (FSharpWorkspace.optionsFor state app).Value.OtherOptions)
