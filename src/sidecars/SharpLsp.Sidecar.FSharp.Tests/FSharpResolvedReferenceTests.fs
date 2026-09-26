@@ -166,7 +166,9 @@ let ``a multi-targeted project reads the build MSBuild picked of the F# project 
             Assert.True(NativePaths.AreEqual(lib, file), $"`answer` lands in Lib's source: {file}")
             Assert.Equal((2, 4), (line, column))
 
-            // A project-wide query from Lib counts the use App makes through that build.
+            // A project-wide query from Lib searches Lib alone: App reads the build MSBuild
+            // picked, and a multi-targeted reader is not searched. Searching every one of
+            // them stalled the sidecar on FsToolkit (CI run 36201579575).
             let! uses = FSharpReferences.getProjectUsages state lib 2 4
             let place (used: FSharpSymbolUse) =
                 let range = used.Range
@@ -180,7 +182,7 @@ let ``a multi-targeted project reads the build MSBuild picked of the F# project 
                 |> Array.sort
                 |> List.ofArray
 
-            Assert.Equal<int list>([ 3 ], linesIn app)
+            Assert.Equal<int list>([], linesIn app)
             Assert.Equal<int list>([ 2; 5 ], linesIn lib)
         finally
             cleanup root
