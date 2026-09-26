@@ -2,7 +2,12 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { type SdkPin, pinSatisfiedBy, runtimeFloorMet } from '../../global-json.js';
+import {
+  type SdkPin,
+  installedSdkVersions,
+  pinSatisfiedBy,
+  runtimeFloorMet,
+} from '../../global-json.js';
 import { findSidecarSdk, supportsSidecars } from '../../dotnet-host.js';
 import {
   FRAMEWORK_MISSING_EXIT,
@@ -230,6 +235,13 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     assert.ok(
       pinSatisfiedBy(realSdks(path.dirname(nineOnly)), ninePin),
       'the 9-only root must satisfy its own pin, or this is not the #297 scenario',
+    );
+    // Asked through the selector's own lister too: the root's SDK is a link, and a
+    // name alone would survive a dangling one while the selector returned nothing
+    // for the wrong reason — an unsatisfied pin rather than a refused host.
+    assert.ok(
+      pinSatisfiedBy(installedSdkVersions(nineOnly), ninePin),
+      'the selector itself must see the 9-only root satisfy the pin through its link',
     );
     assertFrameworkMissing(scratch, nineOnly, 'CSharp');
     // And the F# sidecar too — both are net10.0, so both must be lost together.
