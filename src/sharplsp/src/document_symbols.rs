@@ -30,7 +30,7 @@ pub fn handle_fsharp(
         anyhow::bail!("F# sidecar unavailable; cannot compute document symbols");
     };
     let params: DocumentSymbolParams = serde_json::from_value(req.params)?;
-    let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
 
     // A sidecar/parse failure yields an empty outline rather than a hard error —
     // a transient outline gap is preferable to a failed request. [SE-FSHARP-SYMBOLS]

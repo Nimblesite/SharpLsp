@@ -27,7 +27,7 @@ impl LangId {
     /// still works there. [GitHub #110]
     pub fn from_uri(uri: &Uri) -> Option<Self> {
         let raw = uri.as_str();
-        let path = crate::utils::uri_to_path(raw).unwrap_or_else(|_| raw.to_string());
+        let path = crate::paths::uri_to_path(raw).unwrap_or_else(|_| raw.to_string());
         Self::from_path(Path::new(&path))
     }
 

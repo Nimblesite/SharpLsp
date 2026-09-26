@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn map_hierarchy_item_translates_fields() {
-        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
+        use crate::paths::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
         let sidecar = item("Foo", "Class", NATIVE_FILE);
         let mapped = map_hierarchy_item(&sidecar).unwrap();
         assert_eq!(mapped.name, "Foo");

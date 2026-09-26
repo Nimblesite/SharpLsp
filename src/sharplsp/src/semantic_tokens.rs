@@ -74,7 +74,7 @@ pub fn handle_full(
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: SemanticTokensParams| {
-        let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+        let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
         let Some(data) = fetch_full_tokens(runtime, sidecar, file_path)? else {
             return Ok(serde_json::Value::Null);
         };
@@ -101,7 +101,7 @@ pub fn handle_range(
         sidecar,
         |sidecar, params: SemanticTokensRangeParams| {
             let request = SidecarRangeReq {
-                file_path: crate::semantic::uri_to_path(&params.text_document.uri)?,
+                file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
                 start_line: params.range.start.line,
                 start_character: params.range.start.character,
                 end_line: params.range.end.line,
@@ -146,7 +146,7 @@ fn delta_against_cache(
     let prev_id = &params.previous_result_id;
 
     // Fetch fresh tokens from sidecar.
-    let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
     let Some(new_data) = fetch_full_tokens(runtime, sidecar, file_path)? else {
         return Ok(serde_json::Value::Null);
     };

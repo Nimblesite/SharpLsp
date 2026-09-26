@@ -21,6 +21,7 @@ mod hot_reload;
 mod inlay_hints;
 mod nav_cache;
 mod nuget;
+mod paths;
 mod postfix_completion;
 mod profiler;
 mod pull_diagnostics;
@@ -176,14 +177,14 @@ fn run_server() -> Result<()> {
         .workspace_folders
         .as_ref()
         .and_then(|folders| folders.first())
-        .and_then(|folder| semantic::uri_to_path(&folder.uri).ok())
+        .and_then(|folder| paths::uri_to_path(folder.uri.as_str()).ok())
         .or_else(|| {
             #[expect(
                 deprecated,
                 reason = "root_uri is the LSP 3.16 fallback when workspace_folders is absent"
             )]
             let root = init_params.root_uri.as_ref();
-            root.and_then(|uri| semantic::uri_to_path(uri).ok())
+            root.and_then(|uri| paths::uri_to_path(uri.as_str()).ok())
         })
         .map(PathBuf::from);
 
@@ -512,7 +513,7 @@ fn opened_document_path(notif: &Notification) -> Option<String> {
     let params =
         serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params.clone())
             .ok()?;
-    semantic::uri_to_path(&params.text_document.uri).ok()
+    paths::uri_to_path(params.text_document.uri.as_str()).ok()
 }
 
 /// Map a document to the sidecar that owns its language. Implements [SCRIPT-DETECT].
@@ -597,7 +598,7 @@ async fn handle_csharp_event(
     let Some(path) = event.strip_prefix("diagnostics-settled ") else {
         return;
     };
-    let Ok(uri) = utils::path_to_lsp_uri(path.trim()) else {
+    let Ok(uri) = paths::path_to_lsp_uri(path.trim()) else {
         warn!(path, "Sidecar settle event carried an invalid path");
         return;
     };
@@ -1029,7 +1030,7 @@ fn converge_provisional_publication(
     let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };
-    let Ok(file_path) = semantic::uri_to_path(uri) else {
+    let Ok(file_path) = paths::uri_to_path(uri.as_str()) else {
         return;
     };
     runtime.block_on(diagnostics::converge_provisional(
@@ -1358,7 +1359,7 @@ fn collect_fsharp_ws_symbols(
     let Some(sidecar) = fsharp_sidecar else {
         return;
     };
-    let Ok(file_path) = crate::semantic::uri_to_path(uri) else {
+    let Ok(file_path) = crate::paths::uri_to_path(uri.as_str()) else {
         return;
     };
     let Ok(found) = document_symbols::fsharp_workspace_symbols(runtime, sidecar, uri, file_path)
@@ -1525,7 +1526,7 @@ fn handle_notification(
                 // (Roslyn / FCS) sees the current buffer. Routing by language is
                 // essential: without it F# edits never reach the F# sidecar, which
                 // then resolves hover/completion against stale on-disk text.
-                if let Ok(file_path) = semantic::uri_to_path(&doc.uri) {
+                if let Ok(file_path) = paths::uri_to_path(doc.uri.as_str()) {
                     let sidecar = sidecar_for_uri(&doc.uri, csharp_sidecar, fsharp_sidecar);
                     semantic::notify_did_change(&file_path, &doc.text, runtime, sidecar);
                 }
@@ -1555,7 +1556,7 @@ fn handle_notification(
                     nav_cache.invalidate(uri);
                     // Notify the document's own sidecar so the semantic engine
                     // sees the new source text (F# → F# sidecar, C# → C#).
-                    if let Ok(file_path) = semantic::uri_to_path(uri) {
+                    if let Ok(file_path) = paths::uri_to_path(uri.as_str()) {
                         let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar);
                         semantic::notify_did_change(&file_path, &change.text, runtime, sidecar);
                     }
@@ -1624,7 +1625,7 @@ fn trigger_diagnostics(
     let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };
-    let Ok(file_path) = semantic::uri_to_path(uri) else {
+    let Ok(file_path) = paths::uri_to_path(uri.as_str()) else {
         return;
     };
     diagnostics::request_in_background(

@@ -35,7 +35,7 @@ pub fn handle_formatting(
         return Ok(serde_json::Value::Null);
     };
     let params: DocumentFormattingParams = serde_json::from_value(req.params)?;
-    let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
 
     let request = SidecarFileReq { file_path };
     let payload = rmp_serde::to_vec(&request)?;
@@ -63,7 +63,7 @@ pub fn handle_range_formatting(
         return Ok(serde_json::Value::Null);
     };
     let params: DocumentRangeFormattingParams = serde_json::from_value(req.params)?;
-    let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
 
     let request = SidecarRangeReq {
         file_path,
@@ -96,7 +96,8 @@ pub fn handle_on_type_formatting(
         return Ok(serde_json::Value::Null);
     };
     let params: DocumentOnTypeFormattingParams = serde_json::from_value(req.params)?;
-    let file_path = crate::semantic::uri_to_path(&params.text_document_position.text_document.uri)?;
+    let file_path =
+        crate::paths::uri_to_path(params.text_document_position.text_document.uri.as_str())?;
 
     let request = SidecarPositionReq {
         file_path,

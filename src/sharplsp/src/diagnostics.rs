@@ -264,7 +264,7 @@ pub fn request_solution_in_background(
                     }
                 }
                 for (file_path, diagnostics) in file_diagnostics {
-                    let uri = match crate::utils::path_to_lsp_uri(&file_path) {
+                    let uri = match crate::paths::path_to_lsp_uri(&file_path) {
                         Ok(uri) => uri,
                         Err(err) => {
                             warn!("Skip diagnostics for {file_path}: {err:#}");
@@ -343,7 +343,7 @@ async fn verify_error_files(
 
         match fetch(sidecar, file_path, source_tag).await {
             Ok(diagnostics) => {
-                let uri = match crate::utils::path_to_lsp_uri(file_path) {
+                let uri = match crate::paths::path_to_lsp_uri(file_path) {
                     Ok(uri) => uri,
                     Err(err) => {
                         warn!("Skip verification for {file_path}: {err:#}");
@@ -615,13 +615,6 @@ mod tests {
         );
         assert_eq!(diag.source, Some("sharplsp-csharp".to_string()));
         assert_eq!(diag.message, "Unused variable");
-    }
-
-    #[test]
-    fn path_to_uri_valid_path() {
-        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
-        let uri = crate::utils::path_to_lsp_uri(NATIVE_FILE).unwrap();
-        assert_eq!(uri.as_str(), NATIVE_FILE_URI);
     }
 
     #[test]

@@ -25,7 +25,7 @@ pub fn handle_code_action(
         return Ok(serde_json::Value::Null);
     };
     let params: CodeActionParams = serde_json::from_value(req.params)?;
-    let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
 
     let request = SidecarCodeActionReq {
         file_path,
@@ -123,7 +123,7 @@ fn map_action_kind(kind: &str) -> CodeActionKind {
 fn map_workspace_edit(edit: &SidecarWorkspaceEdit) -> WorkspaceEdit {
     let mut changes = std::collections::HashMap::new();
     for doc_edit in &edit.document_changes {
-        if let Ok(uri) = crate::utils::path_to_lsp_uri(&doc_edit.file_path) {
+        if let Ok(uri) = crate::paths::path_to_lsp_uri(&doc_edit.file_path) {
             let edits: Vec<TextEdit> = doc_edit.edits.iter().map(map_text_edit).collect();
             let _ = changes.insert(uri, edits);
         }
@@ -247,7 +247,7 @@ mod tests {
         reason = "Uri is the key type mandated by lsp-types WorkspaceEdit"
     )]
     fn map_workspace_edit_groups_edits_by_uri() {
-        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
+        use crate::paths::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
         let edit = SidecarWorkspaceEdit {
             document_changes: vec![SidecarDocumentEdit {
                 file_path: NATIVE_FILE.to_string(),

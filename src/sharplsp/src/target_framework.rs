@@ -14,7 +14,7 @@ use lsp_types::{ClientCapabilities, TextDocumentIdentifier};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::semantic;
+use crate::paths;
 use crate::sidecar::manager::SidecarManager;
 
 /// The notification that tells the editor a project's framework changed.
@@ -137,7 +137,7 @@ fn forward(
 ) -> Result<FrameworkContext> {
     let sidecar = sidecar.context("no sidecar owns this document")?;
     let request = SidecarRequest {
-        file_path: semantic::uri_to_path(&params.text_document.uri)?,
+        file_path: paths::uri_to_path(params.text_document.uri.as_str())?,
         target_framework: params.target_framework.clone(),
     };
     let payload = rmp_serde::to_vec(&request).context("serialize target framework request")?;

@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 use tree_sitter::Node;
 
+use crate::paths::uri_to_path;
 use crate::tree_sitter_parse::{parse_file, TsParsers};
-use crate::utils::{uri_to_path, usize_to_u32};
+use crate::utils::usize_to_u32;
 
 /// Request params for `sharplsp/sortMembers`.
 #[derive(Debug, Deserialize)]
@@ -621,28 +622,6 @@ mod tests {
     }
 
     #[test]
-    fn uri_to_path_converts_to_native_path() {
-        // `uri_to_path` yields a NATIVE path per platform: a driveless POSIX URI
-        // is a valid path only on Unix, while Windows requires a drive letter
-        // (GitHub #110 — `file:///C:/…` must not become `/C:/…`).
-        #[cfg(unix)]
-        {
-            let path = uri_to_path("file:///home/user/test.cs").unwrap();
-            assert_eq!(path, "/home/user/test.cs");
-        }
-        #[cfg(windows)]
-        {
-            let path = uri_to_path("file:///C:/Users/test.cs").unwrap();
-            assert_eq!(path, r"C:\Users\test.cs");
-        }
-    }
-
-    #[test]
-    fn uri_to_path_rejects_non_file() {
-        assert!(uri_to_path("https://example.com").is_err());
-    }
-
-    #[test]
     fn member_category_classifies_correctly() {
         // This test would require tree-sitter nodes, so we test the
         // priority functions instead (above). The category mapping is
@@ -668,7 +647,7 @@ mod tests {
         std::fs::write(&file, source).unwrap();
 
         let params = SortMembersParams {
-            uri: crate::utils::path_to_uri(&file.to_string_lossy()).unwrap(),
+            uri: crate::paths::path_to_uri(&file.to_string_lossy()).unwrap(),
             range: SortRange {
                 start: SortPosition {
                     line: 0,
@@ -717,7 +696,7 @@ mod tests {
         std::fs::write(&file, "class One\n{\n    public int X;\n}\n").unwrap();
 
         let params = SortMembersParams {
-            uri: crate::utils::path_to_uri(&file.to_string_lossy()).unwrap(),
+            uri: crate::paths::path_to_uri(&file.to_string_lossy()).unwrap(),
             range: SortRange {
                 start: SortPosition {
                     line: 0,
