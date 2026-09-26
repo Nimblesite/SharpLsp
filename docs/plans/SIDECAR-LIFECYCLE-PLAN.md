@@ -616,6 +616,6 @@ item and its required evidence are complete.
 - [ ] Attach wrong-ID and activity-aware health evidence to #164 and close only when both halves pass.
 - [ ] Attach real Windows PATH fallback evidence to #167 and close only when shims cannot block the
       valid candidate.
-- [x] Attach ack-before-exit evidence to #172 and close only when graceful shutdown avoids hard kill.
+- [ ] Attach ack-before-exit evidence to #172 and close only when graceful shutdown avoids hard kill.
 - [ ] Re-export `docs/bugs/open-issues.csv` after issue states/relationships change so the inventory
       remains synchronized with GitHub.
