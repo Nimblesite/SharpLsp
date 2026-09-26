@@ -103,11 +103,19 @@ export function realSource(): string {
   return found;
 }
 
+const CLONE = { recursive: true, mode: fs.constants.COPYFILE_FICLONE } as const;
+
 export function cloneInto(source: string, relative: string, target: string): void {
-  fs.cpSync(path.join(source, relative), target, {
-    recursive: true,
-    mode: fs.constants.COPYFILE_FICLONE,
-  });
+  fs.cpSync(path.join(source, relative), target, CLONE);
+}
+
+/**
+ * `cloneInto` without holding the event loop. The suites run INSIDE the extension
+ * host, so a synchronous copy freezes it: VS Code flags it unresponsive and mocha
+ * cannot fire the timeout that would have named the hook (Windows `workspace`).
+ */
+async function cloneAsync(source: string, relative: string, target: string): Promise<void> {
+  await fs.promises.cp(path.join(source, relative), target, CLONE);
 }
 
 /**
@@ -132,17 +140,24 @@ export function copySdkMajor(source: string, target: string, major: number): str
 }
 
 /** Every hostfxr the source ships: the muxer picks the newest it can find. */
-export function copyFxr(source: string, root: string): void {
-  for (const version of namesUnder(source, FXR)) {
-    cloneInto(source, path.join(FXR, version), path.join(root, FXR, version));
-  }
+async function copyFxr(source: string, root: string): Promise<void> {
+  const versions = namesUnder(source, FXR).map((version) => path.join(FXR, version));
+  await Promise.all(versions.map((fxr) => cloneAsync(source, fxr, path.join(root, fxr))));
 }
 
 /** Real runtime bits, advertised under the version name being tested. */
-export function copyRuntime(source: string, root: string, advertised: string): void {
+async function copyRuntime(source: string, root: string, advertised: string): Promise<void> {
   const real = newestVersion(realRuntimes(source), '10.') ?? realRuntimes(source)[0];
   assert.ok(real, 'the source install must carry a real runtime to compose from');
-  cloneInto(source, path.join(FRAMEWORK, real), path.join(root, FRAMEWORK, advertised));
+  await cloneAsync(source, path.join(FRAMEWORK, real), path.join(root, FRAMEWORK, advertised));
+}
+
+/** Where the machine's newest real SDK of `major` lives: its root and its `sdk/<version>`. */
+function realSdk(major: number): { source: string; relative: string } {
+  const source = sdkSource(major);
+  const real = newestVersion(realSdks(source), `${String(major)}.`);
+  assert.ok(real, `SDK ${String(major)} must be a real installed directory, never composed`);
+  return { source, relative: path.join('sdk', real) };
 }
 
 /**
@@ -159,10 +174,7 @@ export function copyRuntime(source: string, root: string, advertised: string): v
  * carries 9.0.312 — so each major is sourced independently.
  */
 export function stageSdk(root: string, major: number): void {
-  const source = sdkSource(major);
-  const real = newestVersion(realSdks(source), `${String(major)}.`);
-  assert.ok(real, `SDK ${String(major)} must be a real installed directory, never composed`);
-  const relative = path.join('sdk', real);
+  const { source, relative } = realSdk(major);
   const sibling = siblingCopy(root, relative);
   if (sibling === undefined) cloneInto(source, relative, path.join(root, relative));
   else linkTree(sibling, path.join(root, relative));
@@ -196,6 +208,21 @@ function linkTree(from: string, to: string): void {
 }
 
 /**
+ * The machine's real SDK of `major`, LINKED into `root`: one call, where a copy is
+ * 400 MB in ~3,800 files, per root, and seven roots took the floor suite's setup
+ * past its budget (Windows `workspace`). It is the real install, never a name, and
+ * hostfxr follows the link exactly as `installedSdkVersions` does. Only for roots
+ * that never RUN their SDK: a build resolves its packs and runtime through the
+ * link's target, which would be the machine's root rather than the one composed.
+ * Teardown removes the link, never what it points at.
+ */
+function linkSdk(root: string, major: number): void {
+  const { source, relative } = realSdk(major);
+  fs.mkdirSync(path.join(root, 'sdk'), { recursive: true });
+  fs.symlinkSync(path.join(source, relative), path.join(root, relative), 'junction');
+}
+
+/**
  * A real, launchable root advertising exactly one SDK and one runtime.
  *
  * The muxer is COPIED, never symlinked: it resolves its root from its own real
@@ -207,19 +234,18 @@ function linkTree(from: string, to: string): void {
  * the binaries inside stay real, so the process genuinely starts whenever the
  * name says it may.
  */
-export function composeRoot(
+export async function composeRoot(
   scratch: string,
   source: string,
   name: string,
   sdkMajor: number,
   runtimeAs: string,
-): string {
+): Promise<string> {
   const root = path.join(scratch, name);
   fs.mkdirSync(root, { recursive: true });
   installMuxer(source, root);
-  stageSdk(root, sdkMajor);
-  copyFxr(source, root);
-  copyRuntime(source, root, runtimeAs);
+  linkSdk(root, sdkMajor);
+  await Promise.all([copyFxr(source, root), copyRuntime(source, root, runtimeAs)]);
   return dotnetExecutable(root);
 }
 

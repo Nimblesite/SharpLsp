@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import { directoryOf, joinPath, resolvePath } from './paths';
+import { isDirectory } from './utils';
 
 /**
  * `global.json` SDK pin handling.
@@ -295,14 +296,16 @@ function parseJson(source: string): unknown {
   }
 }
 
-/** SDK versions installed beside a `dotnet` executable, newest last. */
+/**
+ * SDK versions installed beside a `dotnet` executable, newest last. A linked SDK
+ * counts, exactly as `dotnet --list-sdks` counts it: hostfxr follows the link.
+ */
 export function installedSdkVersions(dotnetPath: string): readonly string[] {
   try {
+    const sdks = joinPath(directoryOf(dotnetPath), 'sdk');
     return fs
-      .readdirSync(joinPath(directoryOf(dotnetPath), 'sdk'), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .filter((name) => parseSdkVersion(name) !== undefined)
+      .readdirSync(sdks)
+      .filter((name) => parseSdkVersion(name) !== undefined && isDirectory(joinPath(sdks, name)))
       .sort();
   } catch {
     return [];

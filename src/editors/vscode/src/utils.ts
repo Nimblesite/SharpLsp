@@ -13,6 +13,19 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Whether `candidate` is a directory, following links the way the OS and hostfxr do.
+ * A directory entry reports a link as a link, never as the directory it opens, so
+ * one that stands in for an SDK or a project folder must be asked through `stat`.
+ */
+export function isDirectory(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** Extract a human-readable message from an unknown error value. */
 export function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

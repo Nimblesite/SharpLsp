@@ -10,7 +10,7 @@
 import * as fs from 'node:fs';
 import { directoryOf, extensionOf, fileNameOf, joinPath } from './paths';
 import { isIgnoredDir } from './launch-target';
-import { isRecord } from './utils';
+import { isDirectory, isRecord } from './utils';
 
 /** One entry of a `launchSettings.json` / `<app>.run.json` profiles map. */
 export interface LaunchProfile {
@@ -262,14 +262,6 @@ function safeEntries(dir: string): string[] {
     return fs.readdirSync(dir).sort((left, right) => left.localeCompare(right));
   } catch {
     return [];
-  }
-}
-
-function isDirectory(candidate: string): boolean {
-  try {
-    return fs.statSync(candidate).isDirectory();
-  } catch {
-    return false;
   }
 }
 

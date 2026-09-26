@@ -141,6 +141,20 @@ suite('global.json SDK pin', () => {
     assert.deepEqual(installedSdkVersions(path.join(scratchDir, 'absent', 'dotnet')), []);
   });
 
+  test('installedSdkVersions lists a linked SDK exactly as hostfxr does', () => {
+    // hostfxr follows a link under `sdk/` (Nix and other store layouts ship the SDK
+    // that way), so `--list-sdks` reports it. A lister that saw only plain
+    // directories told the user a machine that builds had no SDK at all.
+    const exe = fakeDotnet('linked-root', ['9.0.312']);
+    const stored = path.join(scratchDir, 'store', '10.0.303');
+    fs.mkdirSync(stored, { recursive: true });
+    const sdkDir = path.join(path.dirname(exe), 'sdk');
+    fs.symlinkSync(stored, path.join(sdkDir, '10.0.303'), 'junction');
+    fs.symlinkSync(path.join(scratchDir, 'gone'), path.join(sdkDir, '10.0.400'), 'junction');
+    assert.deepEqual(installedSdkVersions(exe), ['10.0.303', '9.0.312']);
+    assert.ok(fs.existsSync(stored), 'listing must never disturb what the link points at');
+  });
+
   // ── The bug: acquisition accepted an SDK the workspace could never use ──
 
   // ── The bug: one unsatisfying root was treated as the whole machine ──
