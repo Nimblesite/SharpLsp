@@ -38,6 +38,7 @@ import {
 } from '../../test-discovery.js';
 import { buildFilterArgs } from '../../test-execution.js';
 import { filterClause } from '../../test-filter.js';
+import { splitTrimmed } from '../../utils.js';
 import { NEVER_RUN, findTestByMethodName, statusLensTitle } from '../../test-lens.js';
 import {
   createSolution,
@@ -160,11 +161,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       ['vstest', announced, '--ListFullyQualifiedTests', `--ListTestsTargetPath:${listPath}`],
       root,
     );
-    rawListing = fs
-      .readFileSync(listPath, 'utf8')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+    rawListing = splitTrimmed(fs.readFileSync(listPath, 'utf8'), '\n');
 
     // Settle the tree by COUNT, never by the names this suite is asserting.
     // Waiting here for the bare names would make the defect present as a hook

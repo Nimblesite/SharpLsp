@@ -9,11 +9,12 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, fileNameOf, isProjectFile, resolvePath } from './paths';
 import * as vscode from 'vscode';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
 import { Signal } from './signals.js';
+import { getErrorMessage } from './utils.js';
 
 const WATCH_GLOB = '**/{*.csproj,*.fsproj,Directory.Packages.props}';
 const DEBOUNCE_MS = 150;
@@ -61,7 +62,7 @@ export function initProjectDepsStore(context: vscode.ExtensionContext): void {
  * `projectDependencies.value.get(path)` after this will see fresh data.
  */
 export function ensureTracked(projectPath: string): deps.ProjectDependencies {
-  const absolute = path.resolve(projectPath);
+  const absolute = resolvePath(projectPath);
   ensureProjectWatcher(absolute);
   const existing = projectDependencies.value.get(absolute);
   if (existing !== undefined) {
@@ -81,7 +82,7 @@ export function ensureTracked(projectPath: string): deps.ProjectDependencies {
 
 /** Synchronously refresh an already-tracked project from disk. */
 export function refreshTracked(projectPath: string): deps.ProjectDependencies | undefined {
-  const absolute = path.resolve(projectPath);
+  const absolute = resolvePath(projectPath);
   if (!projectDependencies.value.has(absolute)) return undefined;
   const mtime = readMtime(absolute);
   if (mtime === undefined) {
@@ -117,7 +118,7 @@ function startMtimeGuard(context: vscode.ExtensionContext): void {
 function ensureProjectWatcher(projectPath: string): void {
   if (storeContext === undefined || projectWatchers.has(projectPath)) return;
   const projectWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(path.dirname(projectPath), path.basename(projectPath)),
+    new vscode.RelativePattern(directoryOf(projectPath), fileNameOf(projectPath)),
   );
   const nodeWatcher = watchTrackedProjectWithNode(projectPath);
   const subscription = vscode.Disposable.from(
@@ -157,7 +158,7 @@ function watchTrackedProjectWithNode(projectPath: string): vscode.Disposable | u
       nodeWatcher.close();
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     log.traceInfo(`project-deps-store: node watcher unavailable for ${projectPath}: ${msg}`);
     return undefined;
   }
@@ -259,9 +260,7 @@ function schedule(filePath: string): void {
 }
 
 function rescan(filePath: string): void {
-  const lower = filePath.toLowerCase();
-  const isProject = lower.endsWith('.csproj') || lower.endsWith('.fsproj');
-  if (isProject) {
+  if (isProjectFile(filePath)) {
     rescanOne(filePath);
     return;
   }
@@ -271,7 +270,7 @@ function rescan(filePath: string): void {
 }
 
 function rescanOne(projectPath: string): void {
-  const absolute = path.resolve(projectPath);
+  const absolute = resolvePath(projectPath);
   if (!projectDependencies.value.has(absolute)) return;
   const parsed = deps.parseProjectDependencies(absolute);
   const next = new Map(projectDependencies.value);
@@ -284,7 +283,7 @@ function rescanOne(projectPath: string): void {
 }
 
 function remove(filePath: string): void {
-  const absolute = path.resolve(filePath);
+  const absolute = resolvePath(filePath);
   if (!projectDependencies.value.has(absolute)) return;
   const next = new Map(projectDependencies.value);
   next.delete(absolute);

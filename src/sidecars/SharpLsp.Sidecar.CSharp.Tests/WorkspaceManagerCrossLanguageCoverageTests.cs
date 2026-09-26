@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -28,22 +28,19 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 )]
 public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wm-xlang-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wm-xlang-{Guid.NewGuid():N}");
     private readonly string _appCsprojPath;
     private readonly string _programPath;
 
     public WorkspaceManagerCrossLanguageCoverageTests()
     {
-        var libDir = Path.Combine(_root, "Lib");
-        var appDir = Path.Combine(_root, "App");
+        var libDir = NativePaths.Join(_root, "Lib");
+        var appDir = NativePaths.Join(_root, "App");
         Directory.CreateDirectory(libDir);
         Directory.CreateDirectory(appDir);
 
         File.WriteAllText(
-            Path.Combine(libDir, "Lib.fsproj"),
+            NativePaths.Join(libDir, "Lib.fsproj"),
             """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -56,11 +53,11 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
             """
         );
         File.WriteAllText(
-            Path.Combine(libDir, "Library.fs"),
+            NativePaths.Join(libDir, "Library.fs"),
             "namespace FsLib\n\ntype Widget() =\n    member _.Value = 42\n"
         );
 
-        _appCsprojPath = Path.Combine(appDir, "App.csproj");
+        _appCsprojPath = NativePaths.Join(appDir, "App.csproj");
         File.WriteAllText(
             _appCsprojPath,
             """
@@ -75,7 +72,7 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
             </Project>
             """
         );
-        _programPath = Path.Combine(appDir, "Program.cs");
+        _programPath = NativePaths.Join(appDir, "Program.cs");
         File.WriteAllText(
             _programPath,
             "namespace App;\n"
@@ -124,6 +121,58 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
         Assert.All(locations.Locations, loc => Assert.False(string.IsNullOrEmpty(loc.FilePath)));
     }
 
+    /// <summary>
+    /// <c>MSBuildWorkspace</c> loads a MULTI-TARGETED <c>.fsproj</c> as one empty stub
+    /// per framework, every one with the same file path. Keyed by that path, the
+    /// rewiring threw "An item with the same key has already been added" and the
+    /// whole workspace failed to open — every C# feature of the solution with it.
+    /// FsToolkit's F# solution logged exactly that on CI.
+    /// </summary>
+    [Fact]
+    public async Task A_multi_targeted_FSharp_reference_opens_and_resolves_from_CSharp()
+    {
+        var libDir = NativePaths.Join(_root, "Multi", "Lib");
+        var appDir = NativePaths.Join(_root, "Multi", "App");
+        Directory.CreateDirectory(libDir);
+        Directory.CreateDirectory(appDir);
+        await File.WriteAllTextAsync(
+            NativePaths.Join(libDir, "Lib.fsproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup>
+                <Compile Include="Library.fs" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.Copy(
+            NativePaths.Join(_root, "Lib", "Library.fs"),
+            NativePaths.Join(libDir, "Library.fs")
+        );
+        var appCsproj = NativePaths.Join(appDir, "App.csproj");
+        File.Copy(_appCsprojPath, appCsproj);
+        var program = NativePaths.Join(appDir, "Program.cs");
+        File.Copy(_programPath, program);
+        BuildProject(appCsproj);
+
+        using var manager = new WorkspaceManager();
+#pragma warning disable CS0618 // Obsolete OpenAsync placeholder
+        var open = await manager.OpenAsync(appCsproj);
+#pragma warning restore CS0618
+        Assert.False(open.IsError, open.Match(_ => "ok", err => err));
+        Assert.True(manager.IsLoaded, "a solution with a multi-targeted F# project must load");
+
+        var (line, character) = LocateToken(program, "new FsLib.Widget", "Widget");
+        var locations = AssertOk(await manager.GetDefinitionAsync(program, line, character));
+        Assert.NotEmpty(locations.Locations);
+        Assert.All(locations.Locations, loc => Assert.False(string.IsNullOrEmpty(loc.FilePath)));
+        var diagnostics = AssertOk(await manager.GetDiagnosticsAsync(program));
+        Assert.DoesNotContain(diagnostics, diag => diag.Severity == "Error");
+    }
+
     /// <summary>Assert the query succeeded and return its success value.</summary>
     private static TValue AssertOk<TValue>(Outcome.Result<TValue, string> result)
     {
@@ -159,19 +208,7 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
     /// <summary>Build a project (and its project references) with the dotnet CLI.</summary>
     private static void BuildProject(string projectPath)
     {
-        var psi = new ProcessStartInfo(
-            "dotnet",
-            $"build \"{projectPath}\" -c Debug --nologo -v quiet"
-        )
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var process = new Process { StartInfo = psi };
-        process.Start();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        Assert.True(process.ExitCode == 0, $"dotnet build must succeed:\n{stdout}\n{stderr}");
+        var (exitCode, output) = DotnetBuild.Run(projectPath);
+        Assert.True(exitCode == 0, $"dotnet build must succeed:\n{output}");
     }
 }

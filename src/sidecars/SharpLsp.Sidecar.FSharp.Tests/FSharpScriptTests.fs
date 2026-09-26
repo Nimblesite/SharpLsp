@@ -6,14 +6,15 @@ open System
 open System.IO
 open Xunit
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.Common
 
 let private tempDir () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fsx-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fsx-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     dir
 
 let private write (dir: string) (name: string) (text: string) =
-    let path = Path.Combine(dir, name)
+    let path = NativePaths.Resolve(dir, name)
     File.WriteAllText(path, text)
     path
 
@@ -58,7 +59,7 @@ let ``fsx load closure includes the loaded script`` () =
 
         let containsScript (name: string) =
             sourceFiles
-            |> Array.exists (fun f -> f.EndsWith(name, StringComparison.OrdinalIgnoreCase))
+            |> Array.exists (fun f -> NativePaths.SameName(f, name))
 
         Assert.True(containsScript "Lib.fsx", $"Lib.fsx missing from %A{sourceFiles}")
         Assert.True(containsScript "Main.fsx", $"Main.fsx missing from %A{sourceFiles}")

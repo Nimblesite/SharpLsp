@@ -94,6 +94,7 @@
       "files": [
         "debug-test-fsharp-e2e.test.js",
         "debug-test-debugging-e2e.test.js",
+        "debug-test-decorated-e2e.test.js",
         "debug-test-stop-e2e.test.js",
         "debug-test-groups-e2e.test.js",
         "debug-test-mtp-e2e.test.js",
@@ -177,6 +178,7 @@
         "solution-explorer.test.js",
         "solution-explorer-build.test.js",
         "fixture-solutions.test.js",
+        "fixture-solutions-contract.test.js",
         "tree-config-e2e.test.js",
         "context-menus.test.js",
         "project-deps-watcher-e2e.test.js",
@@ -187,7 +189,8 @@
         "nuget-deps-e2e.test.js",
         "profiler.test.js",
         "profiler-e2e.test.js",
-        "fsi-build-output-e2e.test.js"
+        "fsi-build-output-e2e.test.js",
+        "utils.test.js"
       ]
     },
     "realrepo": {
@@ -197,6 +200,34 @@
         "real-repo-serilog.test.js",
         "real-repo-fluentvalidation.test.js",
         "real-repo-fstoolkit.test.js"
+      ]
+    },
+    "netfx-testexplorer": {
+      "windowsOnly": true,
+      "description": ".NET Framework in the Test Explorer, Windows only ([NETFX-SCOPE]): C# and F# test projects multi-targeting net462/net472/net48 beside the installed .NET runtimes, through VSTest and Microsoft.Testing.Platform. Framework tags and root descriptions, per-framework failure messages, `Run on <tfm>` profiles, framework-exclusive tests, .NET Framework MTP modules executed directly, and the debug refusal ([NETFX-TEST], [NETFX-DEBUG]).",
+      "files": [
+        "test-explorer-netfx.test.js",
+        "test-explorer-mtp-netfx.test.js"
+      ]
+    },
+    "netfx-language": {
+      "windowsOnly": true,
+      "description": "The C# and F# language services over multi-targeted .NET Framework + .NET projects, Windows only: the default framework context, .NET Framework-only and .NET-only APIs, `#if` regions and diagnostics flipping on `sharplsp/setTargetFramework`, a netstandard2.0 library referenced from both families, F# options that are MSBuild's own (Directory.Build.*, globs, linked and conditioned items) and their degraded fallback, and Run / F5 of a multi-targeted program ([NETFX-PROJECTS], [NETFX-CONTEXT], [NETFX-DEBUG]).",
+      "files": [
+        "netfx-language.test.js",
+        "netfx-language-fsharp.test.js",
+        "netfx-msbuild-fsharp.test.js",
+        "netfx-degrade-fsharp.test.js",
+        "netfx-run-fsharp.test.js"
+      ]
+    },
+    "realrepo-netfx": {
+      "windowsOnly": true,
+      "description": "Real .NET Framework repositories at pinned commits, Windows only ([NETFX-CORPUS]): GitReader (F# and C#), CsvHelper and NLog (C#), each targeting several .NET Framework and .NET Standard versions: load, LSP inside .NET Framework code, the active framework, and Test Explorer discovery and runs across every framework they target.",
+      "files": [
+        "real-repo-netfx-csharp.test.js",
+        "real-repo-netfx-fsharp.test.js",
+        "real-repo-netfx-nlog.test.js"
       ]
     }
   },

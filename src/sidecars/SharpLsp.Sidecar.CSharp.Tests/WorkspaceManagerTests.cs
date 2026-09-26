@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -14,10 +15,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// </summary>
 public sealed class WorkspaceManagerTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wm-tests-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wm-tests-{Guid.NewGuid():N}");
 
     public WorkspaceManagerTests()
     {
@@ -69,7 +67,7 @@ public sealed class WorkspaceManagerTests : IDisposable
         await manager.OpenAsync(csprojPath);
 #pragma warning restore CS0618
 
-        var bogus = Path.Combine(_root, "NotInProject.cs");
+        var bogus = NativePaths.Join(_root, "NotInProject.cs");
         var result = await manager.UpdateDocumentTextAsync(bogus, "// nope\n");
 
         Assert.True(result.IsError, "unknown document must fail");
@@ -117,7 +115,7 @@ public sealed class WorkspaceManagerTests : IDisposable
     public async Task Open_discovers_slnx_via_recursive_scan()
     {
         // Mirrors `sharplsp <workspace-root>` where the .slnx lives in a subdir.
-        var sub = Path.Combine(_root, "backend");
+        var sub = NativePaths.Join(_root, "backend");
         Directory.CreateDirectory(sub);
         WriteSlnxWithSingleProject("namespace S; public class Baz {}\n", sub);
 
@@ -144,14 +142,14 @@ public sealed class WorkspaceManagerTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        var projectDir = Path.Combine(root, "src", "App");
+        var projectDir = NativePaths.Join(root, "src", "App");
         Directory.CreateDirectory(projectDir);
-        var csprojPath = Path.Combine(projectDir, "App.csproj");
-        var sourcePath = Path.Combine(projectDir, "Source.cs");
+        var csprojPath = NativePaths.Join(projectDir, "App.csproj");
+        var sourcePath = NativePaths.Join(projectDir, "Source.cs");
         File.WriteAllText(csprojPath, csproj);
         File.WriteAllText(sourcePath, source);
 
-        var slnxPath = Path.Combine(root, "App.slnx");
+        var slnxPath = NativePaths.Join(root, "App.slnx");
         File.WriteAllText(
             slnxPath,
             """
@@ -173,8 +171,8 @@ public sealed class WorkspaceManagerTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        var csprojPath = Path.Combine(_root, "Stash.csproj");
-        var sourcePath = Path.Combine(_root, "Source.cs");
+        var csprojPath = NativePaths.Join(_root, "Stash.csproj");
+        var sourcePath = NativePaths.Join(_root, "Source.cs");
         File.WriteAllText(csprojPath, csproj);
         File.WriteAllText(sourcePath, source);
         return (csprojPath, sourcePath);

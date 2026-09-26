@@ -6,8 +6,9 @@ use anyhow::Result;
 use lsp_types::{Position, Range, TextDocumentPositionParams, Uri};
 use tracing::debug;
 
+use crate::paths::path_to_lsp_uri;
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{path_to_lsp_uri, request_sidecar, SidecarPositionReq};
+use crate::utils::{request_sidecar, SidecarPositionReq};
 
 /// A hierarchy item returned by the sidecar for call- and type-hierarchy
 /// requests. Shared by `call_hierarchy` and `type_hierarchy`, which map it

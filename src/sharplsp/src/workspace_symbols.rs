@@ -14,6 +14,7 @@ use tracing::info;
 use tree_sitter::Node;
 
 use crate::sidecar::manager::SidecarManager;
+use crate::source_walk::collect_files;
 use crate::tree_sitter_parse::{parse_file, LangId, TsParsers};
 use crate::utils::usize_to_u32;
 use crate::vfs::Vfs;
@@ -309,10 +310,7 @@ fn project_info(project: &SolutionProjectEntry, folders: &[SolutionFolderEntry])
 /// A project named directly rather than read from a solution.
 fn standalone_project(path: &str, declaration_order: usize) -> ProjectInfo {
     ProjectInfo {
-        name: Path::new(path).file_stem().map_or_else(
-            || path.to_string(),
-            |stem| stem.to_string_lossy().to_string(),
-        ),
+        name: crate::paths::file_stem_of(path).unwrap_or_else(|| path.to_string()),
         path: path.to_string(),
         identity: path.to_string(),
         parent_folder: None,
@@ -326,10 +324,7 @@ fn project_name(project: &SolutionProjectEntry) -> String {
         return project.display_name.clone();
     }
 
-    Path::new(&project.path).file_stem().map_or_else(
-        || project.relative_path.clone(),
-        |stem| stem.to_string_lossy().to_string(),
-    )
+    crate::paths::file_stem_of(&project.path).unwrap_or_else(|| project.relative_path.clone())
 }
 
 /// Resolve a project's parent solution-folder name.
@@ -406,17 +401,12 @@ fn is_dotnet_project(project: &SolutionProjectEntry) -> bool {
 
 /// Check whether a path points at a C# or F# project file.
 pub(crate) fn is_dotnet_project_path(path: &str) -> bool {
-    Path::new(path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("csproj") || extension.eq_ignore_ascii_case("fsproj")
-        })
+    crate::paths::has_extension(path, &["csproj", "fsproj"])
 }
 
 /// Check whether a project type marker identifies a C# or F# project.
 fn is_dotnet_project_type(project_type: &str) -> bool {
-    project_type.eq_ignore_ascii_case(".csproj") || project_type.eq_ignore_ascii_case(".fsproj")
+    crate::paths::is_extension(project_type, &["csproj", "fsproj"])
 }
 
 /// Intermediate representation of a project discovered in a solution.
@@ -539,36 +529,10 @@ fn find_source_files(dir: &Path) -> Vec<String> {
     files
 }
 
-/// Recursively collect the files `keep` accepts, skipping build output.
-pub(crate) fn collect_files(dir: &Path, keep: fn(&Path) -> bool, files: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = path.file_name().map(|n| n.to_string_lossy().to_string());
-            // Skip build output and hidden directories.
-            if matches!(
-                name.as_deref(),
-                Some("bin" | "obj" | ".git" | "node_modules")
-            ) {
-                continue;
-            }
-            collect_files(&path, keep, files);
-        } else if keep(&path) {
-            files.push(path.to_string_lossy().to_string());
-        }
-    }
-}
-
 /// Check whether the path has a `.cs` or `.fs` extension, in any casing —
 /// Windows filesystems are case-insensitive, so `Program.CS` is a C# file.
 fn is_source_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("cs") || ext.eq_ignore_ascii_case("fs"))
+    crate::paths::has_extension(path, &["cs", "fs"])
 }
 
 /// Parse a single source file and extract symbols.

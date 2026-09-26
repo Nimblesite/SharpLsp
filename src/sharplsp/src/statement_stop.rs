@@ -30,8 +30,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tree_sitter::Point;
 
+use crate::paths::uri_to_path;
 use crate::tree_sitter_parse::{parse_file, TsParsers};
-use crate::utils::uri_to_path;
 use crate::vfs::Vfs;
 
 /// Request params for `sharplsp/statementStop`.

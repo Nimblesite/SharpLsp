@@ -25,6 +25,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/completion", HandleCompletionAsync);
         Register("completionItem/resolve", HandleCompletionResolveAsync);
         Register("textDocument/hover", HandleHoverAsync);
+        Register("textDocument/signatureHelp", HandleSignatureHelpAsync);
         Register("textDocument/definition", HandleDefinitionAsync);
         Register("textDocument/typeDefinition", HandleTypeDefinitionAsync);
         Register("textDocument/declaration", HandleDeclarationAsync);
@@ -55,6 +56,8 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("project/removePackage", HandleRemovePackageAsync);
         Register("analyzers/configure", HandleConfigureAnalyzersAsync);
         Register("debug/hotReload", HandleHotReloadAsync);
+        Register("workspace/targetFramework", HandleTargetFrameworkAsync);
+        Register("workspace/setTargetFramework", HandleSetTargetFrameworkAsync);
     }
 
     private Task<ByteResult> HandleConfigureAnalyzersAsync(byte[] payload, CancellationToken ct)
@@ -76,6 +79,20 @@ internal sealed partial class CSharpSidecar : SidecarHost
     }
 
     private readonly WorkspaceManager _workspace = new();
+
+    /// <summary>
+    /// The MSBuild workspace keeps its out-of-process BuildHost alive for as long as
+    /// the workspace lives. Left undisposed, every sidecar exit — a graceful one too —
+    /// left that BuildHost running with no parent. [SIDECAR-SHUTDOWN-ACK]
+    /// </summary>
+    protected override async ValueTask DisposeCoreAsync()
+    {
+        _workspace.Dispose();
+        await base.DisposeCoreAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Whether this sidecar's workspace has been released.</summary>
+    internal bool WorkspaceDisposed => _workspace.IsDisposed;
 
     private Task<ByteResult> HandleCodeActionAsync(byte[] payload, CancellationToken ct)
     {
@@ -192,6 +209,12 @@ internal sealed partial class CSharpSidecar : SidecarHost
     private Task<ByteResult> HandleHoverAsync(byte[] payload, CancellationToken ct)
     {
         return HandleNullableRequestAsync(payload, _workspace.GetHoverAsync, ct);
+    }
+
+    /// <summary>Implements [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP] (GitHub #174).</summary>
+    private Task<ByteResult> HandleSignatureHelpAsync(byte[] payload, CancellationToken ct)
+    {
+        return HandleNullableRequestAsync(payload, _workspace.GetSignatureHelpAsync, ct);
     }
 
     private Task<ByteResult> HandleImplementationAsync(byte[] payload, CancellationToken ct)
@@ -408,19 +431,8 @@ internal sealed partial class CSharpSidecar : SidecarHost
 
     private static ByteResult SerializeResult<T>(Result<T, string> result, CancellationToken ct)
     {
-        if (result is not Result<T, string>.Ok<T, string> { Value: var value })
-        {
-            return ByteResult.Failure(!result ?? "Unknown error");
-        }
-
-        try
-        {
-            var bytes = MessagePackSerializer.Serialize(value, cancellationToken: ct);
-            return new ByteResult.Ok<byte[], string>(bytes);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return result is Result<T, string>.Ok<T, string> { Value: var value }
+            ? Serialized(value, ct)
+            : ByteResult.Failure(!result ?? "Unknown error");
     }
 }

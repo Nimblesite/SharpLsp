@@ -10,6 +10,7 @@ mod config_debug;
 mod configuration;
 mod diagnostics;
 mod document_symbols;
+mod folding;
 // Formatting module is sequestered — not wired into the LSP server.
 // Use CSharpier (C#) / Fantomas via Ionide (F#). See docs/formatting/README.md.
 #[cfg(feature = "formatting")]
@@ -20,6 +21,7 @@ mod hot_reload;
 mod inlay_hints;
 mod nav_cache;
 mod nuget;
+mod paths;
 mod postfix_completion;
 mod profiler;
 mod pull_diagnostics;
@@ -28,8 +30,10 @@ mod semantic_tokens;
 mod sidecar;
 mod signature_help;
 mod sort_members;
+mod source_walk;
 mod statement_stop;
 mod syntax;
+mod target_framework;
 mod tree_sitter_parse;
 mod type_hierarchy;
 mod utils;
@@ -160,6 +164,7 @@ fn run_server() -> Result<()> {
     let init_params: InitializeParams =
         serde_json::from_value(init_params).context("deserialize InitializeParams")?;
     let server_capabilities = build_capabilities(&init_params.capabilities);
+    target_framework::remember_client(&init_params.capabilities);
     let capabilities_json = serde_json::json!({
         "capabilities": serde_json::to_value(server_capabilities).context("serialize capabilities")?,
     });
@@ -172,14 +177,14 @@ fn run_server() -> Result<()> {
         .workspace_folders
         .as_ref()
         .and_then(|folders| folders.first())
-        .and_then(|folder| semantic::uri_to_path(&folder.uri).ok())
+        .and_then(|folder| paths::uri_to_path(folder.uri.as_str()).ok())
         .or_else(|| {
             #[expect(
                 deprecated,
                 reason = "root_uri is the LSP 3.16 fallback when workspace_folders is absent"
             )]
             let root = init_params.root_uri.as_ref();
-            root.and_then(|uri| semantic::uri_to_path(uri).ok())
+            root.and_then(|uri| paths::uri_to_path(uri.as_str()).ok())
         })
         .map(PathBuf::from);
 
@@ -508,7 +513,7 @@ fn opened_document_path(notif: &Notification) -> Option<String> {
     let params =
         serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params.clone())
             .ok()?;
-    semantic::uri_to_path(&params.text_document.uri).ok()
+    paths::uri_to_path(params.text_document.uri.as_str()).ok()
 }
 
 /// Map a document to the sidecar that owns its language. Implements [SCRIPT-DETECT].
@@ -520,14 +525,9 @@ fn sidecar_for_path<'a>(
     csharp_sidecar: Option<&'a Arc<SidecarManager>>,
     fsharp_sidecar: Option<&'a Arc<SidecarManager>>,
 ) -> Option<&'a Arc<SidecarManager>> {
-    let extension = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    match extension.as_str() {
-        "cs" | "csx" => csharp_sidecar,
-        "fs" | "fsx" | "fsscript" => fsharp_sidecar,
+    match paths::extension_key(file_path).as_deref() {
+        Some("CS" | "CSX") => csharp_sidecar,
+        Some("FS" | "FSX" | "FSSCRIPT") => fsharp_sidecar,
         _ => None,
     }
 }
@@ -593,7 +593,7 @@ async fn handle_csharp_event(
     let Some(path) = event.strip_prefix("diagnostics-settled ") else {
         return;
     };
-    let Ok(uri) = utils::path_to_lsp_uri(path.trim()) else {
+    let Ok(uri) = paths::path_to_lsp_uri(path.trim()) else {
         warn!(path, "Sidecar settle event carried an invalid path");
         return;
     };
@@ -909,6 +909,26 @@ fn handle_request(
         WorkspaceSymbolRequest::METHOD => {
             handle_standard_workspace_symbol(req, parsers, vfs, runtime, fsharp_sidecar)
         }
+        // Active target framework [NETFX-CONTEXT]
+        "sharplsp/targetFramework" => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            target_framework::handle_get(req, runtime, sidecar)
+        }
+        "sharplsp/setTargetFramework" => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            let switched = target_framework::handle_set(req, runtime, sidecar, &connection.sender);
+            if switched.is_ok() {
+                nav_cache.clear();
+                republish_open_diagnostics(
+                    vfs,
+                    runtime,
+                    csharp_sidecar,
+                    fsharp_sidecar,
+                    connection,
+                );
+            }
+            switched
+        }
         // Solution loading
         "sharplsp/loadSolution" => handle_load_solution(
             req,
@@ -1005,7 +1025,7 @@ fn converge_provisional_publication(
     let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };
-    let Ok(file_path) = semantic::uri_to_path(uri) else {
+    let Ok(file_path) = paths::uri_to_path(uri.as_str()) else {
         return;
     };
     runtime.block_on(diagnostics::converge_provisional(
@@ -1322,7 +1342,8 @@ fn handle_standard_workspace_symbol(
 
 /// Append the FCS-sourced workspace symbols matching `query` for one open F#
 /// document. No sidecar / unresolvable path / sidecar error → contributes
-/// nothing, never fails the whole search. `[SHARPLSP-FEATURES-NAVIGATION]`
+/// nothing, never fails the whole search. `[SHARPLSP-FEATURES-NAVIGATION]`,
+/// `[FS-WORKSPACE-SYMBOL]`
 fn collect_fsharp_ws_symbols(
     uri: &Uri,
     runtime: &tokio::runtime::Runtime,
@@ -1333,7 +1354,7 @@ fn collect_fsharp_ws_symbols(
     let Some(sidecar) = fsharp_sidecar else {
         return;
     };
-    let Ok(file_path) = crate::semantic::uri_to_path(uri) else {
+    let Ok(file_path) = crate::paths::uri_to_path(uri.as_str()) else {
         return;
     };
     let Ok(found) = document_symbols::fsharp_workspace_symbols(runtime, sidecar, uri, file_path)
@@ -1500,7 +1521,7 @@ fn handle_notification(
                 // (Roslyn / FCS) sees the current buffer. Routing by language is
                 // essential: without it F# edits never reach the F# sidecar, which
                 // then resolves hover/completion against stale on-disk text.
-                if let Ok(file_path) = semantic::uri_to_path(&doc.uri) {
+                if let Ok(file_path) = paths::uri_to_path(doc.uri.as_str()) {
                     let sidecar = sidecar_for_uri(&doc.uri, csharp_sidecar, fsharp_sidecar);
                     semantic::notify_did_change(&file_path, &doc.text, runtime, sidecar);
                 }
@@ -1530,7 +1551,7 @@ fn handle_notification(
                     nav_cache.invalidate(uri);
                     // Notify the document's own sidecar so the semantic engine
                     // sees the new source text (F# → F# sidecar, C# → C#).
-                    if let Ok(file_path) = semantic::uri_to_path(uri) {
+                    if let Ok(file_path) = paths::uri_to_path(uri.as_str()) {
                         let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar);
                         semantic::notify_did_change(&file_path, &change.text, runtime, sidecar);
                     }
@@ -1571,6 +1592,21 @@ fn handle_notification(
     }
 }
 
+/// Re-publish every open document's diagnostics: a framework switch changes
+/// which `#if` branches compile. [NETFX-CONTEXT]
+fn republish_open_diagnostics(
+    vfs: &Vfs,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+    connection: &Connection,
+) {
+    let open: Vec<Uri> = vfs.iter().map(|entry| entry.key().clone()).collect();
+    for uri in &open {
+        trigger_diagnostics(uri, runtime, csharp_sidecar, fsharp_sidecar, connection);
+    }
+}
+
 /// Spawn a background diagnostic request for the given URI.
 ///
 /// Routes to the correct sidecar based on the document's language.
@@ -1584,7 +1620,7 @@ fn trigger_diagnostics(
     let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };
-    let Ok(file_path) = semantic::uri_to_path(uri) else {
+    let Ok(file_path) = paths::uri_to_path(uri.as_str()) else {
         return;
     };
     diagnostics::request_in_background(

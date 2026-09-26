@@ -1,5 +1,5 @@
 /** Implements [SE-TREE], [SE-SORT], [SE-HOVER], and [SE-CONTEXT-MENUS]. */
-import * as path from 'node:path';
+import { fileNameOf } from './paths';
 import {
   type CancellationToken,
   commands,
@@ -203,13 +203,13 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
   private rebuildTree(): void {
     const phase = state.loadPhase.value;
     if (phase.kind !== 'idle') {
-      // [SE-LOAD-FEEDBACK]: while solutions are being discovered or a
+      // [SE-LOADING-FEEDBACK]: while solutions are being discovered or a
       // solution is loading, a spinner node replaces whatever the tree held —
       // an empty tree reads as "broken", a stale tree reads as "done".
       const message =
         phase.kind === 'discovering'
           ? 'Searching for solutions…'
-          : `Loading ${path.basename(phase.solutionPath)}…`;
+          : `Loading ${fileNameOf(phase.solutionPath)}…`;
       log.traceInfo(`Tree feedback: ${message}`);
       this.roots = [makeFeedbackNode(message)];
       this.onDidChangeEmitter.fire(undefined);
@@ -260,7 +260,7 @@ function buildTree(
   response: WorkspaceSymbolsResponse,
   order: SortOrder,
 ): ExplorerNode[] {
-  const name = path.basename(solutionPath);
+  const name = fileNameOf(solutionPath);
   const node = new ExplorerNode(name, NodeType.Solution, TreeItemCollapsibleState.Expanded);
   node.iconPath = new ThemeIcon('package', new ThemeColor('terminal.ansiGreen'));
   node.sortName = name;
@@ -277,7 +277,7 @@ function buildTree(
 }
 
 function buildProjectNode(project: ProjectNode): ExplorerNode {
-  const file = path.basename(project.path);
+  const file = fileNameOf(project.path);
   const label = `${project.name} (${file})`;
   const node = new ExplorerNode(label, NodeType.Project, TreeItemCollapsibleState.Expanded);
   node.iconPath = new ThemeIcon('project', new ThemeColor('terminal.ansiCyan'));
@@ -586,7 +586,7 @@ function makeErrorNode(message: string): ExplorerNode {
 
 /**
  * Transient node shown while the solution pipeline works — the tree must
- * never just sit blank ([SE-LOAD-FEEDBACK]). `loading~spin` is the same
+ * never just sit blank ([SE-LOADING-FEEDBACK]). `loading~spin` is the same
  * codicon the status bar uses while the LSP is connecting.
  */
 function makeFeedbackNode(message: string): ExplorerNode {

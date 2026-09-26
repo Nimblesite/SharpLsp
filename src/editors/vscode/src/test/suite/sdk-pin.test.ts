@@ -15,7 +15,7 @@ import {
 import { describeSdkPinFailure, existingSdkSatisfiesWorkspace } from '../../dotnetRuntime.js';
 import { candidateDotnetRoots, findDotnetSatisfying } from '../../dotnet-roots.js';
 import { SDK_RESOLUTION_EXIT_CODE, diagnoseBuildFailure } from '../../build.js';
-import { assertContainsAll } from './test-helpers';
+import { assertContainsAll, removeDirRecursive } from './test-helpers';
 
 /**
  * Regression suite for the SDK pin that broke every `dotnet` entry point on a
@@ -60,7 +60,10 @@ suite('global.json SDK pin', () => {
   });
 
   teardown(() => {
-    fs.rmSync(scratchDir, { recursive: true, force: true });
+    // The one delete every suite's scratch goes through. A bare recursive `rmSync`
+    // on Node 24 (the extension host's runtime) descends through a Windows junction
+    // and silently leaves a tree holding a dangling one behind.
+    removeDirRecursive(scratchDir);
   });
 
   test('a lower feature band never satisfies a latestPatch pin', () => {
@@ -139,6 +142,20 @@ suite('global.json SDK pin', () => {
     const exe = fakeDotnet('root', ['10.0.203', '9.0.312']);
     assert.deepEqual(installedSdkVersions(exe), ['10.0.203', '9.0.312']);
     assert.deepEqual(installedSdkVersions(path.join(scratchDir, 'absent', 'dotnet')), []);
+  });
+
+  test('installedSdkVersions lists a linked SDK exactly as hostfxr does', () => {
+    // hostfxr follows a link under `sdk/` (Nix and other store layouts ship the SDK
+    // that way), so `--list-sdks` reports it. A lister that saw only plain
+    // directories told the user a machine that builds had no SDK at all.
+    const exe = fakeDotnet('linked-root', ['9.0.312']);
+    const stored = path.join(scratchDir, 'store', '10.0.303');
+    fs.mkdirSync(stored, { recursive: true });
+    const sdkDir = path.join(path.dirname(exe), 'sdk');
+    fs.symlinkSync(stored, path.join(sdkDir, '10.0.303'), 'junction');
+    fs.symlinkSync(path.join(scratchDir, 'gone'), path.join(sdkDir, '10.0.400'), 'junction');
+    assert.deepEqual(installedSdkVersions(exe), ['10.0.303', '9.0.312']);
+    assert.ok(fs.existsSync(stored), 'listing must never disturb what the link points at');
   });
 
   // ── The bug: acquisition accepted an SDK the workspace could never use ──

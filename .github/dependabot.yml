@@ -1,7 +1,7 @@
 # agent-pmo:a72c926
 #
 # Dependabot — supply-chain defence without PR spam, and without burning CI on
-# `main` for routine bumps. Implements [GITHUB-DEPENDABOT].
+# `main` for routine bumps. Implements [DIST-CI-DEPENDABOT].
 #
 # EVERY bump ends up on the long-lived `dependabot-upgrades` STAGING branch,
 # swept there by .github/workflows/dependabot-automerge.yml:

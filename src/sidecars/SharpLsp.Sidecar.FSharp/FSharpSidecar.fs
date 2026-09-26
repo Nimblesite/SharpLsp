@@ -57,6 +57,12 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
+        // The active target framework of a multi-targeted project. [NETFX-CONTEXT]
+        base.Register("workspace/targetFramework", Helpers.handle (fun (request: Messages.TargetFrameworkRequest) ->
+            Task.FromResult(FSharpTargetFrameworks.current workspace request.FilePath)) Helpers.resultOf)
+        base.Register("workspace/setTargetFramework", Helpers.handle (fun (request: Messages.TargetFrameworkRequest) ->
+            FSharpTargetFrameworks.switch workspace request.FilePath (string request.TargetFramework) CancellationToken.None) Helpers.resultOf)
+
         base.Register("workspace/status", Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
             try
                 let status = if workspace.IsLoaded then "loaded" else "not_loaded"
@@ -224,13 +230,17 @@ type FSharpSidecar() =
                     // [ANALYZERS-DEADCODE-SEVERITY] Merge project-wide dead-code diagnostics
                     // for this file (monorepo mode promotes public deadness to errors).
                     if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then
-                        let! proj = FSharpWorkspace.checkProject workspace
-                        match proj with
-                        | Some projResults ->
-                            let allUses = projResults.GetAllUsesOfAllSymbols()
-                            FSharpAnalyzers.deadCodeDiagnosticsForFile analyzerConfig allUses filePath
-                            |> List.iter results.Add
-                        | None -> ()
+                        // The file's own project decides: a symbol that is not public cannot
+                        // be used from another project, and a public one is reported only in
+                        // monorepo mode, where the projects reading this one in memory count.
+                        let scope = FSharpWorkspace.queryScope workspace filePath
+                        let! projects =
+                            FSharpWorkspace.checkAll
+                                workspace
+                                (if analyzerConfig.Monorepo then scope else List.truncate 1 scope)
+                        let allUses = projects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
+                        FSharpAnalyzers.deadCodeDiagnosticsForFile analyzerConfig allUses filePath
+                        |> List.iter results.Add
                     return Helpers.serializeOk (results.ToArray()) ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)

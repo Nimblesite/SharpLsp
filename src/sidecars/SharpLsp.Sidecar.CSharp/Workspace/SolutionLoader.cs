@@ -1,4 +1,5 @@
 using Outcome;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -28,10 +29,9 @@ internal static class SolutionLoader
 
     internal static bool IsProjectOrSolutionFile(string path)
     {
-        var extension = Path.GetExtension(path);
         return Array.Exists(
             ProjectOrSolutionExtensions,
-            candidate => string.Equals(extension, candidate, StringComparison.OrdinalIgnoreCase)
+            candidate => NativePaths.HasExtension(path, candidate)
         );
     }
 
@@ -70,15 +70,10 @@ internal static class SolutionLoader
 
     private static string PickBestSolution(string[] solutionFiles, string workspacePath)
     {
-        var dirName = Path.GetFileName(workspacePath);
+        var dirName = NativePaths.NameOf(workspacePath);
         var match = Array.Find(
             solutionFiles,
-            s =>
-                string.Equals(
-                    Path.GetFileNameWithoutExtension(s),
-                    dirName,
-                    StringComparison.OrdinalIgnoreCase
-                )
+            s => NativePaths.Comparer.Equals(NativePaths.StemOf(s), dirName)
         );
         return match ?? solutionFiles[0];
     }

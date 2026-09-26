@@ -24,10 +24,13 @@ const QUICK_SUCCESS: Spec = ("cmd", &["/C", "exit 0"]);
 const QUICK_SUCCESS: Spec = ("true", &[]);
 
 /// Command line for a child that stays alive for ~60s (kill/cleanup tests).
-/// `ping -n 60` fires one echo per second — the closest `cmd` builtin
-/// equivalent of `sleep 60`; its output is discarded by [`spawn`].
+/// `ping -n 60` fires one echo per second — the closest built-in equivalent of
+/// `sleep 60`; its output is discarded by [`spawn`]. It runs as `ping.exe`
+/// itself, never under `cmd /C`: a kill ends only the process it names, so a
+/// `cmd` wrapper left `ping` alive for the rest of its minute, holding the
+/// test runner's inherited pipes open — a leaked process on every run.
 #[cfg(windows)]
-const LONG_LIVED: Spec = ("cmd", &["/C", "ping -n 60 127.0.0.1"]);
+const LONG_LIVED: Spec = ("ping", &["-n", "60", "127.0.0.1"]);
 
 /// Command line for a child that stays alive for ~60s (kill/cleanup tests).
 #[cfg(not(windows))]

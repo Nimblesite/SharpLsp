@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1515 // Types can be internal
@@ -11,10 +12,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// </summary>
 public sealed class SolutionLoaderTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-sln-loader-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-sln-loader-{Guid.NewGuid():N}");
 
     public SolutionLoaderTests()
     {
@@ -44,7 +42,7 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Single_sln_in_root_is_found()
     {
-        File.WriteAllText(Path.Combine(_root, "App.sln"), "");
+        File.WriteAllText(NativePaths.Join(_root, "App.sln"), "");
         var result = SolutionLoader.FindSolutionOrProject(_root);
         Assert.True(
             result is Outcome.Result<string?, string>.Ok<string?, string> { Value: not null }
@@ -54,7 +52,7 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Explicit_sln_path_returns_that_exact_file()
     {
-        var slnPath = Path.Combine(_root, "Exact.sln");
+        var slnPath = NativePaths.Join(_root, "Exact.sln");
         File.WriteAllText(slnPath, "");
         var value = Resolve(slnPath);
         Assert.Equal(slnPath, value);
@@ -76,12 +74,12 @@ public sealed class SolutionLoaderTests : IDisposable
     public void Multiple_sln_in_subdirs_should_not_pick_arbitrary_one()
     {
         // Create two .sln files in different subdirectories.
-        var subA = Path.Combine(_root, "examples");
-        var subB = Path.Combine(_root, "sidecars");
+        var subA = NativePaths.Join(_root, "examples");
+        var subB = NativePaths.Join(_root, "sidecars");
         Directory.CreateDirectory(subA);
         Directory.CreateDirectory(subB);
-        File.WriteAllText(Path.Combine(subA, "Test.sln"), "");
-        File.WriteAllText(Path.Combine(subB, "Real.sln"), "");
+        File.WriteAllText(NativePaths.Join(subA, "Test.sln"), "");
+        File.WriteAllText(NativePaths.Join(subB, "Real.sln"), "");
 
         var result = SolutionLoader.FindSolutionOrProject(_root);
 
@@ -106,10 +104,10 @@ public sealed class SolutionLoaderTests : IDisposable
     public void Explicit_sln_path_loads_exact_solution_not_recursive_search()
     {
         // Create two .sln files — one the user wants, one they don't.
-        var wanted = Path.Combine(_root, "sidecars", "Wanted.sln");
-        var unwanted = Path.Combine(_root, "examples", "Unwanted.sln");
-        Directory.CreateDirectory(Path.GetDirectoryName(wanted)!);
-        Directory.CreateDirectory(Path.GetDirectoryName(unwanted)!);
+        var wanted = NativePaths.Join(_root, "sidecars", "Wanted.sln");
+        var unwanted = NativePaths.Join(_root, "examples", "Unwanted.sln");
+        Directory.CreateDirectory(NativePaths.DirectoryOf(wanted));
+        Directory.CreateDirectory(NativePaths.DirectoryOf(unwanted));
         File.WriteAllText(wanted, "");
         File.WriteAllText(unwanted, "");
 
@@ -121,7 +119,7 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Csproj_in_root_is_found_when_no_sln_present()
     {
-        var csproj = Path.Combine(_root, "App.csproj");
+        var csproj = NativePaths.Join(_root, "App.csproj");
         File.WriteAllText(csproj, "");
 
         var value = Resolve(_root);
@@ -131,7 +129,7 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Nonexistent_path_returns_null()
     {
-        var missing = Path.Combine(_root, "does_not_exist");
+        var missing = NativePaths.Join(_root, "does_not_exist");
 
         var result = SolutionLoader.FindSolutionOrProject(missing);
 
@@ -143,10 +141,10 @@ public sealed class SolutionLoaderTests : IDisposable
     public void Multiple_sln_in_root_picks_one_matching_dir_name()
     {
         // Workspace dir "MyApp" with "Other.sln" and "MyApp.sln" — must pick MyApp.sln.
-        var app = Path.Combine(_root, "MyApp");
+        var app = NativePaths.Join(_root, "MyApp");
         Directory.CreateDirectory(app);
-        var wanted = Path.Combine(app, "MyApp.sln");
-        var other = Path.Combine(app, "Other.sln");
+        var wanted = NativePaths.Join(app, "MyApp.sln");
+        var other = NativePaths.Join(app, "Other.sln");
         File.WriteAllText(wanted, "");
         File.WriteAllText(other, "");
 
@@ -158,8 +156,8 @@ public sealed class SolutionLoaderTests : IDisposable
     public void Multiple_sln_in_root_without_matching_name_falls_back_to_first()
     {
         // Two unrelated .sln files in root — pick the first one returned by OS.
-        var a = Path.Combine(_root, "A.sln");
-        var b = Path.Combine(_root, "B.sln");
+        var a = NativePaths.Join(_root, "A.sln");
+        var b = NativePaths.Join(_root, "B.sln");
         File.WriteAllText(a, "");
         File.WriteAllText(b, "");
 
@@ -171,9 +169,9 @@ public sealed class SolutionLoaderTests : IDisposable
     public void Single_csproj_in_subdir_is_found_recursively()
     {
         // No .sln, one .csproj nested — recursive search should find it.
-        var sub = Path.Combine(_root, "nested", "Project");
+        var sub = NativePaths.Join(_root, "nested", "Project");
         Directory.CreateDirectory(sub);
-        var csproj = Path.Combine(sub, "Deep.csproj");
+        var csproj = NativePaths.Join(sub, "Deep.csproj");
         File.WriteAllText(csproj, "");
 
         var value = Resolve(_root);
@@ -183,9 +181,9 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Single_sln_in_subdir_is_found_recursively()
     {
-        var sub = Path.Combine(_root, "nested", "Solution");
+        var sub = NativePaths.Join(_root, "nested", "Solution");
         Directory.CreateDirectory(sub);
-        var sln = Path.Combine(sub, "Nested.sln");
+        var sln = NativePaths.Join(sub, "Nested.sln");
         File.WriteAllText(sln, "");
 
         var value = Resolve(_root);
@@ -195,7 +193,7 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Single_slnx_in_root_is_found()
     {
-        var slnx = Path.Combine(_root, "App.slnx");
+        var slnx = NativePaths.Join(_root, "App.slnx");
         File.WriteAllText(slnx, "");
 
         var value = Resolve(_root);
@@ -207,9 +205,9 @@ public sealed class SolutionLoaderTests : IDisposable
     {
         // Mirrors the user-reported case: TradiSite/backend/AiCms.slnx where
         // the workspace root is one level above the .slnx.
-        var sub = Path.Combine(_root, "backend");
+        var sub = NativePaths.Join(_root, "backend");
         Directory.CreateDirectory(sub);
-        var slnx = Path.Combine(sub, "AiCms.slnx");
+        var slnx = NativePaths.Join(sub, "AiCms.slnx");
         File.WriteAllText(slnx, "");
 
         var value = Resolve(_root);
@@ -219,7 +217,7 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Explicit_slnx_path_returns_that_exact_file()
     {
-        var slnx = Path.Combine(_root, "Exact.slnx");
+        var slnx = NativePaths.Join(_root, "Exact.slnx");
         File.WriteAllText(slnx, "");
 
         var value = Resolve(slnx);
@@ -229,11 +227,11 @@ public sealed class SolutionLoaderTests : IDisposable
     [Fact]
     public void Slnx_in_root_takes_priority_over_recursive_csproj()
     {
-        var slnx = Path.Combine(_root, "App.slnx");
+        var slnx = NativePaths.Join(_root, "App.slnx");
         File.WriteAllText(slnx, "");
-        var sub = Path.Combine(_root, "nested");
+        var sub = NativePaths.Join(_root, "nested");
         Directory.CreateDirectory(sub);
-        File.WriteAllText(Path.Combine(sub, "Other.csproj"), "");
+        File.WriteAllText(NativePaths.Join(sub, "Other.csproj"), "");
 
         var value = Resolve(_root);
         Assert.Equal(slnx, value);
@@ -243,10 +241,10 @@ public sealed class SolutionLoaderTests : IDisposable
     public void Slnx_in_root_is_picked_with_matching_name_alongside_sln()
     {
         // Coexisting .sln and .slnx — name-based tiebreak still applies.
-        var app = Path.Combine(_root, "MyApp");
+        var app = NativePaths.Join(_root, "MyApp");
         Directory.CreateDirectory(app);
-        var wanted = Path.Combine(app, "MyApp.slnx");
-        var other = Path.Combine(app, "Other.sln");
+        var wanted = NativePaths.Join(app, "MyApp.slnx");
+        var other = NativePaths.Join(app, "Other.sln");
         File.WriteAllText(wanted, "");
         File.WriteAllText(other, "");
 

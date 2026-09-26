@@ -400,32 +400,36 @@ function netCoreAppMajor(line: string): number | undefined {
 }
 
 /**
- * The two NEWEST target-framework monikers this agent can actually RUN, oldest
- * first — the `<TargetFrameworks>` a multi-targeted fixture must declare.
- *
- * Pinning the pair does not work: a fixture whose second framework has no
- * installed runtime never gets a test host, so VSTest never announces its
- * assembly and the project silently degrades to a single target — which would
- * make a multi-targeting regression suite pass vacuously. Agents disagree about
- * which runtimes they carry (a developer box and a CI runner rarely match), so
- * the pair is READ off the machine. The two NEWEST are taken rather than the
- * oldest and the newest because an out-of-support moniker makes the SDK
- * complain about the fixture instead of building it.
+ * Every `netN.0` moniker this agent can RUN (an installed `Microsoft.NETCore.App`
+ * runtime), oldest first. Read off the machine, never pinned: a target with no
+ * runtime gets no test host and silently drops out of a multi-targeted fixture.
+ */
+export async function installedNetCoreTargets(cwd: string): Promise<string[]> {
+  const output = await dotnet(['--list-runtimes'], cwd);
+  const majors = new Set(output.split('\n').flatMap((raw) => netCoreAppMajor(raw.trim()) ?? []));
+  return [...majors].sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
+}
+
+/**
+ * .NET Framework monikers every Windows agent can RUN ([NETFX-SCOPE]): the
+ * in-place 4.8.x CLR executes all of them, and the SDK compiles each against its
+ * own reference assemblies, so each defines its own `NET462`/`NET472`/`NET48`.
+ */
+export const NET_FRAMEWORK_TARGETS: readonly string[] = ['net462', 'net472', 'net48'];
+
+/**
+ * The two NEWEST `netN.0` monikers this agent can RUN, oldest first. The two
+ * newest rather than oldest-and-newest: an out-of-support moniker makes the SDK
+ * warn about the fixture instead of building it.
  */
 export async function installedFrameworkPair(cwd: string): Promise<string[]> {
-  const output = await dotnet(['--list-runtimes'], cwd);
-  const majors = new Set<number>();
-  for (const raw of output.split('\n')) {
-    const major = netCoreAppMajor(raw.trim());
-    if (major !== undefined) majors.add(major);
-  }
-  const newest = [...majors].sort((left, right) => right - left).slice(0, 2);
-  if (newest.length < 2) {
+  const targets = await installedNetCoreTargets(cwd);
+  if (targets.length < 2) {
     throw new Error(
       `multi-targeting needs two runnable ${NETCORE_APP} runtimes; this agent has: ${
-        [...majors].join(', ') || '(none)'
+        targets.join(', ') || '(none)'
       }`,
     );
   }
-  return newest.sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
+  return targets.slice(-2);
 }

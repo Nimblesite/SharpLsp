@@ -29,7 +29,12 @@ import {
   type TestDebugFixture,
 } from './debug-test-kit';
 import { DebugSessionRecorder } from './run-debug-kit';
-import { activateTestExplorer, runViaProfile } from './test-explorer-kit';
+import {
+  activateTestExplorer,
+  discoverSolution,
+  findItem,
+  runViaProfile,
+} from './test-explorer-kit';
 import { closeAllEditors, comparablePath, eq, requireAt } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
@@ -92,6 +97,27 @@ export function useDebugTestFixture(
     assert.ok(current, 'the debug-test harness must be created in setup');
     return current;
   };
+}
+
+/**
+ * Discover `fixture`, expecting `expected`, and return the row for `fqn`: the
+ * LEAF the Debug button applies to.
+ */
+export async function debuggableRow(
+  fixture: TestDebugFixture,
+  expected: readonly string[],
+  fqn: string,
+): Promise<vscode.TestItem> {
+  const api = await activateTestExplorer();
+  const discovered = await discoverSolution(api, fixture.solutionPath, expected);
+  assert.ok(
+    discovered.includes(fqn),
+    `${fqn} must be discovered before it can be debugged; found: ${discovered.join(', ')}`,
+  );
+  const item = findItem(api.testController.items, fqn);
+  assert.ok(item, `the TestItem for ${fqn} must exist`);
+  eq(item.children.size, 0, `${fqn} is a test, so it is a LEAF the Debug button applies to`);
+  return item;
 }
 
 /** Press the Debug button on `items`, exactly as the workbench does. */

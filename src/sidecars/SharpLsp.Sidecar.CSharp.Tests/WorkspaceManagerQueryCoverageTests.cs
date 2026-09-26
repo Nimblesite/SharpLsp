@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -418,10 +419,7 @@ public sealed class WorkspaceManagerQueryFixture : IAsyncLifetime, IDisposable
         }
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wmq-tests-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wmq-tests-{Guid.NewGuid():N}");
 
     private WorkspaceManager? _manager;
 
@@ -444,8 +442,8 @@ public sealed class WorkspaceManagerQueryFixture : IAsyncLifetime, IDisposable
               </PropertyGroup>
             </Project>
             """;
-        var csprojPath = Path.Combine(_root, "Query.csproj");
-        SourcePath = Path.Combine(_root, "Source.cs");
+        var csprojPath = NativePaths.Join(_root, "Query.csproj");
+        SourcePath = NativePaths.Join(_root, "Source.cs");
         await File.WriteAllTextAsync(csprojPath, csproj).ConfigureAwait(false);
         await File.WriteAllTextAsync(SourcePath, Source).ConfigureAwait(false);
 

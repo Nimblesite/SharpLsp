@@ -21,7 +21,7 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import { XMLParser } from 'fast-xml-parser';
 import type { TestOutcome } from './test-run-output.js';
 import { withoutAdapterUniqueId } from './test-names.js';
@@ -47,6 +47,20 @@ export interface TrxTestResult {
   readonly durationMs: number | undefined;
   readonly message: string | undefined;
   readonly stackTrace: string | undefined;
+  /**
+   * Every row merged into this result, with the assembly (`TestMethod/@codeBase`)
+   * that reported it — which is what names the FRAMEWORK of each row when one
+   * project targets several ([NETFX-TEST-RESULTS]).
+   */
+  readonly sources?: readonly TrxSourceResult[];
+}
+
+/** One reported row and the built assembly it came from. */
+export interface TrxSourceResult {
+  readonly source: string;
+  readonly outcome: TestOutcome;
+  readonly message: string | undefined;
+  readonly stackTrace: string | undefined;
 }
 
 interface TrxUnitTestResult {
@@ -62,6 +76,7 @@ interface TrxUnitTestResult {
 interface TrxTestMethod {
   readonly '@_className'?: string;
   readonly '@_name'?: string;
+  readonly '@_codeBase'?: string;
 }
 
 interface TrxUnitTest {
@@ -105,7 +120,7 @@ const OUTCOMES = new Map<string, TestOutcome>([
 
 /** Locate `<name>` directly inside `dir`, or `undefined`. */
 export function findTrxFile(dir: string, name: string): string | undefined {
-  const candidate = path.join(dir, name);
+  const candidate = joinPath(dir, name);
   return fs.existsSync(candidate) ? candidate : undefined;
 }
 
@@ -129,8 +144,11 @@ export function parseTrxReport(xml: string): TrxReport {
   const doc: TrxDocument = trxParser.parse(xml);
   const definitions = doc.TestRun?.TestDefinitions?.UnitTest ?? [];
   const namesById = new Map(definitions.map((unit) => [unit['@_id'] ?? '', qualifiedName(unit)]));
+  const sourcesById = new Map(
+    definitions.map((unit) => [unit['@_id'] ?? '', unit.TestMethod?.['@_codeBase']]),
+  );
   const results = (doc.TestRun?.Results?.UnitTestResult ?? []).map((result) =>
-    toTestResult(result, namesById),
+    withSource(toTestResult(result, namesById), sourcesById.get(result['@_testId'] ?? '')),
   );
   const runInfos = (doc.TestRun?.ResultSummary?.RunInfos?.RunInfo ?? []).map((info) => ({
     outcome: info['@_outcome'] ?? '',
@@ -180,6 +198,13 @@ function toTestResult(
     message: textOrUndefined(error?.Message),
     stackTrace: textOrUndefined(error?.StackTrace),
   };
+}
+
+/** `result` carrying itself as its one source row, when the report named the assembly. */
+function withSource(result: TrxTestResult, source: string | undefined): TrxTestResult {
+  if (source === undefined || source === '') return result;
+  const { outcome, message, stackTrace } = result;
+  return { ...result, sources: [{ source, outcome, message, stackTrace }] };
 }
 
 /** TRX writes `hh:mm:ss.fffffff`; the Testing API wants milliseconds. */

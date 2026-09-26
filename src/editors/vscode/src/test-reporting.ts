@@ -7,14 +7,15 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import * as vscode from 'vscode';
 import { info } from './log';
 import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
 import { ownedBy, type MtpRunPlan } from './test-listing-model';
+import { perFrameworkFailures, type FrameworkIndex } from './test-frameworks';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
-import { singleLine } from './utils';
+import { removeDirRecursive, singleLine } from './utils';
 
 /** Writes one result into the controller's status-lens cache. */
 export type CacheWriter = (testId: string, result: CachedTestResult) => void;
@@ -47,9 +48,12 @@ export const COVERAGE_DIR = '.sharplsp-coverage';
  * (see {@link reportOutcome}), so the expected/actual block keeps its layout
  * exactly where there is room to render it.
  */
-export function cachedFrom(result: TrxTestResult): CachedTestResult {
+export function cachedFrom(result: TrxTestResult, frameworks?: FrameworkIndex): CachedTestResult {
   const failure = result.outcome === 'failed' ? 'Test failed' : undefined;
-  const message = result.message === undefined ? failure : singleLine(result.message);
+  const text = result.message === undefined ? failure : singleLine(result.message);
+  const failing = frameworks === undefined ? undefined : perFrameworkFailures(result, frameworks);
+  const named = failing?.map((each) => each.framework).join(', ');
+  const message = named === undefined || named === '' ? text : `[${named}] ${text ?? ''}`;
   return {
     outcome: result.outcome,
     passed: result.outcome === 'passed',
@@ -69,18 +73,30 @@ export function reportOutcome(
   tests: readonly vscode.TestItem[],
   outcome: ReportableOutcome,
   cache: CacheWriter | undefined,
+  frameworks?: FrameworkIndex,
 ): void {
   if (outcome.failure !== undefined) {
-    info(`Test run failed: ${outcome.failure}`);
+    info(`Test run failed: ${singleLine(outcome.failure)}`);
   }
+  reportResults(run, tests, outcome, cache, frameworks);
+}
+
+/** Map the outcome onto each test, logging nothing. */
+function reportResults(
+  run: vscode.TestRun,
+  tests: readonly vscode.TestItem[],
+  outcome: ReportableOutcome,
+  cache: CacheWriter | undefined,
+  frameworks?: FrameworkIndex,
+): void {
   for (const test of tests) {
     const result = outcome.results.get(test.id);
     if (result === undefined) {
       reportMissing(run, test, outcome, cache);
       continue;
     }
-    cache?.(test.id, cachedFrom(result));
-    reportResult(run, test, result);
+    cache?.(test.id, cachedFrom(result, frameworks));
+    reportResult(run, test, result, frameworks);
   }
 }
 
@@ -89,6 +105,7 @@ export function reportOutcome(
  * BY DESIGN is left without a verdict. An MTP module is debugged without a TRX
  * report ([TEST-MTP-DEBUG]), so its tests stay unmarked instead of painted
  * "No result reported"; a run that FAILED still reports that on every test.
+ * The debug flow has already logged the failure as a debug run's.
  */
 export function reportDebugOutcome(
   run: vscode.TestRun,
@@ -100,7 +117,7 @@ export function reportDebugOutcome(
     mtp !== undefined && ownedBy(mtp, test.id) && !outcome.results.has(test.id);
   const reportable =
     outcome.failure === undefined ? tests.filter((test) => !unreported(test)) : tests;
-  reportOutcome(run, reportable, outcome, undefined);
+  reportResults(run, reportable, outcome, undefined);
 }
 
 /** A selected test the run never reported on: build failure or no match. */
@@ -133,6 +150,7 @@ export function reportResult(
   run: vscode.TestRun,
   test: vscode.TestItem,
   result: TrxTestResult,
+  frameworks?: FrameworkIndex,
 ): void {
   if (result.outcome === 'passed') {
     run.passed(test, result.durationMs);
@@ -142,24 +160,35 @@ export function reportResult(
     run.skipped(test);
     return;
   }
+  run.failed(test, failureMessages(result, frameworks), result.durationMs);
+}
+
+/**
+ * The failure pane's messages: one per FAILING framework, `[net48] …`, when the
+ * rows came from several frameworks ([NETFX-TEST-RESULTS]); else the one text.
+ */
+function failureMessages(result: TrxTestResult, frameworks?: FrameworkIndex): vscode.TestMessage[] {
+  const failing = frameworks === undefined ? undefined : perFrameworkFailures(result, frameworks);
+  if (failing !== undefined && failing.length > 0) {
+    return failing.map((each) => new vscode.TestMessage(`[${each.framework}] ${each.text}`));
+  }
   const detail = [result.message, result.stackTrace]
     .filter((part) => part !== undefined)
     .join('\n');
-  run.failed(
-    test,
-    new vscode.TestMessage(detail === '' ? 'Test failed' : detail),
-    result.durationMs,
-  );
+  return [new vscode.TestMessage(detail === '' ? 'Test failed' : detail)];
 }
 
 /**
  * An EMPTY `.sharplsp-coverage` next to the solution. `findCoberturaFile` takes
  * the first report one level down, so a directory left over from an earlier run
- * makes the Testing view show yesterday's coverage for today's run.
+ * makes the Testing view show yesterday's coverage for today's run. It is the
+ * run's results directory in the user's repo, so a link in it, or the directory
+ * itself being one, loses the link and never what it names.
  */
 export function freshCoverageDir(cwd: string): string {
-  const dir = path.join(cwd, COVERAGE_DIR);
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  const dir = joinPath(cwd, COVERAGE_DIR);
+  const removed = removeDirRecursive(dir);
+  if (!removed.ok) throw new Error(removed.error);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

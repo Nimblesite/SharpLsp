@@ -1,15 +1,14 @@
+#pragma warning disable RS1035 // File IO banned for analyzers - tests own temp fixtures
 using SharpLsp.Sidecar.Common.Solutions;
 
 #pragma warning disable CA1515 // Types can be internal
-#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers - tests own temp fixtures
 #pragma warning disable IDE0058 // Expression value is never used
 
 namespace SharpLsp.Sidecar.Common.Tests;
 
 public sealed class SolutionFileReaderTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
+    private readonly string _root = NativePaths.Temp(
         $"sharplsp-solution-reader-{Guid.NewGuid():N}"
     );
 
@@ -31,7 +30,7 @@ public sealed class SolutionFileReaderTests : IDisposable
     public async Task Read_sln_returns_project_model()
     {
         WriteProject("src/App/App.csproj");
-        var slnPath = Path.Combine(_root, "App.sln");
+        var slnPath = NativePaths.Resolve(_root, "App.sln");
         await File.WriteAllTextAsync(
             slnPath,
             """
@@ -50,7 +49,7 @@ public sealed class SolutionFileReaderTests : IDisposable
         var project = Assert.Single(model.Projects);
         Assert.Equal("App", project.DisplayName);
         Assert.EndsWith(
-            Path.Combine("src", "App", "App.csproj"),
+            NativePaths.Join("src", "App", "App.csproj"),
             project.Path,
             StringComparison.Ordinal
         );
@@ -104,7 +103,7 @@ public sealed class SolutionFileReaderTests : IDisposable
         Assert.Equal("src", childFolder.ParentName);
 
         var fsProject = model.Projects.Single(project =>
-            project.RelativePath.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+            NativePaths.HasExtension(project.RelativePath, ".fsproj")
         );
         Assert.Equal("tests", fsProject.ParentFolder);
         Assert.Equal("/src/tests/", fsProject.ParentFolderPath);
@@ -114,7 +113,7 @@ public sealed class SolutionFileReaderTests : IDisposable
     public async Task Read_slnx_solution_items_do_not_create_projects()
     {
         WriteProject("src/App/App.csproj");
-        await File.WriteAllTextAsync(Path.Combine(_root, "README.md"), "# App");
+        await File.WriteAllTextAsync(NativePaths.Resolve(_root, "README.md"), "# App");
         var slnxPath = WriteSlnx(
             """
             <Solution>
@@ -172,7 +171,7 @@ public sealed class SolutionFileReaderTests : IDisposable
     [Fact]
     public async Task Read_nonexistent_file_returns_error()
     {
-        var missing = Path.Combine(_root, "does-not-exist.sln");
+        var missing = NativePaths.Resolve(_root, "does-not-exist.sln");
 
         var result = await SolutionFileReader.ReadAsync(missing);
 
@@ -187,7 +186,7 @@ public sealed class SolutionFileReaderTests : IDisposable
     [Fact]
     public async Task Read_unsupported_extension_returns_error()
     {
-        var textPath = Path.Combine(_root, "notes.txt");
+        var textPath = NativePaths.Resolve(_root, "notes.txt");
         await File.WriteAllTextAsync(textPath, "not a solution");
 
         var result = await SolutionFileReader.ReadAsync(textPath);
@@ -217,7 +216,7 @@ public sealed class SolutionFileReaderTests : IDisposable
     public async Task Read_slnx_with_absolute_project_path_resolves_to_full_path()
     {
         WriteProject("src/App/App.csproj");
-        var absoluteProject = Path.Combine(_root, "src", "App", "App.csproj");
+        var absoluteProject = NativePaths.Resolve(_root, "src", "App", "App.csproj");
         var slnxPath = WriteSlnx(
             $"""
             <Solution>
@@ -229,20 +228,20 @@ public sealed class SolutionFileReaderTests : IDisposable
         var model = AssertOk(await SolutionFileReader.ReadAsync(slnxPath));
 
         var project = Assert.Single(model.Projects);
-        Assert.Equal(Path.GetFullPath(absoluteProject), project.Path);
+        Assert.Equal(NativePaths.NormalizeFullPath(absoluteProject), project.Path);
     }
 
     private string WriteSlnx(string content)
     {
-        var path = Path.Combine(_root, "App.slnx");
+        var path = NativePaths.Resolve(_root, "App.slnx");
         File.WriteAllText(path, content);
         return path;
     }
 
     private void WriteProject(string relativePath)
     {
-        var path = Path.Combine(_root, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var path = NativePaths.Resolve(_root, relativePath);
+        Directory.CreateDirectory(NativePaths.DirectoryOf(path));
         File.WriteAllText(
             path,
             """

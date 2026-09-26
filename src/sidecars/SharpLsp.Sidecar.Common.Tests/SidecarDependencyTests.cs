@@ -44,7 +44,7 @@ public sealed class SidecarDependencyTests
             {
                 Assert.True(
                     required == pinned,
-                    $"{Path.GetFileName(project)} pins FSharp.Core {pinned}; "
+                    $"{NativePaths.NameOf(project)} pins FSharp.Core {pinned}; "
                         + $"FSharp.Compiler.Service {fcsVersion} requires exactly "
                         + $"{required} (NU1608)"
                 );
@@ -64,8 +64,8 @@ public sealed class SidecarDependencyTests
                     && PinnedVersion(local) < PinnedVersion(version)
                 )
                 {
-                    yield return $"{Path.GetFileName(projectPath)} pins {package} {local}, "
-                        + $"below {version} required via {Path.GetFileName(referenced)} (NU1605)";
+                    yield return $"{NativePaths.NameOf(projectPath)} pins {package} {local}, "
+                        + $"below {version} required via {NativePaths.NameOf(referenced)} (NU1605)";
                 }
             }
         }
@@ -84,9 +84,9 @@ public sealed class SidecarDependencyTests
 
     private static bool IsBuildArtifact(string path)
     {
-        var separator = Path.DirectorySeparatorChar;
-        return path.Contains($"{separator}obj{separator}", StringComparison.Ordinal)
-            || path.Contains($"{separator}bin{separator}", StringComparison.Ordinal);
+        var slashed = NativePaths.Slashed(path);
+        return slashed.Contains("/obj/", StringComparison.Ordinal)
+            || slashed.Contains("/bin/", StringComparison.Ordinal);
     }
 
     private static string SidecarsDirectory()
@@ -94,7 +94,7 @@ public sealed class SidecarDependencyTests
         var current = new DirectoryInfo(AppContext.BaseDirectory);
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "SharpLsp.Sidecars.sln")))
+            if (File.Exists(NativePaths.Resolve(current.FullName, "SharpLsp.Sidecars.sln")))
             {
                 return current.FullName;
             }
@@ -129,14 +129,13 @@ public sealed class SidecarDependencyTests
 
     private static IEnumerable<string> DirectProjectReferences(string projectPath)
     {
-        var directory = Path.GetDirectoryName(projectPath)!;
+        var directory = NativePaths.DirectoryOf(projectPath);
         return XDocument
             .Load(projectPath)
             .Descendants("ProjectReference")
             .Select(reference => reference.Attribute("Include")?.Value)
             .Where(include => include is not null)
-            .Select(include => include!.Replace('\\', Path.DirectorySeparatorChar))
-            .Select(include => Path.GetFullPath(Path.Combine(directory, include)));
+            .Select(include => NativePaths.Resolve(directory, include!));
     }
 
     private static HashSet<string> TransitiveProjectReferences(string projectPath)
@@ -166,12 +165,12 @@ public sealed class SidecarDependencyTests
     {
         var packagesRoot =
             Environment.GetEnvironmentVariable("NUGET_PACKAGES")
-            ?? Path.Combine(
+            ?? NativePaths.Resolve(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".nuget",
                 "packages"
             );
-        var nuspec = Path.Combine(
+        var nuspec = NativePaths.Resolve(
             packagesRoot,
             "fsharp.compiler.service",
             fcsVersion,

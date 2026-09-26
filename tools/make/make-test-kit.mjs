@@ -15,7 +15,8 @@ export function dryRun(target, args = []) {
         },
     );
     assert.equal(status, 0, `make -n ${target} failed:\n${stderr}`);
-    return stdout;
+    // Native make on Windows writes CRLF to a pipe; recipes are matched by line.
+    return stdout.replace(/\r\n/g, "\n");
 }
 
 export function stepAt(recipe, needle) {

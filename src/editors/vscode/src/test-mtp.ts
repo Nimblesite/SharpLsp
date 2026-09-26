@@ -14,7 +14,7 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { findGlobalJson } from './global-json.js';
 import { isRecord } from './utils.js';
 
 /** The `global.json` value that selects MTP, lower-cased for comparison. */
@@ -73,23 +73,10 @@ export function mtpRunnerSelected(globalJson: string): boolean {
 }
 
 /**
- * The nearest `global.json` at or above `startDir`, or `undefined`.
- *
- * The SDK resolves the runner the same way, so a solution in a sub-directory of
- * the repository that holds the opt-in must find it too.
+ * True when the nearest `global.json` at or above `startDir` selects the MTP
+ * runner. The SDK resolves the runner the same way, so a solution in a
+ * sub-directory of the repository that holds the opt-in finds it too.
  */
-export function findGlobalJson(startDir: string): string | undefined {
-  let current = path.resolve(startDir);
-  for (;;) {
-    const candidate = path.join(current, 'global.json');
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(current);
-    if (parent === current) return undefined;
-    current = parent;
-  }
-}
-
-/** True when the `global.json` above `startDir` selects the MTP runner. */
 export function usesMtpRunner(startDir: string): boolean {
   const file = findGlobalJson(startDir);
   if (file === undefined) return false;

@@ -14,6 +14,7 @@ open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpDeclarationKindTests
+open SharpLsp.Sidecar.Common
 
 /// An editor sends `didChange` for files the workspace has never heard of —
 /// including before the project finishes cracking. The buffer must still be
@@ -21,7 +22,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpDeclarationKindTests
 [<Fact>]
 let ``didChange before a project loads still records the live buffer`` () =
     let fresh = FSharpWorkspace.create ()
-    let path = Path.Combine(Path.GetTempPath(), "sharplsp-unloaded-buffer.fs")
+    let path = NativePaths.Temp("sharplsp-unloaded-buffer.fs")
     let text = "module Unloaded\n\nlet typedButNeverSaved = 1\n"
 
     FSharpWorkspace.applyDidChange fresh path text
@@ -35,12 +36,12 @@ let ``didChange before a project loads still records the live buffer`` () =
 [<Fact>]
 let ``a request path resolves to the overlay key when no project is loaded`` () =
     let fresh = FSharpWorkspace.create ()
-    let relative = Path.Combine(".", "Unloaded.fs")
+    let relative = NativePaths.Join(".", "Unloaded.fs")
 
     let resolved = FSharpWorkspace.projectFilePath fresh relative
 
-    Assert.Equal(FSharpWorkspaceRuntime.overlayKey relative, resolved)
-    Assert.True(Path.IsPathRooted(resolved), "overlay keys are absolute so one file has one key")
+    Assert.Equal(SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath relative, resolved)
+    Assert.True(NativePaths.IsRooted(resolved), "overlay keys are absolute so one file has one key")
 
 /// Completion, hover and diagnostics all funnel through a check. Without a
 /// project there is nothing to check against, so the check must decline rather
@@ -48,7 +49,7 @@ let ``a request path resolves to the overlay key when no project is loaded`` () 
 [<Fact>]
 let ``checking a file against an unloaded workspace declines instead of throwing`` () = task {
     let fresh = FSharpWorkspace.create ()
-    let path = Path.Combine(Path.GetTempPath(), "sharplsp-unloaded-check.fs")
+    let path = NativePaths.Temp("sharplsp-unloaded-check.fs")
 
     let! withSource = FSharpWorkspace.checkFileWithSource fresh path "module Unloaded\nlet x = 1\n"
     let! project = FSharpWorkspace.checkProject fresh
@@ -90,7 +91,10 @@ let ``no symbol belongs to a workspace that has not been loaded`` () = task {
 [<Fact>]
 let ``a range that names no file never becomes a navigation target`` () =
     let anonymous = Range.mkRange "" (Position.mkPos 1 0) (Position.mkPos 1 4)
-    let real = Range.mkRange "/src/Real.fs" (Position.mkPos 3 2) (Position.mkPos 3 8)
+    // A full path on THIS platform: FCS normalizes every file it is given, so
+    // `/src/Real.fs` comes back as `C:\src\Real.fs` on Windows.
+    let realFile = NativePaths.Temp("src", "Real.fs")
+    let real = Range.mkRange realFile (Position.mkPos 3 2) (Position.mkPos 3 8)
 
     Assert.True((FSharpWorkspace.rangeToLocation anonymous).IsNone)
 
@@ -98,7 +102,7 @@ let ``a range that names no file never becomes a navigation target`` () =
     | None -> failwith "a range with a real file must produce a location"
     | Some location ->
         // Ranges are 1-based, LSP locations are 0-based.
-        Assert.Equal("/src/Real.fs", location.FilePath)
+        Assert.Equal(realFile, location.FilePath)
         Assert.Equal(2, location.Line)
         Assert.Equal(2, location.Character)
         Assert.Equal(8, location.EndCharacter)

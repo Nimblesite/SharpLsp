@@ -277,11 +277,12 @@ let private combineEdits first second =
 let private standardRename state newName (resolved: ResolvedRename) =
     task {
         let symbol = normalizeSymbol resolved.SymbolUse.Symbol
-        let! aliases = FSharpRenameAliases.collectProject state
+        let usedIn = resolved.SymbolUse.FileName
+        let! aliases = FSharpRenameAliases.collectProject state (FSharpWorkspace.anchorOf state symbol usedIn)
         match aliases with
         | Error message -> return Error message
         | Ok aliases ->
-            let! uses = FSharpReferences.getProjectUsagesForSymbol state symbol
+            let! uses = FSharpReferences.getProjectUsagesForSymbol state usedIn symbol
             let! located = tryEditsForUses state newName (withoutAliasUses symbol aliases uses)
             match located with
             | None -> return Error "F# rename could not classify every semantic use"
@@ -325,7 +326,7 @@ let private collectMatchingUses
     xmlDocSig =
     task {
         let collected = ResizeArray<FSharpSymbolUse>()
-        let files = state.ProjectOptions |> Option.map _.SourceFiles |> Option.defaultValue [||]
+        let files = FSharpWorkspace.allSourceFiles state
         for filePath in files do
             let! uses = matchingUsesInFile state assemblyName xmlDocSig filePath
             collected.AddRange(uses)
@@ -460,7 +461,7 @@ let private transientForeignEdits
         | Some currentName ->
             let staleXml = renameXmlDocSignature xmlDocSig currentName newName
             let edits = ResizeArray<FSharpCodeActions.RawEdit>()
-            let files = state.ProjectOptions |> Option.map _.SourceFiles |> Option.defaultValue [||]
+            let files = FSharpWorkspace.allSourceFiles state
             if String.IsNullOrWhiteSpace(staleXml) then return []
             else
                 for filePath in files do

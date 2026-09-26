@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import * as fs from 'fs';
-import * as path from 'path';
+import { directoryOf, fileNameOf, joinPath } from './paths';
 import { info } from './log';
 import { findSolutions } from './solution.js';
 import * as state from './state.js';
+import { getErrorMessage } from './utils.js';
 import {
   CMD_NEW_SOLUTION,
   CMD_NEW_PROJECT,
@@ -49,7 +50,7 @@ export function newProjectArgs(
   folder: string,
   lang?: string,
 ): string[] {
-  const args = ['new', template, '--name', name, '--output', path.join(folder, name)];
+  const args = ['new', template, '--name', name, '--output', joinPath(folder, name)];
   if (lang !== undefined) {
     args.push('--language', lang);
   }
@@ -66,7 +67,7 @@ export function newProjectArgs(
 export async function createSolution(folder: string, name: string): Promise<string> {
   await runDotnet(newSolutionArgs(name, folder), folder);
   for (const ext of ['slnx', 'sln']) {
-    const candidate = path.join(folder, `${name}.${ext}`);
+    const candidate = joinPath(folder, `${name}.${ext}`);
     if (fs.existsSync(candidate)) {
       return candidate;
     }
@@ -82,7 +83,7 @@ export async function createProject(
   lang?: string,
 ): Promise<string> {
   await runDotnet(newProjectArgs(template, name, folder, lang), folder);
-  return path.join(folder, name);
+  return joinPath(folder, name);
 }
 
 /** Add a project to a solution via the .NET CLI. */
@@ -90,13 +91,13 @@ export async function addProjectToSolutionFile(
   solutionPath: string,
   projectPath: string,
 ): Promise<void> {
-  await runDotnet(['sln', solutionPath, 'add', projectPath], path.dirname(solutionPath));
+  await runDotnet(['sln', solutionPath, 'add', projectPath], directoryOf(solutionPath));
 }
 
 /** Locate the `.csproj`/`.fsproj` for a freshly created project. */
 export function findProjectFile(projectDir: string, name: string): string | undefined {
   for (const ext of ['csproj', 'fsproj']) {
-    const candidate = path.join(projectDir, `${name}.${ext}`);
+    const candidate = joinPath(projectDir, `${name}.${ext}`);
     if (fs.existsSync(candidate)) {
       return candidate;
     }
@@ -111,8 +112,7 @@ function workspaceFolder(): string | undefined {
 }
 
 function reportFailure(err: unknown): void {
-  const message = err instanceof Error ? err.message : String(err);
-  void vscode.window.showErrorMessage(`Failed: ${message}`);
+  void vscode.window.showErrorMessage(`Failed: ${getErrorMessage(err)}`);
 }
 
 async function pickProjectTemplate(): Promise<
@@ -156,7 +156,7 @@ async function addToSolutionIfAny(
     return;
   }
   await addProjectToSolutionFile(solutionPath, projectFile);
-  info(`Added ${name} to ${path.basename(solutionPath)}`);
+  info(`Added ${name} to ${fileNameOf(solutionPath)}`);
 }
 
 // ── Commands ────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ async function newSolution(): Promise<void> {
 /** Prompt to scaffold a first project into a brand-new solution. */
 async function offerFirstProject(solutionPath: string): Promise<void> {
   const choice = await vscode.window.showInformationMessage(
-    `Created ${path.basename(solutionPath)}. Add a project now?`,
+    `Created ${fileNameOf(solutionPath)}. Add a project now?`,
     'Add Project',
     'Later',
   );
@@ -249,7 +249,7 @@ async function newFile(): Promise<void> {
   }
 
   const content = generateFileContent(pick.snippet, name);
-  const filePath = path.join(folder, `${name}.cs`);
+  const filePath = joinPath(folder, `${name}.cs`);
   const uri = vscode.Uri.file(filePath);
 
   const edit = new vscode.WorkspaceEdit();
@@ -266,7 +266,7 @@ async function newFile(): Promise<void> {
 /** Try to add a file to the nearest project if it uses explicit Compile includes. */
 async function autoAddFileToProject(filePath: string): Promise<void> {
   try {
-    const dir = path.dirname(filePath);
+    const dir = directoryOf(filePath);
     const files = await vscode.workspace.findFiles(new vscode.RelativePattern(dir, '*.csproj'));
     if (files.length === 0) {
       return;
@@ -283,7 +283,7 @@ async function autoAddFileToProject(filePath: string): Promise<void> {
       return;
     }
 
-    const fileName = path.basename(filePath);
+    const fileName = fileNameOf(filePath);
     if (projContent.includes(`Include="${fileName}"`)) {
       return;
     }
@@ -299,10 +299,9 @@ async function autoAddFileToProject(filePath: string): Promise<void> {
       `    <Compile Include="${fileName}" />\n  ` +
       projContent.slice(compileGroupEnd);
     fs.writeFileSync(projPath, newContent, 'utf-8');
-    info(`Auto-added ${fileName} to ${path.basename(projPath)}`);
+    info(`Auto-added ${fileName} to ${fileNameOf(projPath)}`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    info(`Auto-add to project skipped: ${message}`);
+    info(`Auto-add to project skipped: ${getErrorMessage(err)}`);
   }
 }
 

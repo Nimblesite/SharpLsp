@@ -1,4 +1,4 @@
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import * as fs from 'node:fs';
 import { type ExtensionContext, type Disposable, window, workspace } from 'vscode';
 import {
@@ -260,27 +260,19 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
   const binaryName = process.platform === 'win32' ? SERVER_BINARY_WIN : SERVER_BINARY;
   const platform = detectRuntimePlatform();
 
-  const bundled = path.join(context.extensionPath, 'bin', platform, binaryName);
+  const bundled = joinPath(context.extensionPath, 'bin', platform, binaryName);
   if (fs.existsSync(bundled)) {
     return bundled;
   }
 
-  const bundledBinary = path.join(context.extensionPath, 'bin', binaryName);
+  const bundledBinary = joinPath(context.extensionPath, 'bin', binaryName);
   if (fs.existsSync(bundledBinary)) {
     return bundledBinary;
   }
 
   // Dev fallback: look for a Cargo debug build three levels above the extension dir.
   // Extension lives at <repo>/src/editors/vscode, so ../../../target/debug/<binary> is the repo build.
-  const devBuild = path.join(
-    context.extensionPath,
-    '..',
-    '..',
-    '..',
-    'target',
-    'debug',
-    binaryName,
-  );
+  const devBuild = joinPath(context.extensionPath, '..', '..', '..', 'target', 'debug', binaryName);
   if (fs.existsSync(devBuild)) {
     return devBuild;
   }

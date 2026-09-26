@@ -91,7 +91,7 @@ folded into the new ownership model:
 | #163 | No complete implementation | Direct-child kill, parent death before connect, Windows descendants, and Unix group cleanup remain |
 | #164 | Request timeout drops a suspect transport | Response ID is unchecked; health performs check/drop/reacquire; notifications can be mistaken for responses |
 | #167 | PATH finder accepts `.cmd`, `.bat`, extensionless entries and spawns a bare name | Candidate type/validation/fallback must be redesigned |
-| #172 | Host waits briefly for a response | Sidecar cancels the response write token before returning the ack |
+| #172 | Sidecar flushes the ack before it stops; host checks the correlated `ok`, waits out the 5 s budget for the exit, kills only without one; real-sidecar e2e | Unwritten commands are not cancelled (no command queue until the supervisor); the kill is direct-child only (#163) |
 
 ## 4. Target design `[SIDECAR-PLAN-DESIGN]`
 
@@ -511,15 +511,15 @@ item and its required evidence are complete.
 - [ ] Bound recoverable decode/dispatch failures and reset the counter only after a complete valid
       message/response cycle.
 - [ ] Emit one structured terminal error and exit; do not retry the same permanently broken stream.
-- [ ] Change the shutdown handler to create the `ok` payload without cancelling `_shutdownCts`.
-- [ ] Write and flush the correlated shutdown response with a bounded write token.
-- [ ] Cancel dispatch and dispose listener/transport only after the response flush succeeds.
+- [x] Change the shutdown handler to create the `ok` payload without cancelling `_shutdownCts`.
+- [x] Write and flush the correlated shutdown response with a bounded write token.
+- [x] Cancel dispatch and dispose listener/transport only after the response flush succeeds.
 - [ ] In the supervisor, stop admission, cancel unwritten commands, send shutdown, and wait 1 second
       for the exact acknowledgement.
-- [ ] After acknowledgement, wait within the remaining 5-second graceful budget for zero process exit.
+- [x] After acknowledgement, wait within the remaining 5-second graceful budget for zero process exit.
 - [ ] On ack/exit timeout, hard-terminate only the current generation's contained process tree and reap
       the direct child.
-- [ ] Add a real-process test that observes the matching ack before process exit and asserts the hard
+- [x] Add a real-process test that observes the matching ack before process exit and asserts the hard
       kill path was not used.
 - [ ] Add a persistent broken-stream/decode-storm test that exits within a bound and produces bounded
       logs rather than a hot loop.

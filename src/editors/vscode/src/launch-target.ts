@@ -6,7 +6,19 @@
 // document. There is ONE resolver: F5, Ctrl/Cmd+F5, the editor context menu and
 // the Solution Explorer all come through here.
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import {
+  directoryOf,
+  extensionKeyOf,
+  extensionOf,
+  fileNameOf,
+  hasExtension,
+  hasSegment,
+  isProjectFile,
+  isWithin,
+  joinPath,
+  resolvePath,
+} from './paths';
+import { isDirectory } from './utils';
 
 /** The [SCRIPT-DETECT] document kinds a launch can be built from. */
 export type DocumentKind =
@@ -27,34 +39,7 @@ export interface ConeResult {
   readonly stoppedAt: ConeStop;
 }
 
-const PROJECT_EXTENSIONS = ['.csproj', '.fsproj'];
 const SOLUTION_EXTENSIONS = ['.sln', '.slnx'];
-
-/** Case-insensitive on Windows and macOS; symlinks resolved where possible. */
-export function normalizePath(value: string): string {
-  let resolved = path.resolve(value);
-  try {
-    resolved = fs.realpathSync.native(resolved);
-  } catch {
-    // A path that does not exist yet still normalizes by resolve() alone.
-  }
-  return process.platform === 'linux' ? resolved : resolved.toLowerCase();
-}
-
-/**
- * True when `child` is `parent` or lives beneath it.
- *
- * String equality alone is not a containment test: a start directory OUTSIDE
- * the workspace never equals the workspace root, so a walk guarded only by
- * equality runs to the filesystem root and can select an unrelated project from
- * an ancestor directory.
- */
-export function isWithin(child: string, parent: string): boolean {
-  const from = normalizePath(parent);
-  const to = normalizePath(child);
-  if (from === to) return true;
-  return to.startsWith(from.endsWith(path.sep) ? from : from + path.sep);
-}
 
 /** Files in `dir`, or an empty list when it cannot be read. */
 function entriesOf(dir: string): string[] {
@@ -68,22 +53,22 @@ function entriesOf(dir: string): string[] {
 /** Project files directly inside `dir`, sorted for a stable prompt order. */
 export function projectFilesIn(dir: string): string[] {
   return entriesOf(dir)
-    .filter((entry) => PROJECT_EXTENSIONS.includes(path.extname(entry).toLowerCase()))
+    .filter((entry) => isProjectFile(entry))
     .sort((left, right) => left.localeCompare(right))
-    .map((entry) => path.join(dir, entry));
+    .map((entry) => joinPath(dir, entry));
 }
 
 /** Solution files directly inside `dir`. */
 export function solutionFilesIn(dir: string): string[] {
   return entriesOf(dir)
-    .filter((entry) => SOLUTION_EXTENSIONS.includes(path.extname(entry).toLowerCase()))
+    .filter((entry) => hasExtension(entry, ...SOLUTION_EXTENSIONS))
     .sort((left, right) => left.localeCompare(right))
-    .map((entry) => path.join(dir, entry));
+    .map((entry) => joinPath(dir, entry));
 }
 
 /** True when `dir` holds a `.git` entry — a [SCRIPT-CONE] stop. */
 function isRepositoryRoot(dir: string): boolean {
-  return fs.existsSync(path.join(dir, '.git'));
+  return fs.existsSync(joinPath(dir, '.git'));
 }
 
 /** What, if anything, makes `dir` a cone stop. */
@@ -103,14 +88,14 @@ export function walkCone(startDir: string, workspaceRoot: string | undefined): C
   if (workspaceRoot !== undefined && !isWithin(startDir, workspaceRoot)) {
     return { dir: undefined, stoppedAt: 'workspace' };
   }
-  let current = path.resolve(startDir);
+  let current = resolvePath(startDir);
   for (;;) {
     const stop = stopKindOf(current);
     if (stop !== undefined) return { dir: current, stoppedAt: stop };
     if (workspaceRoot !== undefined && isWithin(workspaceRoot, current)) {
       return { dir: current, stoppedAt: 'workspace' };
     }
-    const parent = path.dirname(current);
+    const parent = directoryOf(current);
     if (parent === current) return { dir: current, stoppedAt: 'root' };
     current = parent;
   }
@@ -123,12 +108,12 @@ export function walkCone(startDir: string, workspaceRoot: string | undefined): C
  * so their kind is decided by extension alone.
  */
 export function classifyDocument(file: string, workspaceRoot: string | undefined): DocumentKind {
-  const extension = path.extname(file).toLowerCase();
+  const extension = extensionKeyOf(file);
   if (extension === '.csx') return 'csharpScript';
   if (extension === '.fsx' || extension === '.fsscript') return 'fsharpScript';
   if (extension !== '.cs' && extension !== '.fs') return 'unsupported';
 
-  const cone = walkCone(path.dirname(file), workspaceRoot);
+  const cone = walkCone(directoryOf(file), workspaceRoot);
   if (cone.stoppedAt === 'project' || cone.stoppedAt === 'solution') return 'projectOwned';
   // A project-less `.fs` has no file-based-app model; only C# has one. It is a
   // kind of its OWN, not `unsupported`: the two refusals differ, and collapsing
@@ -182,20 +167,12 @@ export function isIgnoredDir(name: string): boolean {
 function childProjectsOf(root: string, depth = CHILD_SCAN_DEPTH): string[] {
   const found: string[] = [];
   for (const entry of entriesOf(root)) {
-    const child = path.join(root, entry);
+    const child = joinPath(root, entry);
     if (!isDirectory(child) || isIgnoredDir(entry)) continue;
     found.push(...projectFilesIn(child));
     if (depth > 1) found.push(...childProjectsOf(child, depth - 1));
   }
   return found.sort((left, right) => left.localeCompare(right));
-}
-
-function isDirectory(candidate: string): boolean {
-  try {
-    return fs.statSync(candidate).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -206,9 +183,9 @@ function isDirectory(candidate: string): boolean {
  * offered as a launch target even when its dll exists.
  */
 export function hasRuntimeConfig(assemblyPath: string): boolean {
-  const directory = path.dirname(assemblyPath);
-  const stem = path.basename(assemblyPath, path.extname(assemblyPath));
-  return fs.existsSync(path.join(directory, `${stem}.runtimeconfig.json`));
+  const directory = directoryOf(assemblyPath);
+  const stem = fileNameOf(assemblyPath, extensionOf(assemblyPath));
+  return fs.existsSync(joinPath(directory, `${stem}.runtimeconfig.json`));
 }
 
 /** A project's launch entry: where its assembly is, and where to run it. */
@@ -229,7 +206,7 @@ function walkFiles(dir: string, budget: number): string[] {
   if (budget <= 0) return [];
   const found: string[] = [];
   for (const entry of entriesOf(dir)) {
-    const child = path.join(dir, entry);
+    const child = joinPath(dir, entry);
     if (isDirectory(child)) {
       found.push(...walkFiles(child, budget - 1));
     } else {
@@ -253,7 +230,7 @@ function walkFiles(dir: string, budget: number): string[] {
 export function discoverAssembly(projectDir: string, assemblyName?: string): string | undefined {
   const candidates: string[] = [];
   for (const root of OUTPUT_ROOTS) {
-    const outputRoot = path.join(projectDir, root);
+    const outputRoot = joinPath(projectDir, root);
     if (!fs.existsSync(outputRoot)) continue;
     candidates.push(...walkFiles(outputRoot, 6).filter(isApplicationAssembly));
   }
@@ -267,12 +244,12 @@ export function discoverAssembly(projectDir: string, assemblyName?: string): str
 
 /** A file's name without its extension, lowercased for comparison. */
 function stemOf(candidate: string): string {
-  return path.basename(candidate, path.extname(candidate)).toLowerCase();
+  return fileNameOf(candidate, extensionOf(candidate)).toLowerCase();
 }
 
 /** A dll is an application when the SDK emitted a runtimeconfig beside it. */
 function isApplicationAssembly(candidate: string): boolean {
-  return path.extname(candidate).toLowerCase() === '.dll' && hasRuntimeConfig(candidate);
+  return hasExtension(candidate, '.dll') && hasRuntimeConfig(candidate);
 }
 
 /** Debug output first, then most recently written. */
@@ -285,7 +262,7 @@ function preferDebug(candidates: readonly string[]): string[] {
 }
 
 function isDebugOutput(candidate: string): boolean {
-  return candidate.split(path.sep).some((segment) => segment.toLowerCase() === 'debug');
+  return hasSegment(candidate, 'debug');
 }
 
 function modifiedAt(candidate: string): number {
@@ -298,14 +275,14 @@ function modifiedAt(candidate: string): number {
 
 /** The launch entry for a project file. */
 export function projectEntryFromFile(projectFile: string): ProjectEntry {
-  const cwd = path.dirname(projectFile);
+  const cwd = directoryOf(projectFile);
   // Two projects in one directory SHARE bin/, so an unfiltered scan gives each
   // of them whichever assembly sorted first — one project reported as the
   // other's. Disambiguate by name only when it is genuinely ambiguous: a lone
   // project may legitimately emit a differently named assembly via
   // <AssemblyName>, and must still be found.
   const ambiguous = projectFilesIn(cwd).length > 1;
-  const stem = path.basename(projectFile, path.extname(projectFile));
+  const stem = fileNameOf(projectFile, extensionOf(projectFile));
   const dll = ambiguous ? discoverAssembly(cwd, stem) : discoverAssembly(cwd);
   return { projectFile, dll, cwd };
 }

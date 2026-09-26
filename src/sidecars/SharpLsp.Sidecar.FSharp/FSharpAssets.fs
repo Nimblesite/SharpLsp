@@ -15,6 +15,7 @@ open System
 open System.IO
 open System.Text.Json
 open Serilog
+open SharpLsp.Sidecar.Common
 
 /// A restored package compile assembly: simple name + absolute path.
 [<NoComparison; NoEquality>]
@@ -22,8 +23,7 @@ type PackageAssembly = { Simple: string; Path: string }
 
 /// Path to a project's restored assets file.
 let private assetsPath (fsprojPath: string) =
-    let dir = Path.GetDirectoryName(fsprojPath) |> string
-    Path.Combine(dir, "obj", "project.assets.json")
+    NativePaths.Resolve(NativePaths.DirectoryOf fsprojPath, "obj", "project.assets.json")
 
 /// Try to read an object property.
 let private tryProp (el: JsonElement) (name: string) : JsonElement option =
@@ -55,10 +55,8 @@ let private libraryPath (libraries: JsonElement option) (key: string) : string =
 
     match fromLibraries with
     | Some path when not (String.IsNullOrEmpty path) -> path
+    // NuGet lays a package out under its lower-cased id/version: a layout rule, not path identity.
     | _ -> key.ToLowerInvariant()
-
-/// Replace forward slashes with the platform path separator.
-let private toLocal (rel: string) = rel.Replace('/', Path.DirectorySeparatorChar)
 
 /// Compile assemblies declared by one target-framework package entry.
 let private packageAssemblies
@@ -78,12 +76,10 @@ let private packageAssemblies
             // package — so match on the filename component, not the whole key.
             // Handing `_._` to FCS as `-r:` poisons every checked file with
             // FS0229/FS3160 startup errors that no edit clears. [GitHub #160]
-            if Path.GetFileName(file.Name) = "_._" then
+            if NativePaths.NameOf file.Name = "_._" then
                 None
             else
-                let abs = Path.Combine(root, toLocal libPath, toLocal file.Name)
-                let simple = Path.GetFileNameWithoutExtension(file.Name) |> string
-                Some { Simple = simple; Path = abs })
+                Some { Simple = NativePaths.StemOf file.Name; Path = NativePaths.Resolve(root, libPath, file.Name) })
     | _ -> Seq.empty
 
 /// Parse compile assemblies + packages root from a project's restored assets.

@@ -20,6 +20,13 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 - There is no SharpLsp "legacy" code. Code that does not match the specs is deleted, never copied — move files, don't duplicate them
 - **All screens MUST BE 100% reactive.** When the data changes, the screen is listening and updates. Manage state with Signals in the VSIX and other extensions
 - **Zero code duplication.** Run Deslop (https://deslop.live/docs/for-ai/ — MCP or CLI) before adding code and after editing
+- ⛔️ **Paths are handled in ONE place per tier** — [SHARPLSP-ARCHITECTURE-PATHS]. Every operation on a path
+  string (normalising, comparing, keying a map, choosing the case rule, resolving against a directory,
+  splitting into directory/name/stem, testing the extension, converting to or from a URI) lives in that
+  tier's path module and nowhere else: `SharpLsp.Sidecar.Common.NativePaths` (both sidecars),
+  `src/sharplsp/src/paths.rs` (host), `src/editors/vscode/src/paths.ts` (extension). Outside it, never
+  call `System.IO.Path`, `std::path` string operations, `node:path`, `StringComparison.OrdinalIgnoreCase`,
+  `ToUpperInvariant`/`ToLowerInvariant`, or `OperatingSystem.IsWindows()` on a path. Never scatter, never repeat
 - **Functional style, every language.** `Result<T,E>` and `Option<T>` everywhere, expressions over statements — `match`, `if let`, iterator chains, pure functions, minimal side effects. Early returns with `?`. C#/F# nullability stands in for `Option<T>`
 - Anything that can throw or panic returns `Result<T,E>` (`outcome` in .NET — use the exhaustion analyzer)
 - **Never use RegEx or string matching on code.** Always use the real AST/CST — no line splicing, regex replacement, or string concatenation

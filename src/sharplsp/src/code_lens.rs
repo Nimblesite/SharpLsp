@@ -20,7 +20,7 @@ pub fn handle_code_lens(
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: CodeLensParams| {
         let request = SidecarFileReq {
-            file_path: crate::semantic::uri_to_path(&params.text_document.uri)?,
+            file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
         };
         let items: Vec<SidecarCodeLens> =
             request_sidecar(runtime, sidecar, "textDocument/codeLens", &request)?

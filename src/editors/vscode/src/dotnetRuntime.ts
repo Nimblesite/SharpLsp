@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf } from './paths';
 import * as vscode from 'vscode';
 import * as log from './log.js';
 import {
@@ -39,7 +39,7 @@ export function dotnetArchitecture(): string {
 
 /** [DIST-RUNTIME-ACQUIRE]: verification and sidecars must use the same acquired host. */
 export function dotnetHostEnvironment(dotnetPath: string): Record<string, string> {
-  const root = path.dirname(dotnetPath);
+  const root = directoryOf(dotnetPath);
   // Apphosts consult the architecture-specific variable BEFORE DOTNET_ROOT.
   return { DOTNET_ROOT: root, [`DOTNET_ROOT_${dotnetArchitecture().toUpperCase()}`]: root };
 }
@@ -348,7 +348,7 @@ export function describeSdkPinFailure(
 
 /** Directory containing the dotnet executable — used to set DOTNET_ROOT. */
 export function dotnetRootFromPath(dotnetPath: string): string {
-  return path.dirname(dotnetPath);
+  return directoryOf(dotnetPath);
 }
 
 /**

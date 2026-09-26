@@ -7,7 +7,8 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// <summary>
 /// Roslyn dead-code analyzer — the C# half of the cross-language monorepo
 /// dead-code feature (the F# half emits <c>SLSPF0101</c>). A declared symbol with
-/// no semantic references anywhere in the loaded solution is dead.
+/// no semantic references in the loaded solution — each project's active
+/// framework ([NETFX-PROJECTS-CSHARP]) — is dead.
 ///
 /// Implements [ANALYZERS-UNUSED-PUBLIC] / [ANALYZERS-DEADCODE-SEVERITY]:
 ///   * Public symbols are reported only in monorepo mode (the repo is the whole
@@ -27,7 +28,7 @@ internal static class DeadCodeAnalyzer
     /// <summary>Analyze one document and return dead-code diagnostics for it.</summary>
     public static async Task<List<DiagnosticResult>> AnalyzeAsync(
         Document document,
-        Solution solution,
+        SearchScope scope,
         bool monorepo,
         CancellationToken ct
     )
@@ -55,7 +56,7 @@ internal static class DeadCodeAnalyzer
                 continue;
             }
 
-            var diagnostic = await ClassifyAsync(symbol, node, filePath, solution, monorepo, ct)
+            var diagnostic = await ClassifyAsync(symbol, node, filePath, scope, monorepo, ct)
                 .ConfigureAwait(false);
             if (diagnostic is not null)
             {
@@ -133,7 +134,7 @@ internal static class DeadCodeAnalyzer
         ISymbol symbol,
         SyntaxNode node,
         string filePath,
-        Solution solution,
+        SearchScope scope,
         bool monorepo,
         CancellationToken ct
     )
@@ -145,7 +146,7 @@ internal static class DeadCodeAnalyzer
             return null;
         }
 
-        if (await HasReferencesAsync(symbol, solution, ct).ConfigureAwait(false))
+        if (await HasReferencesAsync(symbol, scope, ct).ConfigureAwait(false))
         {
             return null;
         }
@@ -176,15 +177,13 @@ internal static class DeadCodeAnalyzer
 
     private static async Task<bool> HasReferencesAsync(
         ISymbol symbol,
-        Solution solution,
+        SearchScope scope,
         CancellationToken ct
     )
     {
         try
         {
-            var refs = await SymbolFinder
-                .FindReferencesAsync(symbol, solution, cancellationToken: ct)
-                .ConfigureAwait(false);
+            var refs = await scope.FindReferencesAsync(symbol, ct).ConfigureAwait(false);
             return refs.Any(r => r.Locations.Any());
         }
         catch (Exception) when (!ct.IsCancellationRequested)

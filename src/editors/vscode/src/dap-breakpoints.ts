@@ -22,7 +22,7 @@ import {
   type LogToken,
 } from './dap-emulate';
 import { topFrameLocation } from './dap-stepping';
-import { normalizePath } from './launch-target';
+import { normalizePath } from './paths';
 
 /** What the router should do with a stop that named breakpoints. */
 export type StopVerdict =

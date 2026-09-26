@@ -44,6 +44,7 @@
   "cmd.showOutput": "显示输出通道",
   "cmd.showTraceOutput": "显示跟踪输出",
   "cmd.selectSolution": "选择解决方案",
+  "cmd.selectTargetFramework": "选择目标框架",
   "cmd.openSolution": "打开解决方案",
   "cmd.refreshExplorer": "刷新资源管理器",
   "cmd.sortNatural": "排序：源代码顺序",

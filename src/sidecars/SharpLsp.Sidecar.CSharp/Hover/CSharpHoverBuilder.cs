@@ -41,13 +41,26 @@ internal static class CSharpHoverBuilder
         {
             var root = model.SyntaxTree.GetRoot(ct);
             var token = root.FindToken(position);
-            var result = token.IsKind(SyntaxKind.None) ? null : ResolveAndBuild(model, token, ct);
+            var result =
+                token.IsKind(SyntaxKind.None) || InDisabledCode(root, position)
+                    ? null
+                    : ResolveAndBuild(model, token, ct);
             return new HoverQueryResult.Ok<HoverResult?, string>(result);
         }
         catch (Exception ex)
         {
             return HoverQueryResult.Failure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// True inside code an inactive <c>#if</c> branch disables: the active framework does not
+    /// compile it, so it names no symbol — though <c>FindToken</c> would hand back the token
+    /// AFTER it, whose leading trivia it is. [NETFX-CONTEXT]
+    /// </summary>
+    private static bool InDisabledCode(SyntaxNode root, int position)
+    {
+        return root.FindTrivia(position).IsKind(SyntaxKind.DisabledTextTrivia);
     }
 
     private static HoverResult? ResolveAndBuild(

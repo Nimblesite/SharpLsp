@@ -31,6 +31,32 @@ export function forEachLeafIn(
   }
 }
 
+/**
+ * The tests a request selects: its `include` set (or the whole tree when it has
+ * none), minus everything the user explicitly EXCLUDED. Ignoring `exclude` runs
+ * tests the user just deselected. Group nodes expand to their leaf tests — a
+ * class or namespace ▶ runs its members — and discovery-error rows are never
+ * selectable as tests.
+ */
+export function collectRequestedTests(
+  request: vscode.TestRunRequest,
+  items: vscode.TestItemCollection,
+): vscode.TestItem[] {
+  const excluded = new Set((request.exclude ?? []).map((item) => item.id));
+  const tests: vscode.TestItem[] = [];
+  const walk = (item: vscode.TestItem): void => {
+    if (excluded.has(item.id) || item.error !== undefined) return;
+    if (item.children.size === 0) {
+      tests.push(item);
+      return;
+    }
+    item.children.forEach(walk);
+  };
+  if (request.include === undefined) items.forEach(walk);
+  else for (const item of request.include) walk(item);
+  return tests;
+}
+
 /** {@link forEachLeafIn} over a live {@link vscode.TestItemCollection}. */
 export function forEachLeaf(
   items: vscode.TestItemCollection,

@@ -6,12 +6,12 @@
 // confirmed every delta, and discards whenever it did not.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { directoryOf, hasExtension, isLexicallyWithin, joinPath, resolvePath } from './paths';
 import * as vscode from 'vscode';
 import type { DapMessage } from './dap-emulate';
 import { error, traceInfo } from './log';
 import * as state from './state';
-import { getErrorMessage, isRecord } from './utils';
+import { getErrorMessage, isRecord, removeDirRecursive } from './utils';
 
 interface HotReloadHost {
   request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
@@ -113,7 +113,7 @@ export class DapHotReload implements vscode.Disposable {
     const env = isRecord(args.env) ? args.env : {};
     args.env = { ...env, DOTNET_MODIFIABLE_ASSEMBLIES: 'debug' };
     this.projectPath = findOwningProject(args);
-    this.deltaDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-hot-reload-'));
+    this.deltaDirectory = fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-hot-reload-'));
   }
 
   /** Gate a real stop on the baseline; consume a stop this class induced. */
@@ -356,8 +356,7 @@ export class DapHotReload implements vscode.Disposable {
     if (!this.enabled || document.languageId !== 'csharp' || this.projectPath === undefined) {
       return false;
     }
-    const relative = path.relative(path.dirname(this.projectPath), document.uri.fsPath);
-    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+    return isLexicallyWithin(directoryOf(this.projectPath), document.uri.fsPath);
   }
 
   private async topFrameId(threadId: number): Promise<number> {
@@ -398,7 +397,7 @@ export class DapHotReload implements vscode.Disposable {
     if (directory === undefined || this.disposed) {
       throw new Error('the debug session ended before the update was applied');
     }
-    const prefix = path.join(directory, String(++this.updateSequence));
+    const prefix = joinPath(directory, String(++this.updateSequence));
     const files = await writeDeltaFiles(prefix, update);
     try {
       if (this.sessionEnded()) {
@@ -418,7 +417,7 @@ export class DapHotReload implements vscode.Disposable {
   /** Hand one set of delta files to netcoredbg's `applyDeltas` request. */
   private async requestApplyDeltas(assemblyName: string, files: DeltaFiles): Promise<void> {
     const response = await this.host.request('applyDeltas', {
-      dllFileName: assemblyName.endsWith('.dll') ? assemblyName : `${assemblyName}.dll`,
+      dllFileName: hasExtension(assemblyName, '.dll') ? assemblyName : `${assemblyName}.dll`,
       ...files,
     });
     if (response.success !== true) {
@@ -508,26 +507,23 @@ function isFileLockError(cause: unknown): boolean {
 
 function removeDirectory(directory: string | undefined): void {
   if (directory === undefined) return;
-  try {
-    fs.rmSync(directory, { recursive: true, force: true });
-  } catch (cause: unknown) {
-    error(`[hot-reload] could not remove ${directory}: ${getErrorMessage(cause)}`);
-  }
+  const removed = removeDirRecursive(directory);
+  if (!removed.ok) error(`[hot-reload] ${removed.error}`);
 }
 
 function findOwningProject(args: Record<string, unknown>): string | undefined {
   const starts = [
     args.cwd,
-    typeof args.program === 'string' ? path.dirname(args.program) : undefined,
+    typeof args.program === 'string' ? directoryOf(args.program) : undefined,
   ];
   for (const start of starts) {
     if (typeof start !== 'string') continue;
-    let current = path.resolve(start);
+    let current = resolvePath(start);
     for (;;) {
       const projects = projectsAt(current);
       const project = projects.length === 1 ? projects.at(0) : undefined;
-      if (project !== undefined) return path.join(current, project);
-      const parent = path.dirname(current);
+      if (project !== undefined) return joinPath(current, project);
+      const parent = directoryOf(current);
       if (parent === current) break;
       current = parent;
     }
@@ -539,7 +535,7 @@ function projectsAt(directory: string): string[] {
   try {
     return fs
       .readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.csproj'))
+      .filter((entry) => entry.isFile() && hasExtension(entry.name, '.csproj'))
       .map((entry) => entry.name);
   } catch {
     return [];

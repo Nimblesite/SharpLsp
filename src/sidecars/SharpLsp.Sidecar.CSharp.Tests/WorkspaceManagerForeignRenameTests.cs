@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
@@ -55,7 +55,7 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
     {
         var workspace = FindRepositoryFixture();
         await EnsureFSharpFixtureBuiltAsync(workspace);
-        var sourcePath = Path.Combine(workspace, "crosslanguage", "FSharpConsumer.cs");
+        var sourcePath = NativePaths.Join(workspace, "crosslanguage", "FSharpConsumer.cs");
         using var manager = await OpenRepositoryManagerAsync(workspace);
         var (line, character) = LocateFile(sourcePath, "Read(FSharpOrigin", "FSharpOrigin");
         Assert.NotEmpty(
@@ -166,7 +166,7 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
     {
         var manager = new WorkspaceManager();
 #pragma warning disable CS0618 // Exercise the real solution-loading boundary
-        var opened = await manager.OpenAsync(Path.Combine(workspace, "TestFixtures.slnx"));
+        var opened = await manager.OpenAsync(NativePaths.Join(workspace, "TestFixtures.slnx"));
 #pragma warning restore CS0618
         Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
         Assert.True(manager.IsLoaded);
@@ -265,8 +265,8 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
                 return;
             }
 
-            var project = Path.Combine(workspace, "fsharp", "FSharpFixtures.fsproj");
-            var (exitCode, output) = await RunDotnetBuildAsync(project).ConfigureAwait(false);
+            var project = NativePaths.Join(workspace, "fsharp", "FSharpFixtures.fsproj");
+            var (exitCode, output) = DotnetBuild.Run(project);
             Assert.True(exitCode == 0, $"F# fixture build failed ({exitCode}):{output}");
             _fSharpFixtureBuilt = true;
         }
@@ -276,33 +276,13 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
         }
     }
 
-    /// <summary>Build one project, returning its exit code and merged output.</summary>
-    private static async Task<(int ExitCode, string Output)> RunDotnetBuildAsync(string project)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            ArgumentList = { "build", project, "--configuration", "Debug", "--nologo" },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var build = Process.Start(startInfo);
-        Assert.NotNull(build);
-        // Drain both pipes concurrently: reading them in sequence deadlocks as soon
-        // as the un-read pipe fills its buffer.
-        var stdout = build.StandardOutput.ReadToEndAsync();
-        var stderr = build.StandardError.ReadToEndAsync();
-        await build.WaitForExitAsync().ConfigureAwait(false);
-        var text = await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false);
-        return (build.ExitCode, text);
-    }
-
     private static string FindRepositoryFixture()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
             var candidate = RepositoryFixtureCandidate(directory.FullName);
-            if (File.Exists(Path.Combine(candidate, "TestFixtures.slnx")))
+            if (File.Exists(NativePaths.Join(candidate, "TestFixtures.slnx")))
             {
                 return candidate;
             }
@@ -313,7 +293,14 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
 
     private static string RepositoryFixtureCandidate(string directory)
     {
-        return Path.Combine(directory, "src", "editors", "vscode", "test-fixtures", "workspace");
+        return NativePaths.Join(
+            directory,
+            "src",
+            "editors",
+            "vscode",
+            "test-fixtures",
+            "workspace"
+        );
     }
 
     private static (int Line, int Character) LocateFile(string path, string anchor, string token)
@@ -332,20 +319,17 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
 
 public sealed class ForeignRenameFixture : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-foreign-rename-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-foreign-rename-{Guid.NewGuid():N}");
 
     public ForeignRenameFixture()
     {
-        var libDirectory = Path.Combine(_root, "Lib");
-        var appDirectory = Path.Combine(_root, "App");
+        var libDirectory = NativePaths.Join(_root, "Lib");
+        var appDirectory = NativePaths.Join(_root, "App");
         Directory.CreateDirectory(libDirectory);
         Directory.CreateDirectory(appDirectory);
         WriteFSharpLibrary(libDirectory);
         ProjectPath = WriteCSharpConsumer(appDirectory, libDirectory);
-        SourcePath = Path.Combine(appDirectory, "Program.cs");
+        SourcePath = NativePaths.Join(appDirectory, "Program.cs");
         WriteConsumerSource(SourcePath);
         BuildProject(ProjectPath);
     }
@@ -397,19 +381,19 @@ public sealed class ForeignRenameFixture : IDisposable
 
     private static void WriteFSharpLibrary(string directory)
     {
-        File.WriteAllText(Path.Combine(directory, "Lib.fsproj"), FSharpProject);
+        File.WriteAllText(NativePaths.Join(directory, "Lib.fsproj"), FSharpProject);
         File.WriteAllText(
-            Path.Combine(directory, "Library.fs"),
+            NativePaths.Join(directory, "Library.fs"),
             "namespace FsLib\n\ntype Widget() =\n    member _.Value = 42\n"
         );
     }
 
     private static string WriteCSharpConsumer(string directory, string libDirectory)
     {
-        var projectPath = Path.Combine(directory, "App.csproj");
-        var relativeReference = Path.GetRelativePath(
+        var projectPath = NativePaths.Join(directory, "App.csproj");
+        var relativeReference = NativePaths.RelativeTo(
             directory,
-            Path.Combine(libDirectory, "Lib.fsproj")
+            NativePaths.Join(libDirectory, "Lib.fsproj")
         );
         File.WriteAllText(projectPath, CSharpProject.Replace("$REFERENCE$", relativeReference));
         return projectPath;
@@ -422,17 +406,8 @@ public sealed class ForeignRenameFixture : IDisposable
 
     private static void BuildProject(string projectPath)
     {
-        var startInfo = new ProcessStartInfo("dotnet", $"build \"{projectPath}\" --nologo -v quiet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using var process =
-            Process.Start(startInfo) ?? throw new InvalidOperationException("dotnet did not start");
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        Assert.True(process.ExitCode == 0, $"real mixed build failed:\n{stdout}\n{stderr}");
+        var (exitCode, output) = DotnetBuild.Run(projectPath);
+        Assert.True(exitCode == 0, $"real mixed build failed:\n{output}");
     }
 
     private const string FSharpProject = """

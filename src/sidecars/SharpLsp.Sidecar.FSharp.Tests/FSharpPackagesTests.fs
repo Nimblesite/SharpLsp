@@ -11,6 +11,7 @@ open System.Diagnostics
 open System.IO
 open Xunit
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.Common
 
 /// Quietly delete a temp directory.
 let private cleanup (dir: string) =
@@ -21,13 +22,13 @@ let private cleanup (dir: string) =
 
 /// Does any path mention the given (lowercased) needle?
 let private mentions (paths: string array) (needle: string) =
-    paths |> Array.exists (fun p -> p.ToLowerInvariant().Contains(needle))
+    paths |> Array.exists (fun p -> p.Contains(needle, NativePaths.Comparison))
 
 /// Write a real .fsproj referencing `Newtonsoft.Json` plus one source file,
 /// then `dotnet restore` it so obj/project.assets.json and the package compile
 /// assemblies exist on disk for the isolated usage check. Returns (dir, fsproj).
 let private makeRestoredProject (source: string) =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-pkg-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-pkg-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
 
     let fsproj =
@@ -44,9 +45,9 @@ let private makeRestoredProject (source: string) =
   </ItemGroup>
 </Project>"""
 
-    let fsprojPath = Path.Combine(dir, "PkgProject.fsproj")
+    let fsprojPath = NativePaths.Resolve(dir, "PkgProject.fsproj")
     File.WriteAllText(fsprojPath, fsproj)
-    File.WriteAllText(Path.Combine(dir, "Library.fs"), source)
+    File.WriteAllText(NativePaths.Resolve(dir, "Library.fs"), source)
 
     let psi = ProcessStartInfo("dotnet", "restore --verbosity quiet")
     psi.WorkingDirectory <- dir
@@ -95,9 +96,9 @@ let ``getReferenceUsage flags a referenced-but-unused package`` () =
 let ``getReferenceUsage is fail-safe when assets are missing`` () =
     task {
         // A real .fsproj that was never restored → no obj/project.assets.json.
-        let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-pkg-{Guid.NewGuid():N}")
+        let dir = NativePaths.Temp($"sharplsp-pkg-{Guid.NewGuid():N}")
         Directory.CreateDirectory(dir) |> ignore
-        let fsproj = Path.Combine(dir, "Bare.fsproj")
+        let fsproj = NativePaths.Resolve(dir, "Bare.fsproj")
         File.WriteAllText(fsproj, "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>")
 
         try
@@ -129,17 +130,17 @@ let ``getReferenceUsage is fail-safe for a non-existent project`` () =
 // (netstandard.library in FsToolkit.ErrorHandling's assets, GitHub #160).
 
 let private withCraftedAssets (assetsJson: string) =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-assets-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(Path.Combine(dir, "obj")) |> ignore
-    let fsproj = Path.Combine(dir, "Crafted.fsproj")
+    let dir = NativePaths.Temp($"sharplsp-assets-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(NativePaths.Resolve(dir, "obj")) |> ignore
+    let fsproj = NativePaths.Resolve(dir, "Crafted.fsproj")
     File.WriteAllText(
         fsproj,
         "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
         + "<TargetFramework>net10.0</TargetFramework>"
         + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
         + "</PropertyGroup><ItemGroup><Compile Include=\"Library.fs\" /></ItemGroup></Project>")
-    File.WriteAllText(Path.Combine(dir, "Library.fs"), "module Library\nlet x = 1\n")
-    File.WriteAllText(Path.Combine(dir, "obj", "project.assets.json"), assetsJson)
+    File.WriteAllText(NativePaths.Resolve(dir, "Library.fs"), "module Library\nlet x = 1\n")
+    File.WriteAllText(NativePaths.Resolve(dir, "obj", "project.assets.json"), assetsJson)
     dir, fsproj
 
 [<Fact>]
@@ -187,13 +188,13 @@ let ``getReferenceUsage handles array packageFolders and empty-assembly packages
 let ``path-qualified placeholder compile entries are never handed to FCS as references`` () =
     // A real packages root holding both a physical `_._` placeholder and a
     // physical real assembly, exactly as `dotnet restore` lays them out.
-    let root = Path.Combine(Path.GetTempPath(), $"sharplsp-pkgs-{Guid.NewGuid():N}")
-    let placeholderDir = Path.Combine(root, "netstandard.library", "2.0.3", "lib", "netstandard1.0")
-    let realDir = Path.Combine(root, "real.package", "1.0.0", "lib", "net10.0")
+    let root = NativePaths.Temp($"sharplsp-pkgs-{Guid.NewGuid():N}")
+    let placeholderDir = NativePaths.Resolve(root, "netstandard.library", "2.0.3", "lib", "netstandard1.0")
+    let realDir = NativePaths.Resolve(root, "real.package", "1.0.0", "lib", "net10.0")
     Directory.CreateDirectory(placeholderDir) |> ignore
     Directory.CreateDirectory(realDir) |> ignore
-    File.WriteAllText(Path.Combine(placeholderDir, "_._"), "")
-    File.WriteAllText(Path.Combine(realDir, "Real.dll"), "not really a dll")
+    File.WriteAllText(NativePaths.Resolve(placeholderDir, "_._"), "")
+    File.WriteAllText(NativePaths.Resolve(realDir, "Real.dll"), "not really a dll")
     let jsonRoot = root.Replace('\\', '/')
     let assets =
         $$"""{ "packageFolders": { "{{jsonRoot}}": {} },

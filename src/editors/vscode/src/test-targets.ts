@@ -5,7 +5,7 @@
  * Testing API wiring and nothing else.
  */
 
-import * as path from 'node:path';
+import { directoryOf } from './paths';
 import * as vscode from 'vscode';
 import * as state from './state';
 
@@ -35,7 +35,7 @@ export function runTarget(): string | undefined {
 export function runCwd(): string | undefined {
   const solution = state.solutionPath.value;
   if (solution !== undefined) {
-    return path.dirname(solution);
+    return directoryOf(solution);
   }
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }

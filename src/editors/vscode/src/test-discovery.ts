@@ -26,7 +26,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { directoryOf, extensionOf, fileNameOf, joinPath } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
 import { parseListingDiagnostics, parseTestList } from './test-listing.js';
@@ -36,8 +36,10 @@ import {
   type TestAssemblyListing,
   type TestListing,
 } from './test-listing-model.js';
+import { frameworkMoniker } from './test-frameworks.js';
 import { listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
 import { usesMtpRunner } from './test-mtp.js';
+import { removeDirRecursive } from './utils.js';
 
 export { parseFullyQualifiedTestList, withoutAdapterUniqueId } from './test-names.js';
 export { isDiscoveredTestLine, parseTestList } from './test-listing.js';
@@ -75,6 +77,44 @@ function assemblyFromBanner(line: string): string | undefined {
   const suffix = rest.lastIndexOf(' (');
   const candidate = (suffix === -1 ? rest : rest.slice(0, suffix)).trim();
   return candidate.length === 0 ? undefined : candidate;
+}
+
+/**
+ * The framework a banner closes with — `(.NETFramework,Version=v4.8)` → `net48`
+ * — or `undefined`. Read from the RIGHT, like the path it follows.
+ * Spec: [NETFX-TEST-DISCOVERY].
+ */
+function frameworkFromBanner(line: string): string | undefined {
+  if (!line.startsWith(ASSEMBLY_BANNER) || !line.endsWith(')')) return undefined;
+  const open = line.lastIndexOf(' (');
+  return open === -1 ? undefined : frameworkMoniker(line.slice(open + 2, -1));
+}
+
+/** Each announced assembly's framework, keyed by its ON-DISK path. */
+export function parseAnnouncedFrameworks(output: string): Map<string, string> {
+  const frameworks = new Map<string, string>();
+  for (const raw of output.split('\n')) {
+    const line = raw.trim();
+    const announced = assemblyFromBanner(line);
+    const assembly = announced === undefined ? undefined : resolveAnnouncedAssembly(announced);
+    const framework = frameworkFromBanner(line);
+    if (assembly !== undefined && framework !== undefined) frameworks.set(assembly, framework);
+  }
+  return frameworks;
+}
+
+/** One assembly's listing, carrying the framework build it came from. */
+function assemblyListing(
+  assembly: string,
+  names: readonly string[],
+  framework: string | undefined,
+): TestAssemblyListing {
+  return {
+    name: fileNameOf(assembly, extensionOf(assembly)),
+    path: assembly,
+    names,
+    ...(framework === undefined ? {} : { frameworks: [{ framework, path: assembly, names }] }),
+  };
 }
 
 /** Every assembly path a `dotnet test --list-tests` run announced, in order. */
@@ -230,7 +270,7 @@ async function listWithVsTest(
 /** Working directory for a target, or `undefined` when it is not on disk. */
 function targetCwd(target: string): string | undefined {
   try {
-    return fs.statSync(target).isDirectory() ? target : path.dirname(target);
+    return fs.statSync(target).isDirectory() ? target : directoryOf(target);
   } catch {
     return undefined;
   }
@@ -272,6 +312,7 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
   const assemblies = parseTestAssemblies(output);
   const missing = announced.filter((one) => resolveAnnouncedAssembly(one) === undefined);
   const warnings = missing.map((assembly) => `Announced test assembly is missing: ${assembly}`);
+  const frameworks = parseAnnouncedFrameworks(output);
 
   if (assemblies.length > 0) {
     // One listing invocation PER assembly: the names a multi-assembly
@@ -284,11 +325,7 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
       const one = await listFqnBatch([assembly], cwd, timeoutMs);
       warnings.push(...one.warnings);
       all.push(...one.names);
-      byAssembly.push({
-        name: path.basename(assembly, path.extname(assembly)),
-        path: assembly,
-        names: one.names,
-      });
+      byAssembly.push(assemblyListing(assembly, one.names, frameworks.get(assembly)));
     }
     const names = [...new Set(all)];
     if (names.length > 0) {
@@ -338,7 +375,7 @@ async function listFqnBatch(
   if (dir === undefined) {
     return { names: [], warnings: ['Could not create a temp directory for the FQN listing'] };
   }
-  const listPath = path.join(dir, 'tests.txt');
+  const listPath = joinPath(dir, 'tests.txt');
   const args = [
     'vstest',
     ...assemblies,
@@ -353,7 +390,7 @@ async function listFqnBatch(
 /** A private directory for one listing, or `undefined` when the disk says no. */
 function makeTempDir(): string | undefined {
   try {
-    return fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-fqn-'));
+    return fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-fqn-'));
   } catch {
     return undefined;
   }
@@ -379,20 +416,6 @@ function readAndRemove(listPath: string, dir: string): string[] {
   } catch {
     return [];
   } finally {
-    removeTempDir(dir);
-  }
-}
-
-/**
- * Best-effort delete. `force: true` swallows ENOENT but does NOT retry, and on
- * Windows a directory whose file a just-exited `dotnet` still holds open fails
- * with EPERM/EBUSY — which, thrown from a `finally`, would discard a listing
- * that parsed perfectly well.
- */
-function removeTempDir(dir: string): void {
-  try {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  } catch {
-    // A leaked handle in a child process must not fail discovery.
+    removeDirRecursive(dir);
   }
 }

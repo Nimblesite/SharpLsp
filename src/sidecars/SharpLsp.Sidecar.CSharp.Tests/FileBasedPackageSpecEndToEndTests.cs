@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 // CA1515: xUnit requires public test classes.
@@ -24,7 +25,7 @@ public sealed partial class FileBasedPackageSpecEndToEndTests : IDisposable
     private const string ClearPackageText = "Console.WriteLine(\"clear\".Length);\n";
     private static readonly TimeSpan ResolutionTimeout = TimeSpan.FromSeconds(45);
     private readonly ProjectlessWorkspaceFixture _fixture = new("pkg-spec");
-    private readonly HashSet<string> _restoreDirectories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _restoreDirectories = new(NativePaths.Comparer);
 
     public void Dispose()
     {
@@ -186,14 +187,13 @@ public sealed partial class FileBasedPackageSpecEndToEndTests : IDisposable
 
     private string PrepareRestoreRoot(string app)
     {
-        var fullPath = Path.GetFullPath(app);
+        var fullPath = NativePaths.NormalizeFullPath(app);
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(fullPath));
         var hash = Convert.ToHexString(digest)[..16];
-        var directory = Path.Combine(
-            Path.GetTempPath(),
+        var directory = NativePaths.Temp(
             "dotnet",
             "runfile",
-            $"{Path.GetFileNameWithoutExtension(fullPath)}-{hash}"
+            $"{NativePaths.StemOf(fullPath)}-{hash}"
         );
         if (Directory.Exists(directory))
         {
@@ -205,12 +205,12 @@ public sealed partial class FileBasedPackageSpecEndToEndTests : IDisposable
 
     private static void AssertGenerationDirectory(string restoreRoot, string projectPath)
     {
-        var generationRoot = Assert.IsType<string>(Path.GetDirectoryName(projectPath));
-        var directoryName = Path.GetFileName(generationRoot);
+        var generationRoot = Assert.IsType<string>(NativePaths.DirectoryOf(projectPath));
+        var directoryName = NativePaths.NameOf(generationRoot);
         Assert.Equal($"{Environment.ProcessId}-1", directoryName);
         Assert.Equal(
-            Path.Combine(restoreRoot, "generations"),
-            Path.GetDirectoryName(generationRoot)
+            NativePaths.Join(restoreRoot, "generations"),
+            NativePaths.DirectoryOf(generationRoot)
         );
     }
 

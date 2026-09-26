@@ -10,7 +10,7 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { hasExtension, joinPath } from './paths';
 import type { TestOutcome } from './test-run-output.js';
 import { parseTrxReport, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
 
@@ -55,7 +55,10 @@ const OUTCOME_SEVERITY: Record<TestOutcome, number> = {
 export function worse(left: TrxTestResult, right: TrxTestResult): TrxTestResult {
   const durationMs = sumDurations(left.durationMs, right.durationMs);
   const dominant = OUTCOME_SEVERITY[right.outcome] > OUTCOME_SEVERITY[left.outcome] ? right : left;
-  return { ...dominant, durationMs };
+  // Every row is kept: the rows of one test may come from different target
+  // frameworks, and each failing framework is named ([NETFX-TEST-RESULTS]).
+  const sources = [...(left.sources ?? []), ...(right.sources ?? [])];
+  return { ...dominant, durationMs, ...(sources.length === 0 ? {} : { sources }) };
 }
 
 /** Add two optional durations, keeping `undefined` only when both are absent. */
@@ -70,8 +73,8 @@ export function trxFiles(dir: string): string[] {
   try {
     return fs
       .readdirSync(dir)
-      .filter((entry) => entry.toLowerCase().endsWith('.trx'))
-      .map((entry) => path.join(dir, entry));
+      .filter((entry) => hasExtension(entry, '.trx'))
+      .map((entry) => joinPath(dir, entry));
   } catch {
     return [];
   }

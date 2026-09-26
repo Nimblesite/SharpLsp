@@ -115,8 +115,7 @@ fn walk(
 
 /// Check whether a directory should be skipped during workspace scanning.
 fn should_skip_dir(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
+    crate::paths::file_name_of(path)
         .is_some_and(|name| name.starts_with('.') || SKIP_DIRS.contains(&name))
 }
 
@@ -127,13 +126,13 @@ fn classify_file(
     out: &mut Vec<NuGetTarget>,
     cpm_file: &mut Option<String>,
 ) {
-    let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+    let Some(file_name) = crate::paths::file_name_of(path) else {
         return;
     };
 
     let abs = path.to_string_lossy().to_string();
 
-    if file_name.eq_ignore_ascii_case("Directory.Packages.props") {
+    if crate::paths::has_file_name(path, "Directory.Packages.props") {
         if cpm_file.is_none() {
             *cpm_file = Some(abs.clone());
         }
@@ -141,17 +140,15 @@ fn classify_file(
         return;
     }
 
-    if file_name.eq_ignore_ascii_case("Directory.Build.props") {
+    if crate::paths::has_file_name(path, "Directory.Build.props") {
         out.push(build_props_target(root, path, file_name));
         return;
     }
 
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if ext.eq_ignore_ascii_case("csproj") {
-            out.push(project_target(path, file_name, TargetLanguage::CSharp));
-        } else if ext.eq_ignore_ascii_case("fsproj") {
-            out.push(project_target(path, file_name, TargetLanguage::FSharp));
-        }
+    if crate::paths::has_extension(path, &["csproj"]) {
+        out.push(project_target(path, file_name, TargetLanguage::CSharp));
+    } else if crate::paths::has_extension(path, &["fsproj"]) {
+        out.push(project_target(path, file_name, TargetLanguage::FSharp));
     }
 }
 
@@ -171,10 +168,8 @@ fn project_target(path: &Path, file_name: &str, language: TargetLanguage) -> NuG
 /// Build a props-kind `NuGetTarget` from a `Directory.Build.props` or similar.
 fn build_props_target(root: &Path, path: &Path, file_name: &str) -> NuGetTarget {
     let abs = path.to_string_lossy().to_string();
-    let rel = path
-        .parent()
-        .and_then(|p| p.strip_prefix(root).ok())
-        .map(|p| p.to_string_lossy().to_string())
+    let rel = crate::paths::directory_of(path)
+        .and_then(|directory| crate::paths::relative_to(&directory, root))
         .unwrap_or_default();
     let display = if rel.is_empty() {
         format!("{file_name} (solution root)")

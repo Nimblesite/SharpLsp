@@ -19,19 +19,20 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { extensionOf, fileNameOf, joinPath } from './paths';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
 import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
 import { relistModule } from './test-mtp-discovery.js';
-import { runReported } from './test-mtp-report.js';
+import { refusedOutcome, runReported, startedModules } from './test-mtp-report.js';
 import { buildTarget, builtMtpProjects, dirOf, type MtpProjectScan } from './test-mtp-modules.js';
 import { err, ok, type Result } from './result.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
 import { collectReport, trxFiles, worse } from './test-trx-collect.js';
 import type { TrxRunInfo, TrxTestResult } from './test-trx.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
+import { removeDirRecursive } from './utils.js';
 
 export { runArgs } from './test-mtp-report.js';
 
@@ -70,7 +71,7 @@ function untouched(module: MtpModuleRun, testIds: readonly string[]): boolean {
  * the target frameworks of one project build modules sharing ONE file name.
  */
 export function trxNameFor(modulePath: string, index: number): string {
-  const stem = path.basename(modulePath, path.extname(modulePath));
+  const stem = fileNameOf(modulePath, extensionOf(modulePath));
   return `${stem}.${String(index)}.trx`;
 }
 
@@ -105,7 +106,7 @@ function invocationFailure(
   if (rejected === undefined) return resultCount > 0 ? undefined : (errorMessage ?? undefined);
   const extension = EXTENSION_PACKAGES.get(rejected);
   const refusal =
-    `${path.basename(modulePath)} does not support ${rejected} (MTP exit code ` +
+    `${fileNameOf(modulePath)} does not support ${rejected} (MTP exit code ` +
     `${String(MTP_INVALID_COMMAND_LINE)}).`;
   return extension === undefined
     ? refusal
@@ -192,7 +193,7 @@ function outcomeOf(
     results: report.results,
     summary: parseMtpSummary(output),
     failure: run.killed
-      ? `${path.basename(modulePath)} was killed: ${run.errorMessage ?? 'no detail'}`
+      ? `${fileNameOf(modulePath)} was killed: ${run.errorMessage ?? 'no detail'}`
       : invocationFailure(modulePath, output, run.errorMessage, report.results.size),
     runInfos: report.runInfos,
     retriedUnfiltered: false,
@@ -392,8 +393,14 @@ async function runModules(
   testIds: readonly string[],
   context: RunContext,
 ): Promise<TestRunOutcome | undefined> {
-  let merged: TestRunOutcome | undefined;
-  for (const module of modules) {
+  const { start, refused } = startedModules(modules, testIds, context.options);
+  let merged = refused
+    .map(refusedOutcome)
+    .reduce<TestRunOutcome | undefined>(
+      (left, right) => (left === undefined ? right : mergeKeepingFailures(left, right)),
+      undefined,
+    );
+  for (const module of start) {
     if (context.options.signal?.aborted === true) break;
     const one = await runModule(module, testIds, context);
     if (one === undefined) continue;
@@ -456,7 +463,7 @@ export async function runMtpTests(
   try {
     return (await runTargets(plan, testIds, context)) ?? emptyOutcome(noModuleRan(plan, options));
   } finally {
-    if (owned) fs.rmSync(resultsDirectory, { recursive: true, force: true });
+    if (owned) removeDirRecursive(resultsDirectory);
   }
 }
 
@@ -468,5 +475,5 @@ function noModuleRan(plan: MtpRunPlan, options: TestRunOptions): string | undefi
 
 /** A private, empty directory for one run's TRX output. */
 function freshTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-'));
+  return fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-mtp-'));
 }

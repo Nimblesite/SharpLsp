@@ -41,7 +41,7 @@ that feature — that is the parity gap.
 | `textDocument/semanticTokens/{full,range}` | [semantic_tokens.rs](../../src/sharplsp/src/semantic_tokens.rs) | ✅ | ✅ | — |
 | `textDocument/documentSymbol` | [document_symbols.rs:20](../../src/sharplsp/src/document_symbols.rs#L20) | ✅ tree-sitter (host) | ✅ **FCS nav items (this plan)** | [FS-DOCSYMBOL] |
 | `workspace/symbol` | [main.rs](../../src/sharplsp/src/main.rs) `handle_standard_workspace_symbol` | ✅ tree-sitter (host) | ✅ **FCS document symbols** | [FS-WORKSPACE-SYMBOL] |
-| `textDocument/signatureHelp` | [signature_help.rs:21](../../src/sharplsp/src/signature_help.rs#L21) | — | ✅ **FCS GetMethods (this plan)** | [FS-SIGHELP] |
+| `textDocument/signatureHelp` | [signature_help.rs](../../src/sharplsp/src/signature_help.rs) | ✅ semantic model ([SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]) | ✅ **FCS GetMethods (this plan)** | [FS-SIGHELP] |
 | `textDocument/inlayHint` | [inlay_hints.rs](../../src/sharplsp/src/inlay_hints.rs) | ✅ | ✅ | — |
 | `workspace/diagnostics` (pull) | [pull_diagnostics.rs](../../src/sharplsp/src/pull_diagnostics.rs) | ✅ | ✅ | — |
 | `project/unusedPackages` | [nuget](../../src/sharplsp/src/nuget) | ✅ | ✅ | — |
@@ -70,7 +70,7 @@ unopened namespaces expose `NamespaceToOpen`, surfaced as an `(open <ns>)` detai
 hint (mirrors C#'s `(import) <ns>`). `completionItem/resolve` returns the wire-empty
 `AdditionalEdits` for now; **auto-`open` insertion is a follow-up** (see below).
 
-### [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY] / [REFERENCES-FSHARP-FIND]
+### Rename and references ([RENAME-FSHARP-PREPARE], [RENAME-FSHARP-APPLY], [REFERENCES-FSHARP-FIND])
 Rename and references both need **project-wide** symbol uses, not just the current
 file. A shared `getProjectUsages` helper runs `ParseAndCheckProject` and
 `GetUsesOfSymbol` so `textDocument/references` becomes project-wide (was current-file
@@ -92,6 +92,21 @@ match the host's `parse_symbol_kind`.
 ### Type hierarchy — [FS-TYPEHIER-PREPARE], [FS-TYPEHIER-SUPER], [FS-TYPEHIER-SUB]
 Supertypes come from `FSharpEntity.BaseType` + `AllInterfaces`. Subtypes are found by
 scanning project entities for any whose base type or interfaces include the target.
+
+### [FS-DOCSYMBOL]
+`textDocument/documentSymbol` for `.fs` is served by the F# sidecar from FCS
+`GetNavigationItems` — a parse, never a type check, so it stays within the host's
+syntax-only latency budget. `.cs` stays on the host's tree-sitter path.
+
+### [FS-SIGHELP]
+`textDocument/signatureHelp` uses FCS `GetMethods` at the call site and surfaces every
+overload.
+
+### [FS-WORKSPACE-SYMBOL]
+The host's standard `workspace/symbol` handler matches C# files with tree-sitter and
+routes each open F# file to the F# sidecar's document symbols
+(`collect_fsharp_ws_symbols` in `main.rs`, `fsharp_workspace_symbols` in
+`document_symbols.rs`), filtering both by the same lower-cased query.
 
 ## Known limitations / follow-ups
 
@@ -144,9 +159,13 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
 - [ ] File ordering awareness + reorder suggestions (F# compilation order matters)
 - [ ] Type provider navigation support
 - [ ] Convert pipe to/from nested function calls (refactoring)
-- [ ] Multi-project F# workspace state (multiple `FSharpProjectOptions`). Unblocks
-      mixed C#/F# `.slnx` full-stack coverage (migrated from the completed-and-removed
-      SLNX-SUPPORT plan, whose only remaining item was gated on this).
+- [x] Multi-project F# workspace state (multiple `FSharpProjectOptions`). Every `.fsproj`
+      loads; every F#→F# project reference is read in memory — a multi-targeted project's
+      from the build MSBuild picked for its framework — and a project-wide query spans the
+      declaring project and its in-memory readers
+      ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES], #165; tests in
+      `FSharpMultiProjectTests.fs` and `FSharpResolvedReferenceTests.fs`). Mixed C#/F#
+      `.slnx` full-stack coverage is `definition_cross_language.rs`.
 
 ## TODO — parity pass
 

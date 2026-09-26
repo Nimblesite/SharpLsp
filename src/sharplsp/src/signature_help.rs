@@ -1,10 +1,10 @@
 //! Signature help (`textDocument/signatureHelp`).
 //!
 //! Routed to the language sidecar, which resolves the enclosing method or
-//! constructor call and returns its overloads. The F# sidecar (FCS
-//! `GetMethods`) implements this; C# requests for which the sidecar has no
-//! handler resolve to null. This is the signature-help portion of
-//! `[SHARPLSP-FEATURES-INTELLIGENCE]`.
+//! constructor call and returns its overloads: the F# sidecar with FCS
+//! `GetMethods`, the C# sidecar from the Roslyn semantic model. A sidecar
+//! without a handler still resolves to null. Implements
+//! `[SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]` and, for F#, `[FS-SIGHELP]`.
 
 use std::sync::Arc;
 

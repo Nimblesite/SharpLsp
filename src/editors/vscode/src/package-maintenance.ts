@@ -6,7 +6,7 @@
  * custom requests. Removal reuses the existing `dependencies.removeNuGetPackage`
  * path so there is one canonical "remove a package" implementation.
  */
-import * as path from 'node:path';
+import { fileNameOf } from './paths';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import * as deps from './dependencies.js';
@@ -123,7 +123,7 @@ async function detectUnused(
 /** Modal confirmation listing the packages to be removed. */
 async function confirmRemoval(findings: Finding[], total: number): Promise<boolean> {
   const summary = findings
-    .map((f) => `${path.basename(f.projectPath)}: ${f.unused.map((u) => u.id).join(', ')}`)
+    .map((f) => `${fileNameOf(f.projectPath)}: ${f.unused.map((u) => u.id).join(', ')}`)
     .join('\n');
   const answer = await vscode.window.showWarningMessage(
     `Remove ${String(total)} unused package(s)?\n\n${summary}`,

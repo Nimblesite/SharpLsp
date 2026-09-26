@@ -16,7 +16,7 @@ use lsp_types::{
 use tracing::{debug, warn};
 
 use crate::diagnostics;
-use crate::semantic::uri_to_path;
+use crate::paths::uri_to_path;
 use crate::sidecar::manager::SidecarManager;
 
 /// Handle `textDocument/diagnostic` — return diagnostics for a single file.
@@ -30,7 +30,7 @@ pub fn handle_document_diagnostic(
 
     let items = match sidecar {
         Some(sc) => {
-            let file_path = uri_to_path(uri)?;
+            let file_path = uri_to_path(uri.as_str())?;
             debug!(file = %file_path, "Pull diagnostics for document");
             match runtime.block_on(diagnostics::fetch_from_sidecar(sc, &file_path)) {
                 Ok(diags) => diags,

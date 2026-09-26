@@ -27,7 +27,12 @@
     <Compile Include="FSharpProjectCrackingTests.fs" />
     <Compile Include="FSharpDeclarationKindTests.fs" />
     <Compile Include="FSharpNavigationEdgeTests.fs" />
+    <Compile Include="FSharpMetadataDefinitionTests.fs" />
     <Compile Include="FSharpUnloadedWorkspaceTests.fs" />
+    <Compile Include="FSharpDesignTimeTests.fs" />
+    <Compile Include="FSharpMultiProjectTests.fs" />
+    <Compile Include="FSharpResolvedReferenceTests.fs" />
+    <Compile Include="FSharpCSharpReferenceTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -219,18 +219,7 @@ fn source_tag_for_uri(uri: &Uri) -> String {
 
 /// Determine the diagnostic source tag from a native document path.
 fn source_tag_for_path(file_path: &str) -> &'static str {
-    let Some(extension) = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-    else {
-        return "sharplsp-csharp";
-    };
-
-    if extension.eq_ignore_ascii_case("fs")
-        || extension.eq_ignore_ascii_case("fsx")
-        || extension.eq_ignore_ascii_case("fsi")
-        || extension.eq_ignore_ascii_case("fsscript")
-    {
+    if crate::paths::has_extension(file_path, &["fs", "fsx", "fsi", "fsscript"]) {
         "sharplsp-fsharp"
     } else {
         "sharplsp-csharp"
@@ -264,7 +253,7 @@ pub fn request_solution_in_background(
                     }
                 }
                 for (file_path, diagnostics) in file_diagnostics {
-                    let uri = match crate::utils::path_to_lsp_uri(&file_path) {
+                    let uri = match crate::paths::path_to_lsp_uri(&file_path) {
                         Ok(uri) => uri,
                         Err(err) => {
                             warn!("Skip diagnostics for {file_path}: {err:#}");
@@ -343,7 +332,7 @@ async fn verify_error_files(
 
         match fetch(sidecar, file_path, source_tag).await {
             Ok(diagnostics) => {
-                let uri = match crate::utils::path_to_lsp_uri(file_path) {
+                let uri = match crate::paths::path_to_lsp_uri(file_path) {
                     Ok(uri) => uri,
                     Err(err) => {
                         warn!("Skip verification for {file_path}: {err:#}");
@@ -615,13 +604,6 @@ mod tests {
         );
         assert_eq!(diag.source, Some("sharplsp-csharp".to_string()));
         assert_eq!(diag.message, "Unused variable");
-    }
-
-    #[test]
-    fn path_to_uri_valid_path() {
-        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
-        let uri = crate::utils::path_to_lsp_uri(NATIVE_FILE).unwrap();
-        assert_eq!(uri.as_str(), NATIVE_FILE_URI);
     }
 
     #[test]

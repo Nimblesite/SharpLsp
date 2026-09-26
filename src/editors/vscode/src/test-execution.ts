@@ -19,14 +19,20 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import type * as vscode from 'vscode';
-import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetHooks } from './dotnet-process.js';
+import {
+  DOTNET_TIMEOUT_MS,
+  runDotnet,
+  type DotnetHooks,
+  type DotnetRun,
+} from './dotnet-process.js';
 import { runTarget } from './test-targets.js';
 import { filterBatches, filterExpression } from './test-filter.js';
 import { parseFailureMessage, parseRunSummary, type TestRunSummary } from './test-run-output.js';
 import { isRunError, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
 import { collectReport, trxFiles } from './test-trx-collect.js';
+import { removeDirRecursive } from './utils.js';
 
 /** What one `dotnet test` invocation produced. */
 export interface TestRunOutcome {
@@ -133,13 +139,13 @@ export async function runTests(
   try {
     return await runInto(testIds, cwd, resultsDirectory, options);
   } finally {
-    if (owned) fs.rmSync(resultsDirectory, { recursive: true, force: true });
+    if (owned) removeDirRecursive(resultsDirectory);
   }
 }
 
 /** A private, empty directory for one run's TRX output. */
 function freshTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-trx-'));
+  return fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-trx-'));
 }
 
 /**
@@ -226,7 +232,19 @@ async function invoke(
     options.signal,
     options.hooks,
   );
-  const durationMs = Date.now() - started;
+  return outcomeOf(run, resultsDirectory, before, Date.now() - started);
+}
+
+/**
+ * One finished VSTest invocation — `dotnet test` or `dotnet vstest` — read back:
+ * the TRX reports it created, its console summary, and its process failure.
+ */
+export function outcomeOf(
+  run: DotnetRun,
+  resultsDirectory: string,
+  before: ReadonlySet<string>,
+  durationMs: number,
+): TestRunOutcome {
   const output = `${run.stdout}\n${run.stderr}`;
   const report = collectReport(resultsDirectory, before);
   return {
@@ -241,14 +259,14 @@ async function invoke(
 }
 
 /** True when an adapter refused the filter and swallowed a selected test with it. */
-function needsUnfilteredRetry(run: TestRunOutcome, testIds: readonly string[]): boolean {
+export function needsUnfilteredRetry(run: TestRunOutcome, testIds: readonly string[]): boolean {
   if (testIds.length === 0) return false;
   if (!run.runInfos.some(isRunError)) return false;
   return testIds.some((id) => !run.results.has(id));
 }
 
 /** Prefer the unfiltered retry's results; keep everything the first run proved. */
-function mergeRuns(filtered: TestRunOutcome, unfiltered: TestRunOutcome): TestRunOutcome {
+export function mergeRuns(filtered: TestRunOutcome, unfiltered: TestRunOutcome): TestRunOutcome {
   const results = new Map(filtered.results);
   for (const [name, result] of unfiltered.results) {
     results.set(name, result);

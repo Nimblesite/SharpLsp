@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Debugging;
 
@@ -75,7 +76,7 @@ internal sealed class HotReloadSession : IAsyncDisposable
     )
     {
         var project = await workspace
-            .OpenProjectAsync(CanonicalPath(projectPath), cancellationToken: ct)
+            .OpenProjectAsync(NativePaths.WithLinksResolved(projectPath), cancellationToken: ct)
             .ConfigureAwait(false);
         var solution = project.Solution;
         foreach (var loadedProject in project.Solution.Projects)
@@ -326,7 +327,7 @@ internal sealed class HotReloadSession : IAsyncDisposable
 
     private static Document FindDocument(Solution solution, string filePath)
     {
-        var fullPath = CanonicalPath(filePath);
+        var fullPath = NativePaths.WithLinksResolved(filePath);
         return solution
                 .Projects.SelectMany(project => project.Documents)
                 .FirstOrDefault(document => PathsEqual(document.FilePath, fullPath))
@@ -336,41 +337,6 @@ internal sealed class HotReloadSession : IAsyncDisposable
     private static bool PathsEqual(string? left, string right)
     {
         return left is not null
-            && string.Equals(
-                CanonicalPath(left),
-                right,
-                OperatingSystem.IsWindows()
-                    ? StringComparison.OrdinalIgnoreCase
-                    : StringComparison.Ordinal
-            );
-    }
-
-    private static string CanonicalPath(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        return OperatingSystem.IsWindows() ? fullPath : ResolveLinks(fullPath);
-    }
-
-    /// <summary>Resolve each symlinked segment, as editors hand out both spellings.</summary>
-    private static string ResolveLinks(string fullPath)
-    {
-        var root = Path.GetPathRoot(fullPath)!;
-        var current = root;
-        foreach (
-            var segment in fullPath[root.Length..]
-                .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
-        )
-        {
-            current = Path.Combine(current, segment);
-            FileSystemInfo entry = Directory.Exists(current)
-                ? new DirectoryInfo(current)
-                : new FileInfo(current);
-            if (entry.ResolveLinkTarget(returnFinalTarget: true) is { } target)
-            {
-                current = target.FullName;
-            }
-        }
-
-        return current;
+            && NativePaths.Comparer.Equals(NativePaths.WithLinksResolved(left), right);
     }
 }

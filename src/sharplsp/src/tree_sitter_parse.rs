@@ -27,16 +27,15 @@ impl LangId {
     /// still works there. [GitHub #110]
     pub fn from_uri(uri: &Uri) -> Option<Self> {
         let raw = uri.as_str();
-        let path = crate::utils::uri_to_path(raw).unwrap_or_else(|_| raw.to_string());
+        let path = crate::paths::uri_to_path(raw).unwrap_or_else(|_| raw.to_string());
         Self::from_path(Path::new(&path))
     }
 
     /// Detect language from a file path.
     pub fn from_path(path: &Path) -> Option<Self> {
-        let ext = path.extension()?.to_str()?;
-        match ext.to_ascii_lowercase().as_str() {
-            "cs" => Some(Self::CSharp),
-            "fs" | "fsx" | "fsi" => Some(Self::FSharp),
+        match crate::paths::extension_key(path)?.as_str() {
+            "CS" => Some(Self::CSharp),
+            "FS" | "FSX" | "FSI" => Some(Self::FSharp),
             _ => None,
         }
     }

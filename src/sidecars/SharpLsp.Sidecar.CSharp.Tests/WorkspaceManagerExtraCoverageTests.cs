@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -92,10 +93,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         }
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wm-extra-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wm-extra-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -104,7 +102,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         File.WriteAllText(
-            Path.Combine(_root, "Extra.csproj"),
+            NativePaths.Join(_root, "Extra.csproj"),
             """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -115,8 +113,8 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
             </Project>
             """
         );
-        _csprojPath = Path.Combine(_root, "Extra.csproj");
-        _sourcePath = Path.Combine(_root, "Extra.cs");
+        _csprojPath = NativePaths.Join(_root, "Extra.csproj");
+        _sourcePath = NativePaths.Join(_root, "Extra.cs");
         File.WriteAllText(_sourcePath, Source);
     }
 

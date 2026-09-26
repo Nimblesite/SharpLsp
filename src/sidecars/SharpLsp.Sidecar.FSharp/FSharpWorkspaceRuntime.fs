@@ -9,31 +9,23 @@ open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Text
 open SharpLsp.Sidecar.Common
 
-let overlayComparer: StringComparer =
-    if OperatingSystem.IsWindows() then
-        StringComparer.OrdinalIgnoreCase
-    else
-        StringComparer.Ordinal
-
-let overlayKey (filePath: string) : string = NativePaths.NormalizeFullPath filePath
-
+/// The overlay text of `filePath`, else its text on disk. Overlays are keyed by the one
+/// normal spelling of a path ([SHARPLSP-ARCHITECTURE-PATHS]).
 let tryReadSource (overlays: ConcurrentDictionary<string, string>) (filePath: string) : string option =
-    let normalizedPath = overlayKey filePath
+    let normalizedPath = NativePaths.NormalizeFullPath filePath
 
     match overlays.TryGetValue normalizedPath with
     | true, text -> Some text
     | _ when File.Exists normalizedPath -> Some(File.ReadAllText normalizedPath)
     | _ -> None
 
+/// The spelling `options` compile `filePath` under, when they compile it.
 let tryProjectSourcePath (options: FSharpProjectOptions) (filePath: string) : string option =
-    let normalizedPath = overlayKey filePath
-
-    options.SourceFiles
-    |> Array.tryFind (fun sourceFile -> NativePaths.AreEqual(sourceFile, normalizedPath))
+    options.SourceFiles |> Array.tryFind (fun sourceFile -> NativePaths.AreEqual(sourceFile, filePath))
 
 let projectSourcePath (options: FSharpProjectOptions) (filePath: string) : string =
     tryProjectSourcePath options filePath
-    |> Option.defaultValue (overlayKey filePath)
+    |> Option.defaultValue (NativePaths.NormalizeFullPath filePath)
 
 let private requiredFcs (message: string) (value: 'T | null) : 'T =
     match value with
@@ -100,8 +92,16 @@ let private isCheckerFactory (documentSourceOptionType: Type) (methodInfo: Metho
     methodInfo.Name = "Create"
     && methodInfo.ReturnType = typeof<FSharpChecker>
     && parameters.Length = 14
+    && hasNamedParameter "projectCacheSize" typeof<int option> parameters
     && hasNamedParameter "keepAssemblyContents" typeof<bool option> parameters
     && hasNamedParameter "documentSource" documentSourceOptionType parameters
+
+/// How many project builders the checker keeps. FCS's default of three suits an editor
+/// checking one project at a time; a project-wide query here checks the declaring project
+/// and every project that reads it, and a builder evicted during one query is rebuilt from
+/// scratch by the next. FsAutoComplete keeps 200 as well.
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+let private projectCacheSize = 200
 
 let private checkerFactory (documentSourceOptionType: Type) =
     typeof<FSharpChecker>.GetMethods(publicStatic)
@@ -119,6 +119,7 @@ let private setArgument (parameters: ParameterInfo array) (arguments: objnull ar
 let private checkerArguments (factory: MethodInfo) (documentSourceOption: obj) =
     let parameters = factory.GetParameters()
     let arguments = Array.zeroCreate<objnull> parameters.Length
+    setArgument parameters arguments "projectCacheSize" (box (Some projectCacheSize))
     setArgument parameters arguments "keepAssemblyContents" (box (Some true))
     setArgument parameters arguments "documentSource" documentSourceOption
     arguments

@@ -165,7 +165,7 @@ pub async fn pump(
 /// is provisional, open the settle window that holds semantic responses until
 /// the corrected publication lands.
 fn handle_settled(path: &str, sidecar: &Arc<SidecarManager>, sender: &Sender<Message>) {
-    let Ok(uri) = crate::utils::path_to_lsp_uri(path) else {
+    let Ok(uri) = crate::paths::path_to_lsp_uri(path) else {
         warn!(path = %path, "Sidecar settle event carried an unusable path");
         return;
     };

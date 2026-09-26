@@ -50,8 +50,14 @@ import { registerHotReloadCommands } from './hot-reload.js';
 import { registerDebugAdapter } from './debug.js';
 import { registerTestExplorer, SharpLspTestController } from './testing.js';
 import { registerTestStatusLens } from './test-lens.js';
+import {
+  registerTargetFramework,
+  type TargetFrameworkStatus,
+  type TargetFrameworkUi,
+} from './target-framework.js';
 import { initProjectDepsStore } from './project-deps-store.js';
 import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
+import { samePath } from './paths';
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface SharpLspExtensionApi {
@@ -66,6 +72,8 @@ export interface SharpLspExtensionApi {
    * Exposed so tests can read the SharpLsp channel back ([DIST-CLEAN-OUTPUT]).
    */
   readonly logUri: vscode.Uri;
+  /** The focused project's active target framework, as the status bar shows it. [NETFX-CONTEXT] */
+  readonly targetFrameworkStatus?: TargetFrameworkStatus;
 }
 
 let lspClient: LanguageClient | undefined;
@@ -73,6 +81,7 @@ let statusBar: SharpLspStatusBar | undefined;
 let explorerProvider: SolutionExplorerProvider | undefined;
 let profilerProvider: profiler.ProfilerTreeProvider | undefined;
 let testController: SharpLspTestController | undefined;
+let targetFrameworks: TargetFrameworkUi | undefined;
 
 interface DeploymentDiagnostic {
   readonly componentId: string;
@@ -188,7 +197,8 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   registerScaffoldingCommands(context);
   registerFsiCommands(context);
   registerHotReloadCommands(context);
-  registerDebugAdapter(context);
+  targetFrameworks = registerTargetFramework(context, () => lspClient);
+  registerDebugAdapter(context, targetFrameworks.answerFor);
   testController = registerTestExplorer(context);
   registerTestStatusLens(context, testController);
   log.info('step 10: wireDocumentChangeRefresh');
@@ -250,6 +260,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   if (lspClient !== undefined) {
     explorerProvider.setClient(lspClient);
     profilerProvider.setClient(lspClient);
+    targetFrameworks.attach(lspClient);
     // Fire-and-forget — don't block activation on solution loading.
     void selectAndLoadSolution().catch((err: unknown) => {
       const msg = getErrorMessage(err);
@@ -279,6 +290,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     getLspClient: () => lspClient,
     testController,
     logUri: context.logUri,
+    targetFrameworkStatus: targetFrameworks.status,
   };
 }
 
@@ -311,6 +323,7 @@ function degradedApi(context: ExtensionContext): SharpLspExtensionApi {
     getLspClient: () => lspClient,
     testController: testController ?? new SharpLspTestController(),
     logUri: context.logUri,
+    ...(targetFrameworks === undefined ? {} : { targetFrameworkStatus: targetFrameworks.status }),
   };
 }
 
@@ -541,7 +554,7 @@ async function addProjectReference(node: ExplorerNode | undefined): Promise<void
   const projectFilePath = projectPathOf(node);
   if (projectFilePath === undefined) return;
   const projectFiles = await workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
-  const candidates = projectFiles.filter((f) => f.fsPath !== projectFilePath);
+  const candidates = projectFiles.filter((f) => !samePath(f.fsPath, projectFilePath));
   if (candidates.length === 0) {
     void window.showWarningMessage('No other project files found to reference.');
     return;
@@ -703,7 +716,7 @@ async function selectAndLoadSolution(): Promise<void> {
   const generation = ++solutionSelectionGeneration;
   const initialSolution = sharedState.solutionPath.value;
 
-  // [SE-LOAD-FEEDBACK]: without this the explorer sits blank while the
+  // [SE-LOADING-FEEDBACK]: without this the explorer sits blank while the
   // workspace scan (up to 5s) and then the solution load run, and the user
   // has no signal that anything is happening. `window.withProgress` puts a
   // native progress bar in the Solution Explorer view title with a status
@@ -751,13 +764,13 @@ async function loadSolution(selected: solution.SolutionSelection): Promise<void>
 
   // Cover the whole load — the LSP reload below runs BEFORE
   // state.loadSolution begins its own phase, and the tree must not sit on a
-  // stale/blank view meanwhile ([SE-LOAD-FEEDBACK]).
+  // stale/blank view meanwhile ([SE-LOADING-FEEDBACK]).
   const phase = sharedState.beginLoading(selected.path);
 
   // `finally`, never a trailing statement: a throw out of the explorer load
   // would otherwise leave the phase set forever, and the tree renders a
   // spinner for as long as a phase is active — a permanently "loading"
-  // Solution Explorer with no way back ([SE-LOAD-FEEDBACK]).
+  // Solution Explorer with no way back ([SE-LOADING-FEEDBACK]).
   try {
     // Tell the LSP server to reload sidecars with this specific solution.
     // Without this, the sidecar uses the workspace root and may pick the

@@ -66,9 +66,9 @@ fn id_set(paths: &[String], root: &str) -> HashSet<String> {
 /// `/.nuget/packages/` marker when the root is unknown. Returns `None` for
 /// assemblies that are not inside a packages folder (framework / project refs).
 fn package_id_from_path(path: &str, root: &str) -> Option<String> {
-    let normalized = path.replace('\\', "/").to_lowercase();
+    let normalized = crate::paths::comparison_key(path);
 
-    let root_normalized = root.replace('\\', "/").to_lowercase();
+    let root_normalized = crate::paths::comparison_key(root);
     if !root_normalized.is_empty() {
         let trimmed = root_normalized.trim_end_matches('/');
         if let Some(rest) = normalized.strip_prefix(trimmed) {
@@ -76,18 +76,20 @@ fn package_id_from_path(path: &str, root: &str) -> Option<String> {
         }
     }
 
-    let marker = normalized.find(NUGET_MARKER)?;
-    let rest = normalized.get(marker + NUGET_MARKER.len()..)?;
+    let marker_key = crate::paths::comparison_key(NUGET_MARKER);
+    let marker = normalized.find(&marker_key)?;
+    let rest = normalized.get(marker + marker_key.len()..)?;
     first_segment(rest)
 }
 
-/// First non-empty `/`-delimited segment of a path remainder.
+/// First non-empty `/`-delimited segment of a path remainder, as a package id:
+/// lower-case, the way the packages folder spells every id.
 fn first_segment(rest: &str) -> Option<String> {
     rest.trim_start_matches('/')
         .split('/')
         .next()
         .filter(|segment| !segment.is_empty())
-        .map(str::to_string)
+        .map(str::to_lowercase)
 }
 
 #[cfg(test)]

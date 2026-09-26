@@ -96,19 +96,14 @@ fn classify(
     cache: &mut HashMap<PathBuf, DotnetMatch>,
 ) -> DotnetMatch {
     let exe = first_exe_token(command_line).unwrap_or(name);
-    let exe_path = Path::new(exe);
-    let base = exe_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(name);
     // The .NET host muxer: `dotnet run`/`exec`, `dotnet App.dll`, … — always
     // .NET; the version (if any) comes from the managed assembly's directory.
-    if base.eq_ignore_ascii_case("dotnet") || base.eq_ignore_ascii_case("dotnet.exe") {
+    if crate::paths::names_executable(exe, "dotnet") {
         return DotnetMatch::Yes(muxer_version(command_line, cache));
     }
     // An apphost: its publish/output directory carries a `*.runtimeconfig.json`.
-    match exe_path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
-        Some(dir) => probe_dir(dir, cache),
+    match crate::paths::directory_of(exe) {
+        Some(dir) => probe_dir(&dir, cache),
         None => DotnetMatch::No,
     }
 }
@@ -119,11 +114,9 @@ fn classify(
 fn muxer_version(command_line: &str, cache: &mut HashMap<PathBuf, DotnetMatch>) -> Option<String> {
     let dll = command_line
         .split_whitespace()
-        .find(|token| token.to_ascii_lowercase().ends_with(".dll"))?;
-    let dir = Path::new(dll)
-        .parent()
-        .filter(|dir| !dir.as_os_str().is_empty())?;
-    match probe_dir(dir, cache) {
+        .find(|token| crate::paths::has_extension(token, &["dll"]))?;
+    let dir = crate::paths::directory_of(dll)?;
+    match probe_dir(&dir, cache) {
         DotnetMatch::Yes(version) => version,
         DotnetMatch::No => None,
     }
@@ -155,11 +148,8 @@ fn first_exe_token(command_line: &str) -> Option<&str> {
 /// a .NET apphost's publish/output directory.
 fn find_runtimeconfig(dir: &Path) -> Option<PathBuf> {
     std::fs::read_dir(dir).ok()?.flatten().find_map(|entry| {
-        entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.ends_with(".runtimeconfig.json"))
-            .then(|| entry.path())
+        let path = entry.path();
+        crate::paths::has_name_suffix(&path, ".runtimeconfig.json").then_some(path)
     })
 }
 

@@ -71,6 +71,20 @@ export interface TestAssemblyListing {
   readonly path: string;
   /** Fully-qualified test names this assembly contributed, in listing order. */
   readonly names: readonly string[];
+  /**
+   * One entry per framework build, when the banners named them: one for a
+   * single-target project, several once {@link mergeMultiTargeted} collapsed a
+   * multi-targeted one. Spec: [NETFX-TEST-DISCOVERY].
+   */
+  readonly frameworks?: readonly FrameworkBuild[];
+}
+
+/** One framework's build of a test assembly, and the names IT lists. */
+export interface FrameworkBuild {
+  /** Short moniker, as `<TargetFrameworks>` spells it: `net48`, `net8.0`. */
+  readonly framework: string;
+  readonly path: string;
+  readonly names: readonly string[];
 }
 
 /**
@@ -94,20 +108,19 @@ export interface TestAssemblyListing {
 export function mergeMultiTargeted(
   listings: readonly TestAssemblyListing[],
 ): TestAssemblyListing[] {
-  const merged = new Map<string, { paths: string[]; names: string[] }>();
+  const merged = new Map<string, { paths: string[]; names: string[]; builds: FrameworkBuild[] }>();
   for (const listing of listings) {
-    const existing = merged.get(listing.name);
-    if (existing === undefined) {
-      merged.set(listing.name, { paths: [listing.path], names: [...listing.names] });
-      continue;
-    }
-    existing.paths.push(listing.path);
-    existing.names.push(...listing.names);
+    const entry = merged.get(listing.name) ?? { paths: [], names: [], builds: [] };
+    entry.paths.push(listing.path);
+    entry.names.push(...listing.names);
+    entry.builds.push(...(listing.frameworks ?? []));
+    merged.set(listing.name, entry);
   }
   return [...merged].map(([name, entry]) => ({
     name,
     path: sharedOutputPath(entry.paths),
     names: [...new Set(entry.names)],
+    ...(entry.builds.length === 0 ? {} : { frameworks: entry.builds }),
   }));
 }
 

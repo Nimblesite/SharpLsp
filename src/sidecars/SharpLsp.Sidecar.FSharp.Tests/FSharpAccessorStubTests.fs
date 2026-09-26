@@ -129,3 +129,24 @@ let ``a setter-only member still offers the missing getter`` () =
         finally
             cleanup dir
     }
+
+/// `with get () = ... and set v = ...` fully implements `with get, set`, so the
+/// property is never offered again, which would emit a second `Value` that does
+/// not compile. The genuinely missing `Reset` still is (GitHub #206).
+[<Fact>]
+let ``a get-and-set member is implemented, so only the missing member is offered`` () =
+    task {
+        let! (state, dir, _fsproj, paths) = accessorProject ()
+
+        try
+            let! text = stubTextAt state paths 7 15
+
+            match text with
+            | None -> failwith "no interface stub offered for the get/set implementation"
+            | Some text ->
+                Assert.Contains("Reset", text)
+                Assert.DoesNotContain("Value", text)
+                Assert.Empty(trailingWhitespaceLines text)
+        finally
+            cleanup dir
+    }

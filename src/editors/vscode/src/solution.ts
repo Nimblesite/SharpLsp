@@ -1,4 +1,4 @@
-import * as path from 'node:path';
+import { fileNameOf } from './paths';
 import { CancellationTokenSource, workspace, window } from 'vscode';
 import * as log from './log.js';
 
@@ -82,7 +82,7 @@ export function toSolutionSelections(paths: readonly string[]): SolutionSelectio
   return paths
     .map((solutionPath) => ({
       path: solutionPath,
-      name: path.basename(solutionPath),
+      name: fileNameOf(solutionPath),
     }))
     .sort(
       (left, right) => left.name.localeCompare(right.name) || left.path.localeCompare(right.path),

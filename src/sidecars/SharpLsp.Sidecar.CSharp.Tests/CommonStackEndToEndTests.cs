@@ -1,4 +1,5 @@
 using MessagePack;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Solutions;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -45,7 +46,7 @@ public sealed class CommonStackEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SolutionRead_legacy_sln_returns_project_and_folder()
     {
-        var slnPath = Path.Combine(fixture.TempDir, "Legacy.sln");
+        var slnPath = NativePaths.Join(fixture.TempDir, "Legacy.sln");
         await File.WriteAllTextAsync(
             slnPath,
             "Microsoft Visual Studio Solution File, Format Version 12.00\n"
@@ -77,7 +78,7 @@ public sealed class CommonStackEndToEndTests(CSharpSidecarFixture fixture)
     {
         // Valid extension but unparseable content: ValidateSupportedFile passes,
         // so the parser throws and ReadAsync's catch returns a failure result.
-        var slnxPath = Path.Combine(fixture.TempDir, "Broken.slnx");
+        var slnxPath = NativePaths.Join(fixture.TempDir, "Broken.slnx");
         await File.WriteAllTextAsync(slnxPath, "<Solution><Project Path=");
 
         await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnxPath));
@@ -89,7 +90,7 @@ public sealed class CommonStackEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SolutionRead_invalid_extension_is_handled_gracefully()
     {
-        var badPath = Path.Combine(fixture.TempDir, "not-a-solution.txt");
+        var badPath = NativePaths.Join(fixture.TempDir, "not-a-solution.txt");
         await File.WriteAllTextAsync(badPath, "irrelevant");
 
         await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(badPath));

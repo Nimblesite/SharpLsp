@@ -1,4 +1,4 @@
-# Buildable Fixture Solutions `[SE-ACTIONS-BUILD-FIXTURES]`
+# Buildable Fixture Solutions Plan ([SE-ACTIONS-BUILD-FIXTURES])
 
 Spec: [SE-ACTIONS-BUILD-FIXTURES](../specs/SOLUTION-EXPLORER-SPEC.md).
 Bug: [#273](https://github.com/Nimblesite/SharpLsp/issues/273).

@@ -45,9 +45,7 @@ pub fn consolidate(
     sidecar: Option<&Arc<SidecarManager>>,
     runtime: &Runtime,
 ) -> Result<ConsolidateResponse> {
-    let solution_dir = Path::new(solution_path)
-        .parent()
-        .map(Path::to_path_buf)
+    let solution_dir = crate::paths::directory_of(solution_path)
         .with_context(|| format!("solution has no parent dir: {solution_path}"))?;
 
     let scan = targets::enumerate_targets(&solution_dir.to_string_lossy())?;
@@ -219,8 +217,7 @@ fn ensure_props(solution_dir: &Path) -> Result<PathBuf> {
 
 /// Display label for a project path (its file name).
 fn file_label(path: &Path) -> String {
-    path.file_name()
-        .and_then(|n| n.to_str())
+    crate::paths::file_name_of(path)
         .map_or_else(|| path.to_string_lossy().to_string(), String::from)
 }
 

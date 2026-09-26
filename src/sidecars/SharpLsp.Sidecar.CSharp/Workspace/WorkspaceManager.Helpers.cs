@@ -199,9 +199,14 @@ internal sealed partial class WorkspaceManager
 
     private IEnumerable<Project> FilterProjects(string[] filter)
     {
+        // Only each project's ACTIVE framework reports: every framework would
+        // publish the same file's diagnostics again ([NETFX-CONTEXT]).
+        var active = _solution!.Projects.Where(project =>
+            TargetFrameworks.IsActive(_solution, project, _activeFrameworks)
+        );
         return filter.Length == 0
-            ? _solution!.Projects
-            : _solution!.Projects.Where(project =>
+            ? active
+            : active.Where(project =>
                 filter.Any(pattern =>
                     project.Name.Contains(pattern, StringComparison.OrdinalIgnoreCase)
                 )
@@ -246,10 +251,7 @@ internal sealed partial class WorkspaceManager
     /// </summary>
     private static bool IsGeneratedBuildOutput(string filePath)
     {
-        return filePath.Contains(
-                $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal
-            ) || filePath.Contains("/obj/", StringComparison.Ordinal);
+        return NativePaths.HasDirectory(filePath, "obj");
     }
 
     /// <summary>
@@ -265,7 +267,7 @@ internal sealed partial class WorkspaceManager
 
         try
         {
-            return SolutionPaths.FindDocument(_solution, filePath)
+            return TargetFrameworks.FindActiveDocument(_solution, filePath, _activeFrameworks)
                 ?? await FindSourceGeneratedDocumentByPathAsync(filePath, ct).ConfigureAwait(false);
         }
         catch (Exception)
@@ -322,5 +324,32 @@ internal sealed partial class WorkspaceManager
         {
             return Outcome.Result<TValue, string>.Failure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// <see cref="RunDocumentQueryAsync{TValue}"/> for a query that searches beyond the
+    /// document: <paramref name="resolve"/> also gets each project's active framework to
+    /// search. [NETFX-PROJECTS-CSHARP]
+    /// </summary>
+    private Task<Outcome.Result<TValue, string>> RunScopedQueryAsync<TValue>(
+        string filePath,
+        TValue emptyValue,
+        Func<Document, SearchScope, Task<TValue>> resolve,
+        CancellationToken ct
+    )
+    {
+        return RunDocumentQueryAsync(
+            filePath,
+            emptyValue,
+            async document =>
+                await resolve(
+                        document,
+                        await SearchScope
+                            .OfAsync(document, _activeFrameworks, ct)
+                            .ConfigureAwait(false)
+                    )
+                    .ConfigureAwait(false),
+            ct
+        );
     }
 }

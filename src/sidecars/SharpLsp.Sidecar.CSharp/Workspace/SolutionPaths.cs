@@ -15,9 +15,18 @@ internal static class SolutionPaths
     /// <summary>Find a regular (non-generated) document by file path.</summary>
     internal static Document? FindDocument(Solution solution, string filePath)
     {
+        return DocumentsAt(solution, filePath).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Every regular document at <paramref name="filePath"/>: one per target framework of a
+    /// multi-targeted project. [NETFX-PROJECTS-CSHARP]
+    /// </summary>
+    internal static IEnumerable<Document> DocumentsAt(Solution solution, string filePath)
+    {
         return solution
             .Projects.SelectMany(project => project.Documents)
-            .FirstOrDefault(document => NativePaths.AreEqual(document.FilePath, filePath));
+            .Where(document => NativePaths.AreEqual(document.FilePath, filePath));
     }
 
     /// <summary>Find a loaded project by its project-file path.</summary>

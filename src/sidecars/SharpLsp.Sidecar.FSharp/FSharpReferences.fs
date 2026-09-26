@@ -63,35 +63,34 @@ let private deduplicateSemanticRanges (uses: FSharpSymbolUse array) =
         |> Array.tryFind (fun symbolUse -> symbolUse.IsFromDefinition)
         |> Option.defaultValue sameRange[0])
 
-let private getFileUsages
-    (state: FSharpWorkspace.FSharpWorkspaceState)
+/// The uses of `symbol` one check holds — a file's or a whole project's — given every
+/// use it holds and the uses of one symbol: a CLI event is found by its projection.
+let private usesFrom
+    (allUses: unit -> FSharpSymbolUse seq)
+    (usesOf: FSharpSymbol -> FSharpSymbolUse array)
     (symbol: FSharpSymbol)
-    (filePath: string)
     =
+    match projectedEventKey symbol with
+    | Some key -> allUses () |> Seq.filter (matchesProjectedEvent key) |> Seq.toArray
+    | None -> projectUsageSymbols symbol |> Array.collect usesOf
+
+/// The uses of `symbol` in the file `results` checked.
+let private usesInFile (results: FSharpCheckFileResults) (symbol: FSharpSymbol) =
+    usesFrom results.GetAllUsesOfAllSymbolsInFile results.GetUsesOfSymbolInFile symbol
+
+/// Every use of `symbol` across the scope anchored on `anchor`, from the whole-project
+/// checks the checker keeps — never by checking each file again, which walked every file
+/// of every reader on each request. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+let private getScopeUsages (state: FSharpWorkspace.FSharpWorkspaceState) (anchor: string) (symbol: FSharpSymbol) =
     task {
-        let! checkedFile = FSharpWorkspace.checkFile state filePath
+        let! projects = FSharpWorkspace.checkAll state (FSharpWorkspace.queryScope state anchor)
 
         return
-            checkedFile
-            |> Option.map (fun (results, _) ->
-                match projectedEventKey symbol with
-                | Some key -> results.GetAllUsesOfAllSymbolsInFile() |> Seq.filter (matchesProjectedEvent key) |> Seq.toArray
-                | None -> projectUsageSymbols symbol |> Array.collect results.GetUsesOfSymbolInFile)
-            |> Option.defaultValue [||]
-    }
-
-let private getOverlayAwareProjectUsages
-    (state: FSharpWorkspace.FSharpWorkspaceState)
-    (symbol: FSharpSymbol)
-    =
-    task {
-        let uses = ResizeArray<FSharpSymbolUse>()
-
-        for filePath in state.ProjectOptions.Value.SourceFiles do
-            let! fileUses = getFileUsages state symbol filePath
-            uses.AddRange(fileUses)
-
-        return uses.ToArray() |> deduplicateSemanticRanges
+            projects
+            |> Array.ofList
+            |> Array.collect (fun (project: FSharpCheckProjectResults) ->
+                usesFrom (fun () -> Seq.ofArray (project.GetAllUsesOfAllSymbols())) project.GetUsesOfSymbol symbol)
+            |> deduplicateSemanticRanges
     }
 
 /// Resolve project-wide uses from an already-resolved symbol. Rename uses this
@@ -99,12 +98,13 @@ let private getOverlayAwareProjectUsages
 /// resolve the symbol again from a token-normalized source position.
 let internal getProjectUsagesForSymbol
     (state: FSharpWorkspace.FSharpWorkspaceState)
+    (usedIn: string)
     (symbol: FSharpSymbol)
     =
     task {
         match state.ProjectOptions with
         | None -> return [||]
-        | Some _ -> return! getOverlayAwareProjectUsages state symbol
+        | Some _ -> return! getScopeUsages state (FSharpWorkspace.anchorOf state symbol usedIn) symbol
     }
 
 /// Resolve the symbol at a position and return all of its uses across the
@@ -124,15 +124,9 @@ let getProjectUsages
             | Some(checkResults, source) ->
                 match FSharpWorkspace.getSymbolUse checkResults source line character with
                 | None -> return [||]
-                | Some symbolUse ->
-                    if state.ProjectOptions.IsNone then
-                        return
-                            match projectedEventKey symbolUse.Symbol with
-                            | Some key -> checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.filter (matchesProjectedEvent key) |> Seq.toArray
-                            | None -> projectUsageSymbols symbolUse.Symbol |> Array.collect checkResults.GetUsesOfSymbolInFile
-                            |> deduplicateSemanticRanges
-                    else
-                        return! getProjectUsagesForSymbol state symbolUse.Symbol
+                | Some symbolUse when state.ProjectOptions.IsNone ->
+                    return usesInFile checkResults symbolUse.Symbol |> deduplicateSemanticRanges
+                | Some symbolUse -> return! getProjectUsagesForSymbol state filePath symbolUse.Symbol
         with ex ->
             Log.Debug(ex, "[F# ProjectUsages] failed")
             return [||]

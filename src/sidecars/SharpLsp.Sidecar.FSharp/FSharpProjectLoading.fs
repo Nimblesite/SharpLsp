@@ -13,13 +13,13 @@ open SharpLsp.Sidecar.Common.Solutions
 
 let parseFsprojSourceFiles (fsprojPath: string) : string array =
     let document = XDocument.Load(fsprojPath)
-    let projectDirectory = Path.GetDirectoryName(fsprojPath) |> string
+    let projectDirectory = NativePaths.DirectoryOf fsprojPath
 
     document.Descendants(XName.Get("Compile"))
     |> Seq.choose (fun element ->
         element.Attribute(XName.Get("Include"))
         |> Option.ofObj
-        |> Option.map (fun attribute -> Path.GetFullPath(Path.Combine(projectDirectory, attribute.Value))))
+        |> Option.map (fun attribute -> NativePaths.Resolve(projectDirectory, attribute.Value)))
     |> Seq.toArray
 
 let parseFsprojOtherFlags (fsprojPath: string) : string array =
@@ -48,7 +48,7 @@ let parseFsprojAssemblyName (fsprojPath: string) =
         |> Seq.tryLast
 
     explicitName
-    |> Option.defaultValue (Path.GetFileNameWithoutExtension(fsprojPath) |> string)
+    |> Option.defaultValue (NativePaths.StemOf fsprojPath)
 
 let private isOutputFlag (value: string) =
     value.StartsWith("--out:", StringComparison.OrdinalIgnoreCase)
@@ -60,16 +60,13 @@ let private projectIdentityArgs fsprojPath projectFlags =
     else
         [| $"--out:{parseFsprojAssemblyName fsprojPath}.dll" |]
 
-let private isFsprojPath (path: string) =
-    path.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+let private isFsprojPath (path: string) = NativePaths.HasExtension(path, ".fsproj")
 
 let private isSolutionPath (path: string) =
-    path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
-    || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
+    NativePaths.HasExtension(path, ".sln") || NativePaths.HasExtension(path, ".slnx")
 
 let isScriptPath (path: string) =
-    path.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase)
-    || path.EndsWith(".fsscript", StringComparison.OrdinalIgnoreCase)
+    NativePaths.HasExtension(path, ".fsx") || NativePaths.HasExtension(path, ".fsscript")
 
 let private outcomeError (result: Outcome.Result<SolutionFileModel, string>) =
     result.Match((fun _ -> String.Empty), (fun error -> error))
@@ -95,7 +92,7 @@ let private fsprojFilesFromSolution (path: string) (ct: CancellationToken) =
 
 let discoverFsprojFiles (path: string) (ct: CancellationToken) =
     task {
-        let fullPath = Path.GetFullPath(path)
+        let fullPath = NativePaths.NormalizeFullPath path
 
         if File.Exists(fullPath) && isFsprojPath fullPath then
             return Ok [| fullPath |]
@@ -128,12 +125,17 @@ let private fsharpCoreReferenceArgs () =
     else
         [| $"-r:{assemblyPath}" |]
 
+/// The sidecar runtime's references never change within a process, and reading every
+/// runtime assembly's header is paid once, however many projects load.
+let private runtimeReferences =
+    lazy
+        [| yield "--noframework"
+           yield "--targetprofile:netcore"
+           yield! runtimeReferenceArgs ()
+           yield! fsharpCoreReferenceArgs () |]
+
 /// Compiler references shared by project loading and package analysis.
-let frameworkReferenceArgs () : string array =
-    [| yield "--noframework"
-       yield "--targetprofile:netcore"
-       yield! runtimeReferenceArgs ()
-       yield! fsharpCoreReferenceArgs () |]
+let frameworkReferenceArgs () : string array = Array.copy runtimeReferences.Value
 
 let private packageReferenceArgs fsprojPath =
     FSharpAssets.parseAssets fsprojPath
@@ -145,9 +147,20 @@ let private projectReferenceArg projectPath =
     |> Option.ofObj
     |> Option.map (fun assemblyPath -> $"-r:{assemblyPath}")
 
-let private projectReferenceArgs fsprojPath =
+/// The projects `fsprojPath` references whose project file ends in `extension`.
+let referencedProjects (extension: string) (fsprojPath: string) =
     ProjectReferences.ReadReferencedProjects(fsprojPath)
-    |> Seq.filter (fun project -> project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+    |> Seq.filter (fun project -> NativePaths.HasExtension(project, extension))
+
+/// The prefix among `prefixes` that compiler argument `arg` starts with, and its value.
+let flagValue (prefixes: string list) (arg: string) =
+    prefixes
+    |> List.tryFind (fun prefix -> arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+    |> Option.map (fun prefix -> prefix, arg.Substring prefix.Length)
+
+/// A C# project is referenced as its built assembly: FCS cannot read C# source.
+let private projectReferenceArgs fsprojPath =
+    referencedProjects ".csproj" fsprojPath
     |> Seq.choose projectReferenceArg
     |> Seq.toArray
 

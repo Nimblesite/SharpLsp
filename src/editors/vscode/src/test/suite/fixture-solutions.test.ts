@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { dotnet } from './dotnet-project-kit';
+import { removeDirRecursive } from './test-helpers';
 import { FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const fixture = path.resolve(__dirname, '../../../test-fixtures/workspace');
@@ -35,7 +36,7 @@ for (const solution of solutions) {
       });
 
       suiteTeardown(() => {
-        if (root !== undefined) fs.rmSync(root, { recursive: true, force: true });
+        if (root !== undefined) removeDirRecursive(root);
       });
 
       test('builds every declared F# and C# project from source, not just an empty solution', function () {

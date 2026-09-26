@@ -3,8 +3,9 @@
 // netcoredbg exposes CLR sequence points, including C# block braces. The Rust
 // host already owns the concrete syntax trees for both C# and F#, so the router
 // asks it whether a stop carries code instead of guessing from source text.
-import * as path from 'node:path';
+
 import * as vscode from 'vscode';
+import { isLexicallyWithin } from './paths';
 import * as state from './state';
 
 /** One source position reported by the adapter, in DAP's one-based coordinates. */
@@ -30,18 +31,8 @@ export function belongsToUserCode(location: StatementLocation, launchRoot?: stri
   if (location.path === undefined) return false;
   return (
     vscode.workspace.getWorkspaceFolder(vscode.Uri.file(location.path)) !== undefined ||
-    isWithin(launchRoot, location.path)
+    (launchRoot !== undefined && isLexicallyWithin(launchRoot, location.path))
   );
-}
-
-function isWithin(root: string | undefined, candidate: string): boolean {
-  if (root === undefined) return false;
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  // On Windows `path.relative` answers across drives with an ABSOLUTE path:
-  // across different drives it returns the candidate path itself, which does
-  // not begin with `..`. Treat an absolute answer as "different volume, never
-  // within".
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 interface StatementStopResponse {

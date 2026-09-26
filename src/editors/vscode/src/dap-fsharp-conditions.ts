@@ -17,6 +17,7 @@
 // rewriting more would be inventing an F# evaluator rather than spelling one
 // operator the way the evaluator expects.
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
+import { hasExtension } from './paths';
 
 /** Source extensions whose conditions are written in F#. */
 const FSHARP_EXTENSIONS: readonly string[] = ['.fs', '.fsi', '.fsx', '.fsscript'];
@@ -26,8 +27,7 @@ const COMPOSITE_EQUALS: readonly string[] = ['==', '!=', '<=', '>=', '=>'];
 
 /** Whether `path` is F# source, so its conditions are F# expressions. */
 export function isFSharpSource(path: string): boolean {
-  const lowered = path.toLowerCase();
-  return FSHARP_EXTENSIONS.some((extension) => lowered.endsWith(extension));
+  return hasExtension(path, ...FSHARP_EXTENSIONS);
 }
 
 /**

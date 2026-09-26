@@ -125,7 +125,7 @@ Each item is sized to one focused change with e2e + sidecar tests.
     (computed via `ParsedInput.FindNearestPointToInsertOpenDeclaration`). Sized as its own change.
     Tracked: [#122](https://github.com/Nimblesite/SharpLsp/issues/122).
 
-## E2E coverage status (`[FSAC-PARITY-E2E]`)
+## E2E coverage status `[FSAC-PARITY-E2E]`
 
 Rust-host full-stack F# e2e lives in
 [src/sharplsp/tests/e2e_modules/fsharp.rs](../../src/sharplsp/tests/e2e_modules/fsharp.rs) and drives the

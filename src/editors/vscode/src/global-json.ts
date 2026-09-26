@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, joinPath, resolvePath } from './paths';
+import { isDirectory } from './utils';
 
 /**
  * `global.json` SDK pin handling.
@@ -242,11 +243,11 @@ export function pinSatisfiedBy(installed: readonly string[], pin: SdkPin): boole
 
 /** The nearest `global.json` at or above `startDir`, if any. */
 export function findGlobalJson(startDir: string): string | undefined {
-  let dir = path.resolve(startDir);
+  let dir = resolvePath(startDir);
   for (;;) {
-    const candidate = path.join(dir, 'global.json');
+    const candidate = joinPath(dir, 'global.json');
     if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
+    const parent = directoryOf(dir);
     if (parent === dir) return undefined;
     dir = parent;
   }
@@ -295,14 +296,16 @@ function parseJson(source: string): unknown {
   }
 }
 
-/** SDK versions installed beside a `dotnet` executable, newest last. */
+/**
+ * SDK versions installed beside a `dotnet` executable, newest last. A linked SDK
+ * counts, exactly as `dotnet --list-sdks` counts it: hostfxr follows the link.
+ */
 export function installedSdkVersions(dotnetPath: string): readonly string[] {
   try {
+    const sdks = joinPath(directoryOf(dotnetPath), 'sdk');
     return fs
-      .readdirSync(path.join(path.dirname(dotnetPath), 'sdk'), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .filter((name) => parseSdkVersion(name) !== undefined)
+      .readdirSync(sdks)
+      .filter((name) => parseSdkVersion(name) !== undefined && isDirectory(joinPath(sdks, name)))
       .sort();
   } catch {
     return [];

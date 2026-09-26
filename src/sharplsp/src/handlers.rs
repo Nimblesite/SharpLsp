@@ -13,6 +13,7 @@ use lsp_types::{
 };
 use tree_sitter::Tree;
 
+use crate::folding;
 use crate::syntax;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
@@ -54,7 +55,7 @@ pub fn handle_folding_ranges(
     let uri = &params.text_document.uri;
     let source = vfs.get_content(uri).context("document not found in VFS")?;
     let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
-    let ranges = syntax::folding_ranges(&tree, &source);
+    let ranges = folding::folding_ranges(&tree, &source);
     Ok(serde_json::to_value(ranges)?)
 }
 

@@ -17,8 +17,9 @@
  * Implements [TEST-MTP-DISCOVERY].
  */
 
-import * as path from 'node:path';
-import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
+import { extensionOf, fileNameOf } from './paths';
+import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
+import { runModule } from './test-mtp-report.js';
 import {
   mergeMultiTargeted,
   type MtpModuleRun,
@@ -41,9 +42,12 @@ import {
   type MtpProjectScan,
 } from './test-mtp-modules.js';
 
-/** Ask a module for its tests as JSON, and nothing else. */
+/** The module's own arguments asking for its tests as JSON, and nothing else. */
+const LIST_OPTIONS: readonly string[] = ['--list-tests', 'json', '--no-banner', '--no-ansi'];
+
+/** The `dotnet exec` argument vector that lists a module's tests. */
 export function listArgs(modulePath: string): string[] {
-  return ['exec', modulePath, '--list-tests', 'json', '--no-banner', '--no-ansi'];
+  return ['exec', modulePath, ...LIST_OPTIONS];
 }
 
 /** One module's tests, plus whatever went wrong asking for them. */
@@ -58,14 +62,14 @@ async function listModule(
   cwd: string,
   timeoutMs: number,
 ): Promise<ModuleListing> {
-  const run = await runDotnet(listArgs(modulePath), cwd, timeoutMs);
+  const run = await runModule(modulePath, LIST_OPTIONS, cwd, { timeoutMs });
   const output = `${run.stdout}\n${run.stderr}`;
   const rejected = rejectedMtpOption(output);
   if (rejected !== undefined) {
     return {
       tests: [],
       warnings: [
-        `${path.basename(modulePath)} rejected ${rejected}. ` +
+        `${fileNameOf(modulePath)} rejected ${rejected}. ` +
           'Its Microsoft.Testing.Platform version is older than 2.3, which is the first ' +
           'to list tests as JSON. Update the test framework package.',
       ],
@@ -83,10 +87,10 @@ function moduleListing(modulePath: string, run: DotnetRun): ModuleListing {
     listing.tests.length === 0 &&
     listing.warnings.length === 0 &&
     !run.killed &&
-    (!run.failed || run.errorMessage === 'dotnet exited with code 8');
+    (!run.failed || run.exitCode === 8);
   const failure =
     listing.tests.length === 0 && run.failed && !empty
-      ? [`${path.basename(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]
+      ? [`${fileNameOf(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]
       : [];
   return { tests: listing.tests, warnings: [...listing.warnings, ...failure] };
 }
@@ -131,7 +135,7 @@ async function scanModule(modulePath: string, sweep: SweepContext): Promise<Modu
   const listed = await listModule(modulePath, sweep.cwd, sweep.timeoutMs);
   return {
     assembly: {
-      name: path.basename(modulePath, path.extname(modulePath)),
+      name: fileNameOf(modulePath, extensionOf(modulePath)),
       path: modulePath,
       names: mtpIds(listed.tests),
     },
@@ -164,14 +168,7 @@ function collectLocations(
  * project at all is a truthful empty answer; a target whose modules all failed
  * to list, or whose build `dotnet` refused outright, is not.
  */
-export async function listMtpTests(
-  target: string,
-  cwd: string,
-  timeoutMs: number = DOTNET_TIMEOUT_MS,
-): Promise<TestListing> {
-  const sweep: SweepContext = { target, cwd, timeoutMs };
-  return await listScanned(await scanMtpProjects(target, cwd, timeoutMs), sweep);
-}
+export const listMtpTests = sweepOf(scanMtpProjects);
 
 /**
  * Enumerate every MTP test of a target the VSTest passes have just restored.
@@ -182,13 +179,14 @@ export async function listMtpTests(
  * must not pay a second build for a probe that finds nothing. Spec:
  * [TEST-MTP-DETECT].
  */
-export async function probeMtpTests(
-  target: string,
-  cwd: string,
-  timeoutMs: number = DOTNET_TIMEOUT_MS,
-): Promise<TestListing> {
-  const sweep: SweepContext = { target, cwd, timeoutMs };
-  return await listScanned(await probeMtpProjects(target, cwd, timeoutMs), sweep);
+export const probeMtpTests = sweepOf(probeMtpProjects);
+
+/** A sweep that lists every test of the MTP projects `scan` finds in its target. */
+function sweepOf(
+  scan: (target: string, cwd: string, timeoutMs: number) => Promise<MtpProjectScan>,
+): (target: string, cwd: string, timeoutMs?: number) => Promise<TestListing> {
+  return async (target, cwd, timeoutMs = DOTNET_TIMEOUT_MS) =>
+    await listScanned(await scan(target, cwd, timeoutMs), { target, cwd, timeoutMs });
 }
 
 /** What every module of a sweep reported, gathered for the tree and the run. */

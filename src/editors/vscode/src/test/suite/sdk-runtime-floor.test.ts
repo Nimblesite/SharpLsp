@@ -2,7 +2,12 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { type SdkPin, pinSatisfiedBy, runtimeFloorMet } from '../../global-json.js';
+import {
+  type SdkPin,
+  installedSdkVersions,
+  pinSatisfiedBy,
+  runtimeFloorMet,
+} from '../../global-json.js';
 import { findSidecarSdk, supportsSidecars } from '../../dotnet-host.js';
 import {
   FRAMEWORK_MISSING_EXIT,
@@ -37,10 +42,10 @@ import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts.js';
  * ahead of the sidecars', and an SDK major differing from the runtime's. Those
  * four are exactly where a "does this look like 10?" check goes wrong.
  *
- * Composing a root copies a real SDK and a real runtime, which costs tens of
- * seconds on an agent without reflinks, so every root is composed ONCE in
- * `suiteSetup` and the test bodies only launch processes against them
- * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]: a suite pays one initialization).
+ * Composing a root links the suite's one copy of a real SDK and copies a real
+ * runtime, which costs seconds on an agent without reflinks, so every root is
+ * composed ONCE in `suiteSetup` and the test bodies only launch processes against
+ * them ([DIST-CI-VSIX-SHARDS-TIMEOUTS]: a suite pays one initialization).
  *
  * Implements [DIST-RUNTIME-ACQUIRE].
  */
@@ -97,13 +102,14 @@ suite('a root is judged by whether the sidecars actually start on it', () => {
   let scratch: string;
   const hosts = new Map<string, string>();
 
-  suiteSetup(function () {
+  suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
     const source = realSource();
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-runtime-floor-'));
-    for (const [name, sdkMajor, runtime] of CASES) {
-      hosts.set(name, composeRoot(scratch, source, name, sdkMajor, runtime));
-    }
+    const composed = CASES.map(async ([name, sdkMajor, runtime]) => {
+      hosts.set(name, await composeRoot(scratch, source, name, sdkMajor, runtime));
+    });
+    await Promise.all(composed);
   });
 
   suiteTeardown(() => {
@@ -206,12 +212,14 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     return { version: sdk, rollForward: 'disable', source: path.join(scratch, 'global.json') };
   }
 
-  suiteSetup(function () {
+  suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
     const source = realSource();
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-both-questions-'));
-    nineOnly = composeRoot(scratch, source, 'nine-only', 9, '9.0.14');
-    ten = composeRoot(scratch, source, 'ten', 10, '10.0.7');
+    [nineOnly, ten] = await Promise.all([
+      composeRoot(scratch, source, 'nine-only', 9, '9.0.14'),
+      composeRoot(scratch, source, 'ten', 10, '10.0.7'),
+    ]);
     ninePin = pinFor(nineOnly);
     tenPin = pinFor(ten);
   });
@@ -227,6 +235,13 @@ suite('[DIST-RUNTIME-ACQUIRE] a selected host answers both questions', () => {
     assert.ok(
       pinSatisfiedBy(realSdks(path.dirname(nineOnly)), ninePin),
       'the 9-only root must satisfy its own pin, or this is not the #297 scenario',
+    );
+    // Asked through the selector's own lister too: the root's SDK is a link, and a
+    // name alone would survive a dangling one while the selector returned nothing
+    // for the wrong reason — an unsatisfied pin rather than a refused host.
+    assert.ok(
+      pinSatisfiedBy(installedSdkVersions(nineOnly), ninePin),
+      'the selector itself must see the 9-only root satisfy the pin through its link',
     );
     assertFrameworkMissing(scratch, nineOnly, 'CSharp');
     // And the F# sidecar too — both are net10.0, so both must be lost together.
@@ -327,11 +342,11 @@ suite('[DIST-RUNTIME-ACQUIRE] a probe that cannot answer discards the root', () 
   let source: string;
   let ten: string;
 
-  suiteSetup(function () {
+  suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
     source = realSource();
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-probe-fails-'));
-    ten = composeRoot(scratch, source, 'ten', 10, '10.0.7');
+    ten = await composeRoot(scratch, source, 'ten', 10, '10.0.7');
   });
 
   setup(() => {

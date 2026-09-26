@@ -20,10 +20,19 @@ public abstract class SidecarHost : IAsyncDisposable
     /// otherwise spin at 100% CPU flooding the log forever (GitHub #153).
     private const int MaxConsecutiveMessageFailures = 8;
 
+    /// Ceiling on writing one response. A peer that stopped reading must not
+    /// hold the loop — or the shutdown acknowledgement — forever
+    /// ([SIDECAR-SHUTDOWN-ACK]).
+    private static readonly TimeSpan ResponseWriteBudget = TimeSpan.FromSeconds(5);
+
     private readonly MessageRouter _router = new();
     private readonly CancellationTokenSource _shutdownCts = new();
     private IpcListener? _listener;
     private FramedTransport? _transport;
+
+    /// Set by the shutdown handler; the loop acts on it only once the
+    /// handler's acknowledgement is flushed ([SIDECAR-SHUTDOWN-ACK]).
+    private bool _stopRequested;
 
     /// <summary>
     /// True when the sidecar could not bind its endpoint and never reached
@@ -80,7 +89,37 @@ public abstract class SidecarHost : IAsyncDisposable
     /// <summary>Shuts down the sidecar and releases all resources.</summary>
     public async ValueTask DisposeAsync()
     {
-        await _shutdownCts.CancelAsync().ConfigureAwait(false);
+        await CloseAsync().ConfigureAwait(false);
+        await DisposeCoreAsync().ConfigureAwait(false);
+        _shutdownCts.Dispose();
+        SidecarLog.Shutdown();
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Release what a concrete sidecar owns — a workspace, and any process it started
+    /// — once the connection is closed and before the log is. The process entry point
+    /// disposes the sidecar the moment its message loop ends, so anything not released
+    /// here outlives the sidecar.
+    /// </summary>
+    protected virtual ValueTask DisposeCoreAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Stop dispatch, then close the connection and the listener. An
+    /// acknowledged shutdown ends here, so the peer reads end of stream, and
+    /// disposal ends here again: closing twice is harmless, and a cancelled
+    /// source is never cancelled twice — disposal cancels before it disposes,
+    /// so this never touches a disposed one.
+    /// </summary>
+    private async Task CloseAsync()
+    {
+        if (!_shutdownCts.IsCancellationRequested)
+        {
+            await _shutdownCts.CancelAsync().ConfigureAwait(false);
+        }
 
         if (_transport is not null)
         {
@@ -91,10 +130,6 @@ public abstract class SidecarHost : IAsyncDisposable
         {
             await _listener.DisposeAsync().ConfigureAwait(false);
         }
-
-        _shutdownCts.Dispose();
-        SidecarLog.Shutdown();
-        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -128,10 +163,16 @@ public abstract class SidecarHost : IAsyncDisposable
         var stream = await _listener.AcceptStreamAsync(_shutdownCts.Token).ConfigureAwait(false);
         _transport = new FramedTransport(stream);
 
-        await MessageLoopAsync().ConfigureAwait(false);
+        await MessageLoopAsync(_transport).ConfigureAwait(false);
+        if (_stopRequested)
+        {
+            // The acknowledgement is flushed: only now stop dispatch and close,
+            // so the process exits zero with the peer already answered.
+            await CloseAsync().ConfigureAwait(false);
+        }
     }
 
-    private async Task MessageLoopAsync()
+    private async Task MessageLoopAsync(FramedTransport transport)
     {
         // Terminal and bounded failure behavior: [SIDECAR-IPC-MESSAGE-LOOP].
         var ct = _shutdownCts.Token;
@@ -140,7 +181,7 @@ public abstract class SidecarHost : IAsyncDisposable
         {
             try
             {
-                if (!await ProcessOneMessageAsync(ct).ConfigureAwait(false))
+                if (!await ProcessOneMessageAsync(transport, ct).ConfigureAwait(false))
                 {
                     break;
                 }
@@ -174,9 +215,13 @@ public abstract class SidecarHost : IAsyncDisposable
         }
     }
 
-    private async Task<bool> ProcessOneMessageAsync(CancellationToken ct)
+    /// <summary>
+    /// Read, dispatch and answer one frame; false once the loop must end — at
+    /// end of stream, or once a shutdown's acknowledgement is flushed.
+    /// </summary>
+    private async Task<bool> ProcessOneMessageAsync(FramedTransport transport, CancellationToken ct)
     {
-        var frameBytes = await _transport!.ReadFrameAsync(ct).ConfigureAwait(false);
+        var frameBytes = await transport.ReadFrameAsync(ct).ConfigureAwait(false);
         if (frameBytes is null)
         {
             return false;
@@ -187,38 +232,55 @@ public abstract class SidecarHost : IAsyncDisposable
             cancellationToken: ct
         );
         var response = await _router.HandleAsync(envelope, ct).ConfigureAwait(false);
-        if (response is null)
+        if (response is not null)
         {
-            return true;
+            await WriteResponseAsync(transport, response, ct).ConfigureAwait(false);
         }
 
-        var responseBytes = MessagePackSerializer.Serialize(response, cancellationToken: ct);
-        await _transport.WriteFrameAsync(responseBytes, ct).ConfigureAwait(false);
-        return true;
+        return !_stopRequested;
+    }
+
+    /// Write and flush one response within <see cref="ResponseWriteBudget" />.
+    private static async Task WriteResponseAsync(
+        FramedTransport transport,
+        Envelope response,
+        CancellationToken ct
+    )
+    {
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        bounded.CancelAfter(ResponseWriteBudget);
+        var bytes = MessagePackSerializer.Serialize(response, cancellationToken: bounded.Token);
+        await transport.WriteFrameAsync(bytes, bounded.Token).ConfigureAwait(false);
     }
 
     // Ping responder for [SIDECAR-HEALTH-ACTIVITY].
     private static Task<ByteResult> HandlePingAsync(byte[] _, CancellationToken ct)
     {
-        try
-        {
-            var bytes = MessagePackSerializer.Serialize("pong", cancellationToken: ct);
-            return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));
-        }
-        catch (Exception ex)
-        {
-            return Task.FromResult(ByteResult.Failure(ex.Message));
-        }
+        return Task.FromResult(Serialized("pong", ct));
     }
 
-    // TODO [SIDECAR-SHUTDOWN-ACK]: cancel only after the acknowledgement is flushed.
-    private async Task<ByteResult> HandleShutdownAsync(byte[] _, CancellationToken ct)
+    /// <summary>
+    /// Acknowledge shutdown WITHOUT stopping anything: cancelling here would
+    /// cancel the very write that carries the "ok" (GitHub #172). The loop
+    /// stops once the acknowledgement is flushed ([SIDECAR-SHUTDOWN-ACK]).
+    /// </summary>
+    private Task<ByteResult> HandleShutdownAsync(byte[] _, CancellationToken ct)
+    {
+        var reply = Serialized("ok", ct);
+        _stopRequested = !reply.IsError;
+        return Task.FromResult(reply);
+    }
+
+    /// <summary>
+    /// A handler's answer, serialized for the wire. A value that cannot be
+    /// serialized is that handler's failure, never an exception in the loop.
+    /// </summary>
+    protected static ByteResult Serialized<T>(T value, CancellationToken ct)
     {
         try
         {
-            var result = MessagePackSerializer.Serialize("ok", cancellationToken: ct);
-            await _shutdownCts.CancelAsync().ConfigureAwait(false);
-            return new ByteResult.Ok<byte[], string>(result);
+            var bytes = MessagePackSerializer.Serialize(value, cancellationToken: ct);
+            return new ByteResult.Ok<byte[], string>(bytes);
         }
         catch (Exception ex)
         {

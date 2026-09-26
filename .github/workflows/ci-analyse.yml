@@ -71,7 +71,7 @@ jobs:
         run: make _lint-vsix
 
       # ── Duplication ────────────────────────────────────────────────
-      # [CI-DESLOP] The duplication ratchet. `deslop .` reads the committed
+      # [DIST-CI-DESLOP] The duplication ratchet. `deslop .` reads the committed
       # .deslop.toml — which owns BOTH the threshold (max_duplication_percent)
       # and the exclude list — and exits 3 the moment measured duplication over
       # the SHIPPED code exceeds it. The threshold is deliberately NOT passed on
@@ -95,7 +95,7 @@ jobs:
           # Download the archive AND its published checksum, and verify before
           # unpacking: this step runs a downloaded binary over the whole tree, so
           # an unverified tarball would be a supply-chain hole in the gate that
-          # exists to protect the codebase. [DIST-SECRETS]
+          # exists to protect the codebase. [DIST-CI-DESLOP]
           curl -sSfL --retry 3 -o "$tmp/$tarball" "$base/$tarball"
           curl -sSfL --retry 3 -o "$tmp/$tarball.sha256" "$base/$tarball.sha256"
           ( cd "$tmp" && awk '{print $1"  '"$tarball"'"}' "$tarball.sha256" | sha256sum -c - )

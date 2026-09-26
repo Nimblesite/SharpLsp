@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
+import { removeDirRecursive } from '../../utils';
 import { LSP_RESPONSE_MS, POLL_INTERVAL_MS, READINESS_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -454,23 +455,13 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
 /**
  * Recursively delete a scratch directory, tolerating Windows file-handle races.
  *
- * `force: true` only swallows ENOENT — it does NOT retry. On Windows a directory
- * whose files are still open in a spawned child (dotnet, VBCSCompiler, a sidecar)
- * fails the delete with EPERM/EBUSY, which is why teardown hooks flaked on the
- * Windows runners while the identical code is stable on Linux. Node retries exactly
- * those codes when given maxRetries/retryDelay.
- *
- * Cleanup failure must never fail an otherwise-passing test, so this is best-effort
- * after the retries are exhausted. Use this everywhere instead of a bare rmSync:
- * a per-call-site copy is how the retry policy drifts. Implements [DIST-CI-WIN-VSIX].
+ * Teardown hooks flaked on the Windows runners while the identical code was
+ * stable on Linux: a spawned child still held a file open. Cleanup failure must
+ * never fail an otherwise-passing test. Use this everywhere instead of a bare
+ * rmSync — it is the production helper, so the retry policy has one home.
+ * Implements [DIST-CI-WIN-VSIX].
  */
-export function removeDirRecursive(target: string): void {
-  try {
-    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  } catch {
-    // Best-effort: a leaked handle in a child process must not fail the suite.
-  }
-}
+export { removeDirRecursive };
 
 /** Remove the temp directory created by `setupLspTestSuite`. */
 export function teardownLspTestSuite(tmpDir: string): void {

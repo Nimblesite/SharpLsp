@@ -543,6 +543,12 @@
         "icon": "$(folder-opened)"
       },
       {
+        "command": "sharplsp.selectTargetFramework",
+        "title": "%cmd.selectTargetFramework%",
+        "category": "%category%",
+        "icon": "$(versions)"
+      },
+      {
         "command": "sharplsp.openSolution",
         "title": "%cmd.openSolution%",
         "category": "%category%"

@@ -14,12 +14,9 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, hasExtension, isProjectFile, joinPath, resolvePath } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet } from './dotnet-process.js';
 import { evaluateProject, type ProjectProperties } from './msbuild.js';
-
-/** Project file extensions the Test Explorer knows. */
-const PROJECT_EXTENSIONS = ['.csproj', '.fsproj'];
 
 /** Solution file extensions `dotnet sln list` accepts. */
 const SOLUTION_EXTENSIONS = ['.sln', '.slnx', '.slnf'];
@@ -40,7 +37,7 @@ export interface MtpProjectScan {
 
 /** True when `target` is a solution file `dotnet sln list` understands. */
 export function isSolutionFile(target: string): boolean {
-  return SOLUTION_EXTENSIONS.includes(path.extname(target).toLowerCase());
+  return hasExtension(target, ...SOLUTION_EXTENSIONS);
 }
 
 /**
@@ -55,16 +52,15 @@ export function parseSolutionProjects(output: string, solutionDir: string): stri
   const projects: string[] = [];
   for (const raw of output.split('\n')) {
     const line = raw.trim();
-    if (!PROJECT_EXTENSIONS.includes(path.extname(line).toLowerCase())) continue;
-    projects.push(path.resolve(solutionDir, line));
+    if (!isProjectFile(line)) continue;
+    projects.push(resolvePath(solutionDir, line));
   }
   return projects;
 }
 
 /** True when `name` is a file `dotnet build <folder>` would pick up. */
 function isBuildable(name: string): boolean {
-  const extension = path.extname(name).toLowerCase();
-  return PROJECT_EXTENSIONS.includes(extension) || SOLUTION_EXTENSIONS.includes(extension);
+  return isProjectFile(name) || hasExtension(name, ...SOLUTION_EXTENSIONS);
 }
 
 /** The project and solution files DIRECTLY inside `dir`, never below it. */
@@ -73,7 +69,7 @@ function buildableFilesIn(dir: string): string[] {
     return fs
       .readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && isBuildable(entry.name))
-      .map((entry) => path.join(dir, entry.name));
+      .map((entry) => joinPath(dir, entry.name));
   } catch {
     return [];
   }
@@ -90,7 +86,7 @@ function isDirectory(target: string): boolean {
 
 /** Directory containing a target path (the path itself when it is a directory). */
 export function dirOf(target: string): string {
-  return isDirectory(target) ? target : path.dirname(target);
+  return isDirectory(target) ? target : directoryOf(target);
 }
 
 /**
@@ -104,7 +100,7 @@ export function dirOf(target: string): string {
  */
 export async function projectsOf(target: string, timeoutMs: number): Promise<string[]> {
   if (isSolutionFile(target)) {
-    const dir = path.dirname(target);
+    const dir = directoryOf(target);
     const run = await runDotnet(['sln', target, 'list'], dir, timeoutMs);
     return parseSolutionProjects(run.stdout, dir);
   }

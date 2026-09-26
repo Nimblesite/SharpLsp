@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.Build.Locator;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp;
 
@@ -114,7 +115,7 @@ internal static class MSBuildInstanceSelector
     /// </summary>
     private static string NeutralWorkingDirectory()
     {
-        var probeDir = Path.Combine(Path.GetTempPath(), "sharplsp-sdkprobe");
+        var probeDir = NativePaths.Temp("sharplsp-sdkprobe");
         _ = Directory.CreateDirectory(probeDir);
         return probeDir;
     }
@@ -187,14 +188,16 @@ internal static class MSBuildInstanceSelector
     /// <summary>Roslyn version bundled next to the running sidecar, or null.</summary>
     internal static Version? ReadBundledRoslynVersion()
     {
-        return ReadAssemblyVersion(Path.Combine(AppContext.BaseDirectory, RoslynAssemblyName));
+        return ReadAssemblyVersion(
+            NativePaths.Resolve(AppContext.BaseDirectory, RoslynAssemblyName)
+        );
     }
 
     /// <summary>Roslyn version shipped by the SDK rooted at <paramref name="msbuildPath"/>.</summary>
     internal static Version? ReadRoslynVersion(string msbuildPath)
     {
         return ReadAssemblyVersion(
-            Path.Combine(msbuildPath, "Roslyn", "bincore", RoslynAssemblyName)
+            NativePaths.Resolve(msbuildPath, "Roslyn", "bincore", RoslynAssemblyName)
         );
     }
 
@@ -290,7 +293,7 @@ internal static class MSBuildInstanceSelector
         return
         [
             .. CandidateDotnetRoots()
-                .Where(root => !PathComparer.Equals(root, active))
+                .Where(root => !NativePaths.Comparer.Equals(root, active))
                 .Where(root => SdkCandidatesUnder(root).Any(sdk => sdk.RoslynVersion == bundled)),
         ];
     }
@@ -312,22 +315,22 @@ internal static class MSBuildInstanceSelector
             Combine(Environment.GetEnvironmentVariable("ProgramFiles"), "dotnet"),
             Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA"), "Microsoft", "dotnet"),
         ];
-        return [.. roots.OfType<string>().Where(Directory.Exists).Distinct(PathComparer)];
+        return [.. roots.OfType<string>().Where(Directory.Exists).Distinct(NativePaths.Comparer)];
     }
 
     /// <summary>The directory of the first <c>dotnet</c> muxer on PATH, if any.</summary>
     private static string? MuxerDirectory()
     {
-        var muxer = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
-        return (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(directory => File.Exists(Path.Combine(directory, muxer)));
+        var muxer = NativePaths.ExecutableName("dotnet");
+        return NativePaths
+            .SearchPathEntries(Environment.GetEnvironmentVariable("PATH"))
+            .FirstOrDefault(directory => File.Exists(NativePaths.Resolve(directory, muxer)));
     }
 
     /// <summary>Every <c>sdk/&lt;version&gt;</c> directory beneath one .NET root.</summary>
     internal static IReadOnlyList<SdkCandidate> SdkCandidatesUnder(string root)
     {
-        var sdkDirectory = Path.Combine(root, "sdk");
+        var sdkDirectory = NativePaths.Resolve(root, "sdk");
         try
         {
             return Directory.Exists(sdkDirectory) ? ScanSdkDirectory(sdkDirectory) : [];
@@ -346,7 +349,7 @@ internal static class MSBuildInstanceSelector
         [
             .. Directory
                 .EnumerateDirectories(sdkDirectory)
-                .Select(path => (path, version: ParseSdkVersion(Path.GetFileName(path))))
+                .Select(path => (path, version: ParseSdkVersion(NativePaths.NameOf(path))))
                 .Where(entry => entry.version is not null)
                 .Select(entry => new SdkCandidate(
                     entry.version!,
@@ -373,12 +376,8 @@ internal static class MSBuildInstanceSelector
 
     private static string? Combine(string? root, params string[] parts)
     {
-        return string.IsNullOrEmpty(root) ? null : Path.Combine([root, .. parts]);
+        return string.IsNullOrEmpty(root) ? null : NativePaths.Resolve(root, parts);
     }
-
-    /// <summary>Path equality: case-insensitive on Windows, exact elsewhere.</summary>
-    private static StringComparer PathComparer =>
-        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     private static string Describe(Version? version)
     {

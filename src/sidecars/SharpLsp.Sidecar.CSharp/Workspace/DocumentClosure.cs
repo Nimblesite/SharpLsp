@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -96,8 +97,14 @@ internal static class DocumentClosure
         CancellationToken ct
     )
     {
-        var full = Path.GetFullPath(path);
-        if (!state.Visited.Add(full) || state.Files.Count >= MaxFiles || depth > MaxDepth)
+        var full = NativePaths.NormalizeFullPath(path);
+        // A path already visited names a file already in the closure: skipping it drops
+        // nothing, so it is no issue. Identity follows the directory's own case rules.
+        if (
+            !state.Visited.Add(NativePaths.IdentityOf(full))
+            || state.Files.Count >= MaxFiles
+            || depth > MaxDepth
+        )
         {
             RecordBound(full, depth, state);
             return;
@@ -171,7 +178,7 @@ internal static class DocumentClosure
         ExpansionState state
     )
     {
-        var baseDir = Path.GetDirectoryName(filePath) ?? ".";
+        var baseDir = NativePaths.DirectoryOf(filePath);
         return directives
             .Where(d => d.Kind == FileDirectiveKind.Include)
             .SelectMany(d => ResolveInclude(d.Name, baseDir, state));
@@ -194,7 +201,7 @@ internal static class DocumentClosure
             || pattern.Contains('?', StringComparison.Ordinal);
         return usesMsBuildProperty ? []
             : isGlob ? ExpandGlob(pattern, baseDir, state)
-            : [Path.GetFullPath(Path.Combine(baseDir, pattern))];
+            : [NativePaths.Resolve(baseDir, pattern)];
     }
 
     private static string[] ExpandGlob(string pattern, string baseDir, ExpansionState state)
@@ -205,10 +212,8 @@ internal static class DocumentClosure
             var normalized = pattern
                 .Replace("**/", string.Empty, StringComparison.Ordinal)
                 .Replace("**\\", string.Empty, StringComparison.Ordinal);
-            var dir = Path.GetFullPath(
-                Path.Combine(baseDir, Path.GetDirectoryName(normalized) ?? string.Empty)
-            );
-            var mask = Path.GetFileName(normalized);
+            var dir = NativePaths.Resolve(baseDir, NativePaths.DirectoryOf(normalized));
+            var mask = NativePaths.NameOf(normalized);
             var option = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
             return Directory.Exists(dir) ? Directory.GetFiles(dir, mask, option) : [];
         }
@@ -235,18 +240,26 @@ internal static class DocumentClosure
 
     private sealed class ExpansionState(ChildResolver children, LiveText? live)
     {
-        private readonly string? _livePath = live is null ? null : Path.GetFullPath(live.Path);
+        private readonly string? _livePath = live is null
+            ? null
+            : NativePaths.NormalizeFullPath(live.Path);
 
         /// <summary>The unsaved text for <paramref name="fullPath"/>, or null to read disk.</summary>
         public string? LiveTextFor(string fullPath)
         {
-            return string.Equals(_livePath, fullPath, StringComparison.OrdinalIgnoreCase)
+            return
+                _livePath is not null
+                && string.Equals(
+                    NativePaths.IdentityOf(_livePath),
+                    NativePaths.IdentityOf(fullPath),
+                    StringComparison.Ordinal
+                )
                 ? live!.Text
                 : null;
         }
 
         public ChildResolver Children { get; } = children;
-        public HashSet<string> Visited { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Visited { get; } = new(StringComparer.Ordinal);
         public List<ClosureFile> Files { get; } = [];
         public List<PackageRef> Packages { get; } = [];
         public List<FileDirective> Directives { get; } = [];

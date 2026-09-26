@@ -38,7 +38,8 @@ Desktop.ini
 # committed: `.claude/settings.local.json` pins `"autoMemoryEnabled": false`.
 # Claude Code's local settings file has the highest precedence, so this is the
 # only place the value can be pinned for every contributor — and it holds that
-# one reviewed key, never machine paths. [GITIGNORE-RULES] [AGENT-AUTOMEMORY]
+# one reviewed key, never machine paths. (AgentPMO portfolio standards
+# GITIGNORE-RULES and AGENT-AUTOMEMORY; no SharpLsp spec defines them.)
 !.claude/settings.local.json
 
 # -----------------------------------------------------------------------------
@@ -141,7 +142,7 @@ test-results/
 .too_many_cooks/
 .commandtree/
 .playwright-mcp/
-# Deslop's local index ([CI-DESLOP]) and the reports the CLI writes locally.
+# Deslop's local index ([DIST-CI-DESLOP]) and the reports the CLI writes locally.
 .deslop/
 deslop-report.*
 deslop-*.log

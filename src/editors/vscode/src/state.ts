@@ -79,7 +79,7 @@ export type SymbolsState =
  * `loading`: a specific solution is being loaded (sidecar reload + workspace
  * symbols walk). `idle`: nothing in flight. The Solution Explorer subscribes
  * to this and renders a spinner node instead of staying blank
- * ([SE-LOAD-FEEDBACK]).
+ * ([SE-LOADING-FEEDBACK]).
  */
 export type LoadPhase =
   | { readonly kind: 'idle' }

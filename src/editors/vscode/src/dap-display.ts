@@ -22,20 +22,13 @@
 import type { RetryHost } from './dap-attach';
 import { parseDisplayFormat, type DisplayToken } from './dap-emulate';
 import { childrenOf, evaluateIn, referenceOf, stringField, unquote } from './dap-values';
+// Multi-line hole results (F# `%A`-style renderings) fold to one panel line.
+import { singleLine } from './utils';
 
 const ATTRIBUTE_TYPE = 'System.Diagnostics.DebuggerDisplayAttribute';
 
 /** Bound on the evaluations one rendering may cost the stopped session. */
 const MAX_HOLES = 8;
-
-/** Multi-line hole results (F# `%A`-style renderings) fold to one panel line. */
-function singleLine(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .join(' ');
-}
 
 /** Tokens usable for rendering: parsed, and affordably few holes. */
 function boundedTokens(tokens: DisplayToken[] | undefined): DisplayToken[] | undefined {

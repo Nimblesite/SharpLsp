@@ -3,6 +3,8 @@
 use dashmap::DashMap;
 use lsp_types::Uri;
 
+use crate::paths::{canonical_native_path, canonical_path, native_paths_equal};
+
 /// Stores the current content of all open documents.
 pub struct Vfs {
     /// Concurrent map of open document URIs to their state.
@@ -95,10 +97,8 @@ impl Vfs {
     /// needed: canonicalizing one side alone leaves the other's alias
     /// unmatched. Implements [SE-LIVE-BUFFER] (GitHub #110, #191).
     pub fn get_content_for_path_canonical(&self, path: &str) -> Option<String> {
-        self.get_content_for_path(path).or_else(|| {
-            let canonical = std::fs::canonicalize(path).ok()?;
-            self.get_content_for_path(&canonical.to_string_lossy())
-        })
+        self.get_content_for_path(path)
+            .or_else(|| self.get_content_for_path(&canonical_path(path)?))
     }
 
     /// Read the live buffer for `file_path` when the editor has the document
@@ -141,43 +141,8 @@ fn document_denotes_path(uri: &Uri, doc: &DocumentState, path: &str) -> bool {
         .is_some_and(|canonical| native_paths_equal(canonical, path));
 
     canonical_matches
-        || crate::utils::uri_to_path(uri.as_str())
+        || crate::paths::uri_to_path(uri.as_str())
             .is_ok_and(|doc_path| native_paths_equal(&doc_path, path))
-}
-
-/// Resolve a document URI to the canonical spelling of its native path, when the
-/// file exists on disk. The verbatim prefix `std::fs::canonicalize` adds is
-/// stripped up front so the result compares directly against the plain paths
-/// editors and sidecars supply. Implements [SE-LIVE-BUFFER] (GitHub #191).
-fn canonical_native_path(uri: &Uri) -> Option<String> {
-    let path = crate::utils::uri_to_path(uri.as_str()).ok()?;
-    let canonical = std::fs::canonicalize(path).ok()?;
-    Some(strip_verbatim(&canonical.to_string_lossy()).into_owned())
-}
-
-/// Compare two native paths for equality. Windows verbatim (`\\?\`) prefixes
-/// are ignored and the comparison is case-insensitive on Windows, where the
-/// filesystem is too: editors lowercase the drive letter (`c:`) while
-/// `std::fs::canonicalize` uppercases it (`\\?\C:`).
-fn native_paths_equal(left: &str, right: &str) -> bool {
-    let (left, right) = (strip_verbatim(left), strip_verbatim(right));
-    if cfg!(windows) {
-        left.eq_ignore_ascii_case(&right)
-    } else {
-        left == right
-    }
-}
-
-/// Strip the Windows verbatim prefix `std::fs::canonicalize` adds:
-/// `\\?\C:\...` becomes `C:\...` and `\\?\UNC\server\share\...` becomes
-/// `\\server\share\...`. A bare `\\?\` strip would leave the UNC form as
-/// `UNC\server\share\...`, which can never equal the plain spelling — so
-/// every network-share document would miss the VFS. [GitHub #110]
-fn strip_verbatim(path: &str) -> std::borrow::Cow<'_, str> {
-    if let Some(unc_rest) = path.strip_prefix(r"\\?\UNC\") {
-        return std::borrow::Cow::Owned(format!(r"\\{unc_rest}"));
-    }
-    std::borrow::Cow::Borrowed(path.strip_prefix(r"\\?\").unwrap_or(path))
 }
 
 #[cfg(test)]
@@ -189,21 +154,39 @@ mod tests {
 
     use super::*;
 
+    /// NTFS folds case across Unicode, not only ASCII: `Ärger` and `ärger` name
+    /// one directory. Canonicalizing cannot bridge the two spellings when the
+    /// file is not on disk — deleted since it was opened, or never saved — so
+    /// the comparison itself has to fold `Ä` and `ä`, or the open buffer is
+    /// missed and the caller reads a file that is not there. NTFS maps one
+    /// UTF-16 unit to one (its `$UpCase` table), so `ß` never equals `SS`.
+    /// Implements [SE-LIVE-BUFFER] (GitHub #171).
     #[cfg(windows)]
     #[test]
-    fn native_paths_equal_strips_verbatim_disk_and_unc_prefixes() {
-        // `std::fs::canonicalize` returns `\\?\C:\...` for local paths and
-        // `\\?\UNC\server\share\...` for network paths; both must compare
-        // equal to their plain spellings. [GitHub #110]
-        assert!(native_paths_equal(r"\\?\C:\dir\F.cs", r"c:\dir\f.cs"));
-        assert!(
-            native_paths_equal(r"\\?\UNC\server\share\F.cs", r"\\server\share\f.cs"),
-            "verbatim UNC must equal its plain UNC spelling"
+    fn get_content_for_path_folds_case_beyond_ascii_like_ntfs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let opened = tmp.path().join("Ärger").join("Übersicht.cs");
+        let vfs = Vfs::new();
+        let uri: Uri = url::Url::from_file_path(&opened)
+            .unwrap()
+            .to_string()
+            .parse()
+            .unwrap();
+        vfs.open(uri, 1, "class InBuffer {}".to_string());
+
+        let respelled = tmp.path().join("ärger").join("ÜBERSICHT.cs");
+        assert_eq!(
+            vfs.get_content_for_path_canonical(&respelled.to_string_lossy())
+                .as_deref(),
+            Some("class InBuffer {}"),
+            "a buffer whose file is not on disk must be found under any NTFS casing"
         );
-        assert!(!native_paths_equal(
-            r"\\?\UNC\server\share\F.cs",
-            r"\\other\share\F.cs"
+        assert!(native_paths_equal(
+            r"C:\ΣΟΦΙΑ\Ärger.cs",
+            r"c:\σοφια\ärger.cs"
         ));
+        assert!(!native_paths_equal(r"C:\a\straße.cs", r"C:\a\STRASSE.cs"));
+        assert!(!native_paths_equal(r"C:\Ärger\a.cs", r"C:\Arger\a.cs"));
     }
 
     #[test]

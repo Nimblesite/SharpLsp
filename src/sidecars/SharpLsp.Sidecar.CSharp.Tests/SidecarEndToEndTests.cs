@@ -1,5 +1,6 @@
 using MessagePack;
 using Microsoft.Build.Locator;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
 using SharpLsp.Sidecar.Common.Solutions;
@@ -210,18 +211,15 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
         """;
 
     private static readonly Lock MsBuildRegistrationLock = new();
-    private readonly string _socketPath = Path.Combine(
-        Path.GetTempPath(),
-        $"slsp-cs-{Guid.NewGuid():N}.sock"
-    );
+    private readonly string _socketPath = NativePaths.Temp($"slsp-cs-{Guid.NewGuid():N}.sock");
 
     private CSharpSidecar? _sidecar;
     private FramedTransport? _transport;
     private int _nextId;
 
     public string TempDir { get; private set; } = string.Empty;
-    public string SourceFile => Path.Combine(TempDir, "Program.cs");
-    public string MetaProbeFile => Path.Combine(TempDir, "MetaProbe.cs");
+    public string SourceFile => NativePaths.Join(TempDir, "Program.cs");
+    public string MetaProbeFile => NativePaths.Join(TempDir, "MetaProbe.cs");
     public static string InitialSource => TestSource;
 
     // A second compilation unit packed with every token kind, framework-member
@@ -451,10 +449,10 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
 
     private static string CreateTestProject()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"slsp-cs-{Guid.NewGuid():N}");
+        var dir = NativePaths.Temp($"slsp-cs-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
         File.WriteAllText(
-            Path.Combine(dir, "TestProject.csproj"),
+            NativePaths.Join(dir, "TestProject.csproj"),
             """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -465,8 +463,8 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
             </Project>
             """
         );
-        File.WriteAllText(Path.Combine(dir, "Program.cs"), TestSource);
-        File.WriteAllText(Path.Combine(dir, "MetaProbe.cs"), MetaProbeSource);
+        File.WriteAllText(NativePaths.Join(dir, "Program.cs"), TestSource);
+        File.WriteAllText(NativePaths.Join(dir, "MetaProbe.cs"), MetaProbeSource);
         return dir;
     }
 
@@ -505,7 +503,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Solution_read_returns_slnx_model()
     {
-        var slnxPath = Path.Combine(fixture.TempDir, "TestProject.slnx");
+        var slnxPath = NativePaths.Join(fixture.TempDir, "TestProject.slnx");
         await File.WriteAllTextAsync(
             slnxPath,
             """

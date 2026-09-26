@@ -4,16 +4,12 @@
 
 use std::path::Path;
 
-use crate::workspace_symbols::{collect_files, is_dotnet_project_path};
+use crate::source_walk::collect_files;
+use crate::workspace_symbols::is_dotnet_project_path;
 
 /// Whether `target` names a solution file (`.sln` / `.slnx`), in any casing.
 pub(crate) fn is_solution(target: &Path) -> bool {
-    target
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("sln") || extension.eq_ignore_ascii_case("slnx")
-        })
+    crate::paths::has_extension(target, &["sln", "slnx"])
 }
 
 /// The C# and F# projects a non-solution target stands for: the project file
@@ -63,7 +59,7 @@ mod tests {
 
         let found: Vec<String> = projects_of(root.path())
             .iter()
-            .map(|path| path.replace('\\', "/"))
+            .map(|path| crate::paths::slashed(path))
             .collect();
 
         assert_eq!(found.len(), 2, "bin/ output is not a project: {found:?}");

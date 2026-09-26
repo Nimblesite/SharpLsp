@@ -1,5 +1,6 @@
 /**
- * One place where the Test Explorer shells out to `dotnet`.
+ * One place where the Test Explorer shells out to `dotnet` — or, for a .NET
+ * Framework test module `dotnet` cannot host, to the module itself.
  *
  * Discovery (`test-discovery.ts`) and execution (`testing.ts`) previously each
  * carried their own `execFile` wrapper with different timeouts, different buffer
@@ -12,10 +13,11 @@
  * process is reported separately from a non-zero exit, because killed output is
  * TRUNCATED and must never be parsed as if it were complete.
  *
- * Implements [TEST-ENV-LOCALE].
+ * Implements [TEST-ENV-LOCALE] and [NETFX-TEST-MTP].
  */
 
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { fileStemOf } from './paths';
 import type { CancellationToken } from 'vscode';
 import { info } from './log.js';
 import { err, ok, type Result } from './result.js';
@@ -41,7 +43,7 @@ export const DOTNET_MAX_BUFFER = 64 * 1024 * 1024;
  */
 export const DOTNET_CLI_LANGUAGE = 'en-US';
 
-/** What a `dotnet` invocation produced. Never an exception. */
+/** What one invocation produced. Never an exception. */
 export interface DotnetRun {
   readonly stdout: string;
   readonly stderr: string;
@@ -52,6 +54,13 @@ export interface DotnetRun {
    * point, so a partial listing must not be mistaken for a complete one.
    */
   readonly killed: boolean;
+  /**
+   * The code the process exited with on its own terms; `undefined` when it
+   * never started, or was killed before it could exit. Callers that give an
+   * exit code a meaning read it here, never out of {@link errorMessage}: that
+   * text names the program, and it is stderr whenever stderr said anything.
+   */
+  readonly exitCode: number | undefined;
   /** Diagnostic for logs when `failed` is true. */
   readonly errorMessage: string | undefined;
 }
@@ -115,42 +124,80 @@ export async function runDotnet(
   signal?: AbortSignal,
   hooks?: DotnetHooks,
 ): Promise<DotnetRun> {
-  if (signal?.aborted === true) return terminated(EMPTY, CANCELLED);
+  return await runProcess(dotnetExecutable, args, cwd, timeoutMs, signal, hooks);
+}
+
+/**
+ * Run `program` exactly the way {@link runDotnet} runs `dotnet`: the same
+ * pinned UI language, output ceiling, timeout, and whole-tree stop.
+ *
+ * A .NET Framework test module is an `.exe` that `dotnet` cannot host, so it
+ * is started as ITSELF ([NETFX-TEST-MTP]) — and it must be stoppable, bounded
+ * and reported like every `dotnet` child, or ⏹ would leave its tests running.
+ * Never rejects.
+ */
+export async function runProcess(
+  program: string,
+  args: readonly string[],
+  cwd: string,
+  timeoutMs: number = DOTNET_TIMEOUT_MS,
+  signal?: AbortSignal,
+  hooks?: DotnetHooks,
+): Promise<DotnetRun> {
+  const capture = freshCapture(program);
+  if (signal?.aborted === true) return terminated(capture, CANCELLED);
+  const child = startChild(program, args, spawnOptions(cwd, hooks?.env));
+  if (!child.ok) return failedToRun(capture, child.error);
+  return await supervise(child.value, capture, { timeoutMs, signal, onOutput: hooks?.onOutput });
+}
+
+/**
+ * Spawn `program`, turning a SYNCHRONOUS throw into an error.
+ *
+ * `spawn` throws most violently when the argument vector exceeds the Windows
+ * command-line ceiling: `spawn ENAMETOOLONG`, before any 'error' event could
+ * fire. {@link runProcess} never rejects, so the throw becomes a failed run the
+ * caller can report, instead of blowing the run handler out of VS Code's
+ * Testing view with "An error occurred attempting to run tests".
+ */
+function startChild(
+  program: string,
+  args: readonly string[],
+  options: SpawnOptions,
+): Result<ChildProcess> {
+  try {
+    return ok(spawn(program, [...args], options));
+  } catch (spawnError: unknown) {
+    return err(
+      spawnError instanceof Error
+        ? spawnError.message
+        : `${programName(program)} failed to start: ${String(spawnError)}`,
+    );
+  }
+}
+
+/** What a running child is watched for, besides its own exit. */
+interface Watch {
+  readonly timeoutMs: number;
+  readonly signal: AbortSignal | undefined;
+  readonly onOutput: ((chunk: string) => void) | undefined;
+}
+
+/** Collect a started child's output until it exits, fails, or is stopped. */
+async function supervise(child: ChildProcess, capture: Capture, watch: Watch): Promise<DotnetRun> {
   return await new Promise<DotnetRun>((resolve) => {
-    const capture: Capture = { stdout: '', stderr: '', reason: undefined };
-    // `spawn` can THROW SYNCHRONOUSLY — most violently when the argument
-    // vector exceeds the Windows command-line ceiling, where it throws
-    // `spawn ENAMETOOLONG` before any 'error' event could fire. This function's
-    // contract is "never rejects", so the throw is settled as a failed run the
-    // caller can report, instead of blowing the run handler out of VS Code's
-    // Testing view with "An error occurred attempting to run tests".
-    let child: ChildProcess;
-    try {
-      child = spawn(dotnetExecutable, [...args], spawnOptions(cwd, hooks?.env));
-    } catch (spawnError: unknown) {
-      resolve({
-        ...EMPTY,
-        failed: true,
-        killed: false,
-        errorMessage:
-          spawnError instanceof Error
-            ? spawnError.message
-            : `dotnet failed to start: ${String(spawnError)}`,
-      });
-      return;
-    }
-    absorbOutput(capture, child, hooks?.onOutput);
+    absorbOutput(capture, child, watch.onOutput);
     const timer = setTimeout(() => {
-      kill(capture, child, `timed out after ${String(timeoutMs)}ms`);
-    }, timeoutMs);
-    const detach = watchAbort(capture, child, signal);
+      kill(capture, child, `timed out after ${String(watch.timeoutMs)}ms`);
+    }, watch.timeoutMs);
+    const detach = watchAbort(capture, child, watch.signal);
     const settle = (run: DotnetRun): void => {
       clearTimeout(timer);
       detach();
       resolve(run);
     };
     child.once('error', (error: Error) => {
-      settle({ ...capture, failed: true, killed: false, errorMessage: error.message });
+      settle(failedToRun(capture, error.message));
     });
     child.once('close', (code, signalName) => {
       settle(toRun(capture, code, signalName));
@@ -188,15 +235,43 @@ export function cancellationSignal(token: CancellationToken): Cancellation {
 /** Why a child was terminated, when the reason was cancellation. */
 const CANCELLED = 'cancelled';
 
-/** The output of an invocation that never produced any. */
-const EMPTY: Capture = { stdout: '', stderr: '', reason: undefined };
-
 /** Output accumulated so far, plus why (if at all) the child was terminated. */
 interface Capture {
+  /** The program's name in every message: `dotnet`, or a test module's name. */
+  readonly program: string;
   stdout: string;
   stderr: string;
   /** Set once this module kills the child: timeout, overflow or cancellation. */
   reason: string | undefined;
+}
+
+/** An empty capture for one invocation of `program`. */
+function freshCapture(program: string): Capture {
+  return { program: programName(program), stdout: '', stderr: '', reason: undefined };
+}
+
+/**
+ * `dotnet` for any spelling of the `dotnet` executable — bare, or the absolute
+ * `…\dotnet.exe` activation resolved — and a module's own name otherwise.
+ */
+function programName(program: string): string {
+  return fileStemOf(program);
+}
+
+/** The two streams a capture holds, and nothing else of it. */
+function outputOf(capture: Capture): Pick<DotnetRun, 'stdout' | 'stderr'> {
+  return { stdout: capture.stdout, stderr: capture.stderr };
+}
+
+/** A child that never ran: it could not be spawned, or failed to start. */
+function failedToRun(capture: Capture, message: string): DotnetRun {
+  return {
+    ...outputOf(capture),
+    failed: true,
+    killed: false,
+    exitCode: undefined,
+    errorMessage: message,
+  };
 }
 
 /**
@@ -261,7 +336,7 @@ function watchAbort(
 function kill(capture: Capture, child: ChildProcess, reason: string): void {
   if (capture.reason !== undefined) return;
   capture.reason = reason;
-  info(`Terminating dotnet (pid ${String(child.pid ?? -1)}): ${reason}`);
+  info(`Terminating ${capture.program} (pid ${String(child.pid ?? -1)}): ${reason}`);
   terminateTree(child);
 }
 
@@ -341,13 +416,24 @@ function toRun(
 ): DotnetRun {
   if (capture.reason !== undefined) return terminated(capture, capture.reason);
   if (signalName !== null) return terminated(capture, `killed by ${signalName}`);
-  if (code === 0) return { ...capture, failed: false, killed: false, errorMessage: undefined };
+  const exitCode = code ?? undefined;
+  if (exitCode === 0) {
+    return {
+      ...outputOf(capture),
+      failed: false,
+      killed: false,
+      exitCode,
+      errorMessage: undefined,
+    };
+  }
   const trimmed = capture.stderr.trim();
+  const exited = `${capture.program} exited with code ${String(exitCode ?? -1)}`;
   return {
-    ...capture,
+    ...outputOf(capture),
     failed: true,
     killed: false,
-    errorMessage: trimmed === '' ? `dotnet exited with code ${String(code ?? -1)}` : trimmed,
+    exitCode,
+    errorMessage: trimmed === '' ? exited : trimmed,
   };
 }
 
@@ -360,10 +446,10 @@ function toRun(
  */
 function terminated(capture: Capture, reason: string): DotnetRun {
   return {
-    stdout: capture.stdout,
-    stderr: capture.stderr,
+    ...outputOf(capture),
     failed: true,
     killed: true,
-    errorMessage: `dotnet was terminated: ${reason}`,
+    exitCode: undefined,
+    errorMessage: `${capture.program} was terminated: ${reason}`,
   };
 }

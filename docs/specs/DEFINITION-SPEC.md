@@ -166,16 +166,36 @@ Implementation: [FSharpWorkspace.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/
 
 ## Cross-Language Navigation `[DEFINITION-CROSSLANG]`
 
-When a C# project references an F# project or vice versa, each engine sees the other language as a compiled assembly. Cross-language navigation therefore wires the referenced output DLL into the resolving engine and decompiles the target type to a metadata-as-source location; it requires no cross-sidecar symbol index.
+The two directions are not symmetric. An F# project reads a referenced C# project compiled in
+memory, so F# → C# navigation lands in the C# source, unbuilt. A C# project sees a referenced F#
+project only as its built DLL, so C# → F# navigation lands in decompiled metadata-as-source. No
+cross-sidecar symbol index exists in either direction.
 
 | Scenario | Approach |
 |---|---|
-| C# code references F# type | Roslyn drops the F# `<ProjectReference>` (loads it as an empty stub); `WorkspaceManager.AddCrossLanguageMetadataReferences` re-attaches the built F# DLL as a metadata reference and removes the stub, then `MetadataNavigator` decompiles the resolved symbol |
-| F# code references C# type | `buildProjectOptions` wires each referenced C# project's output DLL into the FCS `-r:` options so the symbol resolves; `FSharpMetadataNavigator` decompiles the external symbol in `extractDefinition` |
+| F# code references C# type | The F# sidecar compiles the referenced C# project with Roslyn in memory, for the framework MSBuild picked for that reference, and FCS reads the image as a `PEReference` under MSBuild's own `-r:` ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]). Definition, type definition and declaration resolve the symbol's documentation id in that Roslyn compilation and land in the `.cs` file and range that declares it. A C# reference the options do not carry keeps the DLL route below |
+| F# code references a type in a DLL | `FSharpMetadataNavigator` decompiles the external symbol's type through the shared `MetadataDecompiler` and lands in the metadata-as-source file |
+| C# code references F# type | Roslyn drops the F# `<ProjectReference>` (loads it as an empty stub); `WorkspaceManager.AddCrossLanguageMetadataReferences` re-attaches the built F# DLL as a metadata reference and removes the stub, then `MetadataNavigator` decompiles the resolved symbol. The F# project must be built for resolution to succeed |
 
-Both directions decompile through the shared `MetadataDecompiler` (`SharpLsp.Sidecar.Common`), and the referenced project must be built (its output DLL must exist) for resolution to succeed. Requirement: navigating from a use site in one language onto a symbol defined in the other resolves to a decompiled metadata-as-source location for that symbol's type.
+Before a symbol is decompiled, the sidecar resolves what it stands for:
 
-Source-to-source cross-language navigation into the original `.fs` or `.cs` file is not implemented; it requires a Rust-host cross-sidecar symbol index.
+- **Abbreviations.** An F# type abbreviation (`string`, `int`, `seq<_>`) has no source of its own.
+  Navigation follows `AbbreviatedType` to the entity it names (`System.String`) and decompiles
+  that; FSharp.Core's abbreviations never land in FSharp.Core.
+- **Type forwarders.** FCS names the assembly a symbol was compiled against, which for the BCL is a
+  facade (`netstandard.dll`, `mscorlib.dll`) that only forwards the type. `MetadataDecompiler`
+  resolves the type through the facade's type system and decompiles from the assembly that
+  declares it (`System.Private.CoreLib.dll`), so the result is the type's source, not an empty
+  forwarder.
+
+Both directions compare paths only through the tier's path module
+([SHARPLSP-ARCHITECTURE-PATHS]). Requirement: navigating from a use site in one language onto a
+symbol defined in the other resolves to the declaring C# source (F# → C#) or to a decompiled
+metadata-as-source location for that symbol's type (C# → F#), and never to `null` because the
+target was an abbreviation or a forwarded type.
+
+Source-to-source navigation from C# into an `.fs` file is not implemented; it requires a Rust-host
+cross-sidecar symbol index.
 
 ## Caching Strategy `[DEFINITION-CACHE]`
 

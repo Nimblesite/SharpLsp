@@ -5,8 +5,8 @@
 //   node check-coverage.mjs <project-key> <actual-percent>
 //   node check-coverage.mjs <project-key> --json <file> <dotted.path>
 //
-// Thresholds live in the repo-root coverage-thresholds.json (AgentPMO
-// [COVERAGE-THRESHOLDS-JSON]): projects.<key>.threshold, falling back to
+// Thresholds live in the repo-root coverage-thresholds.json
+// ([DIST-CI-COVERAGE-THRESHOLDS]): projects.<key>.threshold, falling back to
 // default_threshold. The ratchet rewrites the same file in place.
 
 import { execFileSync } from 'node:child_process';

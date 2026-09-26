@@ -7,7 +7,7 @@ name: Release
 
 # Least-privilege default: every job is read-only unless it explicitly
 # escalates (the GitHub Release job needs contents: write; deploy-pages needs
-# pages/id-token). [DIST-SECRETS]
+# pages/id-token). [DIST-CI-SECURITY]
 permissions:
   contents: read
 
@@ -328,8 +328,9 @@ jobs:
             artifacts/*.zip \
             artifacts/SHA256SUMS
 
-  # Release tags deploy their exact website revision. Website-only changes also
-  # deploy after merging to main through deploy-pages.yml's push trigger.
+  # Release tags deploy their exact website revision, and ONLY release tags:
+  # deploy-pages.yml has no push trigger, so the site can never advertise what
+  # no release has shipped. [DIST-RELEASE]
   deploy-pages:
     name: Deploy website to GitHub Pages
     needs: release

@@ -385,7 +385,15 @@ internal sealed class CodeActionResolver
     )
     {
         var title = Qualified(parentTitle, action.Title);
-        if (CacheNestedActions(action, kind, items, title) || IsDuplicate(title, kind, items))
+        // An action with options needs an IDE dialog a headless host cannot show, and
+        // its options service does not exist here, so resolving it throws. It is never
+        // offered: Roslyn's own "Generate overrides..." has a headless replacement, and
+        // the rest wait for one. [REFACTOR-NO-DIALOG] (GitHub #201)
+        if (
+            action is CodeActionWithOptions
+            || CacheNestedActions(action, kind, items, title)
+            || IsDuplicate(title, kind, items)
+        )
         {
             return;
         }

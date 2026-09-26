@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 // RS1035: these tests deliberately touch the real filesystem — the repo mandates testing
@@ -22,7 +23,7 @@ internal sealed class ProjectlessWorkspaceFixture : IDisposable
 
     public ProjectlessWorkspaceFixture(string prefix)
     {
-        Root = Path.Combine(Path.GetTempPath(), $"sharplsp-{prefix}-{Guid.NewGuid():N}");
+        Root = NativePaths.Temp($"sharplsp-{prefix}-{Guid.NewGuid():N}");
         _ = Directory.CreateDirectory(Root);
     }
 
@@ -40,8 +41,8 @@ internal sealed class ProjectlessWorkspaceFixture : IDisposable
     /// <summary>Write <paramref name="text"/> to <paramref name="relativePath"/> under the root.</summary>
     public string Write(string relativePath, string text)
     {
-        var path = Path.Combine(Root, relativePath);
-        _ = Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var path = NativePaths.Join(Root, relativePath);
+        _ = Directory.CreateDirectory(NativePaths.DirectoryOf(path));
         File.WriteAllText(path, text);
         return path;
     }

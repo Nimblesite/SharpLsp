@@ -50,7 +50,24 @@ const makeVariable = (name) => {
  */
 const PROBE_MARKER = 'SHARPLSP_PROBE_PATH=';
 
-const childPath = (env) => {
+/**
+ * This process's environment with `env` over it, PATH replaced whatever its
+ * case. Windows spells it `Path`, and a copy that keeps `Path` beside a new
+ * `PATH` hands the child either one.
+ */
+const environmentWith = (env) => ({
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PATH')),
+  ...env,
+});
+
+/** Two PATH entries naming one directory, as this platform compares them. */
+const samePath = (left, right) =>
+  process.platform === 'win32'
+    ? resolve(left).toLowerCase() === resolve(right).toLowerCase()
+    : resolve(left) === resolve(right);
+
+/** The PATH a NATIVE child of a recipe inherits, entry by entry, as it reads it. */
+const inheritedPath = (env) => {
   const probe = join(mkdtempSync(join(tmpdir(), 'sharplsp-make-')), 'probe.mk');
   // The decoy line is deliberate. GNU Make 4.x prints `make[1]: Entering
   // directory '...'` to STDOUT whenever MAKELEVEL is set, and `_test-tooling`
@@ -60,19 +77,43 @@ const childPath = (env) => {
   // GNU Make 3.81 prints no banner. Emitting the same shape here pins the
   // parser against that noise on every run and every platform, instead of
   // trusting that no future recipe, flag or make version ever prints anything.
+  //
+  // `node` answers, not the recipe shell: Git Bash would print its own POSIX
+  // rendering of PATH, while a native child reads the list it really gets.
   writeFileSync(
     probe,
-    `_probe_path:\n\t@echo "make[1]: Entering directory '/decoy'"\n\t@echo "${PROBE_MARKER}$$PATH"\n`,
+    `_probe_path:\n\t@echo "make[1]: Entering directory '/decoy'"\n\t@node -e "process.stdout.write('${PROBE_MARKER}' + process.env.PATH)"\n`,
   );
-  const { status, stdout, stderr } = spawnSync('make', ['_probe_path'], {
+  // The fixture's entries lead; this machine's PATH follows them, so `make`, its
+  // shell and `node` are still found where `/usr/bin` holds none of them.
+  const { status, stdout, stderr, error } = spawnSync('make', ['_probe_path'], {
     cwd: ROOT,
     encoding: 'utf8',
-    env: { ...process.env, ...env, MAKEFILES: probe },
+    env: environmentWith({ ...env, PATH: [env.PATH, process.env.PATH].join(delimiter), MAKEFILES: probe }),
   });
-  assert.equal(status, 0, `make _probe_path failed:\n${stderr}`);
+  assert.equal(status, 0, `make _probe_path failed:\n${stderr ?? error}`);
   const answer = stdout.split('\n').find((line) => line.startsWith(PROBE_MARKER));
   assert.ok(answer, `the probe printed no ${PROBE_MARKER} line:\n${stdout}`);
-  return answer.slice(PROBE_MARKER.length).trim().split(delimiter);
+  return answer
+    .slice(PROBE_MARKER.length)
+    .trim()
+    .split(delimiter)
+    .filter(Boolean)
+    .map((entry) => resolve(entry));
+};
+
+/**
+ * The PATH a recipe's child inherits from MAKE: less the entries the recipe
+ * shell puts ahead of everything on its own. On Windows that shell is Git
+ * Bash's `bin/bash.exe`, which leads with its own tool directories, none of
+ * which holds a dotnet. A run in which the Makefile adds nothing - no root -
+ * shows how many there are.
+ */
+const childPath = (env) => {
+  const lead = env.PATH.split(delimiter)[0];
+  const shellOwn = inheritedPath({ ...env, SHARPLSP_DOTNET_ROOT: '' }).findIndex((entry) => samePath(entry, lead));
+  assert.ok(shellOwn >= 0, `the fixture's first entry ${lead} never reached a child`);
+  return inheritedPath(env).slice(shellOwn);
 };
 
 /**

@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using Outcome;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 using VoidResult = Outcome.Result<Outcome.Unit, string>;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
@@ -60,11 +61,8 @@ internal sealed partial class WorkspaceManager
     /// <summary>Classify a path into its project-less compilation model. [SCRIPT-DETECT]</summary>
     internal static ProjectlessKind Classify(string path)
     {
-        var extension = Path.GetExtension(path);
-        return string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase)
-                ? ProjectlessKind.FileBasedApp
-            : string.Equals(extension, ".csx", StringComparison.OrdinalIgnoreCase)
-                ? ProjectlessKind.Script
+        return NativePaths.HasExtension(path, ".cs") ? ProjectlessKind.FileBasedApp
+            : NativePaths.HasExtension(path, ".csx") ? ProjectlessKind.Script
             : ProjectlessKind.Unsupported;
     }
 
@@ -245,11 +243,9 @@ internal sealed partial class WorkspaceManager
         var currentDocIds = currentProject.Documents.ToDictionary(
             document => document.FilePath!,
             document => document.Id,
-            StringComparer.OrdinalIgnoreCase
+            NativePaths.Comparer
         );
-        var closurePaths = closure
-            .Files.Select(file => file.Path)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var closurePaths = closure.Files.Select(file => file.Path).ToHashSet(NativePaths.Comparer);
         var next = _solution!;
 
         foreach (var file in closure.Files.Where(file => !currentDocIds.ContainsKey(file.Path)))
@@ -273,9 +269,9 @@ internal sealed partial class WorkspaceManager
         HashSet<string> closurePaths
     )
     {
-        return !path.EndsWith(GlobalUsingsFileName, StringComparison.OrdinalIgnoreCase)
+        return !NativePaths.SameName(path, GlobalUsingsFileName)
             && !closurePaths.Contains(path)
-            && !string.Equals(path, editedPath, StringComparison.OrdinalIgnoreCase);
+            && !NativePaths.Comparer.Equals(path, editedPath);
     }
 
     /// <summary>
@@ -345,7 +341,7 @@ internal sealed partial class WorkspaceManager
 
     private static ProjectInfo BuildProjectInfo(ProjectlessKind kind, string rootPath)
     {
-        var name = Path.GetFileNameWithoutExtension(rootPath);
+        var name = NativePaths.StemOf(rootPath);
         var isScript = kind == ProjectlessKind.Script;
         return ProjectInfo.Create(
             ProjectId.CreateNewId(),
@@ -377,8 +373,10 @@ internal sealed partial class WorkspaceManager
             return options;
         }
 
-        var baseDirectory = Path.GetDirectoryName(rootPath);
-        return options.WithSourceReferenceResolver(new SourceFileResolver([], baseDirectory));
+        var baseDirectory = NativePaths.DirectoryOf(rootPath);
+        return options.WithSourceReferenceResolver(
+            new SourceFileResolver([], baseDirectory.Length == 0 ? null : baseDirectory)
+        );
     }
 
     // LanguageVersion.Latest, not Preview: Preview enables unstable features the user's SDK may
@@ -408,14 +406,13 @@ internal sealed partial class WorkspaceManager
         var source = string.Concat(
             ConsoleImplicitUsings.Select(ns => $"global using global::{ns};\n")
         );
-        var directory = Path.GetDirectoryName(rootPath) ?? ".";
         return DocumentInfo.Create(
             DocumentId.CreateNewId(projectId),
             GlobalUsingsFileName,
             loader: TextLoader.From(
                 TextAndVersion.Create(SourceText.From(source), VersionStamp.Create())
             ),
-            filePath: Path.Combine(directory, GlobalUsingsFileName)
+            filePath: NativePaths.Resolve(NativePaths.DirectoryOf(rootPath), GlobalUsingsFileName)
         );
     }
 
@@ -430,7 +427,7 @@ internal sealed partial class WorkspaceManager
     {
         return DocumentInfo.Create(
             DocumentId.CreateNewId(projectId),
-            Path.GetFileName(file.Path),
+            NativePaths.NameOf(file.Path),
             sourceCodeKind: kind == ProjectlessKind.Script
                 ? SourceCodeKind.Script
                 : SourceCodeKind.Regular,

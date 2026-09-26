@@ -7,10 +7,15 @@
 // profile parsing in launch-profiles.ts and script dispatch in launch-run.ts —
 // one resolver behind F5, Ctrl/Cmd+F5, both commands and the Solution Explorer.
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, fileNameOf, isWithin } from './paths';
 import * as vscode from 'vscode';
 import { sharedDebugConfiguration } from './debug-configuration';
 import { CMD_DEBUG_PROGRAM, CMD_RUN_PROGRAM, DEBUG_TYPE } from './constants';
+import {
+  debuggableTarget,
+  runUnderFramework,
+  type ActiveFrameworkReader,
+} from './launch-framework-run';
 import { findNetcoredbg, getNetcoredbgCandidates } from './netcoredbg';
 import { info, warn } from './log';
 import { DapRouter } from './dap-router';
@@ -43,7 +48,6 @@ import {
 import {
   findEntryProject,
   findProjectFile,
-  isWithin,
   projectEntryFromFile,
   type ProjectEntry,
 } from './launch-target';
@@ -139,9 +143,7 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
       return undefined;
     }
     if (!fs.existsSync(program)) {
-      void vscode.window.showWarningMessage(
-        `Build produced no output for ${path.basename(program)}.`,
-      );
+      void vscode.window.showWarningMessage(`Build produced no output for ${fileNameOf(program)}.`);
       return undefined;
     }
     return config;
@@ -289,7 +291,7 @@ async function applyTarget(
 function profileRootFor(folder: vscode.WorkspaceFolder, program: unknown): string {
   const root = folder.uri.fsPath;
   if (typeof program !== 'string' || program.length === 0) return root;
-  const from = path.dirname(program);
+  const from = directoryOf(program);
   if (!isWithin(from, root)) return root;
   return findProjectFile(from, root)?.cwd ?? root;
 }
@@ -341,7 +343,7 @@ export async function planLaunch(
   const program = await programFor(target);
   if (program === undefined) return undefined;
   const named =
-    target.kind === 'project' ? path.basename(target.projectFile) : path.basename(target.file);
+    target.kind === 'project' ? fileNameOf(target.projectFile) : fileNameOf(target.file);
   const configuration: vscode.DebugConfiguration = {
     ...baseConfiguration(`${noDebug ? 'Run' : 'Debug'} ${named}`, program, target.cwd),
     ...(target.kind === 'script' ? {} : argsAndEnv(target)),
@@ -381,7 +383,7 @@ async function programFor(target: LaunchTarget): Promise<string | undefined> {
  */
 async function builtProgram(target: ProjectTarget): Promise<string | undefined> {
   const built = await buildProject(target.projectFile, target.framework);
-  const named = path.basename(target.projectFile);
+  const named = fileNameOf(target.projectFile);
   if (!built.ok) {
     void vscode.window.showWarningMessage(`Build failed for ${named}: ${built.error}`);
     return undefined;
@@ -498,7 +500,14 @@ function namedResource(argument: LaunchArgument): string | undefined {
 }
 
 /** Register the adapter, the configuration providers and both commands. */
-export function registerDebugAdapter(context: vscode.ExtensionContext): void {
+/** Reads a document's active framework for Run; set when the adapter registers. [NETFX-DEBUG] */
+let activeFrameworkReader: ActiveFrameworkReader | undefined;
+
+export function registerDebugAdapter(
+  context: vscode.ExtensionContext,
+  readActiveFramework?: ActiveFrameworkReader,
+): void {
+  activeFrameworkReader = readActiveFramework;
   const provider = new SharpLspLaunchProvider();
   context.subscriptions.push(
     // Both trigger kinds: `Initial` fills a generated launch.json, `Dynamic`
@@ -546,7 +555,7 @@ export async function launch(argument: LaunchArgument, noDebug: boolean): Promis
     if (resolved.error.length > 0) void vscode.window.showWarningMessage(resolved.error);
     return;
   }
-  await dispatch(resolved.value, folder, noDebug);
+  await dispatch(resolved.value, folder, noDebug, document);
 }
 
 /** Send a resolved target to the runner or the debugger. */
@@ -554,18 +563,38 @@ async function dispatch(
   target: LaunchTarget,
   folder: vscode.WorkspaceFolder,
   noDebug: boolean,
+  document?: string,
 ): Promise<void> {
+  if (noDebug && target.kind === 'project' && target.frameworks !== undefined) {
+    await runUnderFramework(target, target.frameworks, folder, document, activeFrameworkReader);
+    return;
+  }
   if (noDebug && target.kind !== 'project') {
     await runWithoutDebugger(target, folder);
     return;
   }
-  const plan = await planLaunch(target, folder, noDebug);
+  const launchable = await debuggable(target, noDebug, document);
+  if (launchable === undefined) return;
+  const plan = await planLaunch(launchable, folder, noDebug);
   if (plan === undefined) return;
   const started = await vscode.debug.startDebugging(plan.folder, plan.configuration, { noDebug });
   if (!started) {
     warn(`startDebugging refused ${plan.configuration.name}`);
     void vscode.window.showWarningMessage(`Could not start ${plan.configuration.name}.`);
   }
+}
+
+/** The target to debug: a multi-targeted project moves onto a .NET framework. [NETFX-DEBUG] */
+async function debuggable(
+  target: LaunchTarget,
+  noDebug: boolean,
+  document: string | undefined,
+): Promise<LaunchTarget | undefined> {
+  if (noDebug || target.kind !== 'project' || target.frameworks === undefined) return target;
+  const moved = await debuggableTarget(target, target.frameworks, document, activeFrameworkReader);
+  if (moved.ok) return moved.value;
+  void vscode.window.showWarningMessage(moved.error);
+  return undefined;
 }
 
 /** Run a script or file-based app as a task, with no adapter involved. */

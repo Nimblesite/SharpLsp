@@ -11,10 +11,10 @@
 //
 // `dotnet msbuild -getProperty:A -getProperty:B` emits a JSON document
 // (`{"Properties": {...}}`) which is parsed with `JSON.parse`, never scraped.
-import * as path from 'node:path';
+import { directoryOf, fileNameOf } from './paths';
 import { runDotnet } from './dotnet-process';
 import { err, ok, type Result } from './result';
-import { isRecord } from './utils';
+import { getErrorMessage, isRecord, splitTrimmed } from './utils';
 
 /** The properties a launch needs from MSBuild. */
 export interface ProjectProperties {
@@ -78,16 +78,13 @@ function parseProperties(stdout: string): Result<Map<string, string>> {
     if (!isRecord(bag)) return err('MSBuild JSON had no Properties');
     return ok(stringEntries(bag));
   } catch (error) {
-    return err(error instanceof Error ? error.message : String(error));
+    return err(getErrorMessage(error));
   }
 }
 
 /** Split a `;`-separated MSBuild list, dropping empties. */
 function splitList(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(';')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+  return splitTrimmed(value ?? '', ';');
 }
 
 /** Evaluate `projectFile`, optionally pinned to a single target framework. */
@@ -97,7 +94,7 @@ export async function evaluateProject(
 ): Promise<Result<ProjectProperties>> {
   const run = await runDotnet(
     evaluateArgs(projectFile, framework),
-    path.dirname(projectFile),
+    directoryOf(projectFile),
     EVALUATE_TIMEOUT_MS,
   );
   if (run.failed) {
@@ -134,7 +131,7 @@ export async function resolveTargetPath(
 
   const frameworks = evaluated.value.targetFrameworks;
   if (frameworks.length === 0) {
-    return err(`MSBuild reported no TargetPath for ${path.basename(projectFile)}`);
+    return err(`MSBuild reported no TargetPath for ${fileNameOf(projectFile)}`);
   }
   return await pickFramework(projectFile, frameworks, exists);
 }
@@ -153,7 +150,7 @@ async function pickFramework(
     if (exists(pinned.value.targetPath)) return ok(pinned.value);
   }
   if (firstDeclared !== undefined) return ok(firstDeclared);
-  return err(`no target framework of ${path.basename(projectFile)} could be evaluated`);
+  return err(`no target framework of ${fileNameOf(projectFile)} could be evaluated`);
 }
 
 /** True when MSBuild says the project produces a runnable assembly. */

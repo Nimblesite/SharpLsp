@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -17,10 +18,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// </summary>
 public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
 {
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-wm-degen-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-wm-degen-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -29,7 +27,7 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         File.WriteAllText(
-            Path.Combine(_root, "Degen.csproj"),
+            NativePaths.Join(_root, "Degen.csproj"),
             """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -39,8 +37,8 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
             </Project>
             """
         );
-        _csprojPath = Path.Combine(_root, "Degen.csproj");
-        _sourcePath = Path.Combine(_root, "Degen.cs");
+        _csprojPath = NativePaths.Join(_root, "Degen.csproj");
+        _sourcePath = NativePaths.Join(_root, "Degen.cs");
         File.WriteAllText(_sourcePath, "namespace D;\npublic class C { public int N; }\n");
     }
 
@@ -144,7 +142,7 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
     [Fact]
     public async Task Open_on_directory_without_a_project_succeeds_lazily()
     {
-        var emptyDir = Path.Combine(_root, "empty");
+        var emptyDir = NativePaths.Join(_root, "empty");
         Directory.CreateDirectory(emptyDir);
         using var manager = new WorkspaceManager();
 
@@ -169,7 +167,10 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
             )
             .ConfigureAwait(true);
         await manager
-            .UpdateDocumentTextAsync(Path.Combine(_root, "ghost.cs"), "namespace D; class Ghost {}")
+            .UpdateDocumentTextAsync(
+                NativePaths.Join(_root, "ghost.cs"),
+                "namespace D; class Ghost {}"
+            )
             .ConfigureAwait(true);
 
 #pragma warning disable CS0618 // Obsolete OpenAsync placeholder

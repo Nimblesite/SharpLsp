@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
@@ -98,10 +99,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         }
         """;
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-override-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-override-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -119,8 +117,8 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        _csprojPath = Path.Combine(_root, "Shapes.csproj");
-        _sourcePath = Path.Combine(_root, "Shapes.cs");
+        _csprojPath = NativePaths.Join(_root, "Shapes.csproj");
+        _sourcePath = NativePaths.Join(_root, "Shapes.cs");
         File.WriteAllText(_csprojPath, csproj);
         File.WriteAllText(_sourcePath, Source);
     }
@@ -140,6 +138,26 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         using var manager = await OpenAsync();
         var actions = Unwrap(await CodeActionsOnTypeAsync(manager, "public class Square : Shape"));
         Assert.Contains(actions, action => action.Title == "Generate overrides...");
+    }
+
+    /// <summary>
+    /// Roslyn's own "Generate overrides..." needs a member picker a headless host does not
+    /// have, so resolving it throws, and it shares the headless action's title. On
+    /// <c>Shape</c>, whose base leaves nothing abstract, the headless action has nothing to
+    /// generate, so NO "Generate overrides..." may be offered there. Where there is
+    /// something to generate, exactly one is offered and it resolves (GitHub #201).
+    /// </summary>
+    [Fact]
+    public async Task Only_the_headless_override_action_is_ever_offered()
+    {
+        using var manager = await OpenAsync();
+        var onShape = Unwrap(await CodeActionsOnTypeAsync(manager, "abstract class Shape"));
+        Assert.DoesNotContain(onShape, action => action.Title == "Generate overrides...");
+
+        var onSquare = Unwrap(await CodeActionsOnTypeAsync(manager, "public class Square : Shape"));
+        var offered = Assert.Single(onSquare, action => action.Title == "Generate overrides...");
+        var resolved = await manager.ResolveCodeActionAsync(offered.Id);
+        Assert.False(resolved.IsError, resolved.Match(_ => "ok", error => error));
     }
 
     [Fact]

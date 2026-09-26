@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Outcome;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.Common.Solutions;
 using SharpLsp.Sidecar.CSharp.Hover;
@@ -23,10 +24,6 @@ using CompletionsResult = Outcome.Result<
     string
 >;
 using DefinitionResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationResult?, string>;
-using DiagnosticsResult = Outcome.Result<
-    System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.DiagnosticResult>,
-    string
->;
 using HighlightsResult = Outcome.Result<
     SharpLsp.Sidecar.CSharp.DocumentHighlightListResult,
     string
@@ -62,6 +59,9 @@ internal sealed partial class WorkspaceManager : IDisposable
     // log flood described in issue #78.
     private readonly HashSet<string> _loggedWorkspaceFailures = new(StringComparer.Ordinal);
 
+    /// <summary>Whether <see cref="Dispose" /> ran: the MSBuild workspace, and its BuildHost, are released.</summary>
+    internal bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposeState, 1) != 0)
@@ -71,6 +71,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         _packageResolutionGenerations.Clear();
         _packageResolutionCancellation.Cancel();
+        DrainPackageResolutions();
         _packageResolutionCancellation.Dispose();
         _workspace?.Dispose();
         _adhocWorkspace?.Dispose();
@@ -81,24 +82,22 @@ internal sealed partial class WorkspaceManager : IDisposable
     // Pending text edits keyed by file path that arrived BEFORE the workspace
     // finished loading. We replay them after OpenAsync completes so live edits
     // sent during workspace warmup aren't silently lost.
-    private readonly Dictionary<string, string> _pendingTextEdits = new(
-        StringComparer.OrdinalIgnoreCase
-    );
+    private readonly Dictionary<string, string> _pendingTextEdits = new(NativePaths.Comparer);
 
     private readonly Dictionary<string, IReadOnlyList<PackageRef>> _documentPackages = new(
-        StringComparer.OrdinalIgnoreCase
+        NativePaths.Comparer
     );
     private readonly Dictionary<string, IReadOnlyList<FileDirective>> _documentDirectives = new(
-        StringComparer.OrdinalIgnoreCase
+        NativePaths.Comparer
     );
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
         string,
         ProjectlessDegradation
-    > _projectlessDegradations = new(StringComparer.OrdinalIgnoreCase);
+    > _projectlessDegradations = new(NativePaths.Comparer);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
         string,
         long
-    > _packageResolutionGenerations = new(StringComparer.OrdinalIgnoreCase);
+    > _packageResolutionGenerations = new(NativePaths.Comparer);
     private CancellationTokenSource _packageResolutionCancellation = new();
     private long _nextPackageResolutionGeneration;
 
@@ -121,7 +120,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             // MSBuild's solution loading and relative-path resolution.
             // Normalize at the boundary so every downstream consumer sees the
             // normal form. [GitHub #110]
-            var normalized = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath(path);
+            var normalized = NativePaths.NormalizeFullPath(path);
             return await OpenCoreAsync(normalized, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -178,7 +177,11 @@ internal sealed partial class WorkspaceManager : IDisposable
                     return VoidResult.Failure($"Document not found: {filePath}");
                 }
 
-                _solution = _solution.WithDocumentText(document.Id, SourceText.From(newText));
+                _solution = TargetFrameworks.WithTextInEveryContext(
+                    _solution,
+                    document,
+                    SourceText.From(newText)
+                );
 
                 // Auto-update the closure and packages if they changed during a live edit
                 if (document.Project.Solution.Workspace is AdhocWorkspace)
@@ -201,72 +204,6 @@ internal sealed partial class WorkspaceManager : IDisposable
         catch (Exception ex)
         {
             return VoidResult.Failure(ex.Message);
-        }
-    }
-
-    private bool _deadCodeEnabled;
-    private bool _monorepo;
-
-    /// <summary>
-    /// Configure the static analyzers from the host's <c>analyzers/configure</c>
-    /// push ([ANALYZERS-CONFIG-IMPL]). Flags persist across workspace re-opens.
-    /// Defaults are off so direct test construction never gets dead-code diagnostics
-    /// unless explicitly enabled; the host always configures in production.
-    /// </summary>
-    public void ConfigureAnalyzers(bool deadCode, bool monorepo)
-    {
-        _deadCodeEnabled = deadCode;
-        _monorepo = monorepo;
-    }
-
-    /// <summary>
-    /// Get diagnostics for a file: FCS-style compiler diagnostics plus, when the
-    /// dead-code analyzer is enabled, project-wide unused-symbol diagnostics
-    /// (`SLSPC0101`, [ANALYZERS-UNUSED-PUBLIC]).
-    /// </summary>
-    public async Task<DiagnosticsResult> GetDiagnosticsAsync(
-        string filePath,
-        CancellationToken ct = default
-    )
-    {
-        try
-        {
-            // The document snapshot and the tier-2 degradation notice MUST come from
-            // the same instant, or a slow semantic-model computation can pair a
-            // pre-restore compilation with a post-restore notice state and present
-            // phantom package errors as final. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            var state = await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false);
-            if (state.Document is null)
-            {
-                return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
-            }
-
-            var model = await state.Document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-            if (model is null)
-            {
-                return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
-            }
-
-            var diagnostics = MapDiagnostics(filePath, model, ct);
-            AppendDegradation(filePath, state.Degradation, diagnostics);
-            if (_deadCodeEnabled && _solution is not null)
-            {
-                var dead = await DeadCodeAnalyzer
-                    .AnalyzeAsync(state.Document, _solution, _monorepo, ct)
-                    .ConfigureAwait(false);
-                diagnostics.AddRange(dead);
-            }
-
-            Log.Debug(
-                "Diagnostics answer for {File}: [{Codes}]",
-                filePath,
-                string.Join(",", diagnostics.Select(diagnostic => diagnostic.Code))
-            );
-            return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
-        }
-        catch (Exception ex)
-        {
-            return DiagnosticsResult.Failure(ex.Message);
         }
     }
 
@@ -458,19 +395,11 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        // A non-null document implies _solution was non-null at lookup time:
-        // FindDocumentAsync returns null whenever _solution is null.
-        return RunDocumentQueryAsync(
+        return RunScopedQueryAsync(
             filePath,
             new LocationListResult(),
-            document =>
-                DefinitionResolver.ResolveImplementationsAsync(
-                    document,
-                    _solution!,
-                    line,
-                    character,
-                    ct
-                ),
+            (document, scope) =>
+                ReferenceResolver.ResolveImplementationsAsync(document, scope, line, character, ct),
             ct
         );
     }
@@ -483,14 +412,13 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        // As above: a found document means a loaded solution.
-        return RunDocumentQueryAsync(
+        return RunScopedQueryAsync(
             filePath,
             new LocationListResult(),
-            document =>
-                DefinitionResolver.ResolveReferencesAsync(
+            (document, scope) =>
+                ReferenceResolver.ResolveReferencesAsync(
                     document,
-                    _solution!,
+                    scope,
                     line,
                     character,
                     includeDeclaration,
@@ -563,12 +491,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         return RunDocumentQueryAsync(
             filePath,
             new DocumentHighlightListResult(),
-            // A non-null document implies _solution was non-null at lookup time:
-            // FindDocumentAsync returns null whenever _solution is null.
             async document => new DocumentHighlightListResult
             {
-                Highlights = await DefinitionResolver
-                    .ResolveDocumentHighlightsAsync(document, _solution!, line, character, ct)
+                Highlights = await ReferenceResolver
+                    .ResolveDocumentHighlightsAsync(document, line, character, ct)
                     .ConfigureAwait(false),
             },
             ct
@@ -580,7 +506,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     // Implements [SCRIPT-DEGRADE] and [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
     private static string AmbiguousSolutionMessage(string path, string[] candidates)
     {
-        var names = string.Join(", ", candidates.Select(Path.GetFileName));
+        var names = string.Join(", ", candidates.Select(NativePaths.NameOf));
         return $"Found {candidates.Length} solutions under '{path}' ({names}), so which one to "
             + "load is ambiguous. Set `csharp.solution_path` in sharplsp.toml to the solution "
             + "you want, relative to the workspace root.";
@@ -687,33 +613,26 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         foreach (var (filePath, newText) in _pendingTextEdits)
         {
-            var documentId = SolutionPaths.FindDocument(_solution, filePath)?.Id;
-            if (documentId is not null)
+            var document = SolutionPaths.FindDocument(_solution, filePath);
+            if (document is not null)
             {
-                _solution = _solution.WithDocumentText(documentId, SourceText.From(newText));
+                _solution = TargetFrameworks.WithTextInEveryContext(
+                    _solution,
+                    document,
+                    SourceText.From(newText)
+                );
             }
         }
         _pendingTextEdits.Clear();
     }
 
-    private async Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
+    /// <summary>
+    /// A .sln, .slnx or one project, loaded with no F# project design-time-built: the F#
+    /// sidecar owns those builds. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP].
+    /// </summary>
+    private Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
     {
-        // Roslyn 5.x's MSBuildWorkspace.OpenSolutionAsync handles both
-        // legacy .sln and the XML-based .slnx format.
-        if (
-            target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
-            || target.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return await _workspace!
-                .OpenSolutionAsync(target, cancellationToken: ct)
-                .ConfigureAwait(false);
-        }
-
-        var project = await _workspace!
-            .OpenProjectAsync(target, cancellationToken: ct)
-            .ConfigureAwait(false);
-        return project.Solution;
+        return RoslynProjectLoading.LoadAsync(_workspace!, target, ct);
     }
 
     /// <summary>
@@ -731,29 +650,31 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// empty stub project so its assembly identity can no longer shadow the DLL.
     /// The referenced symbol then resolves and <see cref="MetadataNavigator"/>
     /// decompiles it to a navigable location. Same-language (.csproj) references
-    /// are already linked correctly and are left untouched. Implements
-    /// [DEFINITION-CROSSLANG].
+    /// are already linked correctly and are left untouched. A multi-targeted
+    /// <c>.fsproj</c> loads as one stub PER FRAMEWORK, all at the same path, so the
+    /// stubs are grouped by path: keyed one-to-one, the second one threw and the
+    /// whole workspace failed to open. Implements [DEFINITION-CROSSLANG].
     /// </remarks>
     private static Solution AddCrossLanguageMetadataReferences(Solution solution)
     {
         var fsharpStubs = solution
             .Projects.Where(project =>
                 project.FilePath is not null
-                && project.FilePath.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+                && NativePaths.HasExtension(project.FilePath, ".fsproj")
             )
-            .ToDictionary(project => NormalizedPath(project.FilePath!), project => project.Id);
+            .ToLookup(project => NormalizedPath(project.FilePath!), project => project.Id);
 
         foreach (var projectId in solution.ProjectIds.ToList())
         {
             var project = solution.GetProject(projectId);
-            if (project?.FilePath?.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) != true)
+            if (project?.FilePath is null || !NativePaths.HasExtension(project.FilePath, ".csproj"))
             {
                 continue;
             }
 
             foreach (var referenced in ProjectReferences.ReadReferencedProjects(project.FilePath))
             {
-                if (!referenced.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase))
+                if (!NativePaths.HasExtension(referenced, ".fsproj"))
                 {
                     continue;
                 }
@@ -769,7 +690,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
 
         // Drop the now-unreferenced empty F# stub projects.
-        foreach (var stubId in fsharpStubs.Values)
+        foreach (var stubId in fsharpStubs.SelectMany(stubs => stubs))
         {
             if (solution.GetProject(stubId) is not null)
             {
@@ -788,7 +709,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         Solution solution,
         ProjectId projectId,
         string referencedFsproj,
-        Dictionary<string, ProjectId> fsharpStubs
+        ILookup<string, ProjectId> fsharpStubs
     )
     {
         var dll = ProjectReferences.FindOutputAssembly(referencedFsproj);
@@ -799,18 +720,19 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         var project = solution.GetProject(projectId)!;
 
-        // Remove the empty project-to-project reference to the F# stub, if any.
-        if (fsharpStubs.TryGetValue(NormalizedPath(referencedFsproj), out var stubId))
+        // Remove the empty project-to-project reference to the F# stub, whichever
+        // framework's stub this project was linked to.
+        var stubIds = fsharpStubs[NormalizedPath(referencedFsproj)].ToHashSet();
+        foreach (
+            var stubRef in project
+                .ProjectReferences.Where(reference => stubIds.Contains(reference.ProjectId))
+                .ToList()
+        )
         {
-            var stubRef = project.ProjectReferences.FirstOrDefault(reference =>
-                reference.ProjectId == stubId
-            );
-            if (stubRef is not null)
-            {
-                solution = solution.RemoveProjectReference(projectId, stubRef);
-                project = solution.GetProject(projectId)!;
-            }
+            solution = solution.RemoveProjectReference(projectId, stubRef);
         }
+
+        project = solution.GetProject(projectId)!;
 
         // Add the referenced project's output DLL *and its sibling assemblies*.
         // An F# assembly carries a hard dependency on FSharp.Core (and possibly
@@ -818,8 +740,8 @@ internal sealed partial class WorkspaceManager : IDisposable
         // those, Roslyn cannot fully load the F# type and the referenced symbol
         // stays unresolved. Dedup by simple name so framework assemblies already
         // in the compilation are never doubled.
-        var outputDir = Path.GetDirectoryName(dll);
-        if (outputDir is null)
+        var outputDir = NativePaths.DirectoryOf(dll);
+        if (outputDir.Length == 0)
         {
             return solution;
         }
@@ -837,7 +759,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         Log.Debug(
             "[CrossLang] Wired {Dll} (+ siblings from {Dir}) into project {Project}",
-            Path.GetFileName(dll),
+            NativePaths.NameOf(dll),
             outputDir,
             project.Name
         );
@@ -847,20 +769,17 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// <summary>Whether the project already references an assembly with the same simple name.</summary>
     private static bool AlreadyReferencesSimpleName(Project project, string dll)
     {
-        var simpleName = Path.GetFileNameWithoutExtension(dll);
+        var simpleName = NativePaths.StemOf(dll);
         return project
             .MetadataReferences.OfType<PortableExecutableReference>()
             .Any(reference =>
-                string.Equals(
-                    Path.GetFileNameWithoutExtension(reference.FilePath),
-                    simpleName,
-                    StringComparison.OrdinalIgnoreCase
-                )
+                reference.FilePath is { } path
+                && NativePaths.Comparer.Equals(NativePaths.StemOf(path), simpleName)
             );
     }
 
     private static string NormalizedPath(string path)
     {
-        return SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath(path);
+        return NativePaths.NormalizeFullPath(path);
     }
 }

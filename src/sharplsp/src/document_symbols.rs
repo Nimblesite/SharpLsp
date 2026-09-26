@@ -16,7 +16,7 @@ use tracing::warn;
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::SidecarFileReq;
 
-/// Handle `textDocument/documentSymbol` for an F# file via the sidecar.
+/// Handle `textDocument/documentSymbol` for an F# file via the sidecar. `[FS-DOCSYMBOL]`
 pub fn handle_fsharp(
     req: Request,
     runtime: &tokio::runtime::Runtime,
@@ -30,7 +30,7 @@ pub fn handle_fsharp(
         anyhow::bail!("F# sidecar unavailable; cannot compute document symbols");
     };
     let params: DocumentSymbolParams = serde_json::from_value(req.params)?;
-    let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
 
     // A sidecar/parse failure yields an empty outline rather than a hard error —
     // a transient outline gap is preferable to a failed request. [SE-FSHARP-SYMBOLS]
@@ -106,7 +106,7 @@ fn map_symbol(item: &SidecarDocumentSymbol) -> DocumentSymbol {
 /// editor's `workspace/symbol` (Go to Symbol in Workspace / Ctrl-T) search reaches
 /// F# symbols. The host has no F# tree-sitter grammar, so — like the outline and
 /// the Solution Explorer — these come from the FCS sidecar. Unfiltered; the caller
-/// applies the query match. `[SHARPLSP-FEATURES-NAVIGATION]`
+/// applies the query match. `[SHARPLSP-FEATURES-NAVIGATION]`, `[FS-WORKSPACE-SYMBOL]`
 pub(crate) fn fsharp_workspace_symbols(
     runtime: &tokio::runtime::Runtime,
     sidecar: &Arc<SidecarManager>,

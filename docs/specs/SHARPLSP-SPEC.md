@@ -52,6 +52,30 @@ Primary implementations: [main.rs](../../src/sharplsp/src/main.rs), [handlers.rs
 
 Rust-host salsa MUST be the only memoization mechanism. Sidecars and clients MAY retain authoritative compiler, document, protocol, and rendered UI state, but MUST NOT cache feature results. LRU, dictionary/map-backed, sidecar-local, client-local, and other ad-hoc result caches are forbidden.
 
+### [SHARPLSP-ARCHITECTURE-PATHS] Path Handling
+
+Every tier handles paths in exactly ONE module. All path logic lives there and nowhere else; code outside it calls the module and never repeats its logic.
+
+| Tier | Path module |
+|---|---|
+| Rust host | `src/sharplsp/src/paths.rs` |
+| C# and F# sidecars | `SharpLsp.Sidecar.Common.NativePaths` |
+| VS Code extension | `src/editors/vscode/src/paths.ts` |
+
+The module owns, for its tier:
+
+- **Normalisation:** fully qualifying a path, collapsing `.` and `..` segments, unifying separators, and stripping Windows extended-length prefixes (`\\?\`, `\\?\UNC\`, see [GitHub #110]).
+- **Identity:** whether two spellings name one file, and the comparer every path-keyed map, set and dictionary is built with. There is ONE identity per tier, decided once in the module; no caller picks a case rule of its own. Names differing only in case are one file, except in a directory the module has probed and found to tell case apart ([SCRIPT-CLOSURE], GitHub #190), and that probe lives in the module too.
+- **Resolution:** a relative path against a base directory.
+- **Pieces:** the directory, file name and stem of a path, and whether it carries a given extension (`.csproj`, `.fsproj`, `.sln`, `.fsx`, …).
+- **URIs:** conversion between native paths and LSP URIs, where the tier does it.
+
+Outside the module, code MUST NOT call the platform path API (`System.IO.Path`, `std::path` string operations, `node:path`), compare paths with `StringComparison.OrdinalIgnoreCase` or a case fold, branch on `OperatingSystem.IsWindows()` for a path rule, or test an extension with a string suffix. A second helper that does any of this, in any file, is a defect: it is deleted and its callers routed through the module.
+
+Rationale: MSBuild, Roslyn, FCS, the host's canonicaliser and the editor each spell one file differently (`..` segments, case, verbatim prefixes, separators), and every scattered comparison is a place where two of those spellings fail to match. [GitHub #110] and the F# reference wiring under [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] were both bugs of that class.
+
+Code implementing this section cites `[SHARPLSP-ARCHITECTURE-PATHS]`.
+
 ### [SHARPLSP-ARCHITECTURE-IPC] IPC Transport Protocol
 
 Communication between the Rust host and .NET sidecars uses a custom binary RPC protocol:
@@ -107,6 +131,14 @@ Project evaluation MUST handle SDK-style and legacy `.csproj`/`.fsproj` files, m
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. SharpLsp exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
 - **Project-less files:** A `.cs` [file-based app](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps), a `.csx` Roslyn script, and a `.fsx` F# script are all first-class editing targets with no owning project. Their compilation closure is derived from the root file — `#:include` for file-based apps, `#load` for scripts — and never from the containing directory. See [SCRIPTING-FILEBASED-SPEC.md](SCRIPTING-FILEBASED-SPEC.md).
 
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP] Each Sidecar Builds Only Its Own Projects
+
+A design-time build writes generated files under the project's `obj/<configuration>/<framework>/` — for F#, `<Name>.AssemblyInfo.fs` among them. Two builds of one project at once race on those files, and the loser fails with "being used by another process". So each project has exactly ONE owner that ever design-time-builds it:
+
+- The F# sidecar owns every `.fsproj`. The C# sidecar MUST NOT design-time-build one — neither because a solution lists it nor because a C# project references it. It knows an F# project only as the DLL that project last built, per [DEFINITION-CROSSLANG].
+- Roslyn's `MSBuildWorkspace` loads any `.fsproj` it meets, so the C# sidecar registers each reachable F# project as an empty placeholder in the `ProjectMap` Roslyn resolves projects through, before loading. Roslyn takes the placeholder instead of building, and the placeholder is then replaced by the F# DLL.
+- Violating this shows as an F# project that silently falls back to its `<Compile>` items — no references, no defines — whenever the two sidecars load the solution at the same moment.
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH] Choosing the Solution to Open
 
 The host sends one path to each sidecar's `workspace/open`. When that path is a directory, the C# sidecar discovers a target under it: an unambiguous `.sln`, `.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between several nested solutions — a monorepo root holding `app/App.sln` and `other/Other.sln` is ambiguous, and guessing would silently load the wrong half of the repository.
@@ -119,6 +151,43 @@ solution_path = "app/App.sln"
 ```
 
 The host resolves the setting and sends the **solution file** rather than the root, so the sidecar opens it without running discovery at all. The setting falls back to workspace-root discovery when unset, and when it names a path that is not an existing file — a stale or misspelled entry degrades to auto-discovery instead of wedging the workspace on a path that cannot load.
+
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES] F# Projects That Reference F# Projects
+
+The F# sidecar loads every `.fsproj` of the solution, and each file answers from the project that compiles it, with that project's defines and references. The first project stays the workspace's own for anything that needs one project.
+
+A `<ProjectReference>` from one loaded F# project to another is an FCS in-memory reference (`FSharpReferencedProject.FSharpReference`), never its built DLL:
+
+- a solution nobody has built still checks clean;
+- an unsaved edit in the referenced project reaches the project that uses it;
+- go-to-definition lands in the referenced project's source.
+
+Which build of the referenced project is read depends on where the reference comes from:
+
+- **MSBuild resolved it**, on a multi-targeted project's design-time command line ([NETFX-PROJECTS-FSHARP]). MSBuild picks the build of the referenced project that the referencing project's framework compiles against, and that need not be the referenced project's own active framework. Its `ReferencePathWithRefAssemblies` item names that build: the `-r:` path, the project (`MSBuildSourceProjectFile`) and the framework (`NearestTargetFramework`). The referenced project's design-time options for that framework are read in memory under that exact `-r:`, and no `-r:` is added. They are built once, at load or at the switch that needs them. When MSBuild cannot report them, the reference stands on its DLL.
+- **The options do not carry it**, because hand-built options never carry an F# one. It reads the referenced project's current options under a `-r:` added for it.
+
+References are wired transitively. A cycle, which MSBuild refuses anyway, stops at the project already being wired. The reference graph is read once per load, and the options are wired where they are used, so a framework switch ([NETFX-CONTEXT]) is followed without reloading. Each framework's options carry a project id of their own, so FCS keeps one builder per project AND framework: the build another project reads and the build the project answers from coexist, and an unsaved edit is notified to every build of the project that compiles the file, so neither goes stale. The checker keeps 200 builders, as FsAutoComplete does. FCS's default of three suits an editor checking one project at a time; a builder evicted during a project-wide query is rebuilt from scratch by the next one, which made every code lens on FsToolkit's core library take 14–20 s.
+
+A project-wide query spans the project that declares its subject and every loaded project that reads that one in memory, through whichever build of it MSBuild picked, because a use there of a symbol from the declaring project counts. This covers references, rename, code lens counts and subtypes. A project that still reads it as a DLL, because its build could not be produced, sees it as last built and is not searched. Checking every project of a large solution on every request stalled the whole server. The first such query checks each reader once; every later one is answered from the builders the checker keeps, references and counts included, never by checking each file of the scope again. Dead code is judged by the file's own project: a symbol that is not public cannot be used from another project, and a public one is reported only in monorepo mode, where the in-memory readers count too. A rename that comes from the other language has no F# file to anchor on, so it walks every loaded project. A C# project that an F# project references is compiled in memory ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]); a C# project reads an F# one as its DLL ([DEFINITION-CROSSLANG]).
+
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] F# Projects That Reference C# Projects
+
+A `<ProjectReference>` from a loaded F# project to a C# project is compiled in memory with Roslyn, never read from its built DLL:
+
+- a solution nobody has built still checks clean;
+- a saved edit in the C# project reaches F# on the next check, without a build;
+- go-to-definition, type definition and declaration land in the C# source ([DEFINITION-CROSSLANG]).
+
+An F# project that references a C# project always loads from MSBuild's design-time command line, even with one framework, because only MSBuild knows which build of the C# project that framework compiles against. Its `ReferencePathWithRefAssemblies` item names the C# project, the framework MSBuild picked and the `-r:` path, as for an F# reference ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]). A design-time build of the C# project for that framework reports the C# compiler's command line (`CscCommandLineArgs`), and Roslyn compiles its sources against its references. A C# project it references in turn is compiled the same way and read from that compilation. A cycle, which MSBuild refuses anyway, is refused. Each C# build is prepared once per project and framework, at load or at the framework switch that needs it.
+
+Roslyn emits a metadata-only image that tolerates errors in method bodies, and FCS reads that image under the exact `-r:` MSBuild wrote, so the F# command line is unchanged.
+
+A build is stamped with the newest last-write time of its project file, its sources and the builds it reads. When the stamp moves, Roslyn compiles again and FCS reads the new image. When the changed sources no longer emit, the last image stays and the log says why. Unsaved C# edits live in the C# sidecar, so F# sees a C# edit once it is saved.
+
+Definition finds the declaration in Roslyn's compilation by the documentation id both compilers give it (FCS's `XmlDocSig`, Roslyn's `DocumentationCommentId`) and lands on its first location in source.
+
+When MSBuild cannot report the command line, or Roslyn cannot emit an image at all, the reference stands on its DLL and a warning names the project and the reason. A DLL that does not exist is left for the compiler to report.
 
 ### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation
 
@@ -281,7 +350,7 @@ Both C# and F# columns require full support unless noted.
 | Completion resolve | `completionItem/resolve` | [CompletionService.GetDescriptionAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdescriptionasync) | GetDeclarationListInfo (detail) | P0 |
 | Completion edit semantics | `textDocument/completion` | `GetDefaultCompletionListSpan` + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | `QuickParse.GetPartialLongNameEx` island + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | P0 |
 | Hover / Quick Info | `textDocument/hover` | See [HOVER-SPEC.md](HOVER-SPEC.md) | See [HOVER-SPEC.md](HOVER-SPEC.md) | P0 |
-| Signature help | `textDocument/signatureHelp` | SignatureHelpService.GetItemsAsync() | GetMethods() | P0 |
+| Signature help | `textDocument/signatureHelp` | Semantic model: member group + bound symbol — `[SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]` | GetMethods() | P0 |
 | Parameter hints | `textDocument/signatureHelp` | Same (active parameter tracking) | Same (active parameter tracking) | P0 |
 | Inlay hints (types) | `textDocument/inlayHint` | Type inference display | Type inference display | P1 |
 | Inlay hints (params) | `textDocument/inlayHint` | Parameter name hints | Parameter name hints | P1 |
@@ -292,6 +361,18 @@ Both C# and F# columns require full support unless noted.
 Every completion item returned by either sidecar carries an explicit LSP `textEdit`, not just an `insertText`. Its range is the identifier span **at the caret** — the typed prefix to the left of the cursor *plus any identifier characters that already follow it on the same line*. Accepting an item therefore **replaces** that identifier instead of being appended to it: completing `WriteLine` at `Console.|WriteLine` yields `Console.WriteLine`, never `Console.WriteLineWriteLine` (GitHub #178). Without a `textEdit` the editor falls back to its own word-boundary heuristic, which appends after a member-access trigger character and duplicates the identifier.
 
 The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/sharplsp/src/semantic.rs`.
+
+#### [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP] Signature Help
+
+Inside a call's argument list, both sidecars answer `textDocument/signatureHelp` with every overload the call could bind to. The Rust host (`src/sharplsp/src/signature_help.rs`) forwards the request to the document's sidecar and maps the positional wire shape — `signatures[{ label, parameters[] }]`, `activeSignature`, `activeParameter` — onto LSP `SignatureHelp`. F# resolves the overloads with FCS `GetMethods` ([FS-SIGHELP]). C# builds them from the semantic model (`SignatureHelpResolver`), because Roslyn's own signature-help providers are MEF components a headless workspace does not have; until it did, C# answered `null` for every call (GitHub #174).
+
+1. **Where.** The innermost argument list the caret sits in: after its `(` and not past its `)`, or anywhere after the `(` while the call is still being typed. The token left of the caret decides, because the token at the caret may already belong to what follows an unfinished call. Anywhere else the answer is `null`.
+2. **What.** Method groups (every accessible overload), delegate values (their `Invoke`), object creations — explicit and target-typed `new(…)` — (the created type's constructors) and `: base(…)`/`: this(…)` initializers.
+3. **Which overload.** The one the call binds to; while it binds to none, the first that takes as many arguments as are typed.
+4. **Which parameter.** The one a named argument names; otherwise the argument's position, counted by the commas before the caret, with every extra argument of a `params` array on its last parameter.
+5. **Labels.** C# labels read `string Greeter.Greet(string name, int times)`, `Point(int x, int y)`, `string Func<int, string>(int arg)`. Every parameter label appears verbatim in its signature's label, because an editor highlights the active parameter by finding that text.
+
+Tests: `SignatureHelpEndToEndTests` drives the real `WorkspaceManager` over a real program for overloads, the active parameter across commas and while typing, named arguments, constructors, delegates, framework overloads and the `null` cases. The host session e2e (`user_session_csharp.rs`) asserts the shape through real IPC.
 
 ### [SHARPLSP-FEATURES-NAVIGATION] Navigation
 
@@ -349,6 +430,35 @@ SharpLsp also owns custom static analyzers that run through the same workspace d
 | Make field/property | `textDocument/codeAction` | EncapsulateField refactoring | Custom implementation | P2 |
 | Convert auto-prop ↔ full prop | `textDocument/codeAction` | Roslyn property conversion | N/A | P1 |
 | Convert method ↔ property | `textDocument/codeAction` | Custom implementation | N/A | P2 |
+
+#### [REFACTOR-NO-DIALOG] Actions That Need a Dialog
+
+An action whose options come from an IDE dialog is never offered. Roslyn models these as `CodeActionWithOptions`, for example its own `Generate overrides...`, `Extract interface...`, `Generate constructor from members...` and `Change signature...`. LSP has no dialog, and a headless `MSBuildWorkspace` has no options service, so resolving one throws. Offering it anyway handed the client an action that always failed. Where it shared a title with a working action, as Roslyn's `Generate overrides...` does with [REFACTOR-OVERRIDE-HEADLESS], ordering decided which one the client got (GitHub #201). A dialog feature is offered once it has a headless implementation, and not before.
+
+#### [REFACTOR-OVERRIDE-HEADLESS] Headless Override Generation
+
+Roslyn's own "Generate overrides" is an editor feature: its member picker and the
+implement/override services behind it are MEF components a headless host does not
+have. The C# sidecar therefore builds the declarations itself
+(`HeadlessOverrideCodeAction`, `HeadlessOverrideSyntax`).
+
+1. **Where it is offered.** `Generate overrides...` is offered when the requested
+   range touches a type declaration's identifier and at least one member is left
+   to override.
+2. **What it generates.** One override for every abstract, non-static, non-sealed
+   member of every base class, walking the whole base chain, that the type does not
+   already override. Each body throws `System.NotImplementedException`.
+3. **Every member shape compiles.** Methods, generic methods with the constraint
+   clauses their nullability annotations require (including nullability inside a
+   constructed generic argument), read/write, get-only and init-only properties
+   (an init accessor stays `init`), indexers, events, and unsafe pointer members.
+   A non-public member keeps its accessibility.
+4. **All or nothing.** If a required member is inaccessible from the type, or one
+   of its accessors is, the action is not offered: a partial set of overrides
+   would leave the type as uncompilable as before.
+
+The action is verified by APPLYING it to a real MSBuild project and compiling the
+result (`HeadlessOverrideGenerationTests`), not by checking that it is offered.
 
 ### [SHARPLSP-FEATURES-FORMATTING] Formatting
 

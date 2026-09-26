@@ -1,4 +1,4 @@
-/// Document symbols for the F# sidecar via FCS GetNavigationItems.
+/// Document symbols for the F# sidecar via FCS GetNavigationItems. Implements [FS-DOCSYMBOL].
 /// Purely syntactic (parse-only) so it responds without a cracked project —
 /// matching the host's "syntax-only" latency budget for textDocument/documentSymbol.
 /// F# symbol-extraction contract [SE-FSHARP-SYMBOLS].
@@ -94,10 +94,10 @@ let private toTopLevel (decl: NavigationTopLevelDeclaration) : SymbolItem =
     let children = decl.Nested |> Array.map (toItem []) |> Array.toList
     toItem children decl.Declaration
 
-/// Parsing options that work without a cracked project. Fixtures use no
-/// conditional-compilation directives, so the defaults parse them faithfully.
+/// The parsing options of the project that compiles the file — its defines decide
+/// which `#if` branch outlines — or the defaults when no project is loaded.
 let private parsingOptions (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) =
-    match state.ProjectOptions with
+    match FSharpWorkspace.optionsFor state filePath with
     | Some opts -> fst (state.Checker.GetParsingOptionsFromProjectOptions(opts))
     | None -> { FSharpParsingOptions.Default with SourceFiles = [| filePath |] }
 

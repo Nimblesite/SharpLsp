@@ -20,6 +20,7 @@ open System.Xml.Linq
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
+open SharpLsp.Sidecar.Common
 
 let private node (name: string) (content: obj array) = XElement(XName.Get name, content)
 
@@ -44,22 +45,22 @@ let private writeProject (dir: string) (projectName: string) (otherFlags: string
         node "ItemGroup" (Array.append [| node "Compile" [| attr "Include" "Library.fs" |] |] extraItems)
 
     let project = node "Project" [| attr "Sdk" "Microsoft.NET.Sdk"; properties; items |]
-    let fsproj = Path.Combine(dir, $"{projectName}.fsproj")
+    let fsproj = NativePaths.Resolve(dir, $"{projectName}.fsproj")
     XDocument(project).Save(fsproj)
-    File.WriteAllText(Path.Combine(dir, "Library.fs"), "module Cracked.Library\n\nlet answer = 42\n")
+    File.WriteAllText(NativePaths.Resolve(dir, "Library.fs"), "module Cracked.Library\n\nlet answer = 42\n")
     fsproj
 
 /// A referenced C# project whose output assembly is already built. The copied
 /// file is a genuine managed assembly, so `-r:` names something FCS can open.
 let private writeBuiltCsharpReference (root: string) =
-    let projectDir = Path.Combine(root, "Neighbour")
-    let outputDir = Path.Combine(projectDir, "bin", "Debug", "net10.0")
+    let projectDir = NativePaths.Resolve(root, "Neighbour")
+    let outputDir = NativePaths.Resolve(projectDir, "bin", "Debug", "net10.0")
     Directory.CreateDirectory(outputDir) |> ignore
-    let csproj = Path.Combine(projectDir, "Neighbour.csproj")
+    let csproj = NativePaths.Resolve(projectDir, "Neighbour.csproj")
 
     XDocument(node "Project" [| attr "Sdk" "Microsoft.NET.Sdk" |]).Save(csproj)
 
-    let assembly = Path.Combine(outputDir, "Neighbour.dll")
+    let assembly = NativePaths.Resolve(outputDir, "Neighbour.dll")
     File.Copy(typeof<SharpLsp.Sidecar.Common.NativePaths>.Assembly.Location, assembly, true)
     assembly
 
@@ -68,7 +69,7 @@ let private FLAGS_WITHOUT_OUTPUT = "--nowarn:52 $(UnexpandedExtraFlags) --warnon
 
 [<Fact>]
 let ``cracking a real fsproj carries OtherFlags to FCS and drops unexpanded properties`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-crack-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
@@ -81,7 +82,7 @@ let ``cracking a real fsproj carries OtherFlags to FCS and drops unexpanded prop
 
 [<Fact>]
 let ``an AssemblyName MSBuild never expanded falls back to the project file stem`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-crack-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
@@ -93,16 +94,16 @@ let ``an AssemblyName MSBuild never expanded falls back to the project file stem
 
 [<Fact>]
 let ``compile items become the FCS source list in declaration order`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-crack-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
         let sources = FSharpWorkspace.parseFsprojSourceFiles fsproj
 
         Assert.Equal(1, sources.Length)
-        Assert.Equal(Path.Combine(dir, "Library.fs"), sources[0])
+        Assert.Equal(NativePaths.Resolve(dir, "Library.fs"), sources[0])
         // Source paths must be absolute — FCS resolves nothing relative to cwd.
-        Assert.True(Path.IsPathRooted(sources[0]))
+        Assert.True(NativePaths.IsRooted(sources[0]))
     finally
         cleanup dir
 
@@ -113,11 +114,11 @@ let ``framework reference args pin the runtime instead of the desktop profile`` 
     Assert.Contains("--noframework", args)
     Assert.Contains("--targetprofile:netcore", args)
     // Without FSharp.Core on the line, every fixture would fail to typecheck.
-    Assert.Contains(args, fun arg -> arg.EndsWith("FSharp.Core.dll", StringComparison.OrdinalIgnoreCase))
+    Assert.Contains(args, fun arg -> NativePaths.NameOf arg = "FSharp.Core.dll")
 
 [<Fact>]
 let ``a referenced C# project arrives on the compiler line as its built assembly`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-crack-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         Directory.CreateDirectory(dir) |> ignore
@@ -140,13 +141,13 @@ let ``a referenced C# project arrives on the compiler line as its built assembly
         Assert.Contains("--nowarn:52", options.OtherOptions)
         // No <OtherFlags> output flag, so the cracker stamps the identity itself.
         Assert.Contains("--out:CrackedA.dll", options.OtherOptions)
-        Assert.Equal<string array>([| Path.Combine(dir, "Library.fs") |], options.SourceFiles)
+        Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs") |], options.SourceFiles)
     finally
         cleanup dir
 
 [<Fact>]
 let ``a project that declares its own output flag is not given a second one`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-crack-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedB" "--nowarn:52 --out:Custom.dll" [||]
@@ -167,7 +168,7 @@ let ``a project that declares its own output flag is not given a second one`` ()
 
 [<Fact>]
 let ``a lowercase short output flag also suppresses the generated identity`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-crack-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedC" "-o:Short.dll" [||]

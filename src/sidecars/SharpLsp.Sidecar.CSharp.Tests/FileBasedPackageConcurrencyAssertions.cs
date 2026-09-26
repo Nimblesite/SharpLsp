@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Xml;
 using System.Xml.Linq;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 // CA1515: xUnit requires the public partial test class.
@@ -15,7 +16,7 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
     {
         WriteAppCone();
         return _fixture.Write(
-            Path.Combine("cone", "Concurrent.cs"),
+            NativePaths.Join("cone", "Concurrent.cs"),
             "#:package Newtonsoft.Json\n#:property DefineConstants=FROM_DIRECTIVE;$(DefineConstants)\n#:property AssemblyTitle=Sharp & Precise\nusing Newtonsoft.Json;\nConsole.WriteLine(JsonConvert.SerializeObject(3));\n"
         );
     }
@@ -127,7 +128,7 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
 
     private static string[] RestoreProjects(string restoreRoot)
     {
-        var generations = Path.Combine(restoreRoot, "generations");
+        var generations = NativePaths.Join(restoreRoot, "generations");
         return !Directory.Exists(generations)
             ? []
             : Directory.GetFiles(generations, "restore.csproj", SearchOption.AllDirectories);

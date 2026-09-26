@@ -1,11 +1,10 @@
+#pragma warning disable RS1035 // File IO banned for analyzers — tests own temp fixtures
 using System.Net.Sockets;
 using System.Text;
 using MessagePack;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
 using ByteResult = Outcome.Result<byte[], string>;
-
-#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — tests own temp fixtures
 
 namespace SharpLsp.Sidecar.Common.Tests;
 
@@ -150,17 +149,61 @@ public sealed class SidecarHostEndToEndTests
     }
 
     [Fact]
+    public async Task Shutdown_is_acknowledged_before_the_host_stops()
+    {
+        // GitHub #172 / [SIDECAR-SHUTDOWN-ACK]: the Rust host waits for a
+        // correlated "ok" before it lets the process exit on its own
+        // ([SIDECAR-SHUTDOWN-PROTOCOL]). A handler that cancels the token the
+        // response is written with never sends one, so every shutdown ended in
+        // a hard kill.
+        var socketPath = IpcConnection.GenerateSocketPath($"host-ack-{Guid.NewGuid():N}");
+        var host = new TestHost();
+        await using (host.ConfigureAwait(false))
+        {
+            var runTask = host.RunAsync(socketPath);
+
+            var stream = await ConnectWithRetryAsync(socketPath).ConfigureAwait(true);
+            var client = new FramedTransport(stream);
+            await using (client.ConfigureAwait(false))
+            {
+                var pong = await RoundTripAsync(client, Request(1, "ping")).ConfigureAwait(true);
+                Assert.Equal(1u, pong.Id);
+                Assert.Null(pong.Error);
+                Assert.False(runTask.IsCompleted, "the host serves until it is asked to stop");
+
+                var ack = await RoundTripAsync(client, Request(2, "shutdown"))
+                    .WaitAsync(TimeSpan.FromSeconds(10))
+                    .ConfigureAwait(true);
+                Assert.Equal(2u, ack.Id);
+                Assert.Null(ack.Error);
+                Assert.Equal("ok", MessagePackSerializer.Deserialize<string>(ack.Payload));
+
+                // Only after the flushed ack does the host stop: it closes its
+                // end, and RunAsync returns for a zero exit.
+                await runTask.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(true);
+                Assert.True(runTask.IsCompletedSuccessfully);
+                Assert.False(host.StartupFailed, "an acknowledged shutdown exits zero");
+                var afterAck = await client
+                    .ReadFrameAsync()
+                    .WaitAsync(TimeSpan.FromSeconds(10))
+                    .ConfigureAwait(true);
+                Assert.Null(afterAck);
+            }
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_returns_when_listener_cannot_bind()
     {
         // Bind must fail so RunAsync logs the listener failure and returns cleanly.
         // The socket's parent path is a regular file (ENOTDIR), and the whole path
         // is kept well under the 108-char Unix limit so it is NOT relocated to a
         // bindable temp path by the socket-path shortening guard.
-        var parentFile = Path.Combine(Path.GetTempPath(), $"slsp-nf-{Guid.NewGuid():N}"[..16]);
+        var parentFile = NativePaths.Temp($"slsp-nf-{Guid.NewGuid():N}"[..16]);
         await File.WriteAllTextAsync(parentFile, "x").ConfigureAwait(true);
         try
         {
-            var badPath = Path.Combine(parentFile, "h.sock");
+            var badPath = NativePaths.Resolve(parentFile, "h.sock");
             var host = new TestHost();
             await using (host.ConfigureAwait(false))
             {
@@ -183,14 +226,14 @@ public sealed class SidecarHostEndToEndTests
         // its own log — instead of dying silently with the reason visible only
         // in a temp-file log. That silence is what made #110 undiagnosable.
         // The line must preserve the exception type, not just its message.
-        var parentFile = Path.Combine(Path.GetTempPath(), $"slsp-ft-{Guid.NewGuid():N}"[..16]);
+        var parentFile = NativePaths.Temp($"slsp-ft-{Guid.NewGuid():N}"[..16]);
         await File.WriteAllTextAsync(parentFile, "x").ConfigureAwait(true);
         using var capture = new CapturedConsoleWriter();
         var original = Console.Error;
         Console.SetError(capture);
         try
         {
-            var badPath = Path.Combine(parentFile, "h.sock");
+            var badPath = NativePaths.Resolve(parentFile, "h.sock");
             var host = new TestHost();
             await using (host.ConfigureAwait(false))
             {
@@ -252,10 +295,7 @@ public sealed class SidecarHostEndToEndTests
         // endpoint, READY must advertise the path it actually bound, not the
         // path it was asked for — so this client connects to the advertised
         // path RAW, exactly like the Rust host does.
-        var overlong = Path.Combine(
-            Path.GetTempPath(),
-            $"sharplsp-e2e-{new string('a', 120)}.sock"
-        );
+        var overlong = NativePaths.Temp($"sharplsp-e2e-{new string('a', 120)}.sock");
         using var capture = new CapturedConsoleWriter();
         var original = Console.Out;
         Console.SetOut(capture);

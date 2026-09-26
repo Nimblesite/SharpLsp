@@ -3,7 +3,7 @@
 // Implements [DEBUG-FEATURES-LAUNCH-TARGET], [DEBUG-FEATURES-LAUNCH-BUILD],
 // [DEBUG-FEATURES-LAUNCH-SCRIPT], [DEBUG-FEATURES-LAUNCH-PROFILES].
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, fileNameOf } from './paths';
 import * as vscode from 'vscode';
 import {
   candidatesAt,
@@ -47,6 +47,8 @@ export interface ProjectTarget {
   readonly cwd: string;
   /** The TFM this target resolved to; the build must be pinned to it. */
   readonly framework?: string;
+  /** Every framework a MULTI-targeted project declares, in order. [NETFX-DEBUG] */
+  readonly frameworks?: readonly string[];
   readonly args?: readonly string[];
   readonly env?: Readonly<Record<string, string>>;
 }
@@ -148,13 +150,13 @@ async function chooseProject(
   options: ResolveOptions,
 ): Promise<string | undefined> {
   const items = runnable.map((entry) => ({
-    label: path.basename(entry.projectFile),
-    description: path.dirname(entry.projectFile),
+    label: fileNameOf(entry.projectFile),
+    description: directoryOf(entry.projectFile),
   }));
   const choose = options.choose ?? defaultChoose;
   const picked = await choose(items, PROJECT_PICK);
   if (picked === undefined) return undefined;
-  return runnable.find((entry) => path.basename(entry.projectFile) === picked.label)?.projectFile;
+  return runnable.find((entry) => fileNameOf(entry.projectFile) === picked.label)?.projectFile;
 }
 
 /**
@@ -203,8 +205,9 @@ async function projectTarget(
     kind: 'project',
     projectFile,
     program: properties.targetPath,
-    cwd: path.dirname(projectFile),
+    cwd: directoryOf(projectFile),
     ...(properties.targetFramework === '' ? {} : { framework: properties.targetFramework }),
+    ...(properties.targetFrameworks.length > 1 ? { frameworks: properties.targetFrameworks } : {}),
   };
   return await withProfile(base, projectFile, options);
 }
@@ -236,7 +239,7 @@ async function projectlessTarget(
   file: string,
   options: ResolveOptions,
 ): Promise<Result<LaunchTarget>> {
-  const cwd = path.dirname(file);
+  const cwd = directoryOf(file);
   if (kind === 'csharpFileBasedApp') {
     return ok(await withProfile({ kind: 'fileBasedApp', file, cwd }, file, options));
   }
@@ -269,5 +272,5 @@ export async function resolveLaunchTarget(
 
   const kind = classifyDocument(file, root);
   if (kind !== 'projectOwned') return await projectlessTarget(kind, file, options);
-  return await fromCandidates(candidatesAt(walkCone(path.dirname(file), root)), options);
+  return await fromCandidates(candidatesAt(walkCone(directoryOf(file), root)), options);
 }

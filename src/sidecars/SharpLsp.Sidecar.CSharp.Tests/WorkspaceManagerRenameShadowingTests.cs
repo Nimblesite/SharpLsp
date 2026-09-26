@@ -1,3 +1,4 @@
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.DoesNotContain
@@ -32,10 +33,7 @@ public sealed class WorkspaceManagerRenameShadowingTests : IDisposable
         + "    }\n"
         + "}\n";
 
-    private readonly string _root = Path.Combine(
-        Path.GetTempPath(),
-        $"sharplsp-rename-shadow-{Guid.NewGuid():N}"
-    );
+    private readonly string _root = NativePaths.Temp($"sharplsp-rename-shadow-{Guid.NewGuid():N}");
 
     private readonly string _csprojPath;
     private readonly string _sourcePath;
@@ -51,8 +49,8 @@ public sealed class WorkspaceManagerRenameShadowingTests : IDisposable
               </PropertyGroup>
             </Project>
             """;
-        _csprojPath = Path.Combine(_root, "Shadow.csproj");
-        _sourcePath = Path.Combine(_root, "Shadow.cs");
+        _csprojPath = NativePaths.Join(_root, "Shadow.csproj");
+        _sourcePath = NativePaths.Join(_root, "Shadow.cs");
         File.WriteAllText(_csprojPath, csproj);
         File.WriteAllText(_sourcePath, Source);
     }

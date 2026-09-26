@@ -25,7 +25,7 @@ pub fn handle_inlay_hint(
     let Some(sidecar) = sidecar else {
         return Ok(serde_json::Value::Null);
     };
-    let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
+    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
 
     let request = SidecarInlayHintReq {
         file_path,

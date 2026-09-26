@@ -7,7 +7,7 @@ plugins {
     // 2.2 was rejected by the platform with an "outdated" warning.
     id("org.jetbrains.intellij.platform") version "2.14.0"
     // Line coverage for the Rider plugin, gated by the repo-wide ratchet in
-    // .config/coverage/thresholds.json. [DIST-CI-RIDER]
+    // coverage-thresholds.json. [DIST-CI-RIDER]
     id("org.jetbrains.kotlinx.kover") version "0.9.2"
 }
 

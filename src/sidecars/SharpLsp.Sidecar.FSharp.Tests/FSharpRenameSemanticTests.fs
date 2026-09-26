@@ -7,6 +7,7 @@ open FSharp.Compiler.CodeAnalysis
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
+open SharpLsp.Sidecar.Common
 
 /// A string continuation (`\`) strips the leading whitespace of the next line, so
 /// indentation-sensitive fixtures must be assembled from explicit lines.
@@ -69,7 +70,7 @@ let private UNMARKED_INDEXER_SOURCE =
 
 /// Render an edit so a failed expectation names the exact span that moved.
 let private editKey (edit: FSharpCodeActions.RawEdit) =
-    let file = System.IO.Path.GetFileName edit.FilePath
+    let file = NativePaths.NameOf edit.FilePath
     $"{file}:{edit.StartLine}.{edit.StartCharacter}-{edit.EndLine}.{edit.EndCharacter}=>{edit.NewText}"
 
 /// Render a use so a failed expectation names the span FCS reported and whether
@@ -78,7 +79,7 @@ let private describeUse (state: FSharpWorkspace.FSharpWorkspaceState) (symbolUse
     let range: FSharp.Compiler.Text.Range = symbolUse.Range
     let tokenized = FSharpRenameToken.tokenizeSource state.Checker (FSharpWorkspace.readSource state range.FileName)
     let token = FSharpRenameToken.tokenForUse state.Checker tokenized symbolUse
-    let file = System.IO.Path.GetFileName range.FileName
+    let file = NativePaths.NameOf range.FileName
     let located = token |> Option.map _.Text |> Option.defaultValue "NO-TOKEN"
     $"{file}:{range.StartLine}.{range.StartColumn}-{range.EndLine}.{range.EndColumn} token={located}"
 

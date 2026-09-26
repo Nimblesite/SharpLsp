@@ -7,9 +7,10 @@
 // matrices, and the completeness guard all go through this script: adding a
 // chunk or a suite is a one-file edit that reaches every consumer.
 //
-// A chunk marked `"linuxOnly": true` is absent from the win32 matrix. That is
-// the only platform distinction the manifest carries — everything else runs on
-// both, because a chunk that runs on one platform only is a gap nobody sees.
+// A chunk marked `"linuxOnly": true` is absent from the win32 matrix, and one
+// marked `"windowsOnly": true` (.NET Framework, [NETFX-SCOPE]) from the Ubuntu
+// one. Everything else runs on both: a chunk on one platform only is a gap
+// nobody sees, so the flags are reserved for what cannot run elsewhere.
 //
 // Usage:
 //   node tools/vsix/vsix-test-chunks.mjs files <chunk>   -> comma-separated globs for MOCHA_FILES
@@ -58,10 +59,9 @@ function declaredSuites(dir = SUITE_DIR, prefix = "") {
 }
 
 /**
- * Chunk names for one platform. `win` drops the `linuxOnly` chunks — currently
- * the real-world-repository stress suites, which clone and restore third-party
- * solutions; the win32 gate proves the editor experience, not repo ingestion,
- * and cloning there would double the matrix's slowest job for no new signal.
+ * Chunk names for one platform. `win` drops the `linuxOnly` chunks (third-party
+ * repository ingestion); `linux` drops the `windowsOnly` ones, whose .NET
+ * Framework test hosts only Windows can run ([NETFX-SCOPE]).
  */
 function matrix(manifest, platform) {
     if (platform !== "win" && platform !== "linux") {
@@ -69,8 +69,9 @@ function matrix(manifest, platform) {
             `matrix needs a platform: 'win' or 'linux', got '${platform ?? ""}'`,
         );
     }
+    const excluded = platform === "win" ? "linuxOnly" : "windowsOnly";
     return Object.entries(manifest.chunks)
-        .filter(([, entry]) => platform === "linux" || entry.linuxOnly !== true)
+        .filter(([, entry]) => entry[excluded] !== true)
         .map(([chunk]) => chunk);
 }
 

@@ -19,6 +19,7 @@ use lsp_types::{
 use tracing::{debug, info, warn};
 
 use crate::nav_cache::is_empty_nav_result;
+use crate::paths::{normalized_rename_path, path_to_lsp_uri, uri_to_path};
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::{
     map_text_edit, map_text_edits, request_sidecar, with_sidecar, SidecarPositionReq,
@@ -34,7 +35,7 @@ pub fn handle_completion(
 ) -> Result<serde_json::Value> {
     let params: CompletionParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document_position.text_document.uri;
-    let file_path = uri_to_path(uri)?;
+    let file_path = uri_to_path(uri.as_str())?;
     let line = params.text_document_position.position.line;
     let character = params.text_document_position.position.character;
 
@@ -171,7 +172,7 @@ pub fn handle_hover(
         return Ok(cached.clone());
     }
 
-    let file_path = uri_to_path(uri)?;
+    let file_path = uri_to_path(uri.as_str())?;
     info!(
         file = %file_path,
         line = position.line,
@@ -614,7 +615,7 @@ fn handle_single_location_nav(
 
 /// Convert a sidecar `LocationResult` to an LSP `Location`.
 fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Location> {
-    let uri: Uri = crate::utils::path_to_lsp_uri(&loc.file_path).ok()?;
+    let uri: Uri = path_to_lsp_uri(&loc.file_path).ok()?;
     Some(Location {
         uri,
         range: Range::new(
@@ -637,11 +638,6 @@ fn build_hover_range(result: &SidecarHoverResult) -> Option<Range> {
         }
         _ => None,
     }
-}
-
-/// Convert a file URI to a filesystem path string.
-pub(crate) fn uri_to_path(uri: &Uri) -> Result<String> {
-    crate::utils::uri_to_path(uri.as_str())
 }
 
 /// Map a Roslyn completion tag to an LSP `CompletionItemKind`.
@@ -833,7 +829,7 @@ pub fn handle_prepare_rename(
     };
 
     let params: TextDocumentPositionParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(&params.text_document.uri)?;
+    let file_path = uri_to_path(params.text_document.uri.as_str())?;
     let request = SidecarPositionReq {
         file_path,
         line: params.position.line,
@@ -891,7 +887,7 @@ pub fn handle_rename(
 /// Convert LSP rename parameters into the sidecar's compact wire request.
 fn sidecar_rename_request(params: RenameParams) -> Result<SidecarRenameRequest> {
     Ok(SidecarRenameRequest {
-        file_path: uri_to_path(&params.text_document_position.text_document.uri)?,
+        file_path: uri_to_path(params.text_document_position.text_document.uri.as_str())?,
         line: params.text_document_position.position.line,
         character: params.text_document_position.position.character,
         new_name: params.new_name,
@@ -1047,7 +1043,7 @@ fn workspace_edit_value(result: SidecarWorkspaceEditResult) -> Result<serde_json
 
 /// Convert one sidecar document edit into its LSP representation.
 fn lsp_document_edit(edit: SidecarDocumentEditResult) -> Result<lsp_types::TextDocumentEdit> {
-    let uri = crate::utils::path_to_lsp_uri(&edit.file_path)?;
+    let uri = path_to_lsp_uri(&edit.file_path)?;
     let edits = edit.edits.into_iter().map(lsp_rename_edit).collect();
     Ok(lsp_types::TextDocumentEdit {
         text_document: lsp_types::OptionalVersionedTextDocumentIdentifier { uri, version: None },
@@ -1192,28 +1188,6 @@ fn rename_edit_key(edit: &SidecarTextEditResult) -> (u32, u32, u32, u32, &str) {
 /// Test whether two replacements target the same range with the same text.
 fn same_rename_edit(left: &SidecarTextEditResult, right: &SidecarTextEditResult) -> bool {
     rename_edit_key(left) == rename_edit_key(right)
-}
-
-/// Canonicalize a path into a stable cross-sidecar merge key.
-fn normalized_rename_path(path: &str) -> String {
-    let canonical = std::fs::canonicalize(path).map_or_else(
-        |_| path.to_string(),
-        |value| value.to_string_lossy().into_owned(),
-    );
-    let normalized = strip_rename_verbatim(&canonical).replace('\\', "/");
-    if cfg!(windows) {
-        normalized.to_ascii_lowercase()
-    } else {
-        normalized
-    }
-}
-
-/// Remove the Windows verbatim prefix while preserving UNC semantics.
-fn strip_rename_verbatim(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
-        return format!(r"\\{rest}");
-    }
-    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
 }
 
 /// Sidecar request to rename a symbol.
