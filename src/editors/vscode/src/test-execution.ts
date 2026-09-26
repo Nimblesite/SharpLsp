@@ -32,6 +32,7 @@ import { filterBatches, filterExpression } from './test-filter.js';
 import { parseFailureMessage, parseRunSummary, type TestRunSummary } from './test-run-output.js';
 import { isRunError, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
 import { collectReport, trxFiles } from './test-trx-collect.js';
+import { removeDirRecursive } from './utils.js';
 
 /** What one `dotnet test` invocation produced. */
 export interface TestRunOutcome {
@@ -138,7 +139,7 @@ export async function runTests(
   try {
     return await runInto(testIds, cwd, resultsDirectory, options);
   } finally {
-    if (owned) fs.rmSync(resultsDirectory, { recursive: true, force: true });
+    if (owned) removeDirRecursive(resultsDirectory);
   }
 }
 

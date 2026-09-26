@@ -32,6 +32,7 @@ import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-r
 import { collectReport, trxFiles, worse } from './test-trx-collect.js';
 import type { TrxRunInfo, TrxTestResult } from './test-trx.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
+import { removeDirRecursive } from './utils.js';
 
 export { runArgs } from './test-mtp-report.js';
 
@@ -462,7 +463,7 @@ export async function runMtpTests(
   try {
     return (await runTargets(plan, testIds, context)) ?? emptyOutcome(noModuleRan(plan, options));
   } finally {
-    if (owned) fs.rmSync(resultsDirectory, { recursive: true, force: true });
+    if (owned) removeDirRecursive(resultsDirectory);
   }
 }
 

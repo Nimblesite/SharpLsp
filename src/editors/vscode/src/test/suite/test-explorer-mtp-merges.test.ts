@@ -26,7 +26,8 @@ import { COVERAGE_DIR, freshCoverageDir } from '../../test-reporting.js';
 import { runnersFor, splitByRunner, VSTEST_ONLY } from '../../test-run-routes.js';
 import type { TestOutcome, TestRunSummary } from '../../test-run-output.js';
 import type { TrxTestResult } from '../../test-trx.js';
-import { removeDirRecursive, assertContainsAll } from './test-helpers';
+import { removeDirRecursive, assertContainsAll, pollUntilResult } from './test-helpers';
+import { POLL_INTERVAL_MS, SETTLE_MS } from './test-timeouts';
 
 /** One TRX result for `id`. */
 function result(id: string, outcome: TestOutcome, durationMs = 5): TrxTestResult {
@@ -290,6 +291,47 @@ suite('Test Explorer MTP — the merge, routing and resolution rules', () => {
       assert.deepStrictEqual(findCoberturaFiles(fresh), [], 'the stale report is gone');
     } finally {
       removeDirRecursive(dir);
+    }
+  });
+
+  test('emptying the coverage directory never reaches through a junction in it, or one it is', async function () {
+    // It is the run's results directory in the user's own repo: a test that links a
+    // folder into its results, or a user who links the directory itself elsewhere,
+    // must lose the link on the next coverage run — never the folder it names.
+    this.timeout(SETTLE_MS * 2 + 5_000);
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-coverage-link-'));
+    const [dir, victim] = [path.join(base, 'solution'), path.join(base, 'victim')];
+    const keep = path.join(victim, 'keep.txt');
+    const fresh = path.join(dir, COVERAGE_DIR);
+    const settled = async (): Promise<string[]> =>
+      await pollUntilResult(
+        async () => fs.readdirSync(dir),
+        (names) => names.length === 1,
+        SETTLE_MS,
+        POLL_INTERVAL_MS,
+        'the old coverage directory, moved aside, to be deleted',
+      );
+    try {
+      fs.mkdirSync(victim);
+      fs.writeFileSync(keep, 'kept', 'utf8');
+      fs.mkdirSync(path.join(fresh, 'run-1'), { recursive: true });
+      fs.symlinkSync(victim, path.join(fresh, 'run-1', 'linked'), 'junction');
+      assert.equal(freshCoverageDir(dir), fresh, 'the same directory, recreated');
+      assert.ok(fs.existsSync(keep), 'what a junction in it names keeps its file');
+      assert.deepStrictEqual(fs.readdirSync(fresh), [], 'emptied, junction and all');
+      assert.deepStrictEqual(await settled(), [COVERAGE_DIR], 'the old tree is deleted');
+      assert.equal(fs.readFileSync(keep, 'utf8'), 'kept', 'and still never what it named');
+
+      fs.rmdirSync(fresh);
+      fs.symlinkSync(victim, fresh, 'junction');
+      assert.equal(freshCoverageDir(dir), fresh, 'recreated where the link stood');
+      assert.ok(fs.existsSync(keep), 'what the directory linked to keeps its file');
+      assert.equal(fs.lstatSync(fresh).isSymbolicLink(), false, 'a plain directory, not the link');
+      assert.deepStrictEqual(fs.readdirSync(fresh), [], 'and an empty one');
+      assert.deepStrictEqual(await settled(), [COVERAGE_DIR], 'the link is deleted');
+      assert.deepStrictEqual(fs.readdirSync(victim), ['keep.txt'], 'its target whole');
+    } finally {
+      removeDirRecursive(base);
     }
   });
 

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
+import { joinPath } from './paths';
+import { err, ok, type Result } from './result';
 
 /**
  * A plain, non-null object — the only shape a parsed JSON node, an MSBuild
@@ -27,8 +29,8 @@ export function isDirectory(candidate: string): boolean {
 }
 
 /** Extract a human-readable message from an unknown error value. */
-export function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+export function getErrorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /** Resolve after `ms` milliseconds — the one delay every poller waits on. */
@@ -107,17 +109,51 @@ export const RETRYING_RM: fs.RmOptions = {
  * file in it — the delete runs in place, with the Windows retry policy. Once the
  * retries are exhausted, a handle a child process leaked must not fail the
  * caller: thrown from a `finally`, it would discard a result already complete.
+ *
+ * Neither path reaches through a link. The extension host's `fs.rmSync` (Node 24)
+ * walks INTO a Windows junction and empties the directory it names, so the
+ * in-place delete unlinks every link first; `fs.promises.rm` unlinks a link
+ * without entering it. Implements [DIST-CI-WIN-VSIX].
+ *
+ * `ok` means the path is free the moment this returns; `err` names a tree that
+ * could neither move nor go, for a caller whose contract needs the path empty.
  */
-export function removeDirRecursive(target: string): void {
+export function removeDirRecursive(target: string): Result<void> {
   const aside = moveAside(target);
   if (aside !== undefined) {
     void fs.promises.rm(aside, RETRYING_RM).catch(() => undefined);
-    return;
+    return ok(undefined);
   }
   try {
-    fs.rmSync(target, RETRYING_RM);
-  } catch {
-    // Best-effort by contract: the caller's result stands without the delete.
+    removeInPlace(target);
+    return ok(undefined);
+  } catch (cause: unknown) {
+    return err(`could not remove ${target}: ${getErrorMessage(cause)}`);
+  }
+}
+
+/** Delete `target` where it stands: a link is unlinked itself, a tree loses its links first. */
+function removeInPlace(target: string): void {
+  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (stat === undefined) return;
+  if (stat.isSymbolicLink()) {
+    fs.unlinkSync(target);
+    return;
+  }
+  if (stat.isDirectory()) unlinkLinks(target);
+  fs.rmSync(target, RETRYING_RM);
+}
+
+/**
+ * Unlink every link under `tree` without descending through one, so what is left
+ * is plain files and directories. A junction counts: a directory entry reports
+ * every Windows reparse point as a link.
+ */
+function unlinkLinks(tree: string): void {
+  for (const entry of fs.readdirSync(tree, { withFileTypes: true })) {
+    const child = joinPath(tree, entry.name);
+    if (entry.isSymbolicLink()) fs.unlinkSync(child);
+    else if (entry.isDirectory()) unlinkLinks(child);
   }
 }
 
