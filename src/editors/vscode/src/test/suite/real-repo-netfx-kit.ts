@@ -7,10 +7,7 @@
 // A pinned commit cannot be cloned with `--branch`, so it is fetched by id into
 // an empty repository and checked out detached. Everything after that —
 // `global.json` removal, the audit-free restore, the solution load and the
-// semantic warm-up — is the shared real-repo lifecycle, reused unchanged. The
-// one step between the restore and the load is building the C# projects an F#
-// project reads, because F# reads C# only as a built DLL ([DEFINITION-CROSSLANG])
-// and a fresh clone has none.
+// semantic warm-up — is the shared real-repo lifecycle, reused unchanged.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -25,7 +22,7 @@ import {
   discoverOnce,
   runnableOf,
 } from './netfx-test-kit';
-import { ensureRepoReady, realWorldFixturesRoot, type RealRepoSpec } from './real-repo-helpers';
+import { realWorldFixturesRoot, type RealRepoSpec } from './real-repo-helpers';
 import { type Anchor, useRealRepo } from './real-repo-kit';
 import { activateTestExplorer, clearTestTree, rootsOf } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers';
@@ -35,13 +32,6 @@ import { DOTNET_CLI_MS, REAL_REPO_MS } from './test-timeouts';
 export interface PinnedRepoSpec extends RealRepoSpec {
   /** The full commit id the clone is checked out at. */
   readonly commit: string;
-  /**
-   * The C# projects an F# project in the repo references, relative to the
-   * clone. [DEFINITION-CROSSLANG]: F# reads C# only through the referenced
-   * project's BUILT DLL, so these alone are built before the load; every F#
-   * project stays unbuilt, and F# → F# references are still read from source.
-   */
-  readonly readAsDlls?: readonly string[];
 }
 
 /**
@@ -63,8 +53,6 @@ export const GITREADER: PinnedRepoSpec = pinned({
   url: 'https://github.com/kekyo/GitReader',
   commit: '079ea8530fafde82731e5a8cb8fd2989e2bdb0a2',
   sln: 'GitReader.sln',
-  // FSharp.GitReader references it, and the F# tests read it through that library.
-  readAsDlls: ['GitReader.Core/GitReader.Core.csproj'],
 });
 
 /**
@@ -90,9 +78,9 @@ export const NLOG: PinnedRepoSpec = pinned({
   sln: 'src/NLog.sln',
 });
 
-/** Run one CLI step in the clone, its output streamed to the test log. */
-function run(program: string, args: readonly string[], cwd: string): void {
-  execFileSync(program, [...args], { cwd, stdio: 'inherit', timeout: REAL_REPO_MS });
+/** Run one git step in the clone, its output streamed to the test log. */
+function git(args: readonly string[], cwd: string): void {
+  execFileSync('git', [...args], { cwd, stdio: 'inherit', timeout: REAL_REPO_MS });
 }
 
 /** Fetch exactly `spec.commit` into a fresh repository and check it out, once. */
@@ -101,46 +89,20 @@ function checkOutPinned(spec: PinnedRepoSpec): void {
   if (fs.existsSync(path.join(repoDir, spec.sln))) return;
   removeDirRecursive(repoDir);
   fs.mkdirSync(repoDir, { recursive: true });
-  run('git', ['init', '--quiet'], repoDir);
-  run('git', ['fetch', '--quiet', '--depth', '1', spec.url, spec.commit], repoDir);
-  run('git', ['checkout', '--quiet', 'FETCH_HEAD'], repoDir);
-}
-
-/** The frameworks of `project` whose build left its DLL, `<Name>.dll`, in `bin/Debug`. */
-function frameworksBuilt(repoDir: string, project: string): string[] {
-  const bin = path.join(repoDir, path.dirname(project), 'bin', 'Debug');
-  const dll = `${path.basename(project, path.extname(project))}.dll`;
-  if (!fs.existsSync(bin)) return [];
-  return fs.readdirSync(bin).filter((tfm) => fs.existsSync(path.join(bin, tfm, dll)));
+  git(['init', '--quiet'], repoDir);
+  git(['fetch', '--quiet', '--depth', '1', spec.url, spec.commit], repoDir);
+  git(['checkout', '--quiet', 'FETCH_HEAD'], repoDir);
 }
 
 /**
- * Restore through the shared lifecycle, then build `spec.readAsDlls`: the C#
- * projects F# reads only as DLLs ([DEFINITION-CROSSLANG]). Nothing else builds,
- * and a repo with none is left to the shared lifecycle untouched.
- */
-function buildReadAsDlls(spec: PinnedRepoSpec): void {
-  const projects = spec.readAsDlls ?? [];
-  if (projects.length === 0) return;
-  const repoDir = ensureRepoReady(spec);
-  for (const project of projects) {
-    run('dotnet', ['build', project, '--no-restore'], repoDir);
-    const built = frameworksBuilt(repoDir, project);
-    assert.ok(built.length > 0, `[DEFINITION-CROSSLANG]: ${project} leaves a DLL for F#`);
-  }
-}
-
-/**
- * Check `spec` out at its pinned commit, build the C# projects its F# reads,
- * then hand over to the shared real-repo lifecycle: restore, load through the
- * real extension, and wait until `file` answers SEMANTIC hover at `anchor`.
- * Returns the clone directory's accessor.
+ * Check `spec` out at its pinned commit, then hand over to the shared real-repo
+ * lifecycle: restore, load through the real extension, and wait until `file`
+ * answers SEMANTIC hover at `anchor`. Returns the clone directory's accessor.
  */
 export function usePinnedRepo(spec: PinnedRepoSpec, file: string, anchor: Anchor): () => string {
   suiteSetup(function () {
     this.timeout(REAL_REPO_MS);
     checkOutPinned(spec);
-    buildReadAsDlls(spec);
   });
   return useRealRepo(spec, file, anchor);
 }
