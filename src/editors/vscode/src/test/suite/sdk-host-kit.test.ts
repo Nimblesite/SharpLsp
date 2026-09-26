@@ -1,18 +1,23 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
 import { dotnetExecutable } from '../../dotnet-roots.js';
-import { copySdkMajor, newestVersion } from './sdk-host-kit.js';
+import { directoryOf, joinPath } from '../../paths.js';
+import { copySdkMajor, linkSdkMajor, namesUnder, newestVersion } from './sdk-host-kit.js';
 import { removeDirRecursive } from './test-helpers.js';
 
-const COMPONENTS = ['sdk', path.join('host', 'fxr'), path.join('shared', 'Microsoft.NETCore.App')];
+const COMPONENTS = ['sdk', joinPath('host', 'fxr'), joinPath('shared', 'Microsoft.NETCore.App')];
 
 function seedComponent(source: string, component: string, versions: readonly string[]): void {
   for (const version of versions) {
-    fs.mkdirSync(path.join(source, component, version), { recursive: true });
-    fs.writeFileSync(path.join(source, component, version, 'payload'), version);
+    fs.mkdirSync(joinPath(source, component, version), { recursive: true });
+    fs.writeFileSync(joinPath(source, component, version, 'payload'), version);
   }
+}
+
+/** A file's identity: the same for every hard link to it, different for any copy. */
+function identity(file: string): bigint {
+  return fs.statSync(file, { bigint: true }).ino;
 }
 
 /**
@@ -34,7 +39,7 @@ suite('SDK host fixture copy', () => {
   let scratch: string;
 
   setup(() => {
-    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-sdk-kit-'));
+    scratch = fs.mkdtempSync(joinPath(os.tmpdir(), 'slsp-sdk-kit-'));
   });
 
   teardown(() => {
@@ -42,8 +47,8 @@ suite('SDK host fixture copy', () => {
   });
 
   function stage(versions: readonly string[]): { source: string; target: string } {
-    const source = path.join(scratch, 'source');
-    const target = path.join(scratch, 'target');
+    const source = joinPath(scratch, 'source');
+    const target = joinPath(scratch, 'target');
     fs.mkdirSync(source, { recursive: true });
     fs.writeFileSync(dotnetExecutable(source), 'muxer');
     for (const component of COMPONENTS) seedComponent(source, component, versions);
@@ -58,12 +63,12 @@ suite('SDK host fixture copy', () => {
     assert.ok(fs.existsSync(host), 'and that muxer must really exist on disk');
     for (const component of COMPONENTS) {
       assert.deepEqual(
-        fs.readdirSync(path.join(target, component)),
+        fs.readdirSync(joinPath(target, component)),
         ['10.0.303'],
         `${component} must carry exactly one version, or the copy blocks CI for minutes`,
       );
       assert.equal(
-        fs.readFileSync(path.join(target, component, '10.0.303', 'payload'), 'utf8'),
+        fs.readFileSync(joinPath(target, component, '10.0.303', 'payload'), 'utf8'),
         '10.0.303',
         `${component} must hold the real payload, not an empty directory of the right name`,
       );
@@ -77,7 +82,7 @@ suite('SDK host fixture copy', () => {
     await copySdkMajor(source, target, 10);
     for (const component of COMPONENTS) {
       assert.deepEqual(
-        fs.readdirSync(path.join(target, component)),
+        fs.readdirSync(joinPath(target, component)),
         ['10.0.100'],
         `${component}: band 100 is newer than band 0 patch 99, whatever a string sort says`,
       );
@@ -121,6 +126,44 @@ suite('SDK host fixture copy', () => {
       copySdkMajor(source, target, 9),
       /must supply \.NET 9/,
       'a missing major is a fixture prerequisite, never an empty directory named 9.x',
+    );
+  });
+
+  // #309 CI: a suite copies each SDK once and every test links its roots from that
+  // copy, so a link must never become a way to rewrite the copy.
+  test('a linked root shares the stored bits, owns its muxer, and never writes through', async () => {
+    const { source, target } = stage(['9.0.14', '10.0.303']);
+    const stored = directoryOf(await copySdkMajor(source, joinPath(scratch, 'stored'), 10));
+    const host = await linkSdkMajor(stored, target, 10);
+    for (const component of COMPONENTS) {
+      const payload = joinPath(component, '10.0.303', 'payload');
+      assert.equal(
+        identity(joinPath(target, payload)),
+        identity(joinPath(stored, payload)),
+        `${component} must be the stored file itself, not another 400 MB copy`,
+      );
+    }
+    assert.notEqual(
+      identity(host),
+      identity(dotnetExecutable(stored)),
+      'the muxer is a copy the root owns: tests replace it, and it names the root it runs',
+    );
+
+    fs.writeFileSync(dotnetExecutable(source), 'newer muxer');
+    await copySdkMajor(source, target, 9);
+    assert.equal(fs.readFileSync(host, 'utf8'), 'newer muxer', 'installing replaces the muxer');
+    assert.equal(fs.readFileSync(dotnetExecutable(stored), 'utf8'), 'muxer', 'the store keeps its');
+    assert.deepEqual(namesUnder(target, 'sdk').sort(), ['10.0.303', '9.0.14'], 'both majors');
+
+    await assert.rejects(
+      copySdkMajor(source, target, 10),
+      (error: NodeJS.ErrnoException) => error.code === 'ERR_FS_CP_EEXIST',
+      'a copy over a linked version must refuse, never write through the link',
+    );
+    assert.equal(
+      fs.readFileSync(joinPath(stored, 'sdk', '10.0.303', 'payload'), 'utf8'),
+      '10.0.303',
+      'and the stored copy is exactly what it was',
     );
   });
 });
