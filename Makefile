@@ -49,6 +49,11 @@
 ifeq ($(OS),Windows_NT)
     DETECTED_OS := windows
     EXE_EXT     := .exe
+    # Native make sees PATH as the Windows `;` list, whichever shell started it,
+    # and spells a directory it hands to that list `C:/...` (cygpath ships with
+    # Git Bash).
+    PATH_SEP    := ;
+    NATIVE_DIR  := cygpath -m
     # Probe well-known Git-for-Windows install locations. DOS 8.3 short names
     # avoid the space in "Program Files" which GNU Make cannot quote in SHELL.
     GIT_BASH_CANDIDATES := \
@@ -63,6 +68,8 @@ ifeq ($(OS),Windows_NT)
 else
     DETECTED_OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
     EXE_EXT     :=
+    PATH_SEP    := :
+    NATIVE_DIR  := echo
     SHELL       := /bin/bash
 endif
 .SHELLFLAGS := -eo pipefail -c
@@ -175,7 +182,7 @@ SHARPLSP_DOTNET_ROOT := $(shell \
 		"$$ProgramFiles/dotnet"; do \
 		[ -n "$$root" ] && [ -x "$$root/dotnet$(EXE_EXT)" ] || continue; \
 		DOTNET_ROOT="$$root" "$$root/dotnet$(EXE_EXT)" --version >/dev/null 2>&1 || continue; \
-		echo "$$root"; break; \
+		$(NATIVE_DIR) "$$root"; break; \
 	done)
 endif
 export SHARPLSP_DOTNET_ROOT
@@ -193,20 +200,24 @@ export DOTNET_ROOT := $(SHARPLSP_DOTNET_ROOT)
 # lookup, so testing presence skipped the prepend in precisely the configuration
 # it exists to fix.
 #
-# The test is delegated to the SHELL rather than done with `firstword`, because
-# every make word function splits on whitespace and the Windows default root is
-# `/c/Program Files/dotnet`. `firstword` read its head as `/c/Program`, which
-# never equals the root, so the guard prepended again at every level of a
-# recursive build - unbounded PATH growth, and the precedence it exists to
-# assert never actually checked. `$${PATH%%:*}` compares the whole first entry.
-# A `case` glob cannot be used here: make counts parentheses inside
-# `$(shell ...)`, so the `)` closing a case pattern terminates the call.
+# The test reads make's OWN view of PATH with `findstring`, which compares
+# literal text - spaces included. Every word function splits on whitespace, and
+# the Windows default root is `C:/Program Files/dotnet`: `firstword` read its
+# head as `C:/Program`, which never equals the root, so the guard prepended again
+# at every level of a recursive build - unbounded PATH growth, and the precedence
+# it exists to assert never actually checked. The `|` sentinel anchors the match
+# to the FIRST entry.
+#
+# On Windows that view is the native `;` list, and a sub-make receives the entry
+# its parent prepended back as `C:\...`, so both sides are compared with forward
+# slashes. Joining the root on with `:` made one garbage entry of the root and
+# the entry after it: the root never led, and that entry left PATH too.
 #
 # Testing precedence also gets the duplicate-free property the presence test was
 # reaching for: after one prepend the root leads, so a nested sub-make compares
 # equal and skips it.
-ifneq ($(shell [ "$${PATH%%:*}" = "$(SHARPLSP_DOTNET_ROOT)" ] && echo led),led)
-export PATH := $(SHARPLSP_DOTNET_ROOT):$(PATH)
+ifeq ($(findstring |$(subst \,/,$(SHARPLSP_DOTNET_ROOT))$(PATH_SEP),|$(subst \,/,$(PATH))$(PATH_SEP)),)
+export PATH := $(SHARPLSP_DOTNET_ROOT)$(PATH_SEP)$(PATH)
 endif
 endif
 
