@@ -2723,27 +2723,3 @@ let ``formatRange returns no edits when the range is already formatted`` () = ta
     finally
         cleanup dir
 }
-
-[<Fact>]
-let ``PROBE conversion in the VS Code fixture`` () = task {
-    let root = Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "editors", "vscode", "test-fixtures", "workspace", "fsharp"))
-    let file = Path.Combine(root, "DiagnosticsTarget.fs")
-    let state = FSharpWorkspace.create ()
-    let! _ = FSharpWorkspace.loadProjectWithCancellation state (Path.Combine(root, "FSharpFixtures.fsproj")) Threading.CancellationToken.None
-    let source = "module FSharpFixtures.RefactorConversion\n\nlet accept (value: float) = value\nlet actualValue: decimal = 1M\nlet value = accept actualValue\nlet sentinel = 48\n"
-    FSharpWorkspace.applyDidChange state file source
-    let! checkedFile = FSharpWorkspace.checkFileWithParse state file
-    let diags =
-        match checkedFile with
-        | Some(_, results, _) -> results.Diagnostics |> Array.map (fun d -> $"{d.ErrorNumber} {d.Range} [{d.Message}]") |> String.concat "\n"
-        | None -> "NO CHECK"
-    let events = Collections.Concurrent.ConcurrentQueue<string>()
-    let sink = { new Serilog.Core.ILogEventSink with member _.Emit e = events.Enqueue($"{e.RenderMessage()} {e.Exception}") }
-    Serilog.Log.Logger <- Serilog.LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger()
-    let cf = FSharpCodeFixes.createState ()
-    let! actions = FSharpCodeFixes.getCodeActions cf state file 4 19 4 30
-    let logged = events |> Seq.filter (fun e -> e.Contains "CodeFixes") |> String.concat "\n"
-    let diags = $"{diags}\nLOG:\n{logged}"
-    let titles = actions |> List.map _.Title |> String.concat " | "
-    Assert.Fail($"DIAGS:\n{diags}\nACTIONS: {titles}")
-}
