@@ -187,6 +187,11 @@ Debug/Release execution, changed output paths, empty discovery, data-row edits,
 cancellation, breakpoint stepping, and multi-root runner routing. Windows CI and the
 final PR checks remain outstanding.
 
+After the dependency merge and the decompiler pin fix, the Linux workspace,
+`testexplorer-mtp`, `testexplorer-mtp-runners`, `testexplorer-mtp-parity`, and
+`testexplorer` chunks all passed again against freshly published sidecars. All 1,094
+.NET sidecar tests and their coverage gates passed on the same package versions.
+
 The new chunk is well inside the 15-minute ceiling [DIST-CI-WIN-VSIX] sets. The other three
 are the chunks this work touched, and none regressed.
 
