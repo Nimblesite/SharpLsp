@@ -123,7 +123,10 @@ public static class MetadataDecompiler
     /// <summary>The file whose module defines <paramref name="typeName"/>, through any forwarder; null when unresolved.</summary>
     private static string? DeclaringAssembly(CSharpDecompiler decompiler, FullTypeName typeName)
     {
-        var declared = decompiler.TypeSystem.FindType(typeName).GetDefinition()?.ParentModule?.MetadataFile?.FileName;
+        var declared = decompiler
+            .TypeSystem.FindType(typeName)
+            .GetDefinition()
+            ?.ParentModule?.MetadataFile?.FileName;
         return string.IsNullOrEmpty(declared) ? null : declared;
     }
 
@@ -135,7 +138,9 @@ public static class MetadataDecompiler
     /// </summary>
     internal static void PublishAtomically(string target, string source)
     {
-        var directory = NativePaths.DirectoryOf(target) is { Length: > 0 } holder ? holder : NativePaths.Temp();
+        var directory = NativePaths.DirectoryOf(target) is { Length: > 0 } holder
+            ? holder
+            : NativePaths.Temp();
         _ = Directory.CreateDirectory(directory);
         var staging = NativePaths.Resolve(directory, $"{Guid.NewGuid():N}.tmp");
         try

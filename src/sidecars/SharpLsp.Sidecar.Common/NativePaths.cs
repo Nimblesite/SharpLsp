@@ -60,7 +60,9 @@ public static class NativePaths
     /// </summary>
     public static string Resolve(string baseDirectory, params string[] segments)
     {
-        return NormalizeFullPath(Path.Combine([Portable(baseDirectory), .. segments.Select(Portable)]));
+        return NormalizeFullPath(
+            Path.Combine([Portable(baseDirectory), .. segments.Select(Portable)])
+        );
     }
 
     /// <summary><paramref name="segments"/> resolved under the user's temporary directory.</summary>
@@ -85,7 +87,8 @@ public static class NativePaths
     /// </summary>
     private static string Portable(string path)
     {
-        return path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        return path.Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
     }
 
     /// <summary>Whether <paramref name="path"/> ends in <paramref name="extension"/> (dot included), by the case rule.</summary>
