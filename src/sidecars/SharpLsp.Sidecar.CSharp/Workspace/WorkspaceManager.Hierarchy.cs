@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis;
 using CallHierarchyListResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.CallHierarchyCallResult>,
     string
@@ -37,11 +38,10 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunScopedQueryAsync(
+        return RunScopedAtAsync<CallHierarchyCallResult>(
             filePath,
-            new List<CallHierarchyCallResult>(),
-            (document, scope) =>
-                CallHierarchyResolver.GetIncomingAsync(document, scope, line, character, ct),
+            (line, character),
+            CallHierarchyResolver.GetIncomingAsync,
             ct
         );
     }
@@ -98,11 +98,29 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
+        return RunScopedAtAsync<HierarchyItem>(
+            filePath,
+            (line, character),
+            TypeHierarchyResolver.GetSubtypesAsync,
+            ct
+        );
+    }
+
+    /// <summary>
+    /// A hierarchy list at a position, searched in each project's active framework
+    /// ([NETFX-PROJECTS-CSHARP]); empty when the document is not in the solution.
+    /// </summary>
+    private Task<Outcome.Result<List<T>, string>> RunScopedAtAsync<T>(
+        string filePath,
+        (int Line, int Character) at,
+        Func<Document, SearchScope, int, int, CancellationToken, Task<List<T>>> query,
+        CancellationToken ct
+    )
+    {
         return RunScopedQueryAsync(
             filePath,
-            new List<HierarchyItem>(),
-            (document, scope) =>
-                TypeHierarchyResolver.GetSubtypesAsync(document, scope, line, character, ct),
+            new List<T>(),
+            (document, scope) => query(document, scope, at.Line, at.Character, ct),
             ct
         );
     }

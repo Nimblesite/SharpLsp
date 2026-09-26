@@ -29,7 +29,7 @@ internal static class CallHierarchyResolver
     }
 
     /// <summary>Get incoming calls for a symbol, from each project's active framework.</summary>
-    public static async Task<List<CallHierarchyCallResult>> GetIncomingAsync(
+    public static Task<List<CallHierarchyCallResult>> GetIncomingAsync(
         Document document,
         SearchScope scope,
         int line,
@@ -37,38 +37,41 @@ internal static class CallHierarchyResolver
         CancellationToken ct
     )
     {
-        var symbol = await ResolveAtPositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return [];
-        }
-
-        var results = new List<CallHierarchyCallResult>();
-        foreach (var caller in await scope.FindCallersAsync(symbol, ct).ConfigureAwait(false))
-        {
-            AddCall(caller.CallingSymbol, caller.Locations, results);
-        }
-
-        return results;
+        return DocumentPosition.CollectAsync<ISymbol, CallHierarchyCallResult>(
+            ResolveAtPositionAsync(document, line, character, ct),
+            async (symbol, results) =>
+            {
+                var callers = await scope.FindCallersAsync(symbol, ct).ConfigureAwait(false);
+                foreach (var caller in callers)
+                {
+                    AddCall(caller.CallingSymbol, caller.Locations, results);
+                }
+            }
+        );
     }
 
     /// <summary>Get outgoing calls from a symbol.</summary>
-    public static async Task<List<CallHierarchyCallResult>> GetOutgoingAsync(
+    public static Task<List<CallHierarchyCallResult>> GetOutgoingAsync(
         Document document,
         int line,
         int character,
         CancellationToken ct
     )
     {
-        var symbol = await ResolveAtPositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return [];
-        }
+        return DocumentPosition.CollectAsync<ISymbol, CallHierarchyCallResult>(
+            ResolveAtPositionAsync(document, line, character, ct),
+            (symbol, results) => CollectOutgoingAsync(document, symbol, results, ct)
+        );
+    }
 
-        var results = new List<CallHierarchyCallResult>();
+    /// <summary>The calls made in each in-source declaration of <paramref name="symbol"/>.</summary>
+    private static async Task CollectOutgoingAsync(
+        Document document,
+        ISymbol symbol,
+        List<CallHierarchyCallResult> results,
+        CancellationToken ct
+    )
+    {
         foreach (var location in symbol.Locations.Where(l => l.IsInSource))
         {
             var tree = location.SourceTree;
@@ -90,8 +93,6 @@ internal static class CallHierarchyResolver
             var node = root.FindNode(location.SourceSpan);
             CollectOutgoingCalls(node, model, results, ct);
         }
-
-        return results;
     }
 
     private static void CollectOutgoingCalls(

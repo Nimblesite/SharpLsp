@@ -21,44 +21,25 @@ internal static class TypeHierarchyResolver
     }
 
     /// <summary>Get supertypes (base class + interfaces).</summary>
-    public static async Task<List<HierarchyItem>> GetSupertypesAsync(
+    public static Task<List<HierarchyItem>> GetSupertypesAsync(
         Document document,
         int line,
         int character,
         CancellationToken ct
     )
     {
-        var symbol = await ResolveTypeAtPositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return [];
-        }
-
-        var results = new List<HierarchyItem>();
-        if (symbol.BaseType is not null && symbol.BaseType.SpecialType != SpecialType.System_Object)
-        {
-            var item = ToItem(symbol.BaseType);
-            if (item is not null)
+        return DocumentPosition.CollectAsync<INamedTypeSymbol, HierarchyItem>(
+            ResolveTypeAtPositionAsync(document, line, character, ct),
+            (symbol, results) =>
             {
-                results.Add(item);
+                AddItems(Supertypes(symbol), results);
+                return Task.CompletedTask;
             }
-        }
-
-        foreach (var iface in symbol.Interfaces)
-        {
-            var item = ToItem(iface);
-            if (item is not null)
-            {
-                results.Add(item);
-            }
-        }
-
-        return results;
+        );
     }
 
     /// <summary>Get subtypes (derived classes + implementors) from each project's active framework.</summary>
-    public static async Task<List<HierarchyItem>> GetSubtypesAsync(
+    public static Task<List<HierarchyItem>> GetSubtypesAsync(
         Document document,
         SearchScope scope,
         int line,
@@ -66,38 +47,37 @@ internal static class TypeHierarchyResolver
         CancellationToken ct
     )
     {
-        var symbol = await ResolveTypeAtPositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return [];
-        }
-
-        var results = new List<HierarchyItem>();
-        var derived = await scope.FindDerivedClassesAsync(symbol, ct).ConfigureAwait(false);
-        foreach (var d in derived)
-        {
-            var item = ToItem(d);
-            if (item is not null)
+        return DocumentPosition.CollectAsync<INamedTypeSymbol, HierarchyItem>(
+            ResolveTypeAtPositionAsync(document, line, character, ct),
+            async (symbol, results) =>
             {
-                results.Add(item);
-            }
-        }
-
-        if (symbol.TypeKind == TypeKind.Interface)
-        {
-            var impls = await scope.FindImplementationsAsync(symbol, ct).ConfigureAwait(false);
-            foreach (var impl in impls.OfType<INamedTypeSymbol>())
-            {
-                var item = ToItem(impl);
-                if (item is not null)
+                AddItems(
+                    await scope.FindDerivedClassesAsync(symbol, ct).ConfigureAwait(false),
+                    results
+                );
+                if (symbol.TypeKind == TypeKind.Interface)
                 {
-                    results.Add(item);
+                    var impls = await scope
+                        .FindImplementationsAsync(symbol, ct)
+                        .ConfigureAwait(false);
+                    AddItems(impls.OfType<INamedTypeSymbol>(), results);
                 }
             }
-        }
+        );
+    }
 
-        return results;
+    /// <summary>The base class, unless it is <c>object</c>, then every interface.</summary>
+    private static IEnumerable<INamedTypeSymbol> Supertypes(INamedTypeSymbol symbol)
+    {
+        return symbol.BaseType is { SpecialType: not SpecialType.System_Object } baseType
+            ? symbol.Interfaces.Prepend(baseType)
+            : symbol.Interfaces;
+    }
+
+    /// <summary>The item of each type declared in source, in order.</summary>
+    private static void AddItems(IEnumerable<INamedTypeSymbol> types, List<HierarchyItem> results)
+    {
+        results.AddRange(types.Select(ToItem).OfType<HierarchyItem>());
     }
 
     private static async Task<INamedTypeSymbol?> ResolveTypeAtPositionAsync(

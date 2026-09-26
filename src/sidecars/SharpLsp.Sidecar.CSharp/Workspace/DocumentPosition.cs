@@ -36,6 +36,26 @@ internal static class DocumentPosition
     }
 
     /// <summary>
+    /// What <paramref name="collect"/> gathers about the symbol <paramref name="resolving"/>
+    /// finds at a position; empty when there is none. Collapses the identical "resolve the
+    /// symbol, answer empty without one, fill a list" preamble of every hierarchy query.
+    /// </summary>
+    public static async Task<List<TItem>> CollectAsync<TSymbol, TItem>(
+        Task<TSymbol?> resolving,
+        Func<TSymbol, List<TItem>, Task> collect
+    )
+        where TSymbol : class
+    {
+        var results = new List<TItem>();
+        if (await resolving.ConfigureAwait(false) is { } symbol)
+        {
+            await collect(symbol, results).ConfigureAwait(false);
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// Projects a <see cref="FileLinePositionSpan"/> into the path plus start/end
     /// (line, character) coordinates shared by the call-hierarchy, type-hierarchy, and
     /// definition result shapes. Collapses the identical field-mapping block those
