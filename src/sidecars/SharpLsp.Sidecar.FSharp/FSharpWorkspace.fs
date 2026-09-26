@@ -33,6 +33,9 @@ type FSharpWorkspaceState =
         /// The F# projects each loaded project references, read once at load.
         /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
         References: ConcurrentDictionary<string, string list>
+        /// The C# projects loaded projects reference, compiled in memory.
+        /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]
+        CSharpBuilds: FSharpCSharpReferences.CSharpBuilds
     }
 
 /// Create a new workspace with an overlay-aware FSharpChecker.
@@ -52,7 +55,8 @@ let create () : FSharpWorkspaceState =
       IsLoaded = false
       Overlays = overlays
       Projects = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer)
-      References = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer) }
+      References = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer)
+      CSharpBuilds = ConcurrentDictionary(FSharpWorkspaceRuntime.overlayComparer) }
 
 /// The project that compiles `filePath`, if any loaded project does.
 let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =
@@ -69,34 +73,45 @@ let private valueAt (table: ConcurrentDictionary<string, 'T>) (key: string) =
 let private lookup (table: ConcurrentDictionary<string, 'T>) (project: string) =
     valueAt table (FSharpWorkspaceRuntime.overlayKey project)
 
-/// The framework `options` were built for, when they are one of `entry`'s MSBuild builds.
-let private frameworkOf (entry: FSharpDesignTime.FSharpProjectEntry) (options: FSharpProjectOptions) =
-    entry.ByFramework
-    |> Seq.tryPick (fun build -> if obj.ReferenceEquals(build.Value, options) then Some build.Key else None)
+/// The project references MSBuild resolved for `options`, when they are one of their
+/// project's MSBuild builds.
+let private resolvedFor (state: FSharpWorkspaceState) (options: FSharpProjectOptions) =
+    lookup state.Projects options.ProjectFileName
+    |> Option.bind (fun entry -> FSharpDesignTime.frameworkOf entry options |> Option.bind (valueAt entry.Resolved))
+    |> Option.defaultValue []
 
 /// The builds of loaded F# projects that MSBuild resolved the project references of
 /// `options` to, each once its options are built. FCS keeps one builder per project and
 /// framework, so a build read here and the one its project answers from coexist.
 /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
 let private referencedBuilds (state: FSharpWorkspaceState) (options: FSharpProjectOptions) : FSharpProjectGraph.ReferencedBuild list =
-    lookup state.Projects options.ProjectFileName
-    |> Option.bind (fun entry -> frameworkOf entry options |> Option.bind (valueAt entry.Resolved))
-    |> Option.defaultValue []
+    resolvedFor state options
     |> List.choose (fun reference ->
         lookup state.Projects reference.Project
         |> Option.bind (fun referenced -> valueAt referenced.ByFramework reference.Framework)
         |> Option.map (fun build -> { Reference = reference.Assembly; Options = build }))
 
-/// `options` with the loaded F# projects it references wired in, in memory.
-/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+/// The C# projects compiled in memory for the project references of `options`, each read
+/// under the `-r:` MSBuild wrote. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]
+let private referencedAssemblies (state: FSharpWorkspaceState) (options: FSharpProjectOptions) =
+    resolvedFor state options
+    |> List.choose (FSharpCSharpReferences.tryFind state.CSharpBuilds)
+    |> List.map FSharpCSharpReferences.referencedProject
+
+/// `options` with the loaded F# projects and the C# projects it references wired in, in
+/// memory. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
 let internal wired (state: FSharpWorkspaceState) (options: FSharpProjectOptions) =
     let current = lookup state.Projects >> Option.map _.Options
     let referencesOf = lookup state.References >> Option.defaultValue []
-    FSharpProjectGraph.wireAll current referencesOf (referencedBuilds state) options
+    FSharpProjectGraph.wireGraph (referencedAssemblies state) current referencesOf (referencedBuilds state) options
+
+let private readsFromDll (entry: FSharpDesignTime.FSharpProjectEntry) (reference: FSharpDesignTime.ResolvedReference) (reason: string) =
+    Log.Warning("F# project {Path} reads {Reference} from its DLL: {Reason}", entry.Path, reference.Project, reason)
 
 /// Build, once, each build of a loaded F# project that MSBuild resolved `entry`'s project
-/// references to under `framework`, then theirs, so a reference reads its build in memory
-/// from the first request on. A build MSBuild cannot report leaves its reference on the DLL.
+/// references to under `framework`, then theirs, and compile each C# project among them,
+/// so a reference reads its build in memory from the first request on. A build MSBuild
+/// cannot report leaves its reference on the DLL.
 /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
 let rec internal prepareReferencedBuilds
     (state: FSharpWorkspaceState)
@@ -110,8 +125,11 @@ let rec internal prepareReferencedBuilds
             | Some referenced when not (referenced.ByFramework.ContainsKey reference.Framework) ->
                 match! FSharpDesignTime.optionsForFramework state.Checker referenced reference.Framework ct with
                 | Ok _ -> do! prepareReferencedBuilds state referenced reference.Framework ct
-                | Error reason ->
-                    Log.Warning("F# project {Path} reads {Reference} from its DLL: {Reason}", entry.Path, reference.Project, reason)
+                | Error reason -> readsFromDll entry reference reason
+            | None when FSharpCSharpReferences.isCSharpProject reference.Project ->
+                match! FSharpCSharpReferences.prepare state.CSharpBuilds [] reference ct with
+                | Ok _ -> ()
+                | Error reason -> readsFromDll entry reference reason
             | _ -> ()
     }
 
@@ -328,7 +346,7 @@ let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string arra
                     state.References[key] <- FSharpProjectGraph.fsharpReferences entry.Path
 
                 for entry in entries do
-                    match entry.Active with
+                    match FSharpDesignTime.builtFramework entry with
                     | Some framework -> do! prepareReferencedBuilds state entry framework ct
                     | None -> ()
 
@@ -441,16 +459,21 @@ let private mapNavigationList (operation: Task<FSharpSemanticNavigation.Navigati
         return result |> List.map mapLocation
     }
 
+/// Where an external symbol is declared: in the C# source compiled in memory, when a C#
+/// project of the workspace declares it. [DEFINITION-CROSSLANG]
+let private external (state: FSharpWorkspaceState) =
+    FSharpCSharpReferences.tryLocate state.CSharpBuilds
+
 let getDefinition state filePath line character =
-    FSharpSemanticNavigation.getDefinition (checkFile state) filePath line character
+    FSharpSemanticNavigation.getDefinitionIn (external state) (checkFile state) filePath line character
     |> mapNavigation
 
 let getTypeDefinition state filePath line character =
-    FSharpSemanticNavigation.getTypeDefinition (checkFile state) filePath line character
+    FSharpSemanticNavigation.getTypeDefinitionIn (external state) (checkFile state) filePath line character
     |> mapNavigation
 
 let getDeclaration state filePath line character =
-    FSharpSemanticNavigation.getDeclaration (checkFile state) filePath line character
+    FSharpSemanticNavigation.getDeclarationIn (external state) (checkFile state) filePath line character
     |> mapNavigation
 
 let getImplementations state filePath line character =

@@ -32,6 +32,7 @@
     <Compile Include="FSharpDesignTimeTests.fs" />
     <Compile Include="FSharpMultiProjectTests.fs" />
     <Compile Include="FSharpResolvedReferenceTests.fs" />
+    <Compile Include="FSharpCSharpReferenceTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

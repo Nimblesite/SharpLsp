@@ -159,15 +159,38 @@ let private getTypeEntity (valueType: FSharpType) =
     else
         None
 
-let private fromMetadata (symbolUse: FSharpSymbolUse option) =
-    symbolUse
-    |> Option.bind (fun useInfo -> FSharpMetadataNavigator.tryResolve useInfo.Symbol)
-    |> Option.map (fun (filePath, startLine, startColumn, endLine, endColumn) ->
-        { FilePath = filePath
-          Line = startLine
-          Character = startColumn
-          EndLine = endLine
-          EndCharacter = endColumn })
+/// Where an external symbol is declared, according to `resolve`: the file, 0-based start
+/// line and column, end line and column.
+type ExternalResolver = FSharpSymbol -> (string * int * int * int * int) option
+
+/// No external source: every external symbol falls back to metadata-as-source.
+let noExternalSource: ExternalResolver = fun _ -> None
+
+let private toLocation (filePath, startLine, startColumn, endLine, endColumn) =
+    { FilePath = filePath
+      Line = startLine
+      Character = startColumn
+      EndLine = endLine
+      EndCharacter = endColumn }
+
+/// An external symbol's declaration in the source `external` knows — a C# project
+/// compiled in memory — else decompiled from its assembly. [DEFINITION-CROSSLANG]
+let private fromExternal (external: ExternalResolver) (symbol: FSharpSymbol option) =
+    symbol
+    |> Option.bind (fun symbol -> external symbol |> Option.orElseWith (fun () -> FSharpMetadataNavigator.tryResolve symbol))
+    |> Option.map toLocation
+
+/// `extract` over the checked file; nothing when the check fails, and nothing — logged
+/// under `operation` — when it throws.
+let private navigate (operation: string) (checkFile: string -> Task<CheckedFile option>) filePath extract =
+    task {
+        try
+            let! result = checkFile filePath
+            return result |> Option.bind (fun (check, source) -> extract check source)
+        with ex ->
+            Log.Debug(ex, "[F# {Operation}] failed", operation)
+            return None
+    }
 
 let private declarationResultLocation result =
     match result with
@@ -196,7 +219,7 @@ let private declarationLocationFallback (checkResults: FSharpCheckFileResults) (
 let private onDisk (location: NavigationLocation) =
     if File.Exists location.FilePath then Some location else None
 
-let private extractDefinition checkResults source line character =
+let private extractDefinition (external: ExternalResolver) checkResults source line character =
     let symbolUse = getSymbolUse checkResults source line character
 
     let fromSource =
@@ -206,21 +229,16 @@ let private extractDefinition checkResults source line character =
         |> Option.bind onDisk
 
     fromSource
-    |> Option.orElseWith (fun () -> fromMetadata symbolUse)
+    |> Option.orElseWith (fun () -> fromExternal external (symbolUse |> Option.map _.Symbol))
     |> Option.orElseWith (fun () -> declarationLocationFallback checkResults source line character)
 
-let getDefinition (checkFile: string -> Task<CheckedFile option>) filePath line character =
-    task {
-        try
-            let! result = checkFile filePath
+/// The definition of the symbol at a position; an external symbol's is the source
+/// `external` knows, else decompiled metadata.
+let getDefinitionIn (external: ExternalResolver) (checkFile: string -> Task<CheckedFile option>) filePath line character =
+    navigate "Definition" checkFile filePath (fun check source -> extractDefinition external check source line character)
 
-            return
-                result
-                |> Option.bind (fun (check, source) -> extractDefinition check source line character)
-        with ex ->
-            Log.Debug(ex, "[F# Definition] failed")
-            return None
-    }
+let getDefinition (checkFile: string -> Task<CheckedFile option>) filePath line character =
+    getDefinitionIn noExternalSource checkFile filePath line character
 
 let private symbolTypeEntity (symbol: FSharpSymbol) =
     match symbol with
@@ -229,23 +247,23 @@ let private symbolTypeEntity (symbol: FSharpSymbol) =
     | :? FSharpEntity as entity -> Some entity
     | _ -> None
 
-let private extractTypeDefinition checkResults source line character =
-    getSymbolUse checkResults source line character
-    |> Option.bind (fun useInfo -> symbolTypeEntity useInfo.Symbol)
+let private extractTypeDefinition (external: ExternalResolver) checkResults source line character =
+    let entity =
+        getSymbolUse checkResults source line character
+        |> Option.bind (fun useInfo -> symbolTypeEntity useInfo.Symbol)
+
+    entity
     |> Option.bind (fun entity -> rangeToLocation entity.DeclarationLocation)
+    |> Option.bind onDisk
+    |> Option.orElseWith (fun () -> fromExternal external (entity |> Option.map (fun entity -> entity :> FSharpSymbol)))
+
+/// The definition of the type of the symbol at a position; an external type's is the
+/// source `external` knows, else decompiled metadata.
+let getTypeDefinitionIn (external: ExternalResolver) (checkFile: string -> Task<CheckedFile option>) filePath line character =
+    navigate "TypeDefinition" checkFile filePath (fun check source -> extractTypeDefinition external check source line character)
 
 let getTypeDefinition (checkFile: string -> Task<CheckedFile option>) filePath line character =
-    task {
-        try
-            let! result = checkFile filePath
-
-            return
-                result
-                |> Option.bind (fun (check, source) -> extractTypeDefinition check source line character)
-        with ex ->
-            Log.Debug(ex, "[F# TypeDefinition] failed")
-            return None
-    }
+    getTypeDefinitionIn noExternalSource checkFile filePath line character
 
 let private findBaseMember (memberValue: FSharpMemberOrFunctionOrValue) =
     if not memberValue.IsOverrideOrExplicitInterfaceImplementation then
@@ -259,7 +277,7 @@ let private findBaseMember (memberValue: FSharpMemberOrFunctionOrValue) =
             |> Seq.tryFind (fun item -> item.DisplayName = memberValue.DisplayName)
             |> Option.bind (fun item -> rangeToLocation item.DeclarationLocation))
 
-let private extractDeclaration checkResults source line character =
+let private extractDeclaration (external: ExternalResolver) checkResults source line character =
     match getSymbolUse checkResults source line character with
     | None -> None
     | Some useInfo ->
@@ -267,20 +285,15 @@ let private extractDeclaration checkResults source line character =
         | :? FSharpMemberOrFunctionOrValue as memberValue ->
             findBaseMember memberValue
             |> Option.orElseWith (fun () -> rangeToLocation memberValue.DeclarationLocation)
-        | _ -> extractDefinition checkResults source line character
+        | _ -> extractDefinition external checkResults source line character
+
+/// The declaration of the symbol at a position: the base member an override implements,
+/// else its definition.
+let getDeclarationIn (external: ExternalResolver) (checkFile: string -> Task<CheckedFile option>) filePath line character =
+    navigate "Declaration" checkFile filePath (fun check source -> extractDeclaration external check source line character)
 
 let getDeclaration (checkFile: string -> Task<CheckedFile option>) filePath line character =
-    task {
-        try
-            let! result = checkFile filePath
-
-            return
-                result
-                |> Option.bind (fun (check, source) -> extractDeclaration check source line character)
-        with ex ->
-            Log.Debug(ex, "[F# Declaration] failed")
-            return None
-    }
+    getDeclarationIn noExternalSource checkFile filePath line character
 
 let private extractImplementations checkResults source line character =
     getSymbolUse checkResults source line character

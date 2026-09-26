@@ -33,6 +33,10 @@
   <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="10.1.401" />
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.401" />
+    <!-- Roslyn compiles the C# projects an F# project references, in memory, so the
+         sidecar ships it like the C# sidecar does: restore full asset flow.
+         [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] -->
+    <PackageReference Update="Microsoft.CodeAnalysis.CSharp" PrivateAssets="none" />
     <PackageReference Include="Fantomas.Core" Version="8.0.2" />
     <PackageReference Include="FSharpLint.Core" Version="0.27.0" />
     <PackageReference Include="MessagePack" Version="3.1.9" />
@@ -47,6 +51,7 @@
     <Compile Include="FSharpWorkspaceRuntime.fs" />
     <Compile Include="FSharpProjectLoading.fs" />
     <Compile Include="FSharpDesignTime.fs" />
+    <Compile Include="FSharpCSharpReferences.fs" />
     <Compile Include="FSharpProjectGraph.fs" />
     <Compile Include="FSharpSemanticNavigation.fs" />
     <Compile Include="FSharpWorkspace.fs" />

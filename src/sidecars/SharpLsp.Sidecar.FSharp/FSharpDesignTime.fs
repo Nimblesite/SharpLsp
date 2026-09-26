@@ -153,7 +153,15 @@ let private propertyOf (document: JsonDocument) (name: string) =
 let declaresTargetFrameworks (fsprojPath: string) =
     XDocument.Load(fsprojPath).Descendants(XName.Get "TargetFrameworks") |> Seq.isEmpty |> not
 
-/// The evaluated `<TargetFrameworks>`, in declared order.
+/// The evaluated `<TargetFrameworks>`, in declared order; the lone `<TargetFramework>`
+/// of a project that declares no plural.
+let private declaredFrameworks (document: JsonDocument) =
+    [ "TargetFrameworks"; "TargetFramework" ]
+    |> List.tryPick (propertyOf document >> Option.map splitFrameworks >> Option.filter (List.isEmpty >> not))
+    |> Option.defaultValue []
+
+/// The evaluated `<TargetFrameworks>`, in declared order — a single `<TargetFramework>`
+/// alone in its list.
 let evaluateTargetFrameworks (fsprojPath: string) (ct: CancellationToken) =
     task {
         let! run = runMsbuild fsprojPath [ "-getProperty:TargetFrameworks"; "-getProperty:TargetFramework" ] ct
@@ -161,12 +169,9 @@ let evaluateTargetFrameworks (fsprojPath: string) (ct: CancellationToken) =
         return
             run
             |> Result.bind (fun text ->
-                parseJson text
-                |> Option.bind (fun document -> propertyOf document "TargetFrameworks")
-                |> Option.map splitFrameworks
-                |> function
-                    | Some frameworks -> Ok frameworks
-                    | None -> Error "MSBuild reported no TargetFrameworks")
+                match parseJson text |> Option.map declaredFrameworks with
+                | Some frameworks when not frameworks.IsEmpty -> Ok frameworks
+                | _ -> Error "MSBuild reported no TargetFrameworks")
     }
 
 let private absolute (directory: string) (path: string) =
@@ -187,8 +192,8 @@ let private metadataOf (item: JsonElement) (name: string) =
     | true, value -> value.GetString() |> Option.ofObj |> Option.filter (String.IsNullOrWhiteSpace >> not)
     | _ -> None
 
-let private itemIdentities (document: JsonDocument) =
-    itemsNamed "FscCommandLineArgs" document |> List.choose (fun arg -> metadataOf arg "Identity") |> Array.ofList
+let private itemIdentities (item: string) (document: JsonDocument) =
+    itemsNamed item document |> List.choose (fun arg -> metadataOf arg "Identity") |> Array.ofList
 
 /// The compiler's references that MSBuild resolved from project references, read from the
 /// very items its `-r:` arguments are made of.
@@ -204,26 +209,32 @@ let private resolvedReferences (directory: string) (document: JsonDocument) =
                   Framework = framework })
         | _ -> None)
 
-/// The compiler's arguments for `framework`, exactly as the build would pass them, and the
-/// project references among them with the framework of each MSBuild picked.
-let commandLineArgs (fsprojPath: string) (framework: string) (ct: CancellationToken) =
+/// The arguments the compiler task reported as `item` for `framework` of `projectPath`,
+/// exactly as the build would pass them, and the project references among them with the
+/// framework of each MSBuild picked: `FscCommandLineArgs` of an F# project,
+/// `CscCommandLineArgs` of a C# one.
+let compilerArgs (item: string) (projectPath: string) (framework: string) (ct: CancellationToken) =
     task {
         let arguments =
             [ yield! designTimeProperties framework |> List.map (sprintf "-p:%s")
               yield! designTimeTargets |> List.map (sprintf "-t:%s")
-              "-getItem:FscCommandLineArgs"
+              $"-getItem:{item}"
               "-getItem:ReferencePathWithRefAssemblies" ]
 
-        let! run = runMsbuild fsprojPath arguments ct
-        let directory = Path.GetDirectoryName fsprojPath |> string
+        let! run = runMsbuild projectPath arguments ct
+        let directory = Path.GetDirectoryName projectPath |> string
 
         return
             run
             |> Result.bind (fun text ->
-                match parseJson text |> Option.map (fun document -> itemIdentities document, resolvedReferences directory document) with
+                match parseJson text |> Option.map (fun document -> itemIdentities item document, resolvedReferences directory document) with
                 | Some(args, references) when args.Length > 0 -> Ok(args, references)
                 | _ -> Error $"the design-time build of {framework} reported no compiler arguments")
     }
+
+/// The F# compiler's arguments for `framework`, and the project references among them.
+let commandLineArgs (fsprojPath: string) (framework: string) (ct: CancellationToken) =
+    compilerArgs "FscCommandLineArgs" fsprojPath framework ct
 
 /// A path-valued flag with its path made absolute; any other flag unchanged.
 let private absoluteFlag (directory: string) (arg: string) =
@@ -271,29 +282,46 @@ let private singleTarget (options: FSharpProjectOptions) (path: string) =
       ByFramework = ConcurrentDictionary()
       Resolved = ConcurrentDictionary() }
 
-/// A multi-targeted project answering from its first framework; when MSBuild cannot
-/// report that framework's arguments, it keeps the hand-built options and says why.
-let private multiTarget checker fallback path (frameworks: string list) ct =
+/// The framework `options` were built for, when they are one of `entry`'s MSBuild builds.
+let frameworkOf (entry: FSharpProjectEntry) (options: FSharpProjectOptions) =
+    entry.ByFramework
+    |> Seq.tryPick (fun build -> if obj.ReferenceEquals(build.Value, options) then Some build.Key else None)
+
+/// The framework `entry` answers from, when its options are one of MSBuild's builds.
+let builtFramework (entry: FSharpProjectEntry) = frameworkOf entry entry.Options
+
+/// A project answering from MSBuild's options for `built`, with `frameworks` to switch
+/// between — none for a single-target project; when MSBuild cannot report that
+/// framework's arguments, it keeps the hand-built options and says why.
+let private builtEntry checker fallback path (frameworks: string list) (built: string) ct =
     task {
         let entry = { singleTarget fallback path with Frameworks = frameworks; Active = List.tryHead frameworks }
 
-        match! optionsForFramework checker entry frameworks.Head ct with
+        match! optionsForFramework checker entry built ct with
         | Ok options -> entry.Options <- options
         | Error reason -> Log.Warning("F# project {Path} keeps its <Compile> items: {Reason}", path, reason)
 
         return entry
     }
 
-/// Load one project: from MSBuild when it targets several frameworks, else by hand.
+/// Whether the project references a C# project: MSBuild alone knows which build of it
+/// the framework compiles against. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]
+let private readsCSharp (fsprojPath: string) =
+    FSharpProjectLoading.referencedProjects ".csproj" fsprojPath |> Seq.isEmpty |> not
+
+/// Load one project: from MSBuild when it targets several frameworks or reads a C#
+/// project, else by hand.
 let loadEntry (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions) (path: string) ct =
     task {
         let options = fallback path
+        let readsCSharp = readsCSharp path
 
-        if not (declaresTargetFrameworks path) then
+        if not (declaresTargetFrameworks path || readsCSharp) then
             return singleTarget options path
         else
             match! evaluateTargetFrameworks path ct with
-            | Ok frameworks when frameworks.Length > 1 -> return! multiTarget checker options path frameworks ct
+            | Ok frameworks when frameworks.Length > 1 -> return! builtEntry checker options path frameworks frameworks.Head ct
+            | Ok [ framework ] when readsCSharp -> return! builtEntry checker options path [] framework ct
             | Ok _ -> return singleTarget options path
             | Error reason ->
                 Log.Warning("F# project {Path}: target frameworks unknown: {Reason}", path, reason)
