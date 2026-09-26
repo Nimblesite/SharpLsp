@@ -15,6 +15,7 @@ open MessagePack
 open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
+open SharpLsp.Sidecar.Common
 
 // ── A real loaded workspace, built once from a real temp .fsproj ──
 let private loaded =
@@ -22,7 +23,7 @@ let private loaded =
         (let dir = createTestProject ()
          let ws = FSharpWorkspace.create ()
          (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
-         (ws, Path.Combine(dir, "Library.fs")))
+         (ws, NativePaths.Resolve(dir, "Library.fs")))
 
 let private missing = "/sharplsp/definitely/not/a/real/file.fs"
 
@@ -81,7 +82,7 @@ type SidecarErrorBranchTests(fixture: SidecarFixture) =
     [<Fact>]
     member _.``unused packages returns a usage model for the real project``() =
         task {
-            let fsproj = Path.Combine(fixture.Dir, "TestProject.fsproj")
+            let fsproj = NativePaths.Resolve(fixture.Dir, "TestProject.fsproj")
             let! r = fixture.Send("project/unusedPackages", MessagePackSerializer.Serialize(fsproj))
             Assert.Null(r.Error)
             let usage = deserialize<ReferenceUsageResult> r.Payload
@@ -94,7 +95,7 @@ type SidecarErrorBranchTests(fixture: SidecarFixture) =
     [<Fact>]
     member _.``code action on FS0020 resolves to a workspace edit``() =
         task {
-            let extra = Path.Combine(fixture.Dir, "Extra.fs")
+            let extra = NativePaths.Resolve(fixture.Dir, "Extra.fs")
             let req =
                 { CodeActionRequest.FilePath = extra
                   StartLine = 5
@@ -117,7 +118,7 @@ type SidecarErrorBranchTests(fixture: SidecarFixture) =
     [<Fact>]
     member _.``diagnostics on a file with warnings returns entries``() =
         task {
-            let extra = Path.Combine(fixture.Dir, "Extra.fs")
+            let extra = NativePaths.Resolve(fixture.Dir, "Extra.fs")
             let! r = fixture.Send("workspace/diagnostics", MessagePackSerializer.Serialize extra)
             Assert.Null(r.Error)
             let diags = deserialize<DiagnosticResult array> r.Payload
@@ -342,7 +343,7 @@ let ``getHover reads the didChange overlay instead of on-disk source`` () =
         try
             let ws = FSharpWorkspace.create ()
             let! _ = FSharpWorkspace.loadProject ws dir
-            let src = Path.Combine(dir, "Library.fs")
+            let src = NativePaths.Resolve(dir, "Library.fs")
             // Edited buffer: append a binding present only in memory, never on disk.
             let edited =
                 File.ReadAllText(src)
@@ -386,20 +387,20 @@ let ``main exits gracefully for an unusable socket path`` () =
 [<Fact>]
 let ``analyzeFileOrder flags a forward dependency in a misordered project`` () =
     task {
-        let dir = Path.Combine(Path.GetTempPath(), $"slsp-order-{System.Guid.NewGuid():N}")
+        let dir = NativePaths.Temp($"slsp-order-{System.Guid.NewGuid():N}")
         Directory.CreateDirectory(dir) |> ignore
         // Compile order A→B, but A uses B ⇒ B must come first ⇒ misordered.
         File.WriteAllText(
-            Path.Combine(dir, "Order.fsproj"),
+            NativePaths.Resolve(dir, "Order.fsproj"),
             "<Project Sdk=\"Microsoft.NET.Sdk\">"
             + "<PropertyGroup><TargetFramework>net10.0</TargetFramework>"
             + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference></PropertyGroup>"
             + "<ItemGroup><Compile Include=\"A.fs\" /><Compile Include=\"B.fs\" /></ItemGroup></Project>")
-        File.WriteAllText(Path.Combine(dir, "A.fs"), "module P.A\n\nlet useB = B.value\n")
-        File.WriteAllText(Path.Combine(dir, "B.fs"), "module P.B\n\nlet value = 42\n")
+        File.WriteAllText(NativePaths.Resolve(dir, "A.fs"), "module P.A\n\nlet useB = B.value\n")
+        File.WriteAllText(NativePaths.Resolve(dir, "B.fs"), "module P.B\n\nlet value = 42\n")
         let ws = FSharpWorkspace.create ()
         let! _ = FSharpWorkspace.loadProject ws dir
-        let! issues = FSharpFileOrder.analyzeFileOrder ws (Path.Combine(dir, "Order.fsproj"))
+        let! issues = FSharpFileOrder.analyzeFileOrder ws (NativePaths.Resolve(dir, "Order.fsproj"))
         Assert.NotEmpty(issues)
         Assert.All(issues, fun i -> Assert.False(System.String.IsNullOrEmpty i.Message))
         try Directory.Delete(dir, true) with _ -> ()

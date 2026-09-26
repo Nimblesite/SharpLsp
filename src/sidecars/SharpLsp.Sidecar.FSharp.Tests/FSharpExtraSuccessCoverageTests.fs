@@ -7,13 +7,14 @@ open MessagePack
 open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
+open SharpLsp.Sidecar.Common
 
 let private loaded =
     lazy
         (let dir = createTestProject ()
          let ws = FSharpWorkspace.create ()
          (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
-         (ws, Path.Combine(dir, "Library.fs")))
+         (ws, NativePaths.Resolve(dir, "Library.fs")))
 
 let private missing = "/sharplsp/definitely/not/a/real/file.fs"
 
@@ -129,7 +130,7 @@ let ``completion surfaces members of a record value`` () =
 let ``loadProject discovers the fsproj through an explicit slnx`` () =
     task {
         let dir = createTestProject ()
-        let slnx = Path.Combine(dir, "Solution.slnx")
+        let slnx = NativePaths.Resolve(dir, "Solution.slnx")
         File.WriteAllText(slnx, "<Solution>\n  <Project Path=\"TestProject.fsproj\" />\n</Solution>\n")
         let ws = FSharpWorkspace.create ()
         let! result = FSharpWorkspace.loadProject ws slnx
@@ -141,9 +142,9 @@ let ``loadProject discovers the fsproj through an explicit slnx`` () =
 [<Fact>]
 let ``loadProject on a solution with no fsproj reports an error`` () =
     task {
-        let dir = Path.Combine(Path.GetTempPath(), $"slsp-emptysln-{System.Guid.NewGuid():N}")
+        let dir = NativePaths.Temp($"slsp-emptysln-{System.Guid.NewGuid():N}")
         Directory.CreateDirectory(dir) |> ignore
-        let slnx = Path.Combine(dir, "Empty.slnx")
+        let slnx = NativePaths.Resolve(dir, "Empty.slnx")
         File.WriteAllText(slnx, "<Solution>\n</Solution>\n")
         let ws = FSharpWorkspace.create ()
         let! result = FSharpWorkspace.loadProject ws slnx
@@ -156,23 +157,23 @@ let ``loadProject on a solution with no fsproj reports an error`` () =
 /// Build + load a real framework-only F# project whose files are in the
 /// compile list, so per-file checks produce real diagnostics.
 let private loadWorkspaceWith (files: (string * string) list) =
-    let dir = Path.Combine(Path.GetTempPath(), $"slsp-cf-{System.Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"slsp-cf-{System.Guid.NewGuid():N}")
     Directory.CreateDirectory dir |> ignore
     let compiles =
         files
         |> List.map (fun (n, _) -> $"<Compile Include=\"{n}\" />")
         |> String.concat ""
     File.WriteAllText(
-        Path.Combine(dir, "P.fsproj"),
+        NativePaths.Resolve(dir, "P.fsproj"),
         "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
         + "<TargetFramework>net10.0</TargetFramework>"
         + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
         + $"</PropertyGroup><ItemGroup>{compiles}</ItemGroup></Project>")
     for (n, c) in files do
-        File.WriteAllText(Path.Combine(dir, n), c)
+        File.WriteAllText(NativePaths.Resolve(dir, n), c)
     let ws = FSharpWorkspace.create ()
     (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
-    ws, dir, files |> List.map (fun (n, _) -> Path.Combine(dir, n))
+    ws, dir, files |> List.map (fun (n, _) -> NativePaths.Resolve(dir, n))
 
 [<Fact>]
 let ``code fixes fire for incomplete match and undefined name`` () =
@@ -415,7 +416,7 @@ type SidecarSuccessBranchTests(fixture: SidecarFixture) =
     [<Fact>]
     member _.``formatting preview on unparseable source returns nil``() =
         task {
-            let bad = Path.Combine(fixture.Dir, "BrokenPreview.fs")
+            let bad = NativePaths.Resolve(fixture.Dir, "BrokenPreview.fs")
             File.WriteAllText(bad, "module Bad\nlet x = ( \n")
             let! r = fixture.Send("textDocument/formattingPreview", posPayload bad 0 0)
             Assert.Null(r.Error)

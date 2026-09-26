@@ -7,6 +7,7 @@ open System.IO
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
+open SharpLsp.Sidecar.Common
 
 // A real loaded workspace, built once from a real temp .fsproj.
 let private loaded =
@@ -14,7 +15,7 @@ let private loaded =
         (let dir = createTestProject ()
          let ws = FSharpWorkspace.create ()
          (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
-         (ws, Path.Combine(dir, "Library.fs")))
+         (ws, NativePaths.Resolve(dir, "Library.fs")))
 
 let private missing = "/sharplsp/definitely/not/a/real/file.fs"
 

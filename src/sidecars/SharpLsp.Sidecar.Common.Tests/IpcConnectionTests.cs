@@ -1,7 +1,7 @@
+#pragma warning disable RS1035 // File IO banned for analyzers — tests own temp fixtures
 using System.IO.Pipes;
 using SharpLsp.Sidecar.Common.Ipc;
 
-#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — tests own temp fixtures
 
 namespace SharpLsp.Sidecar.Common.Tests;
 
@@ -158,7 +158,7 @@ public sealed class IpcConnectionTests
 
         // Unix domain sockets cap paths at 108 chars; an overlong path must be
         // transparently relocated to a hashed temp path so binding still succeeds.
-        var overlong = Path.Combine(Path.GetTempPath(), new string('a', 120) + ".sock");
+        var overlong = NativePaths.Temp(new string('a', 120) + ".sock");
         Assert.True(overlong.Length > 107);
 
         var listener = Assert
@@ -221,11 +221,7 @@ public sealed class IpcConnectionTests
     {
         // A socket path whose parent directory does not exist cannot bind; the
         // listener factory surfaces the bind error as a structured failure.
-        var badPath = Path.Combine(
-            Path.GetTempPath(),
-            $"sharplsp-missing-{Guid.NewGuid():N}",
-            "x.sock"
-        );
+        var badPath = NativePaths.Temp($"sharplsp-missing-{Guid.NewGuid():N}", "x.sock");
         var result = IpcConnection.CreateListener(badPath);
         Assert.True(
             result is Outcome.Result<IpcListener, string>.Error<IpcListener, string>,

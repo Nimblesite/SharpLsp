@@ -12,6 +12,7 @@ open MessagePack
 open SharpLsp.Sidecar.Common.Ipc
 open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.Common
 
 // ── Wire mirrors for handler responses built from anonymous records ──
 // The sidecar serializes anonymous records (formatting edits, inlay hints) as
@@ -123,10 +124,10 @@ let heading = Direction.North
 /// Create a temp directory with a real .fsproj and F# source file.
 /// Public so the extra-coverage suite can build a real loaded workspace from it.
 let createTestProject () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-e2e-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-e2e-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     File.WriteAllText(
-        Path.Combine(dir, "TestProject.fsproj"),
+        NativePaths.Resolve(dir, "TestProject.fsproj"),
         """<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -142,7 +143,7 @@ let createTestProject () =
     <Compile Include="Interface.fs" />
   </ItemGroup>
 </Project>""")
-    File.WriteAllText(Path.Combine(dir, "Library.fs"), testSource)
+    File.WriteAllText(NativePaths.Resolve(dir, "Library.fs"), testSource)
     // A third file kept self-contained (no references to Library symbols, so it
     // never changes cross-file reference/rename counts). It carries:
     //   * an FS0020 (implicitly-ignored result) at line 4 → drives the
@@ -150,7 +151,7 @@ let createTestProject () =
     //   * an FSharpLint hint (`not (a = b)` → prefer `<>`) at line 7 → drives the
     //     lint branch of workspace/diagnostics.
     File.WriteAllText(
-        Path.Combine(dir, "Extra.fs"),
+        NativePaths.Resolve(dir, "Extra.fs"),
         "module TestProject.Extra\n\n"
         + "let private compute () = 1 + 1\n\n"
         + "let ignoredResult () =\n"
@@ -160,7 +161,7 @@ let createTestProject () =
     // A second source file that references Library.add, so references/rename can
     // be exercised across file boundaries (proving they are project-wide).
     File.WriteAllText(
-        Path.Combine(dir, "Consumer.fs"),
+        NativePaths.Resolve(dir, "Consumer.fs"),
         "module TestProject.Consumer\n\nopen TestProject.Library\n\nlet consumeAdd () = add 100 200\n")
     // A self-contained file with deliberate dead code, driving the dead-code
     // analyzer ([ANALYZERS-DEADCODE-SEVERITY]). It references no Library symbols, so it
@@ -171,7 +172,7 @@ let createTestProject () =
     //   * liveOne       — public,  used by liveResult → ALIVE
     //   * liveResult    — public,  never used → skipped (default), Error (monorepo)
     File.WriteAllText(
-        Path.Combine(dir, "Dead.fs"),
+        NativePaths.Resolve(dir, "Dead.fs"),
         "module TestProject.Dead\n\n"
         + "let private sharedConst = 7\n\n"
         + "let private deadPrivateFn () = sharedConst + 1\n\n"
@@ -181,14 +182,14 @@ let createTestProject () =
     // Drives the FSAC-parity file-local analyzers: an unused 'open' that nothing
     // references → [ANALYZERS-FSAC-UNUSED-OPEN].
     File.WriteAllText(
-        Path.Combine(dir, "Hints.fs"),
+        NativePaths.Resolve(dir, "Hints.fs"),
         "module TestProject.Hints\n\nopen System.Text\n\nlet hintValue = 1\n")
     // Drives the analyzer-backed code fixes ([ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]): `open
     // System` is genuinely used (DateTime unqualified on line 4), so it is NOT a
     // remove-unused-open candidate, while `System.DateTime` on line 6 carries a
     // redundant qualifier → "Simplify name" to `DateTime`.
     File.WriteAllText(
-        Path.Combine(dir, "Simplify.fs"),
+        NativePaths.Resolve(dir, "Simplify.fs"),
         "module TestProject.Simplify\n\n"
         + "open System\n\n"
         + "let nowKind () : DateTime = DateTime.Now\n\n"
@@ -197,7 +198,7 @@ let createTestProject () =
     // ([ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]): `Square` declares `interface IShape` but
     // implements none of its members → "Implement interface" generates them.
     File.WriteAllText(
-        Path.Combine(dir, "Interface.fs"),
+        NativePaths.Resolve(dir, "Interface.fs"),
         "module TestProject.Interface\n\n"
         + "type IShape =\n"
         + "    abstract member Area: unit -> float\n"
@@ -243,7 +244,7 @@ let deadCodeFor (symbol: string) (diags: DiagnosticResult array) =
 /// Shared fixture: starts FSharpSidecar over IPC, loads a real workspace.
 type SidecarFixture() =
     let dir = createTestProject ()
-    let sock = Path.Combine(Path.GetTempPath(), $"sharplsp-e2e-{Guid.NewGuid():N}.sock")
+    let sock = NativePaths.Temp($"sharplsp-e2e-{Guid.NewGuid():N}.sock")
     let sidecar = new FSharpSidecar()
     let mutable transport: FramedTransport option = None
     let mutable nextId = 0
@@ -254,12 +255,12 @@ type SidecarFixture() =
     let sendGate = new System.Threading.SemaphoreSlim(1, 1)
 
     member _.Dir = dir
-    member _.Src = Path.Combine(dir, "Library.fs")
-    member _.Consumer = Path.Combine(dir, "Consumer.fs")
-    member _.Dead = Path.Combine(dir, "Dead.fs")
-    member _.Hints = Path.Combine(dir, "Hints.fs")
-    member _.Simplify = Path.Combine(dir, "Simplify.fs")
-    member _.Interface = Path.Combine(dir, "Interface.fs")
+    member _.Src = NativePaths.Resolve(dir, "Library.fs")
+    member _.Consumer = NativePaths.Resolve(dir, "Consumer.fs")
+    member _.Dead = NativePaths.Resolve(dir, "Dead.fs")
+    member _.Hints = NativePaths.Resolve(dir, "Hints.fs")
+    member _.Simplify = NativePaths.Resolve(dir, "Simplify.fs")
+    member _.Interface = NativePaths.Resolve(dir, "Interface.fs")
     member _.NextId() = Interlocked.Increment(&nextId)
 
     member this.Send(meth, payload) =
@@ -325,7 +326,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
 
     [<Fact>]
     member _.``workspace open accepts explicit slnx with fsproj``() = task {
-        let slnxPath = Path.Combine(fixture.Dir, "TestProject.slnx")
+        let slnxPath = NativePaths.Resolve(fixture.Dir, "TestProject.slnx")
         File.WriteAllText(
             slnxPath,
             """<Solution>
@@ -826,7 +827,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
     member _.``formatting reformats a poorly-spaced file``() = task {
         // Write a badly-formatted file and request whole-document formatting;
         // Fantomas must return exactly one whole-file replacement edit.
-        let bad = Path.Combine(fixture.Dir, "Bad.fs")
+        let bad = NativePaths.Resolve(fixture.Dir, "Bad.fs")
         File.WriteAllText(bad, "module Bad\nlet    x=1\nlet  y   =   2\n")
         try
             let! r = fixture.Send("textDocument/formatting", posPayload bad 0 0)
@@ -842,7 +843,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
 
     [<Fact>]
     member _.``range formatting reformats a single line``() = task {
-        let bad = Path.Combine(fixture.Dir, "Range.fs")
+        let bad = NativePaths.Resolve(fixture.Dir, "Range.fs")
         File.WriteAllText(bad, "module Range\nlet   z   =   7\nlet w = 8\n")
         try
             let payload =
@@ -912,11 +913,11 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         // undefined name; the diagnostics handler must map the FCS error into a
         // wire DiagnosticResult. The fixture workspace is restored afterwards so
         // sibling tests keep seeing the canonical project.
-        let badDir = Path.Combine(Path.GetTempPath(), $"sharplsp-diag-{Guid.NewGuid():N}")
+        let badDir = NativePaths.Temp($"sharplsp-diag-{Guid.NewGuid():N}")
         Directory.CreateDirectory(badDir) |> ignore
-        let badSrc = Path.Combine(badDir, "Broken.fs")
+        let badSrc = NativePaths.Resolve(badDir, "Broken.fs")
         File.WriteAllText(
-            Path.Combine(badDir, "Broken.fsproj"),
+            NativePaths.Resolve(badDir, "Broken.fsproj"),
             """<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -963,7 +964,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
     [<Fact>]
     member _.``solution read returns the project model for a real slnx``() = task {
         // The solution/read handler parses a real .slnx and returns its model.
-        let slnx = Path.Combine(fixture.Dir, "Read.slnx")
+        let slnx = NativePaths.Resolve(fixture.Dir, "Read.slnx")
         File.WriteAllText(
             slnx,
             """<Solution>
@@ -977,14 +978,14 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
             // referenced .fsproj.
             let model = deserialize<SolutionModelWire>(r.Payload)
             Assert.NotNull(model.Projects)
-            Assert.Contains(model.Projects, fun p -> p.Path.EndsWith("TestProject.fsproj"))
+            Assert.Contains(model.Projects, fun p -> NativePaths.NameOf p.Path = "TestProject.fsproj")
         finally
             try File.Delete(slnx) with _ -> ()
     }
 
     [<Fact>]
     member _.``solution read returns an error for a missing file``() = task {
-        let missing = Path.Combine(fixture.Dir, "DoesNotExist.slnx")
+        let missing = NativePaths.Resolve(fixture.Dir, "DoesNotExist.slnx")
         let payload = MessagePackSerializer.Serialize(missing)
         let! r = fixture.Send("solution/read", payload)
         // The reader reports an error which the handler surfaces on the envelope.
@@ -1056,8 +1057,8 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         let! r = fixture.Send("textDocument/references", payload)
         Assert.Null(r.Error)
         let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.Contains(loc.Locations, fun l -> l.FilePath.EndsWith("Consumer.fs"))
-        Assert.Contains(loc.Locations, fun l -> l.FilePath.EndsWith("Library.fs"))
+        Assert.Contains(loc.Locations, fun l -> NativePaths.NameOf l.FilePath = "Consumer.fs")
+        Assert.Contains(loc.Locations, fun l -> NativePaths.NameOf l.FilePath = "Library.fs")
     }
 
     // ── Rename [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY] ──────────
@@ -1083,8 +1084,8 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         let edit = deserialize<WorkspaceEditResult>(r.Payload)
         Assert.NotEmpty(edit.DocumentChanges)
         // The definition (Library.fs) and the cross-file use (Consumer.fs) both edit.
-        Assert.Contains(edit.DocumentChanges, fun d -> d.FilePath.EndsWith("Consumer.fs"))
-        Assert.Contains(edit.DocumentChanges, fun d -> d.FilePath.EndsWith("Library.fs"))
+        Assert.Contains(edit.DocumentChanges, fun d -> NativePaths.NameOf d.FilePath = "Consumer.fs")
+        Assert.Contains(edit.DocumentChanges, fun d -> NativePaths.NameOf d.FilePath = "Library.fs")
         let allEdits = edit.DocumentChanges |> Array.collect (fun d -> d.Edits)
         Assert.NotEmpty(allEdits)
         for e in allEdits do
@@ -1215,7 +1216,7 @@ let ``workspace returns None for all queries when not loaded`` () = task {
 [<Fact>]
 let ``loadProject with missing fsproj returns error`` () = task {
     let st = FSharpWorkspace.create ()
-    let empty = Path.Combine(Path.GetTempPath(), $"sharplsp-empty-{Guid.NewGuid():N}")
+    let empty = NativePaths.Temp($"sharplsp-empty-{Guid.NewGuid():N}")
     Directory.CreateDirectory(empty) |> ignore
     try
         let! r = FSharpWorkspace.loadProject st empty

@@ -1,3 +1,4 @@
+#pragma warning disable RS1035 // File IO banned for analyzers — tests own temp fixtures
 using System.Net.Sockets;
 using System.Text;
 using MessagePack;
@@ -5,7 +6,6 @@ using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
 using ByteResult = Outcome.Result<byte[], string>;
 
-#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — tests own temp fixtures
 
 namespace SharpLsp.Sidecar.Common.Tests;
 
@@ -200,11 +200,11 @@ public sealed class SidecarHostEndToEndTests
         // The socket's parent path is a regular file (ENOTDIR), and the whole path
         // is kept well under the 108-char Unix limit so it is NOT relocated to a
         // bindable temp path by the socket-path shortening guard.
-        var parentFile = Path.Combine(Path.GetTempPath(), $"slsp-nf-{Guid.NewGuid():N}"[..16]);
+        var parentFile = NativePaths.Temp($"slsp-nf-{Guid.NewGuid():N}"[..16]);
         await File.WriteAllTextAsync(parentFile, "x").ConfigureAwait(true);
         try
         {
-            var badPath = Path.Combine(parentFile, "h.sock");
+            var badPath = NativePaths.Resolve(parentFile, "h.sock");
             var host = new TestHost();
             await using (host.ConfigureAwait(false))
             {
@@ -227,14 +227,14 @@ public sealed class SidecarHostEndToEndTests
         // its own log — instead of dying silently with the reason visible only
         // in a temp-file log. That silence is what made #110 undiagnosable.
         // The line must preserve the exception type, not just its message.
-        var parentFile = Path.Combine(Path.GetTempPath(), $"slsp-ft-{Guid.NewGuid():N}"[..16]);
+        var parentFile = NativePaths.Temp($"slsp-ft-{Guid.NewGuid():N}"[..16]);
         await File.WriteAllTextAsync(parentFile, "x").ConfigureAwait(true);
         using var capture = new CapturedConsoleWriter();
         var original = Console.Error;
         Console.SetError(capture);
         try
         {
-            var badPath = Path.Combine(parentFile, "h.sock");
+            var badPath = NativePaths.Resolve(parentFile, "h.sock");
             var host = new TestHost();
             await using (host.ConfigureAwait(false))
             {
@@ -296,10 +296,7 @@ public sealed class SidecarHostEndToEndTests
         // endpoint, READY must advertise the path it actually bound, not the
         // path it was asked for — so this client connects to the advertised
         // path RAW, exactly like the Rust host does.
-        var overlong = Path.Combine(
-            Path.GetTempPath(),
-            $"sharplsp-e2e-{new string('a', 120)}.sock"
-        );
+        var overlong = NativePaths.Temp($"sharplsp-e2e-{new string('a', 120)}.sock");
         using var capture = new CapturedConsoleWriter();
         var original = Console.Out;
         Console.SetOut(capture);

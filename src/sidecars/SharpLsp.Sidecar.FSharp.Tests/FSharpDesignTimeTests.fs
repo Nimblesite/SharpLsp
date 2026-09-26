@@ -13,6 +13,7 @@ open System.Xml.Linq
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
+open SharpLsp.Sidecar.Common
 
 /// `<Name>` holding `children`: the project is built as XML, never spliced as text.
 let private element (name: string) (children: obj list) = XElement(XName.Get name, Array.ofList children)
@@ -22,7 +23,7 @@ let private includes (path: string) =
 
 /// Write `<Name>.fsproj` into `dir` with `properties`, a globbed `Src/*.fs` and `extra`.
 let private writeProject (dir: string) (name: string) (properties: obj list) (extra: obj list) =
-    Directory.CreateDirectory(Path.Combine(dir, "Src")) |> ignore
+    Directory.CreateDirectory(NativePaths.Resolve(dir, "Src")) |> ignore
 
     let project =
         element
@@ -32,7 +33,7 @@ let private writeProject (dir: string) (name: string) (properties: obj list) (ex
                element "ItemGroup" [ includes "Src/*.fs" ] ]
              @ extra)
 
-    let path = Path.Combine(dir, $"{name}.fsproj")
+    let path = NativePaths.Resolve(dir, $"{name}.fsproj")
     XDocument(project).Save(path)
     path
 
@@ -72,9 +73,9 @@ let private dotnet (dir: string) (args: string) =
 
 /// A restored `net48;net10.0` project holding `source`; its directory, project file and probe.
 let private restoredProbeOf (source: string) =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-dt-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fx-dt-{Guid.NewGuid():N}")
     let fsproj = writeFsproj dir "Probe" [ frameworks "net48;net10.0" ]
-    let probe = Path.Combine(dir, "Src", "Probe.fs")
+    let probe = NativePaths.Resolve(dir, "Src", "Probe.fs")
     // CRLF, as a Windows checkout writes it: a `#if` line's `\r` must not hide the dead branch.
     File.WriteAllText(probe, source.Replace("\n", "\r\n"))
     dotnet dir $"restore \"{fsproj}\" --nologo -v q"
@@ -95,7 +96,7 @@ let private ok (result: Result<'T, string>) =
 
 [<Fact>]
 let ``only a project file that declares TargetFrameworks is evaluated`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-decl-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fx-decl-{Guid.NewGuid():N}")
 
     try
         let multi = writeFsproj dir "Multi" [ frameworks "net48;net10.0" ]
@@ -119,12 +120,12 @@ let ``the design-time compile of each framework carries that framework's defines
         Assert.Equal(Some "net48", entry.Active)
         // The glob is MSBuild's to expand; its generated attribute sources compile too.
         Assert.Contains(probe, entry.Options.SourceFiles)
-        Assert.All(entry.Options.SourceFiles, fun source -> Assert.True(Path.IsPathRooted source, source))
+        Assert.All(entry.Options.SourceFiles, fun source -> Assert.True(NativePaths.IsRooted source, source))
         Assert.True(entry.Options.SourceFiles.Length > 1, "MSBuild's generated sources are compiled")
         Assert.Contains("--define:NETFRAMEWORK", entry.Options.OtherOptions)
         Assert.Contains("--targetprofile:mscorlib", entry.Options.OtherOptions)
         let output = entry.Options.OtherOptions |> Array.find (fun arg -> arg.StartsWith("-o:"))
-        Assert.True(Path.IsPathRooted(output.Substring 3), $"a relative output resolves against the project: {output}")
+        Assert.True(NativePaths.IsRooted(output.Substring 3), $"a relative output resolves against the project: {output}")
 
         let! modern = FSharpDesignTime.optionsForFramework state.Checker entry "net10.0" CancellationToken.None
         Assert.DoesNotContain("--define:NETFRAMEWORK", (ok modern).OtherOptions)
@@ -183,7 +184,7 @@ let ``an undeclared framework fails by name, and a file no project compiles has 
         | Error reason -> Assert.Contains("net99.0 is not a target framework of Probe.fsproj", reason)
         | Ok _ -> failwith "an undeclared framework must be refused"
 
-        let foreign = Path.Combine(dir, "Elsewhere.fs")
+        let foreign = NativePaths.Resolve(dir, "Elsewhere.fs")
 
         let none = ok (FSharpTargetFrameworks.current state foreign)
         Assert.Null(none.Active)
@@ -199,13 +200,13 @@ let ``an undeclared framework fails by name, and a file no project compiles has 
 
 [<Fact>]
 let ``a lone framework, a framework MSBuild cannot compile, and a broken evaluation all keep the Compile items`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-fallback-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fx-fallback-{Guid.NewGuid():N}")
 
     try
-        let lone = writeFsproj (Path.Combine(dir, "Lone")) "Lone" [ frameworks "net10.0" ]
-        let unbuildable = writeFsproj (Path.Combine(dir, "Future")) "Future" [ frameworks "net99.0;net10.0" ]
+        let lone = writeFsproj (NativePaths.Resolve(dir, "Lone")) "Lone" [ frameworks "net10.0" ]
+        let unbuildable = writeFsproj (NativePaths.Resolve(dir, "Future")) "Future" [ frameworks "net99.0;net10.0" ]
         let missing = element "Import" [ XAttribute(XName.Get "Project", "missing.props") ]
-        let broken = writeProject (Path.Combine(dir, "Broken")) "Broken" [ frameworks "net48;net10.0" ] [ missing ]
+        let broken = writeProject (NativePaths.Resolve(dir, "Broken")) "Broken" [ frameworks "net48;net10.0" ] [ missing ]
 
         let state = FSharpWorkspace.create ()
         let load path = FSharpDesignTime.loadEntry state.Checker (FSharpWorkspace.buildProjectOptions state) path CancellationToken.None
@@ -258,7 +259,7 @@ let ``completion on unchanged text follows the switch: File.WriteAllTextAsync on
 /// over several log lines hid the error from the line that names the project.
 [<Fact>]
 let ``a failed design-time compile is reported by its error, on one line`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-why-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fx-why-{Guid.NewGuid():N}")
 
     try
         let attribute (name: string) (value: string) = XAttribute(XName.Get name, value) :> obj
@@ -272,7 +273,7 @@ let ``a failed design-time compile is reported by its error, on one line`` () = 
                   element "Error" [ attribute "Text" "SharpLsp fixture: the compile fails on purpose" ] ]
 
         let fsproj = writeProject dir "Why" [ frameworks "net48;net10.0" ] [ failsOnPurpose ]
-        File.WriteAllText(Path.Combine(dir, "Src", "Why.fs"), "module Why\nlet answer = 42\n")
+        File.WriteAllText(NativePaths.Resolve(dir, "Src", "Why.fs"), "module Why\nlet answer = 42\n")
         dotnet dir $"restore \"{fsproj}\" --nologo -v q"
 
         let state = FSharpWorkspace.create ()

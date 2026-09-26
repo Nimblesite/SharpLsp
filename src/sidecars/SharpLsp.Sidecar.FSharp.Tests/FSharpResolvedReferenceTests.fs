@@ -55,8 +55,8 @@ let private node (name: string) (children: obj list) =
     XElement(XName.Get name, Array.ofList children) :> obj
 
 /// `root/<name>/<name>.fsproj` for `frameworks`, compiling `<name>.fs` and referencing `references`.
-let private writeTargeting root name (frameworks: string) (source: string) (references: string list) =
-    let dir = Path.Combine(root, name)
+let private writeTargeting root (name: string) (frameworks: string) (source: string) (references: string list) =
+    let dir = NativePaths.Resolve(root, name)
     let itemOf (item: string) (path: string) = node item [ XAttribute(XName.Get "Include", path) :> obj ]
     Directory.CreateDirectory dir |> ignore
 
@@ -67,9 +67,9 @@ let private writeTargeting root name (frameworks: string) (source: string) (refe
               node "PropertyGroup" [ node "TargetFrameworks" [ frameworks :> obj ] ]
               node "ItemGroup" (itemOf "Compile" $"{name}.fs" :: List.map (itemOf "ProjectReference") references) ]
     )
-        .Save(Path.Combine(dir, $"{name}.fsproj"))
+        .Save(NativePaths.Resolve(dir, $"{name}.fsproj"))
 
-    let path = Path.Combine(dir, $"{name}.fs")
+    let path = NativePaths.Resolve(dir, $"{name}.fs")
     File.WriteAllText(path, source)
     path
 
@@ -92,10 +92,10 @@ let private restore (project: string) =
 /// Lib and App — App referencing Lib, both `net48;net10.0` — restored, never built, loaded as one folder.
 let private openSolution () =
     task {
-        let root = Path.Combine(Path.GetTempPath(), $"sharplsp-picked-{Guid.NewGuid():N}")
+        let root = NativePaths.Temp($"sharplsp-picked-{Guid.NewGuid():N}")
         let lib = writeMultiTargeted root "Lib" (libSource "answer") []
-        let app = writeMultiTargeted root "App" appSource [ Path.Combine("..", "Lib", "Lib.fsproj") ]
-        restore (Path.Combine(root, "App", "App.fsproj"))
+        let app = writeMultiTargeted root "App" appSource [ NativePaths.Join("..", "Lib", "Lib.fsproj") ]
+        restore (NativePaths.Resolve(root, "App", "App.fsproj"))
         let state = FSharpWorkspace.create ()
         let! loaded = FSharpWorkspace.loadProject state root
         Assert.True(Result.isOk loaded, $"both projects load: {loaded}")
@@ -110,7 +110,7 @@ let private entryOf (state: FSharpWorkspace.FSharpWorkspaceState) (file: string)
 /// The reference to Lib MSBuild resolved for `entry` under `framework`.
 let private resolvedLib (entry: FSharpDesignTime.FSharpProjectEntry) (framework: string) =
     entry.Resolved[framework]
-    |> List.find (fun reference -> Path.GetFileName reference.Project = "Lib.fsproj")
+    |> List.find (fun reference -> NativePaths.NameOf reference.Project = "Lib.fsproj")
 
 /// The errors FCS reports for `file`, as (0-based line, message).
 let private errorsIn state file =
@@ -235,14 +235,14 @@ let ``the build MSBuild picked stays through the referenced project's switch, fo
 /// which read Lib's net10.0 build: six builders, twice what FCS keeps by default.
 let private openFanOut () =
     task {
-        let root = Path.Combine(Path.GetTempPath(), $"sharplsp-fanout-{Guid.NewGuid():N}")
+        let root = NativePaths.Temp($"sharplsp-fanout-{Guid.NewGuid():N}")
         let lib = writeMultiTargeted root "Lib" (libSource "answer") []
-        let toLib = [ Path.Combine("..", "Lib", "Lib.fsproj") ]
+        let toLib = [ NativePaths.Join("..", "Lib", "Lib.fsproj") ]
         let app = writeMultiTargeted root "App" appSource toLib
         let modern = [ for i in 1..3 -> writeTargeting root $"Modern{i}" "net10.0;net48" appSource toLib ]
 
         for reader in app :: modern do
-            restore (Path.ChangeExtension(reader, ".fsproj") |> string)
+            restore (NativePaths.WithExtension(reader, ".fsproj") |> string)
 
         let state = FSharpWorkspace.create ()
         let! loaded = FSharpWorkspace.loadProject state root
@@ -296,14 +296,14 @@ let ``a query over many readers checks each once, and the next identical query r
 
             let fileOf (used: FSharpSymbolUse) =
                 let range = used.Range
-                string (Path.GetFileName range.FileName)
+                string (NativePaths.NameOf range.FileName)
 
             let readers = uses |> Array.map fileOf |> Array.distinct |> Array.sort
             Assert.Equal<string array>([| "App.fs"; "Lib.fs"; "Modern1.fs"; "Modern2.fs"; "Modern3.fs" |], readers)
             let! after = declaredIn state scope
 
             for (project, value), (_, again) in List.zip before after do
-                Assert.True(value.Equals again, $"{Path.GetFileName project} was checked again by queries that changed nothing")
+                Assert.True(value.Equals again, $"{NativePaths.NameOf project} was checked again by queries that changed nothing")
 
             // Lib answers from net48 while its readers on net10.0 read another build of it:
             // two builds of one project, each with a project id and a builder of its own.
@@ -330,10 +330,10 @@ let private fromCommandLine (project: string) (args: string list) =
 
 [<Fact>]
 let ``a build MSBuild picked is read in memory under the -r it wrote, and only one it wrote`` () =
-    let root = Path.Combine(Path.GetTempPath(), "sharplsp-picked-graph")
-    let picked = Path.Combine(root, "Shared", "obj", "Debug", "net10.0", "ref", "Shared.dll")
-    let shared = fromCommandLine (Path.Combine(root, "Shared", "Shared.fsproj")) [ "--out:obj/Debug/net10.0/Shared.dll" ]
-    let flip = fromCommandLine (Path.Combine(root, "Flip", "Flip.fsproj")) [ "--out:Flip.dll"; $"-r:{picked}" ]
+    let root = NativePaths.Temp("sharplsp-picked-graph")
+    let picked = NativePaths.Resolve(root, "Shared", "obj", "Debug", "net10.0", "ref", "Shared.dll")
+    let shared = fromCommandLine (NativePaths.Resolve(root, "Shared", "Shared.fsproj")) [ "--out:obj/Debug/net10.0/Shared.dll" ]
+    let flip = fromCommandLine (NativePaths.Resolve(root, "Flip", "Flip.fsproj")) [ "--out:Flip.dll"; $"-r:{picked}" ]
     let none (_: string) : FSharpProjectOptions option = None
     let noReferences (_: string) : string list = []
 
@@ -353,7 +353,7 @@ let ``a build MSBuild picked is read in memory under the -r it wrote, and only o
     | other -> failwith $"exactly one in-memory reference, to Shared's picked build: {other}"
 
     // A build under a path no -r: of the options names is never read.
-    let elsewhere = FSharpProjectGraph.wireAll none noReferences (builtFor (Path.Combine(root, "Elsewhere.dll"))) flip
+    let elsewhere = FSharpProjectGraph.wireAll none noReferences (builtFor (NativePaths.Resolve(root, "Elsewhere.dll"))) flip
     Assert.Same(flip, elsewhere)
 
     // Knowing nothing of MSBuild's builds, the reference it resolved stands.

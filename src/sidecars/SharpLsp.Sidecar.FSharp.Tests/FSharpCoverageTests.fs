@@ -7,13 +7,14 @@ open System
 open System.IO
 open Xunit
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.Common
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 /// Create a temporary directory with a .fsproj and one or more source files.
 /// Returns (projectDir, fsprojPath, absolute source paths in compile order).
 let private makeProject (files: (string * string) list) =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fx-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fx-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     let compileItems =
         files
@@ -29,12 +30,12 @@ let private makeProject (files: (string * string) list) =
 {compileItems}
   </ItemGroup>
 </Project>"""
-    let fsprojPath = Path.Combine(dir, "TestProject.fsproj")
+    let fsprojPath = NativePaths.Resolve(dir, "TestProject.fsproj")
     File.WriteAllText(fsprojPath, fsproj)
     let paths =
         files
         |> List.map (fun (name, content) ->
-            let p = Path.Combine(dir, name)
+            let p = NativePaths.Resolve(dir, name)
             File.WriteAllText(p, content)
             p)
     (dir, fsprojPath, paths)
@@ -72,7 +73,7 @@ let ``loadProject carries every compile item into the FCS source file set`` () =
     try
         let sourceFileNames =
             state.ProjectOptions.Value.SourceFiles
-            |> Array.map (fun (path: string) -> Path.GetFileName path |> string)
+            |> Array.map (fun (path: string) -> NativePaths.NameOf path |> string)
         Assert.Equal<string array>([| "Defs.fs"; "Uses.fs" |], sourceFileNames)
         // And the project-wide usage search must find the cross-file use.
         let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5
@@ -92,19 +93,15 @@ let ``loadProject carries every compile item into the FCS source file set`` () =
 /// [REFERENCES-FSHARP-FIND]
 [<Fact>]
 let ``project usages resolve through a request path with different drive casing`` () = task {
-    if OperatingSystem.IsWindows() then
-        let! (state, dir, _fsproj, paths) =
-            loadWorkspace
-                [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
-                  "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
+    let! (state, dir, _fsproj, paths) =
+        loadWorkspace
+            [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
+              "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
+    // Only a directory that does not tell case apart has a second spelling of the file.
+    if NativePaths.IsCaseSensitive paths[0] = Nullable false then
         try
             let defsPath: string = paths[0]
-            let flipped =
-                let head = defsPath[0]
-                let toggled =
-                    if Char.IsUpper head then Char.ToLowerInvariant head
-                    else Char.ToUpperInvariant head
-                string toggled + defsPath[1..]
+            let flipped = NativePaths.FlipCase defsPath
             Assert.NotEqual<string>(defsPath, flipped)
             let! uses = FSharpReferences.getProjectUsages state flipped 1 5
             Assert.True(
@@ -206,8 +203,8 @@ let ``generateReorderEdit returns None when files not in fsproj`` () =
     try
         let result =
             FSharpFileOrder.generateReorderEdit fsproj
-                (Path.Combine(dir, "Ghost.fs"))
-                (Path.Combine(dir, "Phantom.fs"))
+                (NativePaths.Resolve(dir, "Ghost.fs"))
+                (NativePaths.Resolve(dir, "Phantom.fs"))
         Assert.True(result.IsNone)
     finally
         cleanup dir
@@ -635,9 +632,9 @@ let ``getImplementations on non-existent file returns empty`` () = task {
 
 [<Fact>]
 let ``formatDocument returns empty for already-formatted file`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fmt-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fmt-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Fmt.fs")
+    let file = NativePaths.Resolve(dir, "Fmt.fs")
     // Write something simple that might already match Fantomas output.
     File.WriteAllText(file, "module Fmt\n\nlet x = 1\n")
     try
@@ -1674,9 +1671,9 @@ let ``FEAT getInlayHints produces type and parameter hints`` () = task {
 let ``FEAT formatDocument rewrites a poorly-formatted file`` () = task {
     // Extra spacing / odd layout is normalised by Fantomas, producing a
     // single whole-file replacement edit.
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fmt-feat-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fmt-feat-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Bad.fs")
+    let file = NativePaths.Resolve(dir, "Bad.fs")
     File.WriteAllText(file, "module    Bad\nlet    x=1\nlet   y    =     2\n")
     try
         let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
@@ -1694,9 +1691,9 @@ let ``FEAT formatDocument rewrites a poorly-formatted file`` () = task {
 
 [<Fact>]
 let ``FEAT formatRange reformats a single binding region`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fmtr-feat-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fmtr-feat-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Range.fs")
+    let file = NativePaths.Resolve(dir, "Range.fs")
     File.WriteAllText(file, "module Range\nlet   z    =    7\nlet w = 8\n")
     try
         let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 1 0 1 16
@@ -1711,9 +1708,9 @@ let ``FEAT formatRange reformats a single binding region`` () = task {
 
 [<Fact>]
 let ``FEAT formatPreview returns original and formatted text`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fmtp-feat-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fmtp-feat-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Prev.fs")
+    let file = NativePaths.Resolve(dir, "Prev.fs")
     let original = "module Prev\nlet    q=9\n"
     File.WriteAllText(file, original)
     try
@@ -1734,9 +1731,9 @@ let ``FEAT formatPreview returns original and formatted text`` () = task {
 let ``FEAT getCompileOrder resolves nested and relative include paths`` () =
     // A Compile Include with a subdirectory must resolve to an absolute,
     // fully-qualified path under the project directory.
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-order-feat-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-order-feat-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    Directory.CreateDirectory(Path.Combine(dir, "src")) |> ignore
+    Directory.CreateDirectory(NativePaths.Resolve(dir, "src")) |> ignore
     let fsproj =
         "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
         "  <ItemGroup>\n" +
@@ -1744,13 +1741,13 @@ let ``FEAT getCompileOrder resolves nested and relative include paths`` () =
         "    <Compile Include=\"Second.fs\" />\n" +
         "  </ItemGroup>\n" +
         "</Project>\n"
-    let fsprojPath = Path.Combine(dir, "Nested.fsproj")
+    let fsprojPath = NativePaths.Resolve(dir, "Nested.fsproj")
     File.WriteAllText(fsprojPath, fsproj)
     try
         let order = FSharpFileOrder.getCompileOrder fsprojPath
         Assert.Equal(2, order.Length)
         // Paths are absolute (rooted) and point inside the project dir.
-        Assert.True(Path.IsPathRooted(order[0]))
+        Assert.True(NativePaths.IsRooted(order[0]))
         Assert.EndsWith("First.fs", order[0])
         Assert.EndsWith("Second.fs", order[1])
         Assert.Contains("src", order[0])
@@ -1761,7 +1758,7 @@ let ``FEAT getCompileOrder resolves nested and relative include paths`` () =
 let ``FEAT getCompileOrder skips Compile items without Include`` () =
     // A <Compile> element lacking an Include attribute is ignored by the
     // Option.ofObj choose path.
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-order-noinc-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-order-noinc-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     let fsproj =
         "<Project Sdk=\"Microsoft.NET.Sdk\">\n" +
@@ -1770,7 +1767,7 @@ let ``FEAT getCompileOrder skips Compile items without Include`` () =
         "    <Compile Include=\"Real.fs\" />\n" +
         "  </ItemGroup>\n" +
         "</Project>\n"
-    let fsprojPath = Path.Combine(dir, "NoInclude.fsproj")
+    let fsprojPath = NativePaths.Resolve(dir, "NoInclude.fsproj")
     File.WriteAllText(fsprojPath, fsproj)
     try
         let order = FSharpFileOrder.getCompileOrder fsprojPath
@@ -1782,9 +1779,9 @@ let ``FEAT getCompileOrder skips Compile items without Include`` () =
 [<Fact>]
 let ``FEAT getCompileOrder returns empty for malformed xml`` () =
     // XDocument.Load throws on invalid XML; the handler swallows and returns [||].
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-order-bad-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-order-bad-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let fsprojPath = Path.Combine(dir, "Broken.fsproj")
+    let fsprojPath = NativePaths.Resolve(dir, "Broken.fsproj")
     File.WriteAllText(fsprojPath, "<Project><ItemGroup><Compile Include=\"X.fs\"></Project>")
     try
         let order = FSharpFileOrder.getCompileOrder fsprojPath
@@ -1843,7 +1840,7 @@ let ``FEAT generateReorderEdit returns None when before file missing`` () =
         // The "before" target is not in the fsproj → beforeLineIdx stays -1.
         let result =
             FSharpFileOrder.generateReorderEdit fsproj paths[1]
-                (Path.Combine(dir, "Absent.fs"))
+                (NativePaths.Resolve(dir, "Absent.fs"))
         Assert.True(result.IsNone)
     finally
         cleanup dir
@@ -2252,9 +2249,9 @@ let ``FEAT2 getInlayHints emits a pipeline type hint`` () = task {
 let ``FEAT2 formatRange returns empty for an already-formatted line`` () = task {
     // A canonically-formatted range yields no Fantomas change, exercising the
     // `result = rangeText` empty-edit branch of formatRange.
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fmtr2-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fmtr2-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Clean.fs")
+    let file = NativePaths.Resolve(dir, "Clean.fs")
     File.WriteAllText(file, "module Clean\n\nlet x = 1\n")
     try
         let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 2 0 2 9
@@ -2267,9 +2264,9 @@ let ``FEAT2 formatRange returns empty for an already-formatted line`` () = task 
 let ``FEAT2 formatDocument returns empty when content is already canonical`` () = task {
     // Fantomas leaves canonical source unchanged, exercising the `result =
     // source` empty-array branch of formatDocument.
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fmt2-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fmt2-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Canon.fs")
+    let file = NativePaths.Resolve(dir, "Canon.fs")
     File.WriteAllText(file, "module Canon\n\nlet value = 1\n")
     try
         let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
@@ -2329,7 +2326,7 @@ let ``WS2 getDocumentHighlights returns empty for a file that cannot be read`` (
 let ``WS2 loadProject reports an error for a directory with no fsproj`` () = task {
     // discoverFsprojFiles finds zero .fsproj under a directory, so
     // loadFirstProject returns the "No .fsproj found" error branch.
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-empty2-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-empty2-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     let state = FSharpWorkspace.create ()
     try
@@ -2524,9 +2521,9 @@ let ``code fix ignores a diagnostic with no registered handler`` () = task {
 
 [<Fact>]
 let ``loadProject reports an error for a malformed fsproj`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"slsp-badproj-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"slsp-badproj-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    File.WriteAllText(Path.Combine(dir, "Bad.fsproj"), "this is not xml <<<")
+    File.WriteAllText(NativePaths.Resolve(dir, "Bad.fsproj"), "this is not xml <<<")
     try
         let ws = FSharpWorkspace.create ()
         let! result = FSharpWorkspace.loadProject ws dir
@@ -2537,9 +2534,9 @@ let ``loadProject reports an error for a malformed fsproj`` () = task {
 
 [<Fact>]
 let ``loadProject reports an error for a corrupt slnx`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"slsp-badslnx-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"slsp-badslnx-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let slnx = Path.Combine(dir, "Bad.slnx")
+    let slnx = NativePaths.Resolve(dir, "Bad.slnx")
     File.WriteAllText(slnx, "<Solution><<<not xml")
     try
         let ws = FSharpWorkspace.create ()
@@ -2551,18 +2548,18 @@ let ``loadProject reports an error for a corrupt slnx`` () = task {
 
 [<Fact>]
 let ``loadProject discovers and loads the first of several projects`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"slsp-multi-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(Path.Combine(dir, "ProjA")) |> ignore
-    Directory.CreateDirectory(Path.Combine(dir, "ProjB")) |> ignore
+    let dir = NativePaths.Temp($"slsp-multi-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(NativePaths.Resolve(dir, "ProjA")) |> ignore
+    Directory.CreateDirectory(NativePaths.Resolve(dir, "ProjB")) |> ignore
     let proj name =
         "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
         + "<TargetFramework>net10.0</TargetFramework>"
         + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
         + $"</PropertyGroup><ItemGroup><Compile Include=\"{name}.fs\" /></ItemGroup></Project>"
-    File.WriteAllText(Path.Combine(dir, "ProjA", "ProjA.fsproj"), proj "A")
-    File.WriteAllText(Path.Combine(dir, "ProjA", "A.fs"), "module A\nlet a = 1\n")
-    File.WriteAllText(Path.Combine(dir, "ProjB", "ProjB.fsproj"), proj "B")
-    File.WriteAllText(Path.Combine(dir, "ProjB", "B.fs"), "module B\nlet b = 2\n")
+    File.WriteAllText(NativePaths.Resolve(dir, "ProjA", "ProjA.fsproj"), proj "A")
+    File.WriteAllText(NativePaths.Resolve(dir, "ProjA", "A.fs"), "module A\nlet a = 1\n")
+    File.WriteAllText(NativePaths.Resolve(dir, "ProjB", "ProjB.fsproj"), proj "B")
+    File.WriteAllText(NativePaths.Resolve(dir, "ProjB", "B.fs"), "module B\nlet b = 2\n")
     try
         let ws = FSharpWorkspace.create ()
         let! result = FSharpWorkspace.loadProject ws dir
@@ -2574,9 +2571,9 @@ let ``loadProject discovers and loads the first of several projects`` () = task 
 
 [<Fact>]
 let ``loadProject accepts a direct fsproj path and ignores attribute-less Compile`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"slsp-direct-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"slsp-direct-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let fsproj = Path.Combine(dir, "Direct.fsproj")
+    let fsproj = NativePaths.Resolve(dir, "Direct.fsproj")
     // The first <Compile> has no Include attribute → parseFsprojSourceFiles None arm.
     File.WriteAllText(
         fsproj,
@@ -2584,7 +2581,7 @@ let ``loadProject accepts a direct fsproj path and ignores attribute-less Compil
         + "<TargetFramework>net10.0</TargetFramework>"
         + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
         + "</PropertyGroup><ItemGroup><Compile /><Compile Include=\"A.fs\" /></ItemGroup></Project>")
-    File.WriteAllText(Path.Combine(dir, "A.fs"), "module A\nlet a = 1\n")
+    File.WriteAllText(NativePaths.Resolve(dir, "A.fs"), "module A\nlet a = 1\n")
     try
         let ws = FSharpWorkspace.create ()
         // Pass the .fsproj path directly (isFsprojPath true → Ok [| fullPath |]).
@@ -2598,7 +2595,7 @@ let ``loadProject accepts a direct fsproj path and ignores attribute-less Compil
 [<Fact>]
 let ``loadProjectWithCancellation reports an error for an invalid path`` () = task {
     let ws = FSharpWorkspace.create ()
-    // An embedded NUL makes Path.GetFullPath throw before any guarded branch.
+    // An embedded NUL makes NativePaths.NormalizeFullPath throw before any guarded branch.
     let! result =
         FSharpWorkspace.loadProjectWithCancellation ws "bad path" System.Threading.CancellationToken.None
     Assert.True(match result with | Error _ -> true | Ok _ -> false)
@@ -2608,16 +2605,16 @@ let ``loadProjectWithCancellation reports an error for an invalid path`` () = ta
 
 [<Fact>]
 let ``analyzeFileOrder skips a compile entry whose file is absent`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"slsp-ghost-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"slsp-ghost-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let fsproj = Path.Combine(dir, "Order.fsproj")
+    let fsproj = NativePaths.Resolve(dir, "Order.fsproj")
     File.WriteAllText(
         fsproj,
         "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
         + "<TargetFramework>net10.0</TargetFramework>"
         + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
         + "</PropertyGroup><ItemGroup><Compile Include=\"A.fs\" /><Compile Include=\"Ghost.fs\" /></ItemGroup></Project>")
-    File.WriteAllText(Path.Combine(dir, "A.fs"), "module A\nlet x = 1\n")
+    File.WriteAllText(NativePaths.Resolve(dir, "A.fs"), "module A\nlet x = 1\n")
     // Ghost.fs is intentionally NOT created → collectUndefinedErrors returns [].
     try
         let ws = FSharpWorkspace.create ()
@@ -2685,9 +2682,9 @@ let ``semantic tokens tolerate active-pattern symbol kinds`` () = task {
 
 [<Fact>]
 let ``formatRange returns no edits when the range is already formatted`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"slsp-fmt-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"slsp-fmt-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Clean.fs")
+    let file = NativePaths.Resolve(dir, "Clean.fs")
     File.WriteAllText(file, "module M\n\nlet x = 1\n")
     try
         // The single already-formatted line round-trips unchanged → [||].

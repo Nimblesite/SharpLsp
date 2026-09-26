@@ -1,6 +1,6 @@
 #pragma warning disable CA1515 // Types can be internal
-#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers - tests own temp fixtures
 #pragma warning disable IDE0058 // Expression value is never used
+#pragma warning disable RS1035 // File IO banned for analyzers - tests own temp fixtures
 
 namespace SharpLsp.Sidecar.Common.Tests;
 
@@ -54,7 +54,7 @@ public sealed class MetadataDecompilerTests
         );
 
         Assert.NotNull(path);
-        var fileName = Path.GetFileName(path!);
+        var fileName = NativePaths.NameOf(path!);
         Assert.False(fileName.Contains('<', StringComparison.Ordinal), fileName);
         Assert.False(fileName.Contains('>', StringComparison.Ordinal), fileName);
         Assert.False(fileName.Contains(',', StringComparison.Ordinal), fileName);
@@ -77,7 +77,7 @@ public sealed class MetadataDecompilerTests
         );
 
         Assert.NotNull(path);
-        var fileName = Path.GetFileName(path!);
+        var fileName = NativePaths.NameOf(path!);
         Assert.False(fileName.Contains(':', StringComparison.Ordinal), fileName);
         Assert.Equal("global__System.Int32.cs", fileName);
     }
@@ -99,7 +99,7 @@ public sealed class MetadataDecompilerTests
         Assert.NotNull(guid);
         Assert.NotNull(version);
         Assert.NotEqual(guid, version);
-        Assert.Equal("Shared173.cs", Path.GetFileName(guid!));
+        Assert.Equal("Shared173.cs", NativePaths.NameOf(guid!));
         Assert.Contains("struct Guid", File.ReadAllText(guid!), StringComparison.Ordinal);
         Assert.Contains("class Version", File.ReadAllText(version!), StringComparison.Ordinal);
     }
@@ -155,11 +155,11 @@ public sealed class MetadataDecompilerTests
         // Two sidecars decompiling one type both stage a file; the second rename
         // finds the first one's published file. It must keep that file, succeed,
         // and leave no staging file behind (GitHub #173).
-        var directory = Path.Combine(Path.GetTempPath(), $"sharplsp-publish-{Guid.NewGuid():N}");
+        var directory = NativePaths.Temp($"sharplsp-publish-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         try
         {
-            var target = Path.Combine(directory, "Winner.cs");
+            var target = NativePaths.Resolve(directory, "Winner.cs");
             File.WriteAllText(target, "// published first");
 
             MetadataDecompiler.PublishAtomically(target, "// published second");
@@ -189,7 +189,7 @@ public sealed class MetadataDecompilerTests
     public void DecompileTypeToFile_returns_null_for_a_missing_assembly()
     {
         var path = MetadataDecompiler.DecompileTypeToFile(
-            Path.Combine(Path.GetTempPath(), $"nope-{Guid.NewGuid():N}.dll"),
+            NativePaths.Temp($"nope-{Guid.NewGuid():N}.dll"),
             "System.String",
             "String"
         );
@@ -200,7 +200,7 @@ public sealed class MetadataDecompilerTests
     [Fact]
     public void FindDeclaration_matches_pattern_then_name_then_falls_back_to_origin()
     {
-        var file = Path.Combine(Path.GetTempPath(), $"decompiled-{Guid.NewGuid():N}.cs");
+        var file = NativePaths.Temp($"decompiled-{Guid.NewGuid():N}.cs");
         File.WriteAllText(file, "namespace N;\npublic class Widget\n{\n    public int Value;\n}\n");
         try
         {
@@ -227,7 +227,7 @@ public sealed class MetadataDecompilerTests
     public void FindDeclaration_on_missing_file_returns_origin()
     {
         var pos = MetadataDecompiler.FindDeclaration(
-            Path.Combine(Path.GetTempPath(), $"gone-{Guid.NewGuid():N}.cs"),
+            NativePaths.Temp($"gone-{Guid.NewGuid():N}.cs"),
             "X",
             null
         );

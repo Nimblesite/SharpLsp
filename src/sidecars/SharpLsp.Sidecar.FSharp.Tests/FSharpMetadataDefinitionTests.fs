@@ -11,6 +11,7 @@ open System.IO
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
+open SharpLsp.Sidecar.Common
 
 /// Definition two characters into the first `needle` on `line` of `src`.
 let private definitionOf (src: string) line (needle: string) = task {
@@ -56,6 +57,6 @@ let ``a symbol declared in the project's own source still lands in that source``
 
     Assert.True(definition.IsSome, "a source symbol navigates to its declaration")
     let location = definition.Value
-    Assert.Equal(Path.GetFullPath sourceFile, Path.GetFullPath location.FilePath)
+    Assert.Equal(NativePaths.NormalizeFullPath sourceFile, NativePaths.NormalizeFullPath location.FilePath)
     Assert.Equal(1, location.Line)
 }

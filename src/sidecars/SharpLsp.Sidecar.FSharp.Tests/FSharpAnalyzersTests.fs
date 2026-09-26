@@ -7,6 +7,7 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpAnalyzersTests
 open Xunit
 open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.Common
 
 [<Fact>]
 let ``Default config enables dead-code and disables monorepo`` () =
@@ -34,7 +35,7 @@ let ``samePath is false for different files`` () =
 
 [<Fact>]
 let ``samePath falls back to ordinal compare on invalid paths`` () =
-    // A NUL byte makes Path.GetFullPath throw, exercising the catch branch.
+    // A NUL byte defeats full-path resolution, so identity falls back to the raw spelling.
     let bad = "bad\000path.fs"
     Assert.True(FSharpAnalyzers.samePath bad bad)
     Assert.False(FSharpAnalyzers.samePath bad "other\000path.fs")
@@ -45,7 +46,7 @@ let ``buildDiagnostic maps a 1-based range to 0-based positions`` () =
     // `/tmp/X.fs` becomes `C:\tmp\X.fs`), so anchor the fixture to a path
     // that is already in native full form on every platform.
     let path =
-        System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "X.fs"))
+        NativePaths.Temp("X.fs")
 
     let r = Range.mkRange path (Position.mkPos 5 2) (Position.mkPos 5 9)
     let d = FSharpAnalyzers.buildDiagnostic "SLSPF0101" "Warning" "msg" r

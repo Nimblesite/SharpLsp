@@ -21,7 +21,7 @@ public static class NativePaths
     /// holding two names that differ only in case is a project no build tool tells apart
     /// either. Decided once here; no caller picks a rule of its own.
     /// </summary>
-    private const StringComparison Comparison = StringComparison.OrdinalIgnoreCase;
+    public const StringComparison Comparison = StringComparison.OrdinalIgnoreCase;
 
     /// <summary>
     /// The comparer every path-keyed collection is built with. Keys are
@@ -65,6 +65,33 @@ public static class NativePaths
         );
     }
 
+    /// <summary>
+    /// <paramref name="segments"/> joined as written, relative when the first is: how a
+    /// project file spells a <c>&lt;ProjectReference&gt;</c> or a solution a project path.
+    /// </summary>
+    public static string Join(params string[] segments)
+    {
+        return Path.Combine([.. segments.Select(Portable)]);
+    }
+
+    /// <summary><paramref name="path"/> relative to <paramref name="baseDirectory"/>, as a project file spells a reference.</summary>
+    public static string RelativeTo(string baseDirectory, string path)
+    {
+        return Path.GetRelativePath(Portable(baseDirectory), Portable(path));
+    }
+
+    /// <summary>Whether <paramref name="path"/> is absolute on this platform.</summary>
+    public static bool IsRooted(string path)
+    {
+        return Path.IsPathRooted(Portable(path));
+    }
+
+    /// <summary><paramref name="path"/> with <paramref name="extension"/> (dot included) in place of its own.</summary>
+    public static string WithExtension(string path, string extension)
+    {
+        return Path.ChangeExtension(Portable(path), extension);
+    }
+
     /// <summary><paramref name="segments"/> resolved under the user's temporary directory.</summary>
     public static string Temp(params string[] segments)
     {
@@ -95,6 +122,100 @@ public static class NativePaths
     public static bool HasExtension(string path, string extension)
     {
         return path.EndsWith(extension, Comparison);
+    }
+
+    /// <summary>Whether a directory named <paramref name="segment"/> lies on <paramref name="path"/>, by the case rule.</summary>
+    public static bool HasDirectory(string path, string segment)
+    {
+        var separator = Path.DirectorySeparatorChar;
+        return Portable(path).Contains($"{separator}{segment}{separator}", Comparison);
+    }
+
+    /// <summary>Probed case rules, per directory: whether it tells names apart by case.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string,
+        bool
+    > CaseSensitiveDirectories = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The one identity of <paramref name="path"/>: its <see cref="NormalizeFullPath"/> spelling,
+    /// exact in a directory that tells names apart by case and folded in one that does not. Two
+    /// names differing only in case are two files in a case-sensitive directory and one elsewhere;
+    /// folding everywhere dropped the second of two such files from a closure without a word. A
+    /// directory that cannot be probed (the file is missing) keeps every spelling apart, so a
+    /// missing file is reported, never merged. The probe is cached per directory.
+    /// Implements [SHARPLSP-ARCHITECTURE-PATHS] and [SCRIPT-CLOSURE] (GitHub #190).
+    /// </summary>
+    public static string IdentityOf(string path)
+    {
+        var fullPath = NormalizeFullPath(path);
+        return TellsCaseApart(fullPath) ? fullPath : fullPath.ToUpperInvariant();
+    }
+
+    /// <summary>Whether the directory holding <paramref name="fullPath"/> tells names apart by case; true when it cannot be probed.</summary>
+    private static bool TellsCaseApart(string fullPath)
+    {
+        var directory = DirectoryOf(fullPath) is { Length: > 0 } parent ? parent : fullPath;
+        if (CaseSensitiveDirectories.TryGetValue(directory, out var known))
+        {
+            return known;
+        }
+
+        var probed = IsCaseSensitive(fullPath);
+        if (probed is { } sensitive)
+        {
+            CaseSensitiveDirectories[directory] = sensitive;
+        }
+
+        return probed ?? true;
+    }
+
+    /// <summary>The directories a search-path value such as <c>PATH</c> lists, empty entries dropped.</summary>
+    public static string[] SearchPathEntries(string? value)
+    {
+        return (value ?? string.Empty).Split(
+            Path.PathSeparator,
+            StringSplitOptions.RemoveEmptyEntries
+        );
+    }
+
+    /// <summary>The file name of the <paramref name="stem"/> executable on this platform.</summary>
+    public static string ExecutableName(string stem)
+    {
+        return OperatingSystem.IsWindows() ? $"{stem}.exe" : stem;
+    }
+
+    /// <summary>
+    /// <paramref name="path"/> fully qualified with every symlinked segment resolved, as editors
+    /// hand out both spellings of a linked file. Windows keeps the qualified spelling.
+    /// </summary>
+    public static string WithLinksResolved(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        return OperatingSystem.IsWindows() ? fullPath : ResolveLinks(fullPath);
+    }
+
+    /// <summary>Resolve each symlinked segment of <paramref name="fullPath"/>.</summary>
+    private static string ResolveLinks(string fullPath)
+    {
+        var root = Path.GetPathRoot(fullPath)!;
+        var current = root;
+        foreach (
+            var segment in fullPath[root.Length..]
+                .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
+        )
+        {
+            current = Path.Combine(current, segment);
+            FileSystemInfo entry = Directory.Exists(current)
+                ? new DirectoryInfo(current)
+                : new FileInfo(current);
+            if (entry.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+            {
+                current = target.FullName;
+            }
+        }
+
+        return current;
     }
 
     /// <summary>
@@ -209,10 +330,14 @@ public static class NativePaths
             .Any(entry => string.Equals(Path.GetFileName(entry), name, StringComparison.Ordinal));
     }
 
-    private static string FlipCase(string name)
+    /// <summary>
+    /// <paramref name="path"/> with every letter's case flipped: on a directory that does
+    /// not tell case apart, a second spelling of the same file.
+    /// </summary>
+    public static string FlipCase(string path)
     {
         return string.Concat(
-            name.Select(letter =>
+            path.Select(letter =>
                 char.IsUpper(letter) ? char.ToLowerInvariant(letter) : char.ToUpperInvariant(letter)
             )
         );

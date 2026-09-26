@@ -15,6 +15,7 @@ open Xunit
 open MessagePack
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
+open SharpLsp.Sidecar.Common
 
 /// A fresh, isolated real workspace over a real temp .fsproj, so overlays
 /// applied here never leak into the shared fixtures of sibling suites.
@@ -23,7 +24,7 @@ let private freshWorkspace () =
         let dir = createTestProject ()
         let ws = FSharpWorkspace.create ()
         let! _ = FSharpWorkspace.loadProject ws dir
-        return ws, dir, Path.Combine(dir, "Library.fs")
+        return ws, dir, NativePaths.Resolve(dir, "Library.fs")
     }
 
 let private isLibraryCompile (element: XElement) =
@@ -32,7 +33,7 @@ let private isLibraryCompile (element: XElement) =
     | attribute -> attribute.Value = "Library.fs"
 
 let private configureIdentityProject dir =
-    let project = Path.Combine(dir, "TestProject.fsproj")
+    let project = NativePaths.Resolve(dir, "TestProject.fsproj")
     let document = XDocument.Load(project)
     let properties = document.Descendants(XName.Get("PropertyGroup")) |> Seq.head
     properties.Add(XElement(XName.Get("AssemblyName"), "FSharpFixtures"))
@@ -41,7 +42,7 @@ let private configureIdentityProject dir =
     |> Seq.toArray
     |> Array.iter _.Remove()
     document.Save(project)
-    let source = Path.Combine(dir, "Library.fs")
+    let source = NativePaths.Resolve(dir, "Library.fs")
     File.WriteAllText(source, "namespace FSharpFixtures.CrossLanguage\n\ntype FSharpOrigin(value: int) =\n    member _.Value = value\n")
     project, source
 
@@ -303,15 +304,11 @@ let ``documentSymbols reflect the didChange overlay instead of on-disk text`` ()
 [<Fact>]
 let ``overlay stored under one drive-letter casing is read via another on Windows`` () =
     task {
-        if OperatingSystem.IsWindows() then
-            let! ws, dir, src = freshWorkspace ()
+        let! ws, dir, src = freshWorkspace ()
+        // Only a directory that does not tell case apart has a second spelling of the file.
+        if NativePaths.IsCaseSensitive src = Nullable false then
             try
-                let flippedDrive =
-                    let head = src[0]
-                    let flipped =
-                        if Char.IsUpper head then Char.ToLowerInvariant head
-                        else Char.ToUpperInvariant head
-                    string flipped + src[1..]
+                let flippedDrive = NativePaths.FlipCase src
                 Assert.NotEqual<string>(src, flippedDrive)
                 let edited =
                     File.ReadAllText(src)
@@ -324,7 +321,7 @@ let ``overlay stored under one drive-letter casing is read via another on Window
                 try Directory.Delete(dir, true) with _ -> ()
     }
 
-/// Cross-platform: `Path.GetFullPath` normalization must collapse separator
+/// Cross-platform: `NativePaths.NormalizeFullPath` normalization must collapse separator
 /// and relative-segment spellings (`dir/./Library.fs` with forward slashes)
 /// onto the canonical key the analyses look up.
 [<Fact>]
@@ -476,7 +473,7 @@ type SidecarOverlayTests(fixture: SidecarFixture) =
     [<Fact>]
     member _.``formatting computes edits from the didChange overlay, not disk``() =
         task {
-            let path = Path.Combine(fixture.Dir, "OverlayFormat.fs")
+            let path = NativePaths.Resolve(fixture.Dir, "OverlayFormat.fs")
             File.WriteAllText(path, "module OverlayFormat\nlet    diskOnly=1\n")
             try
                 let overlayText = "module OverlayFormat\nlet    bufferOnly=2\n"

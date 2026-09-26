@@ -13,6 +13,7 @@ open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpDeclarationKindTests
+open SharpLsp.Sidecar.Common
 
 /// Caret two characters into `needle` on the fixture line that contains `anchor`.
 let private caretAt (anchor: string) (needle: string) =
@@ -178,11 +179,11 @@ let ``renaming to an illegal F# identifier is refused`` () = task {
 /// recognise the script itself as project source or the rename finds nothing.
 [<Fact>]
 let ``renaming a binding inside a loaded script rewrites its uses`` () = task {
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-fsx-rename-{Guid.NewGuid():N}")
+    let dir = NativePaths.Temp($"sharplsp-fsx-rename-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
 
     try
-        let script = Path.Combine(dir, "Rename.fsx")
+        let script = NativePaths.Resolve(dir, "Rename.fsx")
         File.WriteAllText(script, "let squared value = value * value\nlet answer = squared 7\n")
         let state = FSharpWorkspace.create ()
         let! loaded = FSharpWorkspace.loadProject state script

@@ -65,7 +65,7 @@ Every tier handles paths in exactly ONE module. All path logic lives there and n
 The module owns, for its tier:
 
 - **Normalisation:** fully qualifying a path, collapsing `.` and `..` segments, unifying separators, and stripping Windows extended-length prefixes (`\\?\`, `\\?\UNC\`, see [GitHub #110]).
-- **Identity:** whether two spellings name one file, and the comparer every path-keyed map, set and dictionary is built with. There is ONE case rule per tier, decided once in the module; no caller picks one.
+- **Identity:** whether two spellings name one file, and the comparer every path-keyed map, set and dictionary is built with. There is ONE identity per tier, decided once in the module; no caller picks a case rule of its own. Names differing only in case are one file, except in a directory the module has probed and found to tell case apart ([SCRIPT-CLOSURE], GitHub #190), and that probe lives in the module too.
 - **Resolution:** a relative path against a base directory.
 - **Pieces:** the directory, file name and stem of a path, and whether it carries a given extension (`.csproj`, `.fsproj`, `.sln`, `.fsx`, …).
 - **URIs:** conversion between native paths and LSP URIs, where the tier does it.

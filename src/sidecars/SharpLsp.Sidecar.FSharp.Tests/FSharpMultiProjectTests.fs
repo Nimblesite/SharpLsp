@@ -55,8 +55,8 @@ let private element (name: string) (children: obj list) =
 let private attribute (name: string) (value: string) = XAttribute(XName.Get name, value) :> obj
 
 /// `root/<name>/<name>.fsproj` compiling `source` as `file` and referencing `references`.
-let private writeProject root name file (source: string) (references: string list) =
-    let dir = Path.Combine(root, name)
+let private writeProject root (name: string) file (source: string) (references: string list) =
+    let dir = NativePaths.Resolve(root, name)
     Directory.CreateDirectory dir |> ignore
 
     let items =
@@ -73,17 +73,17 @@ let private writeProject root name file (source: string) (references: string lis
                     element "DisableImplicitFSharpCoreReference" [ "true" :> obj ] ]
               element "ItemGroup" items ]
 
-    XDocument(project).Save(Path.Combine(dir, $"{name}.fsproj"))
-    let path = Path.Combine(dir, file)
+    XDocument(project).Save(NativePaths.Resolve(dir, $"{name}.fsproj"))
+    let path = NativePaths.Resolve(dir, file)
     File.WriteAllText(path, source)
     path
 
 /// Core and App — App referencing Core — written, never built, and opened as one folder.
 let private openSolution () =
     task {
-        let root = Path.Combine(Path.GetTempPath(), $"sharplsp-multi-{Guid.NewGuid():N}")
+        let root = NativePaths.Temp($"sharplsp-multi-{Guid.NewGuid():N}")
         let core = writeProject root "Core" "Library.fs" coreSource []
-        let app = writeProject root "App" "Program.fs" appSource [ Path.Combine("..", "Core", "Core.fsproj") ]
+        let app = writeProject root "App" "Program.fs" appSource [ NativePaths.Join("..", "Core", "Core.fsproj") ]
         let state = FSharpWorkspace.create ()
         let! loaded = FSharpWorkspace.loadProject state root
         Assert.True(Result.isOk loaded, $"both projects load: {loaded}")
@@ -125,7 +125,7 @@ let ``a project reads the F# project it references from source, never built`` ()
         let! (state, root, core, app) = openSolution ()
 
         try
-            Assert.False(Directory.Exists(Path.Combine(root, "Core", "bin")), "Core is never built")
+            Assert.False(Directory.Exists(NativePaths.Resolve(root, "Core", "bin")), "Core is never built")
             let! appErrors = errorsIn state app
             Assert.Empty(appErrors)
             let! coreErrors = errorsIn state core
@@ -199,11 +199,11 @@ let private commandLine (project: string) (args: string list) =
 /// so theirs is wired in memory.
 [<Fact>]
 let ``a reference MSBuild resolved stands, and one hand-built options drop is wired in memory`` () =
-    let root = Path.Combine(Path.GetTempPath(), "sharplsp-graph")
-    let shared = commandLine (Path.Combine(root, "Shared", "Shared.fsproj")) [ "--out:Shared.dll" ]
-    let resolvedDll = Path.Combine(root, "Shared", "bin", "netstandard2.1", "Shared.dll")
-    let flip = commandLine (Path.Combine(root, "Flip", "Flip.fsproj")) [ "--out:Flip.dll"; $"-r:{resolvedDll}" ]
-    let app = commandLine (Path.Combine(root, "App", "App.fsproj")) [ "--out:App.dll" ]
+    let root = NativePaths.Temp("sharplsp-graph")
+    let shared = commandLine (NativePaths.Resolve(root, "Shared", "Shared.fsproj")) [ "--out:Shared.dll" ]
+    let resolvedDll = NativePaths.Resolve(root, "Shared", "bin", "netstandard2.1", "Shared.dll")
+    let flip = commandLine (NativePaths.Resolve(root, "Flip", "Flip.fsproj")) [ "--out:Flip.dll"; $"-r:{resolvedDll}" ]
+    let app = commandLine (NativePaths.Resolve(root, "App", "App.fsproj")) [ "--out:App.dll" ]
     let current (project: string) = if NativePaths.AreEqual(project, shared.ProjectFileName) then Some shared else None
     let referencesOf (_: string) = [ shared.ProjectFileName ]
 
@@ -212,7 +212,7 @@ let ``a reference MSBuild resolved stands, and one hand-built options drop is wi
     Assert.Equal<string array>(flip.OtherOptions, resolved.OtherOptions)
 
     let output = FSharpProjectGraph.outputOf shared
-    Assert.Equal(Path.Combine(root, "Shared", "Shared.dll"), output)
+    Assert.Equal(NativePaths.Resolve(root, "Shared", "Shared.dll"), output)
     let wired = FSharpProjectGraph.wire current referencesOf app
     Assert.Contains($"-r:{output}", wired.OtherOptions)
 

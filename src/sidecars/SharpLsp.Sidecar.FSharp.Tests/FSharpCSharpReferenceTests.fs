@@ -79,8 +79,8 @@ let private attribute (name: string) (value: string) = XAttribute(XName.Get name
 
 /// `root/<name>/<name>.<extension>` for `frameworks`, compiling `file` and referencing
 /// `references`, with `extra` project content.
-let private writeProject root name extension (frameworks: string) file (source: string) (references: string list) (extra: obj list) =
-    let dir = Path.Combine(root, name)
+let private writeProject root (name: string) extension (frameworks: string) file (source: string) (references: string list) (extra: obj list) =
+    let dir = NativePaths.Resolve(root, name)
     Directory.CreateDirectory dir |> ignore
     let property = if frameworks.Contains ';' then "TargetFrameworks" else "TargetFramework"
     let itemOf (item: string) (path: string) = node item [ attribute "Include" path ]
@@ -94,9 +94,9 @@ let private writeProject root name extension (frameworks: string) file (source: 
                node "ItemGroup" (items @ List.map (itemOf "ProjectReference") references) ]
              @ extra)
     )
-        .Save(Path.Combine(dir, $"{name}.{extension}"))
+        .Save(NativePaths.Resolve(dir, $"{name}.{extension}"))
 
-    let path = Path.Combine(dir, file)
+    let path = NativePaths.Resolve(dir, file)
     File.WriteAllText(path, source)
     path
 
@@ -116,12 +116,12 @@ let private restore (project: string) =
 /// restored, never built, loaded as one folder.
 let private openSolution () =
     task {
-        let root = Path.Combine(Path.GetTempPath(), $"sharplsp-fs-cs-{Guid.NewGuid():N}")
+        let root = NativePaths.Temp($"sharplsp-fs-cs-{Guid.NewGuid():N}")
         let both = "net48;net10.0"
         let named = writeProject root "Base" "csproj" both "Named.cs" namedSource [] []
-        let greeter = writeProject root "Core" "csproj" both "Greeter.cs" (greeterSource "Greet") [ Path.Combine("..", "Base", "Base.csproj") ] []
-        let app = writeProject root "App" "fsproj" both "App.fs" appSource [ Path.Combine("..", "Core", "Core.csproj") ] []
-        restore (Path.Combine(root, "App", "App.fsproj"))
+        let greeter = writeProject root "Core" "csproj" both "Greeter.cs" (greeterSource "Greet") [ NativePaths.Join("..", "Base", "Base.csproj") ] []
+        let app = writeProject root "App" "fsproj" both "App.fs" appSource [ NativePaths.Join("..", "Core", "Core.csproj") ] []
+        restore (NativePaths.Resolve(root, "App", "App.fsproj"))
         let state = FSharpWorkspace.create ()
         let! loaded = FSharpWorkspace.loadProject state root
         Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
@@ -258,7 +258,7 @@ let ``a saved C# edit reaches F# on the next check, without a build`` () =
 [<Fact>]
 let ``a C# project MSBuild cannot compile leaves the reference on its DLL, and the log says why`` () =
     task {
-        let root = Path.Combine(Path.GetTempPath(), $"sharplsp-fs-cs-bad-{Guid.NewGuid():N}")
+        let root = NativePaths.Temp($"sharplsp-fs-cs-bad-{Guid.NewGuid():N}")
 
         try
             let failsOnPurpose =
@@ -270,8 +270,8 @@ let ``a C# project MSBuild cannot compile leaves the reference on its DLL, and t
 
             let bad = "namespace Bad { public static class Thing { public static int Value = 1; } }\n"
             writeProject root "Bad" "csproj" "net10.0" "Thing.cs" bad [] [ failsOnPurpose ] |> ignore
-            let app = writeProject root "App" "fsproj" "net10.0" "App.fs" "module App.Main\n\nlet value = Bad.Thing.Value\n" [ Path.Combine("..", "Bad", "Bad.csproj") ] []
-            restore (Path.Combine(root, "App", "App.fsproj"))
+            let app = writeProject root "App" "fsproj" "net10.0" "App.fs" "module App.Main\n\nlet value = Bad.Thing.Value\n" [ NativePaths.Join("..", "Bad", "Bad.csproj") ] []
+            restore (NativePaths.Resolve(root, "App", "App.fsproj"))
             let state = FSharpWorkspace.create ()
             let! loaded = FSharpWorkspace.loadProject state root
             Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
@@ -303,12 +303,12 @@ let ``a C# project MSBuild cannot compile leaves the reference on its DLL, and t
 /// it references — the reason a saved edit anywhere in the graph is read again.
 [<Fact>]
 let ``a build is stamped by the newest of its project, its sources and the builds it reads`` () =
-    let root = Path.Combine(Path.GetTempPath(), $"sharplsp-fs-cs-stamp-{Guid.NewGuid():N}")
+    let root = NativePaths.Temp($"sharplsp-fs-cs-stamp-{Guid.NewGuid():N}")
 
     try
         let write (name: string) (at: DateTime) =
-            let path = Path.Combine(root, name)
-            Directory.CreateDirectory(Path.GetDirectoryName path |> string) |> ignore
+            let path = NativePaths.Resolve(root, name)
+            Directory.CreateDirectory(NativePaths.DirectoryOf path |> string) |> ignore
             File.WriteAllText(path, "")
             File.SetLastWriteTimeUtc(path, at)
             path
@@ -322,8 +322,8 @@ let ``a build is stamped by the newest of its project, its sources and the build
         let buildOf project (sources: string list) references =
             { FSharpCSharpReferences.Project = project
               FSharpCSharpReferences.Framework = "net10.0"
-              FSharpCSharpReferences.Reference = Path.ChangeExtension(project, ".dll") |> string
-              FSharpCSharpReferences.Arguments = CSharpCommandLineParser.Default.Parse(sources, Path.GetDirectoryName project |> string, null)
+              FSharpCSharpReferences.Reference = NativePaths.WithExtension(project, ".dll") |> string
+              FSharpCSharpReferences.Arguments = CSharpCommandLineParser.Default.Parse(sources, NativePaths.DirectoryOf project |> string, null)
               FSharpCSharpReferences.References = references
               FSharpCSharpReferences.Gate = obj ()
               FSharpCSharpReferences.Emitted = None }
