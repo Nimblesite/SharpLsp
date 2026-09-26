@@ -207,19 +207,39 @@ function linkTree(from: string, to: string): void {
   }
 }
 
+/** Where a scratch keeps the one real SDK copy per major that its roots link. */
+const SDK_STORE = 'sdk-store';
+
+/** One copy per scratch and SDK, however many roots composed in parallel ask for it. */
+const storedSdks = new Map<string, Promise<string>>();
+
 /**
- * The machine's real SDK of `major`, LINKED into `root`: one call, where a copy is
- * 400 MB in ~3,800 files, per root, and seven roots took the floor suite's setup
- * past its budget (Windows `workspace`). It is the real install, never a name, and
- * hostfxr follows the link exactly as `installedSdkVersions` does. Only for roots
- * that never RUN their SDK: a build resolves its packs and runtime through the
- * link's target, which would be the machine's root rather than the one composed.
- * Teardown removes the link, never what it points at.
+ * The scratch's OWN copy of the machine's real SDK of `major`, made once, off the
+ * event loop. Roots link this copy and never the machine's install: the extension
+ * host's Node 24 `rmSync` descends through a Windows junction and empties what it
+ * points at, so a link into the install put it one fallen-back teardown from being
+ * wiped, on a runner that is an administrator. Only a copy this scratch owns is
+ * ever linked, as `linkTree` requires.
  */
-function linkSdk(root: string, major: number): void {
+function storedSdk(scratch: string, major: number): Promise<string> {
   const { source, relative } = realSdk(major);
+  const stored = path.join(scratch, SDK_STORE, relative);
+  const copied = storedSdks.get(stored) ?? cloneAsync(source, relative, stored).then(() => stored);
+  storedSdks.set(stored, copied);
+  return copied;
+}
+
+/**
+ * The scratch's real SDK of `major`, LINKED into `root`: one call per root, where
+ * a copy is 400 MB in ~3,800 files, and seven roots took the floor suite's setup
+ * past its budget (Windows `workspace`). hostfxr follows the link exactly as
+ * `installedSdkVersions` does. Only for roots that never RUN their SDK: a build
+ * resolves its packs and runtime through the link's target, not the root composed.
+ */
+async function linkSdk(scratch: string, root: string, major: number): Promise<void> {
+  const stored = await storedSdk(scratch, major);
   fs.mkdirSync(path.join(root, 'sdk'), { recursive: true });
-  fs.symlinkSync(path.join(source, relative), path.join(root, relative), 'junction');
+  fs.symlinkSync(stored, path.join(root, 'sdk', path.basename(stored)), 'junction');
 }
 
 /**
@@ -244,8 +264,11 @@ export async function composeRoot(
   const root = path.join(scratch, name);
   fs.mkdirSync(root, { recursive: true });
   installMuxer(source, root);
-  linkSdk(root, sdkMajor);
-  await Promise.all([copyFxr(source, root), copyRuntime(source, root, runtimeAs)]);
+  await Promise.all([
+    linkSdk(scratch, root, sdkMajor),
+    copyFxr(source, root),
+    copyRuntime(source, root, runtimeAs),
+  ]);
   return dotnetExecutable(root);
 }
 

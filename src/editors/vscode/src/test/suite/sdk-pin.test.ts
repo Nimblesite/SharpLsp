@@ -15,7 +15,7 @@ import {
 import { describeSdkPinFailure, existingSdkSatisfiesWorkspace } from '../../dotnetRuntime.js';
 import { candidateDotnetRoots, findDotnetSatisfying } from '../../dotnet-roots.js';
 import { SDK_RESOLUTION_EXIT_CODE, diagnoseBuildFailure } from '../../build.js';
-import { assertContainsAll } from './test-helpers';
+import { assertContainsAll, removeDirRecursive } from './test-helpers';
 
 /**
  * Regression suite for the SDK pin that broke every `dotnet` entry point on a
@@ -60,7 +60,10 @@ suite('global.json SDK pin', () => {
   });
 
   teardown(() => {
-    fs.rmSync(scratchDir, { recursive: true, force: true });
+    // The one delete every suite's scratch goes through. A bare recursive `rmSync`
+    // on Node 24 (the extension host's runtime) descends through a Windows junction
+    // and silently leaves a tree holding a dangling one behind.
+    removeDirRecursive(scratchDir);
   });
 
   test('a lower feature band never satisfies a latestPatch pin', () => {

@@ -37,10 +37,10 @@ import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts.js';
  * ahead of the sidecars', and an SDK major differing from the runtime's. Those
  * four are exactly where a "does this look like 10?" check goes wrong.
  *
- * Composing a root links a real SDK and copies a real runtime, which costs
- * seconds on an agent without reflinks, so every root is composed ONCE in
- * `suiteSetup` and the test bodies only launch processes against them
- * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]: a suite pays one initialization).
+ * Composing a root links the suite's one copy of a real SDK and copies a real
+ * runtime, which costs seconds on an agent without reflinks, so every root is
+ * composed ONCE in `suiteSetup` and the test bodies only launch processes against
+ * them ([DIST-CI-VSIX-SHARDS-TIMEOUTS]: a suite pays one initialization).
  *
  * Implements [DIST-RUNTIME-ACQUIRE].
  */
