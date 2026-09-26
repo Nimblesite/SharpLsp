@@ -35,7 +35,9 @@ export function findNetcoredbg(extensionPath?: string): string | undefined {
 
 /** Resolve `name` against PATH, honouring PATHEXT on Windows. */
 function findOnPath(name: string): string | undefined {
-  const entries = (process.env.PATH ?? '').split(searchPathDelimiter).filter((dir) => dir.length > 0);
+  const entries = (process.env.PATH ?? '')
+    .split(searchPathDelimiter)
+    .filter((dir) => dir.length > 0);
   const extensions = process.platform === 'win32' ? ['', ...windowsPathExt()] : [''];
   for (const dir of entries) {
     for (const extension of extensions) {

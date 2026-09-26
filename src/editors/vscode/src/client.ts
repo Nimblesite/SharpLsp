@@ -272,15 +272,7 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
 
   // Dev fallback: look for a Cargo debug build three levels above the extension dir.
   // Extension lives at <repo>/src/editors/vscode, so ../../../target/debug/<binary> is the repo build.
-  const devBuild = joinPath(
-    context.extensionPath,
-    '..',
-    '..',
-    '..',
-    'target',
-    'debug',
-    binaryName,
-  );
+  const devBuild = joinPath(context.extensionPath, '..', '..', '..', 'target', 'debug', binaryName);
   if (fs.existsSync(devBuild)) {
     return devBuild;
   }

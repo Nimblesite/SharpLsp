@@ -143,9 +143,7 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
       return undefined;
     }
     if (!fs.existsSync(program)) {
-      void vscode.window.showWarningMessage(
-        `Build produced no output for ${fileNameOf(program)}.`,
-      );
+      void vscode.window.showWarningMessage(`Build produced no output for ${fileNameOf(program)}.`);
       return undefined;
     }
     return config;
