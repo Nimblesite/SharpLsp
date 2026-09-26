@@ -40,10 +40,10 @@ jobs:
           toolchain: stable
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2
+      - uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2
         with:
           tool: cargo-llvm-cov
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2
+      - uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2
         with:
           tool: nextest
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
