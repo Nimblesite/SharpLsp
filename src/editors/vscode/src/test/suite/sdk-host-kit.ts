@@ -162,7 +162,37 @@ export function stageSdk(root: string, major: number): void {
   const source = sdkSource(major);
   const real = newestVersion(realSdks(source), `${String(major)}.`);
   assert.ok(real, `SDK ${String(major)} must be a real installed directory, never composed`);
-  cloneInto(source, path.join('sdk', real), path.join(root, 'sdk', real));
+  const relative = path.join('sdk', real);
+  const sibling = siblingCopy(root, relative);
+  if (sibling === undefined) cloneInto(source, relative, path.join(root, relative));
+  else linkTree(sibling, path.join(root, relative));
+}
+
+/**
+ * The copy of `relative` a root composed beside `root` already holds. Seven roots
+ * share two SDKs, and on an agent without reflinks copying each SDK again took the
+ * floor suite's setup past its budget (Windows `workspace`).
+ */
+function siblingCopy(root: string, relative: string): string | undefined {
+  const scratch = path.dirname(root);
+  return fs
+    .readdirSync(scratch)
+    .map((name) => path.join(scratch, name, relative))
+    .find((copy) => copy !== path.join(root, relative) && fs.existsSync(copy));
+}
+
+/**
+ * `from` rebuilt at `to` from hard links: the same real bits at a third of a copy's
+ * cost. Only a copy this scratch owns is ever linked, so no test can write through a
+ * link into the machine's own install.
+ */
+function linkTree(from: string, to: string): void {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const [source, target] = [path.join(from, entry.name), path.join(to, entry.name)];
+    if (entry.isDirectory()) linkTree(source, target);
+    else fs.linkSync(source, target);
+  }
 }
 
 /**
