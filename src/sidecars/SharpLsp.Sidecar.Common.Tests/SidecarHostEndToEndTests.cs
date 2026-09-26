@@ -6,7 +6,6 @@ using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
 using ByteResult = Outcome.Result<byte[], string>;
 
-
 namespace SharpLsp.Sidecar.Common.Tests;
 
 /// <summary>

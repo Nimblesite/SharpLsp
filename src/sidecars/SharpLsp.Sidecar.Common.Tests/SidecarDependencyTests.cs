@@ -165,8 +165,17 @@ public sealed class SidecarDependencyTests
     {
         var packagesRoot =
             Environment.GetEnvironmentVariable("NUGET_PACKAGES")
-            ?? NativePaths.Resolve(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
-        var nuspec = NativePaths.Resolve(packagesRoot, "fsharp.compiler.service", fcsVersion, "fsharp.compiler.service.nuspec");
+            ?? NativePaths.Resolve(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".nuget",
+                "packages"
+            );
+        var nuspec = NativePaths.Resolve(
+            packagesRoot,
+            "fsharp.compiler.service",
+            fcsVersion,
+            "fsharp.compiler.service.nuspec"
+        );
         Assert.True(
             File.Exists(nuspec),
             $"FCS {fcsVersion} nuspec not found at {nuspec} — restore the solution first"

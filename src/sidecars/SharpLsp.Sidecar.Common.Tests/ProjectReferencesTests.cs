@@ -59,7 +59,9 @@ public sealed class ProjectReferencesTests : IDisposable
     public void ReadReferencedProjects_on_missing_file_returns_empty()
     {
         Assert.Empty(
-            ProjectReferences.ReadReferencedProjects(NativePaths.Resolve(_root, "does-not-exist.csproj"))
+            ProjectReferences.ReadReferencedProjects(
+                NativePaths.Resolve(_root, "does-not-exist.csproj")
+            )
         );
     }
 

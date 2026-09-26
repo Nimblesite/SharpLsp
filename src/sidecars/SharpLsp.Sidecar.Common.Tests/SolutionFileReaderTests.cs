@@ -8,7 +8,9 @@ namespace SharpLsp.Sidecar.Common.Tests;
 
 public sealed class SolutionFileReaderTests : IDisposable
 {
-    private readonly string _root = NativePaths.Temp($"sharplsp-solution-reader-{Guid.NewGuid():N}");
+    private readonly string _root = NativePaths.Temp(
+        $"sharplsp-solution-reader-{Guid.NewGuid():N}"
+    );
 
     public SolutionFileReaderTests()
     {

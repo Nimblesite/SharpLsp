@@ -2,7 +2,6 @@
 using System.IO.Pipes;
 using SharpLsp.Sidecar.Common.Ipc;
 
-
 namespace SharpLsp.Sidecar.Common.Tests;
 
 public sealed class IpcConnectionTests
