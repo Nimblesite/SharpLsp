@@ -2,7 +2,7 @@
  * MTP invocation and reporter negotiation, and how a module is STARTED.
  * Implements [TEST-MTP-RUN] and [NETFX-TEST-MTP].
  */
-import * as path from 'node:path';
+import { extensionOf, fileNameOf } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet, runProcess, type DotnetRun } from './dotnet-process.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
 import { netFrameworkDebugRefusal } from './test-frameworks.js';
@@ -25,14 +25,14 @@ interface MtpInvocation {
  * `<Name>.exe` itself, while a .NET module's is always its `.dll`.
  */
 export function isNetFrameworkModule(modulePath: string): boolean {
-  return path.extname(modulePath).toLowerCase() === '.exe';
+  return extensionOf(modulePath).toLowerCase() === '.exe';
 }
 
 /** Why a .NET Framework module must not start: it runs only on Windows. */
 function netFrameworkRefusal(modulePath: string): string | undefined {
   return process.platform === 'win32'
     ? undefined
-    : `${path.basename(modulePath)} targets .NET Framework, which runs only on Windows`;
+    : `${fileNameOf(modulePath)} targets .NET Framework, which runs only on Windows`;
 }
 
 /** A run's modules: those it starts, and the .NET Framework ones Debug refuses. */
@@ -69,7 +69,7 @@ export function startedModules(
  * debug run's closing `Test debug:` line logs it, so it is logged exactly once.
  */
 export function refusedOutcome(module: MtpModuleRun): TestRunOutcome {
-  const refusal = netFrameworkDebugRefusal(path.basename(module.modulePath));
+  const refusal = netFrameworkDebugRefusal(fileNameOf(module.modulePath));
   return {
     results: new Map(),
     summary: undefined,

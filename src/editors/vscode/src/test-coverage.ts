@@ -7,7 +7,7 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import * as vscode from 'vscode';
 import { XMLParser } from 'fast-xml-parser';
 import { info } from './log.js';
@@ -66,10 +66,10 @@ export function findCoberturaFiles(resultsDir: string): string[] {
   const reports: string[] = [];
   for (const entry of fs.readdirSync(resultsDir, { withFileTypes: true })) {
     if (entry.isFile() && entry.name.toLowerCase().endsWith(COBERTURA_SUFFIX)) {
-      reports.push(path.join(resultsDir, entry.name));
+      reports.push(joinPath(resultsDir, entry.name));
       continue;
     }
-    const nested = path.join(resultsDir, entry.name, 'coverage.cobertura.xml');
+    const nested = joinPath(resultsDir, entry.name, 'coverage.cobertura.xml');
     if (entry.isDirectory() && fs.existsSync(nested)) reports.push(nested);
   }
   return reports.sort();

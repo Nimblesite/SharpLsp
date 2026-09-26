@@ -7,7 +7,7 @@
 // cancellation, so a terminal run can neither be observed nor reported. A Task
 // exposes its command, its arguments and its process exit code.
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, extensionOf, fileNameOf, joinPath } from './paths';
 import * as vscode from 'vscode';
 import { currentDotnetExecutable, runDotnet } from './dotnet-process';
 import { err, ok, type Result } from './result';
@@ -83,7 +83,7 @@ export function runTask(
   const task = new vscode.Task(
     { type: RUN_TASK_TYPE, file: target.file },
     scope,
-    `Run ${path.basename(target.file)}`,
+    `Run ${fileNameOf(target.file)}`,
     RUN_TASK_SOURCE,
     execution,
   );
@@ -107,7 +107,7 @@ export async function buildProject(projectFile: string, framework?: string): Pro
   // multi-targeted project builds every TFM, which costs time we do not need to
   // spend and produces output for a framework this launch will never run.
   const pinned = framework === undefined ? [] : [`-p:TargetFramework=${framework}`];
-  const run = await runDotnet(['build', projectFile, ...pinned], path.dirname(projectFile));
+  const run = await runDotnet(['build', projectFile, ...pinned], directoryOf(projectFile));
   if (!run.failed) return ok(undefined);
   const reason = run.errorMessage ?? '';
   return err(reason.length > 0 ? reason : run.stderr || run.stdout);
@@ -129,15 +129,15 @@ export async function hasDotnetScript(): Promise<boolean> {
  * has no path a `launch` request could name.
  */
 export async function buildFileBasedApp(file: string): Promise<Result<string>> {
-  const artifacts = path.join(path.dirname(file), ARTIFACTS_DIRNAME);
-  const run = await runDotnet(['build', file, '--artifacts-path', artifacts], path.dirname(file));
+  const artifacts = joinPath(directoryOf(file), ARTIFACTS_DIRNAME);
+  const run = await runDotnet(['build', file, '--artifacts-path', artifacts], directoryOf(file));
   if (run.failed) {
     const reason = run.errorMessage ?? '';
     return err(reason.length > 0 ? reason : run.stderr || run.stdout);
   }
   const produced = fileBasedAssembly(artifacts, file);
   if (!fs.existsSync(produced)) {
-    return err(`Build produced no output for ${path.basename(file)}.`);
+    return err(`Build produced no output for ${fileNameOf(file)}.`);
   }
   return ok(produced);
 }
@@ -150,6 +150,6 @@ export async function buildFileBasedApp(file: string): Promise<Result<string>> {
  * builder.
  */
 export function fileBasedAssembly(artifactsDir: string, entryFile: string): string {
-  const stem = path.basename(entryFile, path.extname(entryFile));
-  return path.join(artifactsDir, 'bin', 'debug', `${stem}.dll`);
+  const stem = fileNameOf(entryFile, extensionOf(entryFile));
+  return joinPath(artifactsDir, 'bin', 'debug', `${stem}.dll`);
 }

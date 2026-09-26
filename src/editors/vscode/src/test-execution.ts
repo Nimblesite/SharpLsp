@@ -19,7 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import type * as vscode from 'vscode';
 import {
   DOTNET_TIMEOUT_MS,
@@ -144,7 +144,7 @@ export async function runTests(
 
 /** A private, empty directory for one run's TRX output. */
 function freshTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-trx-'));
+  return fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-trx-'));
 }
 
 /**

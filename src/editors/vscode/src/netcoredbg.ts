@@ -5,7 +5,7 @@
 // no launch target, and three suites plus the VSIX staging check import it
 // directly.
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { joinPath, searchPathDelimiter } from './paths';
 import * as vscode from 'vscode';
 import { exeName } from './platform';
 import { splitTrimmed } from './utils';
@@ -35,11 +35,11 @@ export function findNetcoredbg(extensionPath?: string): string | undefined {
 
 /** Resolve `name` against PATH, honouring PATHEXT on Windows. */
 function findOnPath(name: string): string | undefined {
-  const entries = (process.env.PATH ?? '').split(path.delimiter).filter((dir) => dir.length > 0);
+  const entries = (process.env.PATH ?? '').split(searchPathDelimiter).filter((dir) => dir.length > 0);
   const extensions = process.platform === 'win32' ? ['', ...windowsPathExt()] : [''];
   for (const dir of entries) {
     for (const extension of extensions) {
-      const candidate = path.join(dir, `${name}${extension}`);
+      const candidate = joinPath(dir, `${name}${extension}`);
       if (fs.existsSync(candidate)) return candidate;
     }
   }
@@ -65,15 +65,15 @@ export function getNetcoredbgCandidates(extensionPath?: string): string[] {
   const candidates: string[] = [];
   if (extensionPath !== undefined && extensionPath.length > 0) {
     candidates.push(
-      path.join(extensionPath, 'bin', `${process.platform}-${process.arch}`, 'netcoredbg', exe),
+      joinPath(extensionPath, 'bin', `${process.platform}-${process.arch}`, 'netcoredbg', exe),
     );
   }
   candidates.push(
-    path.join(home, '.dotnet', 'tools', exe),
-    path.join(home, '.local', 'share', 'netcoredbg', exe),
+    joinPath(home, '.dotnet', 'tools', exe),
+    joinPath(home, '.local', 'share', 'netcoredbg', exe),
     `/usr/local/bin/${exe}`,
     `/usr/bin/${exe}`,
-    path.join(home, 'AppData', 'Local', 'netcoredbg', exe),
+    joinPath(home, 'AppData', 'Local', 'netcoredbg', exe),
   );
   return candidates;
 }

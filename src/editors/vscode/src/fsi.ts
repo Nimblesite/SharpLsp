@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, fileNameOf, joinPath } from './paths';
 import * as vscode from 'vscode';
 import { info } from './log';
 import * as config from './config.js';
@@ -97,7 +97,7 @@ async function generateSignatureFile(): Promise<void> {
   }
 
   const fsPath = document.uri.fsPath;
-  const fsiPath = path.join(path.dirname(fsPath), `${path.basename(fsPath, '.fs')}.fsi`);
+  const fsiPath = joinPath(directoryOf(fsPath), `${fileNameOf(fsPath, '.fs')}.fsi`);
   const content = document.getText();
   const signature = extractSignature(content);
 

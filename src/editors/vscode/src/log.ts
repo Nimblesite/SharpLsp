@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import { window, type LogOutputChannel } from 'vscode';
 import { OUTPUT_CHANNEL_NAME, TRACE_CHANNEL_NAME } from './constants.js';
 import { guardChannel } from './channel-guard.js';
@@ -8,7 +8,7 @@ import { guardChannel } from './channel-guard.js';
 let outputChannel: LogOutputChannel | undefined;
 let traceChannel: LogOutputChannel | undefined;
 
-const LOG_FILE = path.join(os.tmpdir(), 'sharplsp-vscode.log');
+const LOG_FILE = joinPath(os.tmpdir(), 'sharplsp-vscode.log');
 let logStream: fs.WriteStream | undefined;
 
 /** Get or create the file log stream. */

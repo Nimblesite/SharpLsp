@@ -5,7 +5,7 @@
  * adapter, so a .NET Framework build starts on the desktop CLR it needs and a
  * .NET build through its own host. Implements [NETFX-DEBUG].
  */
-import * as path from 'node:path';
+import { fileStemOf, resolvePath } from './paths';
 import * as vscode from 'vscode';
 import { currentDotnetExecutable } from './dotnet-process';
 import { RUN_TASK_SOURCE, RUN_TASK_TYPE } from './launch-run';
@@ -39,7 +39,7 @@ export function frameworkRunArgs(target: ProjectTarget, framework: string): stri
 
 /** True when both paths name the same file, whatever the host's spelling. */
 function sameFile(left: string, right: string): boolean {
-  const normalize = (file: string): string => path.resolve(file).toLowerCase();
+  const normalize = (file: string): string => resolvePath(file).toLowerCase();
   return normalize(left) === normalize(right);
 }
 
@@ -70,7 +70,7 @@ export function frameworkRunTask(
     frameworkRunArgs(target, framework),
     { cwd: target.cwd, ...(target.env === undefined ? {} : { env: { ...target.env } }) },
   );
-  const name = path.parse(target.projectFile).name;
+  const name = fileStemOf(target.projectFile);
   const task = new vscode.Task(
     { type: RUN_TASK_TYPE, project: target.projectFile, framework },
     scope,
@@ -94,7 +94,7 @@ export async function runUnderFramework(
   read: ActiveFrameworkReader | undefined,
 ): Promise<void> {
   const framework = await chosenFramework(target, frameworks, document, read);
-  info(`Run: ${path.parse(target.projectFile).name} under ${framework}`);
+  info(`Run: ${fileStemOf(target.projectFile)} under ${framework}`);
   await vscode.tasks.executeTask(frameworkRunTask(target, framework, scope));
 }
 
@@ -114,7 +114,7 @@ export async function debuggableTarget(
   const net = [active, ...frameworks].find(
     (framework) => !isNetFramework(framework) && !framework.startsWith('netstandard'),
   );
-  if (net === undefined) return err(netFrameworkDebugRefusal(path.parse(target.projectFile).name));
+  if (net === undefined) return err(netFrameworkDebugRefusal(fileStemOf(target.projectFile)));
   if (net === target.framework) return ok(target);
   const evaluated = await evaluateProject(target.projectFile, net);
   return evaluated.ok

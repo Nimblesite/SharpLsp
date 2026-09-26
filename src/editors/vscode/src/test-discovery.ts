@@ -26,7 +26,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { directoryOf, extensionOf, fileNameOf, joinPath } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
 import { parseListingDiagnostics, parseTestList } from './test-listing.js';
@@ -110,7 +110,7 @@ function assemblyListing(
   framework: string | undefined,
 ): TestAssemblyListing {
   return {
-    name: path.basename(assembly, path.extname(assembly)),
+    name: fileNameOf(assembly, extensionOf(assembly)),
     path: assembly,
     names,
     ...(framework === undefined ? {} : { frameworks: [{ framework, path: assembly, names }] }),
@@ -270,7 +270,7 @@ async function listWithVsTest(
 /** Working directory for a target, or `undefined` when it is not on disk. */
 function targetCwd(target: string): string | undefined {
   try {
-    return fs.statSync(target).isDirectory() ? target : path.dirname(target);
+    return fs.statSync(target).isDirectory() ? target : directoryOf(target);
   } catch {
     return undefined;
   }
@@ -375,7 +375,7 @@ async function listFqnBatch(
   if (dir === undefined) {
     return { names: [], warnings: ['Could not create a temp directory for the FQN listing'] };
   }
-  const listPath = path.join(dir, 'tests.txt');
+  const listPath = joinPath(dir, 'tests.txt');
   const args = [
     'vstest',
     ...assemblies,
@@ -390,7 +390,7 @@ async function listFqnBatch(
 /** A private directory for one listing, or `undefined` when the disk says no. */
 function makeTempDir(): string | undefined {
   try {
-    return fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-fqn-'));
+    return fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-fqn-'));
   } catch {
     return undefined;
   }

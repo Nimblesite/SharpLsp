@@ -10,7 +10,7 @@
  * Implements [NETFX-TEST-DISCOVERY] and [NETFX-TEST-RESULTS].
  */
 
-import * as path from 'node:path';
+import { directoryOf, fileNameOf, pathKey } from './paths';
 import type { FrameworkBuild, TestAssemblyListing } from './test-listing-model.js';
 import type { TrxTestResult } from './test-trx.js';
 
@@ -137,11 +137,6 @@ export function perFrameworkFailures(
     .map(([framework, text]) => ({ framework, text }));
 }
 
-/** Stable comparison key for an assembly path VSTest and TRX spell differently. */
-function pathKey(assembly: string): string {
-  return path.normalize(assembly).toLowerCase();
-}
-
 /**
  * Everything a sweep learned about frameworks, indexed for the three questions
  * the Test Explorer asks: which frameworks does this test exist in, which built
@@ -215,7 +210,7 @@ export class FrameworkIndex {
    * the name of the directory the assembly sits in (`bin/Debug/net48/X.dll`).
    */
   public frameworkOf(source: string): string {
-    return this.byAssembly.get(pathKey(source)) ?? path.basename(path.dirname(source));
+    return this.byAssembly.get(pathKey(source)) ?? fileNameOf(directoryOf(source));
   }
 }
 

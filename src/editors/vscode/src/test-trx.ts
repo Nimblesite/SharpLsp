@@ -21,7 +21,7 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import { XMLParser } from 'fast-xml-parser';
 import type { TestOutcome } from './test-run-output.js';
 import { withoutAdapterUniqueId } from './test-names.js';
@@ -120,7 +120,7 @@ const OUTCOMES = new Map<string, TestOutcome>([
 
 /** Locate `<name>` directly inside `dir`, or `undefined`. */
 export function findTrxFile(dir: string, name: string): string | undefined {
-  const candidate = path.join(dir, name);
+  const candidate = joinPath(dir, name);
   return fs.existsSync(candidate) ? candidate : undefined;
 }
 

@@ -6,7 +6,7 @@
  * the server announces a switch, or a read failed because the workspace was
  * still loading. Implements [NETFX-CONTEXT].
  */
-import * as path from 'node:path';
+import { fileStemOf } from './paths';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { CMD_SELECT_TARGET_FRAMEWORK } from './constants.js';
@@ -80,7 +80,7 @@ function pickItems(shown: MultiTargeted): vscode.QuickPickItem[] {
 
 /** The project's display name: its file name without the extension. */
 function projectName(shown: Shown): string {
-  return shown.project === undefined ? shown.uri.fsPath : path.parse(shown.project).name;
+  return shown.project === undefined ? shown.uri.fsPath : fileStemOf(shown.project);
 }
 
 /** The focused document, when its language can be multi-targeted. */

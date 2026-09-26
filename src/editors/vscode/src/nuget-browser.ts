@@ -1,5 +1,5 @@
 // Implements the editor boundary in [NUGET-WEBVIEW-EXTENSION].
-import * as path from 'node:path';
+import { resolvePath } from './paths';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import * as log from './log.js';
@@ -390,7 +390,7 @@ export class NuGetBrowserPanel {
     if (target?.kind !== 'project') return false;
     const parsed =
       projectDeps.refreshTracked(target.path) ??
-      projectDeps.projectDependencies.value.get(path.resolve(target.path));
+      projectDeps.projectDependencies.value.get(resolvePath(target.path));
     if (parsed === undefined) return false;
     const wasLoading = this.loading.delete('installed');
     const changed = this.replaceInstalledPackages(parsed.nugetPackages);

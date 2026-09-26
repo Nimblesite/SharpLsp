@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import { type SdkPin, installedSdkVersions, pinSatisfiedBy } from './global-json.js';
 
 /**
@@ -22,13 +22,13 @@ import { type SdkPin, installedSdkVersions, pinSatisfiedBy } from './global-json
 
 /** The `dotnet` executable inside a root directory. */
 export function dotnetExecutable(root: string): string {
-  return path.join(root, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet');
+  return joinPath(root, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet');
 }
 
 /** A non-empty environment value, or nothing. */
 function fromEnv(env: NodeJS.ProcessEnv, name: string, ...segments: string[]): string | undefined {
   const base = env[name];
-  return base === undefined || base === '' ? undefined : path.join(base, ...segments);
+  return base === undefined || base === '' ? undefined : joinPath(base, ...segments);
 }
 
 /** Where this platform's installers put a dotnet host, most specific first. */
@@ -53,7 +53,7 @@ function platformRoots(env: NodeJS.ProcessEnv): readonly (string | undefined)[] 
 export function candidateDotnetRoots(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const candidates = [
     fromEnv(env, 'DOTNET_ROOT'),
-    path.join(os.homedir(), '.dotnet'),
+    joinPath(os.homedir(), '.dotnet'),
     ...platformRoots(env),
   ];
   return [...new Set(candidates.filter((root): root is string => root !== undefined))];

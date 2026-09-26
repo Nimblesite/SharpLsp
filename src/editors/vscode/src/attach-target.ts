@@ -15,7 +15,7 @@
 // so the workbench's `startDebugging` result is the honest answer.
 import { execFile } from 'node:child_process';
 import { delay, isRecord } from './utils';
-import * as path from 'node:path';
+import { windowsFileNameOf } from './paths';
 
 /** How long a process listing may take before the attach is refused. */
 const LIST_TIMEOUT_MS = 10_000;
@@ -126,7 +126,7 @@ function windowsRow(entry: unknown): ProcessRow | undefined {
  * and it contains spaces and quotes that no column split survives.
  */
 function windowsFilterCommand(processName: string): string {
-  const stem = path.win32.basename(processName).replace(/\.(?:dll|exe)$/iu, '');
+  const stem = windowsFileNameOf(processName).replace(/\.(?:dll|exe)$/iu, '');
   const executable = `${stem}.exe`.replaceAll("'", "''");
   const filter = `Name='dotnet.exe' OR Name='${executable}'`;
   const encodedFilter = Buffer.from(filter, 'utf16le').toString('base64');

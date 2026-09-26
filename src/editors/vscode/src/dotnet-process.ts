@@ -17,7 +17,7 @@
  */
 
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import * as path from 'node:path';
+import { fileStemOf } from './paths';
 import type { CancellationToken } from 'vscode';
 import { info } from './log.js';
 import { err, ok, type Result } from './result.js';
@@ -255,7 +255,7 @@ function freshCapture(program: string): Capture {
  * `…\dotnet.exe` activation resolved — and a module's own name otherwise.
  */
 function programName(program: string): string {
-  return path.parse(program).name;
+  return fileStemOf(program);
 }
 
 /** The two streams a capture holds, and nothing else of it. */

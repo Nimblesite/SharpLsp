@@ -19,7 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { extensionOf, fileNameOf, joinPath } from './paths';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
 import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
@@ -70,7 +70,7 @@ function untouched(module: MtpModuleRun, testIds: readonly string[]): boolean {
  * the target frameworks of one project build modules sharing ONE file name.
  */
 export function trxNameFor(modulePath: string, index: number): string {
-  const stem = path.basename(modulePath, path.extname(modulePath));
+  const stem = fileNameOf(modulePath, extensionOf(modulePath));
   return `${stem}.${String(index)}.trx`;
 }
 
@@ -105,7 +105,7 @@ function invocationFailure(
   if (rejected === undefined) return resultCount > 0 ? undefined : (errorMessage ?? undefined);
   const extension = EXTENSION_PACKAGES.get(rejected);
   const refusal =
-    `${path.basename(modulePath)} does not support ${rejected} (MTP exit code ` +
+    `${fileNameOf(modulePath)} does not support ${rejected} (MTP exit code ` +
     `${String(MTP_INVALID_COMMAND_LINE)}).`;
   return extension === undefined
     ? refusal
@@ -192,7 +192,7 @@ function outcomeOf(
     results: report.results,
     summary: parseMtpSummary(output),
     failure: run.killed
-      ? `${path.basename(modulePath)} was killed: ${run.errorMessage ?? 'no detail'}`
+      ? `${fileNameOf(modulePath)} was killed: ${run.errorMessage ?? 'no detail'}`
       : invocationFailure(modulePath, output, run.errorMessage, report.results.size),
     runInfos: report.runInfos,
     retriedUnfiltered: false,
@@ -474,5 +474,5 @@ function noModuleRan(plan: MtpRunPlan, options: TestRunOptions): string | undefi
 
 /** A private, empty directory for one run's TRX output. */
 function freshTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-mtp-'));
+  return fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-mtp-'));
 }

@@ -7,7 +7,7 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import * as vscode from 'vscode';
 import { info } from './log';
 import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
@@ -184,7 +184,7 @@ function failureMessages(result: TrxTestResult, frameworks?: FrameworkIndex): vs
  * makes the Testing view show yesterday's coverage for today's run.
  */
 export function freshCoverageDir(cwd: string): string {
-  const dir = path.join(cwd, COVERAGE_DIR);
+  const dir = joinPath(cwd, COVERAGE_DIR);
   fs.rmSync(dir, RETRYING_RM);
   fs.mkdirSync(dir, { recursive: true });
   return dir;

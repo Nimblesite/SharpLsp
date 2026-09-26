@@ -7,7 +7,7 @@
 // profile parsing in launch-profiles.ts and script dispatch in launch-run.ts —
 // one resolver behind F5, Ctrl/Cmd+F5, both commands and the Solution Explorer.
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, fileNameOf, isWithin } from './paths';
 import * as vscode from 'vscode';
 import { sharedDebugConfiguration } from './debug-configuration';
 import { CMD_DEBUG_PROGRAM, CMD_RUN_PROGRAM, DEBUG_TYPE } from './constants';
@@ -48,7 +48,6 @@ import {
 import {
   findEntryProject,
   findProjectFile,
-  isWithin,
   projectEntryFromFile,
   type ProjectEntry,
 } from './launch-target';
@@ -145,7 +144,7 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
     }
     if (!fs.existsSync(program)) {
       void vscode.window.showWarningMessage(
-        `Build produced no output for ${path.basename(program)}.`,
+        `Build produced no output for ${fileNameOf(program)}.`,
       );
       return undefined;
     }
@@ -294,7 +293,7 @@ async function applyTarget(
 function profileRootFor(folder: vscode.WorkspaceFolder, program: unknown): string {
   const root = folder.uri.fsPath;
   if (typeof program !== 'string' || program.length === 0) return root;
-  const from = path.dirname(program);
+  const from = directoryOf(program);
   if (!isWithin(from, root)) return root;
   return findProjectFile(from, root)?.cwd ?? root;
 }
@@ -346,7 +345,7 @@ export async function planLaunch(
   const program = await programFor(target);
   if (program === undefined) return undefined;
   const named =
-    target.kind === 'project' ? path.basename(target.projectFile) : path.basename(target.file);
+    target.kind === 'project' ? fileNameOf(target.projectFile) : fileNameOf(target.file);
   const configuration: vscode.DebugConfiguration = {
     ...baseConfiguration(`${noDebug ? 'Run' : 'Debug'} ${named}`, program, target.cwd),
     ...(target.kind === 'script' ? {} : argsAndEnv(target)),
@@ -386,7 +385,7 @@ async function programFor(target: LaunchTarget): Promise<string | undefined> {
  */
 async function builtProgram(target: ProjectTarget): Promise<string | undefined> {
   const built = await buildProject(target.projectFile, target.framework);
-  const named = path.basename(target.projectFile);
+  const named = fileNameOf(target.projectFile);
   if (!built.ok) {
     void vscode.window.showWarningMessage(`Build failed for ${named}: ${built.error}`);
     return undefined;

@@ -1,4 +1,4 @@
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import type { ActivationResult } from '@nimblesite/shipwright-vscode' with {
   'resolution-mode': 'import',
 };
@@ -13,7 +13,7 @@ export async function verifyDeployment(
   return await activateShipwright(
     { extensionPath },
     {
-      manifestPath: path.join(extensionPath, 'shipwright.json'),
+      manifestPath: joinPath(extensionPath, 'shipwright.json'),
       env: { ...process.env, ...dotnetHostEnvironment(dotnetPath) },
     },
   );

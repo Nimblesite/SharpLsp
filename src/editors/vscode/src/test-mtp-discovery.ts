@@ -17,7 +17,7 @@
  * Implements [TEST-MTP-DISCOVERY].
  */
 
-import * as path from 'node:path';
+import { extensionOf, fileNameOf } from './paths';
 import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import { runModule } from './test-mtp-report.js';
 import {
@@ -69,7 +69,7 @@ async function listModule(
     return {
       tests: [],
       warnings: [
-        `${path.basename(modulePath)} rejected ${rejected}. ` +
+        `${fileNameOf(modulePath)} rejected ${rejected}. ` +
           'Its Microsoft.Testing.Platform version is older than 2.3, which is the first ' +
           'to list tests as JSON. Update the test framework package.',
       ],
@@ -90,7 +90,7 @@ function moduleListing(modulePath: string, run: DotnetRun): ModuleListing {
     (!run.failed || run.exitCode === 8);
   const failure =
     listing.tests.length === 0 && run.failed && !empty
-      ? [`${path.basename(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]
+      ? [`${fileNameOf(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]
       : [];
   return { tests: listing.tests, warnings: [...listing.warnings, ...failure] };
 }
@@ -135,7 +135,7 @@ async function scanModule(modulePath: string, sweep: SweepContext): Promise<Modu
   const listed = await listModule(modulePath, sweep.cwd, sweep.timeoutMs);
   return {
     assembly: {
-      name: path.basename(modulePath, path.extname(modulePath)),
+      name: fileNameOf(modulePath, extensionOf(modulePath)),
       path: modulePath,
       names: mtpIds(listed.tests),
     },

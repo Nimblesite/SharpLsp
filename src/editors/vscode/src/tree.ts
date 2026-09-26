@@ -1,5 +1,5 @@
 /** Implements [SE-TREE], [SE-SORT], [SE-HOVER], and [SE-CONTEXT-MENUS]. */
-import * as path from 'node:path';
+import { fileNameOf } from './paths';
 import {
   type CancellationToken,
   commands,
@@ -209,7 +209,7 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
       const message =
         phase.kind === 'discovering'
           ? 'Searching for solutions…'
-          : `Loading ${path.basename(phase.solutionPath)}…`;
+          : `Loading ${fileNameOf(phase.solutionPath)}…`;
       log.traceInfo(`Tree feedback: ${message}`);
       this.roots = [makeFeedbackNode(message)];
       this.onDidChangeEmitter.fire(undefined);
@@ -260,7 +260,7 @@ function buildTree(
   response: WorkspaceSymbolsResponse,
   order: SortOrder,
 ): ExplorerNode[] {
-  const name = path.basename(solutionPath);
+  const name = fileNameOf(solutionPath);
   const node = new ExplorerNode(name, NodeType.Solution, TreeItemCollapsibleState.Expanded);
   node.iconPath = new ThemeIcon('package', new ThemeColor('terminal.ansiGreen'));
   node.sortName = name;
@@ -277,7 +277,7 @@ function buildTree(
 }
 
 function buildProjectNode(project: ProjectNode): ExplorerNode {
-  const file = path.basename(project.path);
+  const file = fileNameOf(project.path);
   const label = `${project.name} (${file})`;
   const node = new ExplorerNode(label, NodeType.Project, TreeItemCollapsibleState.Expanded);
   node.iconPath = new ThemeIcon('project', new ThemeColor('terminal.ansiCyan'));

@@ -1,4 +1,4 @@
-import * as path from 'node:path';
+import { fileNameOf } from './paths';
 import * as vscode from 'vscode';
 import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from './constants';
 import { currentDotnetExecutable } from './dotnet-process';
@@ -255,7 +255,7 @@ const PROGRESS_VERBS: Readonly<Record<string, string>> = {
 /** What the progress notification says: the verb, and what it is acting on. */
 export function progressTitle(command: string, target?: string): string {
   const verb = PROGRESS_VERBS[command] ?? 'Running';
-  return target === undefined ? `${verb} the workspace` : `${verb} ${path.basename(target)}`;
+  return target === undefined ? `${verb} the workspace` : `${verb} ${fileNameOf(target)}`;
 }
 
 /**

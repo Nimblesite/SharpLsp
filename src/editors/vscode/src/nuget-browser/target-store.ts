@@ -4,7 +4,7 @@
 // know about the workspaceState key, fallback synthesis, or default-target
 // resolution rules.
 
-import * as path from 'node:path';
+import { directoryOf, fileNameOf } from '../paths';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { fetchTargets } from './lsp.js';
@@ -60,11 +60,11 @@ export async function persistTargetSelection(
 export function computeWorkspaceRoot(initialProjectPath: string): string {
   const fromVscode = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (fromVscode !== undefined) return fromVscode;
-  return path.dirname(initialProjectPath);
+  return directoryOf(initialProjectPath);
 }
 
 export function synthesizeFallback(projectPath: string): NuGetTarget {
-  const file = path.basename(projectPath);
+  const file = fileNameOf(projectPath);
   return {
     id: projectPath,
     kind: 'project',

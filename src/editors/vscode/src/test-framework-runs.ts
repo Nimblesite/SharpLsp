@@ -13,7 +13,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import * as path from 'node:path';
+import { joinPath } from './paths';
 import * as vscode from 'vscode';
 import { DOTNET_TIMEOUT_MS, cancellationSignal, runDotnet } from './dotnet-process.js';
 import { info } from './log.js';
@@ -134,7 +134,7 @@ export async function runAssemblies(
   const built = await buildTarget(target, dirOf(target), timeoutMs, options.signal);
   if (built.length > 0) return failedBefore(built.join('\n'));
   const owned = options.resultsDirectory === undefined;
-  const dir = options.resultsDirectory ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-tfm-'));
+  const dir = options.resultsDirectory ?? fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-tfm-'));
   try {
     return await runBatches(assemblies, ids, cwd, dir, options);
   } finally {

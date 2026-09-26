@@ -11,7 +11,7 @@
 //
 // `dotnet msbuild -getProperty:A -getProperty:B` emits a JSON document
 // (`{"Properties": {...}}`) which is parsed with `JSON.parse`, never scraped.
-import * as path from 'node:path';
+import { directoryOf, fileNameOf } from './paths';
 import { runDotnet } from './dotnet-process';
 import { err, ok, type Result } from './result';
 import { getErrorMessage, isRecord, splitTrimmed } from './utils';
@@ -94,7 +94,7 @@ export async function evaluateProject(
 ): Promise<Result<ProjectProperties>> {
   const run = await runDotnet(
     evaluateArgs(projectFile, framework),
-    path.dirname(projectFile),
+    directoryOf(projectFile),
     EVALUATE_TIMEOUT_MS,
   );
   if (run.failed) {
@@ -131,7 +131,7 @@ export async function resolveTargetPath(
 
   const frameworks = evaluated.value.targetFrameworks;
   if (frameworks.length === 0) {
-    return err(`MSBuild reported no TargetPath for ${path.basename(projectFile)}`);
+    return err(`MSBuild reported no TargetPath for ${fileNameOf(projectFile)}`);
   }
   return await pickFramework(projectFile, frameworks, exists);
 }
@@ -150,7 +150,7 @@ async function pickFramework(
     if (exists(pinned.value.targetPath)) return ok(pinned.value);
   }
   if (firstDeclared !== undefined) return ok(firstDeclared);
-  return err(`no target framework of ${path.basename(projectFile)} could be evaluated`);
+  return err(`no target framework of ${fileNameOf(projectFile)} could be evaluated`);
 }
 
 /** True when MSBuild says the project produces a runnable assembly. */

@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { extensionOf, fileNameOf } from './paths';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
@@ -125,7 +125,7 @@ function extractProjectReferences(itemGroups: XmlItemGroup[]): ProjectReference[
     for (const ref of projRefs) {
       const includePath = ref['@_Include'];
       if (includePath === undefined) continue;
-      const name = path.basename(includePath, path.extname(includePath));
+      const name = fileNameOf(includePath, extensionOf(includePath));
       refs.push({ name, includePath });
     }
   }

@@ -8,7 +8,7 @@
 // project, so the near-universal `src/App/App.csproj` layout found nothing; and
 // `commandLineArgs.split(' ')` shredded every quoted argument.
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { directoryOf, extensionOf, fileNameOf, joinPath } from './paths';
 import { isIgnoredDir } from './launch-target';
 import { isRecord } from './utils';
 
@@ -97,11 +97,11 @@ export function parseProfiles(text: string): LaunchProfile[] {
  * `<entry>.run.json` instead.
  */
 export function profileCandidates(target: string): string[] {
-  const directory = path.dirname(target);
-  const stem = path.basename(target, path.extname(target));
+  const directory = directoryOf(target);
+  const stem = fileNameOf(target, extensionOf(target));
   return [
-    path.join(directory, 'Properties', 'launchSettings.json'),
-    path.join(directory, `${stem}.run.json`),
+    joinPath(directory, 'Properties', 'launchSettings.json'),
+    joinPath(directory, `${stem}.run.json`),
   ];
 }
 
@@ -238,9 +238,9 @@ export function readLaunchProfiles(rootPath: string): Record<string, LaunchProfi
  * nothing. The depth bound keeps a large repository from being walked whole.
  */
 function profileDocuments(rootPath: string, depth = PROFILE_SCAN_DEPTH): string[] {
-  const documents = [path.join(rootPath, 'Properties', 'launchSettings.json')];
+  const documents = [joinPath(rootPath, 'Properties', 'launchSettings.json')];
   for (const entry of safeEntries(rootPath)) {
-    const child = path.join(rootPath, entry);
+    const child = joinPath(rootPath, entry);
     if (isRunJson(entry)) documents.push(child);
     else if (depth > 0 && isDirectory(child) && !isIgnoredDir(entry)) {
       documents.push(...profileDocuments(child, depth - 1));
