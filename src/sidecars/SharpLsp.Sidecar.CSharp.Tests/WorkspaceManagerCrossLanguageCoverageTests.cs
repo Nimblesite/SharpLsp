@@ -124,6 +124,55 @@ public sealed class WorkspaceManagerCrossLanguageCoverageTests : IDisposable
         Assert.All(locations.Locations, loc => Assert.False(string.IsNullOrEmpty(loc.FilePath)));
     }
 
+    /// <summary>
+    /// <c>MSBuildWorkspace</c> loads a MULTI-TARGETED <c>.fsproj</c> as one empty stub
+    /// per framework, every one with the same file path. Keyed by that path, the
+    /// rewiring threw "An item with the same key has already been added" and the
+    /// whole workspace failed to open — every C# feature of the solution with it.
+    /// FsToolkit's F# solution logged exactly that on CI.
+    /// </summary>
+    [Fact]
+    public async Task A_multi_targeted_FSharp_reference_opens_and_resolves_from_CSharp()
+    {
+        var libDir = Path.Combine(_root, "Multi", "Lib");
+        var appDir = Path.Combine(_root, "Multi", "App");
+        Directory.CreateDirectory(libDir);
+        Directory.CreateDirectory(appDir);
+        await File.WriteAllTextAsync(
+            Path.Combine(libDir, "Lib.fsproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+              </PropertyGroup>
+              <ItemGroup>
+                <Compile Include="Library.fs" />
+              </ItemGroup>
+            </Project>
+            """
+        );
+        File.Copy(Path.Combine(_root, "Lib", "Library.fs"), Path.Combine(libDir, "Library.fs"));
+        var appCsproj = Path.Combine(appDir, "App.csproj");
+        File.Copy(_appCsprojPath, appCsproj);
+        var program = Path.Combine(appDir, "Program.cs");
+        File.Copy(_programPath, program);
+        BuildProject(appCsproj);
+
+        using var manager = new WorkspaceManager();
+#pragma warning disable CS0618 // Obsolete OpenAsync placeholder
+        var open = await manager.OpenAsync(appCsproj);
+#pragma warning restore CS0618
+        Assert.False(open.IsError, open.Match(_ => "ok", err => err));
+        Assert.True(manager.IsLoaded, "a solution with a multi-targeted F# project must load");
+
+        var (line, character) = LocateToken(program, "new FsLib.Widget", "Widget");
+        var locations = AssertOk(await manager.GetDefinitionAsync(program, line, character));
+        Assert.NotEmpty(locations.Locations);
+        Assert.All(locations.Locations, loc => Assert.False(string.IsNullOrEmpty(loc.FilePath)));
+        var diagnostics = AssertOk(await manager.GetDiagnosticsAsync(program));
+        Assert.DoesNotContain(diagnostics, diag => diag.Severity == "Error");
+    }
+
     /// <summary>Assert the query succeeded and return its success value.</summary>
     private static TValue AssertOk<TValue>(Outcome.Result<TValue, string> result)
     {

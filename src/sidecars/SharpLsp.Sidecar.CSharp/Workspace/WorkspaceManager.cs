@@ -739,8 +739,10 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// empty stub project so its assembly identity can no longer shadow the DLL.
     /// The referenced symbol then resolves and <see cref="MetadataNavigator"/>
     /// decompiles it to a navigable location. Same-language (.csproj) references
-    /// are already linked correctly and are left untouched. Implements
-    /// [DEFINITION-CROSSLANG].
+    /// are already linked correctly and are left untouched. A multi-targeted
+    /// <c>.fsproj</c> loads as one stub PER FRAMEWORK, all at the same path, so the
+    /// stubs are grouped by path: keyed one-to-one, the second one threw and the
+    /// whole workspace failed to open. Implements [DEFINITION-CROSSLANG].
     /// </remarks>
     private static Solution AddCrossLanguageMetadataReferences(Solution solution)
     {
@@ -749,7 +751,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                 project.FilePath is not null
                 && project.FilePath.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
             )
-            .ToDictionary(project => NormalizedPath(project.FilePath!), project => project.Id);
+            .ToLookup(project => NormalizedPath(project.FilePath!), project => project.Id);
 
         foreach (var projectId in solution.ProjectIds.ToList())
         {
@@ -777,7 +779,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
 
         // Drop the now-unreferenced empty F# stub projects.
-        foreach (var stubId in fsharpStubs.Values)
+        foreach (var stubId in fsharpStubs.SelectMany(stubs => stubs))
         {
             if (solution.GetProject(stubId) is not null)
             {
@@ -796,7 +798,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         Solution solution,
         ProjectId projectId,
         string referencedFsproj,
-        Dictionary<string, ProjectId> fsharpStubs
+        ILookup<string, ProjectId> fsharpStubs
     )
     {
         var dll = ProjectReferences.FindOutputAssembly(referencedFsproj);
@@ -807,18 +809,19 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         var project = solution.GetProject(projectId)!;
 
-        // Remove the empty project-to-project reference to the F# stub, if any.
-        if (fsharpStubs.TryGetValue(NormalizedPath(referencedFsproj), out var stubId))
+        // Remove the empty project-to-project reference to the F# stub, whichever
+        // framework's stub this project was linked to.
+        var stubIds = fsharpStubs[NormalizedPath(referencedFsproj)].ToHashSet();
+        foreach (
+            var stubRef in project
+                .ProjectReferences.Where(reference => stubIds.Contains(reference.ProjectId))
+                .ToList()
+        )
         {
-            var stubRef = project.ProjectReferences.FirstOrDefault(reference =>
-                reference.ProjectId == stubId
-            );
-            if (stubRef is not null)
-            {
-                solution = solution.RemoveProjectReference(projectId, stubRef);
-                project = solution.GetProject(projectId)!;
-            }
+            solution = solution.RemoveProjectReference(projectId, stubRef);
         }
+
+        project = solution.GetProject(projectId)!;
 
         // Add the referenced project's output DLL *and its sibling assemblies*.
         // An F# assembly carries a hard dependency on FSharp.Core (and possibly
