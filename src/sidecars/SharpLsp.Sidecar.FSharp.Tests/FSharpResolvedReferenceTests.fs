@@ -54,8 +54,8 @@ let private appSource =
 let private node (name: string) (children: obj list) =
     XElement(XName.Get name, Array.ofList children) :> obj
 
-/// `root/<name>/<name>.fsproj` for `net48;net10.0`, compiling `<name>.fs` and referencing `references`.
-let private writeMultiTargeted root name (source: string) (references: string list) =
+/// `root/<name>/<name>.fsproj` for `frameworks`, compiling `<name>.fs` and referencing `references`.
+let private writeTargeting root name (frameworks: string) (source: string) (references: string list) =
     let dir = Path.Combine(root, name)
     let itemOf (item: string) (path: string) = node item [ XAttribute(XName.Get "Include", path) :> obj ]
     Directory.CreateDirectory dir |> ignore
@@ -64,7 +64,7 @@ let private writeMultiTargeted root name (source: string) (references: string li
         node
             "Project"
             [ XAttribute(XName.Get "Sdk", "Microsoft.NET.Sdk") :> obj
-              node "PropertyGroup" [ node "TargetFrameworks" [ "net48;net10.0" :> obj ] ]
+              node "PropertyGroup" [ node "TargetFrameworks" [ frameworks :> obj ] ]
               node "ItemGroup" (itemOf "Compile" $"{name}.fs" :: List.map (itemOf "ProjectReference") references) ]
     )
         .Save(Path.Combine(dir, $"{name}.fsproj"))
@@ -72,6 +72,10 @@ let private writeMultiTargeted root name (source: string) (references: string li
     let path = Path.Combine(dir, $"{name}.fs")
     File.WriteAllText(path, source)
     path
+
+/// `root/<name>/<name>.fsproj` for `net48;net10.0`, compiling `<name>.fs` and referencing `references`.
+let private writeMultiTargeted root name (source: string) (references: string list) =
+    writeTargeting root name "net48;net10.0" source references
 
 /// Restore `project` with the dotnet CLI; the test fails when restore does.
 let private restore (project: string) =
@@ -166,9 +170,7 @@ let ``a multi-targeted project reads the build MSBuild picked of the F# project 
             Assert.True(NativePaths.AreEqual(lib, file), $"`answer` lands in Lib's source: {file}")
             Assert.Equal((2, 4), (line, column))
 
-            // A project-wide query from Lib searches Lib alone: App reads the build MSBuild
-            // picked, and a multi-targeted reader is not searched. Searching every one of
-            // them stalled the sidecar on FsToolkit (CI run 36201579575).
+            // A project-wide query from Lib counts the use App makes through that build.
             let! uses = FSharpReferences.getProjectUsages state lib 2 4
             let place (used: FSharpSymbolUse) =
                 let range = used.Range
@@ -182,7 +184,7 @@ let ``a multi-targeted project reads the build MSBuild picked of the F# project 
                 |> Array.sort
                 |> List.ofArray
 
-            Assert.Equal<int list>([], linesIn app)
+            Assert.Equal<int list>([ 3 ], linesIn app)
             Assert.Equal<int list>([ 2; 5 ], linesIn lib)
         finally
             cleanup root
@@ -225,6 +227,99 @@ let ``the build MSBuild picked stays through the referenced project's switch, fo
             let! (modernFile, modernLine, modernColumn) = definitionOf state app 5 37
             Assert.True(NativePaths.AreEqual(lib, modernFile), $"`onModern` lands in Lib's source: {modernFile}")
             Assert.Equal((7, 4), (modernLine, modernColumn))
+        finally
+            cleanup root
+    }
+
+/// `Lib` read by `App` on net48 and by three readers whose first framework is net10.0,
+/// which read Lib's net10.0 build: six builders, twice what FCS keeps by default.
+let private openFanOut () =
+    task {
+        let root = Path.Combine(Path.GetTempPath(), $"sharplsp-fanout-{Guid.NewGuid():N}")
+        let lib = writeMultiTargeted root "Lib" (libSource "answer") []
+        let toLib = [ Path.Combine("..", "Lib", "Lib.fsproj") ]
+        let app = writeMultiTargeted root "App" appSource toLib
+        let modern = [ for i in 1..3 -> writeTargeting root $"Modern{i}" "net10.0;net48" appSource toLib ]
+
+        for reader in app :: modern do
+            restore (Path.ChangeExtension(reader, ".fsproj") |> string)
+
+        let state = FSharpWorkspace.create ()
+        let! loaded = FSharpWorkspace.loadProject state root
+        Assert.True(Result.isOk loaded, $"every project loads: {loaded}")
+        return state, root, lib, app, modern
+    }
+
+/// The value each project of `scope` declares — `answer` in Lib, `total` in a reader — as
+/// the whole-project check holds it NOW. FCS creates the value anew each time it checks the
+/// project, so the same value coming back is the builder being reused, not rebuilt.
+let private declaredIn state (scope: FSharpProjectOptions list) =
+    task {
+        let! results = FSharpWorkspace.checkAll state scope
+
+        return
+            results
+            |> List.map (fun project ->
+                project.GetAllUsesOfAllSymbols()
+                |> Array.find (fun used -> used.IsFromDefinition && List.contains used.Symbol.DisplayName [ "answer"; "total" ])
+                |> fun used -> project.ProjectContext.ProjectOptions.ProjectFileName, used.Symbol)
+    }
+
+/// Every reader of Lib is searched, through whichever build of Lib it reads, and the
+/// second identical query re-checks NOTHING: FCS keeps one builder per project AND
+/// framework, and enough of them for a solution. With FCS's default of three, the six
+/// builders here evicted each other and every query re-checked every project from
+/// scratch, which is what stalled FsToolkit (CI run 36201579575).
+[<Fact>]
+let ``a query over many readers checks each once, and the next identical query re-checks nothing`` () =
+    task {
+        let! (state, root, lib, app, modern) = openFanOut ()
+
+        try
+            let titles () =
+                task {
+                    let! lenses = FSharpCodeLens.getCodeLenses state lib
+                    return lenses |> List.map (fun lens -> lens.Line, lens.Title) |> List.sort
+                }
+
+            // The module: two uses per reader. `answer`: one per reader and Lib's own on line 5.
+            // `onFramework`: App alone compiles the .NET Framework branch that uses it.
+            let! first = titles ()
+            Assert.Equal<(int * string) list>([ 0, "8 references"; 2, "5 references"; 5, "1 reference" ], first)
+            let scope = FSharpWorkspace.queryScope state lib
+            Assert.Equal(5, scope.Length)
+            let! before = declaredIn state scope
+
+            let! second = titles ()
+            Assert.Equal<(int * string) list>(first, second)
+            let! uses = FSharpReferences.getProjectUsages state lib 2 4
+
+            let fileOf (used: FSharpSymbolUse) =
+                let range = used.Range
+                string (Path.GetFileName range.FileName)
+
+            let readers = uses |> Array.map fileOf |> Array.distinct |> Array.sort
+            Assert.Equal<string array>([| "App.fs"; "Lib.fs"; "Modern1.fs"; "Modern2.fs"; "Modern3.fs" |], readers)
+            let! after = declaredIn state scope
+
+            for (project, value), (_, again) in List.zip before after do
+                Assert.True(value.Equals again, $"{Path.GetFileName project} was checked again by queries that changed nothing")
+
+            // Lib answers from net48 while its readers on net10.0 read another build of it:
+            // two builds of one project, each with a project id and a builder of its own.
+            let own = (FSharpWorkspace.optionsFor state lib).Value
+
+            let picked =
+                (FSharpWorkspace.optionsFor state modern[0]).Value.ReferencedProjects
+                |> Array.pick (function
+                    | FSharpReferencedProject.FSharpReference(_, options) -> Some options
+                    | _ -> None)
+
+            Assert.True(NativePaths.AreEqual(own.ProjectFileName, picked.ProjectFileName))
+            Assert.True(own.ProjectId.IsSome && picked.ProjectId.IsSome, "every framework's options carry a project id")
+            Assert.NotEqual(own.ProjectId, picked.ProjectId)
+            let! appErrors = errorsIn state app
+            Assert.Empty(appErrors)
         finally
             cleanup root
     }

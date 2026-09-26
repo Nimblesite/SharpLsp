@@ -231,13 +231,19 @@ let private absoluteFlag (directory: string) (arg: string) =
     |> Option.map (fun (flag, path) -> flag + absolute directory path)
     |> Option.defaultValue arg
 
-/// FCS options from a compiler command line: flags stay options, the rest are sources.
-let optionsFromArgs (checker: FSharpChecker) (fsprojPath: string) (args: string array) =
+/// FCS options from `framework`'s compiler command line: flags stay options, the rest are
+/// sources. They carry a project id of their own, so FCS keeps one builder per project AND
+/// framework: the build another project reads and the build this one answers from coexist
+/// instead of evicting each other. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+let optionsFromArgs (checker: FSharpChecker) (fsprojPath: string) (framework: string) (args: string array) =
     let directory = Path.GetDirectoryName fsprojPath |> string
     let isSource (arg: string) = not (arg.StartsWith '-')
     let sources = args |> Array.filter isSource |> Array.map (absolute directory)
     let flags = args |> Array.filter (isSource >> not) |> Array.map (absoluteFlag directory)
-    { checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, flags) with SourceFiles = sources }
+
+    { checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, flags) with
+        SourceFiles = sources
+        ProjectId = Some $"{fsprojPath}|{framework}" }
 
 /// The options for `framework`, built once and remembered with the project references
 /// MSBuild resolved for it.
@@ -251,7 +257,7 @@ let optionsForFramework (checker: FSharpChecker) (entry: FSharpProjectEntry) (fr
             return
                 compiled
                 |> Result.map (fun (args, references) ->
-                    let options = optionsFromArgs checker entry.Path args
+                    let options = optionsFromArgs checker entry.Path framework args
                     entry.Resolved[framework] <- references
                     entry.ByFramework[framework] <- options
                     options)

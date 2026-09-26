@@ -75,9 +75,9 @@ let private frameworkOf (entry: FSharpDesignTime.FSharpProjectEntry) (options: F
     |> Seq.tryPick (fun build -> if obj.ReferenceEquals(build.Value, options) then Some build.Key else None)
 
 /// The builds of loaded F# projects that MSBuild resolved the project references of
-/// `options` to, each once its options are built. FCS keeps one builder per project file,
-/// so a build read here and the one its project answers from replace each other, and
-/// neither is ever left stale. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+/// `options` to, each once its options are built. FCS keeps one builder per project and
+/// framework, so a build read here and the one its project answers from coexist.
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
 let private referencedBuilds (state: FSharpWorkspaceState) (options: FSharpProjectOptions) : FSharpProjectGraph.ReferencedBuild list =
     lookup state.Projects options.ProjectFileName
     |> Option.bind (fun entry -> frameworkOf entry options |> Option.bind (valueAt entry.Resolved))
@@ -87,14 +87,11 @@ let private referencedBuilds (state: FSharpWorkspaceState) (options: FSharpProje
         |> Option.bind (fun referenced -> valueAt referenced.ByFramework reference.Framework)
         |> Option.map (fun build -> { Reference = reference.Assembly; Options = build }))
 
-/// A loaded project's current options, and a project's F# references.
-let private graphOf (state: FSharpWorkspaceState) =
-    lookup state.Projects >> Option.map _.Options, lookup state.References >> Option.defaultValue []
-
 /// `options` with the loaded F# projects it references wired in, in memory.
 /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
 let internal wired (state: FSharpWorkspaceState) (options: FSharpProjectOptions) =
-    let current, referencesOf = graphOf state
+    let current = lookup state.Projects >> Option.map _.Options
+    let referencesOf = lookup state.References >> Option.defaultValue []
     FSharpProjectGraph.wireAll current referencesOf (referencedBuilds state) options
 
 /// Build, once, each build of a loaded F# project that MSBuild resolved `entry`'s project
@@ -163,22 +160,21 @@ let rec private readsInMemory (project: string) (options: FSharpProjectOptions) 
         | _ -> false)
 
 /// The projects a project-wide query anchored on `filePath` spans: the project that
-/// compiles it, then every loaded project that reads its CURRENT options in memory — a
-/// reference that project's options do not carry. A multi-targeted reader, which reads
-/// the build MSBuild picked, is not searched: searching every one of them made each code
-/// lens on FsToolkit's core library take 14–20 s instead of under 3 s, and the sidecar
-/// answers nothing else meanwhile. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+/// compiles it, then every loaded project that reads that one IN MEMORY — through
+/// whichever build of it MSBuild picked — which sees its current source. A project still
+/// reading it as a DLL — its build could not be produced — sees it as last built, and
+/// checking every project of a large solution on every request stalled the whole server.
+/// The first query checks each reader once; the checker keeps every builder, so the next
+/// re-checks nothing. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
 let internal queryScope (state: FSharpWorkspaceState) (filePath: string) : FSharpProjectOptions list =
     match optionsFor state filePath with
     | None -> []
     | Some own ->
-        let current, referencesOf = graphOf state
+        let reads (options: FSharpProjectOptions) =
+            not (SharpLsp.Sidecar.Common.NativePaths.AreEqual(options.ProjectFileName, own.ProjectFileName))
+            && readsInMemory own.ProjectFileName options
 
-        let readsCurrent (entry: FSharpDesignTime.FSharpProjectEntry) =
-            not (SharpLsp.Sidecar.Common.NativePaths.AreEqual(entry.Options.ProjectFileName, own.ProjectFileName))
-            && readsInMemory own.ProjectFileName (FSharpProjectGraph.wire current referencesOf entry.Options)
-
-        own :: (state.Projects.Values |> Seq.filter readsCurrent |> Seq.map (fun entry -> wired state entry.Options) |> List.ofSeq)
+        own :: (state.Projects.Values |> Seq.map (fun entry -> wired state entry.Options) |> Seq.filter reads |> List.ofSeq)
 
 /// Every source file of the scope anchored on `filePath`, each once: what references and
 /// rename walk ([REFERENCES-FSHARP-FIND]).
@@ -193,17 +189,27 @@ let internal anchorOf (state: FSharpWorkspaceState) (symbol: FSharpSymbol) (used
     |> Option.filter (fun declared -> (projectOf state declared).IsSome)
     |> Option.defaultValue usedIn
 
-/// Record the editor's in-memory buffer and invalidate the corresponding FCS file.
+/// Every build of the project that compiles `filePath`, wired: the one it answers from and
+/// each framework's, since another project may read a build it does not answer from.
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
+let private buildsCompiling (state: FSharpWorkspaceState) (filePath: string) =
+    let byFramework =
+        projectOf state filePath
+        |> Option.map (fun entry -> entry.ByFramework.Values |> Seq.map (wired state) |> List.ofSeq)
+        |> Option.defaultValue []
+
+    Option.toList (optionsFor state filePath) @ byFramework
+
+/// Record the editor's in-memory buffer and invalidate the file in every build that
+/// compiles it.
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
     let normalizedPath = FSharpWorkspaceRuntime.overlayKey filePath
     state.Overlays[normalizedPath] <- newText
 
-    match optionsFor state normalizedPath with
-    | Some options ->
+    for options in buildsCompiling state normalizedPath do
         match FSharpWorkspaceRuntime.tryProjectSourcePath options normalizedPath with
         | Some projectPath -> FSharpWorkspaceRuntime.notifyFileChanged state.Checker projectPath options
         | None -> ()
-    | None -> ()
 
 /// Read the live overlay when present, otherwise the source on disk.
 let internal readSource (state: FSharpWorkspaceState) (filePath: string) : string =
