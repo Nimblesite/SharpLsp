@@ -35,6 +35,30 @@ export function windowsFileNameOf(value: string): string {
   return nodePath.win32.basename(value);
 }
 
+/**
+ * The file name of `token`, whichever platform's separators the token uses.
+ *
+ * `path.basename` only knows the HOST's separator, so a Windows-shaped path in
+ * a command line — `"C:\a b\StepTarget.dll"` — came back whole when the
+ * listing was read on Linux, and a process the user named by assembly matched
+ * nothing. A command line is text from another process, not a host path: it can
+ * carry either separator wherever it is read. [SHARPLSP-ARCHITECTURE-PATHS]
+ */
+export function portableFileNameOf(token: string): string {
+  const cut = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
+  return cut === -1 ? token : token.slice(cut + 1);
+}
+
+/** True when two file names are the same name in any case. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function sameFileName(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
+/** The file name of the `stem` executable on this platform. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function executableName(stem: string): string {
+  return process.platform === 'win32' ? `${stem}.exe` : stem;
+}
+
 /** The extension of `value` including its dot, or `''`. [SHARPLSP-ARCHITECTURE-PATHS] */
 export function extensionOf(value: string): string {
   return nodePath.extname(value);

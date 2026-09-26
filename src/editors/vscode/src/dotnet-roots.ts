@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import { joinPath } from './paths';
+import { executableName, joinPath } from './paths';
 import { type SdkPin, installedSdkVersions, pinSatisfiedBy } from './global-json.js';
 
 /**
@@ -22,7 +22,7 @@ import { type SdkPin, installedSdkVersions, pinSatisfiedBy } from './global-json
 
 /** The `dotnet` executable inside a root directory. */
 export function dotnetExecutable(root: string): string {
-  return joinPath(root, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet');
+  return joinPath(root, executableName('dotnet'));
 }
 
 /** A non-empty environment value, or nothing. */
