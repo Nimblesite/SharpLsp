@@ -1,5 +1,6 @@
 use super::profiler_full_stack::{
     build_profile_target, start_profiler_session, stop_profile_target,
+    PROFILE_TARGET_PARENT_PID_ENV,
 };
 use super::*;
 
@@ -216,7 +217,8 @@ fn test_profiler_edge_profile_target_dies_when_parent_killed() {
     let mut parent = Command::new("sh")
         .arg("-c")
         .arg(format!(
-            "{} >/dev/null 2>&1 & echo $!; wait",
+            "{}=$$ {} >/dev/null 2>&1 & echo $!; wait",
+            PROFILE_TARGET_PARENT_PID_ENV,
             binary.display()
         ))
         .stdout(Stdio::piped())
@@ -260,6 +262,8 @@ fn test_profiler_edge_profile_target_dies_when_parent_killed() {
         "ProfileTarget (PID {child_pid}) should be running before its parent is killed"
     );
 
+    // [PROFILER-SESSIONS-LIFECYCLE] Keep the creator PID even if a subreaper
+    // adopts the target before its watchdog starts.
     // Simulate the abnormal death of the test process: SIGKILL the intermediary
     // WITHOUT touching ProfileTarget. Drop-based cleanup cannot run on this path.
     let _ = parent.kill();
