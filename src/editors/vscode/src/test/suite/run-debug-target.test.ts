@@ -26,6 +26,9 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { chosenFramework } from '../../launch-framework-run';
+import type { ProjectTarget } from '../../launch-resolver';
+import { joinPath } from '../../paths';
 import {
   LANGS,
   Quiet,
@@ -41,6 +44,7 @@ import {
   clearFocus,
 } from './run-debug-target-kit';
 import { createSolution } from './dotnet-project-kit';
+import { writeCSharpConsole, writeFSharpConsole } from './run-debug-fixtures';
 import {
   CMD_DEBUG_PROGRAM,
   DebugSessionRecorder,
@@ -81,6 +85,39 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
     tasks.dispose();
     await closeAllEditors();
     removeDirRecursive(tmpDir);
+  });
+
+  test('an explicit project does not borrow the focused project framework when paths differ by case', async function () {
+    if (process.platform !== 'linux') this.skip();
+    for (const write of [writeCSharpConsole, writeFSharpConsole]) {
+      const properties = { TargetFrameworks: 'net8.0;net10.0' };
+      const selected = write(joinPath(tmpDir, 'App'), 'CaseApp', { properties });
+      const focused = write(joinPath(tmpDir, 'app'), 'CaseApp', { properties });
+      assert.ok(fs.existsSync(selected.projectFile), 'the selected project exists');
+      assert.ok(fs.existsSync(focused.projectFile), 'the focused project exists');
+      const target: ProjectTarget = {
+        kind: 'project',
+        projectFile: selected.projectFile,
+        program: joinPath(selected.dir, 'bin', 'Debug', 'net8.0', 'CaseApp.dll'),
+        cwd: selected.dir,
+      };
+      const frameworks = ['net8.0', 'net10.0'];
+      const fromOther = await chosenFramework(target, frameworks, focused.sourceFile, async () => ({
+        project: focused.projectFile,
+        active: 'net10.0',
+      }));
+      assert.strictEqual(fromOther, 'net8.0', 'the explicit target keeps its default framework');
+      const fromSelected = await chosenFramework(
+        target,
+        frameworks,
+        selected.sourceFile,
+        async () => ({
+          project: selected.projectFile,
+          active: 'net10.0',
+        }),
+      );
+      assert.strictEqual(fromSelected, 'net10.0', 'its own active framework still applies');
+    }
   });
 
   // B18, B19 — descend to the only runnable project, then follow the focus.
