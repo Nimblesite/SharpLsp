@@ -278,7 +278,7 @@ _build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
 	@$(MAKE) _verify-staged-vsix-payload
-	cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
+	cd $(VSCODE_DIR) && SHARPLSP_VSIX_STAGED=1 SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
 		--target $(HOST_PLATFORM) -o ../../../$(DEV_VSIX)
 	rm -rf $(VSCODE_DIR)/bin
 
@@ -314,7 +314,11 @@ _rebuild-vsix-binaries:
 # make -j. This is the DEFAULT path: a local tree's incremental Rust and sidecar
 # output is exactly what makes a VSIX test pass against a binary that no longer
 # matches the source (#279), so nothing here trusts what is already on disk.
-_stage-vsix-binary: _rebuild-vsix-binaries
+# SHARPLSP_VSIX_STAGED is set only by the recipes below that run `vsce package`
+# straight after rebuilding: vsce's `vscode:prepublish` re-enters this target,
+# and without it every VSIX build compiled the host and both sidecars twice. A
+# bare `vsce package` or `npm test` never sets it, so those still rebuild.
+_stage-vsix-binary: $(if $(SHARPLSP_VSIX_STAGED),,_rebuild-vsix-binaries)
 	@$(MAKE) _copy-vsix-binaries
 
 # [DIST-CI-VSIX-SHARDS] Staging what is already on disk, WITHOUT rebuilding.
@@ -948,7 +952,7 @@ _package-vsix: _stage-vsix-binary
 	# vsce/ovsx refuse to PUBLISH with --pre-release unless the VSIX was also
 	# PACKAGED with --pre-release (it sets preRelease=true in the embedded
 	# manifest). A hyphenated SemVer VERSION (e.g. 0.2.0-rc.1) is a prerelease.
-	cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
+	cd $(VSCODE_DIR) && SHARPLSP_VSIX_STAGED=1 SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
 		$(if $(findstring -,$(VERSION)),--pre-release,) \
 		--target $(VSIX_PLAT) \
 		-o ../../../dist/sharplsp-$(VSIX_PLAT).vsix
