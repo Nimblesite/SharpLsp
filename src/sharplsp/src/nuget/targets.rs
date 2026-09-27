@@ -73,6 +73,15 @@ pub fn enumerate_targets(workspace_root: &str) -> Result<TargetsResponse> {
     })
 }
 
+/// Enumerate the install targets of the open solution, whose project files are
+/// `solution_projects`.
+pub fn enumerate_solution_targets(
+    workspace_root: &str,
+    _solution_projects: &[String],
+) -> Result<TargetsResponse> {
+    enumerate_targets(workspace_root)
+}
+
 /// Recursive workspace walker (bounded depth + skip-list).
 fn walk(
     root: &Path,
@@ -299,5 +308,70 @@ mod tests {
         let resp = enumerate_targets(td.path().to_str().unwrap()).unwrap();
         assert!(resp.targets.is_empty());
         assert!(resp.default_target_id.is_none());
+    }
+
+    fn abs(root: &Path, parts: &[&str]) -> String {
+        parts
+            .iter()
+            .fold(root.to_path_buf(), |dir, part| dir.join(part))
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// An NLog-shaped repo: the solution names two projects, while `examples/`
+    /// holds projects (and their own props) that belong to no solution.
+    /// Implements [NUGET-REQUESTS-TARGET-ENUMERATE].
+    #[test]
+    fn solution_targets_are_its_projects_and_the_props_msbuild_imports_for_them() {
+        let td = TempDir::new().unwrap();
+        let root = td.path();
+        let cpm = "<Project><PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup></Project>";
+        write(root, "Directory.Build.props", "<Project/>");
+        write(root, "Directory.Packages.props", cpm);
+        write(root, "src/NLog/NLog.csproj", "<Project/>");
+        write(root, "tests/Directory.Build.props", "<Project/>");
+        write(root, "tests/NLog.Tests/NLog.Tests.fsproj", "<Project/>");
+        write(root, "examples/Directory.Build.props", "<Project/>");
+        write(root, "examples/AppB/AppB.csproj", "<Project/>");
+        let lib = abs(root, &["src", "NLog", "NLog.csproj"]);
+        let tests = abs(root, &["tests", "NLog.Tests", "NLog.Tests.fsproj"]);
+        let root_build = abs(root, &["Directory.Build.props"]);
+        let tests_build = abs(root, &["tests", "Directory.Build.props"]);
+        let root_packages = abs(root, &["Directory.Packages.props"]);
+
+        let resp =
+            enumerate_solution_targets(root.to_str().unwrap(), &[tests.clone(), lib.clone()])
+                .unwrap();
+
+        let paths: Vec<&str> = resp.targets.iter().map(|t| t.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                tests.as_str(),
+                lib.as_str(),
+                root_build.as_str(),
+                tests_build.as_str(),
+                root_packages.as_str()
+            ],
+            "only the solution's projects and the props MSBuild imports for them"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("examples")),
+            "projects and props outside the solution are never offered"
+        );
+        let languages: Vec<_> = resp.targets.iter().map(|t| t.language).collect();
+        assert_eq!(
+            languages,
+            vec![
+                Some(TargetLanguage::FSharp),
+                Some(TargetLanguage::CSharp),
+                None,
+                None,
+                None
+            ]
+        );
+        assert_eq!(resp.default_target_id.as_deref(), Some(tests.as_str()));
+        assert!(resp.cpm_enabled, "CPM read from the solution's packages props");
+        assert_eq!(resp.cpm_file.as_deref(), Some(root_packages.as_str()));
     }
 }
