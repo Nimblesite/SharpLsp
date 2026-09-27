@@ -8,7 +8,7 @@ SharpLsp debugging MUST use redistributable open-source components, work through
 
 ### Phase Four Adapter `[DEBUG-ADAPTER-NETCOREDBG]`
 
-Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. SharpLsp ships the upstream release archive unmodified and never compiles or patches the debugger ([DIST-DEBUGGER-BUNDLE]). Upstream's DAP protocol has no request that applies hot-reload deltas (upstream issue #220); every unknown command answers `E_NOTIMPL`. Phase Five replaces it with the native SharpLsp Debug Sidecar in [DEBUG-ARCHITECTURE-SIDECAR].
+Phase Four uses the MIT-licensed netcoredbg adapter over DAP `1.71.0` on stdin/stdout, as released by SharpLsp's fork `Nimblesite/netcoredbg` (`3.2.0-1092-sharplsp.1`: upstream `3.2.0-1092` plus branch `sharplsp/dap-hot-reload`). The fork adds the `applyDeltas` request that upstream's DAP protocol lacks (upstream issue #220) and lets a step from a frame without sequence points fall back to the simple stepper; both changes are offered upstream (`tools/netcoredbg/UPSTREAM-ISSUE.md`) and the fork retires when a pinned upstream release carries them. SharpLsp downloads the fork's release archive and never compiles the debugger ([DIST-DEBUGGER-BUNDLE]). Every unknown command answers `E_NOTIMPL`. Phase Five replaces it with the native SharpLsp Debug Sidecar in [DEBUG-ARCHITECTURE-SIDECAR].
 
 ### netcoredbg Gaps `[DEBUG-ADAPTER-GAPS]`
 
@@ -29,7 +29,7 @@ Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.
 | C# 12 primary constructor params not inspectable | Compiler-generated fields not mapped back to source syntax | Issue #203 |
 | `Nullable<T>` expansion broken | `Nullable<Guid>` and similar value types cannot be expanded in debugger | Issue #213 |
 
-SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream. SharpLsp MUST NOT carry a netcoredbg patch or source build to close a gap: fixes go upstream, and the gap stays documented until a pinned upstream release closes it.
+SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream. SharpLsp MUST NOT patch or compile netcoredbg in its own tree: a fix lands as a reviewed commit on the `Nimblesite/netcoredbg` fork, is built and released by that repository's own workflow, is offered upstream, and the gap stays documented until a pinned release closes it.
 
 ## Architecture `[DEBUG-ARCHITECTURE]`
 
@@ -50,8 +50,8 @@ Target `DapRouter` responsibilities:
 
 ### netcoredbg Integration (Phase Four) `[DEBUG-ARCHITECTURE-NETCOREDBG]`
 
-- **Distribution**: [`debug.ts`](../../src/editors/vscode/src/debug.ts) resolves a configured path, the bundled upstream platform archive, a standard user install, or `PATH`
-- **Version pinning**: [`tools/netcoredbg/netcoredbg.lock.json`](../../tools/netcoredbg/netcoredbg.lock.json) pins the upstream release `3.2.0-1092` and each platform archive's SHA-256; upgrades require the debug end-to-end suite
+- **Distribution**: [`debug.ts`](../../src/editors/vscode/src/debug.ts) resolves a configured path, the bundled platform archive from the fork release, a standard user install, or `PATH`
+- **Version pinning**: [`tools/netcoredbg/netcoredbg.lock.json`](../../tools/netcoredbg/netcoredbg.lock.json) pins the fork release `3.2.0-1092-sharplsp.1` and each platform archive's SHA-256; upgrades require the debug end-to-end suite
 - **Transport**: DAP over stdin/stdout; DapRouter opens the child process and pipes JSON-RPC
 - **Launch modes**:
   - `launch`: spawn a new .NET process
@@ -790,7 +790,7 @@ For `MailboxProcessor<'Msg>`, SharpLsp exposes:
 
 | Dependency | Version | License | Use |
 |---|---|---|---|
-| [netcoredbg](https://github.com/Samsung/netcoredbg) | 3.2.0-1092 | MIT | Phase 4 debug adapter |
+| [netcoredbg](https://github.com/Samsung/netcoredbg) via the [Nimblesite fork](https://github.com/Nimblesite/netcoredbg) | 3.2.0-1092-sharplsp.1 | MIT | Phase 4 debug adapter |
 | [ClrDebug](https://github.com/lordmilko/ClrDebug) | 0.3.4+ | MIT | Phase 5 managed ICorDebug wrapper |
 | [Microsoft.Diagnostics.DbgShim](https://www.nuget.org/packages/Microsoft.Diagnostics.DbgShim) | 9.0.661903+ | MIT | DbgShim for runtime discovery |
 | [Microsoft.Diagnostics.NETCore.Client](https://www.nuget.org/packages/Microsoft.Diagnostics.NETCore.Client) | 9.0.661903+ | MIT | EventPipe / diagnostics IPC |

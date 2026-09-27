@@ -30,9 +30,13 @@ which this file satisfies.
   platform at `bin/<platform>/netcoredbg/` and launched by the
   `sharplsp-coreclr` debug adapter factory (`src/editors/vscode/src/debug.ts`).
 - **Upstream:** https://github.com/Samsung/netcoredbg
-- **Pinned version:** `3.2.0-1092` (`9744e1f051866215611b8440c638042aa2aa2f72`),
-  the upstream release archives redistributed unmodified and SHA-256-pinned in
-  `tools/netcoredbg/netcoredbg.lock.json`. SharpLsp never compiles or patches it.
+- **Pinned version:** `3.2.0-1092-sharplsp.1`, a release of SharpLsp's fork
+  https://github.com/Nimblesite/netcoredbg: upstream `3.2.0-1092`
+  (`9744e1f051866215611b8440c638042aa2aa2f72`) plus two patches on branch
+  `sharplsp/dap-hot-reload` (an `applyDeltas` DAP request for hot reload, and
+  stepping from a frame without symbols), both offered upstream. The fork's
+  release archives are SHA-256-pinned in `tools/netcoredbg/netcoredbg.lock.json`
+  and downloaded as published; SharpLsp itself never compiles the debugger.
 - **License:** MIT — **© 2017 Samsung Electronics Co., LTD** (verified against
   https://raw.githubusercontent.com/Samsung/netcoredbg/master/LICENSE).
 - **Platform coverage:** upstream publishes `win32-x64`, `linux-x64`,

@@ -267,16 +267,15 @@ open and are called out as such, because nothing implements them.
       `debug-adapter-e2e.test.ts` *a configured netcoredbgPath outranks bundled, user-installed
       and PATH copies* / *the candidate list is ordered, pure, and only its head depends on
       extensionPath*
-- [x] ~~Build netcoredbg from source for `osx-arm64`~~ — **unnecessary.** Upstream 3.2.0-1092
-      ships `netcoredbg-osx-arm64.zip`; it is fetched like every other prebuilt
-      (`tools/vsix/fetch-netcoredbg.sh:28`). The plan's premise that Samsung ships no ARM64 macOS binary is
-      out of date.
+- [ ] `darwin-arm64` and `linux-arm64` archives of the fork release `3.2.0-1092-sharplsp.1`:
+      published by the fork's `Build release` workflow (macOS and ARM runners), then pinned in
+      `tools/netcoredbg/netcoredbg.lock.json` like the two x64 archives already are.
 - [ ] `win-arm64` and `osx-x64` coverage — needs a source build; both currently degrade to the
       PATH fallback
 - [ ] Add SharpLsp CI job: build netcoredbg for Alpine/musl (`linux-musl-x64`,
       `linux-musl-arm64`) with patched stack size pre-reservation to work around
       dotnet/runtime#103741
-- [x] Version-pin netcoredbg `3.2.0-1092` in `tools/vsix/fetch-netcoredbg.sh`; [DEBUG-ADAPTER-NETCOREDBG] documents that an upgrade requires the debug end-to-end suite
+- [x] Version-pin the netcoredbg fork release in `tools/netcoredbg/netcoredbg.lock.json`; [DEBUG-ADAPTER-NETCOREDBG] documents that an upgrade requires the debug end-to-end suite
 - [ ] Implement first-run auto-download if bundled binary absent (SHA-256 hash verification mandatory)
 - [ ] Add `sharplsp/debugAdapterStatus` notification for download progress display
 
@@ -496,11 +495,10 @@ open and are called out as such, because nothing implements them.
 
 ### 4.9 Hot Reload
 
-**Blocked on the adapter.** SharpLsp now ships the upstream netcoredbg release
-unmodified and never builds it ([DIST-DEBUGGER-BUNDLE]); upstream's DAP protocol
-has no delta request (issue #220), so `applyDeltas` answers `E_NOTIMPL` and no
-delta reaches the debuggee. Everything up to delivery still works.
-`dap-hot-reload.ts` owns the save-to-Roslyn-to-runtime pipeline for
+**Working through the fork release.** SharpLsp ships the `Nimblesite/netcoredbg`
+release, downloaded and never built here ([DIST-DEBUGGER-BUNDLE]); the fork adds
+the `applyDeltas` DAP request that upstream lacks (issue #220), and the request
+is offered upstream from the fork branch. `dap-hot-reload.ts` owns the save-to-Roslyn-to-runtime pipeline for
 one DAP session: a `hotReload: true` launch sets `DOTNET_MODIFIABLE_ASSEMBLIES`,
 the first stop reads the debuggee's `MetadataUpdater.GetCapabilities()`, the C#
 sidecar (`HotReloadSessionRegistry` + `HotReloadSession`, reached through the
@@ -509,9 +507,9 @@ host's `sharplsp/hotReload` -> `debug/hotReload` pass-through) holds a Roslyn
 LIVE debuggee through netcoredbg's `applyDeltas` request. Verdicts are honest:
 `applied` (deltas), `restartRequired` (rude edit, named ENC diagnostics),
 `notCompilable` (compiler errors, named, baseline untouched). The three
-`debug-hot-reload-e2e.test.ts` cases passed only against the old patched
-adapter; `hot-reload.ts` (the
-`dotnet watch` terminal) remains the separate non-debug flow.
+`debug-hot-reload-e2e.test.ts` cases run against the fork release in CI;
+`hot-reload.ts` (the `dotnet watch` terminal) remains the separate non-debug
+flow.
 
 - [x] `sharplsp/hotReload` LSP request routed host-side to the C# sidecar
       (`src/sharplsp/src/hot_reload.rs`, wire-contract tests included)
@@ -524,10 +522,11 @@ adapter; `hot-reload.ts` (the
       diagnostics and the spec-pinned signature-change refusal; tested by
       `HotReloadSessionRegistryTests` against a real built project, including a
       runtime `MetadataUpdater.ApplyUpdate` verification of the emitted delta
-- [ ] Deltas delivered to the target process through the UNMODIFIED upstream
-      adapter: the patched `applyDeltas` request is gone with the source build;
-      [DEBUG-FEATURES-HOT-RELOAD] step 3's `evaluate` injection, or an upstream
-      DAP delta request (netcoredbg #220), is the remaining route
+- [x] Deltas delivered to the target process through the fork release's
+      `applyDeltas` request (`Nimblesite/netcoredbg`, branch
+      `sharplsp/dap-hot-reload`, covered there by `VSCodeTestHotReload`)
+- [ ] Retire the fork once upstream ships a DAP delta request (netcoredbg #220)
+      and the symbol-less stepping fix (`tools/netcoredbg/UPSTREAM-ISSUE.md`)
 - [x] Result surfaced to the editor: applied silently, rude edits warn once
       with the named reason and a restart prompt, non-compiling saves wait —
       `debug-hot-reload-e2e.test.ts` *a rude edit is refused with a named
@@ -894,10 +893,10 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 ## Continuous: Upstream Contributions
 
 - [ ] Samsung/netcoredbg: contribute logpoint native implementation (Phase 4 emulation algorithm documented for upstream adoption)
-- [x] ~~Samsung/netcoredbg: contribute macOS ARM64 CI and official binary release~~ — no
-      longer needed: upstream 3.2.0-1092 publishes `netcoredbg-osx-arm64.zip`, which
-      `tools/vsix/fetch-netcoredbg.sh:28` fetches like any other prebuilt. `win32-arm64`
-      and `darwin-x64` are the two that still have none.
+- [ ] Samsung/netcoredbg: offer the fork's two patches upstream (`applyDeltas` on #220, the
+      symbol-less stepping fix from `tools/netcoredbg/UPSTREAM-ISSUE.md`) and retire the fork
+      once a pinned upstream release carries them. `win32-arm64` and `darwin-x64` still have
+      no build anywhere.
 - [ ] Samsung/netcoredbg: contribute musl/Alpine stack size workaround + dotnet/runtime#103741 upstreaming
 - [ ] Samsung/netcoredbg: contribute async stack reconstruction from [DEBUG-FEATURES-STACK-ASYNC](../specs/DEBUGGING-SPEC.md)
 - [ ] Samsung/netcoredbg: track and test fix for attach reliability issue #205

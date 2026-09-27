@@ -1,35 +1,33 @@
 {
   "_comment": [
     "[DIST-DEBUGGER-BUNDLE] The single source of truth for which netcoredbg",
-    "SharpLsp ships: the latest stable Samsung/netcoredbg release, downloaded",
-    "as published. SharpLsp never compiles the debugger - not locally, not in",
-    "CI, not in a release. Every path goes through tools/netcoredbg/provide.mjs.",
+    "SharpLsp ships: a release of SharpLsp's fork, Nimblesite/netcoredbg, which",
+    "is upstream Samsung/netcoredbg plus the SharpLsp patches on branch",
+    "sharplsp/dap-hot-reload (the applyDeltas DAP request for hot reload, and",
+    "stepping from a frame without symbols). The fork's own `Build release`",
+    "workflow compiles it; SharpLsp never does - not locally, not in CI, not in",
+    "a release. Every path goes through tools/netcoredbg/provide.mjs.",
     "",
     "CHAIN OF CUSTODY. `platforms` pins a URL and a SHA-256 per platform.",
     "provide.mjs downloads the URL, hashes the bytes, and REFUSES to continue on",
     "a mismatch. A supported platform with no pin is a hard error.",
     "",
-    "TO BUMP: point `release` at the new upstream tag and replace every URL and",
-    "SHA-256 with that release's (GitHub lists each asset's digest:",
-    "`gh release view <tag> --repo Samsung/netcoredbg --json assets`)."
+    "TO BUMP: tag the fork branch, let `Build release` publish the archives, then",
+    "point `release` at the new tag and replace every URL and SHA-256 with that",
+    "release's (`gh release view <tag> --repo Nimblesite/netcoredbg --json assets`).",
+    "",
+    "linux-arm64 and darwin-arm64 are unpinned until the fork's `Build release`",
+    "workflow publishes their archives for this tag."
   ],
-  "release": "3.2.0-1092",
+  "release": "3.2.0-1092-sharplsp.1",
   "platforms": {
     "linux-x64": {
-      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-linux-amd64.tar.gz",
-      "sha256": "080eb3b2d2152465f599d3b33d1ee6e747794e11cc0a3773ec689f5e5f2c5afa"
-    },
-    "linux-arm64": {
-      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-linux-arm64.tar.gz",
-      "sha256": "065ff49badec8a695dbea2de6ab6a330c774a191e426a217ab8cc05250627ccb"
-    },
-    "darwin-arm64": {
-      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-osx-arm64.zip",
-      "sha256": "f4fa33b3ff874910cc184b4bb3b9c56d0abdf5c6521cee0b144d7c6e4a6e59ea"
+      "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-linux-x64.tar.gz",
+      "sha256": "819a82b59a5c77158844f964553cfa58fb73bebdab812d99b066d66d635c2aa1"
     },
     "win32-x64": {
-      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-win64.zip",
-      "sha256": "3c410a45fa502415203a94fcb88654af65bf8e3dac158a5527a722e7a6b9274a"
+      "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-win32-x64.tar.gz",
+      "sha256": "a3bf7bcd5e5c74980ec686f79d02a7f3fe8d6a6dd74a2da55923c24f385dd753"
     }
   }
 }

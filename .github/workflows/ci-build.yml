@@ -83,8 +83,8 @@ jobs:
   build-macos:
     name: macOS debugger check
     # [DIST-CI-SMOKE] [DIST-DEBUGGER-BUNDLE] Linux/Windows cannot run the macOS
-    # debugger the release ships, so fetch the pinned upstream archive here and
-    # run it. The debugger is downloaded, never compiled.
+    # debugger the release ships, so fetch the pinned fork release archive here
+    # and run it. The debugger is downloaded, never compiled.
     runs-on: macos-15
     timeout-minutes: 10
     steps:

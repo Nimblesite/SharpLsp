@@ -1052,12 +1052,15 @@ EXTENSION_ID = $(shell node -e "const p=require('./$(VSCODE_DIR)/package.json');
 
 # The per-OS half of the install loop: where the VS Code CLI lives, and how stale
 # servers die. Everything else in the loop is shared. [DIST-VSIX-DEV-INSTALL]
-ifeq ($(DETECTED_OS),windows)
-# Git Bash: `code` is a .cmd shim that may not be on PATH, so probe the default
-# per-user and machine-wide install locations too.
+# One candidate list for every OS: probing a candidate that does not exist on
+# this platform is a silent `command -v` miss, and the reinstall-loop contract
+# (`code` AND the Git Bash `code.cmd` shim are probed, plus the default
+# per-user, machine-wide and macOS app locations) holds everywhere.
 CODE_CANDIDATES = code code.cmd \
 	"$$LOCALAPPDATA/Programs/Microsoft VS Code/bin/code.cmd" \
-	"/c/Program Files/Microsoft VS Code/bin/code.cmd"
+	"/c/Program Files/Microsoft VS Code/bin/code.cmd" \
+	"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+ifeq ($(DETECTED_OS),windows)
 # Git Bash ships no pkill, so kill by image name: the installed VSIX names its
 # sidecars `sharplsp-sidecar-*`, a local build `SharpLsp.Sidecar.*`. A survivor
 # locks its own .exe and fails the clean after it.
@@ -1066,8 +1069,6 @@ KILL_SHARPLSP = for image in sharplsp.exe \
 	SharpLsp.Sidecar.CSharp.exe SharpLsp.Sidecar.FSharp.exe; do \
 	taskkill //F //T //IM "$$image" >/dev/null 2>&1 || true; done
 else
-CODE_CANDIDATES = code \
-	"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
 KILL_SHARPLSP = pkill -9 -f 'sharplsp' 2>/dev/null || true; \
 	pkill -9 -f 'SharpLsp\.Sidecar\.' 2>/dev/null || true
 endif

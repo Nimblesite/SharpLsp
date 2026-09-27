@@ -242,7 +242,7 @@ function missingProgram(config: vscode.DebugConfiguration): string {
 function refusedLaunch(debuggee: Debuggee): string {
   return (
     `vscode.debug.startDebugging refused to launch ${debuggee.fixture.assemblyName}. ` +
-    '[DEBUG-ARCHITECTURE-NETCOREDBG] requires the VSIX to bundle a netcoredbg 3.2.0-1092 for ' +
+    '[DEBUG-ARCHITECTURE-NETCOREDBG] requires the VSIX to bundle the pinned netcoredbg fork release for ' +
     'every platform in its matrix and [DEBUG-ADAPTER-NETCOREDBG] makes it the Phase Four ' +
     'adapter, so a refusal here means the shipped extension cannot debug at all on this host. ' +
     `Adapter errors seen: ${JSON.stringify(debuggee.recorder.errors)}`

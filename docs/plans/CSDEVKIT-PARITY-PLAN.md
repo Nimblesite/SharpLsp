@@ -161,7 +161,7 @@ exists and a test names the behaviour but that test is red.
 | F# debugging (breakpoints, stepping, exceptions) | Partial | Yes | **DONE** — `[DEBUG-FSHARP-STEPPING]`, chunk `debug-fsharp` |
 | F# DU / list / record rendering in F# syntax | No | No | **MISSING** — specified by `debug-fsharp-inspection-e2e`, no implementation |
 | Debug a unit test | Yes | No | **MISSING** — the Debug profile opens a `dotnet test` terminal; no attach |
-| Hot Reload | Yes | Yes | **BLOCKED** — `dap-hot-reload.ts` + C# sidecar Roslyn EnC deltas work, but the upstream netcoredbg SharpLsp now ships unmodified has no DAP delta request (#220); see DEBUGGING-PLAN §4.9 |
+| Hot Reload | Yes | Yes | ✅ `dap-hot-reload.ts` + C# sidecar Roslyn EnC deltas, delivered through the `applyDeltas` request of the `Nimblesite/netcoredbg` fork release (offered upstream as #220); see DEBUGGING-PLAN §4.9 |
 
 ### NuGet Package Management
 

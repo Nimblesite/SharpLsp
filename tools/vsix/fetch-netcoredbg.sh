@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Stage the pinned upstream netcoredbg into the VS Code extension.
+# Stage the pinned netcoredbg fork release into the VS Code extension.
 # Implements [DIST-DEBUGGER-BUNDLE].
 #
 # This script does NOT decide how the adapter is obtained. That is
-# tools/netcoredbg/provide.mjs, which downloads the SHA-256-pinned upstream
-# release named in netcoredbg.lock.json. The debugger is never compiled.
+# tools/netcoredbg/provide.mjs, which downloads the SHA-256-pinned release of
+# the Nimblesite/netcoredbg fork named in netcoredbg.lock.json. The debugger is
+# never compiled here.
 #
 # netcoredbg is MIT-licensed (© 2017 Samsung Electronics Co., LTD) — attribution
 # is in THIRD-PARTY-NOTICES.md. Platforms upstream publishes no build for

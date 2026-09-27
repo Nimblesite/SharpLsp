@@ -1,8 +1,8 @@
-// [DIST-DEBUGGER-BUNDLE] End-to-end tests for how SharpLsp obtains the upstream
+// [DIST-DEBUGGER-BUNDLE] End-to-end tests for how SharpLsp obtains the
 // netcoredbg debug adapter. Run by `make _test-tooling`.
 //
 // The adapter is the process users attach to their own code with. SharpLsp never
-// compiles it: provide.mjs must DOWNLOAD the pinned Samsung/netcoredbg release,
+// compiles it: provide.mjs must DOWNLOAD the pinned Nimblesite/netcoredbg release,
 // must verify the bytes it actually received, and must REFUSE when the digest
 // does not match or a supported platform has no pin. There is no source build to
 // fall back to, and nothing in the repo may reintroduce one.
@@ -219,17 +219,17 @@ test('a digest mismatch REFUSES, and does not fall back to a source build', asyn
     );
 });
 
-test('the lock file pins every supported platform to the upstream release', () => {
+test('the lock file pins every supported platform to the fork release', () => {
     const lock = JSON.parse(readFileSync(LOCK, 'utf8'));
-    assert.ok(lock.release, 'netcoredbg.lock.json must name the upstream release');
+    assert.ok(lock.release, 'netcoredbg.lock.json must name the fork release');
     for (const field of ['netcoredbgCommit', 'coreclrCommit', 'patchVersion']) {
         assert.equal(lock[field], undefined, `${field} described a source build, which no longer exists`);
     }
-    const prefix = `https://github.com/Samsung/netcoredbg/releases/download/${lock.release}/`;
+    const prefix = `https://github.com/Nimblesite/netcoredbg/releases/download/${lock.release}/`;
     for (const platform of ['linux-x64', 'linux-arm64', 'darwin-arm64', 'win32-x64']) {
         const pin = lock.platforms[platform];
         assert.ok(pin, `${platform} must be pinned: a supported platform with no pin cannot be provided`);
-        assert.ok(pin.url.startsWith(prefix), `${platform} must download the named upstream release`);
+        assert.equal(pin.url, `${prefix}netcoredbg-${platform}.tar.gz`, `${platform} must download the fork release`);
         assert.match(pin.sha256, /^[0-9a-f]{64}$/, `${platform} must pin a SHA-256 digest`);
     }
 });

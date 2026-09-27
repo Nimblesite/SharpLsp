@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // [DIST-DEBUGGER-BUNDLE] Guarantees that target/netcoredbg/<platform>/netcoredbg
-// holds the upstream Samsung/netcoredbg release SharpLsp ships, and returns
-// without doing any work when it already does.
+// holds the Nimblesite/netcoredbg fork release SharpLsp ships (upstream plus the
+// SharpLsp patches, built by the fork's own workflow), and returns without doing
+// any work when it already does.
 //
 // DOWNLOAD ONLY. SharpLsp never compiles the debugger. The lock file pins a URL
 // and SHA-256 per platform; this downloads it, hashes the bytes it actually
@@ -21,7 +22,7 @@ const ROOT = resolve(HERE, '..', '..');
 const LOCK_PATH = process.env.SHARPLSP_NETCOREDBG_LOCK || join(HERE, 'netcoredbg.lock.json');
 const MARKER_NAME = '.sharplsp-netcoredbg-release';
 
-/** Platforms upstream publishes no build for ([DIST-DEBUGGER-BUNDLE]). */
+/** Platforms the fork release publishes no build for ([DIST-DEBUGGER-BUNDLE]). */
 const UNSUPPORTED = new Set(['win32-arm64', 'darwin-x64']);
 const SUPPORTED = new Set(['linux-x64', 'linux-arm64', 'darwin-arm64', 'win32-x64']);
 
@@ -59,12 +60,11 @@ function run(command, args, label, cwd = ROOT) {
 /** Archive member name used for the staged download, see extract(). */
 const DOWNLOAD_NAME = 'netcoredbg-download';
 
-// Upstream ships .tar.gz for Linux and .zip for macOS and Windows. bsdtar reads
-// both and detects the format itself; it is `tar` on macOS and System32's
-// tar.exe on Windows, where Git Bash's GNU tar would otherwise win on PATH and
-// cannot read a zip. Only the `netcoredbg/` member is extracted, which drops the
-// `__MACOSX/` resource forks the macOS zip carries. A bare relative filename with
-// `cwd` set keeps every argument colon-free: GNU tar reads `C:\...` as host:path.
+// The fork release ships .tar.gz for every platform. bsdtar reads it and detects
+// the format itself; it is `tar` on macOS and System32's tar.exe on Windows,
+// where Git Bash's GNU tar would otherwise win on PATH. Only the `netcoredbg/`
+// member is extracted. A bare relative filename with `cwd` set keeps every
+// argument colon-free: GNU tar reads `C:\...` as host:path.
 function tarCommand() {
     return process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 }
