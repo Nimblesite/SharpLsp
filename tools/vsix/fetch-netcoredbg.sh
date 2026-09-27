@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Stage SharpLsp's patched netcoredbg into the VS Code extension.
+# Stage the pinned upstream netcoredbg into the VS Code extension.
 # Implements [DIST-DEBUGGER-BUNDLE].
 #
 # This script does NOT decide how the adapter is obtained. That is
-# tools/netcoredbg/provide.mjs, which prefers the SHA-256-pinned artifact in
-# netcoredbg.lock.json and only compiles from source when a platform has no
-# pin. Releases must ship the pinned artifact so the bytes users debug with
-# have attested provenance.
+# tools/netcoredbg/provide.mjs, which downloads the SHA-256-pinned upstream
+# release named in netcoredbg.lock.json. The debugger is never compiled.
 #
 # netcoredbg is MIT-licensed (© 2017 Samsung Electronics Co., LTD) — attribution
-# is in THIRD-PARTY-NOTICES.md. Platforms without a configured native build
+# is in THIRD-PARTY-NOTICES.md. Platforms upstream publishes no build for
 # skip cleanly and fall back to PATH / sharplsp.debug.netcoredbgPath.
 set -euo pipefail
 
@@ -22,7 +20,7 @@ case "$PLATFORM" in
   win32-x64) EXE_EXT=".exe" ;;
   linux-x64|linux-arm64|darwin-arm64) EXE_EXT="" ;;
   win32-arm64|darwin-x64)
-    echo "netcoredbg: no patched build for '$PLATFORM' — using configured/PATH fallback" >&2
+    echo "netcoredbg: no upstream build for '$PLATFORM' — using configured/PATH fallback" >&2
     exit 0 ;;
   *)
     echo "netcoredbg: unknown platform '$PLATFORM'" >&2
@@ -30,12 +28,12 @@ case "$PLATFORM" in
 esac
 
 # An adapter is current only when its marker names the build the lock file
-# describes. Existence is not enough: after a patchVersion bump, an adapter
-# built from the previous lock still exists and lacks the new patch.
+# describes. Existence is not enough: after a release bump, an adapter
+# from the previous lock still exists and is the wrong release.
 BUILD_ID="$(node "$ROOT/tools/netcoredbg/read-lock.mjs" buildId)"
 is_current() {
   [ -f "$1/netcoredbg$EXE_EXT" ] &&
-    [ "$(tr -d '\r\n' < "$1/.sharplsp-dap-hot-reload" 2>/dev/null || true)" = "$BUILD_ID" ]
+    [ "$(tr -d '\r\n' < "$1/.sharplsp-netcoredbg-release" 2>/dev/null || true)" = "$BUILD_ID" ]
 }
 
 DEST="$VSCODE_BIN/$PLATFORM"
@@ -45,11 +43,11 @@ if is_current "$DEST/netcoredbg"; then
   exit 0
 fi
 
-# provide.mjs returns at once when target/ already holds this build.
+# provide.mjs returns at once when target/ already holds this release.
 BUILT="$ROOT/target/netcoredbg/$PLATFORM/netcoredbg"
 node "$ROOT/tools/netcoredbg/provide.mjs" "$PLATFORM"
 if ! is_current "$BUILT"; then
-  echo "netcoredbg: patched build $BUILD_ID missing at $BUILT" >&2
+  echo "netcoredbg: release $BUILD_ID missing at $BUILT" >&2
   exit 1
 fi
 
@@ -63,5 +61,5 @@ if [ ! -f "$EXE" ]; then
 fi
 chmod +x "$EXE" 2>/dev/null || true
 
-echo "netcoredbg: staged patched adapter for $PLATFORM -> $EXE"
+echo "netcoredbg: staged release $BUILD_ID for $PLATFORM -> $EXE"
 "$EXE" --version 2>&1 | head -2 || echo "netcoredbg: (binary staged; --version not run)"

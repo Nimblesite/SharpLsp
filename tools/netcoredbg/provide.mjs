@@ -1,22 +1,16 @@
 #!/usr/bin/env node
 // [DIST-DEBUGGER-BUNDLE] Guarantees that target/netcoredbg/<platform>/netcoredbg
-// holds the patched debug adapter SharpLsp ships, and returns without doing any
-// work when it already does.
+// holds the upstream Samsung/netcoredbg release SharpLsp ships, and returns
+// without doing any work when it already does.
 //
-// PREFER THE PINNED ARTIFACT. When netcoredbg.lock.json pins a URL and SHA-256
-// for the platform, this downloads it, hashes the bytes it actually received,
-// and unpacks it only if the digest matches. A mismatch is FATAL: it never
-// falls back to a source build, because falling back would turn a supply-chain
-// alarm into a silent recompile and defeat the pin entirely.
-//
-// SOURCE BUILD IS THE BOOTSTRAP PATH. A platform with no pin is compiled from
-// the commits in the lock file by build-netcoredbg.sh. That is how the pinned
-// archives are produced in the first place (publish-netcoredbg.yml), and how a
-// developer works on the patch. It is reported loudly, because a release built
-// that way has no attested provenance.
+// DOWNLOAD ONLY. SharpLsp never compiles the debugger. The lock file pins a URL
+// and SHA-256 per platform; this downloads it, hashes the bytes it actually
+// received, and unpacks it only if the digest matches. A mismatch, or a
+// supported platform with no pin, is FATAL. Local builds, CI and releases all
+// come through here, so every one of them ships the same bytes.
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,20 +19,20 @@ const ROOT = resolve(HERE, '..', '..');
 // The override exists so the end-to-end test can drive a real download against
 // a real digest without editing the committed pins.
 const LOCK_PATH = process.env.SHARPLSP_NETCOREDBG_LOCK || join(HERE, 'netcoredbg.lock.json');
-const MARKER_NAME = '.sharplsp-dap-hot-reload';
+const MARKER_NAME = '.sharplsp-netcoredbg-release';
 
-/** Platforms with no configured native build ([DIST-DEBUGGER-BUNDLE]). */
+/** Platforms upstream publishes no build for ([DIST-DEBUGGER-BUNDLE]). */
 const UNSUPPORTED = new Set(['win32-arm64', 'darwin-x64']);
 const SUPPORTED = new Set(['linux-x64', 'linux-arm64', 'darwin-arm64', 'win32-x64']);
 
-/** The lock file is the ONLY place these commits are written down. */
+/** The lock file is the ONLY place the release and its digests are written down. */
 export function readLock() {
     return JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
 }
 
-/** Identifies exactly which build an on-disk adapter is, for the marker file. */
+/** Identifies exactly which release an on-disk adapter is, for the marker file. */
 export function buildId(lock) {
-    return `${lock.netcoredbgCommit}:${lock.patchVersion}`;
+    return lock.release;
 }
 
 function outputDir(platform) {
@@ -63,21 +57,24 @@ function run(command, args, label, cwd = ROOT) {
 }
 
 /** Archive member name used for the staged download, see extract(). */
-const DOWNLOAD_NAME = 'netcoredbg-download.tar.gz';
+const DOWNLOAD_NAME = 'netcoredbg-download';
 
-// GNU tar reads an argument containing a colon as `host:path` and tries to reach
-// a remote machine, so a Windows absolute path like C:\... fails with "Cannot
-// connect to C: resolve failed". bsdtar - which is what ships in System32 -
-// accepts those paths but rejects GNU's `--force-local`, so neither an absolute
-// path nor that flag is portable across the two tars a Windows runner may
-// resolve. Extracting with `cwd` set and a bare relative filename keeps every
-// argument colon-free and works on both.
-function extract(destination) {
-    run('tar', ['-xzf', DOWNLOAD_NAME, '--strip-components=1'], 'tar', destination);
+// Upstream ships .tar.gz for Linux and .zip for macOS and Windows. bsdtar reads
+// both and detects the format itself; it is `tar` on macOS and System32's
+// tar.exe on Windows, where Git Bash's GNU tar would otherwise win on PATH and
+// cannot read a zip. Only the `netcoredbg/` member is extracted, which drops the
+// `__MACOSX/` resource forks the macOS zip carries. A bare relative filename with
+// `cwd` set keeps every argument colon-free: GNU tar reads `C:\...` as host:path.
+function tarCommand() {
+    return process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 }
 
-async function downloadPinned(platform, pin, id) {
-    console.log(`netcoredbg: fetching pinned ${platform} adapter\n  ${pin.url}`);
+function extract(destination) {
+    run(tarCommand(), ['-xf', DOWNLOAD_NAME, '--strip-components=1', 'netcoredbg'], 'tar', destination);
+}
+
+async function fetchVerified(platform, pin) {
+    console.log(`netcoredbg: fetching ${platform} adapter\n  ${pin.url}`);
     const response = await fetch(pin.url, { redirect: 'follow' });
     if (!response.ok) {
         throw new Error(`netcoredbg: download failed with HTTP ${response.status} for ${pin.url}`);
@@ -85,7 +82,6 @@ async function downloadPinned(platform, pin, id) {
     const bytes = Buffer.from(await response.arrayBuffer());
     const digest = createHash('sha256').update(bytes).digest('hex');
     if (digest !== pin.sha256) {
-        // Deliberately fatal. See the header: never recompile past a bad digest.
         throw new Error(
             `netcoredbg: SHA-256 MISMATCH for ${platform}\n` +
                 `  expected ${pin.sha256}\n` +
@@ -94,7 +90,11 @@ async function downloadPinned(platform, pin, id) {
                 'Refusing to unpack. Either the pin is stale or the artifact was tampered with.',
         );
     }
+    return { bytes, digest };
+}
 
+async function downloadPinned(platform, pin, id) {
+    const { bytes, digest } = await fetchVerified(platform, pin);
     const destination = outputDir(platform);
     rmSync(destination, { recursive: true, force: true });
     mkdirSync(destination, { recursive: true });
@@ -106,22 +106,14 @@ async function downloadPinned(platform, pin, id) {
     if (!existsSync(executable(platform))) {
         throw new Error(`netcoredbg: archive for ${platform} contained no ${executable(platform)}`);
     }
+    chmodSync(executable(platform), 0o755);
     writeFileSync(join(destination, MARKER_NAME), `${id}\n`);
     console.log(`netcoredbg: verified ${digest} and unpacked to ${destination}`);
 }
 
-function buildFromSource(platform) {
-    console.warn(
-        `netcoredbg: no pinned artifact for '${platform}' in netcoredbg.lock.json - ` +
-            'building from source. A release built this way has NO attested provenance; ' +
-            'run the "Publish netcoredbg" workflow and pin the result.',
-    );
-    run('bash', [join('tools', 'vsix', 'build-netcoredbg.sh'), platform], 'build-netcoredbg.sh');
-}
-
 export async function provide(platform) {
     if (UNSUPPORTED.has(platform)) {
-        console.warn(`netcoredbg: no patched build for '${platform}' - using configured/PATH fallback`);
+        console.warn(`netcoredbg: no upstream build for '${platform}' - using configured/PATH fallback`);
         return false;
     }
     if (!SUPPORTED.has(platform)) throw new Error(`netcoredbg: unknown platform '${platform}'`);
@@ -129,13 +121,13 @@ export async function provide(platform) {
     const lock = readLock();
     const id = buildId(lock);
     if (alreadyProvided(platform, id)) {
-        console.log(`netcoredbg: patched build already available at ${executable(platform)}`);
+        console.log(`netcoredbg: release ${id} already available at ${executable(platform)}`);
         return true;
     }
 
     const pin = lock.platforms?.[platform];
-    if (pin) await downloadPinned(platform, pin, id);
-    else buildFromSource(platform);
+    if (!pin) throw new Error(`netcoredbg: no pinned download for '${platform}' in netcoredbg.lock.json`);
+    await downloadPinned(platform, pin, id);
     return true;
 }
 
