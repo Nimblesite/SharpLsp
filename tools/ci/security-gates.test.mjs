@@ -84,17 +84,17 @@ test("the macOS debugger source build is a required PR gate", () => {
 
     const build = workflow("ci-build");
     const mac = build.jobs["build-macos"];
-    assert.ok(mac, "PR CI must check the macOS debugger build before release");
+    assert.ok(mac, "PR CI must check the macOS debugger before release");
     assert.equal(mac["runs-on"], releaseMac.os);
     assert.ok(
         mac.steps.some((step) =>
-            step.run?.includes("bash tools/vsix/build-netcoredbg.sh darwin-arm64"),
+            step.run?.includes("node tools/netcoredbg/provide.mjs darwin-arm64"),
         ),
-        "PR CI must compile the same patched macOS debugger as release",
+        "PR CI must download the same pinned macOS debugger as release",
     );
     assert.ok(
         mac.steps.some((step) => step.run?.includes("netcoredbg --version")),
-        "the macOS build check must run the binary it produced",
+        "the macOS check must run the binary it downloaded",
     );
     assert.notEqual(mac["continue-on-error"], true);
     assert.ok(ci.jobs.ci.needs.includes("build"));

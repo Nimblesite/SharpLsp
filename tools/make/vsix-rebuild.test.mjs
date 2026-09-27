@@ -2,8 +2,9 @@
 // build, UNLESS it was handed output built by the same CI run ([DIST-CI-VSIX-SHARDS]).
 // Both halves are asserted here: the default path must clean-rebuild everything,
 // and the VSIX_PREBUILT path must skip the rebuild yet still stage - a flag that
-// silently rebuilt would multiply Rust, both sidecars and netcoredbg by the
-// matrix width and add hours to every PR.
+// silently rebuilt would multiply Rust and both sidecars by the matrix width and
+// add hours to every PR. netcoredbg is an external binary: every path downloads
+// the pinned upstream release and none ever compiles it ([DIST-DEBUGGER-BUNDLE]).
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dryRun, stepAt } from "./make-test-kit.mjs";
@@ -27,9 +28,9 @@ for (const target of targets) {
             recipe,
             " publish src/sidecars/SharpLsp.Sidecar.CSharp/",
         );
-        const debuggerBuild = stepAt(
+        const debuggerDownload = stepAt(
             recipe,
-            `build-netcoredbg.sh ${platform} --rebuild`,
+            `fetch-netcoredbg.sh ${platform}`,
         );
         const fsharpBuild = stepAt(
             recipe,
@@ -56,11 +57,16 @@ for (const target of targets) {
             managedBuild,
             fsharpBuild,
             compatibility,
-            debuggerBuild,
+            debuggerDownload,
         ])
             assert.ok(
                 built < consumerAt(recipe),
                 "every binary must rebuild before packaging/testing",
+            );
+        for (const compile of ["build-netcoredbg", "cmake"])
+            assert.ok(
+                !recipe.includes(compile),
+                `the debugger is downloaded, never compiled ('${compile}')`,
             );
     });
 }
@@ -131,8 +137,8 @@ for (const platform of platforms) {
             "package platform must not retain the internal target underscore",
         );
         assert.ok(
-            recipe.includes(`build-netcoredbg.sh ${platform} --rebuild`),
-            "debugger rebuild must target the package platform",
+            recipe.includes(`fetch-netcoredbg.sh ${platform}`),
+            "debugger download must target the package platform",
         );
         assert.ok(
             recipe.includes("clean-sidecar-output.mjs"),

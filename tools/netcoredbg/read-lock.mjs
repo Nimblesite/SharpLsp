@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 // [DIST-DEBUGGER-BUNDLE] Prints one field of netcoredbg.lock.json, so the shell
-// build script can read the pinned commits without keeping its own copy of them
+// staging script can read the pinned release without keeping its own copy of it
 // and without grepping JSON.
 //
-// `buildId` is synthesised rather than stored: it is the identity written into
-// the on-disk marker file, and deriving it in one place keeps the marker, the
-// pins and the source build describing the same artifact.
+// `buildId` is the identity written into the on-disk marker file; deriving it in
+// one place keeps the marker and the pins describing the same artifact.
 import { buildId, readLock } from './provide.mjs';
 
 const field = process.argv[2];
