@@ -8,17 +8,38 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class SolutionLoader
 {
+    /// <summary>
+    /// What discovery found under a path: the target to load, or — when several solutions
+    /// compete and discovery refused to guess — every competitor. Neither means ABSENCE.
+    /// </summary>
+    internal sealed record Discovery(string? Target, string[] Competing);
+
     public static Result<string?, string> FindSolutionOrProject(string workspacePath)
+    {
+        return Discover(workspacePath)
+            .Match(
+                found => new Result<string?, string>.Ok<string?, string>(found.Target),
+                Result<string?, string>.Failure
+            );
+    }
+
+    /// <summary>
+    /// The target under <paramref name="workspacePath"/>, or the solutions competing for it,
+    /// from ONE walk of the tree. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] and
+    /// [SCRIPT-DEGRADE].
+    /// </summary>
+    internal static Result<Discovery, string> Discover(string workspacePath)
     {
         try
         {
-            var result =
-                FindExplicitOrRootMatch(workspacePath) ?? FindRecursiveMatch(workspacePath);
-            return new Result<string?, string>.Ok<string?, string>(result);
+            var discovery = FindExplicitOrRootMatch(workspacePath) is { } match
+                ? new Discovery(match, [])
+                : FindRecursiveMatch(workspacePath);
+            return new Result<Discovery, string>.Ok<Discovery, string>(discovery);
         }
         catch (Exception ex)
         {
-            return Result<string?, string>.Failure(ex.Message);
+            return Result<Discovery, string>.Failure(ex.Message);
         }
     }
 
@@ -27,12 +48,21 @@ internal static class SolutionLoader
     // and would prevent it ever reaching file-based/script loading. Implements [SCRIPT-DETECT].
     private static readonly string[] ProjectOrSolutionExtensions = [".sln", ".slnx", ".csproj"];
 
+    private static readonly string[] SolutionExtensions = [".sln", ".slnx"];
+
     internal static bool IsProjectOrSolutionFile(string path)
     {
-        return Array.Exists(
-            ProjectOrSolutionExtensions,
-            candidate => NativePaths.HasExtension(path, candidate)
-        );
+        return HasAnyExtension(path, ProjectOrSolutionExtensions);
+    }
+
+    private static bool IsSolution(string path)
+    {
+        return HasAnyExtension(path, SolutionExtensions);
+    }
+
+    private static bool HasAnyExtension(string path, string[] extensions)
+    {
+        return Array.Exists(extensions, candidate => NativePaths.HasExtension(path, candidate));
     }
 
     private static string? FindExplicitOrRootMatch(string workspacePath)
@@ -49,23 +79,14 @@ internal static class SolutionLoader
 
     private static string? FindInRootDirectory(string workspacePath)
     {
-        var solutionFiles = EnumerateSolutionFiles(workspacePath, SearchOption.TopDirectoryOnly);
-        if (solutionFiles.Length is 1)
+        var rootFiles = Directory.GetFiles(workspacePath);
+        var solutionFiles = Array.FindAll(rootFiles, IsSolution);
+        return solutionFiles.Length switch
         {
-            return solutionFiles[0];
-        }
-
-        if (solutionFiles.Length > 1)
-        {
-            return PickBestSolution(solutionFiles, workspacePath);
-        }
-
-        var csprojFiles = Directory.GetFiles(
-            workspacePath,
-            "*.csproj",
-            SearchOption.TopDirectoryOnly
-        );
-        return csprojFiles.Length > 0 ? csprojFiles[0] : null;
+            1 => solutionFiles[0],
+            > 1 => PickBestSolution(solutionFiles, workspacePath),
+            _ => Array.Find(rootFiles, path => NativePaths.HasExtension(path, ".csproj")),
+        };
     }
 
     private static string PickBestSolution(string[] solutionFiles, string workspacePath)
@@ -79,69 +100,24 @@ internal static class SolutionLoader
     }
 
     /// <summary>
-    /// The competing solutions under <paramref name="workspacePath"/> when recursive discovery
-    /// found more than one and therefore returned no target. Empty when the root resolves
-    /// unambiguously or holds no solution at all, which lets a caller tell AMBIGUITY apart from
-    /// ABSENCE — <see cref="FindSolutionOrProject"/> reports both as a null target.
-    /// Implements [SCRIPT-DEGRADE].
+    /// One solution nested anywhere is the target; several compete and none is guessed, so
+    /// the caller can ask which to load; with none, a lone nested project is the target.
     /// </summary>
-    internal static string[] FindAmbiguousSolutions(string workspacePath)
-    {
-        if (!Directory.Exists(workspacePath) || FindExplicitOrRootMatch(workspacePath) is not null)
-        {
-            return [];
-        }
-
-        var solutionFiles = EnumerateSolutionFiles(workspacePath, SearchOption.AllDirectories);
-        return solutionFiles.Length > 1 ? solutionFiles : [];
-    }
-
-    private static string? FindRecursiveMatch(string workspacePath)
+    private static Discovery FindRecursiveMatch(string workspacePath)
     {
         if (!Directory.Exists(workspacePath))
         {
-            return null;
+            return new Discovery(null, []);
         }
 
-        var solutionFiles = EnumerateSolutionFiles(workspacePath, SearchOption.AllDirectories);
-        if (solutionFiles.Length is 1)
+        var found = NativePaths.WorkspaceFiles(workspacePath, ProjectOrSolutionExtensions);
+        var solutionFiles = Array.FindAll(found, IsSolution);
+        var projectFiles = Array.FindAll(found, path => !IsSolution(path));
+        return solutionFiles.Length switch
         {
-            return solutionFiles[0];
-        }
-
-        // Multiple solution files: ambiguous. Return null so the caller can
-        // ask the user to specify which solution to load.
-        if (solutionFiles.Length > 1)
-        {
-            return null;
-        }
-
-        var csprojFiles = Directory.GetFiles(
-            workspacePath,
-            "*.csproj",
-            SearchOption.AllDirectories
-        );
-        return csprojFiles.Length is 1 ? csprojFiles[0] : null;
-    }
-
-    // Enumerate both .sln and .slnx explicitly. The "*.sln" glob matches .slnx
-    // on Windows (8.3 short-name behavior) but not on macOS/Linux, so a single
-    // pattern is not portable.
-    private static string[] EnumerateSolutionFiles(string path, SearchOption option)
-    {
-        var sln = Directory.GetFiles(path, "*.sln", option);
-        var slnx = Directory.GetFiles(path, "*.slnx", option);
-        if (sln.Length == 0)
-        {
-            return slnx;
-        }
-        if (slnx.Length == 0)
-        {
-            return sln;
-        }
-        var combined = new string[sln.Length + slnx.Length];
-        Array.Copy(sln, combined, sln.Length);
-        Array.Copy(slnx, 0, combined, sln.Length, slnx.Length);
-        return combined;
+            1 => new Discovery(solutionFiles[0], []),
+            > 1 => new Discovery(null, solutionFiles),
+            _ => new Discovery(projectFiles.Length is 1 ? projectFiles[0] : null, []),
+        };
     }
 }

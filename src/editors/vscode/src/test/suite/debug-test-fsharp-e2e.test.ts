@@ -11,7 +11,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { CMD_TEST_DEBUG_AT_CURSOR } from '../../constants.js';
-import { DapRecorder } from './debug-dap-kit';
+import { DapRecorder, assertSessionEnded } from './debug-dap-kit';
 import {
   CMD_CONTINUE,
   CMD_STEP_OUT,
@@ -327,7 +327,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     assertHandshakeOrder(recorder, 'the at-cursor F# gesture');
     assertBoundAtLines(recorder, [FS_SOURCE.dapLine('fs-call')], 'the at-cursor F# breakpoint');
     eq(sessions.ours.length, 1, 'the editor gesture starts ONE session, exactly as the tree does');
-    assert.ok(recorder.events('terminated').length <= 1, 'and terminates it at most once');
+    assertSessionEnded(recorder, 'and terminates it at most once');
     const api = await activateTestExplorer();
     const stillThere = findItem(api.testController.items, FS_SPACED);
     assert.ok(stillThere, 'the binding is still a row after being debugged from the editor');
@@ -399,7 +399,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // under it must still be addressable afterwards.
     assert.ok(moduleRow.id.includes(FS_MODULE_TYPE), 'the group id names the module');
     assert.ok(FS_MODULE.startsWith(FS_MODULE_NAMESPACE), 'which sits under its own namespace');
-    assert.ok(recorder.events('terminated').length <= 1, 'one group is at most one termination');
+    assertSessionEnded(recorder, 'one group is at most one termination');
     eq(sessions.ours.length, 1, 'and exactly one session throughout');
     for (const fqn of FS_ALL) {
       const item = findItem((await activateTestExplorer()).testController.items, fqn);
@@ -466,7 +466,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       'both under the module the fixture declares',
     );
     eq(sessions.ours.length, 1, 'a selection is ONE session, never one per test');
-    assert.ok(recorder.events('terminated').length <= 1, 'and at most one termination');
+    assertSessionEnded(recorder, 'and at most one termination');
     assert.ok(
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
       'every stop was the armed helper breakpoint, not a step or an exception',

@@ -496,7 +496,11 @@ open and are called out as such, because nothing implements them.
 
 ### 4.9 Hot Reload
 
-**Working.** `dap-hot-reload.ts` owns the save-to-Roslyn-to-runtime pipeline for
+**Blocked on the adapter.** SharpLsp now ships the upstream netcoredbg release
+unmodified and never builds it ([DIST-DEBUGGER-BUNDLE]); upstream's DAP protocol
+has no delta request (issue #220), so `applyDeltas` answers `E_NOTIMPL` and no
+delta reaches the debuggee. Everything up to delivery still works.
+`dap-hot-reload.ts` owns the save-to-Roslyn-to-runtime pipeline for
 one DAP session: a `hotReload: true` launch sets `DOTNET_MODIFIABLE_ASSEMBLIES`,
 the first stop reads the debuggee's `MetadataUpdater.GetCapabilities()`, the C#
 sidecar (`HotReloadSessionRegistry` + `HotReloadSession`, reached through the
@@ -504,8 +508,9 @@ host's `sharplsp/hotReload` -> `debug/hotReload` pass-through) holds a Roslyn
 `UnitTestingHotReloadService` baseline per session, and emitted deltas reach the
 LIVE debuggee through netcoredbg's `applyDeltas` request. Verdicts are honest:
 `applied` (deltas), `restartRequired` (rude edit, named ENC diagnostics),
-`notCompilable` (compiler errors, named, baseline untouched). All three
-`debug-hot-reload-e2e.test.ts` cases pass locally; `hot-reload.ts` (the
+`notCompilable` (compiler errors, named, baseline untouched). The three
+`debug-hot-reload-e2e.test.ts` cases passed only against the old patched
+adapter; `hot-reload.ts` (the
 `dotnet watch` terminal) remains the separate non-debug flow.
 
 - [x] `sharplsp/hotReload` LSP request routed host-side to the C# sidecar
@@ -519,8 +524,10 @@ LIVE debuggee through netcoredbg's `applyDeltas` request. Verdicts are honest:
       diagnostics and the spec-pinned signature-change refusal; tested by
       `HotReloadSessionRegistryTests` against a real built project, including a
       runtime `MetadataUpdater.ApplyUpdate` verification of the emitted delta
-- [x] Deltas delivered to the target process via netcoredbg `applyDeltas`
-      (metadata/IL/PDB files; expression-evaluation injection was abandoned)
+- [ ] Deltas delivered to the target process through the UNMODIFIED upstream
+      adapter: the patched `applyDeltas` request is gone with the source build;
+      [DEBUG-FEATURES-HOT-RELOAD] step 3's `evaluate` injection, or an upstream
+      DAP delta request (netcoredbg #220), is the remaining route
 - [x] Result surfaced to the editor: applied silently, rude edits warn once
       with the named reason and a restart prompt, non-compiling saves wait —
       `debug-hot-reload-e2e.test.ts` *a rude edit is refused with a named

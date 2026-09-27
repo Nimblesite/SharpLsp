@@ -16,6 +16,13 @@ use super::transport::FramedTransport;
 
 mod shutdown;
 
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod arrival_order_tests;
+
 /// Maximum backoff delay for crash recovery. `[SIDECAR-RECOVERY-BACKOFF]`
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// Initial backoff delay.
@@ -136,16 +143,11 @@ impl SidecarManager {
         Self::new("F# (FCS)", &command, args, &socket_path)
     }
 
-    /// Ensure the sidecar is running and connected.
-    ///
-    /// Holds the transport lock during the entire spawn to prevent
-    /// concurrent callers from spawning duplicate sidecar processes.
-    pub async fn ensure_running(&self) -> Result<()> {
-        if self.is_shutting_down() {
-            bail!("{} sidecar is shutting down", self.name);
-        }
-        let mut transport_guard = self.transport.lock().await;
-        if transport_guard.is_some() {
+    /// Spawn and connect unless `connection` already holds a transport. The
+    /// caller holds the transport lock during the entire spawn, so no
+    /// concurrent caller can spawn a duplicate process.
+    async fn connect_if_needed(&self, connection: &mut Option<FramedTransport>) -> Result<()> {
+        if connection.is_some() {
             return Ok(());
         }
 
@@ -154,7 +156,7 @@ impl SidecarManager {
         match self.spawn_process().await {
             Ok((child, transport)) => {
                 *self.child.lock().await = Some(child);
-                *transport_guard = Some(transport);
+                *connection = Some(transport);
                 *self.backoff.lock().await = INITIAL_BACKOFF;
                 *self.spawn_retry_after.lock().await = None;
                 info!(sidecar = %self.name, "Sidecar connected");
@@ -221,13 +223,19 @@ impl SidecarManager {
         payload: Vec<u8>,
         budget: Duration,
     ) -> Result<Vec<u8>> {
-        self.ensure_running().await?;
+        if self.is_shutting_down() {
+            bail!("{} sidecar is shutting down", self.name);
+        }
+        // ONE acquisition covers connecting, numbering and the exchange. The
+        // lock is FIFO, so requests are written in the order they arrived;
+        // releasing it between connecting and writing let a later request
+        // overtake an earlier one. `[SIDECAR-IPC-DRIVER]`
+        let mut transport_guard = self.transport.lock().await;
+        self.connect_if_needed(&mut transport_guard).await?;
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         info!(sidecar = %self.name, method = %method, id = id, "Sidecar request");
         let envelope = Envelope::request(id, method, payload);
-
-        let mut transport_guard = self.transport.lock().await;
         let transport = transport_guard.as_mut().context("sidecar not connected")?;
 
         let exchange = async {
@@ -821,7 +829,7 @@ mod tests {
         manager.shutdown().await;
 
         assert!(manager.is_shutting_down());
-        let error = manager.ensure_running().await.unwrap_err();
+        let error = manager.request("ping", Vec::new()).await.unwrap_err();
         assert!(error.to_string().contains("shutting down"));
     }
 
@@ -1048,13 +1056,13 @@ mod tests {
         let missing = format!("sharplsp-missing-cmd-{}", std::process::id());
         let manager = SidecarManager::new("test", &missing, vec![], "/tmp/sharplsp-backoff.sock");
 
-        let first = manager.ensure_running().await.unwrap_err();
+        let first = manager.request("ping", Vec::new()).await.unwrap_err();
         assert!(
             !format!("{first:#}").contains("backoff"),
             "first attempt must surface the real spawn failure, got: {first:#}"
         );
 
-        let second = manager.ensure_running().await.unwrap_err();
+        let second = manager.request("ping", Vec::new()).await.unwrap_err();
         assert!(
             format!("{second:#}").contains("backoff"),
             "an immediate respawn after a spawn failure must be suppressed \
@@ -1069,7 +1077,7 @@ mod tests {
     #[tokio::test]
     async fn pre_ready_exit_reports_exit_status_and_log_hint() {
         let manager = SidecarManager::new("test", "false", vec![], "/tmp/sharplsp-eof.sock");
-        let err = manager.ensure_running().await.unwrap_err();
+        let err = manager.request("ping", Vec::new()).await.unwrap_err();
         let message = format!("{err:#}");
         assert!(
             message.contains("exit status"),

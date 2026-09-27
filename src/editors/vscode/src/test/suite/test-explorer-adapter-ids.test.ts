@@ -70,6 +70,7 @@ import {
   sorted,
   assertReported,
   NO_RESULT,
+  runIds,
 } from './test-explorer-outcome-assertions';
 import { removeDirRecursive, assertContainsAll, assertContainsNone } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -677,7 +678,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       runProfile.isDefault,
       'Run is the default profile — it is the ▶ the user actually presses',
     );
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, RUNNABLE));
+    await runIds(api, vscode.TestRunProfileKind.Run, RUNNABLE);
 
     // Interaction 2 — each outcome is attributed from the TRX report, in full:
     // the outcome, the passed flag, a measured duration, and the message.
@@ -1515,7 +1516,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // presents as every test going grey after working once.
     //
     // Interaction 1 — run the three outcome kinds once.
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, RUNNABLE));
+    await runIds(api, vscode.TestRunProfileKind.Run, RUNNABLE);
     const first = RUNNABLE.map((id) => cachedFor(api, id).outcome);
     const idsAfterFirst = sorted(collectLeafIds(api.testController.items));
     assert.deepStrictEqual(
@@ -1526,7 +1527,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
 
     // Interaction 2 — run exactly the same selection again.
     const sizeBefore = api.testController.cachedResults.size;
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, RUNNABLE));
+    await runIds(api, vscode.TestRunProfileKind.Run, RUNNABLE);
     const second = RUNNABLE.map((id) => cachedFor(api, id).outcome);
     assert.deepStrictEqual(
       second,

@@ -25,14 +25,23 @@ function fail<T>(error: string): LspResult<T> {
   return { ok: false, error };
 }
 
+/**
+ * Enumerate install targets. `solutionProjects` is the open solution's project
+ * files; the host offers only those (and the props MSBuild imports for them),
+ * or walks the whole workspace when it is empty ([NUGET-REQUESTS-TARGET-ENUMERATE]).
+ */
 export async function fetchTargets(
   lsp: LanguageClient,
   workspaceRoot: string,
+  solutionProjects: readonly string[] = [],
 ): Promise<LspResult<NuGetTargetsResponse>> {
   try {
-    log.info(`nuget/lsp: fetchTargets workspace=${workspaceRoot}`);
+    log.info(
+      `nuget/lsp: fetchTargets workspace=${workspaceRoot} solutionProjects=${solutionProjects.length.toString()}`,
+    );
     const result = await lsp.sendRequest<NuGetTargetsResponse>('sharplsp/nuget/targets', {
       workspaceRoot,
+      solutionProjects,
     });
     return ok(result);
   } catch (err: unknown) {

@@ -76,6 +76,7 @@ import {
   sorted,
   assertReported,
   NO_RESULT,
+  runIds,
 } from './test-explorer-outcome-assertions';
 import { assertContainsAll, assertContainsNone } from './test-helpers.js';
 import { DOTNET_CLI_MS } from './test-timeouts';
@@ -149,6 +150,20 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     ({ api, slnPath, coverageDir } = warm());
   });
 
+  /** Library lines executed, per every report now in the results directory. */
+  const reportedLines = (): number[] => findCoberturaFiles(coverageDir).flatMap(libraryLinesIn);
+
+  /** {@link reportedLines}, each line once. */
+  const coveredLines = (): number[] => [...new Set(reportedLines())];
+
+  /** Run with Coverage on `ids`, asserting ONE report per test project. */
+  async function coverEvery(ids: readonly string[], why: string): Promise<string[]> {
+    await runIds(api, vscode.TestRunProfileKind.Coverage, ids);
+    const reports = findCoberturaFiles(coverageDir);
+    assert.strictEqual(reports.length, TEST_PROJECTS, why);
+    return reports;
+  }
+
   test('the Coverage run writes ONE Cobertura report per test project, one directory down', async function () {
     this.timeout(DOTNET_CLI_MS);
 
@@ -173,11 +188,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     );
 
     // Interaction 2 — press Run with Coverage on the whole tree.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, ALL_COVERAGE_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, ALL_COVERAGE_TESTS);
     assert.ok(fs.existsSync(coverageDir), 'the run creates the results directory');
 
     // Interaction 3 — what landed there: one TRX and one run-id folder per test
@@ -321,13 +332,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     this.timeout(DOTNET_CLI_MS);
 
     // Interaction 1 — collect coverage across both projects at once.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, ALL_COVERAGE_TESTS),
-    );
-    const reports = findCoberturaFiles(coverageDir);
-    assert.strictEqual(reports.length, TEST_PROJECTS, 'both projects reported');
+    const reports = await coverEvery(ALL_COVERAGE_TESTS, 'both projects reported');
 
     // Interaction 2 — each report on its own covers the library, and the two
     // disagree about WHICH lines ran. That disagreement is the whole point of
@@ -459,13 +464,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // collector DID measure test assemblies, a solution of nothing but tests
     // would still produce covered lines, and every other assertion in this
     // suite could pass while measuring the wrong assembly entirely.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, ALL_COVERAGE_TESTS),
-    );
-    const reports = findCoberturaFiles(coverageDir);
-    assert.strictEqual(reports.length, TEST_PROJECTS, 'both projects reported');
+    const reports = await coverEvery(ALL_COVERAGE_TESTS, 'both projects reported');
 
     // Interaction 2 — every file named across BOTH reports is the library's,
     // and the two test sources that drove the run appear in neither.
@@ -546,13 +545,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // the file. Both fixture projects cover the SAME `Calculator.cs`, and detail
     // is stashed by file URI — so reading a report back only right after parsing
     // it is exactly what hid the last report answering for every entry.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, ALL_COVERAGE_TESTS),
-    );
-    const reports = findCoberturaFiles(coverageDir);
-    assert.strictEqual(reports.length, TEST_PROJECTS, 'both reports are available to merge');
+    const reports = await coverEvery(ALL_COVERAGE_TESTS, 'both reports are available to merge');
 
     // Interaction 2 — merged as the run attaches them: ONE entry per source
     // file, not one per report. Two entries for a file cannot both be right
@@ -676,13 +669,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     this.timeout(DOTNET_CLI_MS);
 
     // Interaction 1 — run coverage over the whole tree, then merge every report.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, ALL_COVERAGE_TESTS),
-    );
-    const reports = findCoberturaFiles(coverageDir);
-    assert.strictEqual(reports.length, TEST_PROJECTS, 'both reports are available to merge');
+    const reports = await coverEvery(ALL_COVERAGE_TESTS, 'both reports are available to merge');
     const covered = [...new Set(reports.flatMap((report) => libraryLinesIn(report)))];
 
     // Interaction 2 — the two functions the tests DID call are covered. `Add` is
@@ -736,9 +723,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // Interaction 4 - and the functions NOBODY called must stay uncovered.
     // Coverage that paints unreachable code as executed is worse than none: it
     // is the number a team deletes tests to protect.
-    const everyLine = new Set(
-      findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report)),
-    );
+    const everyLine = new Set(reportedLines());
     for (const name of NEVER_COVERED) {
       assert.ok(
         !everyLine.has(declarationLine(name)),
@@ -755,9 +740,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // is what makes it a measurement: a function no test calls must not appear as
     // executed, or the report is a list of every line in the file.
     const calledLines = libraryLinesIn(findCoberturaFiles(coverageDir)[0] ?? '');
-    const unionLines = [
-      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-    ];
+    const unionLines = coveredLines();
     for (const name of NEVER_COVERED) {
       assert.ok(
         !unionLines.includes(declarationLine(name)),
@@ -776,11 +759,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     this.timeout(DOTNET_CLI_MS);
 
     // Interaction 1 — a first coverage run, whose artefacts we remember.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [CS_COVERS, FS_COVERS]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [CS_COVERS, FS_COVERS]);
     const firstDirs = reportDirsOf(coverageDir);
     const firstEntries = fs.readdirSync(coverageDir).sort();
     assert.strictEqual(firstDirs.length, TEST_PROJECTS, 'the first run reported for both projects');
@@ -813,11 +792,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // Interaction 3 — a second coverage run. [TEST-COVERAGE] requires the
     // directory to be emptied first, so every planted artefact is gone and the
     // reports are the NEW run's alone.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [CS_COVERS, FS_COVERS]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [CS_COVERS, FS_COVERS]);
     assert.ok(
       !fs.existsSync(sentinel),
       'a freshly emptied results directory cannot still hold the sentinel — reusing it ' +
@@ -1013,11 +988,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
     // Interaction 1 — press ▶, not Run with Coverage, on the same selection.
     assert.ok(!fs.existsSync(coverageDir), 'nothing collected yet');
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [CS_COVERS, FS_COVERS]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [CS_COVERS, FS_COVERS]);
     assert.ok(
       !fs.existsSync(coverageDir),
       '▶ adds no --collect and no --results-directory, so it must not create ' +
@@ -1027,11 +998,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     assertPassed(cachedFor(api, FS_COVERS), FS_COVERS);
 
     // Interaction 2 — now collect coverage, and remember exactly what landed.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [CS_COVERS, FS_COVERS]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [CS_COVERS, FS_COVERS]);
     const collected = fs.readdirSync(coverageDir).sort();
     const reports = findCoberturaFiles(coverageDir);
     assert.strictEqual(reports.length, TEST_PROJECTS, 'the coverage run reported for both');
@@ -1040,11 +1007,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // Interaction 3 — a plain ▶ afterwards neither adds to that directory nor
     // rewrites it. A Run that quietly reused the coverage arguments would show
     // up as a third folder or a moved timestamp.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, ALL_COVERAGE_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, ALL_COVERAGE_TESTS);
     assert.deepStrictEqual(
       fs.readdirSync(coverageDir).sort(),
       collected,
@@ -1235,9 +1198,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
     // Interaction 3 — the coverage collected is the C# project's alone: `Add`
     // ran, `Multiply` did not, because no F# test was selected.
-    const covered = [
-      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-    ];
+    const covered = coveredLines();
     assert.ok(
       covered.includes(declarationLine(COVERED_BY_CSHARP)),
       `the class's tests call Calculator.${COVERED_BY_CSHARP}, so its line must be covered`,
@@ -1255,9 +1216,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     }
     // Interaction 4 - a class row is a group, and coverage of a group is the
     // union of what its tests loaded.
-    const classLines = new Set(
-      findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report)),
-    );
+    const classLines = new Set(reportedLines());
     assert.ok(
       classLines.has(declarationLine(COVERED_BY_CSHARP)),
       `the class contains the test that calls ${COVERED_BY_CSHARP}, so it must be covered`,
@@ -1283,9 +1242,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       assert.notStrictEqual(cachedFor(api, id).outcome, 'notRun', `${id} beneath the class ran`);
     }
     assert.ok(
-      [
-        ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-      ].includes(declarationLine(COVERED_BY_CSHARP)),
+      coveredLines().includes(declarationLine(COVERED_BY_CSHARP)),
       'and the function the class exercises reads as executed',
     );
     assert.ok(findCoberturaFiles(coverageDir).length >= 1, 'behind at least one readable report');
@@ -1318,9 +1275,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
     // Interaction 3 — and the coverage it produced is the F# side's: `Multiply`
     // executed, `Add` not.
-    const covered = [
-      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-    ];
+    const covered = coveredLines();
     assert.ok(
       covered.includes(declarationLine(COVERED_BY_FSHARP)),
       `the F# test calls Calculator.${COVERED_BY_FSHARP}, so its line must be covered`,
@@ -1366,9 +1321,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       'the spaced binding really ran and passed under Coverage',
     );
     assert.ok(
-      [
-        ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-      ].includes(declarationLine(COVERED_BY_FSHARP)),
+      coveredLines().includes(declarationLine(COVERED_BY_FSHARP)),
       'and the function only it calls reads as executed',
     );
   });
@@ -1402,9 +1355,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
     // Interaction 3 — the coverage collected is that project's alone: `Multiply`
     // ran, `Add` did not, because no C# test was in the selection.
-    const covered = [
-      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-    ];
+    const covered = coveredLines();
     assert.ok(
       covered.includes(declarationLine(COVERED_BY_FSHARP)),
       `the F# project's test calls Calculator.${COVERED_BY_FSHARP}, so its line must be covered`,
@@ -1424,9 +1375,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // Interaction 4 - one project's assembly root covers that project alone, so
     // the OTHER project's function must be absent. This is the assertion a
     // single-project fixture cannot make at all.
-    const rootLines = new Set(
-      findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report)),
-    );
+    const rootLines = new Set(reportedLines());
     assert.ok(
       rootLines.has(declarationLine(COVERED_BY_FSHARP)),
       `the F# project's root covers ${COVERED_BY_FSHARP}`,
@@ -1475,14 +1424,8 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // code it never touched.
     //
     // Interaction 1 — cover the C# side only.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [CS_COVERS]),
-    );
-    const firstCovered = [
-      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-    ];
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [CS_COVERS]);
+    const firstCovered = coveredLines();
     assert.ok(
       firstCovered.includes(declarationLine(COVERED_BY_CSHARP)),
       `the C# run covers Calculator.${COVERED_BY_CSHARP}`,
@@ -1495,14 +1438,8 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     assert.ok(firstDirs.length >= 1, 'the first run wrote at least one run-id folder');
 
     // Interaction 2 — now cover the F# side only.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [FS_COVERS]),
-    );
-    const secondCovered = [
-      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-    ];
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [FS_COVERS]);
+    const secondCovered = coveredLines();
 
     // Interaction 3 — the second run's coverage is the F# side's ALONE. The C#
     // line the previous run covered must be gone.
@@ -1536,9 +1473,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // Interaction 4 - and the two runs are distinguishable at every level: the
     // report count, the covered lines, and the results the tree carries.
     assert.ok(findCoberturaFiles(coverageDir).length >= 1, 'the second run wrote its own report');
-    const secondRunLines = new Set(
-      findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report)),
-    );
+    const secondRunLines = new Set(reportedLines());
     assert.ok(secondRunLines.size >= 1, 'the second selection really did execute library code');
     for (const name of NEVER_COVERED) {
       assert.ok(
@@ -1554,9 +1489,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // Interaction 4 - two selections that cover different functions must produce
     // different reports. If the second run's numbers include the first run's
     // lines, the results directory was never emptied ([TEST-COVERAGE] claim 1).
-    const secondSelectionLines = [
-      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
-    ];
+    const secondSelectionLines = coveredLines();
     assert.ok(secondSelectionLines.length >= 1, 'the second run covered something');
     for (const name of NEVER_COVERED) {
       assert.ok(
@@ -1582,11 +1515,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // directory would delete the report the user is looking at.
     //
     // Interaction 1 — collect coverage, and record exactly what landed.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [CS_COVERS, FS_COVERS]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [CS_COVERS, FS_COVERS]);
     const entries = fs.readdirSync(coverageDir).sort();
     const reports = findCoberturaFiles(coverageDir);
     assert.strictEqual(reports.length, TEST_PROJECTS, 'both projects reported');

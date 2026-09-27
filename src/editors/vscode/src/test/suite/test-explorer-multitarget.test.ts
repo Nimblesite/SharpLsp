@@ -64,7 +64,7 @@ import {
   assertLeavesAre,
 } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers.js';
-import { cachedFor, itemsFor, sorted } from './test-explorer-outcome-assertions';
+import { cachedFor, itemsFor, sorted, runIds } from './test-explorer-outcome-assertions';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** The C# xUnit fixture, rebuilt here for TWO target frameworks. */
@@ -838,11 +838,7 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
 
     // Interaction 3 — the same for a test that FAILS under both, whose two
     // reports must merge to the one failure with real assertion text.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [CS.failing]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [CS.failing]);
     const failed = cachedFor(api, CS.failing);
     assert.strictEqual(failed.outcome, 'failed', 'a red test is red under both frameworks');
     assert.ok(!failed.passed, 'and never flips to a pass');

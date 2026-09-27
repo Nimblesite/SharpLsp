@@ -17,7 +17,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DapRecorder, type StopRecord } from './debug-dap-kit';
-import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts';
+import { assertStoppedAt, topFrame, type Frame } from './debug-drive-kit';
+import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts';
 import {
   MODE,
   writeCSharpStepTarget,
@@ -192,6 +193,44 @@ export async function runToFirstStop(
   const [stop] = await debuggee.recorder.waitForStops(1);
   assert.ok(stop, `the debuggee must stop at ${[anchors].flat().join(', ')}`);
   return { session, stop };
+}
+
+/** {@link runToFirstStop}, plus the frame execution stopped in. */
+export async function runToFirstFrame(
+  debuggee: Debuggee,
+  anchors: string | readonly string[],
+  options: LaunchOptions = {},
+): Promise<{ session: vscode.DebugSession; stop: StopRecord; frame: Frame }> {
+  const { session, stop } = await runToFirstStop(debuggee, anchors, options);
+  return { session, stop, frame: await topFrame(session, stop.threadId) };
+}
+
+/**
+ * {@link runToFirstFrame}, asserting the frame is the FIRST anchor's statement
+ * inside `method` of the fixture source.
+ */
+export async function stopInFrame(
+  debuggee: Debuggee,
+  anchors: string | readonly string[],
+  method: string,
+  why: string,
+  options: LaunchOptions = {},
+): Promise<{ session: vscode.DebugSession; stop: StopRecord; frame: Frame }> {
+  const landed = await runToFirstFrame(debuggee, anchors, options);
+  assertStoppedAt(landed.frame, debuggee.fixture, [anchors].flat()[0] ?? '', method, why);
+  return landed;
+}
+
+/** A test in this family: the debug timeout, with the per-test harness handed in. */
+export function debugTest(
+  title: string,
+  debuggee: () => Debuggee,
+  body: (harness: Debuggee) => Promise<void>,
+): void {
+  test(title, async function () {
+    this.timeout(DEBUG_TEST_MS);
+    await body(debuggee());
+  });
 }
 
 /** The message a missing build produces — a fixture bug, not a product bug. */

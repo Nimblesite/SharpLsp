@@ -10,7 +10,7 @@
 // One test at a time lives in `debug-test-debugging-e2e.test.ts`.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { DapRecorder, assertAnswered } from './debug-dap-kit';
+import { DapRecorder, assertAnswered, assertSessionEnded } from './debug-dap-kit';
 import { CMD_CONTINUE, assertStopReason, gesture, methodOf, topFrame } from './debug-drive-kit';
 import { assertBoundAtLines } from './debug-suite-kit';
 import {
@@ -135,7 +135,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // Interaction 4 - a class is ONE invocation ([TEST-RUN-TRX]) however many
     // tests it holds, and the tree row itself must stay a GROUP the whole time.
     eq(sessions.ours.length, 1, 'a class of five tests is ONE session, never five');
-    assert.ok(recorder.events('terminated').length <= 1, 'and at most one termination');
+    assertSessionEnded(recorder, 'and at most one termination');
     eq(recorder.events('initialized').length, 1, 'behind exactly one handshake');
     eq(classRow.children.size, MATH_CLASS_TESTS, 'the class still holds every test it declares');
     assert.ok(classRow.canResolveChildren, 'and still declares them, so the row stays expandable');
@@ -349,7 +349,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // user did NOT select must be untouched in the tree.
     eq(sessions.ours.length, 1, 'two selected classes are ONE session, not two');
     eq(recorder.events('initialized').length, 1, 'behind one handshake');
-    assert.ok(recorder.events('terminated').length <= 1, 'and at most one termination');
+    assertSessionEnded(recorder, 'and at most one termination');
     const root = await assemblyRoot();
     eq(
       collectLeafIds(root.children).length,

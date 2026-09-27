@@ -35,9 +35,51 @@ internal static class RoslynProjectLoading
     )
     {
         var entries = await EntriesAsync(target, ct).ConfigureAwait(false);
-        var solution = WithPlaceholders(workspace.CurrentSolution, FSharpReachedFrom(entries));
-        var map = ProjectMap.Create(solution);
+        var fsharp = FSharpReachedFrom(entries);
         var loader = new MSBuildProjectLoader(workspace, PropertiesFor(workspace, target));
+        return fsharp.Count is 0 && SolutionFileReader.IsSolutionFile(target)
+            ? await LoadWholeSolutionAsync(workspace.CurrentSolution, loader, target, ct)
+                .ConfigureAwait(false)
+            : await LoadEachProjectAsync(
+                    WithPlaceholders(workspace.CurrentSolution, fsharp),
+                    loader,
+                    entries,
+                    ct
+                )
+                .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A solution no F# project is reachable from, in ONE batch. Roslyn starts and tears down
+    /// a BuildHost process per <c>LoadProjectInfoAsync</c> call, so project-by-project loading
+    /// cost NLog's 15 projects 21.5s against 8s batched. Nothing here can build an F# project,
+    /// so the batch needs no placeholders. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD].
+    /// </summary>
+    private static async Task<Solution> LoadWholeSolutionAsync(
+        Solution solution,
+        MSBuildProjectLoader loader,
+        string target,
+        CancellationToken ct
+    )
+    {
+        var info = await loader
+            .LoadSolutionInfoAsync(target, cancellationToken: ct)
+            .ConfigureAwait(false);
+        return WithNew(solution, info.Projects);
+    }
+
+    /// <summary>
+    /// Each Roslyn project of <paramref name="entries"/> in turn, through the map that holds
+    /// the F# placeholders: the only public load that takes one, and it takes one project.
+    /// </summary>
+    private static async Task<Solution> LoadEachProjectAsync(
+        Solution solution,
+        MSBuildProjectLoader loader,
+        IReadOnlyList<string> entries,
+        CancellationToken ct
+    )
+    {
+        var map = ProjectMap.Create(solution);
         foreach (var project in entries.Where(IsRoslynProject))
         {
             var infos = await loader
@@ -125,7 +167,7 @@ internal static class RoslynProjectLoading
     /// <paramref name="solution"/> with the projects of <paramref name="infos"/> it lacks: a
     /// project loaded as one project's reference comes back again when it is asked for.
     /// </summary>
-    private static Solution WithNew(Solution solution, ImmutableArray<ProjectInfo> infos)
+    private static Solution WithNew(Solution solution, IEnumerable<ProjectInfo> infos)
     {
         return infos
             .Where(info => solution.GetProject(info.Id) is null)

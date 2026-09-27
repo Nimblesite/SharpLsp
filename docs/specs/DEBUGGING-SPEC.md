@@ -8,7 +8,7 @@ SharpLsp debugging MUST use redistributable open-source components, work through
 
 ### Phase Four Adapter `[DEBUG-ADAPTER-NETCOREDBG]`
 
-Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. SharpLsp builds the pinned upstream commit with a minimal patch that exposes netcoredbg's existing `ICorDebugModule2::ApplyChanges` hot-reload path as the custom DAP `applyDeltas` request. Phase Five replaces it with the native SharpLsp Debug Sidecar in [DEBUG-ARCHITECTURE-SIDECAR].
+Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. SharpLsp ships the upstream release archive unmodified and never compiles or patches the debugger ([DIST-DEBUGGER-BUNDLE]). Upstream's DAP protocol has no request that applies hot-reload deltas (upstream issue #220); every unknown command answers `E_NOTIMPL`. Phase Five replaces it with the native SharpLsp Debug Sidecar in [DEBUG-ARCHITECTURE-SIDECAR].
 
 ### netcoredbg Gaps `[DEBUG-ADAPTER-GAPS]`
 
@@ -29,7 +29,7 @@ Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.
 | C# 12 primary constructor params not inspectable | Compiler-generated fields not mapped back to source syntax | Issue #203 |
 | `Nullable<T>` expansion broken | `Nullable<Guid>` and similar value types cannot be expanded in debugger | Issue #213 |
 
-SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream. Until upstream issue #220 gains DAP support, SharpLsp MAY carry the isolated protocol patch in `tools/netcoredbg/dap-hot-reload.patch`; it MUST remain pinned, source-built, and covered by the live hot-reload acceptance suite.
+SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream. SharpLsp MUST NOT carry a netcoredbg patch or source build to close a gap: fixes go upstream, and the gap stays documented until a pinned upstream release closes it.
 
 ## Architecture `[DEBUG-ARCHITECTURE]`
 
@@ -50,8 +50,8 @@ Target `DapRouter` responsibilities:
 
 ### netcoredbg Integration (Phase Four) `[DEBUG-ARCHITECTURE-NETCOREDBG]`
 
-- **Distribution**: [`debug.ts`](../../src/editors/vscode/src/debug.ts) resolves a configured path, the bundled source-built platform artifact, a standard user install, or `PATH`
-- **Version pinning**: [`tools/vsix/build-netcoredbg.sh`](../../tools/vsix/build-netcoredbg.sh) pins netcoredbg `3.2.0-1092`, its CoreCLR headers, and the DAP patch; upgrades require the debug end-to-end suite
+- **Distribution**: [`debug.ts`](../../src/editors/vscode/src/debug.ts) resolves a configured path, the bundled upstream platform archive, a standard user install, or `PATH`
+- **Version pinning**: [`tools/netcoredbg/netcoredbg.lock.json`](../../tools/netcoredbg/netcoredbg.lock.json) pins the upstream release `3.2.0-1092` and each platform archive's SHA-256; upgrades require the debug end-to-end suite
 - **Transport**: DAP over stdin/stdout; DapRouter opens the child process and pipes JSON-RPC
 - **Launch modes**:
   - `launch`: spawn a new .NET process

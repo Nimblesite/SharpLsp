@@ -80,6 +80,45 @@ public sealed class NativePathsTests
         Assert.False(NativePaths.AreEqual(null, null));
     }
 
+    /// <summary>
+    /// The workspace walk matches extensions exactly by the case rule (".sln" is not ".slnx",
+    /// whatever Windows 8.3 globbing says), keeps nested matches, and never enters build
+    /// output, JS packages or a dot-directory — while a dot-named ROOT is still walked.
+    /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    [Fact]
+    public void WorkspaceFilesSkipsBuildOutputPackagesAndDotDirectories()
+    {
+        var root = NativePaths.Temp($".walk-{Guid.NewGuid():N}");
+        string[] kept = [NativePaths.Join(root, "A.sln"), NativePaths.Join(root, "src", "B.SLN")];
+        string[] skipped =
+        [
+            NativePaths.Join(root, "C.slnx"),
+            NativePaths.Join(root, "src", "bin", "D.sln"),
+            NativePaths.Join(root, "src", "OBJ", "E.sln"),
+            NativePaths.Join(root, "node_modules", "F.sln"),
+            NativePaths.Join(root, ".vs", "G.sln"),
+        ];
+        try
+        {
+            foreach (var path in kept.Concat(skipped))
+            {
+                Directory.CreateDirectory(NativePaths.DirectoryOf(path));
+                File.WriteAllText(path, "");
+            }
+
+            var found = NativePaths.WorkspaceFiles(root, ".sln");
+
+            Assert.Equal(kept.Order(NativePaths.Comparer), found.Order(NativePaths.Comparer));
+            Assert.Single(NativePaths.WorkspaceFiles(root, ".slnx"));
+            Assert.Empty(NativePaths.WorkspaceFiles(root, ".csproj"));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     [Fact]
     public void UnresolvablePathFallsBackToRawComparison()
     {

@@ -22,15 +22,15 @@ Debugging uses **netcoredbg**, the managed-code DAP adapter launched for the `sh
 
 | Aspect | Requirement |
 |---|---|
-| Source | `Samsung/netcoredbg`, pinned to `3.2.0-1092` / commit `9744e1f051866215611b8440c638042aa2aa2f72`, MIT-licensed; `tools/netcoredbg/dap-hot-reload.patch` exposes the existing debugger-side delta applier over DAP, and `tools/netcoredbg/exception-stepping.patch` lets a step start from a frame without symbols. Upstream mixes CRLF and LF sources while this repo stores patches LF, so the patches MUST be applied with `core.autocrlf=input` (line-ending-normalised), never under the runner's own git config |
-| Staging | `tools/vsix/build-netcoredbg.sh <platform>` builds the pinned source and CoreCLR headers, then `tools/vsix/fetch-netcoredbg.sh <platform>` stages the result into `bin/<platform>/netcoredbg/`; both Makefile staging paths use it. An adapter counts as current only when its `.sharplsp-dap-hot-reload` marker names the lock's build (`netcoredbgCommit:patchVersion`), so a build from an older lock is provided and staged again, never shipped |
+| Source | The `Samsung/netcoredbg` release `3.2.0-1092` (commit `9744e1f051866215611b8440c638042aa2aa2f72`), MIT-licensed, downloaded as published. SharpLsp MUST NOT compile or patch the debugger - not locally, not in CI, not in a release. `tools/netcoredbg/netcoredbg.lock.json` pins each platform's archive URL and SHA-256; `tools/netcoredbg/provide.mjs` downloads it, hashes the bytes received and refuses to unpack on a mismatch. A supported platform with no pin is a hard error |
+| Staging | `tools/vsix/fetch-netcoredbg.sh <platform>` runs `provide.mjs` and stages the result into `bin/<platform>/netcoredbg/`; both Makefile staging paths use it. An adapter counts as current only when its `.sharplsp-netcoredbg-release` marker names the lock's `release`, so an adapter from an older lock is downloaded and staged again, never shipped |
 | Layout | `bin/<platform>/netcoredbg/netcoredbg[.exe]` **plus** its sibling managed assemblies (`ManagedPart.dll`, `dbgshim.dll`, `Microsoft.CodeAnalysis*.dll`) — the whole directory ships, since the executable loads them |
 | Resolution | `getNetcoredbgCandidates(extensionPath)` prefers the bundled binary; scan order is user-setting (`sharplsp.debug.netcoredbgPath`) → **bundled** → common install paths → `PATH` |
-| Platform coverage | SharpLsp source-builds `win32-x64`, `linux-x64`, `linux-arm64`, and `darwin-arm64` on matching native runners. On `win32-arm64` and `darwin-x64`, debugging falls back to a `PATH` copy / the setting. The staging script skips those platforms cleanly (exit 0). |
+| Platform coverage | Upstream publishes `win32-x64`, `linux-x64`, `linux-arm64`, and `darwin-arm64` archives. On `win32-arm64` and `darwin-x64`, debugging falls back to a `PATH` copy / the setting. The staging script skips those platforms cleanly (exit 0). |
 
 Unlike the three [DIST-COMPONENTS], a missing netcoredbg degrades **only** the debugging feature (surfaced via an error toast pointing at the install), not whole-extension activation.
 
-**Licensing.** netcoredbg (MIT, © 2017 Samsung Electronics Co., LTD) and every other bundled third-party component are acknowledged in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md); all bundled licenses are permissive and compatible with SharpLsp's MIT license. Bumping the pinned netcoredbg or CoreCLR commit MUST update `tools/vsix/build-netcoredbg.sh`, its patch, and the notices file in lockstep.
+**Licensing.** netcoredbg (MIT, © 2017 Samsung Electronics Co., LTD) and every other bundled third-party component are acknowledged in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md); all bundled licenses are permissive and compatible with SharpLsp's MIT license. Bumping the pinned netcoredbg release MUST update `netcoredbg.lock.json` (every URL and SHA-256) and the notices file in lockstep.
 
 ## [DIST-RUNTIME-ACQUIRE] .NET SDK Acquisition
 
@@ -175,7 +175,7 @@ enclosing fresh build passes the prebuilt flag into npm's packaging lifecycle so
 that lifecycle cannot secretly rebuild the payload a second time.
 
 1. Delete Rust objects for the selected profile/target before rebuilding the host. Delete generated `bin`/`obj` for all sidecar projects and both publish directories before publishing C# and F#. This includes Roslyn's BuildHost and transitive assemblies, not merely the apphost executable.
-2. Rebuild the patched netcoredbg native binary and its managed helper from clean CMake/MSBuild output on every supported debugger platform. Existing build-ID markers do not bypass this. Platforms explicitly without a bundled debugger retain their documented fallback.
+2. Provide the pinned upstream netcoredbg through `fetch-netcoredbg.sh`. It is downloaded and SHA-256-verified, never compiled; a marker naming the lock's `release` is the only thing that skips the download. Platforms explicitly without a bundled debugger retain their documented fallback.
 3. Run the Roslyn/pinned-SDK compatibility regression before staging. Failures in clean, build, compatibility verification, copy, or package verification MUST stop the consumer; never fall back to an old output tree.
 4. Stage only after all builds succeed, into an empty VSIX `bin` tree. Recompile the extension/test JavaScript before its consumer. Verify the production payload before packaging.
 5. `_build-vsix`, `_package-vsix` and every platform wrapper, `_test-vsix`, `_test-vsix-shard`, `_run-vsix-suite`, and `_verify-vsix-payload` MUST enforce this automatically. Prebuilt flags are only for the same-run handoff above, not stale local outputs. `npm test`, `npm run test:run`, and `vscode:prepublish` MUST enforce the same default and same-run exception.
@@ -668,10 +668,9 @@ detect-changes -> ANALYSE -> FULL BUILD (linux || windows) -> TEST -> COVERAGE -
 | 5 COVERAGE | `ci-coverage.yml` | The two SHARDED ratchets — Rust, and VS Code over both platforms ([DIST-CI-VSIX-COVERAGE]) |
 
 CodeQL (`codeql.yml`, [DIST-CI-SECURITY]), the release (`release.yml`,
-[DIST-RELEASE]) and the Pages deploy it calls (`deploy-pages.yml`), the Dependabot
-sweep (`dependabot-automerge.yml`, [DIST-CI-DEPENDABOT]) and the patched-debugger
-publication (`publish-netcoredbg.yml`, [DIST-DEBUGGER-BUNDLE]) are separate
-workflows with their own triggers.
+[DIST-RELEASE]), the Pages deploy it calls (`deploy-pages.yml`) and the Dependabot
+sweep (`dependabot-automerge.yml`, [DIST-CI-DEPENDABOT]) are separate workflows
+with their own triggers.
 
 Phase invariants:
 
@@ -895,10 +894,10 @@ before any feature test can fail for the same reason:
 - The standalone archive is packaged, checked for layout and executed on
   `linux-x64` ([DIST-ARCHIVE-VERIFY]), and the Homebrew and Scoop renderers are
   exercised ([DIST-PATH-PUBLISH]).
-- The patched debugger is built on the release's own macOS runner image on every
-  PR (`build-macos` in `ci-build.yml`). The release rebuilds it from source for
-  `darwin-arm64`, and a Linux- and Windows-only PR build cannot catch a macOS
-  compiler or linker failure before a tag is pushed ([DIST-DEBUGGER-BUNDLE]).
+- The pinned macOS debugger is downloaded, verified and run on the release's own
+  macOS runner image on every PR (`build-macos` in `ci-build.yml`): a Linux- and
+  Windows-only PR cannot run the `darwin-arm64` archive the release ships
+  ([DIST-DEBUGGER-BUNDLE]).
 - The version contract ([DIST-VERSION-OUTPUT]): the `version-contract` job runs
   `sharplsp --version` and `--version --json` against the PHASE 2 binary; the
   .NET leg runs both sidecars' `--version` against their MSBuild `Version`.
@@ -1025,8 +1024,8 @@ Invariants:
   refactor set and an empty unused-package report — failures that look like
   product bugs and are really a missing restore. Each shard builds the fixtures
   itself against a cached NuGet store.
-- **Nothing is compiled or built twice.** The Rust host, both sidecars and
-  netcoredbg are built once per platform and staged from artifacts
+- **Nothing is compiled or built twice.** The Rust host and both sidecars are
+  built, and netcoredbg downloaded, once per platform and staged from artifacts
   (`VSIX_PREBUILT=1`). The suite itself — clean, tsc, esbuild bundle — is
   compiled once per platform by `_build-vsix-suite`, published as an artifact,
   and consumed by every shard (`VSIX_SUITE_PREBUILT=1`). The VS Code test host

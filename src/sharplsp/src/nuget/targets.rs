@@ -8,6 +8,7 @@
 //! `Directory.Packages.props` file with
 //! `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>`.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -35,15 +36,63 @@ const SKIP_DIRS: &[&str] = &[
 
 /// Enumerate all `NuGet` install targets under a workspace root.
 pub fn enumerate_targets(workspace_root: &str) -> Result<TargetsResponse> {
+    let root = existing_root(workspace_root)?;
+    let mut targets: Vec<NuGetTarget> = Vec::new();
+    let mut cpm_file: Option<String> = None;
+    walk(&root, &root, 0, &mut targets, &mut cpm_file)?;
+    Ok(respond(workspace_root, targets, cpm_file))
+}
+
+/// Enumerate the install targets of the open solution: its project files
+/// (`solution_projects`) and the nearest `Directory.Build.props` /
+/// `Directory.Packages.props` `MSBuild` imports for each. Projects on disk that
+/// the solution does not reference are never offered.
+/// Implements [NUGET-REQUESTS-TARGET-ENUMERATE].
+pub fn enumerate_solution_targets(
+    workspace_root: &str,
+    solution_projects: &[String],
+) -> Result<TargetsResponse> {
+    let root = existing_root(workspace_root)?;
+    let mut targets: Vec<NuGetTarget> = Vec::new();
+    let mut cpm_file: Option<String> = None;
+    for path in solution_files(solution_projects).values() {
+        classify_file(&root, path, &mut targets, &mut cpm_file);
+    }
+    Ok(respond(workspace_root, targets, cpm_file))
+}
+
+/// The solution's existing project files plus the props files `MSBuild`
+/// imports for them, deduplicated by path identity.
+fn solution_files(solution_projects: &[String]) -> BTreeMap<String, PathBuf> {
+    solution_projects
+        .iter()
+        .map(PathBuf::from)
+        .filter(|project| project.is_file())
+        .flat_map(|project| {
+            let build = find_nearest(&project, "Directory.Build.props");
+            let packages = find_packages_props(&project);
+            [Some(project), build, packages]
+        })
+        .flatten()
+        .map(|path| (crate::paths::comparison_key(&path.to_string_lossy()), path))
+        .collect()
+}
+
+/// The workspace root as a path, or an error when it is missing.
+fn existing_root(workspace_root: &str) -> Result<PathBuf> {
     let root = PathBuf::from(workspace_root);
     if !root.exists() {
         anyhow::bail!("workspace root does not exist: {workspace_root}");
     }
+    Ok(root)
+}
 
-    let mut targets: Vec<NuGetTarget> = Vec::new();
-    let mut cpm_file: Option<String> = None;
-    walk(&root, &root, 0, &mut targets, &mut cpm_file)?;
-
+/// Order the targets and detect CPM into the response.
+fn respond(
+    workspace_root: &str,
+    mut targets: Vec<NuGetTarget>,
+    cpm_file: Option<String>,
+) -> TargetsResponse {
     // Stable ordering: projects first (alpha), then props files (alpha).
     targets.sort_by(|a, b| {
         use std::cmp::Ordering;
@@ -65,21 +114,12 @@ pub fn enumerate_targets(workspace_root: &str) -> Result<TargetsResponse> {
         targets.len()
     );
 
-    Ok(TargetsResponse {
+    TargetsResponse {
         targets,
         default_target_id,
         cpm_enabled,
         cpm_file,
-    })
-}
-
-/// Enumerate the install targets of the open solution, whose project files are
-/// `solution_projects`.
-pub fn enumerate_solution_targets(
-    workspace_root: &str,
-    _solution_projects: &[String],
-) -> Result<TargetsResponse> {
-    enumerate_targets(workspace_root)
+    }
 }
 
 /// Recursive workspace walker (bounded depth + skip-list).
@@ -201,9 +241,15 @@ fn build_props_target(root: &Path, path: &Path, file_name: &str) -> NuGetTarget 
 /// Single source of truth for CPM props-file discovery, shared by the install,
 /// consolidation, and unused-package flows.
 pub fn find_packages_props(start: &Path) -> Option<PathBuf> {
+    find_nearest(start, "Directory.Packages.props")
+}
+
+/// Walk up from `start` to the nearest sibling or ancestor named `file_name`:
+/// the one `MSBuild` imports automatically.
+fn find_nearest(start: &Path, file_name: &str) -> Option<PathBuf> {
     let mut dir = start.parent()?.to_path_buf();
     loop {
-        let candidate = dir.join("Directory.Packages.props");
+        let candidate = dir.join(file_name);
         if candidate.exists() {
             return Some(candidate);
         }
@@ -371,7 +417,10 @@ mod tests {
             ]
         );
         assert_eq!(resp.default_target_id.as_deref(), Some(tests.as_str()));
-        assert!(resp.cpm_enabled, "CPM read from the solution's packages props");
+        assert!(
+            resp.cpm_enabled,
+            "CPM read from the solution's packages props"
+        );
         assert_eq!(resp.cpm_file.as_deref(), Some(root_packages.as_str()));
     }
 }

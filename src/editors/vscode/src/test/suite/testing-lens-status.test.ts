@@ -56,7 +56,7 @@ import {
   teardownFixtureSolution,
   collectLeafIds,
 } from './test-explorer-kit';
-import { cachedFor, itemsFor, sorted } from './test-explorer-outcome-assertions';
+import { cachedFor, itemsFor, sorted, runIds } from './test-explorer-outcome-assertions';
 import {
   closeAllEditors,
   deepEq,
@@ -311,11 +311,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
 
     // Interaction 1 — run everything, so all three Testing-API states are
     // represented at once.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, ALL_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, ALL_TESTS);
 
     // Interaction 2 — a pass renders as a pass, carrying the duration the TRX
     // report measured, formatted exactly as the lens formats it.
@@ -458,11 +454,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     // Interaction 2 — press ▶ on ONE test from the tree, without touching the
     // editor. The document is never edited, so a provider that only refreshes on
     // a document change never fires.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [CS.passing]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [CS.passing]);
     const after = await codeLensesFor(csFile);
     const title = statusFor(after, method) ?? '';
     assert.ok(
@@ -733,11 +725,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     //
     // Interaction 1 — run everything under the plain profile, and record the
     // rows.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, ALL_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, ALL_TESTS);
     const plain = await codeLensesFor(csFile);
     const plainStatuses = lensedMethods(plain).map((method) => statusFor(plain, method) ?? '');
     assert.ok(
@@ -755,11 +743,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     assert.ok(plainStatuses.includes(SKIPPED_TITLE), 'and the skip');
 
     // Interaction 2 — run the same selection with coverage.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, ALL_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, ALL_TESTS);
     const covered = await codeLensesFor(csFile);
     assert.deepStrictEqual(
       lensedMethods(covered),
@@ -839,11 +823,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     // find every row reset to "Not run".
     //
     // Interaction 1 — run the tree, then read the rows with the file open.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, ALL_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, ALL_TESTS);
     const opened = await vscode.workspace.openTextDocument(csFile);
     await vscode.window.showTextDocument(opened, { preview: false });
     const before = await codeLensesFor(csFile);
@@ -935,11 +915,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     // touched, and in the other language.
     //
     // Interaction 1 — the F# rows before, from a run of the C# side alone.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [CS.passing]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [CS.passing]);
     const csRows = await codeLensesFor(csFile);
     assert.ok(
       (statusFor(csRows, methodOf(CS.passing)) ?? '').startsWith(PASSED_PREFIX),

@@ -38,11 +38,10 @@ import {
 import { COVERAGE_DIR_NAME } from './test-coverage-fixtures';
 import {
   discoverSolution,
-  runViaProfile,
   teardownFixtureSolution,
   activateWithScratch,
 } from './test-explorer-kit';
-import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
+import { assertPassed, cachedFor, runIds } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
@@ -156,11 +155,7 @@ suite('Test Explorer e2e — Run with Coverage on a Microsoft.Testing.Platform m
     const coverageDir = path.join(root, COVERAGE_DIR_NAME);
 
     // 1. Run with Coverage on the one test: it still reports its real verdict.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [COVERS_ADD]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [COVERS_ADD]);
     await api.testController.whenIdle();
     assertPassed(cachedFor(api, COVERS_ADD), COVERS_ADD);
 
@@ -218,11 +213,7 @@ suite('Test Explorer e2e — Run with Coverage on a Microsoft.Testing.Platform m
 
     // 5. Run with Coverage AGAIN: the directory is emptied first, so the one report
     //    there is the new run's, never the first run's beside it.
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [COVERS_ADD]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [COVERS_ADD]);
     await api.testController.whenIdle();
     assertPassed(cachedFor(api, COVERS_ADD), COVERS_ADD);
     const again = findCoberturaFiles(coverageDir);

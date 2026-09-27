@@ -237,6 +237,79 @@ public sealed class SolutionLoaderTests : IDisposable
         Assert.Equal(slnx, value);
     }
 
+    /// <summary>Create an empty file at each of <paramref name="paths"/>, directories included.</summary>
+    private static void Touch(params string[] paths)
+    {
+        foreach (var path in paths)
+        {
+            Directory.CreateDirectory(NativePaths.DirectoryOf(path));
+            File.WriteAllText(path, "");
+        }
+    }
+
+    /// <summary>
+    /// Build output, JS packages and dot-directories hold copies and caches of solutions,
+    /// never one the user opens. Counting them made a repository root "ambiguous" with
+    /// hundreds of candidates, and walking them made every open of that root take seconds.
+    /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    [Fact]
+    public void Solutions_under_build_output_packages_and_dot_directories_are_not_discovered()
+    {
+        var wanted = NativePaths.Join(_root, "app", "App.sln");
+        Touch(
+            wanted,
+            NativePaths.Join(_root, "app", "bin", "Debug", "App.sln"),
+            NativePaths.Join(_root, "app", "obj", "Copy.slnx"),
+            NativePaths.Join(_root, "node_modules", "pkg", "Pkg.sln"),
+            NativePaths.Join(_root, ".git", "modules", "Sub.sln")
+        );
+
+        var discovery = +SolutionLoader.Discover(_root);
+
+        Assert.Equal(wanted, discovery.Target);
+        Assert.Empty(discovery.Competing);
+        Assert.Equal(wanted, Resolve(_root));
+    }
+
+    /// <summary>
+    /// A stale project copy under <c>obj</c> is not a second project: the one real project
+    /// still resolves on its own. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    [Fact]
+    public void Project_copies_under_build_output_do_not_hide_the_single_real_project()
+    {
+        var real = NativePaths.Join(_root, "nested", "Real.csproj");
+        Touch(real, NativePaths.Join(_root, "nested", "obj", "Stale.csproj"));
+
+        var discovery = +SolutionLoader.Discover(_root);
+
+        Assert.Equal(real, discovery.Target);
+        Assert.Empty(discovery.Competing);
+        Assert.Equal(real, Resolve(_root));
+    }
+
+    /// <summary>
+    /// Several real solutions compete: discovery names exactly those, in one walk, and loads
+    /// none of them. Implements [SCRIPT-DEGRADE] and [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    [Fact]
+    public void Competing_solutions_are_named_without_their_build_output_copies()
+    {
+        var first = NativePaths.Join(_root, "one", "One.sln");
+        var second = NativePaths.Join(_root, "two", "Two.slnx");
+        Touch(first, second, NativePaths.Join(_root, "one", "bin", "One.sln"));
+
+        var discovery = +SolutionLoader.Discover(_root);
+
+        Assert.Null(discovery.Target);
+        Assert.Equal(
+            new[] { first, second }.Order(NativePaths.Comparer),
+            discovery.Competing.Order(NativePaths.Comparer)
+        );
+        Assert.Null(Resolve(_root));
+    }
+
     [Fact]
     public void Slnx_in_root_is_picked_with_matching_name_alongside_sln()
     {

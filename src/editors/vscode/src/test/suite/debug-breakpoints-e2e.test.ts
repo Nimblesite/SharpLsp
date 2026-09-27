@@ -31,9 +31,9 @@ import {
   breakpointAt,
   startDebuggee,
   useDebuggee,
+  debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
-import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** The 0-based lines the workbench currently holds source breakpoints on. */
 function armedLines(): number[] {
@@ -64,362 +64,373 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
   const debuggee = useDebuggee('debug-bp-cs-', 'csharp');
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rules 1–4 at runtime.
-  test('F9 in a C# editor sets a breakpoint the adapter binds and stops on', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'F9 in a C# editor sets a breakpoint the adapter binds and stops on',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — the gate must be the manifest, not a user override. If
+      // `allowBreakpointsEverywhere` were on, F9 would work for the wrong reason
+      // and this suite would report green on a non-conforming manifest.
+      eq(
+        vscode.workspace.getConfiguration('debug').get<boolean>('allowBreakpointsEverywhere'),
+        false,
+        'debug.allowBreakpointsEverywhere must stay at its default; with it on, F9 succeeds ' +
+          'even when contributes.breakpoints omits csharp, and rule 3 goes untested',
+      );
+      deepEq(armedLines(), [], 'no test may inherit a breakpoint from its neighbour');
 
-    // Interaction 1 — the gate must be the manifest, not a user override. If
-    // `allowBreakpointsEverywhere` were on, F9 would work for the wrong reason
-    // and this suite would report green on a non-conforming manifest.
-    eq(
-      vscode.workspace.getConfiguration('debug').get<boolean>('allowBreakpointsEverywhere'),
-      false,
-      'debug.allowBreakpointsEverywhere must stay at its default; with it on, F9 succeeds ' +
-        'even when contributes.breakpoints omits csharp, and rule 3 goes untested',
-    );
-    deepEq(armedLines(), [], 'no test may inherit a breakpoint from its neighbour');
+      // Interaction 2 — put the caret on a statement and press F9.
+      const editor = await focusAnchor(fixture, 'main-accumulate');
+      eq(editor.document.languageId, 'csharp', 'F9 is being pressed in a C# document');
+      await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
+      deepEq(
+        armedLines(),
+        [fixture.source.line('main-accumulate')],
+        'F9 must create a breakpoint. VS Code gates every breakpoint UI entry point on ' +
+          'canSetBreakpointsIn, which consults contributes.breakpoints; with no `csharp` entry ' +
+          'and the default allowBreakpointsEverywhere of false, C# breakpoints are IMPOSSIBLE ' +
+          '([DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rules 1 and 3)',
+      );
+      const created = requireAt(vscode.debug.breakpoints, 0, 'the breakpoint F9 created');
+      assert.ok(created.enabled, 'a breakpoint created by F9 is enabled');
+      assert.ok(created instanceof vscode.SourceBreakpoint, 'F9 creates a SOURCE breakpoint');
 
-    // Interaction 2 — put the caret on a statement and press F9.
-    const editor = await focusAnchor(fixture, 'main-accumulate');
-    eq(editor.document.languageId, 'csharp', 'F9 is being pressed in a C# document');
-    await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-    deepEq(
-      armedLines(),
-      [fixture.source.line('main-accumulate')],
-      'F9 must create a breakpoint. VS Code gates every breakpoint UI entry point on ' +
-        'canSetBreakpointsIn, which consults contributes.breakpoints; with no `csharp` entry ' +
-        'and the default allowBreakpointsEverywhere of false, C# breakpoints are IMPOSSIBLE ' +
-        '([DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rules 1 and 3)',
-    );
-    const created = requireAt(vscode.debug.breakpoints, 0, 'the breakpoint F9 created');
-    assert.ok(created.enabled, 'a breakpoint created by F9 is enabled');
-    assert.ok(created instanceof vscode.SourceBreakpoint, 'F9 creates a SOURCE breakpoint');
+      // Interaction 3 — F9 again on the same line must REMOVE it. A toggle that
+      // only ever adds leaves the user unable to clear a breakpoint from the editor.
+      await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
+      deepEq(armedLines(), [], 'F9 on an existing breakpoint must toggle it off');
 
-    // Interaction 3 — F9 again on the same line must REMOVE it. A toggle that
-    // only ever adds leaves the user unable to clear a breakpoint from the editor.
-    await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-    deepEq(armedLines(), [], 'F9 on an existing breakpoint must toggle it off');
-
-    // Interaction 4 — F9 once more, then launch and prove it really stops.
-    await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-    deepEq(armedLines(), [fixture.source.line('main-accumulate')], 'the third F9 re-arms it');
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'a breakpoint set through the editor must stop the debuggee');
-    assertStopReason(stop, 'breakpoint', 'an F9-set breakpoint');
-    assertBreakpointsBound(recorder, fixture, ['main-accumulate'], 'the F9 line');
-    assertStoppedAt(
-      await topFrame(session, stop.threadId),
-      fixture,
-      'main-accumulate',
-      'Main',
-      'the F9 breakpoint',
-    );
-    assertCleanSession(debuggee(), 'an F9 breakpoint');
-  });
+      // Interaction 4 — F9 once more, then launch and prove it really stops.
+      await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
+      deepEq(armedLines(), [fixture.source.line('main-accumulate')], 'the third F9 re-arms it');
+      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+      const [stop] = await recorder.waitForStops(1);
+      assert.ok(stop, 'a breakpoint set through the editor must stop the debuggee');
+      assertStopReason(stop, 'breakpoint', 'an F9-set breakpoint');
+      assertBreakpointsBound(recorder, fixture, ['main-accumulate'], 'the F9 line');
+      assertStoppedAt(
+        await topFrame(session, stop.threadId),
+        fixture,
+        'main-accumulate',
+        'Main',
+        'the F9 breakpoint',
+      );
+      assertCleanSession(debuggee(), 'an F9 breakpoint');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Line breakpoints", plus the
   // reactivity [VSCODE-REACTIVITY] demands: a change must reach the RUNNING adapter.
-  test('breakpoints added and removed mid-session reach the running adapter', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'breakpoints added and removed mid-session reach the running adapter',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — launch with a single breakpoint and stop on it.
+      armBreakpoints(fixture, 'main-accumulate');
+      await startDebuggee(debuggee(), { mode: MODE.plain });
+      const [first] = await recorder.waitForStops(1);
+      assert.ok(first, 'the debuggee must reach the only armed breakpoint');
+      const armedOnly = [fixture.source.dapLine('main-accumulate')];
+      const atLaunch = await recorder.waitForRequestArgs(
+        'setBreakpoints',
+        (args) => sameLines(args, armedOnly),
+        'only the armed line may be sent to the adapter',
+      );
+      deepEq(linesOf(atLaunch), armedOnly, 'only the armed line may be sent to the adapter');
 
-    // Interaction 1 — launch with a single breakpoint and stop on it.
-    armBreakpoints(fixture, 'main-accumulate');
-    await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [first] = await recorder.waitForStops(1);
-    assert.ok(first, 'the debuggee must reach the only armed breakpoint');
-    const armedOnly = [fixture.source.dapLine('main-accumulate')];
-    const atLaunch = await recorder.waitForRequestArgs(
-      'setBreakpoints',
-      (args) => sameLines(args, armedOnly),
-      'only the armed line may be sent to the adapter',
-    );
-    deepEq(linesOf(atLaunch), armedOnly, 'only the armed line may be sent to the adapter');
+      // Interaction 2 — add a SECOND breakpoint while the debuggee is paused.
+      vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-done')]);
+      const bothLines = [
+        fixture.source.dapLine('main-accumulate'),
+        fixture.source.dapLine('main-done'),
+      ].sort((left, right) => left - right);
+      const addReason =
+        'a breakpoint added mid-session must be pushed to the live adapter, not queued for the ' +
+        'next launch — otherwise the user sets a breakpoint and the debuggee runs straight past';
+      const afterAdd = await recorder.waitForRequestArgs(
+        'setBreakpoints',
+        (args) => sameLines(args, bothLines),
+        addReason,
+      );
+      deepEq(linesOf(afterAdd), bothLines, addReason);
 
-    // Interaction 2 — add a SECOND breakpoint while the debuggee is paused.
-    vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-done')]);
-    const bothLines = [
-      fixture.source.dapLine('main-accumulate'),
-      fixture.source.dapLine('main-done'),
-    ].sort((left, right) => left - right);
-    const addReason =
-      'a breakpoint added mid-session must be pushed to the live adapter, not queued for the ' +
-      'next launch — otherwise the user sets a breakpoint and the debuggee runs straight past';
-    const afterAdd = await recorder.waitForRequestArgs(
-      'setBreakpoints',
-      (args) => sameLines(args, bothLines),
-      addReason,
-    );
-    deepEq(linesOf(afterAdd), bothLines, addReason);
+      // Interaction 3 — continue. The newly added breakpoint must stop the program.
+      const second = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(second.stop, 'breakpoint', 'the mid-session breakpoint');
+      assertStoppedAt(
+        second.frame,
+        fixture,
+        'main-done',
+        'Main',
+        'the breakpoint added mid-session',
+      );
+      eq(recorder.stops().length, 2, 'exactly two stops: the original and the added one');
 
-    // Interaction 3 — continue. The newly added breakpoint must stop the program.
-    const second = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(second.stop, 'breakpoint', 'the mid-session breakpoint');
-    assertStoppedAt(second.frame, fixture, 'main-done', 'Main', 'the breakpoint added mid-session');
-    eq(recorder.stops().length, 2, 'exactly two stops: the original and the added one');
-
-    // Interaction 4 — remove BOTH and continue; nothing may stop the program again.
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
-    const removeReason =
-      'removing every breakpoint must send an EMPTY breakpoints array; a removal that is ' +
-      'never sent leaves the debuggee stopping on a breakpoint the user has deleted';
-    const afterRemoval = await recorder.waitForRequestArgs(
-      'setBreakpoints',
-      (args) => sameLines(args, []),
-      removeReason,
-    );
-    deepEq(linesOf(afterRemoval), [], removeReason);
-    const stopsBefore = recorder.stops().length;
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'a session whose breakpoints were all removed');
-    eq(recorder.stops().length, stopsBefore, 'a removed breakpoint must never stop the debuggee');
-    assertCleanSession(debuggee(), 'add and remove mid-session');
-  });
+      // Interaction 4 — remove BOTH and continue; nothing may stop the program again.
+      vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
+      const removeReason =
+        'removing every breakpoint must send an EMPTY breakpoints array; a removal that is ' +
+        'never sent leaves the debuggee stopping on a breakpoint the user has deleted';
+      const afterRemoval = await recorder.waitForRequestArgs(
+        'setBreakpoints',
+        (args) => sameLines(args, []),
+        removeReason,
+      );
+      deepEq(linesOf(afterRemoval), [], removeReason);
+      const stopsBefore = recorder.stops().length;
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'a session whose breakpoints were all removed');
+      eq(recorder.stops().length, stopsBefore, 'a removed breakpoint must never stop the debuggee');
+      assertCleanSession(debuggee(), 'add and remove mid-session');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Line breakpoints" — the enabled flag.
-  test('a disabled breakpoint is never armed, and re-enabling it re-arms it', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'a disabled breakpoint is never armed, and re-enabling it re-arms it',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — one enabled breakpoint, one disabled breakpoint.
+      vscode.debug.addBreakpoints([
+        breakpointAt(fixture, 'main-accumulate'),
+        breakpointAt(fixture, 'main-inspect', { enabled: false }),
+      ]);
+      eq(vscode.debug.breakpoints.length, 2, 'the view holds both, enabled and disabled alike');
+      deepEq(
+        vscode.debug.breakpoints.map((breakpoint) => breakpoint.enabled),
+        [true, false],
+        'the disabled breakpoint keeps its disabled state in the Breakpoints view',
+      );
 
-    // Interaction 1 — one enabled breakpoint, one disabled breakpoint.
-    vscode.debug.addBreakpoints([
-      breakpointAt(fixture, 'main-accumulate'),
-      breakpointAt(fixture, 'main-inspect', { enabled: false }),
-    ]);
-    eq(vscode.debug.breakpoints.length, 2, 'the view holds both, enabled and disabled alike');
-    deepEq(
-      vscode.debug.breakpoints.map((breakpoint) => breakpoint.enabled),
-      [true, false],
-      'the disabled breakpoint keeps its disabled state in the Breakpoints view',
-    );
+      // Interaction 2 — launch. Only the ENABLED line may reach the adapter.
+      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+      const [first] = await recorder.waitForStops(1);
+      assert.ok(first, 'the enabled breakpoint must stop the debuggee');
+      const enabledOnly = [fixture.source.dapLine('main-accumulate')];
+      const disabledReason =
+        'a DISABLED breakpoint must not be sent to the adapter — the Breakpoints view shows it ' +
+        'greyed out precisely because it is inert';
+      const sentAtLaunch = await recorder.waitForRequestArgs(
+        'setBreakpoints',
+        (args) => sameLines(args, enabledOnly),
+        disabledReason,
+      );
+      deepEq(linesOf(sentAtLaunch), enabledOnly, disabledReason);
+      assertStoppedAt(
+        await topFrame(session, first.threadId),
+        fixture,
+        'main-accumulate',
+        'Main',
+        'the enabled breakpoint',
+      );
 
-    // Interaction 2 — launch. Only the ENABLED line may reach the adapter.
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const [first] = await recorder.waitForStops(1);
-    assert.ok(first, 'the enabled breakpoint must stop the debuggee');
-    const enabledOnly = [fixture.source.dapLine('main-accumulate')];
-    const disabledReason =
-      'a DISABLED breakpoint must not be sent to the adapter — the Breakpoints view shows it ' +
-      'greyed out precisely because it is inert';
-    const sentAtLaunch = await recorder.waitForRequestArgs(
-      'setBreakpoints',
-      (args) => sameLines(args, enabledOnly),
-      disabledReason,
-    );
-    deepEq(linesOf(sentAtLaunch), enabledOnly, disabledReason);
-    assertStoppedAt(
-      await topFrame(session, first.threadId),
-      fixture,
-      'main-accumulate',
-      'Main',
-      'the enabled breakpoint',
-    );
+      // Interaction 3 — enable it (remove + re-add, which is what the checkbox does).
+      const disabled = vscode.debug.breakpoints.filter((breakpoint) => !breakpoint.enabled);
+      eq(disabled.length, 1, 'exactly one breakpoint is disabled before the toggle');
+      const bothArmed = [
+        fixture.source.dapLine('main-accumulate'),
+        fixture.source.dapLine('main-inspect'),
+      ].sort((left, right) => left - right);
+      vscode.debug.removeBreakpoints(disabled);
+      vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-inspect')]);
+      const afterEnable = await recorder.waitForRequestArgs(
+        'setBreakpoints',
+        (args) => sameLines(args, bothArmed),
+        'enabling a breakpoint mid-session must arm it on the live adapter',
+      );
+      deepEq(
+        linesOf(afterEnable),
+        bothArmed,
+        'enabling a breakpoint mid-session must arm it on the live adapter',
+      );
 
-    // Interaction 3 — enable it (remove + re-add, which is what the checkbox does).
-    const disabled = vscode.debug.breakpoints.filter((breakpoint) => !breakpoint.enabled);
-    eq(disabled.length, 1, 'exactly one breakpoint is disabled before the toggle');
-    const bothArmed = [
-      fixture.source.dapLine('main-accumulate'),
-      fixture.source.dapLine('main-inspect'),
-    ].sort((left, right) => left - right);
-    vscode.debug.removeBreakpoints(disabled);
-    vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-inspect')]);
-    const afterEnable = await recorder.waitForRequestArgs(
-      'setBreakpoints',
-      (args) => sameLines(args, bothArmed),
-      'enabling a breakpoint mid-session must arm it on the live adapter',
-    );
-    deepEq(
-      linesOf(afterEnable),
-      bothArmed,
-      'enabling a breakpoint mid-session must arm it on the live adapter',
-    );
-
-    // Interaction 4 — continue: the newly enabled breakpoint must now stop.
-    const second = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(second.stop, 'breakpoint', 'the re-enabled breakpoint');
-    assertStoppedAt(second.frame, fixture, 'main-inspect', 'Main', 'the re-enabled breakpoint');
-    assertCleanSession(debuggee(), 'disable then enable');
-  });
+      // Interaction 4 — continue: the newly enabled breakpoint must now stop.
+      const second = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(second.stop, 'breakpoint', 'the re-enabled breakpoint');
+      assertStoppedAt(second.frame, fixture, 'main-inspect', 'Main', 'the re-enabled breakpoint');
+      assertCleanSession(debuggee(), 'disable then enable');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Function/method breakpoints |
   // setFunctionBreakpoints | P1 | Native".
-  test('a function breakpoint stops on entry to the named method', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'a function breakpoint stops on entry to the named method',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — arm a function breakpoint and nothing else.
+      const functionName = 'StepTarget.Program.Add';
+      vscode.debug.addBreakpoints([new vscode.FunctionBreakpoint(functionName)]);
+      eq(vscode.debug.breakpoints.length, 1, 'one function breakpoint is armed');
+      const armed = requireAt(vscode.debug.breakpoints, 0, 'the function breakpoint');
+      assert.ok(armed instanceof vscode.FunctionBreakpoint, 'it is a FunctionBreakpoint');
+      deepEq(armedLines(), [], 'a function breakpoint is not a source breakpoint');
 
-    // Interaction 1 — arm a function breakpoint and nothing else.
-    const functionName = 'StepTarget.Program.Add';
-    vscode.debug.addBreakpoints([new vscode.FunctionBreakpoint(functionName)]);
-    eq(vscode.debug.breakpoints.length, 1, 'one function breakpoint is armed');
-    const armed = requireAt(vscode.debug.breakpoints, 0, 'the function breakpoint');
-    assert.ok(armed instanceof vscode.FunctionBreakpoint, 'it is a FunctionBreakpoint');
-    deepEq(armedLines(), [], 'a function breakpoint is not a source breakpoint');
+      // Interaction 2 — launch. The adapter must be asked, and must say yes.
+      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+      const requested = recorder.requests('setFunctionBreakpoints');
+      assert.ok(
+        requested.length >= 1,
+        '[DEBUG-FEATURES-BREAKPOINTS] makes function breakpoints P1 and native: the workbench ' +
+          'must send `setFunctionBreakpoints`, and the adapter must advertise ' +
+          'supportsFunctionBreakpoints for it to be sent at all',
+      );
+      eq(
+        recorder.capabilities()['supportsFunctionBreakpoints'],
+        true,
+        'the adapter must advertise supportsFunctionBreakpoints',
+      );
+      // Waited for by NAME, not read off the end of the wire: `requested` was
+      // sampled above to prove the request exists at all, and the entry last on
+      // the wire at that instant need not be the one carrying this name.
+      const sentFunction = await recorder.waitForRequestArgs(
+        'setFunctionBreakpoints',
+        (args) => {
+          const list: unknown = args['breakpoints'];
+          return (
+            Array.isArray(list) &&
+            list.length === 1 &&
+            String((list[0] as Record<string, any>)['name']) === functionName
+          );
+        },
+        'the fully-qualified method name must be forwarded verbatim',
+      );
+      const names: unknown = sentFunction['breakpoints'];
+      assert.ok(Array.isArray(names), '`setFunctionBreakpoints` carries a breakpoints array');
+      deepEq(
+        names.map((entry) => String((entry as Record<string, any>)['name'])),
+        [functionName],
+        'the fully-qualified method name must be forwarded verbatim',
+      );
 
-    // Interaction 2 — launch. The adapter must be asked, and must say yes.
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    const requested = recorder.requests('setFunctionBreakpoints');
-    assert.ok(
-      requested.length >= 1,
-      '[DEBUG-FEATURES-BREAKPOINTS] makes function breakpoints P1 and native: the workbench ' +
-        'must send `setFunctionBreakpoints`, and the adapter must advertise ' +
-        'supportsFunctionBreakpoints for it to be sent at all',
-    );
-    eq(
-      recorder.capabilities()['supportsFunctionBreakpoints'],
-      true,
-      'the adapter must advertise supportsFunctionBreakpoints',
-    );
-    // Waited for by NAME, not read off the end of the wire: `requested` was
-    // sampled above to prove the request exists at all, and the entry last on
-    // the wire at that instant need not be the one carrying this name.
-    const sentFunction = await recorder.waitForRequestArgs(
-      'setFunctionBreakpoints',
-      (args) => {
-        const list: unknown = args['breakpoints'];
-        return (
-          Array.isArray(list) &&
-          list.length === 1 &&
-          String((list[0] as Record<string, any>)['name']) === functionName
-        );
-      },
-      'the fully-qualified method name must be forwarded verbatim',
-    );
-    const names: unknown = sentFunction['breakpoints'];
-    assert.ok(Array.isArray(names), '`setFunctionBreakpoints` carries a breakpoints array');
-    deepEq(
-      names.map((entry) => String((entry as Record<string, any>)['name'])),
-      [functionName],
-      'the fully-qualified method name must be forwarded verbatim',
-    );
+      // Interaction 3 — the debuggee must stop on entry to Add, three frames deep.
+      const [stop] = await recorder.waitForStops(1);
+      assert.ok(stop, 'a function breakpoint must stop the debuggee on entry to the method');
+      assertStopReason(stop, 'function breakpoint', 'a function-breakpoint stop');
+      const frame = await topFrame(session, stop.threadId);
+      eq(methodOf(frame), 'Add', 'the stop must be inside the named method');
+      assertStoppedAt(frame, fixture, 'add-body', 'Add', 'the function breakpoint');
 
-    // Interaction 3 — the debuggee must stop on entry to Add, three frames deep.
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'a function breakpoint must stop the debuggee on entry to the method');
-    assertStopReason(stop, 'function breakpoint', 'a function-breakpoint stop');
-    const frame = await topFrame(session, stop.threadId);
-    eq(methodOf(frame), 'Add', 'the stop must be inside the named method');
-    assertStoppedAt(frame, fixture, 'add-body', 'Add', 'the function breakpoint');
-
-    // Interaction 4 — continue twice: the loop calls Add three times in all.
-    const secondHit = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStoppedAt(secondHit.frame, fixture, 'add-body', 'Add', 'the second call to Add');
-    const thirdHit = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStoppedAt(thirdHit.frame, fixture, 'add-body', 'Add', 'the third call to Add');
-    eq(recorder.stops().length, 3, 'Accumulate calls Add exactly three times, so three stops');
-    assertCleanSession(debuggee(), 'a function breakpoint hit three times');
-  });
+      // Interaction 4 — continue twice: the loop calls Add three times in all.
+      const secondHit = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStoppedAt(secondHit.frame, fixture, 'add-body', 'Add', 'the second call to Add');
+      const thirdHit = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStoppedAt(thirdHit.frame, fixture, 'add-body', 'Add', 'the third call to Add');
+      eq(recorder.stops().length, 3, 'Accumulate calls Add exactly three times, so three stops');
+      assertCleanSession(debuggee(), 'a function breakpoint hit three times');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS] as a TABLE: every breakpoint field
   // the section names — `condition`, `hitCondition`, `logMessage`, and the
   // enabled flag — must reach the adapter on the breakpoint it belongs to, and
   // on no other. A sync that flattens the fields arms four breakpoints that all
   // behave like the first.
-  test('every breakpoint field reaches the adapter on its OWN breakpoint', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
-
-    // Interaction 1 — four breakpoints, each carrying a different field, plus
-    // one that is disabled and must not be sent at all.
-    const plain = breakpointAt(fixture, 'main-accumulate');
-    const conditional = breakpointAt(fixture, 'accumulate-call', { condition: 'index == 3' });
-    const counted = breakpointAt(fixture, 'add-body', { hitCondition: '2' });
-    const disabled = breakpointAt(fixture, 'main-inspect', { enabled: false });
-    vscode.debug.addBreakpoints([plain, conditional, counted, disabled]);
-    eq(vscode.debug.breakpoints.length, 4, 'four breakpoints sit in the Breakpoints view');
-    eq(
-      vscode.debug.breakpoints.filter((entry) => entry.enabled).length,
-      3,
-      'three of them are enabled and one is not',
-    );
-    deepEq(
-      armedLines(),
-      [
-        fixture.source.line('main-accumulate'),
-        fixture.source.line('accumulate-call'),
-        fixture.source.line('add-body'),
-        fixture.source.line('main-inspect'),
-      ].sort((left, right) => left - right),
-      'and the view holds them all, disabled included',
-    );
-
-    // Interaction 2 — the sync. Only the enabled three are sent, each carrying
-    // its own field and nothing else.
-    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-    await recorder.waitForStops(1);
-    const requested = recorder.requests('setBreakpoints');
-    assert.ok(requested.length >= 1, 'the launch synced the armed breakpoints');
-    const sent = requested
-      .flatMap((request) => {
-        const list: unknown = request.args['breakpoints'];
-        return Array.isArray(list) ? (list as Record<string, any>[]) : [];
-      })
-      .filter((entry) => typeof entry['line'] === 'number');
-    assert.ok(
-      !sent.some((entry) => Number(entry['line']) === fixture.source.dapLine('main-inspect')),
-      'a DISABLED breakpoint must never be sent - the view greys it out precisely because it ' +
-        'is inert',
-    );
-    const conditionsSent = sent.filter((entry) => String(entry['condition'] ?? '') !== '');
-    assert.ok(conditionsSent.length >= 1, 'the conditional breakpoint carried its condition');
-    assert.ok(
-      conditionsSent.every(
-        (entry) => Number(entry['line']) === fixture.source.dapLine('accumulate-call'),
-      ),
-      'and ONLY the breakpoint the user typed it on - a condition that leaked onto the plain ' +
-        'breakpoint silences a breakpoint the user set unconditionally',
-    );
-    const countsSent = sent.filter((entry) => String(entry['hitCondition'] ?? '') !== '');
-    assert.ok(countsSent.length >= 1, 'the hit-count breakpoint carried its hit condition');
-    assert.ok(
-      countsSent.every((entry) => Number(entry['line']) === fixture.source.dapLine('add-body')),
-      'and only that one',
-    );
-
-    // Interaction 3 — the capabilities that let each field be sent at all, and
-    // the stop the plain breakpoint produces.
-    for (const flag of [
-      'supportsConditionalBreakpoints',
-      'supportsHitConditionalBreakpoints',
-      'supportsLogPoints',
-    ]) {
+  debugTest(
+    'every breakpoint field reaches the adapter on its OWN breakpoint',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — four breakpoints, each carrying a different field, plus
+      // one that is disabled and must not be sent at all.
+      const plain = breakpointAt(fixture, 'main-accumulate');
+      const conditional = breakpointAt(fixture, 'accumulate-call', { condition: 'index == 3' });
+      const counted = breakpointAt(fixture, 'add-body', { hitCondition: '2' });
+      const disabled = breakpointAt(fixture, 'main-inspect', { enabled: false });
+      vscode.debug.addBreakpoints([plain, conditional, counted, disabled]);
+      eq(vscode.debug.breakpoints.length, 4, 'four breakpoints sit in the Breakpoints view');
       eq(
-        recorder.capabilities()[flag],
-        true,
-        flag +
-          ' is a Phase 4 Yes; unadvertised, VS Code strips the field before sending and ' +
-          'the breakpoint silently becomes a plain one',
+        vscode.debug.breakpoints.filter((entry) => entry.enabled).length,
+        3,
+        'three of them are enabled and one is not',
       );
-    }
-    const stop = requireAt(recorder.stops(), 0, 'the first stop');
-    assertStopReason(stop, 'breakpoint', 'the plain breakpoint');
-    assertStoppedAt(
-      await topFrame(session, stop.threadId),
-      fixture,
-      'main-accumulate',
-      'Main',
-      'the plain breakpoint is reached FIRST, before the conditional and counted ones',
-    );
+      deepEq(
+        armedLines(),
+        [
+          fixture.source.line('main-accumulate'),
+          fixture.source.line('accumulate-call'),
+          fixture.source.line('add-body'),
+          fixture.source.line('main-inspect'),
+        ].sort((left, right) => left - right),
+        'and the view holds them all, disabled included',
+      );
 
-    // Interaction 4 — walk the rest of the run. Each remaining breakpoint must
-    // fire exactly on the visit its own field selects.
-    const conditionalHit = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(conditionalHit.stop, 'breakpoint', 'the counted or conditional breakpoint');
-    assert.ok(
-      ['Add', 'Accumulate'].includes(methodOf(conditionalHit.frame)),
-      'the next stop is one of the two remaining breakpoints, never the disabled one',
-    );
-    assert.ok(
-      methodOf(conditionalHit.frame) !== 'Main',
-      'and never the disabled breakpoint in Main, whose line was not even sent',
-    );
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    assert.ok(
-      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
-      'every stop in the run is a breakpoint stop; a step or entry stop means something ' +
-        'other than the armed breakpoints paused the debuggee',
-    );
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-  });
+      // Interaction 2 — the sync. Only the enabled three are sent, each carrying
+      // its own field and nothing else.
+      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+      await recorder.waitForStops(1);
+      const requested = recorder.requests('setBreakpoints');
+      assert.ok(requested.length >= 1, 'the launch synced the armed breakpoints');
+      const sent = requested
+        .flatMap((request) => {
+          const list: unknown = request.args['breakpoints'];
+          return Array.isArray(list) ? (list as Record<string, any>[]) : [];
+        })
+        .filter((entry) => typeof entry['line'] === 'number');
+      assert.ok(
+        !sent.some((entry) => Number(entry['line']) === fixture.source.dapLine('main-inspect')),
+        'a DISABLED breakpoint must never be sent - the view greys it out precisely because it ' +
+          'is inert',
+      );
+      const conditionsSent = sent.filter((entry) => String(entry['condition'] ?? '') !== '');
+      assert.ok(conditionsSent.length >= 1, 'the conditional breakpoint carried its condition');
+      assert.ok(
+        conditionsSent.every(
+          (entry) => Number(entry['line']) === fixture.source.dapLine('accumulate-call'),
+        ),
+        'and ONLY the breakpoint the user typed it on - a condition that leaked onto the plain ' +
+          'breakpoint silences a breakpoint the user set unconditionally',
+      );
+      const countsSent = sent.filter((entry) => String(entry['hitCondition'] ?? '') !== '');
+      assert.ok(countsSent.length >= 1, 'the hit-count breakpoint carried its hit condition');
+      assert.ok(
+        countsSent.every((entry) => Number(entry['line']) === fixture.source.dapLine('add-body')),
+        'and only that one',
+      );
+
+      // Interaction 3 — the capabilities that let each field be sent at all, and
+      // the stop the plain breakpoint produces.
+      for (const flag of [
+        'supportsConditionalBreakpoints',
+        'supportsHitConditionalBreakpoints',
+        'supportsLogPoints',
+      ]) {
+        eq(
+          recorder.capabilities()[flag],
+          true,
+          flag +
+            ' is a Phase 4 Yes; unadvertised, VS Code strips the field before sending and ' +
+            'the breakpoint silently becomes a plain one',
+        );
+      }
+      const stop = requireAt(recorder.stops(), 0, 'the first stop');
+      assertStopReason(stop, 'breakpoint', 'the plain breakpoint');
+      assertStoppedAt(
+        await topFrame(session, stop.threadId),
+        fixture,
+        'main-accumulate',
+        'Main',
+        'the plain breakpoint is reached FIRST, before the conditional and counted ones',
+      );
+
+      // Interaction 4 — walk the rest of the run. Each remaining breakpoint must
+      // fire exactly on the visit its own field selects.
+      const conditionalHit = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(conditionalHit.stop, 'breakpoint', 'the counted or conditional breakpoint');
+      assert.ok(
+        ['Add', 'Accumulate'].includes(methodOf(conditionalHit.frame)),
+        'the next stop is one of the two remaining breakpoints, never the disabled one',
+      );
+      assert.ok(
+        methodOf(conditionalHit.frame) !== 'Main',
+        'and never the disabled breakpoint in Main, whose line was not even sent',
+      );
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      assert.ok(
+        recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+        'every stop in the run is a breakpoint stop; a step or entry stop means something ' +
+          'other than the armed breakpoints paused the debuggee',
+      );
+      deepEq(recorder.errors, [], 'with no adapter transport error');
+    },
+  );
 });
