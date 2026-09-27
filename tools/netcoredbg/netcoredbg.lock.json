@@ -16,14 +16,24 @@
     "point `release` at the new tag and replace every URL and SHA-256 with that",
     "release's (`gh release view <tag> --repo Nimblesite/netcoredbg --json assets`).",
     "",
-    "linux-arm64 and darwin-arm64 are unpinned until the fork's `Build release`",
-    "workflow publishes their archives for this tag."
+    "TEMPORARY, and custody.test.mjs fails until it is gone: linux-arm64 and",
+    "darwin-arm64 still point at the UNPATCHED upstream 3.2.0-1092 archives",
+    "because the fork's `Build release` workflow has not yet published theirs.",
+    "Run that workflow for tag 3.2.0-1092-sharplsp.1 and repin both."
   ],
   "release": "3.2.0-1092-sharplsp.1",
   "platforms": {
     "linux-x64": {
       "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-linux-x64.tar.gz",
       "sha256": "819a82b59a5c77158844f964553cfa58fb73bebdab812d99b066d66d635c2aa1"
+    },
+    "linux-arm64": {
+      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-linux-arm64.tar.gz",
+      "sha256": "065ff49badec8a695dbea2de6ab6a330c774a191e426a217ab8cc05250627ccb"
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-osx-arm64.zip",
+      "sha256": "f4fa33b3ff874910cc184b4bb3b9c56d0abdf5c6521cee0b144d7c6e4a6e59ea"
     },
     "win32-x64": {
       "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-win32-x64.tar.gz",

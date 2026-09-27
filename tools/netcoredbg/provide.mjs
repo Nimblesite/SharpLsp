@@ -60,11 +60,13 @@ function run(command, args, label, cwd = ROOT) {
 /** Archive member name used for the staged download, see extract(). */
 const DOWNLOAD_NAME = 'netcoredbg-download';
 
-// The fork release ships .tar.gz for every platform. bsdtar reads it and detects
-// the format itself; it is `tar` on macOS and System32's tar.exe on Windows,
-// where Git Bash's GNU tar would otherwise win on PATH. Only the `netcoredbg/`
-// member is extracted. A bare relative filename with `cwd` set keeps every
-// argument colon-free: GNU tar reads `C:\...` as host:path.
+// The fork release ships .tar.gz for every platform; upstream ships .zip for
+// macOS and Windows. bsdtar reads both and detects the format itself; it is
+// `tar` on macOS and System32's tar.exe on Windows, where Git Bash's GNU tar
+// would otherwise win on PATH and cannot read a zip. Only the `netcoredbg/`
+// member is extracted, which drops the `__MACOSX/` resource forks a macOS zip
+// carries. A bare relative filename with `cwd` set keeps every argument
+// colon-free: GNU tar reads `C:\...` as host:path.
 function tarCommand() {
     return process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 }
