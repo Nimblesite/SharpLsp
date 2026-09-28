@@ -1,13 +1,11 @@
-// [DIST-DEBUGGER-BUNDLE] End-to-end tests for how SharpLsp obtains the patched
+// [DIST-DEBUGGER-BUNDLE] End-to-end tests for how SharpLsp obtains the
 // netcoredbg debug adapter. Run by `make _test-tooling`.
 //
-// The adapter is the process users attach to their own code with. It used to be
-// compiled inside the release pipeline from two repositories cloned at build
-// time, with no digest checked and no provenance recorded - so these tests exist
-// to hold the replacement honest. provide.mjs must DOWNLOAD a pinned artifact,
-// must verify the bytes it actually received, and must REFUSE rather than fall
-// back to a source build when the digest does not match. A silent fallback would
-// turn a supply-chain alarm into a slow build and defeat the pin entirely.
+// The adapter is the process users attach to their own code with. SharpLsp never
+// compiles it: provide.mjs must DOWNLOAD the pinned Nimblesite/netcoredbg release,
+// must verify the bytes it actually received, and must REFUSE when the digest
+// does not match or a supported platform has no pin. There is no source build to
+// fall back to, and nothing in the repo may reintroduce one.
 //
 // These drive the REAL script over a REAL HTTP server and a REAL tar archive.
 // Nothing about the download path is stubbed, because the bug this guards
@@ -33,7 +31,7 @@ const PLATFORM = 'linux-arm64';
 const OUTPUT = join(ROOT, 'target', 'netcoredbg', PLATFORM, 'netcoredbg');
 const STAGED = join(ROOT, 'src', 'editors', 'vscode', 'bin', PLATFORM);
 const FETCH = join(ROOT, 'tools', 'vsix', 'fetch-netcoredbg.sh');
-const MARKER = '.sharplsp-dap-hot-reload';
+const MARKER = '.sharplsp-netcoredbg-release';
 
 let scratch = '';
 let server;
@@ -123,7 +121,7 @@ after(() => {
 });
 
 test('a pinned artifact whose digest matches is downloaded and unpacked', async () => {
-    served = buildArchive('patched-adapter');
+    served = buildArchive('upstream-adapter');
     const digest = createHash('sha256').update(served).digest('hex');
 
     const result = await provide(digest);
@@ -132,23 +130,23 @@ test('a pinned artifact whose digest matches is downloaded and unpacked', async 
     assert.ok(existsSync(join(OUTPUT, 'netcoredbg')), 'verified archive should be unpacked');
     assert.equal(
         readFileSync(join(OUTPUT, 'netcoredbg'), 'utf8'),
-        'patched-adapter',
+        'upstream-adapter',
         'the unpacked adapter should be the bytes that were served',
     );
     // The marker is what lets a later run - and the CI cache - recognise this as
     // the build the lock file describes.
     assert.ok(
-        existsSync(join(OUTPUT, '.sharplsp-dap-hot-reload')),
+        existsSync(join(OUTPUT, MARKER)),
         'the build-id marker should be written after a verified unpack',
     );
     assert.ok(
-        !existsSync(join(OUTPUT, 'netcoredbg-download.tar.gz')),
+        !existsSync(join(OUTPUT, 'netcoredbg-download')),
         'the staged download should be cleaned up',
     );
 });
 
 test('an adapter already on disk is not downloaded again', async () => {
-    served = buildArchive('patched-adapter');
+    served = buildArchive('upstream-adapter');
     const digest = createHash('sha256').update(served).digest('hex');
     await provide(digest);
 
@@ -162,16 +160,45 @@ test('an adapter already on disk is not downloaded again', async () => {
     );
 });
 
+test('a repin of the same release to new bytes is downloaded again', async () => {
+    // The fork's `Build release` workflow re-publishes the archives under an
+    // existing tag when it is re-run (a rebuild after a workflow fix). The tag
+    // alone cannot tell the old bytes from the new; only the pinned digest can.
+    served = buildArchive('first-build');
+    await provide(createHash('sha256').update(served).digest('hex'));
+    served = buildArchive('rebuilt-adapter');
+    const digest = createHash('sha256').update(served).digest('hex');
+
+    const result = await provide(digest);
+
+    assert.equal(result.status, 0, `provide.mjs failed: ${result.stderr}`);
+    assert.doesNotMatch(
+        result.stdout,
+        /already available/,
+        'a changed digest must not short-circuit on the marker',
+    );
+    assert.equal(
+        readFileSync(join(OUTPUT, 'netcoredbg'), 'utf8'),
+        'rebuilt-adapter',
+        'the adapter on disk must be the newly pinned bytes',
+    );
+    assert.equal(
+        readFileSync(join(OUTPUT, MARKER), 'utf8').trim(),
+        `${JSON.parse(readFileSync(LOCK, 'utf8')).release}:${digest}`,
+        'the marker names the release and the digest the bytes were verified against',
+    );
+});
+
 test('staging never ships an adapter an older lock file described', async () => {
     // A developer's target/ and bin/ still hold the build the PREVIOUS lock
-    // pinned - say, from before a patchVersion bump. Existence is not freshness:
-    // staging that build ships an adapter without the new patch.
+    // pinned - say, from before a release bump. Existence is not freshness:
+    // staging that build ships the wrong release.
     for (const directory of [OUTPUT, join(STAGED, 'netcoredbg')]) {
         mkdirSync(directory, { recursive: true });
         writeFileSync(join(directory, 'netcoredbg'), 'stale-adapter');
-        writeFileSync(join(directory, MARKER), 'older-commit:older-patch\n');
+        writeFileSync(join(directory, MARKER), 'older-release\n');
     }
-    served = buildArchive('patched-adapter');
+    served = buildArchive('upstream-adapter');
     const digest = createHash('sha256').update(served).digest('hex');
     const lock = JSON.parse(readFileSync(LOCK, 'utf8'));
 
@@ -180,18 +207,18 @@ test('staging never ships an adapter an older lock file described', async () => 
     assert.equal(result.status, 0, `fetch-netcoredbg.sh failed: ${result.stderr}`);
     assert.equal(
         readFileSync(join(OUTPUT, 'netcoredbg'), 'utf8'),
-        'patched-adapter',
+        'upstream-adapter',
         'a build whose marker names an older lock must be provided again',
     );
     assert.equal(
         readFileSync(join(STAGED, 'netcoredbg', 'netcoredbg'), 'utf8'),
-        'patched-adapter',
+        'upstream-adapter',
         'the extension must be staged with the build the lock describes',
     );
     assert.equal(
         readFileSync(join(STAGED, 'netcoredbg', MARKER), 'utf8').trim(),
-        `${lock.netcoredbgCommit}:${lock.patchVersion}`,
-        'the staged marker names the current build',
+        `${lock.release}:${digest}`,
+        'the staged marker names the current release and its digest',
     );
 
     const again = await stage(digest);
@@ -221,29 +248,62 @@ test('a digest mismatch REFUSES, and does not fall back to a source build', asyn
     );
 });
 
-test('the lock file is the only place the pinned commits are written down', () => {
+test('the lock file pins every supported platform to the fork release', () => {
     const lock = JSON.parse(readFileSync(LOCK, 'utf8'));
+    assert.ok(lock.release, 'netcoredbg.lock.json must name the fork release');
     for (const field of ['netcoredbgCommit', 'coreclrCommit', 'patchVersion']) {
-        assert.ok(lock[field], `netcoredbg.lock.json must declare ${field}`);
+        assert.equal(lock[field], undefined, `${field} described a source build, which no longer exists`);
     }
-    // A second copy of a commit in the build script is how a pin and the
-    // artifact it is supposed to describe drift apart.
-    const script = readFileSync(join(ROOT, 'tools', 'vsix', 'build-netcoredbg.sh'), 'utf8');
-    assert.ok(
-        !script.includes(lock.netcoredbgCommit),
-        'build-netcoredbg.sh must read the commit from the lock file, not hardcode it',
-    );
+    const prefix = `https://github.com/Nimblesite/netcoredbg/releases/download/${lock.release}/`;
+    for (const platform of ['linux-x64', 'linux-arm64', 'darwin-arm64', 'win32-x64']) {
+        const pin = lock.platforms[platform];
+        assert.ok(pin, `${platform} must be pinned: a supported platform with no pin cannot be provided`);
+        assert.equal(pin.url, `${prefix}netcoredbg-${platform}.tar.gz`, `${platform} must download the fork release`);
+        assert.match(pin.sha256, /^[0-9a-f]{64}$/, `${platform} must pin a SHA-256 digest`);
+    }
+});
+
+test('nothing in the repo can compile the debugger', () => {
+    for (const path of [
+        join(ROOT, 'tools', 'vsix', 'build-netcoredbg.sh'),
+        join(ROOT, 'tools', 'netcoredbg', 'dap-hot-reload.patch'),
+        join(ROOT, 'tools', 'netcoredbg', 'exception-stepping.patch'),
+        join(ROOT, '.github', 'workflows', 'publish-netcoredbg.yml'),
+    ]) {
+        assert.ok(!existsSync(path), `${path} builds or patches netcoredbg; SharpLsp only downloads it`);
+    }
+    const provider = readFileSync(PROVIDE, 'utf8');
+    for (const compile of ['build-netcoredbg', 'cmake', 'buildFromSource']) {
+        assert.ok(!provider.includes(compile), `provide.mjs must never compile the debugger ('${compile}')`);
+    }
+});
+
+test('a supported platform with no pin is a hard error, not a source build', () => {
+    const lock = JSON.parse(readFileSync(LOCK, 'utf8'));
+    lock.platforms = {};
+    const lockPath = join(scratch, 'unpinned.lock.json');
+    writeFileSync(lockPath, JSON.stringify(lock));
+
+    const result = spawnSync(process.execPath, [PROVIDE, PLATFORM], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, SHARPLSP_NETCOREDBG_LOCK: lockPath },
+    });
+
+    assert.notEqual(result.status, 0, 'an unpinned supported platform must fail the build');
+    assert.match(result.stderr, /no pinned download/, `expected a missing-pin diagnostic: ${result.stderr}`);
+    assert.ok(!existsSync(join(OUTPUT, 'netcoredbg')), 'nothing may be provided without a pin');
 });
 
 test('an unsupported platform skips cleanly instead of failing the build', () => {
-    // darwin-x64 and win32-arm64 have no patched build; the extension falls back
-    // to PATH / sharplsp.debug.netcoredbgPath, so this must not be an error.
+    // Upstream publishes no darwin-x64 or win32-arm64 build; the extension falls
+    // back to PATH / sharplsp.debug.netcoredbgPath, so this must not be an error.
     const result = spawnSync(process.execPath, [PROVIDE, 'darwin-x64'], {
         cwd: ROOT,
         encoding: 'utf8',
     });
     assert.equal(result.status, 0, 'an unsupported platform must not fail the build');
-    assert.match(result.stderr, /no patched build/);
+    assert.match(result.stderr, /no upstream build/);
 });
 
 test('an unknown platform is a hard error', () => {

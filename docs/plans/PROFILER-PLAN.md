@@ -70,6 +70,10 @@ Tracks progress against the spec. Every checked item has implementing code and a
 - [x] `stopTrace` produces a non-empty `.nettrace` and auto-converts
 - [x] `startCounters` delivers at least one `counterUpdate` notification
 - [x] `analyzeHeap` returns deterministic type counts on a fixture dump
+- [x] [PROFILER-SESSIONS-LIFECYCLE] The real `ProfileTarget` exits if its creator
+  dies before watchdog startup, including under a Linux child subreaper (10
+  consecutive orphan-process regressions and the full 701-test Rust coverage
+  suite passed; issue #3).
 - [ ] e2e: click process node → trace session appears in tree
 - [ ] e2e: click trace session → session disappears and SpeedScope URL opens
 - [ ] e2e: right-click trace session → every menu entry invocable

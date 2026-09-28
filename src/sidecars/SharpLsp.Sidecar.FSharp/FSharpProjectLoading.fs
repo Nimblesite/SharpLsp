@@ -99,7 +99,9 @@ let discoverFsprojFiles (path: string) (ct: CancellationToken) =
         elif File.Exists(fullPath) && isSolutionPath fullPath then
             return! fsprojFilesFromSolution fullPath ct
         elif Directory.Exists(fullPath) then
-            return Ok(Directory.GetFiles(fullPath, "*.fsproj", SearchOption.AllDirectories))
+            // Build output, packages and dot-directories left unwalked:
+            // [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+            return Ok(NativePaths.WorkspaceFiles(fullPath, ".fsproj"))
         else
             return Error $"Path does not exist: {path}"
     }

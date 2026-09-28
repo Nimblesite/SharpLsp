@@ -212,6 +212,52 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
         await AssertOneImplementationAsync(manager, shape);
     }
 
+    private const string BrokenSource = """
+        namespace Fx;
+
+        public static class Broken
+        {
+            public static int Read()
+            {
+                int unused;
+                return Missing.Value;
+            }
+        }
+
+        """;
+
+    [Fact]
+    public async Task A_framework_project_reports_its_errors_and_warnings_per_file_and_solution_wide()
+    {
+        // Implements [NETFX-PROJECTS-CSHARP]: net48 is the active framework, and its
+        // compilation reports the same errors and warnings as any modern project.
+        var broken = NativePaths.Join(_root, "Probe", "Broken.cs");
+        await File.WriteAllTextAsync(broken, BrokenSource);
+        using var manager = await OpenAsync(_project);
+        Assert.Equal(
+            "net48",
+            AssertOk(await manager.GetTargetFrameworksAsync(broken, default)).Active
+        );
+        AssertBroken(AssertOk(await manager.GetDiagnosticsAsync(broken, default)));
+        var all = AssertOk(await manager.GetAllDiagnosticsAsync([], default));
+        AssertBroken(all[broken]);
+
+        _ = AssertOk(await manager.SetTargetFrameworkAsync(broken, "net10.0", default));
+        AssertBroken(AssertOk(await manager.GetDiagnosticsAsync(broken, default)));
+    }
+
+    private static void AssertBroken(List<DiagnosticResult> diagnostics)
+    {
+        var error = Assert.Single(diagnostics, diagnostic => diagnostic.Code == "CS0103");
+        Assert.Equal(("Error", 7, 15), (error.Severity, error.StartLine, error.StartCharacter));
+        Assert.Contains("'Missing'", error.Message, StringComparison.Ordinal);
+        var warning = Assert.Single(diagnostics, diagnostic => diagnostic.Code == "CS0168");
+        Assert.Equal(
+            ("Warning", 6, 12),
+            (warning.Severity, warning.StartLine, warning.StartCharacter)
+        );
+    }
+
     private static async Task AssertOneUseAsync(
         WorkspaceManager manager,
         string shared,

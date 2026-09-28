@@ -266,6 +266,69 @@ public static class NativePaths
         );
     }
 
+    /// <summary>Directories a workspace walk never enters, besides every dot-directory.</summary>
+    private static readonly string[] UnwalkedDirectories = ["bin", "obj", "node_modules"];
+
+    /// <summary>
+    /// Every file under <paramref name="root"/> ending in one of <paramref name="extensions"/>
+    /// (dot included, by the case rule). Build output, JS packages and dot-directories
+    /// (<c>.git</c>, <c>.vs</c>, <c>.vscode-test</c>) are never entered, nor is a directory
+    /// reparse point, so a link cycle cannot loop the walk.
+    /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    public static string[] WorkspaceFiles(string root, params string[] extensions)
+    {
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            IgnoreInaccessible = true,
+            AttributesToSkip = 0,
+        };
+        var files = new System.IO.Enumeration.FileSystemEnumerable<string>(
+            root,
+            static (ref entry) => entry.ToFullPath(),
+            options
+        )
+        {
+            ShouldIncludePredicate = (ref entry) =>
+                !entry.IsDirectory && EndsInAny(entry.FileName, extensions),
+            ShouldRecursePredicate = static (ref entry) =>
+                IsWalked(entry.FileName, entry.Attributes),
+        };
+        return [.. files];
+    }
+
+    private static bool EndsInAny(ReadOnlySpan<char> name, string[] extensions)
+    {
+        foreach (var extension in extensions)
+        {
+            if (name.EndsWith(extension, Comparison))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsNamedAny(ReadOnlySpan<char> name, string[] names)
+    {
+        foreach (var candidate in names)
+        {
+            if (name.Equals(candidate, Comparison))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsWalked(ReadOnlySpan<char> name, FileAttributes attributes)
+    {
+        return !name.StartsWith('.')
+            && (attributes & FileAttributes.ReparsePoint) == 0
+            && !IsNamedAny(name, UnwalkedDirectories);
+    }
+
     /// <summary>Whether two paths carry the same file name by the case rule, whatever their directories.</summary>
     public static bool SameName(string left, string right)
     {

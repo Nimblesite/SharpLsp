@@ -52,7 +52,7 @@ import {
   teardownFixtureSolution,
   assertLeavesAre,
 } from './test-explorer-kit';
-import { cachedFor, itemsFor, sorted } from './test-explorer-outcome-assertions';
+import { cachedFor, itemsFor, sorted, runIds } from './test-explorer-outcome-assertions';
 import { pollUntilResult, removeDirRecursive, sleep } from './test-helpers.js';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { warmAndDiscover } from './test-explorer-harness';
@@ -931,11 +931,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // run, and promptly.
     clearMarkers();
     const started = Date.now();
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [FAST_TEST]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [FAST_TEST]);
     const elapsed = Date.now() - started;
     const result = api.testController.getResult(FAST_TEST);
     assert.ok(result, `${FAST_TEST} must report after a cancelled run — the queue drained`);
@@ -1001,11 +997,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // user learns to reload the window every time they press Stop. So run the
     // WHOLE fixture, uncancelled, and require every long test to reach its end.
     clearMarkers();
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, ALL_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, ALL_TESTS);
     assert.deepStrictEqual(
       markersOnDisk(),
       sorted(EVERY_MARKER),
@@ -1094,11 +1086,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 1 — let a run of the fast test finish normally.
     clearMarkers();
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [FAST_TEST]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [FAST_TEST]);
     const settled = api.testController.getResult(FAST_TEST);
     assert.ok(settled, 'the completed run cached a result');
     assert.strictEqual(settled.outcome, 'passed', 'a real pass');
@@ -1361,11 +1349,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // test writes BOTH markers this time.
     clearMarkers();
     const started = Date.now();
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, ALL_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, ALL_TESTS);
     const elapsed = Date.now() - started;
     assert.deepStrictEqual(
       markersOnDisk(),
@@ -1459,11 +1443,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // Interaction 2 — now let a coverage run FINISH, over the fast test alone so
     // it costs one round trip.
     clearMarkers();
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Coverage,
-      itemsFor(api, [FAST_TEST]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Coverage, [FAST_TEST]);
     assert.ok(fs.existsSync(coverageDir), 'the completed run created the directory');
     const entries = fs.readdirSync(coverageDir).sort();
     const dirs = entries.filter((entry) =>
@@ -1567,11 +1547,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     //
     // Interaction 1 — a baseline the assertions below can be compared against.
     clearMarkers();
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [FAST_TEST]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [FAST_TEST]);
     const settled = api.testController.getResult(FAST_TEST);
     assert.ok(settled, 'the control run cached a result');
     assert.strictEqual(settled.outcome, 'passed', 'a real pass');

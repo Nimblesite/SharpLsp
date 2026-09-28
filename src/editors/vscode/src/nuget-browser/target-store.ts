@@ -7,6 +7,7 @@
 import { directoryOf, fileNameOf, hasExtension } from '../paths';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
+import * as state from '../state.js';
 import { fetchTargets } from './lsp.js';
 import { type NuGetTarget } from './types.js';
 
@@ -24,7 +25,7 @@ export async function loadTargetsWithDefaults(
   initialProjectPath: string,
 ): Promise<LoadTargetsResult> {
   const workspaceRoot = computeWorkspaceRoot(initialProjectPath);
-  const result = await fetchTargets(lsp, workspaceRoot);
+  const result = await fetchTargets(lsp, workspaceRoot, solutionProjects());
 
   let targets: NuGetTarget[];
   let error: string | undefined;
@@ -55,6 +56,12 @@ export async function persistTargetSelection(
   targetId: string,
 ): Promise<void> {
   await context.workspaceState.update(LAST_TARGET_KEY, targetId);
+}
+
+/** The loaded solution's project files, as the Solution Explorer shows them. */
+export function solutionProjects(): string[] {
+  const symbols = state.symbolsState.value;
+  return symbols.kind === 'loaded' ? symbols.response.projects.map((p) => p.path) : [];
 }
 
 export function computeWorkspaceRoot(initialProjectPath: string): string {

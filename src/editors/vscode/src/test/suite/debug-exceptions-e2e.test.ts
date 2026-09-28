@@ -32,7 +32,6 @@ import {
   methodOf,
   stackFrames,
   stepToFrame,
-  topFrame,
 } from './debug-drive-kit';
 import {
   armBreakpoints,
@@ -42,9 +41,10 @@ import {
   useDebuggee,
   runToFirstStop,
   type Debuggee,
+  stopInFrame,
+  debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
-import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** The filter id every DAP adapter uses for "break on every throw". */
 const FILTER_ALL = 'all';
@@ -77,433 +77,450 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] and the exception rows of
   // [DEBUG-PROTOCOL-CAPABILITIES].
-  test('the adapter advertises every exception facility the specification requires', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'the adapter advertises every exception facility the specification requires',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — reach a stop so the whole initialize handshake is on the wire.
+      armBreakpoints(fixture, 'main-mode');
+      await startDebuggee(debuggee(), { mode: MODE.plain });
+      await recorder.waitForStops(1);
+      const capabilities = recorder.capabilities();
 
-    // Interaction 1 — reach a stop so the whole initialize handshake is on the wire.
-    armBreakpoints(fixture, 'main-mode');
-    await startDebuggee(debuggee(), { mode: MODE.plain });
-    await recorder.waitForStops(1);
-    const capabilities = recorder.capabilities();
+      // Interaction 2 — the filter set: "all" plus an unhandled-only filter.
+      const filters = advertisedFilters(capabilities);
+      assert.ok(
+        filters.includes(FILTER_ALL),
+        `"Break on all CLR exceptions" is P1; an '${FILTER_ALL}' filter must be advertised. ` +
+          `Advertised: ${filters.join(', ') || '<none>'}`,
+      );
+      assert.ok(
+        filters.some((filter) => UNHANDLED_FILTERS.includes(filter)),
+        '"Break on unhandled exceptions only" is P1; one of ' +
+          `${UNHANDLED_FILTERS.join('/')} must be advertised. Advertised: ${filters.join(', ')}`,
+      );
+      eq(
+        new Set(filters).size,
+        filters.length,
+        'a duplicated filter id makes two checkboxes drive the same switch',
+      );
 
-    // Interaction 2 — the filter set: "all" plus an unhandled-only filter.
-    const filters = advertisedFilters(capabilities);
-    assert.ok(
-      filters.includes(FILTER_ALL),
-      `"Break on all CLR exceptions" is P1; an '${FILTER_ALL}' filter must be advertised. ` +
-        `Advertised: ${filters.join(', ') || '<none>'}`,
-    );
-    assert.ok(
-      filters.some((filter) => UNHANDLED_FILTERS.includes(filter)),
-      '"Break on unhandled exceptions only" is P1; one of ' +
-        `${UNHANDLED_FILTERS.join('/')} must be advertised. Advertised: ${filters.join(', ')}`,
-    );
-    eq(
-      new Set(filters).size,
-      filters.length,
-      'a duplicated filter id makes two checkboxes drive the same switch',
-    );
+      // Interaction 3 — the capability rows [DEBUG-PROTOCOL-CAPABILITIES] pins Yes.
+      eq(
+        capabilities['supportsExceptionOptions'],
+        true,
+        '[DEBUG-PROTOCOL-CAPABILITIES] lists supportsExceptionOptions as Yes for Phase 4 — it is ' +
+          'what carries "Filter by type, user code, etc.", the P1 include/exclude row',
+      );
+      eq(
+        capabilities['supportsExceptionInfoRequest'],
+        true,
+        '"Exception info panel (type, message, stack)" is P1 and arrives only through the ' +
+          '`exceptionInfo` request',
+      );
+      eq(
+        capabilities['supportsExceptionFilterOptions'],
+        true,
+        'DAP 1.71.0 `filterOptions` is how a filter carries a condition; without the capability ' +
+          'VS Code falls back to plain filter ids and the per-type configuration is unreachable',
+      );
 
-    // Interaction 3 — the capability rows [DEBUG-PROTOCOL-CAPABILITIES] pins Yes.
-    eq(
-      capabilities['supportsExceptionOptions'],
-      true,
-      '[DEBUG-PROTOCOL-CAPABILITIES] lists supportsExceptionOptions as Yes for Phase 4 — it is ' +
-        'what carries "Filter by type, user code, etc.", the P1 include/exclude row',
-    );
-    eq(
-      capabilities['supportsExceptionInfoRequest'],
-      true,
-      '"Exception info panel (type, message, stack)" is P1 and arrives only through the ' +
-        '`exceptionInfo` request',
-    );
-    eq(
-      capabilities['supportsExceptionFilterOptions'],
-      true,
-      'DAP 1.71.0 `filterOptions` is how a filter carries a condition; without the capability ' +
-        'VS Code falls back to plain filter ids and the per-type configuration is unreachable',
-    );
-
-    // Interaction 4 — every advertised filter must describe itself to the user.
-    const raw = capabilities['exceptionBreakpointFilters'] as Record<string, any>[];
-    deepEq(
-      raw.map((filter) => typeof filter['label']),
-      raw.map(() => 'string'),
-      'each filter needs a label; an unlabelled checkbox is unusable',
-    );
-    deepEq(
-      raw.map((filter) => String(filter['label']).trim() === ''),
-      raw.map(() => false),
-      'and the label must not be empty',
-    );
-    assertCleanSession(debuggee(), 'reading the adapter capabilities');
-  });
+      // Interaction 4 — every advertised filter must describe itself to the user.
+      const raw = capabilities['exceptionBreakpointFilters'] as Record<string, any>[];
+      deepEq(
+        raw.map((filter) => typeof filter['label']),
+        raw.map(() => 'string'),
+        'each filter needs a label; an unlabelled checkbox is unusable',
+      );
+      deepEq(
+        raw.map((filter) => String(filter['label']).trim() === ''),
+        raw.map(() => false),
+        'and the label must not be empty',
+      );
+      assertCleanSession(debuggee(), 'reading the adapter capabilities');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on all CLR exceptions | P1".
-  test('breaking on ALL exceptions catches a throw the program handles itself', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'breaking on ALL exceptions catches a throw the program handles itself',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — stop early so the filters can be configured before the throw.
+      const { session } = await stopInFrame(
+        debuggee(),
+        'main-mode',
+        'Main',
+        'the gate breakpoint',
+        {
+          mode: MODE.caught,
+        },
+      );
 
-    // Interaction 1 — stop early so the filters can be configured before the throw.
-    const { session, stop: gate } = await runToFirstStop(debuggee(), 'main-mode', {
-      mode: MODE.caught,
-    });
-    assertStoppedAt(
-      await topFrame(session, gate.threadId),
-      fixture,
-      'main-mode',
-      'Main',
-      'the gate breakpoint',
-    );
+      // Interaction 2 — tick "All Exceptions".
+      const before = recorder.requests('setExceptionBreakpoints').length;
+      const response = await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
+      eq(typeof response, 'object', '`setExceptionBreakpoints` must answer');
+      const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
+      deepEq(
+        sent.args['filters'],
+        [FILTER_ALL],
+        'the filter change must reach the adapter carrying the ticked filter. Counting the ' +
+          'requests instead cannot see that: the workbench opens every session with a ' +
+          '`setExceptionBreakpoints` of its own, so a count is satisfied before the suite ' +
+          'has sent anything at all',
+      );
 
-    // Interaction 2 — tick "All Exceptions".
-    const before = recorder.requests('setExceptionBreakpoints').length;
-    const response = await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
-    eq(typeof response, 'object', '`setExceptionBreakpoints` must answer');
-    const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
-    deepEq(
-      sent.args['filters'],
-      [FILTER_ALL],
-      'the filter change must reach the adapter carrying the ticked filter. Counting the ' +
-        'requests instead cannot see that: the workbench opens every session with a ' +
-        '`setExceptionBreakpoints` of its own, so a count is satisfied before the suite ' +
-        'has sent anything at all',
-    );
+      // Interaction 3 — continue. The FIRST-CHANCE throw must stop the debuggee,
+      // even though the program catches it two lines later.
+      const caught = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(caught.stop, 'exception', 'an all-exceptions stop');
+      assertStoppedAt(
+        caught.frame,
+        fixture,
+        'throw-caught',
+        'ThrowCaught',
+        '"Break on all CLR exceptions" must stop on the THROW statement, before the catch ' +
+          'block runs — stopping in the catch, or not at all, is the non-conforming behaviour',
+      );
 
-    // Interaction 3 — continue. The FIRST-CHANCE throw must stop the debuggee,
-    // even though the program catches it two lines later.
-    const caught = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(caught.stop, 'exception', 'an all-exceptions stop');
-    assertStoppedAt(
-      caught.frame,
-      fixture,
-      'throw-caught',
-      'ThrowCaught',
-      '"Break on all CLR exceptions" must stop on the THROW statement, before the catch ' +
-        'block runs — stopping in the catch, or not at all, is the non-conforming behaviour',
-    );
+      // Interaction 4 — the exception panel must identify what was thrown.
+      const info = await exceptionInfoOf(session, caught.stop.threadId);
+      assertExceptionIs(info, CAUGHT_TYPE, CAUGHT_MESSAGE, 'the first-chance exception');
+      eq(
+        info.breakMode,
+        'always',
+        'a stop produced by the "all" filter must report breakMode `always`; `unhandled` here ' +
+          'means the adapter broke for a different reason than the one the user selected',
+      );
+      const frames = await stackFrames(session, caught.stop.threadId);
+      deepEq(
+        frames.slice(0, 2).map((frame) => methodOf(frame)),
+        ['ThrowCaught', 'Main'],
+        'the call stack at an exception stop must be the throwing stack, not the catch site',
+      );
 
-    // Interaction 4 — the exception panel must identify what was thrown.
-    const info = await exceptionInfoOf(session, caught.stop.threadId);
-    assertExceptionIs(info, CAUGHT_TYPE, CAUGHT_MESSAGE, 'the first-chance exception');
-    eq(
-      info.breakMode,
-      'always',
-      'a stop produced by the "all" filter must report breakMode `always`; `unhandled` here ' +
-        'means the adapter broke for a different reason than the one the user selected',
-    );
-    const frames = await stackFrames(session, caught.stop.threadId);
-    deepEq(
-      frames.slice(0, 2).map((frame) => methodOf(frame)),
-      ['ThrowCaught', 'Main'],
-      'the call stack at an exception stop must be the throwing stack, not the catch site',
-    );
-
-    // Interaction 5 — continue: the program handles it and finishes normally.
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'a handled exception');
-    await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
-    eq(
-      recorder.stops().filter((stop) => stop.reason === 'exception').length,
-      1,
-      'the program throws exactly once in `caught` mode, so exactly one exception stop',
-    );
-    assertCleanSession(debuggee(), 'break on all exceptions');
-  });
+      // Interaction 5 — continue: the program handles it and finishes normally.
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'a handled exception');
+      await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
+      eq(
+        recorder.stops().filter((stop) => stop.reason === 'exception').length,
+        1,
+        'the program throws exactly once in `caught` mode, so exactly one exception stop',
+      );
+      assertCleanSession(debuggee(), 'break on all exceptions');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on unhandled exceptions only"
   // and "Break on exceptions from user code only" — the IGNORING half.
-  test('with only the unhandled filter, a handled throw is ignored completely', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { recorder } = debuggee();
+  debugTest(
+    'with only the unhandled filter, a handled throw is ignored completely',
+    debuggee,
+    async ({ recorder }) => {
+      // Interaction 1 — gate, then select ONLY the unhandled-style filter.
+      const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.caught });
+      const filters = advertisedFilters(recorder.capabilities());
+      const unhandled = filters.find((filter) => UNHANDLED_FILTERS.includes(filter));
+      assert.ok(
+        unhandled,
+        `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`,
+      );
+      const before = recorder.requests('setExceptionBreakpoints').length;
+      await dap(session, 'setExceptionBreakpoints', { filters: [unhandled] });
+      const selection = await recorder.requestAfter('setExceptionBreakpoints', before);
+      deepEq(
+        selection.args['filters'],
+        [unhandled],
+        'exactly the selected filter is sent; sending `all` alongside it would break on ' +
+          'everything and the user would have no way to get the behaviour they asked for',
+      );
 
-    // Interaction 1 — gate, then select ONLY the unhandled-style filter.
-    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.caught });
-    const filters = advertisedFilters(recorder.capabilities());
-    const unhandled = filters.find((filter) => UNHANDLED_FILTERS.includes(filter));
-    assert.ok(unhandled, `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`);
-    const before = recorder.requests('setExceptionBreakpoints').length;
-    await dap(session, 'setExceptionBreakpoints', { filters: [unhandled] });
-    const selection = await recorder.requestAfter('setExceptionBreakpoints', before);
-    deepEq(
-      selection.args['filters'],
-      [unhandled],
-      'exactly the selected filter is sent; sending `all` alongside it would break on ' +
-        'everything and the user would have no way to get the behaviour they asked for',
-    );
+      // Interaction 2 — continue. The handled throw must NOT stop the debuggee.
+      const baseline = recorder.stops().length;
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'an ignored, handled exception');
+      await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
 
-    // Interaction 2 — continue. The handled throw must NOT stop the debuggee.
-    const baseline = recorder.stops().length;
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'an ignored, handled exception');
-    await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
+      // Interaction 3 — prove the negative, precisely.
+      deepEq(
+        recorder
+          .stops()
+          .slice(baseline)
+          .map((stop) => `${stop.reason}:${stop.text}`),
+        [],
+        'a throw the program CATCHES must be invisible when only the unhandled filter is ' +
+          'selected. Breaking here is the defect that makes a debugger useless on any codebase ' +
+          'that uses exceptions for control flow',
+      );
+      await recorder.waitForOutput('done caught 45');
 
-    // Interaction 3 — prove the negative, precisely.
-    deepEq(
-      recorder
-        .stops()
-        .slice(baseline)
-        .map((stop) => `${stop.reason}:${stop.text}`),
-      [],
-      'a throw the program CATCHES must be invisible when only the unhandled filter is ' +
-        'selected. Breaking here is the defect that makes a debugger useless on any codebase ' +
-        'that uses exceptions for control flow',
-    );
-    await recorder.waitForOutput('done caught 45');
+      // Interaction 4 - the program RAN, and ran to its own end. "No stops" is
+      // also what a session that died on launch produces, so the negative above
+      // only means something beside the positive evidence that the debuggee got
+      // all the way through the catch block and past it.
+      assertContainsAll(
+        recorder.outputText(),
+        [`handled ${CAUGHT_MESSAGE}`, 'done caught 45'],
+        'recorder.outputText()',
+      );
+      eq(recorder.stops().length, baseline, 'with no stop added after the gate');
 
-    // Interaction 4 - the program RAN, and ran to its own end. "No stops" is
-    // also what a session that died on launch produces, so the negative above
-    // only means something beside the positive evidence that the debuggee got
-    // all the way through the catch block and past it.
-    assertContainsAll(
-      recorder.outputText(),
-      [`handled ${CAUGHT_MESSAGE}`, 'done caught 45'],
-      'recorder.outputText()',
-    );
-    eq(recorder.stops().length, baseline, 'with no stop added after the gate');
+      // Interaction 5 - the SELECTION is still the one that was asked for. A
+      // later `setExceptionBreakpoints` that quietly re-adds `all` would produce
+      // this test's result only until the next continue, and nothing else can see
+      // it ([DEBUG-FEATURES-EXCEPTIONS]).
+      const requests = recorder.requests('setExceptionBreakpoints');
+      const last = requests[requests.length - 1];
+      assert.ok(last, 'at least one setExceptionBreakpoints reached the adapter');
+      deepEq(last.args['filters'], [unhandled], 'and the last one still names only that filter');
+      assert.ok(
+        !JSON.stringify(last.args['filters']).includes('"all"'),
+        'with `all` never smuggled back in alongside it',
+      );
 
-    // Interaction 5 - the SELECTION is still the one that was asked for. A
-    // later `setExceptionBreakpoints` that quietly re-adds `all` would produce
-    // this test's result only until the next continue, and nothing else can see
-    // it ([DEBUG-FEATURES-EXCEPTIONS]).
-    const requests = recorder.requests('setExceptionBreakpoints');
-    const last = requests[requests.length - 1];
-    assert.ok(last, 'at least one setExceptionBreakpoints reached the adapter');
-    deepEq(last.args['filters'], [unhandled], 'and the last one still names only that filter');
-    assert.ok(
-      !JSON.stringify(last.args['filters']).includes('"all"'),
-      'with `all` never smuggled back in alongside it',
-    );
-
-    assertCleanSession(debuggee(), 'ignoring a handled exception');
-  });
+      assertCleanSession(debuggee(), 'ignoring a handled exception');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Exception info panel (type, message,
   // stack)" P1 and "Inner exception chain traversal" P2.
-  test('an unhandled exception breaks with its type, message, stack and inner cause', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'an unhandled exception breaks with its type, message, stack and inner cause',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — gate, then select the unhandled filter and run into the throw.
+      const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.unhandled });
+      const filters = advertisedFilters(recorder.capabilities());
+      const unhandled = filters.find((filter) => UNHANDLED_FILTERS.includes(filter));
+      assert.ok(
+        unhandled,
+        `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`,
+      );
+      await dap(session, 'setExceptionBreakpoints', { filters: [unhandled] });
 
-    // Interaction 1 — gate, then select the unhandled filter and run into the throw.
-    const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.unhandled });
-    const filters = advertisedFilters(recorder.capabilities());
-    const unhandled = filters.find((filter) => UNHANDLED_FILTERS.includes(filter));
-    assert.ok(unhandled, `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`);
-    await dap(session, 'setExceptionBreakpoints', { filters: [unhandled] });
+      // Interaction 2 — continue into the unhandled throw.
+      const crash = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(crash.stop, 'exception', 'an unhandled-exception stop');
+      assertStoppedAt(
+        crash.frame,
+        fixture,
+        'throw-unhandled',
+        'ThrowUnhandled',
+        'an unhandled exception must stop the debuggee at the throw, with the stack intact — ' +
+          'letting the process die first leaves nothing to inspect',
+      );
 
-    // Interaction 2 — continue into the unhandled throw.
-    const crash = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(crash.stop, 'exception', 'an unhandled-exception stop');
-    assertStoppedAt(
-      crash.frame,
-      fixture,
-      'throw-unhandled',
-      'ThrowUnhandled',
-      'an unhandled exception must stop the debuggee at the throw, with the stack intact — ' +
-        'letting the process die first leaves nothing to inspect',
-    );
+      // Interaction 3 — the panel must carry type, message and a real stack.
+      const info = await exceptionInfoOf(session, crash.stop.threadId);
+      assertExceptionIs(info, UNHANDLED_TYPE, UNHANDLED_MESSAGE, 'the unhandled exception');
+      assert.ok(
+        info.stackTrace.includes('ThrowUnhandled'),
+        `the panel's stackTrace must name the throwing method; got: ${info.stackTrace}`,
+      );
+      assert.ok(
+        info.breakMode.length > 0,
+        'DAP requires a breakMode on every exceptionInfo response',
+      );
 
-    // Interaction 3 — the panel must carry type, message and a real stack.
-    const info = await exceptionInfoOf(session, crash.stop.threadId);
-    assertExceptionIs(info, UNHANDLED_TYPE, UNHANDLED_MESSAGE, 'the unhandled exception');
-    assert.ok(
-      info.stackTrace.includes('ThrowUnhandled'),
-      `the panel's stackTrace must name the throwing method; got: ${info.stackTrace}`,
-    );
-    assert.ok(
-      info.breakMode.length > 0,
-      'DAP requires a breakMode on every exceptionInfo response',
-    );
+      // Interaction 4 — the inner exception chain (P2).
+      deepEq(
+        info.innerMessages,
+        [INNER_MESSAGE],
+        '"Inner exception chain traversal" is a specified row: the `ApplicationException` was ' +
+          'constructed with a `FormatException` cause, and an empty chain means the user cannot ' +
+          'see WHY the outer exception was thrown',
+      );
 
-    // Interaction 4 — the inner exception chain (P2).
-    deepEq(
-      info.innerMessages,
-      [INNER_MESSAGE],
-      '"Inner exception chain traversal" is a specified row: the `ApplicationException` was ' +
-        'constructed with a `FormatException` cause, and an empty chain means the user cannot ' +
-        'see WHY the outer exception was thrown',
-    );
-
-    // Interaction 5 — the stack must show who called the throwing method.
-    const frames = await stackFrames(session, crash.stop.threadId);
-    deepEq(
-      frames.slice(0, 2).map((frame) => methodOf(frame)),
-      ['ThrowUnhandled', 'Main'],
-      'the frames below the throw must still be walkable at an unhandled-exception stop',
-    );
-    eq(
-      requireAt(frames, 1, 'the calling frame').line,
-      fixture.source.dapLine('main-unhandled'),
-      'the caller must be parked on the call statement that led to the throw',
-    );
-    assertCleanSession(debuggee(), 'an unhandled exception stop');
-  });
+      // Interaction 5 — the stack must show who called the throwing method.
+      const frames = await stackFrames(session, crash.stop.threadId);
+      deepEq(
+        frames.slice(0, 2).map((frame) => methodOf(frame)),
+        ['ThrowUnhandled', 'Main'],
+        'the frames below the throw must still be walkable at an unhandled-exception stop',
+      );
+      eq(
+        requireAt(frames, 1, 'the calling frame').line,
+        fixture.source.dapLine('main-unhandled'),
+        'the caller must be parked on the call statement that led to the throw',
+      );
+      assertCleanSession(debuggee(), 'an unhandled exception stop');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Exception info panel (type,
   // message, stack) | P1" and "Inner exception chain traversal | P2" together
   // with [DEBUG-FEATURES-STACK]: the panel is only useful if the STACK behind
   // the exception is the user own, at the throw site.
-  test('an exception stop carries the throwing frame and the whole user stack', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'an exception stop carries the throwing frame and the whole user stack',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — break on every throw, in the mode that throws twice.
+      const session = await stopWithAllFilter(debuggee());
+      assert.ok(
+        advertisedFilters(recorder.capabilities()).includes(FILTER_ALL),
+        'the "all exceptions" checkbox must be offered before it can be ticked',
+      );
 
-    // Interaction 1 — break on every throw, in the mode that throws twice.
-    const session = await stopWithAllFilter(debuggee());
-    assert.ok(
-      advertisedFilters(recorder.capabilities()).includes(FILTER_ALL),
-      'the "all exceptions" checkbox must be offered before it can be ticked',
-    );
+      // Interaction 2 — the first throw. The panel fields, and the frame the
+      // throw happened in.
+      const first = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(first.stop, 'exception', 'the first throw');
+      assertStoppedAt(
+        first.frame,
+        fixture,
+        'throw-caught',
+        'ThrowCaught',
+        'an exception stop must park on the THROW, not on the catch that follows it',
+      );
+      const info = await exceptionInfoOf(session, first.stop.threadId);
+      assertExceptionIs(info, CAUGHT_TYPE, CAUGHT_MESSAGE, 'the first throw');
+      neq(info.description, '', 'the panel needs a description to render');
+      const frames = await stackFrames(session, first.stop.threadId);
+      assert.ok(frames.length >= 2, 'the throwing method was called from somewhere');
+      eq(
+        methodOf(requireAt(frames, 0, 'the throwing frame')),
+        'ThrowCaught',
+        'the innermost frame is the method that threw',
+      );
+      assert.ok(
+        frames.map((frame) => methodOf(frame)).includes('Main'),
+        'and the caller chain up to Main is intact, which is how the user finds the cause',
+      );
 
-    // Interaction 2 — the first throw. The panel fields, and the frame the
-    // throw happened in.
-    const first = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(first.stop, 'exception', 'the first throw');
-    assertStoppedAt(
-      first.frame,
-      fixture,
-      'throw-caught',
-      'ThrowCaught',
-      'an exception stop must park on the THROW, not on the catch that follows it',
-    );
-    const info = await exceptionInfoOf(session, first.stop.threadId);
-    assertExceptionIs(info, CAUGHT_TYPE, CAUGHT_MESSAGE, 'the first throw');
-    neq(info.description, '', 'the panel needs a description to render');
-    const frames = await stackFrames(session, first.stop.threadId);
-    assert.ok(frames.length >= 2, 'the throwing method was called from somewhere');
-    eq(
-      methodOf(requireAt(frames, 0, 'the throwing frame')),
-      'ThrowCaught',
-      'the innermost frame is the method that threw',
-    );
-    assert.ok(
-      frames.map((frame) => methodOf(frame)).includes('Main'),
-      'and the caller chain up to Main is intact, which is how the user finds the cause',
-    );
-
-    // Interaction 3 — the SECOND throw carries its own type, its own message
-    // and its own inner cause. Reporting the first exception again is the
-    // failure a single-throw fixture cannot see.
-    const second = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(second.stop, 'exception', 'the second throw');
-    assertStoppedAt(
-      second.frame,
-      fixture,
-      'throw-unhandled',
-      'ThrowUnhandled',
-      'the second throw parks on its own statement',
-    );
-    const secondInfo = await exceptionInfoOf(session, second.stop.threadId);
-    assertExceptionIs(secondInfo, UNHANDLED_TYPE, UNHANDLED_MESSAGE, 'the second throw');
-    neq(
-      secondInfo.exceptionId,
-      info.exceptionId,
-      'the two throws are different exceptions and must report different ids',
-    );
-    assert.ok(
-      secondInfo.description.includes(INNER_MESSAGE) ||
-        secondInfo.description.includes(UNHANDLED_MESSAGE),
-      '"Inner exception chain traversal" is a specified row: the panel must carry the cause, ' +
-        'or the user sees a wrapper and never the real failure',
-    );
-    eq(
-      recorder.stops().filter((entry) => entry.reason === 'exception').length,
-      2,
-      'exactly two exception stops for two throws',
-    );
-  });
+      // Interaction 3 — the SECOND throw carries its own type, its own message
+      // and its own inner cause. Reporting the first exception again is the
+      // failure a single-throw fixture cannot see.
+      const second = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(second.stop, 'exception', 'the second throw');
+      assertStoppedAt(
+        second.frame,
+        fixture,
+        'throw-unhandled',
+        'ThrowUnhandled',
+        'the second throw parks on its own statement',
+      );
+      const secondInfo = await exceptionInfoOf(session, second.stop.threadId);
+      assertExceptionIs(secondInfo, UNHANDLED_TYPE, UNHANDLED_MESSAGE, 'the second throw');
+      neq(
+        secondInfo.exceptionId,
+        info.exceptionId,
+        'the two throws are different exceptions and must report different ids',
+      );
+      assert.ok(
+        secondInfo.description.includes(INNER_MESSAGE) ||
+          secondInfo.description.includes(UNHANDLED_MESSAGE),
+        '"Inner exception chain traversal" is a specified row: the panel must carry the cause, ' +
+          'or the user sees a wrapper and never the real failure',
+      );
+      eq(
+        recorder.stops().filter((entry) => entry.reason === 'exception').length,
+        2,
+        'exactly two exception stops for two throws',
+      );
+    },
+  );
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] with the reactivity every screen in
   // this project owes: unticking "All Exceptions" mid-session must reach the
   // LIVE adapter, not wait for the next launch - and no filter can silence an
   // UNHANDLED throw, because there is nothing after it to continue to.
-  test('unticking every exception filter mid-session reaches the adapter, and only the crash still stops', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'unticking every exception filter mid-session reaches the adapter, and only the crash still stops',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — break on all, and prove it by catching the first throw.
+      const session = await stopWithAllFilter(debuggee());
+      const caught = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(caught.stop, 'exception', 'the first throw with the filter on');
+      assertStoppedAt(caught.frame, fixture, 'throw-caught', 'ThrowCaught', 'the first throw');
 
-    // Interaction 1 — break on all, and prove it by catching the first throw.
-    const session = await stopWithAllFilter(debuggee());
-    const caught = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(caught.stop, 'exception', 'the first throw with the filter on');
-    assertStoppedAt(caught.frame, fixture, 'throw-caught', 'ThrowCaught', 'the first throw');
+      // Interaction 2 — untick everything WHILE paused, and prove the change
+      // reached the adapter rather than being stored for the next launch.
+      const before = recorder.requests('setExceptionBreakpoints').length;
+      await dap(session, 'setExceptionBreakpoints', { filters: [] });
+      const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
+      deepEq(sent.args['filters'], [], 'an empty filter list must be pushed to the LIVE adapter');
+      assert.ok(
+        recorder.requests('setExceptionBreakpoints').length > before,
+        'and it must be sent, not merely remembered',
+      );
 
-    // Interaction 2 — untick everything WHILE paused, and prove the change
-    // reached the adapter rather than being stored for the next launch.
-    const before = recorder.requests('setExceptionBreakpoints').length;
-    await dap(session, 'setExceptionBreakpoints', { filters: [] });
-    const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
-    deepEq(sent.args['filters'], [], 'an empty filter list must be pushed to the LIVE adapter');
-    assert.ok(
-      recorder.requests('setExceptionBreakpoints').length > before,
-      'and it must be sent, not merely remembered',
-    );
-
-    // Interaction 3 — continue. The handled throw is behind us and runs to its
-    // catch; the UNHANDLED throw that follows stops whatever the filters say,
-    // and it must be the ONLY further stop.
-    const exceptionsSoFar = recorder.stops().filter((entry) => entry.reason === 'exception').length;
-    const crash = await stepToFrame(recorder, CMD_CONTINUE);
-    assertStopReason(crash.stop, 'exception', 'the crash after every filter was unticked');
-    assertStoppedAt(
-      crash.frame,
-      fixture,
-      'throw-unhandled',
-      'ThrowUnhandled',
-      'the only stop after unticking is the unhandled throw itself',
-    );
-    eq(
-      recorder.stops().filter((entry) => entry.reason === 'exception').length,
-      exceptionsSoFar + 1,
-      'nothing but the crash may stop the debuggee once every filter is unticked',
-    );
-    assert.ok(
-      recorder.outputText().includes('handled ' + CAUGHT_MESSAGE),
-      'and the program really did carry on running past the handled throw',
-    );
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-  });
+      // Interaction 3 — continue. The handled throw is behind us and runs to its
+      // catch; the UNHANDLED throw that follows stops whatever the filters say,
+      // and it must be the ONLY further stop.
+      const exceptionsSoFar = recorder
+        .stops()
+        .filter((entry) => entry.reason === 'exception').length;
+      const crash = await stepToFrame(recorder, CMD_CONTINUE);
+      assertStopReason(crash.stop, 'exception', 'the crash after every filter was unticked');
+      assertStoppedAt(
+        crash.frame,
+        fixture,
+        'throw-unhandled',
+        'ThrowUnhandled',
+        'the only stop after unticking is the unhandled throw itself',
+      );
+      eq(
+        recorder.stops().filter((entry) => entry.reason === 'exception').length,
+        exceptionsSoFar + 1,
+        'nothing but the crash may stop the debuggee once every filter is unticked',
+      );
+      assert.ok(
+        recorder.outputText().includes('handled ' + CAUGHT_MESSAGE),
+        'and the program really did carry on running past the handled throw',
+      );
+      deepEq(recorder.errors, [], 'with no adapter transport error');
+    },
+  );
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on all CLR exceptions" as the
   // NEGATIVE the section is really about: a program that throws nothing must
   // run to completion with the filter fully armed. A debugger that stops
   // anyway has made every clean run unusable.
-  test('with every filter armed, a program that throws nothing still runs clean', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { recorder } = debuggee();
+  debugTest(
+    'with every filter armed, a program that throws nothing still runs clean',
+    debuggee,
+    async ({ recorder }) => {
+      // Interaction 1 — arm every advertised filter at once.
+      const { session } = await runToFirstStop(debuggee(), 'main-mode');
+      const filters = advertisedFilters(recorder.capabilities());
+      assert.ok(
+        filters.length >= 2,
+        'at least an all filter and an unhandled-only one are offered',
+      );
+      assert.ok(filters.includes(FILTER_ALL), 'including "break on all"');
+      assert.ok(
+        filters.some((filter) => UNHANDLED_FILTERS.includes(filter)),
+        'and an unhandled-only filter under one of the names adapters use',
+      );
 
-    // Interaction 1 — arm every advertised filter at once.
-    const { session } = await runToFirstStop(debuggee(), 'main-mode');
-    const filters = advertisedFilters(recorder.capabilities());
-    assert.ok(filters.length >= 2, 'at least an all filter and an unhandled-only one are offered');
-    assert.ok(filters.includes(FILTER_ALL), 'including "break on all"');
-    assert.ok(
-      filters.some((filter) => UNHANDLED_FILTERS.includes(filter)),
-      'and an unhandled-only filter under one of the names adapters use',
-    );
+      // Interaction 2 — send them all, and check the request really carried them.
+      const before = recorder.requests('setExceptionBreakpoints').length;
+      await dap(session, 'setExceptionBreakpoints', { filters });
+      const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
+      deepEq(sent.args['filters'], filters, 'every advertised filter is armed at once');
 
-    // Interaction 2 — send them all, and check the request really carried them.
-    const before = recorder.requests('setExceptionBreakpoints').length;
-    await dap(session, 'setExceptionBreakpoints', { filters });
-    const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
-    deepEq(sent.args['filters'], filters, 'every advertised filter is armed at once');
-
-    // Interaction 3 — the clean run must stay clean.
-    const stopsBefore = recorder.stops().length;
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'a clean run with every exception filter armed');
-    await recorder.waitForOutput('done plain 45');
-    eq(
-      recorder.stops().length,
-      stopsBefore,
-      'a program that throws nothing must not stop, however many filters are ticked - the CLR ' +
-        'throws internally during startup and JIT, and surfacing those is what makes "break ' +
-        'on all exceptions" unusable in practice',
-    );
-    deepEq(
-      recorder.stops().filter((entry) => entry.reason === 'exception'),
-      [],
-      'and not one exception stop in the whole session',
-    );
-    assertCleanSession(debuggee(), 'a clean run with every filter armed');
-  });
+      // Interaction 3 — the clean run must stay clean.
+      const stopsBefore = recorder.stops().length;
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'a clean run with every exception filter armed');
+      await recorder.waitForOutput('done plain 45');
+      eq(
+        recorder.stops().length,
+        stopsBefore,
+        'a program that throws nothing must not stop, however many filters are ticked - the CLR ' +
+          'throws internally during startup and JIT, and surfacing those is what makes "break ' +
+          'on all exceptions" unusable in practice',
+      );
+      deepEq(
+        recorder.stops().filter((entry) => entry.reason === 'exception'),
+        [],
+        'and not one exception stop in the whole session',
+      );
+      assertCleanSession(debuggee(), 'a clean run with every filter armed');
+    },
+  );
 });

@@ -77,6 +77,10 @@ impl NuGetTarget {
 pub struct TargetsParams {
     /// Absolute path to the workspace root directory.
     pub workspace_root: String,
+    /// The open solution's project files. Empty when no solution is loaded,
+    /// and the whole workspace is enumerated instead.
+    #[serde(default)]
+    pub solution_projects: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

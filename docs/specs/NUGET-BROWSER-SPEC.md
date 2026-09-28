@@ -52,11 +52,17 @@ A target is one of:
 
 Enumerate all valid install targets in the currently open solution/workspace.
 
+With a solution loaded, the targets are exactly that solution's projects plus the
+nearest `Directory.Build.props` and `Directory.Packages.props` MSBuild imports for
+each of them. A project on disk that the solution does not reference is never
+offered. Without a solution, every target under `workspaceRoot` is offered.
+
 **Request:**
 
 ```typescript
 interface NuGetTargetsParams {
-    workspaceRoot: string;   // Absolute path to the workspace/solution root
+    workspaceRoot: string;        // Absolute path to the workspace/solution root
+    solutionProjects?: string[];  // The open solution's project files; absent/empty = walk workspaceRoot
 }
 ```
 

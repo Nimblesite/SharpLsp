@@ -43,6 +43,7 @@ import {
   cachedFor,
   itemsFor,
   sorted,
+  runIds,
 } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -360,7 +361,7 @@ suite('Test Explorer e2e — built-in xUnit reporting', () => {
       assert.equal(outcome.results.get(fixture.parameterized)?.outcome, 'passed');
       assert.equal(outcome.retriedUnfiltered, false, 'reporting keeps the original selection');
 
-      await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
+      await runIds(api, vscode.TestRunProfileKind.Run, ids);
       await api.testController.whenIdle();
       assertPassed(cachedFor(api, fixture.passing), fixture.passing);
       assertFailed(cachedFor(api, fixture.failing), fixture.failing, fixture.failureText);

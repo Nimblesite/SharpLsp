@@ -25,6 +25,7 @@ import {
 } from './nuget-browser/mutate.js';
 import { loadTargetsWithDefaults, persistTargetSelection } from './nuget-browser/target-store.js';
 import * as projectDeps from './project-deps-store.js';
+import * as solutionState from './state.js';
 import {
   installKey,
   type LoadingKey,
@@ -52,6 +53,7 @@ export class NuGetBrowserPanel {
   private readonly getClient: () => LanguageClient | undefined;
   private restoreProgressDisposable: vscode.Disposable | undefined;
   private readonly projectDepsSubscription: () => void;
+  private readonly solutionSubscription: () => void;
   private projectRefreshTimer: NodeJS.Timeout | undefined;
   private disposed = false;
 
@@ -100,6 +102,7 @@ export class NuGetBrowserPanel {
         this.disposed = true;
         this.restoreProgressDisposable?.dispose();
         this.projectDepsSubscription();
+        this.solutionSubscription();
         this.stopProjectRefreshTimer();
         NuGetBrowserPanel.instance = undefined;
       },
@@ -113,6 +116,11 @@ export class NuGetBrowserPanel {
       if (!this.syncInstalledPackagesFromTrackedProject()) {
         void this.loadInstalledPackages();
       }
+    });
+    // The target dropdown lists the loaded solution's projects: reload it when that changes.
+    this.solutionSubscription = solutionState.symbolsState.subscribe(() => {
+      log.info('NuGetBrowserPanel: solution changed, reloading targets');
+      void this.loadTargets();
     });
     this.startProjectRefreshTimer();
 

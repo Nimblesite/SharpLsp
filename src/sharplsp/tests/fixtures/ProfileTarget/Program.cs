@@ -15,7 +15,7 @@ Console.CancelKeyPress += (_, e) =>
 // Self-terminate when orphaned: if the parent (the test host) dies abnormally —
 // e.g. nextest SIGKILLs a timed-out test — Rust-side `Drop` cleanup never runs
 // and this CPU-bound process would leak as a runaway (issue #3). POSIX: watch
-// the parent PID and cancel once we are reparented. Windows: wait on a handle
+// the creator PID supplied at spawn and cancel once we are reparented. Windows: wait on a handle
 // to the original parent process (no reparenting exists there).
 StartParentDeathWatchdog(cts);
 
@@ -53,29 +53,41 @@ static void StartParentDeathWatchdog(CancellationTokenSource cts)
         return;
     }
 
-    var initialParentPid = NativeMethods.getppid();
-    var watchdog = new Thread(() =>
-    {
-        while (!cts.IsCancellationRequested)
-        {
-            var currentParentPid = NativeMethods.getppid();
-            // ppid == 1 means we were reparented to init/launchd, i.e. orphaned;
-            // a *changed* ppid additionally covers a Linux child-subreaper. The
-            // `== 1` check also wins the race where the parent dies during our own
-            // startup, before `initialParentPid` could be captured.
-            if (currentParentPid == 1 || currentParentPid != initialParentPid)
-            {
-                cts.Cancel();
-                return;
-            }
-            Thread.Sleep(250);
-        }
-    })
+    StartUnixParentDeathWatchdog(cts);
+}
+
+static void StartUnixParentDeathWatchdog(CancellationTokenSource cts)
+{
+    // [PROFILER-SESSIONS-LIFECYCLE] A subreaper can adopt us before startup;
+    // the creator's PID supplied at spawn preserves the parent-death signal.
+    var suppliedParentPid = Environment.GetEnvironmentVariable(
+        "SHARPLSP_PROFILE_TARGET_PARENT_PID"
+    );
+    var initialParentPid =
+        int.TryParse(suppliedParentPid, out var creatorPid) && creatorPid > 0
+            ? creatorPid
+            : NativeMethods.getppid();
+    var watchdog = new Thread(() => WatchUnixParent(cts, initialParentPid))
     {
         IsBackground = true,
         Name = "parent-death-watchdog",
     };
     watchdog.Start();
+}
+
+static void WatchUnixParent(CancellationTokenSource cts, int initialParentPid)
+{
+    while (!cts.IsCancellationRequested)
+    {
+        var currentParentPid = NativeMethods.getppid();
+        // ppid == 1 means init/launchd; a changed ppid also detects a subreaper.
+        if (currentParentPid == 1 || currentParentPid != initialParentPid)
+        {
+            cts.Cancel();
+            return;
+        }
+        Thread.Sleep(250);
+    }
 }
 
 // Windows counterpart of the watchdog: there is no reparenting on Windows —

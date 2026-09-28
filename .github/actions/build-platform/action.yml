@@ -9,7 +9,7 @@
 #   * the VS Code test suite (tsc + the instrumented esbuild bundle)
 #   * the release `sharplsp` host
 #   * both .NET sidecars
-#   * the patched netcoredbg adapter (from cache - see ../netcoredbg)
+#   * the downloaded netcoredbg adapter (see ../netcoredbg)
 #   * the packaged VSIX
 #
 # and every one of those outputs is uploaded here, because PHASE 3 is the
@@ -44,7 +44,7 @@ inputs:
     description: Artifact name for the host binary and both sidecars.
     required: true
   debugger-artifact:
-    description: Artifact name for the patched netcoredbg build.
+    description: Artifact name for the downloaded netcoredbg adapter.
     required: true
   archive:
     description: >-
@@ -85,7 +85,7 @@ runs:
     - name: Build sharplsp host and both sidecars (release)
       shell: bash
       run: make _build-rust _build-dotnet
-    - name: Build or restore patched netcoredbg
+    - name: Download pinned netcoredbg
       uses: ./.github/actions/netcoredbg
       with:
         vsix-platform: ${{ inputs.vsix-platform }}
@@ -100,7 +100,7 @@ runs:
           ${{ inputs.host-binary }}
           target/sidecar-csharp
           target/sidecar-fsharp
-    - name: Upload patched debugger
+    - name: Upload downloaded debugger
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ inputs.debugger-artifact }}

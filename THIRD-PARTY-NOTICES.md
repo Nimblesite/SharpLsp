@@ -30,14 +30,18 @@ which this file satisfies.
   platform at `bin/<platform>/netcoredbg/` and launched by the
   `sharplsp-coreclr` debug adapter factory (`src/editors/vscode/src/debug.ts`).
 - **Upstream:** https://github.com/Samsung/netcoredbg
-- **Pinned version:** `3.2.0-1092` (`9744e1f051866215611b8440c638042aa2aa2f72`),
-  built from source with the auditable DAP-only extension in
-  `tools/netcoredbg/dap-hot-reload.patch`.
+- **Pinned version:** `3.2.0-1092-sharplsp.1`, a release of SharpLsp's fork
+  https://github.com/Nimblesite/netcoredbg: upstream `3.2.0-1092`
+  (`9744e1f051866215611b8440c638042aa2aa2f72`) plus two patches on branch
+  `sharplsp/dap-hot-reload` (an `applyDeltas` DAP request for hot reload, and
+  stepping from a frame without symbols), both offered upstream. The fork's
+  release archives are SHA-256-pinned in `tools/netcoredbg/netcoredbg.lock.json`
+  and downloaded as published; SharpLsp itself never compiles the debugger.
 - **License:** MIT — **© 2017 Samsung Electronics Co., LTD** (verified against
   https://raw.githubusercontent.com/Samsung/netcoredbg/master/LICENSE).
-- **Platform coverage:** SharpLsp builds the pinned source on `win32-x64`,
-  `linux-x64`, `linux-arm64`, and `darwin-arm64`. On `win32-arm64` and
-  `darwin-x64` (no configured native build) SharpLsp does not bundle netcoredbg and
+- **Platform coverage:** upstream publishes `win32-x64`, `linux-x64`,
+  `linux-arm64`, and `darwin-arm64` archives. On `win32-arm64` and
+  `darwin-x64` (no upstream build) SharpLsp does not bundle netcoredbg and
   falls back to a user-installed copy on `PATH` / the `sharplsp.debug.netcoredbgPath`
   setting.
 

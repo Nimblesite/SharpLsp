@@ -51,6 +51,7 @@ import {
   fixtureKeys,
   itemsFor,
   sorted,
+  runIds,
 } from './test-explorer-outcome-assertions';
 import { DEBUG_SESSION_MS, DOTNET_CLI_MS } from './test-timeouts';
 import { useWarmFixture } from './test-explorer-harness';
@@ -388,11 +389,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
 
   test('running a SUBSET refreshes only the selected tests results', async function () {
     this.timeout(DOTNET_CLI_MS);
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, ALL_TESTS),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, ALL_TESTS);
     // The snapshot holds the RESULT OBJECTS: a re-run replaces an entry with a
     // NEW one, so identity is an exact test of which results are fresh.
     const snapshot = new Map(api.testController.cachedResults);
@@ -706,11 +703,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     // the adapter's launch round-trip succeeds, so a recorder installed
     // afterwards observes nothing and every assertion built on it is vacuous.
     const sessions = new DebugSessionRecorder();
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Debug,
-      itemsFor(api, [target]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Debug, [target]);
     const isDebugTerminal = (open: readonly vscode.Terminal[]): boolean =>
       open.some((terminal) => terminal.name === DEBUG_TERMINAL);
     const terminals = await pollUntilResult(
@@ -800,11 +793,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       2,
       'a red and a skipped test — a cancelled run must not repaint either green',
     );
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, selection),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, selection);
     assertFailed(cachedFor(api, CS.failing), CS.failing);
     assertSkipped(cachedFor(api, FSX.skipped), FSX.skipped);
     const baseline = new Map(api.testController.cachedResults);

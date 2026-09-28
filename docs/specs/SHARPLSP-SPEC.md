@@ -152,6 +152,18 @@ solution_path = "app/App.sln"
 
 The host resolves the setting and sends the **solution file** rather than the root, so the sidecar opens it without running discovery at all. The setting falls back to workspace-root discovery when unset, and when it names a path that is not an existing file — a stale or misspelled entry degrades to auto-discovery instead of wedging the workspace on a path that cannot load.
 
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] Walking the Workspace for Projects
+
+Recursive discovery (the C# sidecar's solution search, the F# sidecar's `.fsproj` search) never enters `bin`, `obj`, `node_modules`, or any dot-directory (`.git`, `.vs`, `.vscode-test`). Those hold build output, package caches and copies of solutions, never one the user opens: counting them turned a repository root into hundreds of "competing" solutions, and walking them cost seconds per pass. A directory reparse point (junction or symlink) is not followed, so a link cycle cannot loop the walk.
+
+The C# sidecar walks the tree **once** per `workspace/open`: the same walk yields the target, or the competing solutions when it refuses to guess. The walk is `NativePaths.WorkspaceFiles`, in the tier's path module ([SHARPLSP-ARCHITECTURE-PATHS]).
+
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD] Loading a Solution into Roslyn
+
+Roslyn's `MSBuildProjectLoader` starts and tears down a BuildHost process for every `LoadProjectInfoAsync` call, so loading a solution project by project pays that start once per project (NLog, 15 projects: 21.5s one by one, 8s in one batch). A solution from which **no F# project is reachable** — listed, or referenced by a C# project however deep — is therefore loaded in one `LoadSolutionInfoAsync` batch through one BuildHost.
+
+When an F# project is reachable, the C# sidecar loads each C# project in turn through a `ProjectMap` holding an empty placeholder per F# project, the only public load that accepts one, so Roslyn never design-time-builds the F# project ([SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP], #309).
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES] F# Projects That Reference F# Projects
 
 The F# sidecar loads every `.fsproj` of the solution, and each file answers from the project that compiles it, with that project's defines and references. The first project stays the workspace's own for anything that needs one project.

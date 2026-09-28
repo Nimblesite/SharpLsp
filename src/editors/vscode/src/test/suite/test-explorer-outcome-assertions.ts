@@ -41,12 +41,21 @@ export function itemsFor(api: SharpLspExtensionApi, ids: readonly string[]): vsc
   });
 }
 
+/** Press the `kind` profile on the rows of `ids`, as the Testing view does. */
+export async function runIds(
+  api: SharpLspExtensionApi,
+  kind: vscode.TestRunProfileKind,
+  ids: readonly string[],
+): Promise<void> {
+  await runViaProfile(api.testController, kind, itemsFor(api, ids));
+}
+
 /** ▶ on `ids` exactly as the Testing view's Run button does, then settle. */
 export async function runAndSettle(
   api: SharpLspExtensionApi,
   ids: readonly string[],
 ): Promise<void> {
-  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
+  await runIds(api, vscode.TestRunProfileKind.Run, ids);
   await api.testController.whenIdle();
 }
 

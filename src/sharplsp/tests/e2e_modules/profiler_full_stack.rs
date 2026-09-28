@@ -1,5 +1,7 @@
 use super::*;
 
+pub const PROFILE_TARGET_PARENT_PID_ENV: &str = "SHARPLSP_PROFILE_TARGET_PARENT_PID";
+
 // ── Profiler Happy-Path E2E Tests ────────────────────────────────
 //
 // These tests start a REAL .NET process (ProfileTarget), attach the REAL
@@ -70,6 +72,11 @@ pub fn build_profile_target() -> std::path::PathBuf {
 /// Start the `ProfileTarget` process. Waits for `READY` on stdout before returning.
 pub fn start_profile_target(binary: &std::path::Path) -> ProfileTargetProcess {
     let mut child = Command::new(binary)
+        // [PROFILER-SESSIONS-LIFECYCLE] Preserve the creator through early reparenting.
+        .env(
+            PROFILE_TARGET_PARENT_PID_ENV,
+            std::process::id().to_string(),
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()

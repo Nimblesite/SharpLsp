@@ -51,11 +51,10 @@ import {
   errorTextOf,
   findItem,
   rootsOf,
-  runViaProfile,
   activateWithScratch,
   clearTestTree,
 } from './test-explorer-kit';
-import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
+import { assertPassed, cachedFor, runIds } from './test-explorer-outcome-assertions';
 import { removeDirRecursive, assertContainsAll } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
@@ -356,7 +355,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
 
     // 1. Discovered and green.
     await discoverSolution(api, sln, [id]);
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, [id]));
+    await runIds(api, vscode.TestRunProfileKind.Run, [id]);
     await api.testController.whenIdle();
     assertPassed(cachedFor(api, id), id);
 
@@ -382,7 +381,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     // 3. The module lists again. ▶ on the KEPT tree must run it — through the
     //    Run profile and through the status CodeLens alike.
     fs.rmSync(marker, { force: true });
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, [id]));
+    await runIds(api, vscode.TestRunProfileKind.Run, [id]);
     await api.testController.whenIdle();
     assertPassed(cachedFor(api, id), id);
     const lens = await api.testController.runSingle(id);
