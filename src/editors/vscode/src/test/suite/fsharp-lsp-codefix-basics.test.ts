@@ -12,19 +12,17 @@ import {
   activateWarmFSharp,
   assertInsertion,
   assertNoAction,
-  assertQuickFix,
   assertReplacement,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
-  resolvedQuickFixes,
   singleEdit,
   tokenRange,
-  undoAction,
-  uniqueAction,
   assertFixApplied,
+  inspectQuickFix,
+  undoAndRequery,
+  assertSidecarDiagnostics,
 } from './fsharp-refactor-test-kit';
-import { diagnosticCode } from './document-anchors';
 import { revertDocument } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
 import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
@@ -103,7 +101,7 @@ async function assertFalseOpen(name: string, title: string): Promise<void> {
   try {
     const range = tokenRange(fixture.document, name);
     const diagnostics = await diagnosticWithCode(fixture.uri, 'FS0039');
-    assertDiagnostic(diagnostics, range, 'FS0039');
+    assertSidecarDiagnostics(diagnostics, range, 'FS0039');
     assertNoAction(await quickFixes(fixture.uri, range), title);
     assert.strictEqual(fixture.document.getText(), source);
     assert.ok(fixture.document.isDirty);
@@ -194,62 +192,13 @@ async function runBasicFix(spec: BasicFixSpec): Promise<void> {
   const fixture = await openOverlay(TARGET_FILE, spec.source);
   try {
     const range = tokenRange(fixture.document, spec.target, spec.occurrence);
-    const action = await inspectAction(fixture, range, spec);
+    const action = await inspectQuickFix(fixture, range, spec, spec.preferred);
     inspectEdit(fixture.document, fixture.uri, action, spec);
     await applyAndRecheck(fixture, action, spec);
-    await undoAndRequery(fixture, spec);
+    await undoAndRequery(fixture, spec, spec.preferred);
   } finally {
     await revertDocument(fixture.document);
   }
-}
-
-async function inspectAction(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  range: vscode.Range,
-  spec: BasicFixSpec,
-): Promise<vscode.CodeAction> {
-  const diagnostics = await diagnosticWithCode(fixture.uri, spec.diagnostic);
-  assertDiagnostic(diagnostics, range, spec.diagnostic);
-  const listed = await quickFixes(fixture.uri, range);
-  const raw = uniqueAction(listed, spec.title);
-  assertListedAction(raw, spec);
-  await assertOutsideRange(fixture, spec.title);
-  const resolved = await resolvedQuickFixes(fixture.uri, range, spec.title);
-  const action = uniqueAction(resolved, spec.title);
-  assertQuickFix(action, spec.title, spec.preferred);
-  return action;
-}
-
-function assertDiagnostic(
-  diagnostics: readonly vscode.Diagnostic[],
-  range: vscode.Range,
-  code: string,
-): void {
-  const matches = diagnostics.filter((item) => diagnosticCode(item) === code);
-  assert.ok(matches.length >= 1, `${code} must be published`);
-  assert.ok(matches.some((item) => item.range.intersection(range) !== undefined));
-  assert.ok(matches.every((item) => item.message.trim().length > 0));
-  assert.ok(matches.every((item) => item.source === 'sharplsp-fsharp'));
-}
-
-function assertListedAction(action: vscode.CodeAction, spec: BasicFixSpec): void {
-  assert.strictEqual(action.title, spec.title);
-  assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
-  assert.strictEqual(action.isPreferred, spec.preferred);
-  assert.strictEqual(action.edit, undefined, 'listed action must remain unresolved');
-  assert.strictEqual(action.command, undefined, 'quick fix must use an edit, not a command');
-}
-
-async function assertOutsideRange(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  title: string,
-): Promise<void> {
-  const outside = tokenRange(fixture.document, 'sentinel');
-  const actions = await quickFixes(fixture.uri, outside);
-  assertNoAction(actions, title);
-  assert.ok(
-    actions.every((action) => action.kind?.contains(vscode.CodeActionKind.QuickFix) ?? true),
-  );
 }
 
 function inspectEdit(
@@ -273,15 +222,4 @@ async function applyAndRecheck(
   const target = spec.postTarget ?? spec.target;
   await assertFixApplied(fixture, action, spec.expected, spec.diagnostic, target);
   assert.ok(fixture.document.getText().includes('sentinel'));
-}
-
-async function undoAndRequery(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  spec: BasicFixSpec,
-): Promise<void> {
-  await undoAction(fixture.document, spec.source);
-  await diagnosticWithCode(fixture.uri, spec.diagnostic);
-  const range = tokenRange(fixture.document, spec.target, spec.occurrence);
-  const actions = await resolvedQuickFixes(fixture.uri, range, spec.title);
-  assertQuickFix(uniqueAction(actions, spec.title), spec.title, spec.preferred);
 }

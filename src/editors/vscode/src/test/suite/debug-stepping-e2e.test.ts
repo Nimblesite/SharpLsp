@@ -45,6 +45,7 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt } from './test-helpers';
+import { onlySourceBreakpoint, stepIntoAddThroughLoop } from './debug-inspect-kit';
 
 /** The framework directory a Just-My-Code step must never surface. */
 const FRAMEWORK_HINTS: readonly string[] = ['Microsoft.NETCore.App', 'System.Private.CoreLib'];
@@ -67,12 +68,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       // Interaction 1 — arm one breakpoint on the call statement and open the file.
       armBreakpoints(fixture, 'main-accumulate');
       const editor = await openFixture(fixture);
-      eq(vscode.debug.breakpoints.length, 1, 'exactly one breakpoint is armed');
-      const armed = requireAt(vscode.debug.breakpoints, 0, 'the armed breakpoint');
-      assert.ok(
-        armed instanceof vscode.SourceBreakpoint,
-        'a line breakpoint is a SourceBreakpoint',
-      );
+      const armed = onlySourceBreakpoint('the armed breakpoint');
       assert.ok(armed.enabled, 'an armed breakpoint is enabled');
       eq(armed.condition, undefined, 'an unconditional breakpoint carries no condition');
       eq(armed.hitCondition, undefined, 'and no hit condition');
@@ -165,26 +161,13 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
         'the caller frame must still be parked on the call statement',
       );
 
-      // Interaction 3 — F10 twice to reach the call inside the loop.
-      const toCall = await walk(recorder, [CMD_STEP_OVER, CMD_STEP_OVER]);
-      deepEq(
-        trace(toCall.frames),
-        [
-          at(fixture, 'Accumulate', 'accumulate-loop'),
-          at(fixture, 'Accumulate', 'accumulate-call'),
-        ],
-        'F10 inside a for-loop visits the loop header, then the body statement',
-      );
-
-      // Interaction 4 — F11 into Add: three user frames, innermost first.
-      const intoAdd = await stepToFrame(recorder, CMD_STEP_INTO);
-      assertStoppedAt(intoAdd.frame, fixture, 'add-body', 'Add', 'F11 into the innermost callee');
-      const deep = await stackFrames(session, intoAdd.stop.threadId);
-      deepEq(
-        deep.slice(0, 3).map((frame) => methodOf(frame)),
-        ['Add', 'Accumulate', 'Main'],
-        '[DEBUG-FEATURES-STACK]: `stackTrace` reports physical frames innermost-first',
-      );
+      // Interactions 3 and 4 — F10 twice to reach the call inside the loop,
+      // then F11 into Add: three user frames, innermost first.
+      const { deep } = await stepIntoAddThroughLoop(recorder, session, fixture, [
+        'Add',
+        'Accumulate',
+        'Main',
+      ]);
       deepEq(
         deep.slice(0, 3).map((frame) => frame.line),
         [

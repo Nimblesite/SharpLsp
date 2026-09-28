@@ -56,8 +56,7 @@ import {
 import { DEBUG_SESSION_MS, DOTNET_CLI_MS } from './test-timeouts';
 import { useWarmFixture } from './test-explorer-harness';
 import { COVERAGE_DIR_NAME } from './test-coverage-fixtures';
-
-const CS = fixtureFor('xunit-csharp');
+import { CS } from './test-explorer-xunit-pair';
 const FSX = fixtureFor('xunit-fsharp');
 
 /** The idiomatic F# backtick fact whose xUnit FQN literally contains spaces. */

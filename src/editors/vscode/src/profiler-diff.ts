@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { escapeHtml, getErrorMessage } from './utils.js';
 import { ObjectGraphPanel } from './profiler-graph.js';
+import { pickDumpFile } from './profiler-prompts.js';
 
 // ── LSP types ─────────────────────────────────────────────────────
 
@@ -449,23 +450,18 @@ export async function detectLeaksWorkflow(
 }
 
 /** The one `.dmp` file the user picks for `which` side, or undefined on cancel. */
-async function pickDump(which: 'BASELINE' | 'COMPARISON'): Promise<vscode.Uri | undefined> {
-  const picked = await vscode.window.showOpenDialog({
-    canSelectMany: false,
-    filters: { 'Dump files': ['dmp'] },
-    title: `Select ${which} dump file`,
-  });
-  return picked?.[0];
+async function pickDump(which: 'BASELINE' | 'COMPARISON'): Promise<string | undefined> {
+  return await pickDumpFile(`Select ${which} dump file`);
 }
 
 /** Pick the comparison dump, then open the diff of `baseline` against it. */
 async function diffAgainst(
-  baseline: vscode.Uri,
+  baseline: string,
   context: vscode.ExtensionContext,
   client: LanguageClient,
 ): Promise<void> {
   const comparison = await pickDump('COMPARISON');
   if (comparison !== undefined) {
-    await HeapDiffPanel.open(baseline.fsPath, comparison.fsPath, context, client);
+    await HeapDiffPanel.open(baseline, comparison, context, client);
   }
 }

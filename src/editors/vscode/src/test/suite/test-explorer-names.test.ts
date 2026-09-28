@@ -35,8 +35,8 @@ import { HEX_DIGITS, dedupeLines } from '../../test-names.js';
 import { fixtureFor } from './test-explorer-fixtures';
 import { eq, deepEq, assertContainsAll, assertContainsNone } from './test-helpers';
 import { FAST_MS } from './test-timeouts';
-
-const CS = fixtureFor('xunit-csharp');
+import { assertMapsEach } from './test-explorer-outcome-assertions';
+import { CS, FS_FACT_SPACED } from './test-explorer-xunit-pair';
 
 /**
  * Every framework fixture in the suite, so the name reader is driven against
@@ -62,9 +62,6 @@ function everyFixtureName(): string[] {
   }
   return [...new Set(names)];
 }
-
-/** The idiomatic F# backtick binding whose xUnit FQN literally contains spaces. */
-const FS_FACT_SPACED = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
 
 /** The real NUnit `[TestCase]` FQN — parentheses and commas, verbatim. */
 const NUNIT_CASE = 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)';
@@ -148,21 +145,23 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     // Interaction 3 — the two rules stated as rules, not as a table: no space
     // before the bracket, and no hex inside it. Both are what
     // [TEST-DISCOVERY-FQN] names as the distinguishing conditions.
-    assert.strictEqual(
-      withoutAdapterUniqueId(`Ns.C.M(${UNIQUE_ID})`),
-      `Ns.C.M(${UNIQUE_ID})`,
-      'no SPACE before the bracket means it is part of the name, however hex-like it looks',
-    );
-    assert.strictEqual(
-      withoutAdapterUniqueId('Ns.C.M (2,2,4)'),
-      'Ns.C.M (2,2,4)',
-      'a space before a NON-hex bracket is a name that happens to contain a space',
-    );
-    assert.strictEqual(
-      withoutAdapterUniqueId(withoutAdapterUniqueId(`${CS.passing} (${UNIQUE_ID})`)),
-      CS.passing,
-      'stripping is idempotent — an already-bare id survives a second pass unchanged',
-    );
+    assertMapsEach(withoutAdapterUniqueId, [
+      [
+        `Ns.C.M(${UNIQUE_ID})`,
+        `Ns.C.M(${UNIQUE_ID})`,
+        'no SPACE before the bracket means it is part of the name, however hex-like it looks',
+      ],
+      [
+        'Ns.C.M (2,2,4)',
+        'Ns.C.M (2,2,4)',
+        'a space before a NON-hex bracket is a name that happens to contain a space',
+      ],
+      [
+        withoutAdapterUniqueId(`${CS.passing} (${UNIQUE_ID})`),
+        CS.passing,
+        'stripping is idempotent — an already-bare id survives a second pass unchanged',
+      ],
+    ]);
     // Interaction 4 - stripping is a TOTAL function: it answers for every
     // string, and answering twice never changes the answer. A stripper that is
     // not idempotent corrupts a name the second time discovery sweeps.
@@ -173,14 +172,16 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
         `'${name}' must survive a second pass unchanged`,
       );
     }
-    assert.strictEqual(withoutAdapterUniqueId(' '), ' ', 'a lone space is not a decoration');
-    assert.strictEqual(withoutAdapterUniqueId('()'), '()', 'nor a bare pair of brackets');
-    assert.strictEqual(withoutAdapterUniqueId(' ()'), ' ()', 'nor a space and a bare pair');
-    assert.strictEqual(
-      withoutAdapterUniqueId(`(${UNIQUE_ID})`),
-      `(${UNIQUE_ID})`,
-      'a decoration with NO name in front of it is not a decorated name',
-    );
+    assertMapsEach(withoutAdapterUniqueId, [
+      [' ', ' ', 'a lone space is not a decoration'],
+      ['()', '()', 'nor a bare pair of brackets'],
+      [' ()', ' ()', 'nor a space and a bare pair'],
+      [
+        `(${UNIQUE_ID})`,
+        `(${UNIQUE_ID})`,
+        'a decoration with NO name in front of it is not a decorated name',
+      ],
+    ]);
   });
 
   test('the REAL listing file collapses theory rows onto one id, whatever decorated it', function () {

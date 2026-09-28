@@ -2,42 +2,18 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import {
-  closeAllEditors,
-  setupLspTestSuite,
-  teardownLspTestSuite,
-  waitForDocumentSymbols,
-  assertContainsAll,
-} from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { waitForDocumentSymbols, assertContainsAll, requireWorkspaceRoot } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 import { assertShotMembers, MEMBER_CARET } from './completion-shot-kit';
+import { useLspTestSuite } from './lsp-suite-kit';
 
 suite('Visible Completions', () => {
-  let tmpDir: string;
-  let workspaceRoot: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('visible-completions-');
-    tmpDir = result.tmpDir;
-    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    assert.ok(ws, 'Workspace folder must be available');
-    workspaceRoot = ws;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
+  useLspTestSuite('visible-completions-');
 
   test('screenshot completion site offers real instance members', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const filePath = path.join(workspaceRoot, 'CompletionShot.cs');
+    const filePath = path.join(requireWorkspaceRoot(), 'CompletionShot.cs');
     assert.ok(fs.existsSync(filePath), 'CompletionShot.cs fixture must exist');
     const uri = vscode.Uri.file(filePath);
     const document = await vscode.workspace.openTextDocument(uri);

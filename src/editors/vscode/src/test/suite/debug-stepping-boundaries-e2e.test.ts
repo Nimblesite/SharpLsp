@@ -27,7 +27,6 @@ import {
   stackFrames,
   stepToFrame,
   trace,
-  variableNamed,
   walk,
 } from './debug-drive-kit';
 import {
@@ -40,6 +39,7 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
+import { assertValues } from './debug-inspect-kit';
 
 suite('Debug stepping — breakpoints inside steps, and stepping off the end', () => {
   const debuggee = useDebuggee('debug-stepedge-cs-', 'csharp');
@@ -218,8 +218,10 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
         'and the caller sits directly beneath it',
       );
       const locals = await localsOf(session, into.frame.id);
-      eq(variableNamed(locals, 'left').value, '2', 'called with the seed the loop is carrying');
-      eq(variableNamed(locals, 'right').value, '1', 'and the first loop index');
+      assertValues(locals, [
+        ['left', '2', 'called with the seed the loop is carrying'],
+        ['right', '1', 'and the first loop index'],
+      ]);
 
       // Interaction 3 - Shift+F11 OUT. Back in the caller, exactly one frame
       // shallower, on or past the statement that made the call.

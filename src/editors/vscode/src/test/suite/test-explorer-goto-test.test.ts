@@ -32,10 +32,10 @@ import {
 } from './dotnet-project-kit';
 import {
   discoverSolution,
-  drainDiscovery,
   findItem,
   activateWithScratch,
   teardownFixtureSolution,
+  unloadSolution,
 } from './test-explorer-kit';
 import {
   closeAllEditors,
@@ -293,9 +293,7 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
 
   teardown(async () => {
     await closeAllEditors();
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-    }, api.testController);
+    await unloadSolution(api);
   });
 
   suiteTeardown(async function () {

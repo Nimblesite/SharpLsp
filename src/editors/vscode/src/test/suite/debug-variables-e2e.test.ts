@@ -30,6 +30,7 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
+import { assertValues } from './debug-inspect-kit';
 
 /** Assert a variable's rendered value CONTAINS `needle`, naming what it was. */
 function assertValueHas(variable: Variable, needle: string, why: string): void {
@@ -91,9 +92,11 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
         '"Function arguments" and "Local variables" are separate P1 rows: `left`, `right` and ' +
           `\`sum\` must all be inspectable. The frame offered: ${names.join(', ')}`,
       );
-      eq(variableNamed(locals, 'left').value, '2', 'the first call passes the seed, 2');
-      eq(variableNamed(locals, 'right').value, '1', 'and the loop index, 1');
-      eq(variableNamed(locals, 'sum').value, '3', 'the local has already been assigned 2 + 1');
+      assertValues(locals, [
+        ['left', '2', 'the first call passes the seed, 2'],
+        ['right', '1', 'and the loop index, 1'],
+        ['sum', '3', 'the local has already been assigned 2 + 1'],
+      ]);
       assertTyped(variableNamed(locals, 'left'), 'int', 'the first argument');
       assertTyped(variableNamed(locals, 'sum'), 'int', 'the local');
 
@@ -410,9 +413,11 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       // Interaction 1 — stop inside the loop on its first pass.
       const { session, frame: firstFrame } = await runToFirstFrame(debuggee(), 'accumulate-call');
       const firstLocals = await localsOf(session, firstFrame.id);
-      eq(variableNamed(firstLocals, 'running').value, '2', 'the accumulator starts at the seed');
-      eq(variableNamed(firstLocals, 'index').value, '1', 'and the loop is on its first pass');
-      eq(variableNamed(firstLocals, 'seed').value, '2', 'with the argument it was called with');
+      assertValues(firstLocals, [
+        ['running', '2', 'the accumulator starts at the seed'],
+        ['index', '1', 'and the loop is on its first pass'],
+        ['seed', '2', 'with the argument it was called with'],
+      ]);
 
       // Interaction 2 — continue to the SECOND pass. Both the accumulator and
       // the loop variable must have moved on.
@@ -421,12 +426,14 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       const second = requireAt(stops, 1, 'the second loop stop');
       const secondFrame = await topFrame(session, second.threadId);
       const secondLocals = await localsOf(session, secondFrame.id);
-      eq(
-        variableNamed(secondLocals, 'index').value,
-        '2',
-        'the loop variable must report its NEW value, not the value of the first read',
-      );
-      eq(variableNamed(secondLocals, 'running').value, '3', 'and the accumulator its new total');
+      assertValues(secondLocals, [
+        [
+          'index',
+          '2',
+          'the loop variable must report its NEW value, not the value of the first read',
+        ],
+        ['running', '3', 'and the accumulator its new total'],
+      ]);
       neq(
         variableNamed(secondLocals, 'running').value,
         variableNamed(firstLocals, 'running').value,
@@ -440,8 +447,10 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       const third = requireAt(await recorder.waitForStops(3), 2, 'the third loop stop');
       const thirdFrame = await topFrame(session, third.threadId);
       const thirdLocals = await localsOf(session, thirdFrame.id);
-      eq(variableNamed(thirdLocals, 'index').value, '3', 'the third pass reports the third index');
-      eq(variableNamed(thirdLocals, 'running').value, '5', 'and the running total to date');
+      assertValues(thirdLocals, [
+        ['index', '3', 'the third pass reports the third index'],
+        ['running', '5', 'and the running total to date'],
+      ]);
       eq(
         (await evaluate(session, 'running + index', thirdFrame.id, 'watch')).value,
         '8',

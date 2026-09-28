@@ -41,6 +41,7 @@ import {
 import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
 import { type UiStubs } from './ui-stubs';
+import { continueToEnd } from './debug-inspect-kit';
 
 /** How many tests the fixture declares in its first class. */
 const MATH_CLASS_TESTS = 5;
@@ -186,15 +187,13 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     // …and the OTHER namespace never runs. [TEST-RUN-TRX] makes a run one
     // invocation for THE SELECTION; a debug that widened to the whole assembly
     // stops here too and would look identical from the first stop alone.
-    await gesture(CMD_CONTINUE);
-    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    await continueToEnd(recorder, 'and no adapter transport error');
     eq(
       recorder.stops().length,
       1,
       `debugging ${CS_MATH_NAMESPACE} must not execute a test in ${CS_TEXT_NAMESPACE}: the ` +
         'control breakpoint there BOUND, so a second stop is proof the selection widened',
     );
-    deepEq(recorder.errors, [], 'and no adapter transport error');
     // Interaction 4 - the namespace row is a group under the assembly, and the
     // OTHER namespace must be untouched in the tree as well as at runtime.
     eq(sessions.ours.length, 1, 'one namespace, one session');
@@ -337,14 +336,12 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       ['Adds_Two_Numbers', 'Joins_Two_Words'],
       'both selected tests break, one stop each',
     );
-    await gesture(CMD_CONTINUE);
-    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    await continueToEnd(recorder, 'with no adapter transport error');
     eq(
       recorder.stops().length,
       2,
       'and exactly two stops in total: the unselected test must never have executed',
     );
-    deepEq(recorder.errors, [], 'with no adapter transport error');
     // Interaction 4 - a multi-select is still ONE invocation, and the rows the
     // user did NOT select must be untouched in the tree.
     eq(sessions.ours.length, 1, 'two selected classes are ONE session, not two');
@@ -513,15 +510,13 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
 
     // Interaction 3 — running on, the session ends with no further stop, even
     // though four other tests of the class ran to completion inside it.
-    await gesture(CMD_CONTINUE);
-    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    await continueToEnd(recorder, 'with no adapter transport error');
     eq(
       recorder.stops().length,
       1,
       'the other four tests of the class execute but carry no breakpoint, so they must not stop',
     );
     eq(sessions.ours.length, 1, 'and a class is ONE session throughout');
-    deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
     // Interaction 4 - the class row itself is unchanged, and the four unarmed
     // tests really did execute inside the one session.
@@ -577,10 +572,8 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       'Adds_Two_Numbers',
       'in the test carrying the ENABLED breakpoint',
     );
-    await gesture(CMD_CONTINUE);
-    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    await continueToEnd(recorder, 'and no adapter transport error');
     eq(recorder.stops().length, 1, 'the disabled line must never produce a stop');
-    deepEq(recorder.errors, [], 'and no adapter transport error');
     // Interaction 4 - the Breakpoints view still holds BOTH, exactly as the
     // user left them. A debugger that silently deletes a breakpoint it declined
     // to honour is worse than one that ignores it.

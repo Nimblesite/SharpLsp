@@ -170,6 +170,41 @@ suite('Debug adapter startup is total', () => {
     );
   });
 
+  /**
+   * Start a router on an adapter that was never there, `act` on it, and prove
+   * the teardown signalled ONLY that adapter: the extension host never signals
+   * itself, and a canary sibling in our own process group survives.
+   */
+  async function assertSignalsOnlyTheAdapter(
+    dir: string,
+    what: string,
+    act: (router: DapRouter) => Promise<void>,
+  ): Promise<void> {
+    const missing = path.join(tmpDir, dir, EXE);
+    assert.ok(!fs.existsSync(missing), 'the premise: nothing is at that path');
+    const canary = processGroupCanary();
+    assert.ok(
+      typeof canary.pid === 'number' && canary.pid > 0,
+      'the premise: the canary must really be running, in our own process group',
+    );
+    const host = catchHostSigterm();
+    try {
+      const outcome = DapRouter.start(missing);
+      assert.ok(outcome.ok, 'ENOENT fails asynchronously, not at construction');
+      if (!outcome.ok) return;
+      await act(outcome.value);
+      assert.strictEqual(host.count(), 0, 'the extension host must never signal ITSELF');
+      assert.ok(
+        stillAlive(canary),
+        `${what} killed an unrelated sibling (signal ${String(canary.signalCode)}): ` +
+          'the kill reached our whole process group instead of the adapter',
+      );
+    } finally {
+      host.stop();
+      canary.kill('SIGKILL');
+    }
+  }
+
   // The router's teardown must signal the ADAPTER, never the process group the
   // extension host itself sits in. Adapter resolution builds a router purely to
   // read which binary it would spawn and throws it away in the SAME TICK, so
@@ -177,68 +212,30 @@ suite('Debug adapter startup is total', () => {
   // flight and the router still believes its child is open.
   // Implements [DEBUG-ARCHITECTURE-ROUTER].
   test('disposing a router whose adapter never started signals only that adapter', async () => {
-    const missing = path.join(tmpDir, 'never-started', EXE);
-    assert.ok(!fs.existsSync(missing), 'the premise: nothing is at that path');
-
-    const canary = processGroupCanary();
-    assert.ok(
-      typeof canary.pid === 'number' && canary.pid > 0,
-      'the premise: the canary must really be running, in our own process group',
+    await assertSignalsOnlyTheAdapter(
+      'never-started',
+      'disposing an unstarted adapter',
+      async (router) => {
+        router.dispose();
+        await new Promise<void>((resolve) => setTimeout(resolve, 750));
+      },
     );
-    const host = catchHostSigterm();
-    try {
-      const outcome = DapRouter.start(missing);
-      assert.ok(outcome.ok, 'ENOENT fails asynchronously, not at construction');
-      if (!outcome.ok) return;
-      outcome.value.dispose();
-      await new Promise<void>((resolve) => setTimeout(resolve, 750));
-
-      assert.strictEqual(host.count(), 0, 'the extension host must never signal ITSELF');
-      assert.ok(
-        stillAlive(canary),
-        `disposing an unstarted adapter killed an unrelated sibling (signal ${String(
-          canary.signalCode,
-        )}): the kill reached our whole process group instead of the adapter`,
-      );
-    } finally {
-      host.stop();
-      canary.kill('SIGKILL');
-    }
   });
 
   // The same hazard on the restart path, where it is worse: `respawn` escalates
   // to SIGKILL after a grace second, and a SIGKILL aimed at our own process
   // group cannot be caught, logged or survived by anything in it.
   test('respawning a router whose adapter never started signals only that adapter', async () => {
-    const missing = path.join(tmpDir, 'never-respawned', EXE);
-    assert.ok(!fs.existsSync(missing), 'the premise: nothing is at that path');
-
-    const canary = processGroupCanary();
-    assert.ok(
-      typeof canary.pid === 'number' && canary.pid > 0,
-      'the premise: the canary must really be running, in our own process group',
+    await assertSignalsOnlyTheAdapter(
+      'never-respawned',
+      'respawning past an unstarted adapter',
+      async (router) => {
+        router.respawn([]);
+        // Past the SIGKILL escalation, so BOTH signals have had their chance.
+        await new Promise<void>((resolve) => setTimeout(resolve, 1_750));
+        router.dispose();
+      },
     );
-    const host = catchHostSigterm();
-    try {
-      const outcome = DapRouter.start(missing);
-      assert.ok(outcome.ok, 'ENOENT fails asynchronously, not at construction');
-      if (!outcome.ok) return;
-      outcome.value.respawn([]);
-      // Past the SIGKILL escalation, so BOTH signals have had their chance.
-      await new Promise<void>((resolve) => setTimeout(resolve, 1_750));
-      outcome.value.dispose();
-
-      assert.strictEqual(host.count(), 0, 'the extension host must never signal ITSELF');
-      assert.ok(
-        stillAlive(canary),
-        `respawning past an unstarted adapter killed an unrelated sibling (signal ${String(
-          canary.signalCode,
-        )}): the kill reached our whole process group instead of the adapter`,
-      );
-    } finally {
-      host.stop();
-      canary.kill('SIGKILL');
-    }
   });
 
   test('a resolvable adapter still starts, so the guard did not disable debugging', () => {

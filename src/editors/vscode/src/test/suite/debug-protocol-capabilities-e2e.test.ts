@@ -34,6 +34,7 @@ import {
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS } from './test-timeouts';
+import { assertEverySucceeded } from './debug-inspect-kit';
 
 /** The Phase Four column of [DEBUG-PROTOCOL-CAPABILITIES], "Yes" rows. */
 const PHASE_FOUR_YES: readonly { flag: string; note: string }[] = [
@@ -257,22 +258,12 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
       assertCleanSession(debuggee(), 'the DAP handshake');
       // Interaction 5 - the handshake is a SEQUENCE, and every step of it was
       // answered. An unanswered step leaves the session half-configured.
-      assert.ok(
-        recorder.responses('initialize').every((response) => response.success),
-        'initialize was answered successfully',
-      );
-      assert.ok(
-        recorder.responses('launch').every((response) => response.success),
-        'and launch',
-      );
-      assert.ok(
-        recorder.responses('setBreakpoints').every((response) => response.success),
-        'and every breakpoint sync',
-      );
-      assert.ok(
-        recorder.responses('configurationDone').every((response) => response.success),
-        'and configurationDone',
-      );
+      assertEverySucceeded(recorder, [
+        ['initialize', 'initialize was answered successfully'],
+        ['launch', 'and launch'],
+        ['setBreakpoints', 'and every breakpoint sync'],
+        ['configurationDone', 'and configurationDone'],
+      ]);
       deepEq(recorder.exits, [], 'with the adapter process alive throughout');
     },
   );
@@ -408,26 +399,13 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
       assertCleanSession(debuggee(), 'the five panel requests');
       // Interaction 4 - the five panel requests were each answered, which is what
       // makes the panels render at all.
-      assert.ok(
-        recorder.responses('threads').every((response) => response.success),
-        'threads was answered',
-      );
-      assert.ok(
-        recorder.responses('stackTrace').every((response) => response.success),
-        'and stackTrace',
-      );
-      assert.ok(
-        recorder.responses('scopes').every((response) => response.success),
-        'and scopes',
-      );
-      assert.ok(
-        recorder.responses('variables').every((response) => response.success),
-        'and variables',
-      );
-      assert.ok(
-        recorder.responses('evaluate').every((response) => response.success),
-        'and evaluate',
-      );
+      assertEverySucceeded(recorder, [
+        ['threads', 'threads was answered'],
+        ['stackTrace', 'and stackTrace'],
+        ['scopes', 'and scopes'],
+        ['variables', 'and variables'],
+        ['evaluate', 'and evaluate'],
+      ]);
     },
   );
 

@@ -39,14 +39,10 @@ import {
 } from '../../test-discovery.js';
 import { parseFailureMessage, parseRunSummary } from '../../test-run-output.js';
 import { isRunError, parseTrx, parseTrxDuration, parseTrxReport } from '../../test-trx.js';
-import { fixtureFor } from './test-explorer-fixtures';
 import { FAST_MS } from './test-timeouts';
 import { assertContainsAll, assertContainsNone } from './test-helpers';
-
-const CS = fixtureFor('xunit-csharp');
-
-/** The idiomatic F# backtick binding whose xUnit FQN literally contains spaces. */
-const FS_FACT_SPACED = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
+import { assertMapsEach } from './test-explorer-outcome-assertions';
+import { CS, FS_FACT_SPACED } from './test-explorer-xunit-pair';
 
 /** The real NUnit `[TestCase]` FQN — parentheses and commas, verbatim. */
 const NUNIT_CASE = 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)';
@@ -252,24 +248,18 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     );
 
     // Outcome spellings, and the ones that must NOT become a silent pass.
-    assert.strictEqual(mappedOutcome('Passed'), 'passed', 'Passed');
-    assert.strictEqual(mappedOutcome('Failed'), 'failed', 'Failed');
-    assert.strictEqual(mappedOutcome('Error'), 'failed', 'an Error is a failure');
-    assert.strictEqual(mappedOutcome('Timeout'), 'failed', 'a Timeout is a failure');
-    assert.strictEqual(mappedOutcome('Aborted'), 'failed', 'an Aborted run is a failure');
-    assert.strictEqual(mappedOutcome('NotExecuted'), 'skipped', 'NotExecuted is a skip');
-    assert.strictEqual(mappedOutcome('Inconclusive'), 'skipped', 'Inconclusive is a skip');
-    assert.strictEqual(
-      mappedOutcome('nOtExEcUtEd'),
-      'skipped',
-      'the outcome match is case-insensitive',
-    );
-    assert.strictEqual(
-      mappedOutcome('Nonsense'),
-      'notRun',
-      'an unknown spelling is never silently a pass',
-    );
-    assert.strictEqual(mappedOutcome(''), 'notRun', 'nor is a missing outcome');
+    assertMapsEach(mappedOutcome, [
+      ['Passed', 'passed', 'Passed'],
+      ['Failed', 'failed', 'Failed'],
+      ['Error', 'failed', 'an Error is a failure'],
+      ['Timeout', 'failed', 'a Timeout is a failure'],
+      ['Aborted', 'failed', 'an Aborted run is a failure'],
+      ['NotExecuted', 'skipped', 'NotExecuted is a skip'],
+      ['Inconclusive', 'skipped', 'Inconclusive is a skip'],
+      ['nOtExEcUtEd', 'skipped', 'the outcome match is case-insensitive'],
+      ['Nonsense', 'notRun', 'an unknown spelling is never silently a pass'],
+      ['', 'notRun', 'nor is a missing outcome'],
+    ]);
 
     // A result with no definition falls back to its display name rather than
     // vanishing — losing a result entirely would show the user a phantom.
@@ -293,22 +283,16 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     );
 
     // Durations, including the shapes that must NOT be guessed at.
-    assert.strictEqual(parseTrxDuration('00:00:00.0010748'), 1, 'sub-millisecond rounds to 1ms');
-    assert.strictEqual(parseTrxDuration('00:00:01.5000000'), 1500, 'one and a half seconds');
-    assert.strictEqual(parseTrxDuration('00:01:02.0000000'), 62_000, 'minutes and seconds add up');
-    assert.strictEqual(parseTrxDuration('01:00:00.0000000'), 3_600_000, 'a whole hour');
-    assert.strictEqual(
-      parseTrxDuration('00:00:00.0000000'),
-      0,
-      'a zero duration is zero, not undefined',
-    );
-    assert.strictEqual(
-      parseTrxDuration('garbage'),
-      undefined,
-      'an unparseable duration is undefined, never NaN',
-    );
-    assert.strictEqual(parseTrxDuration(undefined), undefined, 'a missing duration is undefined');
-    assert.strictEqual(parseTrxDuration('1:2'), undefined, 'a malformed clock is undefined');
+    assertMapsEach(parseTrxDuration, [
+      ['00:00:00.0010748', 1, 'sub-millisecond rounds to 1ms'],
+      ['00:00:01.5000000', 1500, 'one and a half seconds'],
+      ['00:01:02.0000000', 62_000, 'minutes and seconds add up'],
+      ['01:00:00.0000000', 3_600_000, 'a whole hour'],
+      ['00:00:00.0000000', 0, 'a zero duration is zero, not undefined'],
+      ['garbage', undefined, 'an unparseable duration is undefined, never NaN'],
+      [undefined, undefined, 'a missing duration is undefined'],
+      ['1:2', undefined, 'a malformed clock is undefined'],
+    ]);
   });
 
   test('a REFUSED filter and an unmatched filter are told apart by the run info', function () {
@@ -429,19 +413,15 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
 
     // No summary at all is what a filter matching nothing prints, and it is NOT
     // a failure — it is "nothing ran".
-    assert.strictEqual(parseRunSummary(''), undefined, 'no output means no summary');
-    assert.strictEqual(
-      parseRunSummary(
+    assertMapsEach(parseRunSummary, [
+      ['', undefined, 'no output means no summary'],
+      [
         'No test matches the given testcase filter `FullyQualifiedName=Ns.C.Nope` in X.dll',
-      ),
-      undefined,
-      'an unmatched filter prints no summary at all',
-    );
-    assert.strictEqual(
-      parseRunSummary('Determining projects to restore...'),
-      undefined,
-      'build chatter is not a summary',
-    );
+        undefined,
+        'an unmatched filter prints no summary at all',
+      ],
+      ['Determining projects to restore...', undefined, 'build chatter is not a summary'],
+    ]);
     const zero = parseRunSummary(summaryLine('Passed', 0, 0, 0, 'Empty.dll'));
     assert.ok(zero, 'an assembly with no tests still prints a summary');
     assert.strictEqual(zero.outcome, 'notRun', 'zero total tests is "nothing ran", not a pass');
@@ -464,24 +444,20 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     );
     assertContainsAll(message, ['Expected: 4', 'Actual:   3'], 'message');
     assertContainsNone(message, ['Stack Trace', 'at Cs.Xunit'], 'message');
-    assert.strictEqual(
-      parseFailureMessage('Passed!  - Failed: 0'),
-      undefined,
-      'output with no Error Message block yields undefined',
-    );
-    assert.strictEqual(parseFailureMessage(''), undefined, 'empty output yields undefined');
-    assert.strictEqual(
-      parseFailureMessage(
+    assertMapsEach(parseFailureMessage, [
+      ['Passed!  - Failed: 0', undefined, 'output with no Error Message block yields undefined'],
+      ['', undefined, 'empty output yields undefined'],
+      [
         [
           '  Error Message:',
           '   first failure',
           '  Failed Ns.C.Second [1 ms]',
           '   second failure',
         ].join('\n'),
-      ),
-      'first failure',
-      "the block ends at the next test's Failed header",
-    );
+        'first failure',
+        "the block ends at the next test's Failed header",
+      ],
+    ]);
   });
 
   test('the dotnet child process is pinned to English and sized for a cold Windows restore', function () {
@@ -536,87 +512,33 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     // that does not exist. Dropping it skipped the fully-qualified listing and
     // degraded discovery to DISPLAY names, losing every NUnit test, every MSTest
     // test and every theory, silently.
-    assert.strictEqual(
-      unescapeMsBuildPath('C:\\Program Files %28x86%29\\bin\\A.dll'),
-      'C:\\Program Files (x86)\\bin\\A.dll',
-      'parentheses come back as ( and )',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/a %3B b/c.dll'),
-      '/tmp/a ; b/c.dll',
-      'a semicolon comes back from %3B',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/it%27s/c.dll'),
-      "/tmp/it's/c.dll",
-      'an apostrophe from %27',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/a%2Cb/c.dll'),
-      '/tmp/a,b/c.dll',
-      'a comma from %2C',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/a%40b/c.dll'),
-      '/tmp/a@b/c.dll',
-      'an at sign from %40',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/a%24b/c.dll'),
-      '/tmp/a$b/c.dll',
-      'a dollar from %24',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/a%2Ab/c.dll'),
-      '/tmp/a*b/c.dll',
-      'an asterisk from %2A',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/a%3Fb/c.dll'),
-      '/tmp/a?b/c.dll',
-      'a question mark from %3F',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/100%25/c.dll'),
-      '/tmp/100%/c.dll',
-      'and the percent sign itself from %25',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/%28%29%28%29/c.dll'),
-      '/tmp/()()/c.dll',
-      'several escapes in a row all decode',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/%2f/c.dll'),
-      '/tmp///c.dll',
-      'lower-case hex decodes too',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/plain/c.dll'),
-      '/tmp/plain/c.dll',
-      'a path with nothing to decode is returned unchanged',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/50%/c.dll'),
-      '/tmp/50%/c.dll',
-      'a bare percent is left alone, never dropped',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/c.dll%'),
-      '/tmp/c.dll%',
-      'a trailing percent with no hex survives',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/%zz/c.dll'),
-      '/tmp/%zz/c.dll',
-      'a non-hex escape is not a decode',
-    );
-    assert.strictEqual(
-      unescapeMsBuildPath('/tmp/%2/c.dll'),
-      '/tmp/%2/c.dll',
-      'a one-digit escape is not a decode',
-    );
-    assert.strictEqual(unescapeMsBuildPath(''), '', 'the empty path decodes to itself');
+    assertMapsEach(unescapeMsBuildPath, [
+      [
+        'C:\\Program Files %28x86%29\\bin\\A.dll',
+        'C:\\Program Files (x86)\\bin\\A.dll',
+        'parentheses come back as ( and )',
+      ],
+      ['/tmp/a %3B b/c.dll', '/tmp/a ; b/c.dll', 'a semicolon comes back from %3B'],
+      ['/tmp/it%27s/c.dll', "/tmp/it's/c.dll", 'an apostrophe from %27'],
+      ['/tmp/a%2Cb/c.dll', '/tmp/a,b/c.dll', 'a comma from %2C'],
+      ['/tmp/a%40b/c.dll', '/tmp/a@b/c.dll', 'an at sign from %40'],
+      ['/tmp/a%24b/c.dll', '/tmp/a$b/c.dll', 'a dollar from %24'],
+      ['/tmp/a%2Ab/c.dll', '/tmp/a*b/c.dll', 'an asterisk from %2A'],
+      ['/tmp/a%3Fb/c.dll', '/tmp/a?b/c.dll', 'a question mark from %3F'],
+      ['/tmp/100%25/c.dll', '/tmp/100%/c.dll', 'and the percent sign itself from %25'],
+      ['/tmp/%28%29%28%29/c.dll', '/tmp/()()/c.dll', 'several escapes in a row all decode'],
+      ['/tmp/%2f/c.dll', '/tmp///c.dll', 'lower-case hex decodes too'],
+      [
+        '/tmp/plain/c.dll',
+        '/tmp/plain/c.dll',
+        'a path with nothing to decode is returned unchanged',
+      ],
+      ['/tmp/50%/c.dll', '/tmp/50%/c.dll', 'a bare percent is left alone, never dropped'],
+      ['/tmp/c.dll%', '/tmp/c.dll%', 'a trailing percent with no hex survives'],
+      ['/tmp/%zz/c.dll', '/tmp/%zz/c.dll', 'a non-hex escape is not a decode'],
+      ['/tmp/%2/c.dll', '/tmp/%2/c.dll', 'a one-digit escape is not a decode'],
+      ['', '', 'the empty path decodes to itself'],
+    ]);
 
     // And the banner parser keeps the raw, still-escaped spelling: resolving it
     // to a real file is a separate, filesystem-aware step.

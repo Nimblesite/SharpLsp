@@ -33,7 +33,13 @@ import {
   MTP_XUNIT_PACKAGES,
   type PackageRef,
 } from './dotnet-project-kit';
-import { fixtureNames } from './test-explorer-fixtures';
+import {
+  fixtureNames,
+  csXunitSource,
+  csNunitSource,
+  csMstestSource,
+  fsNunitSource,
+} from './test-explorer-fixtures';
 
 /** One buildable MTP fixture project plus the ids it is expected to expose. */
 export interface MtpFixture {
@@ -95,29 +101,6 @@ const FS_XUNIT_SOURCE = [
   '',
 ].join('\n');
 
-const CS_XUNIT_SOURCE = [
-  'using Xunit;',
-  '',
-  'namespace Cs.XunitMtp.Fixtures',
-  '{',
-  '    public class CalculatorTests',
-  '    {',
-  '        [Fact] public void Adds_TwoNumbers() => Assert.Equal(3, 1 + 2);',
-  '        [Fact] public void Fails_OnPurpose() => Assert.Equal(4, 1 + 2);',
-  '        [Fact(Skip = "fixture: deliberately skipped")] public void Skipped_OnPurpose() { }',
-  '        [Theory]',
-  '        [InlineData(2, 2, 4)]',
-  '        [InlineData(1, 1, 2)]',
-  '        public void Adds_Theory(int a, int b, int expected) => Assert.Equal(expected, a + b);',
-  '        [Theory]',
-  '        [InlineData(2, 2, 4)]',
-  '        [InlineData(1, 1, 99)]',
-  '        public void Mixed_Theory(int a, int b, int expected) => Assert.Equal(expected, a + b);',
-  '    }',
-  '}',
-  '',
-].join('\n');
-
 const FS_MSTEST_SOURCE = [
   'module Fs.MstestMtp.Fixtures',
   '',
@@ -136,62 +119,6 @@ const FS_MSTEST_SOURCE = [
   '',
   '    [<TestMethod; DataRow(2, 2, 4)>]',
   '    member _.AddsRow(a: int, b: int, expected: int) = Assert.AreEqual(expected, a + b)',
-  '',
-].join('\n');
-
-const CS_MSTEST_SOURCE = [
-  'using Microsoft.VisualStudio.TestTools.UnitTesting;',
-  '',
-  'namespace Cs.MstestMtp.Fixtures',
-  '{',
-  '    [TestClass]',
-  '    public class CalculatorTests',
-  '    {',
-  '        [TestMethod] public void Adds_TwoNumbers() => Assert.AreEqual(3, 1 + 2);',
-  '        [TestMethod] public void Fails_OnPurpose() => Assert.AreEqual(4, 1 + 2);',
-  '        [TestMethod, Ignore] public void Skipped_OnPurpose() { }',
-  '        [TestMethod]',
-  '        [DataRow(2, 2, 4)]',
-  '        public void Adds_Row(int a, int b, int expected) => Assert.AreEqual(expected, a + b);',
-  '    }',
-  '}',
-  '',
-].join('\n');
-
-const FS_NUNIT_SOURCE = [
-  'module Fs.NunitMtp.Fixtures',
-  '',
-  'open NUnit.Framework',
-  '',
-  '[<Test>]',
-  'let ``adds two numbers with spaces`` () = Assert.That(1 + 2, Is.EqualTo(3))',
-  '',
-  '[<Test>]',
-  'let ``fails on purpose`` () = Assert.That(1 + 2, Is.EqualTo(4))',
-  '',
-  '[<Test; Ignore("fixture: deliberately skipped")>]',
-  'let ``skipped on purpose`` () = ()',
-  '',
-  '[<TestCase(2, 2, 4)>]',
-  'let ``adds case`` (a: int) (b: int) (expected: int) = Assert.That(a + b, Is.EqualTo(expected))',
-  '',
-].join('\n');
-
-const CS_NUNIT_SOURCE = [
-  'using NUnit.Framework;',
-  '',
-  'namespace Cs.NunitMtp.Fixtures',
-  '{',
-  '    public class CalculatorTests',
-  '    {',
-  '        [Test] public void Adds_TwoNumbers() => Assert.That(1 + 2, Is.EqualTo(3));',
-  '        [Test] public void Fails_OnPurpose() => Assert.That(1 + 2, Is.EqualTo(4));',
-  '        [Test, Ignore("fixture: deliberately skipped")] public void Skipped_OnPurpose() { }',
-  '        [TestCase(2, 2, 4)]',
-  '        public void Adds_Case(int a, int b, int expected) =>',
-  '            Assert.That(a + b, Is.EqualTo(expected));',
-  '    }',
-  '}',
   '',
 ].join('\n');
 
@@ -222,7 +149,7 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     framework: 'xunit',
     language: 'csharp',
     packages: MTP_XUNIT_PACKAGES,
-    source: CS_XUNIT_SOURCE,
+    source: csXunitSource('namespace Cs.XunitMtp.Fixtures'),
     passing: 'Cs.XunitMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.XunitMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
     skipped: 'Cs.XunitMtp.Fixtures.CalculatorTests.Skipped_OnPurpose',
@@ -249,7 +176,7 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     framework: 'mstest',
     language: 'csharp',
     packages: MTP_MSTEST_PACKAGES,
-    source: CS_MSTEST_SOURCE,
+    source: csMstestSource('namespace Cs.MstestMtp.Fixtures', '        [TestMethod]'),
     passing: 'Cs.MstestMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.MstestMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
     skipped: 'Cs.MstestMtp.Fixtures.CalculatorTests.Skipped_OnPurpose',
@@ -262,7 +189,10 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     framework: 'nunit',
     language: 'fsharp',
     packages: MTP_NUNIT_PACKAGES,
-    source: FS_NUNIT_SOURCE,
+    source: fsNunitSource(
+      'module Fs.NunitMtp.Fixtures',
+      'let ``adds two numbers with spaces`` () = Assert.That(1 + 2, Is.EqualTo(3))',
+    ),
     passing: 'Fs.NunitMtp.Fixtures.adds two numbers with spaces',
     failing: 'Fs.NunitMtp.Fixtures.fails on purpose',
     skipped: 'Fs.NunitMtp.Fixtures.skipped on purpose',
@@ -275,7 +205,7 @@ export const MTP_FIXTURES: readonly MtpFixture[] = [
     framework: 'nunit',
     language: 'csharp',
     packages: MTP_NUNIT_PACKAGES,
-    source: CS_NUNIT_SOURCE,
+    source: csNunitSource('namespace Cs.NunitMtp.Fixtures'),
     passing: 'Cs.NunitMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
     failing: 'Cs.NunitMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
     skipped: 'Cs.NunitMtp.Fixtures.CalculatorTests.Skipped_OnPurpose',

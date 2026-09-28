@@ -51,6 +51,7 @@ import {
   activateWithScratch,
   teardownFixtureSolution,
   assertLeavesAre,
+  assertOneProfile,
 } from './test-explorer-kit';
 import { cachedFor, itemsFor, sorted, runIds } from './test-explorer-outcome-assertions';
 import { pollUntilResult, removeDirRecursive, sleep } from './test-helpers.js';
@@ -572,11 +573,9 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       vscode.TestRunProfileKind.Coverage,
       'the Coverage profile is still registered after being cancelled',
     );
-    assert.strictEqual(
-      api.testController.profiles.filter(
-        (profile) => profile.kind === vscode.TestRunProfileKind.Coverage,
-      ).length,
-      1,
+    assertOneProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
       'and there is still exactly one of it',
     );
     assertTreeIntact('with the tree intact');
@@ -589,11 +588,9 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'no report is readable after the kill',
     );
     assert.deepStrictEqual(reportDirsOf(coverageDir), [], 'and no run-id folder holds one');
-    assert.strictEqual(
-      api.testController.profiles.filter(
-        (profile) => profile.kind === vscode.TestRunProfileKind.Coverage,
-      ).length,
-      1,
+    assertOneProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
       'the Coverage profile survived being cancelled',
     );
     assert.ok(

@@ -11,7 +11,7 @@
 // This suite presses Debug on that adapter and requires the stop, the test's
 // own frame, and a clean finish. Implements [DEBUG-FEATURES-TESTS].
 import * as vscode from 'vscode';
-import { CMD_CONTINUE, gesture, methodOf, topFrame } from './debug-drive-kit';
+import { methodOf, topFrame } from './debug-drive-kit';
 import {
   CS_ADDS,
   CS_ALL,
@@ -27,7 +27,8 @@ import {
   useDebugTestFixture,
 } from './debug-test-harness';
 import { comparablePath, deepEq, eq } from './test-helpers';
-import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
+import { DEBUG_TEST_MS } from './test-timeouts';
+import { continueToEnd } from './debug-inspect-kit';
 
 suite('Debug Test — an adapter that decorates test names still stops on the breakpoint', () => {
   const harness = useDebugTestFixture('debug-decorated-', 'csharp', 'vstest-decorating');
@@ -63,10 +64,8 @@ suite('Debug Test — an adapter that decorates test names still stops on the br
 
     // Interaction 4 — continuing runs the test to the end and the session ends
     // on its own, with nothing reported to the user as a failure.
-    await gesture(CMD_CONTINUE);
-    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    await continueToEnd(recorder, 'no adapter transport error');
     eq(recorder.stops().length, 1, 'one stop, the armed one: nothing else halted the host');
-    deepEq(recorder.errors, [], 'no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and no SharpLsp error the user has to read');
   });
 });

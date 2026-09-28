@@ -47,6 +47,7 @@ import {
 } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { useScratchSuite } from './test-explorer-harness';
 
 /** Every id that must come back green. */
 const PASSING: readonly string[] = MTP_FIXTURES.flatMap((fixture) => [
@@ -66,20 +67,10 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
   let root: string;
   let slnPath: string;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root } = await activateWithScratch('sharplsp-mtp-run-'));
+  useScratchSuite('sharplsp-mtp-run-', async (scratch) => {
+    ({ api, root } = scratch);
     slnPath = await createMtpSolution(root);
     await discoverSolution(api, slnPath, ALL_MTP_IDS);
-  });
-
-  teardown(async () => {
-    await api.testController.whenIdle();
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(DOTNET_CLI_MS);
-    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('▶ on the whole tree attributes a pass, a fail and a skip to each test', async function () {

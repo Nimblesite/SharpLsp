@@ -28,7 +28,10 @@ import {
   CMD_PROFILER_KILL_PROCESS,
 } from './constants.js';
 import { promptAndOpenGraph } from './profiler-graph.js';
-import { promptAndOpenDiff, detectLeaksWorkflow } from './profiler-diff.js';
+import { promptAndOpenDiff, detectLeaksWorkflow, formatBytes } from './profiler-diff.js';
+import { askObjectAddress, pickDumpFile, pickOneFile, showPlainText } from './profiler-prompts.js';
+
+export { formatBytes } from './profiler-diff.js';
 
 // ── LSP Types ─────────────────────────────────────────────────────
 
@@ -203,37 +206,20 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
   public getChildren(element?: ProfilerTreeItem): ProfilerTreeItem[] {
     if (element !== undefined) return [];
 
-    const nodes: ProfilerTreeItem[] = [];
-
-    if (this.activeSessions.length > 0) {
-      const header = new ProfilerTreeItem(
-        `Active Sessions (${String(this.activeSessions.length)})`,
-        'header',
-        vscode.TreeItemCollapsibleState.None,
-        { contextValue: 'profiler-header-sessions' },
-      );
-      header.iconPath = new vscode.ThemeIcon('pulse');
-      nodes.push(header);
-
-      for (const session of this.activeSessions) {
-        nodes.push(buildSessionNode(session));
-      }
-    }
-
-    if (this.processes.length > 0) {
-      const header = new ProfilerTreeItem(
-        `.NET Processes (${String(this.processes.length)})`,
-        'header',
-        vscode.TreeItemCollapsibleState.None,
-        { contextValue: 'profiler-header-processes' },
-      );
-      header.iconPath = new vscode.ThemeIcon('server-process');
-      nodes.push(header);
-
-      for (const proc of this.processes) {
-        nodes.push(buildProcessNode(proc));
-      }
-    }
+    const nodes: ProfilerTreeItem[] = [
+      ...headedGroup(
+        'Active Sessions',
+        'sessions',
+        'pulse',
+        this.activeSessions.map(buildSessionNode),
+      ),
+      ...headedGroup(
+        '.NET Processes',
+        'processes',
+        'server-process',
+        this.processes.map(buildProcessNode),
+      ),
+    ];
 
     if (nodes.length === 0) {
       const empty = new ProfilerTreeItem(
@@ -261,6 +247,27 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
 }
 
 /** Build a tree node for an active profiling session. */
+/**
+ * `rows` under a `title (count)` header carrying `profiler-header-${key}`, or
+ * nothing at all when there are no rows.
+ */
+function headedGroup(
+  title: string,
+  key: string,
+  icon: string,
+  rows: readonly ProfilerTreeItem[],
+): ProfilerTreeItem[] {
+  if (rows.length === 0) return [];
+  const header = new ProfilerTreeItem(
+    `${title} (${String(rows.length)})`,
+    'header',
+    vscode.TreeItemCollapsibleState.None,
+    { contextValue: `profiler-header-${key}` },
+  );
+  header.iconPath = new vscode.ThemeIcon(icon);
+  return [header, ...rows];
+}
+
 export function buildSessionNode(session: SessionInfo): ProfilerTreeItem {
   const kindLower = session.kind.toLowerCase();
   const contextValue = `profiler-session-${kindLower}`;
@@ -621,36 +628,51 @@ export function registerCommands(
     }
   }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_START_TRACE, async () => {
-      const lsp = getClient();
-      if (lsp === undefined) return;
-      const proc = await pickProcess(lsp);
-      if (proc === undefined) return;
-      await startTraceOn(proc.pid, proc.name);
-    }),
-  );
+  /**
+   * Register the toolbar command `pickId` (the user picks a process) and the
+   * per-process row command `rowId`, both running `run` on the chosen PID.
+   * `dialogGated` skips the picker in test mode, where it would hang.
+   */
+  function registerProcessPair(
+    pickId: string,
+    rowId: string,
+    run: (pid: number, processName?: string) => Promise<void>,
+    dialogGated = false,
+  ): void {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(pickId, async () => {
+        const lsp = getClient();
+        if (lsp === undefined || (dialogGated && isTestMode)) return;
+        const proc = await pickProcess(lsp);
+        if (proc !== undefined) await run(proc.pid, proc.name);
+      }),
+      vscode.commands.registerCommand(rowId, async (item?: ProfilerTreeItem) => {
+        const pid = item?.processPid;
+        if (pid !== undefined) await run(pid, item?.processName);
+      }),
+    );
+  }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_TRACE_PROCESS, async (item?: ProfilerTreeItem) => {
-      const pid = item?.processPid;
-      if (pid === undefined) return;
-      await startTraceOn(pid, item?.processName);
-    }),
-  );
+  /** Register stop command `id`: the row's session, else the one the user picks of `kind`. */
+  function registerStop(
+    id: string,
+    kind: string,
+    stop: (sessionId: string) => Promise<void>,
+  ): void {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(id, async (item?: ProfilerTreeItem) => {
+        const sessionId = item?.sessionId ?? (await pickActiveSession(provider, kind));
+        if (sessionId !== undefined) await stop(sessionId);
+      }),
+    );
+  }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_STOP_TRACE, async (item?: ProfilerTreeItem) => {
-      let sessionId = item?.sessionId;
-      sessionId ??= await pickActiveSession(provider, 'Trace');
-      if (sessionId === undefined) return;
-      const outputPath = await stopTraceById(sessionId);
-      if (outputPath !== undefined) {
-        // Default Stop action also opens the resulting trace (converted if needed).
-        await openTraceFile(getClient(), outputPath);
-      }
-    }),
-  );
+  registerProcessPair(CMD_PROFILER_START_TRACE, CMD_PROFILER_TRACE_PROCESS, startTraceOn);
+  registerStop(CMD_PROFILER_STOP_TRACE, 'Trace', async (sessionId) => {
+    const outputPath = await stopTraceById(sessionId);
+    // Default Stop action also opens the resulting trace (converted if needed).
+    if (outputPath !== undefined) await openTraceFile(getClient(), outputPath);
+  });
 
   async function startCountersOn(pid: number, processName?: string): Promise<void> {
     const lsp = getClient();
@@ -694,35 +716,8 @@ export function registerCommands(
     }
   }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_START_COUNTERS, async () => {
-      const lsp = getClient();
-      if (lsp === undefined) return;
-      const proc = await pickProcess(lsp);
-      if (proc === undefined) return;
-      await startCountersOn(proc.pid, proc.name);
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      CMD_PROFILER_COUNTERS_PROCESS,
-      async (item?: ProfilerTreeItem) => {
-        const pid = item?.processPid;
-        if (pid === undefined) return;
-        await startCountersOn(pid, item?.processName);
-      },
-    ),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_STOP_COUNTERS, async (item?: ProfilerTreeItem) => {
-      let sessionId = item?.sessionId;
-      sessionId ??= await pickActiveSession(provider, 'Counters');
-      if (sessionId === undefined) return;
-      await stopCountersById(sessionId);
-    }),
-  );
+  registerProcessPair(CMD_PROFILER_START_COUNTERS, CMD_PROFILER_COUNTERS_PROCESS, startCountersOn);
+  registerStop(CMD_PROFILER_STOP_COUNTERS, 'Counters', stopCountersById);
 
   /** The live session a tree item stands for, with its id. */
   const sessionOf = (item?: ProfilerTreeItem): { id: string; session: SessionInfo } | undefined => {
@@ -832,14 +827,11 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_OPEN_TRACE, async () => {
-      const picked = await vscode.window.showOpenDialog({
-        canSelectMany: false,
-        filters: { Traces: ['nettrace', 'speedscope.json', 'json'] },
-        title: 'Open Trace File',
-      });
-      const file = picked?.[0];
-      if (file === undefined) return;
-      await openTraceFile(getClient(), file.fsPath);
+      const file = await pickOneFile(
+        { Traces: ['nettrace', 'speedscope.json', 'json'] },
+        'Open Trace File',
+      );
+      if (file !== undefined) await openTraceFile(getClient(), file);
     }),
   );
 
@@ -847,16 +839,11 @@ export function registerCommands(
     vscode.commands.registerCommand(CMD_PROFILER_CONVERT_TRACE, async () => {
       const lsp = getClient();
       if (lsp === undefined) return;
-      const picked = await vscode.window.showOpenDialog({
-        canSelectMany: false,
-        filters: { 'nettrace files': ['nettrace'] },
-        title: 'Convert .nettrace File',
-      });
-      const file = picked?.[0];
+      const file = await pickOneFile({ 'nettrace files': ['nettrace'] }, 'Convert .nettrace File');
       if (file === undefined) return;
       try {
         const result = await lsp.sendRequest<ConvertTraceResult>('sharplsp/profiler/convertTrace', {
-          input_path: file.fsPath,
+          input_path: file,
           format: 'speedscope',
         });
         const size = formatBytes(result.file_size_bytes);
@@ -887,153 +874,97 @@ export function registerCommands(
     }
   }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_COLLECT_DUMP, async () => {
-      const lsp = getClient();
-      if (lsp === undefined || isTestMode) return;
-      const proc = await pickProcess(lsp);
-      if (proc === undefined) return;
-      await collectDumpOn(proc.pid);
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_DUMP_PROCESS, async (item?: ProfilerTreeItem) => {
-      const pid = item?.processPid;
-      if (pid === undefined) return;
+  registerProcessPair(
+    CMD_PROFILER_COLLECT_DUMP,
+    CMD_PROFILER_DUMP_PROCESS,
+    async (pid) => {
       await collectDumpOn(pid);
-    }),
+    },
+    true,
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_ANALYZE_HEAP, async () => {
-      const lsp = getClient();
-      if (lsp === undefined || isTestMode) return;
-
-      try {
-        const dumpFiles = await vscode.window.showOpenDialog({
-          canSelectMany: false,
-          filters: { 'Dump files': ['dmp'] },
-          title: 'Select memory dump file',
-        });
-        const selectedFile = dumpFiles?.[0];
-        if (selectedFile === undefined) return;
-
-        const dumpPath = selectedFile.fsPath;
-        const result = await lsp.sendRequest<HeapStats>('sharplsp/profiler/analyzeHeap', {
-          dump_path: dumpPath,
-        });
-
-        await showHeapStats(result);
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        void vscode.window.showErrorMessage(`Heap analysis failed: ${msg}`);
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_DIFF_SNAPSHOTS, async () => {
-      const lsp = getClient();
-      if (lsp === undefined || isTestMode) return;
-      try {
-        await promptAndOpenDiff(context, lsp);
-      } catch (err: unknown) {
-        void vscode.window.showErrorMessage(`Heap diff failed: ${getErrorMessage(err)}`);
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_DETECT_LEAKS, async () => {
-      const lsp = getClient();
-      if (lsp === undefined || isTestMode) return;
-      try {
-        await detectLeaksWorkflow(context, lsp);
-      } catch (err: unknown) {
-        void vscode.window.showErrorMessage(`Leak detection failed: ${getErrorMessage(err)}`);
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_SHOW_OBJECT_GRAPH, async () => {
-      const lsp = getClient();
-      if (lsp === undefined || isTestMode) return;
-      try {
-        await promptAndOpenGraph(context, lsp);
-      } catch (err: unknown) {
-        void vscode.window.showErrorMessage(`Object graph failed: ${getErrorMessage(err)}`);
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_INSPECT_OBJECT, async () => {
-      const lsp = getClient();
-      if (lsp === undefined || isTestMode) return;
-
-      const dumpFiles = await vscode.window.showOpenDialog({
-        canSelectMany: false,
-        filters: { 'Dump files': ['dmp'] },
-        title: 'Select memory dump file',
-      });
-      const dumpFile = dumpFiles?.[0];
-      if (dumpFile === undefined) return;
-
-      const address = await vscode.window.showInputBox({
-        prompt: 'Enter the object address (hex)',
-        placeHolder: '00007ff812345678',
-        validateInput: (v) => (v.trim().length > 0 ? undefined : 'Address is required'),
-      });
-      if (address === undefined) return;
-
-      try {
-        const result = await lsp.sendRequest<{
-          address: string;
-          type_name: string;
-          size_bytes: number;
-          generation: string;
-          is_pinned: boolean;
-          fields: {
-            name: string;
-            type_name: string;
-            value: string;
-            is_reference: boolean;
-            reference_address?: string;
-          }[];
-        }>('sharplsp/profiler/inspectObject', {
-          dump_path: dumpFile.fsPath,
-          object_address: address.trim(),
-        });
-
-        const lines = [
-          `Object Inspection: ${result.type_name}`,
-          `Address: ${result.address}`,
-          `Size: ${String(result.size_bytes)} bytes`,
-          `Generation: ${result.generation}`,
-          `Pinned: ${String(result.is_pinned)}`,
-          '',
-          'Fields:',
-          '─'.repeat(60),
-        ];
-        for (const f of result.fields) {
-          const ref = f.reference_address !== undefined ? ` → ${f.reference_address}` : '';
-          lines.push(`  ${f.name}: ${f.type_name} = ${f.value}${ref}`);
+  /**
+   * Register dialog-gated command `id`: it runs once a client exists (never in
+   * test mode, where its dialogs would hang) and reports a throw as `${what} failed`.
+   */
+  function registerDialogCommand(
+    id: string,
+    what: string,
+    run: (lsp: LanguageClient) => Promise<void>,
+  ): void {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(id, async () => {
+        const lsp = getClient();
+        if (lsp === undefined || isTestMode) return;
+        try {
+          await run(lsp);
+        } catch (err: unknown) {
+          void vscode.window.showErrorMessage(`${what} failed: ${getErrorMessage(err)}`);
         }
+      }),
+    );
+  }
 
-        const doc = await vscode.workspace.openTextDocument({
-          content: lines.join('\n'),
-          language: 'plaintext',
-        });
-        await vscode.window.showTextDocument(doc, {
-          preview: true,
-        });
-      } catch (err: unknown) {
-        void vscode.window.showErrorMessage(`Object inspection failed: ${getErrorMessage(err)}`);
-      }
+  registerDialogCommand(CMD_PROFILER_ANALYZE_HEAP, 'Heap analysis', async (lsp) => {
+    const dumpPath = await pickDumpFile();
+    if (dumpPath === undefined) return;
+    const result = await lsp.sendRequest<HeapStats>('sharplsp/profiler/analyzeHeap', {
+      dump_path: dumpPath,
+    });
+    await showHeapStats(result);
+  });
+  registerDialogCommand(CMD_PROFILER_DIFF_SNAPSHOTS, 'Heap diff', async (lsp) => {
+    await promptAndOpenDiff(context, lsp);
+  });
+  registerDialogCommand(CMD_PROFILER_DETECT_LEAKS, 'Leak detection', async (lsp) => {
+    await detectLeaksWorkflow(context, lsp);
+  });
+  registerDialogCommand(CMD_PROFILER_SHOW_OBJECT_GRAPH, 'Object graph', async (lsp) => {
+    await promptAndOpenGraph(context, lsp);
+  });
+  registerDialogCommand(CMD_PROFILER_INSPECT_OBJECT, 'Object inspection', inspectObject);
+}
+
+/** Ask for a dump and an object address in it, and show that object's fields. */
+async function inspectObject(lsp: LanguageClient): Promise<void> {
+  const dumpPath = await pickDumpFile();
+  if (dumpPath === undefined) return;
+  const address = await askObjectAddress('Enter the object address (hex)');
+  if (address === undefined) return;
+  const result = await lsp.sendRequest<ObjectInspection>('sharplsp/profiler/inspectObject', {
+    dump_path: dumpPath,
+    object_address: address.trim(),
+  });
+  await showPlainText([
+    `Object Inspection: ${result.type_name}`,
+    `Address: ${result.address}`,
+    `Size: ${String(result.size_bytes)} bytes`,
+    `Generation: ${result.generation}`,
+    `Pinned: ${String(result.is_pinned)}`,
+    '',
+    'Fields:',
+    '─'.repeat(60),
+    ...result.fields.map((f) => {
+      const ref = f.reference_address !== undefined ? ` → ${f.reference_address}` : '';
+      return `  ${f.name}: ${f.type_name} = ${f.value}${ref}`;
     }),
-  );
+  ]);
+}
+
+/** One object read out of a dump by `sharplsp/profiler/inspectObject`. */
+interface ObjectInspection {
+  address: string;
+  type_name: string;
+  size_bytes: number;
+  generation: string;
+  is_pinned: boolean;
+  fields: {
+    name: string;
+    type_name: string;
+    value: string;
+    is_reference: boolean;
+    reference_address?: string;
+  }[];
 }
 
 // ── SpeedScope Integration ────────────────────────────────────────
@@ -1129,20 +1060,7 @@ async function showHeapStats(stats: HeapStats): Promise<void> {
     const size = formatBytes(t.total_size_bytes).padStart(12);
     lines.push(`${name.padEnd(53)} ${count}    ${size}`);
   }
-
-  const doc = await vscode.workspace.openTextDocument({
-    content: lines.join('\n'),
-    language: 'plaintext',
-  });
-  await vscode.window.showTextDocument(doc, { preview: true });
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  const mb = kb / 1024;
-  return `${mb.toFixed(1)} MB`;
+  await showPlainText(lines);
 }
 
 export function formatDuration(ms: number): string {

@@ -8,7 +8,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { EXTENSION_ID } from './test-helpers';
+import { EXTENSION_ID, pollUntilResult } from './test-helpers';
 
 /** One node of the tree, viewed only through the fields the searches read. */
 export interface ExplorerNode {
@@ -72,4 +72,13 @@ export function writeOneProjectSolution(
   const header = 'Microsoft Visual Studio Solution File, Format Version 12.00';
   fs.writeFileSync(slnPath, [header, entry, 'EndProject', 'Global', 'EndGlobal'].join('\n'));
   return { slnPath, projDir, csprojPath };
+}
+
+/** Poll `provider`'s tree for up to 5 s until a node's label contains `target`. */
+export async function pollTreeFor(provider: ExplorerProvider, target: string): Promise<boolean> {
+  return await pollUntilResult(
+    async () => treeContains(provider.getChildren(), target),
+    (found) => found,
+    5_000,
+  );
 }

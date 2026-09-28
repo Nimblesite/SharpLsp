@@ -39,6 +39,7 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt } from './test-helpers';
+import { assertEvaluatesEverywhere } from './debug-inspect-kit';
 
 /** T1 expressions: field access, arithmetic, casts, null checks. All "Works". */
 const TIER_ONE: readonly { expression: string; expected: string; kind: string }[] = [
@@ -300,35 +301,16 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
       // Interaction 2 — a method call on a local, in each of the three contexts
       // the specification names. Answering in one and not another is worse than
       // failing everywhere: the user cannot tell which panel to trust.
-      const calls: readonly { expression: string; expected: string }[] = [
-        { expression: 'box.Describe()', expected: 'boxed=8' },
-        { expression: 'numbers.Contains(20)', expected: 'true' },
-        { expression: 'text.Length', expected: '7' },
-      ];
-      for (const { expression, expected } of calls) {
-        const watch = await evaluate(session, expression, frame.id, 'watch');
-        assert.ok(
-          watch.value.includes(expected),
-          expression +
-            ' is a T2 "method calls on locals" expression, marked Works for Phase 4; ' +
-            'the Watch panel answered ' +
-            JSON.stringify(watch.value),
-        );
-        const repl = await evaluate(session, expression, frame.id, 'repl');
-        eq(
-          repl.value,
-          watch.value,
-          expression + ': the Debug Console must agree with the Watch panel over one frame',
-        );
-        const hover = await evaluate(session, expression, frame.id, 'hover');
-        eq(
-          hover.value,
-          watch.value,
-          expression +
-            ': and so must a hover - three answers for one expression is a bug the ' +
-            'user reads as their own code misbehaving',
-        );
-      }
+      await assertEvaluatesEverywhere(
+        session,
+        frame.id,
+        [
+          { expression: 'box.Describe()', expected: 'boxed=8' },
+          { expression: 'numbers.Contains(20)', expected: 'true' },
+          { expression: 'text.Length', expected: '7' },
+        ],
+        'a T2 "method calls on locals" expression, marked Works for Phase 4',
+      );
 
       // Interaction 3 — a call with an argument computed from another local, and
       // a chained call. Both are still T2, and both must survive the round trip.

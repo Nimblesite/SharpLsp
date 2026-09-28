@@ -49,7 +49,6 @@ import {
   warmDiscovery,
   writeProject,
 } from './dotnet-project-kit';
-import { fixtureFor } from './test-explorer-fixtures';
 import {
   collectItemIds,
   collectLeafIds,
@@ -66,9 +65,7 @@ import {
 import { removeDirRecursive } from './test-helpers.js';
 import { cachedFor, itemsFor, sorted, runIds } from './test-explorer-outcome-assertions';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-
-/** The C# xUnit fixture, rebuilt here for TWO target frameworks. */
-const CS = fixtureFor('xunit-csharp');
+import { CS } from './test-explorer-xunit-pair';
 
 /** The namespace both classes are declared in. */
 const NAMESPACE = 'Cs.Xunit.Fixtures';
