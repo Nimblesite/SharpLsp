@@ -20,8 +20,8 @@ Tracks progress against the spec. Every checked item has implementing code and a
 - [x] `sharplsp/profiler/collectDump`
 - [x] Session store (`DashMap<String, ProfileSession>`) with lifecycle states
 - [x] Tool discovery (PATH + `dotnet tool list -g` fallback)
-- [ ] Configurable `max_concurrent_sessions` via `sharplsp.toml`
-- [ ] Orphaned-session cleanup on LSP shutdown
+- [x] Configurable `max_concurrent_sessions` via `sharplsp.toml` (`[profiler]`, default 5, validated positive; applied at startup)
+- [x] Orphaned-session cleanup on LSP shutdown (`SessionStore::shutdown` kills child tools before the sidecars stop)
 
 ## Tier 2 — Trace File Management
 

@@ -20,4 +20,5 @@ and producing no assembly. This defect also exists at the release baseline
 - [x] Pass the current Linux workspace chunk: 487 extension-host tests passing,
   including the real `.sln` and `.slnx` Debug/Release fixture builds and linked-SDK
   cleanup cases.
-- [ ] Pass the combined PR's Linux and Windows workspace chunks.
+- [x] Pass the combined PR's Linux and Windows workspace chunks: `VS Code / workspace` and
+  `VS Code (Windows) / workspace` green in #309 and again in CI run 36421775710 (#320).
