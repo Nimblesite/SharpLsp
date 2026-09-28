@@ -14,30 +14,25 @@
     "",
     "TO BUMP: tag the fork branch, let `Build release` publish the archives, then",
     "point `release` at the new tag and replace every URL and SHA-256 with that",
-    "release's (`gh release view <tag> --repo Nimblesite/netcoredbg --json assets`).",
-    "",
-    "TEMPORARY, and custody.test.mjs fails until it is gone: linux-arm64 and",
-    "darwin-arm64 still point at the UNPATCHED upstream 3.2.0-1092 archives",
-    "because the fork's `Build release` workflow has not yet published theirs.",
-    "Run that workflow for tag 3.2.0-1092-sharplsp.1 and repin both."
+    "release's (`gh release view <tag> --repo Nimblesite/netcoredbg --json assets`)."
   ],
   "release": "3.2.0-1092-sharplsp.1",
   "platforms": {
     "linux-x64": {
       "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-linux-x64.tar.gz",
-      "sha256": "819a82b59a5c77158844f964553cfa58fb73bebdab812d99b066d66d635c2aa1"
+      "sha256": "d172015a0d2c37f55f8be76bcc04e81ff194d7610aec0459d4b5038eaa03eb98"
     },
     "linux-arm64": {
-      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-linux-arm64.tar.gz",
-      "sha256": "065ff49badec8a695dbea2de6ab6a330c774a191e426a217ab8cc05250627ccb"
+      "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-linux-arm64.tar.gz",
+      "sha256": "373166f99993ee4b77d258fbab1d4952ebc0d3c706f10ff73fff4cec99d8e012"
     },
     "darwin-arm64": {
-      "url": "https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-osx-arm64.zip",
-      "sha256": "f4fa33b3ff874910cc184b4bb3b9c56d0abdf5c6521cee0b144d7c6e4a6e59ea"
+      "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-darwin-arm64.tar.gz",
+      "sha256": "6d1870ed4b3c74cc3c8c834d4951e88c4c3adead2b2e70c450a271ae00b348e1"
     },
     "win32-x64": {
       "url": "https://github.com/Nimblesite/netcoredbg/releases/download/3.2.0-1092-sharplsp.1/netcoredbg-win32-x64.tar.gz",
-      "sha256": "a3bf7bcd5e5c74980ec686f79d02a7f3fe8d6a6dd74a2da55923c24f385dd753"
+      "sha256": "ae3ce9d4be1148b4f8a8a6b5915515cbf603d1703f057924d98489a46e103a5c"
     }
   }
 }
