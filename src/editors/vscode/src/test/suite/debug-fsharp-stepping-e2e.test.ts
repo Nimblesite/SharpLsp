@@ -18,7 +18,6 @@ import {
   CMD_CONTINUE,
   CMD_STEP_INTO,
   CMD_STEP_OUT,
-  CMD_STEP_OVER,
   CMD_TOGGLE_BREAKPOINT,
   assertExceptionIs,
   assertStopReason,
@@ -34,7 +33,6 @@ import {
   topFrame,
   trace,
   variableNamed,
-  walk,
 } from './debug-drive-kit';
 import {
   assertBreakpointsBound,
@@ -48,6 +46,7 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, requireAt, assertContainsAll } from './test-helpers';
+import { assertValues, onlySourceBreakpoint, stepIntoAddThroughLoop } from './debug-inspect-kit';
 
 suite('Debug F# — breakpoints, stepping and exceptions', () => {
   const debuggee = useDebuggee('debug-step-fs-', 'fsharp');
@@ -129,30 +128,18 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
         'stepping into an F# function must push exactly one frame',
       );
 
-      // Interaction 3 — F10 twice down to the call inside the loop.
-      const toCall = await walk(recorder, [CMD_STEP_OVER, CMD_STEP_OVER]);
-      deepEq(
-        trace(toCall.frames),
-        [
-          at(fixture, 'accumulate', 'accumulate-loop'),
-          at(fixture, 'accumulate', 'accumulate-call'),
-        ],
-        'F10 in an F# `for` loop must visit the loop header, then the body — landing inside ' +
-          '`add` means `next` was serviced as `stepIn`',
-      );
-
-      // Interaction 4 — F11 into `add`; three F# frames, innermost first.
-      const intoAdd = await stepToFrame(recorder, CMD_STEP_INTO);
-      assertStoppedAt(intoAdd.frame, fixture, 'add-body', 'add', 'F11 into the innermost F# call');
-      const deep = await stackFrames(session, intoAdd.stop.threadId);
-      deepEq(
-        deep.slice(0, 3).map((frame) => methodOf(frame)),
-        ['add', 'accumulate', 'main'],
-        'an F# call stack must name F# functions, in DAP’s innermost-first order',
-      );
+      // Interactions 3 and 4 — F10 twice down to the call inside the F# `for`
+      // loop, then F11 into `add`: three F# frames naming F# functions.
+      const { deep } = await stepIntoAddThroughLoop(recorder, session, fixture, [
+        'add',
+        'accumulate',
+        'main',
+      ]);
       const addLocals = await localsOf(session, requireAt(deep, 0, 'the `add` frame').id);
-      eq(variableNamed(addLocals, 'left').value, '2', 'the F# function’s first parameter is bound');
-      eq(variableNamed(addLocals, 'right').value, '1', 'and its second');
+      assertValues(addLocals, [
+        ['left', '2', 'the F# function’s first parameter is bound'],
+        ['right', '1', 'and its second'],
+      ]);
 
       // Interaction 5 — Shift+F11 back out, one frame per press.
       const outOnce = await stepToFrame(recorder, CMD_STEP_OUT);
@@ -293,9 +280,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
       vscode.debug.addBreakpoints([
         breakpointAt(fixture, 'accumulate-call', { condition: 'index = 2' }),
       ]);
-      eq(vscode.debug.breakpoints.length, 1, 'one conditional breakpoint is armed in F# source');
-      const armed = requireAt(vscode.debug.breakpoints, 0, 'the F# conditional breakpoint');
-      assert.ok(armed instanceof vscode.SourceBreakpoint, 'armed as a source breakpoint');
+      const armed = onlySourceBreakpoint('the F# conditional breakpoint');
       eq(armed.condition, 'index = 2', 'carrying the F# expression the user typed');
       assert.ok(
         armed.location.uri.fsPath.endsWith('.fs'),
@@ -363,8 +348,10 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
       const locals = await localsOf(session, frame.id);
       const names = locals.map((local) => local.name);
       assertContainsAll(names, ['left', 'right'], 'names');
-      eq(variableNamed(locals, 'left').value, '2', 'carrying the value the loop passed it');
-      eq(variableNamed(locals, 'right').value, '1', 'and the first loop index');
+      assertValues(locals, [
+        ['left', '2', 'carrying the value the loop passed it'],
+        ['right', '1', 'and the first loop index'],
+      ]);
       eq(
         (await evaluate(session, 'left + right', frame.id, 'watch')).value,
         '3',

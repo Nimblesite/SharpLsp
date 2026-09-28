@@ -30,16 +30,11 @@ import {
   writeMtpGlobalJson,
   writeProject,
 } from './dotnet-project-kit';
-import {
-  discoverSolution,
-  rootsOf,
-  runViaProfile,
-  teardownFixtureSolution,
-  activateWithScratch,
-} from './test-explorer-kit';
+import { discoverSolution, rootsOf, runViaProfile } from './test-explorer-kit';
 import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
-import { removeDirRecursive, assertContainsAll } from './test-helpers';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { assertContainsAll } from './test-helpers';
+import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { useScratchSuite } from './test-explorer-harness';
 
 const PROJECT = 'BatchMtpFs';
 const MODULE = 'Fs.BatchMtp.Fixtures';
@@ -97,9 +92,8 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform selections past one invo
   let root: string;
   let slnPath: string;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root } = await activateWithScratch('sharplsp-mtp-batches-'));
+  useScratchSuite('sharplsp-mtp-batches-', async (scratch) => {
+    ({ api, root } = scratch);
     writeMtpGlobalJson(root);
     const dir = writeProject(
       path.join(root, PROJECT),
@@ -110,15 +104,6 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform selections past one invo
     );
     slnPath = await createSolution(root, 'BatchMtp', [dir]);
     await discoverSolution(api, slnPath, EXPECTED);
-  });
-
-  teardown(async () => {
-    await api.testController.whenIdle();
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(DOTNET_CLI_MS);
-    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('a refusal in a LATER batch is still retried, whatever an earlier batch reported', async function () {

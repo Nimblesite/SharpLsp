@@ -16,6 +16,7 @@ import {
   drainDiscovery,
   pollUntilDiscovered,
   teardownFixtureSolution,
+  clearTestTree,
 } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -81,5 +82,60 @@ export function useWarmFixture(
   return () => {
     assert.ok(fixture, 'the fixture solution must be built in suiteSetup');
     return fixture;
+  };
+}
+
+/** A suite's activated Test Explorer and the scratch root its fixture lives under. */
+export interface ScratchSuite {
+  readonly api: SharpLspExtensionApi;
+  readonly root: string;
+}
+
+/**
+ * Activate the Test Explorer into a fresh scratch root (`prefix`) and hand it
+ * to `build` once for the suite. After each test no `dotnet` invocation may be
+ * left in flight — discovery builds the same `bin/`/`obj/` a run rebuilds, and
+ * the overlap kills VSTest — and the suite ends with `teardownFixtureSolution`.
+ */
+export function useScratchSuite(
+  prefix: string,
+  build: (scratch: ScratchSuite) => Promise<void>,
+): void {
+  let scratch: ScratchSuite | undefined;
+  suiteSetup(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    scratch = await activateWithScratch(prefix);
+    await build(scratch);
+  });
+  teardown(async () => {
+    await scratch?.api.testController.whenIdle();
+  });
+  suiteTeardown(async function () {
+    this.timeout(DOTNET_CLI_MS);
+    if (scratch !== undefined)
+      await teardownFixtureSolution(scratch.api, scratch.root, removeDirRecursive);
+  });
+}
+
+/**
+ * A suite whose tests each build their own solution under ONE scratch parent
+ * (`prefix`): the tree is cleared after every test, and the parent removed
+ * once the suite is done.
+ */
+export function useScratchParent(prefix: string): () => ScratchSuite {
+  let scratch: ScratchSuite | undefined;
+  suiteSetup(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    scratch = await activateWithScratch(prefix);
+  });
+  teardown(async () => {
+    if (scratch !== undefined) await clearTestTree(scratch.api);
+  });
+  suiteTeardown(() => {
+    if (scratch !== undefined) removeDirRecursive(scratch.root);
+  });
+  return () => {
+    assert.ok(scratch, 'the scratch parent must be created in suiteSetup');
+    return scratch;
   };
 }

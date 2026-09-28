@@ -1,22 +1,14 @@
 // Exhaustive real-LSP Roslyn refactor matrix for [SHARPLSP-FEATURES-REFACTORING].
-import * as assert from 'node:assert/strict';
-import * as vscode from 'vscode';
 import {
-  assertFragments,
-  assertFreshActionDataIds,
-  assertRawActionData,
-  assertRawTitles,
-  assertSingleDocumentEdit,
-  onlyAction,
-  rawCodeActions,
-  type RawCodeAction,
+  applyAction,
+  assertActionRequery,
+  assertOutsideActionRange,
+  discoverAction,
+  resolveAction,
+  type ActionLifecycleCase,
 } from './csharp-refactor-test-kit';
-import { rangeAfterAction, rangeOf } from './document-anchors';
 import {
-  applyWorkspaceEdit,
   replaceDocumentText,
-  waitForCodeActions,
-  waitForResolvedCodeActions,
   type OpenFixture,
   useRefactorFixture,
   restoreCommitted,
@@ -39,35 +31,8 @@ import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorCore.cs';
 
-interface RefactorScenario {
-  readonly label: string;
-  readonly source: string;
-  readonly snippet: string;
-  readonly focus: string;
-  readonly title: string;
-  readonly kind: string;
-  readonly options: readonly string[];
-  readonly presentAfter: readonly string[];
-  readonly absentAfter: readonly string[];
-  readonly patternsAfter?: readonly RegExp[];
-  readonly mustDisappear?: boolean;
-  readonly postApplySnippet?: string;
-  readonly postApplyFocus?: string;
-  readonly requeryTitleCount?: number;
-}
-
-function vscodeKind(value: string): vscode.CodeActionKind {
-  switch (value) {
-    case 'refactor.extract':
-      return vscode.CodeActionKind.RefactorExtract;
-    case 'refactor.inline':
-      return vscode.CodeActionKind.RefactorInline;
-    case 'refactor.rewrite':
-      return vscode.CodeActionKind.RefactorRewrite;
-    default:
-      return vscode.CodeActionKind.Refactor;
-  }
-}
+/** A lifecycle case that lists every title its range offers. */
+type RefactorScenario = ActionLifecycleCase & { readonly options: readonly string[] };
 
 const EXPRESSION_SITE = {
   source: EXPRESSION_SOURCE,
@@ -277,104 +242,16 @@ const SCENARIOS: readonly RefactorScenario[] = [
   },
 ];
 
-async function assertOutsideRange(fixture: OpenFixture, scenario: RefactorScenario): Promise<void> {
-  const range = rangeOf(fixture.document, 'namespace');
-  const raw = await rawCodeActions(fixture.uri, range);
-  assert.ok(!raw.some((action) => action.title === scenario.title));
-  const actions = await waitForCodeActions({
-    uri: fixture.uri,
-    range,
-    kind: vscodeKind(scenario.kind),
-    predicate: () => true,
-  });
-  assert.ok(!actions.some((action) => action.title === scenario.title));
-}
-
-async function discover(
-  fixture: OpenFixture,
-  scenario: RefactorScenario,
-): Promise<{ readonly range: vscode.Range; readonly raw: RawCodeAction[] }> {
-  const range = rangeOf(fixture.document, scenario.snippet, scenario.focus);
-  const actions = await waitForCodeActions({
-    uri: fixture.uri,
-    range,
-    kind: vscodeKind(scenario.kind),
-    predicate: (items) => items.some((item) => item.title === scenario.title),
-  });
-  onlyAction(actions, scenario.title);
-  const raw = await rawCodeActions(fixture.uri, range);
-  assertRawTitles(raw, scenario.options, scenario.kind);
-  assertRawActionData(raw, fixture.uri);
-  return { range, raw };
-}
-
-async function resolve(
-  fixture: OpenFixture,
-  scenario: RefactorScenario,
-  range: vscode.Range,
-): Promise<vscode.WorkspaceEdit> {
-  const actions = await waitForResolvedCodeActions({
-    uri: fixture.uri,
-    range,
-    kind: vscodeKind(scenario.kind),
-    predicate: (items) => items.some((item) => item.title === scenario.title && item.edit),
-  });
-  for (const title of scenario.options) onlyAction(actions, title);
-  const selected = onlyAction(actions, scenario.title);
-  assert.strictEqual(selected.kind?.value, scenario.kind);
-  assert.ok(selected.edit, `${scenario.title} must resolve to an edit`);
-  return selected.edit;
-}
-
-function assertMutation(
-  fixture: OpenFixture,
-  scenario: RefactorScenario,
-  previousVersion: number,
-): void {
-  const source = fixture.document.getText();
-  assertFragments(source, scenario.presentAfter, scenario.absentAfter);
-  for (const pattern of scenario.patternsAfter ?? []) assert.match(source, pattern);
-  assert.ok(fixture.document.version > previousVersion);
-  assert.ok(fixture.document.isDirty);
-}
-
-async function assertRequery(
-  fixture: OpenFixture,
-  scenario: RefactorScenario,
-  range: vscode.Range,
-  before: readonly RawCodeAction[],
-): Promise<void> {
-  const requeryRange = rangeAfterAction(
-    fixture,
-    range,
-    scenario.postApplySnippet,
-    scenario.postApplyFocus,
-  );
-  const after = await rawCodeActions(fixture.uri, requeryRange);
-  assertRawActionData(after, fixture.uri);
-  assertFreshActionDataIds(after, before);
-  if (scenario.mustDisappear) assert.ok(!after.some((action) => action.title === scenario.title));
-  if (scenario.requeryTitleCount !== undefined) {
-    assert.strictEqual(
-      after.filter((action) => action.title === scenario.title).length,
-      scenario.requeryTitleCount,
-    );
-  }
-}
-
 async function runScenario(
   fixture: OpenFixture,
   committedText: string,
   scenario: RefactorScenario,
 ): Promise<void> {
   await replaceDocumentText(fixture.document, scenario.source);
-  await assertOutsideRange(fixture, scenario);
-  const discovered = await discover(fixture, scenario);
-  const edit = await resolve(fixture, scenario, discovered.range);
-  const version = fixture.document.version;
-  assertSingleDocumentEdit(await applyWorkspaceEdit(edit), fixture);
-  assertMutation(fixture, scenario, version);
-  await assertRequery(fixture, scenario, discovered.range, discovered.raw);
+  await assertOutsideActionRange(fixture, scenario);
+  const discovered = await discoverAction(fixture, scenario);
+  await applyAction(fixture, scenario, await resolveAction(fixture, scenario, discovered.range));
+  await assertActionRequery(fixture, scenario, discovered.range, discovered.raw);
   await restoreCommitted(fixture, committedText);
 }
 

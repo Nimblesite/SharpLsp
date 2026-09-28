@@ -41,11 +41,9 @@ import {
   drainDiscovery,
   errorTextOf,
   rootsOf,
-  activateWithScratch,
-  clearTestTree,
 } from './test-explorer-kit';
-import { removeDirRecursive } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { useScratchParent } from './test-explorer-harness';
 
 /** One real xUnit test — the test the refusal loses. */
 const TEST_SOURCE = [
@@ -99,15 +97,9 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
   let api: SharpLspExtensionApi;
   let parent: string;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root: parent } = await activateWithScratch('sharplsp-refusals-'));
-  });
-
-  teardown(() => clearTestTree(api));
-
-  suiteTeardown(() => {
-    removeDirRecursive(parent);
+  const scratch = useScratchParent('sharplsp-refusals-');
+  setup(() => {
+    ({ api, root: parent } = scratch());
   });
 
   test('a solution dotnet restores nothing from explains itself instead of going blank', async function () {
@@ -208,15 +200,9 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
   let api: SharpLspExtensionApi;
   let parent: string;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root: parent } = await activateWithScratch('sharplsp-refusal-kinds-'));
-  });
-
-  teardown(() => clearTestTree(api));
-
-  suiteTeardown(() => {
-    removeDirRecursive(parent);
+  const scratch = useScratchParent('sharplsp-refusal-kinds-');
+  setup(() => {
+    ({ api, root: parent } = scratch());
   });
 
   test('a healthy solution carrying a package advisory keeps its truthful empty tree', async function () {

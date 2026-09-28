@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { getErrorMessage } from './utils.js';
+import { askObjectAddress, pickDumpFile } from './profiler-prompts.js';
 
 interface ObjectGraphNode {
   readonly id: string;
@@ -112,20 +113,11 @@ export async function promptAndOpenGraph(
   context: vscode.ExtensionContext,
   client: LanguageClient,
 ): Promise<void> {
-  const dumpFiles = await vscode.window.showOpenDialog({
-    canSelectMany: false,
-    filters: { 'Dump files': ['dmp'] },
-    title: 'Select memory dump file for object graph',
-  });
-  const selectedFile = dumpFiles?.[0];
-  if (selectedFile === undefined) return;
-
-  const rootAddress = await vscode.window.showInputBox({
-    prompt: 'Enter the root object address (hex, e.g. 00007ff812345678)',
-    placeHolder: '00007ff812345678',
-    validateInput: (v) => (v.trim().length > 0 ? undefined : 'Address is required'),
-  });
+  const dumpPath = await pickDumpFile('Select memory dump file for object graph');
+  if (dumpPath === undefined) return;
+  const rootAddress = await askObjectAddress(
+    'Enter the root object address (hex, e.g. 00007ff812345678)',
+  );
   if (rootAddress === undefined) return;
-
-  await ObjectGraphPanel.open(selectedFile.fsPath, rootAddress.trim(), context, client);
+  await ObjectGraphPanel.open(dumpPath, rootAddress.trim(), context, client);
 }

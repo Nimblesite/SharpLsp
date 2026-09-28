@@ -34,6 +34,7 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
+import { assertSentField } from './debug-inspect-kit';
 
 /** The 0-based lines the workbench currently holds source breakpoints on. */
 function armedLines(): number[] {
@@ -283,24 +284,12 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       // Waited for by NAME, not read off the end of the wire: `requested` was
       // sampled above to prove the request exists at all, and the entry last on
       // the wire at that instant need not be the one carrying this name.
-      const sentFunction = await recorder.waitForRequestArgs(
-        'setFunctionBreakpoints',
-        (args) => {
-          const list: unknown = args['breakpoints'];
-          return (
-            Array.isArray(list) &&
-            list.length === 1 &&
-            String((list[0] as Record<string, any>)['name']) === functionName
-          );
-        },
-        'the fully-qualified method name must be forwarded verbatim',
-      );
-      const names: unknown = sentFunction['breakpoints'];
-      assert.ok(Array.isArray(names), '`setFunctionBreakpoints` carries a breakpoints array');
-      deepEq(
-        names.map((entry) => String((entry as Record<string, any>)['name'])),
+      await assertSentField(
+        recorder,
+        'name',
         [functionName],
         'the fully-qualified method name must be forwarded verbatim',
+        'setFunctionBreakpoints',
       );
 
       // Interaction 3 — the debuggee must stop on entry to Add, three frames deep.

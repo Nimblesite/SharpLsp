@@ -19,10 +19,11 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import type { AnchoredSource } from './debug-anchors';
 import { DapRecorder, type StopRecord } from './debug-dap-kit';
-import { assertStopReason } from './debug-drive-kit';
-import { assertBoundAtLines, clearAllBreakpoints, stopDebuggee } from './debug-suite-kit';
+import { assertStopReason, topFrame, type Frame } from './debug-drive-kit';
+import { assertBoundAtLines, useArmedRecorders } from './debug-suite-kit';
 import {
   disposeDebugTestFixture,
+  requireActive,
   writeDebugTestFixture,
   type FixtureLanguage,
   type FixtureRunner,
@@ -35,9 +36,9 @@ import {
   findItem,
   runViaProfile,
 } from './test-explorer-kit';
-import { closeAllEditors, comparablePath, eq, requireAt } from './test-helpers';
+import { comparablePath, eq, requireAt } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
-import { installUiStubs, type UiStubs } from './ui-stubs';
+import { type UiStubs } from './ui-stubs';
 
 /** The suite's built fixture, plus the recorders armed for the current test. */
 export interface DebugTestHarness {
@@ -59,7 +60,6 @@ export function useDebugTestFixture(
   runner: FixtureRunner = 'vstest',
 ): () => DebugTestHarness {
   let fixture: TestDebugFixture;
-  let current: DebugTestHarness | undefined;
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
@@ -71,32 +71,7 @@ export function useDebugTestFixture(
     await disposeDebugTestFixture(fixture);
   });
 
-  setup(() => {
-    clearAllBreakpoints();
-    current = {
-      fixture,
-      recorder: new DapRecorder(),
-      sessions: new DebugSessionRecorder(),
-      stubs: installUiStubs(),
-    };
-  });
-
-  teardown(async () => {
-    const active = current;
-    current = undefined;
-    if (active === undefined) return;
-    await stopDebuggee();
-    clearAllBreakpoints();
-    active.sessions.dispose();
-    active.recorder.dispose();
-    active.stubs.restore();
-    await closeAllEditors();
-  });
-
-  return () => {
-    assert.ok(current, 'the debug-test harness must be created in setup');
-    return current;
-  };
+  return useArmedRecorders(() => ({ fixture }), 'debug-test');
 }
 
 /**
@@ -160,4 +135,27 @@ export async function caretInSource(
   eq(editor.selection.active.line, caret, `the caret sits inside ${anchor}`);
   eq(document.languageId, languageId, `and the editor knows it is ${languageId}`);
   eq(comparablePath(document.uri.fsPath), comparablePath(fixture.sourceFile), 'in the fixture');
+}
+
+/**
+ * The first stop of a test debug run, read back through the ACTIVE session:
+ * {@link firstBreakpointStop}, and then a top frame ON `anchor`'s line of the
+ * fixture's own source — a frame with no source is a debugger with no symbols.
+ */
+export async function stopInTestSource(
+  recorder: DapRecorder,
+  fixture: { readonly sourceFile: string },
+  source: AnchoredSource,
+  anchor: string,
+): Promise<{ stop: StopRecord; active: vscode.DebugSession; frame: Frame }> {
+  const stop = await firstBreakpointStop(recorder, source, anchor);
+  const active = requireActive(`the stop at '${anchor}'`);
+  const frame = await topFrame(active, stop.threadId);
+  eq(frame.line, source.dapLine(anchor), `the top frame is on the line armed at '${anchor}'`);
+  eq(
+    comparablePath(frame.sourcePath),
+    comparablePath(fixture.sourceFile),
+    `and in the fixture's own source file, not a generated or decompiled one`,
+  );
+  return { stop, active, frame };
 }

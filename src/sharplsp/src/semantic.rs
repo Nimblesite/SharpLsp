@@ -125,17 +125,15 @@ pub fn handle_completion_resolve(
         file_path,
         index: i32::try_from(index).unwrap_or(-1),
     };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("completionItem/resolve", payload))
-    {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar completion resolve unavailable: {err:#}");
-            return Ok(serde_json::to_value(item)?);
-        }
+    let Some(result) = request_sidecar::<SidecarCompletionResolveResult, _>(
+        runtime,
+        sidecar,
+        "completionItem/resolve",
+        &request,
+    )?
+    else {
+        return Ok(serde_json::to_value(item)?);
     };
-
-    let result: SidecarCompletionResolveResult = rmp_serde::from_slice(&response_bytes)?;
     if !result.additional_edits.is_empty() {
         item.additional_text_edits = Some(map_text_edits(&result.additional_edits));
     }
@@ -185,16 +183,11 @@ pub fn handle_hover(
         line: position.line,
         character: position.character,
     };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar hover unavailable: {err:#}");
-            return Ok(serde_json::Value::Null);
-        }
+    let Some(result) =
+        request_sidecar::<Option<SidecarHoverResult>, _>(runtime, sidecar, method, &request)?
+    else {
+        return Ok(serde_json::Value::Null);
     };
-
-    let result: Option<SidecarHoverResult> = rmp_serde::from_slice(&response_bytes)?;
     let has_content = result.is_some();
     let hover = result.map(|r| {
         let range = build_hover_range(&r);

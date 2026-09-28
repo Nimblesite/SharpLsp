@@ -298,7 +298,6 @@ async function materialise(scratchDir: string, language: Language): Promise<Debu
 export function useDebuggee(prefix: string, language: Language): () => Debuggee {
   let fixture: DebugFixture;
   let scratchDir: string;
-  let current: Debuggee | undefined;
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
@@ -310,36 +309,10 @@ export function useDebuggee(prefix: string, language: Language): () => Debuggee 
     removeDirRecursive(scratchDir);
   });
 
-  setup(() => {
-    clearAllBreakpoints();
-    current = {
-      fixture,
-      folder: fakeFolder(requireWorkspaceRoot()),
-      recorder: new DapRecorder(),
-      stubs: installUiStubs(),
-      sessions: new DebugSessionRecorder(),
-    };
-  });
-
-  teardown(async function () {
-    // Awaits stopAnyDebugSession's DEBUG_SESSION_MS poll; the ceiling must sit
-    // above it so the poll's own message wins ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    this.timeout(DEBUG_SESSION_MS + 5_000);
-    const active = current;
-    current = undefined;
-    if (active === undefined) return;
-    await stopDebuggee();
-    clearAllBreakpoints();
-    active.sessions.dispose();
-    active.recorder.dispose();
-    active.stubs.restore();
-    await closeAllEditors();
-  });
-
-  return () => {
-    assert.ok(current, 'the debuggee harness must be created in setup');
-    return current;
-  };
+  return useArmedRecorders(
+    () => ({ fixture, folder: fakeFolder(requireWorkspaceRoot()) }),
+    'debuggee',
+  );
 }
 
 /**
@@ -458,4 +431,48 @@ export function assertCleanSession(debuggee: Debuggee, why: string): void {
       'lifecycle the host’s responsibility, and a transport error is a lost session',
   );
   assert.deepStrictEqual(debuggee.stubs.log.infoMessages, [], `${why}: and shows no info toast`);
+}
+
+/** The recorders every debug suite arms fresh for each test. */
+export interface ArmedRecorders {
+  readonly recorder: DapRecorder;
+  readonly sessions: DebugSessionRecorder;
+  readonly stubs: UiStubs;
+}
+
+/**
+ * Arm a fresh DapRecorder, DebugSessionRecorder and UI stubs around every
+ * test, beside what `extra` adds, and hand back an accessor for them. The
+ * teardown order is the contract: stop the debuggee BEFORE the recorders are
+ * disposed, or the stop's own traffic lands on a disposed listener and the next
+ * test starts with a live session still attached.
+ */
+export function useArmedRecorders<T extends object>(
+  extra: () => T,
+  what: string,
+): () => T & ArmedRecorders {
+  let current: (T & ArmedRecorders) | undefined;
+  setup(() => {
+    clearAllBreakpoints();
+    const armed = { recorder: new DapRecorder(), stubs: installUiStubs() };
+    current = { ...extra(), ...armed, sessions: new DebugSessionRecorder() };
+  });
+  teardown(async function () {
+    // Awaits stopAnyDebugSession's DEBUG_SESSION_MS poll; the ceiling must sit
+    // above it so the poll's own message wins ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(DEBUG_SESSION_MS + 5_000);
+    const active = current;
+    current = undefined;
+    if (active === undefined) return;
+    await stopDebuggee();
+    clearAllBreakpoints();
+    active.sessions.dispose();
+    active.recorder.dispose();
+    active.stubs.restore();
+    await closeAllEditors();
+  });
+  return () => {
+    assert.ok(current, `the ${what} harness must be created in setup`);
+    return current;
+  };
 }

@@ -258,6 +258,13 @@ export async function drainDiscovery(
   await controller.whenIdle();
 }
 
+/** Unload every solution, then let re-discovery settle. */
+export async function unloadSolution(api: SharpLspExtensionApi): Promise<void> {
+  await drainDiscovery(() => {
+    api.explorerProvider.clear();
+  }, api.testController);
+}
+
 /** Unload every solution and empty the tree, then let re-discovery settle. */
 export async function clearTestTree(api: SharpLspExtensionApi): Promise<void> {
   await drainDiscovery(() => {
@@ -305,6 +312,15 @@ export function profileOfKind(
   const profile = controller.profiles.find((candidate) => candidate.kind === kind);
   assert.ok(profile, `the controller must register a ${String(kind)} run profile`);
   return profile;
+}
+
+/** Exactly ONE profile of `kind` is registered: two make the gesture ambiguous. */
+export function assertOneProfile(
+  controller: SharpLspTestController,
+  kind: vscode.TestRunProfileKind,
+  why: string,
+): void {
+  assert.strictEqual(controller.profiles.filter((profile) => profile.kind === kind).length, 1, why);
 }
 
 /** The Run, Debug and Coverage profiles, each asserted registered. */

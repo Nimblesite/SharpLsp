@@ -867,28 +867,34 @@ fn handle_request(
         // Call hierarchy
         CallHierarchyPrepare::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            call_hierarchy::handle_prepare(req, runtime, sidecar)
+            hierarchy::handle_prepare(req, runtime, sidecar, call_hierarchy::map_hierarchy_item)
         }
         CallHierarchyIncomingCalls::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            call_hierarchy::handle_incoming(req, runtime, sidecar)
+            hierarchy::handle_related(req, runtime, sidecar, call_hierarchy::incoming_call)
         }
         CallHierarchyOutgoingCalls::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            call_hierarchy::handle_outgoing(req, runtime, sidecar)
+            hierarchy::handle_related(req, runtime, sidecar, call_hierarchy::outgoing_call)
         }
         // Type hierarchy
         TypeHierarchyPrepare::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            type_hierarchy::handle_prepare(req, runtime, sidecar)
+            hierarchy::handle_prepare(
+                req,
+                runtime,
+                sidecar,
+                type_hierarchy::map_type_hierarchy_item,
+            )
         }
-        TypeHierarchySupertypes::METHOD => {
+        TypeHierarchySupertypes::METHOD | TypeHierarchySubtypes::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            type_hierarchy::handle_supertypes(req, runtime, sidecar)
-        }
-        TypeHierarchySubtypes::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            type_hierarchy::handle_subtypes(req, runtime, sidecar)
+            hierarchy::handle_related(
+                req,
+                runtime,
+                sidecar,
+                type_hierarchy::map_type_hierarchy_item,
+            )
         }
         // Code actions
         CodeActionRequest::METHOD => {

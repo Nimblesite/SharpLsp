@@ -73,8 +73,7 @@ import {
   SIDECAR_COLD_MS,
 } from './test-timeouts';
 import { warmAndDiscover } from './test-explorer-harness';
-
-const CS = fixtureFor('xunit-csharp');
+import { CS } from './test-explorer-xunit-pair';
 const FSX = fixtureFor('xunit-fsharp');
 
 /** The F# binding whose fully-qualified name carries SPACES. */

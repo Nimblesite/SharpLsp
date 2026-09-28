@@ -45,6 +45,8 @@ import {
   useDebugTestFixture,
   firstBreakpointStop,
   caretInSource,
+  debuggableRow,
+  stopInTestSource,
 } from './debug-test-harness';
 import { DebugSessionRecorder } from './run-debug-kit';
 import { activateTestExplorer, discoverSolution, findItem } from './test-explorer-kit';
@@ -63,19 +65,6 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     ({ fixture, recorder, sessions, stubs } = harness());
   });
 
-  /** Discover the F# fixture and return the tree row for `fqn`. */
-  async function rowFor(fqn: string): Promise<vscode.TestItem> {
-    const api = await activateTestExplorer();
-    const discovered = await discoverSolution(api, fixture.solutionPath, FS_ALL);
-    assert.ok(
-      discovered.includes(fqn),
-      `${fqn} must be discovered before it can be debugged; found: ${discovered.join(', ')}`,
-    );
-    const item = findItem(api.testController.items, fqn);
-    assert.ok(item, `the TestItem for ${fqn} must exist`);
-    return item;
-  }
-
   test('an F# backtick test whose FQN contains SPACES debugs and breaks in its body', async function () {
     this.timeout(DEBUG_TEST_MS);
 
@@ -83,7 +72,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // grammar, so it must be substituted verbatim ([TEST-FILTER-ESCAPE]); an
     // escaped or truncated name selects no test and the Debug press ends in
     // silence.
-    const item = await rowFor(FS_SPACED);
+    const item = await debuggableRow(fixture, FS_ALL, FS_SPACED);
     assert.ok(FS_SPACED.includes(' '), 'the fixture name really does contain spaces');
     eq(item.id, FS_SPACED, 'and the tree carries it verbatim as the id');
     eq(item.label, 'adds two numbers with spaces', 'labelled with the backtick binding');
@@ -98,16 +87,8 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // Interaction 3 — it stops IN the F# source, with F# locals readable. The
     // F# compiler's PDB gaps ([DEBUG-FSHARP-PDB]) are about state machines, not
     // about plain `let` bindings: these must be inspectable.
-    const stop = await firstBreakpointStop(recorder, FS_SOURCE, 'fs-call');
+    const { stop, active, frame } = await stopInTestSource(recorder, fixture, FS_SOURCE, 'fs-call');
     neq(stop.hitBreakpointIds.length, 0, 'naming the breakpoint it hit');
-    const active = requireActive('an F# breakpoint stop');
-    const frame = await topFrame(active, stop.threadId);
-    eq(frame.line, FS_SOURCE.dapLine('fs-call'), 'on the armed line of the .fs file');
-    eq(
-      comparablePath(frame.sourcePath),
-      comparablePath(fixture.sourceFile),
-      'attributed to the F# source the user wrote, not to a generated file',
-    );
     eq(
       variableNamed(await localsOf(active, frame.id), 'seed').value,
       '20',
@@ -148,7 +129,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
 
     // Interaction 1 — arm the private module-level helper, one frame deeper
     // than the test.
-    const item = await rowFor(FS_SPACED);
+    const item = await debuggableRow(fixture, FS_ALL, FS_SPACED);
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-add-body')]);
     await debugRun([item]);
     assertOneTestSession(sessions, 'debugging into an F# helper');
@@ -228,7 +209,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     this.timeout(DEBUG_TEST_MS);
 
     // Interaction 1 — the F# theory is ONE row in the tree, under one name.
-    const item = await rowFor(FS_ROWS);
+    const item = await debuggableRow(fixture, FS_ALL, FS_ROWS);
     eq(item.id, FS_ROWS, 'one fully-qualified name for both rows');
     assert.ok(item.id.startsWith(`${FS_MODULE}.`), 'qualified by the F# MODULE, not by a class');
     assert.ok(!item.id.includes('('), 'and carrying no row data into the filter grammar');
@@ -266,7 +247,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     eq(sessions.ours.length, 1, 'both rows ran in the ONE session the selection started');
     // Interaction 4 - a theory is ONE test in the tree however many rows it
     // runs, and one session however many times it stops ([TEST-RUN-TRX]).
-    const theoryRow = await rowFor(FS_ROWS);
+    const theoryRow = await debuggableRow(fixture, FS_ALL, FS_ROWS);
     eq(theoryRow.id, FS_ROWS, 'the theory is addressed by the single name its rows share');
     eq(theoryRow.children.size, 0, 'and is a LEAF - one row per [<InlineData>] is two tests');
     eq(recorder.stops().length, 2, 'two rows, two stops, and no third');
@@ -291,7 +272,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // Testing view. It must reach the same debugger the Testing view does —
     // a command that resolves nothing is exactly how "Debug Test does nothing"
     // presents (issue #233).
-    await rowFor(FS_SPACED);
+    await debuggableRow(fixture, FS_ALL, FS_SPACED);
     await caretInSource(fixture, FS_SOURCE, 'fs-call', 'fsharp');
 
     // Interaction 2 — arm a breakpoint and fire the at-cursor command.
@@ -349,7 +330,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     //
     // Interaction 1 — reach the module row through a leaf, and check it holds
     // every binding the fixture declares.
-    const leaf = await rowFor(FS_SPACED);
+    const leaf = await debuggableRow(fixture, FS_ALL, FS_SPACED);
     const moduleRow = leaf.parent;
     assert.ok(moduleRow, 'an F# binding hangs off the module it is declared in');
     eq(moduleRow.label, FS_MODULE_TYPE, 'and that group is the module, by its TYPE name');
@@ -419,7 +400,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     //
     // Interaction 1 — select every binding the fixture exposes.
     const rows = [] as vscode.TestItem[];
-    for (const fqn of FS_ALL) rows.push(await rowFor(fqn));
+    for (const fqn of FS_ALL) rows.push(await debuggableRow(fixture, FS_ALL, fqn));
     eq(rows.length, FS_ALL.length, 'every F# binding resolved to a row');
     deepEq(
       rows.map((row) => row.id),
@@ -498,7 +479,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
 
     // Interaction 2 — debug one binding with nothing armed, so the run goes
     // straight through to termination.
-    const row = await rowFor(FS_SPACED);
+    const row = await debuggableRow(fixture, FS_ALL, FS_SPACED);
     eq(vscode.debug.breakpoints.length, 0, 'the user has armed nothing');
     await debugRun([row]);
     assertOneTestSession(sessions, 'debugging an F# binding with nothing armed');

@@ -44,7 +44,8 @@ import {
   stopInFrame,
   debugTest,
 } from './debug-suite-kit';
-import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
+import { deepEq, eq, neq, requireAt } from './test-helpers';
+import { assertRunsPastHandledThrow } from './debug-inspect-kit';
 
 /** The filter id every DAP adapter uses for "break on every throw". */
 const FILTER_ALL = 'all';
@@ -237,35 +238,15 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
           'everything and the user would have no way to get the behaviour they asked for',
       );
 
-      // Interaction 2 — continue. The handled throw must NOT stop the debuggee.
-      const baseline = recorder.stops().length;
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'an ignored, handled exception');
-      await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
-
-      // Interaction 3 — prove the negative, precisely.
-      deepEq(
-        recorder
-          .stops()
-          .slice(baseline)
-          .map((stop) => `${stop.reason}:${stop.text}`),
-        [],
+      // Interaction 2 — continue. The handled throw must NOT stop the debuggee,
+      // and the program RAN, to its own end, through the catch block and past it.
+      await assertRunsPastHandledThrow(
+        recorder,
+        'an ignored, handled exception',
         'a throw the program CATCHES must be invisible when only the unhandled filter is ' +
           'selected. Breaking here is the defect that makes a debugger useless on any codebase ' +
           'that uses exceptions for control flow',
       );
-      await recorder.waitForOutput('done caught 45');
-
-      // Interaction 4 - the program RAN, and ran to its own end. "No stops" is
-      // also what a session that died on launch produces, so the negative above
-      // only means something beside the positive evidence that the debuggee got
-      // all the way through the catch block and past it.
-      assertContainsAll(
-        recorder.outputText(),
-        [`handled ${CAUGHT_MESSAGE}`, 'done caught 45'],
-        'recorder.outputText()',
-      );
-      eq(recorder.stops().length, baseline, 'with no stop added after the gate');
 
       // Interaction 5 - the SELECTION is still the one that was asked for. A
       // later `setExceptionBreakpoints` that quietly re-adds `all` would produce

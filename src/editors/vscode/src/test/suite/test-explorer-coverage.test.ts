@@ -66,6 +66,7 @@ import {
   runViaProfile,
   assertLeavesAre,
   profilesOf,
+  assertOneProfile,
 } from './test-explorer-kit';
 import {
   assertFailed,
@@ -1038,11 +1039,9 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage),
       'Run must not be the Coverage profile wearing another label',
     );
-    assert.strictEqual(
-      api.testController.profiles.filter(
-        (profile) => profile.kind === vscode.TestRunProfileKind.Coverage,
-      ).length,
-      1,
+    assertOneProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
       'and there is exactly ONE Coverage profile, or the menu gesture is ambiguous',
     );
     for (const id of PASSING) {
@@ -1068,11 +1067,9 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     for (const id of PASSING) {
       assertPassed(cachedFor(api, id), id);
     }
-    assert.strictEqual(
-      api.testController.profiles.filter(
-        (profile) => profile.kind === vscode.TestRunProfileKind.Run,
-      ).length,
-      1,
+    assertOneProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Run,
       'with exactly ONE plain Run profile behind the gesture',
     );
     assert.ok(
@@ -1591,11 +1588,9 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     }
     // Interaction 4 - the Debug profile is a diagnostic, not a measurement. It
     // must leave the results directory exactly as the previous run left it.
-    assert.strictEqual(
-      api.testController.profiles.filter(
-        (profile) => profile.kind === vscode.TestRunProfileKind.Debug,
-      ).length,
-      1,
+    assertOneProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Debug,
       'exactly one Debug profile, or the gesture is ambiguous in the menu',
     );
     assert.notStrictEqual(
@@ -1626,11 +1621,9 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       TEST_PROJECTS,
       'and no run-id folder beyond those',
     );
-    assert.strictEqual(
-      api.testController.profiles.filter(
-        (profile) => profile.kind === vscode.TestRunProfileKind.Debug,
-      ).length,
-      1,
+    assertOneProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Debug,
       'exactly one Debug profile is registered',
     );
     assert.ok(

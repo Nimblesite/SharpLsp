@@ -1,111 +1,30 @@
-//! Call hierarchy handlers (`textDocument/prepareCallHierarchy`,
-//! `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`).
+//! Call hierarchy mapping (`textDocument/prepareCallHierarchy`,
+//! `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`): the requests
+//! themselves are answered by [`crate::hierarchy`].
 
-use std::sync::Arc;
-
-use anyhow::Result;
-use lsp_server::Request;
 use lsp_types::{
-    CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
-    CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    Position, Range, SymbolKind,
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, Position, Range,
+    SymbolKind,
 };
-use tracing::debug;
 
-use crate::hierarchy::{
-    hierarchy_item_location, prepare_hierarchy, SidecarCallHierarchyCall, SidecarHierarchyItem,
-};
-use crate::sidecar::manager::SidecarManager;
-use crate::utils::{request_sidecar, with_sidecar, SidecarPositionReq};
+use crate::hierarchy::{hierarchy_item_location, SidecarCallHierarchyCall, SidecarHierarchyItem};
 
-/// Handle `textDocument/prepareCallHierarchy`.
-pub fn handle_prepare(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    with_sidecar(
-        req,
-        sidecar,
-        |sidecar, params: CallHierarchyPrepareParams| {
-            prepare_hierarchy(
-                runtime,
-                sidecar,
-                "textDocument/prepareCallHierarchy",
-                &params.text_document_position_params,
-                map_hierarchy_item,
-            )
-        },
-    )
+/// An incoming call (`callHierarchy/incomingCalls`): the caller, and where it calls.
+pub fn incoming_call(call: &SidecarCallHierarchyCall) -> Option<CallHierarchyIncomingCall> {
+    let from = map_hierarchy_item(&call.item())?;
+    Some(CallHierarchyIncomingCall {
+        from,
+        from_ranges: call_site_ranges(call),
+    })
 }
 
-/// Handle `callHierarchy/incomingCalls`.
-pub fn handle_incoming(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    with_sidecar(
-        req,
-        sidecar,
-        |sidecar, params: CallHierarchyIncomingCallsParams| {
-            hierarchy_calls(
-                runtime,
-                sidecar,
-                "callHierarchy/incomingCalls",
-                &params.item,
-                |from, from_ranges| CallHierarchyIncomingCall { from, from_ranges },
-            )
-        },
-    )
-}
-
-/// Handle `callHierarchy/outgoingCalls`.
-pub fn handle_outgoing(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    with_sidecar(
-        req,
-        sidecar,
-        |sidecar, params: CallHierarchyOutgoingCallsParams| {
-            hierarchy_calls(
-                runtime,
-                sidecar,
-                "callHierarchy/outgoingCalls",
-                &params.item,
-                |to, from_ranges| CallHierarchyOutgoingCall { to, from_ranges },
-            )
-        },
-    )
-}
-
-/// The calls the sidecar reports for `item` via `method`, each built by `make`.
-///
-/// An unreachable sidecar answers an empty list, the same as a symbol with no
-/// callers: the tree shows nothing rather than an error.
-fn hierarchy_calls<T: serde::Serialize>(
-    runtime: &tokio::runtime::Runtime,
-    sidecar: &SidecarManager,
-    method: &str,
-    item: &CallHierarchyItem,
-    make: impl Fn(CallHierarchyItem, Vec<Range>) -> T,
-) -> Result<serde_json::Value> {
-    let request = SidecarPositionReq::at(&item.uri, item.selection_range.start)?;
-    let calls: Vec<SidecarCallHierarchyCall> =
-        request_sidecar(runtime, sidecar, method, &request)?.unwrap_or_default();
-    debug!(method, count = calls.len(), "hierarchy calls from sidecar");
-    let result: Vec<T> = calls
-        .iter()
-        .filter_map(|call| {
-            Some(make(
-                map_hierarchy_item(&call.item())?,
-                call_site_ranges(call),
-            ))
-        })
-        .collect();
-    Ok(serde_json::to_value(result)?)
+/// An outgoing call (`callHierarchy/outgoingCalls`): the callee, and where it is called.
+pub fn outgoing_call(call: &SidecarCallHierarchyCall) -> Option<CallHierarchyOutgoingCall> {
+    let to = map_hierarchy_item(&call.item())?;
+    Some(CallHierarchyOutgoingCall {
+        to,
+        from_ranges: call_site_ranges(call),
+    })
 }
 
 /// The ranges at which the calls appear, per LSP 3.17.
@@ -134,7 +53,7 @@ fn call_site_ranges(call: &SidecarCallHierarchyCall) -> Vec<Range> {
 // ── Helpers ────────────────────────────────────────────────────────
 
 /// Convert a sidecar hierarchy item into an LSP `CallHierarchyItem`.
-fn map_hierarchy_item(item: &SidecarHierarchyItem) -> Option<CallHierarchyItem> {
+pub fn map_hierarchy_item(item: &SidecarHierarchyItem) -> Option<CallHierarchyItem> {
     let (uri, range, selection_range) = hierarchy_item_location(item)?;
     Some(CallHierarchyItem {
         name: item.name.clone(),

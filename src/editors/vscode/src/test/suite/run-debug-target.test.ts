@@ -24,7 +24,6 @@
 // activation and a second registration corrupts the host.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { chosenFramework } from '../../launch-framework-run';
 import type { ProjectTarget } from '../../launch-resolver';
@@ -51,17 +50,11 @@ import {
   TaskRecorder,
   assertCommandRegistered,
   invokeCommand,
-  stopAnyDebugSession,
 } from './run-debug-kit';
-import {
-  closeAllEditors,
-  comparablePath,
-  openCSharpFile,
-  openFSharpFile,
-  removeDirRecursive,
-} from './test-helpers';
+import { comparablePath, openCSharpFile, openFSharpFile } from './test-helpers';
 import { DOTNET_CLI_MS, QUIET_MS } from './test-timeouts';
-import { installUiStubs, type UiStubs } from './ui-stubs';
+import { type UiStubs } from './ui-stubs';
+import { useRunDebugCase } from './run-debug-case';
 
 suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE]', () => {
   let tmpDir: string;
@@ -70,21 +63,11 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
   let tasks: TaskRecorder;
   let q: Quiet;
 
+  const runCase = useRunDebugCase('sharplsp-run-target-');
   setup(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-run-target-'));
-    stubs = installUiStubs();
-    sessions = new DebugSessionRecorder();
-    tasks = new TaskRecorder();
-    q = { stubs, sessions, tasks };
-  });
-
-  teardown(async () => {
-    stubs.restore();
-    await stopAnyDebugSession();
-    sessions.dispose();
-    tasks.dispose();
-    await closeAllEditors();
-    removeDirRecursive(tmpDir);
+    const armed = runCase();
+    q = armed;
+    ({ tmpDir, stubs, sessions, tasks } = armed);
   });
 
   test('an explicit project does not borrow the focused project framework when paths differ by case', async function () {

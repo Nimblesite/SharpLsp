@@ -31,43 +31,14 @@ import {
   useDebuggee,
   debugTest,
 } from './debug-suite-kit';
-import type { DapRecorder } from './debug-dap-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
-
-/** The `breakpoints` entries of one `setBreakpoints` request. */
-function entriesOf(args: Record<string, any>): Record<string, any>[] {
-  const list: unknown = args['breakpoints'];
-  return Array.isArray(list) ? (list as Record<string, any>[]) : [];
-}
-
-/**
- * Wait until a `setBreakpoints` request carries exactly `want` under `field`.
- *
- * Reading the LAST request the wire holds asks what is there RIGHT NOW, which
- * is the final state only if nothing further is in flight. One gesture is
- * routinely several requests - the workbench syncs a breakpoint as a remove
- * then an add - so the last entry at an arbitrary moment can be an
- * INTERMEDIATE one carrying the state before the gesture completed, and which
- * one a test observes is then decided by how fast the machine is.
- */
-async function waitForSentField(
-  recorder: DapRecorder,
-  field: string,
-  want: readonly (string | undefined)[],
-  why: string,
-): Promise<(string | undefined)[]> {
-  const read = (args: Record<string, any>): (string | undefined)[] =>
-    entriesOf(args).map((entry) => entry[field] as string | undefined);
-  const carried = await recorder.waitForRequestArgs(
-    'setBreakpoints',
-    (args) => {
-      const got = read(args);
-      return got.length === want.length && want.every((value, at) => got[at] === value);
-    },
-    why,
-  );
-  return read(carried);
-}
+import {
+  assertValues,
+  onlySourceBreakpoint,
+  entriesOf,
+  waitForSentField,
+  assertSentField,
+} from './debug-inspect-kit';
 
 /** How many times the fixture's `Add` call site is reached in one run. */
 const LOOP_ITERATIONS = 3;
@@ -99,13 +70,9 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         '[DEBUG-PROTOCOL-CAPABILITIES] lists supportsConditionalBreakpoints as Yes for Phase 4; ' +
           'without it VS Code never forwards the condition and the breakpoint stops every time',
       );
-      deepEq(
-        await waitForSentField(
-          recorder,
-          'condition',
-          ['index == 3'],
-          'the C# expression must be forwarded verbatim to the adapter',
-        ),
+      await assertSentField(
+        recorder,
+        'condition',
         ['index == 3'],
         'the C# expression must be forwarded verbatim to the adapter',
       );
@@ -123,16 +90,14 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         'the conditional breakpoint',
       );
       const locals = await localsOf(session, frame.id);
-      eq(
-        variableNamed(locals, 'index').value,
-        '3',
-        'the stop must happen on the iteration the CONDITION names, not on the first one',
-      );
-      eq(
-        variableNamed(locals, 'running').value,
-        '5',
-        'two iterations must already have run: 2 -> 3 -> 5, with 8 still to come',
-      );
+      assertValues(locals, [
+        [
+          'index',
+          '3',
+          'the stop must happen on the iteration the CONDITION names, not on the first one',
+        ],
+        ['running', '5', 'two iterations must already have run: 2 -> 3 -> 5, with 8 still to come'],
+      ]);
       await recorder.assertNoFurtherStop(1, 'a condition true on ONE iteration stops exactly once');
 
       // Interaction 4 — replace it with a condition that is never true.
@@ -175,13 +140,9 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         true,
         '[DEBUG-PROTOCOL-CAPABILITIES] lists supportsHitConditionalBreakpoints as Yes for Phase 4',
       );
-      deepEq(
-        await waitForSentField(
-          recorder,
-          'hitCondition',
-          ['3'],
-          'the hit condition must be forwarded to the adapter, not evaluated in the editor',
-        ),
+      await assertSentField(
+        recorder,
+        'hitCondition',
         ['3'],
         'the hit condition must be forwarded to the adapter, not evaluated in the editor',
       );
@@ -269,13 +230,9 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
           'makes the DapRouter responsible for rewriting them — an unadvertised capability ' +
           'means VS Code silently downgrades the logpoint to a normal breakpoint',
       );
-      deepEq(
-        await waitForSentField(
-          recorder,
-          'logMessage',
-          [message],
-          'the log message must reach the adapter layer that emulates it',
-        ),
+      await assertSentField(
+        recorder,
+        'logMessage',
         [message],
         'the log message must reach the adapter layer that emulates it',
       );
@@ -326,9 +283,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
       vscode.debug.addBreakpoints([
         breakpointAt(fixture, 'accumulate-call', { condition: 'index == 2 && running > 1' }),
       ]);
-      eq(vscode.debug.breakpoints.length, 1, 'one conditional breakpoint is armed');
-      const armed = requireAt(vscode.debug.breakpoints, 0, 'the conditional breakpoint');
-      assert.ok(armed instanceof vscode.SourceBreakpoint, 'armed as a source breakpoint');
+      const armed = onlySourceBreakpoint('the conditional breakpoint');
       eq(armed.condition, 'index == 2 && running > 1', 'carrying the expression the user typed');
       eq(armed.hitCondition, undefined, 'and no hit count - this is an expression condition');
 
@@ -362,12 +317,10 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
       const frame = await topFrame(session, stop.threadId);
       assertStoppedAt(frame, fixture, 'accumulate-call', 'Accumulate', 'the selected pass');
       const locals = await localsOf(session, frame.id);
-      eq(variableNamed(locals, 'index').value, '2', 'stopped on the pass the condition selects');
-      eq(
-        variableNamed(locals, 'running').value,
-        '3',
-        'with the accumulator the condition required',
-      );
+      assertValues(locals, [
+        ['index', '2', 'stopped on the pass the condition selects'],
+        ['running', '3', 'with the accumulator the condition required'],
+      ]);
       await vscode.commands.executeCommand(CMD_CONTINUE);
       await assertRanToCompletion(recorder, 0, 'a multi-local conditional breakpoint');
       eq(
@@ -456,8 +409,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
       vscode.debug.addBreakpoints([
         breakpointAt(fixture, 'accumulate-call', { hitCondition: '>= 2' }),
       ]);
-      const armed = requireAt(vscode.debug.breakpoints, 0, 'the hit-count breakpoint');
-      assert.ok(armed instanceof vscode.SourceBreakpoint, 'armed as a source breakpoint');
+      const armed = onlySourceBreakpoint('the hit-count breakpoint');
       eq(armed.hitCondition, '>= 2', 'carrying the relational hit condition the user typed');
       eq(armed.condition, undefined, 'a hit count is not an expression condition');
       const session = await startDebuggee(debuggee(), { mode: MODE.plain });

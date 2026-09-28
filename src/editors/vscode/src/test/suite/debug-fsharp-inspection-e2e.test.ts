@@ -37,6 +37,7 @@ import {
 } from './debug-suite-kit';
 import { deepEq, eq, neq, assertContainsAll } from './test-helpers';
 import { assertAnswered, assertSessionEnded, assertAdapterAlive } from './debug-dap-kit';
+import { assertValues, assertEvaluatesEverywhere } from './debug-inspect-kit';
 
 /** CLR spellings [DEBUG-FSHARP-UNIONS] names as the wrong answer. */
 const RAW_CLR_FORMS: readonly string[] = ['Tag =', 'Tag=', 'FSharpOption`1', 'FSharpList`1'];
@@ -135,16 +136,10 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       const point = variableNamed(locals, 'point');
       assert.ok(point.reference > 0, 'an F# record must be expandable');
       const fields = await variablesOf(session, point.reference);
-      eq(
-        variableNamed(fields, 'X').value,
-        '8',
-        '`accumulate 2` produces 8, so the record field X must read 8',
-      );
-      eq(
-        variableNamed(fields, 'Y').value,
-        '12',
-        '`area (Rect(3, 4))` is 12, so the record field Y must read 12',
-      );
+      assertValues(fields, [
+        ['X', '8', '`accumulate 2` produces 8, so the record field X must read 8'],
+        ['Y', '12', '`area (Rect(3, 4))` is 12, so the record field Y must read 12'],
+      ]);
 
       // Interaction 3 — the tuple's elements.
       const pair = variableNamed(locals, 'pair');
@@ -337,8 +332,10 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       const fields = await variablesOf(session, point.reference);
       const fieldNames = fields.map((field) => field.name);
       assertContainsAll(fieldNames, ['X', 'Y'], 'fieldNames');
-      eq(variableNamed(fields, 'X').value, '8', 'X carries the value the program bound');
-      eq(variableNamed(fields, 'Y').value, '12', 'and Y the value the match computed');
+      assertValues(fields, [
+        ['X', '8', 'X carries the value the program bound'],
+        ['Y', '12', 'and Y the value the match computed'],
+      ]);
       for (const field of fields) {
         assert.ok(
           !RAW_CLR_FORMS.some((raw) => field.value.includes(raw)),
@@ -403,32 +400,17 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       );
 
       // Interaction 2 — T1 expressions over F# bindings, in all three contexts.
-      const expressions: readonly { expression: string; expected: string }[] = [
-        { expression: 'total', expected: '8' },
-        { expression: 'point.X', expected: '8' },
-        { expression: 'point.Y', expected: '12' },
-        { expression: 'total + 1', expected: '9' },
-      ];
-      for (const { expression, expected } of expressions) {
-        const watch = await evaluate(session, expression, frame.id, 'watch');
-        assert.ok(
-          watch.value.includes(expected),
-          expression +
-            ' is a T1 expression over an F# binding and must evaluate; the Watch ' +
-            'panel answered ' +
-            JSON.stringify(watch.value),
-        );
-        eq(
-          (await evaluate(session, expression, frame.id, 'hover')).value,
-          watch.value,
-          expression + ': a hover must agree with the Watch panel',
-        );
-        eq(
-          (await evaluate(session, expression, frame.id, 'repl')).value,
-          watch.value,
-          expression + ': and so must the Debug Console',
-        );
-      }
+      await assertEvaluatesEverywhere(
+        session,
+        frame.id,
+        [
+          { expression: 'total', expected: '8' },
+          { expression: 'point.X', expected: '8' },
+          { expression: 'point.Y', expected: '12' },
+          { expression: 'total + 1', expected: '9' },
+        ],
+        'a T1 expression over an F# binding',
+      );
 
       // Interaction 3 — the evaluated values must agree with the PANEL, and
       // evaluating must not disturb the session.

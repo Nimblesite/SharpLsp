@@ -37,7 +37,8 @@ import {
   runToFirstStop,
   debugTest,
 } from './debug-suite-kit';
-import { deepEq, eq, neq, assertContainsAll } from './test-helpers';
+import { deepEq, eq, neq } from './test-helpers';
+import { assertRunsPastHandledThrow } from './debug-inspect-kit';
 
 /** A type the fixture never throws — the exclude half of every filter case. */
 const NEVER_THROWN_TYPE = 'System.DivideByZeroException';
@@ -115,33 +116,17 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
       const { session } = await runToFirstStop(debuggee(), 'main-mode', { mode: MODE.caught });
       const beforeFilter = recorder.requests('setExceptionBreakpoints').length;
       await dap(session, 'setExceptionBreakpoints', onlyType(NEVER_THROWN_TYPE));
-      const baseline = recorder.stops().length;
 
       // Interaction 2 — continue. The InvalidOperationException the program DOES
-      // throw must pass straight through the filter.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'an exception the filter excludes');
-      await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
-      deepEq(
-        recorder
-          .stops()
-          .slice(baseline)
-          .map((stop) => `${stop.reason}:${stop.text}`),
-        [],
+      // throw must pass straight through the filter, and the program really RUN:
+      // a filter that silences a stop by killing the session would satisfy "no
+      // stops" while proving the opposite of what this test is about.
+      await assertRunsPastHandledThrow(
+        recorder,
+        'an exception the filter excludes',
         `a filter naming only ${NEVER_THROWN_TYPE} must ignore ${CAUGHT_TYPE} entirely. ` +
           'Breaking anyway means the type list is decorative and the filter is really "break ' +
           'on all", which [DEBUG-FEATURES-EXCEPTIONS] lists as a SEPARATE row',
-      );
-      await recorder.waitForOutput('done caught 45');
-
-      // Interaction 3 — the program really RAN. A filter that silences a stop by
-      // killing the session would satisfy "no stops" while proving the opposite
-      // of what this test is about.
-      eq(recorder.stops().length, baseline, 'no stop was added by the excluded type');
-      assertContainsAll(
-        recorder.outputText(),
-        [`handled ${CAUGHT_MESSAGE}`, 'done caught 45'],
-        'recorder.outputText()',
       );
 
       // Interaction 4 — the filter that WAS set is the one that was asked for.

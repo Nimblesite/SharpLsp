@@ -36,6 +36,7 @@ import {
 import { comparablePath, deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 import { assertAnswered, assertSessionEnded, assertAdapterAlive } from './debug-dap-kit';
+import { assertValues } from './debug-inspect-kit';
 
 /** The logical await chain the sidecar must reconstruct, innermost first. */
 const ASYNC_CHAIN = ['LeafAsync', 'MiddleAsync', 'RootAsync'] as const;
@@ -148,13 +149,15 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // Interaction 3 — click the CALLER: its locals are Accumulate's.
       const caller = requireAt(frames, 1, 'the Accumulate frame');
       const callerLocals = await localsOf(session, caller.id);
-      eq(
-        variableNamed(callerLocals, 'running').value,
-        '2',
-        'selecting a caller frame must read THAT frame’s state: `running` is still the seed ' +
-          'because the assignment on this line has not completed',
-      );
-      eq(variableNamed(callerLocals, 'index').value, '1', 'and the loop is on its first iteration');
+      assertValues(callerLocals, [
+        [
+          'running',
+          '2',
+          'selecting a caller frame must read THAT frame’s state: `running` is still the seed ' +
+            'because the assignment on this line has not completed',
+        ],
+        ['index', '1', 'and the loop is on its first iteration'],
+      ]);
       deepEq(
         callerLocals.map((local) => local.name).includes('sum'),
         false,

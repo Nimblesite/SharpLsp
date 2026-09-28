@@ -51,12 +51,11 @@ import {
   errorTextOf,
   findItem,
   rootsOf,
-  activateWithScratch,
-  clearTestTree,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor, runIds } from './test-explorer-outcome-assertions';
-import { removeDirRecursive, assertContainsAll } from './test-helpers';
+import { assertContainsAll } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { useScratchParent } from './test-explorer-harness';
 
 /** An F# library: something to build, and no test anywhere. */
 const LIBRARY_SOURCE = 'module Sweep.Library\n\nlet add a b = a + b\n';
@@ -185,15 +184,9 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
   let api: SharpLspExtensionApi;
   let parent: string;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root: parent } = await activateWithScratch('sharplsp-mtp-sweeps-'));
-  });
-
-  teardown(() => clearTestTree(api));
-
-  suiteTeardown(() => {
-    removeDirRecursive(parent);
+  const scratch = useScratchParent('sharplsp-mtp-sweeps-');
+  setup(() => {
+    ({ api, root: parent } = scratch());
   });
 
   test('a solution with no MTP project is built no more often than VSTest builds it', async function () {
