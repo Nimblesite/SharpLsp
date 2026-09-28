@@ -10,11 +10,16 @@
     "",
     "CHAIN OF CUSTODY. `platforms` pins a URL and a SHA-256 per platform.",
     "provide.mjs downloads the URL, hashes the bytes, and REFUSES to continue on",
-    "a mismatch. A supported platform with no pin is a hard error.",
+    "a mismatch. A supported platform with no pin is a hard error. The on-disk",
+    "marker names the release AND the digest, so bytes the fork re-publishes",
+    "under the same tag are downloaded again.",
     "",
-    "TO BUMP: tag the fork branch, let `Build release` publish the archives, then",
-    "point `release` at the new tag and replace every URL and SHA-256 with that",
-    "release's (`gh release view <tag> --repo Nimblesite/netcoredbg --json assets`)."
+    "TO BUMP: run the fork's `Build release` workflow (its Actions tab, or",
+    "`gh workflow run build-release.yml --repo Nimblesite/netcoredbg -f tag=<tag>`).",
+    "It creates the release and uploads every archive with a provenance",
+    "attestation. Then point `release` at that tag and replace every URL and",
+    "SHA-256 with the release's (`gh release view <tag> --repo Nimblesite/netcoredbg",
+    "--json assets`)."
   ],
   "release": "3.2.0-1092-sharplsp.1",
   "platforms": {

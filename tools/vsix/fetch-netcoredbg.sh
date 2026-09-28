@@ -8,8 +8,8 @@
 # never compiled here.
 #
 # netcoredbg is MIT-licensed (© 2017 Samsung Electronics Co., LTD) — attribution
-# is in THIRD-PARTY-NOTICES.md. Platforms upstream publishes no build for
-# skip cleanly and fall back to PATH / sharplsp.debug.netcoredbgPath.
+# is in THIRD-PARTY-NOTICES.md. Platforms the fork release publishes no build
+# for skip cleanly and fall back to PATH / sharplsp.debug.netcoredbgPath.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,10 +28,11 @@ case "$PLATFORM" in
     exit 1 ;;
 esac
 
-# An adapter is current only when its marker names the build the lock file
-# describes. Existence is not enough: after a release bump, an adapter
-# from the previous lock still exists and is the wrong release.
-BUILD_ID="$(node "$ROOT/tools/netcoredbg/read-lock.mjs" buildId)"
+# An adapter is current only when its marker names the release AND the digest
+# the lock file pins. Existence is not enough: after a release bump, or after
+# the fork re-publishes bytes under the same tag, an adapter from the previous
+# lock still exists and is the wrong one.
+BUILD_ID="$(node "$ROOT/tools/netcoredbg/read-lock.mjs" buildId "$PLATFORM")"
 is_current() {
   [ -f "$1/netcoredbg$EXE_EXT" ] &&
     [ "$(tr -d '\r\n' < "$1/.sharplsp-netcoredbg-release" 2>/dev/null || true)" = "$BUILD_ID" ]

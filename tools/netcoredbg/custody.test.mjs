@@ -160,6 +160,35 @@ test('an adapter already on disk is not downloaded again', async () => {
     );
 });
 
+test('a repin of the same release to new bytes is downloaded again', async () => {
+    // The fork's `Build release` workflow re-publishes the archives under an
+    // existing tag when it is re-run (a rebuild after a workflow fix). The tag
+    // alone cannot tell the old bytes from the new; only the pinned digest can.
+    served = buildArchive('first-build');
+    await provide(createHash('sha256').update(served).digest('hex'));
+    served = buildArchive('rebuilt-adapter');
+    const digest = createHash('sha256').update(served).digest('hex');
+
+    const result = await provide(digest);
+
+    assert.equal(result.status, 0, `provide.mjs failed: ${result.stderr}`);
+    assert.doesNotMatch(
+        result.stdout,
+        /already available/,
+        'a changed digest must not short-circuit on the marker',
+    );
+    assert.equal(
+        readFileSync(join(OUTPUT, 'netcoredbg'), 'utf8'),
+        'rebuilt-adapter',
+        'the adapter on disk must be the newly pinned bytes',
+    );
+    assert.equal(
+        readFileSync(join(OUTPUT, MARKER), 'utf8').trim(),
+        `${JSON.parse(readFileSync(LOCK, 'utf8')).release}:${digest}`,
+        'the marker names the release and the digest the bytes were verified against',
+    );
+});
+
 test('staging never ships an adapter an older lock file described', async () => {
     // A developer's target/ and bin/ still hold the build the PREVIOUS lock
     // pinned - say, from before a release bump. Existence is not freshness:
@@ -188,8 +217,8 @@ test('staging never ships an adapter an older lock file described', async () => 
     );
     assert.equal(
         readFileSync(join(STAGED, 'netcoredbg', MARKER), 'utf8').trim(),
-        lock.release,
-        'the staged marker names the current build',
+        `${lock.release}:${digest}`,
+        'the staged marker names the current release and its digest',
     );
 
     const again = await stage(digest);

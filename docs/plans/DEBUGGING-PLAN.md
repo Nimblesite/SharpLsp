@@ -267,9 +267,12 @@ open and are called out as such, because nothing implements them.
       `debug-adapter-e2e.test.ts` *a configured netcoredbgPath outranks bundled, user-installed
       and PATH copies* / *the candidate list is ordered, pure, and only its head depends on
       extensionPath*
-- [ ] `darwin-arm64` and `linux-arm64` archives of the fork release `3.2.0-1092-sharplsp.1`:
-      published by the fork's `Build release` workflow (macOS and ARM runners), then pinned in
-      `tools/netcoredbg/netcoredbg.lock.json` like the two x64 archives already are.
+- [x] `darwin-arm64` and `linux-arm64` archives of the fork release `3.2.0-1092-sharplsp.1`:
+      published by the fork's `Build release` workflow run 36409887551 (macOS and ARM runners,
+      provenance-attested), which re-published the two x64 archives too; all four are pinned in
+      `tools/netcoredbg/netcoredbg.lock.json`. The on-disk marker names release AND digest, so
+      bytes re-published under the same tag are downloaded again (`custody.test.mjs` *a repin of
+      the same release to new bytes is downloaded again*).
 - [ ] `win-arm64` and `osx-x64` coverage — needs a source build; both currently degrade to the
       PATH fallback
 - [ ] Add SharpLsp CI job: build netcoredbg for Alpine/musl (`linux-musl-x64`,

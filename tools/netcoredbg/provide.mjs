@@ -31,9 +31,17 @@ export function readLock() {
     return JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
 }
 
-/** Identifies exactly which release an on-disk adapter is, for the marker file. */
-export function buildId(lock) {
-    return lock.release;
+/**
+ * Identifies exactly which bytes an on-disk adapter came from, for the marker
+ * file: the release AND the platform's pinned digest. The fork re-publishes
+ * its archives under an existing tag when `Build release` is re-run, so the
+ * tag alone cannot tell old bytes from new. A supported platform with no pin
+ * is the hard error [DIST-DEBUGGER-BUNDLE] demands.
+ */
+export function buildId(lock, platform) {
+    const pin = lock.platforms?.[platform];
+    if (!pin) throw new Error(`netcoredbg: no pinned download for '${platform}' in netcoredbg.lock.json`);
+    return `${lock.release}:${pin.sha256}`;
 }
 
 function outputDir(platform) {
@@ -119,15 +127,12 @@ export async function provide(platform) {
     if (!SUPPORTED.has(platform)) throw new Error(`netcoredbg: unknown platform '${platform}'`);
 
     const lock = readLock();
-    const id = buildId(lock);
+    const id = buildId(lock, platform);
     if (alreadyProvided(platform, id)) {
         console.log(`netcoredbg: release ${id} already available at ${executable(platform)}`);
         return true;
     }
-
-    const pin = lock.platforms?.[platform];
-    if (!pin) throw new Error(`netcoredbg: no pinned download for '${platform}' in netcoredbg.lock.json`);
-    await downloadPinned(platform, pin, id);
+    await downloadPinned(platform, lock.platforms[platform], id);
     return true;
 }
 
