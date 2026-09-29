@@ -90,6 +90,21 @@ let private fsprojFilesFromSolution (path: string) (ct: CancellationToken) =
             return Ok(readResult |> outcomeValue |> solutionProjects)
     }
 
+/// Every `.fsproj` under `directory`, unless several solutions compete for it: which one
+/// to load is then the user's choice, never a guess, and loading them all held a
+/// repository root's `workspace/open` for minutes. Build output, packages and
+/// dot-directories left unwalked: [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY],
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+let private fsprojFilesFromDirectory (directory: string) =
+    let solutions, projects =
+        NativePaths.WorkspaceFiles(directory, ".sln", ".slnx", ".fsproj")
+        |> Array.partition isSolutionPath
+
+    if solutions.Length > 1 then
+        Error(SolutionAmbiguity.Describe(directory, solutions) + " Choose the solution to open.")
+    else
+        Ok projects
+
 let discoverFsprojFiles (path: string) (ct: CancellationToken) =
     task {
         let fullPath = NativePaths.NormalizeFullPath path
@@ -99,9 +114,7 @@ let discoverFsprojFiles (path: string) (ct: CancellationToken) =
         elif File.Exists(fullPath) && isSolutionPath fullPath then
             return! fsprojFilesFromSolution fullPath ct
         elif Directory.Exists(fullPath) then
-            // Build output, packages and dot-directories left unwalked:
-            // [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
-            return Ok(NativePaths.WorkspaceFiles(fullPath, ".fsproj"))
+            return fsprojFilesFromDirectory fullPath
         else
             return Error $"Path does not exist: {path}"
     }

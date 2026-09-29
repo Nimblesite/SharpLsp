@@ -189,6 +189,56 @@ let ``references, code lens and subtypes count what every project does`` () =
             cleanup root
     }
 
+/// `root/<dir>/<name>.slnx` listing `projects`, relative to that directory.
+let private writeSolution root (dir: string) (name: string) (projects: string list) =
+    let solution =
+        element "Solution" [ for project in projects -> element "Project" [ attribute "Path" project ] ]
+
+    let path = NativePaths.Resolve(root, dir, $"{name}.slnx")
+    XDocument(solution).Save(path)
+    path
+
+/// A folder holding several nested solutions is ambiguous: the F# sidecar refuses it, as
+/// the C# sidecar does, rather than loading every project under it — a repository root
+/// otherwise held `workspace/open`, and every F# request queued behind it, for minutes.
+/// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+[<Fact>]
+let ``a folder holding several solutions is refused, and each solution still opens`` () =
+    task {
+        let root = NativePaths.Temp($"sharplsp-ambiguous-{Guid.NewGuid():N}")
+        let core = writeProject root "Core" "Library.fs" coreSource []
+        let app = writeProject root "App" "Program.fs" appSource [ NativePaths.Join("..", "Core", "Core.fsproj") ]
+        let coreSolution = writeSolution root "Core" "Core" [ "Core.fsproj" ]
+        let appSolution = writeSolution root "App" "App" [ "App.fsproj"; NativePaths.Join("..", "Core", "Core.fsproj") ]
+
+        try
+            let folderState = FSharpWorkspace.create ()
+            let! folder = FSharpWorkspace.loadProject folderState root
+
+            match folder with
+            | Ok() -> failwith "a folder of two solutions must not load"
+            | Error message ->
+                Assert.Contains("Found 2 solutions", message)
+                Assert.Contains(NativePaths.NameOf appSolution, message)
+                Assert.Contains(NativePaths.NameOf coreSolution, message)
+
+            Assert.False(folderState.IsLoaded, "no project loads from an ambiguous folder")
+
+            let appState = FSharpWorkspace.create ()
+            let! appLoaded = FSharpWorkspace.loadProject appState appSolution
+            Assert.True(Result.isOk appLoaded, $"App.slnx opens: {appLoaded}")
+            let! appErrors = errorsIn appState app
+            Assert.Empty(appErrors)
+
+            let coreState = FSharpWorkspace.create ()
+            let! coreLoaded = FSharpWorkspace.loadProject coreState coreSolution
+            Assert.True(Result.isOk coreLoaded, $"Core.slnx opens: {coreLoaded}")
+            let! coreErrors = errorsIn coreState core
+            Assert.Empty(coreErrors)
+        finally
+            cleanup root
+    }
+
 /// Options for `project` from a compiler command line.
 let private commandLine (project: string) (args: string list) =
     (FSharpWorkspace.create ()).Checker.GetProjectOptionsFromCommandLineArgs(project, Array.ofList args)

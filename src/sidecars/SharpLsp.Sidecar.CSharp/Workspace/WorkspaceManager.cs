@@ -506,10 +506,9 @@ internal sealed partial class WorkspaceManager : IDisposable
     // Implements [SCRIPT-DEGRADE] and [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
     private static string AmbiguousSolutionMessage(string path, string[] candidates)
     {
-        var names = string.Join(", ", candidates.Select(NativePaths.NameOf));
-        return $"Found {candidates.Length} solutions under '{path}' ({names}), so which one to "
-            + "load is ambiguous. Set `csharp.solution_path` in sharplsp.toml to the solution "
-            + "you want, relative to the workspace root.";
+        return SolutionAmbiguity.Describe(path, candidates)
+            + " Set `csharp.solution_path` in sharplsp.toml to the solution you want, relative "
+            + "to the workspace root.";
     }
 
     private async Task<VoidResult> OpenCoreAsync(string path, CancellationToken ct)
