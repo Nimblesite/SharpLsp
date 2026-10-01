@@ -141,7 +141,7 @@ A design-time build writes generated files under the project's `obj/<configurati
 
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH] Choosing the Solution to Open
 
-The host sends one path to each sidecar's `workspace/open`. When that path is a directory, the C# sidecar discovers a target under it: an unambiguous `.sln`, `.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between several nested solutions — a monorepo root holding `app/App.sln` and `other/Other.sln` is ambiguous, and guessing would silently load the wrong half of the repository.
+The host sends one path to each sidecar's `workspace/open`. When that path is a directory, the C# sidecar discovers a target under it: an unambiguous `.sln`, `.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between several nested solutions — a monorepo root holding `app/App.sln` and `other/Other.sln` is ambiguous, and guessing would silently load the wrong half of the repository. Both sidecars refuse an ambiguous directory with an error naming every candidate solution; the F# sidecar loads no `.fsproj` from it.
 
 `csharp.solution_path` in `sharplsp.toml` resolves that ambiguity by naming the solution to open, absolute or relative to the workspace root:
 
