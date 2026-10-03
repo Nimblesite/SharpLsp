@@ -7,7 +7,7 @@ Core infrastructure improvements for the SharpLsp LSP host.
 - [x] Integrate ionide/tree-sitter-fsharp grammar into Rust host
 - [x] Add `tree-sitter-fsharp` dependency to Cargo.toml (`0.3`)
 - [x] Remove `anyhow::bail!("F# tree-sitter grammar not yet integrated")` from `tree_sitter_parse.rs`
-- [x] Enable tree-sitter syntax features for F# (documentSymbol, foldingRange, selectionRange)
+- [x] Enable F# tree-sitter folding ranges and selection ranges; document symbols remain FCS-backed for richer navigation items
 
 ## Observability
 

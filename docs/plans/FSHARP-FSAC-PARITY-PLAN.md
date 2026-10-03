@@ -46,7 +46,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Hover | `textDocument/hover` | ✅ | XML-doc rendering; e2e covered |
 | Signature help | `textDocument/signatureHelp` | ✅ | `[FS-SIGHELP]` |
 | Document symbols | `textDocument/documentSymbol` | ✅ | `[FS-DOCSYMBOL]` (parse-only) |
-| Workspace symbols | `workspace/symbol` | ✅ | `[FS-WORKSPACE-SYMBOL]` — F# files routed to the FCS sidecar's document symbols (Ctrl-T); host has no F# tree-sitter grammar |
+| Workspace symbols | `workspace/symbol` | ✅ | `[FS-WORKSPACE-SYMBOL]` — F# files routed to the FCS sidecar's document symbols (Ctrl-T); the host's F# tree-sitter grammar serves folding and selection ranges |
 | Document highlight | `textDocument/documentHighlight` | ✅ | file-local read/write classification |
 | Diagnostics | pull (`textDocument`/`workspace` diagnostic) | ✅ | FCS compiler diagnostics, `FS####` codes |
 
@@ -158,5 +158,5 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 - [x] File first parity gap (`#112`)
 - [x] Backlog item 2 (workspace/symbol), 4 (remove unused open), 5 (simplify name)
 - [ ] Backlog items 1, 3, 6–11 above (F# sidecar lane; 11 = auto-`open`, blocked on the entity index)
-- [ ] Public F# parity page on the website (SharpLsp3) — mirror this matrix
+- [x] Public F# parity page at `src/website/src/docs/fsharp.md`; feature status, gaps, and F# tree-sitter/multi-project support match this matrix and the host
 - [ ] Keep this matrix in lockstep as gaps close (flip 🟡/❌ → ✅, add e2e rows)

@@ -28,7 +28,7 @@ Tracks progress against the spec. Every checked item has implementing code and a
 - [x] `sharplsp/profiler/convertTrace` — standalone conversion entrypoint for any `.nettrace`
 - [x] `sharplsp.profiler.openTrace` command — user picks a trace file, SharpLsp converts+opens
 - [x] Automatic SpeedScope conversion on session stop (when data was captured)
-- [ ] Chromium-format conversion wired through `convertTrace` param (handler accepts it; UI default is SpeedScope)
+- [x] Chromium-format conversion through `convertTrace` (`format: "chromium"`); `test_profiler_convert_trace_full_stack_chromium` captures a real trace and verifies the nonempty `.chromium.json` output. The VS Code command defaults to SpeedScope.
 
 ## Tier 3 — Heap & Memory
 
@@ -78,14 +78,14 @@ Tracks progress against the spec. Every checked item has implementing code and a
 - [ ] e2e: click trace session → session disappears and SpeedScope URL opens
 - [ ] e2e: right-click trace session → every menu entry invocable
 - [ ] e2e: `openTrace` command on a standalone `.nettrace` file → SpeedScope opens
-- [ ] e2e: `convertTrace` idempotence (re-running produces same output file)
+- [x] e2e: `test_profiler_convert_trace_full_stack_chromium` converts the same real capture twice and asserts the same output path and file size
 
 ## Documentation
 
 - [x] PROFILER-SPEC.md covers tree UX, context menus, and trace file conversion
 - [x] Command catalogue in spec matches `package.json` contributions
 - [ ] Screenshots of the tree view + context menus in the spec
-- [ ] User-facing README section on "Opening a trace file"
+- [x] User-facing README section on "Opening a trace file"
 
 ## Known Issues
 

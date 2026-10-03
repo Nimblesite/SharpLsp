@@ -32,7 +32,7 @@ F# is a **first-class citizen** in SharpLsp. The Rust LSP host routes F# semanti
 | Call Hierarchy | Supported | Incoming and outgoing calls |
 | Type Hierarchy | Partial | Sidecar and host handlers exist; client capability advertisement is still pending |
 | Formatting (Fantomas) | Not exposed | Implemented in the sidecar but intentionally not advertised or routed by the host |
-| Folding / Selection Range | Not yet | The Rust host does not yet include an F# tree-sitter grammar |
+| Folding / Selection Range | Supported | The Rust host uses the F# tree-sitter grammar for both syntax features |
 | F# Interactive | Supported | VS Code commands for sending code, starting FSI, and generating signatures |
 
 ## IntelliSense
@@ -59,7 +59,9 @@ The VS Code settings `sharplsp.inlayHints.typeInference`, `sharplsp.inlayHints.p
 
 Definition, type definition, declaration, references, highlight, and rename resolve through FCS symbol uses. References and rename scan the loaded F# project and can return edits in multiple files. The implementation handler is currently only a declaration fallback; it does not yet search for concrete implementations or overrides. Metadata symbols from the BCL or NuGet packages can open generated read-only decompiled source.
 
-Cross-language hierarchy edges and multi-project F# workspace state are still incomplete.
+Cross-language hierarchy edges still need a shared symbol index. A loaded F# solution can contain multiple `.fsproj` projects; project references are checked from source in memory.
+
+In VS Code, a workspace with one solution opens it automatically. When it contains several `.sln` or `.slnx` files, SharpLsp asks which one to open and loads that selection in both the F# and C# sidecars.
 
 ## Code Actions and Quick Fixes
 
@@ -122,10 +124,9 @@ The main remaining F# gaps are:
 
 - unopened-namespace completion and auto-`open`;
 - host-routed Fantomas formatting;
-- F# folding and selection ranges;
 - FSharpLint diagnostics;
 - full `.fsx` semantic parity and FSAC documentation endpoints;
-- multi-project F# workspaces and cross-language hierarchies;
+- cross-language hierarchies;
 - standard client advertisement for type hierarchy.
 
 <p class="next-link"><a href="/docs/diagnostics/">Next: Diagnostics <span aria-hidden="true">→</span></a></p>

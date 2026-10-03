@@ -200,9 +200,9 @@ The first host run found one more defect: the shared `assertFailed` helper hardc
 framework's own text, defaulting to xUnit's so every existing caller is unchanged, and each
 MTP fixture declares the text its framework writes.
 
-## Not done
+## Release regression follow-through
 
-Release regression follow-through ([TEST-MTP-RUN]):
+Completion evidence for [TEST-MTP-RUN]:
 
 - [x] Reproduce bare xUnit v3 execution failure with real F# and C# projects before fixing it.
 - [x] Negotiate xUnit's built-in reporter after the optional MTP reporter is rejected.

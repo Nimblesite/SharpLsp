@@ -90,6 +90,44 @@ let private openSolution () =
         return state, root, core, app
     }
 
+/// A folder remains discoverable when it contains several solutions; an explicit
+/// solution path narrows the project list after the user chooses one.
+/// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+let private writeSingleProjectSolution root name =
+    let path = NativePaths.Resolve(root, name, $"{name}.slnx")
+    File.WriteAllText(path, $"<Solution><Project Path=\"{name}.fsproj\" /></Solution>")
+    path
+
+let private assertMultipleSolutionDiscovery root chosenSolution =
+    task {
+        let! folder = FSharpProjectLoading.discoverFsprojFiles root System.Threading.CancellationToken.None
+        let! chosen = FSharpProjectLoading.discoverFsprojFiles chosenSolution System.Threading.CancellationToken.None
+        let coreProject = NativePaths.Resolve(root, "Core", "Core.fsproj")
+        let appProject = NativePaths.Resolve(root, "App", "App.fsproj")
+        match folder, chosen with
+        | Ok all, Ok selected ->
+            Assert.Equal<string array>([| appProject; coreProject |] |> Array.sort, all |> Array.sort)
+            Assert.Equal<string array>([| appProject |], selected)
+            Assert.Equal(2, all.Length)
+        | _ -> failwith $"folder and selected solution must open: {folder}; {chosen}"
+    }
+
+[<Fact>]
+let ``multiple solutions do not block F# discovery and a selected solution narrows it`` () =
+    task {
+        let root = NativePaths.Temp($"sharplsp-solutions-{Guid.NewGuid():N}")
+        let core = writeProject root "Core" "Library.fs" coreSource []
+        let app = writeProject root "App" "Program.fs" appSource []
+        writeSingleProjectSolution root "Core" |> ignore
+        let appSolution = writeSingleProjectSolution root "App"
+
+        try
+            do! assertMultipleSolutionDiscovery root appSolution
+            Assert.True(File.Exists(core) && File.Exists(app), "both real project sources exist")
+        finally
+            cleanup root
+    }
+
 /// The errors FCS reports for `file`, as (0-based line, message).
 let private errorsIn state file =
     task {
@@ -185,56 +223,6 @@ let ``references, code lens and subtypes count what every project does`` () =
             Assert.True(square.IsSome, $"App's Square implements Core's IShape: {subtypes}")
             Assert.True(NativePaths.AreEqual(app, square.Value.FilePath))
             Assert.Equal(6, square.Value.Line)
-        finally
-            cleanup root
-    }
-
-/// `root/<dir>/<name>.slnx` listing `projects`, relative to that directory.
-let private writeSolution root (dir: string) (name: string) (projects: string list) =
-    let solution =
-        element "Solution" [ for project in projects -> element "Project" [ attribute "Path" project ] ]
-
-    let path = NativePaths.Resolve(root, dir, $"{name}.slnx")
-    XDocument(solution).Save(path)
-    path
-
-/// A folder holding several nested solutions is ambiguous: the F# sidecar refuses it, as
-/// the C# sidecar does, rather than loading every project under it — a repository root
-/// otherwise held `workspace/open`, and every F# request queued behind it, for minutes.
-/// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
-[<Fact>]
-let ``a folder holding several solutions is refused, and each solution still opens`` () =
-    task {
-        let root = NativePaths.Temp($"sharplsp-ambiguous-{Guid.NewGuid():N}")
-        let core = writeProject root "Core" "Library.fs" coreSource []
-        let app = writeProject root "App" "Program.fs" appSource [ NativePaths.Join("..", "Core", "Core.fsproj") ]
-        let coreSolution = writeSolution root "Core" "Core" [ "Core.fsproj" ]
-        let appSolution = writeSolution root "App" "App" [ "App.fsproj"; NativePaths.Join("..", "Core", "Core.fsproj") ]
-
-        try
-            let folderState = FSharpWorkspace.create ()
-            let! folder = FSharpWorkspace.loadProject folderState root
-
-            match folder with
-            | Ok() -> failwith "a folder of two solutions must not load"
-            | Error message ->
-                Assert.Contains("Found 2 solutions", message)
-                Assert.Contains(NativePaths.NameOf appSolution, message)
-                Assert.Contains(NativePaths.NameOf coreSolution, message)
-
-            Assert.False(folderState.IsLoaded, "no project loads from an ambiguous folder")
-
-            let appState = FSharpWorkspace.create ()
-            let! appLoaded = FSharpWorkspace.loadProject appState appSolution
-            Assert.True(Result.isOk appLoaded, $"App.slnx opens: {appLoaded}")
-            let! appErrors = errorsIn appState app
-            Assert.Empty(appErrors)
-
-            let coreState = FSharpWorkspace.create ()
-            let! coreLoaded = FSharpWorkspace.loadProject coreState coreSolution
-            Assert.True(Result.isOk coreLoaded, $"Core.slnx opens: {coreLoaded}")
-            let! coreErrors = errorsIn coreState core
-            Assert.Empty(coreErrors)
         finally
             cleanup root
     }

@@ -483,6 +483,13 @@ fn test_profiler_convert_trace_full_stack_chromium() {
         "converted file must exist on disk: {converted}"
     );
 
+    let repeated = client.request(
+        "sharplsp/profiler/convertTrace",
+        json!({ "input_path": &trace_path, "format": "chromium" }),
+    );
+    assert!(repeated.get("error").is_none(), "{repeated}");
+    assert_eq!(repeated["result"], resp["result"]);
+
     client.shutdown_and_exit();
     client.wait_with_timeout();
     stop_profile_target(&mut target);
