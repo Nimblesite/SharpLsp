@@ -33,7 +33,7 @@ F# 在 SharpLsp 中是**一等公民**。Rust LSP 主机会将 F# 语义请求�
 | 调用层次结构 | 支持 | 支持传入和传出调用 |
 | 类型层次结构 | 部分支持 | sidecar 和主机处理程序已经存在；客户端能力仍未公布 |
 | 格式化（Fantomas） | 未开放 | sidecar 已实现，但主机有意不公布也不路由该功能 |
-| 折叠／选择范围 | 尚未支持 | Rust 主机尚未包含 F# tree-sitter 语法 |
+| 折叠／选择范围 | 支持 | Rust 主机使用 F# tree-sitter 语法提供这两项语法功能 |
 | F# Interactive | 支持 | 提供发送代码、启动 FSI 和生成签名的 VS Code 命令 |
 
 ## IntelliSense
@@ -60,7 +60,9 @@ VS Code 设置 `sharplsp.inlayHints.typeInference`、`sharplsp.inlayHints.parame
 
 定义、类型定义、声明、引用、高亮和重命名都通过 FCS 符号用法解析。引用和重命名会扫描已加载的 F# 项目，并可返回跨多个文件的编辑。实现查找目前为部分支持，只会返回选中符号自身的声明，而不会查找具体实现或重写。来自 BCL 或 NuGet 包的元数据符号可以打开生成的只读反编译源码。
 
-跨语言层次结构边以及多项目 F# 工作区状态仍不完整。
+跨语言层次结构边仍需要共享符号索引。已加载的 F# 解决方案可以包含多个 `.fsproj` 项目；项目引用会基于内存中的源代码进行检查。
+
+在 VS Code 中，工作区只有一个解决方案时会自动打开它。如果存在多个 `.sln` 或 `.slnx` 文件，SharpLsp 会提示选择，并在 F# 和 C# 两个 sidecar 中加载选中的解决方案。
 
 ## 代码操作和快速修复
 
@@ -123,10 +125,9 @@ F# 目前的主要差距包括：
 
 - 未打开命名空间的补全和自动 `open`；
 - 由主机路由的 Fantomas 格式化；
-- F# 折叠和选择范围；
 - FSharpLint 诊断；
 - 完整的 `.fsx` 语义一致性和 FSAC 文档端点；
-- 多项目 F# 工作区和跨语言层次结构；
+- 跨语言层次结构；
 - 面向标准客户端的类型层次结构能力公布。
 
 <p class="next-link"><a href="/zh/docs/diagnostics/">下一篇：诊断 <span aria-hidden="true">→</span></a></p>

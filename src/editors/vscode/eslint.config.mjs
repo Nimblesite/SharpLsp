@@ -15,7 +15,7 @@ export default tseslint.config(
   },
   {
     // Source files — max type safety
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.{ts,mts}'],
     ignores: ['src/test/**/*.ts'],
     rules: {
       // ── 1. No implicit any — every value must have a known type ────

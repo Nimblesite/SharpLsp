@@ -580,6 +580,7 @@ define RUN_VSIX_SUITE
 endef
 
 _run-vsix-suite: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
+	$(if $(filter-out workspace,$(CHUNK)),,@npm exec --prefix $(VSCODE_DIR) -- playwright install $(PLAYWRIGHT_DEPS_FLAG) chromium)
 	$(RUN_VSIX_SUITE)
 
 # Compilation-only build-phase entry point. Test consumers always recompile

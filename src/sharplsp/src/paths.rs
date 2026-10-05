@@ -227,6 +227,22 @@ pub fn directory_of(path: impl AsRef<Path>) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// Resolve an output path before handing it to a client with a different working directory.
+/// Implements [SHARPLSP-ARCHITECTURE-PATHS] and [PROFILER-TRACE-CONVERSION].
+pub fn absolute_output(path: &str) -> Result<String> {
+    let absolute = std::path::absolute(path).context("resolve output path")?;
+    Ok(absolute.to_string_lossy().into_owned())
+}
+
+/// Create an output's parent directory. Implements [SHARPLSP-ARCHITECTURE-PATHS].
+pub fn ensure_output_dir(path: &str) -> Result<()> {
+    if let Some(parent) = directory_of(path) {
+        std::fs::create_dir_all(&parent)
+            .with_context(|| format!("create output dir: {}", parent.display()))?;
+    }
+    Ok(())
+}
+
 /// `path` relative to `root`, when it lies beneath it. [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn relative_to(path: &Path, root: &Path) -> Option<String> {
     path.strip_prefix(root)

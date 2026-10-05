@@ -46,6 +46,7 @@ Desktop.ini
 # Rust
 # -----------------------------------------------------------------------------
 /target
+*.profraw
 # The Zed extension is a separate cargo workspace with its own target dir.
 /src/editors/zed/target/
 

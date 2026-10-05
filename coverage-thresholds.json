@@ -20,7 +20,7 @@
       "language": "dotnet"
     },
     "vscode-extension": {
-      "threshold": 96.67,
+      "threshold": 96.96,
       "language": "typescript"
     },
     "sharplsp-zed": {

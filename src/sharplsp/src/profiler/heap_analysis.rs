@@ -182,7 +182,7 @@ pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>
 /// 00007ff...    1234     98765 System.String
 /// 00007ff...     567     45678 System.Object[]
 /// ```
-fn parse_dumpheap_stat(output: &str) -> Vec<HeapTypeInfo> {
+pub(super) fn parse_dumpheap_stat(output: &str) -> Vec<HeapTypeInfo> {
     output
         .lines()
         .filter_map(parse_dumpheap_stat_line)

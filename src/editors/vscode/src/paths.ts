@@ -3,6 +3,12 @@
 // `node:path`. Implements [SHARPLSP-ARCHITECTURE-PATHS].
 import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
+import { Uri } from 'vscode';
+
+/** Convert a native path to a file URI. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function fileUri(value: string): Uri {
+  return Uri.file(value);
+}
 
 /** The platform's directory separator. [SHARPLSP-ARCHITECTURE-PATHS] */
 export const pathSeparator = nodePath.sep;

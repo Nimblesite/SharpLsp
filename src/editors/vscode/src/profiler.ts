@@ -30,6 +30,7 @@ import {
 import { promptAndOpenGraph } from './profiler-graph.js';
 import { promptAndOpenDiff, detectLeaksWorkflow, formatBytes } from './profiler-diff.js';
 import { askObjectAddress, pickDumpFile, pickOneFile, showPlainText } from './profiler-prompts.js';
+import { profilerRequest } from './profiler-request.js';
 
 export { formatBytes } from './profiler-diff.js';
 
@@ -636,7 +637,7 @@ export function registerCommands(
   function registerProcessPair(
     pickId: string,
     rowId: string,
-    run: (pid: number, processName?: string) => Promise<void>,
+    run: (pid: number, processName?: string, fromRow?: boolean) => Promise<void>,
     dialogGated = false,
   ): void {
     context.subscriptions.push(
@@ -648,7 +649,7 @@ export function registerCommands(
       }),
       vscode.commands.registerCommand(rowId, async (item?: ProfilerTreeItem) => {
         const pid = item?.processPid;
-        if (pid !== undefined) await run(pid, item?.processName);
+        if (pid !== undefined) await run(pid, item?.processName, true);
       }),
     );
   }
@@ -855,18 +856,23 @@ export function registerCommands(
     }),
   );
 
-  async function collectDumpOn(pid: number): Promise<void> {
+  async function collectDumpOn(pid: number, fromRow: boolean): Promise<void> {
     const lsp = getClient();
-    if (lsp === undefined || isTestMode) return;
+    if (lsp === undefined) return;
     try {
-      const dumpType = await vscode.window.showQuickPick(['Heap', 'Full', 'Mini'], {
-        placeHolder: 'Select dump type',
-      });
+      const dumpType = fromRow
+        ? 'Heap'
+        : await vscode.window.showQuickPick(['Heap', 'Full', 'Mini'], {
+            placeHolder: 'Select dump type',
+          });
       if (dumpType === undefined) return;
-      const result = await lsp.sendRequest<CollectDumpResult>('sharplsp/profiler/collectDump', {
-        pid,
-        dump_type: dumpType,
-      });
+      const result = await profilerRequest<CollectDumpResult>(
+        lsp,
+        'sharplsp/profiler/collectDump',
+        { pid, dump_type: dumpType },
+        'Collecting memory dump',
+      );
+      if (result === undefined) return;
       const size = formatBytes(result.file_size_bytes);
       void vscode.window.showInformationMessage(`Dump saved: ${result.output_path} (${size})`);
     } catch (err: unknown) {
@@ -877,8 +883,8 @@ export function registerCommands(
   registerProcessPair(
     CMD_PROFILER_COLLECT_DUMP,
     CMD_PROFILER_DUMP_PROCESS,
-    async (pid) => {
-      await collectDumpOn(pid);
+    async (pid, _name, fromRow = false) => {
+      await collectDumpOn(pid, fromRow);
     },
     true,
   );
@@ -908,10 +914,13 @@ export function registerCommands(
   registerDialogCommand(CMD_PROFILER_ANALYZE_HEAP, 'Heap analysis', async (lsp) => {
     const dumpPath = await pickDumpFile();
     if (dumpPath === undefined) return;
-    const result = await lsp.sendRequest<HeapStats>('sharplsp/profiler/analyzeHeap', {
-      dump_path: dumpPath,
-    });
-    await showHeapStats(result);
+    const result = await profilerRequest<HeapStats>(
+      lsp,
+      'sharplsp/profiler/analyzeHeap',
+      { dump_path: dumpPath },
+      'Analyzing heap dump',
+    );
+    if (result !== undefined) await showHeapStats(result);
   });
   registerDialogCommand(CMD_PROFILER_DIFF_SNAPSHOTS, 'Heap diff', async (lsp) => {
     await promptAndOpenDiff(context, lsp);
@@ -931,10 +940,13 @@ async function inspectObject(lsp: LanguageClient): Promise<void> {
   if (dumpPath === undefined) return;
   const address = await askObjectAddress('Enter the object address (hex)');
   if (address === undefined) return;
-  const result = await lsp.sendRequest<ObjectInspection>('sharplsp/profiler/inspectObject', {
-    dump_path: dumpPath,
-    object_address: address.trim(),
-  });
+  const result = await profilerRequest<ObjectInspection>(
+    lsp,
+    'sharplsp/profiler/inspectObject',
+    { dump_path: dumpPath, object_address: address.trim() },
+    'Inspecting object',
+  );
+  if (result === undefined) return;
   await showPlainText([
     `Object Inspection: ${result.type_name}`,
     `Address: ${result.address}`,

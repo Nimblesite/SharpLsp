@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use lsp_server::{Message, Request};
+use std::{future::Future, pin::Pin};
 use tracing::info;
 
 use super::{
@@ -69,71 +70,39 @@ pub fn handle_stop_counters(req: Request) -> Result<serde_json::Value> {
     Ok(serde_json::Value::Null)
 }
 
-/// Handle `sharplsp/profiler/collectDump`.
-pub fn handle_collect_dump(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
+/// A diagnostic operation whose child tool is stopped when the future is dropped.
+pub(super) type Operation = Pin<Box<dyn Future<Output = Result<serde_json::Value>> + Send>>;
+
+/// Route long profiler work off the message loop. Implements [PROFILER-PERFORMANCE].
+pub(super) fn analysis(
+    req: &Request,
     sender: crossbeam_channel::Sender<Message>,
-) -> Result<serde_json::Value> {
-    info!("Handling sharplsp/profiler/collectDump");
-    let params: dump::CollectDumpParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(dump::collect(params, sender))?;
-    Ok(serde_json::to_value(result)?)
+) -> Option<Operation> {
+    let params = req.params.clone();
+    Some(match req.method.as_str() {
+        "sharplsp/profiler/collectDump" => prepare(params, move |p| dump::collect(p, sender)),
+        "sharplsp/profiler/analyzeHeap" => prepare(params, heap_analysis::analyze_heap),
+        "sharplsp/profiler/findGCRoots" => prepare(params, heap_analysis::find_gc_roots),
+        "sharplsp/profiler/inspectObject" => prepare(params, object_inspection::inspect),
+        "sharplsp/profiler/diffHeapSnapshots" => prepare(params, heap_diff::diff_snapshots),
+        "sharplsp/profiler/getObjectGraph" => prepare(params, object_graph::get_object_graph),
+        _ => return None,
+    })
 }
 
-/// Handle `sharplsp/profiler/analyzeHeap`.
-pub fn handle_analyze_heap(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<serde_json::Value> {
-    info!("Handling sharplsp/profiler/analyzeHeap");
-    let params: heap_analysis::AnalyzeHeapParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(heap_analysis::analyze_heap(params))?;
-    Ok(serde_json::to_value(result)?)
-}
-
-/// Handle `sharplsp/profiler/findGCRoots`.
-pub fn handle_find_gc_roots(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<serde_json::Value> {
-    info!("Handling sharplsp/profiler/findGCRoots");
-    let params: heap_analysis::FindGcRootsParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(heap_analysis::find_gc_roots(params))?;
-    Ok(serde_json::to_value(result)?)
-}
-
-/// Handle `sharplsp/profiler/inspectObject`.
-pub fn handle_inspect_object(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<serde_json::Value> {
-    info!("Handling sharplsp/profiler/inspectObject");
-    let params: object_inspection::InspectObjectParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(object_inspection::inspect(params))?;
-    Ok(serde_json::to_value(result)?)
-}
-
-/// Handle `sharplsp/profiler/diffHeapSnapshots`.
-pub fn handle_diff_heap_snapshots(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<serde_json::Value> {
-    info!("Handling sharplsp/profiler/diffHeapSnapshots");
-    let params: heap_diff::DiffHeapSnapshotsParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(heap_diff::diff_snapshots(params))?;
-    Ok(serde_json::to_value(result)?)
-}
-
-/// Handle `sharplsp/profiler/getObjectGraph`.
-pub fn handle_get_object_graph(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<serde_json::Value> {
-    info!("Handling sharplsp/profiler/getObjectGraph");
-    let params: object_graph::GetObjectGraphParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(object_graph::get_object_graph(params))?;
-    Ok(serde_json::to_value(result)?)
+/// Shared decoding and serialization for every asynchronous diagnostic request.
+fn prepare<P, T, F, Fut>(params: serde_json::Value, run: F) -> Operation
+where
+    P: serde::de::DeserializeOwned + Send + 'static,
+    T: serde::Serialize,
+    F: FnOnce(P) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
+{
+    Box::pin(async move {
+        Ok(serde_json::to_value(
+            run(serde_json::from_value(params)?).await?,
+        )?)
+    })
 }
 
 /// Wire type for stopping a profiler session (trace or counters).

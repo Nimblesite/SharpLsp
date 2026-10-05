@@ -74,7 +74,7 @@
   "cmd.profiler.openTrace": "打开跟踪文件…",
   "cmd.profiler.convertTrace": "将 .nettrace 转换为 SpeedScope",
   "cmd.profiler.stopSession": "停止会话",
-  "cmd.profiler.revealOutput": "在 Finder 中显示输出文件",
+  "cmd.profiler.revealOutput": "显示输出文件",
   "cmd.profiler.copyOutputPath": "复制输出路径",
   "cmd.profiler.showCountersPanel": "显示实时计数器面板",
   "cmd.profiler.traceProcess": "对此进程开始跟踪",

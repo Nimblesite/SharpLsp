@@ -62,6 +62,7 @@ pub mod lsp_features;
 pub mod multi_solution;
 pub mod nuget_unused_full_stack;
 pub mod profiler;
+pub mod profiler_cancellation;
 pub mod profiler_dump_analysis_full_stack;
 pub mod profiler_edge_cases;
 pub mod profiler_full_stack;

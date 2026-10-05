@@ -14,6 +14,8 @@ pub mod heap_diff;
 pub mod object_graph;
 pub mod object_inspection;
 pub mod process_list;
+pub mod requests;
+mod retained_size;
 pub mod session;
 #[cfg(test)]
 mod test_support;

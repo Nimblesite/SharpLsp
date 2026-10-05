@@ -620,6 +620,7 @@ fn main_loop(
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
+    let mut profiler_requests = profiler::requests::Requests::default();
     let inbound = spawn_shutdown_fast_path(connection);
 
     for msg in &inbound {
@@ -639,6 +640,9 @@ fn main_loop(
                     configuration.respond(req, connection)?;
                     continue;
                 }
+                if profiler_requests.dispatch(&req, runtime, &connection.sender) {
+                    continue;
+                }
                 handle_request(
                     req,
                     vfs,
@@ -652,6 +656,10 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
+                if notif.method == "$/cancelRequest" {
+                    profiler_requests.cancel(&notif.params);
+                    continue;
+                }
                 if notif.method == "workspace/didChangeConfiguration" {
                     if let Err(error) = configuration.update(
                         notif
@@ -969,7 +977,18 @@ fn handle_request(
         );
     }
 
-    let resp = match result {
+    let resp = request_response(id, &method, result);
+    connection.sender.send(Message::Response(resp))?;
+    Ok(())
+}
+
+/// Build the shared success/error response for foreground and background requests.
+fn request_response(
+    id: lsp_server::RequestId,
+    method: &str,
+    result: Result<serde_json::Value>,
+) -> Response {
+    match result {
         Ok(value) => Response::new_ok(id, value),
         Err(e) => {
             error!(method = %method, "Request failed: {e:#}");
@@ -979,9 +998,7 @@ fn handle_request(
                 format!("{e:#}"),
             )
         }
-    };
-    connection.sender.send(Message::Response(resp))?;
-    Ok(())
+    }
 }
 
 /// The `textDocument.uri` of a request's params, when the request carries one.
@@ -1139,20 +1156,6 @@ fn handle_custom_request(
             profiler::handlers::handle_start_counters(req, connection.sender.clone())
         }
         "sharplsp/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req),
-        "sharplsp/profiler/collectDump" => {
-            profiler::handlers::handle_collect_dump(req, runtime, connection.sender.clone())
-        }
-        "sharplsp/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
-        "sharplsp/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
-        "sharplsp/profiler/inspectObject" => {
-            profiler::handlers::handle_inspect_object(req, runtime)
-        }
-        "sharplsp/profiler/diffHeapSnapshots" => {
-            profiler::handlers::handle_diff_heap_snapshots(req, runtime)
-        }
-        "sharplsp/profiler/getObjectGraph" => {
-            profiler::handlers::handle_get_object_graph(req, runtime)
-        }
         _ => {
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))

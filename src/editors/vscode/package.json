@@ -1259,16 +1259,18 @@
     "vscode:prepublish": "node ../../../tools/npm/run-sequential.mjs prepare:vsix-binaries prepare:test-assets build:production verify:vsix-payload",
     "clean": "node clean-out.mjs",
     "prepare:test-fixtures": "node ../../../tools/vsix/build-test-fixtures.mjs",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.{ts,mts}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,mts}\""
   },
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.11.0",
+    "d3-force": "^3.0.0",
     "fast-xml-parser": "^5.11.1",
     "vscode-languageclient": "^10.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/d3-force": "^3.0.10",
     "@types/mocha": "^10.0.6",
     "@types/node": "^26.6.2",
     "@types/vscode": "^1.125.0",
@@ -1299,7 +1301,7 @@
   "overrides": {
     "serialize-javascript": "7.0.5",
     "brace-expansion@^2.0.0": "2.1.4",
-    "brace-expansion@^5.0.0": "5.0.9",
+    "brace-expansion@^5.0.0": "5.0.12",
     "@vscode/test-cli": {
       "mocha": "$mocha"
     }

@@ -174,9 +174,8 @@ fn test_profiler_object_graph_roots_inspect_and_diff_full_stack() {
         root["size_bytes"].is_u64(),
         "root must report a numeric shallow size: {root}"
     );
-    // The exact shallow size is parsed from `dumpobj` text whose per-object
-    // layout is SOS/runtime-build specific; pin the concrete value only where
-    // this suite's output format is verified (Windows CI + local dev).
+    // [PROFILER-GRAPH-BUILD] Inclusive size includes the retained character array.
+    assert!(root["retained_size_bytes"].as_u64() > root["size_bytes"].as_u64());
     if cfg!(windows) {
         assert!(
             root["size_bytes"].as_u64().unwrap_or(0) > 0,

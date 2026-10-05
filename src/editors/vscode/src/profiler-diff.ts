@@ -10,6 +10,7 @@ import { type LanguageClient } from 'vscode-languageclient/node';
 import { escapeHtml, getErrorMessage } from './utils.js';
 import { ObjectGraphPanel } from './profiler-graph.js';
 import { pickDumpFile } from './profiler-prompts.js';
+import { profilerRequest } from './profiler-request.js';
 
 // ── LSP types ─────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ export class HeapDiffPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private disposed = false;
+  private result: HeapDiffResult | undefined;
 
   private constructor(
     baselinePath: string,
@@ -87,7 +89,7 @@ export class HeapDiffPanel {
           validateInput: (v) => (v.trim().length > 0 ? undefined : 'Address is required'),
         });
         if (address === undefined) return;
-        await ObjectGraphPanel.open(msg.dumpPath, address.trim(), context, client);
+        await ObjectGraphPanel.open(msg.dumpPath, address.trim(), context, client, this.result);
       },
       undefined,
       context.subscriptions,
@@ -106,13 +108,19 @@ export class HeapDiffPanel {
     const pane = new HeapDiffPanel(baselinePath, comparisonPath, context, client);
 
     try {
-      const result = await client.sendRequest<HeapDiffResult>(
+      const result = await profilerRequest<HeapDiffResult>(
+        client,
         'sharplsp/profiler/diffHeapSnapshots',
         {
           baseline_dump_path: baselinePath,
           comparison_dump_path: comparisonPath,
         },
+        'Comparing heap snapshots',
       );
+      if (result === undefined) {
+        pane.panel.dispose();
+        return;
+      }
       pane.render(result, baselinePath, comparisonPath);
     } catch (err: unknown) {
       pane.showError(getErrorMessage(err));
@@ -121,6 +129,7 @@ export class HeapDiffPanel {
 
   private render(result: HeapDiffResult, baselinePath: string, comparisonPath: string): void {
     if (this.disposed) return;
+    this.result = result;
     this.panel.webview.html = buildDiffHtml(result, baselinePath, comparisonPath);
   }
 

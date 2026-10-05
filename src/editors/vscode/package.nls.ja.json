@@ -74,7 +74,7 @@
   "cmd.profiler.openTrace": "トレースファイルを開く…",
   "cmd.profiler.convertTrace": ".nettrace を SpeedScope に変換",
   "cmd.profiler.stopSession": "セッションを停止",
-  "cmd.profiler.revealOutput": "Finder で出力ファイルを表示",
+  "cmd.profiler.revealOutput": "出力ファイルを表示",
   "cmd.profiler.copyOutputPath": "出力パスをコピー",
   "cmd.profiler.showCountersPanel": "ライブカウンターパネルを表示",
   "cmd.profiler.traceProcess": "このプロセスのトレースを開始",
