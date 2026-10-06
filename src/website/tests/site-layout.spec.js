@@ -12,6 +12,7 @@ const LOCALIZED_ROUTES = [
   'blog/categories/',
   'blog/editor-agnostic-dotnet-lsp/',
   'blog/introducing-sharplsp/',
+  'blog/microsoft-testing-platform-mtp-dotnet-test-csharp-fsharp/',
   'blog/pull-diagnostics-without-phantom-errors/',
   'blog/why-fsharp-is-first-class-in-sharplsp/',
   'docs/',

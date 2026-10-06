@@ -28,7 +28,7 @@
         />
         <PackageReference
             Include="Microsoft.NET.StringTools"
-            Version="18.10.1"
+            Version="18.7.1"
             ExcludeAssets="runtime"
             PrivateAssets="all"
         />
