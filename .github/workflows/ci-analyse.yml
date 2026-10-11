@@ -64,7 +64,7 @@ jobs:
 
       # ── TypeScript ─────────────────────────────────────────────────
       - name: Format check (VS Code)
-        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
+        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts' 'src/**/*.mts'
       - name: Lint (VS Code)
         # Also asserts every test suite belongs to a declared feature chunk, so
         # a new suite cannot silently drop out of the PHASE 4 matrix.

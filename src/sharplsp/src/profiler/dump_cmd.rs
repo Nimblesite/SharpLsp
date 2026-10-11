@@ -15,6 +15,7 @@ pub async fn run(
     let mut cmd = tokio::process::Command::new(tool);
     crate::utils::hide_console_window_tokio(&mut cmd);
     let mut child = cmd
+        .kill_on_drop(true)
         .args(["analyze", dump_path])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

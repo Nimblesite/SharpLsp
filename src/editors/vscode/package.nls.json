@@ -71,7 +71,7 @@
   "cmd.profiler.openTrace": "Open Trace File\u2026",
   "cmd.profiler.convertTrace": "Convert .nettrace to SpeedScope",
   "cmd.profiler.stopSession": "Stop Session",
-  "cmd.profiler.revealOutput": "Reveal Output File in Finder",
+  "cmd.profiler.revealOutput": "Reveal Output File",
   "cmd.profiler.copyOutputPath": "Copy Output Path",
   "cmd.profiler.showCountersPanel": "Show Live Counters Panel",
   "cmd.profiler.traceProcess": "Start Trace on This Process",

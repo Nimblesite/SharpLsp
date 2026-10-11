@@ -189,6 +189,8 @@
         "nuget-deps-e2e.test.js",
         "profiler.test.js",
         "profiler-e2e.test.js",
+        "profiler-release.test.js",
+        "profiler-graph-browser.test.js",
         "fsi-build-output-e2e.test.js",
         "utils.test.js"
       ]

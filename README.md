@@ -81,6 +81,10 @@ any editor that can launch an LSP server over stdio.
 
 ## Documentation
 
+### Opening a trace file
+
+In VS Code, run **SharpLsp: Open Trace File…** and select a `.nettrace` or `.speedscope.json` file. SharpLsp converts a `.nettrace` to a sibling `.speedscope.json` with `dotnet-trace`, then opens it in SpeedScope. The **SharpLsp: Convert .nettrace to SpeedScope** command converts a file without starting a profiling session. Trace conversion requires the `dotnet-trace` tool.
+
 Full documentation is available at [sharplsp.dev/docs](https://sharplsp.dev/docs).
 
 The repository includes a complete [`sharplsp.toml` configuration template](src/examples/config/sharplsp.example.toml).
