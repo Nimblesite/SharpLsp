@@ -9,18 +9,16 @@ import {
 import {
   applyAction,
   assertNoAction,
-  assertQuickFix,
   assertReplacement,
   diagnosticsSettled,
   diagnosticWithCode,
   openOverlay,
   quickFixes,
   assertPrepareAcrossToken,
-  resolvedQuickFixes,
   singleEdit,
   tokenRange,
-  undoAction,
-  uniqueAction,
+  inspectQuickFix,
+  undoAndRequery,
 } from './fsharp-refactor-test-kit';
 import { diagnosticCode } from './document-anchors';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
@@ -118,50 +116,13 @@ async function runConversion(scenario: CodeFixScenario): Promise<void> {
   const fixture = await openOverlay(TARGET_FILE, scenario.source);
   try {
     const range = tokenRange(fixture.document, scenario.target, scenario.occurrence);
-    const action = await inspectConversion(fixture, range, scenario);
+    const action = await inspectQuickFix(fixture, range, scenario, false, assertTypeMismatch);
     assertConversionEdit(fixture.document, fixture.uri, action, scenario);
     await applyConversion(fixture, action, scenario);
-    await undoConversion(fixture, scenario);
+    await undoAndRequery(fixture, scenario, false);
   } finally {
     await revertDocument(fixture.document);
   }
-}
-
-async function inspectConversion(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  range: vscode.Range,
-  scenario: CodeFixScenario,
-): Promise<vscode.CodeAction> {
-  const diagnostics = await diagnosticWithCode(fixture.uri, scenario.diagnostic);
-  assertConversionDiagnostic(diagnostics, range);
-  const raw = uniqueAction(await quickFixes(fixture.uri, range), scenario.title);
-  assertRawConversion(raw, scenario.title);
-  const outside = await quickFixes(fixture.uri, tokenRange(fixture.document, 'sentinel'));
-  assertNoAction(outside, scenario.title);
-  const resolved = await resolvedQuickFixes(fixture.uri, range, scenario.title);
-  const action = uniqueAction(resolved, scenario.title);
-  assertQuickFix(action, scenario.title, false);
-  return action;
-}
-
-function assertConversionDiagnostic(
-  diagnostics: readonly vscode.Diagnostic[],
-  range: vscode.Range,
-): void {
-  const mismatches = diagnostics.filter((item) => diagnosticCode(item) === 'FS0001');
-  assert.ok(mismatches.length >= 1);
-  assert.ok(mismatches.some((item) => item.range.intersection(range) !== undefined));
-  assert.ok(mismatches.every((item) => item.severity === vscode.DiagnosticSeverity.Error));
-  assert.ok(mismatches.every((item) => item.source === 'sharplsp-fsharp'));
-  assert.ok(mismatches.every((item) => /type/i.test(item.message)));
-}
-
-function assertRawConversion(action: vscode.CodeAction, title: string): void {
-  assert.strictEqual(action.title, title);
-  assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
-  assert.strictEqual(action.isPreferred, false);
-  assert.strictEqual(action.edit, undefined);
-  assert.strictEqual(action.command, undefined);
 }
 
 function assertConversionEdit(
@@ -204,17 +165,12 @@ async function assertConversionClean(uri: vscode.Uri, diagnostic: string): Promi
   );
 }
 
-async function undoConversion(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  scenario: CodeFixScenario,
-): Promise<void> {
-  await undoAction(fixture.document, scenario.source);
-  await diagnosticWithCode(fixture.uri, scenario.diagnostic);
-  const range = tokenRange(fixture.document, scenario.target, scenario.occurrence);
-  const actions = await resolvedQuickFixes(fixture.uri, range, scenario.title);
-  assertQuickFix(uniqueAction(actions, scenario.title), scenario.title, false);
-}
-
 function expectedSource(scenario: CodeFixScenario): string {
   return scenario.source.replace(`accept ${scenario.target}\n`, `accept ${scenario.replacement}\n`);
+}
+
+/** FS0001 is a TYPE mismatch the compiler reports as an error. */
+function assertTypeMismatch(mismatches: readonly vscode.Diagnostic[]): void {
+  assert.ok(mismatches.every((item) => item.severity === vscode.DiagnosticSeverity.Error));
+  assert.ok(mismatches.every((item) => /type/i.test(item.message)));
 }

@@ -3,18 +3,18 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
   assertFragments,
-  assertRawActionData,
-  assertRawTitles,
-  onlyAction,
   rawCodeActions,
+  assertOutsideActionRange,
+  assertRequiredDiagnostic,
+  discoverAction,
+  resolveAction,
+  type ActionLifecycleCase,
 } from './csharp-refactor-test-kit';
-import { diagnosticCode, rangeOf } from './document-anchors';
+import { diagnosticCode } from './document-anchors';
 import {
   applyWorkspaceEdit,
   replaceDocumentText,
-  waitForCodeActions,
   waitForMatchingDiagnostics,
-  waitForResolvedCodeActions,
   type OpenFixture,
   type WorkspaceEditSnapshot,
   useRefactorFixture,
@@ -24,17 +24,11 @@ import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorQuickFixes.cs';
 
-interface QuickFixScenario {
-  readonly label: string;
-  readonly source: string;
-  readonly snippet: string;
-  readonly focus: string;
+/** A compiler quick fix: the lifecycle case plus the diagnostic it answers. */
+type QuickFixScenario = ActionLifecycleCase & {
   readonly diagnosticCode: string;
-  readonly title: string;
   readonly options: readonly string[];
-  readonly presentAfter: readonly string[];
-  readonly absentAfter: readonly string[];
-}
+};
 
 const UNUSED_LOCAL = `namespace SharpLsp.TestFixtures.Refactors;
 
@@ -96,6 +90,7 @@ const SCENARIOS: readonly QuickFixScenario[] = [
     focus: 'unusedValue',
     diagnosticCode: 'CS0219',
     title: 'Remove unused variable',
+    kind: 'quickfix',
     options: ['Remove unused variable'],
     presentAfter: ['return input + 1;', 'unused-local-sentinel'],
     absentAfter: ['unusedValue'],
@@ -107,6 +102,7 @@ const SCENARIOS: readonly QuickFixScenario[] = [
     focus: 'StringBuilder',
     diagnosticCode: 'CS0246',
     title: 'using System.Text;',
+    kind: 'quickfix',
     options: ['System.Text.StringBuilder', 'using System.Text;'],
     presentAfter: ['using System.Text;', 'new StringBuilder()', 'add-using-sentinel'],
     absentAfter: [],
@@ -118,6 +114,7 @@ const SCENARIOS: readonly QuickFixScenario[] = [
     focus: 'MissingOperation',
     diagnosticCode: 'CS0103',
     title: "Generate method 'MissingOperation'",
+    kind: 'quickfix',
     options: ["Generate method 'MissingOperation'"],
     presentAfter: ['MissingOperation(int input)', 'throw new', 'generate-method-sentinel'],
     absentAfter: [],
@@ -129,6 +126,7 @@ const SCENARIOS: readonly QuickFixScenario[] = [
     focus: 'IQuickContract',
     diagnosticCode: 'CS0535',
     title: 'Implement interface',
+    kind: 'quickfix',
     options: ['Implement interface', 'Implement all members explicitly'],
     presentAfter: [
       'public int Compute(int input)',
@@ -138,68 +136,6 @@ const SCENARIOS: readonly QuickFixScenario[] = [
     absentAfter: [],
   },
 ];
-
-async function assertNegativeRange(
-  fixture: OpenFixture,
-  scenario: QuickFixScenario,
-): Promise<void> {
-  const outside = rangeOf(fixture.document, 'namespace', 'namespace');
-  const raw = await rawCodeActions(fixture.uri, outside);
-  assert.ok(!raw.some((action) => action.title === scenario.title));
-  const actions = await waitForCodeActions({
-    uri: fixture.uri,
-    range: outside,
-    kind: vscode.CodeActionKind.QuickFix,
-    predicate: () => true,
-  });
-  assert.ok(!actions.some((action) => action.title === scenario.title));
-}
-
-async function assertDiagnostic(fixture: OpenFixture, scenario: QuickFixScenario): Promise<void> {
-  const diagnostics = await waitForMatchingDiagnostics(fixture.uri, (items) =>
-    items.some((item) => diagnosticCode(item) === scenario.diagnosticCode),
-  );
-  const matches = diagnostics.filter((item) => diagnosticCode(item) === scenario.diagnosticCode);
-  assert.ok(matches.length >= 1, `missing ${scenario.diagnosticCode}`);
-  assert.ok(matches.every((item) => item.message.length > 0));
-  assert.ok(matches.every((item) => !item.range.isEmpty));
-}
-
-async function discoverInside(
-  fixture: OpenFixture,
-  scenario: QuickFixScenario,
-): Promise<vscode.Range> {
-  const range = rangeOf(fixture.document, scenario.snippet, scenario.focus);
-  const actions = await waitForCodeActions({
-    uri: fixture.uri,
-    range,
-    kind: vscode.CodeActionKind.QuickFix,
-    predicate: (items) => items.some((item) => item.title === scenario.title),
-  });
-  onlyAction(actions, scenario.title);
-  const raw = await rawCodeActions(fixture.uri, range);
-  assertRawTitles(raw, scenario.options, 'quickfix');
-  assertRawActionData(raw, fixture.uri);
-  return range;
-}
-
-async function resolveEdit(
-  fixture: OpenFixture,
-  scenario: QuickFixScenario,
-  range: vscode.Range,
-): Promise<vscode.WorkspaceEdit> {
-  const actions = await waitForResolvedCodeActions({
-    uri: fixture.uri,
-    range,
-    kind: vscode.CodeActionKind.QuickFix,
-    predicate: (items) => items.some((item) => item.title === scenario.title && item.edit),
-  });
-  for (const title of scenario.options) onlyAction(actions, title);
-  const selected = onlyAction(actions, scenario.title);
-  assert.strictEqual(selected.kind?.value, vscode.CodeActionKind.QuickFix.value);
-  assert.ok(selected.edit, `${scenario.title} must resolve to a WorkspaceEdit`);
-  return selected.edit;
-}
 
 function assertSnapshots(snapshots: readonly WorkspaceEditSnapshot[], fixture: OpenFixture): void {
   assert.strictEqual(snapshots.length, 1, 'selected quick fix must edit one document');
@@ -238,10 +174,10 @@ async function runScenario(
 ): Promise<void> {
   await replaceDocumentText(fixture.document, scenario.source);
   assert.ok(fixture.document.isDirty);
-  await assertDiagnostic(fixture, scenario);
-  await assertNegativeRange(fixture, scenario);
-  const range = await discoverInside(fixture, scenario);
-  const edit = await resolveEdit(fixture, scenario, range);
+  await assertRequiredDiagnostic(fixture, scenario);
+  await assertOutsideActionRange(fixture, scenario);
+  const { range } = await discoverAction(fixture, scenario);
+  const edit = await resolveAction(fixture, scenario, range);
   const version = fixture.document.version;
   assertSnapshots(await applyWorkspaceEdit(edit), fixture);
   assertMutation(fixture, scenario, version);

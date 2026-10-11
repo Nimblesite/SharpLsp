@@ -201,7 +201,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 - [x] Verify what actually SHIPS, not what happens to sit in the working tree: `tools/vsix/verify-vsix-payload.mjs` reads `vsce ls` and asserts the host, both sidecars and — on platforms with an upstream prebuilt — `bin/<platform>/netcoredbg/netcoredbg` **and** its `ManagedPart.dll`. A launcher without its managed half is not a debugger.
 - [x] Resolve `npx` by its real name so the payload check runs on Windows at all (`npx.cmd` is not spawnable under the bare name)
-- [x] Stage netcoredbg from `tools/vsix/fetch-netcoredbg.sh`, version-pinned to `3.2.0-1092`, cached by version+asset so CI's Windows chunks download it once; `win32-arm64` and `darwin-x64` have no upstream prebuilt and skip cleanly to the PATH / `sharplsp.debug.netcoredbgPath` fallback
+- [x] Stage netcoredbg from `tools/vsix/fetch-netcoredbg.sh`, version-pinned to the fork release `3.2.0-1092-sharplsp.1`, cached by version+asset so CI's Windows chunks download it once; `win32-arm64` and `darwin-x64` have no prebuilt and skip cleanly to the PATH / `sharplsp.debug.netcoredbgPath` fallback
 - [x] Assert staging from inside the extension host too: `00-vsix-dev-binary-staging.test.ts` runs as the shared head of **every** Windows chunk, so a staging regression fails as itself instead of as a wall of LSP timeouts
 
 #### Windows-only defects the widened gate surfaced immediately

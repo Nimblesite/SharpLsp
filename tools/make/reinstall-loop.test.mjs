@@ -280,7 +280,7 @@ test('reinstall-vsix rebuilds the binaries it packages, and kills what holds the
 
   // A running server holds its binary open - fatally so on Windows - and the
   // kill must happen before the clean that deletes it.
-  const kill = stepAt(recipe, "pkill -9 -f 'sharplsp'");
+  const kill = stepAt(recipe, process.platform === 'win32' ? 'taskkill //F //T //IM' : "pkill -9 -f 'sharplsp'");
   assert.ok(kill < stepAt(recipe, 'cargo clean'), 'stale servers must die before the clean');
 
   // The previous build's stage must not survive into the fresh package.

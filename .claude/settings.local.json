@@ -1,4 +1,5 @@
 {
-  "_agent_pmo": "a72c926",
+  "remoteControlAtStartup": true, 
+  "disableWorkflows": true,   
   "autoMemoryEnabled": false
 }

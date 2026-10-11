@@ -56,65 +56,74 @@ export interface FrameworkFixture {
   readonly mixedParameterized?: string;
 }
 
-const CS_XUNIT_SOURCE = [
-  'using Xunit;',
-  '',
-  'namespace Cs.Xunit.Fixtures',
-  '{',
-  '    public class CalculatorTests',
-  '    {',
-  '        [Fact] public void Adds_TwoNumbers() => Assert.Equal(3, 1 + 2);',
-  '        [Fact] public void Fails_OnPurpose() => Assert.Equal(4, 1 + 2);',
-  '        [Fact(Skip = "fixture: deliberately skipped")] public void Skipped_OnPurpose() { }',
-  '        [Theory]',
-  '        [InlineData(2, 2, 4)]',
-  '        [InlineData(1, 1, 2)]',
-  '        public void Adds_Theory(int a, int b, int expected) => Assert.Equal(expected, a + b);',
-  '        [Theory]',
-  '        [InlineData(2, 2, 4)]',
-  '        [InlineData(1, 1, 99)]',
-  '        public void Mixed_Theory(int a, int b, int expected) => Assert.Equal(expected, a + b);',
-  '    }',
-  '}',
-  '',
-].join('\n');
+/** The C# xUnit fixture: a pass, a failure, a skip, and two theories. */
+export function csXunitSource(namespace: string): string {
+  return [
+    'using Xunit;',
+    '',
+    namespace,
+    '{',
+    '    public class CalculatorTests',
+    '    {',
+    '        [Fact] public void Adds_TwoNumbers() => Assert.Equal(3, 1 + 2);',
+    '        [Fact] public void Fails_OnPurpose() => Assert.Equal(4, 1 + 2);',
+    '        [Fact(Skip = "fixture: deliberately skipped")] public void Skipped_OnPurpose() { }',
+    '        [Theory]',
+    '        [InlineData(2, 2, 4)]',
+    '        [InlineData(1, 1, 2)]',
+    '        public void Adds_Theory(int a, int b, int expected) => Assert.Equal(expected, a + b);',
+    '        [Theory]',
+    '        [InlineData(2, 2, 4)]',
+    '        [InlineData(1, 1, 99)]',
+    '        public void Mixed_Theory(int a, int b, int expected) => Assert.Equal(expected, a + b);',
+    '    }',
+    '}',
+    '',
+  ].join('\n');
+}
 
-const CS_NUNIT_SOURCE = [
-  'using NUnit.Framework;',
-  '',
-  'namespace Cs.Nunit.Fixtures',
-  '{',
-  '    public class CalculatorTests',
-  '    {',
-  '        [Test] public void Adds_TwoNumbers() => Assert.That(1 + 2, Is.EqualTo(3));',
-  '        [Test] public void Fails_OnPurpose() => Assert.That(1 + 2, Is.EqualTo(4));',
-  '        [Test, Ignore("fixture: deliberately skipped")] public void Skipped_OnPurpose() { }',
-  '        [TestCase(2, 2, 4)]',
-  '        public void Adds_Case(int a, int b, int expected) =>',
-  '            Assert.That(a + b, Is.EqualTo(expected));',
-  '    }',
-  '}',
-  '',
-].join('\n');
+/** The C# NUnit fixture: a pass, a failure, an ignore, and a test case. */
+export function csNunitSource(namespace: string): string {
+  return [
+    'using NUnit.Framework;',
+    '',
+    namespace,
+    '{',
+    '    public class CalculatorTests',
+    '    {',
+    '        [Test] public void Adds_TwoNumbers() => Assert.That(1 + 2, Is.EqualTo(3));',
+    '        [Test] public void Fails_OnPurpose() => Assert.That(1 + 2, Is.EqualTo(4));',
+    '        [Test, Ignore("fixture: deliberately skipped")] public void Skipped_OnPurpose() { }',
+    '        [TestCase(2, 2, 4)]',
+    '        public void Adds_Case(int a, int b, int expected) =>',
+    '            Assert.That(a + b, Is.EqualTo(expected));',
+    '    }',
+    '}',
+    '',
+  ].join('\n');
+}
 
-const CS_MSTEST_SOURCE = [
-  'using Microsoft.VisualStudio.TestTools.UnitTesting;',
-  '',
-  'namespace Cs.Mstest.Fixtures',
-  '{',
-  '    [TestClass]',
-  '    public class CalculatorTests',
-  '    {',
-  '        [TestMethod] public void Adds_TwoNumbers() => Assert.AreEqual(3, 1 + 2);',
-  '        [TestMethod] public void Fails_OnPurpose() => Assert.AreEqual(4, 1 + 2);',
-  '        [TestMethod, Ignore] public void Skipped_OnPurpose() { }',
-  '        [DataTestMethod]',
-  '        [DataRow(2, 2, 4)]',
-  '        public void Adds_Row(int a, int b, int expected) => Assert.AreEqual(expected, a + b);',
-  '    }',
-  '}',
-  '',
-].join('\n');
+/** The C# MSTest fixture; `rowMethod` is the attribute line above its data row. */
+export function csMstestSource(namespace: string, rowMethod: string): string {
+  return [
+    'using Microsoft.VisualStudio.TestTools.UnitTesting;',
+    '',
+    namespace,
+    '{',
+    '    [TestClass]',
+    '    public class CalculatorTests',
+    '    {',
+    '        [TestMethod] public void Adds_TwoNumbers() => Assert.AreEqual(3, 1 + 2);',
+    '        [TestMethod] public void Fails_OnPurpose() => Assert.AreEqual(4, 1 + 2);',
+    '        [TestMethod, Ignore] public void Skipped_OnPurpose() { }',
+    rowMethod,
+    '        [DataRow(2, 2, 4)]',
+    '        public void Adds_Row(int a, int b, int expected) => Assert.AreEqual(expected, a + b);',
+    '    }',
+    '}',
+    '',
+  ].join('\n');
+}
 
 const FS_XUNIT_SOURCE = [
   'module Fs.Xunit.Fixtures',
@@ -144,24 +153,27 @@ const FS_XUNIT_SOURCE = [
   '',
 ].join('\n');
 
-const FS_NUNIT_SOURCE = [
-  'module Fs.Nunit.Fixtures',
-  '',
-  'open NUnit.Framework',
-  '',
-  '[<Test>]',
-  'let addsTwoNumbers () = Assert.That(1 + 2, Is.EqualTo(3))',
-  '',
-  '[<Test>]',
-  'let ``fails on purpose`` () = Assert.That(1 + 2, Is.EqualTo(4))',
-  '',
-  '[<Test; Ignore("fixture: deliberately skipped")>]',
-  'let ``skipped on purpose`` () = ()',
-  '',
-  '[<TestCase(2, 2, 4)>]',
-  'let ``adds case`` (a: int) (b: int) (expected: int) = Assert.That(a + b, Is.EqualTo(expected))',
-  '',
-].join('\n');
+/** The F# NUnit fixture; `passing` is the line declaring its passing test. */
+export function fsNunitSource(module: string, passing: string): string {
+  return [
+    module,
+    '',
+    'open NUnit.Framework',
+    '',
+    '[<Test>]',
+    passing,
+    '',
+    '[<Test>]',
+    'let ``fails on purpose`` () = Assert.That(1 + 2, Is.EqualTo(4))',
+    '',
+    '[<Test; Ignore("fixture: deliberately skipped")>]',
+    'let ``skipped on purpose`` () = ()',
+    '',
+    '[<TestCase(2, 2, 4)>]',
+    'let ``adds case`` (a: int) (b: int) (expected: int) = Assert.That(a + b, Is.EqualTo(expected))',
+    '',
+  ].join('\n');
+}
 
 const FS_MSTEST_SOURCE = [
   'module Fs.Mstest.Fixtures',
@@ -232,37 +244,64 @@ export const FRAMEWORK_FIXTURES: readonly FrameworkFixture[] = [
     parameterized: 'Fs.Xunit.Fixtures.adds theory',
     mixedParameterized: 'Fs.Xunit.Fixtures.mixed theory',
   }),
-  frameworkFixture('nunit', 'fsharp', NUNIT_PACKAGES, FS_NUNIT_SOURCE, {
-    passing: 'Fs.Nunit.Fixtures.addsTwoNumbers',
-    failing: 'Fs.Nunit.Fixtures.fails on purpose',
-    skipped: 'Fs.Nunit.Fixtures.skipped on purpose',
-    parameterized: 'Fs.Nunit.Fixtures.adds case(2,2,4)',
-  }),
+  frameworkFixture(
+    'nunit',
+    'fsharp',
+    NUNIT_PACKAGES,
+    fsNunitSource(
+      'module Fs.Nunit.Fixtures',
+      'let addsTwoNumbers () = Assert.That(1 + 2, Is.EqualTo(3))',
+    ),
+    {
+      passing: 'Fs.Nunit.Fixtures.addsTwoNumbers',
+      failing: 'Fs.Nunit.Fixtures.fails on purpose',
+      skipped: 'Fs.Nunit.Fixtures.skipped on purpose',
+      parameterized: 'Fs.Nunit.Fixtures.adds case(2,2,4)',
+    },
+  ),
   frameworkFixture('mstest', 'fsharp', MSTEST_PACKAGES, FS_MSTEST_SOURCE, {
     passing: 'Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers',
     failing: 'Fs.Mstest.Fixtures+CalculatorTests.FailsOnPurpose',
     skipped: 'Fs.Mstest.Fixtures+CalculatorTests.SkippedOnPurpose',
     parameterized: 'Fs.Mstest.Fixtures+CalculatorTests.AddsRow',
   }),
-  frameworkFixture('xunit', 'csharp', XUNIT_PACKAGES, CS_XUNIT_SOURCE, {
-    passing: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
-    failing: 'Cs.Xunit.Fixtures.CalculatorTests.Fails_OnPurpose',
-    skipped: 'Cs.Xunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
-    parameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_Theory',
-    mixedParameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Mixed_Theory',
-  }),
-  frameworkFixture('nunit', 'csharp', NUNIT_PACKAGES, CS_NUNIT_SOURCE, {
-    passing: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
-    failing: 'Cs.Nunit.Fixtures.CalculatorTests.Fails_OnPurpose',
-    skipped: 'Cs.Nunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
-    parameterized: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)',
-  }),
-  frameworkFixture('mstest', 'csharp', MSTEST_PACKAGES, CS_MSTEST_SOURCE, {
-    passing: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_TwoNumbers',
-    failing: 'Cs.Mstest.Fixtures.CalculatorTests.Fails_OnPurpose',
-    skipped: 'Cs.Mstest.Fixtures.CalculatorTests.Skipped_OnPurpose',
-    parameterized: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
-  }),
+  frameworkFixture(
+    'xunit',
+    'csharp',
+    XUNIT_PACKAGES,
+    csXunitSource('namespace Cs.Xunit.Fixtures'),
+    {
+      passing: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
+      failing: 'Cs.Xunit.Fixtures.CalculatorTests.Fails_OnPurpose',
+      skipped: 'Cs.Xunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
+      parameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_Theory',
+      mixedParameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Mixed_Theory',
+    },
+  ),
+  frameworkFixture(
+    'nunit',
+    'csharp',
+    NUNIT_PACKAGES,
+    csNunitSource('namespace Cs.Nunit.Fixtures'),
+    {
+      passing: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
+      failing: 'Cs.Nunit.Fixtures.CalculatorTests.Fails_OnPurpose',
+      skipped: 'Cs.Nunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
+      parameterized: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)',
+    },
+  ),
+  frameworkFixture(
+    'mstest',
+    'csharp',
+    MSTEST_PACKAGES,
+    csMstestSource('namespace Cs.Mstest.Fixtures', '        [DataTestMethod]'),
+    {
+      passing: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_TwoNumbers',
+      failing: 'Cs.Mstest.Fixtures.CalculatorTests.Fails_OnPurpose',
+      skipped: 'Cs.Mstest.Fixtures.CalculatorTests.Skipped_OnPurpose',
+      parameterized: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
+    },
+  ),
 ];
 
 /**

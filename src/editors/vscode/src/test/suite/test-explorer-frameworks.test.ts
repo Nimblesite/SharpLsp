@@ -43,18 +43,12 @@ import {
   nextResultsChange,
   snapshotItems,
   type TestItemSnapshot,
-  activateWithScratch,
-  teardownFixtureSolution,
   assertPlainLeaf,
 } from './test-explorer-kit';
-import {
-  comparablePath,
-  removeDirRecursive,
-  assertContainsAll,
-  assertContainsNone,
-} from './test-helpers';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { comparablePath, assertContainsAll, assertContainsNone } from './test-helpers';
+import { DOTNET_CLI_MS } from './test-timeouts';
 import { sorted } from './test-explorer-outcome-assertions';
+import { useScratchSuite } from './test-explorer-harness';
 
 /** The idiomatic F# backtick fact whose xUnit FQN literally contains spaces. */
 const FS_SPACED_FACT = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
@@ -484,26 +478,14 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     return ids;
   }
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root } = await activateWithScratch('sharplsp-frameworks-'));
+  useScratchSuite('sharplsp-frameworks-', async (scratch) => {
+    ({ api, root } = scratch);
     projectDirs = writeAllProjects(root);
     slnPath = await createSolution(root, 'Frameworks', [...projectDirs.values()]);
     // Warm the FULL discovery path once — six restores, six builds, three VSTest
     // adapters JITted — so every test runs warm. The output is KEPT: the parser
     // assertions run against a genuine six-project listing, never an imitation.
     listing = await warmDiscovery(slnPath, root);
-  });
-
-  teardown(async () => {
-    // Never leave a `dotnet` invocation in flight across tests: discovery builds
-    // the same `bin/`/`obj/` a run rebuilds, and the overlap kills VSTest.
-    await api.testController.whenIdle();
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(DOTNET_CLI_MS);
-    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('discovery finds every test in all six framework × language fixtures', async function () {

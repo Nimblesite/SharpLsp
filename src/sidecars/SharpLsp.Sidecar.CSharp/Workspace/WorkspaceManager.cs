@@ -516,13 +516,13 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         _loggedWorkspaceFailures.Clear();
 
-        var findResult = SolutionLoader.FindSolutionOrProject(path);
-        if (findResult.IsError)
+        var discovered = SolutionLoader.Discover(path);
+        if (discovered.IsError)
         {
-            return VoidResult.Failure(!findResult ?? "Search failed");
+            return VoidResult.Failure(!discovered ?? "Search failed");
         }
 
-        var target = findResult.Match(value => value, _ => null);
+        var (target, candidates) = +discovered;
 
         if (target is null)
         {
@@ -533,7 +533,6 @@ internal sealed partial class WorkspaceManager : IDisposable
                 // analyse a real repository as loose files, resolving no project reference
                 // and reporting phantom diagnostics across the whole tree. Surface the
                 // choice instead. Implements [SCRIPT-DEGRADE].
-                var candidates = SolutionLoader.FindAmbiguousSolutions(path);
                 if (candidates.Length > 0)
                 {
                     return VoidResult.Failure(AmbiguousSolutionMessage(path, candidates));

@@ -347,3 +347,78 @@ export function changedFileNames(edit: vscode.WorkspaceEdit): string[] {
 export function countOccurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
 }
+
+/** Where a quick fix is exercised: the overlay, the token it fixes, and what it answers. */
+export interface QuickFixSite {
+  readonly source: string;
+  readonly target: string;
+  readonly occurrence?: number;
+  readonly title: string;
+  readonly diagnostic: string;
+}
+
+/** The `code` diagnostics: published, one ON `range`, each worded, each from the F# sidecar. */
+export function assertSidecarDiagnostics(
+  diagnostics: readonly vscode.Diagnostic[],
+  range: vscode.Range,
+  code: string,
+): vscode.Diagnostic[] {
+  const matches = diagnostics.filter((item) => diagnosticCode(item) === code);
+  assert.ok(matches.length >= 1, `${code} must be published`);
+  assert.ok(matches.some((item) => item.range.intersection(range) !== undefined));
+  assert.ok(matches.every((item) => item.message.trim().length > 0));
+  assert.ok(matches.every((item) => item.source === 'sharplsp-fsharp'));
+  return matches;
+}
+
+/** A LISTED quick fix: still unresolved, and an edit rather than a command. */
+function assertListedQuickFix(action: vscode.CodeAction, title: string, preferred: boolean): void {
+  assert.strictEqual(action.title, title);
+  assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
+  assert.strictEqual(action.isPreferred, preferred);
+  assert.strictEqual(action.edit, undefined, 'listed action must remain unresolved');
+  assert.strictEqual(action.command, undefined, 'quick fix must use an edit, not a command');
+}
+
+/**
+ * List then resolve the quick fix `site` names on `range`: its diagnostic sits
+ * there, the listing offers it once and unresolved, the `sentinel` binding
+ * outside it never does, and it resolves to an edit. `refine` adds the
+ * caller's own checks on the diagnostics that drove it. [ANALYZERS-FSAC-PARITY]
+ */
+export async function inspectQuickFix(
+  fixture: OpenFixture,
+  range: vscode.Range,
+  site: QuickFixSite,
+  preferred: boolean,
+  refine: (matches: readonly vscode.Diagnostic[]) => void = () => undefined,
+): Promise<vscode.CodeAction> {
+  const diagnostics = await diagnosticWithCode(fixture.uri, site.diagnostic, range);
+  refine(assertSidecarDiagnostics(diagnostics, range, site.diagnostic));
+  assertListedQuickFix(
+    uniqueAction(await quickFixes(fixture.uri, range), site.title),
+    site.title,
+    preferred,
+  );
+  const outside = await quickFixes(fixture.uri, tokenRange(fixture.document, 'sentinel'));
+  assertNoAction(outside, site.title);
+  assert.ok(
+    outside.every((action) => action.kind?.contains(vscode.CodeActionKind.QuickFix) ?? true),
+  );
+  const action = uniqueAction(await resolvedQuickFixes(fixture.uri, range, site.title), site.title);
+  assertQuickFix(action, site.title, preferred);
+  return action;
+}
+
+/** Undo restores `site.source`, its diagnostic returns, and the fix is offered again. */
+export async function undoAndRequery(
+  fixture: OpenFixture,
+  site: QuickFixSite,
+  preferred: boolean,
+): Promise<void> {
+  await undoAction(fixture.document, site.source);
+  await diagnosticWithCode(fixture.uri, site.diagnostic);
+  const range = tokenRange(fixture.document, site.target, site.occurrence);
+  const actions = await resolvedQuickFixes(fixture.uri, range, site.title);
+  assertQuickFix(uniqueAction(actions, site.title), site.title, preferred);
+}

@@ -32,17 +32,11 @@ import {
   mtpFixtureFor,
   type MtpFixture,
 } from './test-explorer-mtp-fixtures';
-import {
-  collectLeafIds,
-  discoverSolution,
-  findItem,
-  rootsOf,
-  teardownFixtureSolution,
-  activateWithScratch,
-} from './test-explorer-kit';
+import { collectLeafIds, discoverSolution, findItem, rootsOf } from './test-explorer-kit';
 import { sorted } from './test-explorer-outcome-assertions';
-import { removeDirRecursive, assertContainsAll } from './test-helpers';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { assertContainsAll } from './test-helpers';
+import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { useScratchSuite } from './test-explorer-harness';
 
 /** The awkward id shapes, the label each renders as, and why it is hard. */
 const AWKWARD_SHAPES: readonly (readonly [string, string, string])[] = [
@@ -86,21 +80,9 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform discovery', () => {
   let root: string;
   let slnPath: string;
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root } = await activateWithScratch('sharplsp-mtp-'));
+  useScratchSuite('sharplsp-mtp-', async (scratch) => {
+    ({ api, root } = scratch);
     slnPath = await createMtpSolution(root);
-  });
-
-  teardown(async () => {
-    // Never leave a `dotnet` invocation in flight across tests: discovery builds
-    // the same `bin/`/`obj/` a run rebuilds, and the overlap breaks both.
-    await api.testController.whenIdle();
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(DOTNET_CLI_MS);
-    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('the global.json opt-in selects MTP, and the modules come from MSBuild', async function () {

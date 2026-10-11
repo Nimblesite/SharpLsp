@@ -34,18 +34,14 @@ import {
 } from './netfx-explorer-kit';
 import { rootLabelled } from './netfx-test-kit';
 import { fixtureNames } from './test-explorer-fixtures';
-import {
-  activateWithScratch,
-  collectLeafIds,
-  runViaProfile,
-  teardownFixtureSolution,
-} from './test-explorer-kit';
+import { activateWithScratch, collectLeafIds, teardownFixtureSolution } from './test-explorer-kit';
 import {
   assertPassed,
   assertReported,
   assertSkipped,
   cachedFor,
   itemsFor,
+  runIds,
 } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DEBUG_TEST_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -202,7 +198,7 @@ suite('Test Explorer — MTP modules built for .NET Framework AND .NET', () => {
   test('the test only .NET Framework compiles PASSES: its .exe module ran as itself', async function () {
     this.timeout(DOTNET_CLI_MS * 2);
     const ids = idsOf(FIXTURES, 'net48Only');
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
+    await runIds(api, vscode.TestRunProfileKind.Run, ids);
     for (const id of ids) assertPassed(assertReported(api, id), id);
     for (const item of itemsFor(api, ids)) {
       assert.strictEqual(item.error, undefined, `${item.id} carries no hostpolicy.dll error`);

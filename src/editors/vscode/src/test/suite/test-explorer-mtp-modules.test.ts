@@ -40,13 +40,7 @@ import {
   writeProject,
 } from './dotnet-project-kit';
 import { idsOf, mtpFixtureFor, writeMtpProject } from './test-explorer-mtp-fixtures';
-import {
-  discoverSolution,
-  rootsOf,
-  runViaProfile,
-  teardownFixtureSolution,
-  activateWithScratch,
-} from './test-explorer-kit';
+import { discoverSolution, rootsOf, runViaProfile } from './test-explorer-kit';
 import {
   assertFailed,
   assertPassed,
@@ -55,7 +49,8 @@ import {
   sorted,
 } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { useScratchSuite } from './test-explorer-harness';
 
 /** The multi-targeted project: TWO modules sharing one file name. */
 const PROJECT = 'ModulesMtpCs';
@@ -159,22 +154,12 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform across several modules',
   /** Every id the fixture solution must expose. */
   let expected: string[];
 
-  suiteSetup(async function () {
-    this.timeout(FIXTURE_BUILD_MS);
-    ({ api, root } = await activateWithScratch('sharplsp-mtp-modules-'));
+  useScratchSuite('sharplsp-mtp-modules-', async (scratch) => {
+    ({ api, root } = scratch);
     frameworks = await installedFrameworkPair(root);
     slnPath = await createFixture(root, frameworks);
     expected = [EDITED, ...frameworks.map(frameworkId), ...NO_TRX_IDS];
     await discoverSolution(api, slnPath, expected);
-  });
-
-  teardown(async () => {
-    await api.testController.whenIdle();
-  });
-
-  suiteTeardown(async function () {
-    this.timeout(DOTNET_CLI_MS);
-    await teardownFixtureSolution(api, root, removeDirRecursive);
   });
 
   test('a multi-targeted project reports EVERY framework, and no report overwrites another', async function () {

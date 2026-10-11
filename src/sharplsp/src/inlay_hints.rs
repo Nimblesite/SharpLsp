@@ -5,9 +5,10 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use lsp_server::Request;
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel, InlayHintParams, Position};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::sidecar::manager::SidecarManager;
+use crate::utils::request_sidecar;
 use crate::vfs::Vfs;
 
 /// Handle `textDocument/inlayHint`.
@@ -25,24 +26,20 @@ pub fn handle_inlay_hint(
     let Some(sidecar) = sidecar else {
         return Ok(serde_json::Value::Null);
     };
-    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
-
     let request = SidecarInlayHintReq {
-        file_path,
+        file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
         start_line: params.range.start.line,
         end_line: params.range.end.line,
     };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("textDocument/inlayHint", payload))
-    {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar inlayHint unavailable: {err:#}");
-            return Ok(serde_json::Value::Null);
-        }
+    let Some(items) = request_sidecar::<Vec<SidecarInlayHint>, _>(
+        runtime,
+        sidecar,
+        "textDocument/inlayHint",
+        &request,
+    )?
+    else {
+        return Ok(serde_json::Value::Null);
     };
-
-    let items: Vec<SidecarInlayHint> = rmp_serde::from_slice(&response_bytes)?;
     debug!("Got {} inlay hints from sidecar", items.len());
 
     let hints: Vec<InlayHint> = items.iter().map(map_inlay_hint).collect();

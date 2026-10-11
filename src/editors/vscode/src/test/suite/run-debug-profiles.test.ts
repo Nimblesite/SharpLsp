@@ -10,7 +10,6 @@
 // provider at activation and a second registration corrupts the host.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
@@ -27,7 +26,6 @@ import {
   fakeFolder,
   focusDocument,
   bareF5Config,
-  stopAnyDebugSession,
   undefinedF5Config,
 } from './run-debug-kit';
 import {
@@ -37,9 +35,10 @@ import {
   writeRawLaunchSettings,
   writeRunJson,
 } from './run-debug-fixtures';
-import { installUiStubs, type UiStubs } from './ui-stubs';
-import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
+import { type UiStubs } from './ui-stubs';
+import { comparablePath } from './test-helpers';
 import { DOTNET_CLI_MS } from './test-timeouts';
+import { useRunDebugCase } from './run-debug-case';
 
 /** Shorthand so every assertion helper fits one signature line. */
 type Config = vscode.DebugConfiguration;
@@ -166,20 +165,9 @@ suite('Run and Debug: launch profiles', () => {
   let sessions: DebugSessionRecorder;
   let tasks: TaskRecorder;
 
+  const runCase = useRunDebugCase('sharplsp-run-debug-profiles-');
   setup(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-run-debug-profiles-'));
-    stubs = installUiStubs();
-    sessions = new DebugSessionRecorder();
-    tasks = new TaskRecorder();
-  });
-
-  teardown(async () => {
-    stubs.restore();
-    await stopAnyDebugSession();
-    sessions.dispose();
-    tasks.dispose();
-    await closeAllEditors();
-    removeDirRecursive(tmpDir);
+    ({ tmpDir, stubs, sessions, tasks } = runCase());
   });
 
   /** A fresh case directory under the suite's temp root. */

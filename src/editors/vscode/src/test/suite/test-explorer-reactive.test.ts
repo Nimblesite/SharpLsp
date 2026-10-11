@@ -20,7 +20,6 @@ import {
   warmDiscovery,
   writeProject,
 } from './dotnet-project-kit';
-import { fixtureFor } from './test-explorer-fixtures';
 import {
   assertDeclaredInside,
   activateTestExplorer,
@@ -33,13 +32,11 @@ import {
   snapshotItems,
   teardownFixtureSolution,
   assertLeavesAre,
+  unloadSolution,
 } from './test-explorer-kit';
 import { comparablePath, removeDirRecursive, assertContainsAll } from './test-helpers.js';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-
-const CS = fixtureFor('xunit-csharp');
-/** The xUnit C# mixed theory, literal so `suiteSetup` can prove the fixture agrees. */
-const CS_MIXED_THEORY = 'Cs.Xunit.Fixtures.CalculatorTests.Mixed_Theory';
+import { CS, CS_MIXED_THEORY } from './test-explorer-xunit-pair';
 
 /** Exactly the FQNs the xUnit C# fixture exposes — theory rows collapse to one. */
 const EXPECTED = [CS.passing, CS.failing, CS.skipped, CS.parameterized, CS_MIXED_THEORY] as const;
@@ -274,9 +271,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   teardown(async function () {
     this.timeout(DOTNET_CLI_MS);
     // Reset the signal so the next load is a REAL transition, and let it settle.
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-    }, api.testController);
+    await unloadSolution(api);
   });
 
   suiteTeardown(async function () {

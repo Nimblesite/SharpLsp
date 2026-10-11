@@ -14,14 +14,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { DapRecorder } from './debug-dap-kit';
-import {
-  CMD_CONTINUE,
-  gesture,
-  localsOf,
-  methodOf,
-  topFrame,
-  variableNamed,
-} from './debug-drive-kit';
+import { localsOf, methodOf, variableNamed } from './debug-drive-kit';
 import {
   CS_ADDS,
   CS_ALL,
@@ -30,22 +23,22 @@ import {
   assertHandshakeOrder,
   assertOneTestSession,
   breakpointAt,
-  requireActive,
   type TestDebugFixture,
 } from './debug-test-kit';
-import { debugRun, useDebugTestFixture, firstBreakpointStop } from './debug-test-harness';
+import {
+  debugRun,
+  useDebugTestFixture,
+  debuggableRow,
+  stopInTestSource,
+} from './debug-test-harness';
 import { TEST_HOST_DEBUG_ENV } from '../../test-debug.js';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
-import {
-  activateTestExplorer,
-  discoverSolution,
-  findItem,
-  runViaProfile,
-} from './test-explorer-kit';
+import { activateTestExplorer, runViaProfile } from './test-explorer-kit';
 import { assertFailed, cachedFor } from './test-explorer-outcome-assertions';
-import { comparablePath, deepEq, eq, neq } from './test-helpers';
+import { deepEq, eq, neq } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 import { type UiStubs } from './ui-stubs';
+import { continueToEnd } from './debug-inspect-kit';
 
 suite(
   'Debug an MTP test — the Test Explorer Debug profile on a Microsoft.Testing.Platform module',
@@ -60,21 +53,11 @@ suite(
       ({ fixture, recorder, sessions, stubs } = harness());
     });
 
-    /** Discover the MTP fixture and return the tree row for `fqn`. */
-    async function rowFor(fqn: string): Promise<vscode.TestItem> {
-      const api = await activateTestExplorer();
-      const discovered = await discoverSolution(api, fixture.solutionPath, CS_ALL);
-      assert.ok(discovered.includes(fqn), `${fqn} must be discovered: ${discovered.join(', ')}`);
-      const item = findItem(api.testController.items, fqn);
-      assert.ok(item, `the TestItem for ${fqn} must exist`);
-      return item;
-    }
-
     test('the Debug profile attaches to the waiting MODULE and stops inside the test body', async function () {
       this.timeout(DEBUG_TEST_MS);
 
       // 1. Arm a breakpoint inside the test method and press Debug on its row.
-      const item = await rowFor(CS_ADDS);
+      const item = await debuggableRow(fixture, CS_ALL, CS_ADDS);
       const api = await activateTestExplorer();
       const cachedBefore = api.testController.getResult(CS_ADDS);
       vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-call')]);
@@ -98,16 +81,8 @@ suite(
 
       // 3. The breakpoint BOUND and the module stopped on it, in the test, with
       //    the test's own state readable.
-      const stop = await firstBreakpointStop(recorder, CS_SOURCE, 'adds-call');
-      const active = requireActive('a breakpoint stop in an MTP module');
-      const frame = await topFrame(active, stop.threadId);
+      const { active, frame } = await stopInTestSource(recorder, fixture, CS_SOURCE, 'adds-call');
       eq(methodOf(frame), 'Adds_Two_Numbers', `stopped in '${frame.name}', not in the test`);
-      eq(frame.line, CS_SOURCE.dapLine('adds-call'), 'on the armed line');
-      eq(
-        comparablePath(frame.sourcePath),
-        comparablePath(fixture.sourceFile),
-        'in the user’s file',
-      );
       eq(
         variableNamed(await localsOf(active, frame.id), 'seed').value,
         '20',
@@ -115,10 +90,8 @@ suite(
       );
 
       // 4. Continue: the module runs the test to the end and the session ends.
-      await gesture(CMD_CONTINUE);
-      await recorder.waitForEvents('terminated', 1);
+      await continueToEnd(recorder, 'and no adapter transport error');
       deepEq(stubs.log.errorMessages, [], 'a working MTP debug run reports no error');
-      deepEq(recorder.errors, [], 'and no adapter transport error');
 
       // 5. The user's breakpoint was the first stop AND the only one: no wait loop
       //    or runner frame stopped the module on its own.
@@ -132,7 +105,7 @@ suite(
     test('an MTP debug run writes no result, and ▶ afterwards still reports the real one', async function () {
       this.timeout(DEBUG_TEST_MS);
       const api = await activateTestExplorer();
-      const item = await rowFor(CS_FAILS);
+      const item = await debuggableRow(fixture, CS_ALL, CS_FAILS);
       const before = api.testController.getResult(CS_FAILS);
 
       // 1. Debug a FAILING test with nothing armed: a session starts, the module

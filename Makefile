@@ -278,7 +278,7 @@ _build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
 	@$(MAKE) _verify-staged-vsix-payload
-	cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
+	cd $(VSCODE_DIR) && SHARPLSP_VSIX_STAGED=1 SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
 		--target $(HOST_PLATFORM) -o ../../../$(DEV_VSIX)
 	rm -rf $(VSCODE_DIR)/bin
 
@@ -309,20 +309,23 @@ _rebuild-vsix-binaries:
 	$(MAKE) _build-rust
 	$(MAKE) _build-dotnet
 	$(DOTNET) test $(SIDECAR_CS).Tests/SharpLsp.Sidecar.CSharp.Tests.csproj --configuration $(DOTNET_CFG) --filter FullyQualifiedName~Repo_pinned_sdk_ships_exactly_the_bundled_roslyn
-	bash tools/vsix/build-netcoredbg.sh $(VSIX_PLAT) --rebuild
 
 # [DIST-VSIX-REBUILD] Ordered sub-makes keep clean/build/copy sequential under
 # make -j. This is the DEFAULT path: a local tree's incremental Rust and sidecar
 # output is exactly what makes a VSIX test pass against a binary that no longer
 # matches the source (#279), so nothing here trusts what is already on disk.
-_stage-vsix-binary: _rebuild-vsix-binaries
+# SHARPLSP_VSIX_STAGED is set only by the recipes below that run `vsce package`
+# straight after rebuilding: vsce's `vscode:prepublish` re-enters this target,
+# and without it every VSIX build compiled the host and both sidecars twice. A
+# bare `vsce package` or `npm test` never sets it, so those still rebuild.
+_stage-vsix-binary: $(if $(SHARPLSP_VSIX_STAGED),,_rebuild-vsix-binaries)
 	@$(MAKE) _copy-vsix-binaries
 
 # [DIST-CI-VSIX-SHARDS] Staging what is already on disk, WITHOUT rebuilding.
 # The staleness #279 describes is a property of an incremental local tree, not
 # of a CI artifact: the binaries a shard downloads were built by the `build` job
-# of THIS run from THIS commit, so they cannot be stale. Rebuilding Rust, both
-# sidecars and netcoredbg once per shard would multiply that work by the matrix
+# of THIS run from THIS commit, so they cannot be stale. Rebuilding Rust and both
+# sidecars once per shard would multiply that work by the matrix
 # width and add hours to every PR, which is why CI - and only CI, by setting
 # VSIX_PREBUILT - takes this path.
 _stage-vsix-binary-only:
@@ -949,7 +952,7 @@ _package-vsix: _stage-vsix-binary
 	# vsce/ovsx refuse to PUBLISH with --pre-release unless the VSIX was also
 	# PACKAGED with --pre-release (it sets preRelease=true in the embedded
 	# manifest). A hyphenated SemVer VERSION (e.g. 0.2.0-rc.1) is a prerelease.
-	cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
+	cd $(VSCODE_DIR) && SHARPLSP_VSIX_STAGED=1 SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
 		$(if $(findstring -,$(VERSION)),--pre-release,) \
 		--target $(VSIX_PLAT) \
 		-o ../../../dist/sharplsp-$(VSIX_PLAT).vsix
@@ -1047,17 +1050,35 @@ _deploy-sidecars:
 # existed for months, silently uninstalling nothing. [DIST-VSIX-DEV-INSTALL]
 EXTENSION_ID = $(shell node -e "const p=require('./$(VSCODE_DIR)/package.json');process.stdout.write(p.publisher+'.'+p.name)")
 
-# Resolve the VS Code CLI into $$code_cli, or fail loudly. Windows runs these
-# recipes under Git Bash, where `code` is a .cmd shim that may not be on PATH, so
-# probe the default per-user and machine-wide install locations too. Override the
-# whole probe with CODE=/path/to/code. [DIST-VSIX-DEV-INSTALL]
+# The per-OS half of the install loop: where the VS Code CLI lives, and how stale
+# servers die. Everything else in the loop is shared. [DIST-VSIX-DEV-INSTALL]
+# One candidate list for every OS: probing a candidate that does not exist on
+# this platform is a silent `command -v` miss, and the reinstall-loop contract
+# (`code` AND the Git Bash `code.cmd` shim are probed, plus the default
+# per-user, machine-wide and macOS app locations) holds everywhere.
+CODE_CANDIDATES = code code.cmd \
+	"$$LOCALAPPDATA/Programs/Microsoft VS Code/bin/code.cmd" \
+	"/c/Program Files/Microsoft VS Code/bin/code.cmd" \
+	"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+ifeq ($(DETECTED_OS),windows)
+# Git Bash ships no pkill, so kill by image name: the installed VSIX names its
+# sidecars `sharplsp-sidecar-*`, a local build `SharpLsp.Sidecar.*`. A survivor
+# locks its own .exe and fails the clean after it.
+KILL_SHARPLSP = for image in sharplsp.exe \
+	sharplsp-sidecar-csharp.exe sharplsp-sidecar-fsharp.exe \
+	SharpLsp.Sidecar.CSharp.exe SharpLsp.Sidecar.FSharp.exe; do \
+	taskkill //F //T //IM "$$image" >/dev/null 2>&1 || true; done
+else
+KILL_SHARPLSP = pkill -9 -f 'sharplsp' 2>/dev/null || true; \
+	pkill -9 -f 'SharpLsp\.Sidecar\.' 2>/dev/null || true
+endif
+
+# Resolve the VS Code CLI into $$code_cli, or fail loudly. Override the whole
+# probe with CODE=/path/to/code. [DIST-VSIX-DEV-INSTALL]
 RESOLVE_CODE = \
 	code_cli="$(CODE)"; \
 	if [ -z "$$code_cli" ]; then \
-		for candidate in code code.cmd \
-			"$$LOCALAPPDATA/Programs/Microsoft VS Code/bin/code.cmd" \
-			"/c/Program Files/Microsoft VS Code/bin/code.cmd" \
-			"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"; do \
+		for candidate in $(CODE_CANDIDATES); do \
 			if command -v "$$candidate" >/dev/null 2>&1; then code_cli="$$candidate"; break; fi; \
 		done; \
 	fi; \
@@ -1117,8 +1138,7 @@ _install-sidecars: _build-dotnet _kill _deploy-sidecars
 
 _kill:
 	@echo "==> Killing stale sharplsp processes..."
-	-@pkill -9 -f 'sharplsp' 2>/dev/null || true
-	-@pkill -9 -f 'SharpLsp\.Sidecar\.' 2>/dev/null || true
+	-@$(KILL_SHARPLSP)
 	@sleep 0.5
 
 # ── Clean ─────────────────────────────────────────────────────────

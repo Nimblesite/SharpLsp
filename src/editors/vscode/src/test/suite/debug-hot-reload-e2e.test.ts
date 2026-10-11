@@ -21,9 +21,9 @@ import {
   startDebuggee,
   useDebuggee,
   runToFirstStop,
+  debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, requireAt, sleep } from './test-helpers';
-import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** Long enough for a save to reach Roslyn, produce deltas, and be applied. */
 const RELOAD_SETTLE_MS = 8_000;
@@ -65,174 +65,177 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
 
   // Implements [DEBUG-FEATURES-HOT-RELOAD] "Method body change | Yes" and
   // architecture steps 1–4.
-  test('a method-body edit is applied to the LIVE session, without restarting it', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder, sessions } = debuggee();
+  debugTest(
+    'a method-body edit is applied to the LIVE session, without restarting it',
+    debuggee,
+    async ({ fixture, recorder, sessions }) => {
+      // Interaction 1 — pause before the method under edit is ever called.
+      armBreakpoints(fixture, 'accumulate-entry');
+      const session = await startDebuggee(debuggee(), {
+        mode: MODE.plain,
+        extra: { hotReload: true },
+      });
+      eq(
+        session.configuration['hotReload'],
+        true,
+        '[DEBUG-FEATURES-LAUNCH] lists "Hot Reload enabled launch | launch (hotReload: true)" and ' +
+          '[DEBUG-FEATURES-LAUNCH-OUTPUT] rule 3 puts `hotReload` in the declared launch schema',
+      );
+      const [stop] = await recorder.waitForStops(1);
+      assert.ok(stop, 'the debuggee must pause before the loop runs');
+      assertStoppedAt(
+        await topFrame(session, stop.threadId),
+        fixture,
+        'accumulate-entry',
+        'Accumulate',
+        'the pause before the edit',
+      );
 
-    // Interaction 1 — pause before the method under edit is ever called.
-    armBreakpoints(fixture, 'accumulate-entry');
-    const session = await startDebuggee(debuggee(), {
-      mode: MODE.plain,
-      extra: { hotReload: true },
-    });
-    eq(
-      session.configuration['hotReload'],
-      true,
-      '[DEBUG-FEATURES-LAUNCH] lists "Hot Reload enabled launch | launch (hotReload: true)" and ' +
-        '[DEBUG-FEATURES-LAUNCH-OUTPUT] rule 3 puts `hotReload` in the declared launch schema',
-    );
-    const [stop] = await recorder.waitForStops(1);
-    assert.ok(stop, 'the debuggee must pause before the loop runs');
-    assertStoppedAt(
-      await topFrame(session, stop.threadId),
-      fixture,
-      'accumulate-entry',
-      'Accumulate',
-      'the pause before the edit',
-    );
+      // Interaction 2 — edit the method body and save.
+      await rewriteLine(
+        fixture,
+        'add-body',
+        '        var sum = left + right + 100;                                  // @anchor:add-body',
+      );
+      await sleep(RELOAD_SETTLE_MS);
 
-    // Interaction 2 — edit the method body and save.
-    await rewriteLine(
-      fixture,
-      'add-body',
-      '        var sum = left + right + 100;                                  // @anchor:add-body',
-    );
-    await sleep(RELOAD_SETTLE_MS);
+      // Interaction 3 — the SESSION must have survived the edit intact.
+      eq(
+        vscode.debug.activeDebugSession?.id,
+        session.id,
+        'architecture step 4: "Subsequent calls use the new IL WITHOUT INTERRUPTING THE SESSION". ' +
+          'A new session id means the debuggee was restarted and the user lost their state',
+      );
+      deepEq(
+        recorder.events('terminated').map((event) => event.body),
+        [],
+        'no `terminated` event may be sent for a supported edit',
+      );
+      eq(sessions.ours.length, 1, 'exactly one session has existed across the edit');
 
-    // Interaction 3 — the SESSION must have survived the edit intact.
-    eq(
-      vscode.debug.activeDebugSession?.id,
-      session.id,
-      'architecture step 4: "Subsequent calls use the new IL WITHOUT INTERRUPTING THE SESSION". ' +
-        'A new session id means the debuggee was restarted and the user lost their state',
-    );
-    deepEq(
-      recorder.events('terminated').map((event) => event.body),
-      [],
-      'no `terminated` event may be sent for a supported edit',
-    );
-    eq(sessions.ours.length, 1, 'exactly one session has existed across the edit');
-
-    // Interaction 4 — continue: the NEW IL must be what runs.
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'a hot-reloaded session');
-    const output = recorder.outputText();
-    assert.ok(
-      output.includes('total=308'),
-      'the reloaded body adds 100 per iteration: 2 -> 103 -> 205 -> 308. ' +
-        `Output seen: ${JSON.stringify(output)}`,
-    );
-    assert.ok(
-      !output.includes('total=8'),
-      'the ORIGINAL IL must not have run: an edit that is accepted and then ignored is worse ' +
-        'than one that is refused, because nothing tells the user their change did not apply',
-    );
-  });
+      // Interaction 4 — continue: the NEW IL must be what runs.
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'a hot-reloaded session');
+      const output = recorder.outputText();
+      assert.ok(
+        output.includes('total=308'),
+        'the reloaded body adds 100 per iteration: 2 -> 103 -> 205 -> 308. ' +
+          `Output seen: ${JSON.stringify(output)}`,
+      );
+      assert.ok(
+        !output.includes('total=8'),
+        'the ORIGINAL IL must not have run: an edit that is accepted and then ignored is worse ' +
+          'than one that is refused, because nothing tells the user their change did not apply',
+      );
+    },
+  );
 
   // Implements [DEBUG-FEATURES-HOT-RELOAD] "Add new method to existing type |
   // Yes (.NET 8+)" and "Add new static field | Yes (.NET 8+)".
-  test('a new method added to an existing type is reachable from reloaded code', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder } = debuggee();
+  debugTest(
+    'a new method added to an existing type is reachable from reloaded code',
+    debuggee,
+    async ({ fixture, recorder }) => {
+      // Interaction 1 — pause before the type is used.
+      const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
+        mode: MODE.plain,
+        extra: { hotReload: true },
+      });
 
-    // Interaction 1 — pause before the type is used.
-    const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
-      mode: MODE.plain,
-      extra: { hotReload: true },
-    });
+      // Interaction 2 — add a method to the existing type, and call it.
+      await rewriteLine(
+        fixture,
+        'total-field',
+        '    public static int Total; public static int Bump(int value) => value + 1000; // @anchor:total-field',
+      );
+      await rewriteLine(
+        fixture,
+        'add-body',
+        '        var sum = Bump(left + right);                                  // @anchor:add-body',
+      );
+      await sleep(RELOAD_SETTLE_MS);
 
-    // Interaction 2 — add a method to the existing type, and call it.
-    await rewriteLine(
-      fixture,
-      'total-field',
-      '    public static int Total; public static int Bump(int value) => value + 1000; // @anchor:total-field',
-    );
-    await rewriteLine(
-      fixture,
-      'add-body',
-      '        var sum = Bump(left + right);                                  // @anchor:add-body',
-    );
-    await sleep(RELOAD_SETTLE_MS);
+      // Interaction 3 — the session must still be the same one.
+      eq(
+        vscode.debug.activeDebugSession?.id,
+        session.id,
+        '"Add new method to existing type" is a SUPPORTED edit on .NET 8+, so it must not force ' +
+          'a restart',
+      );
+      deepEq(
+        refusalsOf(debuggee().stubs),
+        [],
+        'a supported edit must not warn the user about anything',
+      );
 
-    // Interaction 3 — the session must still be the same one.
-    eq(
-      vscode.debug.activeDebugSession?.id,
-      session.id,
-      '"Add new method to existing type" is a SUPPORTED edit on .NET 8+, so it must not force ' +
-        'a restart',
-    );
-    deepEq(
-      refusalsOf(debuggee().stubs),
-      [],
-      'a supported edit must not warn the user about anything',
-    );
-
-    // Interaction 4 — continue: the new method must be the one that runs.
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'a session with a newly added method');
-    assert.ok(
-      recorder.outputText().includes('total=3008'),
-      'the new method adds 1000 per iteration: 2 -> 1003 -> 2005 -> 3008. ' +
-        `Output seen: ${JSON.stringify(recorder.outputText())}`,
-    );
-  });
+      // Interaction 4 — continue: the new method must be the one that runs.
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'a session with a newly added method');
+      assert.ok(
+        recorder.outputText().includes('total=3008'),
+        'the new method adds 1000 per iteration: 2 -> 1003 -> 2005 -> 3008. ' +
+          `Output seen: ${JSON.stringify(recorder.outputText())}`,
+      );
+    },
+  );
 
   // Implements [DEBUG-FEATURES-HOT-RELOAD] architecture step 5 and the
   // "Change method signature | No — requires restart" row.
-  test('a rude edit is refused with a named reason and a restart prompt', async function () {
-    this.timeout(DEBUG_TEST_MS);
-    const { fixture, recorder, stubs, sessions } = debuggee();
+  debugTest(
+    'a rude edit is refused with a named reason and a restart prompt',
+    debuggee,
+    async ({ fixture, recorder, stubs, sessions }) => {
+      // Interaction 1 — pause.
+      const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
+        mode: MODE.plain,
+        extra: { hotReload: true },
+      });
+      deepEq(refusalsOf(debuggee().stubs), [], 'nothing has been reported before the edit');
 
-    // Interaction 1 — pause.
-    const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
-      mode: MODE.plain,
-      extra: { hotReload: true },
-    });
-    deepEq(refusalsOf(debuggee().stubs), [], 'nothing has been reported before the edit');
+      // Interaction 2 — change the method's SIGNATURE. The call site still
+      // compiles (int widens to long), so this is a rude EDIT, not a build break.
+      await rewriteLine(
+        fixture,
+        'add-signature',
+        '    public static int Add(long left, int right)                        // @anchor:add-signature',
+      );
+      await rewriteLine(
+        fixture,
+        'add-body',
+        '        var sum = (int)(left + right);                                 // @anchor:add-body',
+      );
+      await sleep(RELOAD_SETTLE_MS);
 
-    // Interaction 2 — change the method's SIGNATURE. The call site still
-    // compiles (int widens to long), so this is a rude EDIT, not a build break.
-    await rewriteLine(
-      fixture,
-      'add-signature',
-      '    public static int Add(long left, int right)                        // @anchor:add-signature',
-    );
-    await rewriteLine(
-      fixture,
-      'add-body',
-      '        var sum = (int)(left + right);                                 // @anchor:add-body',
-    );
-    await sleep(RELOAD_SETTLE_MS);
+      // Interaction 3 — exactly one message, and it must say what to do.
+      const reported = refusalsOf(debuggee().stubs);
+      eq(
+        reported.length,
+        1,
+        'architecture step 5: "Unsupported rude edits report the reason and prompt a restart". ' +
+          'Silence is the defect — the user keeps debugging IL that no longer matches the source ' +
+          `they are reading. Messages seen: ${JSON.stringify(reported)}`,
+      );
+      const message = requireAt(reported, 0, 'the rude-edit message');
+      assert.ok(
+        message.toLowerCase().includes('restart'),
+        `the message must prompt a restart, per step 5; it said: '${message}'`,
+      );
+      deepEq(stubs.log.infoMessages, [], 'a refused edit is not an informational notice');
 
-    // Interaction 3 — exactly one message, and it must say what to do.
-    const reported = refusalsOf(debuggee().stubs);
-    eq(
-      reported.length,
-      1,
-      'architecture step 5: "Unsupported rude edits report the reason and prompt a restart". ' +
-        'Silence is the defect — the user keeps debugging IL that no longer matches the source ' +
-        `they are reading. Messages seen: ${JSON.stringify(reported)}`,
-    );
-    const message = requireAt(reported, 0, 'the rude-edit message');
-    assert.ok(
-      message.toLowerCase().includes('restart'),
-      `the message must prompt a restart, per step 5; it said: '${message}'`,
-    );
-    deepEq(stubs.log.infoMessages, [], 'a refused edit is not an informational notice');
-
-    // Interaction 4 — the session must SURVIVE the refusal.
-    eq(
-      vscode.debug.activeDebugSession?.id,
-      session.id,
-      'a rude edit is refused, not fatal: killing the session on a rude edit throws away the ' +
-        'state the user was inspecting without them ever choosing to restart',
-    );
-    eq(sessions.ours.length, 1, 'and no second session was started behind their back');
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'a session after a refused rude edit');
-    assert.ok(
-      recorder.outputText().includes('total=8'),
-      'a refused edit leaves the ORIGINAL IL running, so the original result must appear',
-    );
-  });
+      // Interaction 4 — the session must SURVIVE the refusal.
+      eq(
+        vscode.debug.activeDebugSession?.id,
+        session.id,
+        'a rude edit is refused, not fatal: killing the session on a rude edit throws away the ' +
+          'state the user was inspecting without them ever choosing to restart',
+      );
+      eq(sessions.ours.length, 1, 'and no second session was started behind their back');
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'a session after a refused rude edit');
+      assert.ok(
+        recorder.outputText().includes('total=8'),
+        'a refused edit leaves the ORIGINAL IL running, so the original result must appear',
+      );
+    },
+  );
 });

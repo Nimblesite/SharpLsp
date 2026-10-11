@@ -216,3 +216,65 @@ fn test_workspace_symbols_resolves_a_project_or_a_folder_without_a_solution() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+/// A console app written as top-level statements, as `dotnet new console` makes it.
+const TOP_LEVEL_SOURCE: &str = "using System;\n\
+\n\
+Console.WriteLine(Greet(\"world\"));\n\
+\n\
+static string Greet(string name) => $\"Hello {name}\";\n";
+
+#[test]
+fn test_workspace_symbols_lists_top_level_statements_as_the_program_class() {
+    // Implements [SE-TREE]: a file of top-level statements declares no type, but the
+    // compiler compiles it into the global-namespace `Program` class, so the tree
+    // shows `Program` rather than dropping the project's only code.
+    require_dotnet();
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        "TopLevel/TopLevel.csproj",
+        &format!("{SDK}</Project>"),
+    );
+    write(tmp.path(), "TopLevel/Program.cs", TOP_LEVEL_SOURCE);
+    write(
+        tmp.path(),
+        "TopLevel/Helper.cs",
+        "namespace TopLevel;\ninternal static class Helper { }\n",
+    );
+    write(
+        tmp.path(),
+        "TopLevel.slnx",
+        r#"<Solution><Project Path="TopLevel/TopLevel.csproj" /></Solution>"#,
+    );
+    let sln = tmp.path().canonicalize().unwrap().join("TopLevel.slnx");
+    let mut client = LspClient::start_verbose();
+    initialize_workspace_symbols_client(&mut client, &tmp);
+
+    let projects = resolve(&mut client, &sln.to_string_lossy(), "TopLevel");
+    let symbols = project_symbols(&projects, "TopLevel");
+    let program = symbols
+        .iter()
+        .find(|symbol| symbol["name"] == "Program")
+        .unwrap_or_else(|| panic!("Program must be a top-level node: {symbols:?}"));
+    assert_eq!(program["kind"], "Class", "{program}");
+    assert_eq!(
+        start_line(program, "range"),
+        2,
+        "starts at the first statement: {program}"
+    );
+    assert_eq!(start_line(program, "selectionRange"), 2, "{program}");
+    assert_eq!(
+        program["range"]["end"]["line"], 4,
+        "ends at the last statement: {program}"
+    );
+
+    // The file-scoped namespace in the other file keeps its own type.
+    let namespace = find_named(&symbols, "TopLevel").expect("namespace must be listed");
+    assert_eq!(namespace["kind"], "Namespace", "{namespace}");
+    assert!(find_named(namespace["children"].as_array().unwrap(), "Helper").is_some());
+    assert!(find_named(namespace["children"].as_array().unwrap(), "Program").is_none());
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}

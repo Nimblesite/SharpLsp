@@ -18,7 +18,11 @@ use super::{cli, consolidate, edit, parse, search, targets, types, unused};
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/targets");
     let params: types::TargetsParams = serde_json::from_value(req.params)?;
-    let response = targets::enumerate_targets(&params.workspace_root)?;
+    let response = if params.solution_projects.is_empty() {
+        targets::enumerate_targets(&params.workspace_root)?
+    } else {
+        targets::enumerate_solution_targets(&params.workspace_root, &params.solution_projects)?
+    };
     Ok(serde_json::to_value(response)?)
 }
 

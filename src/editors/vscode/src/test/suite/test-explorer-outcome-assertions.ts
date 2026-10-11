@@ -41,12 +41,21 @@ export function itemsFor(api: SharpLspExtensionApi, ids: readonly string[]): vsc
   });
 }
 
+/** Press the `kind` profile on the rows of `ids`, as the Testing view does. */
+export async function runIds(
+  api: SharpLspExtensionApi,
+  kind: vscode.TestRunProfileKind,
+  ids: readonly string[],
+): Promise<void> {
+  await runViaProfile(api.testController, kind, itemsFor(api, ids));
+}
+
 /** ▶ on `ids` exactly as the Testing view's Run button does, then settle. */
 export async function runAndSettle(
   api: SharpLspExtensionApi,
   ids: readonly string[],
 ): Promise<void> {
-  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, ids));
+  await runIds(api, vscode.TestRunProfileKind.Run, ids);
   await api.testController.whenIdle();
 }
 
@@ -184,4 +193,15 @@ export function assertEveryOutcome(api: SharpLspExtensionApi, groups: OutcomeGro
   for (const id of groups.passing) assertPassed(cachedFor(api, id), id);
   for (const id of groups.failing) assertFailed(cachedFor(api, id), id);
   for (const id of groups.skipped) assertSkipped(cachedFor(api, id), id);
+}
+
+/**
+ * `map(input)` is exactly `expected` on every row, each row failing with its
+ * own reason — the table form of a run of `assert.strictEqual(map(x), …)`.
+ */
+export function assertMapsEach<I, O>(
+  map: (input: I) => O,
+  rows: readonly (readonly [input: I, expected: O, why: string])[],
+): void {
+  for (const [input, expected, why] of rows) assert.strictEqual(map(input), expected, why);
 }

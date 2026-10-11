@@ -43,18 +43,16 @@ import {
   useDebugTestFixture,
   firstBreakpointStop,
   caretInSource,
+  debuggableRow,
+  stopInTestSource,
 } from './debug-test-harness';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
-import {
-  activateTestExplorer,
-  discoverSolution,
-  findItem,
-  runViaProfile,
-} from './test-explorer-kit';
+import { activateTestExplorer, runViaProfile } from './test-explorer-kit';
 import { assertPassed, cachedFor } from './test-explorer-outcome-assertions';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
 import { type UiStubs } from './ui-stubs';
+import { continueToEnd } from './debug-inspect-kit';
 
 suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor gesture', () => {
   let fixture: TestDebugFixture;
@@ -67,22 +65,12 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     ({ fixture, recorder, sessions, stubs } = harness());
   });
 
-  /** Discover the F# MTP fixture and return the tree row for `fqn`. */
-  async function rowFor(fqn: string): Promise<vscode.TestItem> {
-    const api = await activateTestExplorer();
-    const discovered = await discoverSolution(api, fixture.solutionPath, FS_ALL);
-    assert.ok(discovered.includes(fqn), `${fqn} must be discovered: ${discovered.join(', ')}`);
-    const item = findItem(api.testController.items, fqn);
-    assert.ok(item, `the TestItem for ${fqn} must exist`);
-    return item;
-  }
-
   test('an F# backtick test on MTP attaches to the module and breaks in its body', async function () {
     this.timeout(DEBUG_TEST_MS);
 
     // 1. The spaced id reaches the tree verbatim, from the module's own listing
     //    — which, unlike VSTest's, carries the binding's location.
-    const item = await rowFor(FS_SPACED);
+    const item = await debuggableRow(fixture, FS_ALL, FS_SPACED);
     eq(item.id, FS_SPACED, 'the tree carries the spaced id verbatim');
     eq(item.label, 'adds two numbers with spaces', 'labelled with the backtick binding');
     eq(item.children.size, 0, 'a module-level binding is a leaf');
@@ -102,20 +90,14 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     assertHandshakeOrder(recorder, 'debugging an F# MTP test');
     // 3. It stops IN the F# binding, with its `let` bindings readable and the
     //    watch window evaluating in the F# frame.
-    const stop = await firstBreakpointStop(recorder, FS_SOURCE, 'fs-call');
-    const active = requireActive('an F# MTP breakpoint stop');
-    const frame = await topFrame(active, stop.threadId);
-    eq(frame.line, FS_SOURCE.dapLine('fs-call'), 'on the armed line of the .fs file');
-    eq(comparablePath(frame.sourcePath), comparablePath(fixture.sourceFile), 'in Tests.fs');
+    const { active, frame } = await stopInTestSource(recorder, fixture, FS_SOURCE, 'fs-call');
     eq(variableNamed(await localsOf(active, frame.id), 'seed').value, '20', 'an F# local');
     eq((await evaluate(active, 'seed', frame.id, 'watch')).value, '20', 'and a watch on it');
 
     // 4. Continue: the module runs to the end, ONE stop, no error, and a debug
     //    run writes no result ([TEST-MTP-DEBUG]).
-    await gesture(CMD_CONTINUE);
-    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    await continueToEnd(recorder, 'no adapter transport error');
     eq(recorder.stops().length, 1, 'one stop, on the armed line');
-    deepEq(recorder.errors, [], 'no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'a working F# MTP debug run reports no error');
     await api.testController.whenIdle();
     deepEq(api.testController.getResult(FS_SPACED), cachedBefore, 'the cache is untouched');
@@ -125,7 +107,7 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     this.timeout(DEBUG_TEST_MS);
 
     // 1. ONE row in the tree for both uids, qualified by the F# module.
-    const item = await rowFor(FS_ROWS);
+    const item = await debuggableRow(fixture, FS_ALL, FS_ROWS);
     eq(item.id, FS_ROWS, 'one id for both rows');
     assert.ok(item.id.startsWith(`${FS_MODULE}.`), 'qualified by the F# module');
     eq(item.children.size, 0, 'a theory is ONE leaf, however many rows it runs');
@@ -168,7 +150,7 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     this.timeout(DEBUG_TEST_MS);
 
     // 1. The caret sits in the spaced binding of the MTP module's source.
-    await rowFor(FS_SPACED);
+    await debuggableRow(fixture, FS_ALL, FS_SPACED);
     await caretInSource(fixture, FS_SOURCE, 'fs-call', 'fsharp');
 
     // 2. Arm and fire the at-cursor command: the same attach the tree makes.

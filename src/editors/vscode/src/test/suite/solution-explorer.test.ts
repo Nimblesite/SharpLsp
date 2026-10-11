@@ -22,6 +22,7 @@ import {
   treeContains,
   writeOneProjectSolution,
   csprojText,
+  pollTreeFor,
 } from './explorer-kit';
 import { assertReachableCommand, commandEntries } from './extension-manifest-kit';
 import { assertSymbolShape, assertSymbolTree, childNamed } from './lsp-invariants-kit';
@@ -161,65 +162,41 @@ suite('Solution Explorer & Workspace Symbols', () => {
 
   // ── Command Registration ─────────────────────────────────────
 
-  test('sharplsp.selectSolution command is registered', async () => {
-    // Interaction 1 - reachable: registered, declared once, titled, categorised.
-    const allCommands = await vscode.commands.getCommands(true);
-    assert.ok(
-      allCommands.includes('sharplsp.selectSolution'),
-      'sharplsp.selectSolution should be registered',
-    );
-    const entry = assertReachableCommand('sharplsp.selectSolution', allCommands);
+  // [SE-COMMANDS] marks both "Always" and gives each a title and a toolbar
+  // codicon. A command with no icon cannot appear in the view's title bar at
+  // all — the only place a user goes looking for "open a different solution",
+  // and Refresh is the manual escape hatch when reactivity has not caught up.
+  const ALWAYS_IN_TITLE_BAR = [
+    { id: 'sharplsp.selectSolution', title: 'Select Solution', icon: '$(folder-opened)' },
+    { id: 'sharplsp.refreshExplorer', title: 'Refresh Explorer', icon: '$(refresh)' },
+  ] as const;
 
-    // Interaction 2 - [SE-COMMANDS] gives it a title and a toolbar icon. A
-    // command with no icon cannot appear in the view's title bar at all, which
-    // is the only place a user goes looking for "open a different solution".
-    assert.strictEqual(entry.title, 'Select Solution', 'the spec fixes the title');
-    const icon: unknown = (entry as { icon?: unknown }).icon;
-    assert.strictEqual(icon, '$(folder-opened)', 'and the folder-opened codicon');
-    assert.strictEqual(entry.category, 'SharpLsp', 'under the SharpLsp category');
+  for (const { id, title, icon } of ALWAYS_IN_TITLE_BAR) {
+    test(`${id} command is registered`, async () => {
+      // Interaction 1 - reachable: registered, declared once, titled, categorised.
+      const allCommands = await vscode.commands.getCommands(true);
+      assert.ok(allCommands.includes(id), `${id} should be registered`);
+      const entry = assertReachableCommand(id, allCommands);
 
-    // Interaction 3 - it is placed in the Solution Explorer's title bar, and
-    // unconditionally: [SE-COMMANDS] marks it "Always".
-    const placements = viewTitleMenu().filter((item) => item.command === 'sharplsp.selectSolution');
-    assert.strictEqual(placements.length, 1, 'placed in view/title exactly once');
-    assert.ok(
-      (placements[0]?.when ?? '').includes('sharplsp.solutionExplorer'),
-      `scoped to the Solution Explorer view; got: ${String(placements[0]?.when)}`,
-    );
-    assert.ok(
-      !(placements[0]?.when ?? '').includes('sortOrder'),
-      'and never gated on the sort mode - it is always available',
-    );
-  });
+      // Interaction 2 - the spec's title and codicon, under the SharpLsp category.
+      assert.strictEqual(entry.title, title, 'the spec fixes the title');
+      assert.strictEqual((entry as { icon?: unknown }).icon, icon, `and the ${icon} codicon`);
+      assert.strictEqual(entry.category, 'SharpLsp', 'under the SharpLsp category');
 
-  test('sharplsp.refreshExplorer command is registered', async () => {
-    // Interaction 1 - reachable from the palette and the manifest alike.
-    const allCommands = await vscode.commands.getCommands(true);
-    assert.ok(
-      allCommands.includes('sharplsp.refreshExplorer'),
-      'sharplsp.refreshExplorer should be registered',
-    );
-    const entry = assertReachableCommand('sharplsp.refreshExplorer', allCommands);
-
-    // Interaction 2 - [SE-COMMANDS]: "Refresh Explorer", with the refresh
-    // codicon. Refresh is the user's manual escape hatch when reactivity has
-    // not caught up, so it has to be visible without opening the palette.
-    assert.strictEqual(entry.title, 'Refresh Explorer', 'the spec fixes the title');
-    assert.strictEqual((entry as { icon?: unknown }).icon, '$(refresh)', 'and the refresh codicon');
-    assert.strictEqual(entry.category, 'SharpLsp', 'under the SharpLsp category');
-
-    // Interaction 3 - it sits in the view title bar, always, next to Select
-    // Solution rather than behind a sort-mode condition.
-    const placements = viewTitleMenu().filter(
-      (item) => item.command === 'sharplsp.refreshExplorer',
-    );
-    assert.strictEqual(placements.length, 1, 'placed in view/title exactly once');
-    assert.ok(
-      (placements[0]?.when ?? '').includes('sharplsp.solutionExplorer'),
-      'scoped to the Solution Explorer view',
-    );
-    assert.ok(!(placements[0]?.when ?? '').includes('sortOrder'), 'and is always available');
-  });
+      // Interaction 3 - placed in the Solution Explorer's title bar, and
+      // unconditionally: never gated on the sort mode.
+      const placements = viewTitleMenu().filter((item) => item.command === id);
+      assert.strictEqual(placements.length, 1, 'placed in view/title exactly once');
+      assert.ok(
+        (placements[0]?.when ?? '').includes('sharplsp.solutionExplorer'),
+        `scoped to the Solution Explorer view; got: ${String(placements[0]?.when)}`,
+      );
+      assert.ok(
+        !(placements[0]?.when ?? '').includes('sortOrder'),
+        'and never gated on the sort mode - it is always available',
+      );
+    });
+  }
 
   for (const cmd of SORT_COMMANDS) {
     test(`${cmd} command is registered`, async function () {
@@ -1211,11 +1188,7 @@ EndGlobal`,
     // Load solution — tree should show "DiskVersion".
     await provider.loadSolution(slnPath);
 
-    const hasDisk = await pollUntilResult(
-      async () => treeContains(provider.getChildren(), 'DiskVersion'),
-      (found) => found,
-      5_000,
-    );
+    const hasDisk = await pollTreeFor(provider, 'DiskVersion');
     assert.ok(hasDisk, "Tree must show 'DiskVersion' initially");
 
     // Edit the buffer WITHOUT saving — rename to "BufferVersion".
@@ -1229,11 +1202,7 @@ EndGlobal`,
     await provider.refresh();
 
     // Give a moment for the tree to rebuild from the signal.
-    const hasBuffer = await pollUntilResult(
-      async () => treeContains(provider.getChildren(), 'BufferVersion'),
-      (found) => found,
-      5_000,
-    );
+    const hasBuffer = await pollTreeFor(provider, 'BufferVersion');
 
     provider.clear();
 
@@ -1273,11 +1242,7 @@ EndGlobal`,
     // After all edits, explicitly refresh and check the FINAL state.
     await provider.refresh();
 
-    const hasFinal = await pollUntilResult(
-      async () => treeContains(provider.getChildren(), 'Step3'),
-      (found) => found,
-      5_000,
-    );
+    const hasFinal = await pollTreeFor(provider, 'Step3');
 
     provider.clear();
 
@@ -1310,11 +1275,7 @@ EndGlobal`,
     // Load solution into tree and verify "Alpha" appears.
     await provider.loadSolution(slnPath);
 
-    const hasAlpha = await pollUntilResult(
-      async () => treeContains(provider.getChildren(), 'Alpha'),
-      (found) => found,
-      5_000,
-    );
+    const hasAlpha = await pollTreeFor(provider, 'Alpha');
     assert.ok(hasAlpha, "Tree must show 'Alpha' before rename");
 
     assert.ok(
@@ -1333,11 +1294,7 @@ EndGlobal`,
     await replaceDocumentContent(doc, renamed);
 
     // Wait for debounced auto-refresh — tree must show "Bravo".
-    const hasBravo = await pollUntilResult(
-      async () => treeContains(provider.getChildren(), 'Bravo'),
-      (found) => found,
-      5_000,
-    );
+    const hasBravo = await pollTreeFor(provider, 'Bravo');
 
     // Clean up tree state for other tests.
     provider.clear();

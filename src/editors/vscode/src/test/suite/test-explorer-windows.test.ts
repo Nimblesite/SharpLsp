@@ -21,7 +21,6 @@ import {
 import { buildFilterArgs, runTests } from '../../test-execution.js';
 import { escapeFilterValue, filterClause, filterExpression } from '../../test-filter.js';
 import { createSolution, projectXml, warmDiscovery, writeProject } from './dotnet-project-kit';
-import { fixtureFor } from './test-explorer-fixtures';
 import {
   assertDeclaredInside,
   collectItemIds,
@@ -41,29 +40,14 @@ import {
   assertContainsNone,
 } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-
-const CS = fixtureFor('xunit-csharp');
-const FS_FIXTURE = fixtureFor('xunit-fsharp');
-
-/** The idiomatic F# backtick binding whose xUnit FQN literally contains spaces. */
-const FS_FACT_SPACED = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
-/** The C# theory whose two rows DISAGREE — both report under this one name. */
-const CS_MIXED_THEORY = 'Cs.Xunit.Fixtures.CalculatorTests.Mixed_Theory';
-
-/** EXHAUSTIVELY every FQN the two xUnit fixtures expose: six F# (first), five C#. */
-const EXPECTED = [
-  FS_FIXTURE.passing,
+import { assertMapsEach } from './test-explorer-outcome-assertions';
+import {
+  CS,
+  FS_FIXTURE,
   FS_FACT_SPACED,
-  FS_FIXTURE.failing,
-  FS_FIXTURE.skipped,
-  FS_FIXTURE.parameterized,
-  'Fs.Xunit.Fixtures.mixed theory',
-  CS.passing,
-  CS.failing,
-  CS.skipped,
-  CS.parameterized,
   CS_MIXED_THEORY,
-] as const;
+  XUNIT_PAIR_IDS as EXPECTED,
+} from './test-explorer-xunit-pair';
 
 /** The real NUnit `[TestCase]` FQNs — the ones that kill the adapter unescaped. */
 const NUNIT_CASE = 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)';
@@ -553,70 +537,46 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   test('the filter grammar escapes every VSTest metacharacter and nothing else', function () {
     this.timeout(FAST_MS);
     // Each of these is grammar to VSTest, so each must be backslash-escaped.
-    assert.strictEqual(
-      escapeFilterValue('\\'),
-      '\\\\',
-      'the backslash itself must be escaped, or the escape is forgeable',
-    );
-    assert.strictEqual(escapeFilterValue('('), '\\(', 'an open paren opens a sub-expression');
-    assert.strictEqual(escapeFilterValue(')'), '\\)', 'a close paren closes a sub-expression');
-    assert.strictEqual(escapeFilterValue('&'), '\\&', 'ampersand is the AND operator');
-    assert.strictEqual(escapeFilterValue('|'), '\\|', 'pipe is the OR operator');
-    assert.strictEqual(escapeFilterValue('='), '\\=', 'equals separates property from value');
-    assert.strictEqual(escapeFilterValue('!'), '\\!', 'bang is negation');
-    assert.strictEqual(escapeFilterValue('~'), '\\~', 'tilde is the contains operator');
-    assert.strictEqual(
-      escapeFilterValue('a(b)c&d|e=f!g~h\\i'),
-      'a\\(b\\)c\\&d\\|e\\=f\\!g\\~h\\\\i',
-      'every metacharacter in one value is escaped, not just the first',
-    );
-    assert.strictEqual(
-      escapeFilterValue('((('),
-      '\\(\\(\\(',
-      'EVERY occurrence is escaped — a non-global replace is the classic incomplete-sanitization bug',
-    );
-    assert.strictEqual(
-      escapeFilterValue('\\('),
-      '\\\\\\(',
-      'escaping is deliberately NOT idempotent: a value is escaped exactly once, at the clause',
-    );
+    assertMapsEach(escapeFilterValue, [
+      ['\\', '\\\\', 'the backslash itself must be escaped, or the escape is forgeable'],
+      ['(', '\\(', 'an open paren opens a sub-expression'],
+      [')', '\\)', 'a close paren closes a sub-expression'],
+      ['&', '\\&', 'ampersand is the AND operator'],
+      ['|', '\\|', 'pipe is the OR operator'],
+      ['=', '\\=', 'equals separates property from value'],
+      ['!', '\\!', 'bang is negation'],
+      ['~', '\\~', 'tilde is the contains operator'],
+      [
+        'a(b)c&d|e=f!g~h\\i',
+        'a\\(b\\)c\\&d\\|e\\=f\\!g\\~h\\\\i',
+        'every metacharacter in one value is escaped, not just the first',
+      ],
+      [
+        '(((',
+        '\\(\\(\\(',
+        'EVERY occurrence is escaped — a non-global replace is the classic incomplete-sanitization bug',
+      ],
+      [
+        '\\(',
+        '\\\\\\(',
+        'escaping is deliberately NOT idempotent: a value is escaped exactly once, at the clause',
+      ],
+    ]);
     // These are NOT grammar. Escaping them would change the value and stop it matching.
-    assert.strictEqual(
-      escapeFilterValue(','),
-      ',',
-      'a comma is data — NUnit case arguments are comma-separated',
-    );
-    assert.strictEqual(
-      escapeFilterValue(' '),
-      ' ',
-      'a space is data — F# backtick names are full of them',
-    );
-    assert.strictEqual(
-      escapeFilterValue('.'),
-      '.',
-      'a dot is the namespace separator, not grammar',
-    );
-    assert.strictEqual(
-      escapeFilterValue('+'),
-      '+',
-      'plus is the CLR nested-type separator, not grammar',
-    );
-    assert.strictEqual(
-      escapeFilterValue('a-b_c'),
-      'a-b_c',
-      'hyphen and underscore are ordinary identifier characters',
-    );
-    assert.strictEqual(
-      escapeFilterValue('0123456789'),
-      '0123456789',
-      'digits pass through untouched',
-    );
-    assert.strictEqual(
-      escapeFilterValue('adds_二つ_числа'),
-      'adds_二つ_числа',
-      'non-ASCII identifiers are legal C#/F# and must pass through',
-    );
-    assert.strictEqual(escapeFilterValue(''), '', 'an empty value escapes to an empty value');
+    assertMapsEach(escapeFilterValue, [
+      [',', ',', 'a comma is data — NUnit case arguments are comma-separated'],
+      [' ', ' ', 'a space is data — F# backtick names are full of them'],
+      ['.', '.', 'a dot is the namespace separator, not grammar'],
+      ['+', '+', 'plus is the CLR nested-type separator, not grammar'],
+      ['a-b_c', 'a-b_c', 'hyphen and underscore are ordinary identifier characters'],
+      ['0123456789', '0123456789', 'digits pass through untouched'],
+      [
+        'adds_二つ_числа',
+        'adds_二つ_числа',
+        'non-ASCII identifiers are legal C#/F# and must pass through',
+      ],
+      ['', '', 'an empty value escapes to an empty value'],
+    ]);
     // The real fixture names, in the shapes VSTest actually produces.
     assert.strictEqual(
       escapeFilterValue(NUNIT_CASE),
@@ -651,21 +611,19 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       );
     }
     // A clause, and the OR expression built from clauses.
-    assert.strictEqual(
-      filterClause(NUNIT_CASE),
-      'FullyQualifiedName=Cs.Nunit.Fixtures.CalculatorTests.Adds_Case\\(2,2,4\\)',
-      'the clause escapes its value but never its own = separator',
-    );
-    assert.strictEqual(
-      filterClause(FS_MSTEST_NESTED),
-      `FullyQualifiedName=${FS_MSTEST_NESTED}`,
-      "the CLR nested-type '+' reaches VSTest verbatim",
-    );
-    assert.strictEqual(
-      filterClause(''),
-      'FullyQualifiedName=',
-      'an empty name still produces a well-formed clause',
-    );
+    assertMapsEach(filterClause, [
+      [
+        NUNIT_CASE,
+        'FullyQualifiedName=Cs.Nunit.Fixtures.CalculatorTests.Adds_Case\\(2,2,4\\)',
+        'the clause escapes its value but never its own = separator',
+      ],
+      [
+        FS_MSTEST_NESTED,
+        `FullyQualifiedName=${FS_MSTEST_NESTED}`,
+        "the CLR nested-type '+' reaches VSTest verbatim",
+      ],
+      ['', 'FullyQualifiedName=', 'an empty name still produces a well-formed clause'],
+    ]);
     assert.strictEqual(filterExpression([]), '', 'no names produce an empty expression');
     assert.strictEqual(
       filterExpression([FS_FACT_SPACED]),

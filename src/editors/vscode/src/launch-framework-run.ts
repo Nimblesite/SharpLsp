@@ -5,7 +5,7 @@
  * adapter, so a .NET Framework build starts on the desktop CLR it needs and a
  * .NET build through its own host. Implements [NETFX-DEBUG].
  */
-import { fileStemOf, resolvePath } from './paths';
+import { fileStemOf, samePath } from './paths';
 import * as vscode from 'vscode';
 import { currentDotnetExecutable } from './dotnet-process';
 import { RUN_TASK_SOURCE, RUN_TASK_TYPE } from './launch-run';
@@ -37,12 +37,6 @@ export function frameworkRunArgs(target: ProjectTarget, framework: string): stri
   ];
 }
 
-/** True when both paths name the same file, whatever the host's spelling. */
-function sameFile(left: string, right: string): boolean {
-  const normalize = (file: string): string => resolvePath(file).toLowerCase();
-  return normalize(left) === normalize(right);
-}
-
 /**
  * The framework to run: the active one when `document` belongs to the project,
  * else the first `frameworks` declares.
@@ -55,7 +49,7 @@ export async function chosenFramework(
 ): Promise<string> {
   const [first = ''] = frameworks;
   const answer = document === undefined ? undefined : await read?.(document);
-  const owned = answer?.project !== undefined && sameFile(answer.project, target.projectFile);
+  const owned = answer?.project !== undefined && samePath(answer.project, target.projectFile);
   return owned && answer.active !== undefined ? answer.active : first;
 }
 

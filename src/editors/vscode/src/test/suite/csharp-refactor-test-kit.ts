@@ -214,7 +214,7 @@ function vscodeKind(value: string): vscode.CodeActionKind {
   }
 }
 
-async function assertRequiredDiagnostic(
+export async function assertRequiredDiagnostic(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
 ): Promise<void> {
@@ -292,7 +292,7 @@ async function assertBoundaryRanges(
   await assertCaretProviderProbe(fixture, actionCase, range.end);
 }
 
-async function assertOutsideActionRange(
+export async function assertOutsideActionRange(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
 ): Promise<void> {
@@ -317,7 +317,7 @@ function discoveryRange(
   return actionCase.caretOnly ? new vscode.Range(range.start, range.start) : range;
 }
 
-async function discoverAction(
+export async function discoverAction(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
 ): Promise<{ readonly range: vscode.Range; readonly raw: RawCodeAction[] }> {
@@ -335,7 +335,7 @@ async function discoverAction(
   return { range, raw };
 }
 
-async function resolveAction(
+export async function resolveAction(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
   range: vscode.Range,
@@ -353,7 +353,7 @@ async function resolveAction(
   return action.edit;
 }
 
-async function applyAction(
+export async function applyAction(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
   edit: vscode.WorkspaceEdit,
@@ -372,7 +372,7 @@ async function applyAction(
   return source;
 }
 
-async function assertActionRequery(
+export async function assertActionRequery(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
   originalRange: vscode.Range,

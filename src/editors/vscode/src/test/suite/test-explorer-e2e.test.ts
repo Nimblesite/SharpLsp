@@ -39,12 +39,10 @@ import {
   warmDiscovery,
   writeProject,
 } from './dotnet-project-kit';
-import { fixtureFor } from './test-explorer-fixtures';
 import {
   assertDeclaredInside,
   assertLeafItem,
   collectItemIds,
-  drainDiscovery,
   errorTextOf,
   findItem,
   pollForIds,
@@ -58,6 +56,9 @@ import {
   assertLeavesAre,
   assertPlainLeaf,
   announcedPair,
+  rootsOf,
+  discoverSolution,
+  unloadSolution,
 } from './test-explorer-kit';
 import { findTestByMethodName } from '../../test-lens.js';
 import {
@@ -69,30 +70,14 @@ import {
 } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { sorted } from './test-explorer-outcome-assertions';
-
-const CS = fixtureFor('xunit-csharp');
-const FS_FIXTURE = fixtureFor('xunit-fsharp');
-
-/** The idiomatic F# backtick binding whose xUnit FQN literally contains spaces. */
-const FS_FACT_SPACED = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
-/** The theories whose two rows DISAGREE — both report under this one FQN. */
-const FS_MIXED_THEORY = 'Fs.Xunit.Fixtures.mixed theory';
-const CS_MIXED_THEORY = 'Cs.Xunit.Fixtures.CalculatorTests.Mixed_Theory';
-
-/** EXHAUSTIVELY every FQN the two xUnit fixtures expose: six F# (first), five C#. */
-const EXPECTED = [
-  FS_FIXTURE.passing,
+import {
+  CS,
+  FS_FIXTURE,
   FS_FACT_SPACED,
-  FS_FIXTURE.failing,
-  FS_FIXTURE.skipped,
-  FS_FIXTURE.parameterized,
   FS_MIXED_THEORY,
-  CS.passing,
-  CS.failing,
-  CS.skipped,
-  CS.parameterized,
   CS_MIXED_THEORY,
-] as const;
+  XUNIT_PAIR_IDS as EXPECTED,
+} from './test-explorer-xunit-pair';
 
 /** The ONLY names `--list-tests` prints — it prints DISPLAY names, which for an
  * xUnit [Fact] equal the FQN, while a [Theory]'s carries row arguments whose
@@ -505,9 +490,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   teardown(async () => {
     // Reset the loaded solution so each test's load is a real transition that
     // re-fires reactive discovery, and let the debounced sweep settle first.
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-    }, api.testController);
+    await unloadSolution(api);
   });
 
   suiteTeardown(async function () {
@@ -980,22 +963,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // The bug this guards: a failed sweep used to leave the view BLANK — no
     // tests, no reason, nothing to act on. It must instead surface an error
     // item carrying the real diagnostic AND a remedy.
-    const failure = await awaitSingleErrorRow();
-    const failureRoots: vscode.TestItem[] = [];
-    api.testController.items.forEach((item) => failureRoots.push(item));
-    assert.strictEqual(
-      failureRoots.length,
-      1,
-      `exactly one row stands after the failed sweep, got: ${failureRoots
-        .map((item) => item.label)
-        .join(' | ')}`,
-    );
-    assert.notStrictEqual(
-      failure.error,
-      undefined,
-      'the failure row carries an error — that is what the Testing view renders',
-    );
-    const message = errorTextOf(failure);
+    const { failure, message } = await assertOnlyErrorRow('a missing target');
     assert.ok(
       message.includes(ghost),
       `the error must NAME the missing target so the user knows what to fix: ${message}`,
@@ -1009,37 +977,17 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       `the error must offer a remedy the user can act on: ${message}`,
     );
     assert.ok(!EXPECTED_SET.has(failure.id), 'the failure row is not a test');
-    assert.strictEqual(failure.children.size, 0, 'the failure row is a leaf');
-    assert.deepStrictEqual(
-      collectLeafIds(api.testController.items).filter((id) => EXPECTED_SET.has(id)),
-      [],
-      'a missing target contributes NO test items — none are invented',
-    );
     assert.strictEqual(
       findItem(api.testController.items, CS.passing),
       undefined,
       'no stale item survives a failed sweep over an empty tree',
     );
     // And the extension recovers: pointing back at the real solution refills it.
-    await api.explorerProvider.loadSolution(slnPath);
-    await api.testController.activateAndDiscover();
-    await pollUntilDiscovered(api.testController, EXPECTED);
-    const recoveredLeaves = assertHierarchyTree(api.testController.items);
-    assertExactTree(recoveredLeaves, 'recovery after a missing target');
+    const recoveredLeaves = await recoverTree('recovery after a missing target');
     assert.strictEqual(
       api.testController.items.size,
       2,
       'recovery rebuilds the two assembly roots and their whole hierarchy',
-    );
-    const errorsAfter: string[] = [];
-    api.testController.items.forEach(function collect(item) {
-      if (item.error !== undefined) errorsAfter.push(item.id);
-      item.children.forEach(collect);
-    });
-    assert.deepStrictEqual(
-      errorsAfter,
-      [],
-      'the stale error row is gone once discovery succeeds again',
     );
     assertContainsAll(recoveredLeaves, [FS_FIXTURE.passing, CS.passing], 'recoveredLeaves');
     for (const snapshot of snapshotItems(api.testController.items).filter(
@@ -1187,8 +1135,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   async function awaitSingleErrorRow(): Promise<vscode.TestItem> {
     const deadline = Date.now() + FIXTURE_BUILD_MS;
     for (;;) {
-      const roots: vscode.TestItem[] = [];
-      api.testController.items.forEach((item) => roots.push(item));
+      const roots = rootsOf(api.testController.items);
       const failure = roots.find((item) => item.error !== undefined);
       if (roots.length === 1 && failure !== undefined) return failure;
       if (Date.now() > deadline) {
@@ -1200,6 +1147,40 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       }
       await sleep(500);
     }
+  }
+
+  /**
+   * The failed sweep's ONE error row, re-read from the tree: the only root,
+   * carrying an error, a leaf, and never a test — no test is invented for a
+   * target that could not be enumerated. Returns the row and its error text.
+   */
+  async function assertOnlyErrorRow(
+    why: string,
+  ): Promise<{ failure: vscode.TestItem; message: string }> {
+    const failure = await awaitSingleErrorRow();
+    const roots = rootsOf(api.testController.items);
+    const labels = roots.map((item) => item.label).join(' | ');
+    assert.strictEqual(roots.length, 1, `${why}: exactly one row stands, got: ${labels}`);
+    assert.notStrictEqual(failure.error, undefined, `${why}: the row carries an error to render`);
+    assert.strictEqual(failure.children.size, 0, `${why}: the error row is a leaf`);
+    assert.deepStrictEqual(
+      collectLeafIds(api.testController.items).filter((id) => EXPECTED_SET.has(id)),
+      [],
+      `${why}: no test is invented for a target that could not be enumerated`,
+    );
+    return { failure, message: errorTextOf(failure) };
+  }
+
+  /** Point discovery back at the real solution: the whole tree returns, no error row left. */
+  async function recoverTree(why: string): Promise<string[]> {
+    await discoverSolution(api, slnPath, EXPECTED);
+    const leaves = assertHierarchyTree(api.testController.items);
+    assertExactTree(leaves, why);
+    const errorsAfter = collectItemIds(api.testController.items).filter(
+      (id) => findItem(api.testController.items, id)?.error !== undefined,
+    );
+    assert.deepStrictEqual(errorsAfter, [], `${why}: the stale error row is gone`);
+    return leaves;
   }
 
   /** The FQNs whose dotted split places them in `namespaceLabel`. */
@@ -1835,29 +1816,12 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // silent empty view. The tree must carry a USEFUL error instead.
     const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     assert.ok(folder, 'the test host must open a workspace folder for this case');
-    await drainDiscovery(() => {
-      api.explorerProvider.clear();
-    }, api.testController);
+    await unloadSolution(api);
     api.testController.items.replace([]);
     await assert.doesNotReject(async () => {
       await api.testController.activateAndDiscover();
     }, 'ambiguous-folder discovery must not reject');
-    const failure = await awaitSingleErrorRow();
-    const failureRoots: vscode.TestItem[] = [];
-    api.testController.items.forEach((item) => failureRoots.push(item));
-    assert.strictEqual(
-      failureRoots.length,
-      1,
-      `one error row for the ambiguous folder, got: ${failureRoots
-        .map((item) => item.label)
-        .join(' | ')}`,
-    );
-    assert.notStrictEqual(
-      failure.error,
-      undefined,
-      'the row carries an error for the view to render',
-    );
-    const message = errorTextOf(failure);
+    const { message } = await assertOnlyErrorRow('the ambiguous folder');
     assert.ok(
       message.includes('MSB1011'),
       `the error must carry the REAL dotnet diagnostic, not a shrug: ${message.slice(0, 400)}`,
@@ -1870,25 +1834,9 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       /select solution/i.test(message),
       `and offer the remedy — load one solution: ${message.slice(0, 400)}`,
     );
-    assert.strictEqual(failure.children.size, 0, 'the error row is a leaf');
-    assert.deepStrictEqual(
-      collectLeafIds(api.testController.items).filter((id) => EXPECTED_SET.has(id)),
-      [],
-      'no tests are invented for a folder that could not be enumerated',
-    );
     // Recovery: loading a solution makes the error row vanish and the full
     // hierarchy appear — the user's exact escape route from the message.
-    await api.explorerProvider.loadSolution(slnPath);
-    await api.testController.activateAndDiscover();
-    await pollUntilDiscovered(api.testController, EXPECTED);
-    const leaves = assertHierarchyTree(api.testController.items);
-    assertExactTree(leaves, 'recovery from the ambiguous folder');
-    const errorsAfter: string[] = [];
-    api.testController.items.forEach(function collect(item) {
-      if (item.error !== undefined) errorsAfter.push(item.id);
-      item.children.forEach(collect);
-    });
-    assert.deepStrictEqual(errorsAfter, [], 'the MSB1011 error row is gone after recovery');
+    await recoverTree('recovery from the ambiguous MSB1011 folder');
   });
 
   test('a project that fails to BUILD surfaces the compiler error in the tree, and ▶ fabricates nothing', async function () {
@@ -1910,33 +1858,13 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       api.testController.items.replace([]);
       await api.explorerProvider.loadSolution(brokenSln);
       await api.testController.activateAndDiscover();
-      const failure = await awaitSingleErrorRow();
-      const failureRoots: vscode.TestItem[] = [];
-      api.testController.items.forEach((item) => failureRoots.push(item));
-      assert.strictEqual(
-        failureRoots.length,
-        1,
-        `one error row for the broken build, got: ${failureRoots
-          .map((item) => item.label)
-          .join(' | ')}`,
-      );
-      assert.notStrictEqual(failure.error, undefined, 'the row carries an error');
-      const message =
-        failure.error instanceof vscode.MarkdownString
-          ? failure.error.value
-          : String(failure.error);
+      const { failure, message } = await assertOnlyErrorRow('the broken build');
       assert.ok(
         /error CS\d+/.test(message),
         `the error must carry the COMPILER diagnostic (error CS…), not a generic failure: ${message.slice(
           0,
           400,
         )}`,
-      );
-      assert.strictEqual(failure.children.size, 0, 'the error row is a leaf');
-      assert.deepStrictEqual(
-        collectLeafIds(api.testController.items).filter((id) => EXPECTED_SET.has(id)),
-        [],
-        'no tests are invented for a project that cannot build',
       );
       // ▶ gestures on an error-only tree must neither crash nor fabricate
       // results: there is nothing runnable to report.

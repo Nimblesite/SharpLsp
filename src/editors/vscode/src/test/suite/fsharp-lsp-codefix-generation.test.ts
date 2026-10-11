@@ -20,16 +20,13 @@ import {
   applyAction,
   assertInsertion,
   assertNoAction,
-  assertQuickFix,
   diagnosticsSettled,
-  diagnosticWithCode,
   openOverlay,
   quickFixes,
-  resolvedQuickFixes,
   singleEdit,
   tokenRange,
-  undoAction,
-  uniqueAction,
+  inspectQuickFix,
+  undoAndRequery,
 } from './fsharp-refactor-test-kit';
 import { diagnosticCode } from './document-anchors';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
@@ -329,50 +326,13 @@ async function runGeneration(spec: GenerationSpec): Promise<void> {
   const fixture = await openOverlay(TARGET_FILE, spec.source);
   try {
     const range = tokenRange(fixture.document, spec.target, spec.occurrence);
-    const action = await inspectGeneration(fixture, range, spec);
+    const action = await inspectQuickFix(fixture, range, spec, true);
     inspectGenerationEdit(fixture.uri, action, spec);
     await applyGeneration(fixture, action, spec);
-    await undoGeneration(fixture, spec);
+    await undoAndRequery(fixture, spec, true);
   } finally {
     await revertDocument(fixture.document);
   }
-}
-
-async function inspectGeneration(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  range: vscode.Range,
-  spec: GenerationSpec,
-): Promise<vscode.CodeAction> {
-  const diagnostics = await diagnosticWithCode(fixture.uri, spec.diagnostic, range);
-  assertGenerationDiagnostic(diagnostics, range, spec.diagnostic);
-  const raw = uniqueAction(await quickFixes(fixture.uri, range), spec.title);
-  assertRawGeneration(raw, spec.title);
-  const outside = await quickFixes(fixture.uri, tokenRange(fixture.document, 'sentinel'));
-  assertNoAction(outside, spec.title);
-  const resolved = await resolvedQuickFixes(fixture.uri, range, spec.title);
-  const action = uniqueAction(resolved, spec.title);
-  assertQuickFix(action, spec.title, true);
-  return action;
-}
-
-function assertGenerationDiagnostic(
-  diagnostics: readonly vscode.Diagnostic[],
-  range: vscode.Range,
-  code: string,
-): void {
-  const matches = diagnostics.filter((item) => diagnosticCode(item) === code);
-  assert.ok(matches.length >= 1, `${code} must drive the generator`);
-  assert.ok(matches.some((item) => item.range.intersection(range) !== undefined));
-  assert.ok(matches.every((item) => item.message.trim().length > 0));
-  assert.ok(matches.every((item) => item.source === 'sharplsp-fsharp'));
-}
-
-function assertRawGeneration(action: vscode.CodeAction, title: string): void {
-  assert.strictEqual(action.title, title);
-  assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
-  assert.strictEqual(action.isPreferred, true);
-  assert.strictEqual(action.edit, undefined);
-  assert.strictEqual(action.command, undefined);
 }
 
 function inspectGenerationEdit(
@@ -446,17 +406,6 @@ function assertGeneratedDocument(document: vscode.TextDocument, spec: Generation
   for (const fragment of spec.preservedFragments ?? []) assert.ok(text.includes(fragment));
   for (const fragment of spec.absentFragments) assert.ok(!text.includes(fragment));
   assert.ok(text.includes('sentinel'));
-}
-
-async function undoGeneration(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  spec: GenerationSpec,
-): Promise<void> {
-  await undoAction(fixture.document, spec.source);
-  await diagnosticWithCode(fixture.uri, spec.diagnostic);
-  const range = tokenRange(fixture.document, spec.target, spec.occurrence);
-  const actions = await resolvedQuickFixes(fixture.uri, range, spec.title);
-  assertQuickFix(uniqueAction(actions, spec.title), spec.title, true);
 }
 
 async function assertComplete(spec: GenerationSpec): Promise<void> {

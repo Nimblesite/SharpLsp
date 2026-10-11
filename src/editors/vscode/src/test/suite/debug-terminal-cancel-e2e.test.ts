@@ -6,9 +6,9 @@ import { isRecord } from '../../dap-emulate';
 import { signalChild } from '../../child-signal';
 import { MODE } from './debug-fixture-programs';
 import { LiveRouter } from './debug-router-kit';
-import { useDebuggee } from './debug-suite-kit';
+import { useDebuggee, debugTest } from './debug-suite-kit';
 import { pollUntilResult } from './test-helpers';
-import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** A cancelled launch ends once and never starts a replacement program. */
 function assertCancelledSession(driver: LiveRouter): void {
@@ -25,8 +25,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
     const debuggee = useDebuggee(`debug-cancel-${language}-`, language);
     for (const console of ['externalTerminal', 'integratedTerminal']) {
       for (const command of ['terminate', 'disconnect']) {
-        test(`${command} ends ${console} before its client responds`, async function () {
-          this.timeout(DEBUG_TEST_MS);
+        debugTest(`${command} ends ${console} before its client responds`, debuggee, async () => {
           const driver = new LiveRouter();
           const { fixture } = debuggee();
           try {
@@ -79,42 +78,49 @@ for (const language of ['fsharp', 'csharp'] as const) {
       }
     }
 
-    test('a late terminal PID is ended without resurrecting a disposed session', async function () {
-      this.timeout(DEBUG_TEST_MS);
-      const driver = new LiveRouter();
-      const { fixture } = debuggee();
-      const child = spawn('dotnet', [fixture.dll, MODE.wait], {
-        cwd: fixture.dir,
-        stdio: 'ignore',
-      });
-      try {
-        await once(child, 'spawn');
-        assert.ok(child.pid && child.pid > 0, 'this client owns a real fixture process');
-        await driver.request('initialize', { supportsRunInTerminalRequest: true });
-        await driver.request('launch', { program: fixture.dll, console: 'integratedTerminal' });
-        const reverse = driver.traffic().find((message) => message.command === 'runInTerminal');
-        assert.ok(reverse);
-        await driver.request('terminate');
-        await driver.event('terminated');
-        driver.dispose();
-        assert.equal(child.exitCode, null, 'the client has not yet identified its running process');
-        assert.equal(child.signalCode, null);
-        driver.answerReverse(
-          reverse,
-          true,
-          process.platform === 'win32' ? { processId: child.pid } : { shellProcessId: child.pid },
-        );
-        await pollUntilResult(
-          async () => child.exitCode !== null || child.signalCode !== null,
-          (ended) => ended,
-          DEBUG_SESSION_MS,
-          20,
-        );
-        assertCancelledSession(driver);
-      } finally {
-        signalChild(child, 'SIGKILL');
-        driver.dispose();
-      }
-    });
+    debugTest(
+      'a late terminal PID is ended without resurrecting a disposed session',
+      debuggee,
+      async () => {
+        const driver = new LiveRouter();
+        const { fixture } = debuggee();
+        const child = spawn('dotnet', [fixture.dll, MODE.wait], {
+          cwd: fixture.dir,
+          stdio: 'ignore',
+        });
+        try {
+          await once(child, 'spawn');
+          assert.ok(child.pid && child.pid > 0, 'this client owns a real fixture process');
+          await driver.request('initialize', { supportsRunInTerminalRequest: true });
+          await driver.request('launch', { program: fixture.dll, console: 'integratedTerminal' });
+          const reverse = driver.traffic().find((message) => message.command === 'runInTerminal');
+          assert.ok(reverse);
+          await driver.request('terminate');
+          await driver.event('terminated');
+          driver.dispose();
+          assert.equal(
+            child.exitCode,
+            null,
+            'the client has not yet identified its running process',
+          );
+          assert.equal(child.signalCode, null);
+          driver.answerReverse(
+            reverse,
+            true,
+            process.platform === 'win32' ? { processId: child.pid } : { shellProcessId: child.pid },
+          );
+          await pollUntilResult(
+            async () => child.exitCode !== null || child.signalCode !== null,
+            (ended) => ended,
+            DEBUG_SESSION_MS,
+            20,
+          );
+          assertCancelledSession(driver);
+        } finally {
+          signalChild(child, 'SIGKILL');
+          driver.dispose();
+        }
+      },
+    );
   });
 }

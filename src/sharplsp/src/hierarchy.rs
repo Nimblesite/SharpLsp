@@ -1,14 +1,17 @@
 //! What the call- and type-hierarchy handlers share: the sidecar's wire shapes
 //! for a hierarchy item and a call, the LSP location they map to, and the
-//! `prepare` request both hierarchies answer the same way.
+//! `prepare` and follow-up requests both hierarchies answer the same way.
+
+use std::sync::Arc;
 
 use anyhow::Result;
+use lsp_server::Request;
 use lsp_types::{Position, Range, TextDocumentPositionParams, Uri};
 use tracing::debug;
 
 use crate::paths::path_to_lsp_uri;
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{request_sidecar, SidecarPositionReq};
+use crate::utils::{request_sidecar, with_sidecar, SidecarPositionReq};
 
 /// A hierarchy item returned by the sidecar for call- and type-hierarchy
 /// requests. Shared by `call_hierarchy` and `type_hierarchy`, which map it
@@ -105,28 +108,77 @@ pub fn hierarchy_item_location(item: &SidecarHierarchyItem) -> Option<(Uri, Rang
     Some((parsed_uri, range, range))
 }
 
-/// `prepare` for either hierarchy: the item at the cursor, mapped by `map`.
+/// Handle `prepare` for either hierarchy: the item at the cursor, mapped by
+/// `map`. The sidecar method is the LSP method, so one handler serves both.
 ///
-/// JSON `null` when the sidecar is unreachable; an empty list when it answered
-/// that nothing hierarchical sits at the cursor.
-pub fn prepare_hierarchy<T: serde::Serialize>(
+/// JSON `null` when no sidecar is attached or it is unreachable; an empty list
+/// when it answered that nothing hierarchical sits at the cursor.
+pub fn handle_prepare<T: serde::Serialize>(
+    req: Request,
     runtime: &tokio::runtime::Runtime,
-    sidecar: &SidecarManager,
-    method: &str,
-    at: &TextDocumentPositionParams,
+    sidecar: Option<&Arc<SidecarManager>>,
     map: impl Fn(&SidecarHierarchyItem) -> Option<T>,
 ) -> Result<serde_json::Value> {
-    let request = SidecarPositionReq::at(&at.text_document.uri, at.position)?;
-    let Some(item) =
-        request_sidecar::<Option<SidecarHierarchyItem>, _>(runtime, sidecar, method, &request)?
-    else {
-        return Ok(serde_json::Value::Null);
-    };
-    debug!(
-        method,
-        found = item.is_some(),
-        "hierarchy item from sidecar"
-    );
-    let result: Vec<T> = item.as_ref().and_then(map).into_iter().collect();
-    Ok(serde_json::to_value(result)?)
+    let method = req.method.clone();
+    with_sidecar(req, sidecar, |sidecar, at: TextDocumentPositionParams| {
+        let request = SidecarPositionReq::at(&at.text_document.uri, at.position)?;
+        let Some(item) = request_sidecar::<Option<SidecarHierarchyItem>, _>(
+            runtime, sidecar, &method, &request,
+        )?
+        else {
+            return Ok(serde_json::Value::Null);
+        };
+        debug!(
+            method,
+            found = item.is_some(),
+            "hierarchy item from sidecar"
+        );
+        let result: Vec<T> = item.as_ref().and_then(map).into_iter().collect();
+        Ok(serde_json::to_value(result)?)
+    })
+}
+
+/// Where the item a follow-up hierarchy request (`incomingCalls`,
+/// `supertypes`, …) expands sits: all the sidecar needs of either LSP item.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ItemAnchor {
+    /// The document declaring the item.
+    uri: Uri,
+    /// The item's name, whose start the sidecar resolves the symbol at.
+    selection_range: Range,
+}
+
+/// The params of every follow-up hierarchy request.
+#[derive(serde::Deserialize)]
+struct ItemParams {
+    /// The item being expanded, as a previous `prepare` answered it.
+    item: ItemAnchor,
+}
+
+/// Handle a follow-up hierarchy request: ask the sidecar (whose method is the
+/// LSP method) for the `W` entries related to the item at its selection, and
+/// answer each one `map` accepts.
+///
+/// An unreachable sidecar answers an empty list, the same as an item with no
+/// relatives: the tree shows nothing rather than an error.
+pub fn handle_related<W: serde::de::DeserializeOwned, T: serde::Serialize>(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    map: impl Fn(&W) -> Option<T>,
+) -> Result<serde_json::Value> {
+    let method = req.method.clone();
+    with_sidecar(req, sidecar, |sidecar, params: ItemParams| {
+        let request = SidecarPositionReq::at(&params.item.uri, params.item.selection_range.start)?;
+        let related: Vec<W> =
+            request_sidecar(runtime, sidecar, &method, &request)?.unwrap_or_default();
+        debug!(
+            method,
+            count = related.len(),
+            "related hierarchy entries from sidecar"
+        );
+        let result: Vec<T> = related.iter().filter_map(map).collect();
+        Ok(serde_json::to_value(result)?)
+    })
 }

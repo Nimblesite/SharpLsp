@@ -81,23 +81,21 @@ jobs:
           debugger-artifact: win-netcoredbg
 
   build-macos:
-    name: macOS debugger build check
-    # [DIST-CI-SMOKE] [DIST-DEBUGGER-BUNDLE] Linux/Windows cannot catch a
-    # macOS clang or linker failure in the patched debugger before release.
+    name: macOS debugger check
+    # [DIST-CI-SMOKE] [DIST-DEBUGGER-BUNDLE] Linux/Windows cannot run the macOS
+    # debugger the release ships, so fetch the pinned fork release archive here
+    # and run it. The debugger is downloaded, never compiled.
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: 10.0.303
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
-      - name: Build the patched macOS debugger once
+      - name: Download the pinned macOS debugger
         shell: bash
-        run: bash tools/vsix/build-netcoredbg.sh darwin-arm64 --rebuild
-      - name: Verify the built debugger runs
+        run: node tools/netcoredbg/provide.mjs darwin-arm64
+      - name: Verify the downloaded debugger runs
         shell: bash
         run: |-
           set -euo pipefail

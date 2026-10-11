@@ -542,11 +542,37 @@ fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result
     let (source, tree) = parse_file(file_path, parsers, vfs)?;
 
     let symbols = collect_symbols(tree.root_node(), source.as_bytes());
-    let symbols = reparent_file_scoped_members(symbols);
+    let symbols = top_level_program(tree.root_node())
+        .into_iter()
+        .chain(reparent_file_scoped_members(symbols))
+        .collect();
 
     Ok(FileSymbol {
         file: file_path.to_string(),
         symbols,
+    })
+}
+
+/// Top-level statements compile into the global-namespace `Program` class, so a
+/// file of them lists as `Program`, spanning its first to last statement ([SE-TREE]).
+fn top_level_program(root: Node<'_>) -> Option<SymbolNode> {
+    let mut cursor = root.walk();
+    let statements: Vec<Node<'_>> = root
+        .children(&mut cursor)
+        .filter(|child| child.kind() == "global_statement")
+        .collect();
+    let (first, last) = (*statements.first()?, *statements.last()?);
+    Some(SymbolNode {
+        name: "Program".to_string(),
+        kind: "Class".to_string(),
+        detail: None,
+        access: None,
+        range: SymbolRange {
+            start: node_range(first).start,
+            end: node_range(last).end,
+        },
+        selection_range: node_range(first),
+        children: Vec::new(),
     })
 }
 

@@ -411,13 +411,28 @@ export async function tryDap(
   }
 }
 
-/** `command` really reached the adapter, and every reply to it succeeded. */
-export function assertAnswered(recorder: DapRecorder, command: string, why: string): void {
-  assert.ok(recorder.requests(command).length >= 1, `${why}: '${command}' must reach the adapter`);
+/** `command` reached the adapter at least `min` times, and every reply to it succeeded. */
+export function assertAnswered(recorder: DapRecorder, command: string, why: string, min = 1): void {
+  assert.ok(
+    recorder.requests(command).length >= min,
+    `${why}: '${command}' must reach the adapter at least ${String(min)} time(s)`,
+  );
   assert.ok(
     recorder.responses(command).every((response) => response.success),
     `${why}: every '${command}' reply must succeed`,
   );
+}
+
+/** The session ended at most once, and the wire carried no transport error. */
+export function assertSessionEnded(recorder: DapRecorder, why: string): void {
+  assert.ok(recorder.events('terminated').length <= 1, `${why}: the session ends at most once`);
+  deepEq(recorder.errors, [], `${why}: with no adapter transport error`);
+}
+
+/** {@link assertSessionEnded}, with the adapter process alive throughout. */
+export function assertAdapterAlive(recorder: DapRecorder, why: string): void {
+  assertSessionEnded(recorder, why);
+  deepEq(recorder.exits, [], `${why}: and the adapter process never exited under it`);
 }
 
 /** One handshake, one termination, and the adapter process alive throughout. */

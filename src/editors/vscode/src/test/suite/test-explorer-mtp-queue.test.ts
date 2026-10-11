@@ -37,11 +37,10 @@ import {
   discoverSolution,
   findItem,
   rootsOf,
-  runViaProfile,
   teardownFixtureSolution,
   activateWithScratch,
 } from './test-explorer-kit';
-import { assertPassed, cachedFor, itemsFor } from './test-explorer-outcome-assertions';
+import { assertPassed, cachedFor, runIds } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
@@ -78,7 +77,7 @@ const SOURCE = [
 
 /** ▶ on `ID` exactly as the Testing view's Run button does. */
 async function runTheTest(api: SharpLspExtensionApi): Promise<void> {
-  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, [ID]));
+  await runIds(api, vscode.TestRunProfileKind.Run, [ID]);
 }
 
 suite('Test Explorer e2e — a run queued behind a discovery sweep', () => {
@@ -192,11 +191,7 @@ suite('Test Explorer e2e — a run queued behind a discovery sweep', () => {
     await newer;
     await api.testController.whenIdle();
     assert.deepStrictEqual(collectLeafIds(api.testController.items), [OTHER_ID], 'it stands');
-    await runViaProfile(
-      api.testController,
-      vscode.TestRunProfileKind.Run,
-      itemsFor(api, [OTHER_ID]),
-    );
+    await runIds(api, vscode.TestRunProfileKind.Run, [OTHER_ID]);
     await api.testController.whenIdle();
     assertPassed(cachedFor(api, OTHER_ID), OTHER_ID);
     const lens = await api.testController.runSingle(OTHER_ID);

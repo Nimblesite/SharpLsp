@@ -10,10 +10,10 @@ use lsp_server::Request;
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, TextEdit, Uri, WorkspaceEdit,
 };
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{map_text_edit, SidecarTextEdit};
+use crate::utils::{map_text_edit, request_sidecar, with_sidecar, SidecarTextEdit};
 
 /// Handle `textDocument/codeAction` — returns available code fixes and refactorings.
 pub fn handle_code_action(
@@ -21,39 +21,31 @@ pub fn handle_code_action(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        return Ok(serde_json::Value::Null);
-    };
-    let params: CodeActionParams = serde_json::from_value(req.params)?;
-    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
-
-    let request = SidecarCodeActionReq {
-        file_path,
-        start_line: params.range.start.line,
-        start_character: params.range.start.character,
-        end_line: params.range.end.line,
-        end_character: params.range.end.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("textDocument/codeAction", payload))
-    {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar codeAction unavailable: {err:#}");
+    with_sidecar(req, sidecar, |sidecar, params: CodeActionParams| {
+        let request = SidecarCodeActionReq {
+            file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
+            start_line: params.range.start.line,
+            start_character: params.range.start.character,
+            end_line: params.range.end.line,
+            end_character: params.range.end.character,
+        };
+        let Some(items) = request_sidecar::<Vec<SidecarCodeActionItem>, _>(
+            runtime,
+            sidecar,
+            "textDocument/codeAction",
+            &request,
+        )?
+        else {
             return Ok(serde_json::Value::Null);
-        }
-    };
-
-    let items: Vec<SidecarCodeActionItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} code actions from sidecar", items.len());
-
-    let doc_uri = params.text_document.uri;
-    let actions: Vec<CodeActionOrCommand> = items
-        .into_iter()
-        .map(|item| CodeActionOrCommand::CodeAction(map_code_action(&item, &doc_uri)))
-        .collect();
-
-    Ok(serde_json::to_value(actions)?)
+        };
+        debug!("Got {} code actions from sidecar", items.len());
+        let doc_uri = params.text_document.uri;
+        let actions: Vec<CodeActionOrCommand> = items
+            .iter()
+            .map(|item| CodeActionOrCommand::CodeAction(map_code_action(item, &doc_uri)))
+            .collect();
+        Ok(serde_json::to_value(actions)?)
+    })
 }
 
 /// Handle `codeAction/resolve` — resolves a code action to a full workspace edit.
@@ -62,34 +54,30 @@ pub fn handle_code_action_resolve(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        return Ok(serde_json::Value::Null);
-    };
-    let action: CodeAction = serde_json::from_value(req.params)?;
-    let data = action
-        .data
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("codeAction/resolve: missing data field"))?;
-
-    // Data format: {"id": N, "uri": "file://..."} — extract just the ID for the sidecar.
-    let action_id: i32 = data
-        .get("id")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .ok_or_else(|| anyhow::anyhow!("codeAction/resolve: missing id in data"))?;
-    let resolve_req = SidecarCodeActionResolveReq { id: action_id };
-    let payload = rmp_serde::to_vec(&resolve_req)?;
-    let response_bytes = match runtime.block_on(sidecar.request("codeAction/resolve", payload)) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar codeAction/resolve unavailable: {err:#}");
+    with_sidecar(req, sidecar, |sidecar, action: CodeAction| {
+        let data = action
+            .data
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("codeAction/resolve: missing data field"))?;
+        // Data format: {"id": N, "uri": "file://..."} — extract just the ID for the sidecar.
+        let action_id: i32 = data
+            .get("id")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .ok_or_else(|| anyhow::anyhow!("codeAction/resolve: missing id in data"))?;
+        let resolve_req = SidecarCodeActionResolveReq { id: action_id };
+        let Some(edit) = request_sidecar::<SidecarWorkspaceEdit, _>(
+            runtime,
+            sidecar,
+            "codeAction/resolve",
+            &resolve_req,
+        )?
+        else {
             return Ok(serde_json::Value::Null);
-        }
-    };
-
-    let edit: SidecarWorkspaceEdit = rmp_serde::from_slice(&response_bytes)?;
-    let mut resolved = action;
-    resolved.edit = Some(map_workspace_edit(&edit));
-    Ok(serde_json::to_value(resolved)?)
+        };
+        let mut resolved = action;
+        resolved.edit = Some(map_workspace_edit(&edit));
+        Ok(serde_json::to_value(resolved)?)
+    })
 }
 
 /// Convert a sidecar code action item into an LSP `CodeAction`.
