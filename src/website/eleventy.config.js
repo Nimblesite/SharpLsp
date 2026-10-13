@@ -102,7 +102,7 @@ export default function (eleventyConfig) {
     body ? releaseNotesMd.render(body) : "",
   );
 
-  // package.json overrides chokidar 3 with 4: chokidar 3 depends on braces,
+  // package.json overrides chokidar with 4.0.3: chokidar 3 depends on braces,
   // whose GHSA-vfj7-8cjw-p6xm has no patched release. chokidar 4 cannot follow
   // the globs Eleventy 3 watches, so `--serve` watches every source file by
   // path instead (a newly created file needs a restart). Drop this when
