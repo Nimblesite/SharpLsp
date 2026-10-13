@@ -174,3 +174,17 @@ fn native_paths_equal_strips_verbatim_disk_and_unc_prefixes() {
         r"\\other\share\F.cs"
     ));
 }
+
+#[cfg(windows)]
+#[test]
+fn command_file_names_only_offers_spawnable_exe_on_windows() {
+    // CreateProcess cannot launch `.cmd`/`.bat` shims or extensionless files,
+    // so PATH resolution must not accept them. [GitHub #167]
+    assert_eq!(command_file_names("dotnet"), vec!["dotnet.exe".to_string()]);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn command_file_names_is_the_bare_name_off_windows() {
+    assert_eq!(command_file_names("dotnet"), vec!["dotnet".to_string()]);
+}

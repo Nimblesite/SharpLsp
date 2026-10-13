@@ -277,18 +277,12 @@ pub fn executable_name(stem: &str) -> String {
     }
 }
 
-/// The spellings a command resolves to on `PATH`: Windows adds its executable
-/// suffixes. [SHARPLSP-ARCHITECTURE-PATHS]
+/// The spellings a command resolves to on `PATH`. Windows accepts only `.exe`:
+/// `CreateProcess` cannot launch `.cmd`/`.bat` shims or extensionless files, so
+/// resolving to one would hide the working fallback layouts. [GitHub #167]
+/// [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn command_file_names(command: &str) -> Vec<String> {
-    let suffixes: &[&str] = if cfg!(windows) {
-        &["", ".exe", ".cmd", ".bat"]
-    } else {
-        &[""]
-    };
-    suffixes
-        .iter()
-        .map(|suffix| format!("{command}{suffix}"))
-        .collect()
+    vec![executable_name(command)]
 }
 
 /// Whether `path` names the `stem` executable (`dotnet`, `dotnet.exe`), in any
