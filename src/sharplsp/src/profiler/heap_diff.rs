@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(d.baseline_count, 0);
         assert_eq!(d.comparison_count, 50);
         assert_eq!(d.size_delta_bytes, 50_000);
-        assert_eq!(d.growth_percent.to_bits(), 100.0_f64.to_bits());
+        assert!(matches!(d.growth_percent, 100.0), "{}", d.growth_percent);
     }
 
     #[test]
@@ -567,15 +567,20 @@ mod tests {
 
     #[test]
     fn test_compute_growth_percent_zero_baseline_positive_delta() {
-        assert_eq!(
-            compute_growth_percent(0, 100).to_bits(),
-            100.0_f64.to_bits()
+        assert!(
+            matches!(compute_growth_percent(0, 100), 100.0),
+            "{}",
+            compute_growth_percent(0, 100)
         );
     }
 
     #[test]
     fn test_compute_growth_percent_zero_baseline_zero_delta() {
-        assert_eq!(compute_growth_percent(0, 0).to_bits(), 0.0_f64.to_bits());
+        assert!(
+            matches!(compute_growth_percent(0, 0), 0.0),
+            "{}",
+            compute_growth_percent(0, 0)
+        );
     }
 
     #[test]
@@ -682,7 +687,11 @@ mod tests {
         assert_eq!(diff.baseline_count, 0);
         assert_eq!(diff.count_delta, 100);
         assert_eq!(diff.size_delta_bytes, 5_000);
-        assert_eq!(diff.growth_percent.to_bits(), 100.0_f64.to_bits());
+        assert!(
+            matches!(diff.growth_percent, 100.0),
+            "{}",
+            diff.growth_percent
+        );
     }
 
     #[test]

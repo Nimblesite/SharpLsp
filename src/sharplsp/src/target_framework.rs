@@ -248,9 +248,13 @@ mod tests {
                 "workspace/diagnostic/refresh"
             ]
         );
-        assert_eq!(
-            refreshes_supported(&ClientCapabilities::default()),
-            Vec::<&str>::new()
+        assert!(
+            matches!(
+                refreshes_supported(&ClientCapabilities::default()).as_slice(),
+                []
+            ),
+            "{:?}",
+            refreshes_supported(&ClientCapabilities::default())
         );
     }
 }

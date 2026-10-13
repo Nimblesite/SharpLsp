@@ -391,7 +391,11 @@ mod tests {
         );
         assert_eq!(resp.moved[0].id, "Serilog");
         assert!(resp.props_file.is_none());
-        assert_eq!(resp.modified_files, Vec::<String>::new());
+        assert!(
+            matches!(resp.modified_files.as_slice(), []),
+            "{:?}",
+            resp.modified_files
+        );
         // Nothing on disk changed.
         assert!(!root.join("Directory.Build.props").exists());
         assert!(std::fs::read_to_string(&a).unwrap().contains("Serilog"));

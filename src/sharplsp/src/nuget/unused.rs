@@ -209,6 +209,6 @@ mod tests {
         };
         let direct = vec![item("Serilog", "3.1.0")];
         let unused = compute_unused(&usage, &direct);
-        assert_eq!(unused, Vec::<crate::nuget::types::UnusedPackage>::new());
+        assert!(matches!(unused.as_slice(), []), "{unused:?}");
     }
 }

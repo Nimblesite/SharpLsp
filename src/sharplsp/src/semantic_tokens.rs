@@ -367,9 +367,10 @@ mod tests {
     #[test]
     fn compute_delta_of_identical_arrays_is_empty() {
         let tokens = [0, 0, 1, 0, 0, 1, 0, 2, 0, 0];
-        assert_eq!(
-            compute_delta(&tokens, &tokens),
-            Vec::<lsp_types::SemanticTokensEdit>::new()
+        assert!(
+            matches!(compute_delta(&tokens, &tokens).as_slice(), []),
+            "{:?}",
+            compute_delta(&tokens, &tokens)
         );
     }
 

@@ -224,9 +224,9 @@ fn test_all_features_on_complex_file() {
         json!({ "textDocument": { "uri": TEST_URI } }),
     );
     assert!(resp.get("error").is_none());
-    assert_ne!(
-        resp["result"].as_array().unwrap(),
-        &Vec::<serde_json::Value>::new()
+    assert!(
+        matches!(resp["result"].as_array().map(Vec::as_slice), Some([_, ..])),
+        "{resp}"
     );
 
     // Folding ranges.
@@ -235,9 +235,9 @@ fn test_all_features_on_complex_file() {
         json!({ "textDocument": { "uri": TEST_URI } }),
     );
     assert!(resp.get("error").is_none());
-    assert_ne!(
-        resp["result"].as_array().unwrap(),
-        &Vec::<serde_json::Value>::new()
+    assert!(
+        matches!(resp["result"].as_array().map(Vec::as_slice), Some([_, ..])),
+        "{resp}"
     );
 
     // Selection ranges.
@@ -249,9 +249,9 @@ fn test_all_features_on_complex_file() {
         }),
     );
     assert!(resp.get("error").is_none());
-    assert_ne!(
-        resp["result"].as_array().unwrap(),
-        &Vec::<serde_json::Value>::new()
+    assert!(
+        matches!(resp["result"].as_array().map(Vec::as_slice), Some([_, ..])),
+        "{resp}"
     );
 
     // Linked editing range (no XML in this file).
