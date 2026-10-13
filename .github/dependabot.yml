@@ -76,6 +76,16 @@ updates:
       dotnet-sidecars-security:
         applies-to: security-updates
         patterns: ["*"]
+    # Roslyn and MSBuild are coupled to the SDK global.json pins: the bundled
+    # Roslyn must equal the pinned SDK's (Repo_pinned_sdk_ships_exactly_the_bundled_roslyn),
+    # and MSBuild packages newer than its MSBuild target a newer TFM. Move them with the SDK pin, by hand.
+    ignore:
+      - dependency-name: "Microsoft.CodeAnalysis.CSharp"
+      - dependency-name: "Microsoft.CodeAnalysis.CSharp.Features"
+      - dependency-name: "Microsoft.CodeAnalysis.CSharp.Workspaces"
+      - dependency-name: "Microsoft.CodeAnalysis.Workspaces.MSBuild"
+      - dependency-name: "Microsoft.Build*"
+      - dependency-name: "Microsoft.NET.StringTools"
 
   # ── npm: VS Code extension ──────────────────────────────────────────
   - package-ecosystem: npm
@@ -92,6 +102,11 @@ updates:
       vscode-extension-security:
         applies-to: security-updates
         patterns: ["*"]
+    # @types/vscode IS the extension's API floor: vsce refuses to package when
+    # it is newer than `engines.vscode`, and the floor stays at Cursor's VS Code
+    # base (1.105) so Open VSX forks can install SharpLsp. Raise both together, by hand.
+    ignore:
+      - dependency-name: "@types/vscode"
 
   # ── npm: website ────────────────────────────────────────────────────
   - package-ecosystem: npm
