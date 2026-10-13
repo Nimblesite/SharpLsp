@@ -88,6 +88,16 @@ runs:
         path: src/editors/vscode/.vscode-test
         key: vscode-test-${{ runner.os }}-${{ hashFiles('src/editors/vscode/package-lock.json') }}
         restore-keys: vscode-test-${{ runner.os }}-
+    - name: Install .NET diagnostic tools
+      # The workspace chunk's profiler suites trace and dump real processes,
+      # exactly as ci-test-rust.yml's profiler e2e tests do.
+      if: inputs.chunk == 'workspace'
+      shell: bash
+      run: |-
+        set -euo pipefail
+        dotnet tool install -g dotnet-trace
+        dotnet tool install -g dotnet-counters
+        dotnet tool install -g dotnet-dump
     - name: Remove PATH-installed SharpLsp binaries
       # Force the test host onto the freshly-staged bundled binaries, never a dev
       # copy that leaked onto the runner PATH.
