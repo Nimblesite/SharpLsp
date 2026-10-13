@@ -236,13 +236,15 @@ fn find_command_skips_every_windows_shim_and_takes_the_exe() {
 #[test]
 fn find_command_takes_the_bare_name_off_windows() {
     let dir = tempfile::tempdir().unwrap();
-    touch(dir.path(), "sharplsp-sidecar-csharp.cmd");
+    let cmd = touch(dir.path(), "sharplsp-sidecar-csharp.cmd");
     let path_var = test_paths::path_var_of(&[dir.path()]).unwrap();
+    assert!(cmd.is_file());
     assert_eq!(find_command("sharplsp-sidecar-csharp", &path_var), None);
 
     let bare = touch(dir.path(), "sharplsp-sidecar-csharp");
     let found = find_command("sharplsp-sidecar-csharp", &path_var).unwrap();
     assert_eq!(found, bare);
+    assert_ne!(found, cmd);
     assert_eq!(found.extension(), None);
 }
 
