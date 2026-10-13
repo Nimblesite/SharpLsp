@@ -527,8 +527,21 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
 ///      `docs/specs/BINARY-DEPLOYMENT.md`.
 ///   3. Dev build via `dotnet run --project src/sidecars/<name>`
 ///      (CWD = repo root).
-// TODO [SIDECAR-STARTUP-RESOLUTION]: validate absolute candidates, reject shims, and remove dotnet run.
+// TODO [SIDECAR-STARTUP-RESOLUTION]: validate absolute candidates and remove dotnet run.
 fn sidecar_launch(
+    tool_command: &str,
+    subdir: &str,
+    name: &str,
+    socket_path: &str,
+) -> (String, Vec<String>) {
+    let path_var = std::env::var_os("PATH");
+    sidecar_launch_on(path_var.as_deref(), tool_command, subdir, name, socket_path)
+}
+
+/// [`sidecar_launch`] against the `PATH` value `path_var`, so the resolution
+/// order is testable without mutating the process environment.
+fn sidecar_launch_on(
+    path_var: Option<&std::ffi::OsStr>,
     tool_command: &str,
     subdir: &str,
     name: &str,
@@ -548,7 +561,7 @@ fn sidecar_launch(
         );
     }
 
-    if let Some(found) = find_on_path(tool_command) {
+    if let Some(found) = path_var.and_then(|path| crate::paths::find_command(tool_command, path)) {
         info!(tool = %tool_command, path = %found.display(), source = "PATH", "Sidecar resolved");
         return (tool_command.to_string(), vec![socket_path.to_string()]);
     }
@@ -598,23 +611,6 @@ fn env_var_sidecar_override(subdir: &str) -> Option<std::path::PathBuf> {
             }
         }
     }
-}
-
-/// Resolve a command name to its full path via the `PATH` environment
-/// variable. Returns `None` if the command is not found or is not
-/// executable. On Windows, also tries `.exe` and `.cmd` suffixes.
-fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    let names = crate::paths::command_file_names(command);
-    for dir in std::env::split_paths(&path_var) {
-        for name in &names {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
 }
 
 /// Check for a published sidecar executable.
@@ -759,6 +755,11 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use std::path::PathBuf;
+
+    /// `command` on the process `PATH`, as [`sidecar_launch`] resolves it.
+    fn find_on_path(command: &str) -> Option<PathBuf> {
+        crate::paths::find_command(command, &std::env::var_os("PATH")?)
+    }
 
     /// On Unix, `ipc_path` must produce a `.sock` path containing the sidecar name.
     #[cfg(unix)]
@@ -946,7 +947,7 @@ mod tests {
     }
 
     /// The directory the test executable runs from, where a VSIX lays sidecars.
-    fn test_exe_dir() -> Result<PathBuf> {
+    pub(super) fn test_exe_dir() -> Result<PathBuf> {
         Ok(std::env::current_exe()
             .context("current test executable")?
             .parent()
@@ -954,7 +955,7 @@ mod tests {
             .to_path_buf())
     }
 
-    fn create_vsix_sidecar(subdir: &str, name: &str) -> Result<PathBuf> {
+    pub(super) fn create_vsix_sidecar(subdir: &str, name: &str) -> Result<PathBuf> {
         let exe_dir = test_exe_dir()?;
         let exe = exe_dir.join(subdir).join(sidecar_exe_name(name));
         let parent = exe.parent().context("sidecar executable parent")?;
@@ -963,7 +964,7 @@ mod tests {
         Ok(exe)
     }
 
-    fn remove_vsix_sidecar(subdir: &str, name: &str) -> Result<()> {
+    pub(super) fn remove_vsix_sidecar(subdir: &str, name: &str) -> Result<()> {
         let exe_dir = test_exe_dir()?;
         let dir = exe_dir.join(subdir);
         let exe = dir.join(sidecar_exe_name(name));
@@ -1089,3 +1090,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "manager_path_tests.rs"]
+mod path_tests;

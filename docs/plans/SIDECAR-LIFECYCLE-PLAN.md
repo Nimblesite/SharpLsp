@@ -90,7 +90,7 @@ folded into the new ownership model:
 | #154 | `BoundEndpoint` is printed in READY | Handshake is unversioned/unfenced and is not exercised through the real Rust host |
 | #163 | No complete implementation | Direct-child kill, parent death before connect, Windows descendants, and Unix group cleanup remain |
 | #164 | Request timeout drops a suspect transport | Response ID is unchecked; health performs check/drop/reacquire; notifications can be mistaken for responses |
-| #167 | PATH finder accepts `.cmd`, `.bat`, extensionless entries and spawns a bare name | Candidate type/validation/fallback must be redesigned |
+| #167 | PATH finder takes only `.exe` on Windows, skips directories, and falls through `.cmd`/`.bat`/`.ps1`/extensionless shims to the installed layout; real-file Windows fallback test | Spawns the bare name, not the resolved absolute path; Unix does not check the executable mode; a failed spawn does not continue the chain |
 | #172 | Sidecar flushes the ack before it stops; host checks the correlated `ok`, waits out the 5 s budget for the exit, kills only without one; real-sidecar e2e | Unwritten commands are not cancelled (no command queue until the supervisor); the kill is direct-child only (#163) |
 
 ## 4. Target design `[SIDECAR-PLAN-DESIGN]`

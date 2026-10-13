@@ -188,3 +188,177 @@ fn command_file_names_only_offers_spawnable_exe_on_windows() {
 fn command_file_names_is_the_bare_name_off_windows() {
     assert_eq!(command_file_names("dotnet"), vec!["dotnet".to_string()]);
 }
+
+/// The empty file `name` in `dir`, as a `PATH` entry would hold it.
+fn touch(dir: &Path, name: &str) -> PathBuf {
+    let file = dir.join(name);
+    std::fs::write(&file, b"").unwrap();
+    file
+}
+
+/// GitHub #167: `dotnet tool`, npm and script installs leave `.cmd`, `.bat`,
+/// `.ps1` and extensionless shims on `PATH`. `CreateProcess` launches none of
+/// them, so resolution must skip every one and reach the real `.exe` in a
+/// later `PATH` entry, or resolve nothing. [SIDECAR-STARTUP-RESOLUTION]
+#[cfg(windows)]
+#[test]
+fn find_command_skips_every_windows_shim_and_takes_the_exe() {
+    let shims = tempfile::tempdir().unwrap();
+    let real = tempfile::tempdir().unwrap();
+    let shim_files: Vec<PathBuf> = ["", ".cmd", ".bat", ".ps1"]
+        .iter()
+        .map(|suffix| touch(shims.path(), &format!("sharplsp-sidecar-csharp{suffix}")))
+        .collect();
+    assert_eq!(shim_files.len(), 4);
+    assert!(shim_files.iter().all(|file| file.is_file()));
+
+    // Only shims on PATH: nothing spawnable, so the caller falls back.
+    let only_shims = test_paths::path_var_of(&[shims.path()]).unwrap();
+    assert_eq!(find_command("sharplsp-sidecar-csharp", &only_shims), None);
+    assert_eq!(find_command("SHARPLSP-SIDECAR-CSHARP", &only_shims), None);
+
+    // A real `.exe` in a later entry wins over the earlier entry's shims.
+    let exe = touch(real.path(), "sharplsp-sidecar-csharp.exe");
+    let both = test_paths::path_var_of(&[shims.path(), real.path()]).unwrap();
+    let found = find_command("sharplsp-sidecar-csharp", &both).unwrap();
+    assert_eq!(found, exe);
+    assert_eq!(found.parent(), Some(real.path()));
+    assert_eq!(found.extension().and_then(|ext| ext.to_str()), Some("exe"));
+    assert!(!found.starts_with(shims.path()));
+
+    // An `.exe` beside the shims in the first entry wins on PATH order.
+    let first = touch(shims.path(), "sharplsp-sidecar-csharp.exe");
+    assert_eq!(find_command("sharplsp-sidecar-csharp", &both), Some(first));
+}
+
+/// Off Windows the bare name is the executable; a `.cmd` spelling never is.
+#[cfg(not(windows))]
+#[test]
+fn find_command_takes_the_bare_name_off_windows() {
+    let dir = tempfile::tempdir().unwrap();
+    touch(dir.path(), "sharplsp-sidecar-csharp.cmd");
+    let path_var = test_paths::path_var_of(&[dir.path()]).unwrap();
+    assert_eq!(find_command("sharplsp-sidecar-csharp", &path_var), None);
+
+    let bare = touch(dir.path(), "sharplsp-sidecar-csharp");
+    let found = find_command("sharplsp-sidecar-csharp", &path_var).unwrap();
+    assert_eq!(found, bare);
+    assert_eq!(found.extension(), None);
+}
+
+/// A directory spelt like the executable is not one, and an empty `PATH`
+/// resolves nothing. [SIDECAR-STARTUP-RESOLUTION]
+#[test]
+fn find_command_skips_directories_and_empty_path() {
+    let decoy = tempfile::tempdir().unwrap();
+    let real = tempfile::tempdir().unwrap();
+    let exe_name = executable_name("sharplsp-sidecar-fsharp");
+    std::fs::create_dir(decoy.path().join(&exe_name)).unwrap();
+    assert!(decoy.path().join(&exe_name).is_dir());
+
+    let decoy_only = test_paths::path_var_of(&[decoy.path()]).unwrap();
+    assert_eq!(find_command("sharplsp-sidecar-fsharp", &decoy_only), None);
+    let empty = std::ffi::OsStr::new("");
+    assert_eq!(find_command("sharplsp-sidecar-fsharp", empty), None);
+
+    let exe = touch(real.path(), &exe_name);
+    let both = test_paths::path_var_of(&[decoy.path(), real.path()]).unwrap();
+    assert_eq!(find_command("sharplsp-sidecar-fsharp", &both), Some(exe));
+}
+
+/// Every spelling that is not exactly the platform executable: shims, other
+/// launchable-looking suffixes, double suffixes and case variants of them.
+const NON_EXECUTABLE_SUFFIXES: [&str; 12] = [
+    ".cmd", ".bat", ".ps1", ".com", ".lnk", ".sh", ".dll", ".CMD", ".Bat", ".exe.cmd", ".cmd.txt",
+    "-shim",
+];
+
+/// GitHub #167, one spelling at a time: a `PATH` entry holding only that
+/// spelling resolves nothing, and adding the real executable beside it
+/// resolves exactly the executable. [SIDECAR-STARTUP-RESOLUTION]
+#[test]
+fn find_command_rejects_each_non_executable_spelling_alone() {
+    let exe_name = executable_name("sharplsp-sidecar-csharp");
+    for suffix in NON_EXECUTABLE_SUFFIXES {
+        let dir = tempfile::tempdir().unwrap();
+        let decoy = touch(dir.path(), &format!("sharplsp-sidecar-csharp{suffix}"));
+        let path_var = test_paths::path_var_of(&[dir.path()]).unwrap();
+        assert!(decoy.is_file(), "{suffix}: fixture must exist");
+        assert_eq!(
+            find_command("sharplsp-sidecar-csharp", &path_var),
+            None,
+            "{suffix} must not resolve"
+        );
+
+        let exe = touch(dir.path(), &exe_name);
+        let found = find_command("sharplsp-sidecar-csharp", &path_var);
+        assert_eq!(found, Some(exe), "{suffix}: the executable beside it wins");
+        assert_ne!(found, Some(decoy), "{suffix} must never be the answer");
+    }
+}
+
+/// Windows file names are case-insensitive: the `.exe` resolves whatever the
+/// casing of the command or of the file on disk. [SIDECAR-STARTUP-RESOLUTION]
+#[cfg(windows)]
+#[test]
+fn find_command_matches_the_exe_in_any_casing_on_windows() {
+    for on_disk in ["tool-x.exe", "TOOL-X.EXE", "Tool-X.Exe"] {
+        let dir = tempfile::tempdir().unwrap();
+        let _file = touch(dir.path(), on_disk);
+        let path_var = test_paths::path_var_of(&[dir.path()]).unwrap();
+        for command in ["tool-x", "TOOL-X", "Tool-X"] {
+            let found = find_command(command, &path_var);
+            assert!(found.is_some(), "{command} must resolve {on_disk}");
+            let found = found.unwrap();
+            assert_eq!(found.parent(), Some(dir.path()), "{command} vs {on_disk}");
+            assert!(found.is_file(), "{command} vs {on_disk}");
+            assert_eq!(
+                found.file_name(),
+                Some(OsStr::new(&executable_name(command)))
+            );
+        }
+    }
+}
+
+/// Empty, missing and file (not directory) `PATH` entries are skipped, and the
+/// search goes on to the entry that holds the executable. [SIDECAR-STARTUP-RESOLUTION]
+#[test]
+fn find_command_skips_empty_missing_and_file_path_entries() {
+    let root = tempfile::tempdir().unwrap();
+    let missing = root.path().join("not-created");
+    let file_entry = touch(root.path(), "a-file-not-a-dir");
+    let real = tempfile::tempdir().unwrap();
+    let exe = touch(real.path(), &executable_name("sharplsp-sidecar-fsharp"));
+    let entries = [
+        missing.as_path(),
+        Path::new(""),
+        file_entry.as_path(),
+        real.path(),
+    ];
+    let path_var = test_paths::path_var_of(&entries).unwrap();
+
+    assert!(!missing.exists());
+    assert_eq!(
+        find_command("sharplsp-sidecar-fsharp", &path_var),
+        Some(exe)
+    );
+    let without_real = test_paths::path_var_of(&entries[..3]).unwrap();
+    assert_eq!(find_command("sharplsp-sidecar-fsharp", &without_real), None);
+}
+
+/// Windows `PATH` entries may be quoted and hold spaces; the quotes are not part
+/// of the directory. [SIDECAR-STARTUP-RESOLUTION]
+#[cfg(windows)]
+#[test]
+fn find_command_reads_quoted_windows_path_entries() {
+    let root = tempfile::tempdir().unwrap();
+    let spaced = root.path().join("Program Files (x86)");
+    std::fs::create_dir(&spaced).unwrap();
+    let exe = touch(&spaced, "sharplsp-sidecar-csharp.exe");
+    let quoted = std::ffi::OsString::from(format!("\"{}\"", spaced.display()));
+
+    let found = find_command("sharplsp-sidecar-csharp", &quoted).unwrap();
+    assert_eq!(found, exe);
+    assert!(found.is_file());
+    assert!(!found.to_string_lossy().contains('"'));
+}
