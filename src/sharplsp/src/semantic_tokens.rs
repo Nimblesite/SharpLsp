@@ -367,7 +367,11 @@ mod tests {
     #[test]
     fn compute_delta_of_identical_arrays_is_empty() {
         let tokens = [0, 0, 1, 0, 0, 1, 0, 2, 0, 0];
-        assert!(compute_delta(&tokens, &tokens).is_empty());
+        assert!(
+            matches!(compute_delta(&tokens, &tokens).as_slice(), []),
+            "{:?}",
+            compute_delta(&tokens, &tokens)
+        );
     }
 
     #[test]

@@ -90,6 +90,44 @@ let private openSolution () =
         return state, root, core, app
     }
 
+/// A folder remains discoverable when it contains several solutions; an explicit
+/// solution path narrows the project list after the user chooses one.
+/// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+let private writeSingleProjectSolution root name =
+    let path = NativePaths.Resolve(root, name, $"{name}.slnx")
+    File.WriteAllText(path, $"<Solution><Project Path=\"{name}.fsproj\" /></Solution>")
+    path
+
+let private assertMultipleSolutionDiscovery root chosenSolution =
+    task {
+        let! folder = FSharpProjectLoading.discoverFsprojFiles root System.Threading.CancellationToken.None
+        let! chosen = FSharpProjectLoading.discoverFsprojFiles chosenSolution System.Threading.CancellationToken.None
+        let coreProject = NativePaths.Resolve(root, "Core", "Core.fsproj")
+        let appProject = NativePaths.Resolve(root, "App", "App.fsproj")
+        match folder, chosen with
+        | Ok all, Ok selected ->
+            Assert.Equal<string array>([| appProject; coreProject |] |> Array.sort, all |> Array.sort)
+            Assert.Equal<string array>([| appProject |], selected)
+            Assert.Equal(2, all.Length)
+        | _ -> failwith $"folder and selected solution must open: {folder}; {chosen}"
+    }
+
+[<Fact>]
+let ``multiple solutions do not block F# discovery and a selected solution narrows it`` () =
+    task {
+        let root = NativePaths.Temp($"sharplsp-solutions-{Guid.NewGuid():N}")
+        let core = writeProject root "Core" "Library.fs" coreSource []
+        let app = writeProject root "App" "Program.fs" appSource []
+        writeSingleProjectSolution root "Core" |> ignore
+        let appSolution = writeSingleProjectSolution root "App"
+
+        try
+            do! assertMultipleSolutionDiscovery root appSolution
+            Assert.True(File.Exists(core) && File.Exists(app), "both real project sources exist")
+        finally
+            cleanup root
+    }
+
 /// The errors FCS reports for `file`, as (0-based line, message).
 let private errorsIn state file =
     task {

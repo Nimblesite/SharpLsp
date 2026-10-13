@@ -1,5 +1,6 @@
 use super::profiler_full_stack::{
     build_profile_target, start_profiler_session, stop_profile_target,
+    PROFILE_TARGET_PARENT_PID_ENV,
 };
 use super::*;
 
@@ -217,7 +218,7 @@ fn test_profiler_edge_profile_target_dies_when_parent_killed() {
         .arg("-c")
         .arg(format!(
             "{}=$$ {} >/dev/null 2>&1 & echo $!; wait",
-            super::profiler_full_stack::PROFILE_TARGET_PARENT_PID_ENV,
+            PROFILE_TARGET_PARENT_PID_ENV,
             binary.display()
         ))
         .stdout(Stdio::piped())

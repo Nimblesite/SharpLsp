@@ -1,6 +1,6 @@
 {
   "extension.displayName": "SharpLsp",
-  "extension.description": "开源的 .NET Language Server——为每个编辑器提供 C# 和 F# 智能感知。零许可证，零厂商锁定。",
+  "extension.description": "Visual Studio 和 Rider 的开源替代方案：完整的 C# 与 F#，包含 NuGet、调试、性能分析和测试。支持 Windows、macOS 和 Linux 上的 VS Code、Cursor 与 Windsurf。",
   "category": "SharpLsp",
 
   "configuration.title": "SharpLsp",
@@ -74,7 +74,7 @@
   "cmd.profiler.openTrace": "打开跟踪文件…",
   "cmd.profiler.convertTrace": "将 .nettrace 转换为 SpeedScope",
   "cmd.profiler.stopSession": "停止会话",
-  "cmd.profiler.revealOutput": "在 Finder 中显示输出文件",
+  "cmd.profiler.revealOutput": "显示输出文件",
   "cmd.profiler.copyOutputPath": "复制输出路径",
   "cmd.profiler.showCountersPanel": "显示实时计数器面板",
   "cmd.profiler.traceProcess": "对此进程开始跟踪",

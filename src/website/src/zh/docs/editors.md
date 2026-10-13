@@ -15,7 +15,7 @@ SharpLsp 在协议层面与编辑器无关。目前受支持且已打包的客�
 
 ## VS Code
 
-从 [VS Code Marketplace 安装 SharpLsp](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp)。VSIX 包含 Rust 宿主以及 C# 和 F# sidecar，因此无需单独安装 SharpLsp。
+从 [VS Code Marketplace 安装 SharpLsp](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp)；在 Cursor、Windsurf 和 VSCodium 中则从 [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) 安装。VSIX 包含 Rust 宿主以及 C# 和 F# sidecar，因此无需单独安装 SharpLsp。
 
 激活时，扩展会：
 
@@ -36,6 +36,6 @@ SharpLsp 在协议层面与编辑器无关。目前受支持且已打包的客�
 
 ## 其他 LSP 客户端
 
-通用编辑器可以通过标准输入输出使用 LSP 3.17 与宿主通信，但 SharpLsp 尚未提供受支持的独立安装流程，来为这些客户端部署宿主和两个 sidecar。Zed、Neovim、Rider、Helix 和 Emacs 集成属于规划内容，并非当前发布的使用界面。
+通用编辑器可以通过标准输入输出使用 LSP 3.17 与宿主通信，每次[发布](https://github.com/Nimblesite/SharpLsp/releases)都会提供按平台区分的独立服务器归档（宿主与两个 sidecar 放在一起），以及启动它的 Rider 插件（`sharplsp-rider.zip`）。Zed、Neovim、Helix 和 Emacs 的打包集成属于规划内容，并非当前发布的使用界面。
 
 要了解如何从代码库构建，请参阅[参与贡献](/zh/docs/contributing/)。

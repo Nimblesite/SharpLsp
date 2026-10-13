@@ -55,9 +55,6 @@ so they are out of scope for parity until the host wires them:
   **intentionally disabled** in the host ([src/sharplsp/src/main.rs:539](../../src/sharplsp/src/main.rs#L539));
   use Fantomas (F#) / CSharpier (C#) directly. F# additionally exposes
   `textDocument/formattingPreview` for the diff UI.
-- `textDocument/didChange` — the host only notifies the **C#** sidecar
-  ([src/sharplsp/src/main.rs:1050](../../src/sharplsp/src/main.rs#L1050)). The F# sidecar reads source from
-  disk per request. See "Known limitations" below.
 - `workspace/diagnostics/all` — C#-only batch path; the host pulls per-document.
 
 ## Design notes
@@ -110,10 +107,9 @@ routes each open F# file to the F# sidecar's document symbols
 
 ## Known limitations / follow-ups
 
-- **Unsaved-buffer fidelity** — the host does not send `textDocument/didChange` to
-  the F# sidecar, so F# semantic results reflect on-disk content. Wiring
-  `notify_did_change` to the F# sidecar + an in-memory overlay is a separate change
-  (tracked here, not in this parity pass).
+- **Unsaved-buffer fidelity** — implemented: the host sends `didOpen` and `didChange`
+  text to the document's own sidecar, and F# analyses use the in-memory overlay
+  ([HOVER-FSHARP-OVERLAY], #160).
 - **Completion auto-`open`** — `completionItem/resolve` should insert the `open` for
   `NamespaceToOpen` items; deferred until the host's resolve wire carries it cleanly.
 - **Cross-language hierarchies** — F#↔C# call/type hierarchy edges require a unified

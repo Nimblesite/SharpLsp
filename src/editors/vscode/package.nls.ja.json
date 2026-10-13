@@ -1,6 +1,6 @@
 {
   "extension.displayName": "SharpLsp",
-  "extension.description": "オープンソースの .NET Language Server — あらゆるエディターのための C# / F# インテリジェンス。ライセンス料ゼロ、ベンダーロックインなし。",
+  "extension.description": "Visual Studio と Rider に代わるオープンソース。C# と F# をフルサポートし、NuGet・デバッグ・プロファイリング・テストまで。Windows・macOS・Linux の VS Code、Cursor、Windsurf で。",
   "category": "SharpLsp",
 
   "configuration.title": "SharpLsp",
@@ -74,7 +74,7 @@
   "cmd.profiler.openTrace": "トレースファイルを開く…",
   "cmd.profiler.convertTrace": ".nettrace を SpeedScope に変換",
   "cmd.profiler.stopSession": "セッションを停止",
-  "cmd.profiler.revealOutput": "Finder で出力ファイルを表示",
+  "cmd.profiler.revealOutput": "出力ファイルを表示",
   "cmd.profiler.copyOutputPath": "出力パスをコピー",
   "cmd.profiler.showCountersPanel": "ライブカウンターパネルを表示",
   "cmd.profiler.traceProcess": "このプロセスのトレースを開始",

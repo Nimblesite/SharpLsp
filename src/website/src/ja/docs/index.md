@@ -15,7 +15,7 @@ SharpLsp は、1 つの Rust ホストから C# と F# のセマンティック�
 
 ### VS Code
 
-[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から SharpLsp 拡張機能をインストールします。
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から SharpLsp 拡張機能をインストールします。Cursor・Windsurf・VSCodium では [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) からインストールできます。
 
 VSIX には `sharplsp` ホストと両方の .NET サイドカーが同梱されています。Rust ツールチェーンや SharpLsp バイナリを別途用意する必要はありません。`.sln`、`.slnx`、`.csproj`、`.fsproj` のいずれかを含むワークスペースを開くと、拡張機能がサーバーを起動します。
 
@@ -30,6 +30,6 @@ VSIX には `sharplsp` ホストと両方の .NET サイドカーが同梱され
 
 ### その他のエディター
 
-サーバーは可能な限り標準 LSP を使用しますが、Neovim、Zed、Rider、Helix、Emacs 向けのパッケージ化された統合はまだリリースされていません。
+サーバーは可能な限り標準 LSP を使用します。各 GitHub リリースではスタンドアロンのサーバーアーカイブと Rider プラグインを公開していますが、Neovim、Zed、Helix、Emacs 向けのパッケージ化された統合はまだリリースされていません。
 
 <p class="next-link"><a href="/ja/docs/architecture/">次へ: アーキテクチャ <span aria-hidden="true">→</span></a></p>

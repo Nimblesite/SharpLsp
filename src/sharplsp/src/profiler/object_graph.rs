@@ -141,7 +141,7 @@ pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGrap
         let stdout = String::from_utf8_lossy(&dumpobj_output.stdout);
         let parsed = parse_dumpobj_for_graph(&stdout, &address, depth);
 
-        if let Some(node) = parsed.node {
+        if let Some(mut node) = parsed.node {
             // Apply type filter: only include nodes whose type_name matches.
             if let Some(ref filter) = params.type_filter {
                 let filter_lower = filter.to_lowercase();
@@ -167,6 +167,8 @@ pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGrap
                 }
             }
 
+            node.retained_size_bytes =
+                super::retained_size::measure(tool, &params.dump_path, &address).await?;
             let _ = nodes.insert(address.clone(), node);
         }
     }
@@ -230,7 +232,7 @@ fn parse_dumpobj_for_graph(output: &str, address: &str, depth: usize) -> ParsedN
         type_name,
         display_name,
         size_bytes,
-        retained_size_bytes: size_bytes, // Updated later if objsize is available.
+        retained_size_bytes: size_bytes, // Replaced by SOS objsize before returning the graph.
         instance_count: 1,
         is_root: false,
         root_kind: None,
@@ -485,7 +487,11 @@ Size:        24(0x18) bytes
         let node = parsed.node.unwrap();
         assert_eq!(node.type_name, "System.Object");
         assert_eq!(node.display_name, "Object");
-        assert!(parsed.references.is_empty());
+        assert!(
+            matches!(parsed.references.as_slice(), []),
+            "{:?}",
+            parsed.references
+        );
     }
 
     #[test]

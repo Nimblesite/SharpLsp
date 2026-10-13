@@ -102,6 +102,15 @@ export default function (eleventyConfig) {
     body ? releaseNotesMd.render(body) : "",
   );
 
+  // package.json overrides chokidar with 4.0.3: chokidar 3 depends on braces,
+  // whose GHSA-vfj7-8cjw-p6xm has no patched release. chokidar 4 cannot follow
+  // the globs Eleventy 3 watches, so `--serve` watches every source file by
+  // path instead (a newly created file needs a restart). Drop this when
+  // Eleventy itself moves to chokidar 4+.
+  for (const entry of readdirSync("src", { recursive: true, withFileTypes: true })) {
+    if (entry.isFile()) eleventyConfig.addWatchTarget(`${entry.parentPath}/${entry.name}`);
+  }
+
   eleventyConfig.addPassthroughCopy("src/assets");
   eleventyConfig.addPassthroughCopy("src/favicon.ico");
   eleventyConfig.addPassthroughCopy("src/favicon.svg");

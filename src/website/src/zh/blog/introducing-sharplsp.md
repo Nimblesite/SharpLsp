@@ -260,6 +260,8 @@ Rust 与 sidecar 之间的 IPC 在 Unix domain sockets 上使用 MessagePack（W
 
 **所有 SharpLsp 二进制文件都集中安装在机器上的同一个位置。** `$PATH` 上的 `sharplsp` 就是任何编辑器所需的全部内容。编辑器扩展只是启动系统二进制文件的轻量客户端——不包含任何捆绑的可执行文件。一次安装即可同时服务 VS Code、Neovim、Helix、Zed，以及所有其他支持 LSP 的编辑器。
 
+> **更新（2026 年 10 月）：** VS Code 扩展现在会在按平台区分的 VSIX 中捆绑宿主、两个 sidecar 和调试器，实现零配置安装。其他编辑器使用每次发布附带的独立 `sharplsp` 归档。
+
 这解决了当前生态中最荒谬的现象之一：每个编辑器扩展都捆绑了自己的语言服务器二进制副本。OmniSharp VS Code 扩展捆绑了一份 OmniSharp 二进制。Ionide 扩展捆绑了自己构建的 F# 语言服务器。这些二进制按扩展、按编辑器、按机器分别下载。它们不共享进程，也不共享缓存。同时使用 VS Code 和 Neovim 处理同一解决方案的开发者，理论上会运行两个独立的 OmniSharp 实例——每个都在内存中维护自己的一份 Roslyn 工作区。SharpLsp 每个解决方案只运行一个进程，由机器上所有编辑器共享。
 
 ## F# 不是事后补上的
@@ -286,7 +288,7 @@ Windows 和 Rider 之外的 F# 工具状态一直是持续的挫败之源，并�
 
 SharpLsp 直接回应这些诉求。C# 和 F# 共享同一层基础设施。它们对齐相同的功能目标。它们按相同的标准接受测试。F# 不是事后补上——它从第一天起就是一等目标。
 
-F# sidecar 运行 [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service)，配合 [Ionide.ProjInfo](https://github.com/ionide/proj-info) 解析项目，并使用 [FSharpLint](https://github.com/fsprojects/FSharpLint) 提供 lint。F# 专属功能——管线类型提示（在 `|>` 链中内联显示中间类型）、union case 生成、record stub 补全、computation expression 补全、`.fsproj` 中的文件顺序感知，以及带 NuGet 引用补全的 `.fsx` 脚本支持——都是路线图上的第一优先级项目，而不是未来可有可无的装饰。
+F# sidecar 运行 [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service)，配合 SharpLsp 自有的项目选项加载器，并使用 [Fantomas](https://github.com/fsprojects/fantomas) 进行格式化。F# 专属功能——管线类型提示（在 `|>` 链中内联显示中间类型）、union case 生成、record stub 补全、computation expression 补全、`.fsproj` 中的文件顺序感知，以及带 NuGet 引用补全的 `.fsx` 脚本支持——都是路线图上的第一优先级项目，而不是未来可有可无的装饰。
 
 我们正在构建的标杆，就是 **Jwosty** 在 r/fsharp 描述 Rider F# 支持时所说的：
 

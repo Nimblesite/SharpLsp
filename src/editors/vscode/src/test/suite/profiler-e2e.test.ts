@@ -61,6 +61,8 @@ import {
 } from '../../profiler-diff.js';
 import { ObjectGraphPanel, promptAndOpenGraph } from '../../profiler-graph.js';
 import { ACTIVATION_MS, COMMAND_MS } from './test-timeouts';
+import { recordExternalUrls } from './external-url-kit';
+import { graphFixture } from './profiler-graph-test-kit';
 
 // ── Extension API access ─────────────────────────────────────────
 
@@ -177,7 +179,9 @@ function rejectingClient(error: unknown) {
 }
 
 function fakeContext(): vscode.ExtensionContext {
-  return { subscriptions: [] } as unknown as vscode.ExtensionContext;
+  const extensionPath = vscode.extensions.getExtension(EXTENSION_ID)?.extensionPath;
+  assert.ok(extensionPath);
+  return { subscriptions: [], extensionPath } as unknown as vscode.ExtensionContext;
 }
 
 // ── Fixture builders ─────────────────────────────────────────────
@@ -694,7 +698,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.countersProcess', node);
     });
-    // dumpProcess early-returns in test mode; still must not throw.
+    // The per-process dump action starts directly without another PID picker.
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.dumpProcess', node);
     });
@@ -822,19 +826,11 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     // Try to stub openExternal so we can positively assert it was reached with
     // the speedscope URL. `vscode.env.openExternal` may be a read-only getter;
     // if so, defineProperty throws and we fall back to the refusal-tolerant path.
-    const env = vscode.env as unknown as Record<string, unknown>;
-    const original = env['openExternal'];
     const captured: vscode.Uri[] = [];
+    let external: ReturnType<typeof recordExternalUrls> | undefined;
     let stubbed: boolean;
     try {
-      Object.defineProperty(vscode.env, 'openExternal', {
-        value: async (uri: vscode.Uri): Promise<boolean> => {
-          captured.push(uri);
-          return true;
-        },
-        configurable: true,
-        writable: true,
-      });
+      external = recordExternalUrls(captured);
       stubbed = true;
     } catch {
       stubbed = false;
@@ -876,13 +872,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
         );
       }
     } finally {
-      if (stubbed) {
-        Object.defineProperty(vscode.env, 'openExternal', {
-          value: original,
-          configurable: true,
-          writable: true,
-        });
-      }
+      external?.restore();
     }
 
     assert.strictEqual(stubs.log.openDialogOptions.length, 1, 'one open dialog for the selection');
@@ -1180,37 +1170,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     }, 'showObjectGraph command must not throw in the test host');
 
     const dump = makeDumpFile('graph.dmp');
-    const graphResult = {
-      nodes: [
-        {
-          id: '0x1',
-          type_name: 'My.Type',
-          display_name: 'root',
-          size_bytes: 24,
-          retained_size_bytes: 24,
-          instance_count: 1,
-          is_root: true,
-          depth: 0,
-        },
-        {
-          id: '0x2',
-          type_name: 'Child',
-          display_name: 'leaf',
-          size_bytes: 8,
-          retained_size_bytes: 8,
-          instance_count: 1,
-          is_root: false,
-          depth: 1,
-        },
-      ],
-      edges: [],
-      stats: {
-        total_nodes_traversed: 2,
-        total_edges_traversed: 1,
-        max_depth_reached: 1,
-        truncated: true,
-      },
-    };
+    const graphResult = graphFixture();
 
     // (a) Cancel the open dialog → no panel, no input box.
     panelSpy = spyWebviewPanels();
@@ -1234,6 +1194,17 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
     );
     const html = panelSpy.created[0]?.webview.html ?? '';
     assert.ok(html.includes('Root: 00007ff8CAFE'), 'trimmed root address echoed');
+    // [PROFILER-GRAPH-WEBVIEW] A text summary does not implement the graph.
+    assert.ok(html.includes('<svg'), 'retention graph must render an SVG viewport');
+    assert.ok(
+      html.includes('profiler-graph-webview.js'),
+      'interactive graph code is bundled locally',
+    );
+    assertContainsAll(
+      html,
+      ['Filter by type', 'Traversal depth', 'Export SVG', 'Export PNG'],
+      'graph controls',
+    );
     assert.ok(!html.includes('  00007ff8CAFE'), 'untrimmed address must not leak');
     assertContainsAll(
       html,

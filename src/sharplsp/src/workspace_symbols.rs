@@ -855,7 +855,7 @@ mod tests {
         let mut files = Vec::new();
         // Must not panic — simply returns nothing.
         collect_files(path, is_source_file, &mut files);
-        assert!(files.is_empty());
+        assert!(matches!(files.as_slice(), []), "{files:?}");
     }
 
     #[test]

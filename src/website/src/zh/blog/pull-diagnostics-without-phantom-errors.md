@@ -99,7 +99,7 @@ SharpLsp 使用 `workspace/diagnostic` 提供解决方案级错误覆盖。当�
 
 F# sidecar 通过 `FSharpChecker` 使用 [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/) 产生诊断。FCS 诊断带 `FS` 前缀，反映完整 F# 类型检查器对项目的看法——包括可区分联合的穷尽性、缺失的接口实现、未使用的绑定（`FS0026`）以及部分活动模式。
 
-[FSharpLint](https://github.com/fsprojects/FSharpLint) 为 F# 提供分析器层，规则严重级别可配置。被配置为构建阻断的 lint 错误会得到与 Roslyn `CA` 错误相同的处理——它们出现在 Problems 面板中，不会被过滤。
+F# 的分析器层由 SharpLsp 自有的、基于 FCS 的分析器提供：`SLSPF0101` 死代码、`SLSPF0102` 未使用的 `open` 和 `SLSPF0103` 冗余限定符。它们的结果与 Roslyn `CA` 错误得到相同处理——出现在 Problems 面板中，不会被过滤。
 
 `.fsproj` 中的 F# 文件顺序对编译至关重要。FCS 会针对因为文件顺序不对而产生的前向引用报告错误。SharpLsp 把它们作为真实诊断显示——它们就是真实的构建错误——同时标记顺序来源以便开发者理解修复方法。
 

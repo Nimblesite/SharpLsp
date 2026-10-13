@@ -1,28 +1,61 @@
-# SharpLsp for VS Code
+<p align="center">
+  <img src="https://sharplsp.dev/assets/images/marketplace/sharplsp-tour.gif" width="100%" alt="SharpLsp のツアー：Visual Studio と Rider に代わるオープンソース。ソリューションエクスプローラー、NuGet ブラウザー、C# と F#、デバッグ、プロファイリング、テストを VS Code・Cursor・Windsurf で">
+</p>
 
-オープンソースの .NET Language Server — あらゆるエディターのための C# / F# インテリジェンス。ライセンス料ゼロ、ベンダーロックインなし。
+<h1 align="center">SharpLsp</h1>
 
-> 🌐 **他の言語:** [English](https://sharplsp.dev/) · [简体中文](https://sharplsp.dev/zh/)
+<p align="center">
+  <strong>Visual Studio と Rider に代わるオープンソース。</strong><br>
+  C# も F# もフルサポート。NuGet、デバッグ、プロファイリング、テストを、いつものエディターで。
+</p>
 
-## 機能
+<p align="center">
+  <a href="https://sharplsp.dev/ja/docs/">ドキュメント</a> ·
+  <a href="https://sharplsp.dev/ja/blog/">ブログ</a> ·
+  <a href="https://github.com/Nimblesite/SharpLsp">GitHub</a> ·
+  <a href="https://github.com/Nimblesite/SharpLsp/issues">Issues</a> ·
+  <a href="https://sharplsp.dev/">English</a> ·
+  <a href="https://sharplsp.dev/zh/">简体中文</a>
+</p>
 
-- **コード補完** — Roslyn による IntelliSense 品質の補完
-- **診断** — 入力に追従するリアルタイムのエラーと警告
-- **ホバー / クイック情報** — 完全な型シグネチャ、XML ドキュメント、nullable 注釈
-- **定義へ移動** — ソースまたは逆コンパイルされたメタデータへジャンプ
-- **ドキュメントシンボル** — tree-sitter による高速アウトライン
-- **コード折りたたみ** — 構文を考慮した領域の折りたたみ
-- **F# サポート** — FSharp.Compiler.Service による第一級の F# 対応
-- **ソリューションエクスプローラー** — .sln / .slnx、プロジェクト、シンボルのツリービュー
-- **プロファイラー** — 組み込みの .NET プロファイリング、カウンター監視、メモリ解析
+## 🥊 重い IDE はもう要らない。パワーはそのまま。
 
-## プロファイラー
+ソリューションエクスプローラー、プロジェクト参照とパッケージ参照、ビルド、リファクタリング、NuGet、デバッガー、プロファイラー、テストエクスプローラー。IDE のワークフローをまるごと VS Code の中に。**サブスクリプション不要。ライセンスサーバー不要。アカウント不要。ずっと MIT。**
 
-SharpLsp は `dotnet-trace`、`dotnet-counters`、`dotnet-dump` をシームレスなエディター体験にラップします。ターミナルは不要です。
+<p align="center">
+  <img src="https://sharplsp.dev/assets/images/marketplace/sharplsp-explorer.png" width="100%" alt="SharpLsp のソリューションエクスプローラー：.NET ソリューション、プロジェクト、依存関係、C# シンボルと Roslyn でハイライトされたコード">
+</p>
 
-### セットアップ
+## ⚖️ C# と F#。えこひいきなし。
 
-.NET 診断ツールをインストールします:
+C# は **Roslyn**、F# は **FSharp.Compiler.Service** で動きます。どちらも補完、ホバー、定義へ移動、参照の検索、名前の変更、コードアクション、セマンティックハイライト、インレイヒント、リアルタイム診断に対応。ソリューションエクスプローラー、テストエクスプローラー、デバッガー、プロファイラーも同じものが使えます。
+
+F# にはさらに **F# Interactive**、`.fsi` シグネチャファイル生成、パイプラインの型ヒント。
+
+## 🐞 デバッグ、プロファイル、テスト。おいしいところ全部。
+
+| | |
+| --- | --- |
+| 🐞 **デバッグ** | F5、ブレークポイント、ステップ実行、ホットリロード。MIT ライセンスの netcoredbg デバッガーを同梱。 |
+| 🔥 **プロファイル** | SpeedScope での CPU トレース、ライブカウンター、メモリダンプ、ヒープ差分、リーク検出、保持グラフ。 |
+| 🧪 **テスト** | xUnit・NUnit・MSTest・Expecto・FsCheck のテストエクスプローラーと CodeLens。VSTest と MTP、C# と F# の両方。 |
+| 📦 **NuGet** | パッケージの検索、インストール、更新、削除、統合。ターミナル不要。 |
+
+<p align="center">
+  <img src="https://sharplsp.dev/assets/images/marketplace/sharplsp-nuget.png" width="100%" alt="SharpLsp の NuGet ブラウザー：ダウンロード数付きのパッケージ一覧と、インストールボタンのあるパッケージ詳細パネル">
+</p>
+
+## 🌍 どこでも動く。
+
+**Windows と Linux**（x64・Arm64）、**macOS**（Apple シリコン）。VS Code Marketplace または **Open VSX** からインストールでき、**VS Code、Cursor、Windsurf、VSCodium** などで動きます。デバッガーもオープンソースなので、どのエディターでも F5 が使えます。
+
+## ⚡ 30 秒で始める
+
+1. **SharpLsp** をインストール。
+2. `.sln`、`.slnx`、`.csproj`、`.fsproj` を含むフォルダーを開く。
+3. コードを書く。
+
+拡張機能には言語サーバー、2 つの .NET サイドカー、デバッガーが同梱されています。**.NET 10 SDK** がなければ Microsoft の .NET Install Tool で取得します。プロファイラーは標準の .NET 診断ツールを使います。最初に一度だけインストールしてください：
 
 ```bash
 dotnet tool install -g dotnet-trace
@@ -30,30 +63,8 @@ dotnet tool install -g dotnet-counters
 dotnet tool install -g dotnet-dump
 ```
 
-### 使い方
+ワークスペースの `sharplsp.toml` ですべて調整できます。詳しくは[設定ガイド](https://sharplsp.dev/ja/docs/configuration/)を参照してください。
 
-SharpLsp サイドバーの **Profiler** パネルを開くと、実行中の .NET プロセスを確認できます。
+## 💚 オープンソース
 
-| 操作 | 方法 |
-|--------|-----|
-| **パフォーマンスをトレース** | `SharpLsp: Start Trace` — プロセスを選択すると、停止するまでトレースが実行されます。出力は SpeedScope で開きます。 |
-| **カウンターを監視** | `SharpLsp: Start Counters` — webview パネルで .NET パフォーマンスカウンターをリアルタイム更新するテーブルを表示します。 |
-| **メモリダンプを取得** | `SharpLsp: Collect Dump` — Heap、Full、Mini のいずれかのダンプ種別を選択します。 |
-| **ヒープを解析** | `SharpLsp: Analyze Heap` — `.dmp` ファイルを選択して、型ごとの件数とメモリ使用量を表示します。 |
-
-すべてのコマンドはコマンドパレット（`Ctrl+Shift+P` / `Cmd+Shift+P`）から利用できます。
-
-## 必要環境
-
-- .NET SDK 10.0+
-- `sharplsp` バイナリ（ソースからビルドするか、リリースからダウンロード）
-
-## 構成
-
-ワークスペースルートの `sharplsp.toml` で構成します。詳細は[完全なドキュメント](https://sharplsp.dev/ja/docs/configuration/)を参照してください。
-
-## リンク
-
-- [ドキュメント](https://sharplsp.dev/ja/docs/)
-- [GitHub](https://github.com/Nimblesite/SharpLsp)
-- [Issues](https://github.com/Nimblesite/SharpLsp/issues)
+SharpLsp は [GitHub](https://github.com/Nimblesite/SharpLsp) 上で MIT ライセンスのもと開発されています。バグ報告、アイデア、プルリクエストを歓迎します。
