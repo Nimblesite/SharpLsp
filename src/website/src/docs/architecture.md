@@ -20,12 +20,12 @@ The host process owns:
 
 - LSP 3.17 JSON-RPC over stdio;
 - full-text document synchronization and the in-memory VFS;
-- C# tree-sitter parsing for document symbols, folding, selection ranges, linked editing, and syntax pre-validation;
+- tree-sitter parsing: folding and selection ranges for C# and F#, plus C# document symbols, linked editing, and syntax pre-validation;
 - routing to the correct language sidecar;
 - sidecar startup, health checks, restart backoff, and shutdown;
 - diagnostic delivery, NuGet request handling, and profiler request handling.
 
-The host currently includes only the C# tree-sitter grammar. F# document and workspace symbols route to FCS; F# folding and selection ranges are not available yet.
+The host loads both the C# and F# tree-sitter grammars, so F# folding and selection ranges are served from syntax too. F# document and workspace symbols route to FCS.
 
 Although tree-sitter is designed for incremental parsing, the current full-sync path reparses C# documents from a fresh tree after each change. SharpLsp does not currently depend on salsa.
 

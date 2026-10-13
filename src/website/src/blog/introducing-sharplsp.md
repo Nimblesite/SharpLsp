@@ -259,6 +259,8 @@ Syntax-only requests — document symbols, folding ranges, selection ranges — 
 
 **All SharpLsp binaries live in one central location on the machine.** `sharplsp` on `$PATH` is all any editor needs. Editor extensions are thin clients that launch the system binary — they contain zero bundled executables. One install serves VS Code, Neovim, Helix, Zed, and every other LSP-capable editor simultaneously.
 
+> **Update (October 2026):** the VS Code extension now bundles the host, both sidecars, and the debugger in a per-platform VSIX for a zero-setup install. Every other editor uses the standalone `sharplsp` archive published with each release.
+
 This resolves one of the more absurd aspects of the current ecosystem: every editor extension bundles its own copy of the language server binary. The OmniSharp VS Code extension ships a bundled OmniSharp binary. The Ionide extension ships its own build of the F# language server. These binaries are downloaded per-extension, per-editor, per-machine. They do not share a process. They do not share a cache. A developer using VS Code and Neovim simultaneously against the same solution would theoretically be running two separate instances of OmniSharp — each maintaining its own copy of the Roslyn workspace in memory. SharpLsp runs one process per solution, shared by all editors on the machine.
 
 ## F# Is Not an Afterthought
@@ -285,7 +287,7 @@ And user **verdadkc** in the F# tooling state thread described the onboarding ba
 
 SharpLsp addresses this directly. C# and F# share the same infrastructure tier. They hit the same feature targets. They are tested to the same standard. F# is not a bolt-on — it is a first-class target from day one.
 
-The F# sidecar runs [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) with [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking and [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting. F#-specific features — pipeline type hints (inline display of intermediate types in `|>` chains), union case generation, record stub completion, computation expression completions, file ordering awareness in `.fsproj`, and `.fsx` script support with NuGet reference completions — are on the roadmap as first-priority items, not future nice-to-haves.
+The F# sidecar runs [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) with SharpLsp's own project-options loader and [Fantomas](https://github.com/fsprojects/fantomas) for formatting. F#-specific features — pipeline type hints (inline display of intermediate types in `|>` chains), union case generation, record stub completion, computation expression completions, file ordering awareness in `.fsproj`, and `.fsx` script support with NuGet reference completions — are on the roadmap as first-priority items, not future nice-to-haves.
 
 The bar we are building to is the one **Jwosty** described of Rider's F# support on r/fsharp:
 

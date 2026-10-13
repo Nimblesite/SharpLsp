@@ -19,7 +19,7 @@ Tracks progress against the spec. Every checked item has implementing code and a
 - [x] `sharplsp/profiler/stopCounters`
 - [x] `sharplsp/profiler/collectDump`
 - [x] Session store (`DashMap<String, ProfileSession>`) with lifecycle states
-- [x] Tool discovery (PATH + `dotnet tool list -g` fallback)
+- [x] Tool discovery (PATH, then the `.dotnet/tools` shim roots — never `dotnet tool list -g`)
 - [x] Configurable `max_concurrent_sessions` via `sharplsp.toml` (`[profiler]`, default 5, validated positive; applied at startup)
 - [x] Orphaned-session cleanup on LSP shutdown (`SessionStore::shutdown` kills child tools before the sidecars stop)
 

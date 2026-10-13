@@ -39,4 +39,4 @@ When a symbol comes from the BCL or a referenced assembly, both sidecars can use
 
 ## Failure Behavior
 
-Navigation returns no locations when the position does not resolve to a symbol or the required sidecar is unavailable. Comment and string pre-validation is available for C# through tree-sitter; F# currently relies on FCS because the host has no F# tree-sitter grammar.
+Navigation returns no locations when the position does not resolve to a symbol or the required sidecar is unavailable. Comment and string pre-validation runs on the host's tree-sitter tree and currently recognizes C# comment and string nodes; F# positions go straight to FCS.

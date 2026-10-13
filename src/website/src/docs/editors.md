@@ -10,11 +10,11 @@ eleventyNavigation:
 
 ![SharpLsp editor support](/assets/screenshots/vscode-editors-page.png)
 
-SharpLsp is editor-agnostic at the protocol layer. VS Code is the supported, packaged client today; the other integrations remain development work.
+SharpLsp is editor-agnostic at the protocol layer. VS Code and its Open VSX forks are the supported, packaged clients today; a Rider plugin and standalone server archives ship with every release, and the other integrations remain development work.
 
 ## VS Code
 
-Install [SharpLsp from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp). The VSIX includes the Rust host and the C# and F# sidecars, so no separate SharpLsp installation is needed.
+Install [SharpLsp from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf, and VSCodium. The VSIX includes the Rust host and the C# and F# sidecars, so no separate SharpLsp installation is needed.
 
 During activation the extension:
 
@@ -35,6 +35,6 @@ In a trusted workspace, the `sharplsp.lspPath`, `sharplsp.csharpSidecarPath`, an
 
 ## Other LSP Clients
 
-A generic editor can speak LSP 3.17 to the host over stdio, but SharpLsp does not yet publish a supported standalone installation workflow that stages the host and both sidecars for those clients. Zed, Neovim, Rider, Helix, and Emacs integrations are planned, not current release surfaces.
+A generic editor can speak LSP 3.17 to the host over stdio. Every [release](https://github.com/Nimblesite/SharpLsp/releases) publishes a standalone server archive per platform with the host and both sidecars side by side, plus a Rider plugin (`sharplsp-rider.zip`) that launches it. Packaged Zed, Neovim, Helix, and Emacs integrations are planned, not current release surfaces.
 
 For repository builds, see [Contributing](/docs/contributing/).

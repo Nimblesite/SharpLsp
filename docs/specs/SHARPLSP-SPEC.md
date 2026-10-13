@@ -219,7 +219,6 @@ bin/<platform>/sharplsp.exe    (Windows)
 | Platform | Binary path inside VSIX |
 |----------|------------------------|
 | `darwin-arm64` | `bin/darwin-arm64/sharplsp` |
-| `darwin-x64` | `bin/darwin-x64/sharplsp` |
 | `linux-x64` | `bin/linux-x64/sharplsp` |
 | `linux-arm64` | `bin/linux-arm64/sharplsp` |
 | `win32-x64` | `bin/win32-x64/sharplsp.exe` |
@@ -398,7 +397,7 @@ Tests: `SignatureHelpEndToEndTests` drives the real `WorkspaceManager` over a re
 | Go to implementation | See [DEFINITION-SPEC.md](DEFINITION-SPEC.md) | | | P0 |
 | Find all references | `textDocument/references` | [SymbolFinder.FindReferencesAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.findusages.symbolfinder.findreferencesasync) | GetUsesOfSymbolInFile/Project() | P0 |
 | Document highlights | `textDocument/documentHighlight` | SymbolFinder (scoped to doc) | GetUsesOfSymbolInFile() | P0 |
-| Workspace symbol search | `workspace/symbol` | tree-sitter over open docs (host) | FCS document symbols via sidecar (host has no F# tree-sitter grammar) | P0 |
+| Workspace symbol search | `workspace/symbol` | tree-sitter over open docs (host) | FCS document symbols via sidecar | P0 |
 | Document symbols | `textDocument/documentSymbol` | tree-sitter structural extraction | tree-sitter structural extraction | P0 |
 | Call hierarchy prepare | `textDocument/prepareCallHierarchy` | Symbol resolution | FCS symbol resolution | P1 |
 | Incoming calls | `callHierarchy/incomingCalls` | SymbolFinder.FindCallersAsync() | Project-wide FCS symbol uses | P1 |

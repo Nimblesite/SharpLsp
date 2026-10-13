@@ -14,7 +14,7 @@ SharpLsp is an open-source Language Server Protocol implementation for .NET, wit
 
 ### VS Code
 
-Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp).
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf, and VSCodium.
 
 The VSIX bundles the `sharplsp` host and both .NET sidecars. You do not need a Rust toolchain or a separate SharpLsp binary. Open a workspace containing a `.sln`, `.slnx`, `.csproj`, or `.fsproj` and the extension starts the server.
 
@@ -29,6 +29,6 @@ The current release includes C# and F# completion, hover, navigation, diagnostic
 
 ### Other editors
 
-The server uses standard LSP wherever possible, but packaged integrations for Neovim, Zed, Rider, Helix, and Emacs are not released yet.
+The server uses standard LSP wherever possible. Every GitHub release publishes standalone server archives and a Rider plugin; packaged integrations for Neovim, Zed, Helix, and Emacs are not released yet.
 
 <p class="next-link"><a href="/docs/architecture/">Next: Architecture <span aria-hidden="true">→</span></a></p>
