@@ -242,7 +242,7 @@ mod tests {
         assert!(config.fsharp.enabled);
         assert!(config.diagnostics.analyzers_enabled);
         assert!(config.diagnostics.solution_wide_analysis);
-        assert!(config.diagnostics.project_filter.is_empty());
+        assert_eq!(config.diagnostics.project_filter, Vec::<String>::new());
         assert!(config.analyzers.dead_code);
         assert!(!config.analyzers.monorepo);
         assert_eq!(config.profiler.max_concurrent_sessions, 5);

@@ -248,6 +248,9 @@ mod tests {
                 "workspace/diagnostic/refresh"
             ]
         );
-        assert!(refreshes_supported(&ClientCapabilities::default()).is_empty());
+        assert_eq!(
+            refreshes_supported(&ClientCapabilities::default()),
+            Vec::<&str>::new()
+        );
     }
 }

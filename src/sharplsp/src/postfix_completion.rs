@@ -368,13 +368,13 @@ mod tests {
     #[test]
     fn fsharp_only_templates_excluded_for_csharp() {
         let items = get_postfix_completions("x.some", 0, 6, LangId::CSharp);
-        assert!(items.is_empty());
+        assert_eq!(items, Vec::<lsp_types::CompletionItem>::new());
     }
 
     #[test]
     fn csharp_only_templates_excluded_for_fsharp() {
         let items = get_postfix_completions("x.notnull", 0, 9, LangId::FSharp);
-        assert!(items.is_empty());
+        assert_eq!(items, Vec::<lsp_types::CompletionItem>::new());
     }
 
     #[test]
@@ -409,13 +409,13 @@ mod tests {
     fn returns_none_when_out_of_line_bounds() {
         // Line only has 3 chars; requesting col 100 must return None.
         let items = get_postfix_completions("foo", 0, 100, LangId::CSharp);
-        assert!(items.is_empty());
+        assert_eq!(items, Vec::<lsp_types::CompletionItem>::new());
     }
 
     #[test]
     fn returns_empty_when_line_index_out_of_range() {
         // Source has 1 line; requesting line 99 must return empty.
         let items = get_postfix_completions("foo.if", 99, 6, LangId::CSharp);
-        assert!(items.is_empty());
+        assert_eq!(items, Vec::<lsp_types::CompletionItem>::new());
     }
 }

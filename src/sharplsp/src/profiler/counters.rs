@@ -240,7 +240,7 @@ mod tests {
         let line = "    Gen 2 GC Count                                          5";
         let counter = parse_counter_line(line).unwrap();
         assert_eq!(counter.display_name, "Gen 2 GC Count");
-        assert!(counter.unit.is_empty());
+        assert_eq!(counter.unit, "");
         assert!((counter.value - 5.0).abs() < f64::EPSILON);
     }
 

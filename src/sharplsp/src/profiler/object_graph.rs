@@ -487,7 +487,7 @@ Size:        24(0x18) bytes
         let node = parsed.node.unwrap();
         assert_eq!(node.type_name, "System.Object");
         assert_eq!(node.display_name, "Object");
-        assert!(parsed.references.is_empty());
+        assert_eq!(parsed.references, Vec::<(String, String)>::new());
     }
 
     #[test]

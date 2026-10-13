@@ -910,7 +910,7 @@ mod tests {
 
         let params = next_publish(&receiver);
         assert_eq!(params.uri, uri);
-        assert!(params.diagnostics.is_empty());
+        assert_eq!(params.diagnostics, Vec::<lsp_types::Diagnostic>::new());
     }
 
     /// The next message on the wire, proven to be a `publishDiagnostics` push.

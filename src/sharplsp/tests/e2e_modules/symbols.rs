@@ -224,7 +224,10 @@ fn test_all_features_on_complex_file() {
         json!({ "textDocument": { "uri": TEST_URI } }),
     );
     assert!(resp.get("error").is_none());
-    assert!(!resp["result"].as_array().unwrap().is_empty());
+    assert_ne!(
+        resp["result"].as_array().unwrap(),
+        &Vec::<serde_json::Value>::new()
+    );
 
     // Folding ranges.
     let resp = client.request(
@@ -232,7 +235,10 @@ fn test_all_features_on_complex_file() {
         json!({ "textDocument": { "uri": TEST_URI } }),
     );
     assert!(resp.get("error").is_none());
-    assert!(!resp["result"].as_array().unwrap().is_empty());
+    assert_ne!(
+        resp["result"].as_array().unwrap(),
+        &Vec::<serde_json::Value>::new()
+    );
 
     // Selection ranges.
     let resp = client.request(
@@ -243,7 +249,10 @@ fn test_all_features_on_complex_file() {
         }),
     );
     assert!(resp.get("error").is_none());
-    assert!(!resp["result"].as_array().unwrap().is_empty());
+    assert_ne!(
+        resp["result"].as_array().unwrap(),
+        &Vec::<serde_json::Value>::new()
+    );
 
     // Linked editing range (no XML in this file).
     let resp = client.request(
