@@ -1,6 +1,8 @@
+// Only the Unix `sh` intermediary passes the parent PID by env var.
+#[cfg(unix)]
+use super::profiler_full_stack::PROFILE_TARGET_PARENT_PID_ENV;
 use super::profiler_full_stack::{
     build_profile_target, start_profiler_session, stop_profile_target,
-    PROFILE_TARGET_PARENT_PID_ENV,
 };
 use super::*;
 

@@ -4,6 +4,7 @@
 //! Implements [SHARPLSP-ARCHITECTURE-PATHS].
 
 use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -277,18 +278,23 @@ pub fn executable_name(stem: &str) -> String {
     }
 }
 
-/// The spellings a command resolves to on `PATH`: Windows adds its executable
-/// suffixes. [SHARPLSP-ARCHITECTURE-PATHS]
+/// The spellings a command resolves to on `PATH`. Windows accepts only `.exe`:
+/// `CreateProcess` cannot launch `.cmd`/`.bat` shims or extensionless files, so
+/// resolving to one would hide the working fallback layouts. [GitHub #167]
+/// [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn command_file_names(command: &str) -> Vec<String> {
-    let suffixes: &[&str] = if cfg!(windows) {
-        &["", ".exe", ".cmd", ".bat"]
-    } else {
-        &[""]
-    };
-    suffixes
-        .iter()
-        .map(|suffix| format!("{command}{suffix}"))
-        .collect()
+    vec![executable_name(command)]
+}
+
+/// The first file on the `PATH` value `path_var` spelt as one of
+/// [`command_file_names`], in `PATH` order; a directory never matches, and a
+/// shim is skipped so a later entry or fallback layout can win. [GitHub #167]
+/// [SIDECAR-STARTUP-RESOLUTION] [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn find_command(command: &str, path_var: &OsStr) -> Option<PathBuf> {
+    let names = command_file_names(command);
+    std::env::split_paths(path_var)
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .find(|candidate| candidate.is_file())
 }
 
 /// Whether `path` names the `stem` executable (`dotnet`, `dotnet.exe`), in any
@@ -304,6 +310,11 @@ pub fn names_executable(path: &str, stem: &str) -> bool {
 /// exercised the Unix shape — so tests must use the platform's real one.
 #[cfg(test)]
 pub mod test_paths {
+    use std::ffi::OsString;
+    use std::path::Path;
+
+    use anyhow::{Context, Result};
+
     /// A platform-native absolute file path, as a sidecar would return it.
     pub const NATIVE_FILE: &str = if cfg!(windows) {
         r"C:\tmp\Foo.cs"
@@ -316,6 +327,11 @@ pub mod test_paths {
     } else {
         "file:///tmp/Foo.cs"
     };
+
+    /// A `PATH` value listing `dirs` in order, for PATH-resolution tests.
+    pub fn path_var_of(dirs: &[&Path]) -> Result<OsString> {
+        std::env::join_paths(dirs).context("join PATH entries")
+    }
 }
 
 #[cfg(test)]
