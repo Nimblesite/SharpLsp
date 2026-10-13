@@ -1,7 +1,6 @@
 //! Memory dump collection via `dotnet-dump collect`.
 
-use std::path::PathBuf;
-
+use crate::paths::{absolute_output, ensure_output_dir};
 use anyhow::{Context, Result};
 use lsp_server::{Message, Notification};
 use serde::{Deserialize, Serialize};
@@ -43,6 +42,7 @@ pub async fn collect(
     let output_path = params
         .output_path
         .unwrap_or_else(|| format!(".sharplsp/profiles/dump-{}.dmp", params.pid));
+    let output_path = absolute_output(&output_path)?;
 
     ensure_output_dir(&output_path)?;
 
@@ -55,10 +55,12 @@ pub async fn collect(
 
     let token = format!("dump-{}", params.pid);
     send_progress_begin(&sender, &token, "Collecting memory dump…");
+    let _progress = DumpProgress { sender, token };
 
     let mut cmd = tokio::process::Command::new(tool);
     crate::utils::hide_console_window_tokio(&mut cmd);
     let output = cmd
+        .kill_on_drop(true)
         .args(["collect", "-p"])
         .arg(params.pid.to_string())
         .args(["--type", &params.dump_type])
@@ -69,13 +71,10 @@ pub async fn collect(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        send_progress_end(&sender, &token);
         anyhow::bail!("dotnet-dump collect failed: {stderr}");
     }
 
     let file_size_bytes = std::fs::metadata(&output_path).map_or(0, |m| m.len());
-
-    send_progress_end(&sender, &token);
 
     info!(
         output = %output_path,
@@ -89,18 +88,23 @@ pub async fn collect(
     })
 }
 
-/// Create parent directories for the output path if they don't exist.
-fn ensure_output_dir(path: &str) -> Result<()> {
-    if let Some(parent) = PathBuf::from(path).parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create output dir: {}", parent.display()))?;
-    }
-    Ok(())
-}
-
 /// Default dump type used when none is specified.
 fn default_dump_type() -> String {
     "Heap".to_string()
+}
+
+/// Ends progress on success, failure, or cancellation of the collection future.
+struct DumpProgress {
+    /// Editor notification channel.
+    sender: crossbeam_channel::Sender<Message>,
+    /// Progress token shared with the begin notification.
+    token: String,
+}
+
+impl Drop for DumpProgress {
+    fn drop(&mut self) {
+        send_progress_end(&self.sender, &self.token);
+    }
 }
 
 /// Send a `$/progress` begin notification.

@@ -1,7 +1,6 @@
 //! Trace collection via `dotnet-trace collect`.
 
-use std::path::PathBuf;
-
+use crate::paths::{absolute_output, ensure_output_dir};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -76,6 +75,7 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         let dir = output_dir();
         format!("{}/trace-{}.nettrace", dir, params.pid)
     });
+    let output_path = absolute_output(&output_path)?;
 
     ensure_output_dir(&output_path)?;
 
@@ -330,15 +330,6 @@ fn derived_output_path(input_path: &str, format: &str) -> String {
 /// Default directory for trace output files.
 fn output_dir() -> &'static str {
     ".sharplsp/profiles"
-}
-
-/// Create parent directories for the output path if they don't exist.
-fn ensure_output_dir(path: &str) -> Result<()> {
-    if let Some(parent) = PathBuf::from(path).parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create output dir: {}", parent.display()))?;
-    }
-    Ok(())
 }
 
 /// Default trace profile.

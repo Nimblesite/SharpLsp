@@ -161,6 +161,6 @@ mod tests {
     #[test]
     fn ignores_unrelated_tags() {
         let items = read_package_items(CSPROJ, "PackageVersion");
-        assert!(items.is_empty());
+        assert!(matches!(items.as_slice(), []), "{items:?}");
     }
 }

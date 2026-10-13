@@ -738,7 +738,7 @@ Clicking a node performs the most common action for that node kind — never a n
 
 **On a trace session:**
 - Stop & Open (inline icon = `debug-stop`)
-- Reveal Output File in Finder
+- Reveal Output File
 - Copy Output Path
 
 **On a counters session:**
@@ -751,6 +751,14 @@ Clicking a node performs the most common action for that node kind — never a n
 - Collect Memory Dump of This Process
 - Kill Process; show a destructive modal naming the process and PID, then invoke `sharplsp/profiler/killProcess` only after explicit confirmation
 - Copy PID
+
+##### [PROFILER-EDITOR-VSCODE-TREE-SCREENSHOTS] Verified trace workflow
+
+The tree and context menu below were captured from a real `ProfileTarget` trace on Windows. The capture regression invokes Copy Output Path from the visible menu and verifies the clipboard, then stops and reopens the same trace through the registered commands.
+
+![Profiler tree with a recording trace](../../src/website/src/assets/screenshots/vscode-profiler-page.png)
+
+![Trace session context menu](../../src/website/src/assets/screenshots/vscode-profiler-context-menu.png)
 
 ##### [PROFILER-EDITOR-VSCODE-TREE-TOOLTIPS] Tooltips
 
@@ -798,7 +806,7 @@ Stopping a trace session uses the same conversion-and-open pipeline.
 | `sharplsp.profiler.openTrace` | SharpLsp: Open Trace File… |
 | `sharplsp.profiler.convertTrace` | SharpLsp: Convert .nettrace to SpeedScope |
 | `sharplsp.profiler.stopSession` | SharpLsp: Stop Session |
-| `sharplsp.profiler.revealOutput` | SharpLsp: Reveal Output File in Finder |
+| `sharplsp.profiler.revealOutput` | SharpLsp: Reveal Output File |
 | `sharplsp.profiler.copyOutputPath` | SharpLsp: Copy Output Path |
 | `sharplsp.profiler.showCountersPanel` | SharpLsp: Show Live Counters Panel |
 | `sharplsp.profiler.traceProcess` | SharpLsp: Start Trace on This Process |
@@ -808,6 +816,8 @@ Stopping a trace session uses the same conversion-and-open pipeline.
 | `sharplsp.profiler.copyPid` | SharpLsp: Copy PID |
 
 ## [PROFILER-PERFORMANCE] Performance Requirements
+
+Long-running dump, heap, inspection, graph and snapshot-diff operations show cancellable editor progress. Cancellation uses `$/cancelRequest`, returns LSP error `-32800`, and terminates only the diagnostic child process. The host also honors cancellation for GC-root requests. The target application remains running, progress ends on success/error/cancellation, and the connection accepts subsequent profiling requests. Trace and dump output paths returned to the editor are absolute.
 
 | Metric | Target |
 |--------|--------|

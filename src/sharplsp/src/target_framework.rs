@@ -248,6 +248,13 @@ mod tests {
                 "workspace/diagnostic/refresh"
             ]
         );
-        assert!(refreshes_supported(&ClientCapabilities::default()).is_empty());
+        assert!(
+            matches!(
+                refreshes_supported(&ClientCapabilities::default()).as_slice(),
+                []
+            ),
+            "{:?}",
+            refreshes_supported(&ClientCapabilities::default())
+        );
     }
 }

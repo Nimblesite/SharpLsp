@@ -15,7 +15,7 @@ SharpLsp はプロトコル層ではエディターに依存しません。現�
 
 ## VS Code
 
-SharpLsp は [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) からインストールします。VSIX には Rust ホストと C#／F# サイドカーが含まれるため、SharpLsp を別途インストールする必要はありません。
+SharpLsp は [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から、Cursor・Windsurf・VSCodium では [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) からインストールします。VSIX には Rust ホストと C#／F# サイドカーが含まれるため、SharpLsp を別途インストールする必要はありません。
 
 アクティベーション時に、拡張機能は次を行います。
 
@@ -36,6 +36,6 @@ SharpLsp は [VS Code Marketplace](https://marketplace.visualstudio.com/items?it
 
 ## その他の LSP クライアント
 
-一般的なエディターは、stdio を介してホストと LSP 3.17 で通信できます。ただし SharpLsp は、ホストと両方のサイドカーをそれらのクライアント向けに配置する、サポート対象のスタンドアロンインストール手順をまだ公開していません。Zed、Neovim、Rider、Helix、Emacs との統合は計画中であり、現在のリリース対象ではありません。
+一般的なエディターは、stdio を介してホストと LSP 3.17 で通信できます。各[リリース](https://github.com/Nimblesite/SharpLsp/releases)では、ホストと両方のサイドカーを同梱したプラットフォーム別のスタンドアロンサーバーアーカイブと、それを起動する Rider プラグイン（`sharplsp-rider.zip`）を公開しています。Zed、Neovim、Helix、Emacs 向けのパッケージ化された統合は計画中であり、現在のリリース対象ではありません。
 
 リポジトリからビルドする方法は、[コントリビュート](/ja/docs/contributing/)を参照してください。

@@ -1,28 +1,61 @@
-# SharpLsp for VS Code
+<p align="center">
+  <img src="https://sharplsp.dev/assets/images/marketplace/sharplsp-tour.gif" width="100%" alt="SharpLsp tour: the open-source alternative to Visual Studio and Rider — Solution Explorer, NuGet browser, C# and F#, debugging, profiling and testing in VS Code, Cursor and Windsurf">
+</p>
 
-The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.
+<h1 align="center">SharpLsp</h1>
 
-> 🌐 **Other languages:** [日本語](https://sharplsp.dev/ja/) · [简体中文](https://sharplsp.dev/zh/)
+<p align="center">
+  <strong>The open-source alternative to Visual Studio and Rider.</strong><br>
+  Full C# and F# — NuGet, debugging, profiling and testing — in the editor you already use.
+</p>
 
-## Features
+<p align="center">
+  <a href="https://sharplsp.dev/docs/">Docs</a> ·
+  <a href="https://sharplsp.dev/blog/">Blog</a> ·
+  <a href="https://github.com/Nimblesite/SharpLsp">GitHub</a> ·
+  <a href="https://github.com/Nimblesite/SharpLsp/issues">Issues</a> ·
+  <a href="https://sharplsp.dev/ja/">日本語</a> ·
+  <a href="https://sharplsp.dev/zh/">简体中文</a>
+</p>
 
-- **Code Completions** — IntelliSense-quality completions powered by Roslyn
-- **Diagnostics** — Real-time errors and warnings as you type
-- **Hover / Quick Info** — Full type signatures, XML docs, and nullability annotations
-- **Go to Definition** — Jump to source or decompiled metadata
-- **Document Symbols** — Fast outline via tree-sitter
-- **Code Folding** — Syntax-aware region folding
-- **F# Support** — First-class F# via FSharp.Compiler.Service
-- **Solution Explorer** — Tree view of your .sln/.slnx, projects, and symbols
-- **Profiler** — Built-in .NET profiling, counter monitoring, and memory analysis
+## 🥊 Ditch the heavyweight IDE. Keep the power.
 
-## Profiler
+Solution Explorer, project and package references, build, refactoring, NuGet, a debugger, a profiler and a Test Explorer — the whole IDE workflow, inside VS Code. **No subscription. No license server. No account. MIT, forever.**
 
-SharpLsp wraps `dotnet-trace`, `dotnet-counters`, and `dotnet-dump` into a seamless editor experience. No terminal required.
+<p align="center">
+  <img src="https://sharplsp.dev/assets/images/marketplace/sharplsp-explorer.png" width="100%" alt="SharpLsp Solution Explorer showing a .NET solution, projects, dependencies and C# symbols next to Roslyn-highlighted code">
+</p>
 
-### Setup
+## ⚖️ C# and F#. No favorites.
 
-Install the .NET diagnostic tools:
+C# runs on **Roslyn**. F# runs on **FSharp.Compiler.Service**. Both get completions, hover, go to definition, references, rename, code actions, semantic highlighting, inlay hints and live diagnostics — and both get the same Solution Explorer, Test Explorer, debugger and profiler.
+
+F# extras: **F# Interactive**, `.fsi` signature generation and pipeline type hints.
+
+## 🐞 Debug, profile, test. All the good stuff.
+
+| | |
+| --- | --- |
+| 🐞 **Debug** | F5, breakpoints, stepping and Hot Reload. The MIT-licensed netcoredbg debugger ships in the box. |
+| 🔥 **Profile** | CPU traces in SpeedScope, live counters, memory dumps, heap diffs, leak detection and retention graphs. |
+| 🧪 **Test** | Test Explorer and CodeLens for xUnit, NUnit, MSTest, Expecto and FsCheck — VSTest and MTP, C# and F#. |
+| 📦 **NuGet** | Browse, install, update, remove and consolidate packages. No terminal. |
+
+<p align="center">
+  <img src="https://sharplsp.dev/assets/images/marketplace/sharplsp-nuget.png" width="100%" alt="SharpLsp NuGet browser listing packages with download counts and a package details panel with an Install button">
+</p>
+
+## 🌍 Runs everywhere.
+
+**Windows and Linux** (x64 and Arm64) and **macOS** (Apple silicon). Install from the VS Code Marketplace or **Open VSX** — **VS Code, Cursor, Windsurf, VSCodium** and the rest of the family. The debugger is open source too, so F5 works in every one of them.
+
+## ⚡ Get started in 30 seconds
+
+1. Install **SharpLsp**.
+2. Open a folder containing a `.sln`, `.slnx`, `.csproj` or `.fsproj`.
+3. Code.
+
+The extension bundles the language server, both .NET sidecars and the debugger, and fetches the **.NET 10 SDK** through Microsoft's .NET Install Tool if you don't have one. The profiler drives the standard .NET diagnostic tools — install them once:
 
 ```bash
 dotnet tool install -g dotnet-trace
@@ -30,30 +63,8 @@ dotnet tool install -g dotnet-counters
 dotnet tool install -g dotnet-dump
 ```
 
-### Usage
+Tune everything with a `sharplsp.toml` in your workspace — see the [configuration guide](https://sharplsp.dev/docs/configuration/).
 
-Open the **Profiler** panel in the SharpLsp sidebar to see running .NET processes.
+## 💚 Open source
 
-| Action | How |
-|--------|-----|
-| **Trace performance** | `SharpLsp: Start Trace` — select a process, trace runs until you stop it. Output opens in SpeedScope. |
-| **Monitor counters** | `SharpLsp: Start Counters` — live-updating table of .NET performance counters in a webview panel. |
-| **Capture memory dump** | `SharpLsp: Collect Dump` — choose Heap, Full, or Mini dump type. |
-| **Analyze heap** | `SharpLsp: Analyze Heap` — select a `.dmp` file to see type counts and memory usage. |
-
-All commands are available from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
-
-## Requirements
-
-- .NET SDK 10.0+
-- `sharplsp` binary (built from source or downloaded from releases)
-
-## Configuration
-
-Configure via `sharplsp.toml` in your workspace root. See the [full documentation](https://sharplsp.dev/docs/configuration/) for details.
-
-## Links
-
-- [Documentation](https://sharplsp.dev/docs/)
-- [GitHub](https://github.com/Nimblesite/SharpLsp)
-- [Issues](https://github.com/Nimblesite/SharpLsp/issues)
+SharpLsp is built in the open on [GitHub](https://github.com/Nimblesite/SharpLsp) under the MIT license. Bugs, ideas and pull requests are welcome.

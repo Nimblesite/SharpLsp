@@ -98,7 +98,7 @@ When a file changes, the sidecar computes updated diagnostics for that document 
 
 The F# sidecar uses [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/) to produce diagnostics via `FSharpChecker`. FCS diagnostics carry `FS` prefixes and reflect the full F# type checker's view of the project — including discriminated union exhaustiveness, missing interface implementations, unused bindings (`FS0026`), and partial active patterns.
 
-[FSharpLint](https://github.com/fsprojects/FSharpLint) provides the analyzer layer for F#, with configurable rule severity. Lint errors configured as build-blocking are surfaced with the same treatment as Roslyn `CA` errors — they appear in the Problems panel and are not filtered.
+SharpLsp's own FCS-backed analyzers provide the analyzer layer for F#: `SLSPF0101` dead code, `SLSPF0102` unused `open`, and `SLSPF0103` redundant qualifier. Their findings get the same treatment as Roslyn `CA` errors — they appear in the Problems panel and are not filtered.
 
 F# file ordering in `.fsproj` matters for compilation. FCS will report errors for forward references that occur because files are in the wrong order. SharpLsp surfaces these as real diagnostics — they are real build errors — while flagging the ordering source so developers understand the fix.
 

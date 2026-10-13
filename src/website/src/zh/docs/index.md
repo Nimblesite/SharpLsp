@@ -15,7 +15,7 @@ SharpLsp 是一个面向 .NET 的开源语言服务器协议实现，由一个 R
 
 ### VS Code
 
-从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) 安装 SharpLsp 扩展。
+从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) 安装 SharpLsp 扩展；在 Cursor、Windsurf 和 VSCodium 中可从 [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) 安装。
 
 VSIX 内含 `sharplsp` 宿主和两个 .NET sidecar。你不需要 Rust 工具链，也不必单独安装 SharpLsp 二进制文件。打开包含 `.sln`、`.slnx`、`.csproj` 或 `.fsproj` 的工作区，扩展就会启动服务器。
 
@@ -30,6 +30,6 @@ VSIX 内含 `sharplsp` 宿主和两个 .NET sidecar。你不需要 Rust 工具�
 
 ### 其他编辑器
 
-服务器会尽可能使用标准 LSP，但 Neovim、Zed、Rider、Helix 和 Emacs 的打包集成尚未发布。
+服务器会尽可能使用标准 LSP。每次 GitHub 发布都会提供独立服务器归档和 Rider 插件；Neovim、Zed、Helix 和 Emacs 的打包集成尚未发布。
 
 <p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span aria-hidden="true">→</span></a></p>

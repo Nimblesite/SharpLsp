@@ -25,46 +25,13 @@ import { writeCSharpConsole } from './run-debug-fixtures';
 import { assertCommandRegistered, invokeCommand } from './run-debug-kit';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS } from './test-timeouts';
+import { recordProgress } from './progress-kit';
 
 /** The command the Solution Explorer's Build menu item names ([SE-ACTIONS-BUILD]). */
 const CMD_BUILD = 'sharplsp.build';
 
 /** The three verbs `provideTasks` offers, in picker order. */
 const VERBS = ['build', 'rebuild', 'clean'] as const;
-
-/** One observed `window.withProgress` call and when its body finished. */
-interface ProgressCall {
-  readonly options: vscode.ProgressOptions;
-  /** `Date.now()` at the moment the wrapped body resolved; `undefined` while it runs. */
-  settledAt: number | undefined;
-}
-
-/** `vscode.window` with the one member this suite patches made assignable. */
-interface MutableWindow {
-  withProgress: typeof vscode.window.withProgress;
-}
-
-/**
- * Record every `withProgress` call, running the real one underneath.
- *
- * Wrapped rather than replaced: the assertion is that the notification is tied
- * to the build's LIFETIME, which only holds if the genuine body still runs and
- * is still awaited. A stub that resolved immediately would report a pass for the
- * fire-and-forget notification this test exists to reject.
- */
-function recordProgress(): { readonly calls: ProgressCall[]; restore: () => void } {
-  const mutable = vscode.window as unknown as MutableWindow;
-  const original = mutable.withProgress;
-  const calls: ProgressCall[] = [];
-  mutable.withProgress = async (options, body) => {
-    const call: ProgressCall = { options, settledAt: undefined };
-    calls.push(call);
-    const result = await original(options, body);
-    call.settledAt = Date.now();
-    return result;
-  };
-  return { calls, restore: () => (mutable.withProgress = original) };
-}
 
 /** Record when the last SharpLsp build process exited. */
 function recordBuildExit(): { readonly endedAt: number[]; restore: () => void } {

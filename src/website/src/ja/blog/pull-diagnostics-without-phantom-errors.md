@@ -99,7 +99,7 @@ SharpLsp は `workspace/diagnostic` を使って、ソリューション全体�
 
 F# サイドカーは [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/) を使い、`FSharpChecker` 経由で診断を生成します。FCS 診断は `FS` 接頭辞を持ち、F# 型チェッカーがプロジェクト全体に対して持つ見解を反映します。判別共用体の網羅性、未実装インターフェイス、未使用バインディング（`FS0026`）、部分アクティブパターンなどが含まれます。
 
-[FSharpLint](https://github.com/fsprojects/FSharpLint) は F# のアナライザー層を提供し、ルールの重大度を構成できます。ビルドを止めるように構成された lint エラーは、Roslyn の `CA` エラーと同じ扱いで表示されます。Problems パネルに現れ、フィルターされません。
+F# のアナライザー層は、SharpLsp 独自の FCS ベースのアナライザーが提供します：`SLSPF0101` デッドコード、`SLSPF0102` 未使用の `open`、`SLSPF0103` 冗長な修飾子。その結果は Roslyn の `CA` エラーと同じ扱いで、Problems パネルに現れ、フィルターされません。
 
 `.fsproj` における F# ファイル順序はコンパイルに影響します。ファイル順序が間違っているために発生する前方参照について、FCS はエラーを報告します。SharpLsp はこれを本物の診断として表示します。本物のビルドエラーだからです。同時に、開発者が修正を理解できるように順序が原因であることを示します。
 
