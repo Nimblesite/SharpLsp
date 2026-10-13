@@ -1,6 +1,6 @@
 {
   "extension.displayName": "SharpLsp",
-  "extension.description": "The open-source .NET Language Server \u2014 C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.",
+  "extension.description": "The open-source alternative to Visual Studio and Rider: full C# and F# with NuGet, debugging, profiling and testing. VS Code, Cursor and Windsurf on Windows, macOS and Linux.",
   "category": "SharpLsp",
   "configuration.title": "SharpLsp",
   "setting.lspPath": "Absolute path to the `sharplsp` binary. Leave empty to let Shipwright resolve the bundled binary, environment variables, package manager installation, or `$PATH`.",

@@ -1,6 +1,6 @@
 {
   "extension.displayName": "SharpLsp",
-  "extension.description": "オープンソースの .NET Language Server — あらゆるエディターのための C# / F# インテリジェンス。ライセンス料ゼロ、ベンダーロックインなし。",
+  "extension.description": "Visual Studio と Rider に代わるオープンソース。C# と F# をフルサポートし、NuGet・デバッグ・プロファイリング・テストまで。Windows・macOS・Linux の VS Code、Cursor、Windsurf で。",
   "category": "SharpLsp",
 
   "configuration.title": "SharpLsp",

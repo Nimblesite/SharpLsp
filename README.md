@@ -1,8 +1,12 @@
 # SharpLsp
 
 <p align="center">
-  <strong>Open-source, editor-agnostic .NET language tooling for C# and F#.</strong><br>
-  Available today in VS Code. Rider, Zed, Neovim, Helix, and Emacs support is on the way.
+  <img src="src/website/src/assets/images/marketplace/sharplsp-tour.gif" width="100%" alt="SharpLsp tour: the open-source alternative to Visual Studio and Rider — Solution Explorer, NuGet browser, C# and F#, debugging, profiling and testing in VS Code, Cursor and Windsurf">
+</p>
+
+<p align="center">
+  <strong>The open-source alternative to Visual Studio and Rider. Full C# and F#, in the editor you already use.</strong><br>
+  Available today for VS Code, Cursor, Windsurf, and VSCodium, plus a Rider plugin and a standalone server for any LSP client. Packaged Zed, Neovim, Helix, and Emacs integrations are on the way.
 </p>
 
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:24px 0;">
@@ -48,7 +52,7 @@ That split keeps the editor protocol fast and portable while letting the .NET co
 
 ### VS Code
 
-Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp). The extension ships with the SharpLsp engine and both sidecars — no Rust toolchain or separate install required.
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf, and VSCodium. The extension ships with the SharpLsp engine, both sidecars, and the debugger — no Rust toolchain or separate install required.
 
 ### Any other editor
 
