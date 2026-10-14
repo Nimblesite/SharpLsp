@@ -111,6 +111,9 @@ export const dotnetPath = new Signal<string | undefined>(undefined);
 /** Current sort order for the solution explorer tree. */
 export const sortOrder = new Signal<SortOrder>(SortOrder.Alphabetical);
 
+/** Whether the solution explorer nests namespaces on `.` ([SE-TREE-NAMESPACE-NEST]). */
+export const nestNamespaces = new Signal<boolean>(true);
+
 /** Workspace symbols — empty, loaded, or error. */
 export const symbolsState = new Signal<SymbolsState>({ kind: 'empty' });
 

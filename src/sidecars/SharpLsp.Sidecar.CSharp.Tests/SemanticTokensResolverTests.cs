@@ -19,8 +19,9 @@ public sealed class SemanticTokensResolverTests
         Assert.Equal("type", types[1]);
         Assert.Equal("class", types[2]);
         Assert.Equal("comment", types[17]);
-        Assert.Equal("decorator", types[^1]);
-        Assert.Equal(23, types.Length);
+        Assert.Equal("decorator", types[22]);
+        Assert.Equal("controlKeyword", types[^1]);
+        Assert.Equal(24, types.Length);
     }
 
     [Fact]
