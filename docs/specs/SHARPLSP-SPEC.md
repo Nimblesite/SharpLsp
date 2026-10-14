@@ -487,6 +487,9 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 | Full semantic tokens | `textDocument/semanticTokens/full` | [Classifier.GetClassifiedSpans()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.classification.classifier.getclassifiedspans) | GetSemanticClassification() | P0 |
 | Delta semantic tokens | `textDocument/semanticTokens/full/delta` | Incremental classification | Incremental classification | P1 |
 | Range semantic tokens | `textDocument/semanticTokens/range` | Classifier (range-scoped) | GetSemanticClassification (range) | P0 |
+| Keyword classes | `textDocument/semanticTokens/*` | `ClassificationTypeNames.ControlKeyword` → `controlKeyword` | Keywords left to the grammar | P0 |
+
+**Keyword classes.** A flow-control keyword (`if`, `for`, `while`, `return`, `throw`, …) is a different token from every other keyword (`public`, `class`, `int`), as Visual Studio's "Keyword - Control" classification is. The legend carries a `controlKeyword` type after the standard ones, and the C# sidecar reports Roslyn's `ControlKeyword` classification as it; Roslyn's plain `Keyword` stays `keyword`. The VS Code extension declares `controlKeyword` with super type `keyword` and maps it to the TextMate scope `keyword.control`, so a theme paints it as its own grammar does (and as `keyword` where a theme has no `keyword.control` rule). FCS classifies symbols, not keywords, so an F# keyword carries no semantic token and the F# grammar's own keyword classes show through.
 
 ### [SHARPLSP-FEATURES-CODE-LENS] Code Lens
 

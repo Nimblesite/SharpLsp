@@ -24,7 +24,7 @@
   </section>
 </div>
 
-SharpLsp is building the .NET development stack that should already exist: Visual Studio/Rider-grade language intelligence, solution awareness, diagnostics, refactoring, package management, debugging, and profiling without forcing every developer into the same IDE.
+SharpLsp is building the .NET development stack that should already exist: Visual Studio/Rider-grade language intelligence, solution awareness, diagnostics, refactoring, package management, debugging, and profiling without forcing every developer into the same IDE. That includes the .NET Framework 4.x code many teams still ship: analysed on every OS, and run and tested on Windows.
 
 ## Why This Exists
 

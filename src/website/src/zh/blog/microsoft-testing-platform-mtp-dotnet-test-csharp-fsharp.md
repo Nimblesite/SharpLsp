@@ -30,7 +30,7 @@ SharpLsp 的 Test Explorer 现在同时支持两者。该功能已进入 `main`�
 
 ## 感谢 Valentin Dide
 
-这项功能源于 **[Valentin Dide (@validide)](https://github.com/validide)** 遇到了空测试树，并提交了 [issue #249“Test Explorer 支持 Microsoft.Testing.Platform (MTP)”](https://github.com/Nimblesite/SharpLsp/issues/249)。他还在 [PR #250“Test Explorer 支持 Microsoft.Testing.Platform”](https://github.com/Nimblesite/SharpLsp/pull/250)中完成了关键实现：
+这项功能源于 **[Valentin Dide (@validide)](https://github.com/validide)** 遇到了空测试树，并提交了 [issue #249“Test Explorer 支持 Microsoft.Testing.Platform (MTP)”](https://github.com/Nimblesite/SharpLsp/issues/249)。Valentin 还在 [PR #250“Test Explorer 支持 Microsoft.Testing.Platform”](https://github.com/Nimblesite/SharpLsp/pull/250)中完成了关键实现：
 
 - 识别 MTP；
 - 使用 `--list-tests json` 发现测试；

@@ -38,7 +38,7 @@ F# extras: **F# Interactive**, `.fsi` signature generation and pipeline type hin
 | --- | --- |
 | 🐞 **Debug** | F5, breakpoints, stepping and Hot Reload. The MIT-licensed netcoredbg debugger ships in the box. |
 | 🔥 **Profile** | CPU traces in SpeedScope, live counters, memory dumps, heap diffs, leak detection and retention graphs. |
-| 🧪 **Test** | Test Explorer and CodeLens for xUnit, NUnit, MSTest, Expecto and FsCheck — VSTest and MTP, C# and F#. |
+| 🧪 **Test** | Test Explorer and CodeLens for xUnit, NUnit, MSTest, Expecto and FsCheck — VSTest and MTP, C# and F#, .NET Framework included on Windows. |
 | 📦 **NuGet** | Browse, install, update, remove and consolidate packages. No terminal. |
 
 <p align="center">

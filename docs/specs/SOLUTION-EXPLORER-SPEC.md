@@ -143,8 +143,9 @@ When no access modifier is present, `access` is `null`.
 ```mermaid
 flowchart LR
     SLN["Solution<br/>SharpLsp.Sidecars.sln"] --> PROJ["Project<br/>SharpLsp.Sidecar.Common"]
-    PROJ --> NSMESSAGES["Namespace<br/>SharpLsp.Sidecar.Common.Messages"]
-    PROJ --> NSIPC["Namespace<br/>SharpLsp.Sidecar.Common.Ipc"]
+    PROJ --> NSROOT["Namespace<br/>SharpLsp.Sidecar.Common"]
+    NSROOT --> NSMESSAGES["Namespace<br/>Messages"]
+    NSROOT --> NSIPC["Namespace<br/>Ipc"]
     NSMESSAGES --> ENVELOPE["Class<br/>Envelope"]
     NSMESSAGES --> SIDECARHOST["Class<br/>SidecarHost"]
     ENVELOPE --> PROPID["Property<br/>Id : uint?"]
@@ -160,7 +161,17 @@ flowchart LR
 
 ### Namespace Merging `[SE-TREE-NAMESPACE-MERGE]`
 
-Symbols from multiple files sharing the same namespace within a project are merged into a single namespace node.
+Symbols from multiple files sharing the same namespace within a project are merged into a single namespace node. A namespace declared inside another (`namespace A { namespace B { } }`) merges under its full name `A.B`, into the same node a `namespace A.B` declaration lands in.
+
+### Namespace Nesting `[SE-TREE-NAMESPACE-NEST]`
+
+Namespaces nest on `.` like folders, in C# and F# alike: `Serilog.Core` is a child row `Core` under `Serilog`, and `Serilog.Core.Sinks` a child `Sinks` under that.
+
+1. A namespace row lists its child namespaces first, then the types it declares itself — folders before files.
+2. A segment that declares no types of its own and has exactly one child folds into that child's row: a project whose code all lives under `SharpLsp.Sidecar.Common` shows one `SharpLsp.Sidecar.Common` row, not three nested clicks. A segment with two or more children, or with types of its own, is its own row (`SharpLsp.TestFixtures` over `Refactors` and `RenameCoverage`).
+3. Every row keeps a parent link to the row above it, so [SE-ACTIVE-EDITOR-SYNC] reveal walks an unbroken chain, and **Copy Qualified Name** joins the rows' names back into the full name (`TestFixtures.Nested.Outer`).
+4. The layout is the `sharplsp.solutionExplorer.nestNamespaces` setting (boolean, default **true**). `false` restores one flat row per namespace, under its full name.
+5. The view's title bar carries the toggle: **Flatten Namespaces** (`$(list-flat)`, `sharplsp.flattenNamespaces`) while nested and **Nest Namespaces** (`$(list-tree)`, `sharplsp.nestNamespaces`) while flat, each shown by a `config.sharplsp.solutionExplorer.nestNamespaces` when-clause. A toggle writes the setting where it takes effect: the workspace when the workspace pins a value, else the user settings. The tree re-renders from the reactive `nestNamespaces` signal without a new LSP request.
 
 ### Loading Feedback `[SE-LOADING-FEEDBACK]`
 
@@ -211,6 +222,7 @@ Within each access group, symbols are sorted alphabetically.
 ### Sort Scope `[SE-SORT-SCOPE]`
 
 - Sorting applies recursively to namespace children, type children, and nested members
+- Namespace rows sort before every other row at the same level, in every mode, like folders before files ([SE-TREE-NAMESPACE-NEST])
 - Project order within a solution is preserved (follows `.sln` or `.slnx` declaration order)
 - Sorting is client-side only — the current LSP response remains in shared reactive state and is re-sorted without a new request
 
@@ -227,6 +239,8 @@ The current sort order is exposed via VS Code context key `sharplsp.sortOrder` (
 | `sharplsp.sortNatural` | Sort: Source Order | `$(list-ordered)` | `sharplsp.sortOrder == natural` |
 | `sharplsp.sortAlphabetical` | Sort: Alphabetical | `$(case-sensitive)` | `sharplsp.sortOrder == alphabetical` |
 | `sharplsp.sortAccessibility` | Sort: Accessibility | `$(shield)` | `sharplsp.sortOrder == accessibility` |
+| `sharplsp.flattenNamespaces` | Flatten Namespaces | `$(list-flat)` | `config.sharplsp.solutionExplorer.nestNamespaces` |
+| `sharplsp.nestNamespaces` | Nest Namespaces | `$(list-tree)` | `!config.sharplsp.solutionExplorer.nestNamespaces` |
 
 All three sort commands cycle to the next sort mode.
 
@@ -564,9 +578,12 @@ When a C# or F# document becomes active through open, focus, navigation, Quick O
 
 | File | Purpose |
 |------|---------|
-| [tree.ts](../../src/editors/vscode/src/tree.ts) | Tree data provider, node construction, sorting |
+| [tree.ts](../../src/editors/vscode/src/tree.ts) | Tree data provider, node construction |
+| [tree-namespaces.ts](../../src/editors/vscode/src/tree-namespaces.ts) | Namespace nesting and the nest/flatten toggle ([SE-TREE-NAMESPACE-NEST]) |
+| [tree-sort.ts](../../src/editors/vscode/src/tree-sort.ts) | Sort modes ([SE-SORT]) |
 | [extension.ts](../../src/editors/vscode/src/extension.ts) | Command registration, tree view creation |
 | [constants.ts](../../src/editors/vscode/src/constants.ts) | Command and view ID constants |
 | [package.json](../../src/editors/vscode/package.json) | VS Code contribution points |
 | [workspace_symbols.rs](../../src/sharplsp/src/workspace_symbols.rs) | Rust handler: sidecar solution model routing, tree-sitter symbol extraction |
 | [solution-explorer.test.ts](../../src/editors/vscode/src/test/suite/solution-explorer.test.ts) | Coarse tree, command, reactivity, and live-buffer coverage |
+| [solution-explorer-namespaces.test.ts](../../src/editors/vscode/src/test/suite/solution-explorer-namespaces.test.ts) | Nested and flat namespaces over the C# and F# fixture projects |

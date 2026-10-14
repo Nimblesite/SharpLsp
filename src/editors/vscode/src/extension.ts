@@ -40,6 +40,7 @@ import * as profiler from './profiler.js';
 import * as solution from './solution.js';
 import { SharpLspStatusBar, ServerState } from './status.js';
 import { type ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from './tree.js';
+import { registerNamespaceLayout } from './tree-namespaces.js';
 import { NuGetBrowserPanel } from './nuget-browser.js';
 import * as pkgMaint from './package-maintenance.js';
 import { registerBuildCommands } from './build.js';
@@ -437,6 +438,7 @@ function registerCommands(context: ExtensionContext): void {
     commands.registerCommand(CMD_SORT_ACCESSIBILITY, cycleSortHandler),
   );
 
+  registerNamespaceLayout(context);
   registerDependencyCommands(context);
   registerContextMenuCommands(context);
 }
