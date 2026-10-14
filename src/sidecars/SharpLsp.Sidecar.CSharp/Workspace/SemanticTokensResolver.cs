@@ -36,6 +36,9 @@ internal static class SemanticTokensResolver
         "regexp", // 20
         "operator", // 21
         "decorator", // 22
+        // [SHARPLSP-FEATURES-HIGHLIGHTING] "Keyword classes": Roslyn's "keyword - control"
+        // (`if`, `for`, `return`) is not a plain keyword, and Visual Studio paints it apart.
+        "controlKeyword", // 23
     ];
 
     /// <summary>Get the token type legend (registered in server capabilities).</summary>
@@ -142,7 +145,8 @@ internal static class SemanticTokensResolver
             ClassificationTypeNames.DelegateName => 12,
             ClassificationTypeNames.MethodName or ClassificationTypeNames.ExtensionMethodName => 13,
             ClassificationTypeNames.FieldName or ClassificationTypeNames.ConstantName => 8,
-            ClassificationTypeNames.Keyword or ClassificationTypeNames.ControlKeyword => 15,
+            ClassificationTypeNames.Keyword => 15,
+            ClassificationTypeNames.ControlKeyword => 23,
             ClassificationTypeNames.StringLiteral
             or ClassificationTypeNames.VerbatimStringLiteral => 18,
             ClassificationTypeNames.NumericLiteral => 19,

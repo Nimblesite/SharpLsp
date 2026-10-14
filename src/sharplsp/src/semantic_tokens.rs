@@ -279,6 +279,8 @@ pub fn token_types() -> Vec<lsp_types::SemanticTokenType> {
         lsp_types::SemanticTokenType::REGEXP,
         lsp_types::SemanticTokenType::OPERATOR,
         lsp_types::SemanticTokenType::DECORATOR,
+        // [SHARPLSP-FEATURES-HIGHLIGHTING] "Keyword classes": `if`, `for`, `return`.
+        lsp_types::SemanticTokenType::new("controlKeyword"),
     ]
 }
 

@@ -1,4 +1,4 @@
-/** Implements [SE-TREE], [SE-SORT], [SE-HOVER], and [SE-CONTEXT-MENUS]. */
+/** Implements [SE-TREE], [SE-TREE-NAMESPACE-NEST], [SE-SORT], [SE-HOVER], and [SE-CONTEXT-MENUS]. */
 import { fileNameOf } from './paths';
 import {
   type CancellationToken,
@@ -22,11 +22,13 @@ import { CMD_OPEN_SOLUTION } from './constants.js';
 import * as log from './log.js';
 import * as projectDeps from './project-deps-store.js';
 import type * as deps from './dependencies.js';
+import { arrangeNamespaces } from './tree-namespaces.js';
+import { applySortOrder } from './tree-sort.js';
 import { buildNonSymbolTooltip, SYMBOL_CONTEXT_VALUES } from './tree-tooltip.js';
 import { type SolutionSelection } from './solution.js';
 import * as state from './state.js';
 import {
-  SortOrder,
+  type SortOrder,
   type FileSymbol,
   type LspPosition,
   type LspRange,
@@ -111,6 +113,9 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
       this.rebuildTree();
     });
     state.sortOrder.subscribe(() => {
+      this.rebuildTree();
+    });
+    state.nestNamespaces.subscribe(() => {
       this.rebuildTree();
     });
     state.loadPhase.subscribe(() => {
@@ -234,8 +239,11 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
     }
 
     const projects = symbols.response.projects.length;
-    log.traceInfo(`Rebuilding tree: ${String(projects)} projects, sort=${order}`);
-    this.roots = buildTree(solution, symbols.response, order);
+    const nest = state.nestNamespaces.value;
+    log.traceInfo(
+      `Rebuilding tree: ${String(projects)} projects, sort=${order}, nest=${String(nest)}`,
+    );
+    this.roots = buildTree(solution, symbols.response, order, nest);
     this.onDidChangeEmitter.fire(undefined);
   }
 }
@@ -259,6 +267,7 @@ function buildTree(
   solutionPath: string,
   response: WorkspaceSymbolsResponse,
   order: SortOrder,
+  nest: boolean,
 ): ExplorerNode[] {
   const name = fileNameOf(solutionPath);
   const node = new ExplorerNode(name, NodeType.Solution, TreeItemCollapsibleState.Expanded);
@@ -266,7 +275,7 @@ function buildTree(
   node.sortName = name;
   node.contextValue = 'solution';
   node.projectFilePath = solutionPath;
-  node.children = response.projects.map(buildProjectNode);
+  node.children = response.projects.map((project) => buildProjectNode(project, nest));
   for (const project of node.children) {
     // Wire the project → solution link so TreeView.reveal can walk a complete
     // parent chain from any file node up to the root (issue #118).
@@ -276,7 +285,7 @@ function buildTree(
   return [node];
 }
 
-function buildProjectNode(project: ProjectNode): ExplorerNode {
+function buildProjectNode(project: ProjectNode, nest: boolean): ExplorerNode {
   const file = fileNameOf(project.path);
   const label = `${project.name} (${file})`;
   const node = new ExplorerNode(label, NodeType.Project, TreeItemCollapsibleState.Expanded);
@@ -285,7 +294,7 @@ function buildProjectNode(project: ProjectNode): ExplorerNode {
   node.contextValue = 'project';
   node.projectFilePath = project.path;
   const depFolder = buildDependencyFolder(project.path);
-  const symbols = groupByNamespace(project.symbols);
+  const symbols = groupByNamespace(project.symbols, nest);
   node.children = depFolder !== undefined ? [depFolder, ...symbols] : symbols;
   // Wire each direct child (namespace nodes, top-level symbols, Dependencies)
   // back to the project so the reveal parent chain is unbroken (issue #118).
@@ -381,7 +390,7 @@ function sortProjectChildren(project: ExplorerNode, order: SortOrder): void {
   project.children.unshift(depNode);
 }
 
-function groupByNamespace(fileSymbols: FileSymbol[]): ExplorerNode[] {
+function groupByNamespace(fileSymbols: FileSymbol[], nest: boolean): ExplorerNode[] {
   const namespaces = new Map<string, ExplorerNode[]>();
   const noNamespace: ExplorerNode[] = [];
 
@@ -395,41 +404,46 @@ function groupByNamespace(fileSymbols: FileSymbol[]): ExplorerNode[] {
     }
   }
 
-  return [...createNamespaceNodes(namespaces), ...noNamespace];
+  return [...arrangeNamespaces(namespaces, nest, createNamespaceNode), ...noNamespace];
 }
 
+/**
+ * Merge `sym`'s members into the namespace keyed by its full name. A namespace
+ * declared inside another (`namespace A { namespace B {} }`) merges as `A.B`,
+ * the same row a `namespace A.B` declaration lands in ([SE-TREE-NAMESPACE-MERGE]).
+ */
 function mergeNamespace(
   namespaces: Map<string, ExplorerNode[]>,
   sym: SymbolNode,
   filePath: string,
+  qualifier = '',
 ): void {
-  const children = buildSymbolChildren(sym.children, filePath);
-  const existing = namespaces.get(sym.name);
-  if (existing !== undefined) {
-    existing.push(...children);
-  } else {
-    namespaces.set(sym.name, children);
+  const name = `${qualifier}${sym.name}`;
+  const isNamespace = (child: SymbolNode): boolean => child.kind === 'Namespace';
+  const members = buildSymbolChildren(
+    sym.children.filter((child) => !isNamespace(child)),
+    filePath,
+  );
+  namespaces.set(name, [...(namespaces.get(name) ?? []), ...members]);
+  for (const inner of sym.children.filter(isNamespace)) {
+    mergeNamespace(namespaces, inner, filePath, `${name}.`);
   }
 }
 
-function createNamespaceNodes(namespaces: Map<string, ExplorerNode[]>): ExplorerNode[] {
-  const nodes: ExplorerNode[] = [];
-  for (const [name, children] of namespaces) {
-    const node = new ExplorerNode(name, NodeType.Namespace, TreeItemCollapsibleState.Collapsed);
-    node.iconPath = new ThemeIcon(
-      'symbol-namespace',
-      new ThemeColor('symbolIcon.namespaceForeground'),
-    );
-    node.sortName = name;
-    node.contextValue = 'symbol.namespace';
-    node.symbolKind = 'Namespace';
-    node.children = children;
-    for (const child of children) {
-      child.parent = node;
-    }
-    nodes.push(node);
+function createNamespaceNode(name: string, children: ExplorerNode[]): ExplorerNode {
+  const node = new ExplorerNode(name, NodeType.Namespace, TreeItemCollapsibleState.Collapsed);
+  node.iconPath = new ThemeIcon(
+    'symbol-namespace',
+    new ThemeColor('symbolIcon.namespaceForeground'),
+  );
+  node.sortName = name;
+  node.contextValue = 'symbol.namespace';
+  node.symbolKind = 'Namespace';
+  node.children = children;
+  for (const child of children) {
+    child.parent = node;
   }
-  return nodes;
+  return node;
 }
 
 function buildSymbolNode(sym: SymbolNode, filePath: string): ExplorerNode {
@@ -521,43 +535,6 @@ export function buildQualifiedName(node: ExplorerNode): string {
     current = current.parent;
   }
   return parts.join('.');
-}
-
-// ── Sorting ──────────────────────────────────────────────────────
-
-const ACCESS_PRIORITY: Record<string, number> = {
-  public: 0,
-  'internal protected': 1,
-  'protected internal': 1,
-  internal: 2,
-  protected: 3,
-  'private protected': 4,
-  'protected private': 4,
-  private: 5,
-};
-
-function accessPriority(access: string | undefined): number {
-  if (access === undefined) return 6;
-  return ACCESS_PRIORITY[access] ?? 6;
-}
-
-function applySortOrder(nodes: ExplorerNode[], order: SortOrder): void {
-  if (order === SortOrder.Natural) return;
-
-  if (order === SortOrder.Alphabetical) {
-    nodes.sort((a, b) => a.sortName.localeCompare(b.sortName));
-  } else {
-    nodes.sort((a, b) => {
-      const diff = accessPriority(a.access) - accessPriority(b.access);
-      return diff !== 0 ? diff : a.sortName.localeCompare(b.sortName);
-    });
-  }
-
-  for (const node of nodes) {
-    if (node.children.length > 0) {
-      applySortOrder(node.children, order);
-    }
-  }
 }
 
 function buildSolutionChoiceNode(sol: SolutionSelection): ExplorerNode {

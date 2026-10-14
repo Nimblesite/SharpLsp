@@ -212,6 +212,13 @@
           "scope": "resource",
           "order": 18
         },
+        "sharplsp.solutionExplorer.nestNamespaces": {
+          "type": "boolean",
+          "default": true,
+          "description": "%setting.solutionExplorer.nestNamespaces%",
+          "scope": "window",
+          "order": 18
+        },
         "sharplsp.memberSortOrder.hierarchy": {
           "type": "array",
           "items": {
@@ -677,6 +684,18 @@
         "icon": "$(shield)"
       },
       {
+        "command": "sharplsp.nestNamespaces",
+        "title": "%cmd.nestNamespaces%",
+        "category": "%category%",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "sharplsp.flattenNamespaces",
+        "title": "%cmd.flattenNamespaces%",
+        "category": "%category%",
+        "icon": "$(list-flat)"
+      },
+      {
         "command": "sharplsp.removeNuGetPackage",
         "title": "%cmd.removeNuGetPackage%",
         "category": "%category%",
@@ -1052,6 +1071,16 @@
           "group": "navigation"
         },
         {
+          "command": "sharplsp.flattenNamespaces",
+          "when": "view == sharplsp.solutionExplorer && config.sharplsp.solutionExplorer.nestNamespaces",
+          "group": "navigation"
+        },
+        {
+          "command": "sharplsp.nestNamespaces",
+          "when": "view == sharplsp.solutionExplorer && !config.sharplsp.solutionExplorer.nestNamespaces",
+          "group": "navigation"
+        },
+        {
           "command": "sharplsp.profiler.profileCurrentFileCpu",
           "when": "view == sharplsp.profiler.processes && !sharplsp.profiler.cpuBusy",
           "group": "navigation@1"
@@ -1318,6 +1347,22 @@
         }
       ]
     },
+    "semanticTokenTypes": [
+      {
+        "id": "controlKeyword",
+        "superType": "keyword",
+        "description": "%semanticTokenType.controlKeyword%"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "scopes": {
+          "controlKeyword": [
+            "keyword.control"
+          ]
+        }
+      }
+    ],
     "breakpoints": [
       {
         "language": "csharp"

@@ -23,6 +23,8 @@ export const CMD_REFRESH_EXPLORER = 'sharplsp.refreshExplorer';
 export const CMD_SORT_NATURAL = 'sharplsp.sortNatural';
 export const CMD_SORT_ALPHABETICAL = 'sharplsp.sortAlphabetical';
 export const CMD_SORT_ACCESSIBILITY = 'sharplsp.sortAccessibility';
+export const CMD_NEST_NAMESPACES = 'sharplsp.nestNamespaces';
+export const CMD_FLATTEN_NAMESPACES = 'sharplsp.flattenNamespaces';
 
 export const CMD_REMOVE_NUGET_PACKAGE = 'sharplsp.removeNuGetPackage';
 export const CMD_REMOVE_PROJECT_REFERENCE = 'sharplsp.removeProjectReference';
