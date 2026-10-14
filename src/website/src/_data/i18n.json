@@ -72,7 +72,7 @@
       "workflows": [
         {
           "title": "Write & navigate",
-          "description": "Fast, solution-wide language intelligence that understands real C# and F# projects.",
+          "description": "Fast, solution-wide language intelligence that understands real C# and F# projects, from net462 to net10.0.",
           "features": ["Completions, hover, and signature help", "Definitions, references, and symbols", "Solution explorer and project context"]
         },
         {
@@ -262,7 +262,7 @@
       "workflowTitle": "一套开发体验，涵盖交付 .NET 所需的一切。",
       "workflowIntro": "SharpLsp 不止提供自动补全。它把开发者期望从完整 IDE 获得的、具备项目上下文的连贯体验带到你已经在用的编辑器。",
       "workflows": [
-        { "title": "编写与导航", "description": "理解真实 C# 与 F# 项目的快速、全解决方案语言智能。", "features": ["补全、悬停与签名帮助", "定义、引用与符号", "解决方案资源管理器与项目上下文"] },
+        { "title": "编写与导航", "description": "理解真实 C# 与 F# 项目的快速、全解决方案语言智能，从 net462 到 net10.0。", "features": ["补全、悬停与签名帮助", "定义、引用与符号", "解决方案资源管理器与项目上下文"] },
         { "title": "重构与维护", "description": "借助编译器级分析和精确编辑，让大型代码库更安全地演进。", "features": ["诊断与静态分析器", "重命名、代码操作与重构", "Roslyn 与 Fantomas 格式化"] },
         { "title": "构建、调试与分析", "description": "从依赖管理到最终性能优化，始终留在同一个工作区。", "features": ["NuGet 搜索、安装与更新", "构建、测试与调试工作流", "CPU 与内存分配分析"] }
       ],
@@ -442,7 +442,7 @@
       "workflowTitle": "1 つの開発体験。.NET の出荷に必要なすべてを。",
       "workflowIntro": "SharpLsp は自動補完だけではありません。フル IDE に期待される、プロジェクトを理解した一貫した体験を、使い慣れたエディターへ届けます。",
       "workflows": [
-        { "title": "記述とナビゲーション", "description": "実際の C# / F# プロジェクトを理解する、高速でソリューション全体に及ぶ言語機能。", "features": ["補完、ホバー、シグネチャヘルプ", "定義、参照、シンボル", "ソリューションエクスプローラーとプロジェクト情報"] },
+        { "title": "記述とナビゲーション", "description": "net462 から net10.0 まで、実際の C# / F# プロジェクトを理解する、高速でソリューション全体に及ぶ言語機能。", "features": ["補完、ホバー、シグネチャヘルプ", "定義、参照、シンボル", "ソリューションエクスプローラーとプロジェクト情報"] },
         { "title": "リファクタリングと保守", "description": "コンパイラー品質の解析と正確な編集で、大規模なコードベースを安全に変更。", "features": ["診断と静的解析", "名前変更、コードアクション、リファクタリング", "Roslyn と Fantomas による整形"] },
         { "title": "ビルド、デバッグ、解析", "description": "依存関係の管理から最後のパフォーマンス調整まで、1 つのワークスペースで完結。", "features": ["NuGet の検索、インストール、更新", "ビルド、テスト、デバッグ", "CPU とアロケーションのプロファイリング"] }
       ],

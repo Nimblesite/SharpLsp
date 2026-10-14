@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1672px; height: 941px; overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0b1220; color: #e6edf3; position: relative; }
+  .grid { position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 64px 64px; }
+  .glow { position: absolute; width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(15,127,73,.28), transparent 60%);
+    top: -250px; right: -150px; }
+  h1 { position: absolute; left: 72px; top: 64px; width: 780px;
+    font-size: 58px; line-height: 1.12; font-weight: 700; letter-spacing: -.5px; }
+  h1 .accent { color: #2ecc8f; }
+  .sub { position: absolute; left: 72px; top: 330px; width: 720px;
+    font-size: 26px; line-height: 1.5; color: #9fb0c0; }
+  .sub b { color: #e6edf3; font-weight: 600; }
+  .rows { position: absolute; left: 72px; top: 500px; width: 760px;
+    display: flex; flex-direction: column; gap: 16px; }
+  .row { display: flex; align-items: center; gap: 18px; font-size: 22px; color: #9fb0c0; }
+  .row .k { width: 110px; color: #e6edf3; font-weight: 600; }
+  .row .v { flex: 1; }
+  .row .w { color: #2ecc8f; font-weight: 600; }
+  .panel { position: absolute; right: 72px; top: 120px; width: 640px; height: 700px;
+    background: #0d1526; border: 1px solid #223047; border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5); overflow: hidden; }
+  .panel-bar { height: 52px; background: #111b30; display: flex; align-items: center;
+    padding: 0 22px; gap: 10px; border-bottom: 1px solid #223047; }
+  .panel-bar .c { width: 14px; height: 14px; border-radius: 50%; }
+  .panel-bar .t { margin-left: 12px; font-size: 20px; color: #9fb0c0; }
+  .panel-body { padding: 26px 30px; font-size: 21px; line-height: 1.75; }
+  .kw { color: #7ee2b8; }
+  .str { color: #e2c08d; }
+  .cm { color: #5d7290; }
+  .ok { color: #2ecc8f; }
+  .frame { color: #9fb0c0; }
+  .badge { position: absolute; left: 72px; bottom: 56px; display: flex; gap: 16px; }
+  .badge div { border: 1px solid #2a3c58; border-radius: 999px; padding: 10px 24px;
+    font-size: 20px; color: #9fb0c0; background: rgba(17,27,48,.7); }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+  <h1><span class="accent">.NET Framework</span> on Windows, in the editor you already use</h1>
+  <div class="sub">Edit, build, <b>run and test</b> <b>net462–net481</b> on the desktop CLR, next to the <b>net10.0</b> build of the same project. C# and F#.</div>
+
+  <div class="rows">
+    <div class="row"><span class="k">Edit</span><span class="v">#if NETFRAMEWORK code, fully analysed</span><span class="w">every OS</span></div>
+    <div class="row"><span class="k">Run</span><span class="v">Ctrl+F5 on the desktop CLR</span><span class="w">Windows</span></div>
+    <div class="row"><span class="k">Test</span><span class="v">VSTest + MTP, one result per framework</span><span class="w">Windows</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar">
+      <i class="c" style="background:#e0564f"></i><i class="c" style="background:#e2a24a"></i><i class="c" style="background:#2ecc8f"></i>
+      <span class="t">Run Orders (net48) · Test Explorer</span>
+    </div>
+    <div class="panel-body">
+      <div><span class="cm">&gt; dotnet run --project Orders.csproj</span></div>
+      <div><span class="cm">&nbsp;&nbsp;</span><span class="kw">--framework</span> <span class="str">net48</span></div>
+      <div><span class="frame">Run: Orders under </span><span class="str">net48</span></div>
+      <br>
+      <div><span class="frame">Orders.Tests</span> <span class="cm">net48 · net10.0</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Invoice.</span>Totals_Round <span class="cm">tfm:net48 tfm:net10.0</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Fs.Invoice.</span><span class="str">``legacy tax table``</span> <span class="cm">F# · net48</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Wcf.</span>Client_Binds <span class="cm">#if NET48</span></div>
+      <div><span class="ok">✓</span> <span class="frame">Orders.Tests.exe</span> <span class="cm">MTP · net48</span></div>
+      <br>
+      <div><span class="kw">Run on net48</span> <span class="cm">→ dotnet vstest</span></div>
+      <div><span class="kw">Run on net10.0</span> <span class="cm">→ dotnet vstest</span></div>
+      <div><span class="kw">Debug</span> <span class="cm">→ net10.0 only (.NET)</span></div>
+    </div>
+  </div>
+
+  <div class="badge">
+    <div>net462–net481</div><div>VSTest · MTP</div><div>C# + F#</div><div>MIT</div>
+  </div>
+</body>
+</html>

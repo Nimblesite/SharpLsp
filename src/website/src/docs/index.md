@@ -25,7 +25,7 @@ The VSIX bundles the `sharplsp` host and both .NET sidecars. You do not need a R
   </ul>
 </section>
 
-The current release includes C# and F# completion, hover, navigation, diagnostics, symbols, code actions, rename, semantic tokens, inlay hints, solution tooling, NuGet workflows, debugging, and profiling. Some features remain partial; the individual pages document their current limits.
+The current release includes C# and F# completion, hover, navigation, diagnostics, symbols, code actions, rename, semantic tokens, inlay hints, solution tooling, NuGet workflows, debugging, and profiling. Projects that target .NET Framework 4.6.2–4.8.1 get the same language features on every OS, and on Windows they also [run and test](/blog/dotnet-framework-windows-vs-code/) on the desktop CLR. Some features remain partial; the individual pages document their current limits.
 
 ### Other editors
 
