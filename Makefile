@@ -89,6 +89,10 @@ RUST_TEST_LOG     ?= info
 SHARD_COUNT       ?= 2
 PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 
+# The shared profiler ([PROFILER-SHARED-LIBRARY]): a sibling checkout until lsp-profiler is published.
+LSP_PROFILER_DIR ?= ../lsp_profiler
+PROFILER_ENGINE_OUT := $(LSP_PROFILER_DIR)/dotnet/LspProfiler.DotNet.Engine/bin/Release/net8.0
+
 VSCODE_DIR  = src/editors/vscode
 ZED_DIR     = src/editors/zed
 SIDECAR_CS  = src/sidecars/SharpLsp.Sidecar.CSharp
@@ -337,6 +341,10 @@ _copy-vsix-binaries:
 	mkdir -p $(dir $(HOST_VSIX_BIN)) $(VSCODE_DIR)/bin/all
 	cp $(BINARY) $(HOST_VSIX_BIN)
 	chmod +x $(HOST_VSIX_BIN) 2>/dev/null || true
+	# The shared profiler's .NET engine ships beside the host binary, where the
+	# library discovers it ([PROFILER-SHARED-LIBRARY-ENGINE]).
+	cp -r $(PROFILER_ENGINE_OUT)/. $(dir $(HOST_VSIX_BIN))
+	chmod +x $(dir $(HOST_VSIX_BIN))lsp-profiler-dotnet-engine$(EXE_EXT) 2>/dev/null || true
 	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
 	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
 	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp$(EXE_EXT) \

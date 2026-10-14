@@ -213,12 +213,6 @@ pub fn has_file_name(path: impl AsRef<Path>, name: &str) -> bool {
     file_name_of(path.as_ref()).is_some_and(|actual| fold(actual) == fold(name))
 }
 
-/// Whether the last segment of `path` ends in `suffix`, in any casing: a
-/// multi-dot suffix such as `.runtimeconfig.json`. [SHARPLSP-ARCHITECTURE-PATHS]
-pub fn has_name_suffix(path: impl AsRef<Path>, suffix: &str) -> bool {
-    file_name_of(path.as_ref()).is_some_and(|name| fold(name).ends_with(&fold(suffix)))
-}
-
 /// The directory holding `path`; `None` for a root or a bare file name.
 /// [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn directory_of(path: impl AsRef<Path>) -> Option<PathBuf> {
@@ -226,22 +220,6 @@ pub fn directory_of(path: impl AsRef<Path>) -> Option<PathBuf> {
         .parent()
         .filter(|directory| !directory.as_os_str().is_empty())
         .map(Path::to_path_buf)
-}
-
-/// Resolve an output path before handing it to a client with a different working directory.
-/// Implements [SHARPLSP-ARCHITECTURE-PATHS] and [PROFILER-TRACE-CONVERSION].
-pub fn absolute_output(path: &str) -> Result<String> {
-    let absolute = std::path::absolute(path).context("resolve output path")?;
-    Ok(absolute.to_string_lossy().into_owned())
-}
-
-/// Create an output's parent directory. Implements [SHARPLSP-ARCHITECTURE-PATHS].
-pub fn ensure_output_dir(path: &str) -> Result<()> {
-    if let Some(parent) = directory_of(path) {
-        std::fs::create_dir_all(&parent)
-            .with_context(|| format!("create output dir: {}", parent.display()))?;
-    }
-    Ok(())
 }
 
 /// `path` relative to `root`, when it lies beneath it. [SHARPLSP-ARCHITECTURE-PATHS]
@@ -297,11 +275,15 @@ pub fn find_command(command: &str, path_var: &OsStr) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// Whether `path` names the `stem` executable (`dotnet`, `dotnet.exe`), in any
-/// casing. [SHARPLSP-ARCHITECTURE-PATHS]
-pub fn names_executable(path: &str, stem: &str) -> bool {
-    let name = fold(file_name_of(Path::new(path)).unwrap_or(path));
-    name == fold(stem) || name == fold(&format!("{stem}.exe"))
+/// The bundled .NET profiling engine beside this server binary, when present
+/// ([PROFILER-SHARED-LIBRARY-ENGINE]); `None` lets the library discover it.
+/// [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn profiler_engine_path() -> Option<PathBuf> {
+    let beside = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join(executable_name("lsp-profiler-dotnet-engine"));
+    beside.is_file().then_some(beside)
 }
 
 /// Test-only fixtures shared by unit tests across modules that map between

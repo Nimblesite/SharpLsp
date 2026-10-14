@@ -39,16 +39,7 @@ const buildOptions = {
   ...(production ? {} : { packages: 'external' }),
 };
 
-const graphOptions = {
-  entryPoints: ['src/profiler-graph-webview.mts'],
-  bundle: true,
-  platform: 'browser',
-  format: 'iife',
-  target: 'es2022',
-  outfile: 'dist/profiler-graph-webview.js',
-  minify: production,
-};
-for (const options of [buildOptions, graphOptions]) {
+for (const options of [buildOptions]) {
   if (watch) {
     const ctx = await esbuild.context(options);
     await ctx.watch();

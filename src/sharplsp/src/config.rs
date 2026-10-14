@@ -169,17 +169,9 @@ impl Default for AnalyzersConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProfilerConfig {
-    /// Maximum concurrent profiling sessions.
+    /// Maximum concurrent profiling sessions (CPU and memory together).
     pub max_concurrent_sessions: u32,
-    /// Default trace duration in seconds (0 = unlimited).
-    pub default_trace_duration: u32,
-    /// Default trace output format.
-    pub default_trace_format: String,
-    /// Default counter providers.
-    pub default_counter_providers: Vec<String>,
-    /// Default counter refresh interval in seconds.
-    pub default_counter_interval: u32,
-    /// Output directory for trace/dump files.
+    /// Output directory for profile artifacts, relative to the workspace root.
     pub output_directory: String,
 }
 
@@ -187,10 +179,6 @@ impl Default for ProfilerConfig {
     fn default() -> Self {
         Self {
             max_concurrent_sessions: 5,
-            default_trace_duration: 30,
-            default_trace_format: "speedscope".to_string(),
-            default_counter_providers: vec!["System.Runtime".to_string()],
-            default_counter_interval: 1,
             output_directory: ".sharplsp/profiles".to_string(),
         }
     }
@@ -250,7 +238,6 @@ mod tests {
         assert!(config.analyzers.dead_code);
         assert!(!config.analyzers.monorepo);
         assert_eq!(config.profiler.max_concurrent_sessions, 5);
-        assert_eq!(config.profiler.default_trace_duration, 30);
         assert_eq!(config.profiler.output_directory, ".sharplsp/profiles");
     }
 

@@ -8,6 +8,75 @@ SharpLsp exposes `dotnet-trace`, `dotnet-counters`, and `dotnet-dump` through LS
 
 **Reference:** [dotnet-trace documentation](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace)
 
+## [PROFILER-SHARED-LIBRARY] Shared profiler library
+
+SharpLsp's profiler is moving onto **lsp-profiler**, the language-neutral profiler extracted from Basilisk. It lives in the sibling `lsp_profiler` repository. That repository's spec, `docs/specs/LSP-PROFILER-SPEC.md`, is the contract for:
+
+- the shared protocol;
+- the .NET runtime;
+- the editor UI library.
+
+SharpLsp then owns only what this section specifies: hosting the library, configuring it and shipping it. It has no profiler code of its own.
+
+The migration is tracked in [PROFILER-PLAN.md](../plans/PROFILER-PLAN.md) under [PROFILER-PLAN-MIGRATION].
+
+- **Until** that plan's cutover item is checked, the sections listed in [PROFILER-SHARED-LIBRARY-SUPERSEDED] describe the shipped behaviour.
+- **At** cutover, those sections are deleted, and this section becomes SharpLsp's whole profiler contract.
+
+```mermaid
+flowchart LR
+    VSIX["VSIX<br/>lsp-profiler-ui"] -- "workspace/executeCommand<br/>sharplsp.lspProfiler.*" --> Host["sharplsp host<br/>ProfilerService"]
+    Host --> Runtime["lsp-profiler-dotnet"]
+    Runtime -- "spawn · NDJSON" --> Engine["lsp-profiler-dotnet-engine<br/>EventPipe · ClrMD"]
+    Engine -- "diagnostics IPC" --> Target[".NET process"]
+```
+
+### [PROFILER-SHARED-LIBRARY-HOST] Rust host
+
+- **Mounting.** The host builds one `ProfilerService` at startup, with the .NET runtime and the command prefix `sharplsp`. It calls the service's `shutdown()` from LSP shutdown, before the sidecars stop. Sessions still live in the host and still survive a sidecar crash ([PROFILER-ARCHITECTURE-HOST]).
+- **LSP surface.**
+  - Profiler commands are `sharplsp.lspProfiler.*`, advertised in `executeCommandProvider` and routed to the service.
+  - The profiler's capabilities are published under `experimental.lspProfiler`.
+  - The host merges the profiler's diagnostics, inlay hints, code lenses and code actions with SharpLsp's own for each URI. It never publishes a URI's diagnostics without the other half. (Not built on 2026-10-15: the library does not publish diagnostics or providers yet; results carry diagnostics inline and the UI paints them as decorations.)
+- **Cancellation.** `$/cancelRequest` keeps today's behaviour: `-32800`, the engine process terminated, the target left running, and the next request accepted ([PROFILER-PERFORMANCE]).
+- **Configuration.** The `[profiler]` table of `sharplsp.toml` supplies:
+  - the session cap: `max_concurrent_sessions`, default 5 (read, not yet enforced: the library has no cap until its plan's Phase 1 item lands);
+  - the output directory: `output_directory`, default `.sharplsp/profiles`;
+  - the hotspot thresholds.
+
+  Settings that existed only for the CLI tools are removed with them: trace format, trace duration, counter providers and counter interval.
+- **Paths.** The engine's location is resolved only in `src/sharplsp/src/paths.rs` (`profiler_engine_path`: beside the server binary) and passed to the runtime as its configured path; absent there, the library's own discovery applies.
+- **Code.** `src/sharplsp/src/profiler/host.rs` is the whole mount: `ProfilerHost::mount`, `dispatch`, `cancel`, `shutdown`, `command_names`, `capability_block`. `main.rs` holds it in `HostServices` beside the configuration service.
+
+### [PROFILER-SHARED-LIBRARY-VSCODE] VS Code extension
+
+- The extension activates the UI library (`@nimblesite/lsp-profiler-ui`) from `src/profiler-host.ts` with prefix `sharplsp`, the display name "SharpLsp", the settings section `sharplsp`, its debug type `sharplsp-coreclr`, the language IDs `csharp` and `fsharp`, and its `LanguageClient` through a signal filled once the client runs. Debuggee PIDs come from a debug adapter tracker on the DAP `process` event. "Run & Profile" launches the current project under the SharpLsp debug adapter with `profileOnLaunch` / `memoryTrackOnLaunch`.
+- The library's views, webviews, status item and decorations replace the PROFILER tree and the graph, diff and counter webviews.
+- The library's state is signals, which satisfies the extension's reactivity rule.
+- The extension's `package.json` contributions are the library's command and view catalogue under `sharplsp.profiler.*`, written by `tools/vsix/sync-profiler-contributions.mjs` from the library's generator (`--check` fails when they differ). The processes view is `sharplsp.profiler.processes` in the SharpLsp container.
+- Tests: `profiler.test.ts` (registration, advertisement, manifest, settings, wire error codes), `profiler-cpu-e2e.test.ts` and `memory-e2e.test.ts` (real `ProfileTarget` and `ProfileLeakTarget` from `src/sharplsp/tests/fixtures`), through `src/test/suite/profiler-kit.ts`. The library's own suite covers the screens.
+- File-system paths go only through `src/editors/vscode/src/paths.ts`.
+
+### [PROFILER-SHARED-LIBRARY-ENGINE] Engine bundling
+
+Every platform VSIX ships the framework-dependent engine (`lsp-profiler-dotnet-engine` and its assemblies) beside the `sharplsp` binary; the Makefile's `_copy-vsix-binaries` copies it from the sibling `lsp_profiler` checkout (`LSP_PROFILER_DIR`, default `../lsp_profiler`) until the engine is published. The engine runs on the .NET 8+ runtime that SharpLsp users already have. It never writes a process dump: CPU sampling and heap capture both use the runtime's EventPipe, which needs no debugger entitlement, so the memory profiler works on macOS where `dotnet-dump collect` hung. `dotnet-trace`, `dotnet-counters` and `dotnet-dump` are no longer required, and no `dotnet tool install` hint remains in the host; the READMEs still mention them and are updated at cutover.
+
+### [PROFILER-SHARED-LIBRARY-SUPERSEDED] Sections replaced at cutover
+
+| Section | Replaced by (lsp-profiler) |
+|---|---|
+| [PROFILER-TOOLS], [PROFILER-ARCHITECTURE-DISCOVERY] | The .NET engine: EventPipe and TraceEvent, in-process, with no CLI tools and no dumps |
+| [PROFILER-PROTOCOL] | lsp-profiler commands through `workspace/executeCommand` |
+| [PROFILER-PROCESS-LIST] | Process discovery and kill; the .NET classification moves into `lsp-profiler-dotnet` |
+| [PROFILER-TRACE], [PROFILER-TRACE-CONVERSION] | CPU sessions with line-level hotspots and speedscope, flame-graph and `.cpuprofile` exports |
+| [PROFILER-PROTOCOL-COUNTERS], [PROFILER-LEAKS-COUNTERS] | A neutral metrics capability, which is not yet specified in lsp-profiler |
+| [PROFILER-PROTOCOL-DUMP-COLLECT], [PROFILER-PROTOCOL-DUMP-ANALYZE], [PROFILER-LEAKS] | Memory sessions: live-heap snapshots, compare, leak confidence |
+| [PROFILER-GRAPH] | The retention graph and objects-by-type; graph features move into the UI library |
+| [PROFILER-SESSIONS] | Library sessions, configured per [PROFILER-SHARED-LIBRARY-HOST] |
+| [PROFILER-EDITOR] | The UI library's views and commands, per [PROFILER-SHARED-LIBRARY-VSCODE] |
+| [PROFILER-ERRORS] | lsp-profiler's error codes |
+| [PROFILER-SCOPE] | lsp-profiler's scope, plus the parity table in [PROFILER-PLAN-MIGRATION] |
+
 ## [PROFILER-TOOLS] Diagnostic Tools
 
 ### [PROFILER-TOOLS-TRACE] dotnet-trace

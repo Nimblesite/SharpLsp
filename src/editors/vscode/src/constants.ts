@@ -93,5 +93,5 @@ export const CMD_TEST_RUN_AT_CURSOR = 'sharplsp.test.runAtCursor';
 export const CMD_TEST_DEBUG_AT_CURSOR = 'sharplsp.test.debugAtCursor';
 
 export const VIEW_SOLUTION_EXPLORER = 'sharplsp.solutionExplorer';
-export const VIEW_PROFILER = 'sharplsp.profiler';
+export const VIEW_PROFILER = 'sharplsp.profiler.processes';
 export const VIEW_TEST_EXPLORER = 'sharplsp.testExplorer';

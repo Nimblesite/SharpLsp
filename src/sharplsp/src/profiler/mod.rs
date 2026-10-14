@@ -1,23 +1,8 @@
-//! Profiler integration — wraps `dotnet-trace`, `dotnet-counters`, and `dotnet-dump`.
+//! Profiling: the shared `lsp-profiler` engine mounted in this host.
+//! Implements [PROFILER-SHARED-LIBRARY].
 //!
-//! All profiler logic lives in the Rust LSP host. Diagnostic CLI tools are
-//! spawned as child processes — no sidecar involvement.
+//! Every profiling decision — processes, CPU sampling, heap snapshots, leak
+//! scoring, exports — lives in `lsp-profiler` and its .NET runtime. This
+//! module only mounts the service on the LSP connection.
 
-mod child_process;
-pub mod counters;
-pub mod diagnostics_port;
-pub mod dump;
-pub mod dump_cmd;
-pub mod handlers;
-pub mod heap_analysis;
-pub mod heap_diff;
-pub mod object_graph;
-pub mod object_inspection;
-pub mod process_list;
-pub mod requests;
-mod retained_size;
-pub mod session;
-#[cfg(test)]
-mod test_support;
-pub mod tool_discovery;
-pub mod trace;
+pub mod host;
