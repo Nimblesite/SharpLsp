@@ -787,6 +787,8 @@ _lint-zed:
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
 _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
+	# The profiler contributions are generated from the shared UI library ([PROFILER-SHARED-LIBRARY-VSCODE]).
+	node tools/vsix/sync-profiler-contributions.mjs --check
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs \
 		tools/ci/spec-citations.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)

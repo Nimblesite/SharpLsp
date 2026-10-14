@@ -8,7 +8,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
-import type { ProfilerStore } from '@nimblesite/lsp-profiler-ui';
+import type { ProcessesProvider, ProfilerStore } from '@nimblesite/lsp-profiler-ui';
 import { EXTENSION_ID } from './test-helpers';
 
 /** The profiler's commands as the server advertises them. */
@@ -22,7 +22,7 @@ export function uiCommand(name: string): string {
 }
 
 interface ProfilerApi {
-  profiler?: { ui: { store: ProfilerStore } };
+  profiler?: { ui: { store: ProfilerStore; processes: ProcessesProvider } };
   getLspClient?: () => LanguageClient | undefined;
 }
 
@@ -32,6 +32,34 @@ export function profilerStore(): ProfilerStore {
   const store = api?.profiler?.ui.store;
   assert.ok(store, 'the extension must publish the profiler store');
   return store;
+}
+
+/** The processes tree's data provider: the rows the panel renders. */
+export function processesProvider(): ProcessesProvider {
+  const provider = vscode.extensions.getExtension<ProfilerApi>(EXTENSION_ID)?.exports?.profiler
+    ?.ui.processes;
+  assert.ok(provider, 'the extension must publish the processes provider');
+  return provider;
+}
+
+/** The top-level rows of the processes panel as it renders them now. */
+export function panelRows(): vscode.TreeItem[] {
+  return processesProvider().getChildren();
+}
+
+/** The panel row of `pid`, searching inside group headers too. */
+export function rowOf(pid: number): vscode.TreeItem | undefined {
+  const provider = processesProvider();
+  const rows = provider.getChildren().flatMap((item) =>
+    item.contextValue === 'processGroup' ? provider.getChildren(item) : [item],
+  );
+  return rows.find((item) => item.id === `process:${pid}`);
+}
+
+/** A row's tooltip as plain text. */
+export function tooltipText(item: vscode.TreeItem): string {
+  const tip = item.tooltip;
+  return typeof tip === 'string' ? tip : (tip?.value ?? '');
 }
 
 /** The running language client. */

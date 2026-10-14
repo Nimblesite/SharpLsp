@@ -452,13 +452,15 @@ suite('Lifecycle E2E', () => {
     assert.ok(ext?.isActive, 'Extension is active');
     const api = ext.exports as {
       explorerProvider: unknown;
-      profilerProvider: unknown;
+      profiler: { ui: { store: unknown; processes: unknown } } | undefined;
       getLspClient: () => unknown;
     };
     // degradedApi() returns the same shape, so the contract holds in both modes:
-    // explorerProvider + profilerProvider non-null, getLspClient callable.
+    // explorerProvider + the shared profiler UI non-null, getLspClient callable
+    // ([PROFILER-SHARED-LIBRARY-VSCODE]).
     assert.ok(api.explorerProvider, 'API exposes an explorerProvider');
-    assert.ok(api.profilerProvider, 'API exposes a profilerProvider');
+    assert.ok(api.profiler?.ui.store, 'API exposes the profiler store');
+    assert.ok(api.profiler.ui.processes, 'API exposes the processes view provider');
     assert.strictEqual(typeof api.getLspClient, 'function', 'API exposes getLspClient');
   });
 });

@@ -162,9 +162,16 @@ fn processes_lists_the_dotnet_target_and_refuses_to_kill_a_foreign_pid() {
     );
 
     let foreign = command(&mut client, "kill", json!({ "pid": std::process::id() }));
-    assert!(
-        foreign.get("error").is_some() || foreign["result"]["killed"] == false,
-        "the test host itself is not a .NET target: {foreign}"
+    assert_eq!(
+        error_code(&foreign, "kill on the test host"),
+        -32002,
+        "the test host itself is not a .NET target, so kill refuses it: {foreign}"
+    );
+    let missing = command(&mut client, "kill", json!({ "pid": 999_999 }));
+    assert_eq!(
+        error_code(&missing, "kill on a dead pid"),
+        -32001,
+        "PROCESS_NOT_FOUND, not UNSUPPORTED_RUNTIME: {missing}"
     );
     client.shutdown_and_exit();
 }
@@ -332,24 +339,42 @@ fn invalid_pids_and_foreign_commands_fail_with_protocol_codes() {
     client.shutdown_and_exit();
 }
 
+/// A heap snapshot of a live target takes seconds, so a cancel sent right after
+/// it is still in flight: the answer is `RequestCancelled`, the target keeps
+/// running, and the same session snapshots normally afterwards ([PROFILER-SHARED-LIBRARY-HOST]).
 #[test]
 fn an_in_flight_profiler_request_can_be_cancelled() {
     let target = Target::start();
     let mut client = start_server();
+    let started = result(
+        &command(&mut client, "memory.start", json!({ "pid": target.pid })),
+        "memory.start",
+    );
+    let session = json!({ "memory_session_id": started["memory_session_id"] });
     let id = next_id();
     client.send(&json!({
         "jsonrpc": "2.0",
         "id": id,
         "method": "workspace/executeCommand",
-        "params": { "command": "sharplsp.lspProfiler.memory.snapshot", "arguments": [{ "memory_session_id": "mem-none" }] },
+        "params": { "command": "sharplsp.lspProfiler.memory.snapshot", "arguments": [session] },
     }));
     client.notify("$/cancelRequest", json!({ "id": id }));
-    let response = client.recv();
-    let code = response["error"]["code"].as_i64().unwrap_or(0);
-    assert!(
-        code == -32800 || code == -32000,
-        "cancelled or already answered, never a hang: {response}"
+    let response = loop {
+        let message = client.recv();
+        if message["id"] == json!(id) && message.get("method").is_none() {
+            break message;
+        }
+    };
+    assert_eq!(
+        response["error"]["code"].as_i64(),
+        Some(-32800),
+        "an in-flight snapshot is answered as cancelled: {response}"
     );
+    let after = result(
+        &command(&mut client, "memory.snapshot", session),
+        "memory.snapshot after a cancel",
+    );
+    assert_eq!(after["result"]["outcome"]["kind"], "Snapshot", "{after}");
     drop(target);
     client.shutdown_and_exit();
 }

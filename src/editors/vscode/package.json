@@ -867,73 +867,73 @@
       },
       {
         "command": "sharplsp.profiler.profileStart",
-        "title": "SharpLsp: Start Profiling",
+        "title": "Start Profiling",
         "category": "SharpLsp",
         "icon": "$(flame)"
       },
       {
         "command": "sharplsp.profiler.profileStop",
-        "title": "SharpLsp: Stop Profiling",
+        "title": "Stop Profiling",
         "category": "SharpLsp",
         "icon": "$(debug-stop)"
       },
       {
         "command": "sharplsp.profiler.profileSnapshot",
-        "title": "SharpLsp: Take Profile Snapshot",
+        "title": "Take Profile Snapshot",
         "category": "SharpLsp",
         "icon": "$(device-camera)"
       },
       {
         "command": "sharplsp.profiler.profileAttachToDebug",
-        "title": "SharpLsp: Profile Debug Session",
+        "title": "Profile Debug Session",
         "category": "SharpLsp",
         "icon": "$(debug-alt)"
       },
       {
         "command": "sharplsp.profiler.profileShowResults",
-        "title": "SharpLsp: Show Profile Results",
+        "title": "Show Profile Results",
         "category": "SharpLsp",
         "icon": "$(flame)"
       },
       {
         "command": "sharplsp.profiler.memoryMenu",
-        "title": "SharpLsp: Memory…",
+        "title": "Memory…",
         "category": "SharpLsp",
         "icon": "$(database)"
       },
       {
         "command": "sharplsp.profiler.memoryStart",
-        "title": "SharpLsp: Start Memory Tracking",
+        "title": "Start Memory Tracking",
         "category": "SharpLsp",
         "icon": "$(database)"
       },
       {
         "command": "sharplsp.profiler.memorySnapshot",
-        "title": "SharpLsp: Take Memory Snapshot",
+        "title": "Take Memory Snapshot",
         "category": "SharpLsp",
         "icon": "$(device-camera)"
       },
       {
         "command": "sharplsp.profiler.memoryStop",
-        "title": "SharpLsp: Stop Memory Tracking",
+        "title": "Stop Memory Tracking",
         "category": "SharpLsp",
         "icon": "$(debug-stop)"
       },
       {
         "command": "sharplsp.profiler.memoryDiff",
-        "title": "SharpLsp: Compare Memory Snapshots",
+        "title": "Compare Memory Snapshots",
         "category": "SharpLsp",
         "icon": "$(diff)"
       },
       {
         "command": "sharplsp.profiler.memoryGcCollect",
-        "title": "SharpLsp: Force Garbage Collection",
+        "title": "Force Garbage Collection",
         "category": "SharpLsp",
         "icon": "$(trash)"
       },
       {
         "command": "sharplsp.profiler.memoryReferences",
-        "title": "SharpLsp: Show Reference Graph",
+        "title": "Show Reference Graph",
         "category": "SharpLsp",
         "icon": "$(type-hierarchy)"
       },
