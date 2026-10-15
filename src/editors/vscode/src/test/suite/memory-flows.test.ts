@@ -322,6 +322,19 @@ suite('Memory sessions — the UI flow on a live target', () => {
     assert.ok(!/basilisk/i.test(dashboard.html), 'no other product named');
     assert.ok(dashboard.html.includes(LEAK_TYPE), 'the dashboard shows the leaking type by name');
     const snap = lastMemorySnapshot();
+    assert.deepEqual(
+      snap?.gcCounts,
+      [],
+      'generation bytes are never labelled as collection counts',
+    );
+    assert.ok(
+      dashboard.html.includes('Generation sizes'),
+      'the dashboard labels heap region bytes',
+    );
+    assert.ok(
+      dashboard.html.includes('"name":"POH"'),
+      'runtime generation labels reach the dashboard',
+    );
     assert.ok(
       snap?.topAllocations.some((site) => site.typeName === LEAK_TYPE),
       'the snapshot kept type names',
