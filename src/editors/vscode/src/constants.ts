@@ -37,28 +37,6 @@ export const CMD_REVEAL_IN_EXPLORER = 'sharplsp.revealInExplorer';
 export const CMD_BROWSE_NUGET_PACKAGES = 'sharplsp.browseNuGetPackages';
 export const CMD_OPEN_SOLUTION = 'sharplsp.openSolution';
 
-export const CMD_PROFILER_LIST_PROCESSES = 'sharplsp.profiler.listProcesses';
-export const CMD_PROFILER_START_TRACE = 'sharplsp.profiler.startTrace';
-export const CMD_PROFILER_STOP_TRACE = 'sharplsp.profiler.stopTrace';
-export const CMD_PROFILER_START_COUNTERS = 'sharplsp.profiler.startCounters';
-export const CMD_PROFILER_STOP_COUNTERS = 'sharplsp.profiler.stopCounters';
-export const CMD_PROFILER_COLLECT_DUMP = 'sharplsp.profiler.collectDump';
-export const CMD_PROFILER_ANALYZE_HEAP = 'sharplsp.profiler.analyzeHeap';
-export const CMD_PROFILER_REFRESH = 'sharplsp.profiler.refresh';
-export const CMD_PROFILER_DIFF_SNAPSHOTS = 'sharplsp.profiler.diffSnapshots';
-export const CMD_PROFILER_DETECT_LEAKS = 'sharplsp.profiler.detectLeaks';
-export const CMD_PROFILER_SHOW_OBJECT_GRAPH = 'sharplsp.profiler.showObjectGraph';
-export const CMD_PROFILER_INSPECT_OBJECT = 'sharplsp.profiler.inspectObject';
-export const CMD_PROFILER_OPEN_TRACE = 'sharplsp.profiler.openTrace';
-export const CMD_PROFILER_CONVERT_TRACE = 'sharplsp.profiler.convertTrace';
-export const CMD_PROFILER_STOP_SESSION = 'sharplsp.profiler.stopSession';
-export const CMD_PROFILER_REVEAL_OUTPUT = 'sharplsp.profiler.revealOutput';
-export const CMD_PROFILER_COPY_OUTPUT_PATH = 'sharplsp.profiler.copyOutputPath';
-export const CMD_PROFILER_SHOW_COUNTERS_PANEL = 'sharplsp.profiler.showCountersPanel';
-export const CMD_PROFILER_TRACE_PROCESS = 'sharplsp.profiler.traceProcess';
-export const CMD_PROFILER_COUNTERS_PROCESS = 'sharplsp.profiler.countersProcess';
-export const CMD_PROFILER_DUMP_PROCESS = 'sharplsp.profiler.dumpProcess';
-export const CMD_PROFILER_COPY_PID = 'sharplsp.profiler.copyPid';
 export const CMD_PROFILER_KILL_PROCESS = 'sharplsp.profiler.killProcess';
 
 // Build commands

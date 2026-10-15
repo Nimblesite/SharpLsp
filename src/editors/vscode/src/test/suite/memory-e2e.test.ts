@@ -4,9 +4,9 @@
 // the live heap of `ProfileLeakTarget` over EventPipe (no pause, no debugger),
 // the diff scores the growing `LeakedPayload` as a leak, the retention graph
 // reaches the static `Items` root, an induced collection is observed, and the
-// memory track paints the fixture source. Ported from Basilisk's memory-e2e,
-// memory-introspection-e2e and the interval mode of memory-autopilot-e2e; the
-// pause-driven courier flows are Python's and have no direct-mode analogue.
+// memory track paints the fixture source, all on a plain running process. The
+// debug-launched journeys of Basilisk's memory-e2e, memory-introspection-e2e and
+// memory-autopilot-e2e live in the suites of those names, on a .NET debuggee.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
@@ -17,6 +17,8 @@ import {
 } from '@nimblesite/lsp-profiler-ui';
 import type { MemoryStep, RefGraph } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
+  completed,
+  trackMemory,
   execute,
   fixtureSource,
   openSource,
@@ -31,13 +33,6 @@ import { ACTIVATION_MS, PROCESS_START_MS, SETTINGS_WRITE_MS } from './test-timeo
 const LEAK_TYPE = 'ProfileLeakTarget.LeakedPayload';
 const STEP_MS = 90_000;
 const GROWTH_MS = 2_000;
-
-function completed(step: MemoryStep): Extract<MemoryStep, { kind: 'Completed' }>['result'] {
-  if (step.kind !== 'Completed') {
-    throw new Error(`direct mode completes every step: ${JSON.stringify(step)}`);
-  }
-  return step.result;
-}
 
 suite('Memory profiling — real end-to-end (direct mode)', () => {
   let tmpDir = '';
@@ -62,13 +57,7 @@ suite('Memory profiling — real end-to-end (direct mode)', () => {
     const store = profilerStore();
     await openSource(fixtureSource('ProfileLeakTarget'));
 
-    await vscode.commands.executeCommand(uiCommand('memoryStart'), target.pid);
-    await waitFor(
-      () => store.profiler.value.memory,
-      (memory) => memory === 'active',
-      PROCESS_START_MS,
-      'memory session active',
-    );
+    await trackMemory(target.pid);
     assert.ok(
       memoryStatusText()?.includes('tracking'),
       `status bar follows the session: ${memoryStatusText()}`,
@@ -173,13 +162,7 @@ suite('Memory profiling — real end-to-end (direct mode)', () => {
     await config.update('profiler.autoSnapshot', true, vscode.ConfigurationTarget.Global);
     await config.update('profiler.autoSnapshotInterval', 1, vscode.ConfigurationTarget.Global);
     const before = recordedAutopilotCaptures().length;
-    await vscode.commands.executeCommand(uiCommand('memoryStart'), target.pid);
-    await waitFor(
-      () => store.profiler.value.memory,
-      (memory) => memory === 'active',
-      PROCESS_START_MS,
-      'memory session active',
-    );
+    await trackMemory(target.pid);
     await waitFor(
       () => recordedAutopilotCaptures().length,
       (count) => count > before,

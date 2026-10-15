@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import type { ProcessesProvider, ProfilerStore } from '@nimblesite/lsp-profiler-ui';
+import type { MemoryStep } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import { EXTENSION_ID } from './test-helpers';
 
 /** The profiler's commands as the server advertises them. */
@@ -204,4 +205,23 @@ export async function waitFor<T>(
     last = read();
   }
   return last;
+}
+
+/** The result of a step direct mode completes; fails on a courier `Evaluate` step. */
+export function completed(step: MemoryStep): Extract<MemoryStep, { kind: 'Completed' }>['result'] {
+  if (step.kind !== 'Completed') {
+    throw new Error(`direct mode completes every step: ${JSON.stringify(step)}`);
+  }
+  return step.result;
+}
+
+/** Start tracking `pid` through the real command; resolves once the store is tracking. */
+export async function trackMemory(pid: number): Promise<void> {
+  await vscode.commands.executeCommand(uiCommand('memoryStart'), pid);
+  await waitFor(
+    () => profilerStore().profiler.value.memory,
+    (memory) => memory === 'active',
+    30_000,
+    'memory tracking active',
+  );
 }

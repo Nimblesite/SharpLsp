@@ -18,8 +18,8 @@ import {
   profilerStore,
   uiCommand,
 } from './profiler-kit';
-import { setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { useLspSuite } from './profiler-ui-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 const CLIENT_COMMANDS = [
   'profileStart',
@@ -77,14 +77,7 @@ const SETTINGS: Record<string, unknown> = {
 };
 
 suite('Profiler — shared UI registration', () => {
-  let tmpDir = '';
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-reg-'));
-  });
-  suiteTeardown(() => {
-    teardownLspTestSuite(tmpDir);
-  });
+  useLspSuite('profiler-reg-');
 
   test('every profiler client command is registered', async () => {
     const registered = new Set(await vscode.commands.getCommands(true));
@@ -176,14 +169,7 @@ suite('Profiler — shared UI registration', () => {
 });
 
 suite('Profiler — wire lifecycle errors', () => {
-  let tmpDir = '';
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-wire-'));
-  });
-  suiteTeardown(() => {
-    teardownLspTestSuite(tmpDir);
-  });
+  useLspSuite('profiler-wire-');
 
   test('cpu.start rejects a dead PID as PROCESS_NOT_FOUND', async function () {
     this.timeout(LSP_RESPONSE_MS);

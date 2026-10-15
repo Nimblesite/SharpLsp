@@ -27,6 +27,8 @@ import type {
   MemoryStep,
 } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
+  completed,
+  trackMemory,
   execute,
   executeError,
   fixtureSource,
@@ -55,13 +57,6 @@ function embeddedLeaks(html: string): { typeName?: string }[] {
   } catch {
     return [];
   }
-}
-
-function completed(step: MemoryStep): Extract<MemoryStep, { kind: 'Completed' }>['result'] {
-  if (step.kind !== 'Completed') {
-    throw new Error(`direct mode completes every step: ${JSON.stringify(step)}`);
-  }
-  return step.result;
 }
 
 suite('Memory sessions — wire refusals and lifecycle', () => {
@@ -290,15 +285,8 @@ suite('Memory sessions — the UI flow on a live target', () => {
   test('start: tracking state, status bar, panel chrome and context key follow the session', async function () {
     this.timeout(STEP_MS);
     assert.ok(target);
-    const store = profilerStore();
     await openSource(fixtureSource('ProfileLeakTarget'));
-    await vscode.commands.executeCommand(uiCommand('memoryStart'), target.pid);
-    await waitFor(
-      () => store.profiler.value.memory,
-      (m) => m === 'active',
-      PROCESS_START_MS,
-      'tracking',
-    );
+    await trackMemory(target.pid);
     assert.ok(memoryStatusText()?.includes('tracking'), `status: ${memoryStatusText()}`);
     assert.equal(contextKeyValues().get('sharplsp.profiler.memoryTracking'), true);
     assert.deepEqual(processesViewState(), {

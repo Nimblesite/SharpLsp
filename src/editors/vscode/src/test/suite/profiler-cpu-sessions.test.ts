@@ -103,11 +103,11 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
     const later = (await sessions()).find((s) => s.session_id === started.session_id);
     assert.ok(later, 'still listed');
     assert.ok(later.duration_secs >= 1, `duration advances: ${later.duration_secs}`);
-    // The .NET backend has no live progress ([PROFILER-SHARED-LIBRARY-VSCODE];
-    // lsp-profiler's PROF-CPU-PROGRESS): its count
-    // is never invented mid-session, and the report carries the real one.
-    assert.equal(dotnetCpu()?.live_progress, false, 'the capability the count follows');
-    assert.equal(later.sample_count, 0, 'no live count without live progress');
+    // The .NET backend records in segments and streams each finished one
+    // (lsp-profiler's PROF-DOTNET-CPU), so its live count is real and grows,
+    // a segment behind; the report carries the final one.
+    assert.equal(dotnetCpu()?.live_progress, true, 'the capability the count follows');
+    assert.ok(later.sample_count > 0, `the live count grows mid-session: ${later.sample_count}`);
     const report = await stop(started.session_id);
     assert.ok(
       report.total_samples > 0,
@@ -300,7 +300,7 @@ suite('CPU sessions — live chrome through the UI', () => {
     assert.equal(lastProfileResult(), before, 'no result is invented');
   });
 
-  test('while profiling: elapsed time ticks, no sample count is claimed without live progress, the panel and badge follow, and the row flames', async function () {
+  test('while profiling: elapsed time and the live sample count tick, the panel and badge follow, and the row flames', async function () {
     this.timeout(STOP_MS);
     assert.ok(target);
     const store = profilerStore();
@@ -319,15 +319,24 @@ suite('CPU sessions — live chrome through the UI', () => {
       LSP_RESPONSE_MS,
       'progress ticks',
     );
-    assert.equal(dotnetCpu()?.live_progress, false);
-    assert.equal(store.profiler.value.sampleCount, 0, 'no invented live count');
-    assert.ok(profilerStatusText()?.includes('Profiling'), `status bar: ${profilerStatusText()}`);
-    assert.ok(
-      !profilerStatusText()?.includes('samples'),
-      `no sample claim: ${profilerStatusText()}`,
+    assert.equal(dotnetCpu()?.live_progress, true);
+    await waitFor(
+      () => store.profiler.value.sampleCount,
+      (count) => count > 0,
+      LSP_RESPONSE_MS,
+      'a live sample count from the first finished segment',
+    );
+    await waitFor(
+      () => profilerStatusText() ?? '',
+      (text) => /[1-9][\d.]* ?K? samples/.test(text),
+      LSP_RESPONSE_MS,
+      'the status bar to show the live sample count',
     );
     const chrome = processesViewState();
-    assert.equal(chrome.message, `🔥 Profiling PID ${target.pid}…`);
+    assert.ok(
+      chrome.message?.startsWith(`🔥 Profiling PID ${target.pid}`) === true,
+      `the panel shows the live profile: ${String(chrome.message)}`,
+    );
     assert.equal(chrome.badge, 1);
     const row = await waitFor(
       () => rowOf(target?.pid ?? 0),

@@ -54,6 +54,8 @@ flowchart LR
 - The library's views, webviews, status item and decorations replace the PROFILER tree and the graph, diff and counter webviews.
 - The library's state is signals, which satisfies the extension's reactivity rule.
 - The extension's `package.json` contributions are the library's command and view catalogue under `sharplsp.profiler.*`, written by `tools/vsix/sync-profiler-contributions.mjs` from the library's generator (`--check` fails when they differ). The processes view is `sharplsp.profiler.processes` in the SharpLsp container.
+- The protocol commands (`sharplsp.lspProfiler.*`) are called over `workspace/executeCommand`, never as VS Code commands. The language client is built without the stock `workspace/executeCommand` feature (`src/client.ts`), so the server's advertised commands are not registered as editor commands: every registered `sharplsp.*` command is a contributed one.
+- A debuggee the SharpLsp debugger starts in a terminal is announced in a DAP `process` event (`startMethod: launch`) once the adapter attaches to it (`src/dap-replay.ts`), as an adapter-hosted launch announces its own. The profiler takes debuggee PIDs only from that event, so "Run & Profile CPU" and "Run & Track Memory" find the program in either console.
 - Tests: `profiler.test.ts` (registration, advertisement, manifest, settings, wire error codes), `profiler-cpu-e2e.test.ts` and `memory-e2e.test.ts` (real `ProfileTarget` and `ProfileLeakTarget` from `src/sharplsp/tests/fixtures`), through `src/test/suite/profiler-kit.ts`. The library's own suite covers the screens.
 - File-system paths go only through `src/editors/vscode/src/paths.ts`.
 

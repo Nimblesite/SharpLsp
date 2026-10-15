@@ -165,7 +165,7 @@
       ]
     },
     "workspace": {
-      "description": "The IDE surface that is not a language service: activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, and the cross-cutting command workflows; the Solution Explorer tree with its build action — revealed terminal and progress notification ([SE-ACTIONS-BUILD]) — and its reactive sort/state signals, tooltips, reveal, full context-menu surface and project-dependency watcher; scaffolding and the NuGet surface down to real .csproj dependency edits; and profiling end to end (dotnet-trace sessions, live counters, memory dumps, .nettrace conversion, profiler webviews) plus FSI and build-output filtering.",
+      "description": "The IDE surface that is not a language service: activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, and the cross-cutting command workflows; the Solution Explorer tree with its build action — revealed terminal and progress notification ([SE-ACTIONS-BUILD]) — and its reactive sort/state signals, tooltips, reveal, full context-menu surface and project-dependency watcher; scaffolding and the NuGet surface down to real .csproj dependency edits plus FSI and build-output filtering.",
       "files": [
         "bundled-binary.test.js",
         "bundled-sidecars.test.js",
@@ -196,7 +196,7 @@
       ]
     },
     "profiler": {
-      "description": "The shared lsp-profiler mounted in SharpLsp ([PROFILER-SHARED-LIBRARY-VSCODE]), end to end over the real LSP and the bundled .NET engine against live ProfileTarget / ProfileLeakTarget processes: command registration and advertisement, generated manifest contributions, settings, wire error codes, the processes panel (rows, sort, group, filter, kill, copy, reveal), CPU sessions (one-click attach, live status, stop, snapshot, presets, results panel, heat map, artifacts, concurrency, a target that dies mid-session), and memory sessions (snapshot, diff and leak scoring, retention graph, objects, induced GC, dashboard, decorations, autopilot, every refusal path). Its own job because every suite attaches the engine to real processes.",
+      "description": "The shared lsp-profiler mounted in SharpLsp ([PROFILER-SHARED-LIBRARY-VSCODE]), end to end over the real LSP and the bundled .NET engine against live ProfileTarget / ProfileLeakTarget processes: command registration and advertisement, generated manifest contributions, settings, wire error codes, the processes panel (rows, sort, group, filter, kill, copy, reveal), CPU sessions (one-click attach, live status, stop, snapshot, presets, results panel, heat map, artifacts, concurrency, a target that dies mid-session), memory sessions (snapshot, diff and leak scoring, retention graph, objects, induced GC, dashboard, decorations, autopilot, every refusal path), and Basilisk's profiler suites ported onto SharpLsp: the processes panel, decorations, webviews, entry points, reactive chrome, the profile server, and the debug-launched flows (Run & Profile CPU, Run & Track Memory, the autopilot, introspection of a paused debuggee) against a .NET debuggee built in the workspace. Its own job because every suite attaches the engine to real processes.",
       "files": [
         "profiler*.test.js",
         "memory-*.test.js"

@@ -47,6 +47,9 @@ export class SessionReplayer {
   private exceptionMessage?: DapMessage;
   private configurationDoneMessage?: DapMessage;
 
+  /** The terminal-hosted program to announce once its runtime is up. */
+  private terminalDebuggee: number | undefined;
+
   constructor(private readonly host: ReplayHost) {}
 
   /** The launch/attach request, for terminal routing decisions. */
@@ -160,6 +163,35 @@ export class SessionReplayer {
     }
     this.host.respawn(['--attach', String(pid)], () => {
       this.replayHandshake();
+      this.terminalDebuggee = pid;
+    });
+  }
+
+  /**
+   * Observe one adapter message on its way to VS Code. The adapter now
+   * ATTACHES to a program VS Code started, so it never names that program in a
+   * `process` event, and the terminal's shell only becomes the program when it
+   * execs it. The first module the runtime loads proves it has: announce the
+   * program then, as an adapter-hosted launch would, so the workbench and the
+   * profiler learn the debuggee's pid ([DEBUG-FEATURES-LAUNCH-OUTPUT],
+   * [PROFILER-SHARED-LIBRARY-VSCODE]).
+   */
+  public observeChild(message: DapMessage): void {
+    const pid = this.terminalDebuggee;
+    if (pid === undefined || message.type !== 'event' || message.event !== 'module') return;
+    this.terminalDebuggee = undefined;
+    this.announceTerminalDebuggee(pid);
+  }
+
+  /** Name the terminal-hosted program in a `process` event. */
+  private announceTerminalDebuggee(pid: number): void {
+    const program = this.launchMessage?.arguments;
+    const name =
+      isRecord(program) && typeof program.program === 'string' ? program.program : String(pid);
+    this.host.fire({
+      type: 'event',
+      event: 'process',
+      body: { name, systemProcessId: pid, isLocalProcess: true, startMethod: 'launch' },
     });
   }
 

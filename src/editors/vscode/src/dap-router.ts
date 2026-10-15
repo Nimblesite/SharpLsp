@@ -539,6 +539,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.disposed) return;
     this.debuggee.observe(message);
     this.shutdown.observe(message);
+    this.replayer.observeChild(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
         `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
