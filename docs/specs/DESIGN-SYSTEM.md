@@ -97,6 +97,19 @@ Within `.prose`:
 
 Page-level grids and marketing card styles must not leak into `.prose`. Do not recreate prose styling in templates or `pages.css`.
 
+## [WEB-DESIGN-MEDIA] Product Media
+
+Screenshots and video of a SharpLsp feature show the real extension, never a mock-up.
+
+- **Capture.** The profiler media is shot by `src/website/tools/profiler-film/`. `capture.mjs` drives an isolated VS Code (its own user-data and extensions directories, never the user's editor) running the packaged VSIX against a real .NET app, and records stills and real-time screencasts. `render.mjs` turns them into the site's assets.
+- **Honesty.** Footage plays in real time unless the frame says otherwise: every fast-forwarded stretch carries an on-screen speed marker, and captions name time-lapses. Motion graphics (title cards, camera moves, highlights, the cursor) frame the footage but never alter what the editor shows.
+- **Privacy.** No frame may show a user name, home directory, hostname or terminal. The demo app runs from a neutral temporary path and the terminal is never opened.
+- **Formats.**
+  - Films ship as H.264 MP4 and VP9 WebM with a WebP poster.
+  - Stills ship as WebP, 2400px wide, with `width` and `height` set.
+  - Marketing pages may autoplay a film only when it is muted and looping; docs pages use controls.
+  - Every autoplaying video pauses and shows its controls under `prefers-reduced-motion: reduce`.
+
 ## [WEB-DESIGN-RESPONSIVE] Responsive Behavior
 
 Design mobile-first: content order, meaning, and actions must work in a single column without hover. `768px` is the primary responsive boundary; at and below it:

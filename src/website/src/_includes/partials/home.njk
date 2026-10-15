@@ -54,6 +54,27 @@
   </ol>
 </section>
 
+<section class="home-section" aria-labelledby="profiler-title">
+  <header class="section-heading">
+    <p class="eyebrow">{{ homeText.profilerEyebrow }}</p>
+    <h2 id="profiler-title">{{ homeText.profilerTitle }}</h2>
+    <p>{{ homeText.profilerIntro }}</p>
+  </header>
+  <figure class="product-shot">
+    <video
+      autoplay muted loop playsinline preload="metadata"
+      poster="/assets/videos/profiler-film-poster.webp"
+      width="1920"
+      height="1080"
+      aria-label="{{ homeText.profilerVideoLabel }}"
+    >
+      <source src="/assets/videos/profiler-film.webm" type="video/webm">
+      <source src="/assets/videos/profiler-film.mp4" type="video/mp4">
+    </video>
+    <figcaption>{{ homeText.profilerCaption }} <a href="{{ langPrefix }}/docs/profiler/">{{ homeText.profilerCta }} →</a></figcaption>
+  </figure>
+</section>
+
 <section class="language-section">
   <div class="section-heading">
     <p class="eyebrow">{{ homeText.languageEyebrow }}</p>
