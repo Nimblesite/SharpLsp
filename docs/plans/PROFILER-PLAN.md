@@ -149,7 +149,7 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
 
 ### Rust host
 
-- [~] Depend on `lsp-profiler` and `lsp-profiler-dotnet`: path dependencies into the `lspkit/` submodule (`src/sharplsp/Cargo.toml`), which CI checks out with `LSPKIT_READ_TOKEN`. Move to the crates.io release once lspkit publishes them.
+- [~] Depend on `lsp-profiler` and `lsp-profiler-dotnet`: path dependencies into the public `lspkit/` submodule (`src/sharplsp/Cargo.toml`), which CI checks out without a separate repository token. Move to the crates.io release once lspkit publishes them.
 - [x] Profiler wiring in `src/sharplsp/src/main.rs` replaced by `profiler::host::ProfilerHost` (`HostServices`): construction under the workspace root, shutdown before the sidecars, executeCommand routing, `$/cancelRequest`, `executeCommandProvider` and `experimental.lspProfiler` [PROFILER-SHARED-LIBRARY-HOST]. The `sharplsp/profiler/*` routes are gone.
 - [ ] Merge the profiler's diagnostics, inlay hints, code lenses and code actions with SharpLsp's own providers (blocked on the library building them).
 - [x] `[profiler]` table reduced to `max_concurrent_sessions` and `output_directory`; CLI-only settings removed (`config.rs`). The cap is not enforced by the library yet.
@@ -166,7 +166,7 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
 - [ ] **Graph features were not moved before deletion.** `profiler-graph*.ts`, `profiler-graph-webview.mts`, `profiler-graph-browser.test.ts` and `profiler-graph-test-kit.ts` are deleted; their sources are in history. Porting nested expansion, filters, SVG/PNG export, theme contrast and malformed-message recovery onto the library's retention graph, with the browser regressions, is open and listed in the parity table.
 - [x] `profiler.ts`, `profiler-diff.ts`, `profiler-graph.ts`, `profiler-graph-html.ts`, `profiler-graph-message.ts`, `profiler-graph-types.ts`, `profiler-graph-webview.mts`, `profiler-prompts.ts` and `profiler-request.ts` deleted; the esbuild webview entry removed; `launch-profiles.ts` and `dotnet-process.ts` stay (used by debugging and testing).
 - [x] `package.json` profiler contributions replaced by the generated catalogue (`tools/vsix/sync-profiler-contributions.mjs`); stale `cmd.profiler.*` / `view.profiler.name` nls keys removed from every locale. `profiler.test.ts` checks the manifest, and `_lint-vsix` runs the sync script's `--check`.
-- [~] The engine is staged beside the host binary by `_copy-vsix-binaries` [PROFILER-SHARED-LIBRARY-ENGINE]. Verified on macOS only; Windows and Linux VSIX payload verification is open.
+- [x] The engine is staged beside the host binary by `_copy-vsix-binaries` [PROFILER-SHARED-LIBRARY-ENGINE]. macOS verified locally; Windows and Linux VSIX payload verification passed in CI run `38799469697`.
 
 ### Tests
 

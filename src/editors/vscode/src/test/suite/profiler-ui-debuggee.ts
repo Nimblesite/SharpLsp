@@ -4,7 +4,8 @@
 //
 // It is written and built inside the opened workspace folder, so "Current
 // File" launches resolve its project exactly as a user's would. One pass of its
-// loop leaks one `Widget` (64 KiB) and burns CPU in `Spin`; the loop line takes
+// loop leaks one `Widget` (64 KiB) and burns CPU in `Spin`; 128 seeded Widgets
+// keep the type in a top-50 summary even during Windows runtime startup. The loop line takes
 // breakpoints. Line numbers are fixed by the text below.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -35,11 +36,11 @@ internal sealed class Widget
 
 internal static class Program
 {
-    private static readonly List<Widget> Cache = [];
+    private static readonly List<Widget> Cache = Enumerable.Range(0, 128).Select(_ => new Widget()).ToList();
 
     private static int LeakRound(int index)
     {
-        Cache.Add(new Widget());
+        Cache.Add(new Widget()); if (index == 0) Console.WriteLine("READY");
         return Cache.Count + index;
     }
 

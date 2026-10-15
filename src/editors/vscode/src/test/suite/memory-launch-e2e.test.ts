@@ -140,6 +140,7 @@ suite('Memory profiling — real end-to-end', () => {
     vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
     await showProgram(target);
     const session = await launch(target, launchConfig(target, 'Running memory ops'));
+    await recorder().waitForOutput('READY');
     await startTracking(await debuggeePid(session));
     await vscode.commands.executeCommand('sharplsp.profiler.memorySnapshot');
     const snapshot = await pollUntilResult({

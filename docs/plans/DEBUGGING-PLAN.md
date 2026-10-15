@@ -309,6 +309,7 @@ open and are called out as such, because nothing implements them.
       resolution and resolves the same target as F5* and
       `debug-session-lifecycle-e2e.test.ts` *Run without debugging ignores every armed
       breakpoint*
+- [x] Terminal fallback configuration is delivered once after the replacement adapter initializes; pending requests retain their first response. Real F# and C# adapter regressions cover `configurationDone` arriving first and exception configuration arriving first ([DEBUG-FEATURES-LAUNCH-OUTPUT]).
 - [x] Restart. Emulated by respawning the adapter and replaying the handshake, because
       netcoredbg answers `restart` with `E_NOTIMPL`. `dap-router.ts` `restart`, `dap-replay.ts:127`
       `restart`; test `debug-session-lifecycle-e2e.test.ts` *Restart relaunches the same

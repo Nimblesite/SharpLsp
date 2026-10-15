@@ -215,6 +215,7 @@ suite('Memory autopilot — real end-to-end', () => {
     const target = built();
     await showProgram(target);
     const session = await launch(target, launchConfig(target, 'Picker'));
+    await recorder().waitForOutput('READY');
     await vscode.commands.executeCommand(
       'sharplsp.profiler.memoryStart',
       await debuggeePid(session),
