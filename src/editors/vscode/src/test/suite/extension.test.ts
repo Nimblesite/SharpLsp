@@ -179,9 +179,17 @@ suite('Extension Activation & Configuration', () => {
     // client's, not the manifest's. profiler.test.ts pins that advertised set.
     const advertised = new Set(
       vscode.extensions
-        .getExtension<{ getLspClient?: () => { initializeResult?: { capabilities: { executeCommandProvider?: { commands: string[] } } } } | undefined }>(EXTENSION_ID)
-        ?.exports?.getLspClient?.()
-        ?.initializeResult?.capabilities.executeCommandProvider?.commands ?? [],
+        .getExtension<{
+          getLspClient?: () =>
+            | {
+                initializeResult?: {
+                  capabilities: { executeCommandProvider?: { commands: string[] } };
+                };
+              }
+            | undefined;
+        }>(EXTENSION_ID)
+        ?.exports?.getLspClient?.()?.initializeResult?.capabilities.executeCommandProvider
+        ?.commands ?? [],
     );
     const undeclared = palette.filter(
       (id) =>

@@ -36,8 +36,8 @@ export function profilerStore(): ProfilerStore {
 
 /** The processes tree's data provider: the rows the panel renders. */
 export function processesProvider(): ProcessesProvider {
-  const provider = vscode.extensions.getExtension<ProfilerApi>(EXTENSION_ID)?.exports?.profiler
-    ?.ui.processes;
+  const provider =
+    vscode.extensions.getExtension<ProfilerApi>(EXTENSION_ID)?.exports?.profiler?.ui.processes;
   assert.ok(provider, 'the extension must publish the processes provider');
   return provider;
 }
@@ -50,9 +50,11 @@ export function panelRows(): vscode.TreeItem[] {
 /** The panel row of `pid`, searching inside group headers too. */
 export function rowOf(pid: number): vscode.TreeItem | undefined {
   const provider = processesProvider();
-  const rows = provider.getChildren().flatMap((item) =>
-    item.contextValue === 'processGroup' ? provider.getChildren(item) : [item],
-  );
+  const rows = provider
+    .getChildren()
+    .flatMap((item) =>
+      item.contextValue === 'processGroup' ? provider.getChildren(item) : [item],
+    );
   return rows.find((item) => item.id === `process:${pid}`);
 }
 

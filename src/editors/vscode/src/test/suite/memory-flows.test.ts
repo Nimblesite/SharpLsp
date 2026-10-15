@@ -102,7 +102,9 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
     assert.equal(started.runtime, 'dotnet');
     assert.deepEqual(started.mode, { kind: 'Direct' });
     assert.equal(completed(started.step).outcome.kind, 'Ack');
-    completed(await execute<MemoryStep>('memory.stop', { memory_session_id: started.memory_session_id }));
+    completed(
+      await execute<MemoryStep>('memory.stop', { memory_session_id: started.memory_session_id }),
+    );
   });
 
   test('snapshot sites carry the runtime’s type names and resolve the leak to its source', async function () {
@@ -114,7 +116,10 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
     assert.equal(snap.outcome.kind, 'Snapshot');
     if (snap.outcome.kind === 'Snapshot') {
       const leak = snap.outcome.snapshot.sites.find((site) => site.type_name === LEAK_TYPE);
-      assert.ok(leak, `the leak type is a site: ${snap.outcome.snapshot.sites.map((s) => s.type_name).join(', ')}`);
+      assert.ok(
+        leak,
+        `the leak type is a site: ${snap.outcome.snapshot.sites.map((s) => s.type_name).join(', ')}`,
+      );
       assert.ok(leak.count > 0 && leak.size_bytes > 0, 'it has live objects and bytes');
       assert.ok(leak.file?.endsWith('Program.cs'), `resolved to the fixture source: ${leak.file}`);
       assert.ok(snap.outcome.snapshot.current_bytes > 0, 'the heap has a size');
@@ -134,23 +139,43 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
     const session = { memory_session_id: started.memory_session_id };
     completed(await execute<MemoryStep>('memory.snapshot', session));
     const found = completed(
-      await execute<MemoryStep>('memory.objectsByType', { ...session, type_name: LEAK_TYPE, limit: 20 }),
+      await execute<MemoryStep>('memory.objectsByType', {
+        ...session,
+        type_name: LEAK_TYPE,
+        limit: 20,
+      }),
     );
     assert.equal(found.outcome.kind, 'Objects');
     if (found.outcome.kind === 'Objects') {
       const { objects } = found.outcome;
       assert.equal(objects.type_name, LEAK_TYPE);
       assert.ok(objects.total_count > 0, `live objects: ${objects.total_count}`);
-      assert.ok(objects.objects.length > 0 && objects.objects.length <= 20, 'the limit is honoured');
+      assert.ok(
+        objects.objects.length > 0 && objects.objects.length <= 20,
+        'the limit is honoured',
+      );
       const sizes = objects.objects.map((o) => o.size_bytes);
-      assert.deepEqual(sizes, [...sizes].sort((a, b) => b - a), 'largest first');
-      assert.ok(objects.type_summary.some((t) => t.type_name === LEAK_TYPE), 'the type is in the summary');
+      assert.deepEqual(
+        sizes,
+        [...sizes].sort((a, b) => b - a),
+        'largest first',
+      );
+      assert.ok(
+        objects.type_summary.some((t) => t.type_name === LEAK_TYPE),
+        'the type is in the summary',
+      );
     }
     const absent = completed(
-      await execute<MemoryStep>('memory.objectsByType', { ...session, type_name: 'No.Such.Type', limit: 5 }),
+      await execute<MemoryStep>('memory.objectsByType', {
+        ...session,
+        type_name: 'No.Such.Type',
+        limit: 5,
+      }),
     );
     assert.ok(
-      absent.outcome.kind === 'Objects' && absent.outcome.objects.total_count === 0 && absent.outcome.objects.objects.length === 0,
+      absent.outcome.kind === 'Objects' &&
+        absent.outcome.objects.total_count === 0 &&
+        absent.outcome.objects.objects.length === 0,
       'an absent type lists nothing',
     );
     completed(await execute<MemoryStep>('memory.stop', session));
@@ -162,9 +187,17 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
     const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
     const session = { memory_session_id: started.memory_session_id };
     for (const step of ['memory.references', 'memory.objectsByType']) {
-      const error = await executeError(step, { ...session, type_name: LEAK_TYPE, limit: 5, max_depth: 3 });
+      const error = await executeError(step, {
+        ...session,
+        type_name: LEAK_TYPE,
+        limit: 5,
+        max_depth: 3,
+      });
       assert.equal(error?.code, -32000, `${step}: ${error?.message ?? 'no error'}`);
-      assert.ok(error.message.includes('take a snapshot'), `${step} explains itself: ${error.message}`);
+      assert.ok(
+        error.message.includes('take a snapshot'),
+        `${step} explains itself: ${error.message}`,
+      );
     }
     completed(await execute<MemoryStep>('memory.stop', session));
   });
@@ -176,7 +209,12 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
     const session = { memory_session_id: started.memory_session_id };
     completed(await execute<MemoryStep>('memory.snapshot', session));
     const refs = completed(
-      await execute<MemoryStep>('memory.references', { ...session, type_name: 'No.Such.Type', limit: 10, max_depth: 3 }),
+      await execute<MemoryStep>('memory.references', {
+        ...session,
+        type_name: 'No.Such.Type',
+        limit: 10,
+        max_depth: 3,
+      }),
     );
     assert.ok(
       refs.outcome.kind === 'Refs' && !refs.outcome.graph.nodes.some((n) => n.is_target),
@@ -255,10 +293,18 @@ suite('Memory sessions — the UI flow on a live target', () => {
     const store = profilerStore();
     await openSource(fixtureSource('ProfileLeakTarget'));
     await vscode.commands.executeCommand(uiCommand('memoryStart'), target.pid);
-    await waitFor(() => store.profiler.value.memory, (m) => m === 'active', PROCESS_START_MS, 'tracking');
+    await waitFor(
+      () => store.profiler.value.memory,
+      (m) => m === 'active',
+      PROCESS_START_MS,
+      'tracking',
+    );
     assert.ok(memoryStatusText()?.includes('tracking'), `status: ${memoryStatusText()}`);
     assert.equal(contextKeyValues().get('sharplsp.profiler.memoryTracking'), true);
-    assert.deepEqual(processesViewState(), { message: '🗄️ Tracking memory allocations…', badge: 1 });
+    assert.deepEqual(processesViewState(), {
+      message: '🗄️ Tracking memory allocations…',
+      badge: 1,
+    });
   });
 
   test('a second start while tracking is refused and keeps the running session', async function () {
@@ -273,14 +319,25 @@ suite('Memory sessions — the UI flow on a live target', () => {
   test('snapshot opens the SharpLsp dashboard carrying the runtime’s own type names', async function () {
     this.timeout(STEP_MS);
     await vscode.commands.executeCommand(uiCommand('memorySnapshot'));
-    const dashboard = await waitFor(() => memoryDashboardState(), (d) => d !== undefined, STEP_MS, 'dashboard');
+    const dashboard = await waitFor(
+      () => memoryDashboardState(),
+      (d) => d !== undefined,
+      STEP_MS,
+      'dashboard',
+    );
     assert.ok(dashboard);
     assert.equal(dashboard.title, 'SharpLsp Memory Dashboard');
-    assert.ok(dashboard.html.includes('<span class="accent">SHARPLSP</span> MEMORY'), 'brand heading');
+    assert.ok(
+      dashboard.html.includes('<span class="accent">SHARPLSP</span> MEMORY'),
+      'brand heading',
+    );
     assert.ok(!/basilisk/i.test(dashboard.html), 'no other product named');
     assert.ok(dashboard.html.includes(LEAK_TYPE), 'the dashboard shows the leaking type by name');
     const snap = lastMemorySnapshot();
-    assert.ok(snap?.topAllocations.some((site) => site.typeName === LEAK_TYPE), 'the snapshot kept type names');
+    assert.ok(
+      snap?.topAllocations.some((site) => site.typeName === LEAK_TYPE),
+      'the snapshot kept type names',
+    );
     assert.ok(
       appliedMemoryDecorations().some((d) => d.file.endsWith('Program.cs')),
       'the memory track paints the fixture source',
@@ -319,14 +376,25 @@ suite('Memory sessions — the UI flow on a live target', () => {
 
   test('Show Reference Graph offers the snapshot’s own types and walks the one picked', async function () {
     this.timeout(STEP_MS);
-    const expected = lastMemorySnapshot()?.topAllocations.find((site) => site.typeName !== undefined)?.typeName;
+    const expected = lastMemorySnapshot()?.topAllocations.find(
+      (site) => site.typeName !== undefined,
+    )?.typeName;
     assert.ok(expected, 'the snapshot reported at least one type');
     const walk = vscode.commands.executeCommand(uiCommand('memoryReferences'));
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
     await walk;
-    const graph = await waitFor(() => refGraphState(), (g) => g !== undefined, STEP_MS, 'retention graph');
-    assert.equal(graph?.title, `Retention Graph — ${expected}`, 'the first offered type is the runtime’s largest');
+    const graph = await waitFor(
+      () => refGraphState(),
+      (g) => g !== undefined,
+      STEP_MS,
+      'retention graph',
+    );
+    assert.equal(
+      graph?.title,
+      `Retention Graph — ${expected}`,
+      'the first offered type is the runtime’s largest',
+    );
   });
 
   test('an induced GC keeps the session tracking', async function () {
@@ -339,7 +407,12 @@ suite('Memory sessions — the UI flow on a live target', () => {
     this.timeout(STEP_MS);
     const store = profilerStore();
     await vscode.commands.executeCommand(uiCommand('memoryStop'));
-    await waitFor(() => store.profiler.value.memory, (m) => m === 'idle', PROCESS_START_MS, 'idle');
+    await waitFor(
+      () => store.profiler.value.memory,
+      (m) => m === 'idle',
+      PROCESS_START_MS,
+      'idle',
+    );
     assert.equal(memoryStatusText(), undefined);
     assert.equal(contextKeyValues().get('sharplsp.profiler.memoryTracking'), false);
     assert.deepEqual(processesViewState(), { message: undefined, badge: undefined });

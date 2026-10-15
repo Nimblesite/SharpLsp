@@ -34,10 +34,18 @@ import { closeAllEditors, setupLspTestSuite, teardownLspTestSuite } from './test
 import { ACTIVATION_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
 const SAMPLE_WINDOW_MS = 2_000;
-const HOT_FUNCTIONS = ['SlowJsonParsing', 'DeepCallStack', 'StringBuilderAllocation', 'LockContention'];
+const HOT_FUNCTIONS = [
+  'SlowJsonParsing',
+  'DeepCallStack',
+  'StringBuilderAllocation',
+  'LockContention',
+];
 const STOP_MS = 60_000;
 
-async function start(pid: number, extra: Record<string, unknown> = {}): Promise<StartProfileResult> {
+async function start(
+  pid: number,
+  extra: Record<string, unknown> = {},
+): Promise<StartProfileResult> {
   return execute<StartProfileResult>('cpu.start', { pid, ...extra });
 }
 
@@ -95,12 +103,16 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
     const later = (await sessions()).find((s) => s.session_id === started.session_id);
     assert.ok(later, 'still listed');
     assert.ok(later.duration_secs >= 1, `duration advances: ${later.duration_secs}`);
-    // The .NET backend has no live progress ([PROF-CPU-PROGRESS]): its count
+    // The .NET backend has no live progress ([PROFILER-SHARED-LIBRARY-VSCODE];
+    // lsp-profiler's PROF-CPU-PROGRESS): its count
     // is never invented mid-session, and the report carries the real one.
     assert.equal(dotnetCpu()?.live_progress, false, 'the capability the count follows');
     assert.equal(later.sample_count, 0, 'no live count without live progress');
     const report = await stop(started.session_id);
-    assert.ok(report.total_samples > 0, `the stop report carries the samples: ${report.total_samples}`);
+    assert.ok(
+      report.total_samples > 0,
+      `the stop report carries the samples: ${report.total_samples}`,
+    );
     assert.deepEqual(
       (await sessions()).filter((s) => s.session_id === started.session_id),
       [],
@@ -194,7 +206,10 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
     const report = await stop(started.session_id);
     assert.equal(report.session_id, started.session_id);
     assert.ok(report.total_samples > 0, 'the kept report has the samples it took');
-    assert.ok(report.duration_secs < 3, `the session ended near its limit: ${report.duration_secs}s`);
+    assert.ok(
+      report.duration_secs < 3,
+      `the session ended near its limit: ${report.duration_secs}s`,
+    );
   });
 });
 
@@ -228,7 +243,10 @@ suite('CPU sessions — concurrency and a target that dies', () => {
     await sleep(SAMPLE_WINDOW_MS);
     const reportA = await stop(a.session_id);
     assert.equal(reportA.pid, first.pid);
-    assert.deepEqual((await sessions()).map((s) => s.session_id), [b.session_id]);
+    assert.deepEqual(
+      (await sessions()).map((s) => s.session_id),
+      [b.session_id],
+    );
     const reportB = await stop(b.session_id);
     assert.equal(reportB.pid, second.pid);
     assert.ok(
@@ -289,12 +307,25 @@ suite('CPU sessions — live chrome through the UI', () => {
     await vscode.commands.executeCommand(uiCommand('profileProcess'), {
       process: { pid: target.pid, debuggable: true, runtime: 'dotnet' },
     });
-    await waitFor(() => store.profiler.value.cpu, (cpu) => cpu === 'active', PROCESS_START_MS, 'active');
-    await waitFor(() => store.profiler.value.durationSecs, (secs) => secs >= 1, LSP_RESPONSE_MS, 'progress ticks');
+    await waitFor(
+      () => store.profiler.value.cpu,
+      (cpu) => cpu === 'active',
+      PROCESS_START_MS,
+      'active',
+    );
+    await waitFor(
+      () => store.profiler.value.durationSecs,
+      (secs) => secs >= 1,
+      LSP_RESPONSE_MS,
+      'progress ticks',
+    );
     assert.equal(dotnetCpu()?.live_progress, false);
     assert.equal(store.profiler.value.sampleCount, 0, 'no invented live count');
     assert.ok(profilerStatusText()?.includes('Profiling'), `status bar: ${profilerStatusText()}`);
-    assert.ok(!profilerStatusText()?.includes('samples'), `no sample claim: ${profilerStatusText()}`);
+    assert.ok(
+      !profilerStatusText()?.includes('samples'),
+      `no sample claim: ${profilerStatusText()}`,
+    );
     const chrome = processesViewState();
     assert.equal(chrome.message, `🔥 Profiling PID ${target.pid}…`);
     assert.equal(chrome.badge, 1);
@@ -304,7 +335,10 @@ suite('CPU sessions — live chrome through the UI', () => {
       LSP_RESPONSE_MS,
       'flaming row',
     );
-    assert.ok(row?.iconPath instanceof vscode.ThemeIcon && row.iconPath.id === 'flame', 'the row flames');
+    assert.ok(
+      row?.iconPath instanceof vscode.ThemeIcon && row.iconPath.id === 'flame',
+      'the row flames',
+    );
   });
 
   test('a second Profile CPU while one runs is refused and starts nothing', async function () {
@@ -336,17 +370,29 @@ suite('CPU sessions — live chrome through the UI', () => {
   test('stop lands the results panel under the SharpLsp brand with the hot functions', async function () {
     this.timeout(STOP_MS);
     await vscode.commands.executeCommand(uiCommand('profileStop'));
-    await waitFor(() => profilerStore().profiler.value.cpu, (cpu) => cpu === 'idle', STOP_MS, 'idle');
+    await waitFor(
+      () => profilerStore().profiler.value.cpu,
+      (cpu) => cpu === 'idle',
+      STOP_MS,
+      'idle',
+    );
     const panel = flamegraphPanelState();
     assert.ok(panel, 'the results panel is open');
     assert.equal(panel.title, 'SharpLsp Profiler');
-    assert.ok(panel.html.includes('<span class="accent">SHARPLSP</span> PROFILER'), 'brand heading');
+    assert.ok(
+      panel.html.includes('<span class="accent">SHARPLSP</span> PROFILER'),
+      'brand heading',
+    );
     assert.ok(!/basilisk/i.test(panel.html), 'no other product named');
     assert.ok(
       HOT_FUNCTIONS.some((name) => panel.html.includes(name)),
-      'ProfileTarget\'s hot functions are in the panel data',
+      "ProfileTarget's hot functions are in the panel data",
     );
-    assert.deepEqual(processesViewState(), { message: undefined, badge: undefined }, 'chrome clears');
+    assert.deepEqual(
+      processesViewState(),
+      { message: undefined, badge: undefined },
+      'chrome clears',
+    );
     assert.equal(profilerStatusText(), undefined);
   });
 });

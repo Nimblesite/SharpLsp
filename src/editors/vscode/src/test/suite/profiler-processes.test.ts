@@ -102,7 +102,10 @@ suite('Processes panel — the server lists live .NET processes', () => {
     await refreshed();
     const state = profilerStore().processes.value;
     assert.equal(state.fetch, 'loaded');
-    assert.ok(state.list.some((proc) => proc.pid === target?.pid), 'the target is in the store');
+    assert.ok(
+      state.list.some((proc) => proc.pid === target?.pid),
+      'the target is in the store',
+    );
     assert.equal(contextKeyValues().get('sharplsp.profiler.processesState'), 'loaded');
   });
 
@@ -116,7 +119,10 @@ suite('Processes panel — the server lists live .NET processes', () => {
     for (const needle of [`PID ${target.pid}`, '.NET: ', 'CPU: ', 'Memory: ', 'Runtime: ']) {
       assert.ok(tip.includes(needle), `tooltip carries "${needle}": ${tip}`);
     }
-    assert.ok(!tip.includes('Dotnet:'), `the label is the server’s display name, not a guess: ${tip}`);
+    assert.ok(
+      !tip.includes('Dotnet:'),
+      `the label is the server’s display name, not a guess: ${tip}`,
+    );
   });
 
   test('a direct-memory runtime offers Track Memory on any attachable row, not only a debuggee', async function () {
@@ -124,7 +130,11 @@ suite('Processes panel — the server lists live .NET processes', () => {
     assert.ok(target);
     await refreshed();
     const row = await listedRow(target.pid);
-    assert.equal(row.contextValue, 'processDebuggee', 'the row carries the Track-Memory contextValue');
+    assert.equal(
+      row.contextValue,
+      'processDebuggee',
+      'the row carries the Track-Memory contextValue',
+    );
     assert.ok(
       !tooltipText(row).includes('Memory tracking needs the process'),
       'no courier-only warning on a direct runtime',
@@ -246,16 +256,29 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
     while (sortMode() !== 'pid') {
       await vscode.commands.executeCommand(uiCommand('sortProcesses'));
     }
-    const attachable = new Map(store.processes.value.list.map((proc) => [proc.pid, proc.debuggable]));
+    const attachable = new Map(
+      store.processes.value.list.map((proc) => [proc.pid, proc.debuggable]),
+    );
     const pids = panelRows()
       .filter((row) => row.id?.startsWith('process:') === true)
       .map((row) => Number(row.id?.slice('process:'.length)));
     const open = pids.filter((pid) => attachable.get(pid) === true);
     const blocked = pids.filter((pid) => attachable.get(pid) !== true);
     assert.deepEqual(pids, [...open, ...blocked], `attachable rows first: ${pids.join(', ')}`);
-    assert.deepEqual(open, [...open].sort((a, b) => a - b), `ascending: ${open.join(', ')}`);
-    assert.deepEqual(blocked, [...blocked].sort((a, b) => a - b), `ascending: ${blocked.join(', ')}`);
-    assert.ok(open.includes(first.pid) && open.includes(second.pid), 'both live targets are attachable');
+    assert.deepEqual(
+      open,
+      [...open].sort((a, b) => a - b),
+      `ascending: ${open.join(', ')}`,
+    );
+    assert.deepEqual(
+      blocked,
+      [...blocked].sort((a, b) => a - b),
+      `ascending: ${blocked.join(', ')}`,
+    );
+    assert.ok(
+      open.includes(first.pid) && open.includes(second.pid),
+      'both live targets are attachable',
+    );
     while (sortMode() !== 'cpu') {
       await vscode.commands.executeCommand(uiCommand('sortProcesses'));
     }
@@ -275,7 +298,10 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
         .some((row) => row.id === `process:${first?.pid}` || row.id === `process:${second?.pid}`),
     );
     assert.equal(holding.length, 1, 'both net10.0 targets share one version group');
-    assert.ok(Number(holding[0]?.description) >= 2, `the count badge counts members: ${holding[0]?.description}`);
+    assert.ok(
+      Number(holding[0]?.description) >= 2,
+      `the count badge counts members: ${holding[0]?.description}`,
+    );
   });
 
   test('group cycles through every mode and back to none', async () => {
@@ -320,7 +346,10 @@ suite('Processes panel — kill', () => {
         'the victim exits',
       );
       const listing = await execute<ProcessList>('processes', { workspace_roots: [] });
-      assert.ok(!listing.processes.some((proc) => proc.pid === victim.pid), 'gone from the listing');
+      assert.ok(
+        !listing.processes.some((proc) => proc.pid === victim.pid),
+        'gone from the listing',
+      );
     } finally {
       victim.stop();
     }
