@@ -280,6 +280,80 @@
           "markdownDescription": "%setting.memberSortOrder.categoryOrder%",
           "scope": "resource",
           "order": 12
+        },
+        "sharplsp.profiler.sampleRate": {
+          "type": "number",
+          "default": 100,
+          "description": "Sampling rate in Hz for CPU profiling (1-1000)."
+        },
+        "sharplsp.profiler.includeNative": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include native frames in profile results."
+        },
+        "sharplsp.profiler.lineThreshold": {
+          "type": "number",
+          "default": 1,
+          "description": "Minimum percentage of total samples for a line to appear as a hotspot (0.1-100)."
+        },
+        "sharplsp.profiler.functionThreshold": {
+          "type": "number",
+          "default": 2,
+          "description": "Minimum percentage of total samples for a function to appear as a hotspot (0.1-100)."
+        },
+        "sharplsp.profiler.maxDiagnosticsPerFile": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum number of profiling diagnostics per file."
+        },
+        "sharplsp.profiler.showInlineHeatMap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline heat map decorations for hot lines after profiling."
+        },
+        "sharplsp.profiler.profileOnLaunch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start CPU profiling when a debug session launches."
+        },
+        "sharplsp.profiler.processRefreshMs": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 250,
+          "description": "Poll interval (ms) for refreshing the Processes panel while it is visible."
+        },
+        "sharplsp.profiler.preset": {
+          "type": "string",
+          "enum": [
+            "default",
+            "quick",
+            "detailed",
+            "longRunning"
+          ],
+          "enumDescriptions": [
+            "Use the sampleRate / includeNative settings",
+            "Short burst: 10 seconds at 100 Hz, for quick hotspot checks",
+            "Thorough: 60 seconds at 200 Hz, higher-fidelity data",
+            "No time limit at 50 Hz, for long-running servers and batch jobs"
+          ],
+          "default": "default",
+          "description": "Profiling preset that configures sample rate and duration."
+        },
+        "sharplsp.profiler.autoSnapshotOnPause": {
+          "type": "boolean",
+          "default": true,
+          "description": "Memory autopilot: while memory tracking is active, automatically take and compare a snapshot every time the debugger pauses."
+        },
+        "sharplsp.profiler.autoSnapshot": {
+          "type": "boolean",
+          "default": false,
+          "description": "Memory autopilot: while memory tracking is active, automatically take a memory snapshot every few seconds even when the program never pauses."
+        },
+        "sharplsp.profiler.autoSnapshotInterval": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "Seconds between automatic memory snapshots when autoSnapshot is enabled."
         }
       }
     },
@@ -510,8 +584,8 @@
           "icon": "icons/sharplsp.svg"
         },
         {
-          "id": "sharplsp.profiler",
-          "name": "%view.profiler.name%",
+          "id": "sharplsp.profiler.processes",
+          "name": "Processes",
           "icon": "$(pulse)"
         }
       ]
@@ -520,6 +594,31 @@
       {
         "view": "sharplsp.solutionExplorer",
         "contents": "%viewWelcome.solutionExplorer.contents%"
+      },
+      {
+        "view": "sharplsp.profiler.processes",
+        "contents": "Connecting to the SharpLsp language server…",
+        "when": "sharplsp.profiler.serverState != running && sharplsp.profiler.serverState != stopped"
+      },
+      {
+        "view": "sharplsp.profiler.processes",
+        "contents": "The SharpLsp language server is not running.\n[Restart Server](command:sharplsp.restartServer)",
+        "when": "sharplsp.profiler.serverState == stopped"
+      },
+      {
+        "view": "sharplsp.profiler.processes",
+        "contents": "Loading processes…\n[Run & Profile CPU (Current File)](command:sharplsp.profiler.profileCurrentFileCpu)\n[Run & Track Memory (Current File)](command:sharplsp.profiler.trackMemoryCurrentFile)",
+        "when": "sharplsp.profiler.serverState == running && sharplsp.profiler.processesState == loading"
+      },
+      {
+        "view": "sharplsp.profiler.processes",
+        "contents": "Couldn't load the process list.\n[Run & Profile CPU (Current File)](command:sharplsp.profiler.profileCurrentFileCpu)\n[Run & Track Memory (Current File)](command:sharplsp.profiler.trackMemoryCurrentFile)",
+        "when": "sharplsp.profiler.serverState == running && sharplsp.profiler.processesState == error"
+      },
+      {
+        "view": "sharplsp.profiler.processes",
+        "contents": "No processes running.\n[Run & Profile CPU (Current File)](command:sharplsp.profiler.profileCurrentFileCpu)\n[Run & Track Memory (Current File)](command:sharplsp.profiler.trackMemoryCurrentFile)",
+        "when": "sharplsp.profiler.serverState == running && sharplsp.profiler.processesState == loaded"
       }
     ],
     "commands": [
@@ -647,141 +746,6 @@
         "title": "%cmd.revealInExplorer%",
         "category": "%category%",
         "icon": "$(go-to-file)"
-      },
-      {
-        "command": "sharplsp.profiler.listProcesses",
-        "title": "%cmd.profiler.listProcesses%",
-        "category": "%category%"
-      },
-      {
-        "command": "sharplsp.profiler.startTrace",
-        "title": "%cmd.profiler.startTrace%",
-        "category": "%category%",
-        "icon": "$(record)"
-      },
-      {
-        "command": "sharplsp.profiler.stopTrace",
-        "title": "%cmd.profiler.stopTrace%",
-        "category": "%category%",
-        "icon": "$(debug-stop)"
-      },
-      {
-        "command": "sharplsp.profiler.startCounters",
-        "title": "%cmd.profiler.startCounters%",
-        "category": "%category%",
-        "icon": "$(pulse)"
-      },
-      {
-        "command": "sharplsp.profiler.stopCounters",
-        "title": "%cmd.profiler.stopCounters%",
-        "category": "%category%",
-        "icon": "$(debug-stop)"
-      },
-      {
-        "command": "sharplsp.profiler.collectDump",
-        "title": "%cmd.profiler.collectDump%",
-        "category": "%category%",
-        "icon": "$(database)"
-      },
-      {
-        "command": "sharplsp.profiler.analyzeHeap",
-        "title": "%cmd.profiler.analyzeHeap%",
-        "category": "%category%",
-        "icon": "$(graph)"
-      },
-      {
-        "command": "sharplsp.profiler.refresh",
-        "title": "%cmd.profiler.refresh%",
-        "category": "%category%",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "sharplsp.profiler.diffSnapshots",
-        "title": "%cmd.profiler.diffSnapshots%",
-        "category": "%category%",
-        "icon": "$(diff)"
-      },
-      {
-        "command": "sharplsp.profiler.detectLeaks",
-        "title": "%cmd.profiler.detectLeaks%",
-        "category": "%category%",
-        "icon": "$(warning)"
-      },
-      {
-        "command": "sharplsp.profiler.showObjectGraph",
-        "title": "%cmd.profiler.showObjectGraph%",
-        "category": "%category%",
-        "icon": "$(type-hierarchy)"
-      },
-      {
-        "command": "sharplsp.profiler.inspectObject",
-        "title": "%cmd.profiler.inspectObject%",
-        "category": "%category%",
-        "icon": "$(search)"
-      },
-      {
-        "command": "sharplsp.profiler.openTrace",
-        "title": "%cmd.profiler.openTrace%",
-        "category": "%category%",
-        "icon": "$(folder-opened)"
-      },
-      {
-        "command": "sharplsp.profiler.convertTrace",
-        "title": "%cmd.profiler.convertTrace%",
-        "category": "%category%",
-        "icon": "$(file-binary)"
-      },
-      {
-        "command": "sharplsp.profiler.stopSession",
-        "title": "%cmd.profiler.stopSession%",
-        "category": "%category%",
-        "icon": "$(debug-stop)"
-      },
-      {
-        "command": "sharplsp.profiler.revealOutput",
-        "title": "%cmd.profiler.revealOutput%",
-        "category": "%category%",
-        "icon": "$(go-to-file)"
-      },
-      {
-        "command": "sharplsp.profiler.copyOutputPath",
-        "title": "%cmd.profiler.copyOutputPath%",
-        "category": "%category%"
-      },
-      {
-        "command": "sharplsp.profiler.showCountersPanel",
-        "title": "%cmd.profiler.showCountersPanel%",
-        "category": "%category%",
-        "icon": "$(preview)"
-      },
-      {
-        "command": "sharplsp.profiler.traceProcess",
-        "title": "%cmd.profiler.traceProcess%",
-        "category": "%category%",
-        "icon": "$(record)"
-      },
-      {
-        "command": "sharplsp.profiler.countersProcess",
-        "title": "%cmd.profiler.countersProcess%",
-        "category": "%category%",
-        "icon": "$(pulse)"
-      },
-      {
-        "command": "sharplsp.profiler.dumpProcess",
-        "title": "%cmd.profiler.dumpProcess%",
-        "category": "%category%",
-        "icon": "$(database)"
-      },
-      {
-        "command": "sharplsp.profiler.copyPid",
-        "title": "%cmd.profiler.copyPid%",
-        "category": "%category%"
-      },
-      {
-        "command": "sharplsp.profiler.killProcess",
-        "title": "%cmd.profiler.killProcess%",
-        "category": "%category%",
-        "icon": "$(trash)"
       },
       {
         "command": "sharplsp.build",
@@ -919,6 +883,142 @@
         "title": "%cmd.debugProgram%",
         "category": "%category%",
         "icon": "$(debug-alt)"
+      },
+      {
+        "command": "sharplsp.profiler.profileStart",
+        "title": "Start Profiling",
+        "category": "SharpLsp",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "sharplsp.profiler.profileStop",
+        "title": "Stop Profiling",
+        "category": "SharpLsp",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "sharplsp.profiler.profileSnapshot",
+        "title": "Take Profile Snapshot",
+        "category": "SharpLsp",
+        "icon": "$(device-camera)"
+      },
+      {
+        "command": "sharplsp.profiler.profileAttachToDebug",
+        "title": "Profile Debug Session",
+        "category": "SharpLsp",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "sharplsp.profiler.profileShowResults",
+        "title": "Show Profile Results",
+        "category": "SharpLsp",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "sharplsp.profiler.memoryMenu",
+        "title": "Memory…",
+        "category": "SharpLsp",
+        "icon": "$(database)"
+      },
+      {
+        "command": "sharplsp.profiler.memoryStart",
+        "title": "Start Memory Tracking",
+        "category": "SharpLsp",
+        "icon": "$(database)"
+      },
+      {
+        "command": "sharplsp.profiler.memorySnapshot",
+        "title": "Take Memory Snapshot",
+        "category": "SharpLsp",
+        "icon": "$(device-camera)"
+      },
+      {
+        "command": "sharplsp.profiler.memoryStop",
+        "title": "Stop Memory Tracking",
+        "category": "SharpLsp",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "sharplsp.profiler.memoryDiff",
+        "title": "Compare Memory Snapshots",
+        "category": "SharpLsp",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "sharplsp.profiler.memoryGcCollect",
+        "title": "Force Garbage Collection",
+        "category": "SharpLsp",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sharplsp.profiler.memoryReferences",
+        "title": "Show Reference Graph",
+        "category": "SharpLsp",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "sharplsp.profiler.refreshProcesses",
+        "title": "Refresh Processes",
+        "category": "SharpLsp",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sharplsp.profiler.sortProcesses",
+        "title": "Sort Processes",
+        "category": "SharpLsp",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "sharplsp.profiler.groupProcesses",
+        "title": "Group Processes",
+        "category": "SharpLsp",
+        "icon": "$(group-by-ref-type)"
+      },
+      {
+        "command": "sharplsp.profiler.filterProcesses",
+        "title": "Filter Processes",
+        "category": "SharpLsp",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "sharplsp.profiler.profileCurrentFileCpu",
+        "title": "Run & Profile CPU (Current File)",
+        "category": "SharpLsp",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "sharplsp.profiler.trackMemoryCurrentFile",
+        "title": "Run & Track Memory (Current File)",
+        "category": "SharpLsp",
+        "icon": "$(database)"
+      },
+      {
+        "command": "sharplsp.profiler.profileProcess",
+        "title": "Profile CPU",
+        "category": "SharpLsp",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "sharplsp.profiler.memoryTrackProcess",
+        "title": "Track Memory",
+        "category": "SharpLsp",
+        "icon": "$(database)"
+      },
+      {
+        "command": "sharplsp.profiler.copyProcessPid",
+        "title": "Copy PID",
+        "category": "SharpLsp"
+      },
+      {
+        "command": "sharplsp.profiler.revealProcessScript",
+        "title": "Reveal Entry in Editor",
+        "category": "SharpLsp"
+      },
+      {
+        "command": "sharplsp.profiler.killProcess",
+        "title": "Kill Process",
+        "category": "SharpLsp",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -981,49 +1081,54 @@
           "group": "navigation"
         },
         {
-          "command": "sharplsp.profiler.refresh",
-          "when": "view == sharplsp.profiler",
+          "command": "sharplsp.profiler.profileCurrentFileCpu",
+          "when": "view == sharplsp.profiler.processes && !sharplsp.profiler.cpuBusy",
           "group": "navigation@1"
         },
         {
-          "command": "sharplsp.profiler.openTrace",
-          "when": "view == sharplsp.profiler",
+          "command": "sharplsp.profiler.trackMemoryCurrentFile",
+          "when": "view == sharplsp.profiler.processes && !sharplsp.profiler.memoryBusy",
           "group": "navigation@2"
         },
         {
-          "command": "sharplsp.profiler.startTrace",
-          "when": "view == sharplsp.profiler",
-          "group": "overflow@1"
+          "command": "sharplsp.profiler.profileStop",
+          "when": "view == sharplsp.profiler.processes && sharplsp.profiler.profiling",
+          "group": "navigation@1"
         },
         {
-          "command": "sharplsp.profiler.startCounters",
-          "when": "view == sharplsp.profiler",
-          "group": "overflow@2"
+          "command": "sharplsp.profiler.memorySnapshot",
+          "when": "view == sharplsp.profiler.processes && sharplsp.profiler.memoryTracking",
+          "group": "navigation@1"
         },
         {
-          "command": "sharplsp.profiler.collectDump",
-          "when": "view == sharplsp.profiler",
-          "group": "overflow@3"
+          "command": "sharplsp.profiler.memoryDiff",
+          "when": "view == sharplsp.profiler.processes && sharplsp.profiler.memoryTracking",
+          "group": "navigation@2"
         },
         {
-          "command": "sharplsp.profiler.convertTrace",
-          "when": "view == sharplsp.profiler",
-          "group": "overflow@4"
+          "command": "sharplsp.profiler.memoryStop",
+          "when": "view == sharplsp.profiler.processes && sharplsp.profiler.memoryTracking",
+          "group": "navigation@3"
         },
         {
-          "command": "sharplsp.profiler.analyzeHeap",
-          "when": "view == sharplsp.profiler",
-          "group": "overflow@5"
+          "command": "sharplsp.profiler.refreshProcesses",
+          "when": "view == sharplsp.profiler.processes",
+          "group": "navigation@3"
         },
         {
-          "command": "sharplsp.profiler.diffSnapshots",
-          "when": "view == sharplsp.profiler",
-          "group": "overflow@6"
+          "command": "sharplsp.profiler.sortProcesses",
+          "when": "view == sharplsp.profiler.processes",
+          "group": "1_order@1"
         },
         {
-          "command": "sharplsp.profiler.detectLeaks",
-          "when": "view == sharplsp.profiler",
-          "group": "overflow@7"
+          "command": "sharplsp.profiler.groupProcesses",
+          "when": "view == sharplsp.profiler.processes",
+          "group": "1_order@2"
+        },
+        {
+          "command": "sharplsp.profiler.filterProcesses",
+          "when": "view == sharplsp.profiler.processes",
+          "group": "1_order@3"
         }
       ],
       "debug/toolbar": [
@@ -1135,76 +1240,6 @@
           "group": "9_cutcopypaste"
         },
         {
-          "command": "sharplsp.profiler.stopSession",
-          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
-          "group": "inline@1"
-        },
-        {
-          "command": "sharplsp.profiler.stopSession",
-          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
-          "group": "1_stop@1"
-        },
-        {
-          "command": "sharplsp.profiler.revealOutput",
-          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
-          "group": "2_open@1"
-        },
-        {
-          "command": "sharplsp.profiler.copyOutputPath",
-          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
-          "group": "9_copy@1"
-        },
-        {
-          "command": "sharplsp.profiler.showCountersPanel",
-          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
-          "group": "inline@1"
-        },
-        {
-          "command": "sharplsp.profiler.showCountersPanel",
-          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
-          "group": "1_show@1"
-        },
-        {
-          "command": "sharplsp.profiler.stopCounters",
-          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
-          "group": "1_show@2"
-        },
-        {
-          "command": "sharplsp.profiler.traceProcess",
-          "when": "view == sharplsp.profiler && viewItem == profiler-process",
-          "group": "inline@1"
-        },
-        {
-          "command": "sharplsp.profiler.traceProcess",
-          "when": "view == sharplsp.profiler && viewItem == profiler-process",
-          "group": "1_profile@1"
-        },
-        {
-          "command": "sharplsp.profiler.countersProcess",
-          "when": "view == sharplsp.profiler && viewItem == profiler-process",
-          "group": "1_profile@2"
-        },
-        {
-          "command": "sharplsp.profiler.dumpProcess",
-          "when": "view == sharplsp.profiler && viewItem == profiler-process",
-          "group": "1_profile@3"
-        },
-        {
-          "command": "sharplsp.profiler.copyPid",
-          "when": "view == sharplsp.profiler && viewItem == profiler-process",
-          "group": "9_copy@1"
-        },
-        {
-          "command": "sharplsp.profiler.killProcess",
-          "when": "view == sharplsp.profiler && viewItem == profiler-process",
-          "group": "inline@2"
-        },
-        {
-          "command": "sharplsp.profiler.killProcess",
-          "when": "view == sharplsp.profiler && viewItem == profiler-process",
-          "group": "9_destroy@1"
-        },
-        {
           "command": "sharplsp.runProgram",
           "when": "view == sharplsp.solutionExplorer && viewItem == project",
           "group": "3_run@1"
@@ -1213,6 +1248,51 @@
           "command": "sharplsp.debugProgram",
           "when": "view == sharplsp.solutionExplorer && viewItem == project",
           "group": "3_run@2"
+        },
+        {
+          "command": "sharplsp.profiler.profileStop",
+          "when": "view == sharplsp.profiler.processes && viewItem == processProfiling",
+          "group": "inline@0"
+        },
+        {
+          "command": "sharplsp.profiler.profileProcess",
+          "when": "view == sharplsp.profiler.processes && viewItem =~ /^process/ && !sharplsp.profiler.cpuBusy",
+          "group": "inline@1"
+        },
+        {
+          "command": "sharplsp.profiler.memoryTrackProcess",
+          "when": "view == sharplsp.profiler.processes && viewItem == processDebuggee && !sharplsp.profiler.memoryBusy",
+          "group": "inline@2"
+        },
+        {
+          "command": "sharplsp.profiler.profileStop",
+          "when": "view == sharplsp.profiler.processes && viewItem == processProfiling",
+          "group": "1_profile@0"
+        },
+        {
+          "command": "sharplsp.profiler.profileProcess",
+          "when": "view == sharplsp.profiler.processes && viewItem =~ /^process/ && !sharplsp.profiler.cpuBusy",
+          "group": "1_profile@1"
+        },
+        {
+          "command": "sharplsp.profiler.memoryTrackProcess",
+          "when": "view == sharplsp.profiler.processes && viewItem == processDebuggee && !sharplsp.profiler.memoryBusy",
+          "group": "1_profile@2"
+        },
+        {
+          "command": "sharplsp.profiler.copyProcessPid",
+          "when": "view == sharplsp.profiler.processes && viewItem =~ /^(process|blockedProcess)/",
+          "group": "9_copy@1"
+        },
+        {
+          "command": "sharplsp.profiler.revealProcessScript",
+          "when": "view == sharplsp.profiler.processes && viewItem =~ /^(process|blockedProcess)/",
+          "group": "9_copy@2"
+        },
+        {
+          "command": "sharplsp.profiler.killProcess",
+          "when": "view == sharplsp.profiler.processes && viewItem =~ /^(process|blockedProcess)/",
+          "group": "9_danger@1"
         }
       ],
       "editor/title/run": [
@@ -1225,6 +1305,45 @@
           "command": "sharplsp.debugProgram",
           "when": "resourceLangId == csharp || resourceLangId == fsharp",
           "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "sharplsp.profiler.profileProcess",
+          "when": "false"
+        },
+        {
+          "command": "sharplsp.profiler.memoryTrackProcess",
+          "when": "false"
+        },
+        {
+          "command": "sharplsp.profiler.copyProcessPid",
+          "when": "false"
+        },
+        {
+          "command": "sharplsp.profiler.revealProcessScript",
+          "when": "false"
+        },
+        {
+          "command": "sharplsp.profiler.killProcess",
+          "when": "false"
+        }
+      ],
+      "debug/toolBar": [
+        {
+          "command": "sharplsp.profiler.memorySnapshot",
+          "when": "debugType == sharplsp-coreclr && sharplsp.profiler.memoryTracking",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sharplsp.profiler.memoryDiff",
+          "when": "debugType == sharplsp-coreclr && sharplsp.profiler.memoryTracking",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sharplsp.profiler.memoryStop",
+          "when": "debugType == sharplsp-coreclr && sharplsp.profiler.memoryTracking",
+          "group": "navigation@3"
         }
       ]
     },
@@ -1282,6 +1401,18 @@
           }
         }
       }
+    ],
+    "keybindings": [
+      {
+        "command": "sharplsp.profiler.profileStart",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
+        "command": "sharplsp.profiler.profileStop",
+        "key": "ctrl+alt+shift+p",
+        "mac": "cmd+alt+shift+p"
+      }
     ]
   },
   "scripts": {
@@ -1308,7 +1439,9 @@
     "format:check": "prettier --check \"src/**/*.{ts,mts}\""
   },
   "dependencies": {
+    "@nimblesite/lsp-profiler-ui": "file:../../../lspkit/packages/lsp-profiler-ui",
     "@nimblesite/shipwright-vscode": "^0.11.0",
+    "@preact/signals-core": "^1.14.4",
     "d3-force": "^3.0.0",
     "fast-xml-parser": "^5.11.2",
     "vscode-languageclient": "^10.1.2"

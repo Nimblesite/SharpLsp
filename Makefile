@@ -89,6 +89,14 @@ RUST_TEST_LOG     ?= info
 SHARD_COUNT       ?= 2
 PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 
+# The shared profiler ([PROFILER-SHARED-LIBRARY]) lives in the lspkit submodule
+# (https://github.com/Nimblesite/lspkit). `_build-dotnet` publishes its .NET
+# engine to PROFILER_ENGINE_OUT; `_build-profiler-ui` builds its VS Code UI
+# package, which `npm ci` then copies into the extension (install-links=true).
+LSPKIT_DIR          ?= lspkit
+PROFILER_ENGINE_OUT := target/profiler-engine
+PROFILER_UI_DIR     := $(LSPKIT_DIR)/packages/lsp-profiler-ui
+
 VSCODE_DIR  = src/editors/vscode
 ZED_DIR     = src/editors/zed
 SIDECAR_CS  = src/sidecars/SharpLsp.Sidecar.CSharp
@@ -134,7 +142,7 @@ MERGE_COBERTURA = $(DOTNET) run --file tools/coverage/merge-cobertura.cs --
 KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
 
 # The public surface. Everything under it is an internal step or a CI leg.
-.PHONY: build ci test lint fmt clean audit setup \
+.PHONY: build ci test lint fmt clean audit setup _build-profiler-ui \
         reinstall-vsix install-vsix uninstall-vsix install-dotnet-10
 
 .PHONY: _screenshots _website-build _website-dev _uninstall-dotnet-10 \
@@ -258,6 +266,16 @@ _build-dotnet:
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
 	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
+	$(DOTNET) publish $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj --configuration Release --no-self-contained -p:DebugType=none -p:DebugSymbols=false --output $(PROFILER_ENGINE_OUT)
+
+# The profiler's VS Code UI package ([PROFILER-SHARED-LIBRARY-VSCODE]). Its wire
+# model is generated from lspkit's typeDiagram model first, the same file
+# lsp-profiler's build.rs generates; `npm ci` in the extension then packs `out/`.
+_build-profiler-ui:
+	@echo "==> Building the profiler UI package from lspkit..."
+	node $(LSPKIT_DIR)/scripts/typediagram/generate.mjs
+	npm ci --prefix $(PROFILER_UI_DIR)
+	npm run build --prefix $(PROFILER_UI_DIR)
 
 # [DIST-VSIX-CONTENTS] The gate runs BEFORE the package, not after: `vsce ls` is
 # the same file list `vsce package` writes, so verifying the staged tree is
@@ -337,6 +355,10 @@ _copy-vsix-binaries:
 	mkdir -p $(dir $(HOST_VSIX_BIN)) $(VSCODE_DIR)/bin/all
 	cp $(BINARY) $(HOST_VSIX_BIN)
 	chmod +x $(HOST_VSIX_BIN) 2>/dev/null || true
+	# The shared profiler's .NET engine ships beside the host binary, where the
+	# library discovers it ([PROFILER-SHARED-LIBRARY-ENGINE]).
+	cp -r $(PROFILER_ENGINE_OUT)/. $(dir $(HOST_VSIX_BIN))
+	chmod +x $(dir $(HOST_VSIX_BIN))lsp-profiler-dotnet-engine$(EXE_EXT) 2>/dev/null || true
 	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
 	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
 	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
@@ -747,7 +769,7 @@ _test-dotnet-win-transport:
 _test-tooling:
 	@echo "==> Running repo tooling tests..."
 	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
-		tools/rider/gradle.test.mjs
+		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs
 
 _website-build:
 	@echo "==> Building website..."
@@ -779,8 +801,10 @@ _lint-zed:
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
 _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
+	# The profiler contributions are generated from the shared UI library ([PROFILER-SHARED-LIBRARY-VSCODE]).
+	node tools/vsix/sync-profiler-contributions.mjs --check
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs \
-		tools/ci/spec-citations.test.mjs
+		tools/ci/spec-citations.test.mjs tools/vsix/signals-bundle.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
@@ -1169,9 +1193,11 @@ _clean-rider:
 
 setup:
 	@echo "==> Setting up development environment..."
+	node tools/vsix/resolve-symlink-stubs.mjs .claude/skills
 	rustup component add clippy rustfmt llvm-tools-preview
 	cargo install cargo-llvm-cov || true
 	cargo install cargo-audit --locked || true
+	$(MAKE) _build-profiler-ui
 	npm install --prefix $(VSCODE_DIR)
 	$(DOTNET) restore $(SIDECAR_SLN)
 	$(DOTNET) tool restore

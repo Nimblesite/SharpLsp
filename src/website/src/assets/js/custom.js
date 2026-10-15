@@ -4,7 +4,18 @@ document.addEventListener("DOMContentLoaded", () => {
   initThemeToggle();
   initLanguageSwitcher();
   initBlogSearch();
+  initReducedMotionVideos();
 });
+
+// Implements [WEB-DESIGN-MEDIA]: autoplaying films hold still for readers who ask for less motion.
+function initReducedMotionVideos() {
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  document.querySelectorAll("video[autoplay]").forEach((video) => {
+    video.removeAttribute("autoplay");
+    video.pause();
+    video.controls = true;
+  });
+}
 
 function setDisclosure(button, target, expanded) {
   button.setAttribute("aria-expanded", String(expanded));

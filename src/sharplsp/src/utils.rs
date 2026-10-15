@@ -115,19 +115,6 @@ pub fn map_text_edits(edits: &[SidecarTextEdit]) -> Vec<TextEdit> {
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Suppress the child's console window on Windows. No-op elsewhere.
-pub fn hide_console_window(command: &mut std::process::Command) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let _ = command.creation_flags(CREATE_NO_WINDOW);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = command;
-    }
-}
-
-/// Suppress the child's console window on Windows. No-op elsewhere.
 pub fn hide_console_window_tokio(command: &mut tokio::process::Command) {
     #[cfg(windows)]
     {

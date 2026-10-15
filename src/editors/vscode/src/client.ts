@@ -6,7 +6,9 @@ import {
   ErrorAction,
   type CloseHandlerResult,
   type ErrorHandlerResult,
+  type DynamicFeature,
   type Executable,
+  ExecuteCommandRequest,
   LanguageClient,
   type LanguageClientOptions,
   type Message,
@@ -14,6 +16,7 @@ import {
   TransportKind,
   State,
   RevealOutputChannelOn,
+  type StaticFeature,
 } from 'vscode-languageclient/node';
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
 import { getErrorMessage } from './utils.js';
@@ -26,6 +29,29 @@ import { detectRuntimePlatform } from './platform.js';
 import * as state from './state.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 import { dotnetHostEnvironment } from './dotnetRuntime.js';
+
+/**
+ * The language client, without the stock `workspace/executeCommand` feature.
+ *
+ * The server advertises the profiler's protocol commands in
+ * `executeCommandProvider` ([PROFILER-SHARED-LIBRARY-HOST]), and the profiler UI
+ * calls them over `workspace/executeCommand` itself
+ * ([PROFILER-SHARED-LIBRARY-VSCODE]). The stock feature would also register
+ * each advertised command as a VS Code command: one no menu reaches, that a
+ * second client collides with, and that nothing calls. Every SharpLsp editor
+ * command is contributed and registered by the extension instead.
+ */
+class SharpLspClient extends LanguageClient {
+  public override registerFeature(feature: StaticFeature | DynamicFeature<unknown>): void {
+    if (
+      'registrationType' in feature &&
+      feature.registrationType.method === ExecuteCommandRequest.method
+    ) {
+      return;
+    }
+    super.registerFeature(feature);
+  }
+}
 
 /** The documents the client syncs to the server, and holds requests about. */
 export const DOCUMENT_SELECTOR = [
@@ -101,7 +127,7 @@ export async function start(
     middleware: openSync.middleware,
   };
 
-  const client = new LanguageClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
+  const client = new SharpLspClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
 
   wireClientState(client, statusBar, openSync, context);
 

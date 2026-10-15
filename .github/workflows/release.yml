@@ -28,6 +28,8 @@ jobs:
       version: "${{ steps.extract.outputs.version }}"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -60,6 +62,7 @@ jobs:
       actions: read
       contents: read
     uses: ./.github/workflows/codeql.yml
+    secrets: inherit
     with:
       gate: true
 
@@ -71,6 +74,7 @@ jobs:
   audit:
     name: Dependency audit release gate
     uses: ./.github/workflows/ci-audit.yml
+    secrets: inherit
 
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
@@ -108,6 +112,8 @@ jobs:
             can_execute: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       # Each build job stamps the version into the runner working tree from the
       # tag — deterministic, no artifact hand-off, nothing committed.
       # [DIST-RELEASE] [DIST-VERSION-INVARIANT]
@@ -131,6 +137,10 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: src/editors/vscode/package-lock.json
+      - uses: ./.github/actions/typediagram
+      - name: Build the profiler UI package from the lspkit submodule
+        shell: bash
+        run: make _build-profiler-ui
       - name: Install VS Code extension dependencies
         run: npm ci --prefix src/editors/vscode
       - name: Set platform variables
@@ -212,6 +222,8 @@ jobs:
       RIDER_REQUIRED: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - name: Stamp release version
         shell: bash
         run: make _stamp-version VERSION="${{ needs.version.outputs.version }}"
@@ -298,7 +310,7 @@ jobs:
           cat SHA256SUMS
           # A release that silently drops a platform is the failure this catches:
           # one VSIX and one server archive per built platform, plus the Rider zip.
-          expected=$(( 2 * ${PLATFORM_COUNT} + 1 ))
+          expected=$(( 2 * PLATFORM_COUNT + 1 ))
           actual="$(wc -l < SHA256SUMS)"
           if [ "${actual}" -ne "${expected}" ]; then
             echo "::error::expected ${expected} checksummed assets, found ${actual}"
@@ -339,6 +351,7 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/deploy-pages.yml
+    secrets: inherit
 
   publish-marketplace:
     name: Publish VSIX to VS Code Marketplace
@@ -487,6 +500,8 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
@@ -545,6 +560,8 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'

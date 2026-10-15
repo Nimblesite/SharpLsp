@@ -2,13 +2,20 @@
 import * as assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { isRecord } from '../../dap-emulate';
+import { isRecord, type DapMessage } from '../../dap-emulate';
 import { signalChild } from '../../child-signal';
 import { MODE } from './debug-fixture-programs';
 import { LiveRouter } from './debug-router-kit';
 import { useDebuggee, debugTest } from './debug-suite-kit';
 import { pollUntilResult } from './test-helpers';
 import { DEBUG_SESSION_MS } from './test-timeouts';
+
+/** The actual terminal request emitted by the live adapter router. */
+function terminalRequest(driver: LiveRouter): DapMessage {
+  const request = driver.traffic().find((message) => message.command === 'runInTerminal');
+  assert.ok(request, 'the real router asked this client to start a terminal');
+  return request;
+}
 
 /** A cancelled launch ends once and never starts a replacement program. */
 function assertCancelledSession(driver: LiveRouter): void {
@@ -23,6 +30,54 @@ function assertCancelledSession(driver: LiveRouter): void {
 for (const language of ['fsharp', 'csharp'] as const) {
   suite(`Pending terminal cancellation — ${language}`, () => {
     const debuggee = useDebuggee(`debug-cancel-${language}-`, language);
+    for (const configureExceptionsFirst of [false, true]) {
+      debugTest(
+        `terminal fallback answers configuration received during respawn exactly once (exceptions first: ${configureExceptionsFirst})`,
+        debuggee,
+        async () => {
+          const driver = new LiveRouter();
+          const { fixture } = debuggee();
+          try {
+            await driver.request('initialize', { supportsRunInTerminalRequest: true });
+            await driver.event('initialized');
+            await driver.request('launch', {
+              program: fixture.dll,
+              cwd: fixture.dir,
+              args: [MODE.wait],
+              console: 'integratedTerminal',
+            });
+            const reverse = terminalRequest(driver);
+            driver.answerReverse(reverse, false);
+            if (configureExceptionsFirst)
+              assert.equal(
+                (await driver.request('setExceptionBreakpoints', { filters: [] })).success,
+                true,
+              );
+            const configured = await driver.request('configurationDone');
+            assert.equal(configured.success, true, JSON.stringify(configured));
+            const pid = await driver.launchedPid();
+            assert.ok(pid > 0);
+            assert.equal((await driver.request('threads')).success, true);
+            const answers = driver
+              .traffic()
+              .filter(
+                (message) => message.type === 'response' && message.command === 'configurationDone',
+              );
+            assert.equal(
+              answers.length,
+              1,
+              'configuration is sent and answered once across the adapter replacement',
+            );
+            assert.equal(
+              (await driver.request('disconnect', { terminateDebuggee: true })).success,
+              true,
+            );
+          } finally {
+            driver.dispose();
+          }
+        },
+      );
+    }
     for (const console of ['externalTerminal', 'integratedTerminal']) {
       for (const command of ['terminate', 'disconnect']) {
         debugTest(`${command} ends ${console} before its client responds`, debuggee, async () => {
@@ -50,8 +105,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
               ).success,
               true,
             );
-            const reverse = driver.traffic().find((message) => message.command === 'runInTerminal');
-            assert.ok(reverse, 'the real router asked this client to start a terminal');
+            const reverse = terminalRequest(driver);
             assert.ok(isRecord(reverse.arguments));
             assert.equal(
               reverse.arguments.kind,
@@ -93,8 +147,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           assert.ok(child.pid && child.pid > 0, 'this client owns a real fixture process');
           await driver.request('initialize', { supportsRunInTerminalRequest: true });
           await driver.request('launch', { program: fixture.dll, console: 'integratedTerminal' });
-          const reverse = driver.traffic().find((message) => message.command === 'runInTerminal');
-          assert.ok(reverse);
+          const reverse = terminalRequest(driver);
           await driver.request('terminate');
           await driver.event('terminated');
           driver.dispose();

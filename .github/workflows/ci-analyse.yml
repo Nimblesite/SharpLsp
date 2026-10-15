@@ -28,6 +28,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
@@ -51,6 +53,7 @@ jobs:
         run: dotnet tool restore
 
       # ── Rust ───────────────────────────────────────────────────────
+      - uses: ./.github/actions/typediagram
       - name: Format + lint (Rust)
         run: make _lint-rust PROFILE=debug
       - name: Format + lint (Zed)
@@ -64,7 +67,7 @@ jobs:
 
       # ── TypeScript ─────────────────────────────────────────────────
       - name: Format check (VS Code)
-        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts' 'src/**/*.mts'
+        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
       - name: Lint (VS Code)
         # Also asserts every test suite belongs to a declared feature chunk, so
         # a new suite cannot silently drop out of the PHASE 4 matrix.

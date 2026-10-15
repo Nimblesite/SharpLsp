@@ -118,3 +118,70 @@ Both matrices include a final workspace rerun with the completed graph changes: 
 - Dependency audits passed for Rust, .NET and the VS Code extension. The website audit reports **six high-severity findings in the unpatched `braces` dependency chain** ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)); no exception or suppression was added. Release publication remains blocked by #324.
 
 Cancellation scheduling is host infrastructure that overlaps the generic `lspkit` migration. Any PR carrying this change must flag that overlap and reference the upstream request-dispatch/lifecycle work.
+
+## [PROFILER-PLAN-MIGRATION] Migration to lsp-profiler
+
+**Spec:** [PROFILER-SHARED-LIBRARY]. The library side is tracked in lspkit's plan, `lspkit/docs/plans/LSP-PROFILER-PLAN.md` (https://github.com/Nimblesite/lspkit).
+
+Every item below is unchecked until its code and a coarse e2e test exist. Status verified on **2026-10-15**. The old profiler code and suites were deleted on that date, once the library's host, extension and e2e suites replaced them; the gaps below name what the deletion left uncovered.
+
+### Parity
+
+These are SharpLsp's shipped profiler features. Cutover is blocked until each row is delivered by the library or explicitly dropped by the owner.
+
+| Shipped today | After migration | Library status |
+|---|---|---|
+| CPU trace (`dotnet-trace`) opened in the external SpeedScope viewer | CPU session: hot lines and functions in the editor as decorations (inlay hints and lenses when the library builds them); speedscope, flame-graph and `.cpuprofile` exports; results panel | **Delivered** (`profiler_shared` e2e, `profiler-cpu-e2e.test.ts`) |
+| Live counters webview | Neutral metrics capability | **Gap**: not yet specified |
+| Collect dump | Memory snapshot; the dump kept on request for external tools | **Gap**: keep-on-request not yet specified |
+| Analyze heap (`dumpheap -stat`) | Snapshot live-type stats over EventPipe (no dump), counting only reachable objects and anchored at each type's declaration | **Delivered** |
+| Find GC roots | Retention graph with labelled static, stack and handle roots | **Delivered** (`static Items` root reached in both e2e suites) |
+| Inspect object | Neutral `inspect` step | **Gap**: not yet specified |
+| Diff snapshots and leak classification (High/Medium/Low) | Compare and leak-confidence streaks | **Delivered** (`memory-e2e.test.ts`) |
+| Known-leak-pattern elevation (event handlers, `CancellationTokenSource`, timers) | A runtime-supplied leak hint that decides on resolved type identity in the dump, never on name strings | **Gap**: not yet specified |
+| Retained size per graph node | `RefNode.retained_bytes` from a dominator computation in the engine | **Gap**: not yet specified |
+| Open or convert a `.nettrace` | Neutral `import` command through the same symbolizer | **Gap**: not yet specified |
+| Kill process (confirmed) | `kill` with modal confirmation | **Delivered** (`sharplsp.profiler.killProcess`) |
+| Profiler tree: sessions and processes | Processes view and session state | **Delivered** (library processes view, status bars) |
+| Cancellable progress and recovery | `$/cancelRequest` → `-32800` (delivered, `profiler_shared` e2e); work-done progress | Progress is still the library's notification |
+| Retention-graph UI: nested expansion, filters, SVG/PNG export, theme contrast | Same features on the library's neutral graph | **Gap**: deleted with the old extension, not yet ported into the library |
+| Counters-driven leak hints, inspect object, retained size, open `.nettrace` | See the rows above | **Gaps**, unchanged |
+
+### Rust host
+
+- [~] Depend on `lsp-profiler` and `lsp-profiler-dotnet`: path dependencies into the public `lspkit/` submodule (`src/sharplsp/Cargo.toml`), which CI checks out without a separate repository token. Move to the crates.io release once lspkit publishes them.
+- [x] Profiler wiring in `src/sharplsp/src/main.rs` replaced by `profiler::host::ProfilerHost` (`HostServices`): construction under the workspace root, shutdown before the sidecars, executeCommand routing, `$/cancelRequest`, `executeCommandProvider` and `experimental.lspProfiler` [PROFILER-SHARED-LIBRARY-HOST]. The `sharplsp/profiler/*` routes are gone.
+- [ ] Merge the profiler's diagnostics, inlay hints, code lenses and code actions with SharpLsp's own providers (blocked on the library building them).
+- [x] `[profiler]` table reduced to `max_concurrent_sessions` and `output_directory`; CLI-only settings removed (`config.rs`). The cap is not enforced by the library yet.
+- [x] Engine path resolved in `paths.rs` (`profiler_engine_path`).
+- [x] .NET classification and the endpoint check **moved** into `lsp-profiler-dotnet` (`crates/lsp-profiler-dotnet/src/process.rs`, with tests) and deleted here.
+- [x] The rest of `src/sharplsp/src/profiler/` deleted (4,949 lines); `profiler/mod.rs` exports only `host`. Dead path helpers (`has_name_suffix`, `absolute_output`, `ensure_output_dir`, `names_executable`) and `utils::hide_console_window` went with it. 205 unit tests pass; clippy clean.
+
+### VS Code extension
+
+- [x] Pack one Signals runtime for ESM host imports and CommonJS profiler imports. The production-bundle regression verifies consecutive updates and disposal; the live CPU test verifies progress in the development host.
+- [x] Resolve symlinked source paths in the shared library on macOS and Windows; regression opens the real HotLeakApp project through a symlink/junction.
+
+- [~] `@nimblesite/lsp-profiler-ui` as a **`file:` dependency** on the sibling checkout, activated from `extension.ts` through `src/profiler-host.ts` with prefix `sharplsp` [PROFILER-SHARED-LIBRARY-VSCODE]. Publishing is open.
+- [ ] **Graph features were not moved before deletion.** `profiler-graph*.ts`, `profiler-graph-webview.mts`, `profiler-graph-browser.test.ts` and `profiler-graph-test-kit.ts` are deleted; their sources are in history. Porting nested expansion, filters, SVG/PNG export, theme contrast and malformed-message recovery onto the library's retention graph, with the browser regressions, is open and listed in the parity table.
+- [x] `profiler.ts`, `profiler-diff.ts`, `profiler-graph.ts`, `profiler-graph-html.ts`, `profiler-graph-message.ts`, `profiler-graph-types.ts`, `profiler-graph-webview.mts`, `profiler-prompts.ts` and `profiler-request.ts` deleted; the esbuild webview entry removed; `launch-profiles.ts` and `dotnet-process.ts` stay (used by debugging and testing).
+- [x] `package.json` profiler contributions replaced by the generated catalogue (`tools/vsix/sync-profiler-contributions.mjs`); stale `cmd.profiler.*` / `view.profiler.name` nls keys removed from every locale. `profiler.test.ts` checks the manifest, and `_lint-vsix` runs the sync script's `--check`.
+- [x] The engine is staged beside the host binary by `_copy-vsix-binaries` [PROFILER-SHARED-LIBRARY-ENGINE]. macOS verified locally; Windows and Linux VSIX payload verification passed in CI run `38799469697`.
+
+### Tests
+
+- [x] Rust e2e: the five old modules are replaced by `e2e_modules/profiler_shared.rs` (5 tests, pass): the server advertises the commands and the `dotnet` runtime; process listing finds `ProfileTarget` attachable with its version; CPU start twice is `-32004`, `cpu.list` shows the session, the report names `ProfileTarget`'s workers and writes all artifacts, stopping twice is `-32000`; memory snapshot → diff → references (target nodes, edges) → `gcCollect` observed → stop; dead PID `-32001`, non-.NET PID `-32002`, missing params `-32602`, foreign command rejected; `kill` on the test host is exactly `-32002` and on a dead PID `-32001`; cancelling an in-flight heap snapshot of a live session answers `-32800` and the session snapshots again afterwards. (The cancel test used to cancel a request on a missing session and accept `-32000`, which proved nothing; the kill test accepted any error.)
+- [x] Extension: `profiler.test.ts`, `profiler-cpu-e2e.test.ts`, `memory-e2e.test.ts` and `profiler-kit.ts` replace `profiler.test.ts`, `profiler-e2e.test.ts` and `profiler-release.test.ts`; they port Basilisk's `profiler`, `profiler-memory-integration`, `profiler-cpu-e2e`, `memory-e2e`, `memory-introspection-e2e` and the interval mode of `memory-autopilot-e2e`. Not ported, with the feature: the graph browser suite. Not reproducible in direct mode: Basilisk's cooperative-sampler, courier-pause and breakpoint-autopilot flows. Screenshots not regenerated.
+- [x] Extension, second wave (all against live `ProfileTarget` / `ProfileLeakTarget` processes over the real server): `profiler-processes.test.ts` (wire listing and its runtime facts, `in_workspace` per root, scope excludes the extension host, the store and welcome key, row id / tooltip with the runtime's display name / direct-memory contextValue, no click-to-open for a binary entry, pinned launches, copy PID, filter by PID and name and the honest placeholder, sort cycle and per-block PID order, group cycle and the version bucket, kill and its refusals); `profiler-cpu-sessions.test.ts` (`cpu.list` fields, mid-session snapshot, `-32004`, every preset's rate and an explicit override, unknown preset and out-of-range rate `-32602`, duration auto-end, two targets at once, a target dying mid-session, live chrome gated on `live_progress`, a refused second start, the branded results panel); `memory-flows.test.ts` (start refusals `-32001` / `-32002` / `-32602`, inspection before a snapshot refused, type-named sites resolved to source, timeline growth, objects largest first, empty walks for absent types, a stopped session refusing every step, cancellation, and the UI flow: chrome and keys, refused second start, the branded dashboard with type names, timeline, diff leaks by type, the reference picker offering the snapshot's own types, GC, stop clearing every overlay).
+- [x] Extension, third wave: every Basilisk profiler VSIX suite (212 tests, all but the CLI-only `subprocess-mode`) has a SharpLsp counterpart under the same test names, run on the live extension through `profiler-ui-helpers.ts`: `profiler-commands`, `profiler-decorations`, `profiler-entrypoints`, `profiler-panel-reactive`, `profiler-ux`, `profiler-webviews`, `profiler-profile-server`, `profiler-process-explorer`, `profiler-process-reactive-store`, `profiler-memory-integration`, `memory-discoverability`, and the debug-launched suites `memory-autopilot-e2e`, `memory-introspection-e2e`, `memory-launch-e2e` and `profiler-cpu-launch-e2e` on a .NET debuggee built in the workspace (`profiler-ui-debuggee.ts`). Basilisk's hollow cases (a swallowed `assert.fail`, `assert.ok(true)`, heat levels asserted on literals) assert what the user sees instead. Python-only steps map to their .NET counterparts: no stop on entry, a heap read while the program runs, a refusal at a breakpoint.
+- [x] Defects the third wave found and fixed: the router never announced a terminal-hosted debuggee's PID, so neither one-click launch could start; it now announces it once the attached runtime loads its first module, when the shell has become the program (`dap-replay.ts`); the client registered the 17 protocol commands as VS Code commands (`client.ts`); 22 dead old-profiler command constants (`constants.ts`); and in lspkit, Run & Track Memory waited for an entry pause a .NET launch never makes, the autopilot's pause capture had no caller, a .NET heap step at a breakpoint hung until the program resumed, profile-on-launch on macOS always took Python's cooperative path, profile-on-launch then refused its own attach as busy, and the .NET backend under-reported `live_progress`. A .NET heap read racing a debugger pause blocks until the program resumes, so in direct mode the autopilot captures on its interval only and a manual step at a breakpoint is refused at once.
+- [x] The `profiler` chunk on macOS (`make _test-vsix-shard CHUNK=profiler`, 2026-10-15): **294 passing, 0 failing**, after the defects below were fixed; the debugger, manifest and configuration suites they touch pass too (30 passing).
+- [ ] Assertions of the deleted suites with no replacement: counters webview and counter sessions, `openTrace`/`convertTrace` of a `.nettrace`, dump collection with cancellable progress, `inspectObject`, `diffSnapshots`/`detectLeaks` panels over dumps, graph browser interactions. Each maps to a parity gap above.
+
+### Documentation and cutover
+
+- [ ] Every parity row is delivered or dropped by the owner (open rows: counters, keep dump, inspect, known-leak hints, retained size, `.nettrace` import, graph UI).
+- [ ] Delete the sections listed in [PROFILER-SHARED-LIBRARY-SUPERSEDED] (they still describe features whose parity is open).
+- [ ] Update the README section "Opening a trace file" and the `dotnet tool install` hints, and the website screenshots.
+- [x] Spec citations pass (checked 2026-10-15). New host code cites `PROFILER-SHARED-LIBRARY-*`.
+- [ ] **Cutover**: the full Rust and editor suites pass on Windows and Linux, the coverage gates pass, and the VSIX packages are verified. On 2026-10-15 only macOS was run, and only the profiler suites of the extension.

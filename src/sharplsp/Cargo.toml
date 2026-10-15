@@ -49,6 +49,12 @@ tracing-appender = "0.2"
 # Error handling
 anyhow = "1"
 
+# Shared profiler ([PROFILER-SHARED-LIBRARY]) from the lspkit submodule
+# (https://github.com/Nimblesite/lspkit) until its next release is published.
+lsp-profiler = { path = "../../lspkit/crates/lsp-profiler" }
+lsp-profiler-dotnet = { path = "../../lspkit/crates/lsp-profiler-dotnet" }
+async-trait = "0.1"
+
 # HTTP client (NuGet API)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 

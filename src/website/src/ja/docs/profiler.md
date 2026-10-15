@@ -5,80 +5,162 @@ lang: ja
 eleventyExcludeFromCollections: true
 ---
 
-![VS Code でのプロファイラー](/assets/screenshots/vscode-profiler-page.png)
-
 # プロファイラー
 
-SharpLsp は、.NET のトレース、カウンター、ダンプ、ヒープ解析の各ワークフローを VS Code のサイドバーから利用できるようにします。これらの処理は Rust ホスト内で動作し、どちらの言語サイドカーにも依存しません。
+SharpLsp は、VS Code から離れることなく、実行中の任意の .NET プロセスの CPU とメモリをプロファイリングします。ホットな行はコード上で直接ハイライトされ、隣にフレームグラフとホット関数の表が表示され、ライブのヒープタイムラインがアプリの実行中にリークの疑いをランク付けします。`dotnet-trace` のインストールもダンプもライセンスも不要です。
 
-## 必要なツール
+<figure class="article-figure">
+  <video controls muted playsinline preload="metadata" poster="/assets/videos/profiler-film-poster.webp" width="1920" height="1080" aria-label="SharpLsp プロファイラーの紹介映像：VS Code での CPU プロファイリング、ヒートマップ、フレームグラフ、メモリタイムライン、リークの疑い">
+    <source src="/assets/videos/profiler-film.webm" type="video/webm">
+    <source src="/assets/videos/profiler-film.mp4" type="video/mp4">
+  </video>
+  <figcaption>1 分でわかるプロファイラー。エディターの映像はすべて、SharpLsp 拡張機能で実際の .NET アプリをプロファイリングしながら VS Code で収録したものです。早送りの部分は画面上に表示されます。</figcaption>
+</figure>
 
-必要な Microsoft 診断ツールをインストールします。
+## しくみ
 
-```sh
-dotnet tool install -g dotnet-trace
-dotnet tool install -g dotnet-counters
-dotnet tool install -g dotnet-dump
-```
+プロファイラーはどちらの言語サイドカーでもなく SharpLsp ホストの中で動作するため、サイドカーが再起動してもセッションは終了しません。拡張機能は `sharplsp` バイナリの隣に小さな .NET エンジンを同梱しており、ランタイムの診断チャネル（EventPipe）を通じて対象にアタッチします。
 
-SharpLsp は最初に `PATH` を確認し、次に現在のユーザーのホームディレクトリ下にある標準の `.dotnet/tools` ディレクトリを確認します。`dotnet tool list -g` は実行しません。ツールが見つからない場合は、対応するインストールコマンドを含むエラーを返します。
+- CPU サンプリングもヒープスナップショットも、すでに実行中のプロセスに対して動作します。
+- アプリを再起動したり再ビルドしたりする必要はありません。
+- エンジンはデバッガー権限を必要としないため、メモリプロファイラーは macOS でも動作します。
 
-## プロファイラービュー
+エンジンには .NET 8 以降のランタイムが必要です。`DOTNET_EnableDiagnostics=0` で起動したプロセスにはアタッチできません。
 
-**Profiler** ビューには次が表示されます。
+## プロセス
 
-- 実行中のトレースセッションとカウンターセッション
-- 検出可能な .NET プロセスと、その PID およびコマンドライン
-- セッションごとの出力先と操作項目
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-processes.webp" alt="SharpLsp サイドバーの Processes ビュー。実行中の Storefront .NET プロセスと Profile CPU、Track Memory のアクションが表示されている" width="2400" height="1500">
+  <figcaption>Processes ビューは各 .NET プロセスの PID、ランタイム、CPU、メモリを一覧表示します。開いているワークスペースのプロセスはハイライトされます。</figcaption>
+</figure>
 
-Refresh を実行するとプロセス一覧が更新されます。プロセスのコンテキストアクションから、トレースの開始、カウンターの開始、ダンプの収集、PID のコピー、プロセスの終了を実行できます。
+SharpLsp サイドバーの **Processes** ビューは、マシン上の .NET プロセスを検出します。各行には PID、ランタイムのバージョン、CPU 使用率、メモリが表示され、開いているワークスペースのプロセスはハイライトされます。行にマウスを合わせるとインラインのアクションが表示されます。
 
-## トレース
+- **Profile CPU** はサンプラーをアタッチします。
+- **Track Memory** はヒープの追跡を開始します。
 
-1. **SharpLsp: Start Performance Trace** を実行し、.NET プロセスを選択します。
-2. **SharpLsp: Stop Performance Trace** を実行するか、ツリー項目からセッションを停止します。
-3. SharpLsp が `.nettrace` を完成させて SpeedScope JSON に変換し、SpeedScope ビューアーで開きます。
+行のコンテキストメニューには **Copy PID**、**Reveal Entry in Editor**、**Kill Process** もあります。ビューのツールバーには、さらに 3 つの入り口があります。
 
-リクエスト値を明示しない場合、現在のトレースリクエストは既定で 30 秒間実行され、`.sharplsp/profiles` 以下へ出力されます。既存の `.nettrace` を開き、SpeedScope 形式へ変換することもできます。
+- **Run & Profile CPU (Current File)** と **Run & Track Memory (Current File)** は、現在のプロジェクトを SharpLsp デバッガーで起動し、起動時からプロファイリングします。
+- **Refresh**、**Sort**、**Group**、**Filter** でプロセス一覧を整理できます。
 
-## ライブカウンター
+## CPU プロファイリング
 
-**Start Counter Monitoring** は、選択したプロセスに対して `dotnet-counters` を起動し、ライブ Webview を開きます。既定のプロバイダーは `System.Runtime`、更新間隔は 1 秒です。セッションが停止するまで、カウンターの更新は `sharplsp/profiler/counterUpdate` 通知で届きます。
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-live.webp" alt="進行中の CPU プロファイリングセッション。Processes ビューに Profiling PID、ステータスバーに Profiling と表示されている" width="2400" height="1500">
+  <figcaption>進行中のセッション。ステータスバーの項目をクリックすると停止します。</figcaption>
+</figure>
 
-## ダンプとヒープ解析
+行の **Profile CPU** をクリックするか、**SharpLsp: Start Profiling**（<kbd>Ctrl+Alt+P</kbd>、macOS では <kbd>Cmd+Alt+P</kbd>）を実行します。アプリに遅い処理を通らせてから、**SharpLsp: Stop Profiling**（<kbd>Ctrl+Alt+Shift+P</kbd>、macOS では <kbd>Cmd+Alt+Shift+P</kbd>）を実行するか、ステータスバーの項目をクリックします。**SharpLsp: Take Profile Snapshot** を使うと、停止せずにその時点の結果を確認できます。
 
-拡張機能では次の操作ができます。
+セッションが停止すると、結果が 2 か所に同時に表示されます。
 
-- Heap、Full、Mini の各ダンプを収集する
-- `dumpheap -stat` を実行し、型ごとの個数とサイズを表示する
-- 2 つのダンプスナップショットを比較する
-- baseline → exercise → comparison の手順に沿ってメモリリークを検出する
-- アドレスを指定してオブジェクトを調査する
-- 範囲を制限したオブジェクト参照グラフを構築し、GC ルートを特定する
+**エディター内。** ホットな行にはそれぞれ、サンプルの割合を示すインラインのヒートバーが表示されます。バーは強度に応じてオレンジから琥珀色になり、概要ルーラーにも各ホットな行が表示されるので、すぐに移動できます。
 
-ヒープ差分は、個数とサイズの増減から増加候補を分類します。これはヒューリスティックであり、リークの証明ではありません。保持パスとアプリケーションの挙動を確認して判断してください。
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-heatmap.webp" alt="インラインのヒートバーが表示された CheckoutPipeline.cs：ParseCatalog 66.8%、PriceBasket 25.1%、RenderInvoice 7.6%" width="2400" height="1500">
+  <figcaption>ヒートマップは、JSON の解析が時間の 3 分の 2 を占めていることを、該当する行まで特定して示しています。</figcaption>
+</figure>
 
-## 主なコマンド
+**結果パネル内。** サンプル数、所要時間、関数の数、ホットな行の数が表示され、その下にフレームグラフと、合計とセルフの割合を含むホット関数の表が続きます。行をクリックすると、そのソースの位置が開きます。
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-results.webp" alt="SharpLsp Profiler の結果パネル。概要カード、埋め込みのフレームグラフ、ホット関数の表" width="2400" height="1500">
+  <figcaption>結果パネル。閉じた後は <strong>SharpLsp: Show Profile Results</strong> で再び開けます。</figcaption>
+</figure>
+
+**Open Interactive Flame Graph** を使うと、フレームグラフ全体が開きます。フレームをクリックすると、そのサブツリーにズームします。
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-flamegraph.webp" alt="プロファイル全体のインタラクティブなフレームグラフ" width="2400" height="345">
+  <figcaption>プロファイル全体。</figcaption>
+</figure>
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-flamegraph-zoom.webp" alt="ParseCatalog にズームしたフレームグラフ。System.Text.Json の逆シリアル化のスタックが表示されている" width="2400" height="345">
+  <figcaption><code>ParseCatalog</code> にズーム：コストは System.Text.Json のデシリアライザーにあります。</figcaption>
+</figure>
+
+各セッションは `.sharplsp/profiles` に 3 種類のエクスポートも書き出します。
+
+- speedscope 形式の JSON
+- VS Code の組み込みプロファイルビューアーで開ける `.cpuprofile`
+- フレームグラフの SVG
+
+<figure class="article-figure">
+  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="VS Code での CPU プロファイリングセッションの無編集の画面録画">
+    <source src="/assets/videos/profiler-cpu-recording.mp4" type="video/mp4">
+  </video>
+  <figcaption>無編集、実時間：実行中のプロセスで Profile CPU を実行し、Stop すると、ヒートマップと結果パネルが表示されます。</figcaption>
+</figure>
+
+## メモリ追跡
+
+行の **Track Memory** をクリックするか、**SharpLsp: Start Memory Tracking** を実行します。コードの隣に **SharpLsp Memory Dashboard** が開き、次の内容が表示されます。
+
+- 現在とピークのメモリ、生存オブジェクト数
+- ヒープのタイムライン
+- 主な割り当て箇所
+- ランク付けされたリークの疑い
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-memory.webp" alt="着実に上昇するヒープタイムラインに STEADY GROWTH possible leak と表示されたメモリダッシュボードと、隣の SessionCache.cs" width="2400" height="1500">
+  <figcaption>スナップショットのたびにタイムラインが上昇し、着実な増加がグラフ上で指摘されます。</figcaption>
+</figure>
+
+メモリのオートパイロットが、スナップショットの取得と比較を代わりに行います。
+
+- デバッガーが一時停止するたびに（`sharplsp.profiler.autoSnapshotOnPause`、既定で有効）
+- プログラムの実行中、数秒ごとに（`sharplsp.profiler.autoSnapshot`）
+
+**Take Memory Snapshot**、**Compare Memory Snapshots**、**Force Garbage Collection** を使えば、スナップショットを手動で操作することもできます。
+
+リークの疑いは、増加がどれだけ一貫しているかでランク付けされます。各項目には、バイト数とオブジェクト数での増加量と、連続して増加したスナップショットの回数が表示されます。エディターでは、メモリを割り当てる各型の宣言に紫色のヒートバーが表示され、リークの疑いも同じ行に示されます。ダッシュボードの **Heat map mode** で、エディターの表示をメモリ（紫）と CPU（オレンジ）の間で切り替えられます。
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/profiler/profiler-leaks.webp" alt="MB 単位の増加量とオブジェクト数とともに HIGH とランク付けされたリークの疑いと、SessionCache.cs の CustomerSession 宣言に表示されたインラインの HIGH リークマーカー" width="2400" height="1500">
+  <figcaption>リークの疑い。エントリを削除しない静的な <code>Dictionary</code> が、バイト配列、文字列、それらを保持するセッションの一貫した増加として現れています。</figcaption>
+</figure>
+
+**SharpLsp: Show Reference Graph** は、ある型の保持グラフを描画します。その型を保持しているオブジェクトと、それらを生かし続けているルートが表示されます。ヒープの増加はヒューリスティックであり、リークの証明ではありません。疑わしい項目は、保持パスとアプリの動作で確認してください。
+
+<figure class="article-figure">
+  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="VS Code でのメモリ追跡の 3 倍速の画面録画">
+    <source src="/assets/videos/profiler-memory-timelapse.mp4" type="video/mp4">
+  </video>
+  <figcaption>3 倍速のメモリ追跡：自動スナップショットが届くたびに、ヒープのタイムラインが上昇していきます。</figcaption>
+</figure>
+
+## コマンド
 
 | コマンド | 用途 |
 |---|---|
-| `SharpLsp: Refresh Profiler` | プロセスとセッションを更新 |
-| `SharpLsp: Start Performance Trace` / `Stop Performance Trace` | トレースを記録して終了 |
-| `SharpLsp: Open Trace File…` / `Convert .nettrace to SpeedScope` | トレースファイルを開く、または変換 |
-| `SharpLsp: Start Counter Monitoring` / `Stop Counter Monitoring` | ランタイムカウンターを監視 |
-| `SharpLsp: Collect Memory Dump` | メモリダンプを収集 |
-| `SharpLsp: Analyze Heap Dump` | ヒープ統計を表示 |
-| `SharpLsp: Compare Heap Snapshots` | 2 つのダンプの差分を表示 |
-| `SharpLsp: Detect Memory Leaks` | ガイド付きスナップショットワークフローを実行 |
-| `SharpLsp: Show Object Retention Graph` | オブジェクト参照を可視化 |
-| `SharpLsp: Inspect Object` | 1 つのオブジェクトのフィールドと参照を表示 |
+| `SharpLsp: Profile CPU` / `Track Memory` | 選択した行のプロセスをプロファイリング |
+| `SharpLsp: Run & Profile CPU (Current File)` / `Run & Track Memory (Current File)` | 現在のプロジェクトを起動し、最初からプロファイリング |
+| `SharpLsp: Start Profiling` / `Stop Profiling` | CPU セッションの開始と停止 |
+| `SharpLsp: Take Profile Snapshot` | 停止せずにその時点の結果を確認 |
+| `SharpLsp: Show Profile Results` | 前回の結果パネルを再表示 |
+| `SharpLsp: Start Memory Tracking` / `Stop Memory Tracking` | ヒープ追跡の開始と停止 |
+| `SharpLsp: Take Memory Snapshot` / `Compare Memory Snapshots` | ヒープスナップショットの取得と比較 |
+| `SharpLsp: Force Garbage Collection` | スナップショットの前にガベージコレクションを実行 |
+| `SharpLsp: Show Reference Graph` | ある型を生かし続けているものを表示 |
+| `SharpLsp: Refresh Processes` / `Sort Processes` / `Group Processes` / `Filter Processes` | プロセス一覧の整理 |
+| `SharpLsp: Copy PID` / `Reveal Entry in Editor` / `Kill Process` | プロセス行のアクション |
 
-## 設定の適用状況
+## 設定
 
-`sharplsp.toml` では、[設定](/ja/docs/configuration/)ページに示すプロファイラー設定をすべて記述できます。現在、実行時の動作に適用されるのは `profiler.max_concurrent_sessions` だけです。その他のプロファイラー既定値もパースされますが、コマンドは組み込みのリクエスト既定値を引き続き使用します。設定を変更しても、トレース時間、出力形式、カウンタープロバイダー／間隔、出力ディレクトリはまだ変更されません。
+| 設定 | 既定値 | 用途 |
+|---|---|---|
+| `sharplsp.profiler.sampleRate` | `100` | CPU のサンプリングレート（Hz、1〜1000） |
+| `sharplsp.profiler.lineThreshold` | `1` | ホットな行とみなすサンプルの最小割合（%） |
+| `sharplsp.profiler.functionThreshold` | `2` | ホットな関数とみなすサンプルの最小割合（%） |
+| `sharplsp.profiler.showInlineHeatMap` | `true` | プロファイリング後にホットな行へヒートバーを表示 |
+| `sharplsp.profiler.maxDiagnosticsPerFile` | `20` | ファイルごとのプロファイリングマーカーの上限 |
+| `sharplsp.profiler.includeNative` | `false` | 結果にネイティブフレームを含める |
+| `sharplsp.profiler.profileOnLaunch` | `false` | SharpLsp のデバッグセッションの開始時に毎回プロファイリング |
+| `sharplsp.profiler.processRefreshMs` | `2000` | Processes ビューの更新間隔 |
+| `sharplsp.profiler.autoSnapshotOnPause` | `true` | デバッガーが一時停止するたびにスナップショットを取得して比較 |
+| `sharplsp.profiler.autoSnapshot` | `false` | メモリ追跡中に一定間隔でスナップショットを取得 |
+| `sharplsp.profiler.autoSnapshotInterval` | `30` | 定期スナップショットの間隔（秒） |
 
-セッション数の既定上限は 5 です。上限を超えた場合、既存のセッションを置き換えるのではなくエラーを返します。
-
-## 安全性とエラー
-
-プロファイラーコマンドは PID、ファイル、セッション ID、ツールの有無を検証し、LSP を介してエラーを返します。プロセスツリーには明示的な終了アクションもあります。選択した外部プロセスを終了するため、慎重に使用してください。
+`sharplsp.toml` の `[profiler]` テーブルで、出力ディレクトリ（既定は `.sharplsp/profiles`）とホットスポットのしきい値を設定します。[構成](/ja/docs/configuration/)を参照してください。

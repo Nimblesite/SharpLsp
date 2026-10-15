@@ -155,6 +155,10 @@ fn main() -> ExitCode {
 }
 
 /// Initialize the LSP connection, start sidecars, and run the main message loop.
+#[expect(
+    clippy::too_many_lines,
+    reason = "server start-up is one linear sequence; splitting it would hide the order"
+)]
 fn run_server() -> Result<()> {
     let (connection, io_threads) = Connection::stdio();
 
@@ -207,9 +211,6 @@ fn run_server() -> Result<()> {
         "SharpLsp LSP initialized (log_level={}, debounce_ms={})",
         sharplsp_config.server.log_level, sharplsp_config.server.debounce_ms
     );
-
-    // Apply profiler config.
-    profiler::session::set_max_sessions(sharplsp_config.profiler.max_concurrent_sessions);
 
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
@@ -272,29 +273,30 @@ fn run_server() -> Result<()> {
         );
     }
 
-    let mut configuration = configuration::Configuration::new(config_root.unwrap_or(fallback_root));
+    let mut services = host_services(
+        config_root,
+        fallback_root,
+        &sharplsp_config,
+        &connection,
+        &runtime,
+    );
     main_loop(
         &connection,
         &runtime,
-        &mut configuration,
+        &mut services,
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
         &vfs,
         workspace_root.is_some(),
     )?;
 
-    if let Some(event_pump) = csharp_event_pump {
-        event_pump.abort();
-    }
-
-    // Shut down profiler sessions.
-    profiler::session::store().shutdown();
-
-    // Shut down sidecars gracefully (in parallel to avoid doubling timeout).
-    runtime.block_on(shutdown_sidecars(
+    shutdown_services(
+        &runtime,
+        services,
+        csharp_event_pump,
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
-    ));
+    );
 
     // Drop the connection so the writer thread's channel closes,
     // allowing io_threads.join() to complete.
@@ -302,6 +304,26 @@ fn run_server() -> Result<()> {
     io_threads.join()?;
     info!("SharpLsp LSP shut down cleanly");
     Ok(())
+}
+
+/// Stop profiler sessions, then both sidecars: the profiler first so a session
+/// never outlives the host ([PROFILER-SHARED-LIBRARY-HOST]). Consumes the
+/// services: the profiler holds a clone of the connection's sender, and the
+/// writer thread only exits once every clone is gone.
+fn shutdown_services(
+    runtime: &tokio::runtime::Runtime,
+    services: HostServices,
+    csharp_event_pump: Option<tokio::task::JoinHandle<()>>,
+    csharp: Option<&Arc<SidecarManager>>,
+    fsharp: Option<&Arc<SidecarManager>>,
+) {
+    if let Some(event_pump) = csharp_event_pump {
+        event_pump.abort();
+    }
+    services.profiler.shutdown(runtime);
+    drop(services);
+    // Shut down sidecars gracefully (in parallel to avoid doubling timeout).
+    runtime.block_on(shutdown_sidecars(csharp, fsharp));
 }
 
 /// Shut down both language sidecars concurrently.
@@ -325,10 +347,17 @@ async fn shutdown_sidecars(
 /// Build the server capabilities advertised during LSP initialization.
 fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilities {
     ServerCapabilities {
-        // Implements [CONFIG-RESOLUTION]: discoverable by every LSP client.
-        experimental: Some(
-            serde_json::json!({"configurationProvider": {"method": "sharplsp/configuration"}}),
-        ),
+        // Implements [CONFIG-RESOLUTION]: discoverable by every LSP client, and
+        // [PROFILER-SHARED-LIBRARY-HOST]: the profiler's runtimes and capabilities.
+        experimental: Some(serde_json::json!({
+            "configurationProvider": {"method": "sharplsp/configuration"},
+            "lspProfiler": profiler::host::capability_block(),
+        })),
+        // Every profiler operation is a standard `workspace/executeCommand`.
+        execute_command_provider: Some(lsp_types::ExecuteCommandOptions {
+            commands: profiler::host::ProfilerHost::command_names(),
+            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
+        }),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         document_symbol_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
@@ -602,6 +631,36 @@ async fn handle_csharp_event(
 
 // ── Main Loop ─────────────────────────────────────────────────────
 
+/// The per-connection services the main loop routes to: live configuration
+/// and the mounted profiler ([PROFILER-SHARED-LIBRARY-HOST]).
+struct HostServices {
+    /// Configuration requests and change notifications.
+    configuration: configuration::Configuration,
+    /// Profiler commands, notifications and cancellation.
+    profiler: profiler::host::ProfilerHost,
+}
+
+/// Mount the profiler under the workspace root and open the configuration service.
+fn host_services(
+    config_root: Option<PathBuf>,
+    fallback_root: PathBuf,
+    config: &config::SharpLspConfig,
+    connection: &Connection,
+    runtime: &tokio::runtime::Runtime,
+) -> HostServices {
+    let profiler = profiler::host::ProfilerHost::mount(
+        config_root.as_deref().unwrap_or(&fallback_root),
+        &config.profiler,
+        connection.sender.clone(),
+        runtime,
+    );
+    let configuration = configuration::Configuration::new(config_root.unwrap_or(fallback_root));
+    HostServices {
+        configuration,
+        profiler,
+    }
+}
+
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
@@ -610,7 +669,7 @@ async fn handle_csharp_event(
 fn main_loop(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
-    configuration: &mut configuration::Configuration,
+    services: &mut HostServices,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
@@ -620,7 +679,6 @@ fn main_loop(
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
-    let mut profiler_requests = profiler::requests::Requests::default();
     let inbound = spawn_shutdown_fast_path(connection);
 
     for msg in &inbound {
@@ -637,10 +695,13 @@ fn main_loop(
                 }
 
                 if req.method == "sharplsp/configuration" {
-                    configuration.respond(req, connection)?;
+                    services.configuration.respond(req, connection)?;
                     continue;
                 }
-                if profiler_requests.dispatch(&req, runtime, &connection.sender) {
+                if services
+                    .profiler
+                    .dispatch(&req, runtime, &connection.sender)
+                {
                     continue;
                 }
                 handle_request(
@@ -657,11 +718,11 @@ fn main_loop(
             }
             Message::Notification(notif) => {
                 if notif.method == "$/cancelRequest" {
-                    profiler_requests.cancel(&notif.params);
+                    services.profiler.cancel(&notif.params);
                     continue;
                 }
                 if notif.method == "workspace/didChangeConfiguration" {
-                    if let Err(error) = configuration.update(
+                    if let Err(error) = services.configuration.update(
                         notif
                             .params
                             .get("settings")
@@ -1146,16 +1207,6 @@ fn handle_custom_request(
             connection.sender.clone(),
             csharp_sidecar,
         ),
-        // Profiler
-        "sharplsp/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
-        "sharplsp/profiler/killProcess" => profiler::handlers::handle_kill_process(req),
-        "sharplsp/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
-        "sharplsp/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
-        "sharplsp/profiler/convertTrace" => profiler::handlers::handle_convert_trace(req),
-        "sharplsp/profiler/startCounters" => {
-            profiler::handlers::handle_start_counters(req, connection.sender.clone())
-        }
-        "sharplsp/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req),
         _ => {
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))

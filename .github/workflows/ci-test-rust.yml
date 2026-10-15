@@ -35,6 +35,8 @@ jobs:
         shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
@@ -61,6 +63,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
+      - uses: ./.github/actions/typediagram
       - name: Install .NET diagnostic tools
         run: |
           dotnet tool install -g dotnet-trace
@@ -77,7 +80,7 @@ jobs:
         # RUST_E2E_SIDECARS env overrides, so without this every spawn fails
         # with "Permission denied (os error 13)" and the shard times out.
         shell: bash
-        run: chmod +x target/sidecar-csharp/SharpLsp.Sidecar.CSharp target/sidecar-fsharp/SharpLsp.Sidecar.FSharp
+        run: chmod +x target/sidecar-csharp/SharpLsp.Sidecar.CSharp target/sidecar-fsharp/SharpLsp.Sidecar.FSharp target/profiler-engine/lsp-profiler-dotnet-engine
       - name: Test Rust shard with coverage
         run: env VSIX_PREBUILT=1 make _test-rust-shard SHARD=${{ matrix.shard }} SHARD_COUNT=2
       - name: Upload shard coverage
@@ -102,6 +105,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable

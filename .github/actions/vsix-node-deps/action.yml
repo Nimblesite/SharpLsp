@@ -38,7 +38,18 @@ runs:
         path: src/editors/vscode/node_modules
         key: >-
           vsix-node-modules-${{ runner.os }}-${{ runner.arch }}-node20-${{
-          hashFiles('src/editors/vscode/package-lock.json') }}
+          hashFiles('src/editors/vscode/package-lock.json',
+          'lspkit/packages/lsp-profiler-ui/package-lock.json',
+          'lspkit/packages/lsp-profiler-ui/src/**',
+          'lspkit/docs/models/**') }}
+    # install-links=true packs the compiled UI into node_modules. A cache hit
+    # already contains it; rebuilding on every test shard wastes runner time.
+    - uses: ./.github/actions/typediagram
+      if: steps.node-modules.outputs.cache-hit != 'true'
+    - name: Build the profiler UI package from the lspkit submodule
+      if: steps.node-modules.outputs.cache-hit != 'true'
+      shell: bash
+      run: make _build-profiler-ui
     - name: Install VS Code extension deps
       # Only on a miss. On a hit the tree is already exactly what this lockfile
       # resolves to, and `npm ci` would delete it and rebuild it from scratch.

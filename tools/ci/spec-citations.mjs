@@ -16,6 +16,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const DEPENDENCY_SPECS = ["lspkit/docs/specs/LSP-PROFILER-SPEC.md"];
 // marked ships with the extension's toolchain. Lexing the markdown, rather than
 // matching lines that start with `#`, keeps a comment inside a fenced code
 // block from defining an ID.
@@ -94,7 +95,7 @@ function isDocument(path) {
 /** Every heading definition under `docs/`, with the document holding it. */
 export function headingDefinitions(texts) {
     return [...texts]
-        .filter(([path]) => path.startsWith("docs/") && path.endsWith(".md"))
+        .filter(([path]) => (path.startsWith("docs/") && path.endsWith(".md")) || DEPENDENCY_SPECS.includes(path))
         .flatMap(([path, text]) => headingIds(text).map((id) => ({ path, id })));
 }
 
@@ -144,7 +145,7 @@ function readText(root, path) {
 /** Every tracked text file of `root`, keyed by its repo-relative path. */
 export function repositoryTexts(root) {
     return new Map(
-        trackedFiles(root)
+        [...new Set([...trackedFiles(root), ...DEPENDENCY_SPECS])]
             .map((path) => [path, readText(root, path)])
             .filter(([, text]) => text !== undefined),
     );

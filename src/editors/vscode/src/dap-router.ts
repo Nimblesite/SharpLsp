@@ -328,6 +328,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     }
     const sentArgs = isRecord(msg.arguments) ? msg.arguments : undefined;
     if (this.interceptCommand(msg, command, sentArgs, breakpointPath)) return;
+    if (this.transitioning && this.replayer.isConfiguration(command)) return;
     if (STEP_COMMANDS.includes(command)) {
       this.stepper.begin(msg, command, Number(args?.threadId ?? 0));
       return;
@@ -539,6 +540,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.disposed) return;
     this.debuggee.observe(message);
     this.shutdown.observe(message);
+    this.replayer.observeChild(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
         `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
@@ -665,8 +667,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       else this.deliverStopped(message);
       return;
     } else if (name === 'initialized') {
+      const replacing = this.transitioning;
       this.transitioning = false;
-      if (this.clientConfigured) {
+      if (replacing || this.clientConfigured) {
         void this.breakpoints.replayFunctions(this, error);
         this.replayer.replayConfiguration();
         return;

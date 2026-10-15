@@ -22,6 +22,11 @@ const TERMINAL_KINDS = new Map<string, 'integrated' | 'external'>([
   ['integratedTerminal', 'integrated'],
   ['externalTerminal', 'external'],
 ]);
+const CONFIGURATION_COMMANDS = new Set([
+  'setBreakpoints',
+  'setExceptionBreakpoints',
+  'configurationDone',
+]);
 
 /** What the replayer needs from its owning router. */
 export interface ReplayHost extends RouterChannel {
@@ -46,6 +51,15 @@ export class SessionReplayer {
   private readonly breakpointRequests = new Map<string, DapMessage>();
   private exceptionMessage?: DapMessage;
   private configurationDoneMessage?: DapMessage;
+  private readonly pendingConfiguration = new Set<number>();
+
+  /** Configuration arriving during replacement is replayed once after initialized. */
+  public isConfiguration(command: string): boolean {
+    return CONFIGURATION_COMMANDS.has(command);
+  }
+
+  /** The terminal-hosted program to announce once its runtime is up. */
+  private terminalDebuggee: number | undefined;
 
   constructor(private readonly host: ReplayHost) {}
 
@@ -57,6 +71,7 @@ export class SessionReplayer {
   /** Observe one client request travelling towards the adapter. */
   public observe(message: DapMessage, breakpointPath: string | undefined): void {
     const command = typeof message.command === 'string' ? message.command : '';
+    if (this.isConfiguration(command)) this.pendingConfiguration.add(this.host.seqOf(message));
     if (command === 'initialize') {
       this.initializeMessage = message;
     } else if (command === 'launch' || command === 'attach') {
@@ -160,6 +175,36 @@ export class SessionReplayer {
     }
     this.host.respawn(['--attach', String(pid)], () => {
       this.replayHandshake();
+      this.terminalDebuggee = pid;
+    });
+  }
+
+  /**
+   * Observe one adapter message on its way to VS Code. The adapter now
+   * ATTACHES to a program VS Code started, so it never names that program in a
+   * `process` event, and the terminal's shell only becomes the program when it
+   * execs it. The first module the runtime loads proves it has: announce the
+   * program then, as an adapter-hosted launch would, so the workbench and the
+   * profiler learn the debuggee's pid ([DEBUG-FEATURES-LAUNCH-OUTPUT],
+   * [PROFILER-SHARED-LIBRARY-VSCODE]).
+   */
+  public observeChild(message: DapMessage): void {
+    if (message.type === 'response') this.pendingConfiguration.delete(Number(message.request_seq));
+    const pid = this.terminalDebuggee;
+    if (pid === undefined || message.type !== 'event' || message.event !== 'module') return;
+    this.terminalDebuggee = undefined;
+    this.announceTerminalDebuggee(pid);
+  }
+
+  /** Name the terminal-hosted program in a `process` event. */
+  private announceTerminalDebuggee(pid: number): void {
+    const program = this.launchMessage?.arguments;
+    const name =
+      isRecord(program) && typeof program.program === 'string' ? program.program : String(pid);
+    this.host.fire({
+      type: 'event',
+      event: 'process',
+      body: { name, systemProcessId: pid, isLocalProcess: true, startMethod: 'launch' },
     });
   }
 
@@ -186,17 +231,17 @@ export class SessionReplayer {
 
   /** Replay the client's breakpoint/exception/configuration sequence. */
   public replayConfiguration(): void {
-    for (const message of this.breakpointRequests.values()) {
-      this.swallow.add(this.host.seqOf(message));
+    const messages = [
+      ...this.breakpointRequests.values(),
+      this.exceptionMessage,
+      this.configurationDoneMessage,
+    ];
+    for (const message of messages) {
+      if (message === undefined) continue;
+      const seq = this.host.seqOf(message);
+      // A request held during replacement is still owed its first response.
+      if (!this.pendingConfiguration.has(seq)) this.swallow.add(seq);
       this.host.write(message);
-    }
-    if (this.exceptionMessage !== undefined) {
-      this.swallow.add(this.host.seqOf(this.exceptionMessage));
-      this.host.write(this.exceptionMessage);
-    }
-    if (this.configurationDoneMessage !== undefined) {
-      this.swallow.add(this.host.seqOf(this.configurationDoneMessage));
-      this.host.write(this.configurationDoneMessage);
     }
   }
 

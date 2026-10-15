@@ -167,10 +167,12 @@ IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS)
 - Name classes after what the element IS, not the section it sits in
 - Avoid default LLM palettes such as purple
 
-## Migration to `lspkit`
+## lspkit — https://github.com/Nimblesite/lspkit
 
-The cross-cutting LSP + sidecar scaffolding here (LSP server, VFS, sidecar transport + lifecycle, diagnostics pipeline, TOML config) is being distilled into the generic `lspkit-*` workspace at `/Users/christianfindlay/Documents/Code/lsp_toolkit`. The .NET semantic engines (Roslyn, FCS) stay; the protocol shells migrate.
+**lspkit is the shared toolkit every Nimblesite language server is built on, and it is where the profiler lives.** Repo: **https://github.com/Nimblesite/lspkit**. It is checked out here as the git submodule `lspkit/` (`git submodule update --init`), pinned to a commit, until its next release is on crates.io and npm.
 
-**New LSP infrastructure:** prefer `lspkit-*` crates over reinventing it here.
-**Changes to scaffolding here:** flag in the PR description if the patch duplicates `lspkit` functionality, and reference the upstream crate.
-
+- **The profiler is lspkit's, not SharpLsp's.** `lsp-profiler` (core), `lsp-profiler-dotnet` (.NET runtime), the .NET engine (`lspkit/dotnet/`), the VS Code UI package (`lspkit/packages/lsp-profiler-ui`) and their spec (`lspkit/docs/specs/LSP-PROFILER-SPEC.md`) all live in lspkit. SharpLsp only mounts it ([PROFILER-SHARED-LIBRARY]). Profiler changes go to lspkit first, then the submodule pointer moves. Never fork profiler code back into this repo.
+- **Migrate SharpLsp onto lspkit surgically, wherever lspkit already does the job.** The cross-cutting scaffolding here (LSP server loop, VFS, sidecar transport and lifecycle, diagnostics pipeline, TOML config, DAP glue) is duplicated by `lspkit-*` crates and `@nimblesite/lspkit-debug`. Replace one piece at a time, each in its own reviewable change with its tests kept passing; never a big-bang rewrite. The .NET semantic engines (Roslyn, FCS) stay here; the protocol shells move.
+- **New LSP infrastructure:** use or extend lspkit. Do not build it here.
+- **Changes to scaffolding here:** flag in the PR description when a patch duplicates lspkit functionality, and name the lspkit crate that should own it.
+- **Wiring:** Cargo path dependencies point into `lspkit/crates/`, which the root workspace excludes; `make _build-dotnet` publishes the engine to `target/profiler-engine`; `make _build-profiler-ui` builds the UI package that `npm ci` packs into the extension. lspkit is public; CI checks out the pinned submodule without a separate access token.

@@ -10,8 +10,8 @@
 // On macOS/Linux — and Windows checkouts with core.symlinks=true — the same
 // file is a real symlink. We open every candidate with O_NOFOLLOW, so a real
 // symlink fails the open and is left untouched; this script is then a no-op.
-// We only rewrite plain files whose contents look like a relative POSIX path
-// pointing at an existing target file.
+// Plain files pointing at an existing file become its content; directory
+// targets (such as skills) become live directory links, never copies.
 //
 // NOTE: resolving a stub modifies the working tree. Do NOT commit resolved
 // files — Git would record the binary content as the symlink's target text.
@@ -34,11 +34,12 @@ const READ_NOFOLLOW = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
 // relative-path text, or null when the entry is a symlink, a non-file,
 // oversized, or not a single-line relative path.
 function readStubText(stubPath) {
+  if (fs.lstatSync(stubPath).isSymbolicLink()) return null;
   let fd;
   try {
     fd = fs.openSync(stubPath, READ_NOFOLLOW);
   } catch (err) {
-    if (err.code === 'ELOOP' || err.code === 'EMLINK') return null; // real symlink
+    if (['ELOOP', 'EMLINK', 'EISDIR'].includes(err.code)) return null;
     throw err;
   }
   try {
@@ -54,6 +55,22 @@ function readStubText(stubPath) {
   }
 }
 
+// Skill aliases must stay live links to the canonical directory. Windows
+// junctions work without Developer Mode or the symlink privilege.
+function materializeStub(stubPath, target, text) {
+  if (!fs.statSync(target).isDirectory()) {
+    fs.copyFileSync(target, stubPath);
+    return;
+  }
+  fs.unlinkSync(stubPath);
+  try {
+    fs.symlinkSync(target, stubPath, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    fs.writeFileSync(stubPath, text, { flag: 'wx' });
+    throw error;
+  }
+}
+
 function resolveDir(dir) {
   let resolved = 0;
   for (const name of fs.readdirSync(dir)) {
@@ -62,13 +79,10 @@ function resolveDir(dir) {
     if (text === null) continue;
     const target = path.resolve(path.dirname(stubPath), text);
     try {
-      // Attempt the copy directly rather than stat-then-copy: copyFileSync
-      // throws (ENOENT/EISDIR) when the target is missing or not a file, which
-      // we treat as "not a resolvable stub" — no separate existence check to
-      // race against.
-      fs.copyFileSync(target, stubPath);
-    } catch {
-      continue;
+      materializeStub(stubPath, target, text);
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
     }
     resolved += 1;
     console.log(`resolved symlink stub: ${path.relative(process.cwd(), stubPath)} -> ${text}`);

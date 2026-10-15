@@ -111,6 +111,7 @@ jobs:
     needs:
       - detect-changes
     uses: ./.github/workflows/ci-analyse.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   security:
@@ -129,6 +130,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - name: Dependency review
         # Fails the PR when it introduces a dependency carrying a known
         # high-or-worse vulnerability advisory.
@@ -145,6 +148,7 @@ jobs:
     needs:
       - detect-changes
     uses: ./.github/workflows/ci-audit.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   validate-manifest:
@@ -155,6 +159,8 @@ jobs:
     # manifest changed.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -180,6 +186,7 @@ jobs:
       - detect-changes
       - analyse
     uses: ./.github/workflows/ci-build.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   # ══ PHASE 4 — TEST ══════════════════════════════════════════════════
@@ -191,6 +198,7 @@ jobs:
       - detect-changes
       - build
     uses: ./.github/workflows/ci-test-rust.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   test-dotnet:
@@ -199,6 +207,7 @@ jobs:
       - detect-changes
       - build
     uses: ./.github/workflows/ci-test-dotnet.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   test-vsix:
@@ -207,6 +216,7 @@ jobs:
       - detect-changes
       - build
     uses: ./.github/workflows/ci-test-vsix.yml
+    secrets: inherit
     with:
       chunks: ${{ needs.build.outputs.linux-chunks }}
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
@@ -217,6 +227,7 @@ jobs:
       - detect-changes
       - build
     uses: ./.github/workflows/ci-test-vsix-windows.yml
+    secrets: inherit
     with:
       chunks: ${{ needs.build.outputs.win-chunks }}
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
@@ -227,6 +238,7 @@ jobs:
       - detect-changes
       - build
     uses: ./.github/workflows/ci-test-editors.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   test-tooling:
@@ -235,6 +247,7 @@ jobs:
       - detect-changes
       - build
     uses: ./.github/workflows/ci-test-tooling.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   # ══ PHASE 5 — COVERAGE CHECK ════════════════════════════════════════
@@ -250,6 +263,7 @@ jobs:
       - test-vsix
       - test-vsix-windows
     uses: ./.github/workflows/ci-coverage.yml
+    secrets: inherit
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
 
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted

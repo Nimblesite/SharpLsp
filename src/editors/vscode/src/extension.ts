@@ -27,7 +27,6 @@ import {
   CMD_ADD_PROJECT_REFERENCE,
   CMD_NUGET_ADD_FROM_EXPLORER,
   VIEW_SOLUTION_EXPLORER,
-  VIEW_PROFILER,
 } from './constants.js';
 import { configureDotnet } from './dotnet-process.js';
 import { acquireDotnet10Sdk, showAcquireFailureNotification } from './dotnetRuntime.js';
@@ -36,7 +35,7 @@ import * as client from './client.js';
 import * as sharedState from './state.js';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
-import * as profiler from './profiler.js';
+import { registerProfiler, type SharpLspProfiler } from './profiler-host.js';
 import * as solution from './solution.js';
 import { SharpLspStatusBar, ServerState } from './status.js';
 import { type ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from './tree.js';
@@ -63,7 +62,8 @@ import { samePath } from './paths';
 /** Public API exported from activate() for tests and other extensions. */
 export interface SharpLspExtensionApi {
   readonly explorerProvider: SolutionExplorerProvider;
-  readonly profilerProvider: profiler.ProfilerTreeProvider;
+  /** The shared profiler UI ([PROFILER-SHARED-LIBRARY-VSCODE]); its store is the test seam. */
+  readonly profiler: SharpLspProfiler | undefined;
   /** Get the active LSP client, if started. Used by tests. */
   readonly getLspClient: () => LanguageClient | undefined;
   /** The Test Explorer controller. Exposed so tests can drive/observe discovery. */
@@ -80,7 +80,7 @@ export interface SharpLspExtensionApi {
 let lspClient: LanguageClient | undefined;
 let statusBar: SharpLspStatusBar | undefined;
 let explorerProvider: SolutionExplorerProvider | undefined;
-let profilerProvider: profiler.ProfilerTreeProvider | undefined;
+let profilerUi: SharpLspProfiler | undefined;
 let testController: SharpLspTestController | undefined;
 let targetFrameworks: TargetFrameworkUi | undefined;
 
@@ -175,24 +175,14 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   context.subscriptions.push(solutionTreeView);
   wireActiveEditorReveal(context, solutionTreeView, explorerProvider);
 
-  log.info('step 4: ProfilerTreeProvider');
-  profilerProvider = new profiler.ProfilerTreeProvider();
-  log.info('step 5: createTreeView PROFILER');
-  context.subscriptions.push(
-    window.createTreeView(VIEW_PROFILER, {
-      treeDataProvider: profilerProvider,
-    }),
-  );
-
-  log.info('step 6: ProfilerStatusBar');
-  const profilerStatusBar = new profiler.ProfilerStatusBar(context);
+  log.info('step 4: profiler UI');
+  profilerUi = registerProfiler(context);
 
   log.info('step 7: initSortContext');
   explorerProvider.initSortContext();
   log.info('step 8: registerCommands');
   registerCommands(context);
   log.info('step 9: registerAllModuleCommands');
-  profiler.registerCommands(context, profilerProvider, profilerStatusBar, () => lspClient);
   registerBuildCommands(context);
   registerNuGetCommands(context);
   registerScaffoldingCommands(context);
@@ -260,7 +250,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 12: post-start wiring');
   if (lspClient !== undefined) {
     explorerProvider.setClient(lspClient);
-    profilerProvider.setClient(lspClient);
+    profilerUi.setClient(lspClient);
     targetFrameworks.attach(lspClient);
     // Fire-and-forget — don't block activation on solution loading.
     void selectAndLoadSolution().catch((err: unknown) => {
@@ -287,7 +277,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 13: activate complete');
   return {
     explorerProvider,
-    profilerProvider,
+    profiler: profilerUi,
     getLspClient: () => lspClient,
     testController,
     logUri: context.logUri,
@@ -320,7 +310,7 @@ function resolvedComponentPath(
 function degradedApi(context: ExtensionContext): SharpLspExtensionApi {
   return {
     explorerProvider: explorerProvider ?? new SolutionExplorerProvider(),
-    profilerProvider: profilerProvider ?? new profiler.ProfilerTreeProvider(),
+    profiler: profilerUi,
     getLspClient: () => lspClient,
     testController: testController ?? new SharpLspTestController(),
     logUri: context.logUri,
