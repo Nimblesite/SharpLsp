@@ -3,7 +3,9 @@ using Serilog;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.Common.Messages;
+using SharpLsp.Sidecar.Common.Supervision;
 using ByteResult = Outcome.Result<byte[], string>;
+using SupervisionResult = Outcome.Result<bool, string>;
 
 namespace SharpLsp.Sidecar.Common;
 
@@ -25,10 +27,24 @@ public abstract class SidecarHost : IAsyncDisposable
     /// ([SIDECAR-SHUTDOWN-ACK]).
     private static readonly TimeSpan ResponseWriteBudget = TimeSpan.FromSeconds(5);
 
+    /// How long a sidecar whose host died may take to stop on its own before it
+    /// is forced out — a wedged handler must not keep it alive ([SIDECAR-PROCESS-PARENT]).
+    private static readonly TimeSpan ParentExitGrace = TimeSpan.FromSeconds(2);
+
+    private static readonly SupervisionResult Supervised = new SupervisionResult.Ok<bool, string>(
+        true
+    );
+
+    /// The process-lifetime Job Object. Never disposed: closing it kills this
+    /// process and every descendant, which is exactly what process exit does
+    /// ([SIDECAR-PROCESS-TREE]).
+    private static ProcessContainment? s_containment;
+
     private readonly MessageRouter _router = new();
     private readonly CancellationTokenSource _shutdownCts = new();
     private IpcListener? _listener;
     private FramedTransport? _transport;
+    private ParentProcessWatchdog? _watchdog;
 
     /// Set by the shutdown handler; the loop acts on it only once the
     /// handler's acknowledgement is flushed ([SIDECAR-SHUTDOWN-ACK]).
@@ -60,17 +76,37 @@ public abstract class SidecarHost : IAsyncDisposable
         _router.Register(method, handler);
     }
 
-    /// <summary>Run the sidecar: listen, accept, dispatch until shutdown.</summary>
-    public async Task RunAsync(string socketPath)
+    /// <summary>Run an unsupervised sidecar (no host PID): listen, accept, dispatch until shutdown.</summary>
+    public Task RunAsync(string socketPath)
+    {
+        return RunAsync(new SidecarStartupOptions(socketPath, null));
+    }
+
+    /// <summary>
+    /// Run the sidecar: install supervision when a host PID is supplied, then
+    /// listen, accept, dispatch until shutdown or host exit.
+    /// </summary>
+    public async Task RunAsync(SidecarStartupOptions options)
     {
         try
         {
-            // TODO [SIDECAR-PROCESS-PARENT]: install and validate the watcher before binding.
-            // TODO [SIDECAR-PROCESS-TREE]: establish platform containment before READY.
-            var listenerResult = IpcConnection.CreateListener(socketPath);
+            var supervision = options.ParentPid is { } parentPid
+                ? Supervise(parentPid)
+                : Supervised;
+            if (supervision.IsError)
+            {
+                await ReportStartupFailureAsync(
+                        "supervision",
+                        supervision.Match(_ => string.Empty, e => e)
+                    )
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            var listenerResult = IpcConnection.CreateListener(options.Endpoint);
             if (listenerResult.IsError)
             {
-                await ReportStartupFailureAsync(!listenerResult).ConfigureAwait(false);
+                await ReportStartupFailureAsync("listener", !listenerResult).ConfigureAwait(false);
                 return;
             }
 
@@ -89,6 +125,7 @@ public abstract class SidecarHost : IAsyncDisposable
     /// <summary>Shuts down the sidecar and releases all resources.</summary>
     public async ValueTask DisposeAsync()
     {
+        _watchdog?.Dispose();
         await CloseAsync().ConfigureAwait(false);
         await DisposeCoreAsync().ConfigureAwait(false);
         _shutdownCts.Dispose();
@@ -133,19 +170,80 @@ public abstract class SidecarHost : IAsyncDisposable
     }
 
     /// <summary>
+    /// Contain descendants and watch the host before binding, so neither a hard
+    /// host death nor a hard sidecar kill leaks this process tree or its
+    /// endpoint. Implements [SIDECAR-PROCESS-PARENT] and [SIDECAR-PROCESS-TREE] (GitHub #163).
+    /// </summary>
+    private SupervisionResult Supervise(int parentPid)
+    {
+        // Validate the parent first: a sidecar whose host is already gone fails
+        // before it joins a job or binds anything.
+        var watchdog = ParentProcessWatchdog.Start(parentPid, OnParentExit);
+        _watchdog = watchdog.Match<ParentProcessWatchdog?>(w => w, _ => null);
+        if (watchdog.IsError)
+        {
+            return watchdog.Match(_ => Supervised, SupervisionResult.Failure);
+        }
+
+        Log.Information("Sidecar supervised by host {ParentPid}", parentPid);
+        return EnsureContained();
+    }
+
+    /// Join the process-lifetime job once; a second job would be dropped and,
+    /// when finalized, kill this process.
+    private static SupervisionResult EnsureContained()
+    {
+        if (s_containment is not null)
+        {
+            return Supervised;
+        }
+
+        var containment = ProcessContainment.ContainCurrentProcess();
+        s_containment = containment.Match<ProcessContainment?>(c => c, _ => null);
+        return containment.Match(
+            _ => Supervised,
+            e => SupervisionResult.Failure($"process containment failed: {e}")
+        );
+    }
+
+    private void OnParentExit()
+    {
+        _ = StopAfterParentExitAsync();
+    }
+
+    /// Stop dispatch so the entry point exits normally; force the exit if a
+    /// wedged handler keeps the loop alive past the grace period.
+    private async Task StopAfterParentExitAsync()
+    {
+        try
+        {
+            await _shutdownCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        await Task.Delay(ParentExitGrace).ConfigureAwait(false);
+        Log.Fatal("Sidecar still running {Grace} after host exit; forcing exit", ParentExitGrace);
+        SidecarLog.Shutdown();
+        Environment.Exit(1);
+    }
+
+    /// <summary>
     /// Announce a fatal startup failure on stderr — which the Rust host inherits
     /// into its own log — and flag the process for a non-zero exit. Without this
     /// a bind failure is visible only in a temp-file log, the opacity that made
     /// GitHub #110 take multiple log uploads to diagnose. Listener-bind failure
     /// path for [SIDECAR-STARTUP-FAILURE] and [DIST-FAILURE-UX] (GitHub #150).
     /// </summary>
-    private async Task ReportStartupFailureAsync(string error)
+    private async Task ReportStartupFailureAsync(string category, string error)
     {
         StartupFailed = true;
-        Log.Error("Sidecar listener failed: {Error}", error);
+        Log.Error("Sidecar {Category} failed: {Error}", category, error);
         await Console
             .Error.WriteLineAsync(
-                $"FATAL: sidecar listener failed: {error}. See logs in {SidecarLog.LogDirectory}"
+                $"FATAL: sidecar {category} failed: {error}. See logs in {SidecarLog.LogDirectory}"
             )
             .ConfigureAwait(false);
         await Console.Error.FlushAsync().ConfigureAwait(false);
