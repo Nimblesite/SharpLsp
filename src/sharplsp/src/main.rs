@@ -292,7 +292,7 @@ fn run_server() -> Result<()> {
 
     shutdown_services(
         &runtime,
-        &services,
+        services,
         csharp_event_pump,
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
@@ -307,10 +307,12 @@ fn run_server() -> Result<()> {
 }
 
 /// Stop profiler sessions, then both sidecars: the profiler first so a session
-/// never outlives the host ([PROFILER-SHARED-LIBRARY-HOST]).
+/// never outlives the host ([PROFILER-SHARED-LIBRARY-HOST]). Consumes the
+/// services: the profiler holds a clone of the connection's sender, and the
+/// writer thread only exits once every clone is gone.
 fn shutdown_services(
     runtime: &tokio::runtime::Runtime,
-    services: &HostServices,
+    services: HostServices,
     csharp_event_pump: Option<tokio::task::JoinHandle<()>>,
     csharp: Option<&Arc<SidecarManager>>,
     fsharp: Option<&Arc<SidecarManager>>,
@@ -319,6 +321,7 @@ fn shutdown_services(
         event_pump.abort();
     }
     services.profiler.shutdown(runtime);
+    drop(services);
     // Shut down sidecars gracefully (in parallel to avoid doubling timeout).
     runtime.block_on(shutdown_sidecars(csharp, fsharp));
 }
