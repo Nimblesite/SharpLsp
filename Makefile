@@ -89,9 +89,13 @@ RUST_TEST_LOG     ?= info
 SHARD_COUNT       ?= 2
 PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 
-# The shared profiler ([PROFILER-SHARED-LIBRARY]): a sibling checkout until lsp-profiler is published.
-LSP_PROFILER_DIR ?= ../lsp_profiler
-PROFILER_ENGINE_OUT := $(LSP_PROFILER_DIR)/dotnet/LspProfiler.DotNet.Engine/bin/Release/net8.0
+# The shared profiler ([PROFILER-SHARED-LIBRARY]) lives in the lspkit submodule
+# (https://github.com/Nimblesite/lspkit). `_build-dotnet` publishes its .NET
+# engine to PROFILER_ENGINE_OUT; `_build-profiler-ui` builds its VS Code UI
+# package, which `npm ci` then copies into the extension (install-links=true).
+LSPKIT_DIR          ?= lspkit
+PROFILER_ENGINE_OUT := target/profiler-engine
+PROFILER_UI_DIR     := $(LSPKIT_DIR)/packages/lsp-profiler-ui
 
 VSCODE_DIR  = src/editors/vscode
 ZED_DIR     = src/editors/zed
@@ -138,7 +142,7 @@ MERGE_COBERTURA = $(DOTNET) run --file tools/coverage/merge-cobertura.cs --
 KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
 
 # The public surface. Everything under it is an internal step or a CI leg.
-.PHONY: build ci test lint fmt clean audit setup \
+.PHONY: build ci test lint fmt clean audit setup _build-profiler-ui \
         reinstall-vsix install-vsix uninstall-vsix install-dotnet-10
 
 .PHONY: _screenshots _website-build _website-dev _uninstall-dotnet-10 \
@@ -262,6 +266,16 @@ _build-dotnet:
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
 	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
+	$(DOTNET) publish $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj --configuration Release --no-self-contained -p:DebugType=none -p:DebugSymbols=false --output $(PROFILER_ENGINE_OUT)
+
+# The profiler's VS Code UI package ([PROFILER-SHARED-LIBRARY-VSCODE]). Its wire
+# model is generated from lspkit's typeDiagram model first, the same file
+# lsp-profiler's build.rs generates; `npm ci` in the extension then packs `out/`.
+_build-profiler-ui:
+	@echo "==> Building the profiler UI package from lspkit..."
+	node $(LSPKIT_DIR)/scripts/typediagram/generate.mjs
+	npm ci --prefix $(PROFILER_UI_DIR)
+	npm run build --prefix $(PROFILER_UI_DIR)
 
 # [DIST-VSIX-CONTENTS] The gate runs BEFORE the package, not after: `vsce ls` is
 # the same file list `vsce package` writes, so verifying the staged tree is
@@ -1182,6 +1196,7 @@ setup:
 	rustup component add clippy rustfmt llvm-tools-preview
 	cargo install cargo-llvm-cov || true
 	cargo install cargo-audit --locked || true
+	$(MAKE) _build-profiler-ui
 	npm install --prefix $(VSCODE_DIR)
 	$(DOTNET) restore $(SIDECAR_SLN)
 	$(DOTNET) tool restore

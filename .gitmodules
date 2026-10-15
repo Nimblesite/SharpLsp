@@ -1,0 +1,3 @@
+[submodule "lspkit"]
+	path = lspkit
+	url = https://github.com/Nimblesite/lspkit.git

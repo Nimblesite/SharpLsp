@@ -27,6 +27,11 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
+          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
+          submodules: true
+          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
@@ -69,6 +74,11 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
+          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
+          submodules: true
+          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |

@@ -121,7 +121,7 @@ Cancellation scheduling is host infrastructure that overlaps the generic `lspkit
 
 ## [PROFILER-PLAN-MIGRATION] Migration to lsp-profiler
 
-**Spec:** [PROFILER-SHARED-LIBRARY]. The library side is tracked in the sibling repository's plan, `lsp_profiler/docs/plans/LSP-PROFILER-PLAN.md`.
+**Spec:** [PROFILER-SHARED-LIBRARY]. The library side is tracked in lspkit's plan, `lspkit/docs/plans/LSP-PROFILER-PLAN.md` (https://github.com/Nimblesite/lspkit).
 
 Every item below is unchecked until its code and a coarse e2e test exist. Status verified on **2026-10-15**. The old profiler code and suites were deleted on that date, once the library's host, extension and e2e suites replaced them; the gaps below name what the deletion left uncovered.
 
@@ -149,7 +149,7 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
 
 ### Rust host
 
-- [~] Depend on `lsp-profiler` and `lsp-profiler-dotnet`: **path dependencies on `../../../lsp_profiler`** today (`src/sharplsp/Cargo.toml`). CI cannot resolve them until the library is pushed or published.
+- [~] Depend on `lsp-profiler` and `lsp-profiler-dotnet`: path dependencies into the `lspkit/` submodule (`src/sharplsp/Cargo.toml`), which CI checks out with `LSPKIT_READ_TOKEN`. Move to the crates.io release once lspkit publishes them.
 - [x] Profiler wiring in `src/sharplsp/src/main.rs` replaced by `profiler::host::ProfilerHost` (`HostServices`): construction under the workspace root, shutdown before the sidecars, executeCommand routing, `$/cancelRequest`, `executeCommandProvider` and `experimental.lspProfiler` [PROFILER-SHARED-LIBRARY-HOST]. The `sharplsp/profiler/*` routes are gone.
 - [ ] Merge the profiler's diagnostics, inlay hints, code lenses and code actions with SharpLsp's own providers (blocked on the library building them).
 - [x] `[profiler]` table reduced to `max_concurrent_sessions` and `output_directory`; CLI-only settings removed (`config.rs`). The cap is not enforced by the library yet.

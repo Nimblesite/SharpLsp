@@ -14,12 +14,20 @@ use super::*;
 fn install_engine_beside_server() {
     static INSTALLED: OnceLock<()> = OnceLock::new();
     let () = INSTALLED.get_or_init(|| {
-        let engine_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../lsp_profiler/dotnet/LspProfiler.DotNet.Engine/bin/Release/net8.0/lsp-profiler-dotnet-engine");
-        assert!(engine_src.is_file(), "build the engine first (`make dotnet` in lsp_profiler): {}", engine_src.display());
+        let engine_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../target/profiler-engine/lsp-profiler-dotnet-engine{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        assert!(
+            engine_src.is_file(),
+            "build the engine first (`make _build-dotnet`): {}",
+            engine_src.display()
+        );
         let server = std::path::PathBuf::from(env!("CARGO_BIN_EXE_sharplsp"));
         let dir = server.parent().expect("server directory");
-        for entry in std::fs::read_dir(engine_src.parent().expect("engine dir")).expect("engine dir listing") {
+        for entry in
+            std::fs::read_dir(engine_src.parent().expect("engine dir")).expect("engine dir listing")
+        {
             let entry = entry.expect("engine dir entry");
             if entry.file_type().is_ok_and(|t| t.is_file()) {
                 let _ = std::fs::copy(entry.path(), dir.join(entry.file_name()));

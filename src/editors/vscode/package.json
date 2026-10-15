@@ -1439,7 +1439,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,mts}\""
   },
   "dependencies": {
-    "@nimblesite/lsp-profiler-ui": "file:../../../../lsp_profiler/packages/lsp-profiler-ui",
+    "@nimblesite/lsp-profiler-ui": "file:../../../lspkit/packages/lsp-profiler-ui",
     "@nimblesite/shipwright-vscode": "^0.11.0",
     "@preact/signals-core": "^1.14.4",
     "d3-force": "^3.0.0",

@@ -31,6 +31,12 @@ runs:
         node-version: '20'
         cache: npm
         cache-dependency-path: src/editors/vscode/package-lock.json
+    # install-links=true makes `npm ci` pack lspkit's profiler UI package into
+    # node_modules, so its `out/` must exist first ([PROFILER-SHARED-LIBRARY-VSCODE]).
+    - uses: ./.github/actions/typediagram
+    - name: Build the profiler UI package from the lspkit submodule
+      shell: bash
+      run: make _build-profiler-ui
     - name: Restore the installed dependency tree
       id: node-modules
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -38,7 +44,10 @@ runs:
         path: src/editors/vscode/node_modules
         key: >-
           vsix-node-modules-${{ runner.os }}-${{ runner.arch }}-node20-${{
-          hashFiles('src/editors/vscode/package-lock.json') }}
+          hashFiles('src/editors/vscode/package-lock.json',
+          'lspkit/packages/lsp-profiler-ui/package-lock.json',
+          'lspkit/packages/lsp-profiler-ui/src/**',
+          'lspkit/docs/models/**') }}
     - name: Install VS Code extension deps
       # Only on a miss. On a hit the tree is already exactly what this lockfile
       # resolves to, and `npm ci` would delete it and rebuild it from scratch.
