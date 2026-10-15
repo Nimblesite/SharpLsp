@@ -82,6 +82,7 @@ runs:
         suite-artifact: ${{ inputs.suite-artifact }}
 
     # ── The host, the sidecars and the debug adapter ───────────────
+    - uses: ./.github/actions/typediagram
     - name: Build sharplsp host and both sidecars (release)
       shell: bash
       run: make _build-rust _build-dotnet

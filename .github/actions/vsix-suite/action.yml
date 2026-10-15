@@ -39,6 +39,10 @@ runs:
           10.0.303
     - name: Install VS Code extension deps
       uses: ./.github/actions/vsix-node-deps
+    - name: Verify Windows skill junction repair
+      if: inputs.platform == 'win'
+      shell: bash
+      run: node --test tools/vsix/resolve-symlink-stubs.test.mjs
     - name: Resolve the feature chunk matrix
       id: chunks
       shell: bash

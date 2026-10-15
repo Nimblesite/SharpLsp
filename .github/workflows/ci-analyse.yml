@@ -29,10 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
-          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
           submodules: true
-          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
@@ -56,6 +53,7 @@ jobs:
         run: dotnet tool restore
 
       # ── Rust ───────────────────────────────────────────────────────
+      - uses: ./.github/actions/typediagram
       - name: Format + lint (Rust)
         run: make _lint-rust PROFILE=debug
       - name: Format + lint (Zed)

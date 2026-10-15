@@ -8,11 +8,9 @@
 # `Build VSIX` jobs fail with `IDE0055: Fix formatting` even though the files
 # are clean LF in the repo. `eol=lf` here overrides `core.autocrlf`.
 * text=auto eol=lf
-
 # Windows batch scripts must stay CRLF to run correctly (e.g. Gradle wrapper).
 *.bat text eol=crlf
 *.cmd text eol=crlf
-
 # Binary assets — never normalize or diff as text.
 *.png binary
 *.jpg binary
@@ -38,3 +36,6 @@
 *.otf binary
 *.woff binary
 *.woff2 binary
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.webm filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text

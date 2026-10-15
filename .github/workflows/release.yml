@@ -29,10 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
-          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
           submodules: true
-          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -65,7 +62,6 @@ jobs:
       actions: read
       contents: read
     uses: ./.github/workflows/codeql.yml
-    # The lspkit submodule checkout needs LSPKIT_READ_TOKEN.
     secrets: inherit
     with:
       gate: true
@@ -78,7 +74,6 @@ jobs:
   audit:
     name: Dependency audit release gate
     uses: ./.github/workflows/ci-audit.yml
-    # The lspkit submodule checkout needs LSPKIT_READ_TOKEN.
     secrets: inherit
 
   build-vsix:
@@ -118,10 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
-          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
           submodules: true
-          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       # Each build job stamps the version into the runner working tree from the
       # tag — deterministic, no artifact hand-off, nothing committed.
       # [DIST-RELEASE] [DIST-VERSION-INVARIANT]
@@ -231,10 +223,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
-          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
           submodules: true
-          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       - name: Stamp release version
         shell: bash
         run: make _stamp-version VERSION="${{ needs.version.outputs.version }}"
@@ -321,7 +310,7 @@ jobs:
           cat SHA256SUMS
           # A release that silently drops a platform is the failure this catches:
           # one VSIX and one server archive per built platform, plus the Rider zip.
-          expected=$(( 2 * ${PLATFORM_COUNT} + 1 ))
+          expected=$(( 2 * PLATFORM_COUNT + 1 ))
           actual="$(wc -l < SHA256SUMS)"
           if [ "${actual}" -ne "${expected}" ]; then
             echo "::error::expected ${expected} checksummed assets, found ${actual}"
@@ -362,7 +351,6 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/deploy-pages.yml
-    # The lspkit submodule checkout needs LSPKIT_READ_TOKEN.
     secrets: inherit
 
   publish-marketplace:
@@ -513,10 +501,7 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
-          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
           submodules: true
-          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
@@ -576,10 +561,7 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # lspkit (https://github.com/Nimblesite/lspkit) is a private submodule: the
-          # default token cannot read it. [PROFILER-SHARED-LIBRARY]
           submodules: true
-          token: ${{ secrets.LSPKIT_READ_TOKEN || github.token }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'

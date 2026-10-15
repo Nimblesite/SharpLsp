@@ -10,4 +10,7 @@ runs:
   steps:
     - name: Install typeDiagram
       shell: bash
-      run: npm install -g typediagram@0.11.0
+      run: |-
+        if [ "$(typediagram --version 2>/dev/null || true)" != 'typediagram 0.11.0' ]; then
+          npm install -g typediagram@0.11.0
+        fi

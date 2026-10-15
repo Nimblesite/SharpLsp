@@ -1,8 +1,10 @@
 // @ts-check
 import * as esbuild from 'esbuild';
 import * as fs from 'node:fs';
+import { extensionBuildOptions } from './esbuild-options.mjs';
 
 const production = process.argv.includes('--production');
+
 const watch = process.argv.includes('--watch');
 
 /**
@@ -17,29 +19,7 @@ const watch = process.argv.includes('--watch');
  */
 const STALE_SOURCEMAP = 'dist/extension.js.map';
 
-/** @type {esbuild.BuildOptions} */
-const buildOptions = {
-  entryPoints: ['src/extension.ts'],
-  bundle: true,
-  format: 'cjs',
-  platform: 'node',
-  target: 'node18',
-  outfile: 'dist/extension.js',
-  external: ['vscode'],
-  sourcemap: !production,
-  minify: production,
-  treeShaking: true,
-  logLevel: 'info',
-  // Production ships a single self-contained bundle (vsce packages with
-  // --no-dependencies). The dev build instead leaves node_modules external so
-  // the bundle contains ONLY first-party src/*.ts: the test host loads this
-  // build, and code-coverage remaps its execution cleanly onto src without the
-  // dependency sources an inlined bundle would drag into the report. Deps are
-  // resolved at runtime from node_modules, which is present during dev/test.
-  ...(production ? {} : { packages: 'external' }),
-};
-
-for (const options of [buildOptions]) {
+for (const options of [extensionBuildOptions(production)]) {
   if (watch) {
     const ctx = await esbuild.context(options);
     await ctx.watch();

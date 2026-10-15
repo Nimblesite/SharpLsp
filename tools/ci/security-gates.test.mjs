@@ -28,6 +28,17 @@ const action = (name) =>
         ),
     );
 
+// [DIST-CI-VSIX-SHARDS]: a cache hit must skip the shared package build too.
+test("cached VS Code dependencies skip profiler codegen and compilation", () => {
+    const steps = action("vsix-node-deps").runs.steps;
+    const cache = steps.findIndex((step) => step.id === "node-modules");
+    const build = steps.findIndex((step) => step.run === "make _build-profiler-ui");
+    assert.ok(cache >= 0 && cache < build, "restore before deciding whether to build");
+    assert.equal(steps[build].if, "steps.node-modules.outputs.cache-hit != 'true'");
+    const codegen = steps.find((step) => step.uses === "./.github/actions/typediagram");
+    assert.equal(codegen.if, steps[build].if, "cached shards need no code generator install");
+});
+
 // [DIST-VSIX-REBUILD] + [DIST-CI-VSIX-SHARDS]. A CI consumer may skip the
 // rebuild ONLY by declaring the binaries came from this run, and a shard that
 // declares it must also have downloaded them - a shard claiming prebuilt

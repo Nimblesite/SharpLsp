@@ -769,7 +769,7 @@ _test-dotnet-win-transport:
 _test-tooling:
 	@echo "==> Running repo tooling tests..."
 	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
-		tools/rider/gradle.test.mjs
+		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs
 
 _website-build:
 	@echo "==> Building website..."
@@ -804,7 +804,7 @@ _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
 	# The profiler contributions are generated from the shared UI library ([PROFILER-SHARED-LIBRARY-VSCODE]).
 	node tools/vsix/sync-profiler-contributions.mjs --check
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs \
-		tools/ci/spec-citations.test.mjs
+		tools/ci/spec-citations.test.mjs tools/vsix/signals-bundle.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
@@ -1193,6 +1193,7 @@ _clean-rider:
 
 setup:
 	@echo "==> Setting up development environment..."
+	node tools/vsix/resolve-symlink-stubs.mjs .claude/skills
 	rustup component add clippy rustfmt llvm-tools-preview
 	cargo install cargo-llvm-cov || true
 	cargo install cargo-audit --locked || true

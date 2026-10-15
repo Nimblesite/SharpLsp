@@ -255,6 +255,8 @@ The extension's icon assets in `src/editors/vscode/icons/` are symlinks into `do
 3. The resolver MUST run automatically before packaging (`vscode:prepublish`) and before the e2e suite (`pretest`), so both the packaged VSIX and the extension-development host load real images. The e2e suite asserts the invariant (`bundled-binary.test.ts`).
 4. Resolved stubs modify the working tree and MUST NOT be committed — Git would record the binary content as the symlink's target text, corrupting the symlink for every other platform. Restore with `git restore src/editors/vscode/icons`.
 
+The same resolver repairs `.claude/skills` during `make setup`. Skill-directory stubs become directory symlinks on macOS/Linux and junctions on Windows, where junction creation needs no Developer Mode or administrator privilege. They continue to read the canonical `.agents/skills` files; no skill content is copied. Existing working links are untouched and repeated setup is idempotent. To repair only skills, run `node tools/vsix/resolve-symlink-stubs.mjs .claude/skills`. Keep the tracked relative link text in Git; never stage a materialized Windows junction as a directory of copied skill files.
+
 ## [DIST-VSIX-DEV-INSTALL] Local Install Loop
 
 Building the VSIX is not installing it. A developer changing the Rust host, either

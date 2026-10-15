@@ -221,6 +221,11 @@ Two further failure classes were investigated and turned out **not** to be defec
 
 ### CI workflow layout ([DIST-CI-LAYOUT])
 
+- [x] Resolve profiler citations from the pinned lspkit spec, with a CLI regression.
+- [x] Skip profiler code generation and compilation when the VS Code dependency cache hits.
+- [x] Track product videos with repository-local Git LFS and fetch LFS content in Pages deployment.
+- [x] Repair Windows skill-directory stubs as junctions during setup; preserve working macOS links and live canonical skill updates.
+
 - [x] Fail closed on changed-file API failures, partial pagination and empty responses; execute the real YAML classifier in regression tests ([DIST-CI-CLASSIFICATION], #288). Three red cases before the fix; 12 classifier/security guards pass after it, including the PR-only trigger contract.
 - [ ] Verify the classifier fix in a full green PR run before merging; require terminal `CI` through the live main ruleset, with no bypass actors.
 - [x] Split `ci.yml` into reusable workflows, one per phase: `ci-analyse`,

@@ -159,6 +159,9 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
 
 ### VS Code extension
 
+- [x] Pack one Signals runtime for ESM host imports and CommonJS profiler imports. The production-bundle regression verifies consecutive updates and disposal; the live CPU test verifies progress in the development host.
+- [x] Resolve symlinked source paths in the shared library on macOS and Windows; regression opens the real HotLeakApp project through a symlink/junction.
+
 - [~] `@nimblesite/lsp-profiler-ui` as a **`file:` dependency** on the sibling checkout, activated from `extension.ts` through `src/profiler-host.ts` with prefix `sharplsp` [PROFILER-SHARED-LIBRARY-VSCODE]. Publishing is open.
 - [ ] **Graph features were not moved before deletion.** `profiler-graph*.ts`, `profiler-graph-webview.mts`, `profiler-graph-browser.test.ts` and `profiler-graph-test-kit.ts` are deleted; their sources are in history. Porting nested expansion, filters, SVG/PNG export, theme contrast and malformed-message recovery onto the library's retention graph, with the browser regressions, is open and listed in the parity table.
 - [x] `profiler.ts`, `profiler-diff.ts`, `profiler-graph.ts`, `profiler-graph-html.ts`, `profiler-graph-message.ts`, `profiler-graph-types.ts`, `profiler-graph-webview.mts`, `profiler-prompts.ts` and `profiler-request.ts` deleted; the esbuild webview entry removed; `launch-profiles.ts` and `dotnet-process.ts` stay (used by debugging and testing).

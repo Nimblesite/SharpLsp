@@ -1,4 +1,4 @@
-// Tests for [PROFILE-MEMORY-DISCOVERY]. See docs/specs/LSP-PROFILING-SPEC.md#PROFILE-MEMORY-DISCOVERY
+// Tests for [PROF-UI-MEMORY]. See lspkit/docs/specs/LSP-PROFILER-SPEC.md
 //
 // Memory-profiler discoverability (#263): starting a memory-tracking run drops
 // the user in the Debug view, so the snapshot/compare actions must be VISIBLE

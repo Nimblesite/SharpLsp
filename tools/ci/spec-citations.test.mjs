@@ -55,6 +55,17 @@ test("a clean repository passes and says so", (t) => {
     assert.equal(run.stderr, "");
 });
 
+test("host citations resolve against the shared profiler's canonical spec", (t) => {
+    const root = repository(t, {
+        "lspkit/docs/specs/LSP-PROFILER-SPEC.md": "# [PROF-UI] Shared UI\n",
+        "src/profiler.ts": "// Implements [PROF-UI].\n",
+    });
+    const run = gate(root);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr, "");
+    assert.match(run.stdout, /Every spec citation resolves/);
+});
+
 test("a citation nothing defines fails with its file and line", (t) => {
     const root = repository(t, {
         "docs/specs/DEMO-SPEC.md": SPEC,
