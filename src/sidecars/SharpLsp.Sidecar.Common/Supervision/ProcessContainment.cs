@@ -52,6 +52,9 @@ public sealed class ProcessContainment : IDisposable
     /// Disposing the result terminates the process and all its descendants.
     /// </summary>
     [SupportedOSPlatform("windows")]
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage(
+        Justification = NativeMethods.WindowsOnlyCoverage
+    )]
     internal static ContainmentResult Contain(SafeProcessHandle process)
     {
         var job = NativeMethods.CreateJobObject(0, null);
@@ -79,6 +82,9 @@ public sealed class ProcessContainment : IDisposable
     }
 
     [SupportedOSPlatform("windows")]
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage(
+        Justification = NativeMethods.WindowsOnlyCoverage
+    )]
     private static bool SetKillOnClose(SafeJobHandle job)
     {
         var info = new JobExtendedLimitInformation
@@ -99,6 +105,9 @@ public sealed class ProcessContainment : IDisposable
 
     /// Capture the Win32 error before disposing the handle, which may reset it.
     [SupportedOSPlatform("windows")]
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage(
+        Justification = NativeMethods.WindowsOnlyCoverage
+    )]
     private static ContainmentResult Fail(SafeJobHandle job, string call)
     {
         var error = new Win32Exception(Marshal.GetLastPInvokeError()).Message;

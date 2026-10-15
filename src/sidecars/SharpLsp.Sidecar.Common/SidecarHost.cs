@@ -42,6 +42,12 @@ public abstract class SidecarHost : IAsyncDisposable
 
     private readonly MessageRouter _router = new();
     private readonly CancellationTokenSource _shutdownCts = new();
+
+    /// Completes once the sidecar is disposed: one that stopped and released
+    /// everything on its own is never forced out ([SIDECAR-PROCESS-PARENT]).
+    private readonly TaskCompletionSource _stopped = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
     private IpcListener? _listener;
     private FramedTransport? _transport;
     private ParentProcessWatchdog? _watchdog;
@@ -90,28 +96,7 @@ public abstract class SidecarHost : IAsyncDisposable
     {
         try
         {
-            var supervision = options.ParentPid is { } parentPid
-                ? Supervise(parentPid)
-                : Supervised;
-            if (supervision.IsError)
-            {
-                await ReportStartupFailureAsync(
-                        "supervision",
-                        supervision.Match(_ => string.Empty, e => e)
-                    )
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            var listenerResult = IpcConnection.CreateListener(options.Endpoint);
-            if (listenerResult.IsError)
-            {
-                await ReportStartupFailureAsync("listener", !listenerResult).ConfigureAwait(false);
-                return;
-            }
-
-            _listener = +listenerResult;
-            await AcceptAndRunLoopAsync().ConfigureAwait(false);
+            await StartAndServeAsync(options).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         { /* clean shutdown */
@@ -122,6 +107,27 @@ public abstract class SidecarHost : IAsyncDisposable
         }
     }
 
+    private async Task StartAndServeAsync(SidecarStartupOptions options)
+    {
+        var supervision = options.ParentPid is { } parentPid ? Supervise(parentPid) : Supervised;
+        if (supervision.IsError)
+        {
+            var error = supervision.Match(_ => string.Empty, e => e);
+            await ReportStartupFailureAsync("supervision", error).ConfigureAwait(false);
+            return;
+        }
+
+        var listenerResult = IpcConnection.CreateListener(options.Endpoint);
+        if (listenerResult.IsError)
+        {
+            await ReportStartupFailureAsync("listener", !listenerResult).ConfigureAwait(false);
+            return;
+        }
+
+        _listener = +listenerResult;
+        await AcceptAndRunLoopAsync().ConfigureAwait(false);
+    }
+
     /// <summary>Shuts down the sidecar and releases all resources.</summary>
     public async ValueTask DisposeAsync()
     {
@@ -130,6 +136,7 @@ public abstract class SidecarHost : IAsyncDisposable
         await DisposeCoreAsync().ConfigureAwait(false);
         _shutdownCts.Dispose();
         SidecarLog.Shutdown();
+        _ = _stopped.TrySetResult();
         GC.SuppressFinalize(this);
     }
 
@@ -224,7 +231,12 @@ public abstract class SidecarHost : IAsyncDisposable
             return;
         }
 
-        await Task.Delay(ParentExitGrace).ConfigureAwait(false);
+        var grace = Task.Delay(ParentExitGrace);
+        if (await Task.WhenAny(_stopped.Task, grace).ConfigureAwait(false) != grace)
+        {
+            return;
+        }
+
         Log.Fatal("Sidecar still running {Grace} after host exit; forcing exit", ParentExitGrace);
         SidecarLog.Shutdown();
         Environment.Exit(1);

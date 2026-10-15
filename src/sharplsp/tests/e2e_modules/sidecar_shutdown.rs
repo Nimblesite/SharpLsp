@@ -74,7 +74,7 @@ pub(super) fn is_running(pid: u32) -> bool {
 }
 
 /// Whether `pid` is gone within `bound`.
-pub(super) fn exits_within(pid: u32, bound: Duration) -> bool {
+fn exits_within(pid: u32, bound: Duration) -> bool {
     let deadline = std::time::Instant::now() + bound;
     while std::time::Instant::now() < deadline {
         if !is_running(pid) {

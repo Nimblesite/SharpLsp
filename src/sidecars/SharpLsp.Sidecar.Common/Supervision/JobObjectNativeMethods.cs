@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Win32.SafeHandles;
@@ -6,6 +7,7 @@ namespace SharpLsp.Sidecar.Common.Supervision;
 
 /// <summary>An owned Win32 Job Object handle; closing it kills a kill-on-close job.</summary>
 [SupportedOSPlatform("windows")]
+[ExcludeFromCodeCoverage(Justification = NativeMethods.WindowsOnlyCoverage)]
 internal sealed class SafeJobHandle : SafeHandleZeroOrMinusOneIsInvalid
 {
     /// <summary>Required by the interop marshaller.</summary>
@@ -64,6 +66,13 @@ internal struct JobExtendedLimitInformation
 [SupportedOSPlatform("windows")]
 internal static partial class NativeMethods
 {
+    /// <summary>
+    /// Why the Win32-only paths are excluded from the coverage gate: it is measured on
+    /// Linux, where they cannot run; the Windows CI job runs their tests.
+    /// </summary>
+    internal const string WindowsOnlyCoverage =
+        "Win32 Job Object path; the coverage gate runs on Linux, the Windows job runs its tests";
+
     /// <summary><c>JOBOBJECTINFOCLASS.JobObjectExtendedLimitInformation</c>.</summary>
     internal const int JobObjectExtendedLimitInformation = 9;
 

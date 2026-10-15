@@ -7,10 +7,10 @@
 //! exactly as the host launches them, supervised by a stand-in host process
 //! that dies without connecting.
 
-use super::sidecar_shutdown::{exits_within, is_running};
+use super::sidecar_shutdown::is_running;
 use super::*;
 use std::io::BufRead;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 
 /// A real process standing in for the host: it idles until killed.
 fn stand_in_host() -> std::process::Child {
@@ -91,20 +91,33 @@ fn assert_orphan_exits(env_key: &str, language: &str) {
 
 /// `sidecar` exits on its own, promptly and with success.
 fn assert_exits_cleanly(mut sidecar: std::process::Child, language: &str) {
-    let exited = exits_within(sidecar.id(), Duration::from_secs(10));
-    if !exited {
+    let exited = reaped_within(&mut sidecar, Duration::from_secs(10));
+    if exited.is_none() {
         // Never leave the orphan behind a failing run.
         let _ = sidecar.kill();
+        let _ = sidecar.wait();
     }
-    assert!(
-        exited,
-        "{language} sidecar must exit when its host dies before connecting (GitHub #163)"
-    );
-    let status = sidecar.wait().unwrap();
+    let status = exited.unwrap_or_else(|| {
+        panic!("{language} sidecar must exit when its host dies before connecting (GitHub #163)")
+    });
     assert!(
         status.success(),
         "{language} sidecar stops cleanly on host death: {status}"
     );
+}
+
+/// The exit status of this test's own `child` once it exits within `bound`.
+/// Waiting on it reaps it: probing the PID would count an exited but
+/// unreaped child (a Unix zombie) as still running.
+fn reaped_within(child: &mut std::process::Child, bound: Duration) -> Option<ExitStatus> {
+    let deadline = std::time::Instant::now() + bound;
+    while std::time::Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Some(status);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    None
 }
 
 #[test]
