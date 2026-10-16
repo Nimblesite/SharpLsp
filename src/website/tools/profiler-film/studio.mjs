@@ -93,12 +93,21 @@ export function cueLog(clips) {
   };
 }
 
-/** Record `act` as a real-time clip `<clips>/<name>.mp4`, its frames under `<frames>/<name>`. */
+/**
+ * Record `act` as a real-time clip `<clips>/<name>.mp4`, its frames under `<frames>/<name>`.
+ * A failed act still ends the screencast, so the take can be shot again.
+ */
 export async function record({ cdp, cues, frames, clips }, name, act) {
   cues.restart();
   const stop = await startScreencast(cdp, path.join(frames, name));
-  await act();
-  await stop(path.join(clips, `${name}.mp4`));
+  const clip = path.join(clips, `${name}.mp4`);
+  try {
+    await act();
+  } catch (error) {
+    await stop(clip).catch(() => undefined);
+    throw error;
+  }
+  await stop(clip);
   cues.save(name);
 }
 
@@ -160,9 +169,17 @@ export async function scrollDashboard(page, pixels) {
   await sleep(1200);
 }
 
-/** Start memory tracking on the Storefront row and fold the side bar once the dashboard opens. */
-export async function trackMemory(page, cues) {
-  await cues.click(page, await rowButton(page, 'Track Memory'), 'Track Memory');
+/**
+ * Start memory tracking on the Storefront row and fold the side bar once the
+ * dashboard opens. `click(locator, label)` is the act's own way of clicking.
+ */
+export async function trackMemory(page, click) {
+  await click(await rowButton(page, 'Track Memory'), 'Track Memory');
+  await awaitDashboard(page);
+}
+
+/** Wait for the memory dashboard to open, then fold the side bar away from it. */
+export async function awaitDashboard(page) {
   await page.locator('.tab', { hasText: DASHBOARD }).waitFor({ timeout: 60_000 });
   await sleep(1500);
   await clickSharpLspIcon(page);
