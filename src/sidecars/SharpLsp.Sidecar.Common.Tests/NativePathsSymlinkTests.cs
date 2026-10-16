@@ -64,6 +64,63 @@ public sealed class NativePathsSymlinkTests : IDisposable
         Assert.True(NativePaths.AreEqual(actual, NativePaths.Join(alias, "App.cs")));
     }
 
+    [Fact]
+    public void DistinctSpellingsProbeTheDiskOncePerPathNotPerLookup()
+    {
+        var actual = NativePaths.Join(physical, "App.cs");
+        var other = NativePaths.Join(physical, "Other.cs");
+        var linkedFile = NativePaths.Join(root, "linked.cs");
+        File.WriteAllText(other, "");
+        _ = File.CreateSymbolicLink(linkedFile, actual);
+        var paths = new HashSet<string>(NativePaths.Comparer) { actual };
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        Assert.True(
+            Enumerable.Range(0, 100_000).All(_ => paths.Contains(NativePaths.Join(alias, "App.cs")))
+        );
+        Assert.True(Enumerable.Range(0, 100_000).All(_ => !NativePaths.AreEqual(actual, other)));
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"Path lookups took {timer.Elapsed}");
+        Assert.Contains(linkedFile, paths);
+        Assert.DoesNotContain(NativePaths.Join(alias, "Other.cs"), paths);
+
+        File.Delete(linkedFile);
+        _ = File.CreateSymbolicLink(linkedFile, other);
+        Assert.DoesNotContain(linkedFile, paths);
+        Assert.True(NativePaths.AreEqual(other, linkedFile));
+        Assert.Equal(other, NativePaths.WithLinksResolved(linkedFile));
+        Assert.False(NativePaths.ResolvedSegments.ContainsKey(linkedFile));
+    }
+
+    [Fact]
+    public async Task DirectoryChangesAreFollowedOnceTheirMemoExpires()
+    {
+        var moved = NativePaths.Join(root, "moved");
+        var inside = NativePaths.Join(moved, "App.cs");
+        var actual = NativePaths.Join(physical, "App.cs");
+        _ = Directory.CreateDirectory(moved);
+        Assert.False(NativePaths.AreEqual(inside, actual));
+        Assert.Equal(inside, NativePaths.WithLinksResolved(inside));
+        Assert.Equal(moved, NativePaths.WithLinksResolved(moved));
+
+        Directory.Delete(moved);
+        _ = Directory.CreateSymbolicLink(moved, "physical");
+        await Task.Delay(NativePaths.ResolvedLifetime * 2).ConfigureAwait(true);
+        Assert.True(NativePaths.AreEqual(inside, actual));
+        Assert.Equal(actual, NativePaths.WithLinksResolved(inside));
+        Assert.Equal(physical, NativePaths.WithLinksResolved(moved));
+        _ = Assert.Single(new HashSet<string>(NativePaths.Comparer) { inside, actual });
+        Assert.True(NativePaths.ResolvedSegments.ContainsKey(moved));
+
+        var second = NativePaths.Join(root, "second");
+        _ = Directory.CreateDirectory(second);
+        await File.WriteAllTextAsync(NativePaths.Join(second, "App.cs"), "").ConfigureAwait(true);
+        Directory.Delete(moved);
+        _ = Directory.CreateSymbolicLink(moved, "second");
+        await Task.Delay(NativePaths.ResolvedLifetime * 2).ConfigureAwait(true);
+        Assert.False(NativePaths.AreEqual(inside, actual));
+        Assert.True(NativePaths.AreEqual(inside, NativePaths.Join(second, "App.cs")));
+        Assert.Equal(second, NativePaths.WithLinksResolved(moved));
+    }
+
     public void Dispose()
     {
         Directory.Delete(root, recursive: true);

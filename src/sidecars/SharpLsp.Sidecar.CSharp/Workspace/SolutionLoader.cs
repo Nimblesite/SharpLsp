@@ -94,7 +94,7 @@ internal static class SolutionLoader
         var dirName = NativePaths.NameOf(workspacePath);
         var match = Array.Find(
             solutionFiles,
-            s => NativePaths.Comparer.Equals(NativePaths.StemOf(s), dirName)
+            s => string.Equals(NativePaths.StemOf(s), dirName, NativePaths.Comparison)
         );
         return match ?? solutionFiles[0];
     }

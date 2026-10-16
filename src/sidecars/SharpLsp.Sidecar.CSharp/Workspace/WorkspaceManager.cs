@@ -773,7 +773,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             .MetadataReferences.OfType<PortableExecutableReference>()
             .Any(reference =>
                 reference.FilePath is { } path
-                && NativePaths.Comparer.Equals(NativePaths.StemOf(path), simpleName)
+                && string.Equals(NativePaths.StemOf(path), simpleName, NativePaths.Comparison)
             );
     }
 
