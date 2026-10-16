@@ -5,7 +5,7 @@ description: "On Windows, SharpLsp builds, runs and tests .NET Framework 4.6.2â€
 date: 2026-10-14
 author: SharpLsp Team
 image: /assets/images/blog/dotnet-framework-windows-vs-code.png
-imageAlt: A net48 build of a multi-targeted project running on the desktop CLR beside a Test Explorer tree with net48 and net10.0 results
+imageAlt: An emerald ribbon connects a stone window and a modern green arch, representing .NET Framework and modern .NET working together
 tags:
   - posts
   - csharp

@@ -6,7 +6,7 @@ lang: ja
 date: 2026-10-13
 author: SharpLsp チーム
 image: /assets/images/blog/dotnet-framework-multi-targeting-csharp-fsharp.png
-imageAlt: net48 がアクティブな状態で #if NETFRAMEWORK 領域を表示する F# と C# のエディターと、SharpLsp のターゲットフレームワークピッカー
+imageAlt: 1本のエメラルド色の道が分岐して3つの彫刻的な門を通り、1つのプロジェクトで複数の .NET フレームワークを対象とする様子を表現
 tags:
   - posts
   - csharp

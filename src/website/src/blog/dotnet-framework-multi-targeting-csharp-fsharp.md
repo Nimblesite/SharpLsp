@@ -5,7 +5,7 @@ description: "SharpLsp 0.23 gives every framework a project targets — .NET Fra
 date: 2026-10-13
 author: SharpLsp Team
 image: /assets/images/blog/dotnet-framework-multi-targeting-csharp-fsharp.png
-imageAlt: F# and C# editors showing #if NETFRAMEWORK regions with net48 active, next to SharpLsp's target framework picker
+imageAlt: One emerald path branches through three sculptural gateways, representing a single project targeting multiple .NET frameworks
 tags:
   - posts
   - csharp

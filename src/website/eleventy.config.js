@@ -4,6 +4,7 @@ import markdownIt from "markdown-it";
 import { existsSync, lstatSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { videoFigure } from "./video-figure.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginLayouts = join(__dirname, "node_modules/eleventy-plugin-techdoc/templates/layouts");
@@ -110,6 +111,12 @@ export default function (eleventyConfig) {
   for (const entry of readdirSync("src", { recursive: true, withFileTypes: true })) {
     if (entry.isFile()) eleventyConfig.addWatchTarget(`${entry.parentPath}/${entry.name}`);
   }
+
+  // [WEB-DESIGN-MEDIA] `{% video "<id>" %}` renders a video from src/_data/videos.json
+  // in the page's language, with its VideoObject structured data.
+  eleventyConfig.addShortcode("video", function (id, options) {
+    return videoFigure(id, this.ctx?.lang ?? "en", options);
+  });
 
   eleventyConfig.addPassthroughCopy("src/assets");
   eleventyConfig.addPassthroughCopy("src/favicon.ico");

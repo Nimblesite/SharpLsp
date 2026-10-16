@@ -145,12 +145,14 @@ Completion latency targets are under 100ms at the 50th percentile and under 200m
 
 Hover shows the full method or type signature alongside its XML documentation — parameters, return value description, remarks, exceptions, and examples. This is rendered from the XML doc comments in your source or from the documentation embedded in NuGet packages when hovering over third-party APIs. Roslyn's `DocumentationCommentCompiler` surfaces all of this, including inherited documentation from base classes and interface implementations.
 
-The Profiler panel visible in the sidebar is not incidental decoration. SharpLsp surfaces all running .NET processes on the machine, so you always know what is executing. When you are tracking down a performance regression or verifying that a service has actually stopped, this ambient process list is immediately useful — you do not have to open Activity Monitor or run `ps aux | grep dotnet`.
-
 <figure class="article-figure">
   <img src="/assets/screenshots/vscode-hover-page.png" alt="Hover tooltip showing Factorial method signature with full XML documentation and parameter descriptions">
   <figcaption>Hover rendering XML doc comments with parameter and return value documentation.</figcaption>
 </figure>
+
+The Profiler panel visible in the sidebar is not incidental decoration. SharpLsp surfaces all running .NET processes on the machine, so you always know what is executing. When you are tracking down a performance regression or verifying that a service has actually stopped, this ambient process list is immediately useful — you do not have to open Activity Monitor or run `ps aux | grep dotnet`.
+
+{% video "profiler-film" %}
 
 For F#, hover is structurally more important than it is for C#. Because F# code relies heavily on type inference, the types of bindings are often not written explicitly in source. In a deeply nested pipeline of `|>` operators, the type of each intermediate expression is inferred by the compiler — and it is the only authoritative source of that information. FSharp.Compiler.Service's `GetToolTip` API surfaces these inferred types, and SharpLsp renders them with the same priority and formatting as C# hover results. Hovering over an F# binding shows you its full inferred type, which is often the only documentation that exists.
 

@@ -164,7 +164,8 @@ test.describe('Desktop nav (sanity check)', () => {
     await page.locator('.language-dropdown a[lang="ja"]').click();
 
     await expect(page).toHaveURL(/\/ja\/$/);
-    await expect(page.locator('h1')).toContainText('SharpLsp');
+    await expect(page.locator('h1')).toContainText('C# と F# の開発をフルサポート。');
+    await expect(page.locator('.hero-lede')).toContainText('SharpLsp');
     await expect(page.locator('.nav-links a[href="/ja/docs/"]')).toBeVisible();
   });
 });

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { docsSidebar, openDocsMenu } from './docs-menu.js';
 
 // E2E coverage for the F# / FSAC parity docs page (/docs/fsharp/).
 // Proves the page ships, renders the parity content, and is reachable from
@@ -47,14 +48,8 @@ test.describe('F# Language Support docs page', () => {
 
   test('appears in the docs sidebar and is reachable by click', async ({ page }) => {
     await page.goto('/docs/');
-    const sidebar = page.locator('#docs-sidebar');
-    const fsharpLink = sidebar.locator('a[href$="/docs/fsharp/"]');
-    const docsMenuToggle = page.locator('#docs-menu-toggle');
-
-    if (await docsMenuToggle.isVisible()) {
-      await docsMenuToggle.click();
-      await expect(docsMenuToggle).toHaveAttribute('aria-expanded', 'true');
-    }
+    const fsharpLink = docsSidebar(page).locator('a[href$="/docs/fsharp/"]');
+    await openDocsMenu(page);
 
     await expect(fsharpLink).toBeVisible();
     await expect(fsharpLink).toContainText('F#');
@@ -62,6 +57,6 @@ test.describe('F# Language Support docs page', () => {
     await fsharpLink.click();
     await expect(page).toHaveURL(/\/docs\/fsharp\/$/);
     // The active sidebar item reflects the current page.
-    await expect(page.locator('#docs-sidebar a.active')).toContainText('F#');
+    await expect(docsSidebar(page).locator('a.active')).toContainText('F#');
   });
 });

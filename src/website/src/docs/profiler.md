@@ -8,13 +8,7 @@ eleventyExcludeFromCollections: true
 
 SharpLsp profiles CPU and memory for any running .NET process without leaving VS Code. Hot lines light up in your code, a flame graph and hot-function table land beside it, and a live heap timeline ranks leak suspects while the app runs. You don't install `dotnet-trace`, you don't take dumps, and you don't need a license.
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" poster="/assets/videos/profiler-film-poster.webp" width="1920" height="1080" aria-label="SharpLsp profiler film: CPU profiling, heat map, flame graph, memory timeline and leak suspects in VS Code">
-    <source src="/assets/videos/profiler-film.webm" type="video/webm">
-    <source src="/assets/videos/profiler-film.mp4" type="video/mp4">
-  </video>
-  <figcaption>The profiler in one minute. All editor footage was recorded in VS Code with the SharpLsp extension profiling a real .NET app. Fast-forwarded stretches are marked on screen.</figcaption>
-</figure>
+{% video "profiler-film" %}
 
 ## How It Works
 
@@ -86,12 +80,7 @@ Each session also writes three exports under `.sharplsp/profiles`:
 - a `.cpuprofile` that VS Code's built-in profile viewer opens;
 - the flame graph SVG.
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="Unedited screen recording of a CPU profiling session in VS Code">
-    <source src="/assets/videos/profiler-cpu-recording.mp4" type="video/mp4">
-  </video>
-  <figcaption>Unedited, in real time: Profile CPU on a running process, then Stop, then the heat map and results panel.</figcaption>
-</figure>
+{% video "profiler-cpu-recording" %}
 
 ## Memory Tracking
 
@@ -123,12 +112,7 @@ Suspects are ranked by how consistently they grow. Each one shows its growth in 
 
 **SharpLsp: Show Reference Graph** draws the retention graph for a type: the objects that hold it and the roots that keep them alive. Heap growth is a heuristic, not proof of a leak, so confirm a suspect with its retention path and the app's behaviour.
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="Screen recording of memory tracking in VS Code at three times speed">
-    <source src="/assets/videos/profiler-memory-timelapse.mp4" type="video/mp4">
-  </video>
-  <figcaption>Memory tracking, sped up three times: the heap timeline climbs as auto snapshots arrive.</figcaption>
-</figure>
+{% video "profiler-memory-timelapse" %}
 
 ## Commands
 

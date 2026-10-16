@@ -4,6 +4,22 @@
     { "text": "Blog", "url": "/blog/", "i18nKey": "nav.blog" },
     { "text": "GitHub", "url": "https://github.com/Nimblesite/SharpLsp", "external": true }
   ],
+  "docs": [
+    { "group": "setUp", "pages": { "": "gettingStarted", "editors/": "editorSetup", "configuration/": "configuration" } },
+    {
+      "group": "writeCode",
+      "pages": {
+        "fsharp/": "fsharp",
+        "completions/": "codeCompletions",
+        "hover/": "hover",
+        "go-to-definition/": "goToDefinition",
+        "diagnostics/": "diagnostics",
+        "refactoring/": "refactoring"
+      }
+    },
+    { "group": "tools", "pages": { "context-menus/": "contextMenus", "nuget/": "nuget", "profiler/": "profiler" } },
+    { "group": "contributors", "secondary": true, "pages": { "architecture/": "architecture", "contributing/": "contributing" } }
+  ],
   "footer": [
     {
       "title": "Documentation",

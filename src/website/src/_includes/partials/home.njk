@@ -18,16 +18,7 @@
     </ul>
   </div>
 
-  <figure class="product-shot">
-    <img
-      src="/assets/screenshots/whole_shebang.png"
-      alt="{{ homeText.screenshotAlt }}"
-      width="2048"
-      height="1152"
-      fetchpriority="high"
-    >
-    <figcaption>{{ homeText.screenshotCaption }}</figcaption>
-  </figure>
+  {% video "profiler-film", { autoplay: true } %}
 </section>
 
 <div class="proof-strip" aria-label="{{ homeText.proofLabel }}">
@@ -60,19 +51,8 @@
     <h2 id="profiler-title">{{ homeText.profilerTitle }}</h2>
     <p>{{ homeText.profilerIntro }}</p>
   </header>
-  <figure class="product-shot">
-    <video
-      autoplay muted loop playsinline preload="metadata"
-      poster="/assets/videos/profiler-film-poster.webp"
-      width="1920"
-      height="1080"
-      aria-label="{{ homeText.profilerVideoLabel }}"
-    >
-      <source src="/assets/videos/profiler-film.webm" type="video/webm">
-      <source src="/assets/videos/profiler-film.mp4" type="video/mp4">
-    </video>
-    <figcaption>{{ homeText.profilerCaption }} <a href="{{ langPrefix }}/docs/profiler/">{{ homeText.profilerCta }} →</a></figcaption>
-  </figure>
+  {% set profilerCaption %}{{ homeText.profilerCaption }} <a href="{{ langPrefix }}/docs/profiler/">{{ homeText.profilerCta }} →</a>{% endset %}
+  {% video "profiler-cpu-recording", { caption: profilerCaption, autoplay: true } %}
 </section>
 
 <section class="language-section">

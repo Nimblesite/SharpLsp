@@ -6,7 +6,7 @@ lang: zh
 date: 2026-10-13
 author: SharpLsp 团队
 image: /assets/images/blog/dotnet-framework-multi-targeting-csharp-fsharp.png
-imageAlt: 在 net48 处于活动状态时显示 #if NETFRAMEWORK 区域的 F# 和 C# 编辑器，旁边是 SharpLsp 的目标框架选择器
+imageAlt: 一条翠绿色道路分支穿过三座雕塑般的门，象征一个项目面向多个 .NET 框架
 tags:
   - posts
   - csharp

@@ -34,7 +34,6 @@ const READ_NOFOLLOW = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
 // relative-path text, or null when the entry is a symlink, a non-file,
 // oversized, or not a single-line relative path.
 function readStubText(stubPath) {
-  if (fs.lstatSync(stubPath).isSymbolicLink()) return null;
   let fd;
   try {
     fd = fs.openSync(stubPath, READ_NOFOLLOW);

@@ -9,13 +9,7 @@ eleventyExcludeFromCollections: true
 
 SharpLsp 可以在不离开 VS Code 的情况下，对任意正在运行的 .NET 进程进行 CPU 和内存分析。热点代码行直接在代码中高亮，火焰图和热点函数表就在旁边，实时堆时间线会在应用运行时为可疑泄漏排序。无需安装 `dotnet-trace`，无需转储，也无需许可证。
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" poster="/assets/videos/profiler-film-poster.webp" width="1920" height="1080" aria-label="SharpLsp 性能分析器影片：VS Code 中的 CPU 分析、热力图、火焰图、内存时间线和可疑泄漏">
-    <source src="/assets/videos/profiler-film.webm" type="video/webm">
-    <source src="/assets/videos/profiler-film.mp4" type="video/mp4">
-  </video>
-  <figcaption>一分钟了解性能分析器。所有编辑器画面均在 VS Code 中使用 SharpLsp 扩展分析真实 .NET 应用时录制。快进的片段在画面上有标注。</figcaption>
-</figure>
+{% video "profiler-film" %}
 
 ## 工作原理
 
@@ -87,12 +81,7 @@ SharpLsp 侧边栏中的 **Processes** 视图会发现本机上的 .NET 进程�
 - 可用 VS Code 内置分析查看器打开的 `.cpuprofile`；
 - 火焰图 SVG。
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="VS Code 中 CPU 分析会话的未剪辑屏幕录像">
-    <source src="/assets/videos/profiler-cpu-recording.mp4" type="video/mp4">
-  </video>
-  <figcaption>未经剪辑的实时录像：对运行中的进程执行 Profile CPU，然后 Stop，随后出现热力图和结果面板。</figcaption>
-</figure>
+{% video "profiler-cpu-recording" %}
 
 ## 内存跟踪
 
@@ -124,12 +113,7 @@ SharpLsp 侧边栏中的 **Processes** 视图会发现本机上的 .NET 进程�
 
 **SharpLsp: Show Reference Graph** 会为某个类型绘制保留图：持有它的对象，以及让这些对象保持存活的根。堆增长只是启发式判断，并不能证明存在泄漏，请结合保留路径和应用行为确认可疑项。
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="VS Code 中内存跟踪的三倍速屏幕录像">
-    <source src="/assets/videos/profiler-memory-timelapse.mp4" type="video/mp4">
-  </video>
-  <figcaption>三倍速播放的内存跟踪：随着自动快照到来，堆时间线不断攀升。</figcaption>
-</figure>
+{% video "profiler-memory-timelapse" %}
 
 ## 命令
 

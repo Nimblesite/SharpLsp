@@ -6,7 +6,7 @@ lang: zh
 date: 2026-09-22
 author: SharpLsp 团队
 image: /assets/images/blog/microsoft-testing-platform-mtp-dotnet-test-csharp-fsharp.png
-imageAlt: dotnet test 模块将 C# 和 F# 的 xUnit v3、MSTest、NUnit 测试列入 SharpLsp Test Explorer
+imageAlt: 同一底座上的三块象牙色陶瓷砖中嵌有翠绿色对勾，象征软件测试通过
 tags:
   - posts
   - testing

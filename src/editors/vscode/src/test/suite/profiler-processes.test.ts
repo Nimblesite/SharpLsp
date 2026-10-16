@@ -239,6 +239,36 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
     assert.ok(rowOf(first.pid) && rowOf(second.pid));
   });
 
+  test('the panel opens grouped by runtime version, both targets under one header with a count', () => {
+    assert.ok(first && second);
+    const store = profilerStore();
+    assert.equal(store.processes.value.groupMode, 'version', 'the default grouping');
+    const provider = processesProvider();
+    const groups = provider.getChildren().filter((row) => row.contextValue === 'processGroup');
+    assert.ok(groups.length > 0, 'group headers render');
+    const holding = groups.filter((group) =>
+      provider
+        .getChildren(group)
+        .some((row) => row.id === `process:${first?.pid}` || row.id === `process:${second?.pid}`),
+    );
+    assert.equal(holding.length, 1, 'both net10.0 targets share one version group');
+    assert.ok(
+      Number(holding[0]?.description) >= 2,
+      `the count badge counts members: ${holding[0]?.description}`,
+    );
+  });
+
+  test('group cycles through every mode and back to none', async () => {
+    const store = profilerStore();
+    const seen: string[] = [store.processes.value.groupMode];
+    for (let i = 0; i < 4; i++) {
+      await vscode.commands.executeCommand(uiCommand('groupProcesses'));
+      seen.push(store.processes.value.groupMode);
+    }
+    assert.deepEqual(seen, ['version', 'interpreter', 'user', 'parent', 'none']);
+    assert.ok(!panelRows().some((row) => row.contextValue === 'processGroup'), 'flat again');
+  });
+
   test('sort cycles through every mode in order and wraps', async () => {
     const store = profilerStore();
     const seen: string[] = [store.processes.value.sortMode];
@@ -282,37 +312,6 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
     while (sortMode() !== 'cpu') {
       await vscode.commands.executeCommand(uiCommand('sortProcesses'));
     }
-  });
-
-  test('grouping by runtime version buckets both targets under one header with a count', async () => {
-    assert.ok(first && second);
-    const store = profilerStore();
-    await vscode.commands.executeCommand(uiCommand('groupProcesses'));
-    assert.equal(store.processes.value.groupMode, 'version');
-    const provider = processesProvider();
-    const groups = provider.getChildren().filter((row) => row.contextValue === 'processGroup');
-    assert.ok(groups.length > 0, 'group headers render');
-    const holding = groups.filter((group) =>
-      provider
-        .getChildren(group)
-        .some((row) => row.id === `process:${first?.pid}` || row.id === `process:${second?.pid}`),
-    );
-    assert.equal(holding.length, 1, 'both net10.0 targets share one version group');
-    assert.ok(
-      Number(holding[0]?.description) >= 2,
-      `the count badge counts members: ${holding[0]?.description}`,
-    );
-  });
-
-  test('group cycles through every mode and back to none', async () => {
-    const store = profilerStore();
-    const seen: string[] = [store.processes.value.groupMode];
-    for (let i = 0; i < 4; i++) {
-      await vscode.commands.executeCommand(uiCommand('groupProcesses'));
-      seen.push(store.processes.value.groupMode);
-    }
-    assert.deepEqual(seen, ['version', 'interpreter', 'user', 'parent', 'none']);
-    assert.ok(!panelRows().some((row) => row.contextValue === 'processGroup'), 'flat again');
   });
 });
 

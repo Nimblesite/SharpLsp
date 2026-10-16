@@ -59,14 +59,14 @@ async function expectValidJsonLd(page, path) {
 }
 
 test.describe('Site layout regressions', () => {
-  test('homepage leads with the complete .NET alternative and a real product screenshot', async ({ page }) => {
+  test('homepage leads with the complete .NET alternative and the product film', async ({ page }) => {
     await page.goto('/');
 
     const main = page.locator('main');
     const heading = main.getByRole('heading', { level: 1 });
 
     await expect(heading).toHaveCount(1);
-    await expect(heading).toContainText(/complete \.NET development experience/i);
+    await expect(heading).toContainText(/full C# and F# development/i);
     await expect(heading).toContainText(/your editor/i);
     await expect(main).toContainText(/open-source alternative to Visual Studio, Rider, and C# Dev Kit/i);
     await expect(main).toContainText(/C# and F#/i);
@@ -78,20 +78,20 @@ test.describe('Site layout regressions', () => {
     await expect(guideLinks).toHaveCount(2);
     await expect(guideLinks.first()).toHaveAttribute('href', '/docs/');
 
-    const screenshot = page.locator('.product-shot img[src^="/assets/screenshots/"]');
-    await expect(screenshot).toHaveCount(1);
-    await expect(screenshot).toBeVisible();
-    await expect(screenshot).toHaveAttribute('alt', /SharpLsp/i);
-    await expect(screenshot).toHaveAttribute('src', /\/assets\/screenshots\/.+\.(png|webp)$/i);
+    const film = page.locator('.hero .product-shot video');
+    await expect(film).toHaveCount(1);
+    await expect(film).toBeVisible();
+    await expect(film).toHaveAttribute('aria-label', /SharpLsp/i);
+    await expect(film).toHaveAttribute('poster', /\/assets\/videos\/.+\.webp$/i);
 
-    const image = await screenshot.evaluate((element) => ({
-      complete: element.complete,
-      height: element.naturalHeight,
-      width: element.naturalWidth,
-    }));
-    expect(image.complete).toBe(true);
-    expect(image.width).toBeGreaterThan(1000);
-    expect(image.height).toBeGreaterThan(500);
+    const frame = await film.evaluate(async (element) => {
+      const poster = new Image();
+      poster.src = element.poster;
+      await poster.decode();
+      return { height: poster.naturalHeight, width: poster.naturalWidth };
+    });
+    expect(frame.width).toBeGreaterThan(1000);
+    expect(frame.height).toBeGreaterThan(500);
   });
 
   test('homepage has no page-level horizontal overflow at supported widths', async ({ page }) => {

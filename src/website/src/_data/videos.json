@@ -1,0 +1,86 @@
+{
+  "profiler-film": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1080,
+    "duration": "PT1M4S",
+    "uploadDate": "2026-10-16T08:09:21+11:00",
+    "text": {
+      "en": {
+        "label": "SharpLsp profiler film: CPU profiling, heat map, flame graph, memory timeline and leak suspects in VS Code",
+        "caption": "The profiler in one minute. All editor footage was recorded in VS Code with the SharpLsp extension profiling a real .NET app. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "SharpLsp 性能分析器影片：VS Code 中的 CPU 分析、热力图、火焰图、内存时间线和可疑泄漏",
+        "caption": "一分钟了解性能分析器。所有编辑器画面均在 VS Code 中使用 SharpLsp 扩展分析真实 .NET 应用时录制。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp プロファイラーの紹介映像：VS Code での CPU プロファイリング、ヒートマップ、フレームグラフ、メモリタイムライン、リークの疑い",
+        "caption": "1 分でわかるプロファイラー。エディターの映像はすべて、SharpLsp 拡張機能で実際の .NET アプリをプロファイリングしながら VS Code で収録したものです。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "profiler-cpu-recording": {
+    "encodings": ["mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT18S",
+    "uploadDate": "2026-10-16T08:09:21+11:00",
+    "text": {
+      "en": {
+        "label": "Unedited screen recording of a CPU profiling session in VS Code",
+        "caption": "Unedited, in real time: Profile CPU on a running process, then Stop, then the heat map and results panel."
+      },
+      "zh": {
+        "label": "VS Code 中 CPU 分析会话的未剪辑屏幕录像",
+        "caption": "未经剪辑的实时录像：对运行中的进程执行 Profile CPU，然后 Stop，随后出现热力图和结果面板。"
+      },
+      "ja": {
+        "label": "VS Code での CPU プロファイリングセッションの無編集の画面録画",
+        "caption": "無編集、実時間：実行中のプロセスで Profile CPU を実行し、Stop すると、ヒートマップと結果パネルが表示されます。"
+      }
+    }
+  },
+  "profiler-memory-timelapse": {
+    "encodings": ["mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT16S",
+    "uploadDate": "2026-10-16T08:09:21+11:00",
+    "text": {
+      "en": {
+        "label": "Screen recording of memory tracking in VS Code at three times speed",
+        "caption": "Memory tracking, sped up three times: the heap timeline climbs as auto snapshots arrive."
+      },
+      "zh": {
+        "label": "VS Code 中内存跟踪的三倍速屏幕录像",
+        "caption": "三倍速播放的内存跟踪：随着自动快照到来，堆时间线不断攀升。"
+      },
+      "ja": {
+        "label": "VS Code でのメモリ追跡の 3 倍速の画面録画",
+        "caption": "3 倍速のメモリ追跡：自動スナップショットが届くたびに、ヒープのタイムラインが上昇していきます。"
+      }
+    }
+  },
+  "sharplsp-tour": {
+    "encodings": ["webm", "mp4"],
+    "width": 1000,
+    "height": 562,
+    "duration": "PT22S",
+    "uploadDate": "2026-10-13T22:09:22+11:00",
+    "text": {
+      "en": {
+        "label": "SharpLsp tour: the open-source alternative to Visual Studio and Rider — Solution Explorer, NuGet browser, C# and F#, debugging, profiling and testing in VS Code, Cursor and Windsurf",
+        "caption": "SharpLsp in 22 seconds: Solution Explorer, the NuGet browser, C# and F# on equal terms, then debug, profile, test and ship — on Windows, macOS and Linux, in VS Code, Cursor, Windsurf and VSCodium."
+      },
+      "zh": {
+        "label": "SharpLsp 导览：Visual Studio 和 Rider 的开源替代方案——在 VS Code、Cursor 和 Windsurf 中使用解决方案资源管理器、NuGet 浏览器、C# 与 F#、调试、性能分析和测试",
+        "caption": "22 秒了解 SharpLsp：解决方案资源管理器、NuGet 浏览器、地位平等的 C# 与 F#，以及调试、性能分析、测试和发布——支持 Windows、macOS 和 Linux 上的 VS Code、Cursor、Windsurf 和 VSCodium。"
+      },
+      "ja": {
+        "label": "SharpLsp のツアー：Visual Studio と Rider に代わるオープンソース。ソリューションエクスプローラー、NuGet ブラウザー、C# と F#、デバッグ、プロファイリング、テストを VS Code・Cursor・Windsurf で",
+        "caption": "22 秒でわかる SharpLsp：ソリューションエクスプローラー、NuGet ブラウザー、対等に扱われる C# と F#、そしてデバッグ・プロファイル・テスト・ビルド。Windows・macOS・Linux 上の VS Code・Cursor・Windsurf・VSCodium で動作します。"
+      }
+    }
+  }
+}

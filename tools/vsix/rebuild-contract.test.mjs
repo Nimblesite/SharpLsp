@@ -9,6 +9,8 @@ import {
     existsSync,
     rmSync,
 } from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanSidecarOutput } from "./clean-sidecar-output.mjs";
@@ -43,9 +45,7 @@ test("npm test and npm package cannot skip rebuilding binaries", () => {
 test("clean removes stale BuildHost bin/obj/publish files but preserves source and unrelated output", () => {
     const root = mkdtempSync(join(tmpdir(), "sharplsp-clean-contract-"));
     try {
-        const sidecars = join(root, "src", "sidecars");
-        mkdirSync(sidecars, { recursive: true });
-        writeFileSync(join(sidecars, "SharpLsp.Sidecars.sln"), "fixture");
+        const sidecars = sidecarTree(root);
         const names = [
             "SharpLsp.Sidecar.CSharp",
             "SharpLsp.Sidecar.FSharp",
@@ -70,6 +70,13 @@ test("clean removes stale BuildHost bin/obj/publish files but preserves source a
         rmSync(root, { recursive: true, force: true });
     }
 });
+
+function sidecarTree(root) {
+    const sidecars = join(root, "src", "sidecars");
+    mkdirSync(sidecars, { recursive: true });
+    writeFileSync(join(sidecars, "SharpLsp.Sidecars.sln"), "fixture");
+    return sidecars;
+}
 
 function seedOutputs(root, sidecars, names) {
     const outputs = [];
@@ -97,4 +104,82 @@ function seedOutputs(root, sidecars, names) {
     }
     writeFileSync(join(root, "target", "keep.txt"), "keep");
     return outputs;
+}
+
+// [DIST-VSIX-REBUILD] `reinstall-vsix` kills the installed servers, VS Code's
+// language client restarts them at once, and their MSBuild design-time builds
+// write into the very bin/obj the clean is deleting. That race failed the whole
+// loop with ENOTEMPTY before a single binary was rebuilt.
+test("clean outlasts a restarted language server writing into the output it removes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sharplsp-clean-race-"));
+    try {
+        const sidecars = sidecarTree(root);
+        const project = join(sidecars, "SharpLsp.Sidecar.FSharp");
+        seedOutputs(root, sidecars, ["SharpLsp.Sidecar.FSharp"]);
+        const designTime = join(project, "bin", "Debug", "net10.0");
+        mkdirSync(designTime, { recursive: true });
+        for (let i = 0; i < 2000; i++)
+            writeFileSync(join(designTime, `seed-${i}.dll`), "");
+        const writer = startDesignTimeWriter(designTime, 400);
+        await writer.ready;
+
+        assert.doesNotThrow(() => cleanSidecarOutput(root));
+        assert.equal(existsSync(join(root, "target", "sidecar-fsharp")), false);
+        assert.equal(
+            readFileSync(join(project, "Source.cs"), "utf8"),
+            "source",
+        );
+        assert.ok(
+            existsSync(join(project, "SharpLsp.Sidecar.FSharp.fsproj")),
+            "project file must survive",
+        );
+
+        assert.ok(
+            (await writer.written) > 0,
+            "writer must have raced the clean",
+        );
+        cleanSidecarOutput(root);
+        assert.equal(existsSync(join(project, "bin")), false);
+        assert.equal(existsSync(join(project, "obj")), false);
+        assert.equal(
+            readFileSync(join(root, "target", "keep.txt"), "utf8"),
+            "keep",
+        );
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+});
+
+// A separate process, as the real writer is: the clean is synchronous and
+// would starve an in-process writer of the event loop.
+function startDesignTimeWriter(directory, ms) {
+    const script = [
+        'const { mkdirSync, writeFileSync } = require("node:fs");',
+        "const [directory, ms] = process.argv.slice(1);",
+        "const end = Date.now() + Number(ms);",
+        "let written = 0;",
+        'process.stdout.write("ready\\n");',
+        "while (Date.now() < end) {",
+        "  try {",
+        "    mkdirSync(directory, { recursive: true });",
+        '    writeFileSync(`${directory}/design-time-${written}.dll`, "");',
+        "    written++;",
+        "  } catch { /* the clean removed the directory mid-write */ }",
+        "}",
+        "process.stdout.write(String(written));",
+    ].join("\n");
+    const child = spawn(process.execPath, [
+        "-e",
+        script,
+        directory,
+        String(ms),
+    ]);
+    const chunks = [];
+    child.stdout.on("data", (chunk) => chunks.push(chunk));
+    return {
+        ready: once(child.stdout, "data"),
+        written: once(child, "exit").then(() =>
+            Number(Buffer.concat(chunks).toString().split("\n").at(-1)),
+        ),
+    };
 }
