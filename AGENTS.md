@@ -1,58 +1,70 @@
 # AGENTS.md
 <!-- agent-pmo:a72c926 -->
 
-SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor. Key Technology Stack: C#, Rust, Typescript
+SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust: one server, the complete .NET development experience in every editor. Stack: C#, Rust, TypeScript
 
-**Overall aim #1: FIX THE .NET DEVELOPER EXPERIENCE.**
+**Aim #1: Fix the .NET developer experience.**
 Match and surpass Visual Studio, Rider, and C# Dev Kit — no proprietary dependencies, licenses, or vendor lock-in.
 
-**Overall aim #2: TREAT F# AS A FIRST CLASS CITIZEN.**
+**Aim #2: Treat F# as a first-class citizen.**
 F# ahead of C# on every new feature. F# never takes the back seat.
+
+# Workflow
+
+- **Sub agents are illegal.** Delegate by spawning `pi` sessions — you are responsible for their output
+- **Plans (`docs/plans/`) are the backlog.** Work toward checking off their items; delete a plan once it is complete
+- ⛔️ **Never attribute a commit to yourself**: no `Co-Authored-By`, no agent name. *Never overridable*
+- **Coordinate with other agents** through Too Many Cooks or built-in messaging: lock the files you edit, and never edit a file another agent has locked
+- **Never kill VS Code processes** — desktop or browser. They belong to the user
+- **Don't ask the user questions.** Use your judgment
+- **Keep responses tight.** Never reply with a stream of messages; punctuate a critical point with an emoji
 
 # Code
 
 ## Invariants (Hard Rules)
 
-- ⚠️ Never kill VS Code processes — desktop or browser. They belong to the user
-- ⚠️ Don't ask the user questions. Use your judgment
-- ⚠️ Keep responses tight. Never reply with a stream of messages; punctuate a critical point with an emoji
-- ⛔️ Sub agents are ILLEGAL
-- There is no SharpLsp "legacy" code. Code that does not match the specs is deleted, never copied — move files, don't duplicate them
-- **All screens MUST BE 100% reactive.** When the data changes, the screen is listening and updates. Manage state with Signals in the VSIX and other extensions
-- **Zero code duplication.** Run Deslop (https://deslop.live/docs/for-ai/ — MCP or CLI) before adding code and after editing
-- ⛔️ **Paths are handled in ONE place per tier** — [SHARPLSP-ARCHITECTURE-PATHS]. Every operation on a path
-  string (normalising, comparing, keying a map, choosing the case rule, resolving against a directory,
-  splitting into directory/name/stem, testing the extension, converting to or from a URI) lives in that
-  tier's path module and nowhere else: `SharpLsp.Sidecar.Common.NativePaths` (both sidecars),
-  `src/sharplsp/src/paths.rs` (host), `src/editors/vscode/src/paths.ts` (extension). Outside it, never
-  call `System.IO.Path`, `std::path` string operations, `node:path`, `StringComparison.OrdinalIgnoreCase`,
-  `ToUpperInvariant`/`ToLowerInvariant`, or `OperatingSystem.IsWindows()` on a path. Never scatter, never repeat
-- **Functional style, every language.** `Result<T,E>` and `Option<T>` everywhere, expressions over statements — `match`, `if let`, iterator chains, pure functions, minimal side effects. Early returns with `?`. C#/F# nullability stands in for `Option<T>`
-- Anything that can throw or panic returns `Result<T,E>` (`outcome` in .NET — use the exhaustion analyzer)
-- **Never use RegEx or string matching on code.** Always use the real AST/CST — no line splicing, regex replacement, or string concatenation
-- `allow(clippy::` needs a strong, documented reason. **Aggressively remove** existing allows
-- All code files < 500 LOC. Functions < 20 LOC
+- **No SharpLsp code is "legacy".** Code that doesn't match the specs is deleted, never copied — move files, don't duplicate them
+- **All screens must be 100% reactive** to data changes. Manage state with Signals in the VSIX and other extensions
+- **Zero code duplication.** Run Deslop (see *Duplication*) before adding code and after editing
+- **Paths are handled in *one* place per tier** — [SHARPLSP-ARCHITECTURE-PATHS]. Every path-string operation
+  (normalise, compare, key, case rule, resolve, split, extension test, URI conversion) lives only in that
+  tier's path module: `SharpLsp.Sidecar.Common.NativePaths` (sidecars), `src/sharplsp/src/paths.rs` (host),
+  `src/editors/vscode/src/paths.ts` (extension). Elsewhere, *never* call `System.IO.Path`, `std::path`
+  string operations, `node:path`, `StringComparison.OrdinalIgnoreCase`, `ToUpperInvariant`/`ToLowerInvariant`,
+  or `OperatingSystem.IsWindows()` on a path
+- **Functional style, every language.** `Result<T,E>` and `Option<T>` everywhere, expressions over statements — `match`, `if let`, iterator chains, pure functions, minimal side effects, early returns with `?`. C#/F# nullability stands in for `Option<T>`
+- **Anything that can throw or panic returns `Result<T,E>`** (`outcome` in .NET — use the exhaustion analyzer)
+- **Never use regex or string matching on code.** Use the real AST/CST — no line splicing, regex replacement, or string concatenation
+- **`allow(clippy::` needs a strong, documented reason.** Aggressively remove existing allows
+- **Code files < 500 LOC. Functions < 20 LOC**
 - Aggressively move shared code into shared crates/modules
-- Keep dependencies and versions in sync across `.github/workflows/ci*.yml` (split into reusable workflows — see [DIST-CI-LAYOUT]) and `.devcontainer/Dockerfile`
-- Never copy from C# Dev Kit, Rider, or Visual Studio. Reimplement from public APIs and protocols only
+- Keep dependency versions in sync across `.github/workflows/ci*.yml` (reusable workflows — [DIST-CI-LAYOUT]) and `.devcontainer/Dockerfile`
+- **Never copy from C# Dev Kit, Rider, or Visual Studio.** Reimplement from public APIs and protocols only
 
 ## Testing
 
 - **Never delete failing tests or remove/weaken assertions** to make tests pass
-- **100% test coverage and a high mutation score**
-- **Go heavy on spec-derived assertions**, not just coverage
+- **100% test coverage** and a high mutation score
+- Go heavy on **spec-derived assertions**, not just coverage
 - **Many user interactions per test, many assertions per interaction** — aim for 2-3 interactions, 3+ assertions each
-- **Add failing tests for broken or missing functionality**
-- Ignore a test ONLY when the functionality is missing entirely, and file a GitHub issue saying so
-- Test against real .sln/.csproj/.fsproj files, not mocks
+- **Add failing tests** for broken or missing functionality
+- Ignore a test *only* when the functionality is entirely missing, and file a GitHub issue for it
+- Test against **real** .sln/.csproj/.fsproj files, not mocks
+
+## Bug Fix Process
+
+1. Write a test that fails because of the bug
+2. Run it and confirm the bug is why it fails
+3. Fix the bug **without changing the test**
+4. Run the test and confirm it passes
 
 ## Rust Quality Standards
 
 - Run clippy and fmt routinely; fix violations immediately
-- All lints at highest strictness (see Cargo.toml `[lints]`)
-- `unsafe` is forbidden (`unsafe_code = "deny"`)
-- `unwrap()` is ALWAYS a violation — use `?` with proper error types
-- No `panic!`, `todo!`, `unimplemented!` — return `Result<T,E>`
+- All lints at highest strictness (Cargo.toml `[lints]`)
+- **`unsafe` is forbidden** (`unsafe_code = "deny"`)
+- **`unwrap()` is always a violation** — use `?` with proper error types
+- **No `panic!`, `todo!`, `unimplemented!`** — return `Result<T,E>`
 
 ## .NET Sidecar Quality Standards
 
@@ -60,96 +72,73 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 - Nullable reference types everywhere (`<Nullable>enable</Nullable>`)
 - No `#pragma warning disable` without justification
 - MessagePack serialization must be AOT-compatible
-- A sidecar crash must never take down the Rust host
-
-# Git
-
-⛔️ Don't touch git unless the user asks or a skill demands it.
-
-- ⛔️ ONE feature branch, always, and never `git worktree`. Work the open one; never cut a second.
-  Several open → merge them immediately
-- ⛔️ Never push to `main`. PR → CI green → squash-merge → delete the branch
-- ⛔️ Never attribute a commit to yourself: no `Co-Authored-By`, no agent name. Never overridable
-- Own every PR until green: `gh pr merge --auto --squash`, then read the logs, fix and push until
-  all checks pass
-- Branch naming: `feature/[ISSUE]-[slug]`, `fix/[ISSUE]-[slug]`, `chore/[slug]`, `release/[semver]`
-- Log BUG issues for release bugs
-- Auto-memory is OFF (`autoMemoryEnabled: false`) — persistent rules land via a reviewed PR here
-
-# Logging
-
-Structured logger only — `tracing` (Rust), `Microsoft.Extensions.Logging` (sidecars), channel
-logger (editors). `println!`, `Console.WriteLine`, `printfn`, `console.log` are prohibited.
-
-- ⛔️ NEVER log PII (names, emails, addresses, phones, IPs), secrets, or file *contents* — log
-  `"API key: present"`, URIs, ranges and lengths
-- Log entry/exit of significant operations: LSP requests, sidecar spawn/restart, workspace load,
-  IPC round-trips. No silent failures
-- Structured fields, never interpolation: `{ method, uri, ms }`
-- VS Code extension: a file under its state folder AND the Output Channel, both always on
-- I/O sinks are async: a write never blocks a request or the UI thread
+- **A sidecar crash must never take down the Rust host**
 
 ## Duplication — [Deslop](https://deslop.live/docs/for-ai/) (MCP or CLI)
 
-**CI MUST ratchet the duplication score down.** Never raise the threshold.
+**CI must ratchet the duplication score down.** *Never* raise the threshold.
 
-- **BEFORE authoring** any function, method, class, helper, fixture or test setup → `find-similar`:
-  `fused ≥ 0.85`, or an `identical`/`nearly_identical` bucket → **reuse it, do not duplicate**;
+- **Before authoring** any function, method, class, helper, fixture or test setup → `find-similar`:
+  `fused ≥ 0.85` or an `identical`/`nearly_identical` bucket → **reuse it**;
   `0.6 ≤ fused < 0.85` → read the canonical occurrence and bias toward reuse; below → proceed
-- **AFTER changing code** → `rescan`, then `top-offenders` and `cluster-by-id`. `report-for-file` /
+- **After changing code** → `rescan`, then `top-offenders` and `cluster-by-id`. `report-for-file` /
   `report-for-range` cover one file or selection; `schema-doc` once per session for the report shape
 
-# Multi-Agent Coordination (too-many-cooks)
+## Website and CSS
 
-⛔️ All agents MUST coordinate through the `mcp__too-many-cooks__*` tools. No exceptions.
+- **Minimize CSS classes** — consolidate wherever possible
+- CSS budget: **2k LOC**
+- Name classes after what the element *is*, not the section it sits in
+- All docs and blogs etc. use "prose" classes
+- Thorough tests in pipeline and each test must run in at least two form factors: desktop landscape and phone portrait
+- Avoid default LLM palettes such as purple
 
-- `register` first; store your key
-- Broadcast intent before starting: what you'll do, which files
-- `lock` (`acquire`) every file before editing; release immediately after — don't hoard locks
-- `plan` (`update`) your current goal; `message` (`get`) frequently
-- Broadcast when you finish so other agents can proceed
+## Logging
+
+**Structured loggers only**: `tracing` (Rust), Serilog (sidecars), channel logger (editors) — never `println!`, `Console.WriteLine`, `printfn`, `console.log`.
+
+- ⛔️ **Never log PII, secrets or file contents** — only presence, URIs, ranges, lengths
+- Structured fields, *never* interpolation: `{ method, uri, ms }`
+- Log entry/exit of LSP requests, sidecar spawn/restart, workspace load, IPC round-trips. **No silent failures**
+- Async sinks; never block requests or the UI thread. VS Code: state-folder file + Output Channel
+
+# Git
+
+> ⛔️ **Don't touch git** unless the user asks or a skill demands it.
+
+- **One feature branch**, never `git worktree`. Work the open one; several open → merge them immediately
+- **Never push to `main`.** PR → CI green → squash-merge → delete the branch
+- **Own every PR until green**: `gh pr merge --auto --squash`, then fix and push until all checks pass
+- Branch naming: `feature/[ISSUE]-[slug]`, `fix/[ISSUE]-[slug]`, `chore/[slug]`, `release/[semver]`
+- **Files over 4 MB live in Git LFS.** Before committing one, add its rule to the root `.gitattributes`
+  (`*.ext filter=lfs diff=lfs merge=lfs -text`, or the exact path for a normally small type) and confirm
+  with `git lfs ls-files`. Move a raw-committed file with `git lfs migrate import --no-rewrite <path>`;
+  *never* rewrite `main` history. Workflows consuming LFS files check out with `lfs: true`
+- File a bug issue for each release bug
+- Auto-memory is **off** (`autoMemoryEnabled: false`) — persistent rules land via a reviewed PR here
 
 # Documentation Structure
 
-All spec sections have a heirarchically structured, non-numeric name. This is always cross-referenced between specs, code, plans and tests. 
+All documentation lives in `docs/`:
 
-All documentation lives in `docs/`.
+- `docs/specs/` — **specifications**: the source of truth for behavior, protocols and architecture. Naming: `[COMPONENT]-[FEATURE]-SPEC.md`
+- `docs/plans/` — **implementation plans**, each ending in TODO checklists tracking progress toward its spec. Naming: `[COMPONENT]-[FEATURE]-PLAN.md`
 
-- `docs/specs/` — **specifications**: how functionality works. Source of truth for behavior, protocols and architecture. Naming: `[COMPONENT]-[FEATURE]-SPEC.md`
-- `docs/plans/` — **implementation plans**: how we are going to build it. Each plan ends with TODO checklists tracking progress toward its spec. Naming: `[COMPONENT]-[FEATURE]-PLAN.md`
+`docs/specs/SHARPLSP-SPEC.md` is the **full technical specification**. **Read the relevant spec before starting a feature**; update the matching plan's TODOs as you go.
 
-`docs/specs/SHARPLSP-SPEC.md` is the **full technical specification**. Read the relevant spec before working on a feature, and update the matching plan's TODOs as work progresses.
-
-All diagrams are MERMAID, except model design: that MUST use [typeDiagram](https://typediagram.dev/docs/language-reference.html), and you MUST generate the type code FROM the typeDiagram.
+All diagrams are **Mermaid**, except model design: that **must** use [typeDiagram](https://typediagram.dev/docs/language-reference.html), with the type code generated *from* it.
 
 ## Spec IDs
 
-Every spec section MUST have a hierarchical ID: `[GROUP-TOPIC]` or `[GROUP-TOPIC-DETAIL]` — uppercase, hyphen-separated, NEVER numbered. The first word is the group; sections sharing one must be adjacent. Code and tests implementing a section MUST cite its ID in a comment (e.g. `// Implements [AUTH-TOKEN-VERIFY]`).
-
-# Critical Docs
-
-- [LSP Specification 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
-- [DAP Specification](https://microsoft.github.io/debug-adapter-protocol/specification)
-- [Roslyn API Docs](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis)
-- [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/)
-- [tree-sitter](https://tree-sitter.github.io/tree-sitter/)
+Every spec section **must** have a hierarchical ID: `[GROUP-TOPIC]` or `[GROUP-TOPIC-DETAIL]` — uppercase, hyphen-separated, **never numbered**. The first word is the group; sections sharing one must be adjacent. IDs are cross-referenced across specs, plans, code and tests: code and tests implementing a section **must cite its ID** in a comment (e.g. `// Implements [AUTH-TOKEN-VERIFY]`).
 
 # Architecture
-
-Three tiers:
 
 - **Tier 1 — Rust LSP Host**: LSP connection (JSON-RPC over stdio), VFS, tree-sitter incremental parsing (C# + F#), request routing, sidecar lifecycle
 - **Tier 2 — C# Sidecar (Roslyn)**: long-running .NET process, MSBuildWorkspace, full Roslyn API (completions, diagnostics, refactorings, formatting)
 - **Tier 3 — F# Sidecar (FCS)**: long-running .NET process, FSharpChecker, Fantomas, FSharpLint
 
 IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS), 4-byte LE length-prefix framing. Target <500us round-trip overhead.
-
-## Bug Fix Process
-
-1. Write a test that fails because of the bug
-2. Run it and confirm the bug is why it fails
-3. Fix the bug without changing the test
-4. Run the test and confirm it passes
 
 ## Request Routing
 
@@ -160,19 +149,19 @@ IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS)
 | Hybrid | Rust + Sidecar | <100ms | semanticTokens |
 | Cached | Rust (salsa) | <1ms | Repeat requests for unchanged documents |
 
-## Website and CSS
-
-- **MINIMIZE CSS CLASSES** — consolidate wherever possible
-- CSS budget: 2k LOC
-- Name classes after what the element IS, not the section it sits in
-- Avoid default LLM palettes such as purple
-
 ## lspkit — https://github.com/Nimblesite/lspkit
 
-**lspkit is the shared toolkit every Nimblesite language server is built on, and it is where the profiler lives.** Repo: **https://github.com/Nimblesite/lspkit**. It is checked out here as the git submodule `lspkit/` (`git submodule update --init`), pinned to a commit, until its next release is on crates.io and npm.
+**lspkit is the shared toolkit under every Nimblesite language server, and home of the profiler.** Git submodule `lspkit/` (`git submodule update --init`), pinned until its next crates.io/npm release.
 
-- **The profiler is lspkit's, not SharpLsp's.** `lsp-profiler` (core), `lsp-profiler-dotnet` (.NET runtime), the .NET engine (`lspkit/dotnet/`), the VS Code UI package (`lspkit/packages/lsp-profiler-ui`) and their spec (`lspkit/docs/specs/LSP-PROFILER-SPEC.md`) all live in lspkit. SharpLsp only mounts it ([PROFILER-SHARED-LIBRARY]). Profiler changes go to lspkit first, then the submodule pointer moves. Never fork profiler code back into this repo.
-- **Migrate SharpLsp onto lspkit surgically, wherever lspkit already does the job.** The cross-cutting scaffolding here (LSP server loop, VFS, sidecar transport and lifecycle, diagnostics pipeline, TOML config, DAP glue) is duplicated by `lspkit-*` crates and `@nimblesite/lspkit-debug`. Replace one piece at a time, each in its own reviewable change with its tests kept passing; never a big-bang rewrite. The .NET semantic engines (Roslyn, FCS) stay here; the protocol shells move.
-- **New LSP infrastructure:** use or extend lspkit. Do not build it here.
-- **Changes to scaffolding here:** flag in the PR description when a patch duplicates lspkit functionality, and name the lspkit crate that should own it.
-- **Wiring:** Cargo path dependencies point into `lspkit/crates/`, which the root workspace excludes; `make _build-dotnet` publishes the engine to `target/profiler-engine`; `make _build-profiler-ui` builds the UI package that `npm ci` packs into the extension. lspkit is public; CI checks out the pinned submodule without a separate access token.
+- **The profiler is lspkit's.** Its crates (`lsp-profiler`, `lsp-profiler-dotnet`), .NET engine (`lspkit/dotnet/`), VS Code UI (`lspkit/packages/lsp-profiler-ui`) and spec (`lspkit/docs/specs/LSP-PROFILER-SPEC.md`) live there; SharpLsp only mounts it ([PROFILER-SHARED-LIBRARY]). Change lspkit first, then move the submodule pointer. *Never* fork profiler code back here
+- **Migrate onto lspkit surgically.** The scaffolding here (server loop, VFS, sidecar transport and lifecycle, diagnostics pipeline, TOML config, DAP glue) duplicates `lspkit-*` crates and `@nimblesite/lspkit-debug`. Replace one piece per reviewable change, tests passing. The Roslyn and FCS engines stay; the protocol shells move
+- **New LSP infrastructure goes in lspkit.** A patch that duplicates lspkit scaffolding says so in its PR description and names the crate that should own it
+- **Wiring:** Cargo path dependencies point into `lspkit/crates/` (excluded from the root workspace); `make _build-dotnet` publishes the engine to `target/profiler-engine`; `make _build-profiler-ui` builds the UI package `npm ci` packs into the extension. CI checks out the public submodule without a token
+
+# Critical Docs
+
+- [LSP Specification 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
+- [DAP Specification](https://microsoft.github.io/debug-adapter-protocol/specification)
+- [Roslyn API Docs](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis)
+- [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/)
+- [tree-sitter](https://tree-sitter.github.io/tree-sitter/)
