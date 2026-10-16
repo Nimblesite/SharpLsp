@@ -80,6 +80,16 @@ export function toWireProcess(process: ProcessInfo): WireProcess {
   };
 }
 
+/**
+ * Turn the Processes panel's grouping off. It opens grouped by runtime version
+ * ([PROF-UI-PROCESSES]); tests of row order, filtering and row shape read a flat list.
+ */
+export function ungroup(store: ProfilerStore): void {
+  while (store.processes.value.groupMode !== 'none') {
+    store.cycleProcessGroup();
+  }
+}
+
 /** The launch configuration SharpLsp's host builds for `metric`; asserts it exists. */
 export function launchConfigOf(metric: LaunchMetric, program: string): vscode.DebugConfiguration {
   const config = profilerStore().host.launchConfig(metric, program);

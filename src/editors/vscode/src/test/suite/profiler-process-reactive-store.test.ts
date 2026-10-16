@@ -26,7 +26,7 @@ import {
   createProfilerStore,
   type ProfilerStore as Store,
 } from '@nimblesite/lsp-profiler-ui/out/src/store';
-import { seedSignal, fakeHost, toWireProcess } from './profiler-ui-helpers';
+import { seedSignal, fakeHost, toWireProcess, ungroup } from './profiler-ui-helpers';
 import { numberField, rawField } from '@nimblesite/lsp-profiler-ui/out/src/unknown-shape';
 
 const MB = 1024 * 1024;
@@ -70,8 +70,9 @@ function storeServing(processes: readonly ProcessInfo[]): Store {
   return store;
 }
 
-/** A provider wired to the store exactly as registerPythonProcesses wires it. */
+/** A flat provider wired to the store exactly as registerPythonProcesses wires it. */
 function subscribedProvider(store: Store): ProcessesProvider {
+  ungroup(store);
   const provider = new ProcessesProvider(store);
   subscribeRevision(store.processesRevision, provider);
   return provider;

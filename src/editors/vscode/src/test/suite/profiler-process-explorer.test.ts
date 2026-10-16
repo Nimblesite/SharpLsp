@@ -22,7 +22,7 @@ import {
   createProfilerStore,
   type ProfilerStore as Store,
 } from '@nimblesite/lsp-profiler-ui/out/src/store';
-import { seedSignal, fakeHost, toWireProcess } from './profiler-ui-helpers';
+import { seedSignal, fakeHost, toWireProcess, ungroup } from './profiler-ui-helpers';
 import {
   numberField,
   rawField,
@@ -132,11 +132,12 @@ function storeWith(processes: readonly ProcessInfo[], requests?: RecordedRequest
 }
 
 /**
- * Build a provider over `store` and pull the process table into the store
+ * Build a flat provider over `store` and pull the process table into the store
  * through the real store-side fetch path — getChildren() is a pure projection
  * of centralised state and never fetches on its own (#148).
  */
 async function loadedProvider(store: Store): Promise<ProcessesProvider> {
+  ungroup(store);
   const provider = new ProcessesProvider(store);
   await provider.refreshNow();
   return provider;
