@@ -36,6 +36,34 @@ public sealed class NativePathsSymlinkTests : IDisposable
         Assert.False(NativePaths.AreEqual(actual, NativePaths.Join(alias, "Other.cs")));
     }
 
+    [Fact]
+    public void RetargetedFileLinksUseTheirCurrentIdentity()
+    {
+        var first = NativePaths.Join(physical, "App.cs");
+        var second = NativePaths.Join(physical, "Other.cs");
+        var linked = NativePaths.Join(root, "linked.cs");
+        File.WriteAllText(second, "");
+        _ = File.CreateSymbolicLink(linked, first);
+        Assert.True(NativePaths.AreEqual(first, linked));
+        Assert.Equal(first, NativePaths.WithLinksResolved(linked));
+        File.Delete(linked);
+        _ = File.CreateSymbolicLink(linked, second);
+        Assert.False(NativePaths.AreEqual(first, linked));
+        Assert.True(NativePaths.AreEqual(second, linked));
+        Assert.Equal(second, NativePaths.WithLinksResolved(linked));
+    }
+
+    [Fact]
+    public void IdenticalSpellingsDoNotPayForRepeatedFilesystemProbes()
+    {
+        var actual = NativePaths.Join(physical, "App.cs");
+        var same = new string(actual.ToCharArray());
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        Assert.True(Enumerable.Range(0, 100_000).All(_ => NativePaths.AreEqual(actual, same)));
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"Path lookups took {timer.Elapsed}");
+        Assert.True(NativePaths.AreEqual(actual, NativePaths.Join(alias, "App.cs")));
+    }
+
     public void Dispose()
     {
         Directory.Delete(root, recursive: true);

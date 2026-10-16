@@ -37,7 +37,9 @@ public static class NativePaths
     {
         public override int Compare(string? x, string? y)
         {
-            return SpellingComparer.Compare(Canonical(x), Canonical(y));
+            return string.Equals(x, y, StringComparison.Ordinal)
+                ? 0
+                : SpellingComparer.Compare(Canonical(x), Canonical(y));
         }
 
         public override bool Equals(string? x, string? y)
@@ -262,14 +264,15 @@ public static class NativePaths
     private static string ResolveSegment(string parent, string segment)
     {
         var current = Path.Combine(parent, segment);
-        FileSystemInfo entry = Directory.Exists(current)
-            ? new DirectoryInfo(current)
-            : new FileInfo(current);
-        return
-            entry.LinkTarget is not null
-            && entry.ResolveLinkTarget(returnFinalTarget: true) is { } target
-            ? target.FullName
-            : current;
+        FileSystemInfo entry = new FileInfo(current);
+        var attributes = entry.Attributes;
+        if (attributes == (FileAttributes)(-1) || !attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            return current;
+        }
+
+        entry = attributes.HasFlag(FileAttributes.Directory) ? new DirectoryInfo(current) : entry;
+        return entry.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? current;
     }
 
     /// <summary>
