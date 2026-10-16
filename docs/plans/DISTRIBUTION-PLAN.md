@@ -7,6 +7,7 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 - [x] Merge lspkit dependency PRs #5 and #6 and advance the public submodule pin.
 - [x] Align the VS Code SDK and minimum editor at 1.140.0 [DIST-VSIX-MODEL].
 - [x] Refresh compatible dependencies, retaining the SDK/Roslyn pairing and net10.0-compatible MSBuild assemblies.
+- [x] Align CI on Deslop 0.38.0's counted clone types; verify the 6.9% local ratchet reports the same 6.7987% on macOS and Linux [DIST-CI-DESLOP].
 - [x] Resolve sidecar symlink identities while preserving protocol paths; canonicalize generated temp paths and use portable Unix socket byte limits [SHARPLSP-ARCHITECTURE-PATHS] (#347).
 - [x] Verify 59 real-editor checks on VS Code 1.140.0 and package the production VSIX.
 - [x] Verify locally available checks and prepare the dependency-upgrade PR; validate editor gestures on headless CI when the macOS desktop is locked.

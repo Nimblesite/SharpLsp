@@ -1,6 +1,6 @@
 # agent-pmo:a72c926
 [threshold]
-max_duplication_percent = 9.65
+max_duplication_percent = 6.9
 
 [defaults]
 exclude = [
