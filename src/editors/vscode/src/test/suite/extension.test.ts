@@ -173,31 +173,15 @@ suite('Extension Activation & Configuration', () => {
     // VS Code itself registers `<view>.focus`, `.open`, `.toggleVisibility` and
     // friends for every contributed view; those are the host's, not ours.
     const hostOwned = (id: string): boolean => viewIds().some((view) => id.startsWith(`${view}.`));
-    // The language client registers exactly the commands the server advertises
-    // in `executeCommandProvider` (the profiler's protocol commands, which take
-    // structured arguments and never belong in the palette); those are the
-    // client's, not the manifest's. profiler.test.ts pins that advertised set.
-    const advertised = new Set(
-      vscode.extensions
-        .getExtension<{
-          getLspClient?: () =>
-            | {
-                initializeResult?: {
-                  capabilities: { executeCommandProvider?: { commands: string[] } };
-                };
-              }
-            | undefined;
-        }>(EXTENSION_ID)
-        ?.exports?.getLspClient?.()?.initializeResult?.capabilities.executeCommandProvider
-        ?.commands ?? [],
-    );
+    // No exemption for the server's `executeCommandProvider` commands
+    // (`sharplsp.lspProfiler.*`): SharpLspClient drops the stock executeCommand
+    // feature, so none of them may reach the palette ([PROFILER-SHARED-LIBRARY-VSCODE]).
     const undeclared = palette.filter(
       (id) =>
         id.startsWith('sharplsp.') &&
         !declared.has(id) &&
         !id.startsWith('sharplsp._') &&
-        !hostOwned(id) &&
-        !advertised.has(id),
+        !hostOwned(id),
     );
     assert.deepStrictEqual(undeclared, [], 'every registered sharplsp command must be declared');
     assert.ok(declared.has('sharplsp.restartServer'), 'restartServer is among the declared set');

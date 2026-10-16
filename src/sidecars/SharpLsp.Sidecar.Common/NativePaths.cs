@@ -10,7 +10,7 @@ namespace SharpLsp.Sidecar.Common;
 /// Mirrors the host's path module (<c>src/sharplsp/src/paths.rs</c>). [GitHub #110]
 /// Implements [SHARPLSP-ARCHITECTURE-PATHS].
 /// </summary>
-public static class NativePaths
+public static partial class NativePaths
 {
     private const string VerbatimUncPrefix = @"\\?\UNC\";
     private const string VerbatimPrefix = @"\\?\";
@@ -22,41 +22,6 @@ public static class NativePaths
     /// either. Decided once here; no caller picks a rule of its own.
     /// </summary>
     public const StringComparison Comparison = StringComparison.OrdinalIgnoreCase;
-
-    /// <summary>
-    /// The comparer every path-keyed collection is built with. Identity resolves links;
-    /// retained path strings preserve the spelling the editor opened.
-    /// </summary>
-    public static StringComparer Comparer { get; } = new LinkComparer();
-
-    private static readonly StringComparer SpellingComparer = StringComparer.FromComparison(
-        Comparison
-    );
-
-    private sealed class LinkComparer : StringComparer
-    {
-        public override int Compare(string? x, string? y)
-        {
-            return string.Equals(x, y, StringComparison.Ordinal)
-                ? 0
-                : SpellingComparer.Compare(Canonical(x), Canonical(y));
-        }
-
-        public override bool Equals(string? x, string? y)
-        {
-            return Compare(x, y) == 0;
-        }
-
-        public override int GetHashCode(string obj)
-        {
-            return SpellingComparer.GetHashCode(WithLinksResolved(obj));
-        }
-
-        private static string? Canonical(string? path)
-        {
-            return path is null ? null : WithLinksResolved(path);
-        }
-    }
 
     /// <summary>The directory holding <paramref name="path"/>; empty for a bare name or a root.</summary>
     public static string DirectoryOf(string path)
@@ -224,55 +189,6 @@ public static class NativePaths
     public static string ExecutableName(string stem)
     {
         return OperatingSystem.IsWindows() ? $"{stem}.exe" : stem;
-    }
-
-    /// <summary>
-    /// <paramref name="path"/> fully qualified with every symlinked segment resolved, as editors
-    /// hand out both spellings of a linked file, on Windows as well as Unix. Missing outputs
-    /// keep their suffix under the resolved ancestor. Implements [SHARPLSP-ARCHITECTURE-PATHS].
-    /// </summary>
-    public static string WithLinksResolved(string path)
-    {
-        var fullPath = NormalizeFullPath(path);
-        try
-        {
-            return StripVerbatim(ResolveLinks(fullPath));
-        }
-        catch (Exception error)
-            when (error
-                    is IOException
-                        or UnauthorizedAccessException
-                        or ArgumentException
-                        or NotSupportedException
-            )
-        {
-            return fullPath;
-        }
-    }
-
-    /// <summary>Resolve each symlinked segment of <paramref name="fullPath"/>.</summary>
-    private static string ResolveLinks(string fullPath)
-    {
-        var root = Path.GetPathRoot(fullPath);
-        return root is null
-            ? fullPath
-            : fullPath[root.Length..]
-                .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
-                .Aggregate(root, ResolveSegment);
-    }
-
-    private static string ResolveSegment(string parent, string segment)
-    {
-        var current = Path.Combine(parent, segment);
-        FileSystemInfo entry = new FileInfo(current);
-        var attributes = entry.Attributes;
-        if (attributes == (FileAttributes)(-1) || !attributes.HasFlag(FileAttributes.ReparsePoint))
-        {
-            return current;
-        }
-
-        entry = attributes.HasFlag(FileAttributes.Directory) ? new DirectoryInfo(current) : entry;
-        return entry.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? current;
     }
 
     /// <summary>

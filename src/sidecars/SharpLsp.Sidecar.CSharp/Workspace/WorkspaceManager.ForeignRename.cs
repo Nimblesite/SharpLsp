@@ -295,7 +295,7 @@ internal sealed partial class WorkspaceManager
             }
         }
 
-        return [.. edits.OrderBy(edit => edit.FilePath, NativePaths.Comparer)];
+        return [.. edits.OrderBy(edit => edit.FilePath, NativePaths.SpellingComparer)];
     }
 
     private static async Task<DocumentEditResult?> BuildForeignDocumentEditAsync(

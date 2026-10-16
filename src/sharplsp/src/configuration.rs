@@ -40,6 +40,29 @@ pub(crate) fn user_config_file() -> Option<PathBuf> {
     root.map(|root| root.join("sharplsp").join("config.toml"))
 }
 
+/// Keys earlier releases documented that no longer have any effect. Files written from
+/// those docs keep loading; every other unknown key is still an error.
+const RETIRED_KEYS: [(&str, &str); 4] = [
+    ("profiler", "default_trace_duration"),
+    ("profiler", "default_trace_format"),
+    ("profiler", "default_counter_providers"),
+    ("profiler", "default_counter_interval"),
+];
+
+/// Drop retired keys from the merged layers, warning once per key found.
+fn drop_retired(mut value: Value) -> Value {
+    for (section, key) in RETIRED_KEYS {
+        let removed = value
+            .get_mut(section)
+            .and_then(Value::as_object_mut)
+            .and_then(|table| table.remove(key));
+        if removed.is_some() {
+            tracing::warn!(section, key, "ignoring retired configuration key");
+        }
+    }
+    value
+}
+
 /// Resolve layers in precedence order and validate the complete typed configuration.
 pub(crate) fn resolve(
     root: &Path,
@@ -63,7 +86,7 @@ pub(crate) fn resolve(
     merge(&mut value, client.clone());
     merge(&mut value, overrides);
     let typed: SharpLspConfig =
-        serde_json::from_value(value).context("invalid SharpLsp configuration")?;
+        serde_json::from_value(drop_retired(value)).context("invalid SharpLsp configuration")?;
     validate(&typed)?;
     Ok(serde_json::to_value(typed)?)
 }
