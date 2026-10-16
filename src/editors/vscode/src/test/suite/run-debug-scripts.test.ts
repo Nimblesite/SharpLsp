@@ -39,7 +39,10 @@ import {
   removeDirRecursive,
   requireWorkspaceRoot,
 } from './test-helpers';
-import { DEBUG_SESSION_MS, DOTNET_CLI_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { dotnet } from './dotnet-project-kit';
+import { assertSamePath } from './debug-e2e-kit';
+import { assertTaskIdentity, processExecutionOf } from './run-task-assertions';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import {
   armProbe,
@@ -54,24 +57,11 @@ import {
   type Probe,
 } from './run-debug-refusals';
 
-/** Paths compare case/separator-normalised, never raw. */
-function assertSamePath(actual: string, expected: string, why: string): void {
-  assert.strictEqual(comparablePath(actual), comparablePath(expected), why);
-}
 function assertOtherPath(actual: string, expected: string, why: string): void {
   assert.notStrictEqual(comparablePath(actual), comparablePath(expected), why);
 }
 function activePath(): string {
   return vscode.window.activeTextEditor?.document.uri.fsPath ?? '';
-}
-/** The run MUST be a `vscode.Task` on SharpLsp's own task type (rule 1). */
-function assertTaskIdentity(task: ObservedTask, why: string): void {
-  assert.strictEqual(typeof task.name, 'string', `${why}: a task carries a name`);
-  assert.notStrictEqual(task.name.trim().length, 0, `${why}: the task name must not be empty`);
-  assert.strictEqual(typeof task.source, 'string', `${why}: a task carries a source`);
-  assert.notStrictEqual(task.definitionType, 'dotnet', `${why}: 'dotnet' is the proprietary type`);
-  const type = task.definitionType;
-  assert.ok(type.startsWith('sharplsp'), `${why}: SharpLsp must own type '${type}'`);
 }
 
 /** Assert the exact `dotnet` argument vector a script run must produce. */
@@ -137,13 +127,6 @@ const RESOLVED_SDKS: readonly string[] = [
   'C:\\Program Files\\dotnet\\dotnet.exe',
   'D:\\a\\_tool\\dotnet\\DOTNET.EXE',
 ];
-
-/** A run must be a process, not a shell command line, or its args are unreadable. */
-function processExecutionOf(task: vscode.Task, why: string): vscode.ProcessExecution {
-  const execution = task.execution;
-  if (execution instanceof vscode.ProcessExecution) return execution;
-  assert.fail(`${why}: a run must be a ProcessExecution, never a shell command line`);
-}
 
 async function focusScript(file: string, ext: string, dir: string, why: string): Promise<void> {
   const editor = await focusDocument(file);
@@ -212,7 +195,8 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     return root;
   }
 
-  suiteSetup(() => {
+  suiteSetup(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
     scriptDir = path.join(newRoot('sharplsp-scripts-'), 'src');
     fsxFile = fixtures.writeFsxScript(scriptDir, 'Greet', 'hello from Greet.fsx');
     csxFile = fixtures.writeCsxScript(scriptDir, 'Calc', 'hello from Calc.csx');
@@ -238,6 +222,10 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
 
     // A `DOTNET_CLI_HOME` with nothing installed under it — see `withoutGlobalTools`.
     emptyToolHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-no-tools-'));
+    // [DIST-CI-VSIX-SHARDS-TIMEOUTS]: cold restore/build belongs to initialization,
+    // not the bounded task-exit wait that measures the user interaction.
+    await dotnet(['build', fileBasedApp], appDir);
+    await dotnet(['build', neighbourScript], besideDir);
   });
 
   suiteTeardown(() => {
