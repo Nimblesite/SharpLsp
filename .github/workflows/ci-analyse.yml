@@ -34,7 +34,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
@@ -67,7 +67,7 @@ jobs:
 
       # ── TypeScript ─────────────────────────────────────────────────
       - name: Format check (VS Code)
-        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
+        run: npm run format:check --prefix src/editors/vscode
       - name: Lint (VS Code)
         # Also asserts every test suite belongs to a declared feature chunk, so
         # a new suite cannot silently drop out of the PHASE 4 matrix.

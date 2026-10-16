@@ -41,7 +41,7 @@
              Microsoft.Build.Locator 1.11+ enforces this via MSBL001. -->
         <PackageReference
             Include="Microsoft.Build.Framework"
-            Version="17.11.48"
+            Version="17.14.28"
             ExcludeAssets="runtime"
             PrivateAssets="all"
         />
@@ -51,13 +51,13 @@
              (MSBL001), exactly like Microsoft.Build.Framework above. -->
         <PackageReference
             Include="Microsoft.Build"
-            Version="17.11.48"
+            Version="17.14.28"
             ExcludeAssets="runtime"
             PrivateAssets="all"
         />
         <PackageReference
             Include="Microsoft.NET.StringTools"
-            Version="17.11.48"
+            Version="17.14.28"
             ExcludeAssets="runtime"
             PrivateAssets="all"
         />
@@ -75,6 +75,6 @@
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.6.0" />
         <PackageReference Include="ICSharpCode.Decompiler" Version="11.1.0.9782" />
-        <PackageReference Include="MessagePack" Version="3.1.11" />
+        <PackageReference Include="MessagePack" Version="3.1.12" />
     </ItemGroup>
 </Project>

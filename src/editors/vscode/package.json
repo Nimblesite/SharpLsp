@@ -7,7 +7,7 @@
   "license": "MIT",
   "icon": "icons/sharplsp.png",
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.140.0"
   },
   "extensionDependencies": [
     "ms-dotnettools.vscode-dotnet-runtime"
@@ -1451,7 +1451,7 @@
     "@types/d3-force": "^3.0.10",
     "@types/mocha": "^10.0.6",
     "@types/node": "^26.6.4",
-    "@types/vscode": "^1.105.0",
+    "@types/vscode": "~1.140.0",
     "@typescript-eslint/eslint-plugin": "^8.71.0",
     "@typescript-eslint/parser": "^8.71.0",
     "@vscode/test-cli": "^0.0.15",
@@ -1462,7 +1462,7 @@
     "glob": "^13.0.6",
     "mocha": "^12.0.3",
     "playwright": "^1.63.0",
-    "prettier": "3.9.9",
+    "prettier": "3.9.10",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.0"
   },

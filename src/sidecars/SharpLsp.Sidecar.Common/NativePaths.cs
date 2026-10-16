@@ -24,10 +24,39 @@ public static class NativePaths
     public const StringComparison Comparison = StringComparison.OrdinalIgnoreCase;
 
     /// <summary>
-    /// The comparer every path-keyed collection is built with. Keys are
-    /// <see cref="NormalizeFullPath"/> spellings, so one file has one key.
+    /// The comparer every path-keyed collection is built with. Identity resolves links;
+    /// retained path strings preserve the spelling the editor opened.
     /// </summary>
-    public static StringComparer Comparer { get; } = StringComparer.FromComparison(Comparison);
+    public static StringComparer Comparer { get; } = new LinkComparer();
+
+    private static readonly StringComparer SpellingComparer = StringComparer.FromComparison(
+        Comparison
+    );
+
+    private sealed class LinkComparer : StringComparer
+    {
+        public override int Compare(string? x, string? y)
+        {
+            return string.Equals(x, y, StringComparison.Ordinal)
+                ? 0
+                : SpellingComparer.Compare(Canonical(x), Canonical(y));
+        }
+
+        public override bool Equals(string? x, string? y)
+        {
+            return Compare(x, y) == 0;
+        }
+
+        public override int GetHashCode(string obj)
+        {
+            return SpellingComparer.GetHashCode(WithLinksResolved(obj));
+        }
+
+        private static string? Canonical(string? path)
+        {
+            return path is null ? null : WithLinksResolved(path);
+        }
+    }
 
     /// <summary>The directory holding <paramref name="path"/>; empty for a bare name or a root.</summary>
     public static string DirectoryOf(string path)
@@ -104,10 +133,10 @@ public static class NativePaths
         return Path.ChangeExtension(Portable(path), extension);
     }
 
-    /// <summary><paramref name="segments"/> resolved under the user's temporary directory.</summary>
+    /// <summary>Resolve temporary paths physically so SDK restore graphs share one spelling.</summary>
     public static string Temp(params string[] segments)
     {
-        return Resolve(Path.GetTempPath(), segments);
+        return WithLinksResolved(Resolve(Path.GetTempPath(), segments));
     }
 
     /// <summary>
@@ -160,7 +189,7 @@ public static class NativePaths
     /// </summary>
     public static string IdentityOf(string path)
     {
-        var fullPath = NormalizeFullPath(path);
+        var fullPath = WithLinksResolved(path);
         return TellsCaseApart(fullPath) ? fullPath : fullPath.ToUpperInvariant();
     }
 
@@ -199,35 +228,71 @@ public static class NativePaths
 
     /// <summary>
     /// <paramref name="path"/> fully qualified with every symlinked segment resolved, as editors
-    /// hand out both spellings of a linked file. Windows keeps the qualified spelling.
+    /// hand out both spellings of a linked file, on Windows as well as Unix. Missing outputs
+    /// keep their suffix under the resolved ancestor. Implements [SHARPLSP-ARCHITECTURE-PATHS].
     /// </summary>
     public static string WithLinksResolved(string path)
     {
-        var fullPath = Path.GetFullPath(path);
-        return OperatingSystem.IsWindows() ? fullPath : ResolveLinks(fullPath);
+        var fullPath = NormalizeFullPath(path);
+        try
+        {
+            return StripVerbatim(ResolveLinks(fullPath));
+        }
+        catch (Exception error)
+            when (error
+                    is IOException
+                        or UnauthorizedAccessException
+                        or ArgumentException
+                        or NotSupportedException
+            )
+        {
+            return fullPath;
+        }
     }
 
     /// <summary>Resolve each symlinked segment of <paramref name="fullPath"/>.</summary>
     private static string ResolveLinks(string fullPath)
     {
-        var root = Path.GetPathRoot(fullPath)!;
-        var current = root;
-        foreach (
-            var segment in fullPath[root.Length..]
+        var root = Path.GetPathRoot(fullPath);
+        return root is null
+            ? fullPath
+            : fullPath[root.Length..]
                 .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
-        )
+                .Aggregate(root, ResolveSegment);
+    }
+
+    private static string ResolveSegment(string parent, string segment)
+    {
+        var current = Path.Combine(parent, segment);
+        FileSystemInfo entry = new FileInfo(current);
+        var attributes = entry.Attributes;
+        if (attributes == (FileAttributes)(-1) || !attributes.HasFlag(FileAttributes.ReparsePoint))
         {
-            current = Path.Combine(current, segment);
-            FileSystemInfo entry = Directory.Exists(current)
-                ? new DirectoryInfo(current)
-                : new FileInfo(current);
-            if (entry.ResolveLinkTarget(returnFinalTarget: true) is { } target)
-            {
-                current = target.FullName;
-            }
+            return current;
         }
 
-        return current;
+        entry = attributes.HasFlag(FileAttributes.Directory) ? new DirectoryInfo(current) : entry;
+        return entry.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? current;
+    }
+
+    /// <summary>
+    /// Relocate sockets exceeding macOS's 103-byte (Linux: 107-byte) UTF-8 limit.
+    /// Implements [SHARPLSP-ARCHITECTURE-PATHS].
+    /// </summary>
+    public static string ShortenUnixSocketPath(string socketPath)
+    {
+        var parent = DirectoryOf(socketPath);
+        var parentExists = parent.Length == 0 || Directory.Exists(parent);
+        if (System.Text.Encoding.UTF8.GetByteCount(socketPath) <= 103 || !parentExists)
+        {
+            return socketPath;
+        }
+
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(socketPath)
+        );
+        var hex = Convert.ToHexString(hash).AsSpan(0, 16);
+        return Temp($"sharplsp-{hex}.sock");
     }
 
     /// <summary>
@@ -336,8 +401,8 @@ public static class NativePaths
     }
 
     /// <summary>
-    /// Fully qualify <paramref name="path"/> and strip any Windows
-    /// extended-length prefix so equivalent spellings normalize identically.
+    /// Fully qualify <paramref name="path"/> and strip any Windows extended-length prefix,
+    /// preserving its spelling for protocol URIs. Identity resolves links through the comparer.
     /// Returns the input unchanged when it is not a resolvable path.
     /// </summary>
     public static string NormalizeFullPath(string path)
@@ -366,9 +431,7 @@ public static class NativePaths
     /// </summary>
     public static bool AreEqual(string? left, string? right)
     {
-        return left is not null
-            && right is not null
-            && string.Equals(NormalizeFullPath(left), NormalizeFullPath(right), Comparison);
+        return left is not null && right is not null && Comparer.Equals(left, right);
     }
 
     /// <summary>
