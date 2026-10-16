@@ -1,6 +1,7 @@
 // Tests for [WEB-DESIGN-MEDIA]: the profiler film and stills the profiler-film
 // tooling renders from the real extension.
 import { test, expect } from '@playwright/test';
+import { expectPlayable, playback, sourcesOf } from './media.js';
 
 const FILM_POSTER = '/assets/videos/profiler-film-poster.webp';
 const FILM_SOURCES = ['/assets/videos/profiler-film.webm', '/assets/videos/profiler-film.mp4'];
@@ -8,49 +9,79 @@ const PROFILER_STILLS = 8;
 const STILL_WIDTH = 2400;
 const DOCS = ['/docs/profiler/', '/zh/docs/profiler/', '/ja/docs/profiler/'];
 
-/** Fetch the first bytes of a media URL; returns its status and content type. */
-async function probe(request, url) {
-  const response = await request.get(url, { headers: { Range: 'bytes=0-1023' } });
-  return { status: response.status(), type: response.headers()['content-type'] ?? '' };
+const RECORDING_SOURCES = ['/assets/videos/profiler-cpu-recording.mp4'];
+const AUTOPLAYING = ['section.hero video', 'section[aria-labelledby="profiler-title"] video'];
+
+async function expectSilentLoop(request, video, sources) {
+  await expect(video).toHaveAttribute('autoplay', '');
+  await expect(video).toHaveAttribute('loop', '');
+  await expect(video).toHaveAttribute('playsinline', '');
+  expect((await playback(video)).muted, 'an autoplaying film must be muted').toBe(true);
+  expect(await sourcesOf(video), 'its own files, in preference order').toEqual(sources);
+  await expectPlayable(request, sources, 'video/');
 }
 
-async function expectPlayable(request, urls, kind) {
-  for (const url of urls) {
-    const { status, type } = await probe(request, url);
-    expect([200, 206], `${url} must be served`).toContain(status);
-    expect(type, `${url} must be served as ${kind}`).toContain(kind);
-  }
-}
+test.describe('Home page films', () => {
+  test('the hero plays the profiler film beside the headline, both encodings served', async ({ page, request }) => {
+    await page.goto('/');
+    const hero = page.locator('section.hero');
+    await expect(hero.getByRole('heading', { level: 1 })).toHaveText('Full C# and F# development. In your editor.');
+    const film = hero.locator('video');
+    await expectSilentLoop(request, film, FILM_SOURCES);
+    await expect(film).toHaveAttribute('poster', FILM_POSTER);
+    await expectPlayable(request, [FILM_POSTER], 'image/webp');
+  });
 
-const sourcesOf = (video) => video.locator('source').evaluateAll((sources) => sources.map((s) => s.getAttribute('src')));
-
-test.describe('Home page profiler film', () => {
-  test('autoplays muted on a loop, serves both encodings and links to the profiler docs', async ({ page, request }) => {
+  test('the profiler section loops the unedited recording and links to the profiler docs', async ({ page, request }) => {
     await page.goto('/');
     const section = page.locator('section[aria-labelledby="profiler-title"]');
     await expect(section.getByRole('heading', { level: 2 })).toHaveText('Find the hot path. Catch the leak.');
-    const video = section.locator('video');
-    await expect(video).toHaveAttribute('autoplay', '');
-    await expect(video).toHaveAttribute('loop', '');
-    await expect(video).toHaveAttribute('playsinline', '');
-    await expect(video).toHaveAttribute('poster', FILM_POSTER);
-    expect(await video.evaluate((element) => element.muted), 'an autoplaying film must be muted').toBe(true);
-    expect(await sourcesOf(video), 'WebM first, MP4 fallback').toEqual(FILM_SOURCES);
-    await expectPlayable(request, FILM_SOURCES, 'video/');
-    await expectPlayable(request, [FILM_POSTER], 'image/webp');
+    await expectSilentLoop(request, section.locator('video'), RECORDING_SOURCES);
 
     await section.getByRole('link', { name: /Explore the profiler/ }).click();
     await expect(page).toHaveURL(/\/docs\/profiler\/$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Profiler');
   });
 
-  test('holds still with controls when the reader asks for reduced motion', async ({ page }) => {
+  test('every film holds still with controls when the reader asks for reduced motion', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    const video = page.locator('section[aria-labelledby="profiler-title"] video');
-    await expect(video).not.toHaveAttribute('autoplay', '');
-    expect(await video.evaluate((element) => element.paused), 'the film must not play').toBe(true);
-    expect(await video.evaluate((element) => element.controls), 'the reader can still start it').toBe(true);
+    for (const selector of AUTOPLAYING) {
+      const video = page.locator(selector);
+      await expect(video).not.toHaveAttribute('autoplay', '');
+      expect(await playback(video), `${selector} holds still, and the reader can still start it`).toMatchObject({ paused: true, controls: true });
+    }
+  });
+});
+
+// [WEB-DESIGN-HERO] The hero is one screen: a compact headline beside the film,
+// with the whole film above the fold on every desktop screen.
+test.describe('Home hero layout', () => {
+  for (const [width, height] of [[1280, 720], [1440, 800], [1808, 960], [2560, 1300]]) {
+    test(`fills a ${width}x${height} screen with the whole film above the fold`, async ({ page, isMobile }) => {
+      test.skip(isMobile, 'the desktop layout');
+      await page.setViewportSize({ width, height });
+      await page.goto('/');
+      const box = (selector) => page.locator(selector).boundingBox();
+      const [header, hero, headline, film] = await Promise.all(['.site-header', 'section.hero', '.hero h1', '.hero video'].map(box));
+      expect(hero.y, 'the hero starts under the header').toBeCloseTo(header.y + header.height, 0);
+      expect(Math.round(hero.y + hero.height), 'the hero fills the screen, no more').toBe(height);
+      expect(film.y + film.height, 'the whole film is above the fold').toBeLessThanOrEqual(height);
+      expect(film.x, 'the film sits beside the copy').toBeGreaterThan(headline.x + headline.width);
+      expect(film.width, 'the film, not the headline, owns the hero').toBeGreaterThan(headline.width * 1.5);
+      expect(headline.height, 'the headline stays compact').toBeLessThan(height * 0.3);
+    });
+  }
+
+  test('stacks the copy above the film on a phone, neither wider than the screen', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'the phone layout');
+    await page.goto('/');
+    const viewport = page.viewportSize();
+    const headline = await page.locator('.hero h1').boundingBox();
+    const film = await page.locator('.hero video').boundingBox();
+    expect(film.y, 'the film follows the copy').toBeGreaterThan(headline.y + headline.height);
+    expect(film.x + film.width).toBeLessThanOrEqual(viewport.width);
+    expect(headline.height, 'the headline fits in a third of the screen').toBeLessThan(viewport.height / 3);
   });
 });
 

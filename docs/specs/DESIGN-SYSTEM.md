@@ -77,6 +77,31 @@ Radii are `0.35rem`, `0.65rem`, and `1rem` through `--radius-sm`, `--radius-md`,
 
 Main page sections center within the shell and retain fluid side gutters. Article titles, media, code, and tables use the full editorial frame; paragraphs, lists, quotes, and secondary headings use the narrower reading measure. The docs sidebar collapses below `1024px` so it never crushes the prose column. Images are responsive by default, and wide code blocks, diagrams, and tables scroll within their own bounds rather than widening the page.
 
+## [WEB-DESIGN-HERO] Home Hero
+
+The home hero is one screen. On desktop it fills the viewport below the header, no more and no less: a compact copy column aligned to the shell sits beside the product film, which runs out to the window's right edge and is capped so the whole film stays above the fold. The headline is one short sentence plus the accent line, at most `3.25rem`, and never taller than a third of the viewport. Below `1024px` the copy stacks above the film at full width.
+
+## [WEB-DESIGN-DOCS-NAV] Docs Navigation
+
+The docs sidebar groups pages by what the reader is doing. The groups are declared once, in `navigation.json` (`docs`), with their labels in `i18n.json` (`docs.groups`):
+
+| Group | Pages |
+|---|---|
+| Set up | Getting Started, Editor Setup, Configuration |
+| Write code | F# Language Support, Code Completions, Hover & Quick Info, Go to Definition, Diagnostics, Refactoring & Code Actions |
+| Project tools | Context Menus, NuGet Package Manager, Profiler |
+| For contributors | Architecture, Contributing |
+
+- Every docs page appears in exactly one group, in every language, and links stay within the page's language.
+- F# leads "Write code".
+- Pages for people building SharpLsp, not using it, go in "For contributors". That group comes last, below a rule, as a disclosure that stays folded unless the current page is in it.
+- The current page is marked `aria-current="page"`.
+- At and below `1024px` the sidebar is an off-canvas drawer:
+  - its full-width menu control sticks under the header as the reader scrolls;
+  - the drawer opens directly beneath that control and reaches the bottom of the screen;
+  - every entry is a 44px touch target;
+  - Escape, or a tap beside the drawer, closes it.
+
 ## [WEB-DESIGN-COMPONENTS] Components
 
 Primary and secondary actions use `.button` with `.primary` or `.secondary`; `.nav-button` shares the same control geometry. Controls have a minimum height of `2.75rem` (44px), a visible border or fill, and a clear hover/focus state.
@@ -109,6 +134,9 @@ Screenshots and video of a SharpLsp feature show the real extension, never a moc
   - Stills ship as WebP, 2400px wide, with `width` and `height` set.
   - Marketing pages may autoplay a film only when it is muted and looping; docs pages use controls.
   - Every autoplaying video pauses and shows its controls under `prefers-reduced-motion: reduce`.
+  - Every video ships a WebP poster, the films and the recordings alike.
+- **One catalogue.** Every video on the site is declared once in `src/website/src/_data/videos.json`: encodings, size, length, upload date, and its label and caption in each language. Pages place a video with the `{% video "<id>" %}` shortcode (`src/website/video-figure.js`) and never repeat `<video>` markup. The shortcode renders in the page's language and emits a schema.org `VideoObject` whose name is the player's label, so search results describe exactly what a reader hears.
+- **Placement.** A video goes wherever a page talks about what it shows: the home page (the profiler film autoplaying in the hero, the CPU recording in the profiler section), the Getting Started page (the tour), the profiler docs (the film and both recordings), and every blog post that discusses the profiler or the editor experience, in every language the page is published in.
 
 ## [WEB-DESIGN-RESPONSIVE] Responsive Behavior
 
@@ -118,7 +146,7 @@ Design mobile-first: content order, meaning, and actions must work in a single c
 - multi-column workflows, reasons, releases, blog cards, and language sections collapse to one column;
 - featured posts return to normal card flow;
 - primary action rows stack to full-width controls where needed;
-- the docs sidebar becomes an off-canvas panel opened by a full-width menu control;
+- the docs sidebar becomes an off-canvas drawer opened by a sticky full-width menu control ([WEB-DESIGN-DOCS-NAV]);
 - prose and shell gutters reduce to `1rem`.
 
 At `380px`, proof items become one column and dense release metadata stacks. New components must remain usable at 320px without horizontal page overflow.

@@ -6,7 +6,7 @@ lang: ja
 date: 2026-10-14
 author: SharpLsp チーム
 image: /assets/images/blog/dotnet-framework-windows-vs-code.png
-imageAlt: マルチターゲットプロジェクトの net48 ビルドがデスクトップ CLR で実行され、その横に net48 と net10.0 の結果を表示するテストエクスプローラーのツリー
+imageAlt: 石造りの窓とモダンな緑のアーチを結ぶエメラルド色のリボンで、.NET Framework と最新の .NET の連携を表現
 tags:
   - posts
   - csharp

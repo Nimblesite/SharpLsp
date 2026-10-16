@@ -6,7 +6,7 @@ lang: ja
 date: 2026-09-22
 author: SharpLsp チーム
 image: /assets/images/blog/microsoft-testing-platform-mtp-dotnet-test-csharp-fsharp.png
-imageAlt: C# と F# の xUnit v3、MSTest、NUnit テストを SharpLsp Test Explorer に表示する dotnet test モジュール
+imageAlt: 共通の台座に並ぶアイボリーの陶製タイルと3つのエメラルド色のチェックマークで、ソフトウェアテストの成功を表現
 tags:
   - posts
   - testing

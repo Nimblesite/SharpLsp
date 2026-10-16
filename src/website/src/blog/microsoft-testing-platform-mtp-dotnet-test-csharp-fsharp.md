@@ -5,7 +5,7 @@ description: "SharpLsp's VS Code Test Explorer now discovers, runs, debugs and c
 date: 2026-09-22
 author: SharpLsp Team
 image: /assets/images/blog/microsoft-testing-platform-mtp-dotnet-test-csharp-fsharp.png
-imageAlt: A dotnet test module listing xUnit v3, MSTest and NUnit tests for C# and F# into the SharpLsp Test Explorer
+imageAlt: Three emerald check marks in ivory ceramic tiles on a shared platform, representing passing software tests
 tags:
   - posts
   - testing

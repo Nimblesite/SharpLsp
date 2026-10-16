@@ -9,13 +9,7 @@ eleventyExcludeFromCollections: true
 
 SharpLsp は、VS Code から離れることなく、実行中の任意の .NET プロセスの CPU とメモリをプロファイリングします。ホットな行はコード上で直接ハイライトされ、隣にフレームグラフとホット関数の表が表示され、ライブのヒープタイムラインがアプリの実行中にリークの疑いをランク付けします。`dotnet-trace` のインストールもダンプもライセンスも不要です。
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" poster="/assets/videos/profiler-film-poster.webp" width="1920" height="1080" aria-label="SharpLsp プロファイラーの紹介映像：VS Code での CPU プロファイリング、ヒートマップ、フレームグラフ、メモリタイムライン、リークの疑い">
-    <source src="/assets/videos/profiler-film.webm" type="video/webm">
-    <source src="/assets/videos/profiler-film.mp4" type="video/mp4">
-  </video>
-  <figcaption>1 分でわかるプロファイラー。エディターの映像はすべて、SharpLsp 拡張機能で実際の .NET アプリをプロファイリングしながら VS Code で収録したものです。早送りの部分は画面上に表示されます。</figcaption>
-</figure>
+{% video "profiler-film" %}
 
 ## しくみ
 
@@ -87,12 +81,7 @@ SharpLsp サイドバーの **Processes** ビューは、マシン上の .NET �
 - VS Code の組み込みプロファイルビューアーで開ける `.cpuprofile`
 - フレームグラフの SVG
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="VS Code での CPU プロファイリングセッションの無編集の画面録画">
-    <source src="/assets/videos/profiler-cpu-recording.mp4" type="video/mp4">
-  </video>
-  <figcaption>無編集、実時間：実行中のプロセスで Profile CPU を実行し、Stop すると、ヒートマップと結果パネルが表示されます。</figcaption>
-</figure>
+{% video "profiler-cpu-recording" %}
 
 ## メモリ追跡
 
@@ -124,12 +113,7 @@ SharpLsp サイドバーの **Processes** ビューは、マシン上の .NET �
 
 **SharpLsp: Show Reference Graph** は、ある型の保持グラフを描画します。その型を保持しているオブジェクトと、それらを生かし続けているルートが表示されます。ヒープの増加はヒューリスティックであり、リークの証明ではありません。疑わしい項目は、保持パスとアプリの動作で確認してください。
 
-<figure class="article-figure">
-  <video controls muted playsinline preload="metadata" width="1920" height="1200" aria-label="VS Code でのメモリ追跡の 3 倍速の画面録画">
-    <source src="/assets/videos/profiler-memory-timelapse.mp4" type="video/mp4">
-  </video>
-  <figcaption>3 倍速のメモリ追跡：自動スナップショットが届くたびに、ヒープのタイムラインが上昇していきます。</figcaption>
-</figure>
+{% video "profiler-memory-timelapse" %}
 
 ## コマンド
 

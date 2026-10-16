@@ -48,7 +48,7 @@
     },
     "home": {
       "eyebrow": "Open-source .NET tooling · C# + F#",
-      "title": "SharpLsp: full C# and F# development. The complete .NET development experience.",
+      "title": "Full C# and F# development.",
       "titleAccent": "In your editor.",
       "lede": "SharpLsp is the open-source alternative to Visual Studio, Rider, and C# Dev Kit — language intelligence, solution tooling, refactoring, NuGet, debugging, and profiling for C# and F# without subscriptions or vendor lock-in.",
       "engines": "C# via Roslyn. F# via FSharp.Compiler.Service.",
@@ -57,8 +57,6 @@
       "github": "View on GitHub",
       "trustLabel": "Project facts",
       "trust": ["MIT licensed", "Windows, macOS & Linux", "No account required"],
-      "screenshotAlt": "SharpLsp running a full .NET solution in VS Code with C# navigation, solution explorer, and a graphical NuGet package manager",
-      "screenshotCaption": "A real .NET workspace powered by SharpLsp — solution explorer, code intelligence, NuGet, debugging, and profiling included.",
       "proofLabel": "SharpLsp foundations",
       "proof": [
         { "title": "C#", "detail": "Roslyn intelligence" },
@@ -70,7 +68,6 @@
       "profilerTitle": "Find the hot path. Catch the leak.",
       "profilerIntro": "Attach to any running .NET process from VS Code. Hot lines light up in your code, a flame graph lands beside it, and a live heap timeline ranks leak suspects while the app runs. No dotnet-trace, no dumps, no license.",
       "profilerCta": "Explore the profiler",
-      "profilerVideoLabel": "SharpLsp profiler in VS Code: one-click CPU profiling, inline heat map, flame graph, live memory timeline and ranked leak suspects",
       "profilerCaption": "Recorded in VS Code with the SharpLsp extension, profiling a real .NET app.",
       "workflowEyebrow": "The whole workflow",
       "workflowTitle": "One Dev Experience. Everything you need to ship .NET.",
@@ -155,6 +152,12 @@
       "profiler": "Profiler",
       "contributing": "Contributing",
       "menuLabel": "Documentation menu",
+      "groups": {
+        "setUp": "Set up",
+        "writeCode": "Write code",
+        "tools": "Project tools",
+        "contributors": "For contributors"
+      },
       "related": {
         "title": "Related Documentation",
         "architectureKicker": "Architecture",
@@ -246,7 +249,7 @@
     },
     "home": {
       "eyebrow": "开源 .NET 工具 · C# + F#",
-      "title": "SharpLsp：全面支持 C# 和 F# 开发。完整的 .NET 开发体验。",
+      "title": "全面支持 C# 和 F# 开发。",
       "titleAccent": "就在你的编辑器中。",
       "lede": "SharpLsp 是 Visual Studio、Rider 和 C# Dev Kit 的开源替代方案，为 C# 与 F# 提供语言智能、解决方案工具、重构、NuGet、调试和性能分析，无需订阅，也没有厂商锁定。",
       "engines": "C# 由 Roslyn 驱动，F# 由 FSharp.Compiler.Service 驱动。",
@@ -255,8 +258,6 @@
       "github": "在 GitHub 上查看",
       "trustLabel": "项目特点",
       "trust": ["MIT 许可证", "支持 Windows、macOS 与 Linux", "无需账户"],
-      "screenshotAlt": "SharpLsp 在 VS Code 中运行完整 .NET 解决方案，显示 C# 导航、解决方案资源管理器和图形化 NuGet 包管理器",
-      "screenshotCaption": "由 SharpLsp 驱动的真实 .NET 工作区 — 包含解决方案资源管理器、代码智能、NuGet、调试和性能分析。",
       "proofLabel": "SharpLsp 基础能力",
       "proof": [
         { "title": "C#", "detail": "Roslyn 语言智能" },
@@ -268,7 +269,6 @@
       "profilerTitle": "找到热点路径，揪出内存泄漏。",
       "profilerIntro": "在 VS Code 中附加到任意正在运行的 .NET 进程。热点代码行直接在代码中高亮，火焰图就在旁边，实时堆时间线会在应用运行时为可疑泄漏排序。无需 dotnet-trace，无需转储，无需许可证。",
       "profilerCta": "了解性能分析器",
-      "profilerVideoLabel": "VS Code 中的 SharpLsp 性能分析器：一键 CPU 分析、内联热力图、火焰图、实时内存时间线和可疑泄漏排序",
       "profilerCaption": "在 VS Code 中使用 SharpLsp 扩展录制，分析的是一个真实的 .NET 应用。",
       "workflowEyebrow": "完整工作流",
       "workflowTitle": "一套开发体验，涵盖交付 .NET 所需的一切。",
@@ -341,6 +341,12 @@
       "profiler": "性能分析器",
       "contributing": "参与贡献",
       "menuLabel": "文档菜单",
+      "groups": {
+        "setUp": "安装与设置",
+        "writeCode": "编写代码",
+        "tools": "项目工具",
+        "contributors": "面向贡献者"
+      },
       "related": {
         "title": "相关文档",
         "architectureKicker": "架构",
@@ -432,7 +438,7 @@
     },
     "home": {
       "eyebrow": "オープンソース .NET ツール · C# + F#",
-      "title": "SharpLsp：C# と F# の開発をフルサポート。完全な .NET 開発体験を。",
+      "title": "C# と F# の開発をフルサポート。",
       "titleAccent": "いつものエディターで。",
       "lede": "SharpLsp は Visual Studio、Rider、C# Dev Kit に代わるオープンソースの選択肢です。C# と F# の言語機能、ソリューション管理、リファクタリング、NuGet、デバッグ、プロファイリングを、サブスクリプションやベンダーロックインなしで提供します。",
       "engines": "C# は Roslyn、F# は FSharp.Compiler.Service を使用。",
@@ -441,8 +447,6 @@
       "github": "GitHub で見る",
       "trustLabel": "プロジェクト情報",
       "trust": ["MIT ライセンス", "Windows・macOS・Linux", "アカウント不要"],
-      "screenshotAlt": "VS Code で完全な .NET ソリューションを実行する SharpLsp。C# ナビゲーション、ソリューションエクスプローラー、NuGet パッケージマネージャーを表示",
-      "screenshotCaption": "SharpLsp が支える実際の .NET ワークスペース — ソリューション管理、コードインテリジェンス、NuGet、デバッグ、プロファイリングを搭載。",
       "proofLabel": "SharpLsp の基盤",
       "proof": [
         { "title": "C#", "detail": "Roslyn の言語機能" },
@@ -454,7 +458,6 @@
       "profilerTitle": "ホットパスを見つけ、リークを捕まえる。",
       "profilerIntro": "VS Code から実行中の任意の .NET プロセスにアタッチできます。ホットな行はコード上で直接ハイライトされ、隣にフレームグラフが表示され、ライブのヒープタイムラインがアプリの実行中にリークの疑いをランク付けします。dotnet-trace もダンプもライセンスも不要です。",
       "profilerCta": "プロファイラーを見る",
-      "profilerVideoLabel": "VS Code の SharpLsp プロファイラー：ワンクリックの CPU プロファイリング、インラインのヒートマップ、フレームグラフ、ライブのメモリタイムライン、ランク付けされたリークの疑い",
       "profilerCaption": "SharpLsp 拡張機能を使って VS Code で収録。実際の .NET アプリをプロファイリングしています。",
       "workflowEyebrow": "ワークフロー全体",
       "workflowTitle": "1 つの開発体験。.NET の出荷に必要なすべてを。",
@@ -527,6 +530,12 @@
       "profiler": "プロファイラー",
       "contributing": "コントリビューション",
       "menuLabel": "ドキュメントメニュー",
+      "groups": {
+        "setUp": "セットアップ",
+        "writeCode": "コードを書く",
+        "tools": "プロジェクトツール",
+        "contributors": "コントリビューター向け"
+      },
       "related": {
         "title": "関連ドキュメント",
         "architectureKicker": "アーキテクチャ",

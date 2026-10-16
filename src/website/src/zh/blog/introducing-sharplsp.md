@@ -146,12 +146,14 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 
 悬停显示完整的方法或类型签名，并附上其 XML 文档——参数、返回值描述、备注、异常和示例。这些内容由源代码中的 XML 文档注释渲染，或者在悬停第三方 API 时由 NuGet 包中嵌入的文档渲染。Roslyn 的 `DocumentationCommentCompiler` 暴露了所有这些信息，包括来自基类和接口实现的继承文档。
 
-侧边栏中可见的 Profiler 面板并非可有可无的装饰。SharpLsp 显示机器上所有正在运行的 .NET 进程，让你随时知道当前正在执行什么。当你在追查性能回归或确认某个服务确实已经停止时，这种环境进程列表立刻派上用场——你不必打开 Activity Monitor 或运行 `ps aux | grep dotnet`。
-
 <figure class="article-figure">
   <img src="/assets/screenshots/vscode-hover-page.png" alt="悬停提示显示 Factorial 方法签名，以及完整 XML 文档和参数说明">
   <figcaption>悬停渲染 XML 文档注释，包括参数和返回值文档。</figcaption>
 </figure>
+
+侧边栏中可见的 Profiler 面板并非可有可无的装饰。SharpLsp 显示机器上所有正在运行的 .NET 进程，让你随时知道当前正在执行什么。当你在追查性能回归或确认某个服务确实已经停止时，这种环境进程列表立刻派上用场——你不必打开 Activity Monitor 或运行 `ps aux | grep dotnet`。
+
+{% video "profiler-film" %}
 
 对于 F#，悬停在结构上比 C# 更重要。由于 F# 代码大量依赖类型推断，绑定的类型经常没有在源码中显式写出。在深度嵌套的 `|>` 流水线中，每个中间表达式的类型都由编译器推断——而这是该信息的唯一权威来源。FSharp.Compiler.Service 的 `GetToolTip` API 暴露了这些推断类型，SharpLsp 以与 C# 悬停结果相同的优先级和格式渲染它们。悬停在一个 F# 绑定上会显示其完整的推断类型，而这往往是它存在的唯一文档。
 

@@ -6,7 +6,7 @@ lang: zh
 date: 2026-10-14
 author: SharpLsp 团队
 image: /assets/images/blog/dotnet-framework-windows-vs-code.png
-imageAlt: 多目标项目的 net48 构建在桌面 CLR 上运行，旁边是显示 net48 与 net10.0 结果的测试资源管理器树
+imageAlt: 翠绿色缎带连接石窗与现代绿色拱门，象征 .NET Framework 与现代 .NET 协同工作
 tags:
   - posts
   - csharp

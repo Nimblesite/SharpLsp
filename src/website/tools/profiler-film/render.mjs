@@ -1,7 +1,7 @@
 // Implements [WEB-DESIGN-MEDIA]. Renders the profiler film and the website's profiler media from capture.mjs's
 // output: steps film.html frame by frame in headless Chromium, pipes the frames
 // to ffmpeg, then writes the site assets (film MP4/WebM + poster, the unedited
-// recordings, WebP stills).
+// recordings + posters, WebP stills).
 //
 //   node src/website/tools/profiler-film/render.mjs
 //   node src/website/tools/profiler-film/render.mjs --preview 2,9.5,24   (stills of those seconds)
@@ -89,9 +89,14 @@ async function renderMaster(master) {
 function publishFilm(master) {
   ffmpeg(['-i', master, '-c:v', 'libx264', '-preset', 'veryslow', '-crf', '26', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', path.join(videos, 'profiler-film.mp4')], 'film mp4');
   ffmpeg(['-i', master, '-c:v', 'libvpx-vp9', '-crf', '40', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2', '-an', path.join(videos, 'profiler-film.webm')], 'film webm');
-  const poster = path.join(out, 'poster.png');
-  ffmpeg(['-ss', String(POSTER_AT), '-i', master, '-frames:v', '1', poster], 'poster');
-  webp(poster, path.join(videos, 'profiler-film-poster.webp'), 1920);
+  poster(master, POSTER_AT, 'profiler-film');
+}
+
+/** `<name>-poster.webp`: the frame of `video` at `at` seconds. Every site video carries one. */
+function poster(video, at, name) {
+  const frame = path.join(out, `${name}-poster.png`);
+  ffmpeg(['-ss', String(at), '-i', video, '-frames:v', '1', frame], `${name} poster`);
+  webp(frame, path.join(videos, `${name}-poster.webp`), 1920);
 }
 
 /** The unedited recordings: CPU in real time, memory as a 3x time-lapse. */
@@ -99,6 +104,8 @@ function publishRecordings() {
   const encode = ['-c:v', 'libx264', '-preset', 'veryslow', '-crf', '26', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an'];
   ffmpeg(['-i', path.join(out, 'clips/cpu.mp4'), '-vf', 'scale=1920:-2:flags=lanczos', ...encode, path.join(videos, 'profiler-cpu-recording.mp4')], 'cpu recording');
   ffmpeg(['-i', path.join(out, 'clips/memory.mp4'), '-vf', 'setpts=PTS/3,fps=30,scale=1920:-2:flags=lanczos', ...encode, path.join(videos, 'profiler-memory-timelapse.mp4')], 'memory recording');
+  poster(path.join(videos, 'profiler-cpu-recording.mp4'), 16, 'profiler-cpu-recording');
+  poster(path.join(videos, 'profiler-memory-timelapse.mp4'), 14, 'profiler-memory-timelapse');
 }
 
 function webp(source, target, width) {

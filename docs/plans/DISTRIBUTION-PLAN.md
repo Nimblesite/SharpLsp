@@ -122,6 +122,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 - [x] Install the Rust toolchain in CI shards and remove the prebuilt bypass flags.
 - [x] Cover all six release target names; fix the internal underscore leaking into platform IDs.
 - [x] Complete an uncontended real package build and MTP VSIX feature runs: 22 main-chunk and 11 parity tests passing, each with both old prebuilt flags set; full tooling 39/39 and VS Code lint/type checking pass. Logs: `/tmp/sharplsp-vsix-rebuild.NsFxE8/`. Packaged VSIX SHA-256: `1f36e6117f6a0ed8a0958db833e0cfdfbcc18b3d1bd79510f058fd3afd629b2c`. The initial concurrent-build failure is superseded, not counted as a pass. Tracking: [#279](https://github.com/Nimblesite/SharpLsp/issues/279).
+- [x] Retry sidecar `bin`/`obj` removal while restarted language servers design-time-build into it: `reinstall-vsix` failed with `ENOTEMPTY` before rebuilding anything. Regression test races a real writer process (`tools/vsix/rebuild-contract.test.mjs`).
 - [ ] Land the changes and pass combined supported-platform CI; local macOS evidence does not certify Windows/Linux.
 
 ## TODO Checklist — dependency vulnerability audit ([DIST-CI-AUDIT])

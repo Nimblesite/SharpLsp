@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
-  initMobileMenu();
-  initDocsMenu();
+  initDrawer("mobile-menu-toggle", "nav-menu");
+  // [WEB-DESIGN-DOCS-NAV] The docs sidebar is a drawer on a phone.
+  initDrawer("docs-menu-toggle", "docs-sidebar");
   initThemeToggle();
   initLanguageSwitcher();
   initBlogSearch();
@@ -22,27 +23,19 @@ function setDisclosure(button, target, expanded) {
   target.classList.toggle("open", expanded);
 }
 
-function initMobileMenu() {
-  const button = document.getElementById("mobile-menu-toggle");
-  const menu = document.getElementById("nav-menu");
-  if (!button || !menu) return;
+// A phone menu: its button toggles it, and Escape or a tap anywhere outside it closes it.
+function initDrawer(buttonId, drawerId) {
+  const button = document.getElementById(buttonId);
+  const drawer = document.getElementById(drawerId);
+  if (!button || !drawer) return;
   button.addEventListener("click", () => {
-    setDisclosure(button, menu, button.getAttribute("aria-expanded") !== "true");
+    setDisclosure(button, drawer, button.getAttribute("aria-expanded") !== "true");
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") setDisclosure(button, menu, false);
+    if (event.key === "Escape") setDisclosure(button, drawer, false);
   });
-}
-
-function initDocsMenu() {
-  const button = document.getElementById("docs-menu-toggle");
-  const sidebar = document.getElementById("docs-sidebar");
-  if (!button || !sidebar) return;
-  button.addEventListener("click", () => {
-    setDisclosure(button, sidebar, button.getAttribute("aria-expanded") !== "true");
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") setDisclosure(button, sidebar, false);
+  document.addEventListener("click", (event) => {
+    if (!button.contains(event.target) && !drawer.contains(event.target)) setDisclosure(button, drawer, false);
   });
 }
 

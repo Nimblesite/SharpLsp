@@ -36,6 +36,7 @@
 *.otf binary
 *.woff binary
 *.woff2 binary
+# Git LFS — every file over 4 MB is stored here, never as a raw blob (AGENTS.md › Git).
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 *.webm filter=lfs diff=lfs merge=lfs -text
 *.mov filter=lfs diff=lfs merge=lfs -text

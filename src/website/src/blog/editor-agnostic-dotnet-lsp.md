@@ -86,6 +86,8 @@ The architecture is deliberately split:
 
 This is why the VS Code extension can provide a Solution Explorer and profiler view while the same `sharplsp` can still serve editors that only support standard LSP capabilities.
 
+{% video "sharplsp-tour" %}
+
 The alpha is focused on making the VS Code path solid first — that is the right proving ground. The long-term target is one open-source .NET tooling stack, one server, every editor, with a profiler.
 
 ## What This Looks Like in Practice
