@@ -122,6 +122,34 @@ mod contract {
         Ok(())
     }
 
+    /// The `[profiler]` block the 0.25 docs published must keep loading: its retired
+    /// trace and counter defaults are dropped, never echoed, and never fail startup.
+    #[test]
+    fn retired_profiler_keys_load_and_are_dropped() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(
+            dir.path().join("sharplsp.toml"),
+            "[profiler]\nmax_concurrent_sessions = 3\ndefault_trace_duration = 30\n\
+             default_trace_format = \"speedscope\"\n\
+             default_counter_providers = [\"System.Runtime\"]\n\
+             default_counter_interval = 1\noutput_directory = \"traces\"\n",
+        )?;
+        let profiler = resolve(dir.path(), None, &json!({}), json!({}))?["profiler"].clone();
+        assert_eq!(profiler["max_concurrent_sessions"], 3);
+        assert_eq!(profiler["output_directory"], "traces");
+        assert_eq!(
+            profiler.as_object().map(serde_json::Map::len),
+            Some(2),
+            "{profiler}"
+        );
+        let mut config = Configuration::new(dir.path().to_path_buf());
+        config.update(&json!({"sharplsp":{"profiler":{"default_counter_interval":2}}}))?;
+        assert_eq!(config.client["profiler"]["default_counter_interval"], 2);
+        let overlay = json!({"profiler":{"default_trace_seconds":30}});
+        assert!(resolve(dir.path(), None, &json!({}), overlay).is_err());
+        Ok(())
+    }
+
     #[test]
     fn lsp_resolution_uses_scope_and_rejects_non_file_uris() -> Result<()> {
         let dir = tempfile::tempdir()?;

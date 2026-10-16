@@ -21,6 +21,12 @@ exclusions. Unknown keys, invalid enums and malformed exception type names produ
 errors. Invalid client updates retain the previous client layer. Editor defaults
 MUST NOT be sent as explicit overrides.
 
+Retired keys are the exception: keys an earlier release documented that no longer
+have any effect are dropped with a logged warning and are not echoed, so files
+written from those docs keep loading. They are the 0.25 profiler defaults
+`default_trace_duration`, `default_trace_format`, `default_counter_providers` and
+`default_counter_interval`. A setting is never removed without being retired here.
+
 `sharplsp/configuration` accepts `{ scopeUri?, overrides? }` and returns the full
 validated configuration as JSON using the TOML field names. `scopeUri` is a local
 workspace-directory or project-file URI; it enables independent resolution in

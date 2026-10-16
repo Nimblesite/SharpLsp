@@ -742,10 +742,6 @@ stateDiagram-v2
 ```toml
 [profiler]
 max_concurrent_sessions = 5
-default_trace_duration = 30
-default_trace_format = "speedscope"
-default_counter_providers = ["System.Runtime"]
-default_counter_interval = 1
 output_directory = ".sharplsp/profiles"
 ```
 
