@@ -89,7 +89,7 @@ jobs:
       - name: Duplication gate (Deslop)
         env:
           # Pinned — https://github.com/Nimblesite/Deslop/releases
-          DESLOP_VERSION: "0.34.0"
+          DESLOP_VERSION: "0.38.0"
         run: |-
           set -euo pipefail
           base="https://github.com/Nimblesite/Deslop/releases/download/v${DESLOP_VERSION}"

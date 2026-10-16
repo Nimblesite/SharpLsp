@@ -855,7 +855,11 @@ Duplication in shipped code is gated in PHASE 1 by
    downloads the archive AND its published `.sha256` and verifies it before
    unpacking, because it runs a downloaded binary over the whole tree. A missing
    binary fails the step rather than skipping the gate.
-4. `deslop .` exits non-zero (3) the moment measured duplication exceeds the
+4. CI pins Deslop 0.38.0. Its default total counts Identical and Nearly identical
+   clones; loosely similar findings remain in the report but do not contribute
+   to that total. Local threshold ratchets use the same version and counting
+   policy as CI; percentages from an older all-kind total are not comparable.
+5. `deslop .` exits non-zero (3) the moment measured duplication exceeds the
    threshold. Deslop's local index (`.deslop/`) and report files are git-ignored.
 
 ## [DIST-CI-SPEC-CITATIONS] Spec Citation Gate
