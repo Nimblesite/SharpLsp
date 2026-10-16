@@ -2,13 +2,12 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     id("java")
-    kotlin("jvm") version "2.3.0"
-    // 2.14 is the current stable intellij-platform Gradle plugin release;
-    // 2.2 was rejected by the platform with an "outdated" warning.
-    id("org.jetbrains.intellij.platform") version "2.14.0"
+    kotlin("jvm") version "2.3.21"
+    // The 2.x plugin requires Gradle 9.0+, matching the wrapper pin.
+    id("org.jetbrains.intellij.platform") version "2.19.0"
     // Line coverage for the Rider plugin, gated by the repo-wide ratchet in
     // coverage-thresholds.json. [DIST-CI-RIDER]
-    id("org.jetbrains.kotlinx.kover") version "0.9.2"
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
 }
 
 group = providers.gradleProperty("pluginGroup").get()

@@ -50,6 +50,8 @@ function multiRootWorkspace() {
 function testConfig(label, workspaceFolder, userDataDir) {
   return {
     label,
+    // Explicit minimum-editor runs verify [DIST-VSIX-MODEL].
+    version: process.env.VSCODE_TEST_VERSION ?? 'stable',
     files: 'test-cli-runner.cjs',
     extensionDevelopmentPath: '.',
     workspaceFolder,

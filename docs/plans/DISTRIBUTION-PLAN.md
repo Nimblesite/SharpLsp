@@ -2,6 +2,15 @@
 
 Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
+## Dependency refresh
+
+- [x] Merge lspkit dependency PRs #5 and #6 and advance the public submodule pin.
+- [x] Align the VS Code SDK and minimum editor at 1.140.0 [DIST-VSIX-MODEL].
+- [x] Refresh compatible dependencies, retaining the SDK/Roslyn pairing and net10.0-compatible MSBuild assemblies.
+- [x] Resolve sidecar symlink identities while preserving protocol paths; canonicalize generated temp paths and use portable Unix socket byte limits [SHARPLSP-ARCHITECTURE-PATHS] (#347).
+- [x] Verify 59 real-editor checks on VS Code 1.140.0 and package the production VSIX.
+- [x] Verify locally available checks and prepare the dependency-upgrade PR; validate editor gestures on headless CI when the macOS desktop is locked.
+
 ## Context — why this plan was reopened (2026-04-30)
 
 The v0.1.0 GitHub release shipped framework-dependent sidecars (`dotnet publish --no-self-contained`, target `net10.0`) without any mechanism to acquire .NET 10 on the user's machine. On any host that doesn't already have .NET 10 installed, the apphost exits with code 150 ("You must install or update .NET") and Shipwright's startup probe reports `version check failed... no resolved source` — a useless diagnostic. The previous spec demanded the extension "MUST crash with a clear error" if .NET 10 was missing, which is the wrong UX.

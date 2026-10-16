@@ -164,6 +164,14 @@ The VSIX is self-contained. A user who installs the extension gets everything th
 
 **No component is ever installed via `dotnet tool install`, package manager, or any mechanism outside the VSIX.** The `dotnet-tool` source type is NOT used for VSIX distribution.
 
+The extension's minimum editor is VS Code **1.140.0**. Its `engines.vscode`
+range is `^1.140.0`, and `@types/vscode` is pinned to `~1.140.0` so a dependency
+refresh cannot silently enable APIs from a later editor. Validate SDK upgrades
+against the declared minimum editor as well as the regular stable test host,
+and verify that the production VSIX can be packaged with that API requirement.
+The test runner accepts `VSCODE_TEST_VERSION=1.140.0` to repeat the minimum-editor
+check; its regular run targets stable VS Code.
+
 ## [DIST-VSIX-REBUILD] Mandatory Clean Rebuild Before Packaging and Tests
 
 Every supported VSIX package and test entry point MUST rebuild its complete payload from clean compiler output by default. A successful incremental build, a cached binary, or a previous test run is not proof of freshness.

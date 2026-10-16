@@ -8,7 +8,7 @@
       "language": "rust"
     },
     "sharplsp-sidecar-common": {
-      "threshold": 95.02,
+      "threshold": 96.06,
       "language": "dotnet"
     },
     "sharplsp-sidecar-csharp": {

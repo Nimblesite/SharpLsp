@@ -74,6 +74,10 @@ Outside the module, code MUST NOT call the platform path API (`System.IO.Path`, 
 
 Rationale: MSBuild, Roslyn, FCS, the host's canonicaliser and the editor each spell one file differently (`..` segments, case, verbatim prefixes, separators), and every scattered comparison is a place where two of those spellings fail to match. [GitHub #110] and the F# reference wiring under [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] were both bugs of that class.
 
+Sidecar identity resolves symlinked ancestors on Windows and macOS in the shared comparer and `IdentityOf`. Missing outputs retain their suffix beneath the resolved ancestor: an unbuilt project reference has the same identity through either spelling. Skill paths beneath linked directories follow the same rule. Normalized protocol paths retain the spelling the editor opened; comparing aliases must never redirect an edit into another document. Generated temporary paths use their physical spelling so SDK restore graphs have consistent project keys.
+
+Unix socket relocation uses UTF-8 byte length and a 103-byte ceiling, fitting macOS as well as Linux. A missing parent still fails to bind; relocation never turns an invalid endpoint into a successful connection elsewhere.
+
 Code implementing this section cites `[SHARPLSP-ARCHITECTURE-PATHS]`.
 
 ### [SHARPLSP-ARCHITECTURE-IPC] IPC Transport Protocol

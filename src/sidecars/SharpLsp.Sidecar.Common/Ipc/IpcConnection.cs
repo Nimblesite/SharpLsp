@@ -270,20 +270,11 @@ public static class IpcConnection
     }
 
     /// <summary>
-    /// Unix domain sockets have a 108-char path limit. If the path exceeds
-    /// this, relocate to a temp directory using a hash of the original path.
+    /// Delegate Unix socket byte limits and relocation to the shared path module.
     /// </summary>
     internal static string ShortenIfNeeded(string socketPath)
     {
-        const int unixSocketPathLimit = 107;
-        if (socketPath.Length <= unixSocketPathLimit)
-        {
-            return socketPath;
-        }
-
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(socketPath));
-        var hex = Convert.ToHexString(hash).AsSpan(0, 16);
-        return NativePaths.Temp($"sharplsp-{hex}.sock");
+        return NativePaths.ShortenUnixSocketPath(socketPath);
     }
 
     /// <summary>True when the endpoint addresses the Windows named-pipe namespace.</summary>

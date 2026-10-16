@@ -16,7 +16,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import * as vscode from 'vscode';
-import { OUTPUT_CHANNEL_NAME } from '../../constants.js';
+import { CMD_RESTART_SERVER, OUTPUT_CHANNEL_NAME } from '../../constants.js';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { classifyServerLine, serverStdioOptions } from '../../server-stderr.js';
 import { recordingChannel } from './fsi-build-kit.js';
@@ -136,6 +136,9 @@ suite('Server stderr is shown at the level the host wrote', () => {
     suiteSetup(async function () {
       this.timeout(ACTIVATION_MS);
       await activateRealSharpLsp();
+      // Earlier suites can rotate the original startup out of the bounded log.
+      // Spawn this suite's own session before asserting how its startup is filed.
+      await vscode.commands.executeCommand(CMD_RESTART_SERVER);
       const api = vscode.extensions.getExtension(EXTENSION_ID)?.exports as SharpLspExtensionApi;
       channelLog = path.join(api.logUri.fsPath, `${OUTPUT_CHANNEL_NAME}.log`);
     });

@@ -746,13 +746,13 @@ _test-dotnet: $(if $(VSIX_PREBUILT),,_build-dotnet)
 
 # [DIST-CI-WIN-TRANSPORT] The win32 arm of the sidecar IPC transport. ONLY
 # the classes whose behaviour is platform-dependent run here - named-pipe
-# connection setup, and the real sidecar handshake over those pipes. Every
+# connection setup, the real sidecar handshake, and Windows symlink resolution. Every
 # other class in SharpLsp.Sidecar.Common.Tests is platform-agnostic and
 # already ran ONCE in _test-dotnet on Ubuntu; running the whole project
 # again on Windows executed ~12 files' worth of identical assertions a
 # second time, which the pipeline's run-every-test-exactly-once rule
 # forbids ([DIST-CI-LAYOUT]).
-DOTNET_WIN_TRANSPORT_FILTER = FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.IpcConnectionTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.SidecarHostEndToEndTests
+DOTNET_WIN_TRANSPORT_FILTER = FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.IpcConnectionTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.SidecarHostEndToEndTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.NativePathsSymlinkTests
 
 _test-dotnet-win-transport:
 	@echo "==> Running win32 named-pipe transport tests..."
