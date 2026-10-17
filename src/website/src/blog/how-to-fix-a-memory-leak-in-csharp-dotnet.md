@@ -13,10 +13,10 @@ tags:
   - csharp
   - fsharp
 category: profiling
-excerpt: "“fix memory leak” is the memory search people make most, and it more than doubled in two years. Here is the whole fix for a C# memory leak, recorded in VS Code: spot the climb, rank the suspects, find the root, fix it and prove it."
+excerpt: "Here is the whole fix for a C# memory leak, recorded in VS Code: spot the climb, rank the suspects, find the root, fix it and prove it."
 ---
 
-"fix memory leak" is the memory search people make most, and it more than doubled between 2024 and 2026. Close behind it are "what is a memory leak" and "how to fix a memory leak". Most answers stop at "use a memory profiler". This post goes the whole way on a real C# memory leak: we find it, follow it to its root, fix it and prove the fix, all inside VS Code with the free SharpLsp memory profiler.
+Most advice on fixing a memory leak stops at "use a memory profiler". This post goes the whole way on a real C# memory leak: we find it, follow it to its root, fix it and prove the fix, all inside VS Code with the free SharpLsp memory profiler.
 
 Here is the whole loop, recorded in VS Code. Fast-forwarded stretches are marked on screen:
 

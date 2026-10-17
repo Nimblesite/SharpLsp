@@ -3,10 +3,8 @@
 <head>
 <meta charset="utf-8">
 <!--
-  Blog covers for the profiler posts, 1672x941. Open with #trends or #leak and
-  screenshot the page: the trends cover charts the Google Trends comparison the
-  post opens with; the leak cover lists the six steps beside a frame of the
-  recorded walkthrough. Every number and frame is real.
+  Blog cover for the memory-leak post, 1672x941. Open and screenshot the page:
+  it lists the steps beside a frame of the recorded walkthrough.
 -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -20,21 +18,12 @@
   .glow { position: absolute; width: 900px; height: 900px; border-radius: 50%;
     background: radial-gradient(circle, rgba(15,127,73,.28), transparent 60%);
     top: -250px; right: -150px; }
-  .cover { display: none; }
-  body.trends .trends, body.leak .leak { display: block; }
   h1 { position: absolute; left: 72px; top: 64px; width: 720px;
     font-size: 56px; line-height: 1.12; font-weight: 700; letter-spacing: -.5px; }
   h1 .accent { color: #2ecc8f; }
   .sub { position: absolute; left: 72px; top: 330px; width: 680px;
     font-size: 25px; line-height: 1.5; color: #9fb0c0; }
   .sub b { color: #e6edf3; font-weight: 600; }
-  .chart { position: absolute; left: 72px; top: 520px; width: 720px; }
-  .legend { margin-bottom: 14px; font-size: 19px; color: #9fb0c0; }
-  .bars { display: flex; flex-direction: column; gap: 16px; }
-  .bar { display: flex; align-items: center; gap: 16px; font-size: 22px; color: #9fb0c0; }
-  .bar .label { width: 250px; }
-  .bar .fill { height: 28px; border-radius: 8px; }
-  .bar .n { color: #e6edf3; font-weight: 600; }
   .steps { position: absolute; left: 72px; top: 470px; display: flex; flex-direction: column; gap: 14px;
     list-style: none; font-size: 24px; color: #9fb0c0; }
   .steps li { display: flex; align-items: center; gap: 16px; }
@@ -57,27 +46,6 @@
   <div class="grid"></div>
   <div class="glow"></div>
 
-  <section class="cover trends">
-    <h1>What .NET developers search for when <span class="accent">the app is slow</span></h1>
-    <div class="sub">Five years of Google Trends on <b>profiling, CPU, memory</b> and <b>memory leaks</b>, and where SharpLsp answers each search in VS Code.</div>
-    <div class="chart">
-      <div class="legend">Google Trends, worldwide, 5-year average interest</div>
-      <div class="bars">
-        <div class="bar"><span class="label">high cpu usage</span><i class="fill" style="width:400px;background:#e2a24a"></i><span class="n">53.2</span></div>
-        <div class="bar"><span class="label">performance profiler</span><i class="fill" style="width:45px;background:#2ecc8f"></i><span class="n">6.0</span></div>
-        <div class="bar"><span class="label">flame graph</span><i class="fill" style="width:41px;background:#2ecc8f"></i><span class="n">5.5</span></div>
-        <div class="bar"><span class="label">cpu profiler</span><i class="fill" style="width:26px;background:#2ecc8f"></i><span class="n">3.5</span></div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-bar">
-        <i class="c" style="background:#e0564f"></i><i class="c" style="background:#e2a24a"></i><i class="c" style="background:#2ecc8f"></i>
-        <span class="t">CheckoutPipeline.cs — SharpLsp Profiler</span>
-      </div>
-      <img src="../src/assets/screenshots/profiler/profiler-heatmap.webp" alt="">
-    </div>
-  </section>
-
   <section class="cover leak">
     <h1>How to fix a <span class="accent">memory leak</span> in C# and .NET</h1>
     <div class="sub">A real leak, found and fixed <b>in VS Code</b> with the free SharpLsp memory profiler.</div>
@@ -97,10 +65,5 @@
     </div>
   </section>
 
-  <script>
-    const show = () => { document.body.className = location.hash.slice(1) || 'trends'; };
-    addEventListener('hashchange', show);
-    show();
-  </script>
 </body>
 </html>

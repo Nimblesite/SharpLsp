@@ -1,4 +1,5 @@
 import { HtmlBasePlugin } from "@11ty/eleventy";
+import syntaxHighlight from "@11ty/eleventy-plugin-syntaxhighlight";
 import techdoc from "eleventy-plugin-techdoc";
 import markdownIt from "markdown-it";
 import { existsSync, lstatSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
@@ -78,6 +79,9 @@ export default function (eleventyConfig) {
   });
 
   eleventyConfig.addPlugin(HtmlBasePlugin);
+  // Build-time Prism highlighting for fenced code (csharp, fsharp, xml, json, bash).
+  // Code blocks are dark in both themes, so prose.css colours one token palette.
+  eleventyConfig.addPlugin(syntaxHighlight);
 
   // Mermaid fences must reach the browser as `<pre class="mermaid">`: the runtime in
   // base.njk only renders that shape, and markdown-it's default fence emits

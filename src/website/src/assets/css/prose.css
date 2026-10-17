@@ -38,6 +38,12 @@
 .prose code { background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font: 0.86em/1.5 var(--font-code); padding: 0.12em 0.35em; }
 .prose pre:not(.mermaid) { background: var(--color-code); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); color: var(--color-code-text); margin: 2rem 0; max-width: 100%; overflow-x: auto; padding: 1.25rem; }
 .prose pre code { background: transparent; border: 0; color: inherit; display: block; font-size: 0.84rem; padding: 0; }
+.prose pre .token.comment { color: var(--code-comment); font-style: italic; }
+.prose pre .token:is(.keyword, .boolean, .builtin, .important) { color: var(--code-keyword); }
+.prose pre .token:is(.class-name, .namespace, .attr-name, .tag) { color: var(--code-type); }
+.prose pre .token:is(.function, .generic-method, .property) { color: var(--code-function); }
+.prose pre .token:is(.string, .char, .attr-value, .interpolation-string) { color: var(--code-string); }
+.prose pre .token:is(.number, .constant) { color: var(--code-number); }
 .prose pre.mermaid { margin: 2.5rem 0; max-width: 100%; overflow-x: auto; }
 .prose pre.mermaid svg { height: auto; max-width: 100%; }
 

@@ -14,10 +14,10 @@ tags:
   - csharp
   - fsharp
 category: profiling
-excerpt: "“fix memory leak”是人们搜索最多的内存问题，两年内翻了一倍多。这里是在 VS Code 中录制的一次完整的 C# 内存泄漏修复：发现攀升、排列可疑项、找到根、修复并验证。"
+excerpt: "这里是在 VS Code 中录制的一次完整的 C# 内存泄漏修复：发现攀升、排列可疑项、找到根、修复并验证。"
 ---
 
-“fix memory leak”是人们搜索最多的内存问题，从 2024 年到 2026 年翻了一倍多。紧随其后的是“what is a memory leak”和“how to fix a memory leak”。大多数答案止步于“用内存分析器”。本文则把一个真实的 C# 内存泄漏处理到底：找到它，追溯到它的根，修复它并验证修复，全部在 VS Code 中用免费的 SharpLsp 内存分析器完成。
+大多数关于修复内存泄漏的建议止步于“用内存分析器”。本文则把一个真实的 C# 内存泄漏处理到底：找到它，追溯到它的根，修复它并验证修复，全部在 VS Code 中用免费的 SharpLsp 内存分析器完成。
 
 下面是在 VS Code 中录制的完整流程。快进的片段在画面上有标注：
 
