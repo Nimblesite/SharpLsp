@@ -33,8 +33,12 @@ In an untrusted workspace, SharpLsp runs only its bundled binaries. Workspace va
 
 In a trusted workspace, the `sharplsp.lspPath`, `sharplsp.csharpSidecarPath`, and `sharplsp.fsharpSidecarPath` settings can point the extension at local development builds. Leave them empty for the bundled release binaries.
 
+## Zed
+
+Zed runs SharpLsp through a dev extension from this repository, beside Zed's own C# and F# extensions. [SharpLsp in Zed](/docs/zed/) covers installing it, choosing SharpLsp over the other C# and F# servers, settings and troubleshooting.
+
 ## Other LSP Clients
 
-A generic editor can speak LSP 3.17 to the host over stdio. Every [release](https://github.com/Nimblesite/SharpLsp/releases) publishes a standalone server archive per platform with the host and both sidecars side by side, plus a Rider plugin (`sharplsp-rider.zip`) that launches it. Packaged Zed, Neovim, Helix, and Emacs integrations are planned, not current release surfaces.
+A generic editor can speak LSP 3.17 to the host over stdio. Every [release](https://github.com/Nimblesite/SharpLsp/releases) publishes a standalone server archive per platform with the host and both sidecars side by side, plus a Rider plugin (`sharplsp-rider.zip`) that launches it. Packaged Neovim, Helix, and Emacs integrations are planned, not current release surfaces.
 
 For repository builds, see [Contributing](/docs/contributing/).

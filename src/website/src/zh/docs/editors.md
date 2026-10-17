@@ -34,8 +34,12 @@ SharpLsp 在协议层面与编辑器无关。目前受支持且已打包的客�
 
 在受信任的工作区中，可以通过 `sharplsp.lspPath`、`sharplsp.csharpSidecarPath` 和 `sharplsp.fsharpSidecarPath` 设置让扩展使用本地开发版本。将这些设置留空即可使用发行版内置的二进制文件。
 
+## Zed
+
+在 Zed 中，SharpLsp 通过本仓库中的开发扩展运行，与 Zed 自己的 C# 和 F# 扩展并用。[在 Zed 中使用 SharpLsp](/zh/docs/zed/) 介绍了如何安装、如何选择 SharpLsp 而不是其他 C# 和 F# 服务器、设置以及故障排除。
+
 ## 其他 LSP 客户端
 
-通用编辑器可以通过标准输入输出使用 LSP 3.17 与宿主通信，每次[发布](https://github.com/Nimblesite/SharpLsp/releases)都会提供按平台区分的独立服务器归档（宿主与两个 sidecar 放在一起），以及启动它的 Rider 插件（`sharplsp-rider.zip`）。Zed、Neovim、Helix 和 Emacs 的打包集成属于规划内容，并非当前发布的使用界面。
+通用编辑器可以通过标准输入输出使用 LSP 3.17 与宿主通信，每次[发布](https://github.com/Nimblesite/SharpLsp/releases)都会提供按平台区分的独立服务器归档（宿主与两个 sidecar 放在一起），以及启动它的 Rider 插件（`sharplsp-rider.zip`）。Neovim、Helix 和 Emacs 的打包集成属于规划内容，并非当前发布的使用界面。
 
 要了解如何从代码库构建，请参阅[参与贡献](/zh/docs/contributing/)。

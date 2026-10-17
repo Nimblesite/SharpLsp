@@ -34,8 +34,12 @@ SharpLsp は [VS Code Marketplace](https://marketplace.visualstudio.com/items?it
 
 信頼されたワークスペースでは、`sharplsp.lspPath`、`sharplsp.csharpSidecarPath`、`sharplsp.fsharpSidecarPath` の各設定で、ローカルの開発ビルドを拡張機能に指定できます。同梱されたリリースバイナリを使う場合は空のままにしてください。
 
+## Zed
+
+Zed では、Zed 自身の C# 拡張機能と F# 拡張機能と並べて、このリポジトリの開発用拡張機能で SharpLsp を動かします。インストール方法、他の C# と F# のサーバーではなく SharpLsp を選ぶ方法、設定、トラブルシューティングは [Zed での SharpLsp](/ja/docs/zed/) で説明しています。
+
 ## その他の LSP クライアント
 
-一般的なエディターは、stdio を介してホストと LSP 3.17 で通信できます。各[リリース](https://github.com/Nimblesite/SharpLsp/releases)では、ホストと両方のサイドカーを同梱したプラットフォーム別のスタンドアロンサーバーアーカイブと、それを起動する Rider プラグイン（`sharplsp-rider.zip`）を公開しています。Zed、Neovim、Helix、Emacs 向けのパッケージ化された統合は計画中であり、現在のリリース対象ではありません。
+一般的なエディターは、stdio を介してホストと LSP 3.17 で通信できます。各[リリース](https://github.com/Nimblesite/SharpLsp/releases)では、ホストと両方のサイドカーを同梱したプラットフォーム別のスタンドアロンサーバーアーカイブと、それを起動する Rider プラグイン（`sharplsp-rider.zip`）を公開しています。Neovim、Helix、Emacs 向けのパッケージ化された統合は計画中であり、現在のリリース対象ではありません。
 
 リポジトリからビルドする方法は、[コントリビュート](/ja/docs/contributing/)を参照してください。

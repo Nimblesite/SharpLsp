@@ -32,6 +32,6 @@ VSIX には `sharplsp` ホストと両方の .NET サイドカーが同梱され
 
 ### その他のエディター
 
-サーバーは可能な限り標準 LSP を使用します。各 GitHub リリースではスタンドアロンのサーバーアーカイブと Rider プラグインを公開していますが、Neovim、Zed、Helix、Emacs 向けのパッケージ化された統合はまだリリースされていません。
+サーバーは可能な限り標準 LSP を使用します。各 GitHub リリースではスタンドアロンのサーバーアーカイブと Rider プラグインを公開しており、[Zed](/ja/docs/zed/) では開発用拡張機能で SharpLsp を動かせます。Neovim、Helix、Emacs 向けのパッケージ化された統合はまだリリースされていません。
 
 <p class="next-link"><a href="/ja/docs/architecture/">次へ: アーキテクチャ <span aria-hidden="true">→</span></a></p>

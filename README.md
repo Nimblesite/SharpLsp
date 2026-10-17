@@ -80,12 +80,10 @@ IntelliJ Community or Android Studio.
 
 ### Zed
 
-The Zed extension is on its way to the Zed extension registry. Until it is
-listed, clone this repository and run **zed: install dev extension** on
-`src/editors/zed`. Install the C# and F# extensions too: they supply the
-languages SharpLsp attaches to. The extension uses `sharplsp` from your `PATH`
-when it is there, and otherwise downloads this platform's release archive
-itself. Either way the .NET 10 SDK must be installed.
+The extension installs from this repository as a Zed dev extension
+(`src/editors/zed`). The [Zed guide](https://sharplsp.dev/docs/zed/) covers
+installing, choosing SharpLsp over the other C# and F# servers, settings, logs and
+updates.
 
 ### Neovim, Helix, Emacs
 

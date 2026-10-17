@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 import { docsSidebar as sidebar, openDocsMenu as openDrawer } from './docs-menu.js';
 
 const GROUPS = {
-  'Set up': ['Getting Started', 'Editor Setup', 'Configuration'],
+  'Set up': ['Getting Started', 'Editor Setup', 'Zed', 'Configuration'],
   'Write code': ['F# Language Support', 'Code Completions', 'Hover & Quick Info', 'Go to Definition', 'Diagnostics', 'Refactoring & Code Actions'],
   'Project tools': ['Context Menus', 'NuGet Package Manager', 'Profiler', 'Fix a Memory Leak'],
 };

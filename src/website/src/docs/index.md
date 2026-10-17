@@ -31,6 +31,6 @@ The current release includes C# and F# completion, hover, navigation, diagnostic
 
 ### Other editors
 
-The server uses standard LSP wherever possible. Every GitHub release publishes standalone server archives and a Rider plugin; packaged integrations for Neovim, Zed, Helix, and Emacs are not released yet.
+The server uses standard LSP wherever possible. Every GitHub release publishes standalone server archives and a Rider plugin, and [Zed](/docs/zed/) runs SharpLsp through a dev extension. Packaged integrations for Neovim, Helix, and Emacs are not released yet.
 
 <p class="next-link"><a href="/docs/architecture/">Next: Architecture <span aria-hidden="true">→</span></a></p>

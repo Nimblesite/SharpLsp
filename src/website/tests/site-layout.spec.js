@@ -31,6 +31,7 @@ const LOCALIZED_ROUTES = [
   'docs/nuget/',
   'docs/profiler/',
   'docs/refactoring/',
+  'docs/zed/',
 ];
 
 async function mainContentShape(page) {
