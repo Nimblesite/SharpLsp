@@ -125,4 +125,4 @@ Not on its own. `Dispose` and the `using` statement release unmanaged resources 
 
 ## Try it
 
-Install SharpLsp from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf and VSCodium. The [Fix a Memory Leak](/docs/memory-leaks/) guide is the reference version of these steps, and the [profiler docs](/docs/profiler/) cover every command and setting. To see why we wrote this, read [what .NET developers search for when an app is slow or leaking memory](/blog/dotnet-profiler-memory-leak-search-trends/).
+Install SharpLsp from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf and VSCodium. The [Fix a Memory Leak](/docs/memory-leaks/) guide is the reference version of these steps, and the [profiler docs](/docs/profiler/) cover every command and setting.
