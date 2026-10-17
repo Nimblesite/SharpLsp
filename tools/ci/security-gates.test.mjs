@@ -48,6 +48,37 @@ test("all checks finish before build and every test waits for artifact publicati
     }
 });
 
+// [DIST-CI-PROTECTION] #365. GitHub's implicit success() spans the whole
+// dependency chain, so one legitimately skipped ancestor (manifest validation
+// skips unless shipwright.json changed) silently skipped every test leg while
+// `build` itself ran. Each consumer must state its own condition.
+const ancestors = (name, seen = new Set()) => {
+    for (const need of ci.jobs[name].needs ?? []) if (!seen.has(need)) ancestors(need, seen.add(need));
+    return seen;
+};
+const phaseJobs = Object.keys(ci.jobs).filter((name) => name.startsWith("test-") || name === "coverage");
+
+test("a skipped manifest check cannot skip the test phase", () => {
+    assert.ok(phaseJobs.length >= 7, `test legs and coverage: ${phaseJobs}`);
+    for (const name of phaseJobs) {
+        assert.ok(ancestors(name).has("validate-manifest"), `${name} sits downstream of the skippable check`);
+        const condition = ci.jobs[name].if ?? "";
+        assert.ok(condition.includes("!cancelled()"), `${name} must not inherit an ancestor's skip: ${condition}`);
+        for (const need of ci.jobs[name].needs.filter((need) => need !== "detect-changes"))
+            assert.ok(condition.includes(`needs.${need}.result == 'success'`), `${name} must require ${need}: ${condition}`);
+    }
+});
+
+test("the terminal gate fails when code changed but the build or test phase did not run", () => {
+    const gate = ci.jobs.ci.steps.find((step) => step.if?.includes("needs.detect-changes.outputs.code_changed == 'true'"));
+    assert.ok(gate, "a skipped test phase must not report green");
+    for (const name of ["build", ...phaseJobs]) {
+        assert.ok(ci.jobs.ci.needs.includes(name), `CI must wait for ${name}`);
+        assert.ok(gate.if.includes(`needs.${name}.result != 'success'`), `${name} skipping must fail CI`);
+    }
+    assert.match(gate.run, /exit 1/);
+});
+
 test("all compiled test consumers opt into their non-building runners", () => {
     for (const job of Object.values(workflow("ci-test-dotnet").jobs)) {
         const run = job.steps.find((step) => step.run?.startsWith("make _test-dotnet"));

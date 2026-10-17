@@ -840,10 +840,18 @@ and cannot be named in a ruleset at all. The job `needs:` every other job in
 inheriting a skip:
 
 1. Any upstream job that FAILED or was CANCELLED fails `CI`, and with it the merge.
-2. A SKIPPED upstream job satisfies it. That is how a docs-only PR (every job
-   skipped by [DIST-CI-CLASSIFICATION]) and a Dependabot PR (the whole pipeline
-   skipped, [DIST-CI-DEPENDABOT]) pass.
-3. No workflow runs the PR pipeline on a push to `main`; a merge is verified by
+2. A SKIPPED upstream job satisfies it only when no code changed. That is how a
+   docs-only PR (every job skipped by [DIST-CI-CLASSIFICATION]) and a Dependabot
+   PR (the whole pipeline skipped, [DIST-CI-DEPENDABOT]) pass. When code changed,
+   `build`, every test leg and `coverage` MUST have succeeded; a skip among them
+   fails `CI` (#365).
+3. Every PHASE 4 leg and `coverage` states its condition explicitly:
+   `!cancelled()`, code changed, and success of the jobs it consumes. GitHub's
+   implicit `success()` spans the whole dependency chain, so a legitimately
+   skipped ancestor (Validate Shipwright Manifest, which runs only when a
+   manifest changes) would otherwise skip the entire test phase while `build`
+   ran. `tools/ci/security-gates.test.mjs` guards both rules.
+4. No workflow runs the PR pipeline on a push to `main`; a merge is verified by
    the PR run that produced it.
 
 ## [DIST-CI-SECURITY] Security Gates

@@ -200,6 +200,10 @@ jobs:
   # ══ PHASE 4 — TEST ══════════════════════════════════════════════════
   # Every leg gated on `build` ALONE. No leg depends on another leg, and no leg
   # rebuilds a PHASE 2 artifact.
+  #
+  # Each leg states `!cancelled()` and `build` success explicitly. The implicit
+  # success() spans every ancestor, so a legitimately skipped manifest check
+  # would otherwise skip every leg while `build` itself ran (#365).
   test-rust:
     name: Rust
     needs:
@@ -207,7 +211,7 @@ jobs:
       - build
     uses: ./.github/workflows/ci-test-rust.yml
     secrets: inherit
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    if: ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true' && needs.build.result == 'success' }}
 
   test-dotnet:
     name: .NET
@@ -216,7 +220,7 @@ jobs:
       - build
     uses: ./.github/workflows/ci-test-dotnet.yml
     secrets: inherit
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    if: ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true' && needs.build.result == 'success' }}
 
   test-vsix:
     name: VS Code
@@ -227,7 +231,7 @@ jobs:
     secrets: inherit
     with:
       chunks: ${{ needs.build.outputs.linux-chunks }}
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    if: ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true' && needs.build.result == 'success' }}
 
   test-vsix-windows:
     name: VS Code (Windows)
@@ -238,7 +242,7 @@ jobs:
     secrets: inherit
     with:
       chunks: ${{ needs.build.outputs.win-chunks }}
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    if: ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true' && needs.build.result == 'success' }}
 
   test-editors:
     name: Editors
@@ -247,7 +251,7 @@ jobs:
       - build
     uses: ./.github/workflows/ci-test-editors.yml
     secrets: inherit
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    if: ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true' && needs.build.result == 'success' }}
 
   test-tooling:
     name: Tooling
@@ -256,7 +260,7 @@ jobs:
       - build
     uses: ./.github/workflows/ci-test-tooling.yml
     secrets: inherit
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    if: ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true' && needs.build.result == 'success' }}
 
   # ══ PHASE 5 — COVERAGE CHECK ════════════════════════════════════════
   # Only the SHARDED suites need a job here: no Rust partition and no VS Code
@@ -272,7 +276,10 @@ jobs:
       - test-vsix-windows
     uses: ./.github/workflows/ci-coverage.yml
     secrets: inherit
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    if: >-
+      ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true'
+          && needs.test-rust.result == 'success' && needs.test-vsix.result == 'success'
+          && needs.test-vsix-windows.result == 'success' }}
 
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
   # thresholds was removed. On a pull_request, actions/checkout is a detached
@@ -290,7 +297,8 @@ jobs:
   # `always()` so it reports a real conclusion rather than inheriting a skip:
   # on a docs-only PR every upstream job skips and this passes; on a Dependabot
   # PR the whole pipeline skips and this passes; any failure or cancellation
-  # anywhere upstream fails it, and with it the merge.
+  # anywhere upstream fails it, and so does a skipped build or test job when
+  # code changed. Either way the merge is blocked.
   ci:
     name: CI
     if: ${{ always() }}
@@ -316,6 +324,19 @@ jobs:
         shell: bash
         run: |-
           echo "::error::A required CI job did not pass. See the failed job above."
+          exit 1
+      # Code changed, so the build and every test leg must have run. A skip
+      # here is a broken condition upstream, never a pass (#365).
+      - name: Fail if code changed but the build or test phase did not run
+        if: >-
+          ${{ needs.detect-changes.outputs.code_changed == 'true'
+              && (needs.build.result != 'success' || needs.test-rust.result != 'success'
+                  || needs.test-dotnet.result != 'success' || needs.test-vsix.result != 'success'
+                  || needs.test-vsix-windows.result != 'success' || needs.test-editors.result != 'success'
+                  || needs.test-tooling.result != 'success' || needs.coverage.result != 'success') }}
+        shell: bash
+        run: |-
+          echo "::error::Code changed but a build or test job was skipped. Check its if: condition."
           exit 1
       - name: Report
         shell: bash
