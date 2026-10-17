@@ -25,6 +25,9 @@ const PAGES = [
   { path: '/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: 'tour' },
   { path: '/ja/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: 'ツアー' },
   { path: '/zh/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: '导览' },
+  { path: '/blog/dotnet-profiler-vs-code-csharp-fsharp/', videos: PROFILER_DOC, says: 'profiler' },
+  { path: '/ja/blog/dotnet-profiler-vs-code-csharp-fsharp/', videos: PROFILER_DOC, says: 'プロファイラー' },
+  { path: '/zh/blog/dotnet-profiler-vs-code-csharp-fsharp/', videos: PROFILER_DOC, says: '性能分析器' },
 ];
 
 const poster = (id) => `/assets/videos/${id}-poster.webp`;
