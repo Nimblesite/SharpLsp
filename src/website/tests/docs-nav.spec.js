@@ -7,7 +7,7 @@ import { docsSidebar as sidebar, openDocsMenu as openDrawer } from './docs-menu.
 const GROUPS = {
   'Set up': ['Getting Started', 'Editor Setup', 'Configuration'],
   'Write code': ['F# Language Support', 'Code Completions', 'Hover & Quick Info', 'Go to Definition', 'Diagnostics', 'Refactoring & Code Actions'],
-  'Project tools': ['Context Menus', 'NuGet Package Manager', 'Profiler'],
+  'Project tools': ['Context Menus', 'NuGet Package Manager', 'Profiler', 'Fix a Memory Leak'],
 };
 const CONTRIBUTOR_PAGES = ['Architecture', 'Contributing'];
 const LOCALIZED_GROUPS = { '/zh/docs/': ['安装与设置', '编写代码', '项目工具', '面向贡献者'], '/ja/docs/': ['セットアップ', 'コードを書く', 'プロジェクトツール', 'コントリビューター向け'] };

@@ -32,7 +32,8 @@
         "architecture": "Architecture",
         "announcement": "Announcement",
         "diagnostics": "Diagnostics",
-        "fsharp": "F#"
+        "fsharp": "F#",
+        "profiling": "Profiling"
       },
       "tagLabels": {
         "dotnet-lsp": ".NET LSP",
@@ -42,7 +43,9 @@
         "csharp": "C#",
         "fsharp": "F#",
         "diagnostics": "Diagnostics",
-        "lsp": "LSP"
+        "lsp": "LSP",
+        "profiling": "Profiling",
+        "memory-leaks": "Memory leaks"
       },
       "empty": "No blog posts yet. Check back soon!"
     },
@@ -150,6 +153,7 @@
       "contextMenus": "Context Menus",
       "nuget": "NuGet Package Manager",
       "profiler": "Profiler",
+      "memoryLeaks": "Fix a Memory Leak",
       "contributing": "Contributing",
       "menuLabel": "Documentation menu",
       "groups": {
@@ -233,7 +237,8 @@
         "architecture": "架构",
         "announcement": "公告",
         "diagnostics": "诊断",
-        "fsharp": "F#"
+        "fsharp": "F#",
+        "profiling": "性能分析"
       },
       "tagLabels": {
         "dotnet-lsp": ".NET LSP",
@@ -243,7 +248,9 @@
         "csharp": "C#",
         "fsharp": "F#",
         "diagnostics": "诊断",
-        "lsp": "LSP"
+        "lsp": "LSP",
+        "profiling": "性能分析",
+        "memory-leaks": "内存泄漏"
       },
       "empty": "暂无博客文章，请稍后再来！"
     },
@@ -339,6 +346,7 @@
       "contextMenus": "上下文菜单",
       "nuget": "NuGet 包管理器",
       "profiler": "性能分析器",
+      "memoryLeaks": "修复内存泄漏",
       "contributing": "参与贡献",
       "menuLabel": "文档菜单",
       "groups": {
@@ -422,7 +430,8 @@
         "architecture": "アーキテクチャ",
         "announcement": "お知らせ",
         "diagnostics": "診断",
-        "fsharp": "F#"
+        "fsharp": "F#",
+        "profiling": "プロファイリング"
       },
       "tagLabels": {
         "dotnet-lsp": ".NET LSP",
@@ -432,7 +441,9 @@
         "csharp": "C#",
         "fsharp": "F#",
         "diagnostics": "診断",
-        "lsp": "LSP"
+        "lsp": "LSP",
+        "profiling": "プロファイリング",
+        "memory-leaks": "メモリリーク"
       },
       "empty": "ブログ記事はまだありません。しばらくしてからご確認ください。"
     },
@@ -528,6 +539,7 @@
       "contextMenus": "コンテキストメニュー",
       "nuget": "NuGet パッケージマネージャー",
       "profiler": "プロファイラー",
+      "memoryLeaks": "メモリリークの修正",
       "contributing": "コントリビューション",
       "menuLabel": "ドキュメントメニュー",
       "groups": {
