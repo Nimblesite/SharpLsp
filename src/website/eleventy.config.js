@@ -1,4 +1,4 @@
-import { HtmlBasePlugin } from "@11ty/eleventy";
+import { HtmlBasePlugin, RenderPlugin } from "@11ty/eleventy";
 import syntaxHighlight from "@11ty/eleventy-plugin-syntaxhighlight";
 import techdoc from "eleventy-plugin-techdoc";
 import markdownIt from "markdown-it";
@@ -79,6 +79,9 @@ export default function (eleventyConfig) {
   });
 
   eleventyConfig.addPlugin(HtmlBasePlugin);
+  // `{% renderFile %}` pulls in docs that live beside their code, such as the
+  // Zed extension's README on /docs/zed/.
+  eleventyConfig.addPlugin(RenderPlugin);
   // Build-time Prism highlighting for fenced code (csharp, fsharp, xml, json, bash).
   // Code blocks are dark in both themes, so prose.css colours one token palette.
   eleventyConfig.addPlugin(syntaxHighlight);

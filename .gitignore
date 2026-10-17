@@ -49,6 +49,8 @@ Desktop.ini
 *.profraw
 # The Zed extension is a separate cargo workspace with its own target dir.
 /src/editors/zed/target/
+# Zed writes the compiled dev extension beside its manifest.
+/src/editors/zed/extension.wasm
 
 # -----------------------------------------------------------------------------
 # Node / VS Code extension
