@@ -6,13 +6,15 @@ use super::*;
 
 /// Helper: send a hover request and return the response.
 pub fn hover(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
-    client.request(
-        "textDocument/hover",
-        json!({
-            "textDocument": { "uri": uri },
-            "position": { "line": line, "character": character }
-        }),
-    )
+    client.request("textDocument/hover", hover_params(uri, line, character))
+}
+
+/// The params of a `textDocument/hover` request.
+fn hover_params(uri: &str, line: u32, character: u32) -> Value {
+    json!({
+        "textDocument": { "uri": uri },
+        "position": { "line": line, "character": character }
+    })
 }
 
 /// Helper: assert a hover response has no error and is valid JSON-RPC.
@@ -288,15 +290,30 @@ pub fn poll_hover_until_ready(
     character: u32,
     timeout: Duration,
 ) -> Value {
+    poll_hover_collecting(client, uri, line, character, timeout).0
+}
+
+/// [`poll_hover_until_ready`], also returning every notification the server
+/// sent while it waited, so a test can check what the user was shown.
+pub fn poll_hover_collecting(
+    client: &mut LspClient,
+    uri: &str,
+    line: u32,
+    character: u32,
+    timeout: Duration,
+) -> (Value, Vec<Value>) {
     std::thread::sleep(Duration::from_secs(5));
 
     let deadline = std::time::Instant::now() + timeout;
+    let mut notifications = Vec::new();
     loop {
-        let resp = hover(client, uri, line, character);
+        let (resp, seen) = client
+            .request_collecting_notifications("textDocument/hover", hover_params(uri, line, character));
+        notifications.extend(seen);
         assert_hover_ok(&resp);
 
         if !resp["result"].is_null() {
-            return resp["result"].clone();
+            return (resp["result"].clone(), notifications);
         }
 
         assert!(
