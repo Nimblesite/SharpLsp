@@ -48,6 +48,37 @@ test("all checks finish before build and every test waits for artifact publicati
     }
 });
 
+// [DIST-CI-PROTECTION] #365. GitHub's implicit success() spans the whole
+// dependency chain, so one legitimately skipped ancestor (manifest validation
+// skips unless shipwright.json changed) silently skipped every test leg while
+// `build` itself ran. Each consumer must state its own condition.
+const ancestors = (name, seen = new Set()) => {
+    for (const need of ci.jobs[name].needs ?? []) if (!seen.has(need)) ancestors(need, seen.add(need));
+    return seen;
+};
+const phaseJobs = Object.keys(ci.jobs).filter((name) => name.startsWith("test-") || name === "coverage");
+
+test("a skipped manifest check cannot skip the test phase", () => {
+    assert.ok(phaseJobs.length >= 7, `test legs and coverage: ${phaseJobs}`);
+    for (const name of phaseJobs) {
+        assert.ok(ancestors(name).has("validate-manifest"), `${name} sits downstream of the skippable check`);
+        const condition = ci.jobs[name].if ?? "";
+        assert.ok(condition.includes("!cancelled()"), `${name} must not inherit an ancestor's skip: ${condition}`);
+        for (const need of ci.jobs[name].needs.filter((need) => need !== "detect-changes"))
+            assert.ok(condition.includes(`needs.${need}.result == 'success'`), `${name} must require ${need}: ${condition}`);
+    }
+});
+
+test("the terminal gate fails when code changed but the build or test phase did not run", () => {
+    const gate = ci.jobs.ci.steps.find((step) => step.if?.includes("needs.detect-changes.outputs.code_changed == 'true'"));
+    assert.ok(gate, "a skipped test phase must not report green");
+    for (const name of ["build", ...phaseJobs]) {
+        assert.ok(ci.jobs.ci.needs.includes(name), `CI must wait for ${name}`);
+        assert.ok(gate.if.includes(`needs.${name}.result != 'success'`), `${name} skipping must fail CI`);
+    }
+    assert.match(gate.run, /exit 1/);
+});
+
 test("all compiled test consumers opt into their non-building runners", () => {
     for (const job of Object.values(workflow("ci-test-dotnet").jobs)) {
         const run = job.steps.find((step) => step.run?.startsWith("make _test-dotnet"));
@@ -63,7 +94,7 @@ test("all compiled test consumers opt into their non-building runners", () => {
     assert.ok(!editors["test-rider"].steps.some((step) => step.run?.includes("_build-rider")));
 });
 
-test("VSIX shards consume the packaged Release artifact, not a separate dev payload", () => {
+test("VSIX shards take the native payload from the packaged Release artifact", () => {
     const build = action("vsix-payload").runs.steps;
     const upload = build.find((step) => step.with?.path === "dist/sharplsp.vsix");
     assert.ok(upload, "the build must cache the actual packaged VSIX");
@@ -73,6 +104,20 @@ test("VSIX shards consume the packaged Release artifact, not a separate dev payl
     assert.ok(download?.uses.startsWith("actions/download-artifact@"), "consume that same artifact");
     const run = shard.find((step) => step.run?.includes("make _test-vsix-shard"));
     assert.equal(run.env?.VSIX_ARTIFACT, "target/vsix/sharplsp.vsix", "stage the zip bytes");
+});
+
+// [DIST-CI-ARTIFACT-TESTS] The profiler suites share @nimblesite/lsp-profiler-ui
+// and its signals with the running extension. The self-contained production
+// bundle gives the extension its own copy, so its state never reaches them.
+test("shards run the development bundle, built after the VSIX is sealed", () => {
+    const steps = action("build-platform").runs.steps;
+    const packed = steps.findIndex((step) => step.uses === "./.github/actions/vsix-payload");
+    const bundled = steps.findIndex((step) => step.run === "npm run build --prefix src/editors/vscode");
+    const uploaded = steps.findIndex((step) =>
+        step.with?.path?.split("\n").includes("src/editors/vscode/dist/extension.js"));
+    assert.ok(packed >= 0, "the VSIX is packed in the build");
+    assert.ok(packed < bundled, "the test bundle must not be what the VSIX packs");
+    assert.ok(bundled < uploaded, "the shards receive the test bundle");
 });
 
 // [DIST-VSIX-REBUILD] + [DIST-CI-VSIX-SHARDS]. A CI consumer may skip the

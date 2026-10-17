@@ -27,7 +27,7 @@ inputs:
       shard tracefile so both legs' artifacts can land in one directory.
     required: true
   suite-artifact:
-    description: Artifact holding compiled tests, static fixtures and the private production map.
+    description: Artifact holding compiled tests, static fixtures and the test bundle.
     required: true
   xvfb:
     description: '"true" to wrap the run in xvfb-run (Ubuntu has no desktop session).'

@@ -32,6 +32,9 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+#[path = "support/built_binary.rs"]
+mod built_binary;
+
 // ── Test Harness ──────────────────────────────────────────────────
 
 /// Build a valid RFC 8089 `file://` URI cross-platform. On Windows a bare
@@ -72,7 +75,7 @@ impl LspClient {
     /// always constructed — a single file with no project starts one lazily — so
     /// config is the only way to get a server that genuinely has no sidecars.
     fn start_in(dir: Option<&Path>) -> Self {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_sharplsp"));
+        let mut command = Command::new(built_binary::built_sharplsp());
         if let Some(cwd) = dir {
             command.current_dir(cwd);
         }

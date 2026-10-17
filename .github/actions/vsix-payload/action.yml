@@ -10,8 +10,8 @@
 # both round trips, and puts the VSIX where PHASE 2 says it belongs: built with
 # everything else, exactly once, per platform.
 #
-# Packaging emits the ONE production bundle. Its matching private map is
-# uploaded afterwards with the tests; the VSIX itself never includes that map.
+# Packaging emits the ONE production bundle, and the VSIX is cached for the
+# shards, which take its native payload ([DIST-CI-ARTIFACT-TESTS]).
 name: Verify the packaged VSIX payload
 description: >-
   Packs the VSIX from the binaries already built in this job and asserts the

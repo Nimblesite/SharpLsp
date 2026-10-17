@@ -359,13 +359,11 @@ ifneq ($(VSIX_ARTIFACT),)
 	@echo "==> Staging required VSIX binaries from $(VSIX_ARTIFACT)..."
 	@test -f "$(VSIX_ARTIFACT)" || { echo "ERROR: missing same-run VSIX artifact" >&2; exit 1; }
 	@set -eu; stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
-		unzip -q "$(abspath $(VSIX_ARTIFACT))" 'extension/*' -d "$$stage"; \
+		unzip -q "$(abspath $(VSIX_ARTIFACT))" -d "$$stage"; \
 		cmp "$$stage/extension/package.json" $(VSCODE_DIR)/package.json; \
 		cmp "$$stage/extension/shipwright.json" $(VSCODE_DIR)/shipwright.json; \
 		rm -rf $(VSCODE_DIR)/bin; \
-		cp -R "$$stage/extension/bin" $(VSCODE_DIR)/; \
-		mkdir -p $(VSCODE_DIR)/dist; \
-		cp "$$stage/extension/dist/extension.js" $(VSCODE_DIR)/dist/extension.js
+		cp -R "$$stage/extension/bin" $(VSCODE_DIR)/
 else
 	@$(MAKE) _copy-vsix-binaries
 endif
@@ -641,6 +639,7 @@ _build-vsix-suite:
 _test-vsix: _build-vsix
 	@echo "==> Running VS Code extension tests..."
 	@$(MAKE) _build-vsix-suite
+	npm run build --prefix $(VSCODE_DIR)
 	@$(MAKE) _run-vsix-suite VSIX_PREBUILT=1 VSIX_SUITE_PREBUILT=1 VSIX_ARTIFACT=$(DEV_VSIX)
 	@$(CHECK_COV) vscode-extension --json $(VSCODE_DIR)/coverage/coverage-summary.json total.lines.pct
 
@@ -660,8 +659,8 @@ _test-vsix: _build-vsix
 # key identically whether the shard that measured it ran on `C:\Code\SharpLsp`
 # or `/home/runner/work/SharpLsp/SharpLsp` or the union counts it twice.
 #
-# Payload layout is verified once when packaging. A shard extracts the actual
-# VSIX and uses its matching private map; it never recompiles a second bundle.
+# Payload layout is verified once when packaging. A shard stages the native
+# payload from the actual VSIX and runs the test bundle built with the suite.
 VSIX_PLATFORM = $(shell node -e "process.stdout.write(process.platform)")
 VSIX_SHARD_LCOV = target/coverage-vsix-shard-$(VSIX_PLATFORM)-$(CHUNK).lcov
 
