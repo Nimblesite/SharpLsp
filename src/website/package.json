@@ -12,7 +12,7 @@
   "dependencies": {
     "@11ty/eleventy": "^3.1.6",
     "@11ty/eleventy-plugin-syntaxhighlight": "5.0.2",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "eleventy-plugin-techdoc": "0.2.0",
     "markdown-it": "^15.0.2"
   },

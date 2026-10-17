@@ -49,7 +49,7 @@ jobs:
         with:
           node-version: '20'
       - name: Download precompiled Release tests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: zed-test-artifacts
           path: .
@@ -80,14 +80,14 @@ jobs:
       # The IntelliJ Platform SDK is a multi-GB download resolved through
       # Gradle. Uncached, it dominates this job's wall time.
       - name: Download compiled plugin and test classes
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rider-test-artifacts
           path: target
       - name: Restore compiled Rider output
         run: tar -xzf target/rider-tests.tar.gz -C src/editors/rider
       - name: Download precompiled coverage tools
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: coverage-report-tools
           path: target/coverage-tools
