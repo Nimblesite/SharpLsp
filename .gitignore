@@ -131,12 +131,6 @@ test-results/
 /src/website/src/assets/screenshots/*.tmp-*
 /src/website/src/assets/screenshots/*.signal
 
-# Google Trends research output: `src/website/tools/trends-research.mjs` drives
-# the live explore UI and writes a ~7 MB capture of one run's raw API responses.
-# Reproducible on demand, read by nothing in the build; committed once by
-# accident, it dwarfed every other file in the repository.
-/src/website/tools/trends-results.json
-
 # -----------------------------------------------------------------------------
 # Agent and portfolio tooling
 # -----------------------------------------------------------------------------
