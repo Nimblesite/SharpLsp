@@ -626,6 +626,13 @@ waiting; a debug run never writes the result cache.
 
 ### 4.13 Phase 4 Quality Gates
 
+- [ ] Verify failure-safe debug test teardown in PR CI. Implemented: restore UI
+      stubs and dispose session/DAP observers even when Stop or breakpoint cleanup
+      fails. Every debug suite arms its recorders through `useArmedRecorders`, whose
+      one teardown calls `cleanupDebugTest`; the original error still fails the test.
+      `tools/vsix/debug-cleanup.test.mjs` executes that authored hook against a
+      failed Stop, a failed breakpoint clear and a clean stop (3 cases pass).
+      `make _test-tooling` runs this guard; the new revision's PR CI is pending.
 - [x] All P1 breakpoint types work reliably on Windows x64 — **except function breakpoints**
       (`debug-breakpoints` chunk, 9 of 10 green)
 - [ ] All P1 breakpoint types work reliably on Linux x64 (the Ubuntu `VS Code / Full Suite +

@@ -185,9 +185,17 @@ jobs:
     needs:
       - detect-changes
       - analyse
+      - audit
+      - security
+      - validate-manifest
     uses: ./.github/workflows/ci-build.yml
     secrets: inherit
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+    # Manifest validation may legitimately skip; no failed/cancelled check may.
+    if: >-
+      ${{ !cancelled() && needs.detect-changes.outputs.code_changed == 'true'
+          && needs.analyse.result == 'success' && needs.audit.result == 'success'
+          && needs.security.result == 'success'
+          && (needs.validate-manifest.result == 'success' || needs.validate-manifest.result == 'skipped') }}
 
   # ══ PHASE 4 — TEST ══════════════════════════════════════════════════
   # Every leg gated on `build` ALONE. No leg depends on another leg, and no leg

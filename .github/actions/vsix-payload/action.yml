@@ -10,14 +10,16 @@
 # both round trips, and puts the VSIX where PHASE 2 says it belongs: built with
 # everything else, exactly once, per platform.
 #
-# It must stay last. `npm run build` writes the PRODUCTION bundle over
-# src/editors/vscode/dist, and the production bundle carries no sourcemap; the
-# instrumented bundle the coverage shards measure has to have been published
-# before this runs.
+# Packaging emits the ONE production bundle. Its matching private map is
+# uploaded afterwards with the tests; the VSIX itself never includes that map.
 name: Verify the packaged VSIX payload
 description: >-
   Packs the VSIX from the binaries already built in this job and asserts the
   platform `sharplsp` binary is in the archive.
+inputs:
+  suite-artifact:
+    description: Platform-specific artifact prefix shared with the shard consumer.
+    required: true
 runs:
   using: composite
   steps:
@@ -32,3 +34,10 @@ runs:
         set -euo pipefail
         platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
         unzip -l dist/sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
+    - name: Cache the packaged Release VSIX
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.suite-artifact }}-release
+        retention-days: 1
+        if-no-files-found: error
+        path: dist/sharplsp.vsix

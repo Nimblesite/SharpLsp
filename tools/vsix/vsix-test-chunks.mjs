@@ -140,13 +140,10 @@ function check(manifest) {
     const suites = declaredSuites();
     const owners = new Map(suites.map((suite) => [suite, []]));
 
-    for (const [chunk, entry] of Object.entries(manifest.chunks)) {
-        for (const suite of matchSuites(entry.files, suites)) {
+    for (const chunk of Object.keys(manifest.chunks)) {
+        for (const suite of matchSuites(chunkGlobs(manifest, chunk), suites)) {
             owners.get(suite).push(chunk);
         }
-    }
-    for (const suite of matchSuites(manifest.shared.files, suites)) {
-        owners.get(suite).push("shared");
     }
     for (const suite of matchSuites(manifest.excluded.files, suites)) {
         owners.get(suite).push("excluded");

@@ -83,7 +83,4 @@ jobs:
           chunk: ${{ matrix.chunk }}
           platform: win32
           suite-artifact: vsix-suite-win
-          binaries-artifact: win-lsp-binaries
-          debugger-artifact: win-netcoredbg
-          debugger-path: target/netcoredbg/win32-x64/netcoredbg
           user-data-dir: ${{ runner.temp }}/vsx-${{ matrix.chunk }}

@@ -43,12 +43,16 @@ if (!existsSync(solution)) {
   process.exit(1);
 }
 
-console.log(`==> Building test fixtures (${solution})...`);
+// Same-run consumers retain the compiled Debug outputs. Restore only rewrites
+// project.assets.json to this runner's NuGet cache; it never invokes compilation.
+const restoreOnly = process.argv.includes('--restore-only');
+const command = restoreOnly ? 'restore' : 'build';
+console.log(`==> ${command} test fixtures (${solution})...`);
 try {
-  execFileSync('dotnet', ['build', solution, '--configuration', 'Debug', '--nologo'], {
+  execFileSync('dotnet', [command, solution, '-p:Configuration=Debug', '--nologo'], {
     stdio: 'inherit',
   });
 } catch (error) {
-  console.error(`build-test-fixtures: dotnet build failed: ${error.message}`);
+  console.error(`build-test-fixtures: dotnet ${command} failed: ${error.message}`);
   process.exit(1);
 }

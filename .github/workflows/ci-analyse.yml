@@ -62,8 +62,9 @@ jobs:
       # ── .NET ───────────────────────────────────────────────────────
       - name: Format check (.NET)
         run: dotnet csharpier check src/sidecars/
-      - name: Lint (.NET)
-        run: make _lint-dotnet
+      # .NET analyzers execute with the one Release solution build in phase 2
+      # (_build-dotnet-tests -> _lint-dotnet), with warnings still fatal. Running
+      # that target here as well would compile the complete solution twice.
 
       # ── TypeScript ─────────────────────────────────────────────────
       - name: Format check (VS Code)

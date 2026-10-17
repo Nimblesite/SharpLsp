@@ -1,0 +1,23 @@
+---
+name: Rider toolchain
+description: Identical JDK and dependency cache for build and artifact-test runners.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      with:
+        distribution: temurin
+        java-version: '21'
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '20'
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          src/editors/rider/.intellijPlatform
+        key: >-
+          ${{ runner.os }}-gradle-${{ hashFiles('src/editors/rider/build.gradle.kts',
+          'src/editors/rider/gradle.properties', 'src/editors/rider/gradle/**') }}
+        restore-keys: "${{ runner.os }}-gradle-"

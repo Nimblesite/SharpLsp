@@ -16,6 +16,6 @@ test('production host signals notify CommonJS profiler effects on every change',
         nodePaths: [fileURLToPath(new URL('../../src/editors/vscode/node_modules/', import.meta.url))],
     });
     const context = { module: { exports: undefined } };
-    runInNewContext(result.outputFiles[0].text, context);
+    runInNewContext(result.outputFiles.find((file) => file.path.endsWith('.js')).text, context);
     assert.equal(JSON.stringify(context.module.exports), '[0,1,2]', 'changes notify until disposal');
 });

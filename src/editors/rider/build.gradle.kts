@@ -1,4 +1,6 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.gradle.api.tasks.compile.AbstractCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 plugins {
     id("java")
@@ -12,6 +14,15 @@ plugins {
 
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
+
+// [DIST-CI-ARTIFACT-TESTS] A new compile dependency must fail the consumer,
+// never silently rebuild an artifact that was already handed off by CI.
+if (providers.gradleProperty("prebuiltTests").isPresent) {
+    gradle.taskGraph.whenReady {
+        val compilers = allTasks.filter { it is AbstractCompile || it is KotlinJvmCompile }
+        check(compilers.isEmpty()) { "Test phase contains compiler tasks: $compilers" }
+    }
+}
 
 // Rider 2026.1 runs on JetBrains Runtime 21 and its platform jars are
 // compiled against bytecode 21. Targeting 17 causes

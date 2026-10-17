@@ -277,6 +277,22 @@ export async function stopDebuggee(): Promise<void> {
   );
 }
 
+/** Release test-owned state even when Stop or breakpoint cleanup fails. */
+async function cleanupDebugTest(active: ArmedRecorders): Promise<void> {
+  try {
+    await stopDebuggee();
+  } finally {
+    try {
+      clearAllBreakpoints();
+    } finally {
+      active.sessions.dispose();
+      active.recorder.dispose();
+      active.stubs.restore();
+      await closeAllEditors();
+    }
+  }
+}
+
 /** Write and build the debuggee for `language` under `scratchDir`. */
 async function materialise(scratchDir: string, language: Language): Promise<DebugFixture> {
   isolateFromRepoMsbuild(scratchDir);
@@ -464,12 +480,7 @@ export function useArmedRecorders<T extends object>(
     const active = current;
     current = undefined;
     if (active === undefined) return;
-    await stopDebuggee();
-    clearAllBreakpoints();
-    active.sessions.dispose();
-    active.recorder.dispose();
-    active.stubs.restore();
-    await closeAllEditors();
+    await cleanupDebugTest(active);
   });
   return () => {
     assert.ok(current, `the ${what} harness must be created in setup`);

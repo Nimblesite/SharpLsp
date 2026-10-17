@@ -85,12 +85,10 @@ export default defineConfig({
     // `dist/**` is deliberately NOT excluded. The extension runs from the
     // bundled `dist/extension.js` (package.json `main`), so the activation path
     // and every command callback exercised by the end-to-end interaction suites
-    // run there -- not in the `out/` modules the unit tests import. The dev bundle
-    // ships a source map (esbuild `sourcemap: !production`) AND externalizes
-    // dependencies (`packages: 'external'` for non-production), so the only
-    // sources it remaps onto are first-party `src/*.ts`. Including it credits the
-    // real e2e coverage that is otherwise invisible. Dependencies are required at
-    // runtime as separate files and dropped by the `node_modules` glob below.
+    // run there -- not in the `out/` modules the unit tests import. The private
+    // source map matches the actual production bytes extracted from the VSIX.
+    // The report step also filters remapped dependencies: test-cli only applies
+    // these globs before remapping, which alone would count bundled vendor code.
     exclude: ['**/node_modules/**', '**/.vscode-test/**'],
     // `lcov` is what makes SHARDING possible ([DIST-CI-VSIX-SHARDS]): CI runs one
     // chunk of the suite per job, and tools/coverage/merge-lcov.mjs union-merges
@@ -103,6 +101,8 @@ export default defineConfig({
     // exactly the file set and line set of one unsharded run, and so the same
     // percentage. Turning `includeAll` on would change the denominator and
     // silently move the ratchet.
-    reporter: ['text-summary', 'html', 'json-summary', 'lcov'],
+    // Generate the remapped map once. report-vsix-coverage.mjs applies vendor
+    // exclusions AFTER remapping, then emits the normal reports and lcov.
+    reporter: ['json'],
   },
 });

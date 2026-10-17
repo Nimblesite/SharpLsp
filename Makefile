@@ -138,8 +138,8 @@ SUMMARISE = skipped="$$(cat $(SKIPPED_LEGS_DIR)/* 2>/dev/null)"; \
 	if [ -z "$$skipped" ]; then echo "==> $(1)"; \
 	else echo "==> Every leg that ran passed. These did NOT run on this machine:"; \
 	  printf '%s\n' "$$skipped"; fi
-MERGE_COBERTURA = $(DOTNET) run --file tools/coverage/merge-cobertura.cs --
-KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
+MERGE_COBERTURA = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tools/merge-cobertura/merge-cobertura.dll,$(DOTNET) run --file tools/coverage/merge-cobertura.cs --)
+KOVER_PERCENT = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tools/kover-line-percent/kover-line-percent.dll,$(DOTNET) run --file tools/coverage/kover-line-percent.cs --)
 
 # The public surface. Everything under it is an internal step or a CI leg.
 .PHONY: build ci test lint fmt clean audit setup _build-profiler-ui \
@@ -151,7 +151,7 @@ KOVER_PERCENT = $(DOTNET) run --file tools/coverage/kover-line-percent.cs --
         _package-vsix-win32-x64 _package-vsix-win32-arm64 \
         _print-publish-commands \
         _stamp-version \
-        _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
+        _build-rust _build-dotnet _build-dotnet-tests _build-coverage-tools _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-vsix-binary-only _stage-sidecars \
         _test-rust _prepare-rust-tests _test-rust-shard \
         _test-zed _test-rider \
@@ -264,8 +264,8 @@ _build-rust:
 _build-dotnet:
 	@$(CHECK_DOTNET_PIN)
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
-	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
-	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
+	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
+	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 	$(DOTNET) publish $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj --configuration Release --no-self-contained -p:DebugType=none -p:DebugSymbols=false --output $(PROFILER_ENGINE_OUT)
 
 # The profiler's VS Code UI package ([PROFILER-SHARED-LIBRARY-VSCODE]). Its wire
@@ -276,6 +276,16 @@ _build-profiler-ui:
 	node $(LSPKIT_DIR)/scripts/typediagram/generate.mjs
 	npm ci --prefix $(PROFILER_UI_DIR)
 	npm run build --prefix $(PROFILER_UI_DIR)
+
+# [DIST-CI-ARTIFACT-TESTS] Compile product and tests together, once. Publishing
+# afterwards copies these exact Release assemblies; coverage retains their PDBs.
+_build-dotnet-tests: _lint-dotnet
+	mkdir -p target
+	tar -czf target/dotnet-tests.tar.gz src/sidecars/*/bin src/sidecars/*/obj
+
+_build-coverage-tools:
+	$(DOTNET) publish tools/coverage/merge-cobertura.cs -c Release --no-self-contained -p:PublishAot=false -p:PublishTrimmed=false -o target/coverage-tools/merge-cobertura
+	$(DOTNET) publish tools/coverage/kover-line-percent.cs -c Release --no-self-contained -p:PublishAot=false -p:PublishTrimmed=false -o target/coverage-tools/kover-line-percent
 
 # [DIST-VSIX-CONTENTS] The gate runs BEFORE the package, not after: `vsce ls` is
 # the same file list `vsce package` writes, so verifying the staged tree is
@@ -293,9 +303,7 @@ _build-profiler-ui:
 # shape that ships. [DIST-VSIX-DEV-INSTALL]
 _build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
-	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
-	@$(MAKE) _verify-staged-vsix-payload
 	cd $(VSCODE_DIR) && SHARPLSP_VSIX_STAGED=1 SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) npx @vscode/vsce package --no-dependencies \
 		--target $(HOST_PLATFORM) -o ../../../$(DEV_VSIX)
 	rm -rf $(VSCODE_DIR)/bin
@@ -347,7 +355,20 @@ _stage-vsix-binary: $(if $(SHARPLSP_VSIX_STAGED),,_rebuild-vsix-binaries)
 # width and add hours to every PR, which is why CI - and only CI, by setting
 # VSIX_PREBUILT - takes this path.
 _stage-vsix-binary-only:
+ifneq ($(VSIX_ARTIFACT),)
+	@echo "==> Staging required VSIX binaries from $(VSIX_ARTIFACT)..."
+	@test -f "$(VSIX_ARTIFACT)" || { echo "ERROR: missing same-run VSIX artifact" >&2; exit 1; }
+	@set -eu; stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
+		unzip -q "$(abspath $(VSIX_ARTIFACT))" 'extension/*' -d "$$stage"; \
+		cmp "$$stage/extension/package.json" $(VSCODE_DIR)/package.json; \
+		cmp "$$stage/extension/shipwright.json" $(VSCODE_DIR)/shipwright.json; \
+		rm -rf $(VSCODE_DIR)/bin; \
+		cp -R "$$stage/extension/bin" $(VSCODE_DIR)/; \
+		mkdir -p $(VSCODE_DIR)/dist; \
+		cp "$$stage/extension/dist/extension.js" $(VSCODE_DIR)/dist/extension.js
+else
 	@$(MAKE) _copy-vsix-binaries
+endif
 
 _copy-vsix-binaries:
 	@echo "==> Staging required VSIX binaries ($(HOST_PLATFORM))..."
@@ -494,8 +515,10 @@ RUST_E2E_SIDECARS = \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp$(EXE_EXT)"
 
 _prepare-rust-tests: $(if $(VSIX_PREBUILT),,_build-dotnet) _stage-sidecars
+ifeq ($(CARGO_TESTS_PREBUILT),)
 	@echo "==> Pre-building ProfileTarget fixture..."
 	$(DOTNET) build src/sharplsp/tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
+endif
 
 _test-rust: _prepare-rust-tests
 	@echo "==> Running sharplsp tests with coverage..."
@@ -522,8 +545,12 @@ _test-zed:
 	# root target/ that holds every other coverage artifact does not exist yet
 	# and llvm-cov cannot write the report into it.
 	@mkdir -p target
+ifneq ($(CARGO_TESTS_PREBUILT),)
+	bash tools/ci/cargo-artifacts.sh test zed
+else
 	cargo llvm-cov --manifest-path $(ZED_DIR)/Cargo.toml \
 		--json --output-path target/coverage-zed.json
+endif
 	@$(CHECK_COV) sharplsp-zed --json target/coverage-zed.json data.0.totals.lines.percent
 
 # [DIST-CI-RUST-SHARDS] One CI slice of the suite: identical tests, identical
@@ -534,9 +561,14 @@ _test-zed:
 _test-rust-shard: _prepare-rust-tests
 	@test -n "$(SHARD)" || { echo "ERROR: SHARD is required (e.g. make _test-rust-shard SHARD=1)" >&2; exit 1; }
 	@echo "==> Running sharplsp test shard $(SHARD)/$(SHARD_COUNT) with coverage..."
+ifneq ($(CARGO_TESTS_PREBUILT),)
+	$(RUST_E2E_SIDECARS) SHARD=$(SHARD) bash tools/ci/cargo-artifacts.sh test rust \
+		--test-threads $(RUST_TEST_THREADS) --partition hash:$(SHARD)/$(SHARD_COUNT)
+else
 	$(RUST_E2E_SIDECARS) \
 		cargo llvm-cov nextest --lcov --output-path target/coverage-rust-shard$(SHARD).lcov \
 			--no-fail-fast --test-threads $(RUST_TEST_THREADS) --partition hash:$(SHARD)/$(SHARD_COUNT)
+endif
 
 # [DIST-CI-RUST-SHARDS] Union-merge the shard tracefiles and enforce the same
 # ratcheted threshold a single-job run enforces.
@@ -572,19 +604,9 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 #
 # Every shard compiles the suite and extension after its native rebuild.
 VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
-# `pretest` has a PORTABLE half and a MACHINE-BOUND half.
-#
-# Portable: clean, tsc the suite, esbuild the bundle. Identical on every runner,
-# minutes of work, and the whole reason `_build-vsix-suite` exists.
-#
-# Machine-bound: `prepare:test-fixtures` runs `dotnet build` over the fixture
-# solution, and the `obj/project.assets.json` it writes points at THAT machine's
-# `~/.nuget/packages`. Shipping the built fixtures between jobs hands a shard a
-# workspace whose references cannot resolve, so Roslyn loads it degraded: no
-# definitions, a reduced refactor set, and an empty unused-package report - all
-# of which look like test failures rather than a missing restore. Every shard
-# therefore builds the fixtures itself, restoring against its own NuGet cache.
-VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),npm run prepare:test-fixtures,npm run prepare:tests)
+# Rebase machine-local NuGet asset paths without recompiling the cached fixtures.
+# Dynamic projects built by feature tests are test inputs, not product builds.
+VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),npm run prepare:test-fixtures -- --restore-only,npm run prepare:tests)
 
 define RUN_VSIX_SUITE
 	status=0; \
@@ -595,7 +617,8 @@ define RUN_VSIX_SUITE
 	fi; \
 	cd $(VSCODE_DIR); \
 	$(VSIX_PRETEST) && \
-		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test --coverage \
+		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test --coverage && \
+		node ../../../tools/coverage/report-vsix-coverage.mjs \
 		|| status=$$?; \
 	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
@@ -605,11 +628,11 @@ _run-vsix-suite: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binar
 	$(if $(filter-out workspace,$(CHUNK)),,@npm exec --prefix $(VSCODE_DIR) -- playwright install $(PLAYWRIGHT_DEPS_FLAG) chromium)
 	$(RUN_VSIX_SUITE)
 
-# Compilation-only build-phase entry point. Test consumers always recompile
-# their own extension/suite and rebuild binaries under [DIST-VSIX-REBUILD].
+# Compilation-only build-phase entry point. The production bundle is emitted
+# once by vscode:prepublish; this target builds only the tests and static fixtures.
 _build-vsix-suite:
 	@echo "==> Compiling the VS Code suite once for every shard..."
-	@cd $(VSCODE_DIR) && npm run prepare:tests
+	@cd $(VSCODE_DIR) && npm run prepare:ci-tests
 
 # The whole suite in one process, with coverage and the ratcheted gate. This is
 # what `make test` runs locally. CI never runs it: unsharded it was the longest
@@ -617,7 +640,8 @@ _build-vsix-suite:
 # `_test-vsix-shard` instead and gates once over the union.
 _test-vsix: _build-vsix
 	@echo "==> Running VS Code extension tests..."
-	@$(MAKE) _run-vsix-suite
+	@$(MAKE) _build-vsix-suite
+	@$(MAKE) _run-vsix-suite VSIX_PREBUILT=1 VSIX_SUITE_PREBUILT=1 VSIX_ARTIFACT=$(DEV_VSIX)
 	@$(CHECK_COV) vscode-extension --json $(VSCODE_DIR)/coverage/coverage-summary.json total.lines.pct
 
 # [DIST-CI-VSIX-SHARDS] ONE coverage shard on ANY platform: a single chunk,
@@ -636,11 +660,8 @@ _test-vsix: _build-vsix
 # key identically whether the shard that measured it ran on `C:\Code\SharpLsp`
 # or `/home/runner/work/SharpLsp/SharpLsp` or the union counts it twice.
 #
-# Deliberately does NOT verify the VSIX payload. That is one production esbuild
-# plus a `vsce ls` per shard for an answer that does not vary by shard, and
-# worse: it leaves the PRODUCTION bundle in `dist/`, whose missing sourcemap
-# would strip the end-to-end coverage this job exists to collect. The payload
-# has its own job in both legs.
+# Payload layout is verified once when packaging. A shard extracts the actual
+# VSIX and uses its matching private map; it never recompiles a second bundle.
 VSIX_PLATFORM = $(shell node -e "process.stdout.write(process.platform)")
 VSIX_SHARD_LCOV = target/coverage-vsix-shard-$(VSIX_PLATFORM)-$(CHUNK).lcov
 
@@ -707,10 +728,12 @@ _check-vsix-chunks:
 # bundle's sourcemap there, so the first chunk on a clean tree passes and every
 # chunk after it fails on a file that would never have shipped.
 _verify-vsix-payload: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
+ifeq ($(VSIX_SUITE_PREBUILT),)
+	@cd $(VSCODE_DIR) && npm run build:production --silent
+endif
 	@$(MAKE) _verify-staged-vsix-payload
 
 _verify-staged-vsix-payload:
-	@cd $(VSCODE_DIR) && npm run build:production --silent
 	@cd $(VSCODE_DIR) && SHARPLSP_VSIX_PLATFORM=$(VSIX_PLAT) node ../../../tools/vsix/verify-vsix-payload.mjs
 
 # [DIST-CI-RIDER] The Rider plugin's only automated verification. Skipped
@@ -719,7 +742,7 @@ _verify-staged-vsix-payload:
 _test-rider:
 	@# A report from an earlier run must never be gated as this one's.
 	@rm -f "$(RIDER_DIR)/build/reports/kover/report.xml"
-	@$(RIDER_GRADLE) koverXmlReport
+	@$(RIDER_GRADLE) koverXmlReport $(if $(RIDER_TESTS_PREBUILT),-PprebuiltTests=true -x compileKotlin -x compileJava -x compileTestKotlin -x compileTestJava -x instrumentCode -x instrumentTestCode,)
 	@report="$(RIDER_DIR)/build/reports/kover/report.xml"; \
 	 if [ -f "$$report" ]; then \
 	   pct=$$($(KOVER_PERCENT) "$$report") && $(CHECK_COV) sharplsp-rider "$$pct"; \
@@ -731,6 +754,7 @@ _test-dotnet: $(if $(VSIX_PREBUILT),,_build-dotnet)
 	@echo "==> Running .NET sidecar tests..."
 	@rm -rf target/coverage-dotnet
 	$(DOTNET) test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \
+		$(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) \
 		--collect:"XPlat Code Coverage" \
 		--results-directory target/coverage-dotnet \
 		--settings .config/coverage/coverlet.runsettings \
@@ -757,6 +781,7 @@ DOTNET_WIN_TRANSPORT_FILTER = FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.I
 _test-dotnet-win-transport:
 	@echo "==> Running win32 named-pipe transport tests..."
 	$(DOTNET) test $(SIDECAR_COMMON_TESTS) --configuration $(DOTNET_CFG) \
+		$(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) \
 		--filter "$(DOTNET_WIN_TRANSPORT_FILTER)" \
 		--blame-hang-timeout 2min --blame-hang-dump-type none
 
@@ -767,8 +792,9 @@ _test-dotnet-win-transport:
 # that nothing else in the suite exercises. Node's built-in runner, so this
 # needs no dependency of its own.
 _test-tooling:
+	node --test tools/vsix/chunk-once.test.mjs
 	@echo "==> Running repo tooling tests..."
-	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
+	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/vsix/debug-cleanup.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
 		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs
 
 _website-build:
@@ -803,7 +829,7 @@ _lint-zed:
 _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
 	# The profiler contributions are generated from the shared UI library ([PROFILER-SHARED-LIBRARY-VSCODE]).
 	node tools/vsix/sync-profiler-contributions.mjs --check
-	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs \
+	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs tools/ci/vsix-coverage.test.mjs \
 		tools/ci/spec-citations.test.mjs tools/vsix/signals-bundle.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
@@ -971,8 +997,6 @@ $(PACKAGE_VSIX_TARGETS): _stamp-version
 _package-vsix: PROFILE = release
 _package-vsix: _stage-vsix-binary
 	@echo "==> Packaging VSIX for $(VSIX_PLAT)..."
-	npm run build --prefix $(VSCODE_DIR)
-	@$(MAKE) _verify-staged-vsix-payload
 	mkdir -p dist
 	# vsce/ovsx refuse to PUBLISH with --pre-release unless the VSIX was also
 	# PACKAGED with --pre-release (it sets preRelease=true in the embedded
