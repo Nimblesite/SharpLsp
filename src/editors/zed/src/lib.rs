@@ -1,307 +1,276 @@
-mod pipeline;
-mod project;
-mod solution;
-mod tree;
+//! SharpLsp for Zed: starts the SharpLsp language server for C# and F#.
+//! Implements [DIST-ZED-REGISTRY].
+mod archive;
+#[cfg(test)]
+mod fake_host;
+mod server;
+mod zed_host;
 
-use zed_extension_api::{self as zed};
+use zed_extension_api::{self as zed, serde_json::json};
 
-/// SharpLsp Zed extension — provides sharplsp for C# and F# development.
+use crate::server::LANGUAGE_SERVER;
+use crate::zed_host::{lsp_settings, ZedHost};
+
+/// The extension's state: the download resolved earlier in this session.
 struct SharpLspExtension {
-    cached_binary_path: Option<String>,
+    cached_download: Option<String>,
 }
-
-const SERVER_BINARY: &str = "sharplsp";
-const EXPECTED_VERSION: &str = env!("CARGO_PKG_VERSION");
-const SLASH_CMD_TREE: &str = "sharplsp-tree";
 
 impl zed::Extension for SharpLspExtension {
     fn new() -> Self {
         SharpLspExtension {
-            cached_binary_path: None,
+            cached_download: None,
         }
     }
 
     fn language_server_command(
         &mut self,
-        _language_server_id: &zed::LanguageServerId,
+        id: &zed::LanguageServerId,
         worktree: &zed::Worktree,
     ) -> zed::Result<zed::Command> {
-        let binary = self.resolve_binary(worktree)?;
-        let env = build_server_env(worktree);
+        let launch = server::resolve(&ZedHost { id, worktree }, &mut self.cached_download)?;
         Ok(zed::Command {
-            command: binary,
-            args: vec![],
-            env,
+            command: launch.command,
+            args: launch.args,
+            env: server_env(worktree.shell_env(), launch.env),
         })
-    }
-
-    fn language_server_initialization_options(
-        &mut self,
-        _language_server_id: &zed::LanguageServerId,
-        _worktree: &zed::Worktree,
-    ) -> zed::Result<Option<zed::serde_json::Value>> {
-        Ok(None)
     }
 
     fn language_server_workspace_configuration(
         &mut self,
-        _language_server_id: &zed::LanguageServerId,
-        _worktree: &zed::Worktree,
+        _id: &zed::LanguageServerId,
+        worktree: &zed::Worktree,
     ) -> zed::Result<Option<zed::serde_json::Value>> {
-        Ok(None)
-    }
-
-    fn complete_slash_command_argument(
-        &self,
-        command: zed::SlashCommand,
-        _args: Vec<String>,
-    ) -> zed::Result<Vec<zed::SlashCommandArgumentCompletion>> {
-        match command.name.as_str() {
-            SLASH_CMD_TREE => Ok(vec![zed::SlashCommandArgumentCompletion {
-                label: "path/to/Solution.slnx".to_string(),
-                new_text: "Solution.slnx".to_string(),
-                run_command: false,
-            }]),
-            _ => Ok(vec![]),
-        }
-    }
-
-    fn run_slash_command(
-        &self,
-        command: zed::SlashCommand,
-        args: Vec<String>,
-        worktree: Option<&zed::Worktree>,
-    ) -> zed::Result<zed::SlashCommandOutput> {
-        match command.name.as_str() {
-            SLASH_CMD_TREE => run_tree_command(args, worktree),
-            _ => Err(format!("Unknown command: {}", command.name)),
-        }
+        let settings = lsp_settings(worktree).and_then(|settings| settings.settings);
+        Ok(settings.map(client_layer))
     }
 }
 
 zed::register_extension!(SharpLspExtension);
 
-// ── Server binary resolution ────────────────────────────────────
-
-impl SharpLspExtension {
-    /// Resolve the sharplsp binary path.
-    ///
-    /// Priority:
-    ///   1. Cached path from a previous successful resolution
-    ///   2. Binary on `$PATH` (via worktree.which)
-    ///
-    /// NOTE: The Zed extension API (WASM sandbox) does not support running
-    /// subprocesses, so we cannot execute `sharplsp --version` to verify
-    /// the binary version matches the extension version. Version validation
-    /// relies on the LSP server reporting its version during initialization.
-    fn resolve_binary(&mut self, worktree: &zed::Worktree) -> zed::Result<String> {
-        cached_or(&mut self.cached_binary_path, || {
-            worktree.which(SERVER_BINARY)
-        })
-    }
+/// `lsp.sharplsp.settings` uses the `sharplsp.toml` schema; the server reads the
+/// client layer from `settings.sharplsp` ([CONFIG-RESOLUTION]).
+fn client_layer(settings: zed::serde_json::Value) -> zed::serde_json::Value {
+    json!({ LANGUAGE_SERVER: settings })
 }
 
-/// Return the cached path, otherwise look one up and cache it.
-///
-/// Split from `resolve_binary` because `zed::Worktree` exists only inside Zed's
-/// WASM host: the caching contract is testable, the `which` call is not.
-fn cached_or(
-    cache: &mut Option<String>,
-    lookup: impl FnOnce() -> Option<String>,
-) -> zed::Result<String> {
-    if let Some(path) = cache {
-        return Ok(path.clone());
-    }
-
-    let path = lookup().ok_or_else(missing_binary_error)?;
-    *cache = Some(path.clone());
-    Ok(path)
-}
-
-/// The message shown when `sharplsp` is absent from `$PATH`. Zed surfaces this
-/// verbatim, and it is the only install guidance a Zed user ever sees.
-fn missing_binary_error() -> String {
-    format!(
-        "{SERVER_BINARY} not found on PATH. \
-         Install SharpLsp v{EXPECTED_VERSION} via `make install` \
-         or download from https://github.com/Nimblesite/SharpLsp/releases"
-    )
-}
-
-/// Build environment variables for the sharplsp server process.
-fn build_server_env(worktree: &zed::Worktree) -> Vec<(String, String)> {
-    with_default_log_level(worktree.shell_env())
-}
-
-/// The server logs through `tracing`, which emits nothing without `RUST_LOG`.
-/// A shell that already sets it keeps its own value.
-fn with_default_log_level(mut env: Vec<(String, String)>) -> Vec<(String, String)> {
+/// The shell's environment, overridden by `lsp.sharplsp.binary.env`. The server
+/// logs through `tracing`, which emits nothing without `RUST_LOG`, so `info`
+/// applies unless either source sets a level.
+fn server_env(
+    shell: Vec<(String, String)>,
+    configured: Vec<(String, String)>,
+) -> Vec<(String, String)> {
+    let overridden = |key: &String| configured.iter().any(|(set, _)| set == key);
+    let mut env: Vec<(String, String)> = shell
+        .into_iter()
+        .filter(|(key, _)| !overridden(key))
+        .collect();
+    env.extend(configured);
     if !env.iter().any(|(key, _)| key == "RUST_LOG") {
-        env.push(("RUST_LOG".to_string(), "info".to_string()));
+        env.push(("RUST_LOG".to_owned(), "info".to_owned()));
     }
     env
-}
-
-// ── Slash command: sharplsp-tree ───────────────────────────────────
-
-fn run_tree_command(
-    args: Vec<String>,
-    worktree: Option<&zed::Worktree>,
-) -> zed::Result<zed::SlashCommandOutput> {
-    let wt = worktree.ok_or("No worktree available")?;
-
-    let sln_path = args
-        .first()
-        .ok_or("Usage: /sharplsp-tree <path/to/Solution.sln|Solution.slnx>")?;
-
-    let sln_content = wt
-        .read_text_file(sln_path)
-        .map_err(|err| format!("Failed to read {}: {}", sln_path, err))?;
-
-    let text = pipeline::solution_tree(sln_path, &sln_content, |path| wt.read_text_file(path).ok());
-
-    Ok(tree_output(sln_path, text))
-}
-
-/// Wrap the rendered tree in the single labelled section Zed renders.
-fn tree_output(sln_path: &str, text: String) -> zed::SlashCommandOutput {
-    let section = zed::SlashCommandOutputSection {
-        range: (0..text.len()).into(),
-        label: format!("Solution: {}", sln_path),
-    };
-    zed::SlashCommandOutput {
-        text,
-        sections: vec![section],
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
 
-    /// The top-level `version` declared in `extension.toml`, parsed as TOML
-    /// rather than scraped, so a moved or commented-out key is not mistaken for
-    /// a match.
-    fn manifest_version() -> Option<String> {
-        include_str!("../extension.toml")
-            .parse::<toml::Table>()
-            .ok()?
-            .get("version")?
-            .as_str()
-            .map(str::to_owned)
-    }
-
-    /// `make _stamp-version` rewrites the version in BOTH `Cargo.toml` and
-    /// `extension.toml`. Zed reads the latter; `EXPECTED_VERSION` — which the
-    /// install message quotes — comes from the former. If a release stamps one
-    /// and misses the other, the marketplace listing and the version the
-    /// extension tells users to install disagree, and nothing else in the
-    /// pipeline compares them.
-    #[test]
-    fn extension_toml_version_matches_crate_version() {
-        assert_eq!(
-            manifest_version().as_deref(),
-            Some(EXPECTED_VERSION),
-            "extension.toml and Cargo.toml versions must be stamped together",
-        );
-    }
-
-    #[test]
-    fn crate_version_is_numeric_and_dotted() {
-        let segments: Vec<&str> = EXPECTED_VERSION.split('.').collect();
-        assert!(
-            segments.len() >= 2,
-            "version needs at least X.Y segments, got {EXPECTED_VERSION}",
-        );
-        for segment in &segments {
-            assert!(
-                segment.parse::<u32>().is_ok(),
-                "every segment must be numeric, got {segment} in {EXPECTED_VERSION}",
-            );
-        }
-    }
-
-    #[test]
-    fn a_resolved_binary_is_returned_and_cached() {
-        let mut cache = None;
-
-        let resolved = cached_or(&mut cache, || Some("/usr/local/bin/sharplsp".to_owned()));
-
-        assert_eq!(resolved, Ok("/usr/local/bin/sharplsp".to_owned()));
-        assert_eq!(cache.as_deref(), Some("/usr/local/bin/sharplsp"));
-    }
-
-    /// The cache exists to keep `Worktree::which` off the hot path. If a second
-    /// resolve still looked up, the cache would be decorative.
-    #[test]
-    fn a_cached_binary_is_not_looked_up_again() {
-        let mut cache = Some("/cached/sharplsp".to_owned());
-        let looked_up = Cell::new(false);
-
-        let resolved = cached_or(&mut cache, || {
-            looked_up.set(true);
-            Some("/fresh/sharplsp".to_owned())
-        });
-
-        assert_eq!(resolved, Ok("/cached/sharplsp".to_owned()));
-        assert!(
-            !looked_up.get(),
-            "the cached path must short-circuit lookup"
-        );
-    }
-
-    /// This asserts on the message `cached_or` actually produces. The previous
-    /// test rebuilt the string itself and so could not have caught a change to
-    /// the real one.
-    #[test]
-    fn an_absent_binary_reports_the_install_guidance() {
-        let mut cache = None;
-
-        let resolved = cached_or(&mut cache, || None);
-
-        let Err(message) = resolved else {
-            panic!("a missing binary must not resolve");
-        };
-        assert!(message.contains(SERVER_BINARY), "{message}");
-        assert!(message.contains(EXPECTED_VERSION), "{message}");
-        assert!(message.contains("make install"), "{message}");
-        assert!(
-            message.contains("github.com/Nimblesite/SharpLsp"),
-            "{message}"
-        );
-        assert!(cache.is_none(), "a failed lookup must not poison the cache");
+    fn pair(key: &str, value: &str) -> (String, String) {
+        (key.to_owned(), value.to_owned())
     }
 
     #[test]
     fn a_shell_without_rust_log_gets_the_default_level() {
-        let env = with_default_log_level(vec![("PATH".to_owned(), "/usr/bin".to_owned())]);
+        let env = server_env(vec![pair("PATH", "/usr/bin")], vec![]);
 
-        assert!(
-            env.contains(&("RUST_LOG".to_owned(), "info".to_owned())),
-            "{env:?}"
-        );
+        assert_eq!(env, [pair("PATH", "/usr/bin"), pair("RUST_LOG", "info")]);
     }
 
     #[test]
     fn a_shell_with_rust_log_keeps_its_own_level() {
-        let env = with_default_log_level(vec![("RUST_LOG".to_owned(), "trace".to_owned())]);
+        let env = server_env(vec![pair("RUST_LOG", "trace")], vec![]);
 
-        assert_eq!(env, vec![("RUST_LOG".to_owned(), "trace".to_owned())]);
+        assert_eq!(env, [pair("RUST_LOG", "trace")]);
     }
 
-    /// Zed highlights the section by byte range. A range short of the text
-    /// leaves the tail unlabelled; one past it is out of bounds.
+    /// Settings win over the shell for the same key, keep the rest of the shell,
+    /// and can set the log level themselves.
     #[test]
-    fn the_output_section_spans_the_whole_tree() {
-        let text = "Solution: App.slnx\n└ Project: Api (Api.csproj)\n".to_owned();
+    fn configured_environment_overrides_the_shell() {
+        let shell = vec![
+            pair("PATH", "/usr/bin"),
+            pair("DOTNET_ROOT", "/usr/share/dotnet"),
+        ];
+        let configured = vec![
+            pair("DOTNET_ROOT", "/opt/dotnet"),
+            pair("RUST_LOG", "debug"),
+        ];
 
-        let output = tree_output("App.slnx", text.clone());
+        let env = server_env(shell, configured);
 
-        assert_eq!(output.text, text);
-        assert_eq!(output.sections.len(), 1);
-        assert_eq!(output.sections[0].label, "Solution: App.slnx");
-        assert_eq!(output.sections[0].range.start, 0);
-        assert_eq!(u64::from(output.sections[0].range.end), text.len() as u64);
+        assert_eq!(
+            env,
+            [
+                pair("PATH", "/usr/bin"),
+                pair("DOTNET_ROOT", "/opt/dotnet"),
+                pair("RUST_LOG", "debug")
+            ]
+        );
+    }
+
+    /// Zed's `lsp.sharplsp.settings` is the `sharplsp.toml` schema itself; the
+    /// server only reads it under `sharplsp`, so an unwrapped object would be ignored.
+    #[test]
+    fn zed_settings_become_the_servers_client_layer() {
+        let settings = json!({"debug": {"exceptions": {"break_on": "all"}}});
+
+        let layer = client_layer(settings.clone());
+
+        assert_eq!(layer["sharplsp"], settings);
+        assert_eq!(layer.as_object().map(zed::serde_json::Map::len), Some(1));
+        assert_eq!(layer["sharplsp"]["debug"]["exceptions"]["break_on"], "all");
+    }
+}
+
+/// `extension.toml` against the Zed registry's publishing rules. Parsed as TOML,
+/// never scraped, so a moved or commented-out key cannot pass for a match.
+#[cfg(test)]
+mod manifest_tests {
+    use crate::server::{LANGUAGE_SERVER, REPOSITORY};
+
+    fn manifest() -> toml::Table {
+        include_str!("../extension.toml")
+            .parse()
+            .unwrap_or_else(|error| panic!("extension.toml must parse: {error}"))
+    }
+
+    fn crate_manifest() -> toml::Table {
+        include_str!("../Cargo.toml")
+            .parse()
+            .unwrap_or_else(|error| panic!("Cargo.toml must parse: {error}"))
+    }
+
+    /// The registry entry's `version` must equal the manifest's at the pinned commit,
+    /// and the crate is versioned with it so the two can never drift apart.
+    #[test]
+    fn the_manifest_and_crate_share_one_numeric_version() {
+        let version = manifest()["version"].as_str().map(str::to_owned);
+        let crate_version = crate_manifest()["package"]["version"]
+            .as_str()
+            .map(str::to_owned);
+
+        assert_eq!(
+            version, crate_version,
+            "extension.toml and Cargo.toml must match"
+        );
+        let version = version.unwrap_or_default();
+        let segments: Vec<&str> = version.split('.').collect();
+        assert_eq!(segments.len(), 3, "semver X.Y.Z, got {version}");
+        assert!(
+            segments
+                .iter()
+                .all(|segment| segment.parse::<u32>().is_ok()),
+            "{version}"
+        );
+    }
+
+    /// Language-server-only extensions are suffixed `-lsp`; no ID may say `zed` or `extension`.
+    #[test]
+    fn the_id_follows_the_registry_naming_rules() {
+        let manifest = manifest();
+        let id = manifest["id"].as_str().unwrap_or_default();
+
+        assert!(id.ends_with("-lsp"), "{id}");
+        assert!(!id.contains("zed") && !id.contains("extension"), "{id}");
+        assert!(
+            id.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+            "kebab-case: {id}"
+        );
+        assert_eq!(manifest["schema_version"].as_integer(), Some(1));
+        assert_eq!(
+            manifest["repository"].as_str(),
+            Some(format!("https://github.com/{REPOSITORY}").as_str())
+        );
+    }
+
+    /// Zed matches servers to languages by the names the C# and F# extensions define:
+    /// `CSharp` and `FSharp`. `C#` or `F#` silently attaches to nothing.
+    #[test]
+    fn the_server_attaches_to_the_csharp_and_fsharp_languages() {
+        let manifest = manifest();
+        let server = &manifest["language_servers"][LANGUAGE_SERVER];
+
+        let languages: Vec<&str> = server["languages"]
+            .as_array()
+            .map(|names| names.iter().filter_map(toml::Value::as_str).collect())
+            .unwrap_or_default();
+        assert_eq!(languages, ["CSharp", "FSharp"]);
+        assert_eq!(server["language_ids"]["CSharp"].as_str(), Some("csharp"));
+        assert_eq!(server["language_ids"]["FSharp"].as_str(), Some("fsharp"));
+        assert_eq!(server["name"].as_str(), Some("SharpLsp"));
+    }
+
+    /// The extension provides a language server and nothing else: grammars belong to
+    /// language extensions, and Zed no longer accepts slash commands.
+    #[test]
+    fn only_a_language_server_is_provided() {
+        let manifest = manifest();
+
+        for key in [
+            "slash_commands",
+            "grammars",
+            "context_servers",
+            "agent_servers",
+        ] {
+            assert!(!manifest.contains_key(key), "{key} must not be declared");
+        }
+        assert_eq!(
+            manifest["language_servers"]
+                .as_table()
+                .map(toml::Table::len),
+            Some(1)
+        );
+    }
+
+    /// Downloads are confined to this repository's releases, the only thing fetched.
+    #[test]
+    fn downloads_are_limited_to_the_release_repository() {
+        let manifest = manifest();
+        let capabilities = manifest["capabilities"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+
+        assert_eq!(capabilities.len(), 1, "{capabilities:?}");
+        assert_eq!(capabilities[0]["kind"].as_str(), Some("download_file"));
+        assert_eq!(capabilities[0]["host"].as_str(), Some("github.com"));
+        let path: Vec<&str> = capabilities[0]["path"]
+            .as_array()
+            .map(|segments| segments.iter().filter_map(toml::Value::as_str).collect())
+            .unwrap_or_default();
+        let mut expected: Vec<&str> = REPOSITORY.split('/').collect();
+        expected.push("**");
+        assert_eq!(path, expected);
+    }
+
+    /// The registry's CI rejects an extension without an accepted licence in its own
+    /// directory; one at the repository root does not count.
+    #[test]
+    fn the_extension_directory_carries_the_mit_licence() {
+        let licence = include_str!("../LICENSE");
+
+        assert!(
+            licence.starts_with("MIT License"),
+            "{}",
+            &licence[..licence.len().min(40)]
+        );
+        assert!(licence.contains("Permission is hereby granted, free of charge"));
+        assert_eq!(
+            licence,
+            include_str!("../../../../LICENSE"),
+            "the repository licence, not a fork of it"
+        );
     }
 }

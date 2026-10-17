@@ -1,16 +1,24 @@
-id = "sharplsp"
+id = "sharp-lsp"
 name = "SharpLsp"
 description = "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in."
-version = "0.1.0"
+version = "0.26.0"
 schema_version = 1
 authors = ["SharpLsp <sharplsp@users.noreply.github.com>"]
 repository = "https://github.com/Nimblesite/SharpLsp"
 
+# Pair with the C# and F# extensions, which define these languages and their
+# grammars. [DIST-ZED-REGISTRY]
 [language_servers.sharplsp]
 name = "SharpLsp"
-languages = ["C#", "F#"]
+languages = ["CSharp", "FSharp"]
 
-[slash_commands.sharplsp-tree]
-description = "Display the .NET solution tree: projects, dependencies, and references"
-tooltip_text = "Parse a .sln or .slnx file and show its project structure"
-requires_argument = true
+[language_servers.sharplsp.language_ids]
+CSharp = "csharp"
+FSharp = "fsharp"
+
+# The server is never bundled: absent from PATH, the extension downloads the
+# release archive for this platform from this repository only.
+[[capabilities]]
+kind = "download_file"
+host = "github.com"
+path = ["Nimblesite", "SharpLsp", "**"]

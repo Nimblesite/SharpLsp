@@ -24,7 +24,7 @@
       "language": "typescript"
     },
     "sharplsp-zed": {
-      "threshold": 85.04,
+      "threshold": 89.44,
       "language": "typescript"
     },
     "sharplsp-rider": {
