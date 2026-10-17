@@ -5,13 +5,13 @@
 
 ## Overview
 
-Zed extension for SharpLsp — the open-source .NET LSP. Starts the SharpLsp language server for C# and F# in Zed, downloading it when it is not installed. Registry rules and resolution: [DIST-ZED-REGISTRY].
+SharpLsp in Zed — the open-source .NET LSP. Starts the SharpLsp language server for C# and F# in Zed, downloading it when it is not installed. It ships as a server option inside the existing C# and F# Zed extensions, not as an extension of its own: the registry closes competing C# servers in favour of the existing extension. `src/editors/zed` is the reference implementation those changes port from and the dev extension that tests them ([DIST-ZED-REGISTRY]).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    ZED["Zed Editor"] --> EXT["SharpLsp Extension<br/>Rust → WASM"]
+    ZED["Zed Editor"] --> EXT["C# / F# extension: sharplsp server option<br/>or the src/editors/zed dev extension<br/>Rust → WASM"]
     EXT --> ADAPTER["Language Server Adapter"]
     ADAPTER --> BIN["sharplsp binary<br/>stdio JSON-RPC"]
     ADAPTER --> GH["GitHub release archive<br/>downloaded when not on PATH"]
@@ -78,7 +78,7 @@ flowchart LR
 # Native check (development)
 cargo check --manifest-path src/editors/zed/Cargo.toml
 
-# WASM build (release; the registry builds wasm32-wasip2 itself)
+# WASM build (release; Zed builds dev extensions for wasm32-wasip2 itself)
 cargo build --manifest-path src/editors/zed/Cargo.toml --release --target wasm32-wasip2
 
 # Run tests
@@ -95,7 +95,7 @@ Requires `rustup target add wasm32-wasip2` for WASM builds.
 
 3. **No slash commands** — The `/sharplsp-tree` slash command was removed with Zed's extension slash-command API; the registry no longer accepts them.
 
-4. **Decoupled version** — The registry builds the committed `extension.toml`, so the extension versions itself and downloads the latest server release ([DIST-ZED-REGISTRY]).
+4. **Upstream, not a registry extension** — The registry accepts one extension per functionality and closed C# Enhanced, csharp-ls and .NET submissions in favour of the existing C# extension. SharpLsp therefore ships inside `zed-extensions/csharp` and `nathanjcollins/zed-fsharp`. Both download the latest server release, so a SharpLsp release needs no extension update ([DIST-ZED-REGISTRY]).
 
 ## TODOs
 
@@ -134,10 +134,8 @@ Requires `rustup target add wasm32-wasip2` for WASM builds.
 
 ### Phase 5: Language Support (Not planned)
 
-The C# and F# extensions own the grammars and language definitions. The
-registry accepts one extension per functionality, and a grammar would turn this
-language-server extension into a competing language extension
-([DIST-ZED-REGISTRY]).
+The C# and F# extensions own the grammars and language definitions, and
+SharpLsp ships inside them as a server option ([DIST-ZED-REGISTRY]).
 
 ### Phase 6: Testing and CI
 
@@ -145,11 +143,18 @@ language-server extension into a competing language extension
 - [x] CI pipeline: `cargo test` with the coverage ratchet (`make _test-zed`)
 - [x] CI pipeline: `cargo clippy` (`make _lint-zed`)
 - [ ] WASM binary size optimization
-- [x] Meet the registry's publishing rules: `-lsp` id, licence in the extension directory, no bundled server ([DIST-ZED-REGISTRY])
-- [ ] Test in Zed as a dev extension at the commit to be submitted
-- [ ] Publish to the Zed extension registry (PR to `zed-industries/extensions`)
+- [x] No bundled server: resolve from settings or PATH, else download the release archive ([DIST-ZED-REGISTRY])
 
-### Phase 7: Parity Polish
+### Phase 7: Upstream Distribution
+
+The registry closes competing C# server extensions, so SharpLsp ships inside the existing C# and F# extensions ([DIST-ZED-REGISTRY]).
+
+- [ ] Test SharpLsp in Zed through the `src/editors/zed` dev extension
+- [ ] PR to `zed-extensions/csharp`: a `sharplsp` server for `CSharp` beside OmniSharp, Roslyn and csharp-ls, with resolution and download ported from `src/editors/zed`
+- [ ] PR to `nathanjcollins/zed-fsharp`: a `sharplsp` server for `FSharp` beside fsautocomplete, ported the same way
+- [ ] Website: Zed install docs once either PR ships (`docs/editors.md`, plus `ja` and `zh`)
+
+### Phase 8: Parity Polish
 
 - [ ] Debugger integration (DAP support via Zed's debugger API)
 - [ ] Snippet support for C# and F# common patterns
