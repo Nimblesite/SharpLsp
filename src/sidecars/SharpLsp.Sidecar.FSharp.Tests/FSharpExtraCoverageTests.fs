@@ -16,6 +16,7 @@ open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
 open SharpLsp.Sidecar.Common
+open SharpLsp.Sidecar.Common.Ipc
 
 // ── A real loaded workspace, built once from a real temp .fsproj ──
 let private loaded =
@@ -381,6 +382,30 @@ let ``main exits gracefully for an unusable socket path`` () =
     // and no hang.
     let code = Program.main [| "/sharplsp-no-such-dir-xyz/s.sock" |]
     Assert.True(code = 0 || code = 1, $"expected a clean exit code, got {code}")
+
+// ── Program entry point: supervision [SIDECAR-PROCESS-PARENT] (GitHub #163) ──
+
+[<Fact>]
+let ``main rejects a malformed host command line`` () =
+    let endpoint = IpcConnection.GenerateSocketPath($"fs-args-{System.Guid.NewGuid():N}")
+    Assert.Equal(1, Program.main [| endpoint; "--parent-pid"; "not-a-pid" |])
+    Assert.Equal(1, Program.main [| endpoint; "--parent-pid" |])
+    Assert.Equal(1, Program.main [| endpoint; "--unknown"; "1" |])
+
+[<Fact>]
+let ``main exits non-zero when the host that launched it is already gone`` () =
+    let dotnet = new System.Diagnostics.Process()
+    dotnet.StartInfo <- System.Diagnostics.ProcessStartInfo("dotnet", "--version", RedirectStandardOutput = true)
+    Assert.True(dotnet.Start())
+    let gone = dotnet.Id
+    dotnet.WaitForExit()
+    dotnet.Dispose()
+    let endpoint = IpcConnection.GenerateSocketPath($"fs-orphan-{System.Guid.NewGuid():N}")
+    Assert.Equal(1, Program.main [| endpoint; "--parent-pid"; string gone |])
+    // Nothing was bound for the dead host: the endpoint is still free.
+    let listener = IpcConnection.CreateListener(endpoint)
+    Assert.False(listener.IsError)
+    listener.Match((fun l -> l.DisposeAsync().AsTask().Wait()), (fun _ -> ()))
 
 // ── File-order analyzer: a genuinely misordered project ──────────
 

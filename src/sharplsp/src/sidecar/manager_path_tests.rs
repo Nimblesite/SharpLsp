@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use super::sidecar_launch_on;
-use super::tests::{create_vsix_sidecar, remove_vsix_sidecar, test_exe_dir};
+use super::tests::{create_vsix_sidecar, launched_with, remove_vsix_sidecar, test_exe_dir};
 use crate::paths::test_paths::path_var_of;
 
 const SOCKET: &str = "/tmp/sharplsp-path-test.sock";
@@ -49,7 +49,7 @@ fn windows_path_shims_fall_through_to_the_next_candidate() -> Result<()> {
     );
     assert_eq!(PathBuf::from(&command), vsix);
     assert!(vsix.is_file());
-    assert_eq!(args, vec![SOCKET.to_string()]);
+    assert_eq!(args, launched_with(SOCKET));
 
     // 2. A real `.exe` in a later PATH entry: the PATH tool wins again.
     let real = tempfile::tempdir().context("real PATH dir")?;
@@ -58,7 +58,7 @@ fn windows_path_shims_fall_through_to_the_next_candidate() -> Result<()> {
     let (command, args) = sidecar_launch_on(Some(&both), &tool, &subdir, &name, SOCKET);
     assert_eq!(command, tool);
     assert_ne!(PathBuf::from(&command), vsix);
-    assert_eq!(args, vec![SOCKET.to_string()]);
+    assert_eq!(args, launched_with(SOCKET));
 
     // 3. Shims only and no installed layout: the dev `dotnet run` fallback.
     remove_vsix_sidecar(&subdir, &name)?;
@@ -66,7 +66,7 @@ fn windows_path_shims_fall_through_to_the_next_candidate() -> Result<()> {
     assert_eq!(command, "dotnet");
     assert_eq!(args.first().map(String::as_str), Some("run"));
     assert!(args.contains(&format!("src/sidecars/{name}")));
-    assert_eq!(args.last().map(String::as_str), Some(SOCKET));
+    assert!(args.ends_with(&launched_with(SOCKET)), "{args:?}");
     Ok(())
 }
 
@@ -81,7 +81,7 @@ fn missing_path_skips_to_the_installed_sidecar() -> Result<()> {
     let (command, args) = sidecar_launch_on(None, "dotnet", &subdir, &name, SOCKET);
     assert_eq!(PathBuf::from(&command), vsix);
     assert_ne!(command, "dotnet");
-    assert_eq!(args, vec![SOCKET.to_string()]);
+    assert_eq!(args, launched_with(SOCKET));
 
     remove_vsix_sidecar(&subdir, &name)?;
     Ok(())
@@ -106,7 +106,7 @@ fn each_path_shim_alone_falls_through_to_the_vsix_sidecar() -> Result<()> {
 
         let (command, args) = sidecar_launch_on(Some(&path_var), &tool, &subdir, &name, SOCKET);
         assert_eq!(PathBuf::from(&command), vsix, "{suffix} must fall through");
-        assert_eq!(args, vec![SOCKET.to_string()], "{suffix}");
+        assert_eq!(args, launched_with(SOCKET), "{suffix}");
 
         touch(dir.path(), &crate::paths::executable_name(&tool))?;
         let (command, _) = sidecar_launch_on(Some(&path_var), &tool, &subdir, &name, SOCKET);
@@ -191,7 +191,7 @@ fn env_override_is_skipped_until_its_file_exists() -> Result<()> {
     std::fs::write(&override_exe, b"").context("write override exe")?;
     let (command, args) = sidecar_launch_on(None, "unused-tool", &subdir, &name, SOCKET);
     assert_eq!(PathBuf::from(command), override_exe);
-    assert_eq!(args, vec![SOCKET.to_string()]);
+    assert_eq!(args, launched_with(SOCKET));
 
     std::env::remove_var(&key);
     assert_eq!(PathBuf::from(launch_without_path(&subdir, &name)), vsix);

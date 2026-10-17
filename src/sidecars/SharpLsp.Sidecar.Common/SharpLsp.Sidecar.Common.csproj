@@ -15,6 +15,9 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <WarningLevel>9999</WarningLevel>
         <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
+        <!-- The LibraryImport source generator emits unsafe marshalling stubs for the
+             Job Object P/Invokes ([SIDECAR-PROCESS-TREE]); no hand-written code is unsafe. -->
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>

@@ -1,6 +1,5 @@
 #pragma warning disable RS1035 // File IO banned for analyzers — tests own temp fixtures
 using System.Net.Sockets;
-using System.Text;
 using MessagePack;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
@@ -354,42 +353,6 @@ public sealed class SidecarHostEndToEndTests
         }
 
         throw new InvalidOperationException("Host never printed READY");
-    }
-
-    /// <summary>
-    /// Thread-safe console redirection target: the host writes READY/FATAL
-    /// lines from its own tasks while the test polls <see cref="Snapshot" />.
-    /// </summary>
-    private sealed class CapturedConsoleWriter : TextWriter
-    {
-        private readonly StringBuilder _buffer = new();
-        private readonly Lock _gate = new();
-
-        public override Encoding Encoding => Encoding.UTF8;
-
-        public override void Write(char value)
-        {
-            lock (_gate)
-            {
-                _ = _buffer.Append(value);
-            }
-        }
-
-        public override void Write(string? value)
-        {
-            lock (_gate)
-            {
-                _ = _buffer.Append(value);
-            }
-        }
-
-        public string Snapshot()
-        {
-            lock (_gate)
-            {
-                return _buffer.ToString();
-            }
-        }
     }
 
     private static Envelope Request(uint id, string method, byte[]? payload = null)

@@ -88,7 +88,7 @@ folded into the new ownership model:
 | #152 | `spawn_retry_after` throttles an immediate retry | State is split across locks; crash and spawn failure paths differ; concurrent waiters and stable-reset semantics are incomplete |
 | #153 | I/O exceptions break and generic failures are capped | Run result does not consistently communicate fatal exit; no process/CPU/log-flood acceptance test |
 | #154 | `BoundEndpoint` is printed in READY | Handshake is unversioned/unfenced and is not exercised through the real Rust host |
-| #163 | No complete implementation | Direct-child kill, parent death before connect, Windows descendants, and Unix group cleanup remain |
+| #163 | Host passes `--parent-pid`; sidecar validates it and installs `ParentProcessWatchdog` (Windows waitable handle, Unix 250 ms liveness poll) and, on Windows, a retained kill-on-close Job Object before READY; host death cancels dispatch and forces exit after 2 s; real-process watchdog/job tests; e2e on the published sidecars for host death before connect (fails on the pre-fix sidecars) and for a hard-killed connected host, asserting the sidecar and its descendants exit | Unix process group and group kill; Unix direct-parent identity check; `dotnet run` still breaks direct-child termination; the before-connect e2e does not yet assert pipe rebind or a child helper; no test hard-kills a wedged sidecar with a live BuildHost |
 | #164 | Request timeout drops a suspect transport | Response ID is unchecked; health performs check/drop/reacquire; notifications can be mistaken for responses |
 | #167 | PATH finder takes only `.exe` on Windows, skips directories, and falls through `.cmd`/`.bat`/`.ps1`/extensionless shims to the installed layout; real-file Windows fallback test | Spawns the bare name, not the resolved absolute path; Unix does not check the executable mode; a failed spawn does not continue the chain |
 | #172 | Sidecar flushes the ack before it stops; host checks the correlated `ok`, waits out the 5 s budget for the exit, kills only without one; real-sidecar e2e | Unwritten commands are not cancelled (no command queue until the supervisor); the kill is direct-child only (#163) |
@@ -527,20 +527,20 @@ item and its required evidence are complete.
 ### 11.9 Parent death and process-tree cleanup `[SIDECAR-PLAN-CHECKLIST-PROCESS]`
 
 - [ ] Guarantee every production/development launch is direct so Rust child PID equals READY PID.
-- [ ] Start parent-death detection before listener bind and fail pre-READY when the parent cannot be
+- [x] Start parent-death detection before listener bind and fail pre-READY when the parent cannot be
       validated.
-- [ ] On Windows open a waitable handle to the exact parent process object and detect death within one
+- [x] On Windows open a waitable handle to the exact parent process object and detect death within one
       second even while waiting in accept.
 - [ ] On Unix verify direct parent identity and detect reparenting/disappearance within one second.
-- [ ] Implement Windows Job Object creation with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` through safe
+- [x] Implement Windows Job Object creation with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` through safe
       managed handles and assign the sidecar before engine descendants can start.
-- [ ] Retain the Job Object handle for the full sidecar lifetime and make setup failure visible before
+- [x] Retain the Job Object handle for the full sidecar lifetime and make setup failure visible before
       READY.
 - [ ] Launch Unix sidecars as leaders of dedicated process groups without placing the Rust host in the
       group.
 - [ ] On planned Unix hard termination, signal only the current generation's group and escalate within
       a bound.
-- [ ] On hard parent death, terminate descendants, dispose the listener, and exit without an IPC
+- [x] On hard parent death, terminate descendants, dispose the listener, and exit without an IPC
       shutdown request.
 - [ ] Never enumerate/kill processes by executable name and never target VS Code or an unverified PID.
 - [ ] Add a Windows test: fixture spawns child, host dies before IPC connect, sidecar and child vanish,
