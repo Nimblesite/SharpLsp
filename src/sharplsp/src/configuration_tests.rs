@@ -177,4 +177,35 @@ mod contract {
             .is_err());
         Ok(())
     }
+
+    /// Editor settings sent as `initializationOptions` apply before any
+    /// workspace opens, over `sharplsp.toml`; invalid options are dropped
+    /// whole, leaving the file's values. [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]
+    #[test]
+    fn initialization_options_layer_over_toml_and_invalid_ones_are_dropped() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(
+            dir.path().join("sharplsp.toml"),
+            "[csharp]\nsolution_path = 'from/toml.sln'\n[server]\ndebounce_ms = 300\n",
+        )?;
+        let root = dir.path().to_path_buf();
+
+        let chosen = json!({"sharplsp":{"csharp":{"solution_path":"from/editor.sln"}}});
+        let config = Configuration::initialized(root.clone(), Some(&chosen)).config()?;
+        assert_eq!(config.csharp.solution_path, "from/editor.sln");
+        assert_eq!(config.server.debounce_ms, 300, "the file's other keys stay");
+        assert!(config.csharp.enabled, "defaults fill the rest");
+
+        let invalid = json!({"sharplsp":{"csharp":{"no_such_key":true}}});
+        let config = Configuration::initialized(root.clone(), Some(&invalid)).config()?;
+        assert_eq!(config.csharp.solution_path, "from/toml.sln");
+        assert_eq!(config.server.debounce_ms, 300);
+
+        let picker_only = json!({"solutionPicker": true});
+        let config = Configuration::initialized(root.clone(), Some(&picker_only)).config()?;
+        assert_eq!(config.csharp.solution_path, "from/toml.sln");
+        let config = Configuration::initialized(root, None).config()?;
+        assert_eq!(config.csharp.solution_path, "from/toml.sln");
+        Ok(())
+    }
 }

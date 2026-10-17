@@ -38,9 +38,9 @@ mod tree_sitter_parse;
 mod type_hierarchy;
 mod utils;
 mod vfs;
+mod workspace_open;
 mod workspace_symbols;
 mod workspace_targets;
-mod workspace_open;
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
