@@ -17,6 +17,12 @@
   --color-on-primary: #ffffff;
   --color-code: #101613;
   --color-code-text: #e7ece9;
+  --code-comment: #7f8c85;
+  --code-keyword: #6fdc9c;
+  --code-type: #7cc7e8;
+  --code-function: #f0d48a;
+  --code-string: #e8a87c;
+  --code-number: #f2a7a7;
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-code: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Consolas, monospace;
   --shadow-sm: 0 1px 2px rgb(13 17 15 / 8%);
