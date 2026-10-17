@@ -279,15 +279,28 @@ impl LspClient {
     /// declares `textDocument.publishDiagnostics` is not offered the pull
     /// diagnostic provider. [DIAG-LSP-CAPABILITIES-EXCLUSIVE]
     pub fn initialize_with_capabilities(&mut self, root_uri: Value, capabilities: Value) -> Value {
-        let resp = self.request(
-            "initialize",
-            json!({
-                "processId": null,
-                "capabilities": capabilities,
-                "rootUri": root_uri,
-            }),
-        );
-        // Send initialized notification.
+        self.initialize_with_params(json!({
+            "processId": null,
+            "capabilities": capabilities,
+            "rootUri": root_uri,
+        }))
+    }
+
+    /// Perform the LSP initialize handshake sending `initializationOptions`:
+    /// the editor settings a client hands over before any workspace opens.
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]
+    pub fn initialize_with_options(&mut self, root_uri: Value, options: Value) -> Value {
+        self.initialize_with_params(json!({
+            "processId": null,
+            "capabilities": {},
+            "rootUri": root_uri,
+            "initializationOptions": options,
+        }))
+    }
+
+    /// Send `initialize` with `params`, then the `initialized` notification.
+    fn initialize_with_params(&mut self, params: Value) -> Value {
+        let resp = self.request("initialize", params);
         self.notify("initialized", json!({}));
         resp
     }

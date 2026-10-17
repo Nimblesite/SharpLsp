@@ -5,7 +5,7 @@
     { "text": "GitHub", "url": "https://github.com/Nimblesite/SharpLsp", "external": true }
   ],
   "docs": [
-    { "group": "setUp", "pages": { "": "gettingStarted", "editors/": "editorSetup", "configuration/": "configuration" } },
+    { "group": "setUp", "pages": { "": "gettingStarted", "editors/": "editorSetup", "zed/": "zed", "configuration/": "configuration" } },
     {
       "group": "writeCode",
       "pages": {

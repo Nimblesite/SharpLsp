@@ -6,7 +6,7 @@ use lsp_server::{Connection, Message, Request, Response};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::config::{find_config_file, SharpLspConfig};
+use crate::config::{find_config_file, load_config, SharpLspConfig};
 
 /// Merge objects recursively; arrays and scalars replace, including empty arrays.
 fn merge(base: &mut Value, overlay: Value) {
@@ -134,6 +134,24 @@ impl Configuration {
             root,
             client: json!({}),
         }
+    }
+
+    /// Start from the editor's `initializationOptions`, shaped like
+    /// `didChangeConfiguration` settings (`{ sharplsp: <sharplsp.toml schema> }`),
+    /// so editor settings apply before any workspace opens. Invalid options are
+    /// rejected with a warning, as a rejected settings change is.
+    /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+    pub(crate) fn initialized(root: PathBuf, options: Option<&Value>) -> Self {
+        let mut configuration = Self::new(root);
+        if let Err(error) = options.map_or(Ok(()), |options| configuration.update(options)) {
+            tracing::warn!("initializationOptions rejected: {error:#}");
+        }
+        configuration
+    }
+
+    /// The typed configuration of the workspace root, editor settings included.
+    pub(crate) fn config(&self) -> Result<SharpLspConfig> {
+        load_config(&self.root, &self.client)
     }
 
     /// Resolve one scope; this is shared by every editor through JSON-RPC.

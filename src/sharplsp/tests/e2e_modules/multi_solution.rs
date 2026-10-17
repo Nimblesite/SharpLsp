@@ -8,10 +8,11 @@ use super::*;
 // resolve that ambiguity. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
 
 /// Two solutions in sibling subdirectories — the shape of every real monorepo,
-/// and of the `SharpLsp` repo itself. `sharplsp.toml` names the one to load.
+/// and of the `SharpLsp` repo itself. With `with_toml`, `sharplsp.toml` names
+/// the one to load; without it, only the editor's settings can.
 ///
 /// Returns `(tmp, root_uri, app_file_uri, app_source)`.
-fn create_multi_solution_workspace() -> (tempfile::TempDir, String, String, String) {
+fn create_multi_solution_workspace(with_toml: bool) -> (tempfile::TempDir, String, String, String) {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
 
@@ -49,11 +50,13 @@ public class Calculator
     .unwrap();
 
     // The knob under test: name the solution to load, relative to the root.
-    std::fs::write(
-        root.join("sharplsp.toml"),
-        "[csharp]\nsolution_path = \"app/App.sln\"\n",
-    )
-    .unwrap();
+    if with_toml {
+        std::fs::write(
+            root.join("sharplsp.toml"),
+            "[csharp]\nsolution_path = \"app/App.sln\"\n",
+        )
+        .unwrap();
+    }
 
     restore_project(&app_dir);
 
@@ -96,7 +99,7 @@ EndGlobal"#
 fn test_full_stack_hover_uses_configured_solution_path_in_multi_solution_root() {
     require_dotnet();
 
-    let (_tmp, root_uri, file_uri, source) = create_multi_solution_workspace();
+    let (_tmp, root_uri, file_uri, source) = create_multi_solution_workspace(true);
 
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
@@ -113,4 +116,169 @@ fn test_full_stack_hover_uses_configured_solution_path_in_multi_solution_root() 
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
+}
+
+/// The editor's settings choose the solution, with no `sharplsp.toml`.
+/// `initializationOptions.sharplsp` takes the `sharplsp.toml` schema (Zed sends
+/// `lsp.sharplsp.settings` there), and the host reads it before the eager
+/// `workspace/open`, so the right solution loads first time and no error is
+/// shown. Regression test for #375. Implements
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+#[test]
+fn test_full_stack_initialization_options_choose_the_solution_in_multi_solution_root() {
+    require_dotnet();
+
+    let (_tmp, root_uri, file_uri, source) = create_multi_solution_workspace(false);
+
+    let mut client = LspClient::start_verbose();
+    let init = client.initialize_with_options(json!(root_uri), choose_app_solution());
+    assert!(
+        init.get("error").is_none(),
+        "initialize must accept SharpLsp settings: {init}"
+    );
+    assert!(
+        init["result"]["capabilities"]["hoverProvider"].as_bool() == Some(true),
+        "the server must still offer hover: {init}"
+    );
+    client.open_document(&file_uri, &source);
+
+    // Hover on the "Calculator" class name (line 2, char 14).
+    let (class_hover, notifications) =
+        poll_hover_collecting(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+    assert!(
+        hover_text(&class_hover).contains("Calculator"),
+        "the configured App.sln must load, got: {class_hover}"
+    );
+    assert_eq!(
+        error_messages(&notifications),
+        Vec::<String>::new(),
+        "a configured solution must not show an error"
+    );
+
+    // `Add` on line 4 answers from the same solution.
+    let method_hover = hover(&mut client, &file_uri, 4, 16);
+    assert_hover_ok(&method_hover);
+    assert!(
+        hover_text(&method_hover["result"]).contains("Add"),
+        "hover on Add must describe the method, got: {method_hover}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// With several solutions and no `solution_path`, the host shows an error
+/// naming every candidate and the setting. Choosing one in the editor's
+/// settings (`workspace/didChangeConfiguration`) then loads it, with no
+/// restart. Regression test for #375. Implements
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+#[test]
+fn test_full_stack_ambiguous_root_shows_error_until_settings_choose_a_solution() {
+    require_dotnet();
+
+    let (_tmp, root_uri, file_uri, source) = create_multi_solution_workspace(false);
+
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+
+    let shown = client.wait_for_notification("window/showMessage", Duration::from_secs(120));
+    assert_eq!(
+        shown["params"]["type"], 1,
+        "an ambiguous root is an error: {shown}"
+    );
+    let message = shown["params"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("App.sln") && message.contains("Other.sln"),
+        "the error must name every candidate: {message}"
+    );
+    assert!(
+        message.contains("solution_path"),
+        "the error must name the setting that resolves it: {message}"
+    );
+
+    client.open_document(&file_uri, &source);
+    let unloaded = hover(&mut client, &file_uri, 2, 14);
+    assert_hover_ok(&unloaded);
+    assert!(
+        unloaded["result"].is_null(),
+        "no solution is loaded yet, got: {unloaded}"
+    );
+
+    client.notify(
+        "workspace/didChangeConfiguration",
+        json!({ "settings": choose_app_solution() }),
+    );
+    let loaded = poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+    assert!(
+        hover_text(&loaded).contains("Calculator"),
+        "the solution chosen in settings must load, got: {loaded}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// A client with its own solution picker (VS Code) declares
+/// `solutionPicker`, so an ambiguous root is its to resolve: the host shows
+/// no error, and the solution the client sends through
+/// `sharplsp/loadSolution` loads. Implements
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+#[test]
+fn test_full_stack_solution_picker_client_gets_no_ambiguity_error() {
+    require_dotnet();
+
+    let (tmp, root_uri, file_uri, source) = create_multi_solution_workspace(false);
+
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_options(json!(root_uri), json!({ "solutionPicker": true }));
+
+    let solution = std::fs::canonicalize(tmp.path().join("app").join("App.sln")).unwrap();
+    let picked = client.request(
+        "sharplsp/loadSolution",
+        json!({ "solutionPath": solution.to_string_lossy() }),
+    );
+    assert!(
+        picked.get("error").is_none(),
+        "loadSolution failed: {picked}"
+    );
+    assert_eq!(
+        picked["result"]["success"], true,
+        "loadSolution must report success: {picked}"
+    );
+
+    client.open_document(&file_uri, &source);
+    let (class_hover, notifications) =
+        poll_hover_collecting(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+    assert!(
+        hover_text(&class_hover).contains("Calculator"),
+        "the picked App.sln must load, got: {class_hover}"
+    );
+    assert_eq!(
+        error_messages(&notifications),
+        Vec::<String>::new(),
+        "a solution-picker client must not be shown the ambiguity error"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `SharpLsp` settings, in the `sharplsp.toml` schema, that choose `app/App.sln`.
+fn choose_app_solution() -> Value {
+    json!({ "sharplsp": { "csharp": { "solution_path": "app/App.sln" } } })
+}
+
+/// The markdown a hover result shows.
+fn hover_text(result: &Value) -> &str {
+    result["contents"]["value"].as_str().unwrap_or_default()
+}
+
+/// The text of every error `window/showMessage` among `notifications`.
+fn error_messages(notifications: &[Value]) -> Vec<String> {
+    notifications
+        .iter()
+        .filter(|message| message["method"] == "window/showMessage")
+        .filter(|message| message["params"]["type"] == 1)
+        .map(|message| message["params"]["message"].to_string())
+        .collect()
 }

@@ -6,7 +6,7 @@ mod fake_host;
 mod server;
 mod zed_host;
 
-use zed_extension_api::{self as zed, serde_json::json};
+use zed_extension_api::{self as zed, serde_json::json, settings::LspSettings};
 
 use crate::server::LANGUAGE_SERVER;
 use crate::zed_host::{lsp_settings, ZedHost};
@@ -36,13 +36,23 @@ impl zed::Extension for SharpLspExtension {
         })
     }
 
+    /// The workspace configuration, sent with `initialize` too, so
+    /// `csharp.solution_path` picks the solution before the first open
+    /// ([SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]).
+    fn language_server_initialization_options(
+        &mut self,
+        id: &zed::LanguageServerId,
+        worktree: &zed::Worktree,
+    ) -> zed::Result<Option<zed::serde_json::Value>> {
+        self.language_server_workspace_configuration(id, worktree)
+    }
+
     fn language_server_workspace_configuration(
         &mut self,
         _id: &zed::LanguageServerId,
         worktree: &zed::Worktree,
     ) -> zed::Result<Option<zed::serde_json::Value>> {
-        let settings = lsp_settings(worktree).and_then(|settings| settings.settings);
-        Ok(settings.map(client_layer))
+        Ok(settings_layer(lsp_settings(worktree)))
     }
 }
 
@@ -52,6 +62,13 @@ zed::register_extension!(SharpLspExtension);
 /// client layer from `settings.sharplsp` ([CONFIG-RESOLUTION]).
 fn client_layer(settings: zed::serde_json::Value) -> zed::serde_json::Value {
     json!({ LANGUAGE_SERVER: settings })
+}
+
+/// The client layer from `lsp.sharplsp.settings`, if any are set.
+fn settings_layer(settings: Option<LspSettings>) -> Option<zed::serde_json::Value> {
+    settings
+        .and_then(|settings| settings.settings)
+        .map(client_layer)
 }
 
 /// The shell's environment, overridden by `lsp.sharplsp.binary.env`. The server
@@ -131,6 +148,26 @@ mod tests {
         assert_eq!(layer["sharplsp"], settings);
         assert_eq!(layer.as_object().map(zed::serde_json::Map::len), Some(1));
         assert_eq!(layer["sharplsp"]["debug"]["exceptions"]["break_on"], "all");
+    }
+
+    /// `initialize` and every settings change carry `lsp.sharplsp.settings`
+    /// as the client layer, so a chosen solution opens first time; with
+    /// nothing set, neither carries a layer.
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]
+    #[test]
+    fn only_lsp_settings_become_the_layer_sent_at_startup() {
+        let chosen = json!({"csharp": {"solution_path": "app/App.sln"}});
+        let settings = LspSettings {
+            initialization_options: Some(json!({"solutionPicker": true})),
+            settings: Some(chosen.clone()),
+            ..LspSettings::default()
+        };
+
+        let layer = settings_layer(Some(settings));
+
+        assert_eq!(layer, Some(json!({"sharplsp": chosen})));
+        assert_eq!(settings_layer(Some(LspSettings::default())), None);
+        assert_eq!(settings_layer(None), None);
     }
 }
 

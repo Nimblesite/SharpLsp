@@ -32,6 +32,6 @@ VSIX 内含 `sharplsp` 宿主和两个 .NET sidecar。你不需要 Rust 工具�
 
 ### 其他编辑器
 
-服务器会尽可能使用标准 LSP。每次 GitHub 发布都会提供独立服务器归档和 Rider 插件；Neovim、Zed、Helix 和 Emacs 的打包集成尚未发布。
+服务器会尽可能使用标准 LSP。每次 GitHub 发布都会提供独立服务器归档和 Rider 插件，[Zed](/zh/docs/zed/) 则通过开发扩展运行 SharpLsp。Neovim、Helix 和 Emacs 的打包集成尚未发布。
 
 <p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span aria-hidden="true">→</span></a></p>

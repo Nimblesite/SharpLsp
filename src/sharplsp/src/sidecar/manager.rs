@@ -65,6 +65,8 @@ pub struct SidecarManager {
     spawn_retry_after: Mutex<Option<Instant>>,
     /// Set before shutdown begins so background callers stop retrying or respawning.
     shutting_down: AtomicBool,
+    /// Set once the health monitor runs, so each manager runs one.
+    monitored: AtomicBool,
     /// Out-of-band event lines the sidecar writes to its stdout after the
     /// READY handshake (`SHARPLSP-EVENT <name> <payload>`). Forwarded by a
     /// per-child reader task so the pipe never fills; survives respawns
@@ -96,6 +98,7 @@ impl SidecarManager {
             backoff: Mutex::new(INITIAL_BACKOFF),
             spawn_retry_after: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
+            monitored: AtomicBool::new(false),
             events_tx,
             events_rx: std::sync::Mutex::new(Some(events_rx)),
         }
@@ -433,8 +436,14 @@ impl SidecarManager {
     /// Run the health monitoring loop — pings the sidecar periodically.
     /// On failure, triggers crash recovery with exponential backoff.
     /// Must be called from within a tokio runtime (e.g. via `runtime.spawn`).
-    pub async fn start_health_monitor(self: Arc<Self>) -> ! {
-        health_loop(self).await
+    /// Runs at most once per manager: a later call returns at once, so every
+    /// successful `workspace/open`, including a reopen after a failed first
+    /// open, can ask for it.
+    pub async fn start_health_monitor(self: Arc<Self>) {
+        if self.monitored.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        health_loop(self).await;
     }
 }
 
@@ -839,6 +848,21 @@ mod tests {
         assert!(manager.is_shutting_down());
         let error = manager.request("ping", Vec::new()).await.unwrap_err();
         assert!(error.to_string().contains("shutting down"));
+    }
+
+    #[tokio::test]
+    async fn health_monitor_runs_once_per_manager() {
+        let manager = Arc::new(SidecarManager::new("test", "cmd", vec![], "/tmp/test.sock"));
+        let first = tokio::spawn(Arc::clone(&manager).start_health_monitor());
+        tokio::task::yield_now().await;
+        let second = tokio::time::timeout(
+            Duration::from_secs(5),
+            Arc::clone(&manager).start_health_monitor(),
+        )
+        .await;
+        assert!(second.is_ok(), "a second monitor returns at once");
+        assert!(!first.is_finished(), "the first monitor keeps running");
+        first.abort();
     }
 
     #[test]

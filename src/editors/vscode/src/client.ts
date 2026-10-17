@@ -104,6 +104,10 @@ export async function start(
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: DOCUMENT_SELECTOR,
+    // The Solution Explorer's picker settles a root holding several solutions,
+    // so the server shows no error for one
+    // ([SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]).
+    initializationOptions: { solutionPicker: true },
     // Never auto-reveal / steal focus to the Output panel when the server logs an
     // error. vscode-languageclient defaults this to RevealOutputChannelOn.Error,
     // which yanks the user's focus on every server-side diagnostic — intrusive UX,
