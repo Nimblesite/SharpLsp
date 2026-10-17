@@ -167,3 +167,26 @@ test("vulnerability findings block the release and both VSIX marketplaces", () =
         );
     }
 });
+
+// [DIST-RELEASE] deploy-pages: production must serve the tagged homepage. The
+// verify step's expected strings are the site's own copy, never a second one
+// that drifts when the homepage changes (#360).
+test("the Pages verify step expects the homepage the site actually builds", () => {
+    const deploy = workflow("deploy-pages").jobs.deploy;
+    const verify = deploy.steps.find((step) => step.name === "Verify production website");
+    assert.ok(verify, "the deploy job must verify production");
+    assert.equal(
+        verify.env?.EXPECTED_HEADLINE,
+        require("../../website/src/_data/i18n.json").en.home.title,
+        "the expected headline is the English hero title",
+    );
+    const { publisher, name } = require("./package.json");
+    assert.equal(
+        verify.env?.EXPECTED_INSTALL,
+        `href="vscode:extension/${publisher}.${name}"`,
+        "the expected install link opens this extension",
+    );
+    for (const variable of ["$EXPECTED_HEADLINE", "$EXPECTED_INSTALL"]) {
+        assert.ok(verify.run.includes(`"${variable}"`), `the probe must look for ${variable}`);
+    }
+});

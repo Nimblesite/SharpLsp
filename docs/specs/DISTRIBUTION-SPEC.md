@@ -600,7 +600,11 @@ Tag-triggered (`v*`). Jobs:
    (`v0.2.0-rc.1`) is published as a prerelease.
 7. **`deploy-pages`** — deploys the tagged website revision. This is the only
    route by which the site deploys: `deploy-pages.yml` has no push trigger, so
-   the site can never advertise something no release has shipped.
+   the site can never advertise something no release has shipped. It then
+   waits for production to serve the tagged commit, the English hero title
+   (`i18n.json` `en.home.title`) and the extension's install link. Those
+   expected strings are the site's own, enforced by a workflow test, so a
+   homepage copy change cannot turn a release red.
 8. **`publish-marketplace`** / **`publish-openvsx`** — push the VSIXs only.
    Independent of each other; neither gates the other ([DIST-SECRETS]).
 9. **`publish-homebrew`** / **`publish-scoop`** — push the rendered formula and

@@ -75,10 +75,13 @@ jobs:
         shell: bash
         env:
           PRODUCTION_URL: https://sharplsp.dev
+          # The English hero title (src/website/src/_data/i18n.json en.home.title)
+          # and the extension's install link. tools/ci/security-gates.test.mjs
+          # fails the PR when either drifts from the site (#360).
+          EXPECTED_HEADLINE: 'Full C# and F# development.'
+          EXPECTED_INSTALL: 'href="vscode:extension/nimblesite.sharplsp"'
         run: |
           set -euo pipefail
-          expected_headline='SharpLsp: full C# and F# development.'
-          expected_install='href="vscode:extension/nimblesite.sharplsp"'
           fetch() {
             curl --fail --silent --show-error --location \
               --connect-timeout 5 \
@@ -95,8 +98,8 @@ jobs:
             if [[ "$deployed_sha" == "$GITHUB_SHA" ]]; then
               html="$(fetch "${PRODUCTION_URL}/?${probe}")"
 
-              if grep --fixed-strings --quiet "$expected_headline" <<<"$html" \
-                && grep --fixed-strings --quiet "$expected_install" <<<"$html"; then
+              if grep --fixed-strings --quiet "$EXPECTED_HEADLINE" <<<"$html" \
+                && grep --fixed-strings --quiet "$EXPECTED_INSTALL" <<<"$html"; then
                 echo "Production is serving commit ${GITHUB_SHA} with the new SharpLsp experience."
                 exit 0
               fi
