@@ -79,7 +79,7 @@ Main page sections center within the shell and retain fluid side gutters. Articl
 
 ## [WEB-DESIGN-HERO] Home Hero
 
-The home hero is one screen. On desktop it fills the viewport below the header, no more and no less: a compact copy column aligned to the shell sits beside the product film, which runs out to the window's right edge and is capped so the whole film stays above the fold. The headline is one short sentence plus the accent line, at most `3.25rem`, and never taller than a third of the viewport. Below `1024px` the copy stacks above the film at full width.
+The home hero is one screen. On desktop it fills the viewport below the header, no more and no less: a compact copy column sits beside the product film within the centered main shell, with equal outer gutters around the combined composition. The film is capped so it stays above the fold. The headline is one short sentence plus the accent line, at most `3.25rem`, and never taller than a third of the viewport. Below `1024px` the copy stacks above the film at full width.
 
 ## [WEB-DESIGN-DOCS-NAV] Docs Navigation
 

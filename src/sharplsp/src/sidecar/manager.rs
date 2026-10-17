@@ -302,7 +302,7 @@ impl SidecarManager {
 
     /// Spawn the sidecar process and connect via Unix socket.
     /// Returns the child process and transport for the caller to store.
-    /// TODO `[SIDECAR-STARTUP-SPAWN]`: pass endpoint, parent PID, generation, and protocol.
+    /// TODO `[SIDECAR-STARTUP-SPAWN]`: pass `--endpoint`, generation, and protocol (the parent PID is passed).
     async fn spawn_process(&self) -> Result<(Child, FramedTransport)> {
         info!(sidecar = %self.name, "Spawning sidecar");
 
@@ -330,6 +330,7 @@ impl SidecarManager {
                 self.name, self.spawn_command, self.spawn_args
             )
         })?;
+        info!(sidecar = %self.name, pid = child.id().unwrap_or(0), "Sidecar process spawned");
 
         let socket_path = self.wait_for_ready(&mut child).await?;
 
@@ -555,37 +556,43 @@ fn sidecar_launch_on(
     // [SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV]: env var override takes absolute priority.
     if let Some(exe) = env_var_sidecar_override(subdir) {
         info!(exe = %exe.display(), source = "env-var", "Sidecar resolved");
-        return (
-            exe.to_string_lossy().to_string(),
-            vec![socket_path.to_string()],
-        );
+        return (exe.to_string_lossy().to_string(), sidecar_args(socket_path));
     }
 
     if let Some(found) = path_var.and_then(|path| crate::paths::find_command(tool_command, path)) {
         info!(tool = %tool_command, path = %found.display(), source = "PATH", "Sidecar resolved");
-        return (tool_command.to_string(), vec![socket_path.to_string()]);
+        return (tool_command.to_string(), sidecar_args(socket_path));
     }
     debug!(tool_command, "Tool not found on PATH");
 
     if let Some(exe) = installed_sidecar_exe(subdir, name) {
         info!(exe = %exe.display(), source = "installed", "Sidecar resolved");
-        return (
-            exe.to_string_lossy().to_string(),
-            vec![socket_path.to_string()],
-        );
+        return (exe.to_string_lossy().to_string(), sidecar_args(socket_path));
     }
 
     info!(sidecar = %name, source = "dotnet-run", "Sidecar resolved — using dev dotnet run");
+    let run = [
+        "run".to_string(),
+        "--project".to_string(),
+        format!("src/sidecars/{name}"),
+        "--".to_string(),
+    ];
     (
         "dotnet".to_string(),
-        vec![
-            "run".to_string(),
-            "--project".to_string(),
-            format!("src/sidecars/{name}"),
-            "--".to_string(),
-            socket_path.to_string(),
-        ],
+        run.into_iter().chain(sidecar_args(socket_path)).collect(),
     )
+}
+
+/// Arguments every launch source passes the sidecar: its endpoint, then this
+/// host's PID, which arms the sidecar's parent-death watchdog and Windows Job
+/// Object containment so a hard host death cannot leak the sidecar tree.
+/// Implements `[SIDECAR-STARTUP-SPAWN]` and `[SIDECAR-PROCESS-PARENT]` (GitHub #163).
+fn sidecar_args(socket_path: &str) -> Vec<String> {
+    vec![
+        socket_path.to_string(),
+        "--parent-pid".to_string(),
+        std::process::id().to_string(),
+    ]
 }
 
 /// Return the sidecar path from an env var override, if set.
@@ -894,7 +901,7 @@ mod tests {
             "/tmp/sharplsp-test.sock",
         );
         assert_eq!(command, "dotnet");
-        assert_eq!(args, vec!["/tmp/sharplsp-test.sock"]);
+        assert_eq!(args, launched_with("/tmp/sharplsp-test.sock"));
     }
 
     #[test]
@@ -915,8 +922,22 @@ mod tests {
                 format!("src/sidecars/{name}"),
                 "--".to_string(),
                 "/tmp/sharplsp-test.sock".to_string(),
+                "--parent-pid".to_string(),
+                std::process::id().to_string(),
             ]
         );
+    }
+
+    /// The arguments every launch source must pass: the endpoint, then this
+    /// host's PID for the sidecar's parent-death watchdog. Spelled out
+    /// literally — not via `sidecar_args` — so the contract is what is tested.
+    /// `[SIDECAR-STARTUP-SPAWN]`, `[SIDECAR-PROCESS-PARENT]` (GitHub #163)
+    pub(super) fn launched_with(socket: &str) -> Vec<String> {
+        vec![
+            socket.to_string(),
+            "--parent-pid".to_string(),
+            std::process::id().to_string(),
+        ]
     }
 
     #[test]
@@ -933,7 +954,7 @@ mod tests {
         );
 
         assert_eq!(PathBuf::from(command), exe);
-        assert_eq!(args, vec!["/tmp/sharplsp-test.sock"]);
+        assert_eq!(args, launched_with("/tmp/sharplsp-test.sock"));
 
         remove_vsix_sidecar(&subdir, &name)?;
         Ok(())
@@ -1008,7 +1029,7 @@ mod tests {
             exe,
             "sidecar_launch must use SHARPLSP_CSHARP_SIDECAR_PATH when set"
         );
-        assert_eq!(args, vec!["/tmp/sharplsp-test-env.sock"]);
+        assert_eq!(args, launched_with("/tmp/sharplsp-test-env.sock"));
     }
 
     /// A wedged sidecar (accepts the request, never answers) must fail the

@@ -25,9 +25,6 @@ const PAGES = [
   { path: '/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: 'tour' },
   { path: '/ja/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: 'ツアー' },
   { path: '/zh/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: '导览' },
-  { path: '/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/', videos: ['profiler-fix-memory-leak'], says: 'leak' },
-  { path: '/ja/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/', videos: ['profiler-fix-memory-leak'], says: 'リーク' },
-  { path: '/zh/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/', videos: ['profiler-fix-memory-leak'], says: '泄漏' },
 ];
 
 const poster = (id) => `/assets/videos/${id}-poster.webp`;

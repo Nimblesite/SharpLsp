@@ -12,7 +12,6 @@ const LOCALIZED_ROUTES = [
   'blog/categories/',
   'blog/dotnet-framework-windows-vs-code/',
   'blog/editor-agnostic-dotnet-lsp/',
-  'blog/how-to-fix-a-memory-leak-in-csharp-dotnet/',
   'blog/introducing-sharplsp/',
   'blog/microsoft-testing-platform-mtp-dotnet-test-csharp-fsharp/',
   'blog/pull-diagnostics-without-phantom-errors/',
@@ -140,6 +139,17 @@ test.describe('Site layout regressions', () => {
     await search.fill('');
     await expect(page.locator('.blog-grid > .post-card:visible')).toHaveCount(cardCount);
     await expect(page.locator('#blog-search-empty')).toBeHidden();
+  });
+
+  test('the retired memory-leak post forwards to the guide in every language', async ({ page }) => {
+    for (const prefix of ['', '/ja', '/zh']) {
+      const guide = `${prefix}/docs/memory-leaks/`;
+      await page.goto(`${prefix}/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/`);
+      await page.waitForURL(`**${guide}`);
+      await expect(page.locator('html')).toHaveAttribute('lang', prefix ? prefix.slice(1) : 'en');
+      await expect(page.locator('article.prose h1')).toContainText(/C#/);
+      await expect(page.locator('figure video')).toHaveCount(1);
+    }
   });
 
   test('docs and blog post content each use one prose article', async ({ page }) => {

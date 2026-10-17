@@ -1,5 +1,6 @@
 using System.Reflection;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.CSharp;
 
@@ -29,22 +30,25 @@ await RunSidecarAsync(args).ConfigureAwait(false);
 
 static async Task RunSidecarAsync(string[] args)
 {
-    if (args.Length < 1)
+    var parsed = SidecarStartupOptions.Parse(args);
+    if (parsed.IsError)
     {
         await Console
-            .Error.WriteLineAsync("Usage: SharpLsp.Sidecar.CSharp <socket-path>")
+            .Error.WriteLineAsync(
+                $"FATAL: {parsed.Match(_ => string.Empty, e => e)} (SharpLsp.Sidecar.CSharp)"
+            )
             .ConfigureAwait(false);
         Environment.Exit(1);
     }
 
     try
     {
-        var socketPath = args[0];
+        var options = parsed.Match(o => o, _ => throw new InvalidOperationException());
         var sidecar = new CSharpSidecar();
         bool startupFailed;
         await using (sidecar.ConfigureAwait(false))
         {
-            await sidecar.RunAsync(socketPath).ConfigureAwait(false);
+            await sidecar.RunAsync(options).ConfigureAwait(false);
             startupFailed = sidecar.StartupFailed;
         }
 

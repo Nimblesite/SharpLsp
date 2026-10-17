@@ -1,0 +1,5 @@
+[
+  { "from": "/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/", "to": "/docs/memory-leaks/" },
+  { "from": "/ja/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/", "to": "/ja/docs/memory-leaks/" },
+  { "from": "/zh/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/", "to": "/zh/docs/memory-leaks/" }
+]
