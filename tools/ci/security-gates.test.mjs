@@ -94,7 +94,7 @@ test("all compiled test consumers opt into their non-building runners", () => {
     assert.ok(!editors["test-rider"].steps.some((step) => step.run?.includes("_build-rider")));
 });
 
-test("VSIX shards consume the packaged Release artifact, not a separate dev payload", () => {
+test("VSIX shards take the native payload from the packaged Release artifact", () => {
     const build = action("vsix-payload").runs.steps;
     const upload = build.find((step) => step.with?.path === "dist/sharplsp.vsix");
     assert.ok(upload, "the build must cache the actual packaged VSIX");
@@ -104,6 +104,20 @@ test("VSIX shards consume the packaged Release artifact, not a separate dev payl
     assert.ok(download?.uses.startsWith("actions/download-artifact@"), "consume that same artifact");
     const run = shard.find((step) => step.run?.includes("make _test-vsix-shard"));
     assert.equal(run.env?.VSIX_ARTIFACT, "target/vsix/sharplsp.vsix", "stage the zip bytes");
+});
+
+// [DIST-CI-ARTIFACT-TESTS] The profiler suites share @nimblesite/lsp-profiler-ui
+// and its signals with the running extension. The self-contained production
+// bundle gives the extension its own copy, so its state never reaches them.
+test("shards run the development bundle, built after the VSIX is sealed", () => {
+    const steps = action("build-platform").runs.steps;
+    const packed = steps.findIndex((step) => step.uses === "./.github/actions/vsix-payload");
+    const bundled = steps.findIndex((step) => step.run === "npm run build --prefix src/editors/vscode");
+    const uploaded = steps.findIndex((step) =>
+        step.with?.path?.split("\n").includes("src/editors/vscode/dist/extension.js"));
+    assert.ok(packed >= 0, "the VSIX is packed in the build");
+    assert.ok(packed < bundled, "the test bundle must not be what the VSIX packs");
+    assert.ok(bundled < uploaded, "the shards receive the test bundle");
 });
 
 // [DIST-VSIX-REBUILD] + [DIST-CI-VSIX-SHARDS]. A CI consumer may skip the

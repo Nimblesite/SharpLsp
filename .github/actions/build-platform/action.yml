@@ -17,8 +17,10 @@
 # anything. A test leg that rebuilds is a bug.
 #
 # The suite compiles separately from the product. Packaging emits the ONE
-# production bundle and its matching private map, then both artifacts upload.
-# Test jobs execute the packaged bytes, never a second development bundle.
+# production bundle into the VSIX. Shards run that VSIX's native payload with
+# the development bundle built here after packaging: the profiler suites share
+# @nimblesite/lsp-profiler-ui with the running extension, which only a bundle
+# that leaves node_modules external allows ([DIST-CI-ARTIFACT-TESTS]).
 name: Build one platform
 description: >-
   Compiles the VS Code suite, the release host, both sidecars, netcoredbg and
@@ -201,12 +203,16 @@ runs:
       run: node tools/packaging/verify-package-manifests.mjs
 
     # ── The VSIX, LAST ─────────────────────────────────────────────
-    # Emits the only production bundle, then publishes its matching test map.
+    # Packaging writes the production bundle to dist/; the test bundle replaces
+    # it only after the VSIX is sealed.
     - name: Pack and verify the VSIX
       uses: ./.github/actions/vsix-payload
       with:
         suite-artifact: ${{ inputs.suite-artifact }}
-    - name: Cache the compiled suite, fixtures and matching production source map
+    - name: Bundle the extension for the test shards
+      shell: bash
+      run: npm run build --prefix src/editors/vscode
+    - name: Cache the compiled suite, fixtures and test bundle
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ inputs.suite-artifact }}
@@ -217,5 +223,6 @@ runs:
         # asset paths; they must not run dotnet build on this static solution.
         path: |
           src/editors/vscode/out
+          src/editors/vscode/dist/extension.js
           src/editors/vscode/dist/extension.js.map
           src/editors/vscode/test-fixtures

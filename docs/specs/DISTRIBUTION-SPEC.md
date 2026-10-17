@@ -804,10 +804,14 @@ build workflow and download immutable artifacts from that same run/commit.
   Test jobs execute those archives with zero retries; they never compile them.
 - Rider builds its plugin and test classes before handoff. Test execution excludes
   Java/Kotlin compilation, and a task-graph guard rejects new compiler dependencies.
-- VS Code tests execute the production JavaScript and native payload extracted
-  from the packaged VSIX, not a separately built development extension. Its matching
-  source map is a private test artifact and never ships inside the VSIX. Coverage
-  excludes vendor code after remapping, without lowering the existing ratchet.
+- VS Code tests execute the native payload (host, sidecars, debugger, profiler
+  engine) extracted from the packaged VSIX, with the development bundle built
+  once in phase 2 after packaging. The profiler suites share
+  `@nimblesite/lsp-profiler-ui` and its signals with the running extension
+  ([PROFILER-SHARED-LIBRARY-VSCODE]), which only a bundle that leaves
+  `node_modules` external allows; the self-contained production bundle is
+  verified by packaging's payload check instead. Coverage excludes vendor code
+  after remapping, without lowering the existing ratchet.
 - Static test fixtures and coverage utilities are precompiled. Consumers may
   restore NuGet metadata to rebase machine-local package paths, but not compile.
   A feature test which deliberately builds/edits a user's fixture project still

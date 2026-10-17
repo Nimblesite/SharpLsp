@@ -85,10 +85,10 @@ export default defineConfig({
     // `dist/**` is deliberately NOT excluded. The extension runs from the
     // bundled `dist/extension.js` (package.json `main`), so the activation path
     // and every command callback exercised by the end-to-end interaction suites
-    // run there -- not in the `out/` modules the unit tests import. The private
-    // source map matches the actual production bytes extracted from the VSIX.
-    // The report step also filters remapped dependencies: test-cli only applies
-    // these globs before remapping, which alone would count bundled vendor code.
+    // run there -- not in the `out/` modules the unit tests import. That is the
+    // development bundle, whose source map covers only first-party sources: it
+    // leaves node_modules external. The report step still filters remapped
+    // dependencies, because test-cli applies these globs before remapping.
     exclude: ['**/node_modules/**', '**/.vscode-test/**'],
     // `lcov` is what makes SHARDING possible ([DIST-CI-VSIX-SHARDS]): CI runs one
     // chunk of the suite per job, and tools/coverage/merge-lcov.mjs union-merges

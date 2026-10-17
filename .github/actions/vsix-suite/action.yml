@@ -16,8 +16,8 @@
 name: Compile the VS Code suite once
 description: >-
   Installs deps, resolves the feature-chunk matrix for this platform, compiles
-  the test suite and static fixtures. build-platform publishes these after
-  packaging emits the matching production bundle and private source map.
+  the test suite and static fixtures. build-platform publishes these, with the
+  test bundle, after packaging the VSIX.
 inputs:
   platform:
     description: '"linux" or "win" — selects which chunks this leg runs.'
