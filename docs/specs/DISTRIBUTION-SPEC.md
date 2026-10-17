@@ -526,8 +526,8 @@ Users who want `sharplsp` on their system PATH outside VS Code may install via:
 - **Windows**: `scoop install nimblesite/sharplsp`
 
 Both draw from the [DIST-ARCHIVE] assets. This is entirely optional for VS Code
-users — the bundled VSIX binary is sufficient — and for Zed users, whose
-extension downloads the archive itself ([DIST-ZED-REGISTRY]). It is NOT optional
+users — the bundled VSIX binary is sufficient — and for Zed users, whose C# or
+F# extension downloads the archive itself ([DIST-ZED-REGISTRY]). It is NOT optional
 for anyone else: a Rider, Neovim or Helix user installs one of these or unpacks
 the archive by hand.
 
@@ -657,32 +657,51 @@ The plugin MUST pass JetBrains' approval guidelines and the Plugin Verifier
 
 ## [DIST-ZED-REGISTRY] Zed Extension Registry
 
-Zed installs extensions from the `zed-industries/extensions` registry, which
-builds `src/editors/zed` from a submodule commit of this repository. The registry
-reads the committed `extension.toml`, not a release artifact, so the extension
-carries its own version: it changes only when the extension does, and a
-publication pins the commit holding that version. `make _stamp-version` still
-stamps release checkouts, which nothing in the registry reads.
+Zed users get SharpLsp as a language-server option inside the existing C# and
+F# extensions, not as an extension of its own. The `zed-industries/extensions`
+registry accepts one extension per functionality and has closed every competing
+C# server submission in favour of a change to the existing extension: C#
+Enhanced ([#5159](https://github.com/zed-industries/extensions/pull/5159)),
+csharp-ls ([#6205](https://github.com/zed-industries/extensions/pull/6205)) and
+.NET ([#7098](https://github.com/zed-industries/extensions/pull/7098)). So
+SharpLsp is contributed upstream:
 
-1. **A language server and nothing else.** The id `sharp-lsp` takes the
-   registry's `-lsp` suffix for language-server-only extensions. The extension
-   declares no grammar: the C# and F# extensions define the `CSharp` and
-   `FSharp` languages it attaches to, with LSP language ids `csharp` and
-   `fsharp`. Zed has removed extension slash commands, so it declares none.
+| Language | Extension | Existing servers |
+|---|---|---|
+| C# | [`zed-extensions/csharp`](https://github.com/zed-extensions/csharp) (Apache-2.0) | OmniSharp, Roslyn, csharp-ls |
+| F# | [`nathanjcollins/zed-fsharp`](https://github.com/nathanjcollins/zed-fsharp) (MIT) | fsautocomplete |
+
+`src/editors/zed` is the reference implementation the upstream changes port
+from, and the dev extension (`zed: install dev extension`) that tests them. It
+is never submitted to the registry, which would also reject it: the registry's
+CI fails any submodule whose `.gitattributes` uses Git LFS, and this
+repository's website videos live in LFS. Its `extension.toml` version is
+therefore unpublished; the upstream extensions carry their own versions. Both
+download the latest server release, so a SharpLsp release needs no extension
+update.
+
+Every rule below binds the upstream server option and the dev extension alike.
+
+1. **A language server and nothing else.** The server id is `sharplsp` in both
+   extensions, so `lsp.sharplsp.*` settings are the same in either. It declares
+   no grammar: the C# and F# extensions define the `CSharp` and `FSharp`
+   languages it attaches to, with LSP language ids `csharp` and `fsharp`. Users
+   choose it with Zed's per-language `language_servers` setting. Zed has
+   removed extension slash commands, so it declares none.
 2. **Never bundled.** The server resolves from `lsp.sharplsp.binary.path`, then
    `sharplsp` on the worktree's PATH, then a download: the latest stable release's
    [DIST-ARCHIVE] asset for this platform, unpacked into the extension's work
    directory, with the host and both sidecar apphosts made executable. Older
    downloads are pruned best effort. Offline, the newest earlier download starts.
    Platforms without an archive (Intel macOS) get install guidance instead.
-3. **Downloads are confined** to `github.com/Nimblesite/SharpLsp/**` by the
-   manifest's single `download_file` capability.
+3. **Downloads are confined** to `github.com/Nimblesite/SharpLsp/**` by a
+   `download_file` capability scoped to this repository.
 4. **Settings.** `lsp.sharplsp.binary.arguments` and `.env` apply to whichever
    binary starts. `lsp.sharplsp.settings` uses the `sharplsp.toml` schema and
    reaches the server as the client layer `settings.sharplsp`
    ([CONFIG-RESOLUTION]).
-5. **Licence.** The registry's CI accepts only a licence inside the extension
-   directory; `src/editors/zed/LICENSE` links the repository's MIT licence.
+5. **Licence.** The ported code is this repository's MIT code, which both
+   upstream licences can take in.
 
 ## [DIST-SECRETS] Publishing Credentials
 
