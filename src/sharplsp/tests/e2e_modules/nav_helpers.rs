@@ -307,8 +307,10 @@ pub fn poll_hover_collecting(
     let deadline = std::time::Instant::now() + timeout;
     let mut notifications = Vec::new();
     loop {
-        let (resp, seen) = client
-            .request_collecting_notifications("textDocument/hover", hover_params(uri, line, character));
+        let (resp, seen) = client.request_collecting_notifications(
+            "textDocument/hover",
+            hover_params(uri, line, character),
+        );
         notifications.extend(seen);
         assert_hover_ok(&resp);
 

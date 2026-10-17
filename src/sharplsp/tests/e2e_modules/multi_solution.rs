@@ -237,7 +237,10 @@ fn test_full_stack_solution_picker_client_gets_no_ambiguity_error() {
         "sharplsp/loadSolution",
         json!({ "solutionPath": solution.to_string_lossy() }),
     );
-    assert!(picked.get("error").is_none(), "loadSolution failed: {picked}");
+    assert!(
+        picked.get("error").is_none(),
+        "loadSolution failed: {picked}"
+    );
     assert_eq!(
         picked["result"]["success"], true,
         "loadSolution must report success: {picked}"
@@ -260,7 +263,7 @@ fn test_full_stack_solution_picker_client_gets_no_ambiguity_error() {
     client.wait_with_timeout();
 }
 
-/// SharpLsp settings, in the `sharplsp.toml` schema, that choose `app/App.sln`.
+/// `SharpLsp` settings, in the `sharplsp.toml` schema, that choose `app/App.sln`.
 fn choose_app_solution() -> Value {
     json!({ "sharplsp": { "csharp": { "solution_path": "app/App.sln" } } })
 }
