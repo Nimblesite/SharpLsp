@@ -11,6 +11,7 @@ const LOCALIZED_ROUTES = [
   'blog/tags/',
   'blog/categories/',
   'blog/dotnet-framework-windows-vs-code/',
+  'blog/dotnet-profiler-vs-code-csharp-fsharp/',
   'blog/editor-agnostic-dotnet-lsp/',
   'blog/introducing-sharplsp/',
   'blog/microsoft-testing-platform-mtp-dotnet-test-csharp-fsharp/',
