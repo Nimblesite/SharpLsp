@@ -126,4 +126,4 @@ lambda 捕获了 `session`，而模块级列表保存着每一个 lambda。保�
 
 ## 试一试
 
-从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) 安装 SharpLsp，或在 Cursor、Windsurf 和 VSCodium 中从 [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) 安装。[修复内存泄漏](/zh/docs/memory-leaks/)指南是这些步骤的参考版本，[性能分析器文档](/zh/docs/profiler/)介绍了所有命令和设置。想知道我们为什么写这篇文章，请阅读 [.NET 开发者在应用变慢或内存泄漏时会搜索什么](/zh/blog/dotnet-profiler-memory-leak-search-trends/)。
+从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) 安装 SharpLsp，或在 Cursor、Windsurf 和 VSCodium 中从 [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) 安装。[修复内存泄漏](/zh/docs/memory-leaks/)指南是这些步骤的参考版本，[性能分析器文档](/zh/docs/profiler/)介绍了所有命令和设置。

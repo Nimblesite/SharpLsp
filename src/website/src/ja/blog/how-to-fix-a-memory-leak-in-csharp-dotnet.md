@@ -126,4 +126,4 @@ let watch (session: CustomerSession) =
 
 ## 試してみる
 
-SharpLsp は [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から、または Cursor・Windsurf・VSCodium では [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) からインストールできます。[メモリリークの修正](/ja/docs/memory-leaks/)ガイドはこの手順のリファレンス版で、[プロファイラーのドキュメント](/ja/docs/profiler/)にすべてのコマンドと設定があります。この記事を書いた理由は、[アプリが遅いとき、メモリがリークしているとき、.NET 開発者は何を検索するのか](/ja/blog/dotnet-profiler-memory-leak-search-trends/)をお読みください。
+SharpLsp は [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から、または Cursor・Windsurf・VSCodium では [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) からインストールできます。[メモリリークの修正](/ja/docs/memory-leaks/)ガイドはこの手順のリファレンス版で、[プロファイラーのドキュメント](/ja/docs/profiler/)にすべてのコマンドと設定があります。

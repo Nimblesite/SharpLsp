@@ -11,7 +11,6 @@ const LOCALIZED_ROUTES = [
   'blog/tags/',
   'blog/categories/',
   'blog/dotnet-framework-windows-vs-code/',
-  'blog/dotnet-profiler-memory-leak-search-trends/',
   'blog/editor-agnostic-dotnet-lsp/',
   'blog/how-to-fix-a-memory-leak-in-csharp-dotnet/',
   'blog/introducing-sharplsp/',
