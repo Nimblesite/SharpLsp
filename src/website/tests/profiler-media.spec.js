@@ -68,6 +68,7 @@ test.describe('Home hero layout', () => {
       expect(Math.round(hero.y + hero.height), 'the hero fills the screen, no more').toBe(height);
       expect(film.y + film.height, 'the whole film is above the fold').toBeLessThanOrEqual(height);
       expect(film.x, 'the film sits beside the copy').toBeGreaterThan(headline.x + headline.width);
+      expect(headline.x, 'the copy and film have equal outer gutters').toBeCloseTo(width - film.x - film.width, 0);
       expect(film.width, 'the film, not the headline, owns the hero').toBeGreaterThan(headline.width * 1.5);
       expect(headline.height, 'the headline stays compact').toBeLessThan(height * 0.3);
     });
@@ -81,6 +82,8 @@ test.describe('Home hero layout', () => {
     const film = await page.locator('.hero video').boundingBox();
     expect(film.y, 'the film follows the copy').toBeGreaterThan(headline.y + headline.height);
     expect(film.x + film.width).toBeLessThanOrEqual(viewport.width);
+    expect(film.x, 'the phone film has equal outer gutters').toBeCloseTo(viewport.width - film.x - film.width, 0);
+    expect(headline.x, 'the phone copy has equal outer gutters').toBeCloseTo(viewport.width - headline.x - headline.width, 0);
     expect(headline.height, 'the headline fits in a third of the screen').toBeLessThan(viewport.height / 3);
   });
 });

@@ -12,17 +12,15 @@
   width: calc(100% - 3rem);
 }
 
-/* [WEB-DESIGN-HERO] The hero is one screen: the headline, aligned to the shell, beside the film,
-   which runs out to the window's edge but never below the fold. */
+/* [WEB-DESIGN-HERO] Center the copy and film together within the shared shell,
+   with the whole film above the fold. */
 .hero {
   align-items: center;
   display: grid;
   gap: clamp(2rem, 4vw, 3.5rem);
   grid-template-columns: minmax(0, calc(var(--max-width) * 0.36)) minmax(0, 1fr);
-  max-width: none;
   min-height: calc(100svh - var(--header-height) - 1px); /* the header's bottom border */
-  padding: clamp(1.5rem, 4vh, 3rem) 1.5rem clamp(1.5rem, 4vh, 3rem) max(1.5rem, (100% - var(--max-width)) / 2);
-  width: 100%;
+  padding-block: clamp(1.5rem, 4vh, 3rem);
 }
 .hero video { margin-inline: auto; max-height: calc(100svh - var(--header-height) - 8rem); max-width: 100%; width: auto; }
 .hero h1 {
