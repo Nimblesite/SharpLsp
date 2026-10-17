@@ -540,8 +540,9 @@ item and its required evidence are complete.
       group.
 - [ ] On planned Unix hard termination, signal only the current generation's group and escalate within
       a bound.
-- [x] On hard parent death, terminate descendants, dispose the listener, and exit without an IPC
-      shutdown request.
+- [x] On hard parent death, dispose the listener and exit without an IPC shutdown request; on
+      Windows the Job Object terminates descendants.
+- [ ] On hard parent death on Unix, terminate the sidecar's process group (needs the group above).
 - [ ] Never enumerate/kill processes by executable name and never target VS Code or an unverified PID.
 - [ ] Add a Windows test: fixture spawns child, host dies before IPC connect, sidecar and child vanish,
       and the pipe can be rebound.

@@ -122,9 +122,20 @@ public sealed class SidecarHostSupervisionTests
         }
     }
 
-    /// Nothing holds the endpoint: a fresh listener can take it.
+    /// Nothing holds the endpoint: nothing accepts a connection on it, and a
+    /// fresh listener can take it. The connect probe is what catches a holder
+    /// on Unix, where binding first deletes a socket file left at the path.
     private static async Task AssertEndpointFreeAsync(string endpoint)
     {
+        using var probe = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var connected = await IpcConnection
+            .ConnectAsync(endpoint, probe.Token)
+            .ConfigureAwait(true);
+        await connected
+            .Match(stream => stream.DisposeAsync().AsTask(), _ => Task.CompletedTask)
+            .ConfigureAwait(true);
+        Assert.True(connected.IsError, "nothing may still accept connections on the endpoint");
+
         var listener = IpcConnection.CreateListener(endpoint);
         Assert.False(listener.IsError, listener.Match(_ => string.Empty, e => e));
         await listener

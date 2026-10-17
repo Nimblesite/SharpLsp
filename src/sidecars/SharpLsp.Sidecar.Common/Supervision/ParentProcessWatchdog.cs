@@ -47,26 +47,39 @@ public sealed class ParentProcessWatchdog : IDisposable
     )]
     public static WatchdogResult Start(int parentPid, Action onParentExit)
     {
+        Process? parent = null;
         try
         {
-            var parent = Process.GetProcessById(parentPid);
-            // Opening the handle now pins the exact process object.
-            _ = parent.SafeHandle;
-            if (parent.HasExited)
-            {
-                parent.Dispose();
-                return WatchdogResult.Failure($"parent process {parentPid} has already exited");
-            }
-
-            var watchdog = new ParentProcessWatchdog(parent, parentPid);
-            watchdog.Completion = watchdog.WatchAsync(onParentExit);
-            return new WatchdogResult.Ok<ParentProcessWatchdog, string>(watchdog);
+            parent = Process.GetProcessById(parentPid);
+            return Watch(parent, parentPid, onParentExit);
         }
         catch (Exception ex)
             when (ex is ArgumentException or InvalidOperationException or Win32Exception)
         {
+            // Ownership never transferred: release the handle a failed open left behind.
+            parent?.Dispose();
             return WatchdogResult.Failure($"cannot watch parent process {parentPid}: {ex.Message}");
         }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Process ownership transfers to the watchdog via Result"
+    )]
+    private static WatchdogResult Watch(Process parent, int parentPid, Action onParentExit)
+    {
+        // Opening the handle now pins the exact process object.
+        _ = parent.SafeHandle;
+        if (parent.HasExited)
+        {
+            parent.Dispose();
+            return WatchdogResult.Failure($"parent process {parentPid} has already exited");
+        }
+
+        var watchdog = new ParentProcessWatchdog(parent, parentPid);
+        watchdog.Completion = watchdog.WatchAsync(onParentExit);
+        return new WatchdogResult.Ok<ParentProcessWatchdog, string>(watchdog);
     }
 
     /// <summary>Stop watching without firing the callback.</summary>

@@ -12,15 +12,16 @@ use super::*;
 use std::io::BufRead;
 use std::process::{ExitStatus, Stdio};
 
-/// A real process standing in for the host: it idles until killed.
+/// A real process standing in for the host: it idles until killed. Its lease
+/// far outlasts a cold sidecar start, so it never dies before the test kills it.
 fn stand_in_host() -> std::process::Child {
     let mut command = if cfg!(windows) {
         let mut ping = std::process::Command::new("ping");
-        let _ = ping.args(["-n", "60", "127.0.0.1"]);
+        let _ = ping.args(["-n", "600", "127.0.0.1"]);
         ping
     } else {
         let mut sleep = std::process::Command::new("sleep");
-        let _ = sleep.arg("60");
+        let _ = sleep.arg("600");
         sleep
     };
     command.stdout(Stdio::null()).spawn().unwrap()

@@ -129,8 +129,9 @@ fn descendants(_root: u32) -> Vec<u32> {
 }
 
 /// Kill the host the way a crash or Task Manager does — no shutdown, no
-/// drops — and require that `sidecar` and every process it started die with
-/// it. `[SIDECAR-PROCESS-PARENT]`, `[SIDECAR-PROCESS-TREE]` (GitHub #163)
+/// drops — and require that `sidecar` dies with it and, on Windows, every
+/// process it started too; Unix descendants wait on the host-side process
+/// group. `[SIDECAR-PROCESS-PARENT]`, `[SIDECAR-PROCESS-TREE]` (GitHub #163)
 fn assert_dies_with_host(mut client: LspClient, log: &tempfile::NamedTempFile, sidecar: &str) {
     let pid = spawned_pid(&std::fs::read_to_string(log.path()).unwrap(), sidecar);
     assert!(

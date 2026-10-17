@@ -40,6 +40,8 @@ public abstract class SidecarHost : IAsyncDisposable
     /// ([SIDECAR-PROCESS-TREE]).
     private static ProcessContainment? s_containment;
 
+    private static readonly Lock s_containmentGate = new();
+
     private readonly MessageRouter _router = new();
     private readonly CancellationTokenSource _shutdownCts = new();
 
@@ -196,21 +198,24 @@ public abstract class SidecarHost : IAsyncDisposable
         return EnsureContained();
     }
 
-    /// Join the process-lifetime job once; a second job would be dropped and,
-    /// when finalized, kill this process.
+    /// Join the process-lifetime job exactly once, under a lock: a second job
+    /// would be dropped and, when finalized, kill this process.
     private static SupervisionResult EnsureContained()
     {
-        if (s_containment is not null)
+        lock (s_containmentGate)
         {
-            return Supervised;
-        }
+            if (s_containment is not null)
+            {
+                return Supervised;
+            }
 
-        var containment = ProcessContainment.ContainCurrentProcess();
-        s_containment = containment.Match<ProcessContainment?>(c => c, _ => null);
-        return containment.Match(
-            _ => Supervised,
-            e => SupervisionResult.Failure($"process containment failed: {e}")
-        );
+            var containment = ProcessContainment.ContainCurrentProcess();
+            s_containment = containment.Match<ProcessContainment?>(c => c, _ => null);
+            return containment.Match(
+                _ => Supervised,
+                e => SupervisionResult.Failure($"process containment failed: {e}")
+            );
+        }
     }
 
     private void OnParentExit()
