@@ -27,13 +27,34 @@ lang: ja
 
 ## ソリューションを選ぶ
 
-C# の場合、SharpLsp は、開いたフォルダー全体（サブフォルダーを含む）から `.sln` と `.slnx` ファイルを探します。1 つだけ見つかれば、それを読み込みます。複数見つかった場合は、どれを使えばよいか判断できないため、**どれも**読み込みません。構文ハイライトは Zed の C# 拡張機能によるものなので引き続き表示されますが、C# ファイルではホバー、補完、定義へ移動、診断は使えません。F# プロジェクトはどちらの場合も読み込まれます。SharpLsp の言語サーバーログには次のように表示されます。
+C# の場合、SharpLsp は、開いたフォルダー全体（サブフォルダーを含む）から `.sln` と `.slnx` ファイルを探します。1 つだけ見つかれば、それを読み込みます。複数見つかった場合は、どれを使えばよいか判断できないため、**どれも**読み込みません。構文ハイライトは Zed の C# 拡張機能によるものなので引き続き表示されますが、C# ファイルではホバー、補完、定義へ移動、診断は使えません。F# プロジェクトはどちらの場合も読み込まれます。SharpLsp はエラーを表示し、言語サーバーログには次のように記録されます。
 
 ```text
 Found 11 solutions under '/path/to/folder' (...), so which one to load is ambiguous.
 ```
 
-解決方法:
+解決するには、Zed の設定か `sharplsp.toml` ファイルでソリューションを指定します。両方で指定した場合は、Zed の設定が優先されます。
+
+### Zed の設定で指定する
+
+1. <kbd>Cmd+Shift+P</kbd>（Linux と Windows では <kbd>Ctrl+Shift+P</kbd>）を押し、`zed: open project settings` を実行します。
+2. 使いたいソリューションのパスを、開いたフォルダーからの相対パスで追加します。
+
+   ```json
+   {
+     "lsp": {
+       "sharplsp": {
+         "settings": {
+           "csharp": { "solution_path": "src/MyApp.sln" }
+         }
+       }
+     }
+   }
+   ```
+
+3. ファイルを保存します。SharpLsp は再起動なしでソリューションを読み込みます。
+
+### `sharplsp.toml` で指定する
 
 1. Zed で開いたフォルダーに `sharplsp.toml` という名前のファイルを作成します。
 2. 使いたいソリューションのパスを、そのフォルダーからの相対パスで書きます。
@@ -46,8 +67,6 @@ Found 11 solutions under '/path/to/folder' (...), so which one to load is ambigu
 3. <kbd>Cmd+Shift+P</kbd>（Linux と Windows では <kbd>Ctrl+Shift+P</kbd>）を押し、`editor: restart language server` を実行します。
 
 任意の型にマウスを重ねて、動作していることを確認します。
-
-ソリューションは `sharplsp.toml` で指定する必要があります。Zed の設定ファイルで `solution_path` を設定しても機能しません。SharpLsp は起動時、Zed から設定を受け取る前にソリューションを選ぶためです。
 
 ## 他の C# と F# のサーバーではなく SharpLsp を使う
 

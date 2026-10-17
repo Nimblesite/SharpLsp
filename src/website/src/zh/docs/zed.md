@@ -27,13 +27,34 @@ lang: zh
 
 ## 选择解决方案
 
-对于 C#，SharpLsp 会在你打开的整个文件夹（包括子文件夹）中查找 `.sln` 和 `.slnx` 文件。如果只找到一个，就加载它。如果找到多个，它会**一个都不**加载，因为它无法判断你要哪一个。你仍然有语法高亮（来自 Zed 的 C# 扩展），但 C# 文件中没有悬停信息、补全、转到定义和诊断。F# 项目无论如何都会加载。SharpLsp 语言服务器日志会显示：
+对于 C#，SharpLsp 会在你打开的整个文件夹（包括子文件夹）中查找 `.sln` 和 `.slnx` 文件。如果只找到一个，就加载它。如果找到多个，它会**一个都不**加载，因为它无法判断你要哪一个。你仍然有语法高亮（来自 Zed 的 C# 扩展），但 C# 文件中没有悬停信息、补全、转到定义和诊断。F# 项目无论如何都会加载。SharpLsp 会显示一条错误，语言服务器日志中记录的是：
 
 ```text
 Found 11 solutions under '/path/to/folder' (...), so which one to load is ambiguous.
 ```
 
-解决方法：
+要解决这个问题，请在 Zed 的设置或 `sharplsp.toml` 文件中选择解决方案。如果两处都设置了，以 Zed 的设置为准。
+
+### 在 Zed 的设置中选择
+
+1. 按 <kbd>Cmd+Shift+P</kbd>（在 Linux 和 Windows 上按 <kbd>Ctrl+Shift+P</kbd>），运行 `zed: open project settings`。
+2. 添加你要使用的解决方案的路径，路径相对于你打开的文件夹：
+
+   ```json
+   {
+     "lsp": {
+       "sharplsp": {
+         "settings": {
+           "csharp": { "solution_path": "src/MyApp.sln" }
+         }
+       }
+     }
+   }
+   ```
+
+3. 保存文件。SharpLsp 无需重启即可加载该解决方案。
+
+### 在 `sharplsp.toml` 中选择
 
 1. 在你用 Zed 打开的文件夹中创建名为 `sharplsp.toml` 的文件。
 2. 在其中写入你要使用的解决方案的路径，路径相对于该文件夹：
@@ -46,8 +67,6 @@ Found 11 solutions under '/path/to/folder' (...), so which one to load is ambigu
 3. 按 <kbd>Cmd+Shift+P</kbd>（在 Linux 和 Windows 上按 <kbd>Ctrl+Shift+P</kbd>），运行 `editor: restart language server`。
 
 将鼠标悬停在任意类型上，确认已经生效。
-
-解决方案必须在 `sharplsp.toml` 中设置。在 Zed 的设置文件中设置 `solution_path` 不起作用：SharpLsp 在启动时、Zed 发送任何设置之前就已选定解决方案。
 
 ## 使用 SharpLsp 代替其他 C# 和 F# 服务器
 

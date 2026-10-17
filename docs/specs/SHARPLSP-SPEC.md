@@ -158,6 +158,15 @@ solution_path = "app/App.sln"
 
 The host resolves the setting and sends the **solution file** rather than the root, so the sidecar opens it without running discovery at all. The setting falls back to workspace-root discovery when unset, and when it names a path that is not an existing file — a stale or misspelled entry degrades to auto-discovery instead of wedging the workspace on a path that cannot load.
 
+`csharp.solution_path` is also an editor setting. The client layer ([CONFIG-RESOLUTION]) sets it like any other key and wins over `sharplsp.toml`. The client sends that layer twice:
+
+- **`initializationOptions`**, shaped like `workspace/didChangeConfiguration` settings (`{ "sharplsp": { … } }`). The host reads it before the eager `workspace/open`, so a solution chosen in the editor opens first time. Zed sends `lsp.sharplsp.settings` here and as its workspace configuration. Invalid options are dropped with a warning, as a rejected settings change is.
+- **`workspace/didChangeConfiguration`**. When a change moves the resolved target, the host reopens the C# sidecar on it without a restart; a change that leaves the target where it was reopens nothing. Targets compare through the host's path module ([SHARPLSP-ARCHITECTURE-PATHS]).
+
+When the C# `workspace/open` fails, the host shows a `window/showMessage` error (type 1) carrying the sidecar's reason. For a root that discovery refuses to guess for, that reason names every competing solution and `csharp.solution_path`. A client that settles the choice itself declares `initializationOptions.solutionPicker: true`, as VS Code does, and is shown no such error: its picker is the selection flow.
+
+A reopen after a failed first open starts the sidecar's health monitor, which runs at most once per sidecar.
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] Walking the Workspace for Projects
 
 Recursive discovery (the C# sidecar's solution search, the F# sidecar's `.fsproj` search) never enters `bin`, `obj`, `node_modules`, or any dot-directory (`.git`, `.vs`, `.vscode-test`). Those hold build output, package caches and copies of solutions, never one the user opens: counting them turned a repository root into hundreds of "competing" solutions, and walking them cost seconds per pass. A directory reparse point (junction or symlink) is not followed, so a link cycle cannot loop the walk.

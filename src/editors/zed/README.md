@@ -20,13 +20,34 @@ SharpLsp downloads its server the first time you open a C# or F# file.
 
 ## Choose the solution
 
-For C#, SharpLsp searches the whole folder you opened, including subfolders, for `.sln` and `.slnx` files. If it finds exactly one, it loads it. If it finds more than one, it loads **none**, because it can't tell which one you want. You still get syntax highlighting, which comes from Zed's C# extension, but no hover, completions, go to definition or diagnostics in C# files. F# projects load either way. The SharpLsp language server log shows:
+For C#, SharpLsp searches the whole folder you opened, including subfolders, for `.sln` and `.slnx` files. If it finds exactly one, it loads it. If it finds more than one, it loads **none**, because it can't tell which one you want. You still get syntax highlighting, which comes from Zed's C# extension, but no hover, completions, go to definition or diagnostics in C# files. F# projects load either way. SharpLsp shows an error, and its language server log says:
 
 ```text
 Found 11 solutions under '/path/to/folder' (...), so which one to load is ambiguous.
 ```
 
-To fix it:
+To fix it, choose the solution in Zed's settings or in a `sharplsp.toml` file. If you do both, Zed's setting wins.
+
+### In Zed's settings
+
+1. Press <kbd>Cmd+Shift+P</kbd> (<kbd>Ctrl+Shift+P</kbd> on Linux and Windows) and run `zed: open project settings`.
+2. Add the path of the solution you want, relative to the folder you opened:
+
+   ```json
+   {
+     "lsp": {
+       "sharplsp": {
+         "settings": {
+           "csharp": { "solution_path": "src/MyApp.sln" }
+         }
+       }
+     }
+   }
+   ```
+
+3. Save the file. SharpLsp loads the solution without a restart.
+
+### In `sharplsp.toml`
 
 1. Create a file named `sharplsp.toml` in the folder you opened in Zed.
 2. Put the path of the solution you want in it, relative to that folder:
@@ -39,8 +60,6 @@ To fix it:
 3. Press <kbd>Cmd+Shift+P</kbd> (<kbd>Ctrl+Shift+P</kbd> on Linux and Windows) and run `editor: restart language server`.
 
 Hover over any type to check that it worked.
-
-The solution must be set in `sharplsp.toml`. Setting `solution_path` in Zed's settings file doesn't work: SharpLsp picks the solution as it starts, before Zed sends it any settings.
 
 ## Use SharpLsp instead of the other C# and F# servers
 
