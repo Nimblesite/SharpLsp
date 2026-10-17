@@ -2,6 +2,8 @@
 
 C# and F# code intelligence for [Zed](https://zed.dev).
 
+![F# completions from SharpLsp in Zed](/assets/screenshots/zed-fsharp-completions.png)
+
 ## Install
 
 1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and [Rust](https://www.rust-lang.org/tools/install).
@@ -17,6 +19,8 @@ C# and F# code intelligence for [Zed](https://zed.dev).
 6. If the folder contains more than one `.sln` or `.slnx` file, anywhere inside it, follow Choose the solution below. Otherwise SharpLsp loads no C# projects.
 
 SharpLsp downloads its server the first time you open a C# or F# file.
+
+![C# hover from SharpLsp in Zed](/assets/screenshots/zed-hover.png)
 
 ## Choose the solution
 

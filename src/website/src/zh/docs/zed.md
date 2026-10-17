@@ -9,6 +9,8 @@ lang: zh
 
 为 [Zed](https://zed.dev) 提供 C# 和 F# 代码智能功能。
 
+![Zed 中 SharpLsp 提供的 F# 补全](/assets/screenshots/zed-fsharp-completions.png)
+
 ## 安装
 
 1. 安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) 和 [Rust](https://www.rust-lang.org/zh-CN/tools/install)。
@@ -24,6 +26,8 @@ lang: zh
 6. 如果文件夹中任何位置有多个 `.sln` 或 `.slnx` 文件，请按照下面的“选择解决方案”操作。否则 SharpLsp 不会加载任何 C# 项目。
 
 第一次打开 C# 或 F# 文件时，SharpLsp 会下载它的服务器。
+
+![Zed 中 SharpLsp 提供的 C# 悬停提示](/assets/screenshots/zed-hover.png)
 
 ## 选择解决方案
 

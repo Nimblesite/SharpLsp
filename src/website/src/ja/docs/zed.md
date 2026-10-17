@@ -9,6 +9,8 @@ lang: ja
 
 [Zed](https://zed.dev) で使える C# と F# のコードインテリジェンスです。
 
+![Zed での SharpLsp による F# の補完](/assets/screenshots/zed-fsharp-completions.png)
+
 ## インストール
 
 1. [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) と [Rust](https://www.rust-lang.org/ja/tools/install) をインストールします。
@@ -24,6 +26,8 @@ lang: ja
 6. フォルダー内のどこかに `.sln` または `.slnx` ファイルが複数ある場合は、下の「ソリューションを選ぶ」に従ってください。そうしないと SharpLsp は C# プロジェクトを何も読み込みません。
 
 初めて C# または F# のファイルを開いたときに、SharpLsp がサーバーをダウンロードします。
+
+![Zed での SharpLsp による C# のホバー](/assets/screenshots/zed-hover.png)
 
 ## ソリューションを選ぶ
 
