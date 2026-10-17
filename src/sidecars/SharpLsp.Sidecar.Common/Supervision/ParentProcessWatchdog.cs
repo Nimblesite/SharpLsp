@@ -73,10 +73,12 @@ public sealed class ParentProcessWatchdog : IDisposable
     public void Dispose()
     {
         _stop.Cancel();
-        _parent.Dispose();
         _stop.Dispose();
     }
 
+    /// The watch owns the parent handle and releases it only once it has ended:
+    /// disposing it from <see cref="Dispose" /> raced the Unix liveness poll,
+    /// which then faulted reading <c>HasExited</c> on a disposed process.
     private async Task WatchAsync(Action onParentExit)
     {
         try
@@ -86,6 +88,10 @@ public sealed class ParentProcessWatchdog : IDisposable
         catch (OperationCanceledException)
         {
             return;
+        }
+        finally
+        {
+            _parent.Dispose();
         }
 
         Log.Warning("Host process {ParentPid} exited; sidecar is shutting down", _parentPid);

@@ -15,8 +15,10 @@ namespace SharpLsp.Sidecar.Common.Supervision;
 /// Object with <c>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</c>; every process it
 /// later starts (Roslyn BuildHost, MSBuild workers) inherits the job, and when
 /// the last handle closes — the sidecar exiting, crashing or being hard-killed
-/// — the kernel kills them all. On Unix the host owns containment through a
-/// dedicated process group, so this is a no-op there.
+/// — the kernel kills them all. On Unix containment belongs to the host, which
+/// is to launch the sidecar as a dedicated process-group leader; that half is
+/// not built yet (SIDECAR-LIFECYCLE-PLAN, [SIDECAR-PLAN-CHECKLIST-PROCESS]), so
+/// this is a no-op there and Unix descendants can still outlive a hard kill.
 /// Implements [SIDECAR-PROCESS-TREE] (GitHub #163).
 /// </summary>
 public sealed class ProcessContainment : IDisposable
