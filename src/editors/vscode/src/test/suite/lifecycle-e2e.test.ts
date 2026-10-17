@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import type { LanguageClient } from 'vscode-languageclient/node';
 import {
   EXTENSION_ID,
   closeAllEditors,
@@ -13,6 +14,7 @@ import {
   teardownLspTestSuite,
   waitForDocumentSymbols,
   assertContainsAll,
+  assertContainsNone,
   removeDirRecursive,
   openCSharpOutline,
 } from './test-helpers';
@@ -100,7 +102,7 @@ suite('Lifecycle E2E', () => {
     // The live client is exposed through the extension API.
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');
-    const api = ext.exports as { getLspClient: () => unknown };
+    const api = ext.exports as { getLspClient: () => LanguageClient | undefined };
     assert.ok(typeof api.getLspClient === 'function', 'API exposes getLspClient');
 
     await assert.doesNotReject(async () => {
@@ -120,6 +122,23 @@ suite('Lifecycle E2E', () => {
     // `L`, so flatten the tree before the name lookup (executeDocumentSymbolProvider).
     const names = flattenSymbolNames(after);
     assert.ok(names.includes('Restartable'), 'Restarted server resolves the class');
+
+    // The fixture root holds several solutions, which the picker settles, so
+    // every start declares it and the server raises no error for the root
+    // ([SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]).
+    const restarted = api.getLspClient();
+    assert.ok(restarted, 'the extension exposes the restarted client');
+    assert.ok(restarted.isRunning(), 'the restarted client is running');
+    assert.deepStrictEqual(
+      restarted.clientOptions.initializationOptions,
+      { solutionPicker: true },
+      'initialize declares the solution picker',
+    );
+    assertContainsNone(
+      stubs.log.errorMessages.filter((message) => message.includes('C# workspace')),
+      [`SharpLsp couldn't open the C# workspace.`],
+      'a picker client is never shown the ambiguity error',
+    );
   });
 
   test('server-option inputs (config) expose deterministic defaults', () => {

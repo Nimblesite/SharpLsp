@@ -15,6 +15,7 @@ use tracing::{error, info, warn};
 use crate::config::{AnalyzersConfig, SharpLspConfig};
 use crate::configuration::Configuration;
 use crate::diagnostics;
+use crate::paths::native_paths_equal;
 use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
 
@@ -55,7 +56,8 @@ impl OpenFollowUp {
 
 /// Open `target` in a sidecar, then monitor its health. Monitoring waits for
 /// `workspace/open`: a health check that races the load can time out on the
-/// transport lock and kill a healthy sidecar.
+/// transport lock and kill a healthy sidecar. A reopen after a failed first
+/// open starts it then; one already running is left as it is.
 pub(crate) fn start_sidecar(
     sidecar: Option<&Arc<SidecarManager>>,
     target: Option<&PathBuf>,
@@ -71,20 +73,6 @@ pub(crate) fn start_sidecar(
             }
         }));
     }
-}
-
-/// Reopen a running sidecar on `target`, whose health is already monitored.
-fn reopen_sidecar(
-    sidecar: &Arc<SidecarManager>,
-    target: &Path,
-    follow_up: OpenFollowUp,
-    runtime: &tokio::runtime::Runtime,
-) {
-    let sidecar = Arc::clone(sidecar);
-    let target = target.to_string_lossy().to_string();
-    drop(runtime.spawn(async move {
-        let _ = open_and_follow_up(&sidecar, &target, follow_up).await;
-    }));
 }
 
 /// Open `target`, then configure analyzers and start the diagnostics scan.
@@ -229,7 +217,7 @@ impl SolutionChoice {
             return;
         };
         let follow_up = OpenFollowUp::new(&config, vfs, Some(&self.client), self.report());
-        reopen_sidecar(sidecar, &target, follow_up, runtime);
+        start_sidecar(Some(sidecar), Some(&target), follow_up, runtime);
     }
 
     /// The target `configuration` names now, with that configuration, when it
@@ -241,7 +229,8 @@ impl SolutionChoice {
             .map_err(|err| warn!("Configuration not applied: {err:#}"))
             .ok()?;
         let target = config.csharp.open_target(root);
-        if self.target.as_ref() == Some(&target) {
+        let opened = self.target.as_deref().map(Path::to_string_lossy);
+        if opened.is_some_and(|opened| native_paths_equal(&opened, &target.to_string_lossy())) {
             return None;
         }
         info!(target = %target.display(), "C# solution changed; reopening the workspace");
