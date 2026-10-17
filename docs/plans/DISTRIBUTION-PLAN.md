@@ -236,6 +236,19 @@ Two further failure classes were investigated and turned out **not** to be defec
 - [x] Skip profiler code generation and compilation when the VS Code dependency cache hits.
 - [x] Track product videos with repository-local Git LFS and fetch LFS content in Pages deployment.
 - [x] Repair Windows skill-directory stubs as junctions during setup; preserve working macOS links and live canonical skill updates.
+- [ ] Verify the build-once/artifact-only handoff in PR CI ([DIST-CI-ARTIFACT-TESTS]):
+      precompiled Release .NET tests, Rust/Zed nextest archives, Rider plugin/test
+      outputs, packaged VSIX runtime plus private source map and static fixtures.
+      Regression guards cover npm's nested rebuild, no-build test recipes,
+      one shard owner per platform, post-remap vendor exclusion and phase gating.
+      Do not mark complete until the changed pipeline itself passes.
+      Local validation (macOS, 2026-09-23): 1,037 precompiled .NET tests; both
+      Release nextest partitions (353 + 329, Rust coverage 95.065%); 31 Zed and
+      8 Rider tests with their existing coverage gates; packaged-VSIX debug-tests
+      (69) and C#/F# MTP parity (8). No vendor sources remain in VSIX reports.
+      Actionlint, TypeScript/ESLint, 77 tooling checks and 17 CI guards pass;
+      npm audit reports zero vulnerabilities. Linux/Windows PR handoff remains
+      to be verified; local results are not a claim that the new CI matrix passed.
 
 - [x] Fail closed on changed-file API failures, partial pagination and empty responses; execute the real YAML classifier in regression tests ([DIST-CI-CLASSIFICATION], #288). Three red cases before the fix; 12 classifier/security guards pass after it, including the PR-only trigger contract.
 - [ ] Verify the classifier fix in a full green PR run before merging; require terminal `CI` through the live main ruleset, with no bypass actors.

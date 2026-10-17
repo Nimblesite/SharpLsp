@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { dryRun, stepAt } from './make-test-kit.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const npmScripts = JSON.parse(readFileSync(join(ROOT, 'src/editors/vscode/package.json'), 'utf8')).scripts;
 
 /** The root Makefile, which is the build system itself and not a shim. */
 const makefile = () => readFileSync(resolve(ROOT, 'Makefile'), 'utf8');
@@ -276,7 +277,10 @@ test('reinstall-vsix rebuilds the binaries it packages, and kills what holds the
   assert.match(recipe, /cargo build --release/, 'Rust host must be rebuilt');
   assert.match(recipe, /dotnet(\.exe)?" publish .*SharpLsp\.Sidecar\.CSharp\.csproj/, 'C# sidecar must be rebuilt');
   assert.match(recipe, /dotnet(\.exe)?" publish .*SharpLsp\.Sidecar\.FSharp\.fsproj/, 'F# sidecar must be rebuilt');
-  assert.match(recipe, /npm run build --prefix src\/editors\/vscode/, 'extension must be rebuilt');
+  assert.ok(recipe.includes('vsce package'), 'packaging must invoke the production lifecycle');
+  assert.equal(npmScripts['vscode:prepublish'],
+    'node ../../../tools/npm/run-sequential.mjs prepare:vsix-binaries prepare:test-assets build:production verify:vsix-payload',
+    'the single packaging lifecycle must rebuild and then verify the production extension');
 
   // A running server holds its binary open - fatally so on Windows - and the
   // kill must happen before the clean that deletes it.
@@ -424,16 +428,16 @@ test('install-vsix and uninstall-vsix stand alone with the documented contracts'
 test('reinstall-vsix verifies the payload before it installs anything', () => {
   const recipe = dryRun('reinstall-vsix');
 
-  const verify = stepAt(recipe, 'verify-vsix-payload.mjs');
   const packaged = stepAt(recipe, 'vsce package');
   const install = stepAt(recipe, '--install-extension');
+  const lifecycle = npmScripts['vscode:prepublish'];
+  const verify = stepAt(lifecycle, 'verify:vsix-payload');
+  const built = stepAt(lifecycle, 'build:production');
 
   // The gate runs, and it runs while there is still something to gate on.
-  assert.ok(verify < install, 'the payload must be verified before the install');
-  assert.ok(
-    verify < packaged || verify < install,
-    'verification must bracket the package step, not trail the install',
-  );
+  assert.ok(built < verify, 'the packaging lifecycle verifies the production bundle after building it');
+  assert.ok(packaged < install, 'vsce completes prepublish verification before install');
+  assert.equal(npmScripts['verify:vsix-payload'], 'node ../../../tools/vsix/verify-vsix-payload.mjs');
 
   // The verifier reads the staged tree, so the stage must still be on disk when
   // it runs - `_build-vsix` ends with `rm -rf bin`, which is what makes a plain
@@ -441,7 +445,7 @@ test('reinstall-vsix verifies the payload before it installs anything', () => {
   assert.match(recipe, /_stage-vsix-binary-only|cp target\/release\/sharplsp/, 'stage must precede verification');
 
   // The production bundle is what ships, so it is what gets judged.
-  assert.match(recipe, /npm run build:production/, 'the verifier must judge the production bundle');
+  assert.equal(npmScripts['build:production'], 'node esbuild.mjs --production', 'the verifier must judge the production bundle');
 });
 
 // [DIST-VSIX-DEV-INSTALL] Requirement 7: the dev VSIX carries THIS platform's

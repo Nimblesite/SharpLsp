@@ -36,6 +36,7 @@ function requiredEntries() {
         ["bin/all/SharpLsp.Sidecar.CSharp.dll", "the Roslyn sidecar's managed half"],
         ["bin/all/SharpLsp.Sidecar.FSharp.dll", "the FCS sidecar's managed half"],
         ["dist/extension.js", "the extension bundle package.json `main` points at"],
+        ["dist/profiler-graph-licenses.txt", "the licences of the d3 modules bundled for the profiler graph"],
     ];
     if (!NO_DEBUGGER_PREBUILT.has(PLATFORM)) {
         required.push(

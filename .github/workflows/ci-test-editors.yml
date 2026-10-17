@@ -7,12 +7,9 @@
 # `make _lint-zed` but never executed; the Rider plugin had a fully configured
 # JUnit harness and not one test file, and was not even compiled on a PR.
 #
-# Neither consumes a PHASE 2 artifact, because neither links against one: the Zed
-# extension is a standalone Cargo workspace that ships as wasm32-wasip1, and the
-# Rider plugin is a Kotlin/IntelliJ build. What each compiles here is its own
-# instrumented test binaries, the same category of work the Rust shards do, and
-# for the same reason - an instrumented build is not the artifact PHASE 2
-# produced.
+# Both consume phase-2 artifacts. Zed executes its Release nextest archive;
+# Rider restores its plugin/test classes and rejects compiler tasks. Nothing
+# in this workflow compiles or packages the product.
 #
 # PHASE 5 for both is the ratchet inside the make target. Neither suite is
 # sharded, so each gate sees a complete tracefile in-job and needs no separate
@@ -42,17 +39,22 @@ jobs:
         with:
           toolchain: stable
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src/editors/zed
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-llvm-cov
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: nextest
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20'
+      - name: Download precompiled Release tests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: zed-test-artifacts
+          path: .
       - name: Test + coverage gate (Zed)
-        run: make _test-zed
+        run: make _test-zed CARGO_TESTS_PREBUILT=1
 
   test-rider:
     name: Rider Plugin
@@ -63,17 +65,13 @@ jobs:
     timeout-minutes: 30
     env:
       RIDER_REQUIRED: '1'
+      RIDER_TESTS_PREBUILT: '1'
+      COVERAGE_TOOLS_PREBUILT: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '21'
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '20'
+      - uses: ./.github/actions/rider-environment
       # kover-line-percent.cs is a `dotnet run --file` app, matching how
       # merge-cobertura.cs reads the sidecar reports.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -81,23 +79,17 @@ jobs:
           dotnet-version: 10.0.303
       # The IntelliJ Platform SDK is a multi-GB download resolved through
       # Gradle. Uncached, it dominates this job's wall time.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Download compiled plugin and test classes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            src/editors/rider/.intellijPlatform
-          key: >-
-            ${{ runner.os }}-gradle-${{ hashFiles('src/editors/rider/build.gradle.kts',
-            'src/editors/rider/gradle.properties', 'src/editors/rider/gradle/**') }}
-          restore-keys: "${{ runner.os }}-gradle-"
+          name: rider-test-artifacts
+          path: target
+      - name: Restore compiled Rider output
+        run: tar -xzf target/rider-tests.tar.gz -C src/editors/rider
+      - name: Download precompiled coverage tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-report-tools
+          path: target/coverage-tools
       - name: Test + coverage gate (Rider)
         run: make _test-rider
-      - name: Build plugin
-        # The shippable plugin zip. It stays here rather than in PHASE 2 because
-        # it reuses the Gradle daemon and the IntelliJ SDK this job has already
-        # resolved - building it on a separate PHASE 2 runner would compile the
-        # same Kotlin twice and re-download a multi-GB SDK to do it. Nothing
-        # downstream consumes the zip; this is the check that a Kotlin break
-        # cannot reach main behind a green pipeline.
-        run: make _build-rider

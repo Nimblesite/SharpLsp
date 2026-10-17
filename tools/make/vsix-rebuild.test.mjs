@@ -7,7 +7,23 @@
 // the pinned upstream release and none ever compiles it ([DIST-DEBUGGER-BUNDLE]).
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { dryRun, stepAt } from "./make-test-kit.mjs";
+
+test("npm packaging preparation honors the staged boundary vsce re-enters", () => {
+    const run = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm",
+        ["run", "prepare:vsix-binaries", "--", "--dry-run"], {
+            cwd: fileURLToPath(new URL("../../src/editors/vscode", import.meta.url)),
+            env: { ...process.env, SHARPLSP_VSIX_STAGED: "1" }, encoding: "utf8",
+            shell: process.platform === "win32",
+        });
+    assert.equal(run.status, 0, run.stderr);
+    assert.ok(!run.stdout.includes("cargo build"), "vsce's nested npm hook must not rebuild the host");
+    assert.ok(!run.stdout.includes(" publish src/sidecars/"), "nor republish either sidecar");
+    assert.ok(!run.stdout.includes("--rebuild"), "nor rebuild netcoredbg");
+    assert.ok(run.stdout.includes("Staging required VSIX binaries"), "still stage the complete payload");
+});
 
 const targets = [
     "_build-vsix",
@@ -17,6 +33,38 @@ const targets = [
     "_verify-vsix-payload",
     "_package-vsix",
 ];
+
+test("a complete VSIX test run builds the native host once, then tests that package", () => {
+    const recipe = dryRun("_test-vsix");
+    assert.equal(recipe.split("cargo build --release").length - 1, 1, "do not rebuild after packaging");
+    assert.ok(recipe.includes("VSIX_ARTIFACT=dist/sharplsp.vsix"), "test the package this run created");
+});
+
+test("Rider artifact tests forbid both Java and Kotlin compilation", () => {
+    const recipe = dryRun("_test-rider", ["RIDER_TESTS_PREBUILT=1", "COVERAGE_TOOLS_PREBUILT=1"]);
+    assert.ok(recipe.includes("-PprebuiltTests=true"), "enable the task-graph compiler guard");
+    for (const task of ["compileKotlin", "compileJava", "compileTestKotlin", "compileTestJava"])
+        assert.ok(recipe.includes(`-x ${task}`), `${task} belongs only in the build phase`);
+    assert.ok(!recipe.includes("dotnet\" run --file"), "coverage helpers are precompiled too");
+});
+
+for (const target of ["_test-dotnet", "_test-dotnet-win-transport"]) {
+    test(`${target} executes precompiled Release tests without build or restore`, () => {
+        const recipe = dryRun(target, ["VSIX_PREBUILT=1", "DOTNET_TESTS_PREBUILT=1"]);
+        assert.ok(recipe.includes("--no-build --no-restore"), "test must not silently compile");
+        assert.ok(recipe.includes("--configuration Release"), "consume Release test assemblies");
+        assert.ok(!recipe.includes(" publish src/sidecars/"), "do not republish the product");
+    });
+}
+
+for (const [target, component] of [["_test-rust-shard", "rust"], ["_test-zed", "zed"]]) {
+    test(`${component} CI tests execute an archive instead of compiling`, () => {
+        const recipe = dryRun(target, ["VSIX_PREBUILT=1", "CARGO_TESTS_PREBUILT=1", "SHARD=1"]);
+        assert.ok(recipe.includes(`cargo-artifacts.sh test ${component}`), "use the archive-only runner");
+        assert.ok(!recipe.includes("cargo llvm-cov nextest"), "that command compiles before running");
+        assert.ok(!recipe.includes(" build src/sharplsp/tests/fixtures"), "cache static fixtures too");
+    });
+}
 for (const target of targets) {
     test(`${target} always cleans and rebuilds the entire VSIX native payload`, () => {
         const platform = `${process.platform}-${process.arch}`;

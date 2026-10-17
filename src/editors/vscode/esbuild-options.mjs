@@ -10,7 +10,10 @@ export const extensionBuildOptions = (production) => ({
   target: 'node18',
   outfile: 'dist/extension.js',
   external: ['vscode'],
-  sourcemap: !production,
+  // [DIST-CI-ARTIFACT-TESTS] Coverage executes the exact production bytes.
+  // Keep its matching map as a private test artifact; package.json ships only
+  // the bundle, and the payload verifier still forbids every .map in a VSIX.
+  sourcemap: true,
   minify: production,
   treeShaking: true,
   logLevel: 'info',

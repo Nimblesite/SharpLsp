@@ -5,10 +5,8 @@
 # Consumes the PHASE 3 artifacts and rebuilds none of them: the release
 # `sharplsp` host and both sidecars are downloaded, never recompiled.
 #
-# What this leg DOES compile is the instrumented test binaries, and that is not
-# a violation of the phase-3 handoff: a coverage build is a different profile
-# with different codegen from the release artifact, so no build in PHASE 2 could
-# have produced it. The rule is that no test leg rebuilds a SHIPPING artifact.
+# Instrumented Release test binaries and the static fixture are also built in
+# phase 2. Shards execute nextest archives with no compiler and no retries.
 name: CI / Test / Rust
 'on':
   workflow_call: {}
@@ -41,7 +39,6 @@ jobs:
         with:
           toolchain: stable
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-llvm-cov
@@ -81,8 +78,15 @@ jobs:
         # with "Permission denied (os error 13)" and the shard times out.
         shell: bash
         run: chmod +x target/sidecar-csharp/SharpLsp.Sidecar.CSharp target/sidecar-fsharp/SharpLsp.Sidecar.FSharp target/profiler-engine/lsp-profiler-dotnet-engine
+      - name: Download precompiled Release tests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rust-test-artifacts
+          path: target
+      - name: Restore static fixture binaries
+        run: tar -xzf target/rust-fixtures.tar.gz
       - name: Test Rust shard with coverage
-        run: env VSIX_PREBUILT=1 make _test-rust-shard SHARD=${{ matrix.shard }} SHARD_COUNT=2
+        run: env VSIX_PREBUILT=1 CARGO_TESTS_PREBUILT=1 make _test-rust-shard SHARD=${{ matrix.shard }} SHARD_COUNT=2
       - name: Upload shard coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

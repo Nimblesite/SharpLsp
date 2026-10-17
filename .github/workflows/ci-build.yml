@@ -36,6 +36,31 @@ env:
 permissions:
   contents: read
 jobs:
+  build-rider:
+    name: Rider
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    env:
+      RIDER_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+      - uses: ./.github/actions/rider-environment
+      - name: Build plugin and test classes without executing tests
+        run: |-
+          set -euo pipefail
+          sh tools/rider/gradle.sh buildPlugin testClasses instrumentTestCode
+          mkdir -p target
+          tar -czf target/rider-tests.tar.gz -C src/editors/rider build .gradle
+      - name: Cache Rider Release artifact and compiled tests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rider-test-artifacts
+          retention-days: 1
+          if-no-files-found: error
+          path: target/rider-tests.tar.gz
+
   build-linux:
     name: Linux
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}

@@ -77,8 +77,5 @@ jobs:
           chunk: ${{ matrix.chunk }}
           platform: linux
           suite-artifact: vsix-suite-linux
-          binaries-artifact: linux-lsp-binaries
-          debugger-artifact: linux-netcoredbg
-          debugger-path: target/netcoredbg/linux-x64/netcoredbg
           xvfb: 'true'
           user-data-dir: ${{ runner.temp }}/vsx-${{ matrix.chunk }}

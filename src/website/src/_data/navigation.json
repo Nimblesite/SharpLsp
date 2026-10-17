@@ -17,7 +17,7 @@
         "refactoring/": "refactoring"
       }
     },
-    { "group": "tools", "pages": { "context-menus/": "contextMenus", "nuget/": "nuget", "profiler/": "profiler" } },
+    { "group": "tools", "pages": { "context-menus/": "contextMenus", "nuget/": "nuget", "profiler/": "profiler", "memory-leaks/": "memoryLeaks" } },
     { "group": "contributors", "secondary": true, "pages": { "architecture/": "architecture", "contributing/": "contributing" } }
   ],
   "footer": [

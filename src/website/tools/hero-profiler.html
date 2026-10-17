@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  Blog covers for the profiler posts, 1672x941. Open with #trends or #leak and
+  screenshot the page: the trends cover charts the Google Trends comparison the
+  post opens with; the leak cover lists the six steps beside a frame of the
+  recorded walkthrough. Every number and frame is real.
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1672px; height: 941px; overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0b1220; color: #e6edf3; position: relative; }
+  .grid { position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 64px 64px; }
+  .glow { position: absolute; width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(15,127,73,.28), transparent 60%);
+    top: -250px; right: -150px; }
+  .cover { display: none; }
+  body.trends .trends, body.leak .leak { display: block; }
+  h1 { position: absolute; left: 72px; top: 64px; width: 720px;
+    font-size: 56px; line-height: 1.12; font-weight: 700; letter-spacing: -.5px; }
+  h1 .accent { color: #2ecc8f; }
+  .sub { position: absolute; left: 72px; top: 330px; width: 680px;
+    font-size: 25px; line-height: 1.5; color: #9fb0c0; }
+  .sub b { color: #e6edf3; font-weight: 600; }
+  .chart { position: absolute; left: 72px; top: 520px; width: 720px; }
+  .legend { margin-bottom: 14px; font-size: 19px; color: #9fb0c0; }
+  .bars { display: flex; flex-direction: column; gap: 16px; }
+  .bar { display: flex; align-items: center; gap: 16px; font-size: 22px; color: #9fb0c0; }
+  .bar .label { width: 250px; }
+  .bar .fill { height: 28px; border-radius: 8px; }
+  .bar .n { color: #e6edf3; font-weight: 600; }
+  .steps { position: absolute; left: 72px; top: 470px; display: flex; flex-direction: column; gap: 14px;
+    list-style: none; font-size: 24px; color: #9fb0c0; }
+  .steps li { display: flex; align-items: center; gap: 16px; }
+  .steps b { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px;
+    background: #2ecc8f; color: #0b1220; font-weight: 800; }
+  .panel { position: absolute; right: 64px; top: 150px; width: 800px;
+    border: 1px solid #223047; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5); background: #0d1526; }
+  .panel-bar { height: 48px; background: #111b30; display: flex; align-items: center;
+    padding: 0 20px; gap: 10px; border-bottom: 1px solid #223047; }
+  .panel-bar .c { width: 13px; height: 13px; border-radius: 50%; }
+  .panel-bar .t { margin-left: 12px; font-size: 19px; color: #9fb0c0; }
+  .panel img { display: block; width: 100%; }
+  .badge { position: absolute; left: 72px; bottom: 48px; display: flex; gap: 14px; }
+  .badge div { border: 1px solid #2a3c58; border-radius: 999px; padding: 9px 22px;
+    font-size: 19px; color: #9fb0c0; background: rgba(17,27,48,.7); }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+
+  <section class="cover trends">
+    <h1>What .NET developers search for when <span class="accent">the app is slow</span></h1>
+    <div class="sub">Five years of Google Trends on <b>profiling, CPU, memory</b> and <b>memory leaks</b>, and where SharpLsp answers each search in VS Code.</div>
+    <div class="chart">
+      <div class="legend">Google Trends, worldwide, 5-year average interest</div>
+      <div class="bars">
+        <div class="bar"><span class="label">high cpu usage</span><i class="fill" style="width:400px;background:#e2a24a"></i><span class="n">53.2</span></div>
+        <div class="bar"><span class="label">performance profiler</span><i class="fill" style="width:45px;background:#2ecc8f"></i><span class="n">6.0</span></div>
+        <div class="bar"><span class="label">flame graph</span><i class="fill" style="width:41px;background:#2ecc8f"></i><span class="n">5.5</span></div>
+        <div class="bar"><span class="label">cpu profiler</span><i class="fill" style="width:26px;background:#2ecc8f"></i><span class="n">3.5</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-bar">
+        <i class="c" style="background:#e0564f"></i><i class="c" style="background:#e2a24a"></i><i class="c" style="background:#2ecc8f"></i>
+        <span class="t">CheckoutPipeline.cs — SharpLsp Profiler</span>
+      </div>
+      <img src="../src/assets/screenshots/profiler/profiler-heatmap.webp" alt="">
+    </div>
+  </section>
+
+  <section class="cover leak">
+    <h1>How to fix a <span class="accent">memory leak</span> in C# and .NET</h1>
+    <div class="sub">A real leak, found and fixed <b>in VS Code</b> with the free SharpLsp memory profiler.</div>
+    <ol class="steps">
+      <li><b>1</b>Spot the climb</li>
+      <li><b>2</b>Track memory</li>
+      <li><b>3</b>Read the leak suspects</li>
+      <li><b>4</b>Find what keeps it alive</li>
+      <li><b>5</b>Fix it, then prove it</li>
+    </ol>
+    <div class="panel">
+      <div class="panel-bar">
+        <i class="c" style="background:#e0564f"></i><i class="c" style="background:#e2a24a"></i><i class="c" style="background:#2ecc8f"></i>
+        <span class="t">Retention Graph — Storefront.CustomerSession</span>
+      </div>
+      <img src="../src/assets/videos/profiler-fix-memory-leak-poster.webp" alt="">
+    </div>
+  </section>
+
+  <script>
+    const show = () => { document.body.className = location.hash.slice(1) || 'trends'; };
+    addEventListener('hashchange', show);
+    show();
+  </script>
+</body>
+</html>

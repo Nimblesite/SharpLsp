@@ -15,9 +15,8 @@
 # runner needs a virtual X server.
 name: Run one VS Code coverage shard
 description: >-
-  Installs deps, stages the prebuilt host + sidecars + debugger and the
-  precompiled suite, builds the .NET test fixtures locally, runs one
-  instrumented feature chunk, and uploads its lcov tracefile.
+  Downloads the packaged VSIX and compiled suite/fixtures, restores NuGet
+  metadata without compiling, runs one feature chunk, and uploads coverage.
 inputs:
   chunk:
     description: Chunk name from src/editors/vscode/test-chunks.json.
@@ -28,16 +27,7 @@ inputs:
       shard tracefile so both legs' artifacts can land in one directory.
     required: true
   suite-artifact:
-    description: Artifact holding the once-compiled portable suite (out/, dist/).
-    required: true
-  binaries-artifact:
-    description: Artifact holding the release host and both sidecars.
-    required: true
-  debugger-artifact:
-    description: Artifact holding the downloaded netcoredbg adapter.
-    required: true
-  debugger-path:
-    description: Where the debugger artifact unpacks, e.g. target/netcoredbg/linux-x64/netcoredbg.
+    description: Artifact holding compiled tests, static fixtures and the private production map.
     required: true
   xvfb:
     description: '"true" to wrap the run in xvfb-run (Ubuntu has no desktop session).'
@@ -61,20 +51,14 @@ runs:
       with:
         name: ${{ inputs.suite-artifact }}
         path: src/editors/vscode
-    - name: Download the prebuilt host and sidecars
+    - name: Download the packaged Release VSIX
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
-        name: ${{ inputs.binaries-artifact }}
-        path: target
-    - name: Download the debugger artifact
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        name: ${{ inputs.debugger-artifact }}
-        path: ${{ inputs.debugger-path }}
+        name: ${{ inputs.suite-artifact }}-release
+        path: target/vsix
     - name: Cache the NuGet store
-      # The shard builds the fixture solution itself (see VSIX_PRETEST in
-      # the root Makefile); this keeps the restore that build needs off the
-      # network on all but the first run.
+      # Restore rebases asset paths for the cached static fixture binaries.
+      # No dotnet build is permitted here.
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.nuget/packages
@@ -115,6 +99,7 @@ runs:
         # `pretest` again.
         VSIX_PREBUILT: '1'
         VSIX_SUITE_PREBUILT: '1'
+        VSIX_ARTIFACT: target/vsix/sharplsp.vsix
         # Record every DAP request and response the router sees. A debug leg
         # that passed says nothing about WHICH path passed it - a `terminated`
         # the adapter sent and one the ShutdownDeadline synthesised look the

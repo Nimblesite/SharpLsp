@@ -1,11 +1,11 @@
 # Zed Extension Plan
 
 **Status:** Active
-**Last Updated:** 2026-03-22
+**Last Updated:** 2026-10-17
 
 ## Overview
 
-Zed extension for SharpLsp — the open-source .NET LSP. Provides sharplsp integration for C# and F# development in Zed, plus a solution tree slash command for AI-assisted workflows.
+Zed extension for SharpLsp — the open-source .NET LSP. Starts the SharpLsp language server for C# and F# in Zed, downloading it when it is not installed. Registry rules and resolution: [DIST-ZED-REGISTRY].
 
 ## Architecture
 
@@ -13,23 +13,22 @@ Zed extension for SharpLsp — the open-source .NET LSP. Provides sharplsp integ
 flowchart LR
     ZED["Zed Editor"] --> EXT["SharpLsp Extension<br/>Rust → WASM"]
     EXT --> ADAPTER["Language Server Adapter"]
-    EXT --> SLASH["Slash Commands"]
     ADAPTER --> BIN["sharplsp binary<br/>stdio JSON-RPC"]
-    SLASH --> TREECMD["/sharplsp-tree<br/>.sln / .csproj / .fsproj parsing"]
+    ADAPTER --> GH["GitHub release archive<br/>downloaded when not on PATH"]
 ```
 
-The extension compiles to `wasm32-wasip1` and runs in Zed's WASM sandbox. It cannot access the filesystem directly — all file reads go through the `Worktree` API.
+The extension compiles to WASM and runs in Zed's sandbox. It reads only its own work directory, where downloads unpack; everything else goes through the extension API.
 
 ## VS Code Feature Parity Matrix
 
 | VS Code Feature | Zed Status | Implementation |
 |----------------|------------|----------------|
 | LSP client (C# + F#) | Done | `language_server_command()` in lib.rs |
-| Server binary resolution (PATH) | Done | `resolve_binary()` with caching |
-| Server environment (RUST_LOG) | Done | `build_server_env()` inherits shell env |
-| Solution tree (project structure) | Done | `/sharplsp-tree` slash command |
-| Solution tree (NuGet packages) | Done | .csproj/.fsproj XML parsing |
-| Solution tree (project references) | Done | .csproj/.fsproj XML parsing |
+| Server binary resolution | Done | `server::resolve`: settings path, PATH, cached or downloaded release |
+| Server download | Done | Latest release's [DIST-ARCHIVE] asset, unpacked and made executable |
+| Server environment (RUST_LOG) | Done | `server_env()`: shell env, `binary.env` overrides, `info` default |
+| Server settings | Done | `lsp.sharplsp.settings` → `settings.sharplsp` client layer |
+| Solution tree | Blocked | Requires Zed custom panel API (extension slash commands were removed from Zed) |
 | Solution tree (symbol hierarchy) | Blocked | Requires Zed custom panel API |
 | Solution tree (namespace merging) | Blocked | Requires Zed custom panel API |
 | Solution tree (click-to-navigate) | Blocked | Requires Zed custom panel API |
@@ -38,7 +37,7 @@ The extension compiles to `wasm32-wasip1` and runs in Zed's WASM sandbox. It can
 | Status bar indicator | Blocked | Zed has no extension status bar API |
 | Restart server command | N/A | Zed manages LSP lifecycle natively |
 | Output/trace channels | N/A | Zed has built-in LSP log viewer |
-| Select solution dialog | Partial | Slash command takes path argument |
+| Select solution dialog | Blocked | Requires Zed modal UI API |
 | Remove NuGet package | Blocked | Requires Zed command/UI API |
 | Remove project reference | Blocked | Requires Zed command/UI API |
 | Document symbols outline | Free | Zed outline panel + sharplsp documentSymbol |
@@ -53,23 +52,24 @@ Zed extensions (as of 2026-03) cannot:
 2. **Add status bar items** — no extension API for the status bar
 3. **Register editor commands** — no command palette contributions from extensions
 4. **Show dialogs/quick picks** — no modal UI from extensions
-5. **Access LSP client from slash commands** — slash commands run independently of the LSP
+5. **Provide slash commands** — Zed removed extension slash commands; the registry no longer accepts them
 
 These are tracked upstream: [zed-industries/extensions#1288](https://github.com/zed-industries/extensions/issues/1288)
 
-When Zed adds custom panel support, the solution tree should be migrated from slash command to a native panel.
+When Zed adds custom panel support, the solution tree becomes a native panel.
 
 ## File Structure
 
 ```mermaid
 flowchart LR
     ROOT["src/editors/zed/"] --> SRC["src/"]
-    ROOT --> MANIFEST["extension.toml<br/>Extension manifest — language server + slash commands"]
+    ROOT --> MANIFEST["extension.toml<br/>Language server, language ids, download capability"]
     ROOT --> CARGO["Cargo.toml<br/>Rust project, compiles to cdylib → WASM"]
-    SRC --> LIB["lib.rs<br/>Extension entry point, LSP adapter, command routing"]
-    SRC --> SOLUTION["solution.rs<br/>.sln file parsing — project extraction"]
-    SRC --> PROJECT["project.rs<br/>.csproj / .fsproj parsing — dependencies"]
-    SRC --> TREE["tree.rs<br/>Text tree formatting for slash command output"]
+    ROOT --> LICENSE["LICENSE<br/>Link to the repository's MIT licence"]
+    SRC --> LIB["lib.rs<br/>Extension entry point, environment, settings"]
+    SRC --> SERVER["server.rs<br/>Resolution: settings, PATH, cache, download"]
+    SRC --> ARCHIVE["archive.rs<br/>Release asset and layout per platform"]
+    SRC --> HOST["zed_host.rs<br/>The Zed runtime behind the Host trait"]
 ```
 
 ## Building
@@ -78,14 +78,14 @@ flowchart LR
 # Native check (development)
 cargo check --manifest-path src/editors/zed/Cargo.toml
 
-# WASM build (release)
-cargo build --manifest-path src/editors/zed/Cargo.toml --release --target wasm32-wasip1
+# WASM build (release; the registry builds wasm32-wasip2 itself)
+cargo build --manifest-path src/editors/zed/Cargo.toml --release --target wasm32-wasip2
 
 # Run tests
 cargo test --manifest-path src/editors/zed/Cargo.toml
 ```
 
-Requires `rustup target add wasm32-wasip1` for WASM builds.
+Requires `rustup target add wasm32-wasip2` for WASM builds.
 
 ## Key Decisions
 
@@ -93,9 +93,9 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 
 2. **No grammar/highlights** — The extension does not bundle tree-sitter grammars or highlight queries. Users should install the existing C# Zed extension for syntax highlighting. SharpLsp provides the language server, not the grammar.
 
-3. **Slash command for solution tree** — Since Zed lacks custom panels, the solution tree is exposed via `/sharplsp-tree <path>` in the AI assistant. This injects solution structure as context for AI-assisted development.
+3. **No slash commands** — The `/sharplsp-tree` slash command was removed with Zed's extension slash-command API; the registry no longer accepts them.
 
-4. **No serde dependency** — The extension uses only `zed_extension_api` (which re-exports `serde_json`). XML parsing of .csproj/.fsproj files uses simple string matching rather than a full XML parser, keeping the WASM binary small.
+4. **Decoupled version** — The registry builds the committed `extension.toml`, so the extension versions itself and downloads the latest server release ([DIST-ZED-REGISTRY]).
 
 ## TODOs
 
@@ -105,40 +105,25 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 - [x] Cargo project setup (standalone workspace, cdylib)
 - [x] LSP server binary resolution (PATH lookup with caching)
 - [x] Server environment configuration (RUST_LOG from shell env)
-- [x] `/sharplsp-tree` slash command
-- [x] .sln file parsing (project extraction, path normalization)
-- [x] .csproj/.fsproj parsing (NuGet packages, project references)
-- [x] Tree text formatting (box-drawing characters)
-- [x] Unit tests for all parsing and formatting (15 tests)
+- [x] Attach to Zed's `CSharp` and `FSharp` languages (was `C#`/`F#`, which matched nothing)
+- [x] Download the release archive when the server is not installed
+- [x] Remove the `/sharplsp-tree` slash command (Zed removed extension slash commands)
 
-### Phase 2: Enhanced Solution Tree
+### Phase 2: Settings and Configuration
 
-- [ ] Auto-discover .sln files (try `{root_name}.sln` when no arg given)
-- [ ] Slash command argument completion (suggest discovered .sln files)
-- [ ] Include source file listing in tree output
-- [ ] Include target framework in project display
-- [ ] Include output type (exe/lib) in project display
-- [ ] Parse solution folders from .sln and display hierarchy
-
-### Phase 3: Settings and Configuration
-
-- [ ] Read `sharplsp.lspPath` from Zed settings for custom binary location
-- [ ] Read `sharplsp.logging.level` from Zed settings for RUST_LOG
-- [ ] Pass extra CLI args to sharplsp from settings
+- [x] `lsp.sharplsp.binary.path`, `.arguments` and `.env` from Zed settings
+- [x] `lsp.sharplsp.settings` passed through as the server's client layer
 - [ ] Send initialization options (solution path) to sharplsp
-- [ ] Workspace configuration passthrough from Zed settings
 
-### Phase 4: Symbol Integration
+### Phase 3: Symbol Integration
 
-- [ ] `/sharplsp-symbols` slash command — query `sharplsp/workspaceSymbols` via LSP
-  (blocked: slash commands cannot access LSP client in current Zed API)
 - [ ] Custom symbol labels via `labels_for_symbols()`
 - [ ] Custom completion labels via `labels_for_completions()`
 - [ ] Enhanced outline display for .NET symbol kinds
 
-### Phase 5: Zed Custom Panel (Blocked on Zed API)
+### Phase 4: Zed Custom Panel (Blocked on Zed API)
 
-- [ ] Migrate solution tree from slash command to native panel
+- [ ] Solution tree as a native panel
 - [ ] Click-to-navigate on symbol nodes
 - [ ] Hover tooltips via LSP `textDocument/hover`
 - [ ] Sort modes: natural, alphabetical, accessibility
@@ -147,30 +132,26 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 - [ ] Auto-refresh on C#/F# file changes (debounced)
 - [ ] Status bar indicator (server state)
 
-### Phase 6: Language Support
+### Phase 5: Language Support (Not planned)
 
-- [ ] Bundle tree-sitter-c-sharp grammar
-- [ ] Bundle tree-sitter-fsharp grammar
-- [ ] C# highlights.scm query
-- [ ] F# highlights.scm query
-- [ ] C# outline.scm query (enhanced outline panel)
-- [ ] F# outline.scm query
-- [ ] C# brackets.scm / indents.scm
-- [ ] F# brackets.scm / indents.scm
-- [ ] Language config.toml files (comments, brackets, indentation)
+The C# and F# extensions own the grammars and language definitions. The
+registry accepts one extension per functionality, and a grammar would turn this
+language-server extension into a competing language extension
+([DIST-ZED-REGISTRY]).
 
-### Phase 7: Testing and CI
+### Phase 6: Testing and CI
 
 - [ ] E2E test harness (launch Zed with extension, open .sln workspace)
-- [ ] CI pipeline: `cargo check --target wasm32-wasip1`
-- [ ] CI pipeline: `cargo test`
-- [ ] CI pipeline: `cargo clippy`
+- [x] CI pipeline: `cargo test` with the coverage ratchet (`make _test-zed`)
+- [x] CI pipeline: `cargo clippy` (`make _lint-zed`)
 - [ ] WASM binary size optimization
-- [ ] Publish to Zed extension registry
+- [x] Meet the registry's publishing rules: `-lsp` id, licence in the extension directory, no bundled server ([DIST-ZED-REGISTRY])
+- [ ] Test in Zed as a dev extension at the commit to be submitted
+- [ ] Publish to the Zed extension registry (PR to `zed-industries/extensions`)
 
-### Phase 8: Parity Polish
+### Phase 7: Parity Polish
 
 - [ ] Debugger integration (DAP support via Zed's debugger API)
 - [ ] Snippet support for C# and F# common patterns
 - [ ] MCP server integration for AI-powered .NET workflows
-- [ ] Theme contributions (SharpLsp-branded dark/light themes)
+- [ ] Theme contributions (SharpLsp-branded dark/light themes), as a separate `-theme` extension: the registry requires one

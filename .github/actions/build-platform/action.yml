@@ -16,12 +16,9 @@
 # handoff boundary: no job downstream of this action is permitted to compile
 # anything. A test leg that rebuilds is a bug.
 #
-# STEP ORDER IS LOAD-BEARING. `_build-vsix-suite` writes the INSTRUMENTED bundle
-# to src/editors/vscode/dist and that is what the coverage shards measure;
-# `_build-vsix` then overwrites the same directory with the PRODUCTION bundle,
-# which has no sourcemap. The suite artifact is therefore uploaded BEFORE the
-# VSIX is packed. Reordering these two silently strips end-to-end coverage - it
-# does not fail, it just reports a smaller number.
+# The suite compiles separately from the product. Packaging emits the ONE
+# production bundle and its matching private map, then both artifacts upload.
+# Test jobs execute the packaged bytes, never a second development bundle.
 name: Build one platform
 description: >-
   Compiles the VS Code suite, the release host, both sidecars, netcoredbg and
@@ -63,6 +60,7 @@ runs:
     - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       with:
         toolchain: stable
+        components: llvm-tools-preview
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -73,19 +71,39 @@ runs:
         restore-keys: "${{ runner.os }}-nuget-"
 
     # ── The VS Code suite, and this platform's chunk matrix ────────
-    # First, because it publishes the INSTRUMENTED bundle the shards measure.
+    # Test compilation does not emit another extension bundle.
     - name: Compile the VS Code suite and resolve the chunk matrix
       id: suite
       uses: ./.github/actions/vsix-suite
       with:
         platform: ${{ inputs.platform }}
-        suite-artifact: ${{ inputs.suite-artifact }}
 
     # ── The host, the sidecars and the debug adapter ───────────────
     - uses: ./.github/actions/typediagram
     - name: Build sharplsp host and both sidecars (release)
       shell: bash
-      run: make _build-rust _build-dotnet
+      run: |-
+        make _build-rust _build-dotnet-tests
+        make _build-dotnet DOTNET_TESTS_PREBUILT=1
+    - name: Cache precompiled Release .NET tests
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.binaries-artifact }}-tests
+        retention-days: 1
+        if-no-files-found: error
+        path: target/dotnet-tests.tar.gz
+    - name: Build coverage report tools
+      if: ${{ inputs.archive == 'true' }}
+      shell: bash
+      run: make _build-coverage-tools
+    - name: Cache coverage report tools
+      if: ${{ inputs.archive == 'true' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: coverage-report-tools
+        retention-days: 1
+        if-no-files-found: error
+        path: target/coverage-tools
     - name: Download pinned netcoredbg
       uses: ./.github/actions/netcoredbg
       with:
@@ -110,6 +128,45 @@ runs:
         include-hidden-files: true
         path: target/netcoredbg/${{ inputs.vsix-platform }}/netcoredbg
 
+    - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+      if: ${{ inputs.archive == 'true' }}
+      with:
+        tool: cargo-llvm-cov
+    - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+      if: ${{ inputs.archive == 'true' }}
+      with:
+        tool: nextest
+    - name: Build Release Cargo test archives and static Rust fixture
+      if: ${{ inputs.archive == 'true' }}
+      shell: bash
+      run: |-
+        set -euo pipefail
+        bash tools/ci/cargo-artifacts.sh build rust
+        bash tools/ci/cargo-artifacts.sh build zed
+        dotnet build src/sharplsp/tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo
+        tar -czf target/rust-fixtures.tar.gz src/sharplsp/tests/fixtures/ProfileTarget/bin src/sharplsp/tests/fixtures/ProfileTarget/obj
+        make _build-zed
+    - name: Cache Rust test binaries and fixture
+      if: ${{ inputs.archive == 'true' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: rust-test-artifacts
+        retention-days: 1
+        if-no-files-found: error
+        path: |
+          target/rust-tests.tar.zst
+          target/rust-fixtures.tar.gz
+    - name: Cache Zed test binaries and release package
+      if: ${{ inputs.archive == 'true' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: zed-test-artifacts
+        retention-days: 1
+        if-no-files-found: error
+        path: |
+          target/zed-tests.tar.zst
+          dist/sharplsp-zed*
+
     # ── Packaging checks over what was just built ──────────────────
     # These assert the SHAPE of the build outputs, so they belong to the build
     # phase and not to a test leg. They add seconds, because everything they
@@ -120,9 +177,9 @@ runs:
       run: |-
         set -euo pipefail
         dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
-          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          --no-build --no-restore -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
         dotnet pack src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
-          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          --no-build --no-restore -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
         ls -la /tmp/nupkg-smoke/*.nupkg
     - name: Package and verify the standalone server archive
       # [DIST-ARCHIVE] How Rider, Zed, Neovim, Helix and the Homebrew/Scoop
@@ -144,7 +201,21 @@ runs:
       run: node tools/packaging/verify-package-manifests.mjs
 
     # ── The VSIX, LAST ─────────────────────────────────────────────
-    # Overwrites src/editors/vscode/dist with the production bundle, which is
-    # why it runs after the suite artifact is already published.
+    # Emits the only production bundle, then publishes its matching test map.
     - name: Pack and verify the VSIX
       uses: ./.github/actions/vsix-payload
+      with:
+        suite-artifact: ${{ inputs.suite-artifact }}
+    - name: Cache the compiled suite, fixtures and matching production source map
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.suite-artifact }}
+        retention-days: 1
+        if-no-files-found: error
+        include-hidden-files: true
+        # Fixtures are already compiled. Shards restore only to rebase NuGet
+        # asset paths; they must not run dotnet build on this static solution.
+        path: |
+          src/editors/vscode/out
+          src/editors/vscode/dist/extension.js.map
+          src/editors/vscode/test-fixtures

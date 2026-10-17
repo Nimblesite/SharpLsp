@@ -1,4 +1,7 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.gradle.api.tasks.compile.AbstractCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 plugins {
     id("java")
@@ -12,6 +15,15 @@ plugins {
 
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
+
+// [DIST-CI-ARTIFACT-TESTS] A new compile dependency must fail the consumer,
+// never silently rebuild an artifact that was already handed off by CI.
+if (providers.gradleProperty("prebuiltTests").isPresent) {
+    gradle.taskGraph.whenReady {
+        val compilers = allTasks.filter { it is AbstractCompile || it is KotlinJvmCompile }
+        check(compilers.isEmpty()) { "Test phase contains compiler tasks: $compilers" }
+    }
+}
 
 // Rider 2026.1 runs on JetBrains Runtime 21 and its platform jars are
 // compiled against bytecode 21. Targeting 17 causes
@@ -76,21 +88,61 @@ intellijPlatform {
             untilBuild = provider { null }
         }
 
-        description =
-            "SharpLsp for Rider — the open-source .NET language server " +
-            "providing C# and F# intelligence powered by the sharplsp " +
-            "binary. Includes a Solution Explorer tool window mirroring " +
-            "the VS Code experience."
+        // [DIST-JETBRAINS-MARKETPLACE] The listing text. English first, links
+        // live, and nothing claimed that the plugin does not do.
+        description = """
+            <p>Open-source C# and F# language intelligence from the
+            <a href="https://github.com/Nimblesite/SharpLsp">SharpLsp</a> language
+            server: Roslyn semantics for C#, the F# Compiler Service for F#.</p>
+            <ul>
+              <li>Completion, hover, diagnostics, go to definition, references,
+                  rename and formatting through the IDE's LSP client</li>
+              <li><b>SharpLsp Solution</b> tool window: solutions, projects,
+                  dependencies and source files</li>
+              <li><b>SharpLsp NuGet</b> tool window: browse, install and remove
+                  packages</li>
+            </ul>
+            <p><b>Requires</b> the <code>sharplsp</code> server and the .NET 10 SDK.
+            Install the server with <code>brew install nimblesite/tap/sharplsp</code>
+            (macOS, Linux) or <code>scoop install nimblesite/sharplsp</code> (Windows),
+            or unpack a <a href="https://github.com/Nimblesite/SharpLsp/releases">release
+            archive</a>. Set a custom location at <i>Settings | Tools | SharpLsp</i>.</p>
+        """.trimIndent()
+
+        // Each release's notes are its GitHub release, which the tag stamps.
+        changeNotes = providers.gradleProperty("pluginVersion").map { version ->
+            "<p><a href=\"https://github.com/Nimblesite/SharpLsp/releases/tag/v$version\">" +
+                "SharpLsp $version release notes</a></p>"
+        }
 
         vendor {
-            name = "SharpLsp"
+            name = "Nimblesite"
             url = "https://github.com/Nimblesite/SharpLsp"
         }
     }
 
+    // [DIST-JETBRAINS-MARKETPLACE] Optional vendor signature. signPlugin is
+    // skipped unless all three are set; Marketplace countersigns every upload.
+    signing {
+        certificateChain = providers.environmentVariable("JETBRAINS_CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("JETBRAINS_PRIVATE_KEY")
+        password = providers.environmentVariable("JETBRAINS_PRIVATE_KEY_PASSWORD")
+    }
+
+    // Marketplace accepts publishPlugin only after the first version was
+    // uploaded by hand on plugins.jetbrains.com.
     publishing {
-        // No marketplace publishing from this build — we only produce the
-        // zip locally. Release automation lives in a separate workflow.
+        token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN")
+    }
+
+    // The Plugin Verifier Marketplace runs on every upload, run here first
+    // against the Rider build this plugin compiles for.
+    pluginVerification {
+        ides {
+            create(IntelliJPlatformType.Rider, providers.gradleProperty("platformVersion")) {
+                useInstaller = false
+            }
+        }
     }
 
     buildSearchableOptions = false

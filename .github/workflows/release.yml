@@ -680,3 +680,39 @@ jobs:
             exit 1
           fi
           echo "Open VSX: published ${published}, skipped ${skipped} already-present of $((published + skipped)) VSIX(es)"
+
+  # [DIST-JETBRAINS-MARKETPLACE] Off until the first version has been uploaded by
+  # hand and the repository variable JETBRAINS_MARKETPLACE_PUBLISH is 'true':
+  # Marketplace accepts API uploads only for a plugin it already lists. Uploads
+  # the exact zip the release attached, never a rebuild.
+  publish-jetbrains:
+    name: Publish Rider plugin (JetBrains Marketplace)
+    needs:
+      - version
+      - release
+    if: "${{ vars.JETBRAINS_MARKETPLACE_PUBLISH == 'true' && !contains(github.ref_name, '-') }}"
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rider-plugin
+          path: dist
+      - name: Upload to JetBrains Marketplace
+        env:
+          JETBRAINS_MARKETPLACE_TOKEN: "${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${JETBRAINS_MARKETPLACE_TOKEN:-}" ]; then
+            echo "::error::JETBRAINS_MARKETPLACE_TOKEN is not available to this repository."
+            echo "::error::Create a permanent token under My Tokens on plugins.jetbrains.com and add it as a repo secret."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer ${JETBRAINS_MARKETPLACE_TOKEN}" \
+            -F xmlId=dev.sharplsp \
+            -F file=@dist/sharplsp-rider.zip \
+            https://plugins.jetbrains.com/api/updates/upload

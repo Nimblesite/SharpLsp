@@ -62,6 +62,27 @@
       }
     }
   },
+  "profiler-fix-memory-leak": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M32S",
+    "uploadDate": "2026-10-17T09:30:00+11:00",
+    "text": {
+      "en": {
+        "label": "Screen recording: fixing a C# memory leak in VS Code with the SharpLsp memory profiler, from leak suspects to the retention graph and a verified fix",
+        "caption": "The whole loop on the Storefront demo, recorded in VS Code: Track Memory, the leak suspects, the retention graph, the fix typed in, then a second run. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "屏幕录像：在 VS Code 中用 SharpLsp 内存分析器修复 C# 内存泄漏，从可疑泄漏到保留图，再到验证修复",
+        "caption": "在 VS Code 中录制的 Storefront 演示完整流程：Track Memory、可疑泄漏、保留图、输入修复代码，然后再次运行。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "画面録画：VS Code で SharpLsp のメモリプロファイラーを使い、C# のメモリリークをリークの疑いから保持グラフ、修正の確認まで直す",
+        "caption": "VS Code で収録した Storefront デモの一連の流れ：Track Memory、リークの疑い、保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
   "sharplsp-tour": {
     "encodings": ["webm", "mp4"],
     "width": 1000,

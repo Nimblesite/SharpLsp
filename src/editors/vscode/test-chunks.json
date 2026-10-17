@@ -1,10 +1,8 @@
 {
   "description": "Feature chunks of the VS Code end-to-end suite ([DIST-CI-WIN-VSIX], [DIST-CI-VSIX-SHARDS]). Each chunk is one CI job running a GROUP of related feature areas from the SAME suite through the real LSP inside the real extension host. A chunk is a group and not a single area because every job repays a multi-minute preamble (setup-dotnet, node_modules, three artifact downloads, the VS Code host cache): each leg MUST fan out over roughly 6-10 jobs, and a chunk projected past ~15 minutes MUST be split again ([DIST-CI-WIN-VSIX]). and BOTH platform legs fan out over this one list: Windows proves the win32 named-pipe editor experience, Ubuntu adds the linuxOnly repo-ingestion stress suites. Every shard on both platforms is instrumented, and one gate at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]). Single source of truth: the Makefile (_test-vsix-shard), both CI matrices, and the completeness guard all read this file. Consumed via tools/vsix/vsix-test-chunks.mjs. A chunk carrying \"linuxOnly\": true is skipped by the Windows matrix and run by the Ubuntu one.",
   "shared": {
-    "description": "Prepended to every chunk. Asserts the bundled host + sidecars were staged before the extension host started, so a staging regression fails as itself instead of as a wall of LSP timeouts.",
-    "files": [
-      "00-vsix-dev-binary-staging.test.js"
-    ]
+    "description": "Must remain empty: executable tests have one chunk owner per platform, never every shard. Artifact verification is a prerequisite, not a repeated test suite.",
+    "files": []
   },
   "chunks": {
     "lsp": {
@@ -167,6 +165,7 @@
     "workspace": {
       "description": "The IDE surface that is not a language service: activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, and the cross-cutting command workflows; the Solution Explorer tree with its build action — revealed terminal and progress notification ([SE-ACTIONS-BUILD]) — and its reactive sort/state signals, tooltips, reveal, full context-menu surface and project-dependency watcher; scaffolding and the NuGet surface down to real .csproj dependency edits plus FSI and build-output filtering.",
       "files": [
+        "00-vsix-dev-binary-staging.test.js",
         "bundled-binary.test.js",
         "bundled-sidecars.test.js",
         "extension.test.js",

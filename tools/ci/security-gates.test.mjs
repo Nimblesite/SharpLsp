@@ -39,6 +39,42 @@ test("cached VS Code dependencies skip profiler codegen and compilation", () => 
     assert.equal(codegen.if, steps[build].if, "cached shards need no code generator install");
 });
 
+test("all checks finish before build and every test waits for artifact publication", () => {
+    for (const check of ["analyse", "audit", "security", "validate-manifest"])
+        assert.ok(ci.jobs.build.needs.includes(check), `build must wait for ${check}`);
+    for (const [name, job] of Object.entries(ci.jobs).filter(([name]) => name.startsWith("test-"))) {
+        assert.ok(job.needs.includes("build"), `${name} must consume completed build artifacts`);
+        assert.ok(job.needs.every((need) => !need.startsWith("test-")), "test legs must remain independent");
+    }
+});
+
+test("all compiled test consumers opt into their non-building runners", () => {
+    for (const job of Object.values(workflow("ci-test-dotnet").jobs)) {
+        const run = job.steps.find((step) => step.run?.startsWith("make _test-dotnet"));
+        assert.equal(run.env?.DOTNET_TESTS_PREBUILT, "1");
+        assert.ok(job.steps.some((step) => step.uses === "./.github/actions/dotnet-tests"));
+    }
+    const rust = workflow("ci-test-rust").jobs["test-rust"];
+    assert.ok(rust.steps.some((step) => step.run?.includes("CARGO_TESTS_PREBUILT=1")));
+    const editors = workflow("ci-test-editors").jobs;
+    assert.ok(editors["test-zed"].steps.some((step) => step.run === "make _test-zed CARGO_TESTS_PREBUILT=1"));
+    assert.equal(editors["test-rider"].env.RIDER_TESTS_PREBUILT, "1");
+    assert.equal(editors["test-rider"].env.COVERAGE_TOOLS_PREBUILT, "1");
+    assert.ok(!editors["test-rider"].steps.some((step) => step.run?.includes("_build-rider")));
+});
+
+test("VSIX shards consume the packaged Release artifact, not a separate dev payload", () => {
+    const build = action("vsix-payload").runs.steps;
+    const upload = build.find((step) => step.with?.path === "dist/sharplsp.vsix");
+    assert.ok(upload, "the build must cache the actual packaged VSIX");
+    assert.ok(upload.uses.startsWith("actions/upload-artifact@"));
+    const shard = action("vsix-shard").runs.steps;
+    const download = shard.find((step) => step.with?.name === upload.with.name);
+    assert.ok(download?.uses.startsWith("actions/download-artifact@"), "consume that same artifact");
+    const run = shard.find((step) => step.run?.includes("make _test-vsix-shard"));
+    assert.equal(run.env?.VSIX_ARTIFACT, "target/vsix/sharplsp.vsix", "stage the zip bytes");
+});
+
 // [DIST-VSIX-REBUILD] + [DIST-CI-VSIX-SHARDS]. A CI consumer may skip the
 // rebuild ONLY by declaring the binaries came from this run, and a shard that
 // declares it must also have downloaded them - a shard claiming prebuilt
@@ -69,9 +105,11 @@ test("CI stages same-run binaries and release compiles its own", () => {
         step.uses?.startsWith("actions/download-artifact@"),
     );
     assert.ok(
-        downloads.length >= 3,
-        `declaring prebuilt binaries obliges the shard to download them; found ${String(downloads.length)}`,
+        downloads.some((step) => step.with?.name === "${{ inputs.suite-artifact }}"),
+        "declaring a precompiled suite obliges the shard to download it",
     );
+    assert.ok(downloads.some((step) => step.with?.name === "${{ inputs.suite-artifact }}-release"),
+        "the packaged artifact supplies the host, both sidecars and debugger together");
     assert.equal(run["continue-on-error"], undefined, "a shard may not be advisory");
     const pkg = release.jobs["build-vsix"].steps.find((step) =>
         step.run?.includes("make _package-vsix-${{ matrix.platform }}"),

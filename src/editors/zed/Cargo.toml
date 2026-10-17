@@ -1,9 +1,9 @@
 [package]
 name = "sharplsp-zed"
-version = "0.1.0"
+version = "0.26.0"
 edition = "2021"
 license = "MIT"
-description = "SharpLsp Zed extension — .NET LSP integration for C# and F#"
+description = "SharpLsp for Zed: starts the SharpLsp language server for C# and F#"
 publish = false
 
 # Standalone workspace — not part of the root sharplsp workspace.
@@ -18,7 +18,6 @@ dead_code = "deny"
 unused_variables = "deny"
 
 [dependencies]
-quick-xml = "0.42"
 zed_extension_api = "0.7"
 
 [dev-dependencies]

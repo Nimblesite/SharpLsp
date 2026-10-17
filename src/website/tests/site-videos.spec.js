@@ -16,12 +16,21 @@ const PAGES = [
   { path: '/docs/profiler/', videos: PROFILER_DOC, says: 'profiler' },
   { path: '/ja/docs/profiler/', videos: PROFILER_DOC, says: 'プロファイラー' },
   { path: '/zh/docs/profiler/', videos: PROFILER_DOC, says: '性能分析器' },
+  { path: '/docs/memory-leaks/', videos: ['profiler-fix-memory-leak'], says: 'leak' },
+  { path: '/ja/docs/memory-leaks/', videos: ['profiler-fix-memory-leak'], says: 'リーク' },
+  { path: '/zh/docs/memory-leaks/', videos: ['profiler-fix-memory-leak'], says: '泄漏' },
   { path: '/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'profiler' },
   { path: '/ja/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'プロファイラー' },
   { path: '/zh/blog/introducing-sharplsp/', videos: ['profiler-film'], says: '性能分析器' },
   { path: '/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: 'tour' },
   { path: '/ja/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: 'ツアー' },
   { path: '/zh/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: '导览' },
+  { path: '/blog/dotnet-profiler-memory-leak-search-trends/', videos: PROFILER_DOC, says: 'profiler' },
+  { path: '/ja/blog/dotnet-profiler-memory-leak-search-trends/', videos: PROFILER_DOC, says: 'プロファイラー' },
+  { path: '/zh/blog/dotnet-profiler-memory-leak-search-trends/', videos: PROFILER_DOC, says: '性能分析器' },
+  { path: '/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/', videos: ['profiler-fix-memory-leak'], says: 'leak' },
+  { path: '/ja/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/', videos: ['profiler-fix-memory-leak'], says: 'リーク' },
+  { path: '/zh/blog/how-to-fix-a-memory-leak-in-csharp-dotnet/', videos: ['profiler-fix-memory-leak'], says: '泄漏' },
 ];
 
 const poster = (id) => `/assets/videos/${id}-poster.webp`;
@@ -66,7 +75,7 @@ for (const { path, videos, says } of PAGES) {
 }
 
 test('articles and docs never autoplay; readers start every film themselves', async ({ page }) => {
-  for (const path of ['/docs/', '/blog/introducing-sharplsp/', '/blog/editor-agnostic-dotnet-lsp/']) {
+  for (const path of ['/docs/', '/docs/memory-leaks/', '/blog/introducing-sharplsp/', '/blog/editor-agnostic-dotnet-lsp/']) {
     await page.goto(path);
     const player = page.locator('figure video').first();
     await expect(player).toHaveAttribute('controls', '');

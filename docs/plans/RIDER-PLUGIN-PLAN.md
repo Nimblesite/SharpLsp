@@ -223,6 +223,23 @@ how it was installed — and CI built and coverage-gated it in that state.
 - [x] `pluginVersion` is stamped from the tag by `make _stamp-version`; the job
       asserts the versioned zip exists rather than trusting it
 
+### Phase 11: JetBrains Marketplace ([DIST-JETBRAINS-MARKETPLACE])
+
+- [x] Plugin id `com.sharplsp.rider` → `dev.sharplsp`: the Plugin Verifier
+      rejects an id naming a JetBrains product, and an id is permanent once
+      uploaded
+- [x] Display name `SharpLsp` (was `sharplsp-rider`, which names Rider)
+- [x] 40×40 `META-INF/pluginIcon.svg`, English description, Nimblesite vendor,
+      change notes linking the release's GitHub notes
+- [x] `verifyPlugin` against Rider 2026.1: Compatible
+- [x] Optional vendor signing and token publishing read from environment
+      variables; opt-in `publish-jetbrains` release job
+- [ ] Replace the deprecated `ToolWindowFactory.isApplicable` /
+      `isDoNotActivateOnStart` usages the verifier reports (8 warnings)
+- [ ] First version uploaded by hand on plugins.jetbrains.com
+- [ ] `JETBRAINS_MARKETPLACE_TOKEN` secret and `JETBRAINS_MARKETPLACE_PUBLISH`
+      variable set, so later releases publish themselves
+
 ### Phase 10: Docs
 
 - [ ] `docs/specs/RIDER-PLUGIN-SPEC.md` — sibling (done in this change)
