@@ -101,6 +101,19 @@ export default function (eleventyConfig) {
     };
   });
 
+  // The Zed README renders on GitHub and, through `{% renderFile %}`, on /docs/zed/.
+  // Its images use repo-relative paths so GitHub shows them; here they map onto the
+  // site's own /assets/ folder.
+  const repoAssets = "../../website/src/assets/";
+  eleventyConfig.amendLibrary("md", (mdLib) => {
+    const renderImage = mdLib.renderer.rules.image;
+    mdLib.renderer.rules.image = (tokens, index, options, env, self) => {
+      const src = tokens[index].attrGet("src") ?? "";
+      if (src.startsWith(repoAssets)) tokens[index].attrSet("src", `/assets/${src.slice(repoAssets.length)}`);
+      return renderImage(tokens, index, options, env, self);
+    };
+  });
+
   // Renders GitHub release notes (Markdown) on the /releases/ page. Raw HTML is
   // disabled so untrusted content carried in auto-generated notes (PR titles,
   // contributor handles) can never inject markup; linkify turns bare URLs into

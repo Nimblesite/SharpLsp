@@ -2,7 +2,7 @@
 
 C# and F# code intelligence for [Zed](https://zed.dev).
 
-![F# completions from SharpLsp in Zed](/assets/screenshots/zed-fsharp-completions.png)
+![F# completions from SharpLsp in Zed](../../website/src/assets/screenshots/zed-fsharp-completions.png)
 
 ## Install
 
@@ -20,7 +20,7 @@ C# and F# code intelligence for [Zed](https://zed.dev).
 
 SharpLsp downloads its server the first time you open a C# or F# file.
 
-![C# hover from SharpLsp in Zed](/assets/screenshots/zed-hover.png)
+![C# hover from SharpLsp in Zed](../../website/src/assets/screenshots/zed-hover.png)
 
 ## Choose the solution
 
