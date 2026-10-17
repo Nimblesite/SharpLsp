@@ -23,7 +23,7 @@ fn install_engine_beside_server() {
             "build the engine first (`make _build-dotnet`): {}",
             engine_src.display()
         );
-        let server = std::path::PathBuf::from(env!("CARGO_BIN_EXE_sharplsp"));
+        let server = built_sharplsp();
         let dir = server.parent().expect("server directory");
         for entry in
             std::fs::read_dir(engine_src.parent().expect("engine dir")).expect("engine dir listing")

@@ -29,6 +29,9 @@
 )]
 
 // ── Infrastructure sub-modules ────────────────────────────────────
+#[path = "../support/built_binary.rs"]
+mod built_binary;
+pub use built_binary::built_sharplsp;
 pub mod fixtures;
 pub mod fixtures_cross_language;
 pub mod fixtures_medium;
@@ -415,13 +418,9 @@ fn resolve_sharplsp_binary_path() -> PathBuf {
     std::env::var_os("SHARPLSP_EXECUTABLE_PATH")
         .map(PathBuf::from)
         .map_or_else(
-            || absolute_binary_path(env!("CARGO_BIN_EXE_sharplsp")),
+            || absolutize_binary_path(built_sharplsp()),
             absolutize_binary_path,
         )
-}
-
-fn absolute_binary_path(path: &str) -> PathBuf {
-    absolutize_binary_path(PathBuf::from(path))
 }
 
 fn absolutize_binary_path(path: PathBuf) -> PathBuf {
@@ -443,7 +442,7 @@ fn launcher_debug(binary: &Path) -> String {
         |path| path.display().to_string(),
     );
     let raw = std::env::var("SHARPLSP_EXECUTABLE_PATH")
-        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_sharplsp").to_string());
+        .unwrap_or_else(|_| built_sharplsp().display().to_string());
     let metadata = launcher_metadata(binary);
     format!(
         "sharplsp launcher: raw={raw} resolved={} cwd={cwd} exists={} {metadata}",
