@@ -1,0 +1,32 @@
+{
+	"folders": [
+		{
+			"path": "../Basilisk"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../lsp_toolkit"
+		}
+	],
+	"settings": {
+		"rust-analyzer.cargo.features": "all",
+		"rust-analyzer.check.command": "clippy",
+		"rust-analyzer.check.extraArgs": [
+			"--",
+			"-D",
+			"warnings"
+		],
+		"rust-analyzer.check.allTargets": true,
+		"rust-analyzer.cargo.allTargets": true,
+		"rust-analyzer.testExplorer": true,
+		"workbench.colorCustomizations": {
+			"titleBar.activeBackground": "#e8500a",
+			"titleBar.activeForeground": "#f0f2f7",
+			"titleBar.inactiveBackground": "#c43f07",
+			"titleBar.inactiveForeground": "#f0f2f7cc"
+		},
+		"deslop.topOffenders.groupBy": "type"
+	}
+}
