@@ -188,12 +188,13 @@ impl Default for ProfilerConfig {
 const CONFIG_FILE_NAME: &str = "sharplsp.toml";
 
 /// Load configuration by searching for `sharplsp.toml` starting from `workspace_root`
-/// and walking up to parent directories. Returns defaults if no file is found.
-pub fn load_config(workspace_root: &Path) -> Result<SharpLspConfig> {
+/// and walking up to parent directories, with the editor's `client` settings layered
+/// on top. Returns defaults if no file is found.
+pub fn load_config(workspace_root: &Path, client: &serde_json::Value) -> Result<SharpLspConfig> {
     let value = crate::configuration::resolve(
         workspace_root,
         crate::configuration::user_config_file().as_deref(),
-        &serde_json::json!({}),
+        client,
         serde_json::json!({}),
     )?;
     Ok(serde_json::from_value(value)?)
@@ -438,7 +439,7 @@ bogus = true
     #[test]
     fn test_load_config_defaults() {
         let temp = tempfile::tempdir().unwrap();
-        let config = load_config(temp.path()).unwrap();
+        let config = load_config(temp.path(), &serde_json::json!({})).unwrap();
         assert_eq!(config.server.log_level, "info");
     }
 
@@ -459,7 +460,7 @@ enabled = false
         )
         .unwrap();
 
-        let config = load_config(temp.path()).unwrap();
+        let config = load_config(temp.path(), &serde_json::json!({})).unwrap();
         assert_eq!(config.server.log_level, "warn");
         assert_eq!(config.server.debounce_ms, 300);
         assert!(!config.fsharp.enabled);

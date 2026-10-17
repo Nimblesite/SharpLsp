@@ -40,6 +40,7 @@ mod utils;
 mod vfs;
 mod workspace_symbols;
 mod workspace_targets;
+mod workspace_open;
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
@@ -78,6 +79,7 @@ use tree_sitter::Tree;
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
+use crate::workspace_open::OpenFollowUp;
 
 /// Convert `lsp_server::ErrorCode` to `i32`.
 ///
@@ -200,8 +202,20 @@ fn run_server() -> Result<()> {
     let config_root = workspace_root
         .clone()
         .or_else(|| std::env::current_dir().ok());
-    let sharplsp_config = if let Some(ref root) = config_root {
-        config::load_config(root)?
+    // When no workspace root is available (single-file mode), a fallback root is
+    // used solely for IPC path generation — the actual workspace path is sent via
+    // workspace/open once the first file opens.
+    let fallback_root = std::env::temp_dir();
+    // The editor's settings arrive as `initializationOptions` before any
+    // workspace opens, so a solution chosen there loads first time.
+    // Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+    let options = init_params.initialization_options.as_ref();
+    let configuration = configuration::Configuration::initialized(
+        config_root.clone().unwrap_or_else(|| fallback_root.clone()),
+        options,
+    );
+    let sharplsp_config = if config_root.is_some() {
+        configuration.config()?
     } else {
         info!("No workspace root or current directory — using default configuration");
         config::SharpLspConfig::default()
@@ -219,11 +233,7 @@ fn run_server() -> Result<()> {
     // can consult it before re-syncing files from disk and clobbering live edits.
     let vfs = Arc::new(Vfs::new());
 
-    // Initialize C# sidecar manager if enabled. When no workspace root is
-    // available (single-file mode), a fallback root is used solely for IPC
-    // path generation — the actual workspace path is sent via workspace/open
-    // once the first file opens.
-    let fallback_root = std::env::temp_dir();
+    // Initialize C# sidecar manager if enabled.
     let sidecar_root = workspace_root.as_deref().unwrap_or(&fallback_root);
 
     let csharp_sidecar = if sharplsp_config.csharp.enabled {
@@ -248,34 +258,41 @@ fn run_server() -> Result<()> {
     // When no workspace root exists (single-file mode), workspace/open is
     // deferred until the first didOpen notification.
     // The C# sidecar opens the configured solution when `csharp.solution_path`
-    // names one; a root holding several solutions is otherwise ambiguous and
-    // loads nothing. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
-    let csharp_open_root = workspace_root
-        .as_deref()
-        .map(|root| sharplsp_config.csharp.open_target(root));
+    // names one; a root holding several solutions is otherwise ambiguous, loads
+    // nothing, and is shown as an error unless the client picks the solution
+    // itself. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+    let solution = workspace_open::SolutionChoice::new(
+        workspace_root.as_deref(),
+        &sharplsp_config,
+        &connection.sender,
+        !workspace_open::client_picks_solution(options),
+    );
 
     if workspace_root.is_some() {
-        start_sidecar(
+        workspace_open::start_sidecar(
             csharp_sidecar.as_ref(),
-            csharp_open_root.as_ref(),
-            Some((&sharplsp_config.diagnostics, &connection)),
-            sharplsp_config.analyzers.clone(),
+            solution.target(),
+            OpenFollowUp::new(
+                &sharplsp_config,
+                &vfs,
+                Some(&connection.sender),
+                solution.report(),
+            ),
             &runtime,
-            Arc::clone(&vfs),
         );
-        start_sidecar(
+        workspace_open::start_sidecar(
             fsharp_sidecar.as_ref(),
             workspace_root.as_ref(),
-            None,
-            sharplsp_config.analyzers.clone(),
+            OpenFollowUp::new(&sharplsp_config, &vfs, None, None),
             &runtime,
-            Arc::clone(&vfs),
         );
     }
 
+    let profiler_root = config_root.as_deref().unwrap_or(&fallback_root);
     let mut services = host_services(
-        config_root,
-        fallback_root,
+        profiler_root,
+        configuration,
+        solution,
         &sharplsp_config,
         &connection,
         &runtime,
@@ -461,45 +478,6 @@ fn pull_diagnostics_capability(
     ))
 }
 
-/// Open the workspace in a sidecar.
-async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
-    let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
-    let _ = sidecar.request("workspace/open", payload).await?;
-    info!("Workspace opened in {} sidecar", sidecar.name());
-    Ok(())
-}
-
-/// Push analyzer flags from `[analyzers]` in `sharplsp.toml` to a sidecar via
-/// `analyzers/configure`. Sidecars that do not register the method ignore it; any
-/// failure is logged and never aborts startup. The flags drive the monorepo
-/// dead-code analyzer ([ANALYZERS-DEADCODE-SEVERITY]) in both the F# and C# sidecars.
-async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &config::AnalyzersConfig) {
-    #[derive(serde::Serialize)]
-    struct ConfigureRequest {
-        dead_code: bool,
-        monorepo: bool,
-    }
-    let req = ConfigureRequest {
-        dead_code: analyzers.dead_code,
-        monorepo: analyzers.monorepo,
-    };
-    match rmp_serde::to_vec(&req) {
-        Ok(payload) => match sidecar.request("analyzers/configure", payload).await {
-            Ok(_) => info!(
-                "Analyzers configured for {} sidecar (dead_code={}, monorepo={})",
-                sidecar.name(),
-                analyzers.dead_code,
-                analyzers.monorepo
-            ),
-            Err(err) => warn!(
-                "analyzers/configure failed for {} sidecar: {err:#}",
-                sidecar.name()
-            ),
-        },
-        Err(err) => warn!("serialize analyzers/configure failed: {err:#}"),
-    }
-}
-
 /// Lazily open the workspace for the first opened document when the client supplied no
 /// workspace root.
 ///
@@ -526,7 +504,7 @@ fn init_workspace_for_file(
     info!("No workspace root — opening single-document workspace for {file_path}");
     let sidecar = Arc::clone(sidecar);
     drop(runtime.spawn(async move {
-        if let Err(err) = open_workspace(&sidecar, &file_path).await {
+        if let Err(err) = workspace_open::open_workspace(&sidecar, &file_path).await {
             error!("Failed to lazily open workspace: {err:#}");
         }
         // Health monitoring starts only after workspace/open completes, matching the eager
@@ -558,42 +536,6 @@ fn sidecar_for_path<'a>(
         Some("CS" | "CSX") => csharp_sidecar,
         Some("FS" | "FSX" | "FSSCRIPT") => fsharp_sidecar,
         _ => None,
-    }
-}
-
-/// Start a sidecar: open workspace, optionally trigger solution diagnostics, begin health monitoring.
-fn start_sidecar(
-    sidecar: Option<&Arc<SidecarManager>>,
-    workspace_root: Option<&PathBuf>,
-    diagnostics_cfg: Option<(&config::DiagnosticsConfig, &Connection)>,
-    analyzers: config::AnalyzersConfig,
-    runtime: &tokio::runtime::Runtime,
-    vfs: Arc<Vfs>,
-) {
-    if let (Some(sidecar), Some(root)) = (sidecar, workspace_root) {
-        let sc = Arc::clone(sidecar);
-        let root_str = root.to_string_lossy().to_string();
-        let diag = diagnostics_cfg.and_then(|(cfg, conn)| {
-            cfg.solution_wide_analysis
-                .then(|| (conn.sender.clone(), cfg.project_filter.clone()))
-        });
-        drop(runtime.spawn(async move {
-            if let Err(err) = open_workspace(&sc, &root_str).await {
-                error!("Failed to open workspace in sidecar: {err:#}");
-                return;
-            }
-            configure_analyzers(&sc, &analyzers).await;
-            if let Some((sender, project_filter)) = diag {
-                info!("Starting solution-wide diagnostics scan");
-                diagnostics::request_solution_in_background(
-                    Arc::clone(&sc),
-                    sender,
-                    project_filter,
-                    vfs,
-                );
-            }
-            sc.start_health_monitor().await;
-        }));
     }
 }
 
@@ -638,26 +580,50 @@ struct HostServices {
     configuration: configuration::Configuration,
     /// Profiler commands, notifications and cancellation.
     profiler: profiler::host::ProfilerHost,
+    /// The solution the C# sidecar opens, reopened when settings move it.
+    solution: workspace_open::SolutionChoice,
 }
 
-/// Mount the profiler under the workspace root and open the configuration service.
+/// Apply a `workspace/didChangeConfiguration`, reopening the C# workspace when
+/// the change chose another solution. A rejected change keeps the previous one.
+fn settings_changed(
+    services: &mut HostServices,
+    params: &serde_json::Value,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    vfs: &Arc<Vfs>,
+    runtime: &tokio::runtime::Runtime,
+) {
+    let settings = params.get("settings").unwrap_or(&serde_json::Value::Null);
+    match services.configuration.update(settings) {
+        Ok(()) => services.solution.settings_changed(
+            &services.configuration,
+            csharp_sidecar,
+            vfs,
+            runtime,
+        ),
+        Err(error) => warn!("Configuration change rejected: {error:#}"),
+    }
+}
+
+/// Mount the profiler under `profiler_root` beside the configuration service.
 fn host_services(
-    config_root: Option<PathBuf>,
-    fallback_root: PathBuf,
+    profiler_root: &std::path::Path,
+    configuration: configuration::Configuration,
+    solution: workspace_open::SolutionChoice,
     config: &config::SharpLspConfig,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
 ) -> HostServices {
     let profiler = profiler::host::ProfilerHost::mount(
-        config_root.as_deref().unwrap_or(&fallback_root),
+        profiler_root,
         &config.profiler,
         connection.sender.clone(),
         runtime,
     );
-    let configuration = configuration::Configuration::new(config_root.unwrap_or(fallback_root));
     HostServices {
         configuration,
         profiler,
+        solution,
     }
 }
 
@@ -722,14 +688,7 @@ fn main_loop(
                     continue;
                 }
                 if notif.method == "workspace/didChangeConfiguration" {
-                    if let Err(error) = services.configuration.update(
-                        notif
-                            .params
-                            .get("settings")
-                            .unwrap_or(&serde_json::Value::Null),
-                    ) {
-                        warn!("Configuration change rejected: {error:#}");
-                    }
+                    settings_changed(services, &notif.params, csharp_sidecar, vfs, runtime);
                     continue;
                 }
                 if notif.method == SHUTDOWN_ANSWERED {
