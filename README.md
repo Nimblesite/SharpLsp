@@ -78,7 +78,16 @@ Server path**.
 Rider's LSP API ships only in the paid IDEs — the plugin will not load on
 IntelliJ Community or Android Studio.
 
-### Zed, Neovim, Helix, Emacs
+### Zed
+
+The Zed extension is on its way to the Zed extension registry. Until it is
+listed, clone this repository and run **zed: install dev extension** on
+`src/editors/zed`. Install the C# and F# extensions too: they supply the
+languages SharpLsp attaches to. The extension uses `sharplsp` from your `PATH`
+when it is there, and otherwise downloads this platform's release archive
+itself. Either way the .NET 10 SDK must be installed.
+
+### Neovim, Helix, Emacs
 
 Support is in progress. In the meantime the standalone archive above works with
 any editor that can launch an LSP server over stdio.

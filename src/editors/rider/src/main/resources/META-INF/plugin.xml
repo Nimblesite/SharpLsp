@@ -1,7 +1,11 @@
 <idea-plugin>
-    <id>com.sharplsp.rider</id>
-    <name>SharpLsp LSP</name>
-    <vendor url="https://github.com/Nimblesite/sharplsp">SharpLsp LSP</vendor>
+    <!-- Permanent once uploaded. The Plugin Verifier rejects an ID naming a
+         JetBrains product, so it is the project domain, not "rider". -->
+    <id>dev.sharplsp</id>
+    <!-- Name, vendor, description and change notes come from build.gradle.kts
+         (pluginConfiguration), which overwrites these at build time. -->
+    <name>SharpLsp</name>
+    <vendor url="https://github.com/Nimblesite/SharpLsp">Nimblesite</vendor>
 
     <!-- Required for every plugin that uses the IntelliJ Platform APIs. -->
     <depends>com.intellij.modules.platform</depends>

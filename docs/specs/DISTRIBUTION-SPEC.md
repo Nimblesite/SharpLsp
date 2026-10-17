@@ -526,9 +526,10 @@ Users who want `sharplsp` on their system PATH outside VS Code may install via:
 - **Windows**: `scoop install nimblesite/sharplsp`
 
 Both draw from the [DIST-ARCHIVE] assets. This is entirely optional for VS Code
-users — the bundled VSIX binary is sufficient. It is NOT optional for anyone
-else: a Rider, Zed, Neovim or Helix user installs one of these or unpacks the
-archive by hand.
+users — the bundled VSIX binary is sufficient — and for Zed users, whose
+extension downloads the archive itself ([DIST-ZED-REGISTRY]). It is NOT optional
+for anyone else: a Rider, Neovim or Helix user installs one of these or unpacks
+the archive by hand.
 
 ### [DIST-PATH-PUBLISH] Tap and Bucket Publication
 
@@ -613,9 +614,9 @@ Tag-triggered (`v*`). Jobs:
 
 ## [DIST-RIDER-RELEASE] Rider Plugin Release
 
-JetBrains users have no VSIX to install and no marketplace listing to pull from,
-so `sharplsp-rider.zip` on the GitHub release IS the distribution channel for
-Rider. `build-rider` therefore runs with `RIDER_REQUIRED=1`: a missing JDK is a
+JetBrains users have no VSIX to install, so `sharplsp-rider.zip` on the GitHub
+release is the Rider plugin, and the JetBrains Marketplace listing serves that
+same zip ([DIST-JETBRAINS-MARKETPLACE]). `build-rider` therefore runs with `RIDER_REQUIRED=1`: a missing JDK is a
 hard failure, not the local convenience skip `tools/rider/gradle.sh` allows,
 because a silent skip would publish a release with no Rider plugin while
 reporting success ([DIST-CI-RIDER]).
@@ -627,8 +628,61 @@ reporting success ([DIST-CI-RIDER]).
 2. The plugin does NOT bundle the LSP host. It resolves `sharplsp` from its
    project setting, then `~/.local/bin`, then `PATH` — so a Rider user installs
    a [DIST-ARCHIVE] asset or a [DIST-PATH-INSTALL] package first.
-3. The plugin id is `com.sharplsp.rider` and every custom request it issues uses
-   the `sharplsp/` method prefix the host answers on.
+3. The plugin id is `dev.sharplsp` and every custom request it issues uses
+   the `sharplsp/` method prefix the host answers on. The Plugin Verifier rejects
+   an id that names a JetBrains product, and an id is permanent once uploaded.
+
+## [DIST-JETBRAINS-MARKETPLACE] JetBrains Marketplace
+
+The listing at plugins.jetbrains.com serves the release's `sharplsp-rider.zip`.
+The plugin MUST pass JetBrains' approval guidelines and the Plugin Verifier
+(`gradle verifyPlugin`, configured for the `platformVersion` Rider build):
+
+1. **Name** `SharpLsp`: at most 30 characters, and never "Plugin", "IntelliJ",
+   "JetBrains" or a JetBrains product name. The zip keeps the
+   `sharplsp-rider` project name, which is not shown to users.
+2. **Listing.** `build.gradle.kts` supplies the English description, the vendor
+   (Nimblesite) and change notes that link the release's GitHub notes.
+   `META-INF/pluginIcon.svg` is the 40×40 logo (`docs/designs/logo/logo-40x40.svg`).
+3. **First upload is manual.** Marketplace refuses API uploads for a plugin it
+   has never listed, so a person uploads the first version on the web.
+4. **Later uploads are automatic but opt-in.** `release.yml`'s
+   `publish-jetbrains` job runs only when the repository variable
+   `JETBRAINS_MARKETPLACE_PUBLISH` is `true`, and it is skipped for prerelease
+   tags. It uploads the exact zip the release attached, by xml id, through the
+   Marketplace upload API with `JETBRAINS_MARKETPLACE_TOKEN` ([DIST-SECRETS]).
+5. **Signing is optional.** Marketplace countersigns every upload. `signPlugin`
+   signs with a vendor certificate only when `JETBRAINS_CERTIFICATE_CHAIN`,
+   `JETBRAINS_PRIVATE_KEY` and `JETBRAINS_PRIVATE_KEY_PASSWORD` are set.
+
+## [DIST-ZED-REGISTRY] Zed Extension Registry
+
+Zed installs extensions from the `zed-industries/extensions` registry, which
+builds `src/editors/zed` from a submodule commit of this repository. The registry
+reads the committed `extension.toml`, not a release artifact, so the extension
+carries its own version: it changes only when the extension does, and a
+publication pins the commit holding that version. `make _stamp-version` still
+stamps release checkouts, which nothing in the registry reads.
+
+1. **A language server and nothing else.** The id `sharp-lsp` takes the
+   registry's `-lsp` suffix for language-server-only extensions. The extension
+   declares no grammar: the C# and F# extensions define the `CSharp` and
+   `FSharp` languages it attaches to, with LSP language ids `csharp` and
+   `fsharp`. Zed has removed extension slash commands, so it declares none.
+2. **Never bundled.** The server resolves from `lsp.sharplsp.binary.path`, then
+   `sharplsp` on the worktree's PATH, then a download: the latest stable release's
+   [DIST-ARCHIVE] asset for this platform, unpacked into the extension's work
+   directory, with the host and both sidecar apphosts made executable. Older
+   downloads are pruned best effort. Offline, the newest earlier download starts.
+   Platforms without an archive (Intel macOS) get install guidance instead.
+3. **Downloads are confined** to `github.com/Nimblesite/SharpLsp/**` by the
+   manifest's single `download_file` capability.
+4. **Settings.** `lsp.sharplsp.binary.arguments` and `.env` apply to whichever
+   binary starts. `lsp.sharplsp.settings` uses the `sharplsp.toml` schema and
+   reaches the server as the client layer `settings.sharplsp`
+   ([CONFIG-RESOLUTION]).
+5. **Licence.** The registry's CI accepts only a licence inside the extension
+   directory; `src/editors/zed/LICENSE` links the repository's MIT licence.
 
 ## [DIST-SECRETS] Publishing Credentials
 
@@ -639,6 +693,8 @@ The VS Code Marketplace publishes **passwordless via Microsoft Entra ID OIDC** (
 | `BREW_SCOOP_PAT` | repo | PAT with `contents:write` on `Nimblesite/homebrew-tap` and `Nimblesite/scoop-bucket` |
 | `AZURE_CLIENT_ID` | `release` env | Entra ID app (client) id — Marketplace OIDC publish. Not sensitive; no PAT involved. |
 | `AZURE_TENANT_ID` | `release` env | Entra ID tenant (directory) id — Marketplace OIDC publish. |
+| `JETBRAINS_MARKETPLACE_TOKEN` | repo | Marketplace permanent token for `publish-jetbrains`; used only when the variable below is `true` ([DIST-JETBRAINS-MARKETPLACE]). |
+| `JETBRAINS_MARKETPLACE_PUBLISH` | repo variable | `true` after the first manual upload; until then `publish-jetbrains` is skipped. |
 | `OPEN_VSX_PAT` | repo | Open VSX access token. No OIDC path exists; long-lived token required (rotate on a schedule — post-2025 tokens expire by default). |
 
 ## [DIST-FORBIDDEN] Forbidden Distribution Patterns
