@@ -143,7 +143,10 @@ export async function compareMemory(wire: { memory_session_id: string }) {
   const toasts = await captureToasts(() => vscode.commands.executeCommand(uiCommand('memoryDiff')));
   assert.deepEqual(toasts.error, [], 'the UI comparison succeeds');
   assert.deepEqual(toasts.warning, [], 'the UI comparison is not refused');
-  assert.ok(memoryDashboardState()?.html.includes('const leaks = '), 'the dashboard renders the diff');
+  assert.ok(
+    memoryDashboardState()?.html.includes('const leaks = '),
+    'the dashboard renders the diff',
+  );
   return wireDiff(wire);
 }
 
@@ -252,15 +255,16 @@ export function assertPaletteDiscipline(): void {
 }
 
 /** [PROF-DOTNET-SOURCE] + [PROF-DOTNET-HEAP-MARK]: check shapes the fixture actually retains. */
-export function assertEveryShape(
-  snapshot: MemoryDashboardSnapshot,
-  live: Counts,
-): void {
+export function assertEveryShape(snapshot: MemoryDashboardSnapshot, live: Counts): void {
   for (const shape of Object.values(SHAPES)) {
     const expected = count(live, shape.live);
     if (expected > 0) assertAnchored(snapshot, shape, expected);
-    else assert.equal(snapshot.topAllocations.some((site) => site.typeName === shape.type), false,
-      `${shape.type} has no reachable instances`);
+    else
+      assert.equal(
+        snapshot.topAllocations.some((site) => site.typeName === shape.type),
+        false,
+        `${shape.type} has no reachable instances`,
+      );
   }
 }
 

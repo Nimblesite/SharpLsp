@@ -22,7 +22,13 @@ import {
   createProfilerStore,
   type ProfilerStore as Store,
 } from '@nimblesite/lsp-profiler-ui/out/src/store';
-import { seedSignal, fakeHost, toWireProcess, ungroup, rowPid as pidOf } from './profiler-ui-helpers';
+import {
+  seedSignal,
+  fakeHost,
+  toWireProcess,
+  ungroup,
+  rowPid as pidOf,
+} from './profiler-ui-helpers';
 import {
   numberField,
   rawField,

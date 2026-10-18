@@ -232,7 +232,11 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
     assert.equal(count(freed, 'blobs'), 0, 'release all drops the blob');
     assert.equal(count(freed, 'handlers'), 2_000, 'release all never clears the Event handlers');
     const afterRelease = await compareMemory(wire);
-    assert.equal(leakBadge('Ledger.fs', SHAPES.order.line), undefined, 'the old Order badge clears');
+    assert.equal(
+      leakBadge('Ledger.fs', SHAPES.order.line),
+      undefined,
+      'the old Order badge clears',
+    );
     const resetSnap = await uiSnapshot(bloomSnap);
     assert.ok(resetSnap.currentMemory < bloomSnap.currentMemory, 'the heap shrank');
     assertSitesCoherent(resetSnap);
@@ -304,7 +308,11 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
     const first = await uiSnapshot();
     const wire = await snapshotSession(target.pid);
     assertAnchored(first, SHAPES.audit, 400);
-    assert.equal(handlerSite(first).count, count(queued, 'handlers'), 'all retained handlers are counted');
+    assert.equal(
+      handlerSite(first).count,
+      count(queued, 'handlers'),
+      'all retained handlers are counted',
+    );
     assertSitesCoherent(first);
     assertTimelineCoherent(first);
     assertPaletteDiscipline();
@@ -408,7 +416,11 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
     const sixth = await uiSnapshot(fifth);
     assertAnchored(sixth, SHAPES.order, 400);
     assert.equal(count(released, 'snapshots'), 2, 'history still retains the first 400 orders');
-    assert.equal(handlerSite(sixth).count, count(released, 'handlers'), 'the closure leak survives');
+    assert.equal(
+      handlerSite(sixth).count,
+      count(released, 'handlers'),
+      'the closure leak survives',
+    );
     assertAnchored(sixth, SHAPES.quote, 800);
     assert.ok(sixth.currentMemory <= fifth.currentMemory, 'releasing orders shrank the heap');
     assertNoPhantomMemoryPaint(sixth);
@@ -420,7 +432,10 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
     // Only dropping history too makes the Orders unreachable ([PROF-DOTNET-HEAP-MARK]).
     await command(target, 'release all');
     const unrooted = await uiSnapshot(sixth);
-    assert.equal(unrooted.topAllocations.some((site) => site.typeName === SHAPES.order.type), false);
+    assert.equal(
+      unrooted.topAllocations.some((site) => site.typeName === SHAPES.order.type),
+      false,
+    );
     assertAnchored(unrooted, SHAPES.quote, 800);
 
     // ── Interaction 8: stop.
