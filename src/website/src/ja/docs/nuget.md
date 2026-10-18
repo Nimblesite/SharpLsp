@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 8
 ---
 
-![NuGet パッケージブラウザー — Browse タブ](/assets/screenshots/vscode-nuget-browse.png)
+<img src="/assets/screenshots/docs/nuget-browse.webp" alt="F# プロジェクト FsStorefront で開いた SharpLsp の NuGet ブラウザー。nuget.org のパッケージが並ぶ" width="2400" height="1500">
 
 # NuGet パッケージマネージャー
 

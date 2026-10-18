@@ -9,7 +9,8 @@ const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** Every shoot's working files, gitignored: out/<film>/. */
 export const out = path.join(tool, 'out');
 export const videos = path.resolve(tool, '../../src/assets/videos');
-export const shots = path.resolve(tool, '../../src/assets/screenshots/profiler');
+/** The site's stills: a film publishes into its own folder here, `profiler` unless it names another. */
+export const shots = path.resolve(tool, '../../src/assets/screenshots');
 
 /** H.264 for reach: every site video has an MP4. */
 export const H264 = ['-c:v', 'libx264', '-preset', 'veryslow', '-crf', '26', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an'];
@@ -47,10 +48,11 @@ export function poster(video, at, name) {
   webp(frame, path.join(videos, `${name}-poster.webp`), 1920);
 }
 
-/** Every PNG still under `dir`, as the site's 2400px WebP of the same name. */
-export function publishStills(dir) {
-  fs.mkdirSync(shots, { recursive: true });
+/** Every PNG still under `dir`, as the site's 2400px WebP of the same name in `screenshots/<folder>`. */
+export function publishStills(dir, folder = 'profiler') {
+  const target = path.join(shots, folder);
+  fs.mkdirSync(target, { recursive: true });
   for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.png'))) {
-    webp(path.join(dir, file), path.join(shots, file.replace(/\.png$/, '.webp')), 2400);
+    webp(path.join(dir, file), path.join(target, file.replace(/\.png$/, '.webp')), 2400);
   }
 }

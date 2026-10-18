@@ -51,12 +51,13 @@ const showCaption = (page, shown) =>
   );
 
 /**
- * A clean frame `<dir>/<name>.png`: no hover, and the step caption and pointer
- * hidden only for the instant of the shot (Do Not Disturb keeps toasts off screen).
+ * A clean frame `<dir>/<name>.png`: the step caption and pointer hidden only for
+ * the instant of the shot (Do Not Disturb keeps toasts off screen), and the
+ * mouse parked first, so no hover shows, unless `hovering` keeps the one open.
  */
-export async function still(page, dir, name) {
+export async function still(page, dir, name, { hovering = false } = {}) {
   fs.mkdirSync(dir, { recursive: true });
-  await page.mouse.move(PARK.x, PARK.y);
+  if (!hovering) await page.mouse.move(PARK.x, PARK.y);
   await sleep(700);
   await showCaption(page, false);
   await page.screenshot({ path: path.join(dir, `${name}.png`) });
@@ -64,4 +65,4 @@ export async function still(page, dir, name) {
 }
 
 /** A walkthrough's still, into the film's own stills folder; published as `<name>.webp`. */
-export const snap = (shot, name) => still(shot.page, shot.stills, name);
+export const snap = (shot, name, options) => still(shot.page, shot.stills, name, options);

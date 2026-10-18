@@ -8,7 +8,7 @@ eleventyNavigation:
 
 # Configuration
 
-![SharpLsp workspace configuration](/assets/screenshots/vscode-configuration-page.png)
+<img src="/assets/screenshots/docs/configuration.webp" alt="sharplsp.toml open beside the Shop solution, with its server, csharp, fsharp, diagnostics and analyzers sections" width="2400" height="1500">
 
 SharpLsp has two configuration surfaces:
 

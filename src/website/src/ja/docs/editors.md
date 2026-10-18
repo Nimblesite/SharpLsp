@@ -9,7 +9,7 @@ eleventyNavigation:
 
 # エディター設定
 
-![SharpLsp のエディター対応](/assets/screenshots/vscode-editors-page.png)
+<img src="/assets/screenshots/docs/editors.webp" alt="SharpLsp で絞り込んだ VS Code のコマンドパレット。拡張機能の NuGet、ビルド、F# Interactive、デバッグ、プロファイラーのコマンドが並ぶ" width="2400" height="1500">
 
 SharpLsp はプロトコル層ではエディターに依存しません。現時点でサポートされ、パッケージとして提供されているクライアントは VS Code です。その他の統合は開発中です。
 

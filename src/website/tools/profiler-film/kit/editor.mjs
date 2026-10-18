@@ -54,8 +54,10 @@ const FILM_SETTINGS = {
   'window.commandCenter': true,
   'window.restoreWindows': 'none',
   'window.title': '${rootName}',
-  // Context menus drawn in the workbench, where the screencast sees them; a native menu never reaches a frame.
+  // Context menus and dialogs drawn in the workbench, where the screencast sees them and a film can
+  // answer them; a native menu or save dialog never reaches a frame.
   'window.menuStyle': 'custom',
+  'window.dialogStyle': 'custom',
   'editor.fontSize': 15,
   'editor.lineHeight': 24,
   'editor.minimap.enabled': false,

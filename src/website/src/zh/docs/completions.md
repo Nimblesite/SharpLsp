@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 4
 ---
 
-![VS Code 中的代码补全](/assets/screenshots/vscode-completions-page.png)
+<img src="/assets/screenshots/docs/completions.webp" alt="Checkout.fs 中的 F# 补全：basket |> List.min，F# Compiler Service 提供 min 和 minBy" width="2400" height="1500">
 
 # 代码补全
 

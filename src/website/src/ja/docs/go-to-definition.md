@@ -5,7 +5,7 @@ lang: ja
 eleventyExcludeFromCollections: true
 ---
 
-![VS Code での定義へ移動](/assets/screenshots/vscode-go-to-definition-page.png)
+<img src="/assets/screenshots/docs/navigation.webp" alt="CheckoutPipeline.cs の Product レコードに対するすべての参照の検索。ピークウィンドウにすべての使用箇所が並ぶ" width="2400" height="1500">
 
 # ナビゲーション
 

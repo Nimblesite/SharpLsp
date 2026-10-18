@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 9
 ---
 
-![VS Code 中的 SharpLsp 解决方案资源管理器](/assets/screenshots/solution-explorer.png)
+<img src="/assets/screenshots/docs/context-menus.webp" alt="C# 项目上的解决方案资源管理器上下文菜单：生成、清理、重新生成、打开项目文件、不调试运行、调试程序、浏览 NuGet 包、删除未使用的包和复制名称" width="2400" height="1500">
 
 # 上下文菜单
 

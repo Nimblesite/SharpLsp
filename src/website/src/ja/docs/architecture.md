@@ -9,7 +9,7 @@ eleventyNavigation:
 
 # アーキテクチャ
 
-![VS Code で表示した SharpLsp のアーキテクチャ](/assets/screenshots/vscode-architecture-page.png)
+<img src="/assets/screenshots/docs/architecture.webp" alt="C# のホバーを開いた VS Code の SharpLsp。ホバーのリクエストで絞り込んだ SharpLsp のログに、F# (FCS) サイドカーと C# (Roslyn) サイドカーへのリクエストが並ぶ" width="2400" height="1500">
 
 SharpLsp は、エディタープロトコルの処理と、コンパイラーに基づくセマンティック解析を分離しています。
 

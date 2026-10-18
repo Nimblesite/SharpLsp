@@ -110,8 +110,8 @@ SharpLsp で .NET ワークスペースを開いたとき最初に目にする�
 これは聞こえるよりも重要です。Visual Studio のソリューションエクスプローラーは、2002 年以来 .NET プロジェクトの心的モデルとなってきました。これは .NET 開発者がコードを考える方法、つまり「フォルダー内のファイル」ではなく「ソリューション内のプロジェクト内の名前空間内の型」を表しています。Windows の Visual Studio と、macOS や Linux のあらゆるツールを行き来するシニアエンジニアは、このモデルの喪失を強く感じます。ファイルツリーベースの代替はすべてコンテキストスイッチを強います。SharpLsp はそのコンテキストスイッチを拒否します。ソリューション階層が主要なナビゲーション面であり、MSBuild から直接導出され、編集中も同期され続けます。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/solution-explorer.png" alt="VS Code 上で MyApp.sln のプロジェクトと名前空間ツリーを表示する SharpLsp のソリューションエクスプローラー">
-  <figcaption>実際の .sln ファイルを完全なプロジェクトと型の階層で表示するソリューションエクスプローラー。</figcaption>
+  <img src="/assets/screenshots/docs/solution-explorer.webp" alt="VS Code の SharpLsp ソリューションエクスプローラー。Shop.slnx の F# と C# のプロジェクト、名前空間、型を表示" width="2400" height="1500">
+  <figcaption>実際のソリューションを完全なプロジェクトと型の階層で表示するソリューションエクスプローラー。F# と C# が並びます。</figcaption>
 </figure>
 
 ツリーは型レベルの構造も反映します。名前空間を展開すると型が表示され、型を展開するとメンバーが表示されます。各ノードにはインラインで参照数が表示され、何が使われていて何がデッドコードになり得るかを継続的なアンビエントシグナルとして示します。気になるシンボルごとに明示的な「すべての参照を検索」を実行する必要はありません。ディスク上のソリューションが変わったとき、たとえば新しいファイルが追加されたり、プロジェクト参照が変更されたりしたときも、再起動なしにツリーが更新されます。
@@ -123,7 +123,7 @@ SharpLsp で .NET ワークスペースを開いたとき最初に目にする�
 折りたたみ範囲は、コンパイラーサイドカーへのラウンドトリップなしに、Rust ホスト内で完全に計算されます。つまり、ワークスペースのロードが完了しているか、コンパイラーがバックグラウンドビルドの最中であるかを問わず、1 ミリ秒未満で解決されます。折りたたみは構造情報であってセマンティック情報ではありません。SharpLsp はそれをそうしたものとして扱い、最速のハンドラーへルーティングします。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/code-folding.png" alt="名前空間が折りたたまれ、ひと画面に 60 行のコードが見えているコード折りたたみの様子">
+  <img src="/assets/screenshots/docs/code-folding.webp" alt="CheckoutPipeline クラスを宣言行まで折りたたんだコード折りたたみ" width="2400" height="1500">
   <figcaption>tree-sitter による高速なコード折りたたみ — サブミリ秒で、コンパイラー不要。</figcaption>
 </figure>
 
@@ -136,7 +136,7 @@ SharpLsp で .NET ワークスペースを開いたとき最初に目にする�
 まだインポートされていない型名を入力すると、SharpLsp は自動インポート提案とともに表示します。`.` を入力すると、すべてのインポート済み名前空間からの継承メンバーと拡張メソッドを含む完全なメンバーリストが得られます。LINQ チェーンの中にいるときは、補完コンテキストが要素型を意識し、それに応じてフィルタリングします。これが Roslyn が知っていることであり、SharpLsp はそれをすべてそのまま公開します。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-completions-page.png" alt="Add や Count などのメンバーを完全なセマンティックコンテキスト付きで表示する SharpLsp の補完リスト">
+  <img src="/assets/screenshots/docs/completions-csharp.webp" alt="List<Product> に対して Min と MinBy を提示する SharpLsp の C# 補完リスト" width="2400" height="1500">
   <figcaption>Visual Studio を支える同じエンジンによる、Roslyn の CompletionService によるセマンティック補完。</figcaption>
 </figure>
 
@@ -147,8 +147,8 @@ SharpLsp で .NET ワークスペースを開いたとき最初に目にする�
 ホバーはメソッドや型の完全なシグネチャを、XML ドキュメント（パラメーター、戻り値の説明、備考、例外、サンプル）とともに表示します。これはソース内の XML ドキュメントコメントから、あるいはサードパーティ API にホバーした際は NuGet パッケージに埋め込まれたドキュメントからレンダリングされます。Roslyn の `DocumentationCommentCompiler` は、基底クラスやインターフェース実装からの継承ドキュメントを含めて、これらすべてを公開します。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-hover-page.png" alt="Factorial メソッドのシグネチャを完全な XML ドキュメントとパラメーター説明付きで表示するホバーツールチップ">
-  <figcaption>パラメーターと戻り値のドキュメントを伴う XML ドキュメントコメントをレンダリングするホバー。</figcaption>
+  <img src="/assets/screenshots/docs/hover.webp" alt="Catalog.Generate のシグネチャーを XML ドキュメントとパラメーター説明付きで表示するホバー。隣にプロセス ビュー" width="2400" height="1500">
+  <figcaption>パラメーターのドキュメントを伴う XML ドキュメントコメントをレンダリングするホバー。</figcaption>
 </figure>
 
 サイドバーに表示される Profiler パネルは飾りではありません。SharpLsp はマシン上で実行中のすべての .NET プロセスを表示するため、何が動いているのかを常に把握できます。パフォーマンス低下を追跡しているとき、あるいはサービスが本当に停止したことを確認したいときに、このアンビエントなプロセス一覧はすぐに役立ちます。Activity Monitor を開いたり、`ps aux | grep dotnet` を実行したりする必要はありません。
@@ -164,8 +164,8 @@ F# にとって、ホバーは C# よりも構造的に重要です。F# コー�
 これはテキストの grep でもインデックスの検索でもありません。Roslyn のシンボル解決です。Visual Studio が内部で使用しているのと同じ仕組みです。Roslyn のワークスペースモデルがそれらを考慮しているため、部分クラス、ソースジェネレーター、ネスト型を正しく処理します。ソースジェネレーターで定義されたシンボルに対して定義へ移動を押すと、SharpLsp はジェネレーター実装ではなく、生成されたソースに移動します。BCL の型へ移動するときは、C# サイドカーが ICSharpCode.Decompiler を使ってメタデータを逆コンパイルし、再構築されたソースコードを返します。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-go-to-definition-page.png" alt="メソッド実装にナビゲートし、完全な型パスを表示するパンくずを伴う定義へ移動">
-  <figcaption>多階層の型階層をたどって移動する定義へ移動。</figcaption>
+  <img src="/assets/screenshots/docs/definition.webp" alt="CheckoutPipeline.Checkout に移動した定義へ移動。パンくずに完全な型パスが表示される" width="2400" height="1500">
+  <figcaption>呼び出しから別のファイルにある宣言へジャンプする定義へ移動。</figcaption>
 </figure>
 
 逆コンパイルされたメタデータへの定義へ移動、つまり `System.Collections.Generic.List<T>` に入って実装を見るという機能は、歴史的に Visual Studio と Rider のみで利用できました。これらのツールにお金を払う価値があった機能のひとつです。なぜなら、不慣れなコードを読みながら docs.microsoft.com のブラウザータブを開いておく必要がなくなるからです。SharpLsp は、このバイナリが動くあらゆるエディターでこれを実現します。
@@ -173,8 +173,8 @@ F# にとって、ホバーは C# よりも構造的に重要です。F# コー�
 ソリューションエクスプローラーは、同じ構造的理解を反映します。深くネストした型 — 内部クラス、ネストされた列挙型、async メソッドが生成するコンパイラー生成のステートマシン型 — はすべて階層内の正しい位置に表示され、参照数がインラインで示されます。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/nested-classes.png" alt="ソリューションエクスプローラーに参照数付きで表示される Outer、Inner、AnotherInner のネストクラス">
-  <figcaption>ソリューションエクスプローラーでの参照数とネスト型サポート。</figcaption>
+  <img src="/assets/screenshots/docs/type-members.webp" alt="CustomerSession 型をメンバーまで展開したソリューションエクスプローラー" width="2400" height="1500">
+  <figcaption>ソリューションエクスプローラーでは、型をメンバーまで展開できます。</figcaption>
 </figure>
 
 ### 診断
@@ -184,8 +184,8 @@ F# にとって、ホバーは C# よりも構造的に重要です。F# コー�
 SharpLsp は [LSP 3.17 のプル診断モデル](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_diagnostic) を採用しています。これは、診断はエディターが要求したときにのみ計算されることを意味します。プロジェクトグラフが不完全でパッケージがまだ復元されていないワークスペースのロード中に、推測でプッシュされることは決してありません。これは、長年にわたり VS Code 上の C# ツールを悩ませてきた「ファントムエラー」問題を解決します。OmniSharp で大きなソリューションを開き、パッケージがロードされるにつれ何百もの CS0246 エラーが現れては消えるのを見たことがある人なら、なぜこれが重要かを正確にご存知でしょう。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-diagnostics-page.png" alt="ファイルと行参照付きで本物の Roslyn コンパイラーエラーを表示する診断パネル">
-  <figcaption>本物の Roslyn 診断を、必要なときに引き出し、早すぎるプッシュは行いません。</figcaption>
+  <img src="/assets/screenshots/docs/diagnostics.webp" alt="Roslyn の CS0029 エラーと F# の型エラーを、それぞれファイルと行付きで表示する問題パネル" width="2400" height="1500">
+  <figcaption>Roslyn と F# Compiler Service による本物のコンパイラー診断。未保存のコードにも。</figcaption>
 </figure>
 
 NuGet 復元ゲートは、`MSBuildWorkspace` がソリューションを開く前に実行されます。SharpLsp は欠落したパッケージ復元状態を検出し、`dotnet restore` を自動的に実行し、その後にのみセマンティックリクエストの提供を開始します。初回オープン体験は、即座に空の状態を返すよりわずかに長くかかります。トレードオフは、そのゲートを通過した後にエディターが受け取るすべての診断が本物であることです。ワークスペースのロードが完了していないという理由だけで存在する赤い波線はありません。これは、.NET 開発者が期待し、歴史的には Visual Studio や Rider でのみ得られていた挙動です。これらのツールでは、ビルドシステムとの統合により、IDE が解析を始める前にパッケージが揃っていることが保証されます。
@@ -197,7 +197,7 @@ NuGet 復元ゲートは、`MSBuildWorkspace` がソリューションを開く�
 これは、サードパーティの Roslyn アナライザーが自動的に動作することも意味します。プロジェクトが Roslyn アナライザーの NuGet パッケージ — StyleCop、Roslynator、ErrorProne.NET — を参照していれば、その診断ルールとコード修正は追加の設定なしに SharpLsp のアクションメニューに表示されます。アナライザーパイプラインは Roslyn がコンパイル中に実行するのと同じものです。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-refactoring.png" alt="未使用変数の削除、修正、説明オプションを表示するクイックフィックスの電球">
+  <img src="/assets/screenshots/docs/refactoring-csharp.webp" alt="まだ存在しないメソッドの呼び出しに対して「メソッド 'Receipt' を生成する」を提示するクイックフィックスメニュー" width="2400" height="1500">
   <figcaption>エディターのアクションメニューに直接表示される、Roslyn によるクイックフィックス。</figcaption>
 </figure>
 
@@ -210,7 +210,7 @@ NuGet 復元ゲートは、`MSBuildWorkspace` がソリューションを開く�
 ビルド出力は専用パネルに表示され、LSP ログとは混ざりません。ビルドからのエラーは、Visual Studio のエラーリストと同じように、エディター内のソース位置にリンクして戻ります。コンテキストメニューからプロジェクト参照を追加すると、`MSBuildWorkspace` が新しい依存関係を反映するように更新され、ソリューションエクスプローラーのツリーは完全な再起動を要さずにその参照を表示するように更新されます。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-context-menu-open-project.png" alt="ビルド、リビルド、クリーン、NuGet パッケージのブラウズ、プロジェクト参照の追加オプションを表示するプロジェクトコンテキストメニュー">
+  <img src="/assets/screenshots/docs/context-menus.webp" alt="ビルド、クリーン、リビルド、プロジェクト ファイルを開く、NuGet パッケージの参照、未使用パッケージの削除を表示するプロジェクトのコンテキストメニュー" width="2400" height="1500">
   <figcaption>ソリューションエクスプローラーのコンテキストメニューから直接実行できるプロジェクトレベルのアクション。</figcaption>
 </figure>
 
@@ -221,21 +221,21 @@ NuGet 復元ゲートは、`MSBuildWorkspace` がソリューションを開く�
 NuGet パネルは完全なパッケージブラウザーです。nuget.org（または `nuget.config` 経由で構成された任意のパッケージソース）を検索し、利用可能なバージョンをブラウズし、現在インストールされているものを確認し、パッケージメタデータを点検できます。エディターを離れることもターミナルを開くこともなく、すべて行えます。検索結果は NuGet v3 API からライブで取得され、ダウンロード数、ライセンス識別子、バージョンリスト付きでパッケージを返します。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-search.png" alt="ダウンロード数付きで Serilog パッケージの検索結果を表示する NuGet ブラウザー">
+  <img src="/assets/screenshots/docs/nuget-browse.webp" alt="nuget.org のパッケージをダウンロード数付きでライブ表示する NuGet ブラウザー" width="2400" height="1500">
   <figcaption>nuget.org からライブで結果を取得する NuGet パッケージ検索。</figcaption>
 </figure>
 
 パッケージ管理は、Visual Studio 以外のエディターを使う .NET 開発者にとって常に摩擦点でした。VS Code のワークフローは通常、ターミナル（`dotnet add package Serilog`）を使うか、`.csproj` を手で編集して復元を待つかのどちらかです。どちらも、即時フィードバック付きの検索＆クリック UI ほど速くはありません。SharpLsp はその UI をすべてのエディターに届けます。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-installed.png" alt="Newtonsoft.Json を説明とバージョン付きで表示する NuGet インストール済みパッケージパネル">
+  <img src="/assets/screenshots/docs/nuget-installed.webp" alt="F# プロジェクト FsStorefront に FsToolkit.ErrorHandling 5.2.0 を表示する NuGet のインストール済みタブ" width="2400" height="1500">
   <figcaption>アクティブプロジェクトに含まれているものを表示するインストール済みパッケージタブ。</figcaption>
 </figure>
 
 インストール済みパッケージビューのデータは MSBuild プロジェクトグラフ、具体的には NuGet 復元グラフを通じて解決された `PackageReference` 項目から派生しています。つまり、UI 側のキャッシュではなく、プロジェクトファイルの実際の状態を反映します。ターミナルからパッケージを追加した後にパネルを開けば、新しいパッケージはそこにあります。`.csproj` を直接編集すれば、次回の更新時にパネルがその変更を反映します。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-package-details.png" alt="Newtonsoft.Json のライセンス、プロジェクト URL、バージョンを表示する NuGet パッケージ詳細パネル">
+  <img src="/assets/screenshots/docs/nuget-package.webp" alt="FsToolkit.ErrorHandling の NuGet パッケージ詳細パネル。ライセンス、プロジェクト URL、バージョン、インストール" width="2400" height="1500">
   <figcaption>ライセンス、メタデータ、インストール／削除アクション付きのパッケージ詳細。</figcaption>
 </figure>
 

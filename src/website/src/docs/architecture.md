@@ -8,7 +8,7 @@ eleventyNavigation:
 
 # Architecture
 
-![SharpLsp architecture in VS Code](/assets/screenshots/vscode-architecture-page.png)
+<img src="/assets/screenshots/docs/architecture.webp" alt="SharpLsp in VS Code with a C# hover open and the SharpLsp log filtered to hover requests: one went to the F# (FCS) sidecar, one to the C# (Roslyn) sidecar" width="2400" height="1500">
 
 SharpLsp separates editor protocol handling from compiler-backed semantic analysis.
 

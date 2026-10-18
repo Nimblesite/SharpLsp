@@ -5,7 +5,7 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-![VS Code 中的诊断](/assets/screenshots/vscode-diagnostics-page.png)
+<img src="/assets/screenshots/docs/diagnostics.webp" alt="问题面板：来自未保存编辑的 F# Compiler Service F# 类型错误和 Roslyn C# CS0029 错误" width="2400" height="1500">
 
 # 诊断
 

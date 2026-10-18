@@ -5,7 +5,7 @@ lang: ja
 eleventyExcludeFromCollections: true
 ---
 
-![VS Code での診断](/assets/screenshots/vscode-diagnostics-page.png)
+<img src="/assets/screenshots/docs/diagnostics.webp" alt="問題パネル：未保存の編集から、F# Compiler Service による F# の型エラーと、Roslyn による C# の CS0029 エラー" width="2400" height="1500">
 
 # 診断
 

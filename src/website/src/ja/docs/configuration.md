@@ -9,7 +9,7 @@ eleventyNavigation:
 
 # 設定
 
-![VS Code での SharpLsp ワークスペース設定](/assets/screenshots/vscode-configuration-page.png)
+<img src="/assets/screenshots/docs/configuration.webp" alt="Shop ソリューションの隣で開いた sharplsp.toml。server、csharp、fsharp、diagnostics、analyzers の各セクション" width="2400" height="1500">
 
 SharpLsp には 2 つの設定方法があります。
 

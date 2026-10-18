@@ -4,7 +4,7 @@ title: Go to Definition
 eleventyExcludeFromCollections: true
 ---
 
-![Go to Definition in VS Code](/assets/screenshots/vscode-go-to-definition-page.png)
+<img src="/assets/screenshots/docs/navigation.webp" alt="Find All References on the Product record in CheckoutPipeline.cs, every use listed in a peek window" width="2400" height="1500">
 
 # Navigation
 

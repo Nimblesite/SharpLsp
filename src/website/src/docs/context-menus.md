@@ -6,7 +6,7 @@ eleventyNavigation:
   order: 9
 ---
 
-![SharpLsp Solution Explorer in VS Code](/assets/screenshots/solution-explorer.png)
+<img src="/assets/screenshots/docs/context-menus.webp" alt="The Solution Explorer context menu on a C# project: Build, Clean, Rebuild, Open Project File, Run Without Debugging, Debug Program, Browse NuGet Packages, Remove Unused Packages and Copy Name" width="2400" height="1500">
 
 # Context Menus
 

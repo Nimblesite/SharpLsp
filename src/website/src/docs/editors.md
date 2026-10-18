@@ -8,7 +8,7 @@ eleventyNavigation:
 
 # Editor Setup
 
-![SharpLsp editor support](/assets/screenshots/vscode-editors-page.png)
+<img src="/assets/screenshots/docs/editors.webp" alt="The VS Code Command Palette filtered to SharpLsp, listing the extension's NuGet, build, F# Interactive, debugging and profiler commands" width="2400" height="1500">
 
 SharpLsp is editor-agnostic at the protocol layer. VS Code and its Open VSX forks are the supported, packaged clients today; a Rider plugin and standalone server archives ship with every release, and the other integrations remain development work.
 

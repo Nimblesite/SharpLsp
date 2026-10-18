@@ -5,7 +5,7 @@ lang: ja
 eleventyExcludeFromCollections: true
 ---
 
-![VS Code でのホバー](/assets/screenshots/vscode-hover-page.png)
+<img src="/assets/screenshots/docs/hover.webp" alt="Catalog.Generate に対する C# のホバー。シグネチャーと、整形された XML ドキュメント" width="2400" height="1500">
 
 # ホバーとクイック情報
 

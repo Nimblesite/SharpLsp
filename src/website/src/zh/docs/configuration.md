@@ -9,7 +9,7 @@ eleventyNavigation:
 
 # 配置
 
-![SharpLsp 工作区配置](/assets/screenshots/vscode-configuration-page.png)
+<img src="/assets/screenshots/docs/configuration.webp" alt="在 Shop 解决方案旁打开的 sharplsp.toml，包含 server、csharp、fsharp、diagnostics 和 analyzers 各节" width="2400" height="1500">
 
 SharpLsp 有两类配置入口：
 

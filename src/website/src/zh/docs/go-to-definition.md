@@ -5,7 +5,7 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-![VS Code 中的跳转到定义](/assets/screenshots/vscode-go-to-definition-page.png)
+<img src="/assets/screenshots/docs/navigation.webp" alt="在 CheckoutPipeline.cs 中对 Product 记录查找所有引用，速览窗口列出了每一处使用" width="2400" height="1500">
 
 # 导航
 

@@ -28,3 +28,18 @@ export const videoObjects = (page) =>
   page.locator('script[type="application/ld+json"]').evaluateAll((scripts) =>
     scripts.map((script) => JSON.parse(script.textContent)).filter((data) => data['@type'] === 'VideoObject'),
   );
+
+const STILL_WIDTH = 2400;
+
+/** Every still in `stills` loads as the 2400px render with real alt text. [WEB-DESIGN-MEDIA] */
+export async function expectStills(stills) {
+  for (const still of await stills.all()) {
+    await still.scrollIntoViewIfNeeded();
+    const rendered = await still.evaluate((img) => ({ complete: img.complete, width: img.naturalWidth, alt: img.alt }));
+    expect(rendered.complete, 'still finishes loading').toBe(true);
+    expect(rendered.width, 'still is the 2400px render').toBe(STILL_WIDTH);
+    // Characters, not words: a CJK description is dense, so the floor is low but real.
+    expect(rendered.alt.length, 'still has meaningful alt text').toBeGreaterThanOrEqual(8);
+    expect(rendered.alt, 'alt text describes the shot, not the file').not.toContain('.webp');
+  }
+}

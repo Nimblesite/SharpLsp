@@ -110,8 +110,8 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 这件事比听起来更重要。Visual Studio 的解决方案资源管理器自 2002 年以来一直是 .NET 项目的心智模型。它代表了 .NET 开发者思考代码的方式——不是文件夹中的文件，而是解决方案中的项目中的命名空间中的类型。在 Windows 上的 Visual Studio 与 macOS 或 Linux 上其他工具之间切换的资深工程师，能切身感受到失去这种模型的代价。每一个基于文件树的替代方案都会强迫一次心智切换。SharpLsp 拒绝这种切换。解决方案层级是首要导航界面，直接源自 MSBuild，并在你编辑时保持同步。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/solution-explorer.png" alt="SharpLsp 解决方案资源管理器在 VS Code 中显示 MyApp.sln 的项目和命名空间树">
-  <figcaption>解决方案资源管理器渲染真实的 .sln 文件，并展开完整的项目和类型层级。</figcaption>
+  <img src="/assets/screenshots/docs/solution-explorer.webp" alt="VS Code 中的 SharpLsp 解决方案资源管理器，显示 Shop.slnx 的 F# 与 C# 项目、命名空间和类型" width="2400" height="1500">
+  <figcaption>解决方案资源管理器渲染真实的解决方案，展开完整的项目和类型层级，F# 与 C# 并列。</figcaption>
 </figure>
 
 这棵树还反映类型级结构。命名空间展开显示类型。类型展开显示成员。每个节点旁内联显示引用计数，让你随时获得使用情况和潜在死代码的环境信号——而不需要对每一个你想了解的符号显式地运行一次 Find All References。当解决方案在磁盘上发生变化——新增文件、修改项目引用——树会无需重启即可更新。
@@ -123,7 +123,7 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 折叠范围完全在 Rust 宿主中计算，不涉及任何到编译器 sidecar 的往返。这意味着无论工作区是否完成加载，编译器是否在后台构建中，折叠都能在 1 毫秒内解析。折叠是结构信息，不是语义信息——SharpLsp 据此处理它，把请求路由到最快的处理器上。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/code-folding.png" alt="代码折叠显示折叠后的命名空间，一个视图中可见 60 行代码">
+  <img src="/assets/screenshots/docs/code-folding.webp" alt="代码折叠：CheckoutPipeline 类折叠到其声明行" width="2400" height="1500">
   <figcaption>由 tree-sitter 驱动的代码折叠——亚毫秒级，无需编译器。</figcaption>
 </figure>
 
@@ -136,7 +136,7 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 当你输入一个尚未导入的类型名时，SharpLsp 会带着自动导入建议把它呈现出来。当你输入 `.` 时，你会得到完整成员列表，包含继承成员和来自所有已导入命名空间的扩展方法。当你处于 LINQ 链中时，补全上下文能感知元素类型并相应过滤。这就是 Roslyn 所知道的——SharpLsp 把它直接暴露出来。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-completions-page.png" alt="SharpLsp 补全列表显示 Add、Count 和其他带完整语义上下文的成员">
+  <img src="/assets/screenshots/docs/completions-csharp.webp" alt="SharpLsp C# 补全列表，在 List<Product> 上提供 Min 和 MinBy" width="2400" height="1500">
   <figcaption>由 Roslyn CompletionService 驱动的语义补全——与 Visual Studio 背后使用的是同一套引擎。</figcaption>
 </figure>
 
@@ -147,8 +147,8 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 悬停显示完整的方法或类型签名，并附上其 XML 文档——参数、返回值描述、备注、异常和示例。这些内容由源代码中的 XML 文档注释渲染，或者在悬停第三方 API 时由 NuGet 包中嵌入的文档渲染。Roslyn 的 `DocumentationCommentCompiler` 暴露了所有这些信息，包括来自基类和接口实现的继承文档。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-hover-page.png" alt="悬停提示显示 Factorial 方法签名，以及完整 XML 文档和参数说明">
-  <figcaption>悬停渲染 XML 文档注释，包括参数和返回值文档。</figcaption>
+  <img src="/assets/screenshots/docs/hover.webp" alt="悬停提示显示 Catalog.Generate 的签名、XML 文档和参数说明，旁边是进程视图" width="2400" height="1500">
+  <figcaption>悬停渲染 XML 文档注释，包括参数文档。</figcaption>
 </figure>
 
 侧边栏中可见的 Profiler 面板并非可有可无的装饰。SharpLsp 显示机器上所有正在运行的 .NET 进程，让你随时知道当前正在执行什么。当你在追查性能回归或确认某个服务确实已经停止时，这种环境进程列表立刻派上用场——你不必打开 Activity Monitor 或运行 `ps aux | grep dotnet`。
@@ -164,8 +164,8 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 这不是文本 grep，也不是索引查询。这是 Roslyn 的符号解析——与 Visual Studio 内部使用的是同一机制。它能正确处理部分类、source generator 和嵌套类型，因为 Roslyn 的工作区模型对它们都有考虑。当你对一个由 source generator 定义的符号按下跳转到定义时，SharpLsp 导航到生成的源代码——而不是生成器实现。当你导航到 BCL 类型时，C# sidecar 会用 ICSharpCode.Decompiler 反编译元数据并返回重建的源代码。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-go-to-definition-page.png" alt="跳转到定义导航到方法实现，面包屑显示完整类型路径">
-  <figcaption>跳转到定义可以穿过多层类型层级。</figcaption>
+  <img src="/assets/screenshots/docs/definition.webp" alt="跳转到定义落在 CheckoutPipeline.Checkout，面包屑显示完整类型路径" width="2400" height="1500">
+  <figcaption>跳转到定义从调用跳到另一个文件中的声明。</figcaption>
 </figure>
 
 跳转到反编译元数据中的定义——例如导航进入 `System.Collections.Generic.List<T>` 并查看其实现——历来只有 Visual Studio 和 Rider 才有。它正是让那些工具值得付费的特性之一，因为它免去了你阅读陌生代码时还得开着 docs.microsoft.com 浏览器标签的麻烦。SharpLsp 把这一能力带到每一款运行该二进制的编辑器中。
@@ -173,8 +173,8 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 解决方案资源管理器反映了同样的结构理解。深度嵌套的类型——内部类、嵌套枚举、来自异步方法的编译器生成状态机类型——都会出现在层级中的正确位置，并内联显示引用计数。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/nested-classes.png" alt="解决方案资源管理器中的嵌套类，显示 Outer、Inner 和 AnotherInner 以及引用计数">
-  <figcaption>解决方案资源管理器中的引用计数和嵌套类型支持。</figcaption>
+  <img src="/assets/screenshots/docs/type-members.webp" alt="解决方案资源管理器中展开到成员的 CustomerSession 类型" width="2400" height="1500">
+  <figcaption>在解决方案资源管理器中，类型可以展开到其成员。</figcaption>
 </figure>
 
 ### 诊断
@@ -184,8 +184,8 @@ SharpLsp 不是承诺。它是已经能运行的软件。VS Code 扩展是第一
 SharpLsp 使用 [LSP 3.17 拉取式诊断模型](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_diagnostic)，这意味着诊断只在编辑器请求时计算。它们绝不会在工作区加载期间——项目图不完整、包尚未还原时——被推测式地推送出去。这解决了多年来困扰 VS Code 中 C# 工具的"幽灵错误"问题。任何打开过大型解决方案、看到 OmniSharp 弹出几百个 CS0246 错误又随包加载逐渐消失的人，都明白这件事的重要性。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-diagnostics-page.png" alt="诊断面板显示真实 Roslyn 编译器错误，并包含文件和行引用">
-  <figcaption>真实的 Roslyn 诊断，按需拉取，永远不会过早推送。</figcaption>
+  <img src="/assets/screenshots/docs/diagnostics.webp" alt="问题面板显示 Roslyn CS0029 错误和 F# 类型错误，各自带有文件和行号" width="2400" height="1500">
+  <figcaption>来自 Roslyn 和 F# Compiler Service 的真实编译器诊断，作用于未保存的代码。</figcaption>
 </figure>
 
 NuGet 还原门会在 `MSBuildWorkspace` 打开解决方案之前运行。SharpLsp 会检测包还原状态，如果缺失就自动运行 `dotnet restore`，然后才开始服务语义请求。首次打开的体验比立刻返回空状态稍慢，但每一个出现的诊断都是真实的——不会有那种仅仅因为工作区还没加载完就出现的红色波浪线。这是 .NET 开发者期望的行为，过去只有在 Visual Studio 或 Rider 中才能获得，因为它们的构建系统集成会确保 IDE 开始分析前包都已就位。
@@ -197,7 +197,7 @@ NuGet 还原门会在 `MSBuildWorkspace` 打开解决方案之前运行。SharpL
 这也意味着第三方 Roslyn 分析器自动生效。如果你的项目引用了 Roslyn 分析器 NuGet 包——StyleCop、Roslynator、ErrorProne.NET——它们的诊断规则和代码修复就会出现在 SharpLsp 的操作菜单中，无需额外配置。分析器管线就是 Roslyn 在编译期间运行的同一条管线。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-refactoring.png" alt="快速修复灯泡显示 Remove unused variable、Fix 和 Explain 选项">
+  <img src="/assets/screenshots/docs/refactoring-csharp.webp" alt="快速修复菜单为尚不存在的方法调用提供“生成方法 'Receipt'”" width="2400" height="1500">
   <figcaption>由 Roslyn 驱动的快速修复，直接呈现在编辑器操作菜单中。</figcaption>
 </figure>
 
@@ -210,7 +210,7 @@ NuGet 还原门会在 `MSBuildWorkspace` 打开解决方案之前运行。SharpL
 构建输出出现在专用面板中，不会与 LSP 日志混在一起。来自构建的错误像 Visual Studio 的错误列表那样链接回编辑器中的源位置。当你通过上下文菜单添加一个项目引用时，`MSBuildWorkspace` 会更新以反映新依赖，解决方案资源管理器树也会更新显示该引用，无需完全重启。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-context-menu-open-project.png" alt="项目上下文菜单显示 Build、Rebuild、Clean、Browse NuGet Packages、Add Project Reference 选项">
+  <img src="/assets/screenshots/docs/context-menus.webp" alt="项目上下文菜单显示生成、清理、重新生成、打开项目文件、浏览 NuGet 包和删除未使用的包" width="2400" height="1500">
   <figcaption>直接从解决方案资源管理器上下文菜单执行项目级操作。</figcaption>
 </figure>
 
@@ -221,21 +221,21 @@ NuGet 还原门会在 `MSBuildWorkspace` 打开解决方案之前运行。SharpL
 NuGet 面板是一个完整的包浏览器。搜索 nuget.org（或通过 `nuget.config` 配置的任何包源）、浏览可用版本、查看当前安装内容、检查包元数据——全部都不需要离开编辑器或打开终端。搜索结果实时来自 NuGet v3 API，返回包的下载次数、许可证标识符和版本列表。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-search.png" alt="NuGet 浏览器显示 Serilog 包搜索结果和下载次数">
+  <img src="/assets/screenshots/docs/nuget-browse.webp" alt="NuGet 浏览器实时列出 nuget.org 上的包及其下载次数" width="2400" height="1500">
   <figcaption>NuGet 包搜索从 nuget.org 拉取实时结果。</figcaption>
 </figure>
 
 包管理对 Visual Studio 之外的 .NET 开发者来说一直是个摩擦点。VS Code 的工作流通常要么使用终端（`dotnet add package Serilog`），要么手工编辑 `.csproj` 并等待还原。两者都不及一个搜索-点击 UI、立刻反馈来得快。SharpLsp 把这套 UI 带到每一款编辑器。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-installed.png" alt="NuGet 已安装包面板显示 Newtonsoft.Json 的描述和版本">
+  <img src="/assets/screenshots/docs/nuget-installed.webp" alt="NuGet 已安装标签页显示 F# 项目 FsStorefront 中的 FsToolkit.ErrorHandling 5.2.0" width="2400" height="1500">
   <figcaption>已安装包标签页显示当前活动项目中的内容。</figcaption>
 </figure>
 
 已安装包视图的数据来自 MSBuild 项目图——具体是通过 NuGet 还原图解析的 `PackageReference` 项。这意味着它反映的是项目文件的真实状态，而不是 UI 端缓存。如果你通过终端添加了一个包再打开面板，新包就在那里。如果你直接编辑 `.csproj`，面板会在下次刷新时反映该变化。
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-package-details.png" alt="Newtonsoft.Json 的 NuGet 包详情面板显示许可证、项目 URL 和版本">
+  <img src="/assets/screenshots/docs/nuget-package.webp" alt="FsToolkit.ErrorHandling 的 NuGet 包详情面板，显示许可证、项目 URL、版本和安装按钮" width="2400" height="1500">
   <figcaption>包详情包含许可证、元数据以及安装和移除操作。</figcaption>
 </figure>
 

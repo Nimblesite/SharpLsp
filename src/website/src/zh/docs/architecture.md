@@ -9,7 +9,7 @@ eleventyNavigation:
 
 # 架构
 
-![VS Code 中的 SharpLsp 架构](/assets/screenshots/vscode-architecture-page.png)
+<img src="/assets/screenshots/docs/architecture.webp" alt="VS Code 中打开了 C# 悬停的 SharpLsp，SharpLsp 日志按悬停请求过滤：一条发往 F# (FCS) sidecar，一条发往 C# (Roslyn) sidecar" width="2400" height="1500">
 
 SharpLsp 将编辑器协议处理与由编译器提供支持的语义分析分离开来。
 

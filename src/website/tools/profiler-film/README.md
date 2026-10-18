@@ -43,6 +43,7 @@ A shoot takes a few minutes and lands in `out/<film>/`, which is gitignored. Pub
 | `architecture` | `architecture` | Architecture |
 | `contributing` | `contributing` | Contributing |
 | `films/profiler/` | `profiler-film` | The home page: the one-minute composited film (`capture.mjs`, then `render.mjs`) |
+| `doc-stills` | (stills only) | Each feature page's still and the launch post's figures, in `screenshots/docs/` |
 
 Every film but `films/profiler/` is narrated. The Zed page has none: Zed is a native application, and filming it would mean recording the real desktop.
 
@@ -71,6 +72,8 @@ A scene is either a clip or a step off camera:
 
 - `{ clip, act, speed, retries }`: `act(shot)` is recorded in real time as `<clip>.mp4`. It plays back at `speed`, and the frame shows a speed badge whenever `speed` is above 1. `retries` shoots a failed take again. `scene(clip, step, caption, act, { speed, retries })` builds one with its numbered caption.
 - `{ offCamera }`: `offCamera(shot)` runs between clips and is never recorded. Use it for setup, rebuilds and stills.
+
+A film may also take stills (`snap(shot, name)`), published as `screenshots/<stillsFolder>/<name>.webp` (`profiler` unless the film names another folder). A film with no clips, like `doc-stills`, publishes only its stills.
 
 `shot` is `{ page, set, app, workspace, stills }`: the Playwright page, the recorder, the demo process, the staged workspace and the stills folder.
 
