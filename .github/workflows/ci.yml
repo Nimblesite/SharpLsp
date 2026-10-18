@@ -296,9 +296,9 @@ jobs:
   #
   # `always()` so it reports a real conclusion rather than inheriting a skip:
   # on a docs-only PR every upstream job skips and this passes; on a Dependabot
-  # PR the whole pipeline skips and this passes; any failure or cancellation
-  # anywhere upstream fails it, and so does a skipped build or test job when
-  # code changed. Either way the merge is blocked.
+  # PR the whole pipeline skips and this FAILS, since it ran nothing; any
+  # failure or cancellation anywhere upstream fails it, and so does a skipped
+  # build or test job when code changed. Either way the merge is blocked.
   ci:
     name: CI
     if: ${{ always() }}
@@ -337,6 +337,15 @@ jobs:
         shell: bash
         run: |-
           echo "::error::Code changed but a build or test job was skipped. Check its if: condition."
+          exit 1
+      # The whole pipeline skipped this Dependabot PR, so a pass would be a
+      # pass of nothing. Its bump reaches `main` only through the tested
+      # consolidation PR; the sweep retires this one. [DIST-CI-DEPENDABOT]
+      - name: Fail a Dependabot PR to main, which ran no job
+        if: ${{ github.actor == 'dependabot[bot]' }}
+        shell: bash
+        run: |-
+          echo "::error::Dependabot PRs run no CI. dependabot-automerge.yml sweeps this bump into dependabot-upgrades; it reaches main through the tested dependabot-upgrades -> main PR."
           exit 1
       - name: Report
         shell: bash

@@ -79,6 +79,20 @@ test("the terminal gate fails when code changed but the build or test phase did 
     assert.match(gate.run, /exit 1/);
 });
 
+// [DIST-CI-DEPENDABOT]: the whole pipeline skips a Dependabot PR, so a green CI
+// would be a pass of nothing. Every one CI sees targets `main`, where the only
+// route in is the tested `dependabot-upgrades` consolidation PR.
+test("the terminal gate fails a Dependabot PR to main, whose pipeline ran nothing", () => {
+    assert.deepEqual(ci.on.pull_request.branches, ["main"], "every PR CI sees targets main");
+    assert.equal(ci.jobs["detect-changes"].if, "github.actor != 'dependabot[bot]'");
+    const steps = ci.jobs.ci.steps;
+    const gate = steps.find((step) => step.if?.includes("github.actor == 'dependabot[bot]'"));
+    assert.ok(gate, "a Dependabot PR must not report green");
+    assert.ok(steps.indexOf(gate) < steps.findIndex((step) => step.name === "Report"));
+    assert.match(gate.run, /dependabot-upgrades/, "the failure names the route that IS tested");
+    assert.match(gate.run, /exit 1/);
+});
+
 test("all compiled test consumers opt into their non-building runners", () => {
     for (const job of Object.values(workflow("ci-test-dotnet").jobs)) {
         const run = job.steps.find((step) => step.run?.startsWith("make _test-dotnet"));
