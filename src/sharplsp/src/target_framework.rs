@@ -110,13 +110,33 @@ pub fn handle_get(
     Ok(serde_json::to_value(context)?)
 }
 
-/// `sharplsp/setTargetFramework`: switch the project, then tell the editor.
+/// A project the sidecar has switched, not yet announced: the editor hears of it
+/// only after the host has invalidated what the switch made stale. [NETFX-CONTEXT]
+pub struct Switched {
+    /// The document the switch was asked from.
+    document: TextDocumentIdentifier,
+    /// The project's framework context after the switch.
+    context: FrameworkContext,
+}
+
+impl Switched {
+    /// Announce the switch and ask for the refreshes, then answer the request.
+    pub fn announce(
+        self,
+        sender: &crossbeam_channel::Sender<Message>,
+    ) -> Result<serde_json::Value> {
+        announce(sender, &self.document, &self.context)?;
+        Ok(serde_json::to_value(self.context)?)
+    }
+}
+
+/// `sharplsp/setTargetFramework`: switch the project. The caller clears its
+/// navigation cache and re-publishes diagnostics, THEN announces. [NETFX-CONTEXT]
 pub fn handle_set(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
-    sender: &crossbeam_channel::Sender<Message>,
-) -> Result<serde_json::Value> {
+) -> Result<Switched> {
     let params: FrameworkParams = serde_json::from_value(req.params)?;
     let framework = params
         .target_framework
@@ -124,8 +144,10 @@ pub fn handle_set(
         .context("sharplsp/setTargetFramework requires targetFramework")?;
     let context = forward(runtime, sidecar, "workspace/setTargetFramework", &params)?;
     info!(uri = %params.text_document.uri.as_str(), framework, "Target framework switched");
-    announce(sender, &params.text_document, &context)?;
-    Ok(serde_json::to_value(context)?)
+    Ok(Switched {
+        document: params.text_document,
+        context,
+    })
 }
 
 /// Ask the sidecar that owns the document.

@@ -1,0 +1,67 @@
+{
+  "voice": "af_heart",
+  "say": { "FsStorefront": "F S Storefront", "SharpLsp": "Sharp L S P", "F#": "F sharp" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "profile",
+      "en": "This is FsStorefront, an F# app that's running right now. Let's find out where its time goes.",
+      "ja": "これは FsStorefront、いま実際に動いている F# アプリです。時間がどこに使われているのか見てみましょう。",
+      "zh": "这是 FsStorefront，一个正在运行的 F# 应用。我们来看看它的时间都花在了哪里。"
+    },
+    {
+      "scene": "heat",
+      "en": "Stop the profiler, and every hot line of F# lights up: the catalog parsing, the basket shuffle, and the discount fold.",
+      "ja": "プロファイラーを止めると、F# のホットな行がすべて光ります。カタログの解析、バスケットのシャッフル、そして割引の fold です。",
+      "zh": "停止性能分析器，F# 的每个热点行都会亮起：商品目录解析、购物篮洗牌，还有折扣 fold。"
+    },
+    {
+      "scene": "results",
+      "en": "The results keep the names the F# compiler gives your code. Every closure and pipeline stage is named after its line, so you know exactly where to look.",
+      "ja": "結果には、F# コンパイラーがコードに付けた名前がそのまま残ります。クロージャーもパイプラインのステージも行にちなんだ名前なので、どこを見ればいいかがすぐわかります。",
+      "zh": "结果保留了 F# 编译器给代码起的名字。每个闭包和管道阶段都以它所在的行命名，所以你清楚地知道该看哪里。"
+    },
+    {
+      "scene": "track",
+      "en": "Now let's track memory on the same app. SharpLsp snapshots the heap every ten seconds.",
+      "ja": "次は同じアプリのメモリを追跡しましょう。SharpLsp が 10 秒ごとにヒープのスナップショットを取ります。",
+      "zh": "现在来跟踪同一个应用的内存。SharpLsp 每十秒为堆拍一次快照。"
+    },
+    {
+      "scene": "suspect",
+      "en": "F# records and union cases show up as leak suspects. Click one, and you jump straight to the line that builds it.",
+      "ja": "F# のレコードと共用体ケースがリークの疑いとして現れます。クリックすると、それを組み立てる行に直接ジャンプします。",
+      "zh": "F# 记录和联合用例被列为可疑泄漏。点击其中一个，就能直接跳到构造它的那一行。"
+    },
+    {
+      "scene": "ask",
+      "en": "So, what's keeping them alive?",
+      "ja": "では、何がそれらを生かし続けているのでしょうか？",
+      "zh": "那么，是什么让它们一直存活？"
+    },
+    {
+      "scene": "graph",
+      "en": "A module value called sessions, named just as you wrote it. It holds every session the app has ever seen.",
+      "ja": "sessions というモジュール値です。書いたとおりの名前で示されます。アプリがこれまでに扱ったすべてのセッションを保持しています。",
+      "zh": "一个名为 sessions 的模块值，名称和你写的一模一样。它保存着应用见过的每一个会话。"
+    },
+    {
+      "scene": "fix",
+      "en": "The fix: keep the last thousand sessions, and let the rest go.",
+      "ja": "修正は、直近 1,000 件のセッションだけを残し、残りを手放すことです。",
+      "zh": "修复方法：只保留最近一千个会话，其余的放手。"
+    },
+    {
+      "scene": "retrack",
+      "en": "Rebuild, run it again, and track memory.",
+      "ja": "再ビルドして、もう一度実行し、メモリを追跡します。",
+      "zh": "重新构建，再次运行，然后跟踪内存。"
+    },
+    {
+      "scene": "steady",
+      "en": "This time the heap holds steady, and nothing climbs past Low. That's F# profiling in SharpLsp. Free, and open source.",
+      "ja": "今度はヒープが横ばいのまま、Low を超えるものはありません。これが SharpLsp の F# プロファイリングです。無料で、オープンソースです。",
+      "zh": "这一次，堆保持平稳，没有任何项超过 Low。这就是 SharpLsp 的 F# 性能分析。免费，而且开源。"
+    }
+  ]
+}

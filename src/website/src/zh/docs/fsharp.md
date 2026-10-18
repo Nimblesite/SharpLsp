@@ -35,6 +35,7 @@ F# 在 SharpLsp 中是**一等公民**。Rust LSP 主机会将 F# 语义请求�
 | 格式化（Fantomas） | 未开放 | sidecar 已实现，但主机有意不公布也不路由该功能 |
 | 折叠／选择范围 | 支持 | Rust 主机使用 F# tree-sitter 语法提供这两项语法功能 |
 | F# Interactive | 支持 | 提供发送代码、启动 FSI 和生成签名的 VS Code 命令 |
+| CPU 和内存分析 | 支持 | `.fs` 行上的热力条、按名称显示的闭包和管道阶段、标在构造位置的记录和联合 |
 
 ## IntelliSense
 
@@ -114,6 +115,12 @@ VS Code 扩展提供：
 | `F#: Generate Signature File (.fsi)` | 生成 `.fsi` 签名 |
 
 FSI 使用扩展激活期间定位或安装的 .NET 10 SDK。额外参数来自受信任工作区的 VS Code 设置 `sharplsp.fsi.extraArgs`，不会从 `sharplsp.toml` 读取。
+
+## 性能分析
+
+SharpLsp 性能分析器可以附加到任何正在运行的 .NET 进程，因此 F# 程序无需重启即可进行 CPU 分析、堆快照和可疑泄漏检测。它能读懂 F# 编译后的代码：闭包和管道阶段保留编译器给出的名称，记录和联合用例标在构造它们的行上，持有泄漏的模块值按源代码中的写法命名。请参阅 [F# 性能分析](/zh/docs/fsharp-profiling/)。
+
+{% video "profiler-fsharp" %}
 
 ## 编辑器无关协议
 

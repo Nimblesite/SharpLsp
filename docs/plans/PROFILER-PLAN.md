@@ -186,6 +186,23 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
   - The Rust `profiler_shared` tests raced: each nextest process rewrote the engine beside the shared server binary while another test's engine started, and lost the race with "exited before attaching". The engine is now installed atomically.
   - The suites' lifecycle and flows live once in `profiler-kit.ts` (`profilingSuite`, `profileFromRowFor`, `stopTracking`, `snapshotSession`, `retentionGraph`). The Deslop gate is ratcheted from 6.73 % to 6.65 %.
 - [x] The `profiler` chunk on macOS (`make _test-vsix-shard CHUNK=profiler`, 2026-10-15): **294 passing, 0 failing**, after the defects below were fixed; the debugger, manifest and configuration suites they touch pass too (30 passing).
+- [x] F# on real programs: `FsPricingEngine` (CPU: CSV parsing, discount rules, fuzzy search, routing, reports) and `FsOrderLedger` (an event handler, a memoize cache, a mailbox audit trail, undo history and rejection capture, each rooted at its own module value), under `src/sharplsp/tests/fixtures/fsharp-profiling/`. The suites `profiler-fsharp-cpu-e2e`, `-memory-e2e`, `-retention-e2e`, `-corner-e2e`, `-soak-e2e`, `-soak-cpu-e2e` and `profiler-lsp-protocol-e2e`, `-cpu-e2e`, `-memory-e2e` drive them through the UI and over the wire. The defects they found are fixed in lspkit and the host:
+  - idle samples counted as active, so a main thread waiting on stdin took half of every profile (lspkit#12);
+  - a frame every thread shares counted once per thread, so its samples outnumbered the ticks (lspkit#12);
+  - naming a runtime that cannot profile a busy PID answered `ALREADY_PROFILING`, not `UNSUPPORTED_RUNTIME` (lspkit#12);
+  - a `ResizeArray<Order>`'s `Order[]` painted the line that builds an `Order` (lspkit#12);
+  - a retention graph that left instances out still said it was complete (lspkit#12);
+  - a memory step on a program that had exited answered `OTHER`, not `PROCESS_NOT_FOUND` (lspkit#12);
+  - a second diff kept the first diff's leak badges (lspkit#12);
+  - FSharp.Core types were placed at its build server's paths, which do not exist here (lspkit#13);
+  - `objectsByType` dropped the requested type from its summary when it ranked below the twenty largest, as F# union cases do (lspkit#13);
+  - the retention graph never drew a root's label, so a module value's `static sessions` looked like any holder (lspkit#14);
+  - the timeline's peak fell after a release, because `peak_bytes` was each snapshot's own heap size (lspkit#15);
+  - a heap snapshot taken during a CPU session named types by bare address, because the CPU session enabled the runtime provider (lspkit#15);
+  - a hot function with no location reached the UI as file `""`, line 0 (lspkit#15);
+  - the UI's Stop never sent `memory.stop`, so the server kept the session and its graphs and still answered steps (lspkit#15);
+  - a timed CPU session never left `cpu.list` once its duration elapsed (lspkit#15);
+  - the host accepted a profiler command with no argument, two arguments or a non-object argument (`profiler/host.rs`).
 - [ ] Assertions of the deleted suites with no replacement: counters webview and counter sessions, `openTrace`/`convertTrace` of a `.nettrace`, dump collection with cancellable progress, `inspectObject`, `diffSnapshots`/`detectLeaks` panels over dumps, graph browser interactions. Each maps to a parity gap above.
 
 ### Documentation and cutover

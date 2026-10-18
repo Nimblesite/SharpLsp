@@ -14,12 +14,23 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class TargetFrameworks
 {
-    /// <summary>The framework of a per-framework project; null for a single-target one.</summary>
+    /// <summary>
+    /// The framework of a per-framework project; null for a single-target one.
+    /// <c>MSBuildWorkspace</c> appends <c>(tfm)</c> to the project FILE's stem, so only a
+    /// suffix past that stem is a framework: a single-target <c>Utility(net48).csproj</c>
+    /// is named <c>Utility(net48)</c> and has none.
+    /// </summary>
     internal static string? FrameworkOf(Project project)
     {
         var name = project.Name;
-        var open = name.LastIndexOf('(');
-        return open > 0 && name.EndsWith(')') ? name[(open + 1)..^1] : null;
+        var stem = project.FilePath is null ? name : NativePaths.StemOf(project.FilePath);
+        return
+            name.Length > stem.Length + 2
+            && name.StartsWith(stem, StringComparison.Ordinal)
+            && name[stem.Length] == '('
+            && name.EndsWith(')')
+            ? name[(stem.Length + 1)..^1]
+            : null;
     }
 
     /// <summary>The per-framework projects built from <paramref name="project"/>'s file, in load order.</summary>

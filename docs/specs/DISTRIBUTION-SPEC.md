@@ -867,10 +867,10 @@ inheriting a skip:
 
 1. Any upstream job that FAILED or was CANCELLED fails `CI`, and with it the merge.
 2. A SKIPPED upstream job satisfies it only when no code changed. That is how a
-   docs-only PR (every job skipped by [DIST-CI-CLASSIFICATION]) and a Dependabot
-   PR (the whole pipeline skipped, [DIST-CI-DEPENDABOT]) pass. When code changed,
-   `build`, every test leg and `coverage` MUST have succeeded; a skip among them
-   fails `CI` (#365).
+   docs-only PR (every job skipped by [DIST-CI-CLASSIFICATION]) passes. When code
+   changed, `build`, every test leg and `coverage` MUST have succeeded; a skip
+   among them fails `CI` (#365). A Dependabot PR, whose whole pipeline skipped
+   ([DIST-CI-DEPENDABOT]), always fails `CI`: it ran nothing.
 3. Every PHASE 4 leg and `coverage` states its condition explicitly:
    `!cancelled()`, code changed, and success of the jobs it consumes. GitHub's
    implicit `success()` spans the whole dependency chain, so a legitimately
@@ -929,7 +929,9 @@ superseded, and MUST NOT merge anything into `main` unattended.
    staged batch is verified once, by the full pipeline and CodeQL, on the
    `dependabot-upgrades → main` consolidation PR — the only route a dependency
    change takes into `main`. A staged security fix reaches `main` when that PR
-   is opened, so it is opened promptly.
+   is opened, so it is opened promptly. `CI` enforces the route: it FAILS a
+   Dependabot PR to `main`, so a security bump whose sweep did not retire it
+   cannot merge untested.
 4. `dependabot-automerge.yml` MUST exist on both branches: for `pull_request`,
    GitHub runs the workflow from the PR's BASE branch.
 
@@ -1107,6 +1109,10 @@ Invariants:
   distinction the manifest carries is `"linuxOnly": true` or
   `"windowsOnly": true`, which drops a chunk from the other platform's matrix. A
   chunk MUST NOT be declared in CI YAML.
+- **A selection never runs nothing.** The in-host runner fails a run whose
+  `MOCHA_FILES` pattern matches no compiled suite, and, off Windows, one whose
+  pattern names only suites of `windowsOnly` chunks: dropping every one would
+  report a green run of zero tests (`test-runner-selection.test.ts`).
 - **One runner, one shard target.** `make _run-vsix-suite` is the single recipe;
   `CHUNK` selects the slice (empty runs every suite) and `VSIX_SUITE_PREBUILT`
   says the suite is already compiled. Coverage is NOT a knob — the runner always

@@ -34,6 +34,7 @@ F# is a **first-class citizen** in SharpLsp. The Rust LSP host routes F# semanti
 | Formatting (Fantomas) | Not exposed | Implemented in the sidecar but intentionally not advertised or routed by the host |
 | Folding / Selection Range | Supported | The Rust host uses the F# tree-sitter grammar for both syntax features |
 | F# Interactive | Supported | VS Code commands for sending code, starting FSI, and generating signatures |
+| CPU and memory profiling | Supported | Heat bars on `.fs` lines, closures and pipeline stages by name, records and unions painted where they are built |
 
 ## IntelliSense
 
@@ -113,6 +114,12 @@ The VS Code extension provides:
 | `F#: Generate Signature File (.fsi)` | Generate an `.fsi` signature |
 
 FSI uses the .NET 10 SDK located or installed during extension activation. Extra arguments come from the trusted-workspace VS Code setting `sharplsp.fsi.extraArgs`; they are not read from `sharplsp.toml`.
+
+## Profiling
+
+The SharpLsp profiler attaches to any running .NET process, so F# programs get CPU profiling, heap snapshots and leak suspects without a restart. It reads F#'s compiled code: closures and pipeline stages keep their compiler names, records and union cases are painted on the line that builds them, and a module value that holds a leak is named as in source. See [Profiling F#](/docs/fsharp-profiling/).
+
+{% video "profiler-fsharp" %}
 
 ## Editor-Agnostic Protocol
 

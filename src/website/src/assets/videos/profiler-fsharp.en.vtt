@@ -1,0 +1,32 @@
+WEBVTT
+
+00:00.000 --> 00:07.432
+[Gentle music]
+This is FsStorefront, an F# app that's running right now. Let's find out where its time goes.
+
+00:12.850 --> 00:20.659
+Stop the profiler, and every hot line of F# lights up: the catalog parsing, the basket shuffle, and the discount fold.
+
+00:22.017 --> 00:31.499
+The results keep the names the F# compiler gives your code. Every closure and pipeline stage is named after its line, so you know exactly where to look.
+
+00:32.049 --> 00:38.125
+Now let's track memory on the same app. SharpLsp snapshots the heap every ten seconds.
+
+00:43.550 --> 00:50.638
+F# records and union cases show up as leak suspects. Click one, and you jump straight to the line that builds it.
+
+00:53.183 --> 00:54.974
+So, what's keeping them alive?
+
+00:58.379 --> 01:04.974
+A module value called sessions, named just as you wrote it. It holds every session the app has ever seen.
+
+01:07.646 --> 01:11.433
+The fix: keep the last thousand sessions, and let the rest go.
+
+01:23.613 --> 01:26.126
+Rebuild, run it again, and track memory.
+
+01:38.616 --> 01:47.220
+This time the heap holds steady, and nothing climbs past Low. That's F# profiling in SharpLsp. Free, and open source.

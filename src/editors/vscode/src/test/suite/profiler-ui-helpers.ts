@@ -16,12 +16,13 @@ import type { ProcessInfo } from '@nimblesite/lsp-profiler-ui/out/src/process-ex
 import type { ProcessInfo as WireProcess } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import { delay } from '@nimblesite/lsp-profiler-ui/out/src/timeouts';
 import type { ProfileResult } from '@nimblesite/lsp-profiler-ui/out/src/profiler-decorations';
+import type { MemoryDashboardSnapshot } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import type {
   MemoryDiffResult,
   MemorySnapshotResult,
   SuspectedLeak,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
-import { rawField } from '@nimblesite/lsp-profiler-ui/out/src/unknown-shape';
+import { numberField, rawField } from '@nimblesite/lsp-profiler-ui/out/src/unknown-shape';
 import * as assert from 'node:assert/strict';
 import { errorMessage } from './profiler-ui-caught-error';
 import { lspClient, profilerStore } from './profiler-kit';
@@ -254,21 +255,44 @@ export function isRegistered(commandId: string): boolean {
   }
 }
 
-/** Swap `showWarningMessage` for a recorder while `body` runs. */
-export async function captureWarnings(body: () => Promise<unknown>): Promise<string[]> {
-  const warnings: string[] = [];
-  const window = vscode.window as { showWarningMessage: unknown };
-  const original = window.showWarningMessage;
-  window.showWarningMessage = async (message: string): Promise<undefined> => {
-    warnings.push(message);
+/** The notifications shown while a body ran, by severity, with the actions each offered. */
+export interface Toasts {
+  readonly info: { message: string; actions: string[] }[];
+  readonly warning: string[];
+  readonly error: string[];
+}
+
+type ToastWindow = Record<
+  'showInformationMessage' | 'showWarningMessage' | 'showErrorMessage',
+  unknown
+>;
+
+/** Swap every notification for a recorder while `body` runs. */
+export async function captureToasts(body: () => PromiseLike<unknown>): Promise<Toasts> {
+  const toasts: Toasts = { info: [], warning: [], error: [] };
+  const window = vscode.window as unknown as ToastWindow;
+  const original: ToastWindow = {
+    showInformationMessage: window.showInformationMessage,
+    showWarningMessage: window.showWarningMessage,
+    showErrorMessage: window.showErrorMessage,
+  };
+  window.showInformationMessage = async (message: string, ...items: unknown[]) => {
+    toasts.info.push({ message, actions: items.filter((i): i is string => typeof i === 'string') });
     return undefined;
   };
+  window.showWarningMessage = async (message: string) => void toasts.warning.push(message);
+  window.showErrorMessage = async (message: string) => void toasts.error.push(message);
   try {
     await body();
   } finally {
-    window.showWarningMessage = original;
+    Object.assign(window, original);
   }
-  return warnings;
+  return toasts;
+}
+
+/** Swap `showWarningMessage` for a recorder while `body` runs. */
+export async function captureWarnings(body: () => Promise<unknown>): Promise<string[]> {
+  return (await captureToasts(body)).warning;
 }
 
 /** A C# source with twelve numbered lines, for decorations to land on. */
@@ -351,4 +375,100 @@ export function assertHardened(html: string, what: string): void {
     `${what}: the inline script must be nonce-gated`,
   );
   assert.ok(!html.includes('</script><img'), `${what}: untrusted data must not close the <script>`);
+}
+
+// ── Process-row fixtures ([PROF-UI-PROCESSES]) ─────────────────────
+
+const MB = 1024 * 1024;
+
+/**
+ * A debuggable process row; each caller overrides what it exercises. The
+ * one fixture every Processes-panel test builds its table from.
+ */
+export function processFixture(pid: number, overrides: Partial<ProcessInfo> = {}): ProcessInfo {
+  return {
+    pid,
+    ppid: 1,
+    name: 'python3.12',
+    interpreterPath: '/usr/bin/python3.12',
+    script: null,
+    runtime: 'python',
+    runtimeVersion: '3.12.1',
+    cpuPercent: 0,
+    memoryBytes: MB,
+    runtimeSecs: 1,
+    user: null,
+    requiresElevation: false,
+    inWorkspace: false,
+    launcher: null,
+    debuggable: true,
+    undebuggableReason: null,
+    ...overrides,
+  };
+}
+
+/** Read the PID a process row carries (the arg passed to inline commands). */
+export function rowPid(item: vscode.TreeItem): number | undefined {
+  // `process` is attached to the row by the provider under test, not by
+  // `vscode.TreeItem`, so it is read back by name rather than asserted on.
+  return numberField(rawField(item, 'process'), 'pid');
+}
+
+/** The row of `pid`, failing the test when the panel dropped it. */
+export function rowByPid(
+  rows: readonly vscode.TreeItem[],
+  pid: number,
+  what: string,
+): vscode.TreeItem {
+  const row = rows.find((item) => rowPid(item) === pid);
+  assert.ok(row !== undefined, `${what}: the PID ${pid} row must exist`);
+  return row;
+}
+
+// ── Decoration ledgers ─────────────────────────────────────────────
+
+/** What one applied decoration must show: its line, a colour, text it carries. */
+export interface PaintedExpectation {
+  readonly line?: number;
+  readonly color?: string;
+  /** A substring the decoration's after-line text must include. */
+  readonly includes?: string;
+}
+
+/** Assert a decoration was applied and shows exactly what `expect` names. */
+export function assertPainted(
+  painted: { line: number; color: string; contentText: string } | undefined,
+  expect: PaintedExpectation,
+  what: string,
+): void {
+  assert.ok(painted !== undefined, `${what}: a decoration must be applied`);
+  if (expect.line !== undefined) {
+    assert.equal(painted.line, expect.line, `${what}: it lands on its line`);
+  }
+  if (expect.color !== undefined) {
+    assert.equal(painted.color, expect.color, `${what}: it wears its colour`);
+  }
+  if (expect.includes !== undefined) {
+    assert.ok(painted.contentText.includes(expect.includes), painted.contentText);
+  }
+}
+
+// ── Dashboard snapshots ────────────────────────────────────────────
+
+/** A minimal dashboard snapshot (fresh session: one capture, no diff yet). */
+export function dashboardSnapshot(
+  overrides: Partial<MemoryDashboardSnapshot> = {},
+): MemoryDashboardSnapshot {
+  return {
+    memorySessionId: 'mem-1',
+    snapshotId: 'snap-1',
+    currentMemory: 1_048_576,
+    peakMemory: 2_097_152,
+    gcObjects: 1200,
+    gcCounts: [700, 12, 3],
+    topAllocations: [{ file: '/app/Program.cs', line: 10, size: 4096, count: 8 }],
+    timeline: [],
+    heapProfilePath: '',
+    ...overrides,
+  };
 }

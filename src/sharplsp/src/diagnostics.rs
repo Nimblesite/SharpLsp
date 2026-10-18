@@ -85,6 +85,9 @@ struct SolutionDiagnosticsRequest {
     project_filter: Vec<String>,
 }
 
+/// A document to push diagnostics for: its owning sidecar, URI and native path.
+pub type PushTarget = (Arc<SidecarManager>, Uri, String);
+
 /// Spawn a background task to fetch diagnostics and publish them.
 ///
 /// Non-blocking: the main loop continues processing messages while
@@ -101,6 +104,57 @@ pub fn request_in_background(
     let _handle = runtime.spawn(async move {
         fetch_and_publish_gated(&sidecar, &sender, &uri, &file_path, &source_tag, generation).await;
     });
+}
+
+/// Publish every target's diagnostics NOW, concurrently, and return once each
+/// first answer is out, so whatever the caller sends next follows them. A fetch
+/// that failed, or answered a provisional set, goes on as a background push.
+/// Implements [NETFX-CONTEXT] and [DIAG-PUSH-GATE].
+pub fn publish_now(
+    runtime: &tokio::runtime::Runtime,
+    targets: Vec<PushTarget>,
+    sender: &crossbeam_channel::Sender<Message>,
+) {
+    let unfinished = runtime.block_on(async {
+        let mut pushes = tokio::task::JoinSet::new();
+        for target in targets {
+            let generation = next_generation(&target.1);
+            let _push = pushes.spawn(first_push(target, generation, sender.clone()));
+        }
+        still_pushing(pushes).await
+    });
+    for (sidecar, uri, file_path) in unfinished {
+        request_in_background(runtime, sidecar, sender.clone(), uri, file_path);
+    }
+}
+
+/// A target's first fetch and publish; the target back when its push must go on.
+async fn first_push(
+    target: PushTarget,
+    generation: u64,
+    sender: crossbeam_channel::Sender<Message>,
+) -> Option<PushTarget> {
+    let (sidecar, uri, file_path) = &target;
+    let source_tag = source_tag_for_uri(uri);
+    let again = publish_once(sidecar, &sender, uri, file_path, &source_tag, generation)
+        .await
+        .unwrap_or_else(|err| {
+            warn!(uri = %uri.as_str(), "Sidecar diagnostics unavailable: {err:#}");
+            true
+        });
+    again.then_some(target)
+}
+
+/// Every first push finished: the targets whose push must go on.
+async fn still_pushing(mut pushes: tokio::task::JoinSet<Option<PushTarget>>) -> Vec<PushTarget> {
+    let mut unfinished = Vec::new();
+    while let Some(joined) = pushes.join_next().await {
+        match joined {
+            Ok(again) => unfinished.extend(again),
+            Err(err) => warn!("Diagnostics push task failed: {err}"),
+        }
+    }
+    unfinished
 }
 
 /// Register a new push generation for `uri`, superseding in-flight fetches.
@@ -188,18 +242,10 @@ async fn fetch_and_publish_gated(
     generation: u64,
 ) {
     for attempt in 1..=MAX_PUSH_ATTEMPTS {
-        if sidecar.is_shutting_down() || !is_current(uri, generation) {
-            return;
-        }
-        match fetch(sidecar, file_path, source_tag).await {
-            Ok(diagnostics) => {
-                if !publish_provisional(sender, uri, generation, diagnostics) {
-                    return;
-                }
-            }
-            Err(err) => {
-                warn!("Sidecar diagnostics unavailable (attempt {attempt}): {err:#}");
-            }
+        match publish_once(sidecar, sender, uri, file_path, source_tag, generation).await {
+            Ok(false) => return,
+            Ok(true) => {}
+            Err(err) => warn!("Sidecar diagnostics unavailable (attempt {attempt}): {err:#}"),
         }
         tokio::time::sleep(PUSH_RETRY_DELAY).await;
     }
@@ -207,6 +253,24 @@ async fn fetch_and_publish_gated(
         uri = %uri.as_str(),
         "Diagnostics push gave up after {MAX_PUSH_ATTEMPTS} attempts; last published state may be stale"
     );
+}
+
+/// One gated fetch and publish. `Ok(true)` when the published set is
+/// provisional and the push must go on, `Ok(false)` when it is done or
+/// superseded, and the fetch's error when it must retry. [DIAG-PUSH-GATE]
+async fn publish_once(
+    sidecar: &SidecarManager,
+    sender: &crossbeam_channel::Sender<Message>,
+    uri: &Uri,
+    file_path: &str,
+    source_tag: &str,
+    generation: u64,
+) -> Result<bool> {
+    if sidecar.is_shutting_down() || !is_current(uri, generation) {
+        return Ok(false);
+    }
+    let diagnostics = fetch(sidecar, file_path, source_tag).await?;
+    Ok(publish_provisional(sender, uri, generation, diagnostics))
 }
 
 /// Determine the diagnostic source tag based on the document language.

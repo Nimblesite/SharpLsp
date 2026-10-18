@@ -40,7 +40,7 @@
 # sidecars ONCE and emitting that platform's VSIX and its standalone server
 # archive ([DIST-ARCHIVE]); VERSION is optional and defaults to 0.0.0. Then
 # `_print-publish-commands`. Also private: `_screenshots`, `_website-build`,
-# `_website-dev`, `_test-website` and `_uninstall-dotnet-10`.
+# `_website-dev`, `_test-website`, `_film` and `_uninstall-dotnet-10`.
 
 # ── OS detection ──────────────────────────────────────────────────
 # All recipes assume a POSIX shell. On Windows we use Git Bash (bundled with
@@ -145,7 +145,7 @@ KOVER_PERCENT = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tools/
 .PHONY: build ci test lint fmt clean audit setup _build-profiler-ui \
         reinstall-vsix install-vsix uninstall-vsix install-dotnet-10
 
-.PHONY: _screenshots _website-build _website-dev _uninstall-dotnet-10 \
+.PHONY: _screenshots _website-build _website-dev _film _uninstall-dotnet-10 \
         _package-vsix-linux-x64 _package-vsix-linux-arm64 \
         _package-vsix-darwin-arm64 _package-vsix-darwin-x64 \
         _package-vsix-win32-x64 _package-vsix-win32-arm64 \
@@ -804,6 +804,16 @@ _website-build:
 _website-dev:
 	@echo "==> Starting website development server..."
 	npm run dev --prefix src/website
+
+# [WEB-DESIGN-MEDIA] Shoot and publish one website film from the packaged VSIX:
+# `make _film FILM=fsharp`, or `PUBLISH=1` to publish the last shoot again.
+# The films live in src/website/tools/profiler-film/films; its README says how.
+_film:
+	@test -n "$(FILM)" || { echo "usage: make _film FILM=<film> [PUBLISH=1]" >&2; exit 1; }
+	$(if $(PUBLISH),,$(MAKE) _build-vsix VSIX_PREBUILT=1)
+	@# Install once: npm ci would wipe the voice model kokoro-js caches in node_modules.
+	test -d src/website/tools/profiler-film/node_modules || npm ci --prefix src/website/tools/profiler-film
+	node src/website/tools/profiler-film/film.mjs $(FILM) $(if $(PUBLISH),--publish,)
 
 _test-website:
 	@echo "==> Running website Playwright tests..."

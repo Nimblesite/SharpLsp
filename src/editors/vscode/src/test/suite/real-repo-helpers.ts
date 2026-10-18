@@ -6,9 +6,10 @@
 // extension host and assert on the LSP results and on the server processes'
 // memory/CPU footprint.
 import * as assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { promisify } from 'node:util';
 import * as vscode from 'vscode';
 import { EXTENSION_ID, removeDirRecursive, waitForHoverResult } from './test-helpers';
 import { REAL_REPO_MS } from './test-timeouts';
@@ -57,22 +58,26 @@ export function realWorldFixturesRoot(): string {
 
 const RESTORED_MARKER = '.sharplsp-restored';
 
+/** A child process, awaited so the extension host keeps running meanwhile. */
+const run = promisify(execFile);
+
 /**
  * Clone (shallow, pinned tag) and `dotnet restore` a real repo, once.
  * Subsequent runs reuse the existing clone. The clone's `global.json` is
  * removed so the fixture restores with whatever modern SDK is installed —
  * the same workspace-independent SDK policy the sidecar applies per
- * [DIST-SDK-DISCOVERY]; the LSP behavior under test is identical.
+ * [DIST-SDK-DISCOVERY]; the LSP behavior under test is identical. Both steps run
+ * asynchronously: a cold restore of a large multi-target solution takes minutes,
+ * and a synchronous one would freeze the extension host for all of them.
  */
-export function ensureRepoReady(spec: RealRepoSpec): string {
+export async function ensureRepoReady(spec: RealRepoSpec): Promise<string> {
   const root = realWorldFixturesRoot();
   fs.mkdirSync(root, { recursive: true });
   const repoDir = path.join(root, spec.name);
   if (!fs.existsSync(path.join(repoDir, spec.sln))) {
     removeDirRecursive(repoDir);
-    execFileSync('git', ['clone', '--depth', '1', '--branch', spec.tag, spec.url, spec.name], {
+    await run('git', ['clone', '--depth', '1', '--branch', spec.tag, spec.url, spec.name], {
       cwd: root,
-      stdio: 'pipe',
       timeout: REAL_REPO_MS,
     });
   }
@@ -87,16 +92,15 @@ export function ensureRepoReady(spec: RealRepoSpec): string {
     // exists to drive the LSP against real-world code, not to audit that code's
     // dependencies. Same normalisation as removing global.json above.
     try {
-      execFileSync('dotnet', ['restore', spec.sln, '-p:NuGetAudit=false'], {
+      await run('dotnet', ['restore', spec.sln, '-p:NuGetAudit=false'], {
         cwd: repoDir,
-        stdio: 'pipe',
         timeout: REAL_REPO_MS,
       });
     } catch (err: unknown) {
       // stdio:'pipe' captures NuGet's diagnostics and the default rethrow discards
       // them, leaving only "Command failed: dotnet restore". Surface them.
-      const e = err as { stdout?: Buffer; stderr?: Buffer; message?: string };
-      const detail = `${e.stdout?.toString() ?? ''}${e.stderr?.toString() ?? ''}`.trim();
+      const e = err as { stdout?: string; stderr?: string; message?: string };
+      const detail = `${e.stdout ?? ''}${e.stderr ?? ''}`.trim();
       throw new Error(`dotnet restore ${spec.sln} failed:\n${detail || (e.message ?? '')}`, {
         cause: err,
       });

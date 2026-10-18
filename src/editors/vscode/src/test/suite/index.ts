@@ -47,8 +47,8 @@ interface ChunkManifest {
  * Suites of `windowsOnly` chunks: .NET Framework test hosts run only on Windows
  * ([NETFX-SCOPE]), so they never load elsewhere — not even in a local full run.
  */
-function windowsOnlySuites(): ReadonlySet<string> {
-  if (process.platform === 'win32') return new Set();
+function windowsOnlySuites(platform: NodeJS.Platform): ReadonlySet<string> {
+  if (platform === 'win32') return new Set();
   const manifest = path.resolve(__dirname, '..', '..', '..', 'test-chunks.json');
   const { chunks } = JSON.parse(fs.readFileSync(manifest, 'utf8')) as ChunkManifest;
   return new Set(
@@ -58,17 +58,28 @@ function windowsOnlySuites(): ReadonlySet<string> {
 
 /**
  * A chunk that selects nothing must fail loudly: a mistyped file list would
- * otherwise report a green run that executed zero assertions.
+ * otherwise report a green run that executed zero assertions. So must a pattern
+ * that, off Windows, names only Windows-only suites: dropping every one of them
+ * would pass a run of nothing.
  */
-function resolveSuiteFiles(testsRoot: string): string[] {
+export function resolveSuiteFiles(
+  testsRoot: string,
+  globs: readonly string[] = requestedGlobs(),
+  platform: NodeJS.Platform = process.platform,
+): string[] {
   const selected = new Set<string>();
-  const windowsOnly = windowsOnlySuites();
-  for (const pattern of requestedGlobs()) {
+  const windowsOnly = windowsOnlySuites(platform);
+  for (const pattern of globs) {
     const matches = globSync(pattern, { cwd: testsRoot });
     if (matches.length === 0) {
       throw new Error(`MOCHA_FILES pattern matched no compiled suite: ${pattern}`);
     }
     const runnable = matches.filter((match) => !windowsOnly.has(match.split(path.sep).join('/')));
+    if (runnable.length === 0) {
+      throw new Error(
+        `MOCHA_FILES pattern selects only Windows-only suites, which run on Windows alone ([NETFX-SCOPE]): ${pattern}`,
+      );
+    }
     for (const match of runnable.filter(matchesShape)) {
       selected.add(match);
     }

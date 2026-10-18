@@ -50,9 +50,14 @@ export function useRealRepo(
   [snippet, focus]: Anchor,
 ): () => string {
   let repoDir = '';
+  // The clone and restore have a budget of their own: a cold restore can take
+  // minutes, and it must never eat the time the load and warm-up below need.
   suiteSetup(async function () {
     this.timeout(REAL_REPO_MS);
-    repoDir = ensureRepoReady(spec);
+    repoDir = await ensureRepoReady(spec);
+  });
+  suiteSetup(async function () {
+    this.timeout(REAL_REPO_MS);
     await loadSolutionInServer(path.join(repoDir, spec.sln));
     const { doc, uri } = await openRepoFile(repoDir, file);
     await waitForDocumentSymbols(uri, REAL_REPO_WARMUP_MS);

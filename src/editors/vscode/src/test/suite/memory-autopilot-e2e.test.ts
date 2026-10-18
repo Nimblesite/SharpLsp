@@ -24,6 +24,7 @@ import {
   clearMemoryDecorations,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
 import { comparablePath } from './test-helpers';
+import { setProfilerSetting } from './profiler-kit';
 import { launchConfigOf, pollUntilResult } from './profiler-ui-helpers';
 import {
   LEAK_LINES,
@@ -50,11 +51,7 @@ const AUTO_CAPTURE_WAIT_MS = 40_000;
 /** Profiler config keys this suite toggles; reset to default after each test. */
 const CONFIG_KEYS = ['autoSnapshotOnPause', 'autoSnapshot', 'autoSnapshotInterval'];
 
-async function setProfilerConfig(key: string, value: unknown): Promise<void> {
-  await vscode.workspace
-    .getConfiguration('sharplsp.profiler')
-    .update(key, value, vscode.ConfigurationTarget.Global);
-}
+const setProfilerConfig = setProfilerSetting;
 
 async function resetProfilerConfig(): Promise<void> {
   for (const key of CONFIG_KEYS) {

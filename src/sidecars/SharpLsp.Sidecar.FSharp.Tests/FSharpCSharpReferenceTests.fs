@@ -379,3 +379,53 @@ let ``a project reading C# in memory still offers the FS0001 conversion`` () =
         finally
             cleanup root
     }
+
+/// `Core`'s `Order` with an `init` accessor. On .NET Framework the compiler needs
+/// `IsExternalInit`, which the framework lacks and the PolySharp source generator writes
+/// into the build.
+let private orderSource =
+    String.Join(
+        "\n",
+        [ "namespace Core"
+          "{"
+          "    public sealed class Order"
+          "    {"
+          "        public string Sku { get; init; } = \"none\";"
+          "    }"
+          "}"
+          "" ]
+    )
+
+/// A C# project that a source generator completes compiles in memory as its build does:
+/// with the generator's sources. Without them, an `init` accessor on .NET Framework has
+/// no `IsExternalInit`, Roslyn emits nothing, and F# reads a DLL nobody built (FS0078,
+/// FS0084), as GitReader.Core's PolySharp polyfills showed.
+[<Fact>]
+let ``a C# project its source generator completes for .NET Framework is read in memory`` () =
+    task {
+        let root = NativePaths.Temp($"sharplsp-fs-cs-gen-{Guid.NewGuid():N}")
+
+        try
+            // As GitReader.Core: a modern C# on .NET Framework, polyfilled by PolySharp.
+            let modernCSharp = node "PropertyGroup" [ node "LangVersion" [ "latest" :> obj ] ]
+
+            let polySharp =
+                node "ItemGroup" [ node "PackageReference" [ attribute "Include" "PolySharp"; attribute "Version" "1.15.0"; attribute "PrivateAssets" "All" ] ]
+
+            writeProject root "Core" "csproj" "net48" "Order.cs" orderSource [] [ modernCSharp; polySharp ] |> ignore
+            let shopSource = "module Shop\n\nlet sku = Core.Order().Sku\n"
+            let shop = writeProject root "Shop" "fsproj" "net48" "Shop.fs" shopSource [ NativePaths.Join("..", "Core", "Core.csproj") ] []
+            restore (NativePaths.Resolve(root, "Shop", "Shop.fsproj"))
+            let state = FSharpWorkspace.create ()
+            let! loaded = FSharpWorkspace.loadProject state root
+            Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
+
+            let! errors = errorsIn state shop
+            Assert.Empty(errors)
+            Assert.Equal(1, state.CSharpBuilds.Count)
+            let wired = (FSharpWorkspace.optionsFor state shop).Value
+            Assert.Equal(1, (assembliesReadBy wired).Length)
+            Assert.Empty(Directory.GetFiles(root, "*.dll", SearchOption.AllDirectories))
+        finally
+            cleanup root
+    }

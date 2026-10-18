@@ -104,6 +104,37 @@ let private emit (compilation: CSharpCompilation) =
 let private strongNaming (build: CSharpBuild) =
     DesktopStrongNameProvider(ImmutableArray.Create(NativePaths.DirectoryOf build.Project))
 
+/// Loads a source generator from the assembly a command line's `/analyzer:` names.
+type private GeneratorLoader() =
+    interface IAnalyzerAssemblyLoader with
+        member _.AddDependencyLocation(_: string) = ()
+        member _.LoadFromPath(path: string) = Reflection.Assembly.LoadFrom path
+
+let private generatorLoader = GeneratorLoader()
+
+/// The C# source generators `reference` holds; none when its assembly does not load here,
+/// and the log says why, so a generator never costs the project its load.
+let private generatorsIn (reference: Diagnostics.AnalyzerReference) =
+    try
+        reference.GetGenerators(LanguageNames.CSharp) |> List.ofSeq
+    with error ->
+        Log.Warning("Source generators of {Path} are skipped: {Reason}", reference.FullPath, error.Message)
+        []
+
+/// The C# source generators the command line's `/analyzer:` assemblies hold.
+let private generatorsOf (arguments: CSharpCommandLineArguments) =
+    arguments.ResolveAnalyzerReferences(generatorLoader) |> Seq.collect generatorsIn |> List.ofSeq
+
+/// `compilation` with the sources its source generators add, as the build runs them. A
+/// project that polyfills .NET Framework through one (PolySharp writes `IsExternalInit`
+/// for an `init` accessor) has no image without them, and F# would read a DLL nobody built.
+let private generated (arguments: CSharpCommandLineArguments) (compilation: CSharpCompilation) =
+    match generatorsOf arguments with
+    | [] -> compilation
+    | generators ->
+        CSharpGeneratorDriver.Create(generators, parseOptions = arguments.ParseOptions).RunGenerators(compilation).GetRunResult().GeneratedTrees
+        |> compilation.AddSyntaxTrees
+
 /// Each reference on the command line: a C# project compiled here is read from its
 /// compilation, a file the disk has from that file, and a file it lacks — an unbuilt
 /// project no build here covers — is left for the compiler to report.
@@ -128,6 +159,7 @@ and private compile (build: CSharpBuild) =
 
     let options = build.Arguments.CompilationOptions.WithStrongNameProvider(strongNaming build)
     CSharpCompilation.Create(name, syntaxTrees build.Arguments, metadataReferences build, options)
+    |> generated build.Arguments
 
 /// The compilation and image of `build` as its inputs stand now: emitted again when they
 /// changed, and the last ones kept when Roslyn cannot emit the changed sources.

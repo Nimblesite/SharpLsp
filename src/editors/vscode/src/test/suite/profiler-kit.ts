@@ -2,18 +2,24 @@
 // suites: the library's store through the extension API, the .NET fixture
 // targets, and the wire commands the extension drives.
 import * as assert from 'node:assert/strict';
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import { spawn, type ChildProcess } from 'node:child_process';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
+  memoryStatusText,
   profilerStatusText,
   type ProcessesProvider,
   type ProfilerStore,
 } from '@nimblesite/lsp-profiler-ui';
-import type { MemoryStep, RefGraph } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
+import { activeMemorySession } from '@nimblesite/lsp-profiler-ui/out/src/memory-profiler';
+import type {
+  MemoryStartResult,
+  MemoryStep,
+  ProfileReport,
+  RefGraph,
+  StartProfileResult,
+} from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
+import type { SuspectedLeak as DashboardLeak } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import {
   closeAllEditors,
   EXTENSION_ID,
@@ -21,6 +27,9 @@ import {
   teardownLspTestSuite,
 } from './test-helpers';
 import { ACTIVATION_MS, PROCESS_START_MS } from './test-timeouts';
+import { buildFixture } from './profiler-fixtures';
+
+export { buildFixture, fixtureFile, fixtureSource } from './profiler-fixtures';
 
 /** The profiler's commands as the server advertises them. */
 export function lspCommand(name: string): string {
@@ -111,78 +120,57 @@ export async function executeError(
   }
 }
 
-const FIXTURES = path.resolve(__dirname, '../../../../../sharplsp/tests/fixtures');
-/** lspkit's own targets, which prove the engine on every .NET language. */
-const LSPKIT_FIXTURES = path.resolve(__dirname, '../../../../../../lspkit/dotnet/fixtures');
+/** How long a fixture may take to answer one stdin command. */
+const REPLY_MS = 60_000;
 
-/** A profiling target: its project folder, target framework and source file. */
-interface FixtureProject {
-  readonly dir: string;
-  readonly framework: string;
-  readonly source: string;
-}
+/** A child's stdout as whole lines, handed out in order. */
+class LineFeed {
+  private buffer = '';
+  private readonly lines: string[] = [];
+  private readonly waiting: ((line: string | undefined) => void)[] = [];
+  private exited = false;
 
-const FIXTURE_PROJECTS: Readonly<Record<string, FixtureProject>> = {
-  ProfileTarget: { dir: FIXTURES, framework: 'net10.0', source: 'Program.cs' },
-  ProfileLeakTarget: { dir: FIXTURES, framework: 'net10.0', source: 'Program.cs' },
-  // F#: records holding union cases leak into a module value ([PROF-TESTING]).
-  HotLeakAppFs: { dir: LSPKIT_FIXTURES, framework: 'net8.0', source: 'Program.fs' },
-};
-
-function fixtureProject(name: string): FixtureProject {
-  const project = FIXTURE_PROJECTS[name];
-  assert.ok(project, `unknown profiling fixture ${name}`);
-  return project;
-}
-
-/** `dotnet` from PATH, else the user-local install the test host's PATH may lack. */
-function dotnetExecutable(): string {
-  const candidates = [
-    'dotnet',
-    path.join(os.homedir(), '.dotnet', process.platform === 'win32' ? 'dotnet.exe' : 'dotnet'),
-  ];
-  for (const candidate of candidates) {
-    if (spawnSync(candidate, ['--version'], { encoding: 'utf8' }).status === 0) return candidate;
-  }
-  throw new Error('dotnet SDK not found: install it or put it on PATH');
-}
-
-/** Build a fixture project once (Release) and return its binary. */
-export function buildFixture(name: string): string {
-  const { dir, framework } = fixtureProject(name);
-  const project = path.join(dir, name);
-  const binary = path.join(
-    project,
-    'bin',
-    'Release',
-    framework,
-    process.platform === 'win32' ? `${name}.exe` : name,
-  );
-  if (!fs.existsSync(binary)) {
-    const build = spawnSync(dotnetExecutable(), ['build', '-c', 'Release', '--nologo', '-v', 'q'], {
-      cwd: project,
-      encoding: 'utf8',
+  constructor(child: ChildProcess) {
+    child.stdout?.on('data', (chunk: Buffer) => {
+      this.buffer += chunk.toString();
+      const parts = this.buffer.split(/\r?\n/);
+      this.buffer = parts.pop() ?? '';
+      for (const line of parts) {
+        const waiter = this.waiting.shift();
+        if (waiter === undefined) this.lines.push(line);
+        else waiter(line);
+      }
     });
-    assert.equal(
-      build.status,
-      0,
-      `building ${name} failed: ${build.stderr ?? build.error?.message}`,
-    );
+    child.once('exit', () => {
+      this.exited = true;
+      for (const resolve of this.waiting.splice(0)) resolve(undefined);
+    });
   }
-  assert.ok(fs.existsSync(binary), `${binary} missing after build`);
-  return binary;
-}
 
-/** The source file of a fixture, where hot lines and allocation sites land. */
-export function fixtureSource(name: string): string {
-  const { dir, source } = fixtureProject(name);
-  return path.join(dir, name, source);
+  /** The next line, or a failure naming `what` when the child exits or stays silent. */
+  async next(timeoutMs: number, what: string): Promise<string> {
+    const queued = this.lines.shift();
+    if (queued !== undefined) return queued;
+    assert.ok(!this.exited, `${what}: the process already exited`);
+    const line = await new Promise<string | undefined>((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(undefined);
+      }, timeoutMs);
+      this.waiting.push((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      });
+    });
+    assert.ok(line !== undefined, `${what}: no reply within ${timeoutMs}ms or the process exited`);
+    return line;
+  }
 }
 
 /** A running fixture; `stop()` closes its stdin so it exits, then kills it. */
 export class Target {
   private constructor(
     private readonly child: ChildProcess,
+    private readonly feed: LineFeed,
     readonly pid: number,
   ) {}
 
@@ -191,22 +179,19 @@ export class Target {
       stdio: ['pipe', 'pipe', 'ignore'],
       env: { ...process.env, SHARPLSP_PROFILE_TARGET_PARENT_PID: String(process.pid) },
     });
-    const ready = await new Promise<string>((resolve, reject) => {
-      let buffer = '';
-      child.stdout?.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString();
-        if (buffer.includes('\n')) resolve(buffer.split('\n')[0] ?? '');
-      });
-      child.once('error', reject);
-      child.once('exit', (code) => {
-        reject(new Error(`${name} exited early with ${code}`));
-      });
-    });
+    const feed = new LineFeed(child);
+    const ready = await feed.next(PROCESS_START_MS, `${name} READY`);
     assert.ok(ready.startsWith('READY'), `${name} must print READY: ${ready}`);
     assert.ok(child.pid !== undefined, 'spawned pid');
     // Let the runtime open its diagnostics endpoint before anyone attaches.
     await new Promise((resolve) => setTimeout(resolve, 800));
-    return new Target(child, child.pid);
+    return new Target(child, feed, child.pid);
+  }
+
+  /** Send one stdin command and return the one line the fixture answers with. */
+  async send(command: string): Promise<string> {
+    this.child.stdin?.write(`${command}\n`);
+    return this.feed.next(REPLY_MS, `reply to "${command}"`);
   }
 
   stop(): void {
@@ -299,13 +284,13 @@ export function completed(step: MemoryStep): Extract<MemoryStep, { kind: 'Comple
 }
 
 /** The suspected leaks the dashboard embedded for its script (`const leaks = [...]`). */
-export function embeddedLeaks(html: string): { typeName?: string }[] {
+export function embeddedLeaks(html: string): Partial<DashboardLeak>[] {
   const marker = 'const leaks = ';
   const at = html.indexOf(marker);
   if (at < 0) return [];
   const end = html.indexOf(';\n', at);
   try {
-    return JSON.parse(html.slice(at + marker.length, end)) as { typeName?: string }[];
+    return JSON.parse(html.slice(at + marker.length, end)) as Partial<DashboardLeak>[];
   } catch {
     return [];
   }
@@ -391,6 +376,13 @@ export async function retentionGraph(
   return graph;
 }
 
+/** Write one `sharplsp.profiler.*` setting globally; `undefined` restores its default. */
+export async function setProfilerSetting(key: string, value: unknown): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('sharplsp.profiler')
+    .update(key, value, vscode.ConfigurationTarget.Global);
+}
+
 /** Start tracking `pid` through the real command; resolves once the store is tracking. */
 export async function trackMemory(pid: number): Promise<void> {
   await vscode.commands.executeCommand(uiCommand('memoryStart'), pid);
@@ -399,5 +391,64 @@ export async function trackMemory(pid: number): Promise<void> {
     (memory) => memory === 'active',
     30_000,
     'memory tracking active',
+  );
+}
+
+/** Start tracking `pid` through the real command and return the live session id. */
+export async function trackedMemorySession(pid: number): Promise<string> {
+  await trackMemory(pid);
+  const id = activeMemorySession();
+  assert.ok(id !== undefined, 'tracking must hold a live memory session');
+  return id;
+}
+
+/**
+ * Start a memory session on `pid` over the wire and return the handle every
+ * memory step takes.
+ */
+export async function startMemorySession(pid: number): Promise<{ memory_session_id: string }> {
+  const started = await execute<MemoryStartResult>('memory.start', { pid });
+  assert.ok(started.memory_session_id.length > 0, 'a memory session must be minted');
+  return { memory_session_id: started.memory_session_id };
+}
+
+/**
+ * Assert one wire call is refused with exactly `code`, and return the refusal
+ * so a caller can keep asserting over the message.
+ */
+export async function assertWireError(
+  name: string,
+  params: Record<string, unknown>,
+  code: number,
+  what: string,
+): Promise<{ code: number; message: string }> {
+  const error = await executeError(name, params);
+  assert.notEqual(error, undefined, `${what}: the call must be refused, not answered`);
+  assert.equal(error?.code, code, `${what}: ${error?.message ?? 'no error'}`);
+  return error;
+}
+
+/**
+ * Attach the CPU sampler to `pid`, let it sample for `windowMs`, stop it, and
+ * return both the start reply and the report — the shape every "did the
+ * sampler really sample" assertion starts from.
+ */
+export async function sampleCpu(
+  pid: number,
+  windowMs: number,
+  extra: Record<string, unknown> = {},
+): Promise<{ started: StartProfileResult; report: ProfileReport }> {
+  const started = await execute<StartProfileResult>('cpu.start', { pid, ...extra });
+  await new Promise((resolve) => setTimeout(resolve, windowMs));
+  const report = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
+  return { started, report };
+}
+
+/** Assert the status bar names the live tracking session, as it must while one runs. */
+export function assertTrackingInStatusBar(): void {
+  const status = memoryStatusText();
+  assert.ok(
+    status?.includes('tracking') === true,
+    `status bar follows the session: ${String(status)}`,
   );
 }

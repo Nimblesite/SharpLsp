@@ -19,7 +19,6 @@ import {
 } from '@nimblesite/lsp-profiler-ui/out/src/profiler-webview';
 import {
   buildMemoryDashboardHtml,
-  type MemoryDashboardSnapshot,
   type MemoryDiffData,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import { buildRefGraphHtml } from '@nimblesite/lsp-profiler-ui/out/src/memory-ref-graph';
@@ -33,6 +32,7 @@ import {
   assertHardened,
   assertHtml,
   closeAllEditors,
+  dashboardSnapshot,
   pollUntilResult,
   profileResult as baseResult,
   removeTestDir,
@@ -41,23 +41,6 @@ import {
 /** A payload that closes the surrounding <script> if embedding is unescaped. */
 const HOSTILE = '</script><img src=x onerror=alert(1)>';
 const SOURCE = '/app/Program.cs';
-
-function dashboardSnapshot(
-  overrides: Partial<MemoryDashboardSnapshot> = {},
-): MemoryDashboardSnapshot {
-  return {
-    memorySessionId: 'mem-1',
-    snapshotId: 'snap-1',
-    currentMemory: 1_048_576,
-    peakMemory: 2_097_152,
-    gcObjects: 1200,
-    gcCounts: [700, 12, 3],
-    topAllocations: [{ file: SOURCE, line: 10, size: 4096, count: 8 }],
-    timeline: [],
-    heapProfilePath: '',
-    ...overrides,
-  };
-}
 
 function profileResult(overrides: Partial<ProfileResult> = {}): ProfileResult {
   return baseResult({

@@ -950,8 +950,7 @@ fn handle_request(
         }
         "sharplsp/setTargetFramework" => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            let switched = target_framework::handle_set(req, runtime, sidecar, &connection.sender);
-            if switched.is_ok() {
+            target_framework::handle_set(req, runtime, sidecar).and_then(|switched| {
                 nav_cache.clear();
                 republish_open_diagnostics(
                     vfs,
@@ -960,8 +959,8 @@ fn handle_request(
                     fsharp_sidecar,
                     connection,
                 );
-            }
-            switched
+                switched.announce(&connection.sender)
+            })
         }
         // Solution loading
         "sharplsp/loadSolution" => handle_load_solution(
@@ -1611,8 +1610,9 @@ fn handle_notification(
     }
 }
 
-/// Re-publish every open document's diagnostics: a framework switch changes
-/// which `#if` branches compile. [NETFX-CONTEXT]
+/// Re-publish every open document's diagnostics, returning once each is out: a
+/// framework switch changes which `#if` branches compile, and the editor hears
+/// of the switch only after them. [NETFX-CONTEXT]
 fn republish_open_diagnostics(
     vfs: &Vfs,
     runtime: &tokio::runtime::Runtime,
@@ -1620,10 +1620,23 @@ fn republish_open_diagnostics(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     connection: &Connection,
 ) {
-    let open: Vec<Uri> = vfs.iter().map(|entry| entry.key().clone()).collect();
-    for uri in &open {
-        trigger_diagnostics(uri, runtime, csharp_sidecar, fsharp_sidecar, connection);
-    }
+    let open = vfs
+        .iter()
+        .filter_map(|entry| push_target(entry.key(), csharp_sidecar, fsharp_sidecar))
+        .collect();
+    diagnostics::publish_now(runtime, open, &connection.sender);
+}
+
+/// Where a document's diagnostics come from: the sidecar its language routes
+/// to, and its native path.
+fn push_target(
+    uri: &Uri,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+) -> Option<diagnostics::PushTarget> {
+    let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar)?;
+    let file_path = paths::uri_to_path(uri.as_str()).ok()?;
+    Some((Arc::clone(sidecar), uri.clone(), file_path))
 }
 
 /// Spawn a background diagnostic request for the given URI.
@@ -1636,19 +1649,10 @@ fn trigger_diagnostics(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     connection: &Connection,
 ) {
-    let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
+    let Some((sidecar, uri, file_path)) = push_target(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };
-    let Ok(file_path) = paths::uri_to_path(uri.as_str()) else {
-        return;
-    };
-    diagnostics::request_in_background(
-        runtime,
-        Arc::clone(sidecar),
-        connection.sender.clone(),
-        uri.clone(),
-        file_path,
-    );
+    diagnostics::request_in_background(runtime, sidecar, connection.sender.clone(), uri, file_path);
 }
 
 /// Re-parse a document with tree-sitter and cache the result.

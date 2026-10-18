@@ -4,7 +4,7 @@
 // records them with the footage; nothing in the editor itself is staged.
 // The workbench enforces Trusted Types, so the overlay is built from nodes, CSSOM
 // styles and the Web Animations API: no HTML strings, no style sheets.
-import { PARK, sleep } from './studio.mjs';
+import { PARK, sleep } from './workbench.mjs';
 
 const BAR = {
   position: 'fixed', left: '72px', bottom: '40px', zIndex: '100000',

@@ -64,13 +64,16 @@ built at load or at the switch that needs them
 - `sharplsp/targetFramework` `{ textDocument }` → `{ active, available, project }`;
   `sharplsp/setTargetFramework` `{ textDocument, targetFramework }` switches the whole PROJECT in
   both languages and answers the same shape. A single-target project answers
-  `{ active: null, available: [] }`; a document no loaded project compiles answers
-  `{ active: null, available: [], project: null }`, and switching it is an error.
+  `{ active: null, available: [] }`, even one whose name ends in `(tfm)`: a framework is
+  only the suffix `MSBuildWorkspace` appends to the project FILE's stem. A document no
+  loaded project compiles answers `{ active: null, available: [], project: null }`, and
+  switching it is an error.
 - After a switch the host clears its navigation cache, re-publishes every open document's
-  diagnostics, sends `sharplsp/targetFrameworkChanged` `{ textDocument, active, available,
-  project }`, then each of `workspace/semanticTokens/refresh`, `workspace/inlayHint/refresh`,
-  `workspace/codeLens/refresh` and `workspace/diagnostic/refresh` whose `refreshSupport` the
-  client declared.
+  diagnostics and waits for each first publication (a failed or provisional fetch goes on
+  retrying in the background), sends `sharplsp/targetFrameworkChanged` `{ textDocument,
+  active, available, project }`, then each of `workspace/semanticTokens/refresh`,
+  `workspace/inlayHint/refresh`, `workspace/codeLens/refresh` and
+  `workspace/diagnostic/refresh` whose `refreshSupport` the client declared.
 - VS Code: a status-bar item `$(versions) <tfm>` shows the focused document's active framework
   when its project is multi-targeted, and runs `sharplsp.selectTargetFramework [tfm]`. Without
   an argument the command opens a pick placeheld `Target framework for <Project>` (file name, no

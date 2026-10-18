@@ -3,49 +3,36 @@
 // and real-time screencast clips, plus the click cues the film's cursor follows.
 //
 //   make _build-vsix VSIX_PREBUILT=1
-//   node src/website/tools/profiler-film/capture.mjs
+//   node src/website/tools/profiler-film/films/profiler/capture.mjs
 //
 // Output lands in tools/profiler-film/out/ (gitignored); render.mjs turns it into
 // the website's assets.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { launchVsCode, runCommand } from './vscode.mjs';
-import { captureFlameGraph } from './flamegraph.mjs';
+import { cpuStills } from '../../kit/acts/cpu.mjs';
+import { cueLog, record, still } from '../../kit/camera.mjs';
+import { runCommand } from '../../kit/editor.mjs';
+import { out } from '../../kit/encode.mjs';
+import { STOREFRONT, onSet } from '../../kit/set.mjs';
 import {
   PARK,
+  awaitResults,
   clickSharpLspIcon,
-  cueLog,
+  demoRow,
   headerButton,
   openFile,
-  record,
   rowButton,
   scrollDashboard,
   sleep,
-  stageStorefront,
-  still,
-  storefront,
-  storefrontRow,
-  toggleSideBar,
   trackMemory,
-  waitForStorefrontRow,
-} from './studio.mjs';
+  waitForDemoRow,
+} from '../../kit/workbench.mjs';
+import { captureFlameGraph } from './flamegraph.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const out = path.join(here, 'out');
 const stills = path.join(out, 'stills');
 const clips = path.join(out, 'clips');
 const PROFILE_SECONDS = 10;
 const MEMORY_SECONDS = 26;
-
-/**
- * Toggle `title`'s editor group maximised by double-clicking its tab — no
- * palette, which a refreshing webview would close by stealing focus.
- */
-async function toggleMaximised(page, title) {
-  await page.locator('.tab', { hasText: title }).first().dblclick();
-  await sleep(1200);
-}
 
 async function cpuAct(page, cues) {
   await cues.click(page, await rowButton(page, 'Profile CPU'), 'Profile CPU');
@@ -53,19 +40,8 @@ async function cpuAct(page, cues) {
   await still(page, stills, 'profiler-live');
   await sleep((PROFILE_SECONDS - 7) * 1000);
   await cues.click(page, await headerButton(page, 'Stop Profiling'), 'Stop Profiling');
-  await page.locator('.tab', { hasText: 'SharpLsp Profiler' }).waitFor({ timeout: 60_000 });
+  await awaitResults(page);
   await sleep(3500);
-}
-
-async function cpuStills(page) {
-  await toggleMaximised(page, 'SharpLsp Profiler');
-  await still(page, stills, 'profiler-results');
-  await toggleMaximised(page, 'SharpLsp Profiler');
-  await toggleMaximised(page, 'CheckoutPipeline.cs');
-  await toggleSideBar(page);
-  await still(page, stills, 'profiler-heatmap');
-  await toggleSideBar(page);
-  await toggleMaximised(page, 'CheckoutPipeline.cs');
 }
 
 async function memoryAct(page, cues) {
@@ -86,9 +62,9 @@ async function prepare(page) {
   await clickSharpLspIcon(page);
   await openFile(page, 'CheckoutPipeline.cs');
   await sleep(15_000);
-  await waitForStorefrontRow(page);
+  await waitForDemoRow(page);
   await page.mouse.move(PARK.x, PARK.y);
-  await storefrontRow(page).hover();
+  await demoRow(page).hover();
   await sleep(600);
   await page.screenshot({ path: path.join(stills, 'profiler-processes.png') });
 }
@@ -97,12 +73,12 @@ async function shoot(page, cdp, app) {
   const set = { cdp, cues: cueLog(clips), frames: path.join(out, 'frames'), clips };
   await prepare(page);
   await record(set, 'cpu', () => cpuAct(page, set.cues));
-  await cpuStills(page);
+  await cpuStills(page, stills, 'CheckoutPipeline.cs', 'profiler');
   await runCommand(page, 'View: Close All Editors');
   await openFile(page, 'SessionCache.cs');
   app.stop();
   await app.start();
-  await waitForStorefrontRow(page);
+  await waitForDemoRow(page);
   await record(set, 'memory', () => memoryAct(page, set.cues));
   await memoryStills(page);
 }
@@ -110,21 +86,10 @@ async function shoot(page, cdp, app) {
 async function main() {
   fs.mkdirSync(stills, { recursive: true });
   fs.mkdirSync(clips, { recursive: true });
-  const { root, workspace } = stageStorefront();
-  const editor = await launchVsCode({ workspace });
-  const app = storefront(workspace);
-  await app.start();
-  try {
-    await shoot(editor.page, editor.cdp, app);
+  await onSet({ demo: STOREFRONT, out }, async ({ page, cdp, app, workspace }) => {
+    await shoot(page, cdp, app);
     await captureFlameGraph(path.join(workspace, '.sharplsp/profiles'), out);
-  } catch (error) {
-    await editor.page.screenshot({ path: path.join(out, 'failure.png') }).catch(() => undefined);
-    throw error;
-  } finally {
-    app.stop();
-    await editor.close();
-    fs.rmSync(root, { recursive: true, force: true });
-  }
+  });
 }
 
 await main();

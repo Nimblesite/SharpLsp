@@ -83,6 +83,28 @@
       }
     }
   },
+  "profiler-fsharp": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M52S",
+    "uploadDate": "2026-10-18T19:00:00+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Screen recording: profiling an F# app in VS Code with SharpLsp, from hot pipeline stages and closures to F# records and union cases leaking from a module value, and a verified fix",
+        "caption": "Narrated, with original music and captions. The F# loop on the FsStorefront demo, recorded in VS Code: Profile CPU and the heat map on .fs lines, Track Memory, records and union cases painted where they are built, the retention graph rooted at a module value, the fix typed in, then a second run. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "屏幕录像：在 VS Code 中用 SharpLsp 分析 F# 应用，从热点管道阶段和闭包，到从模块值泄漏的 F# 记录和联合用例，再到验证修复",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中录制的 FsStorefront 演示 F# 完整流程：Profile CPU 和 .fs 行上的热力图、Track Memory、标在构造位置的记录和联合用例、根为模块值的保留图、输入修复代码，然后再次运行。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "画面録画：VS Code で SharpLsp を使い F# アプリをプロファイリング。ホットなパイプラインのステージとクロージャーから、モジュール値からリークする F# のレコードと共用体ケース、修正の確認まで",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で収録した FsStorefront デモでの F# の一連の流れ：Profile CPU と .fs の行のヒートマップ、Track Memory、組み立てた行に塗られるレコードと共用体ケース、モジュール値をルートとする保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
   "sharplsp-tour": {
     "encodings": ["webm", "mp4"],
     "width": 1000,
