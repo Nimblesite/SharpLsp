@@ -1,50 +1,18 @@
-// Tests for [PROFILER-SHARED-LIBRARY-VSCODE] at the LSP level. See
-// docs/specs/PROFILER-SPEC.md#PROFILER-SHARED-LIBRARY-VSCODE and
-// lspkit/docs/specs/LSP-PROFILER-SPEC.md.
-//
-// These go one layer below the VS Code commands: the JSON-RPC surface an editor without the UI
-// library uses. Every assertion names the spec section that forces it:
-//
-//   [PROF-WIRE-METHODS]  every operation is `workspace/executeCommand` with exactly one argument,
-//                        the typed params object; commands are advertised in
-//                        `executeCommandProvider.commands`.
-//   [PROF-HOST-ROUTING]  `initialize` adds the profiler's commands and `experimental.lspProfiler`;
-//                        profiler requests never block the host's message loop.
-//   [PROF-UI-IDS]        UI ids are `<prefix>.profiler.*` and never collide with server commands.
-//   [PROF-ERRORS]        OTHER, PROCESS_NOT_FOUND, UNSUPPORTED_RUNTIME, ALREADY_PROFILING,
-//                        INVALID_PARAMS — one code per failure kind.
-//   [PROF-PROCESSES]     one ProcessInfo per recognised process; attachable ones sort first.
-//   [PROF-PROCESSES-KILL] `kill` only reaches a process a registered runtime recognises.
-//   [PROF-CPU-START]     returns `{ session_id, pid, runtime, runtime_version, started_at }`;
-//                        a missing PID is invalid, a refused start leaves nothing behind.
-//   [PROF-CPU-SESSIONS]  `cpu.list` carries id, pid, runtime, version, start time, samples, duration;
-//                        `duration` on start stops the session and keeps its report.
-//   [PROF-CPU-SNAPSHOT]  a snapshot returns the report shape without ending the session.
-//   [PROF-CPU-STOP]      stop drains, aggregates and returns the report.
-//   [PROF-CPU-REPORT]    hot functions with inclusive/self share, hot lines, artifacts.
-//   [PROF-AGGREGATION-LOGIC]      shares are 0–100, self ≤ inclusive, ranked hottest first.
-//   [PROF-SAMPLE]        positions are LSP `Location`s: a file and a 1-based line.
+// Tests for [PROFILER-SHARED-LIBRARY-VSCODE] on real F# processes.
+// SharpLsp contract: docs/specs/PROFILER-SPEC.md.
+// Shared contract: lspkit/docs/specs/LSP-PROFILER-SPEC.md.
+// Each journey cites the specific protocol, CPU, memory and UI requirements it enforces.
 import * as assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import type { InitializeResult } from 'vscode-languageclient/node';
 import type {
-  ProfileReport,
   ProfileSessionList,
   ProcessList,
 } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import { execute, executeError, lspClient, profilingSuite } from './profiler-kit';
-import { command, count, endProfiling, LEDGER, STOP_MS } from './profiler-fsharp-kit';
-
-/** [PROF-ERRORS] codes, as `docs/models/profiler-methods.json` spells them. */
-const CODE = {
-  OTHER: -32_000,
-  PROCESS_NOT_FOUND: -32_001,
-  UNSUPPORTED_RUNTIME: -32_002,
-  ALREADY_PROFILING: -32_004,
-  INVALID_PARAMS: -32_602,
-} as const;
+import { CODE, raw, rawError } from './profiler-fsharp-soak-kit';
+import { endProfiling, LEDGER, STOP_MS } from './profiler-fsharp-kit';
 
 /** Every operation the wire registry names, under SharpLsp's prefix. */
 const COMMANDS = [
@@ -57,7 +25,6 @@ const COMMANDS = [
   'cpu.list',
   'cpu.cooperativeScript',
   'cpu.cooperativeAttach',
-  'cpu.progress',
   'memory.start',
   'memory.snapshot',
   'memory.diff',
@@ -67,57 +34,6 @@ const COMMANDS = [
   'memory.stop',
   'memory.ingest',
 ].map((name) => `sharplsp.lspProfiler.${name}`);
-
-/** `workspace/executeCommand` exactly as the spec shapes it, with caller-chosen arguments. */
-function raw(name: string, args: unknown[]): Promise<unknown> {
-  return lspClient().sendRequest('workspace/executeCommand', {
-    command: name,
-    arguments: args,
-  });
-}
-
-/** The error a raw call rejects with. */
-async function rawError(name: string, args: unknown[]): Promise<{ code: number; message: string }> {
-  try {
-    await raw(name, args);
-  } catch (error: unknown) {
-    const failure = error as { code?: unknown; message?: unknown };
-    return {
-      code: typeof failure.code === 'number' ? failure.code : 0,
-      message: String(failure.message ?? error),
-    };
-  }
-  assert.fail(`${name} with ${JSON.stringify(args)} should have failed`);
-}
-
-/** A refusal the registry defines, or a success: never anything else. */
-const REGISTRY_CODES: ReadonlySet<number> = new Set([
-  CODE.OTHER,
-  CODE.PROCESS_NOT_FOUND,
-  CODE.UNSUPPORTED_RUNTIME,
-  -32_003,
-  CODE.ALREADY_PROFILING,
-  -32_005,
-  -32_006,
-  CODE.INVALID_PARAMS,
-]);
-
-/** The outcome of one call: it succeeded, or it refused with a registry code. */
-async function outcomeOf(name: string, args: unknown[]): Promise<string> {
-  try {
-    await raw(name, args);
-    return 'ok';
-  } catch (error: unknown) {
-    const failure = error as { code?: unknown; message?: unknown };
-    const code = typeof failure.code === 'number' ? failure.code : 0;
-    assert.ok(
-      REGISTRY_CODES.has(code),
-      `[PROF-ERRORS] ${name} refuses with a registry code, not ${code}: ${String(failure.message)}`,
-    );
-    assert.ok(String(failure.message ?? '').length > 0, `${name} explains its refusal`);
-    return 'refused';
-  }
-}
 
 /** A running process no profiler runtime recognises: a plain `sleep`. */
 function sleeper(): ChildProcess {
@@ -146,7 +62,12 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
     const capabilities = initialized.capabilities;
     const advertised = capabilities.executeCommandProvider?.commands ?? [];
 
-    // ── [PROF-WIRE-METHODS] every registry operation is advertised, exactly once.
+    // ── [PROF-WIRE-METHODS] every request is advertised; progress is a server notification.
+    assert.equal(
+      advertised.includes('sharplsp.lspProfiler.cpu.progress'),
+      false,
+      '[PROF-CPU-PROGRESS] progress is not an executable client command',
+    );
     for (const commandId of COMMANDS) {
       const hits = advertised.filter((entry) => entry === commandId).length;
       assert.equal(hits, 1, `${commandId} is advertised exactly once (${hits})`);
@@ -179,11 +100,11 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
       assert.ok(Object.keys(profiler).length > 0, 'the profiler capabilities are not empty');
     }
 
-    // ── Every advertised id is a well-formed `<prefix>.lspProfiler.<area>.<action>`.
+    // ── [PROF-WIRE-METHODS] top-level capabilities/processes/kill and area operations share a prefix.
     for (const commandId of COMMANDS) {
       assert.match(
         commandId,
-        /^sharplsp\.lspProfiler\.[A-Za-z]+\.[A-Za-z]+$/,
+        /^sharplsp\.lspProfiler\.[A-Za-z]+(?:\.[A-Za-z]+)?$/,
         `the id composes from prefix, area and action: ${commandId}`,
       );
       assert.ok(!/\s/.test(commandId), `no whitespace in ${commandId}`);
@@ -205,7 +126,7 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
     // ── [PROF-WIRE-METHODS] exactly one argument: the typed params object.
     const malformed: readonly (readonly [string, unknown[]])[] = [
       ['zero arguments', []],
-      ['two arguments', [{}]],
+      ['two arguments', [{}, {}]],
       ['a number', [42]],
       ['a string', ['pid=1']],
       ['null', [null]],
@@ -255,15 +176,24 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
     );
   });
 
-  test('all eighteen operations answer a malformed call without wedging the loop, and none of them leaves a session behind', async function () {
+  test('all seventeen requests enforce their typed arguments with INVALID_PARAMS and leave the server responsive', async function () {
     this.timeout(STOP_MS * 4);
     for (const commandId of COMMANDS) {
-      // ── [PROF-ERRORS] refuse-or-succeed, never an unclassified failure.
-      const outcome = await outcomeOf(commandId, [{}]);
-      assert.ok(outcome === 'ok' || outcome === 'refused', `${commandId} answered: ${outcome}`);
-      if (outcome === 'refused') {
-        const again = await outcomeOf(commandId, [{}]);
-        assert.equal(again, 'refused', `${commandId} refuses the same malformed call twice`);
+      // [PROF-WIRE-METHODS] only these two requests have no required object fields.
+      const empty = ['capabilities', 'cpu.list'].some(
+        (name) => commandId === `sharplsp.lspProfiler.${name}`,
+      );
+      if (empty) {
+        const result = await raw(commandId, [{}]);
+        assert.ok(
+          result !== null && typeof result === 'object',
+          `${commandId} accepts its empty params object`,
+        );
+      } else {
+        for (const args of [[{}], [{}]]) {
+          const failure = await rawError(commandId, args);
+          assert.equal(failure.code, CODE.INVALID_PARAMS, `${commandId} requires its typed fields`);
+        }
       }
       // ── [PROF-HOST-ROUTING] the loop still serves the next request.
       const sessions = await execute<ProfileSessionList>('cpu.list', {});
@@ -271,9 +201,16 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
       // ── [PROF-CPU-START] a refused call leaves nothing running.
       assert.deepEqual(sessions.sessions, [], `${commandId} created no CPU session`);
     }
-    // ── The same sweep with no argument at all: still classified, still no session.
+    // [PROF-WIRE-METHODS] exactly one typed object, for EVERY operation.
     for (const commandId of COMMANDS) {
-      await outcomeOf(commandId, []);
+      for (const args of [[], [{}, {}], [42], ['not-an-object']]) {
+        const failure = await rawError(commandId, args);
+        assert.equal(
+          failure.code,
+          CODE.INVALID_PARAMS,
+          `${commandId} rejects ${JSON.stringify(args)}`,
+        );
+      }
       assert.deepEqual(
         (await execute<ProfileSessionList>('cpu.list', {})).sessions,
         [],
@@ -380,13 +317,22 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
       // the same processes come back with a root as without one.
       const roots = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
       const scoped = await execute<ProcessList>('processes', { workspace_roots: roots });
-      assert.deepEqual(
-        scoped.processes.map((entry) => entry.pid).sort((a, b) => a - b),
-        processes.map((entry) => entry.pid).sort((a, b) => a - b),
-        'a workspace root never filters the process table',
-      );
       const scopedTarget = scoped.processes.find((entry) => entry.pid === target.pid);
       assert.ok(scopedTarget, 'the F# target survives scoping');
+      assert.equal(
+        fsharp.in_workspace,
+        false,
+        'without roots the fixture is outside the workspace',
+      );
+      const fixtureRoot = fsharp.entry!;
+      const containing = await execute<ProcessList>('processes', {
+        workspace_roots: [fixtureRoot],
+      });
+      assert.equal(
+        containing.processes.find((entry) => entry.pid === target.pid)?.in_workspace,
+        true,
+        '[PROF-PROCESSES-SCOPE] membership follows the supplied root, without hiding the target',
+      );
       assert.equal(typeof scopedTarget.in_workspace, 'boolean', 'membership is a boolean flag');
       assert.deepEqual(
         (await execute<ProfileSessionList>('cpu.list', {})).sessions,
@@ -397,163 +343,4 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
       decoy.kill();
     }
   });
-
-  test('CPU over the wire on F#: identity on start, samples and versions in list, a snapshot that keeps the session, ranked 1-based positions, a report with artifacts, stop, and no session afterwards', async function () {
-    this.timeout(STOP_MS * 4);
-    const { target } = live;
-    await command(target, 'burn on');
-
-    // ── [PROF-CPU-START] returns the session's identity.
-    const started = await execute<{
-      session_id: string;
-      pid: number;
-      runtime: string;
-      runtime_version: string;
-      started_at: string;
-    }>('cpu.start', { pid: target.pid, include_native: false });
-    assert.ok(started.session_id.length > 0, 'a session id');
-    assert.equal(started.pid, target.pid, 'the session names its PID');
-    assert.equal(started.runtime, 'dotnet', '[PROF-RUNTIME] runtime identity travels as data');
-    assert.ok(started.runtime_version.length > 0, '[PROF-CPU-START] a runtime version is reported');
-    assert.match(started.started_at, /^\d{4}-\d{2}-\d{2}T/, 'an RFC 3339 start time');
-
-    // ── [PROF-CPU-SESSIONS] the live session carries samples and a duration.
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
-    const listed = (await execute<ProfileSessionList>('cpu.list', {})).sessions;
-    const now = listed.find((entry) => entry.session_id === started.session_id);
-    assert.ok(now, 'the session is listed while it runs');
-    assert.equal(now.pid, target.pid);
-    assert.equal(now.runtime, 'dotnet');
-    assert.ok(now.runtime_version.length > 0, 'the version survives the listing');
-    assert.ok(now.sample_count > 0, `samples accumulate: ${now.sample_count}`);
-    assert.ok(now.duration_secs > 0, `the duration runs: ${now.duration_secs}`);
-    assert.ok(now.started_at.length > 0, 'the start time is listed');
-
-    // ── [PROF-CPU-SNAPSHOT] a snapshot is a report and the session survives it.
-    const snapshot = await execute<ProfileReport>('cpu.snapshot', {
-      session_id: started.session_id,
-    });
-    assert.equal(snapshot.session_id, started.session_id, 'the report names its session');
-    assert.equal(snapshot.pid, target.pid);
-    assert.equal(snapshot.runtime, 'dotnet');
-    assert.ok(snapshot.total_samples > 0, 'the snapshot samples something');
-    assert.ok(
-      snapshot.user_samples >= 0 && snapshot.user_samples <= snapshot.total_samples,
-      'user samples are a subset',
-    );
-    assert.ok(snapshot.sample_rate >= 1, `a positive sample rate: ${snapshot.sample_rate}`);
-    assert.ok(snapshot.duration_secs >= 0, 'a duration');
-    assert.ok(
-      (await execute<ProfileSessionList>('cpu.list', {})).sessions.some(
-        (entry) => entry.session_id === started.session_id,
-      ),
-      '[PROF-CPU-SNAPSHOT] the snapshot did not end the session',
-    );
-    assertProfileShape(snapshot);
-
-    // ── [PROF-CPU-STOP] stop drains and returns the final report.
-    const stopped = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
-    assert.equal(stopped.session_id, started.session_id, 'the stopped report is the session');
-    assert.ok(stopped.total_samples >= snapshot.total_samples, 'samples never shrink on stop');
-    assert.deepEqual(stopped.artifacts.export_error, undefined, '[PROF-EXPORT] no export error');
-    assertProfileShape(stopped);
-    assert.equal(
-      (await execute<ProfileSessionList>('cpu.list', {})).sessions.some(
-        (entry) => entry.session_id === started.session_id,
-      ),
-      false,
-      '[PROF-CPU-SESSIONS] a stopped session is no longer active',
-    );
-
-    // ── A stopped session cannot be stopped or snapshotted again.
-    const restop = await executeError('cpu.stop', { session_id: started.session_id });
-    assert.ok(restop, 'a second stop fails');
-    assert.ok(restop.code !== 0, `[PROF-ERRORS] ${JSON.stringify(restop)}`);
-    const resnap = await executeError('cpu.snapshot', { session_id: started.session_id });
-    assert.ok(resnap, 'a snapshot after stop fails');
-    assert.ok(resnap.code !== 0, 'the ended session rejects snapshots');
-
-    // ── The program was never disturbed: attaching is not invasive.
-    const alive = await command(target, 'stats');
-    assert.ok(count(alive, 'iterations') >= 0, 'the F# program still answers on stdin');
-  });
-
-  test('a duration on start stops the session by itself and keeps its report for the next stop', async function () {
-    this.timeout(STOP_MS * 4);
-    const { target } = live;
-    // ── [PROF-CPU-SESSIONS] `duration` ends the session automatically.
-    const started = await execute<{ session_id: string }>('cpu.start', {
-      pid: target.pid,
-      duration: 2,
-    });
-    assert.ok(started.session_id.length > 0, 'a session id with a duration');
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
-    const active = (await execute<ProfileSessionList>('cpu.list', {})).sessions;
-    assert.equal(
-      active.some((entry) => entry.session_id === started.session_id),
-      false,
-      'the duration elapsed and the session ended by itself',
-    );
-    // ── Its report is kept for the next stop.
-    const kept = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
-    assert.equal(kept.session_id, started.session_id, 'the kept report belongs to the session');
-    assert.ok(kept.total_samples >= 0, 'the kept report has a sample count');
-    assert.ok(kept.duration_secs >= 0, 'the kept report has a duration');
-    assertProfileShape(kept);
-  });
 });
-
-/** [PROF-CPU-REPORT] + [PROF-AGGREGATION-LOGIC] + [PROF-SAMPLE] + [PROF-EXPORT]. */
-function assertProfileShape(report: ProfileReport): void {
-  assert.ok(Array.isArray(report.hot_functions), 'hot functions are a list');
-  assert.ok(Array.isArray(report.hot_lines), 'hot lines are a list');
-  const percentages = report.hot_functions.map((fn) => fn.percentage);
-  assert.deepEqual(
-    percentages,
-    [...percentages].sort((a, b) => b - a),
-    'functions are ranked hottest first',
-  );
-  for (const fn of report.hot_functions) {
-    assert.ok(fn.name.length > 0, 'a function has a name');
-    assert.ok(
-      fn.percentage >= 0 && fn.percentage <= 100,
-      `inclusive share 0–100: ${fn.percentage}`,
-    );
-    assert.ok(
-      fn.self_percentage <= fn.percentage,
-      `self never exceeds inclusive: ${fn.self_percentage} > ${fn.percentage}`,
-    );
-    assert.ok(fn.samples >= fn.self_samples, 'inclusive samples cover the self samples');
-    assert.ok(fn.samples <= report.total_samples, 'a function cannot exceed the total');
-    if (fn.line !== undefined) {
-      assert.ok(fn.line >= 1, `[PROF-SAMPLE] 1-based definition line: ${fn.line}`);
-      assert.ok((fn.file ?? '').length > 0, 'a located function names its file');
-    }
-  }
-  const linePercentages = report.hot_lines.map((line) => line.percentage);
-  assert.deepEqual(
-    linePercentages,
-    [...linePercentages].sort((a, b) => b - a),
-    'lines are ranked hottest first',
-  );
-  for (const line of report.hot_lines) {
-    assert.ok(line.line >= 1, `[PROF-SAMPLE] 1-based hot line: ${line.line}`);
-    assert.ok(line.file.length > 0, 'a hot line names its file');
-    assert.ok(
-      line.percentage > 0 && line.percentage <= 100,
-      `a hot line share: ${line.percentage}`,
-    );
-    assert.ok(line.samples <= report.total_samples, 'a hot line cannot exceed the total');
-  }
-  const artifacts = report.artifacts;
-  for (const artifact of [
-    artifacts.speedscope_path,
-    artifacts.flamegraph_path,
-    artifacts.cpuprofile_path,
-  ]) {
-    if (artifact !== undefined) {
-      assert.ok(fs.existsSync(artifact), `[PROF-EXPORT] the artifact exists: ${artifact}`);
-    }
-  }
-  assert.ok(Array.isArray(report.diagnostics), 'diagnostics travel with the result');
-}

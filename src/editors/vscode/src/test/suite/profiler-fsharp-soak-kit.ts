@@ -16,7 +16,14 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import { embeddedLeaks, profilerStore, uiCommand, waitFor } from './profiler-kit';
+import {
+  embeddedLeaks,
+  execute,
+  lspClient,
+  profilerStore,
+  uiCommand,
+  waitFor,
+} from './profiler-kit';
 import { captureToasts } from './profiler-ui-helpers';
 import {
   lastMemorySnapshot,
@@ -38,11 +45,24 @@ import {
   STOP_MS,
   wireDiff,
 } from './profiler-fsharp-kit';
-import type { SuspectedLeak } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
+import type {
+  MemoryOutcome,
+  MemoryStep,
+  ProfileReport,
+  SuspectedLeak,
+} from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import type { MemoryDashboardSnapshot } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 
 export const SAMPLE_MS = 3_000;
 export const MIB = 1024 * 1024;
+/** [PROF-ERRORS] classified protocol failures. */
+export const CODE = {
+  OTHER: -32_000,
+  PROCESS_NOT_FOUND: -32_001,
+  UNSUPPORTED_RUNTIME: -32_002,
+  ALREADY_PROFILING: -32_004,
+  INVALID_PARAMS: -32_602,
+} as const;
 /** [PROF-MEMORY-CONFIDENCE] grades as the wire spells them ([PROF-WIRE-GEN]). */
 export const BANDS = ['Low', 'Medium', 'High', 'Definite'] as const;
 export type Band = (typeof BANDS)[number];
@@ -58,10 +78,17 @@ export async function delay(ms: number): Promise<void> {
 export async function uiSnapshot(
   previous?: MemoryDashboardSnapshot,
 ): Promise<MemoryDashboardSnapshot> {
-  await vscode.commands.executeCommand(uiCommand('memorySnapshot'));
+  const before = previous ?? lastMemorySnapshot();
+  const session = trackedSession();
+  const toasts = await captureToasts(() =>
+    vscode.commands.executeCommand(uiCommand('memorySnapshot')),
+  );
+  assert.deepEqual(toasts.error, [], 'the F# snapshot succeeds');
+  assert.deepEqual(toasts.warning, [], 'the F# snapshot is not refused');
   const snapshot = await waitFor(
     () => lastMemorySnapshot(),
-    (snap) => snap !== undefined && snap.snapshotId !== previous?.snapshotId,
+    (snap) =>
+      snap?.memorySessionId === session.memory_session_id && snap.snapshotId !== before?.snapshotId,
     STOP_MS,
     'a newer snapshot in the dashboard',
   );
@@ -147,7 +174,10 @@ export async function compareMemory(wire: { memory_session_id: string }) {
     memoryDashboardState()?.html.includes('const leaks = '),
     'the dashboard renders the diff',
   );
-  return wireDiff(wire);
+  const compared = await wireDiff(wire);
+  for (const site of compared.diff.grown) assert.ok(site.size_diff > 0, 'grown sites gained bytes');
+  for (const site of compared.diff.freed) assert.ok(site.size_diff < 0, 'freed sites lost bytes');
+  return compared;
 }
 
 /** [PROF-MEMORY-CONFIDENCE] + [PROF-UI-MEMORY]: inspect one comparison without advancing it. */
@@ -170,6 +200,8 @@ export function assertConfidence(
   assert.equal(displayed.confidence, band.toLowerCase(), 'the dashboard shows the exact grade');
   assert.equal(displayed.countGrowth, leak.count_growth, 'the same F# count growth reaches the UI');
   assert.equal(displayed.currentCount, leak.current_count, 'the same live F# count reaches the UI');
+  assert.equal(displayed.sizeGrowth, leak.size_growth, 'the same F# byte growth reaches the UI');
+  assert.equal(displayed.currentSize, leak.current_size, 'the same F# live bytes reach the UI');
   for (const file of lines) {
     assert.ok(isFile(leak.file, file), `${type} has its F# source file`);
     assert.ok(leak.line !== undefined, `${type} has a source line`);
@@ -197,6 +229,10 @@ export function assertSitesCoherent(snapshot: MemoryDashboardSnapshot): void {
     assert.ok((site.typeName ?? '').length > 0, 'a row names its runtime type');
     assert.ok(site.size > 0, `${key} has bytes`);
     assert.ok(site.count > 0, `${key} has objects`);
+    if (site.typeName?.endsWith('[]') || site.typeName?.endsWith('[,]')) {
+      assert.equal(site.file, undefined, '[PROF-DOTNET-SOURCE] an array has no source file');
+      assert.equal(site.line, undefined, '[PROF-DOTNET-SOURCE] an array has no source line');
+    }
     assert.ok(site.line === undefined || site.line >= 1, `[PROF-WIRE] 1-based line: ${site.line}`);
     if (site.file !== undefined) {
       assert.ok(fs.existsSync(site.file), `[PROF-DOTNET-SOURCE] the anchor exists: ${site.file}`);
@@ -292,4 +328,122 @@ export function assertStoreCoherent(): void {
   const badge = processesViewState().badge;
   if (values.profilerBusy) assert.ok((badge ?? 0) >= 1, 'a running session badges the panel');
   else assert.equal(badge ?? 0, 0, 'no badge when nothing runs');
+}
+
+/** The outcome of one memory step; a Courier Evaluate step is a failure for a .NET target. */
+export async function step(name: string, params: Record<string, unknown>): Promise<MemoryOutcome> {
+  const result = await execute<MemoryStep>(name, params);
+  assert.equal(result.kind, 'Completed', `[PROF-MEMORY-STEP] ${name} completes in Direct mode`);
+  assert.ok(result.kind === 'Completed', 'narrowed');
+  return result.result.outcome;
+}
+
+export async function snapshotOutcome(
+  id: string,
+): Promise<Extract<MemoryOutcome, { kind: 'Snapshot' }>> {
+  const outcome = await step('memory.snapshot', { memory_session_id: id });
+  assert.equal(outcome.kind, 'Snapshot', '[PROF-MEMORY-STEP] snapshot yields a Snapshot outcome');
+  assert.ok(outcome.kind === 'Snapshot', 'narrowed');
+  return outcome;
+}
+
+export async function diffOutcome(id: string): Promise<Extract<MemoryOutcome, { kind: 'Diff' }>> {
+  const outcome = await step('memory.diff', { memory_session_id: id });
+  assert.equal(outcome.kind, 'Diff', '[PROF-MEMORY-STEP] diff yields a Diff outcome');
+  assert.ok(outcome.kind === 'Diff', 'narrowed');
+  return outcome;
+}
+
+/** `workspace/executeCommand` exactly as the spec shapes it, with caller-chosen arguments. */
+export function raw(name: string, args: unknown[]): Promise<unknown> {
+  return lspClient().sendRequest('workspace/executeCommand', {
+    command: name,
+    arguments: args,
+  });
+}
+
+/** The error a raw call rejects with. */
+export async function rawError(
+  name: string,
+  args: unknown[],
+): Promise<{ code: number; message: string }> {
+  try {
+    await raw(name, args);
+  } catch (error: unknown) {
+    const failure = error as { code?: unknown; message?: unknown };
+    return {
+      code: typeof failure.code === 'number' ? failure.code : 0,
+      message: String(failure.message ?? error),
+    };
+  }
+  assert.fail(`${name} with ${JSON.stringify(args)} should have failed`);
+}
+
+/** [PROF-CPU-REPORT] + [PROF-AGGREGATION-LOGIC] + [PROF-SAMPLE] + [PROF-EXPORT]. */
+export function assertProfileShape(report: ProfileReport): void {
+  assert.ok(Array.isArray(report.hot_functions), 'hot functions are a list');
+  assert.ok(Array.isArray(report.hot_lines), 'hot lines are a list');
+  const percentages = report.hot_functions.map((fn) => fn.percentage);
+  assert.deepEqual(
+    percentages,
+    [...percentages].sort((a, b) => b - a),
+    'functions are ranked hottest first',
+  );
+  for (const fn of report.hot_functions) {
+    assert.ok(fn.name.length > 0, 'a function has a name');
+    assert.ok(
+      fn.percentage >= 0 && fn.percentage <= 100,
+      `inclusive share 0–100: ${fn.percentage}`,
+    );
+    assert.ok(
+      fn.self_percentage <= fn.percentage,
+      `self never exceeds inclusive: ${fn.self_percentage} > ${fn.percentage}`,
+    );
+    assert.ok(fn.samples >= fn.self_samples, 'inclusive samples cover the self samples');
+    assert.ok(fn.samples <= report.user_samples, 'a function cannot exceed retained ticks');
+    assert.equal(
+      fn.percentage,
+      (fn.samples / report.user_samples) * 100,
+      '[PROF-AGGREGATION-LOGIC] inclusive share uses retained ticks as its denominator',
+    );
+    assert.equal(
+      fn.self_percentage,
+      (fn.self_samples / report.user_samples) * 100,
+      '[PROF-AGGREGATION-LOGIC] self share uses the same retained-tick denominator',
+    );
+    if (fn.line !== undefined) {
+      assert.ok(fn.line >= 1, `[PROF-SAMPLE] 1-based definition line: ${fn.line}`);
+      assert.ok((fn.file ?? '').length > 0, 'a located function names its file');
+    }
+  }
+  const linePercentages = report.hot_lines.map((line) => line.percentage);
+  assert.deepEqual(
+    linePercentages,
+    [...linePercentages].sort((a, b) => b - a),
+    'lines are ranked hottest first',
+  );
+  for (const line of report.hot_lines) {
+    assert.ok(line.line >= 1, `[PROF-SAMPLE] 1-based hot line: ${line.line}`);
+    assert.ok(line.file.length > 0, 'a hot line names its file');
+    assert.ok(
+      line.percentage > 0 && line.percentage <= 100,
+      `a hot line share: ${line.percentage}`,
+    );
+    assert.ok(line.samples <= report.user_samples, 'a hot line cannot exceed retained ticks');
+    assert.equal(
+      line.percentage,
+      (line.samples / report.user_samples) * 100,
+      '[PROF-AGGREGATION-LOGIC] a hot line’s share agrees with its tick count',
+    );
+  }
+  const artifacts = report.artifacts;
+  for (const artifact of [
+    artifacts.speedscope_path,
+    artifacts.flamegraph_path,
+    artifacts.cpuprofile_path,
+  ]) {
+    assert.ok(artifact, '[PROF-EXPORT] every required CPU artifact is returned');
+    assert.ok(fs.existsSync(artifact), `[PROF-EXPORT] the artifact exists: ${artifact}`);
+  }
+  assert.ok(Array.isArray(report.diagnostics), 'diagnostics travel with the result');
 }

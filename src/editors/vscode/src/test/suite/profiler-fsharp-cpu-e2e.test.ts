@@ -316,14 +316,18 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
     assert.deepEqual(heatOn('Routing.fs'), [], 'the setting turns the tint off');
     assertResultsPanel(quiet, ['shortestPath']);
 
-    // Heat map back on, every workload at once: each module is hot and painted.
+    // Give every workload a full sampling window in ONE session. A mixed loop's
+    // stages have unequal cost; merely executing a stage does not make it a 2% hotspot.
     await setProfilerSetting('showInlineHeatMap', true);
     await command(target, 'run mixed');
     const files = WORKLOADS.map((w) => w.span.file);
     await showSources(ENGINE, files);
     await profileRow(await processRow(target.pid));
     await awaitLiveProgress();
-    await delay(SAMPLE_MS * 2);
+    for (const workload of WORKLOADS) {
+      await command(target, `run ${workload.command}`);
+      await delay(SAMPLE_MS);
+    }
     await stopProfiling(STOP_MS);
     const mixed = lastProfileResult();
     assert.ok(mixed);
@@ -340,15 +344,18 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
     await command(target, 'idle');
   });
 
-  test('the profiler tells the truth about where F# time goes: on a mixed run, each stage’s share of the samples matches the share FsPricingEngine measured with its own Stopwatch, and the stages rank in the same order', async function () {
+  test('the profiler tells the truth about four sustained F# workloads: sampled shares match the fixture’s Stopwatch and materially different stages rank in the same order', async function () {
     this.timeout(STOP_MS * 3);
     const { target } = live;
-    await command(target, 'run mixed');
+    await command(target, 'run parse');
     await showSources(ENGINE, ['Csv.fs', 'Search.fs', 'Routing.fs']);
     const before = await command(target, 'stats');
     await profileRow(await processRow(target.pid));
     await awaitLiveProgress();
-    await delay(SAMPLE_MS * 3);
+    for (const stage of GROUND_TRUTH) {
+      await command(target, `run ${stage.stage}`);
+      await delay(SAMPLE_MS);
+    }
     await stopProfiling(STOP_MS);
     const after = await command(target, 'stats');
     const result = lastProfileResult();
@@ -372,6 +379,13 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
     }));
     const major = shares.filter((s) => s.truth >= MAJOR_SHARE);
     assert.ok(major.length >= 2, `at least two stages carry real time: ${JSON.stringify(shares)}`);
+    for (const stage of shares) {
+      assert.ok(stage.micros > 0, `the fixture actually exercised ${stage.identifier}`);
+      assert.ok(
+        Math.abs(stage.seen - stage.truth) <= SHARE_TOLERANCE,
+        `${stage.identifier}: sampled ${pct(stage.seen)}, measured ${pct(stage.truth)}`,
+      );
+    }
     for (const stage of major) {
       assert.ok(stage.sampled > 0, `${stage.identifier} took ${pct(stage.truth)} and must be hot`);
       assert.ok(

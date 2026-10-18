@@ -46,6 +46,16 @@ const SPIN_LINES = { first: 26, last: 31 };
 const RECORD = { type: 'HotLeakAppFs.LeakedPayload', line: 23 };
 const UNION_CASE = { type: 'HotLeakAppFs.PayloadKind+Small', line: 21 };
 const GENERIC_RECORD = { type: 'HotLeakAppFs.Tagged`1[System.Int32]', line: 22 };
+/** The rest of lspkit's F# heap zoo, each at the line that constructs it. */
+const ORDER = { type: 'HotLeakAppFs.Order', line: 77 };
+const ORDER_LINE = { type: 'HotLeakAppFs.OrderLine', line: 75 };
+const CUSTOMER = { type: 'HotLeakAppFs.CustomerId', line: 73 };
+const EXPRESS = { type: 'HotLeakAppFs.Priority+Express', line: 76 };
+const QUOTE = { type: 'HotLeakAppFs.Quote', line: 82 };
+const NODE = { type: 'HotLeakAppFs.Node', line: 88 };
+/** The subscription closure F# builds for `Event.Publish.Add`. */
+const CLOSURE_LINE = 97;
+type DashboardSite = NonNullable<ReturnType<typeof lastMemorySnapshot>>['topAllocations'][number];
 
 const inSpin = (line: number): boolean => line >= SPIN_LINES.first && line <= SPIN_LINES.last;
 const isProgramFs = (file: string | undefined): boolean => file?.endsWith('Program.fs') ?? false;
@@ -138,6 +148,99 @@ suite('F# profiling — real end-to-end', () => {
     );
     await stopTracking();
     assert.equal(memoryStatusText(), undefined, 'the status bar hides once idle');
+  });
+
+  test('the F# heap zoo: grow orders, quotes, closures, a cycle and arrays → every shape anchors at its constructing line, arrays never do → the growing record reaches Low → stop clears the track', async function () {
+    this.timeout(STEP_MS * 3);
+    const { target } = live;
+    // A fresh, deterministic heap: no background growth, then one shape at a time.
+    for (const line of ['work off', 'release all', 'payload 100', 'grow 200', 'blob 4']) {
+      const reply = await target.send(line);
+      assert.ok(reply.startsWith(`OK ${line}`), `the fixture accepts "${line}": ${reply}`);
+    }
+    await openSource(fixtureSource(FIXTURE));
+    await trackMemory(target.pid);
+    await vscode.commands.executeCommand(uiCommand('memorySnapshot'));
+    const snapshot = await waitFor(
+      () => lastMemorySnapshot(),
+      (snap) => snap?.topAllocations.some((site) => site.typeName === ORDER.type) ?? false,
+      STEP_MS,
+      'a snapshot naming the F# order record',
+    );
+    assert.ok(snapshot, 'the dashboard holds the snapshot');
+    for (const { type, line } of [
+      RECORD,
+      UNION_CASE,
+      GENERIC_RECORD,
+      ORDER,
+      ORDER_LINE,
+      CUSTOMER,
+      EXPRESS,
+      QUOTE,
+      NODE,
+    ]) {
+      const foundSite: DashboardSite | undefined = snapshot.topAllocations.find(
+        (entry) => entry.typeName === type,
+      );
+      assert.ok(
+        foundSite,
+        `${type} is a site: ${snapshot.topAllocations.map((entry) => entry.typeName).join(', ')}`,
+      );
+      assert.equal(foundSite.line, line, `${type} anchors where the program constructs it`);
+      assert.ok(isProgramFs(foundSite.file), `${type} resolves to Program.fs: ${foundSite.file}`);
+      assert.ok(foundSite.size > 0, `${type} has bytes`);
+      assert.ok(foundSite.count > 0, `${type} has live instances`);
+    }
+    assert.equal(
+      snapshot.topAllocations.find((site) => site.typeName === ORDER.type)?.count,
+      200,
+      'every live order is counted',
+    );
+    assert.equal(
+      snapshot.topAllocations.find((site) => site.typeName === NODE.type)?.count,
+      202,
+      'the cycle plus one node per order',
+    );
+    assert.ok(
+      snapshot.topAllocations.some(
+        (site) => site.line === CLOSURE_LINE && site.typeName?.startsWith('HotLeakAppFs.Shapes'),
+      ),
+      'the event-handler closure is a site at its own line',
+    );
+    // [PROF-DOTNET-SOURCE] an array is the runtime's own type and is never anchored.
+    for (const type of ['System.Byte[]', 'HotLeakAppFs.Order[]', 'HotLeakAppFs.LeakedPayload[]']) {
+      const foundSite: DashboardSite | undefined = snapshot.topAllocations.find(
+        (entry) => entry.typeName === type,
+      );
+      assert.ok(foundSite, `${type} is a site`);
+      assert.equal(foundSite.file, undefined, `${type} has no source file`);
+      assert.equal(foundSite.line, undefined, `${type} has no line`);
+    }
+    const painted = appliedMemoryDecorations().filter((entry) => isProgramFs(entry.file));
+    for (const { line } of [ORDER, ORDER_LINE, CUSTOMER, EXPRESS, QUOTE, NODE]) {
+      assert.ok(
+        painted.some((entry) => entry.line === line),
+        `the memory track paints line ${line}`,
+      );
+    }
+    assert.ok(
+      memoryDashboardState()?.html.includes('HotLeakAppFs.Order'),
+      'the dashboard names the F# record',
+    );
+
+    await target.send('payload 100');
+    await vscode.commands.executeCommand(uiCommand('memoryDiff'));
+    const leaks = await waitFor(
+      () => embeddedLeaks(memoryDashboardState()?.html ?? ''),
+      (found) => found.length > 0,
+      STEP_MS,
+      'suspected leaks after the growth',
+    );
+    const record = leaks.find((leak) => leak.typeName === RECORD.type);
+    assert.ok(record, `the growing F# record is a leak: ${JSON.stringify(leaks)}`);
+    assert.equal(record.confidence, 'low', '[PROF-MEMORY-CONFIDENCE] one growth is Low');
+    await stopTracking();
+    assert.deepEqual(appliedMemoryDecorations(), [], 'stop clears the memory track');
   });
 
   test('the leaked F# record is held by the module value `static items`, and its union case is found by its full name', async function () {

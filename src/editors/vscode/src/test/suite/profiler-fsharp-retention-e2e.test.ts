@@ -139,10 +139,27 @@ function assertObjects(objects: ObjectList, type: string, live: number, limit: n
   );
   assert.ok(objects.total_bytes >= sizes.reduce((a, b) => a + b, 0), 'the total covers the listed');
   if (live > 0) {
-    const summary = objects.type_summary.find((t) => t.type_name === type);
-    assert.ok(summary, `${type} is in the summary`);
-    assert.equal(summary.count, live, 'the summary agrees with the total');
+    const own = objects.type_summary.find((entry) => entry.type_name === type);
+    assert.ok(own, '[PROF-DOTNET-MEMORY] the summary always includes the requested live type');
+    assert.equal(own.count, live, 'the requested summary row counts every live F# instance');
+    assert.equal(
+      own.size_bytes,
+      objects.total_bytes,
+      'its summary bytes match the full type total',
+    );
   }
+  if (live <= limit)
+    assert.equal(
+      objects.total_bytes,
+      sizes.reduce((sum, size) => sum + size, 0),
+      'an exhaustive object list accounts for every byte of the requested F# type',
+    );
+  const ranked = objects.type_summary.map((entry) => entry.size_bytes);
+  assert.deepEqual(
+    ranked,
+    [...ranked].sort((a, b) => b - a),
+    'the heap summary ranks by bytes',
+  );
 }
 
 /** Seed one of every leak, deterministically. */
@@ -185,7 +202,13 @@ suite('F# retention, objects, GC and refusals — FsOrderLedger', () => {
       }
       const tight = await retentionGraph(session, type, 2, 8);
       assertGraphRules(tight, type, 2, 8);
-      assert.equal(tight.truncated, true, `${type}: thousands of instances overflow 8 nodes`);
+      const exhausted = await retentionGraph(session, type, 2, 1);
+      assertGraphRules(exhausted, type, 2, 1);
+      assert.equal(
+        exhausted.truncated,
+        true,
+        `${type}: one node cannot hold the target and its holder`,
+      );
     }
 
     // The never-removed handler: an F# closure, rooted at the event's module value.
@@ -243,6 +266,22 @@ suite('F# retention, objects, GC and refusals — FsOrderLedger', () => {
       for (const limit of [1, 7, 50]) {
         assertObjects(await objectsOf(session, type, limit), type, liveCount, limit);
       }
+    }
+    // [PROF-DOTNET-MEMORY] every summary row agrees with that type's exhaustive totals.
+    const summary = (await objectsOf(session, SHAPES.order.type, 1)).type_summary;
+    assert.ok(summary.length > 0, 'the real heap produces a ranked type summary');
+    for (const entry of summary) {
+      const actual = await objectsOf(session, entry.type_name, 1);
+      assert.equal(
+        entry.count,
+        actual.total_count,
+        `${entry.type_name}: summary count matches objects`,
+      );
+      assert.equal(
+        entry.size_bytes,
+        actual.total_bytes,
+        `${entry.type_name}: summary bytes match objects`,
+      );
     }
     for (const absent of [
       'FsOrderLedger.OrderStatus+Pending',

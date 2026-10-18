@@ -31,9 +31,11 @@ import {
 import {
   execute,
   executeError,
+  completed,
   profilerStore,
   profilingSuite,
   setProfilerSetting,
+  snapshotSession,
   stopProfiling,
   stopTracking,
   trackMemory,
@@ -68,7 +70,9 @@ import {
   showSources,
   STOP_MS,
   within,
+  wireLeak,
 } from './profiler-fsharp-kit';
+import type { MemoryStep } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
   assertConfidence,
   assertDashboard,
@@ -78,6 +82,7 @@ import {
   assertSitesCoherent,
   assertStoreCoherent,
   assertTimelineCoherent,
+  compareMemory,
   delay,
   SAMPLE_MS,
   uiSnapshot,
@@ -114,7 +119,6 @@ suite('F# soak — FsPricingEngine through five workloads in one long CPU sessio
       stages.map((stage) => stage.file),
     );
 
-    let previousSamples = 0;
     for (const stage of stages) {
       // ── Interaction: switch the workload, then profile this stage from the real row.
       const started = await command(target, stage.command);
@@ -205,8 +209,10 @@ suite('F# soak — FsPricingEngine through five workloads in one long CPU sessio
       const result = lastProfileResult();
       assert.ok(result, `a result for ${stage.command}`);
       assert.equal(result.sessionId, sessionId, 'the result belongs to its own session');
-      assert.ok(result.totalSamples >= previousSamples, 'samples accumulate within a session');
-      previousSamples = result.totalSamples;
+      assert.ok(
+        result.totalSamples >= snapshot.totalSamples,
+        '[PROF-CPU-STOP] stop includes every tick from this session’s snapshot',
+      );
       assertRanked(result);
       const fn = hotFunction(result, stage.identifier, stage.file);
       assert.ok(
@@ -275,7 +281,10 @@ suite('F# soak — FsPricingEngine through five workloads in one long CPU sessio
     await command(target, 'run mixed');
     await profileRow(await processRow(target.pid));
     await awaitLiveProgress();
-    await delay(SAMPLE_MS * 2);
+    for (const stage of stages) {
+      await command(target, stage.command);
+      await delay(SAMPLE_MS);
+    }
     await stopProfiling(STOP_MS);
     const loud = lastProfileResult();
     assert.ok(loud, 'a result with the heat map on');
@@ -348,6 +357,7 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
 
     // ── Interaction 4: [PROF-UI-HEATMAP] the memory track paints during the CPU session too.
     const snap = await uiSnapshot();
+    const wire = await snapshotSession(target.pid);
     assertAnchored(snap, SHAPES.order, 300);
     assert.equal(handlerSite(snap).count, 300, 'the handler closures are all reachable');
     assertDashboard(snap, 1, [SHAPES.order.type]);
@@ -355,7 +365,7 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
     assertSitesCoherent(snap);
     assertTimelineCoherent(snap);
     assertPaletteDiscipline();
-    assertEveryShape(snap, { [SHAPES.order.type]: 300 });
+    assertEveryShape(snap, batch);
     assert.ok(memoryStatusText()?.includes('tracking'), 'memory still tracks during the burn');
     assert.ok(heatOn('Ledger.fs').length > 0, 'the CPU heat map paints Ledger.fs');
     assert.ok(memoryTrackOn('Ledger.fs').length > 0, 'the memory track paints Ledger.fs');
@@ -369,6 +379,13 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
     // ── Interaction 5: more work in the same session grows the heap, not the sample count alone.
     const grew = await command(target, 'place 200');
     assert.equal(count(grew, 'orders'), 500, 'the second batch lands in the same session');
+    const growth = await compareMemory(wire);
+    assertConfidence(growth.leaks, SHAPES.order.type, 'Low', ['Ledger.fs']);
+    assert.equal(
+      wireLeak(growth.leaks, SHAPES.order.type)?.count_growth,
+      200,
+      '[PROF-MEMORY-COMPARE] exactly the new F# orders grew',
+    );
     const after = await uiSnapshot(snap);
     assert.ok(after.currentMemory >= snap.currentMemory, 'the heap grew under the CPU session');
     assertAnchored(after, SHAPES.order, 500);
@@ -376,7 +393,7 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
     assertSitesCoherent(after);
     assertTimelineCoherent(after);
     assertPaletteDiscipline();
-    assertEveryShape(after, { [SHAPES.order.type]: 500 });
+    assertEveryShape(after, grew);
 
     // ── Interaction 6: stopping CPU leaves memory tracking and clears only the heat map.
     await stopProfiling(STOP_MS);
@@ -387,8 +404,8 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
     assert.equal(profilerStatusText(), undefined, 'the CPU chrome is gone');
     assert.ok(memoryTrackOn('Ledger.fs').length > 0, 'the memory track stays painted');
 
-    // ── Interaction 7: the diff is taken on a program that is still running.
-    await assertConfidence(SHAPES.order.type, 'Low', ['Ledger.fs']);
+    // ── Interaction 7: the process still answers after CPU stop, while memory tracks it.
+    assert.equal(count(await command(target, 'burn off'), 'orders'), 500);
 
     // ── Interaction 8: stop everything; nothing survives.
     await command(target, 'burn off');
@@ -396,7 +413,7 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
     await stopTracking();
     assert.equal(memoryStatusText(), undefined, 'the memory chrome hides');
     assert.deepEqual(appliedMemoryDecorations(), [], 'the memory track clears');
-    assert.deepEqual(appliedProfileDecorations(), [], 'the heat map clears');
+    assert.ok(heatOn('Ledger.fs').length > 0, 'the completed CPU report remains painted');
     assert.equal(
       flamegraphPanelState() !== undefined,
       true,
@@ -409,7 +426,8 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
       memoryBusy: false,
       profilerBusy: false,
     });
-    assert.equal(processesViewState().badge, 0, 'no badge once idle');
+    assert.equal(processesViewState().badge, undefined, 'no badge once idle');
+    completed(await execute<MemoryStep>('memory.stop', wire));
     assert.deepEqual(await sessions(), [], 'no CPU session is left running');
     assertStoreCoherent();
     assertPaletteDiscipline();

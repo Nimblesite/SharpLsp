@@ -28,6 +28,7 @@ import {
   toWireProcess,
   ungroup,
   rowPid as pidOf,
+  processFixture,
 } from './profiler-ui-helpers';
 import {
   numberField,
@@ -36,29 +37,6 @@ import {
 } from '@nimblesite/lsp-profiler-ui/out/src/unknown-shape';
 
 const MB = 1024 * 1024;
-
-/** A debuggable process row; each test overrides what it exercises. */
-function processFixture(pid: number, overrides: Partial<ProcessInfo> = {}): ProcessInfo {
-  return {
-    pid,
-    ppid: 1,
-    name: 'python3.12',
-    interpreterPath: '/usr/bin/python3.12',
-    script: null,
-    runtime: 'python',
-    runtimeVersion: '3.12.1',
-    cpuPercent: 0,
-    memoryBytes: MB,
-    runtimeSecs: 1,
-    user: null,
-    requiresElevation: false,
-    inWorkspace: false,
-    launcher: null,
-    debuggable: true,
-    undebuggableReason: null,
-    ...overrides,
-  };
-}
 
 /** A representative process table covering launchers, users, and versions. */
 const STUB_PROCESSES: readonly ProcessInfo[] = [

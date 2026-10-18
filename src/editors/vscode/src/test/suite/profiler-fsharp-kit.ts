@@ -10,7 +10,6 @@
 //     memory track (lspkit's [PROF-UI-CPU], [PROF-UI-HEATMAP], [PROF-EXPORT],
 //     [PROF-UI-MEMORY], [PROF-AGGREGATION-THRESHOLD]).
 import * as assert from 'node:assert/strict';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
@@ -44,7 +43,8 @@ import {
   uiCommand,
   waitFor,
 } from './profiler-kit';
-import { comparablePath } from './test-helpers';
+import { isFile } from './profiler-fsharp-artifacts';
+export { isFile, assertArtifacts } from './profiler-fsharp-artifacts';
 import { LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
 export const ENGINE = 'FsPricingEngine';
@@ -97,11 +97,6 @@ export interface Span {
 /** True when `line` of `file` falls inside `span`. */
 export function within(span: Span, file: string | undefined, line: number): boolean {
   return isFile(file, span.file) && line >= span.first && line <= span.last;
-}
-
-/** True when `file` is the fixture file named `name` (any fixture). */
-export function isFile(file: string | undefined, name: string): boolean {
-  return file !== undefined && path.basename(comparablePath(file)) === comparablePath(name);
 }
 
 /** The absolute path of a fixture file, as the editor and the server name it. */
@@ -252,7 +247,7 @@ export async function assertCpuIdle(pid: number): Promise<void> {
 
 // ── The CPU result as the editor shows it ────────────────────────────────────
 
-/** The heat tier a share paints with; `undefined` near a tier boundary. */
+/** The heat tier a share paints with, including its exact threshold. */
 export function cpuTier(percentage: number): string | undefined {
   const tiers: readonly [number, string][] = [
     [20, '#e8500a'],
@@ -260,8 +255,7 @@ export function cpuTier(percentage: number): string | undefined {
     [5, '#fbbf24'],
     [0, '#4a5468'],
   ];
-  if ([20, 10, 5].some((edge) => Math.abs(percentage - edge) < 0.5)) return undefined;
-  return tiers.find(([floor]) => percentage > floor)?.[1];
+  return tiers.find(([floor]) => percentage >= floor)?.[1];
 }
 
 /** [PROF-AGGREGATION-LOGIC] + [PROF-AGGREGATION-THRESHOLD]: shares are sane and ranked. */
@@ -307,10 +301,14 @@ export function assertHeatMap(result: ProfileResult, span: Span): void {
   for (const decoration of painted) {
     assert.ok(CPU_PALETTE.includes(decoration.color), `CPU track colour: ${decoration.color}`);
     assert.ok(/\d%/.test(decoration.contentText), `a share is shown: ${decoration.contentText}`);
-    const hot = result.hotLines.find(
-      (l) => isFile(l.file, span.file) && l.line === decoration.line,
+    const hot =
+      result.hotLines.find((l) => isFile(l.file, span.file) && l.line === decoration.line) ??
+      result.hotFunctions.find((fn) => isFile(fn.file, span.file) && fn.line === decoration.line);
+    assert.ok(hot, `line ${decoration.line} is painted from a reported hot line or function`);
+    assert.ok(
+      decoration.contentText.includes(`${hot.percentage.toFixed(1)}%`),
+      'the decoration displays the reported share at that source location',
     );
-    assert.ok(hot, `line ${decoration.line} is painted only because it is a hot line`);
     const tier = cpuTier(hot.percentage);
     if (tier !== undefined) {
       assert.equal(decoration.color, tier, `line ${hot.line} at ${hot.percentage}% wears its tier`);
@@ -343,67 +341,6 @@ export function assertResultsPanel(result: ProfileResult, identifiers: readonly 
   for (const identifier of identifiers) {
     assert.ok(html.includes(identifier), `the panel lists the F# function ${identifier}`);
   }
-}
-
-interface Speedscope {
-  shared: { frames: { name: string; file?: string; line?: number }[] };
-  profiles: { samples: number[][]; weights: number[] }[];
-}
-
-interface CpuProfile {
-  nodes: { id: number; callFrame: { functionName: string; url: string } }[];
-  samples: number[];
-  timeDeltas: number[];
-  startTime: number;
-  endTime: number;
-}
-
-function readJson(file: string | undefined, what: string): unknown {
-  assert.ok(file !== undefined && fs.existsSync(file), `${what} is written: ${String(file)}`);
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-
-/** [PROF-EXPORT]: all three artifacts exist, validate, and carry the F# function. */
-export function assertArtifacts(result: ProfileResult, identifier: string, file: string): void {
-  assert.equal(result.exportError, undefined, `no export error: ${result.exportError}`);
-  const speedscope = readJson(result.outputFile, 'the speedscope profile') as Speedscope;
-  const { frames } = speedscope.shared;
-  const keysSeen = frames.map((f) => `${f.name}|${f.file ?? ''}|${f.line ?? ''}`);
-  assert.equal(new Set(keysSeen).size, keysSeen.length, 'frames are deduplicated');
-  assert.ok(
-    frames.some((f) => f.name.includes(identifier) && isFile(f.file, file)),
-    `a speedscope frame names ${identifier} in ${file}`,
-  );
-  assert.ok(speedscope.profiles.length > 0, 'one profile per thread');
-  for (const profile of speedscope.profiles) {
-    assert.equal(profile.samples.length, profile.weights.length, 'samples match weights');
-    assert.ok(
-      profile.weights.every((w) => Number.isFinite(w) && w >= 0),
-      'weights are sane',
-    );
-    assert.ok(
-      profile.samples.flat().every((i) => i >= 0 && i < frames.length),
-      'indices in range',
-    );
-  }
-  const v8 = readJson(result.cpuProfilePath, 'the V8 .cpuprofile') as CpuProfile;
-  const ids = new Set(v8.nodes.map((n) => n.id));
-  assert.equal(v8.samples.length, v8.timeDeltas.length, 'one time delta per sample');
-  assert.ok(
-    v8.samples.every((id) => ids.has(id)),
-    'every sample names a node',
-  );
-  assert.ok(v8.endTime >= v8.startTime, 'time runs forward');
-  assert.ok(
-    v8.nodes.some((n) => n.callFrame.functionName.includes(identifier)),
-    `a .cpuprofile node names ${identifier}`,
-  );
-  assert.ok(result.flamegraphPath !== undefined, 'a flame graph is exported');
-  const svg = fs.readFileSync(result.flamegraphPath, 'utf8');
-  assert.ok(
-    svg.includes('<svg') && svg.includes(identifier),
-    `the flame graph shows ${identifier}`,
-  );
 }
 
 // ── Memory, as the editor and the wire show it ───────────────────────────────

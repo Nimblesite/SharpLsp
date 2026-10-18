@@ -19,7 +19,6 @@
 //   [PROF-DOTNET-SOURCE]      F# records, union cases and closures anchor where they are built.
 //   [PROF-DOTNET-HEAP-GRAPH]  a closed generic FSharpMap record is one site.
 import * as assert from 'node:assert/strict';
-import * as vscode from 'vscode';
 import {
   appliedMemoryDecorations,
   memoryStatusText,
@@ -35,7 +34,6 @@ import {
   snapshotSession,
   stopTracking,
   trackMemory,
-  uiCommand,
 } from './profiler-kit';
 import {
   assertAnchored,
@@ -293,6 +291,10 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
       '[PROF-MEMORY-SESSION] the memory session never created a CPU session',
     );
   });
+});
+
+suite('F# soak — FsOrderLedger: mailbox, cache and immutable history retention', () => {
+  const live = profilingSuite('profiler-fs-soak-retention-', LEDGER, { stopping: endProfiling });
 
   test('a paused mailbox and a memoize cache in one session: the queue is a leak while paused and gone after resume, the cache never evicts, and the undo history is a closed generic record over FSharpMap', async function () {
     this.timeout(STOP_MS * 8);
@@ -411,7 +413,11 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
     const released = await command(target, 'release orders');
     assert.equal(count(released, 'orders'), 0, 'the ledger holds no order');
     assert.equal(count(released, 'quotes'), 800, 'the memoize cache still holds every SKU');
-    assert.equal(count(released, 'handlers'), 400, 'the handlers are never removed');
+    assert.equal(
+      count(released, 'handlers'),
+      count(more, 'handlers'),
+      'the handlers are never removed',
+    );
     assert.equal(count(released, 'audits'), 0, 'the mailbox is still drained');
     const sixth = await uiSnapshot(fifth);
     assertAnchored(sixth, SHAPES.order, 400);

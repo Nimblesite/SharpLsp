@@ -1,35 +1,19 @@
-// Tests for [PROFILER-SHARED-LIBRARY-VSCODE] on F#. See docs/specs/PROFILER-SPEC.md#PROFILER-SHARED-LIBRARY-VSCODE.
-//
-// Corner cases of the F# profiler, driven from the specs, against SharpLsp's real F# order
-// ledger (src/sharplsp/tests/fixtures/fsharp-profiling/FsOrderLedger). Each block names the
-// spec section that makes the assertion true:
-//
-//   [PROF-MEMORY-SESSION]     CPU and memory sessions are independent; one PID may hold both.
-//   [PROF-MEMORY-START]       a refused start leaves no session behind; traceback_depth caps stacks.
-//   [PROF-MEMORY-STEP]        every step returns a MemoryStep: Evaluate, or Completed + outcome.
-//   [PROF-MEMORY-INGEST]      an unrecognised payload quotes the delivered text back.
-//   [PROF-MEMORY-HEAPPROFILE] .heapprofile is real V8 JSON; runtime frames are filtered first.
-//   [PROF-MEMORY-TIMELINE]    elapsed time never runs backwards; peak never falls.
-//   [PROF-MEMORY-COMPARE]     1-based file+line identify a site across snapshots.
-//   [PROF-DOTNET-HEAP-GRAPH]  retention graphs carry source locations and cycles.
-//   [PROF-ERRORS]             PROCESS_NOT_FOUND, UNSUPPORTED_RUNTIME, ALREADY_PROFILING, OTHER.
-//   [PROF-UI-MEMORY]          generation sizes and collection counts are different numbers.
-//   [PROF-UI-STATE]           the store, not the webview, is the source of truth.
+// Tests for [PROFILER-SHARED-LIBRARY-VSCODE] on real F# processes.
+// SharpLsp contract: docs/specs/PROFILER-SPEC.md.
+// Shared contract: lspkit/docs/specs/LSP-PROFILER-SPEC.md.
+// Each journey cites the specific protocol, CPU, memory and UI requirements it enforces.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as vscode from 'vscode';
 import {
   appliedMemoryDecorations,
   lastMemorySnapshot,
   memoryDashboardState,
   memoryStatusText,
-  recordedOperations,
 } from '@nimblesite/lsp-profiler-ui';
-import type { MemoryDashboardSnapshot } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import type {
   GcResult,
   HeapDiff,
-  MemoryMode,
+  MemoryStartResult as StartResult,
   MemoryOutcome,
   MemoryStep,
   ObjectList,
@@ -43,8 +27,6 @@ import {
   profilingSuite,
   stopTracking,
   trackMemory,
-  uiCommand,
-  waitFor,
 } from './profiler-kit';
 import {
   assertEveryShape,
@@ -52,11 +34,15 @@ import {
   assertSitesCoherent,
   assertStoreCoherent,
   assertTimelineCoherent,
+  step,
+  snapshotOutcome,
+  diffOutcome,
+  uiSnapshot,
+  CODE,
 } from './profiler-fsharp-soak-kit';
 import {
   assertAnchored,
   command,
-  SHAPES as SHAPE_TABLE,
   count,
   endProfiling,
   isFile,
@@ -66,58 +52,6 @@ import {
   showSources,
   STOP_MS,
 } from './profiler-fsharp-kit';
-
-const MIB = 1024 * 1024;
-/** [PROF-ERRORS] codes, as the registry spells them. */
-const CODE = {
-  OTHER: -32_000,
-  PROCESS_NOT_FOUND: -32_001,
-  UNSUPPORTED_RUNTIME: -32_002,
-  ALREADY_PROFILING: -32_004,
-  INVALID_PARAMS: -32_602,
-} as const;
-
-interface StartResult {
-  readonly memory_session_id: string;
-  readonly runtime: string;
-  readonly mode: MemoryMode;
-  readonly step: MemoryStep;
-}
-
-/** The outcome of one memory step; a Courier Evaluate step is a failure for a .NET target. */
-async function step(name: string, params: Record<string, unknown>): Promise<MemoryOutcome> {
-  const result = await execute<MemoryStep>(name, params);
-  assert.equal(result.kind, 'Completed', `[PROF-MEMORY-STEP] ${name} completes in Direct mode`);
-  assert.ok(result.kind === 'Completed', 'narrowed');
-  return result.result.outcome;
-}
-
-async function snapshotOutcome(id: string): Promise<Extract<MemoryOutcome, { kind: 'Snapshot' }>> {
-  const outcome = await step('memory.snapshot', { memory_session_id: id });
-  assert.equal(outcome.kind, 'Snapshot', '[PROF-MEMORY-STEP] snapshot yields a Snapshot outcome');
-  assert.ok(outcome.kind === 'Snapshot', 'narrowed');
-  return outcome;
-}
-
-async function diffOutcome(id: string): Promise<Extract<MemoryOutcome, { kind: 'Diff' }>> {
-  const outcome = await step('memory.diff', { memory_session_id: id });
-  assert.equal(outcome.kind, 'Diff', '[PROF-MEMORY-STEP] diff yields a Diff outcome');
-  assert.ok(outcome.kind === 'Diff', 'narrowed');
-  return outcome;
-}
-
-/** The UI snapshot the different `previous` snapshot. */
-async function uiSnapshot(previous?: MemoryDashboardSnapshot): Promise<MemoryDashboardSnapshot> {
-  await vscode.commands.executeCommand(uiCommand('memorySnapshot'));
-  const snapshot = await waitFor(
-    () => lastMemorySnapshot(),
-    (snap) => snap !== undefined && snap.snapshotId !== previous?.snapshotId,
-    STOP_MS,
-    'a newer snapshot in the dashboard',
-  );
-  assert.ok(snapshot, 'the dashboard holds a snapshot');
-  return snapshot;
-}
 
 suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
   const live = profilingSuite('profiler-fs-corner-', LEDGER, { stopping: endProfiling });
@@ -217,9 +151,10 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
     );
   });
 
-  test('memory steps: traceback-capped sites, objectsByType, references with cycles, gcCollect frees bytes, and ingest quotes garbage back', async function () {
+  test('memory steps: traceback-capped F# sites, exact objectsByType counts, retention roots, growth and release, and Direct mode refuses courier ingest', async function () {
     this.timeout(STOP_MS * 6);
     const { target } = live;
+    await command(target, 'release all');
     const seeded = await command(target, 'place 300');
     assert.equal(count(seeded, 'orders'), 300, '300 live orders');
 
@@ -248,12 +183,8 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
       '[PROF-MEMORY-TIMELINE] the first snapshot is the first point',
     );
     assert.equal(first.trending_upward, false, 'one point cannot trend upward');
-    if (first.heapprofile_path !== undefined) {
-      assert.ok(
-        fs.existsSync(first.heapprofile_path),
-        `[PROF-MEMORY-HEAPPROFILE] ${first.heapprofile_path}`,
-      );
-    }
+    assert.ok(first.heapprofile_path, '[PROF-MEMORY-HEAPPROFILE] every snapshot exports');
+    assert.ok(fs.existsSync(first.heapprofile_path), 'the exported heap profile exists');
 
     // ── [PROF-MEMORY-STEP] objectsByType names the type and summarises the heap.
     const objects = (await step('memory.objectsByType', {
@@ -263,7 +194,11 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
     assert.equal(objects.kind, 'Objects', 'objectsByType yields an Objects outcome');
     const listed: ObjectList = objects.objects;
     assert.equal(listed.type_name, SHAPES.order.type, 'the requested type is echoed');
-    assert.ok(listed.total_count >= 300, `at least the 300 live orders: ${listed.total_count}`);
+    assert.equal(
+      listed.total_count,
+      count(seeded, 'orders'),
+      'every live F# Order, counted exactly',
+    );
     assert.ok(listed.total_bytes > 0, 'the type has live bytes');
     assert.ok(
       listed.objects.length > 0 && listed.objects.length <= listed.total_count,
@@ -275,14 +210,14 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
       assert.ok(object.label.length > 0, 'a sample has a label');
     }
     assert.ok(listed.type_summary.length > 0, 'a per-type summary is offered');
-    const counts = listed.type_summary.map((stat) => stat.count);
+    const sizes = listed.type_summary.map((stat) => stat.size_bytes);
     assert.deepEqual(
-      counts,
-      [...counts].sort((a, b) => b - a),
-      '[PROF-INVARIANTS] largest types first',
+      sizes,
+      [...sizes].sort((a, b) => b - a),
+      '[PROF-INVARIANTS] types ranked by live bytes, not instance count',
     );
 
-    for (const shape of Object.values(SHAPE_TABLE)) {
+    for (const shape of Object.values(SHAPES)) {
       const listedType = (await step('memory.objectsByType', {
         memory_session_id: id,
         type_name: shape.type,
@@ -298,6 +233,11 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
         `only ${shape.type} samples`,
       );
       assert.ok(listedType.objects.total_bytes >= 0, `${shape.type} bytes are never negative`);
+      assert.equal(
+        listedType.objects.total_count,
+        count(seeded, shape.live),
+        `[PROF-DOTNET-HEAP-MARK] exactly the retained ${shape.type} instances`,
+      );
       assert.ok(
         listedType.objects.objects.length <= listedType.objects.total_count,
         `${shape.type} samples are a subset`,
@@ -306,7 +246,7 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
         listedType.objects.type_summary.length > 0,
         `${shape.type} still summarises the heap`,
       );
-      const summary = listedType.objects.type_summary.map((stat) => stat.count);
+      const summary = listedType.objects.type_summary.map((stat) => stat.size_bytes);
       assert.deepEqual(
         summary,
         [...summary].sort((a, b) => b - a),
@@ -361,23 +301,27 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
     >;
     assert.equal(gc.kind, 'Gc', 'gcCollect yields a Gc outcome');
     const collected: GcResult = gc.gc;
-    assert.ok(collected.collected >= 0, 'a collected count');
+    assert.equal(collected.collected, 1, '[PROF-DOTNET-GC] one induced collection was observed');
     assert.ok(collected.freed_bytes >= 0, 'a freed-bytes total');
-    assert.ok(collected.uncollectable_count >= 0, 'an uncollectable count');
+    assert.equal(collected.uncollectable_count, 0, '.NET reports no uncollectable objects');
     assert.equal(
       collected.uncollectable.length,
       collected.uncollectable_count,
       'the uncollectable details match their count',
     );
 
-    // ── [PROF-MEMORY-INGEST] an unrecognised payload quotes the delivered text back.
+    // ── [PROF-MEMORY-MODE] .NET is Direct: it never parses a courier's payload.
     const marker = 'not-a-payload-7fd1';
     const refused = await executeError('memory.ingest', { memory_session_id: id, output: marker });
     assert.ok(refused, 'garbage is refused');
-    assert.ok(refused.code !== 0, `an error code is returned: ${JSON.stringify(refused)}`);
+    assert.equal(
+      refused.code,
+      CODE.OTHER,
+      '[PROF-ERRORS] a recognised runtime refuses an unsupported backend operation',
+    );
     assert.ok(
-      refused.message.includes(marker),
-      `[PROF-MEMORY-INGEST] the error quotes the delivered text: ${refused.message}`,
+      refused.message.includes('captures directly'),
+      `[PROF-MEMORY-MODE] the refusal explains Direct capture: ${refused.message}`,
     );
 
     // ── Ingesting into an unknown session is an error, never a new session.
@@ -386,11 +330,11 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
       output: '{}',
     });
     assert.ok(unknown, 'an unknown session fails');
+    assert.equal(unknown.code, CODE.OTHER, 'ingest never invents an unknown session');
     assert.equal((await snapshotOutcome(id)).kind, 'Snapshot', 'the real session still answers');
 
     // ── [PROF-MEMORY-COMPARE] growth after the baseline, then release, then freed > 0.
-    await command(target, 'place 300');
-    const grown = await snapshotOutcome(id);
+    const more = await command(target, 'place 300');
     const diff = await diffOutcome(id);
     assert.ok(diff.diff.total_growth > 0, 'the growth is measured');
     assert.equal(diff.diff.net_growth, diff.diff.total_growth - diff.diff.total_freed);
@@ -399,13 +343,16 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
       orderSite,
       `[PROF-MEMORY-COMPARE] the order site grew: ${JSON.stringify(diff.diff.grown.map((s) => s.type_name))}`,
     );
-    assert.ok(orderSite.size_diff > 0 && orderSite.count_diff > 0, 'growth is bytes and count');
-    assert.ok((orderSite.line ?? 0) >= 1, '[PROF-WIRE] site lines are 1-based');
+    assert.equal(orderSite.count_diff, count(more, 'orders') - count(seeded, 'orders'));
+    assert.ok(orderSite.size_diff > 0, 'the additional F# records grew in bytes');
+    assert.ok(isFile(orderSite.file, SHAPES.order.file), 'Order growth resolves to Ledger.fs');
+    assert.equal(orderSite.line, SHAPES.order.line, 'Order growth anchors where constructed');
+    const grown = await snapshotOutcome(id);
     assert.ok(grown.snapshot.current_bytes >= first.snapshot.current_bytes, 'the heap grew');
     assert.equal(
-      grown.trending_upward,
-      true,
-      '[PROF-MEMORY-TIMELINE] two rising points trend upward',
+      grown.snapshot.sites.find((site) => site.type_name === SHAPES.order.type)?.count,
+      count(more, 'orders'),
+      'the post-diff snapshot retains the exact new F# count',
     );
     for (let index = 1; index < grown.timeline.length; index += 1) {
       const before = grown.timeline[index - 1];
@@ -415,8 +362,8 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
     }
 
     await command(target, 'release all');
-    const shrunk = await snapshotOutcome(id);
     const freed: HeapDiff = (await diffOutcome(id)).diff;
+    const shrunk = await snapshotOutcome(id);
     assert.ok(shrunk.snapshot.current_bytes < grown.snapshot.current_bytes, 'the heap shrank');
     assert.ok(
       freed.grown.every((site) => site.size_diff > 0),
@@ -426,6 +373,12 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
       freed.freed.every((site) => site.size_diff < 0),
       'only shrinking sites are listed as freed',
     );
+    assert.equal(
+      freed.freed.find((site) => site.type_name === SHAPES.order.type)?.count_diff,
+      -count(more, 'orders'),
+      'every unrooted F# Order is freed',
+    );
+    assert.ok(freed.total_freed > 0, 'the released F# records contribute freed bytes');
     completed(await execute<MemoryStep>('memory.stop', { memory_session_id: id }));
   });
 });
@@ -437,14 +390,13 @@ suite('F# profiler corner cases — FsOrderLedger through the dashboard', () => 
     this.timeout(STOP_MS * 6);
     const { target } = live;
     await showSources(LEDGER, ['Ledger.fs', 'Quotes.fs']);
-    await command(target, 'quote 250');
+    const seeded = await command(target, 'quote 250');
     await trackMemory(target.pid);
     assert.equal(
       profilerStore().profiler.value.memory,
       'active',
       '[PROF-UI-STATE] the store says tracking',
     );
-    const opsBefore = recordedOperations().length;
 
     // ── [PROF-MEMORY-HEAPPROFILE] the .heapprofile is real V8 JSON.
     const first = await uiSnapshot();
@@ -458,18 +410,19 @@ suite('F# profiler corner cases — FsOrderLedger through the dashboard', () => 
     };
     assert.ok(profile.head !== undefined, 'the profile has a call-tree root');
     assert.ok(Array.isArray(profile.samples), 'the profile has samples');
-    assert.ok((profile.samples as unknown[]).length >= 0, 'the sample array parses from disk');
+    assert.ok((profile.samples as unknown[]).length > 0, 'the live F# heap exports samples');
 
     // ── [PROF-UI-MEMORY] generation bytes are not collection counts.
     assert.deepEqual(first.gcCounts, [], 'counts are never presented as generation bytes');
-    if (first.generationSizes !== undefined) {
-      assert.ok(first.generationSizes.length > 0, 'the runtime named its heap regions');
-      const total = first.generationSizes.reduce((sum, region) => sum + region.size, 0);
-      assert.ok(total <= first.currentMemory + MIB, `regions fit in the live heap: ${total}`);
-      for (const region of first.generationSizes) {
-        assert.ok(region.name.length > 0, 'a region has a runtime label');
-        assert.ok(region.size >= 0, 'a region size is a byte count');
-      }
+    assert.ok(first.generationSizes, 'the .NET runtime reports generation bytes');
+    assert.deepEqual(
+      first.generationSizes.map((region) => region.name),
+      ['Gen 0', 'Gen 1', 'Gen 2', 'LOH', 'POH'],
+      'all five .NET heap regions are named',
+    );
+    for (const region of first.generationSizes) {
+      assert.ok(region.name.length > 0, 'a region has a runtime label');
+      assert.ok(region.size >= 0, 'a region size is a byte count');
     }
     assert.equal(memoryDashboardState()?.title, 'SharpLsp Memory Dashboard');
     assertAnchored(first, SHAPES.quote, 250);
@@ -477,7 +430,7 @@ suite('F# profiler corner cases — FsOrderLedger through the dashboard', () => 
     assertTimelineCoherent(first);
     assertPaletteDiscipline();
     assertStoreCoherent();
-    assertEveryShape(first, { [SHAPES.quote.type]: 250 });
+    assertEveryShape(first, seeded);
     for (const site of first.topAllocations) {
       assert.ok((site.typeName ?? '').length > 0, 'every top site names its runtime type');
       assert.ok(
@@ -501,10 +454,7 @@ suite('F# profiler corner cases — FsOrderLedger through the dashboard', () => 
       1,
       'one site per type, never a duplicate row',
     );
-    assert.ok(
-      recordedOperations().length >= opsBefore,
-      '[PROF-UI-STATE] the store is the source of truth for what was rendered',
-    );
+    assertAnchored(second, SHAPES.quote, count(seeded, 'quotes'));
     assert.equal(
       lastMemorySnapshot()?.snapshotId,
       second.snapshotId,
@@ -528,11 +478,11 @@ suite('F# profiler corner cases — FsOrderLedger through the dashboard', () => 
       profilerBusy: false,
     });
 
-    // ── [PROF-UI-STATE] the last snapshot is a report, not a live session: it survives.
-    assert.equal(
-      lastMemorySnapshot()?.memorySessionId,
-      second.memorySessionId,
-      'the report is kept for reading',
+    // ── [PROF-UI-STATE] the session clears; [PROF-UI-MEMORY] the rendered report stays readable.
+    assert.equal(lastMemorySnapshot(), undefined, 'no stale session snapshot survives stop');
+    assert.ok(
+      memoryDashboardState()?.html.includes(SHAPES.quote.type),
+      'the F# report stays readable',
     );
     const stopped = await executeError('memory.snapshot', {
       memory_session_id: second.memorySessionId,
