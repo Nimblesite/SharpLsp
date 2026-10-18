@@ -112,11 +112,18 @@ type private GeneratorLoader() =
 
 let private generatorLoader = GeneratorLoader()
 
+/// The C# source generators `reference` holds; none when its assembly does not load here,
+/// and the log says why, so a generator never costs the project its load.
+let private generatorsIn (reference: Diagnostics.AnalyzerReference) =
+    try
+        reference.GetGenerators(LanguageNames.CSharp) |> List.ofSeq
+    with error ->
+        Log.Warning("Source generators of {Path} are skipped: {Reason}", reference.FullPath, error.Message)
+        []
+
 /// The C# source generators the command line's `/analyzer:` assemblies hold.
 let private generatorsOf (arguments: CSharpCommandLineArguments) =
-    arguments.ResolveAnalyzerReferences(generatorLoader)
-    |> Seq.collect (fun reference -> reference.GetGenerators(LanguageNames.CSharp))
-    |> List.ofSeq
+    arguments.ResolveAnalyzerReferences(generatorLoader) |> Seq.collect generatorsIn |> List.ofSeq
 
 /// `compilation` with the sources its source generators add, as the build runs them. A
 /// project that polyfills .NET Framework through one (PolySharp writes `IsExternalInit`
@@ -125,14 +132,8 @@ let private generated (arguments: CSharpCommandLineArguments) (compilation: CSha
     match generatorsOf arguments with
     | [] -> compilation
     | generators ->
-        let driver = CSharpGeneratorDriver.Create(generators, parseOptions = arguments.ParseOptions)
-        let mutable output: Compilation = compilation
-        let mutable diagnostics = ImmutableArray<Diagnostic>.Empty
-        driver.RunGeneratorsAndUpdateCompilation(compilation, &output, &diagnostics) |> ignore
-
-        match output with
-        | :? CSharpCompilation as completed -> completed
-        | _ -> compilation
+        CSharpGeneratorDriver.Create(generators, parseOptions = arguments.ParseOptions).RunGenerators(compilation).GetRunResult().GeneratedTrees
+        |> compilation.AddSyntaxTrees
 
 /// Each reference on the command line: a C# project compiled here is read from its
 /// compilation, a file the disk has from that file, and a file it lacks — an unbuilt
