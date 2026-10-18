@@ -221,7 +221,7 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
       for (const identifier of workload.identifiers) {
         const fn = hotFunction(result, identifier, workload.span.file);
         assert.ok(fn, `${identifier} is hot in ${workload.span.file}`);
-        assert.ok(fn.line >= 1, `${identifier} carries its F# line`);
+        assert.ok((fn.line ?? 0) >= 1, `${identifier} carries its F# line`);
       }
       assert.ok(
         result.hotLines.some((line) => within(workload.span, line.file, line.line)),
