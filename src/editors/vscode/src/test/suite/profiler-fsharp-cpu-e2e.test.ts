@@ -41,6 +41,7 @@ import {
   awaitLiveProgress,
   command,
   count,
+  endProfiling,
   ENGINE,
   heatOn,
   hotFunction,
@@ -48,11 +49,11 @@ import {
   profileRow,
   showSources,
   type Span,
+  STOP_MS,
   within,
 } from './profiler-fsharp-kit';
 
 const SAMPLE_MS = 3_000;
-const STOP_MS = 90_000;
 
 /** One F# workload of FsPricingEngine and where its time must land. */
 interface Workload {
@@ -97,6 +98,28 @@ const WORKLOADS: readonly Workload[] = [
   },
 ];
 
+/**
+ * Ground truth: the four pure-CPU stages of a mixed run, each entered through
+ * exactly one F# function, whose time FsPricingEngine measures itself and
+ * reports as `<stage>_us`. The report stage is left out: its task {} awaits
+ * Task.Yield, so its wall time includes waiting, which a CPU sampler rightly
+ * does not count.
+ */
+const GROUND_TRUTH = [
+  { stage: 'parse', identifier: 'parseAll', file: 'Csv.fs' },
+  { stage: 'price', identifier: 'basketTotal', file: 'Pricing.fs' },
+  { stage: 'search', identifier: 'rank', file: 'Search.fs' },
+  { stage: 'route', identifier: 'shortestPath', file: 'Routing.fs' },
+] as const;
+/** A stage that took at least this share of the measured time must be found. */
+const MAJOR_SHARE = 0.15;
+/** How far a sampled share may sit from the measured one. */
+const SHARE_TOLERANCE = 0.15;
+
+function pct(share: number): string {
+  return `${(share * 100).toFixed(1)}%`;
+}
+
 async function sessions(): Promise<ProfileSessionList['sessions']> {
   return (await execute<ProfileSessionList>('cpu.list', {})).sessions;
 }
@@ -116,12 +139,13 @@ function assertProgressClosed(from: number): void {
 }
 
 suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
-  const live = profilingSuite('profiler-fs-cpu-', ENGINE, {
-    stopping: async () => {
-      if (profilerStore().profiler.value.cpu !== 'idle') await stopProfiling(STOP_MS);
-      await setProfilerSetting('showInlineHeatMap', undefined);
-      disposeFlamegraphPanel();
-    },
+  const live = profilingSuite('profiler-fs-cpu-', ENGINE);
+  teardown(async function () {
+    this.timeout(STOP_MS * 2);
+    await endProfiling();
+    await setProfilerSetting('showInlineHeatMap', undefined);
+    disposeFlamegraphPanel();
+    await command(live.target, 'idle');
   });
 
   for (const workload of WORKLOADS) {
@@ -203,8 +227,11 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
         result.hotLines.some((line) => within(workload.span, line.file, line.line)),
         `a hot line sits in ${workload.span.file} ${workload.span.first}-${workload.span.last}`,
       );
-      assert.equal(heatOn('Program.fs').length > 0, result.hotLines.some((l) => l.file.endsWith('Program.fs')),
-        'Program.fs is painted exactly when it has hot lines');
+      assert.equal(
+        heatOn('Program.fs').length > 0,
+        result.hotLines.some((l) => l.file.endsWith('Program.fs')),
+        'Program.fs is painted exactly when it has hot lines',
+      );
       assertHeatMap(result, workload.span);
       assertResultsPanel(result, workload.identifiers);
       assertArtifacts(result, workload.identifiers[0] ?? '', workload.span.file);
@@ -214,7 +241,12 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
       disposeFlamegraphPanel();
       assert.equal(flamegraphPanelOpen(), false);
       await vscode.commands.executeCommand(uiCommand('profileShowResults'));
-      await waitFor(() => flamegraphPanelOpen(), (open) => open, 5_000, 'the panel re-opens');
+      await waitFor(
+        () => flamegraphPanelOpen(),
+        (open) => open,
+        5_000,
+        'the panel re-opens',
+      );
       assertResultsPanel(result, workload.identifiers);
 
       // Attaching was never invasive: the program kept working throughout.
@@ -255,7 +287,10 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
     await vscode.commands.executeCommand(uiCommand('profileSnapshot'));
     const second = await waitFor(
       () => lastProfileResult(),
-      (r) => r !== first && r?.sessionId === sessionId && hotFunction(r, 'distance', 'Search.fs') !== undefined,
+      (r) =>
+        r !== first &&
+        r?.sessionId === sessionId &&
+        hotFunction(r, 'distance', 'Search.fs') !== undefined,
       STOP_MS,
       'phase-two snapshot naming distance',
     );
@@ -276,7 +311,7 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
     await awaitLiveProgress();
     await stopProfiling(STOP_MS);
     const quiet = lastProfileResult();
-    assert.ok(quiet && quiet.sessionId === routed, 'a second session on the same program');
+    assert.ok(quiet?.sessionId === routed, 'a second session on the same program');
     assert.ok(hotFunction(quiet, 'shortestPath', 'Routing.fs'), 'routing is hot');
     assert.deepEqual(heatOn('Routing.fs'), [], 'the setting turns the tint off');
     assertResultsPanel(quiet, ['shortestPath']);
@@ -303,5 +338,56 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
       WORKLOADS.map((w) => w.identifiers[0] ?? ''),
     );
     await command(target, 'idle');
+  });
+
+  test('the profiler tells the truth about where F# time goes: on a mixed run, each stage’s share of the samples matches the share FsPricingEngine measured with its own Stopwatch, and the stages rank in the same order', async function () {
+    this.timeout(STOP_MS * 3);
+    const { target } = live;
+    await command(target, 'run mixed');
+    await showSources(ENGINE, ['Csv.fs', 'Search.fs', 'Routing.fs']);
+    const before = await command(target, 'stats');
+    await profileRow(await processRow(target.pid));
+    await awaitLiveProgress();
+    await delay(SAMPLE_MS * 3);
+    await stopProfiling(STOP_MS);
+    const after = await command(target, 'stats');
+    const result = lastProfileResult();
+    assert.ok(result);
+    assertRanked(result);
+
+    // The four pure-CPU stages, each entered through exactly one F# function.
+    const stages = GROUND_TRUTH.map((stage) => ({
+      ...stage,
+      micros: count(after, `${stage.stage}_us`) - count(before, `${stage.stage}_us`),
+      sampled: hotFunction(result, stage.identifier, stage.file)?.percentage ?? 0,
+    }));
+    const measuredTotal = stages.reduce((sum, s) => sum + s.micros, 0);
+    const sampledTotal = stages.reduce((sum, s) => sum + s.sampled, 0);
+    assert.ok(measuredTotal > 0, `the program measured its own stages: ${JSON.stringify(after)}`);
+    assert.ok(sampledTotal > 0, 'the profiler attributed samples to the stages');
+    const shares = stages.map((s) => ({
+      ...s,
+      truth: s.micros / measuredTotal,
+      seen: s.sampled / sampledTotal,
+    }));
+    const major = shares.filter((s) => s.truth >= MAJOR_SHARE);
+    assert.ok(major.length >= 2, `at least two stages carry real time: ${JSON.stringify(shares)}`);
+    for (const stage of major) {
+      assert.ok(stage.sampled > 0, `${stage.identifier} took ${pct(stage.truth)} and must be hot`);
+      assert.ok(
+        Math.abs(stage.seen - stage.truth) <= SHARE_TOLERANCE,
+        `${stage.identifier}: the profiler says ${pct(stage.seen)}, the Stopwatch ${pct(stage.truth)}`,
+      );
+    }
+    const ranked = [...major].sort((a, b) => b.truth - a.truth);
+    for (const [index, higher] of ranked.entries()) {
+      const lower = ranked[index + 1];
+      if (lower !== undefined && higher.truth >= lower.truth * 1.5) {
+        assert.ok(
+          higher.sampled > lower.sampled,
+          `${higher.identifier} (${pct(higher.truth)}) must outrank ${lower.identifier} (${pct(lower.truth)})`,
+        );
+      }
+    }
   });
 });

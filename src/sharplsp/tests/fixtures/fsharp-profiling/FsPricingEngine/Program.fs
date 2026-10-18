@@ -43,22 +43,32 @@ let private reportStep () =
     Reports.dailyTotals catalogue orders |> List.length |> ignore
     Reports.buildAsync orders |> fun pending -> pending.GetAwaiter().GetResult() |> ignore
 
+let private stageNames = [| "parse"; "price"; "search"; "route"; "report" |]
+let private stages = [| parseStep; priceStep; searchStep; routeStep; reportStep |]
+
+/// Ground truth for the profiler: the Stopwatch ticks the workload thread spent in each
+/// stage. Every reply carries them, so a test can hold the profiler's shares against them.
+let private stageTicks = Array.zeroCreate<int64> stageNames.Length
+
+let private timed (index: int) (step: unit -> unit) () =
+    let started = Stopwatch.GetTimestamp()
+    step ()
+    Interlocked.Add(&stageTicks.[index], Stopwatch.GetTimestamp() - started) |> ignore
+
 let private mixedStep () =
-    parseStep ()
-    priceStep ()
-    searchStep ()
-    routeStep ()
-    reportStep ()
+    stages |> Array.iteri (fun index step -> timed index step ())
 
 let private workloadFor (name: string) : Workload option =
-    match name with
-    | "parse" -> Some { Name = name; Step = Some parseStep }
-    | "price" -> Some { Name = name; Step = Some priceStep }
-    | "search" -> Some { Name = name; Step = Some searchStep }
-    | "route" -> Some { Name = name; Step = Some routeStep }
-    | "report" -> Some { Name = name; Step = Some reportStep }
-    | "mixed" -> Some { Name = name; Step = Some mixedStep }
-    | _ -> None
+    match Array.tryFindIndex ((=) name) stageNames, name with
+    | Some index, _ -> Some { Name = name; Step = Some(timed index stages.[index]) }
+    | None, "mixed" -> Some { Name = name; Step = Some mixedStep }
+    | None, _ -> None
+
+let private stageTimes () : string =
+    stageNames
+    |> Array.mapi (fun index name ->
+        sprintf "%s_us=%d" name (Interlocked.Read(&stageTicks.[index]) * 1_000_000L / Stopwatch.Frequency))
+    |> String.concat " "
 
 let private idle = { Name = "idle"; Step = None }
 
@@ -72,12 +82,13 @@ let private countIteration () = lock gate (fun () -> completed <- completed + 1L
 
 let private unknown (line: string) = sprintf "ERR unknown %s" line
 
-let private replyRun (name: string) = sprintf "OK run %s iterations=%d" name (iterations ())
+let private replyRun (name: string) =
+    sprintf "OK run %s iterations=%d %s" name (iterations ()) (stageTimes ())
 
-let private replyIdle () = sprintf "OK idle iterations=%d" (iterations ())
+let private replyIdle () = sprintf "OK idle iterations=%d %s" (iterations ()) (stageTimes ())
 
 let private replyStats () =
-    sprintf "OK stats workload=%s iterations=%d" (readCurrent ()).Name (iterations ())
+    sprintf "OK stats workload=%s iterations=%d %s" (readCurrent ()).Name (iterations ()) (stageTimes ())
 
 let private handle (line: string) : string =
     match line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries) |> List.ofArray with

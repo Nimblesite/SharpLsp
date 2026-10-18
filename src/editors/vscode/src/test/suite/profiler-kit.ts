@@ -224,7 +224,9 @@ class LineFeed {
     if (queued !== undefined) return queued;
     assert.ok(!this.exited, `${what}: the process already exited`);
     const line = await new Promise<string | undefined>((resolve) => {
-      const timer = setTimeout(() => resolve(undefined), timeoutMs);
+      const timer = setTimeout(() => {
+        resolve(undefined);
+      }, timeoutMs);
       this.waiting.push((value) => {
         clearTimeout(timer);
         resolve(value);

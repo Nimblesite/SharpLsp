@@ -28,6 +28,7 @@ import type { MemoryDashboardSnapshot } from '@nimblesite/lsp-profiler-ui/out/sr
 import type {
   HeapDiff,
   MemoryStep,
+  ProfileSessionList,
   SuspectedLeak,
 } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
@@ -36,6 +37,8 @@ import {
   fixtureFile,
   profilerStore,
   rowOf,
+  stopProfiling,
+  stopTracking,
   type Target,
   tooltipText,
   uiCommand,
@@ -53,6 +56,8 @@ export const CPU_PALETTE = ['#e8500a', '#f97316', '#fbbf24', '#4a5468'];
 export const MEMORY_PALETTE = ['#c084fc', '#a78bfa', '#8b5cf6', '#7c3aed'];
 /** The leak-confidence palette ([PROF-UI-WEBVIEW]: red for leaks). */
 export const LEAK_PALETTE = ['#ef4444', '#f87171', '#fb923c', '#a78bfa'];
+/** How long one profiler step may take: an attach, a stop with symbolization, a heap capture. */
+export const STOP_MS = 90_000;
 /** A leak badge names its confidence in its after-line text. */
 const BADGE = /\b(LOW|MEDIUM|HIGH|DEFINITE)\b/;
 
@@ -263,14 +268,21 @@ export function cpuTier(percentage: number): string | undefined {
 export function assertRanked(result: ProfileResult): void {
   assert.ok(result.totalSamples > 0, `samples: ${result.totalSamples}`);
   const shares = result.hotFunctions.map((fn) => fn.percentage);
-  assert.deepEqual(shares, [...shares].sort((a, b) => b - a), 'hot functions arrive ranked');
+  assert.deepEqual(
+    shares,
+    [...shares].sort((a, b) => b - a),
+    'hot functions arrive ranked',
+  );
   for (const fn of result.hotFunctions) {
     assert.ok(fn.percentage <= 100 && fn.percentage >= 2, `${fn.name}: ${fn.percentage}%`);
     assert.ok(fn.selfPercentage <= fn.percentage + 1e-9, `${fn.name}: self within inclusive`);
     assert.ok(fn.samples <= result.totalSamples, `${fn.name}: never more samples than ticks`);
   }
   for (const line of result.hotLines) {
-    assert.ok(line.percentage <= 100 && line.percentage >= 1, `line ${line.line}: ${line.percentage}%`);
+    assert.ok(
+      line.percentage <= 100 && line.percentage >= 1,
+      `line ${line.line}: ${line.percentage}%`,
+    );
     assert.ok(line.line >= 1, 'lines are 1-based in the editor');
   }
 }
@@ -295,7 +307,9 @@ export function assertHeatMap(result: ProfileResult, span: Span): void {
   for (const decoration of painted) {
     assert.ok(CPU_PALETTE.includes(decoration.color), `CPU track colour: ${decoration.color}`);
     assert.ok(/\d%/.test(decoration.contentText), `a share is shown: ${decoration.contentText}`);
-    const hot = result.hotLines.find((l) => isFile(l.file, span.file) && l.line === decoration.line);
+    const hot = result.hotLines.find(
+      (l) => isFile(l.file, span.file) && l.line === decoration.line,
+    );
     assert.ok(hot, `line ${decoration.line} is painted only because it is a hot line`);
     const tier = cpuTier(hot.percentage);
     if (tier !== undefined) {
@@ -332,15 +346,15 @@ interface CpuProfile {
   endTime: number;
 }
 
-function readJson<T>(file: string | undefined, what: string): T {
+function readJson(file: string | undefined, what: string): unknown {
   assert.ok(file !== undefined && fs.existsSync(file), `${what} is written: ${String(file)}`);
-  return JSON.parse(fs.readFileSync(file, 'utf8')) as T;
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
 /** [PROF-EXPORT]: all three artifacts exist, validate, and carry the F# function. */
 export function assertArtifacts(result: ProfileResult, identifier: string, file: string): void {
   assert.equal(result.exportError, undefined, `no export error: ${result.exportError}`);
-  const speedscope = readJson<Speedscope>(result.outputFile, 'the speedscope profile');
+  const speedscope = readJson(result.outputFile, 'the speedscope profile') as Speedscope;
   const { frames } = speedscope.shared;
   const keysSeen = frames.map((f) => `${f.name}|${f.file ?? ''}|${f.line ?? ''}`);
   assert.equal(new Set(keysSeen).size, keysSeen.length, 'frames are deduplicated');
@@ -351,13 +365,22 @@ export function assertArtifacts(result: ProfileResult, identifier: string, file:
   assert.ok(speedscope.profiles.length > 0, 'one profile per thread');
   for (const profile of speedscope.profiles) {
     assert.equal(profile.samples.length, profile.weights.length, 'samples match weights');
-    assert.ok(profile.weights.every((w) => Number.isFinite(w) && w >= 0), 'weights are sane');
-    assert.ok(profile.samples.flat().every((i) => i >= 0 && i < frames.length), 'indices in range');
+    assert.ok(
+      profile.weights.every((w) => Number.isFinite(w) && w >= 0),
+      'weights are sane',
+    );
+    assert.ok(
+      profile.samples.flat().every((i) => i >= 0 && i < frames.length),
+      'indices in range',
+    );
   }
-  const v8 = readJson<CpuProfile>(result.cpuProfilePath, 'the V8 .cpuprofile');
+  const v8 = readJson(result.cpuProfilePath, 'the V8 .cpuprofile') as CpuProfile;
   const ids = new Set(v8.nodes.map((n) => n.id));
   assert.equal(v8.samples.length, v8.timeDeltas.length, 'one time delta per sample');
-  assert.ok(v8.samples.every((id) => ids.has(id)), 'every sample names a node');
+  assert.ok(
+    v8.samples.every((id) => ids.has(id)),
+    'every sample names a node',
+  );
   assert.ok(v8.endTime >= v8.startTime, 'time runs forward');
   assert.ok(
     v8.nodes.some((n) => n.callFrame.functionName.includes(identifier)),
@@ -365,7 +388,10 @@ export function assertArtifacts(result: ProfileResult, identifier: string, file:
   );
   assert.ok(result.flamegraphPath !== undefined, 'a flame graph is exported');
   const svg = fs.readFileSync(result.flamegraphPath, 'utf8');
-  assert.ok(svg.includes('<svg') && svg.includes(identifier), `the flame graph shows ${identifier}`);
+  assert.ok(
+    svg.includes('<svg') && svg.includes(identifier),
+    `the flame graph shows ${identifier}`,
+  );
 }
 
 // ── Memory, as the editor and the wire show it ───────────────────────────────
@@ -388,7 +414,12 @@ export const SHAPES = {
   customer: { type: 'FsOrderLedger.CustomerId', file: 'Ledger.fs', line: 33, live: 'orders' },
   line: { type: 'FsOrderLedger.OrderLine', file: 'Ledger.fs', line: 41, live: 'orders' },
   paid: { type: 'FsOrderLedger.OrderStatus+Paid', file: 'Ledger.fs', line: 37, live: 'paid' },
-  shipped: { type: 'FsOrderLedger.OrderStatus+Shipped', file: 'Ledger.fs', line: 38, live: 'shipped' },
+  shipped: {
+    type: 'FsOrderLedger.OrderStatus+Shipped',
+    file: 'Ledger.fs',
+    line: 38,
+    live: 'shipped',
+  },
   cancelled: {
     type: 'FsOrderLedger.OrderStatus+Cancelled',
     file: 'Ledger.fs',
@@ -483,10 +514,28 @@ export function wireLeak(leaks: readonly SuspectedLeak[], type: string): Suspect
   return leaks.find((leak) => leak.type_name === type);
 }
 
-/** Restore the profiler settings an F# suite changed. */
-export const TOUCHED_SETTINGS = [
-  'showInlineHeatMap',
-  'autoSnapshot',
-  'autoSnapshotInterval',
-  'autoSnapshotOnPause',
-] as const;
+/**
+ * Stop the ledger's background work and drain its mailbox. Its retained state
+ * is left as the test made it: later tests start from a dirty heap on purpose,
+ * and read every count they assert from the fixture's own replies.
+ */
+export async function settleLedger(target: Target): Promise<void> {
+  for (const line of ['burn off', 'drip off', 'audit resume', 'release blobs']) {
+    await command(target, line);
+  }
+}
+
+/**
+ * End everything a test left running: the UI's CPU and memory sessions and any
+ * wire CPU session. Every F# suite runs it after each test, so one failure
+ * never leaves a session that fails the next test for the wrong reason.
+ */
+export async function endProfiling(): Promise<void> {
+  const session = profilerStore().profiler.value;
+  if (session.cpu !== 'idle') await stopProfiling(STOP_MS);
+  if (session.memory !== 'idle') await stopTracking();
+  const listed = await execute<ProfileSessionList>('cpu.list', {});
+  for (const running of listed.sessions) {
+    await execute('cpu.stop', { session_id: running.session_id });
+  }
+}

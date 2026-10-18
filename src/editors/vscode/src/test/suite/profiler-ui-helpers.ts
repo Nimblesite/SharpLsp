@@ -261,10 +261,13 @@ export interface Toasts {
   readonly error: string[];
 }
 
-type ToastWindow = Record<'showInformationMessage' | 'showWarningMessage' | 'showErrorMessage', unknown>;
+type ToastWindow = Record<
+  'showInformationMessage' | 'showWarningMessage' | 'showErrorMessage',
+  unknown
+>;
 
 /** Swap every notification for a recorder while `body` runs. */
-export async function captureToasts(body: () => Promise<unknown>): Promise<Toasts> {
+export async function captureToasts(body: () => PromiseLike<unknown>): Promise<Toasts> {
   const toasts: Toasts = { info: [], warning: [], error: [] };
   const window = vscode.window as unknown as ToastWindow;
   const original: ToastWindow = {

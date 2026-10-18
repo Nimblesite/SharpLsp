@@ -95,6 +95,24 @@ const PROJECT = `<Project Sdk="Microsoft.NET.Sdk">
 </Project>
 `;
 
+/** A debuggee's sources: its assembly name, project file and one program file. */
+export interface DebuggeeSource {
+  readonly name: string;
+  readonly projectFile: string;
+  readonly project: string;
+  readonly sourceFile: string;
+  readonly program: string;
+}
+
+/** The C# debuggee above. */
+export const CSHARP_DEBUGGEE: DebuggeeSource = {
+  name: DEBUGGEE_NAME,
+  projectFile: `${DEBUGGEE_NAME}.csproj`,
+  project: PROJECT,
+  sourceFile: 'Program.cs',
+  program: PROGRAM,
+};
+
 /** A built debuggee and where its program lives. */
 export interface Debuggee {
   readonly project: ConsoleProject;
@@ -103,20 +121,23 @@ export interface Debuggee {
   readonly folder: vscode.WorkspaceFolder;
 }
 
-/** Write and build the debuggee under a fresh scratch dir in the workspace. */
-export async function materialiseDebuggee(prefix: string): Promise<Debuggee> {
+/** Write and build `source` under a fresh scratch dir in the workspace. */
+export async function materialiseDebuggee(
+  prefix: string,
+  source: DebuggeeSource = CSHARP_DEBUGGEE,
+): Promise<Debuggee> {
   const root = fs.mkdtempSync(path.join(requireWorkspaceRoot(), prefix));
   isolateFromRepoMsbuild(root);
-  const dir = path.join(root, DEBUGGEE_NAME);
+  const dir = path.join(root, source.name);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${DEBUGGEE_NAME}.csproj`), PROJECT, 'utf8');
-  const program = path.join(dir, 'Program.cs');
-  fs.writeFileSync(program, PROGRAM, 'utf8');
+  fs.writeFileSync(path.join(dir, source.projectFile), source.project, 'utf8');
+  const program = path.join(dir, source.sourceFile);
+  fs.writeFileSync(program, source.program, 'utf8');
   const project: ConsoleProject = {
-    projectFile: path.join(dir, `${DEBUGGEE_NAME}.csproj`),
+    projectFile: path.join(dir, source.projectFile),
     sourceFile: program,
     dir,
-    assemblyName: DEBUGGEE_NAME,
+    assemblyName: source.name,
   };
   await buildProject(project);
   const dll = builtDll(project);
@@ -227,12 +248,13 @@ export interface DebuggeeHarness {
 export function useDebuggee(
   prefix: string,
   cleanup: () => Promise<unknown> | undefined = () => undefined,
+  source: DebuggeeSource = CSHARP_DEBUGGEE,
 ): DebuggeeHarness {
   let built: Debuggee | undefined;
   let recorder: DapRecorder | undefined;
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    built = await materialiseDebuggee(prefix);
+    built = await materialiseDebuggee(prefix, source);
   });
   suiteTeardown(async () => {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');

@@ -67,12 +67,14 @@ import {
   processRow,
   profileRow,
   SHAPES,
+  settleLedger,
   showSources,
+  STOP_MS,
+  endProfiling,
   wireDiff,
   wireLeak,
 } from './profiler-fsharp-kit';
 
-const STEP_MS = 90_000;
 const SEEDED = { orders: 12_000, quotes: 4_000, rejections: 1_500 };
 
 /** Take a UI snapshot and wait until the dashboard holds a newer one. */
@@ -81,7 +83,7 @@ async function uiSnapshot(previous?: MemoryDashboardSnapshot): Promise<MemoryDas
   const snapshot = await waitFor(
     () => lastMemorySnapshot(),
     (snap) => snap !== undefined && snap.snapshotId !== previous?.snapshotId,
-    STEP_MS,
+    STOP_MS,
     'a new snapshot in the dashboard',
   );
   assert.ok(snapshot);
@@ -158,15 +160,15 @@ function assertNoPhantomPaint(snapshot: MemoryDashboardSnapshot): void {
 }
 
 suite('F# memory — FsOrderLedger through the UI and the wire', () => {
-  const live = profilingSuite('profiler-fs-mem-', LEDGER, {
-    stopping: async () => {
-      if (profilerStore().profiler.value.cpu !== 'idle') await stopProfiling(STEP_MS);
-      if (profilerStore().profiler.value.memory !== 'idle') await stopTracking();
-    },
+  const live = profilingSuite('profiler-fs-mem-', LEDGER);
+  teardown(async function () {
+    this.timeout(STOP_MS * 2);
+    await endProfiling();
+    await settleLedger(live.target);
   });
 
   test('the F# heap zoo: seed every leak → Track Memory from the row → snapshot anchors every shape at its line with every instance counted → drain the mailbox → snapshot again → release → only the true leaks survive → stop clears everything', async function () {
-    this.timeout(STEP_MS * 6);
+    this.timeout(STOP_MS * 6);
     const { target } = live;
     await command(target, 'audit pause');
     const seeded = await command(target, `place ${SEEDED.orders}`);
@@ -196,7 +198,10 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
       memoryBusy: true,
       profilerBusy: true,
     });
-    assert.deepEqual(processesViewState(), { message: '🗄️ Tracking memory allocations…', badge: 1 });
+    assert.deepEqual(processesViewState(), {
+      message: '🗄️ Tracking memory allocations…',
+      badge: 1,
+    });
     const ops = recordedOperations().slice(opsBefore);
     assert.ok(ops.includes(`begin:${memStartTitle()}`) && ops.includes(`end:${memStartTitle()}`));
     const session = profilerStore().profiler.value.memorySessionId;
@@ -205,14 +210,24 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
     // Snapshot one: every shape, exactly, at its line; nothing invented.
     const first = await uiSnapshot();
     assertZoo(first, counts);
-    assertDashboard(first, Object.values(SHAPES).map((s) => s.type));
+    assertDashboard(
+      first,
+      Object.values(SHAPES).map((s) => s.type),
+    );
     assertNoPhantomPaint(first);
     assert.equal(first.timeline.length, 1, 'the first point of the timeline');
     const offered = referenceTypeCandidates(first);
     const typed = first.topAllocations.flatMap((s) => (s.typeName ? [s.typeName] : []));
-    assert.ok(offered.length > 0 && offered.every((t) => typed.includes(t)), 'the picker offers only reported types');
+    assert.ok(
+      offered.length > 0 && offered.every((t) => typed.includes(t)),
+      'the picker offers only reported types',
+    );
     const positions = offered.map((t) => typed.indexOf(t));
-    assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'in the server’s rank order');
+    assert.deepEqual(
+      positions,
+      [...positions].sort((a, b) => a - b),
+      'in the server’s rank order',
+    );
     for (const shape of [SHAPES.order, SHAPES.shipped, SHAPES.quote]) {
       assert.ok(offered.includes(shape.type), `the picker offers ${shape.type}`);
     }
@@ -242,7 +257,13 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
       [0, 0, 0],
     );
     const third = await uiSnapshot(second);
-    for (const dead of [SHAPES.order, SHAPES.customer, SHAPES.line, SHAPES.shipped, SHAPES.rejected]) {
+    for (const dead of [
+      SHAPES.order,
+      SHAPES.customer,
+      SHAPES.line,
+      SHAPES.shipped,
+      SHAPES.rejected,
+    ]) {
       assert.ok(
         !third.topAllocations.some((s) => s.typeName === dead.type),
         `${dead.type} died with the ledger`,
@@ -275,7 +296,7 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
   });
 
   test('leak confidence, exactly as specified, on two sessions at once: Low → Medium → High on three growths, reset by a flat diff, Low again, freed by a release, Medium on one growth over 10 MiB → High; the dashboard and the wire agree at every step', async function () {
-    this.timeout(STEP_MS * 10);
+    this.timeout(STOP_MS * 10);
     const { target } = live;
     await showSources(LEDGER, ['Ledger.fs']);
     await trackMemory(target.pid);
@@ -288,7 +309,7 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
       const html = await waitFor(
         () => memoryDashboardState()?.html ?? '',
         (h) => h.includes('const leaks = '),
-        STEP_MS,
+        STOP_MS,
         'the dashboard leak analysis',
       );
       const shown = embeddedLeaks(html);
@@ -303,23 +324,44 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
       assert.equal(profilerStore().profiler.value.memorySessionId, before, 'one UI session');
       assert.ok(diff.total_growth > 0, 'the heap grew');
       const order = wireLeak(leaks, SHAPES.order.type);
-      assert.ok(order, `Order is suspected after a growth: ${JSON.stringify(leaks.map((l) => l.type_name))}`);
+      assert.ok(
+        order,
+        `Order is suspected after a growth: ${JSON.stringify(leaks.map((l) => l.type_name))}`,
+      );
       assert.equal(order.confidence.kind, level, `${level} on this growth`);
       assert.equal(order.count_growth, 1000, 'exactly the orders placed');
       assert.equal(order.current_count, count(counts, 'orders'), 'every live order');
       assert.ok(order.size_growth > 0 && order.current_size > 0);
       assert.ok(isFile(order.file, 'Ledger.fs') && order.line === SHAPES.order.line, 'at its line');
       assert.ok(order.reason.length > 0, 'the reason is said');
-      for (const [shape, each] of [[SHAPES.shipped, 250], [SHAPES.customer, 1000]] as const) {
-        assert.equal(wireLeak(leaks, shape.type)?.count_growth, each, `${shape.type} grew by ${each}`);
+      for (const [shape, each] of [
+        [SHAPES.shipped, 250],
+        [SHAPES.customer, 1000],
+      ] as const) {
+        assert.equal(
+          wireLeak(leaks, shape.type)?.count_growth,
+          each,
+          `${shape.type} grew by ${each}`,
+        );
       }
       const ui = shown.find((leak) => leak.typeName === SHAPES.order.type);
       assert.ok(ui, 'the dashboard lists the Order leak');
-      assert.equal(ui.confidence, level.toLowerCase(), 'the dashboard shows the server’s confidence');
+      assert.equal(
+        ui.confidence,
+        level.toLowerCase(),
+        'the dashboard shows the server’s confidence',
+      );
       assert.equal(ui.countGrowth, 1000);
       assert.equal(ui.line, SHAPES.order.line);
       const badge = leakBadge('Ledger.fs', SHAPES.order.line);
-      assert.ok(badge?.contentText.includes(level.toUpperCase()), `a ${level} badge: ${JSON.stringify(badge)}`);
+      assert.ok(
+        badge,
+        `the Order line wears a leak badge: ${JSON.stringify(memoryTrackOn('Ledger.fs'))}`,
+      );
+      assert.ok(
+        badge.contentText.includes(level.toUpperCase()),
+        `a ${level} badge: ${badge.contentText}`,
+      );
       assert.ok(LEAK_PALETTE.includes(badge.color), `leak colour: ${badge.color}`);
     }
 
@@ -346,7 +388,11 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
     assert.equal(wireLeak(freed.leaks, SHAPES.order.type), undefined, 'freed is never a leak');
 
     // One growth over 10 MiB is Medium at once; two more growths make it High.
-    const blobLevels = [['blob 12', 'Medium'], ['blob 1', 'Medium'], ['blob 1', 'High']] as const;
+    const blobLevels = [
+      ['blob 12', 'Medium'],
+      ['blob 1', 'Medium'],
+      ['blob 1', 'High'],
+    ] as const;
     for (const [line, level] of blobLevels) {
       await command(target, line);
       const { leaks, shown } = await bothDiff();
@@ -368,7 +414,7 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
   });
 
   test('two tracks on one F# file: Track Memory and Profile CPU on the same program at once → both painted on Ledger.fs → stopping CPU keeps the memory track → stopping memory keeps the heat map', async function () {
-    this.timeout(STEP_MS * 5);
+    this.timeout(STOP_MS * 5);
     const { target } = live;
     await command(target, 'place 3000');
     await command(target, 'burn on');
@@ -390,15 +436,22 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
     assert.ok(memoryStatusText()?.includes('tracking'), 'the memory status still shows');
     assert.equal(processesViewState().badge, 1, 'one badge for a busy profiler');
     await awaitLiveProgress();
-    await stopProfiling(STEP_MS);
+    await stopProfiling(STOP_MS);
 
     const result = lastProfileResult();
     assert.ok(result && hotFunction(result, 'priceAll', 'Ledger.fs'), 'pricing the ledger is hot');
     assertHeatMap(result, PRICE_ALL);
     const memoryTrack = memoryTrackOn('Ledger.fs');
-    assert.ok(memoryTrack.some((d) => d.line === SHAPES.order.line), 'the memory track survives');
+    assert.ok(
+      memoryTrack.some((d) => d.line === SHAPES.order.line),
+      'the memory track survives',
+    );
     assert.deepEqual(
-      { profiling: keys().profiling, memoryTracking: keys().memoryTracking, busy: keys().profilerBusy },
+      {
+        profiling: keys().profiling,
+        memoryTracking: keys().memoryTracking,
+        busy: keys().profilerBusy,
+      },
       { profiling: false, memoryTracking: true, busy: true },
       'stopping CPU leaves memory running',
     );
