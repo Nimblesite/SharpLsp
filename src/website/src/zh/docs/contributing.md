@@ -11,6 +11,8 @@ eleventyNavigation:
 
 本页面面向贡献者。VS Code 用户通常应安装 Marketplace 扩展，其中已包含宿主和 sidecar。
 
+{% video "contributing" %}
+
 ## 先决条件
 
 - 通过 [rustup](https://rustup.rs) 安装的 Rust stable

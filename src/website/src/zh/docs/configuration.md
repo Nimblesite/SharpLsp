@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp 有两类配置入口：
 
+{% video "configuration" %}
+
 - `sharplsp.toml` 中的工作区级服务器设置；
 - VS Code 中 `sharplsp.*` 下的客户端和界面设置。
 

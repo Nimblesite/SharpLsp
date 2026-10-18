@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp 的大多数上下文菜单命令都位于 VS Code 解决方案资源管理器中。扩展目前不会在“问题”面板中添加上下文菜单。
 
+{% video "context-menus" %}
+
 ## 解决方案资源管理器
 
 | 节点 | 可用操作 |

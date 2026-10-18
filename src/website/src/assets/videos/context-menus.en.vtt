@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00.000 --> 00:10.071
+[Gentle music]
+Right-click in the Solution Explorer, and every node has its own actions. The solution builds, and tidies packages across all of its projects.
+
+00:11.150 --> 00:19.754
+Build, rebuild or clean a project in one click. The build runs in a terminal, and its errors and warnings land in the Problems panel.
+
+00:29.217 --> 00:33.158
+Open Project File takes you straight to the project's XML.
+
+00:46.217 --> 00:53.174
+And on a C# type, Sort Members orders its members by accessibility, kind and name, in a single edit.

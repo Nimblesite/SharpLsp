@@ -10,6 +10,8 @@ eleventyExcludeFromCollections: true
 
 SharpLsp implements the LSP navigation family for both C# and F#. C# queries use Roslyn across the loaded solution; F# queries use FCS across the loaded F# project.
 
+{% video "navigation" %}
+
 ## Methods
 
 | LSP method | Result |

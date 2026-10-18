@@ -1,0 +1,11 @@
+WEBVTT
+
+00:00.000 --> 00:12.136
+[Gentle music]
+The VS Code extension brings everything with it. On start, it finds a .NET 10 SDK, launches the bundled server and both sidecars, and loads your solution.
+
+00:12.686 --> 00:21.888
+Everything it adds lives under SharpLsp in the Command Palette: builds, NuGet, F# Interactive, tests, debugging and the profiler.
+
+00:25.286 --> 00:36.668
+Contributors can point it at their own server and sidecar builds, in a trusted workspace only. And the same server runs in Zed, in Rider, and in any editor that speaks LSP.

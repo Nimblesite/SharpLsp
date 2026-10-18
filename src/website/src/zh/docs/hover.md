@@ -11,6 +11,8 @@ eleventyExcludeFromCollections: true
 
 C# 和 F# 均已实现悬停功能。请求会路由到 Roslyn 或 FCS，并根据当前尚未保存的文档内容进行计算。
 
+{% video "hover" %}
+
 ## C# 悬停
 
 C# 悬停信息可以包括：

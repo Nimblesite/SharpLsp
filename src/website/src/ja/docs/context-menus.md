@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp のコンテキストメニューコマンドの大半は、VS Code のソリューションエクスプローラーにあります。現在、拡張機能は Problems パネルにコンテキストメニューを追加しません。
 
+{% video "context-menus" %}
+
 ## ソリューションエクスプローラー
 
 | ノード | 利用可能なアクション |

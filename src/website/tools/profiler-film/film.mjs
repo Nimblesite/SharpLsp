@@ -22,7 +22,7 @@ const film = (await import(path.join(films, `${id}.mjs`))).default;
 const out = path.join(filmsOut, id);
 const narration = film.narration && JSON.parse(fs.readFileSync(path.join(films, film.narration), 'utf8'));
 
-if (!process.argv.includes('--publish')) await shootWalkthrough({ demo: film.demo, out, scenes: film.scenes });
+if (!process.argv.includes('--publish')) await shootWalkthrough({ demo: film.demo, out, scenes: film.scenes, settings: film.settings });
 const length = await publishWalkthrough({ name: film.name, out, scenes: film.scenes, posterAt: film.poster, narration });
 if (fs.existsSync(path.join(out, 'stills'))) publishStills(path.join(out, 'stills'));
 process.stdout.write(`${film.name}: ${length.toFixed(1)}s published\n`);

@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00.000 --> 00:10.677
+[Gentle music]
+SharpLsp brings a NuGet browser into VS Code. Right-click a project, F# or C#, and choose Browse NuGet Packages.
+
+00:24.117 --> 00:30.217
+Search nuget.org, and pick a package to see its description, license, versions and tags.
+
+00:47.683 --> 00:54.269
+Install edits the project file through MSBuild, keeping its formatting, then restores in the background.
+
+00:54.819 --> 01:01.103
+Now it's under Installed, and the project file has its package reference. No terminal, no guesswork.

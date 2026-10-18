@@ -3,10 +3,9 @@
 // VS Code. Every film, whatever its story, is shot through onSet.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchVsCode } from './editor.mjs';
+import { SCRATCH, launchVsCode, repoRoot } from './editor.mjs';
 
 const demos = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
 
@@ -17,6 +16,40 @@ const demos = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dem
  */
 export const STOREFRONT = { folder: 'storefront', project: 'Storefront' };
 export const FS_STOREFRONT = { folder: 'fs-storefront', project: 'FsStorefront' };
+
+/**
+ * Both demos in one workspace under Shop.slnx, the language films' set: C# and
+ * F# side by side in one solution. Each demo's own solution is left out, so the
+ * workspace holds exactly one, and nothing runs.
+ */
+export const SHOP = { folder: '.', project: 'Shop', omit: ['Storefront.slnx', 'FsStorefront.slnx'], runs: false };
+
+/** `git archive` of HEAD in `repo`, unpacked into `into`: the committed tree, nothing local. */
+function unpackHead(repo, into) {
+  fs.mkdirSync(into, { recursive: true });
+  const archive = spawnSync('git', ['-C', repo, 'archive', '--format=tar', 'HEAD'], { maxBuffer: 1 << 30 });
+  if (archive.status !== 0) throw new Error(`git archive of ${repo} failed: ${archive.stderr}`);
+  const unpack = spawnSync('tar', ['-x', '-C', into], { input: archive.stdout });
+  if (unpack.status !== 0) throw new Error(`unpacking ${repo} failed: ${unpack.stderr}`);
+}
+
+/**
+ * The SharpLsp repository itself, the contributors' film's set: its committed
+ * tree and lspkit's, staged at a neutral path, opened without the extension
+ * (its own sidecar solutions are not the subject), with nothing run.
+ */
+export const REPO = {
+  project: 'SharpLsp',
+  runs: false,
+  disabled: ['nimblesite.sharplsp'],
+  stage: () => {
+    const root = fs.mkdtempSync(path.join(SCRATCH, 'film-'));
+    const workspace = path.join(root, 'SharpLsp');
+    unpackHead(repoRoot, workspace);
+    unpackHead(path.join(repoRoot, 'lspkit'), path.join(workspace, 'lspkit'));
+    return { root, workspace };
+  },
+};
 
 /** Build the staged demo; a failed build stops the shoot. */
 export function buildDemo(workspace) {
@@ -29,22 +62,27 @@ export function buildDemo(workspace) {
  * path (the user's name) can reach a frame name or tooltip on camera.
  */
 export function stageDemo(demo) {
-  // The real path: macOS's tmpdir is a symlink the .NET runtime resolves, and
+  // The real path: macOS's /tmp is a symlink the .NET runtime resolves, and
   // heat-map decorations only land when both sides spell the file the same way.
-  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'film-'));
+  const root = fs.mkdtempSync(path.join(SCRATCH, 'film-'));
   const workspace = path.join(root, demo.project);
   fs.cpSync(path.join(demos, demo.folder), workspace, {
     recursive: true,
-    filter: (source) => !['bin', 'obj', '.sharplsp'].includes(path.basename(source)),
+    filter: (source) => !['bin', 'obj', '.sharplsp', ...(demo.omit ?? [])].includes(path.basename(source)),
   });
   buildDemo(workspace);
   return { root, workspace };
 }
 
-/** Start the demo by absolute path (discovery needs it) and wait for its banner. */
+/**
+ * Start the demo by absolute path (discovery needs it) and wait for its banner.
+ * It shares the editor's temp folder, where .NET opens the diagnostics socket
+ * the profiler attaches through.
+ */
 async function startDemo(workspace) {
   const project = path.basename(workspace);
-  const app = spawn(path.join(workspace, `bin/Debug/net10.0/${project}`), [], { cwd: workspace, stdio: ['ignore', 'pipe', 'ignore'] });
+  const env = { ...process.env, TMPDIR: `${SCRATCH}/` };
+  const app = spawn(path.join(workspace, `bin/Debug/net10.0/${project}`), [], { cwd: workspace, env, stdio: ['ignore', 'pipe', 'ignore'] });
   await new Promise((resolve, reject) => {
     app.stdout.once('data', resolve);
     app.once('exit', (code) => reject(new Error(`${project} exited with ${code}`)));
@@ -77,18 +115,20 @@ function writeSettings(workspace, settings) {
 /**
  * Stage `demo` with optional workspace `settings`, open it in an isolated VS Code
  * beside the running app, and run `shoot({ page, cdp, app, workspace })`. A failed
- * take leaves `<out>/failure.png`; the app, the editor and the staged copy always go.
+ * shoot leaves `<out>/failure.png` and the editor's `<out>/logs`; the app, the
+ * editor and the staged copy always go.
  */
 export async function onSet({ demo, out, settings }, shoot) {
-  const { root, workspace } = stageDemo(demo);
+  const { root, workspace } = (demo.stage ?? stageDemo)(demo);
   if (settings) writeSettings(workspace, settings);
-  const editor = await launchVsCode({ workspace });
-  const app = demoApp(workspace);
+  const editor = await launchVsCode({ workspace, disabled: demo.disabled });
+  const app = demo.runs === false ? { start: async () => undefined, stop: () => undefined } : demoApp(workspace);
   await app.start();
   try {
     await shoot({ page: editor.page, cdp: editor.cdp, app, workspace });
   } catch (error) {
     await editor.page.screenshot({ path: path.join(out, 'failure.png') }).catch(() => undefined);
+    fs.cpSync(editor.logs, path.join(out, 'logs'), { recursive: true });
     throw error;
   } finally {
     app.stop();

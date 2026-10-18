@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00.000 --> 00:12.292
+[Gentle music]
+Press F12 on any symbol to jump to its definition. In F#, the F# compiler resolves it across files: here, a union case declared in another file.
+
+00:15.417 --> 00:20.745
+In C#, Roslyn does the same, from the program straight into the checkout pipeline.
+
+00:31.183 --> 00:38.397
+Shift F12 finds every reference across the solution, in a peek window you can browse without losing your place.
+
+00:43.950 --> 00:51.096
+It works for the framework too. F12 on JsonSerializer opens its source, decompiled from the assembly.

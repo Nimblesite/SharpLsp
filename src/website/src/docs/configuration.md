@@ -12,6 +12,8 @@ eleventyNavigation:
 
 SharpLsp has two configuration surfaces:
 
+{% video "configuration" %}
+
 - workspace-level server settings in `sharplsp.toml`;
 - client and UI settings under `sharplsp.*` in VS Code.
 

@@ -1,0 +1,25 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "VSIX": "V S I X", "NuGet": "new get", "LSP": "L S P", ".NET": "dot net" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "activation",
+      "en": "The VS Code extension brings everything with it. On start, it finds a .NET 10 SDK, launches the bundled server and both sidecars, and loads your solution.",
+      "ja": "VS Code 拡張機能にはすべてが同梱されています。起動すると .NET 10 SDK を見つけ、同梱のサーバーと 2 つのサイドカーを起動し、ソリューションを読み込みます。",
+      "zh": "VS Code 扩展自带一切。启动时，它会找到 .NET 10 SDK，启动内置的服务器和两个 sidecar，并加载你的解决方案。"
+    },
+    {
+      "scene": "palette",
+      "en": "Everything it adds lives under SharpLsp in the Command Palette: builds, NuGet, F# Interactive, tests, debugging and the profiler.",
+      "ja": "追加される機能はすべて、コマンドパレットの SharpLsp の下にあります。ビルド、NuGet、F# Interactive、テスト、デバッグ、そしてプロファイラー。",
+      "zh": "它添加的一切都在命令面板的 SharpLsp 下：生成、NuGet、F# Interactive、测试、调试和性能分析器。"
+    },
+    {
+      "scene": "trust",
+      "en": "Contributors can point it at their own server and sidecar builds, in a trusted workspace only. And the same server runs in Zed, in Rider, and in any editor that speaks LSP.",
+      "ja": "コントリビューターは、信頼済みのワークスペースに限り、自分でビルドしたサーバーとサイドカーを指定できます。そして同じサーバーが Zed でも、Rider でも、LSP を話すどのエディターでも動きます。",
+      "zh": "贡献者可以让它使用自己构建的服务器和 sidecar，但仅限受信任的工作区。同一个服务器也能在 Zed、Rider 以及任何支持 LSP 的编辑器中运行。"
+    }
+  ]
+}

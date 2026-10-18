@@ -1,0 +1,31 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "C#": "C sharp", "F2": "F two" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "fsharp",
+      "en": "Code actions turn problems into code. This F# match misses a union case. Press Command dot, and SharpLsp writes it for you.",
+      "ja": "コードアクションは問題をコードに変えます。この F# の match には共用体ケースが足りません。Command+. を押すと、SharpLsp が書いてくれます。",
+      "zh": "代码操作能把问题变成代码。这个 F# match 漏了一个联合用例。按 Command+.，SharpLsp 就会替你写出来。"
+    },
+    {
+      "scene": "rename",
+      "en": "Rename is built in. Press F2, and the new name reaches every file in the project.",
+      "ja": "名前の変更も組み込みです。F2 を押せば、新しい名前がプロジェクトのすべてのファイルに行き渡ります。",
+      "zh": "重命名也是内置的。按 F2，新名字会传到项目里的每一个文件。"
+    },
+    {
+      "scene": "generate",
+      "en": "In C#, Roslyn's own fixes and refactorings are on hand. Call a method that doesn't exist yet, and generate it in one step.",
+      "ja": "C# では、Roslyn 自身の修正とリファクタリングが使えます。まだ存在しないメソッドを呼び出せば、ワンステップで生成できます。",
+      "zh": "在 C# 中，可以直接使用 Roslyn 自带的修复和重构。调用一个还不存在的方法，一步就能生成它。"
+    },
+    {
+      "scene": "using",
+      "en": "Use a type without its namespace, and one fix adds the using directive.",
+      "ja": "名前空間なしで型を使えば、ひとつの修正で using ディレクティブが追加されます。",
+      "zh": "使用一个没导入命名空间的类型，一个修复就能加上 using 指令。"
+    }
+  ]
+}

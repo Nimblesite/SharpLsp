@@ -1,0 +1,37 @@
+{
+  "voice": "af_heart",
+  "say": {
+    "SharpLsp": "Sharp L S P",
+    "F#": "F sharp",
+    "C#": "C sharp",
+    ".NET": "dot net",
+    "IDs": "I Ds",
+    "ID": "I D",
+    "Rust": "Rust"
+  },
+  "music": {
+    "en": "[Gentle music]",
+    "ja": "[穏やかな音楽]",
+    "zh": "[舒缓的音乐]"
+  },
+  "lines": [
+    {
+      "scene": "layout",
+      "en": "SharpLsp is built in the open. One repository holds the Rust host, the C# and F# sidecars, the editor integrations, and this website.",
+      "ja": "SharpLsp はオープンに開発されています。ひとつのリポジトリに、Rust ホスト、C# と F# のサイドカー、エディター統合、そしてこのウェブサイトが入っています。",
+      "zh": "SharpLsp 是开放开发的。一个仓库就包含了 Rust 宿主、C# 和 F# sidecar、各编辑器集成，以及这个网站。"
+    },
+    {
+      "scene": "specs",
+      "en": "The specs are the source of truth. Every section has an ID, and the code and tests that implement it cite that ID.",
+      "ja": "仕様書が唯一の拠り所です。各セクションには ID があり、それを実装するコードとテストがその ID を引用します。",
+      "zh": "规范是唯一的事实来源。每个章节都有一个 ID，实现它的代码和测试都会引用这个 ID。"
+    },
+    {
+      "scene": "suite",
+      "en": "Everything builds and tests from the command line. Here, the Rust host's unit tests compile and run.",
+      "ja": "すべてコマンドラインからビルドとテストができます。ここでは Rust ホストの単体テストをコンパイルして実行します。",
+      "zh": "一切都能在命令行中生成和测试。这里，Rust 宿主的单元测试正在编译并运行。"
+    }
+  ]
+}

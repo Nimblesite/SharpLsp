@@ -43,13 +43,16 @@ export async function record({ cdp, cues, frames, clips }, name, act) {
   cues.save(name);
 }
 
-/** Show or hide the step caption, if a walkthrough has drawn one. */
+/** Show or hide the step caption and the pointer, where a walkthrough has drawn them. */
 const showCaption = (page, shown) =>
-  page.evaluate((visibility) => document.getElementById('film-caption')?.style.setProperty('visibility', visibility), shown ? 'visible' : 'hidden');
+  page.evaluate(
+    (visibility) => ['film-caption', 'film-pointer'].forEach((id) => document.getElementById(id)?.style.setProperty('visibility', visibility)),
+    shown ? 'visible' : 'hidden',
+  );
 
 /**
- * A clean frame `<dir>/<name>.png`: no hover, and the step caption hidden only
- * for the instant of the shot (Do Not Disturb keeps toasts off screen).
+ * A clean frame `<dir>/<name>.png`: no hover, and the step caption and pointer
+ * hidden only for the instant of the shot (Do Not Disturb keeps toasts off screen).
  */
 export async function still(page, dir, name) {
   fs.mkdirSync(dir, { recursive: true });

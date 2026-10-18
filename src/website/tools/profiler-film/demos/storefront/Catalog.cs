@@ -11,6 +11,8 @@ public static class Catalog
     private static readonly string[] Adjectives = ["Ergonomic", "Rustic", "Sleek", "Vintage"];
     private static readonly string[] Nouns = ["Keyboard", "Lamp", "Backpack", "Kettle", "Monitor"];
 
+    /// <summary>The catalog as JSON: <paramref name="itemCount"/> generated products.</summary>
+    /// <param name="itemCount">How many products to generate.</param>
     public static string Generate(int itemCount) =>
         JsonSerializer.Serialize(Enumerable.Range(0, itemCount).Select(Product).ToList());
 

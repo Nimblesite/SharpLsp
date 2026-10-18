@@ -10,6 +10,8 @@ F# is a **first-class citizen** in SharpLsp. The Rust LSP host routes F# semanti
 
 [FsAutoComplete (FSAC)](https://ionide.io/Tools/fsac.html), the engine behind Ionide, is the parity target. SharpLsp has a broad working surface today, but it does **not** yet claim full FSAC parity.
 
+{% video "fsharp-language" %}
+
 ## Feature Status
 
 | Feature | Status | Current behavior |

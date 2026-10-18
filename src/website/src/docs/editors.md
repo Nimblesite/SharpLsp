@@ -12,6 +12,8 @@ eleventyNavigation:
 
 SharpLsp is editor-agnostic at the protocol layer. VS Code and its Open VSX forks are the supported, packaged clients today; a Rider plugin and standalone server archives ship with every release, and the other integrations remain development work.
 
+{% video "editor-setup" %}
+
 ## VS Code
 
 Install [SharpLsp from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf, and VSCodium. The VSIX includes the Rust host and the C# and F# sidecars, so no separate SharpLsp installation is needed.

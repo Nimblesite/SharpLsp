@@ -454,62 +454,14 @@ fn build_edits(
     source: &str,
     config: &SortConfig,
 ) -> Vec<TextEdit> {
-    let source_bytes = source.as_bytes();
-
-    // Find the first and last member to get the replacement range.
-    // Use trivia_byte for the first member so the edit covers leading comments.
+    // The replacement starts at the first member's leading trivia, so the edit
+    // covers its comments, and ends where the last member ends.
     let first = members.iter().min_by_key(|m| m.trivia_byte);
     let last = members.iter().max_by_key(|m| m.end_byte);
-
     let (Some(first_member), Some(last_member)) = (first, last) else {
         return vec![];
     };
-
-    // Compute the edit start position from the trivia byte offset.
-    let trivia_pos = byte_to_position(source_bytes, first_member.trivia_byte);
-
-    // Build the reordered text by extracting each member's full text
-    // (including its leading trivia) in sorted order.
-    // Insert blank lines between different accessibility/category groups.
-    let mut new_text = String::new();
-    let mut prev_member: Option<&MemberInfo> = None;
-    let separator = members.iter().find_map(|member| {
-        source_bytes
-            .get(member.end_byte)
-            .copied()
-            .filter(|byte| *byte == b',')
-            .map(char::from)
-    });
-
-    for (sorted_pos, &original_index) in sorted_indices.iter().enumerate() {
-        let member = members.iter().find(|m| m.index == original_index);
-        let Some(member) = member else { continue };
-
-        // Extract the full member text including leading trivia.
-        let Some(text) = source_bytes.get(member.trivia_byte..member.end_byte) else {
-            continue;
-        };
-        let member_text = String::from_utf8_lossy(text);
-
-        // Insert blank line between groups.
-        if let Some(prev) = prev_member {
-            if groups_differ(prev, member, config) && !new_text.ends_with("\n\n") {
-                if !new_text.ends_with('\n') {
-                    new_text.push('\n');
-                }
-                new_text.push('\n');
-            }
-        }
-
-        new_text.push_str(&member_text);
-        append_separator(&mut new_text, separator, sorted_pos, sorted_indices.len());
-
-        if sorted_pos < sorted_indices.len() - 1 && !member_text.ends_with('\n') {
-            new_text.push('\n');
-        }
-
-        prev_member = Some(member);
-    }
+    let trivia_pos = byte_to_position(source.as_bytes(), first_member.trivia_byte);
 
     vec![TextEdit {
         range: EditRange {
@@ -522,8 +474,84 @@ fn build_edits(
                 character: last_member.end_col,
             },
         },
-        new_text,
+        new_text: reordered_text(members, sorted_indices, source, config),
     }]
+}
+
+/// The members in sorted order, each on its own line. A type whose members are
+/// spaced by blank lines keeps one between every member; a compact type gets one
+/// only where a new accessibility/category group starts. A member's own leading
+/// blank lines are replaced, never added to, so no gap grows past one line.
+fn reordered_text(
+    members: &[MemberInfo],
+    sorted_indices: &[usize],
+    source: &str,
+    config: &SortConfig,
+) -> String {
+    let newline = if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let separator = members.iter().find_map(|member| {
+        source
+            .as_bytes()
+            .get(member.end_byte)
+            .copied()
+            .filter(|byte| *byte == b',')
+            .map(char::from)
+    });
+    let ordered = sorted_indices
+        .iter()
+        .filter_map(|&index| members.iter().find(|m| m.index == index));
+    let spaced = members.iter().any(|member| {
+        source
+            .get(member.trivia_byte..member.end_byte)
+            .is_some_and(|text| leading_layout(text).blank)
+    });
+
+    let mut new_text = String::new();
+    let mut prev_member: Option<&MemberInfo> = None;
+    for (sorted_pos, member) in ordered.enumerate() {
+        let Some(text) = source.get(member.trivia_byte..member.end_byte) else {
+            continue;
+        };
+        let layout = leading_layout(text);
+        let gap = prev_member.is_some_and(|prev| spaced || groups_differ(prev, member, config));
+        let breaks = match (layout.on_own_line, gap) {
+            (false, _) => 0,
+            (true, false) => 1,
+            (true, true) => 2,
+        };
+        new_text.push_str(&newline.repeat(breaks));
+        new_text.push_str(layout.body);
+        append_separator(&mut new_text, separator, sorted_pos, sorted_indices.len());
+        prev_member = Some(member);
+    }
+    new_text
+}
+
+/// A member's text, split at the line its content starts on.
+struct LeadingLayout<'a> {
+    /// The member starts on a line of its own.
+    on_own_line: bool,
+    /// A blank line came before the member.
+    blank: bool,
+    /// The member from its first line's indentation on (or as it was, mid-line).
+    body: &'a str,
+}
+
+/// Split `text` (a member with its leading trivia) into its leading line breaks and its body.
+fn leading_layout(text: &str) -> LeadingLayout<'_> {
+    let content = text.len() - text.trim_start().len();
+    let leading = text.get(..content).unwrap_or_default();
+    let line_start = leading.rfind('\n').map_or(0, |newline| newline + 1);
+    let breaks = leading.matches('\n').count();
+    LeadingLayout {
+        on_own_line: breaks > 0,
+        blank: breaks > 1,
+        body: text.get(line_start..).unwrap_or(text),
+    }
 }
 
 /// Add punctuation that belongs between declarations rather than to either AST node.

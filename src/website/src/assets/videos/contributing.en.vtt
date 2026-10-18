@@ -1,0 +1,11 @@
+WEBVTT
+
+00:00.000 --> 00:11.745
+[Gentle music]
+SharpLsp is built in the open. One repository holds the Rust host, the C# and F# sidecars, the editor integrations, and this website.
+
+00:15.017 --> 00:22.185
+The specs are the source of truth. Every section has an ID, and the code and tests that implement it cite that ID.
+
+00:29.417 --> 00:35.708
+Everything builds and tests from the command line. Here, the Rust host's unit tests compile and run.

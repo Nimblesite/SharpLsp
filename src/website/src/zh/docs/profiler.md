@@ -9,7 +9,7 @@ eleventyExcludeFromCollections: true
 
 SharpLsp 可以在不离开 VS Code 的情况下，对任意正在运行的 .NET 进程进行 CPU 和内存分析。热点代码行直接在代码中高亮，火焰图和热点函数表就在旁边，实时堆时间线会在应用运行时为可疑泄漏排序。无需安装 `dotnet-trace`，无需转储，也无需许可证。
 
-{% video "profiler-film" %}
+{% video "profiler-csharp" %}
 
 ## 工作原理
 

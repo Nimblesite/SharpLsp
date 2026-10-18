@@ -1,0 +1,32 @@
+WEBVTT
+
+00:00.000 --> 00:10.649
+[Gentle music]
+This is Storefront, a C# app that's running right now. SharpLsp attaches to it, no restart needed, and samples where its time goes.
+
+00:13.383 --> 00:22.096
+Stop the profiler, and every hot line lights up in the editor: the catalog parse, the discount loop, and the invoice built one string at a time.
+
+00:23.450 --> 00:28.724
+The results list the hottest functions and the hottest lines, so you know exactly where to start.
+
+00:32.516 --> 00:38.238
+Now track memory on the same app. SharpLsp snapshots the heap every ten seconds.
+
+00:45.362 --> 00:55.168
+The suspects rank by consistent growth, and CustomerSession grows in every snapshot, along with the byte arrays it holds. Click it, and you jump to its code.
+
+00:58.395 --> 01:00.672
+So, what's keeping those sessions alive?
+
+01:16.304 --> 01:21.379
+A static dictionary, named in the graph, that holds every session the app has ever seen.
+
+01:25.304 --> 01:28.873
+The fix: keep the last thousand orders, and evict the rest.
+
+01:49.237 --> 01:51.750
+Rebuild, run it again, and track memory.
+
+02:05.429 --> 02:13.357
+This time the heap holds steady. That's the SharpLsp profiler, for C# and F#. Free, and open source.

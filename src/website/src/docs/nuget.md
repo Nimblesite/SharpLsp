@@ -12,6 +12,8 @@ eleventyNavigation:
 
 The VS Code extension includes a NuGet browser and package-maintenance commands. The Rust host handles target discovery, NuGet API queries, restore progress, unused-package analysis, and consolidation orchestration. Project-file mutations go through the .NET sidecar's MSBuild DOM so existing XML structure and formatting are preserved.
 
+{% video "nuget" %}
+
 ## Open the Browser
 
 Right-click a project and choose **Browse NuGet Packages**, or run **SharpLsp: Browse NuGet Packages**. If the workspace contains multiple targets, select the project or central package file to edit.

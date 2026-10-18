@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="fs-storefront/FsStorefront.fsproj" />
+  <Project Path="storefront/Storefront.csproj" />
+</Solution>

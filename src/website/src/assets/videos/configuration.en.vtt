@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00.000 --> 00:10.777
+[Gentle music]
+SharpLsp has two kinds of settings. Editor settings live in VS Code, under SharpLsp: logging, NuGet, test lenses and more.
+
+00:13.550 --> 00:26.113
+Server settings live in sharplsp.toml, beside your solution. Turn on monorepo mode, and SharpLsp treats this repository as the only code that will ever call yours.
+
+00:27.283 --> 00:29.589
+Restart the language server to apply it.
+
+00:30.175 --> 00:35.480
+Now a public property that nothing uses is dead code too, and it's reported as an error.

@@ -12,6 +12,8 @@ eleventyNavigation:
 
 SharpLsp supports standard LSP code actions for C# and F#. Actions are context-dependent: the sidecar returns only fixes or refactorings whose compiler/provider can operate on the current diagnostic, cursor, or selection.
 
+{% video "refactoring" %}
+
 In VS Code, use the lightbulb or **Quick Fix** command (`Ctrl+.` on Windows/Linux, `Cmd+.` on macOS).
 
 ## C# Actions

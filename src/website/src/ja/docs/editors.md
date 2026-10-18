@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp はプロトコル層ではエディターに依存しません。現時点でサポートされ、パッケージとして提供されているクライアントは VS Code です。その他の統合は開発中です。
 
+{% video "editor-setup" %}
+
 ## VS Code
 
 SharpLsp は [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から、Cursor・Windsurf・VSCodium では [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) からインストールします。VSIX には Rust ホストと C#／F# サイドカーが含まれるため、SharpLsp を別途インストールする必要はありません。

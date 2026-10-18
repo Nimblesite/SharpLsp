@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp は C# と F# の両方でセマンティック補完を提供します。Rust ホストが各リクエストを Roslyn または F# Compiler Service（FCS）にルーティングし、置換範囲を含む標準の LSP 補完項目を返します。
 
+{% video "code-completions" %}
+
 ## C# の補完
 
 C# の補完には Roslyn の `CompletionService` を使用します。メンバー、型、名前空間、ローカル変数、パラメーター、コンテキストキーワードなど、カーソル位置で Roslyn が提供するシンボルとキーワードを補完します。

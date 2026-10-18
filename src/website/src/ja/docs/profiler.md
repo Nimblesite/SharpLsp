@@ -9,7 +9,7 @@ eleventyExcludeFromCollections: true
 
 SharpLsp は、VS Code から離れることなく、実行中の任意の .NET プロセスの CPU とメモリをプロファイリングします。ホットな行はコード上で直接ハイライトされ、隣にフレームグラフとホット関数の表が表示され、ライブのヒープタイムラインがアプリの実行中にリークの疑いをランク付けします。`dotnet-trace` のインストールもダンプもライセンスも不要です。
 
-{% video "profiler-film" %}
+{% video "profiler-csharp" %}
 
 ## しくみ
 

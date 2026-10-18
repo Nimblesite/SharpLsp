@@ -92,11 +92,15 @@ async function shootScenes(shot, scenes) {
   }
 }
 
-/** Stage `demo`, open it in an isolated VS Code, and shoot `scenes` into `<out>/clips`, stills into `<out>/stills`. */
-export async function shootWalkthrough({ demo, out, scenes }) {
+/**
+ * Stage `demo`, open it in an isolated VS Code with workspace `settings` (the
+ * profiler films' by default), and shoot `scenes` into `<out>/clips`, stills
+ * into `<out>/stills`.
+ */
+export async function shootWalkthrough({ demo, out, scenes, settings = WORKSPACE }) {
   const clips = path.join(out, 'clips');
   fs.mkdirSync(clips, { recursive: true });
-  await onSet({ demo, out, settings: WORKSPACE }, ({ page, cdp, app, workspace }) => {
+  await onSet({ demo, out, settings }, ({ page, cdp, app, workspace }) => {
     const set = { cdp, cues: cueLog(clips), frames: path.join(out, 'frames'), clips };
     return shootScenes({ page, set, app, workspace, stills: path.join(out, 'stills') }, scenes);
   });

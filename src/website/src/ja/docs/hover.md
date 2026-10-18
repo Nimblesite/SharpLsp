@@ -11,6 +11,8 @@ eleventyExcludeFromCollections: true
 
 ホバーは C# と F# の両方に実装されています。リクエストは Roslyn または FCS にルーティングされ、現在の未保存の文書テキストを対象に評価されます。
 
+{% video "hover" %}
+
 ## C# ホバー
 
 C# のホバーには、次の情報が含まれる場合があります。

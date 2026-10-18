@@ -1,0 +1,41 @@
+{
+  "voice": "af_heart",
+  "say": {
+    "SharpLsp": "Sharp L S P",
+    "F#": "F sharp",
+    "C#": "C sharp",
+    "XML": "X M L",
+    ".NET": "dot net"
+  },
+  "music": {
+    "en": "[Gentle music]",
+    "ja": "[穏やかな音楽]",
+    "zh": "[舒缓的音乐]"
+  },
+  "lines": [
+    {
+      "scene": "fsharp",
+      "en": "Hover a symbol to see exactly what it is. In F#, SharpLsp shows the signature the compiler inferred, with your doc comment underneath.",
+      "ja": "シンボルにホバーすると、その正体が正確にわかります。F# では、コンパイラーが推論したシグネチャーと、その下にドキュメントコメントを表示します。",
+      "zh": "把鼠标悬停在符号上，就能准确看到它是什么。在 F# 中，SharpLsp 会显示编译器推断出的签名，下方附上你的文档注释。"
+    },
+    {
+      "scene": "union",
+      "en": "Union cases work the same way, and so do .NET types, shown just as F# sees them.",
+      "ja": "共用体ケースも同じです。.NET の型も、F# から見たとおりの姿で表示されます。",
+      "zh": "联合用例也是一样，.NET 类型同样如此，以 F# 看到的样子显示。"
+    },
+    {
+      "scene": "csharp",
+      "en": "C# hovers come from Roslyn: your XML docs, rendered, and the real type behind every var.",
+      "ja": "C# のホバーは Roslyn から届きます。XML ドキュメントはきれいに表示され、var の背後にある本当の型もわかります。",
+      "zh": "C# 的悬停信息来自 Roslyn：渲染好的 XML 文档，以及每个 var 背后的真实类型。"
+    },
+    {
+      "scene": "live",
+      "en": "And hover reads the code you haven't saved. Change a doc comment, and the next hover already shows it.",
+      "ja": "さらに、ホバーはまだ保存していないコードも読み取ります。ドキュメントコメントを変えれば、次のホバーにはもう反映されています。",
+      "zh": "而且悬停会读取你还没保存的代码。修改一条文档注释，下一次悬停就已经显示出来了。"
+    }
+  ]
+}

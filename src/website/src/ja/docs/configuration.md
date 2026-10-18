@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp には 2 つの設定方法があります。
 
+{% video "configuration" %}
+
 - `sharplsp.toml` に記述するワークスペース単位のサーバー設定
 - VS Code の `sharplsp.*` 以下にあるクライアントおよび UI 設定
 

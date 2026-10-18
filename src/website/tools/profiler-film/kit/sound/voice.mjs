@@ -3,7 +3,6 @@
 // Nothing leaves this machine: kokoro-js runs Kokoro-82M (Apache-2.0) on the CPU.
 import fs from 'node:fs';
 import path from 'node:path';
-import { KokoroTTS } from 'kokoro-js';
 import { wav } from './score.mjs';
 
 const model = { id: 'onnx-community/Kokoro-82M-v1.0-ONNX', dtype: 'fp32', device: 'cpu', silence: 0.01 };
@@ -28,6 +27,8 @@ async function take(tts, script, line, file) {
 
 /** Every line of `script` spoken into `dir`, in order: `{ scene, en, ja, zh, path, length }`. */
 export async function speak(script, dir) {
+  // Loaded only to speak: its phonemizer hooks uncaught errors and would print itself over a failed shoot's.
+  const { KokoroTTS } = await import('kokoro-js');
   const tts = await KokoroTTS.from_pretrained(model.id, { dtype: model.dtype, device: model.device });
   const takes = [];
   for (const [index, line] of script.lines.entries()) takes.push(await take(tts, script, line, path.join(dir, `line${index}.wav`)));

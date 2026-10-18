@@ -11,6 +11,8 @@ eleventyExcludeFromCollections: true
 
 SharpLsp 为 C# 和 F# 实现了 LSP 导航请求系列。C# 查询通过 Roslyn 搜索已加载的解决方案；F# 查询通过 FCS 搜索已加载的 F# 项目。
 
+{% video "navigation" %}
+
 ## 方法
 
 | LSP 方法 | 结果 |

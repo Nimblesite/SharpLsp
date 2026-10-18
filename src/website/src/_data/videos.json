@@ -67,21 +67,22 @@
     "width": 1920,
     "height": 1200,
     "duration": "PT1M32S",
-    "uploadDate": "2026-10-17T09:30:00+11:00",
+    "uploadDate": "2026-10-19T00:06:17+11:00",
     "text": {
       "en": {
         "label": "Screen recording: fixing a C# memory leak in VS Code with the SharpLsp memory profiler, from leak suspects to the retention graph and a verified fix",
-        "caption": "The whole loop on the Storefront demo, recorded in VS Code: Track Memory, the leak suspects, the retention graph, the fix typed in, then a second run. Fast-forwarded stretches are marked on screen."
+        "caption": "Narrated, with original music and captions. The whole loop on the Storefront demo, recorded in VS Code: Track Memory, the leak suspects, the retention graph, the fix typed in, then a second run. Fast-forwarded stretches are marked on screen."
       },
       "zh": {
         "label": "屏幕录像：在 VS Code 中用 SharpLsp 内存分析器修复 C# 内存泄漏，从可疑泄漏到保留图，再到验证修复",
-        "caption": "在 VS Code 中录制的 Storefront 演示完整流程：Track Memory、可疑泄漏、保留图、输入修复代码，然后再次运行。快进的片段在画面上有标注。"
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中录制的 Storefront 演示完整流程：Track Memory、可疑泄漏、保留图、输入修复代码，然后再次运行。快进的片段在画面上有标注。"
       },
       "ja": {
         "label": "画面録画：VS Code で SharpLsp のメモリプロファイラーを使い、C# のメモリリークをリークの疑いから保持グラフ、修正の確認まで直す",
-        "caption": "VS Code で収録した Storefront デモの一連の流れ：Track Memory、リークの疑い、保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で収録した Storefront デモの一連の流れ：Track Memory、リークの疑い、保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
       }
-    }
+    },
+    "captions": ["en", "ja", "zh"]
   },
   "profiler-fsharp": {
     "encodings": ["webm", "mp4"],
@@ -123,6 +124,314 @@
       "ja": {
         "label": "SharpLsp のツアー：Visual Studio と Rider に代わるオープンソース。ソリューションエクスプローラー、NuGet ブラウザー、C# と F#、デバッグ、プロファイリング、テストを VS Code・Cursor・Windsurf で",
         "caption": "22 秒でわかる SharpLsp：ソリューションエクスプローラー、NuGet ブラウザー、対等に扱われる C# と F#、そしてデバッグ・プロファイル・テスト・ビルド。Windows・macOS・Linux 上の VS Code・Cursor・Windsurf・VSCodium で動作します。"
+      }
+    }
+  },
+  "getting-started": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M4S",
+    "uploadDate": "2026-10-18T23:29:29+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Getting started with SharpLsp in VS Code: a C# and F# solution loaded in the Solution Explorer, an F# hover, C# completion and the built-in tools",
+        "caption": "Narrated, with original music and captions. SharpLsp loading the Shop demo solution in VS Code: C# and F# projects side by side, an F# hover from the F# compiler, C# completion from Roslyn, and the profiler's Processes view."
+      },
+      "zh": {
+        "label": "在 VS Code 中开始使用 SharpLsp：解决方案资源管理器中加载的 C# 与 F# 解决方案、F# 悬停、C# 补全和内置工具",
+        "caption": "带旁白、原创配乐和字幕。SharpLsp 在 VS Code 中加载 Shop 演示解决方案：C# 与 F# 项目并排呈现，F# 编译器提供的 F# 悬停，Roslyn 提供的 C# 补全，以及性能分析器的进程视图。"
+      },
+      "ja": {
+        "label": "VS Code で SharpLsp を始める：ソリューションエクスプローラーに読み込まれた C# と F# のソリューション、F# のホバー、C# の補完、組み込みツール",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモのソリューションを読み込む SharpLsp：並んだ C# と F# のプロジェクト、F# コンパイラーによる F# のホバー、Roslyn による C# の補完、そしてプロファイラーのプロセス ビュー。"
+      }
+    }
+  },
+  "editor-setup": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT41S",
+    "uploadDate": "2026-10-18T23:45:16+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "SharpLsp editor setup in VS Code: the bundled server and sidecars starting, every SharpLsp command in the Command Palette, and the trusted-workspace path settings",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code with the packaged extension: the language server restarting from the status bar, the SharpLsp commands, and the settings for development builds. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "SharpLsp 在 VS Code 中的编辑器设置：内置服务器与 sidecar 的启动、命令面板中的 SharpLsp 命令，以及受信任工作区的路径设置",
+        "caption": "带旁白、原创配乐和字幕。使用打包的扩展在 VS Code 中录制：从状态栏重启语言服务器、SharpLsp 命令，以及用于开发构建的设置。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "VS Code での SharpLsp のエディター設定：同梱のサーバーとサイドカーの起動、コマンドパレットの SharpLsp コマンド、信頼済みワークスペース用のパス設定",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。パッケージ版の拡張機能で VS Code にて収録：ステータスバーからの言語サーバーの再起動、SharpLsp のコマンド、開発ビルド用の設定。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "configuration": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT51S",
+    "uploadDate": "2026-10-18T23:39:20+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Configuring SharpLsp: VS Code settings and sharplsp.toml, with monorepo mode reporting an unused public property as dead code",
+        "caption": "Narrated, with original music and captions. The SharpLsp settings in VS Code, then sharplsp.toml beside the Shop solution: monorepo mode switched on, the server restarted, and SLSPC0101 reported on an unused public property. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "配置 SharpLsp：VS Code 设置与 sharplsp.toml，monorepo 模式把未使用的公共属性报告为死代码",
+        "caption": "带旁白、原创配乐和字幕。先看 VS Code 中的 SharpLsp 设置，再看 Shop 解决方案旁的 sharplsp.toml：打开 monorepo 模式并重启服务器后，未使用的公共属性被报告为 SLSPC0101。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp の設定：VS Code の設定と sharplsp.toml。monorepo モードが未使用の public プロパティをデッドコードとして報告",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code の SharpLsp 設定に続いて、Shop ソリューションの隣の sharplsp.toml：monorepo モードをオンにしてサーバーを再起動すると、未使用の public プロパティに SLSPC0101 が報告されます。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "fsharp-language": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M53S",
+    "uploadDate": "2026-10-18T22:53:05+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "F# in VS Code with SharpLsp: hover, completion, go to definition, find references, a generated match case, rename across files and F# Interactive",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on the FsStorefront project: every answer comes from the F# Compiler Service. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "在 VS Code 中用 SharpLsp 编写 F#：悬停、补全、转到定义、查找引用、生成 match 分支、跨文件重命名和 F# Interactive",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于 FsStorefront 项目录制：每个结果都来自 F# Compiler Service。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp による VS Code の F#：ホバー、補完、定義へ移動、参照の検索、生成される match ケース、ファイルをまたぐ名前の変更、F# Interactive",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で FsStorefront プロジェクトを使って収録：すべての答えは F# Compiler Service から届きます。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "code-completions": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M9S",
+    "uploadDate": "2026-10-18T22:59:43+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Code completion in VS Code with SharpLsp: F# list functions and record fields, C# LINQ members, and an import completion that adds its using",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on the Shop demo: F# completion from the F# Compiler Service, C# completion from Roslyn, and Ctrl+Space on a type from an unimported namespace."
+      },
+      "zh": {
+        "label": "在 VS Code 中使用 SharpLsp 的代码补全：F# 列表函数和记录字段、C# LINQ 成员，以及会添加 using 的导入补全",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于 Shop 演示录制：F# Compiler Service 提供的 F# 补全、Roslyn 提供的 C# 补全，以及对未导入命名空间中的类型按 Ctrl+Space。"
+      },
+      "ja": {
+        "label": "SharpLsp による VS Code のコード補完：F# のリスト関数とレコードのフィールド、C# の LINQ メンバー、using を追加するインポート補完",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモを使って収録：F# Compiler Service による F# の補完、Roslyn による C# の補完、そしてインポートしていない名前空間の型に対する Ctrl+Space。"
+      }
+    }
+  },
+  "hover": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M15S",
+    "uploadDate": "2026-10-18T23:16:35+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Hover in VS Code with SharpLsp: F# signatures and doc comments, union cases, C# XML docs, the type behind var, and unsaved edits",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on the Shop demo, hovering F# and C# symbols, then a doc comment changed and left unsaved."
+      },
+      "zh": {
+        "label": "在 VS Code 中使用 SharpLsp 的悬停：F# 签名与文档注释、联合用例、C# XML 文档、var 背后的类型，以及未保存的编辑",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于 Shop 演示录制：悬停 F# 与 C# 符号，最后修改一条文档注释且不保存。"
+      },
+      "ja": {
+        "label": "SharpLsp による VS Code のホバー：F# のシグネチャーとドキュメントコメント、共用体ケース、C# の XML ドキュメント、var の型、未保存の編集",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモの F# と C# のシンボルにホバーし、最後にドキュメントコメントを変更して未保存のままにして収録しました。"
+      }
+    }
+  },
+  "navigation": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M0S",
+    "uploadDate": "2026-10-18T23:57:10+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Navigation in VS Code with SharpLsp: go to definition in F# and C#, find all references in a peek window, and framework source decompiled",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on the Shop demo: F12 in F# and C#, Shift+F12 on a record, and F12 on JsonSerializer."
+      },
+      "zh": {
+        "label": "在 VS Code 中使用 SharpLsp 导航：F# 与 C# 的转到定义、速览窗口中的查找所有引用，以及反编译的框架源代码",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于 Shop 演示录制：在 F# 和 C# 中按 F12，在记录上按 Shift+F12，在 JsonSerializer 上按 F12。"
+      },
+      "ja": {
+        "label": "SharpLsp による VS Code のナビゲーション：F# と C# の定義へ移動、ピークウィンドウでのすべての参照の検索、逆コンパイルされたフレームワークのソース",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモを使って収録：F# と C# での F12、レコードでの Shift+F12、JsonSerializer での F12。"
+      }
+    }
+  },
+  "diagnostics": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M24S",
+    "uploadDate": "2026-10-18T23:19:32+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Diagnostics in VS Code with SharpLsp: F# and C# errors as you type, SharpLsp's unused-open and dead-code analyzers, and the Problems panel",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on the Shop demo: unsaved edits in F# and C#, each finding read by hovering it."
+      },
+      "zh": {
+        "label": "在 VS Code 中使用 SharpLsp 的诊断：输入时的 F# 与 C# 错误、SharpLsp 的未使用 open 与死代码分析器，以及问题面板",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于 Shop 演示录制：F# 与 C# 中未保存的编辑，每项发现都通过悬停查看。"
+      },
+      "ja": {
+        "label": "SharpLsp による VS Code の診断：入力中の F# と C# のエラー、SharpLsp の未使用 open とデッドコードのアナライザー、問題パネル",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモを使って収録：F# と C# の未保存の編集と、ホバーで読む各指摘。"
+      }
+    }
+  },
+  "refactoring": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M27S",
+    "uploadDate": "2026-10-18T23:11:53+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Refactoring and code actions in VS Code with SharpLsp: generate a missing F# union case, rename across files, generate a C# method, add a missing using",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on the Shop demo with Cmd+. and F2. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "在 VS Code 中使用 SharpLsp 的重构与代码操作：生成缺失的 F# 联合用例、跨文件重命名、生成 C# 方法、添加缺失的 using",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于 Shop 演示，用 Cmd+. 和 F2 录制。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp による VS Code のリファクタリングとコードアクション：足りない F# 共用体ケースの生成、ファイルをまたぐ名前の変更、C# メソッドの生成、足りない using の追加",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモを使い、Cmd+. と F2 で収録しました。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "context-menus": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M10S",
+    "uploadDate": "2026-10-18T23:41:52+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "SharpLsp Solution Explorer context menus in VS Code: solution and project actions, Build, Open Project File and Sort Members",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on the Shop solution. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "VS Code 中 SharpLsp 解决方案资源管理器的上下文菜单：解决方案与项目操作、生成、打开项目文件和排序成员",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于 Shop 解决方案录制。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "VS Code の SharpLsp ソリューションエクスプローラーのコンテキストメニュー：ソリューションとプロジェクトのアクション、ビルド、プロジェクト ファイルを開く、メンバーの並べ替え",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop ソリューションを使って収録しました。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "nuget": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT1M18S",
+    "uploadDate": "2026-10-18T23:25:47+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "The SharpLsp NuGet browser in VS Code: search nuget.org, install a package into an F# project, and see its reference in the project file",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code, installing FsToolkit.ErrorHandling into FsStorefront from nuget.org. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "VS Code 中的 SharpLsp NuGet 浏览器：搜索 nuget.org，把包安装到 F# 项目中，并在项目文件里看到它的引用",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中录制，从 nuget.org 将 FsToolkit.ErrorHandling 安装到 FsStorefront。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "VS Code の SharpLsp NuGet ブラウザー：nuget.org を検索し、F# プロジェクトにパッケージをインストールして、プロジェクトファイルの参照を確認",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で nuget.org から FsToolkit.ErrorHandling を FsStorefront にインストールする様子を収録しました。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "profiler-csharp": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT2M16S",
+    "uploadDate": "2026-10-19T00:08:43+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Profiling a C# app in VS Code with SharpLsp: CPU heat on hot lines, the hottest functions, and a leaking static dictionary found and fixed",
+        "caption": "Narrated, with original music and captions. The C# loop on the Storefront demo, recorded in VS Code: Profile CPU and the heat map, Track Memory, the leak suspect, the retention graph rooted at a static field, the fix typed in, then a second run. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "在 VS Code 中用 SharpLsp 分析 C# 应用：热点行的 CPU 热度、最热的函数，以及发现并修复一个泄漏的静态字典",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中录制的 Storefront 演示 C# 完整流程：Profile CPU 和热力图、Track Memory、可疑泄漏、根为静态字段的保留图、输入修复代码，然后再次运行。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp で VS Code の C# アプリをプロファイリング：ホットな行の CPU ヒート、最もホットな関数、リークする static な Dictionary の発見と修正",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で収録した Storefront デモでの C# の一連の流れ：Profile CPU とヒートマップ、Track Memory、リークの疑い、static フィールドをルートとする保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "architecture": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT38S",
+    "uploadDate": "2026-10-18T23:59:07+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "SharpLsp architecture, live in VS Code: the Rust host routing an F# hover to the F# Compiler Service and a C# hover to Roslyn, and tree-sitter folding",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code with the SharpLsp log filtered to hover requests."
+      },
+      "zh": {
+        "label": "在 VS Code 中实时查看 SharpLsp 架构：Rust 宿主把 F# 悬停路由到 F# Compiler Service，把 C# 悬停路由到 Roslyn，并由 tree-sitter 提供折叠",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中录制，SharpLsp 日志已按悬停请求过滤。"
+      },
+      "ja": {
+        "label": "VS Code で見る SharpLsp のアーキテクチャ：Rust ホストが F# のホバーを F# Compiler Service へ、C# のホバーを Roslyn へ振り分け、tree-sitter が折りたたみを担当",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。SharpLsp のログをホバーのリクエストで絞り込んで、VS Code で収録しました。"
+      }
+    }
+  },
+  "contributing": {
+    "encodings": ["webm", "mp4"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT38S",
+    "uploadDate": "2026-10-19T00:12:12+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Contributing to SharpLsp: the repository layout, the specs and their IDs, and the Rust host's unit tests run from a terminal",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on a clean copy of the repository. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "为 SharpLsp 做贡献：仓库结构、规范及其 ID，以及在终端中运行的 Rust 宿主单元测试",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于仓库的干净副本录制。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp への貢献：リポジトリの構成、仕様書とその ID、ターミナルから実行する Rust ホストの単体テスト",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。リポジトリのクリーンなコピーを使って VS Code で収録しました。早送りの部分は画面上に表示されます。"
       }
     }
   }
