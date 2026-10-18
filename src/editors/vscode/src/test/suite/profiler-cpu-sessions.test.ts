@@ -24,13 +24,16 @@ import type {
 import {
   execute,
   executeError,
+  profileFromRow,
   profilerStore,
+  profilingSuite,
   rowOf,
+  stopProfiling,
   Target,
   uiCommand,
   waitFor,
 } from './profiler-kit';
-import { closeAllEditors, setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
+import { setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
 import { ACTIVATION_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
 const SAMPLE_WINDOW_MS = 2_000;
@@ -67,13 +70,7 @@ async function sleep(ms: number): Promise<void> {
 }
 
 suite('CPU sessions — list, snapshot and presets over the wire', () => {
-  let tmpDir = '';
-  let target: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-cpu-sessions-'));
-    target = await Target.start('ProfileTarget');
-  });
+  const live = profilingSuite('profiler-cpu-sessions-', 'ProfileTarget');
   // A test that fails mid-way must not leave its session running into the next
   // one: every test starts from an empty session list.
   teardown(async function () {
@@ -82,14 +79,10 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
       await stop(session.session_id);
     }
   });
-  suiteTeardown(() => {
-    target?.stop();
-    teardownLspTestSuite(tmpDir);
-  });
 
   test('a running session is listed with its PID, runtime, version, start time and growing counts', async function () {
     this.timeout(STOP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await start(target.pid);
     assert.equal(started.pid, target.pid);
     assert.ok(started.runtime_version.length > 0, 'the backend reports the runtime version');
@@ -122,7 +115,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
 
   test('a snapshot reports the data so far and the session keeps running', async function () {
     this.timeout(STOP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await start(target.pid);
     await sleep(SAMPLE_WINDOW_MS);
     const snap = await execute<ProfileReport>('cpu.snapshot', { session_id: started.session_id });
@@ -143,7 +136,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
 
   test('a second session on the same PID is ALREADY_PROFILING; the first is untouched', async function () {
     this.timeout(STOP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await start(target.pid);
     const error = await executeError('cpu.start', { pid: target.pid });
     assert.equal(error?.code, -32004, error?.message ?? 'no error');
@@ -162,7 +155,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
   ] as const) {
     test(`preset ${preset} samples at ${rate} Hz`, async function () {
       this.timeout(STOP_MS);
-      assert.ok(target);
+      const { target } = live;
       const started = await start(target.pid, { preset });
       await sleep(SAMPLE_WINDOW_MS / 2);
       const report = await stop(started.session_id);
@@ -172,7 +165,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
 
   test('an explicit sample rate overrides the preset', async function () {
     this.timeout(STOP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await start(target.pid, { preset: 'detailed', sample_rate: 77 });
     await sleep(SAMPLE_WINDOW_MS / 2);
     assert.equal((await stop(started.session_id)).sample_rate, 77);
@@ -180,7 +173,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
 
   test('an unknown preset is INVALID_PARAMS and names the accepted ones', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     const error = await executeError('cpu.start', { pid: target.pid, preset: 'turbo' });
     assert.equal(error?.code, -32602, error?.message ?? 'no error');
     for (const name of ['quick', 'detailed', 'longRunning']) {
@@ -190,7 +183,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
 
   test('a sample rate outside 1..10000 Hz is INVALID_PARAMS', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     for (const rate of [0, 10_001]) {
       const error = await executeError('cpu.start', { pid: target.pid, sample_rate: rate });
       assert.equal(error?.code, -32602, `${rate} Hz: ${error?.message ?? 'no error'}`);
@@ -200,7 +193,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
 
   test('a duration ends the session by itself and its report is kept for stop', async function () {
     this.timeout(STOP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await start(target.pid, { duration_secs: 1 });
     await sleep(SAMPLE_WINDOW_MS * 2);
     const report = await stop(started.session_id);
@@ -274,21 +267,13 @@ suite('CPU sessions — concurrency and a target that dies', () => {
 });
 
 suite('CPU sessions — live chrome through the UI', () => {
-  let tmpDir = '';
-  let target: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-cpu-ui-'));
-    target = await Target.start('ProfileTarget');
-    await vscode.commands.executeCommand(uiCommand('refreshProcesses'));
-  });
-  suiteTeardown(async () => {
-    if (profilerStore().profiler.value.cpu === 'active') {
-      await vscode.commands.executeCommand(uiCommand('profileStop'));
-    }
-    target?.stop();
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
+  const live = profilingSuite('profiler-cpu-ui-', 'ProfileTarget', {
+    started: () => vscode.commands.executeCommand(uiCommand('refreshProcesses')),
+    stopping: async () => {
+      if (profilerStore().profiler.value.cpu === 'active') {
+        await vscode.commands.executeCommand(uiCommand('profileStop'));
+      }
+    },
   });
 
   test('Stop and Snapshot with no session change nothing', async function () {
@@ -302,17 +287,9 @@ suite('CPU sessions — live chrome through the UI', () => {
 
   test('while profiling: elapsed time and the live sample count tick, the panel and badge follow, and the row flames', async function () {
     this.timeout(STOP_MS);
-    assert.ok(target);
+    const { target } = live;
     const store = profilerStore();
-    await vscode.commands.executeCommand(uiCommand('profileProcess'), {
-      process: { pid: target.pid, debuggable: true, runtime: 'dotnet' },
-    });
-    await waitFor(
-      () => store.profiler.value.cpu,
-      (cpu) => cpu === 'active',
-      PROCESS_START_MS,
-      'active',
-    );
+    await profileFromRow(target.pid);
     await waitFor(
       () => store.profiler.value.durationSecs,
       (secs) => secs >= 1,
@@ -352,7 +329,7 @@ suite('CPU sessions — live chrome through the UI', () => {
 
   test('a second Profile CPU while one runs is refused and starts nothing', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     const store = profilerStore();
     const running = store.profiler.value.cpuSessionId;
     await vscode.commands.executeCommand(uiCommand('profileProcess'), {
@@ -378,13 +355,7 @@ suite('CPU sessions — live chrome through the UI', () => {
 
   test('stop lands the results panel under the SharpLsp brand with the hot functions', async function () {
     this.timeout(STOP_MS);
-    await vscode.commands.executeCommand(uiCommand('profileStop'));
-    await waitFor(
-      () => profilerStore().profiler.value.cpu,
-      (cpu) => cpu === 'idle',
-      STOP_MS,
-      'idle',
-    );
+    await stopProfiling(STOP_MS);
     const panel = flamegraphPanelState();
     assert.ok(panel, 'the results panel is open');
     assert.equal(panel.title, 'SharpLsp Profiler');

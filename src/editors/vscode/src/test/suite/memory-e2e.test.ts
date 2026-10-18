@@ -15,45 +15,38 @@ import {
   recordedAutopilotCaptures,
   recordedOperations,
 } from '@nimblesite/lsp-profiler-ui';
-import type { MemoryStep, RefGraph } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
+import type { MemoryStep } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
   completed,
-  trackMemory,
   execute,
   fixtureSource,
   openSource,
   profilerStore,
-  Target,
+  profilingSuite,
+  retentionGraph,
+  snapshotSession,
+  stopTracking,
+  trackMemory,
   uiCommand,
   waitFor,
 } from './profiler-kit';
-import { closeAllEditors, setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
-import { ACTIVATION_MS, PROCESS_START_MS, SETTINGS_WRITE_MS } from './test-timeouts';
+import { SETTINGS_WRITE_MS } from './test-timeouts';
 
 const LEAK_TYPE = 'ProfileLeakTarget.LeakedPayload';
 const STEP_MS = 90_000;
 const GROWTH_MS = 2_000;
 
 suite('Memory profiling — real end-to-end (direct mode)', () => {
-  let tmpDir = '';
-  let target: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-mem-'));
-    target = await Target.start('ProfileLeakTarget');
-  });
-  suiteTeardown(async () => {
-    target?.stop();
-    await vscode.workspace
-      .getConfiguration('sharplsp')
-      .update('profiler.autoSnapshot', undefined, vscode.ConfigurationTarget.Global);
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
+  const live = profilingSuite('profiler-mem-', 'ProfileLeakTarget', {
+    stopped: () =>
+      vscode.workspace
+        .getConfiguration('sharplsp')
+        .update('profiler.autoSnapshot', undefined, vscode.ConfigurationTarget.Global),
   });
 
   test('Track Memory on a row → snapshot paints the memory track → diff scores the growing type as a leak → stop', async function () {
     this.timeout(STEP_MS * 3);
-    assert.ok(target);
+    const { target } = live;
     const store = profilerStore();
     await openSource(fixtureSource('ProfileLeakTarget'));
 
@@ -91,13 +84,7 @@ suite('Memory profiling — real end-to-end (direct mode)', () => {
       );
     }
 
-    await vscode.commands.executeCommand(uiCommand('memoryStop'));
-    await waitFor(
-      () => store.profiler.value.memory,
-      (memory) => memory === 'idle',
-      PROCESS_START_MS,
-      'memory session stopped',
-    );
+    await stopTracking();
     assert.equal(
       memoryStatusText(),
       undefined,
@@ -116,26 +103,9 @@ suite('Memory profiling — real end-to-end (direct mode)', () => {
 
   test('reference graph: walking the leaked type reaches real targets and the static Items root; gc collect is observed', async function () {
     this.timeout(STEP_MS * 3);
-    assert.ok(target);
-    const started = await execute<{ memory_session_id: string }>('memory.start', {
-      pid: target.pid,
-    });
-    const session = { memory_session_id: started.memory_session_id };
-    completed(await execute<MemoryStep>('memory.snapshot', session));
-    const refs = completed(
-      await execute<MemoryStep>('memory.references', {
-        ...session,
-        type_name: LEAK_TYPE,
-        limit: 40,
-        max_depth: 6,
-      }),
-    );
-    assert.equal(refs.outcome.kind, 'Refs');
-    const graph = (refs.outcome as { graph: RefGraph }).graph;
-    assert.ok(
-      graph.nodes.some((node) => node.is_target && node.type_name === LEAK_TYPE),
-      'target nodes present',
-    );
+    const { target } = live;
+    const session = await snapshotSession(target.pid);
+    const graph = await retentionGraph(session, LEAK_TYPE);
     assert.ok(
       graph.nodes.some(
         (node) => node.is_root && node.root_kind === 'Static' && node.label === 'static Items',
@@ -156,8 +126,7 @@ suite('Memory profiling — real end-to-end (direct mode)', () => {
 
   test('interval autopilot: with autoSnapshot on, a running program is captured on a timer without any pause', async function () {
     this.timeout(STEP_MS * 2 + SETTINGS_WRITE_MS);
-    assert.ok(target);
-    const store = profilerStore();
+    const { target } = live;
     const config = vscode.workspace.getConfiguration('sharplsp');
     await config.update('profiler.autoSnapshot', true, vscode.ConfigurationTarget.Global);
     await config.update('profiler.autoSnapshotInterval', 1, vscode.ConfigurationTarget.Global);
@@ -169,13 +138,7 @@ suite('Memory profiling — real end-to-end (direct mode)', () => {
       STEP_MS,
       'an automatic capture',
     );
-    await vscode.commands.executeCommand(uiCommand('memoryStop'));
-    await waitFor(
-      () => store.profiler.value.memory,
-      (memory) => memory === 'idle',
-      PROCESS_START_MS,
-      'memory session stopped',
-    );
+    await stopTracking();
     await config.update(
       'profiler.autoSnapshotInterval',
       undefined,

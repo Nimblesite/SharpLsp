@@ -829,7 +829,10 @@ build workflow and download immutable artifacts from that same run/commit.
   `@nimblesite/lsp-profiler-ui` and its signals with the running extension
   ([PROFILER-SHARED-LIBRARY-VSCODE]), which only a bundle that leaves
   `node_modules` external allows; the self-contained production bundle is
-  verified by packaging's payload check instead. Coverage excludes vendor code
+  verified by packaging's payload check instead. A local run builds the same
+  development bundle (`npm run prepare:tests`, which `make test` uses). A suite
+  run against the production bundle reads a second copy of the library, so
+  every profiler seam (status bar, decorations, panels) looks empty. Coverage excludes vendor code
   after remapping, without lowering the existing ratchet.
 - Static test fixtures and coverage utilities are precompiled. Consumers may
   restore NuGet metadata to rebase machine-local package paths, but not compile.

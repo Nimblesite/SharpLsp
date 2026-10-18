@@ -28,7 +28,7 @@ import type {
 } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
   completed,
-  trackMemory,
+  embeddedLeaks,
   execute,
   executeError,
   fixtureSource,
@@ -36,41 +36,20 @@ import {
   lspCommand,
   openSource,
   profilerStore,
-  Target,
+  profilingSuite,
+  snapshotSession,
+  stopTracking,
+  trackMemory,
   uiCommand,
   waitFor,
 } from './profiler-kit';
-import { closeAllEditors, setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
+import { COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const LEAK_TYPE = 'ProfileLeakTarget.LeakedPayload';
 const STEP_MS = 90_000;
 
-/** The suspected leaks the dashboard embedded for its script (`const leaks = [...]`). */
-function embeddedLeaks(html: string): { typeName?: string }[] {
-  const marker = 'const leaks = ';
-  const at = html.indexOf(marker);
-  if (at < 0) return [];
-  const end = html.indexOf(';\n', at);
-  try {
-    return JSON.parse(html.slice(at + marker.length, end)) as { typeName?: string }[];
-  } catch {
-    return [];
-  }
-}
-
 suite('Memory sessions — wire refusals and lifecycle', () => {
-  let tmpDir = '';
-  let target: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-mem-wire-'));
-    target = await Target.start('ProfileLeakTarget');
-  });
-  suiteTeardown(() => {
-    target?.stop();
-    teardownLspTestSuite(tmpDir);
-  });
+  const live = profilingSuite('profiler-mem-wire-', 'ProfileLeakTarget');
 
   test('memory.start on a PID that names no process is PROCESS_NOT_FOUND', async function () {
     this.timeout(LSP_RESPONSE_MS);
@@ -92,7 +71,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('a direct-mode start completes at once with the runtime and mode named', async function () {
     this.timeout(STEP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
     assert.equal(started.runtime, 'dotnet');
     assert.deepEqual(started.mode, { kind: 'Direct' });
@@ -104,7 +83,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('snapshot sites carry the runtime’s type names and resolve the leak to its source', async function () {
     this.timeout(STEP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
     const session = { memory_session_id: started.memory_session_id };
     const snap = completed(await execute<MemoryStep>('memory.snapshot', session));
@@ -129,10 +108,8 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('objectsByType lists the leaked objects largest first; an absent type lists none', async function () {
     this.timeout(STEP_MS * 2);
-    assert.ok(target);
-    const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
-    const session = { memory_session_id: started.memory_session_id };
-    completed(await execute<MemoryStep>('memory.snapshot', session));
+    const { target } = live;
+    const session = await snapshotSession(target.pid);
     const found = completed(
       await execute<MemoryStep>('memory.objectsByType', {
         ...session,
@@ -178,7 +155,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('heap inspection before any snapshot is refused and says to take one', async function () {
     this.timeout(STEP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
     const session = { memory_session_id: started.memory_session_id };
     for (const step of ['memory.references', 'memory.objectsByType']) {
@@ -199,10 +176,8 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('a retention walk for a type the heap does not hold is an honest empty graph', async function () {
     this.timeout(STEP_MS);
-    assert.ok(target);
-    const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
-    const session = { memory_session_id: started.memory_session_id };
-    completed(await execute<MemoryStep>('memory.snapshot', session));
+    const { target } = live;
+    const session = await snapshotSession(target.pid);
     const refs = completed(
       await execute<MemoryStep>('memory.references', {
         ...session,
@@ -220,7 +195,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('a stopped session is gone: every later step is refused', async function () {
     this.timeout(STEP_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
     const session = { memory_session_id: started.memory_session_id };
     completed(await execute<MemoryStep>('memory.stop', session));
@@ -231,7 +206,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('a cancelled snapshot answers REQUEST_CANCELLED and the next request works', async function () {
     this.timeout(STEP_MS * 2);
-    assert.ok(target);
+    const { target } = live;
     const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
     const session = { memory_session_id: started.memory_session_id };
     const source = new CancellationTokenSource();
@@ -255,20 +230,12 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 });
 
 suite('Memory sessions — the UI flow on a live target', () => {
-  let tmpDir = '';
-  let target: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-mem-ui-'));
-    target = await Target.start('ProfileLeakTarget');
-  });
-  suiteTeardown(async () => {
-    if (profilerStore().profiler.value.memory !== 'idle') {
-      await vscode.commands.executeCommand(uiCommand('memoryStop'));
-    }
-    target?.stop();
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
+  const live = profilingSuite('profiler-mem-ui-', 'ProfileLeakTarget', {
+    stopping: async () => {
+      if (profilerStore().profiler.value.memory !== 'idle') {
+        await vscode.commands.executeCommand(uiCommand('memoryStop'));
+      }
+    },
   });
 
   test('without a session, snapshot and references change nothing', async function () {
@@ -284,7 +251,7 @@ suite('Memory sessions — the UI flow on a live target', () => {
 
   test('start: tracking state, status bar, panel chrome and context key follow the session', async function () {
     this.timeout(STEP_MS);
-    assert.ok(target);
+    const { target } = live;
     await openSource(fixtureSource('ProfileLeakTarget'));
     await trackMemory(target.pid);
     assert.ok(memoryStatusText()?.includes('tracking'), `status: ${memoryStatusText()}`);
@@ -297,7 +264,7 @@ suite('Memory sessions — the UI flow on a live target', () => {
 
   test('a second start while tracking is refused and keeps the running session', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     const store = profilerStore();
     const running = store.profiler.value.memorySessionId;
     await vscode.commands.executeCommand(uiCommand('memoryStart'), target.pid);
@@ -406,14 +373,7 @@ suite('Memory sessions — the UI flow on a live target', () => {
 
   test('stop returns to idle and clears the status bar, chrome, key and memory track', async function () {
     this.timeout(STEP_MS);
-    const store = profilerStore();
-    await vscode.commands.executeCommand(uiCommand('memoryStop'));
-    await waitFor(
-      () => store.profiler.value.memory,
-      (m) => m === 'idle',
-      PROCESS_START_MS,
-      'idle',
-    );
+    await stopTracking();
     assert.equal(memoryStatusText(), undefined);
     assert.equal(contextKeyValues().get('sharplsp.profiler.memoryTracking'), false);
     assert.deepEqual(processesViewState(), { message: undefined, badge: undefined });

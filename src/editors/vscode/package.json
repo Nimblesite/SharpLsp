@@ -1426,7 +1426,7 @@
     "prepare:test-assets": "node ../../../tools/vsix/resolve-symlink-stubs.mjs icons",
     "prepare:vsix-binaries": "make -C ../../.. _stage-vsix-binary",
     "prepare:ci-tests": "node ../../../tools/npm/run-sequential.mjs prepare:test-assets prepare:test-fixtures compile-tests",
-    "prepare:tests": "node ../../../tools/npm/run-sequential.mjs prepare:ci-tests build:production",
+    "prepare:tests": "node ../../../tools/npm/run-sequential.mjs prepare:ci-tests build",
     "pretest": "node ../../../tools/npm/run-sequential.mjs prepare:vsix-binaries prepare:tests",
     "test": "vscode-test --coverage && node ../../../tools/coverage/report-vsix-coverage.mjs",
     "test:run": "npm run test",
