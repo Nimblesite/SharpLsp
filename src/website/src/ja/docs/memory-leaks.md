@@ -125,13 +125,14 @@ public static class SessionCache
 }
 ```
 
-F# での同じリークはモジュールレベルの `Dictionary` で、修正も同じです。
+F# での同じリークはモジュールレベルの `Dictionary` で、修正も同じです。[F# のプロファイリング](/ja/docs/fsharp-profiling/)では、Storefront の F# 版である FsStorefront でこの流れを収録しています。
 
 ```fsharp
 let private sessions = Dictionary<int, CustomerSession>()
 
-let remember (order: Order) =
-    sessions[order.Id] <- CustomerSession order
+let remember order =
+    let stage = CheckedOut order.Total
+    sessions[order.Id] <- { Order = order; Stage = stage; Snapshot = Array.zeroCreate 4096 }
     sessions.Remove(order.Id - 1_000) |> ignore
 ```
 
@@ -379,4 +380,5 @@ dotnet-dump analyze <dump-file>
 ## 関連ドキュメント
 
 - [プロファイラー](/ja/docs/profiler/)：プロファイラーのすべてのコマンドと設定
+- [F# のプロファイリング](/ja/docs/fsharp-profiling/)：F# アプリでの同じ流れ
 - [設定](/ja/docs/configuration/)：`sharplsp.toml` の `[profiler]` テーブル

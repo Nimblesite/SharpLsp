@@ -114,6 +114,10 @@ Suspects are ranked by how consistently they grow. Each one shows its growth in 
 
 {% video "profiler-memory-timelapse" %}
 
+## F#
+
+F# programs get the same profiler, and it reads the code the F# compiler emits. Closures and pipeline stages keep the names the compiler gives them, such as `Pipe #1 stage #1 at line 11`. Records, unions and union cases are painted on the line that constructs them. A leak held by a module value names that value as it is spelled in your source. [Profiling F#](/docs/fsharp-profiling/) shows the whole loop on an F# app, in a walkthrough video.
+
 ## Commands
 
 | Command | Purpose |

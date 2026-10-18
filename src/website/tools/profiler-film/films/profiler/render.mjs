@@ -3,14 +3,14 @@
 // to ffmpeg, then writes the site assets (film MP4/WebM + poster, the unedited
 // recordings + posters, WebP stills).
 //
-//   node src/website/tools/profiler-film/render.mjs
-//   node src/website/tools/profiler-film/render.mjs --preview 2,9.5,24   (stills of those seconds)
+//   node src/website/tools/profiler-film/films/profiler/render.mjs
+//   node src/website/tools/profiler-film/films/profiler/render.mjs --preview 2,9.5,24   (stills of those seconds)
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
-import { H264, VP9, ffmpeg, out, poster, publishStills, videos } from './encode.mjs';
+import { H264, VP9, ffmpeg, out, poster, publishStills, videos } from '../../kit/encode.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FPS = 30;

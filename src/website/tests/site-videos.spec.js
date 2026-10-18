@@ -19,6 +19,12 @@ const PAGES = [
   { path: '/docs/memory-leaks/', videos: ['profiler-fix-memory-leak'], says: 'leak' },
   { path: '/ja/docs/memory-leaks/', videos: ['profiler-fix-memory-leak'], says: 'リーク' },
   { path: '/zh/docs/memory-leaks/', videos: ['profiler-fix-memory-leak'], says: '泄漏' },
+  { path: '/docs/fsharp-profiling/', videos: ['profiler-fsharp'], says: 'profiling' },
+  { path: '/ja/docs/fsharp-profiling/', videos: ['profiler-fsharp'], says: 'プロファイリング' },
+  { path: '/zh/docs/fsharp-profiling/', videos: ['profiler-fsharp'], says: '分析' },
+  { path: '/docs/fsharp/', videos: ['profiler-fsharp'], says: 'profiling' },
+  { path: '/ja/docs/fsharp/', videos: ['profiler-fsharp'], says: 'プロファイリング' },
+  { path: '/zh/docs/fsharp/', videos: ['profiler-fsharp'], says: '分析' },
   { path: '/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'profiler' },
   { path: '/ja/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'プロファイラー' },
   { path: '/zh/blog/introducing-sharplsp/', videos: ['profiler-film'], says: '性能分析器' },
@@ -71,8 +77,24 @@ for (const { path, videos, says } of PAGES) {
   });
 }
 
+// The F# walkthrough is narrated: a reader hears it, and reads it in their own language.
+const NARRATED = [['/docs/fsharp-profiling/', 'en'], ['/ja/docs/fsharp-profiling/', 'ja'], ['/zh/docs/fsharp-profiling/', 'zh']];
+
+for (const [path, lang] of NARRATED) {
+  test(`${path} plays the F# walkthrough with its narration, captioned in ${lang} by default`, async ({ page, request }) => {
+    await page.goto(path);
+    const player = page.locator('figure video');
+    expect((await playback(player)).muted, 'the narration is heard, never muted').toBe(false);
+    const tracks = player.locator('track[kind="captions"]');
+    await expect(tracks).toHaveCount(3);
+    expect(await tracks.evaluateAll((all) => all.map((track) => track.getAttribute('srclang'))), 'captions in every site language').toEqual(['en', 'ja', 'zh']);
+    await expect(player.locator('track[default]')).toHaveAttribute('srclang', lang);
+    await expectPlayable(request, await tracks.evaluateAll((all) => all.map((track) => track.getAttribute('src'))), 'text/vtt');
+  });
+}
+
 test('articles and docs never autoplay; readers start every film themselves', async ({ page }) => {
-  for (const path of ['/docs/', '/docs/memory-leaks/', '/blog/introducing-sharplsp/', '/blog/editor-agnostic-dotnet-lsp/']) {
+  for (const path of ['/docs/', '/docs/memory-leaks/', '/docs/fsharp-profiling/', '/blog/introducing-sharplsp/', '/blog/editor-agnostic-dotnet-lsp/']) {
     await page.goto(path);
     const player = page.locator('figure video').first();
     await expect(player).toHaveAttribute('controls', '');

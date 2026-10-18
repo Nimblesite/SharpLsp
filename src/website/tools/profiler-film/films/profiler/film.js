@@ -120,8 +120,8 @@ function show(img, src) {
   pending.push(img.decode().catch(() => undefined));
 }
 const clipFrame = (name, clipT) =>
-  `out/film/${name}/${String(clamp(Math.round(clipT * FPS) + 1, 1, DATA[name].frames)).padStart(5, '0')}.jpg`;
-const still = (name) => `out/stills/${name}.png`;
+  `../../out/film/${name}/${String(clamp(Math.round(clipT * FPS) + 1, 1, DATA[name].frames)).padStart(5, '0')}.jpg`;
+const still = (name) => `../../out/stills/${name}.png`;
 
 // ── Camera ──
 

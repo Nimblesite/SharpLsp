@@ -9,8 +9,25 @@ const PROFILER_STILLS = 8;
 const STILL_WIDTH = 2400;
 const DOCS = ['/docs/profiler/', '/zh/docs/profiler/', '/ja/docs/profiler/'];
 
+const FSHARP_POSTER = '/assets/videos/profiler-fsharp-poster.webp';
+const FSHARP_STILLS = ['heatmap', 'results', 'leaks', 'graph'].map((shot) => `/assets/screenshots/profiler/profiler-fsharp-${shot}.webp`);
+const FSHARP_DOCS = ['/docs/fsharp-profiling/', '/zh/docs/fsharp-profiling/', '/ja/docs/fsharp-profiling/'];
+
 const RECORDING_SOURCES = ['/assets/videos/profiler-cpu-recording.mp4'];
 const AUTOPLAYING = ['section.hero video', 'section[aria-labelledby="profiler-title"] video'];
+
+/** Every profiler still on the page loads as the 2400px render with real alt text. */
+async function expectStills(stills) {
+  for (const still of await stills.all()) {
+    await still.scrollIntoViewIfNeeded();
+    const rendered = await still.evaluate((img) => ({ complete: img.complete, width: img.naturalWidth, alt: img.alt }));
+    expect(rendered.complete, 'still finishes loading').toBe(true);
+    expect(rendered.width, 'still is the 2400px render').toBe(STILL_WIDTH);
+    // Characters, not words: a CJK description is dense, so the floor is low but real.
+    expect(rendered.alt.length, 'still has meaningful alt text').toBeGreaterThanOrEqual(8);
+    expect(rendered.alt, 'alt text describes the shot, not the file').not.toContain('.webp');
+  }
+}
 
 async function expectSilentLoop(request, video, sources) {
   await expect(video).toHaveAttribute('autoplay', '');
@@ -94,15 +111,7 @@ test.describe('Profiler docs media', () => {
       await page.goto(docPath);
       const stills = page.locator('img[src^="/assets/screenshots/profiler/"]');
       await expect(stills).toHaveCount(PROFILER_STILLS);
-      for (const still of await stills.all()) {
-        await still.scrollIntoViewIfNeeded();
-        const rendered = await still.evaluate((img) => ({ complete: img.complete, width: img.naturalWidth, alt: img.alt }));
-        expect(rendered.complete, 'still finishes loading').toBe(true);
-        expect(rendered.width, 'still is the 2400px render').toBe(STILL_WIDTH);
-        // Characters, not words: a CJK description is dense, so the floor is low but real.
-        expect(rendered.alt.length, 'still has meaningful alt text').toBeGreaterThanOrEqual(8);
-        expect(rendered.alt, 'alt text describes the shot, not the file').not.toContain('.webp');
-      }
+      await expectStills(stills);
 
       const videos = page.locator('figure video');
       await expect(videos).toHaveCount(3);
@@ -112,6 +121,25 @@ test.describe('Profiler docs media', () => {
         await expectPlayable(request, await sourcesOf(video), 'video/');
       }
       await expect(videos.first()).toHaveAttribute('poster', FILM_POSTER);
+    });
+  }
+});
+
+test.describe('F# profiling docs media', () => {
+  for (const docPath of FSHARP_DOCS) {
+    test(`${docPath} shows the F# stills in order and the F# walkthrough with controls`, async ({ page, request }) => {
+      await page.goto(docPath);
+      const stills = page.locator('img[src^="/assets/screenshots/profiler/"]');
+      await expect(stills).toHaveCount(FSHARP_STILLS.length);
+      expect(await stills.evaluateAll((images) => images.map((img) => img.getAttribute('src'))), 'heat map, results, suspects, graph').toEqual(FSHARP_STILLS);
+      await expectStills(stills);
+
+      const video = page.locator('figure video');
+      await expect(video).toHaveCount(1);
+      await expect(video).toHaveAttribute('controls', '');
+      await expect(video).not.toHaveAttribute('autoplay', '');
+      await expect(video).toHaveAttribute('poster', FSHARP_POSTER);
+      await expectPlayable(request, await sourcesOf(video), 'video/');
     });
   }
 });

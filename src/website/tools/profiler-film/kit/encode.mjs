@@ -5,15 +5,30 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-export const out = path.join(here, 'out');
-export const videos = path.resolve(here, '../../src/assets/videos');
-export const shots = path.resolve(here, '../../src/assets/screenshots/profiler');
+const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/** Every shoot's working files, gitignored: out/<film>/. */
+export const out = path.join(tool, 'out');
+export const videos = path.resolve(tool, '../../src/assets/videos');
+export const shots = path.resolve(tool, '../../src/assets/screenshots/profiler');
 
 /** H.264 for reach: every site video has an MP4. */
 export const H264 = ['-c:v', 'libx264', '-preset', 'veryslow', '-crf', '26', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an'];
 /** VP9 for size: the WebM a browser prefers when it can play it. */
 export const VP9 = ['-c:v', 'libvpx-vp9', '-crf', '40', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2', '-an'];
+
+/** The narrated films' sound: AAC beside H.264, Opus beside VP9. */
+export const AAC = ['-c:a', 'aac', '-b:a', '160k'];
+export const OPUS = ['-c:a', 'libopus', '-b:a', '128k'];
+
+/** A video setting that keeps the soundtrack. */
+export const audible = (video) => video.filter((arg) => arg !== '-an');
+
+/** The length of `file` in seconds. */
+export function duration(file) {
+  const result = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`ffprobe ${file} failed: ${result.stderr}`);
+  return Number(result.stdout.trim());
+}
 
 export function ffmpeg(args, label) {
   const result = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', ...args], { encoding: 'utf8' });

@@ -115,6 +115,10 @@ SharpLsp 侧边栏中的 **Processes** 视图会发现本机上的 .NET 进程�
 
 {% video "profiler-memory-timelapse" %}
 
+## F#
+
+F# 程序可以使用同一个性能分析器，它能读懂 F# 编译器生成的代码。闭包和管道阶段保留编译器给出的名称，例如 `Pipe #1 stage #1 at line 11`。记录、联合和联合用例标在构造它们的行上。由模块值持有的泄漏会以源代码中的写法给出该值的名称。[F# 性能分析](/zh/docs/fsharp-profiling/)用一段演示视频展示了 F# 应用上的完整流程。
+
 ## 命令
 
 | 命令 | 用途 |

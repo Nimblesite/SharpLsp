@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const repoRoot = path.resolve(here, '../../../..');
+export const repoRoot = path.resolve(here, '../../../../..');
 const testHome = path.join(repoRoot, 'src/editors/vscode/.vscode-test');
 const vsix = path.join(repoRoot, 'dist/sharplsp.vsix');
 const RUNTIME_EXTENSION = 'ms-dotnettools.vscode-dotnet-runtime';

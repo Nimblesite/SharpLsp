@@ -62,7 +62,8 @@ flowchart LR
   - the record, the union case and the generic record each anchor, and are painted, at the exact `Program.fs` line that constructs them;
   - the dashboard names the union case `HotLeakAppFs.PayloadKind+Small`;
   - the diff scores the record as a leak;
-  - the leak's retention root is the module value `static items`, with no compiler-mangled name.
+  - the leak's retention root is the module value `static items`, with no compiler-mangled name;
+  - the fixture's line protocol builds the rest of the F# heap zoo one shape at a time: orders over a single-case union, a union case with fields, a list and a struct record; quotes behind a never-evicting cache; event-handler closures; a reference cycle; and arrays. Each anchors at its constructing line except arrays, which have none, and the growing record reaches Low confidence.
 - File-system paths go only through `src/editors/vscode/src/paths.ts`.
 
 ### [PROFILER-SHARED-LIBRARY-ENGINE] Engine bundling
@@ -651,7 +652,7 @@ Commands used per node:
 
 ### [PROFILER-GRAPH-WEBVIEW] Interactive Graph Webview
 
-The object graph renders as an interactive force-directed graph in a VS Code webview panel.
+The object graph renders as a layered graph in a VS Code webview panel: GC roots on top, named by their labels, and the target objects along the bottom ([PROF-UI-REFGRAPH] in lspkit).
 
 #### [PROFILER-GRAPH-WEBVIEW-LAYOUT] Graph Layout
 
@@ -762,7 +763,7 @@ output_directory = ".sharplsp/profiles"
 | Command palette | Start/stop trace, start/stop counters, collect dump, leak detection |
 | Webview panel | Display counter values as live-updating table |
 | Webview panel | Display heap stats as sortable table |
-| Webview panel | Interactive object retention graph (D3.js force-directed) |
+| Webview panel | Object retention graph, layered from GC roots down to the targets |
 | Webview panel | Heap snapshot diff table with growth indicators |
 | Quick pick | Process selection from discovered .NET processes |
 | File open | Open `.speedscope.json` output in browser/SpeedScope viewer |

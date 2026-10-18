@@ -124,13 +124,14 @@ public static class SessionCache
 }
 ```
 
-The same leak in F# is a module-level `Dictionary`, and the fix is the same:
+The same leak in F# is a module-level `Dictionary`, and the fix is the same. [Profiling F#](/docs/fsharp-profiling/) films this loop on FsStorefront, Storefront's F# twin:
 
 ```fsharp
 let private sessions = Dictionary<int, CustomerSession>()
 
-let remember (order: Order) =
-    sessions[order.Id] <- CustomerSession order
+let remember order =
+    let stage = CheckedOut order.Total
+    sessions[order.Id] <- { Order = order; Stage = stage; Snapshot = Array.zeroCreate 4096 }
     sessions.Remove(order.Id - 1_000) |> ignore
 ```
 
@@ -378,4 +379,5 @@ No. It is SharpLsp's own memory profiler, open source and MIT-licensed. Visual S
 ## Related
 
 - [Profiler](/docs/profiler/): every profiler command and setting
+- [Profiling F#](/docs/fsharp-profiling/): the same loop on an F# app
 - [Configuration](/docs/configuration/): the `[profiler]` table in `sharplsp.toml`

@@ -125,13 +125,14 @@ public static class SessionCache
 }
 ```
 
-同样的泄漏在 F# 中是一个模块级的 `Dictionary`，修复方法也一样：
+同样的泄漏在 F# 中是一个模块级的 `Dictionary`，修复方法也一样。[F# 性能分析](/zh/docs/fsharp-profiling/)录制了 Storefront 的 F# 版本 FsStorefront 上的这一流程：
 
 ```fsharp
 let private sessions = Dictionary<int, CustomerSession>()
 
-let remember (order: Order) =
-    sessions[order.Id] <- CustomerSession order
+let remember order =
+    let stage = CheckedOut order.Total
+    sessions[order.Id] <- { Order = order; Stage = stage; Snapshot = Array.zeroCreate 4096 }
     sessions.Remove(order.Id - 1_000) |> ignore
 ```
 
@@ -379,4 +380,5 @@ dotnet-dump analyze <dump-file>
 ## 相关内容
 
 - [性能分析器](/zh/docs/profiler/)：所有性能分析器命令和设置
+- [F# 性能分析](/zh/docs/fsharp-profiling/)：在 F# 应用上的同一流程
 - [配置](/zh/docs/configuration/)：`sharplsp.toml` 中的 `[profiler]` 表
