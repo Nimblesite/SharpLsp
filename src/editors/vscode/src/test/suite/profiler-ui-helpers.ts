@@ -16,9 +16,7 @@ import type { ProcessInfo } from '@nimblesite/lsp-profiler-ui/out/src/process-ex
 import type { ProcessInfo as WireProcess } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import { delay } from '@nimblesite/lsp-profiler-ui/out/src/timeouts';
 import type { ProfileResult } from '@nimblesite/lsp-profiler-ui/out/src/profiler-decorations';
-import type {
-  MemoryDashboardSnapshot,
-} from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
+import type { MemoryDashboardSnapshot } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import type {
   MemoryDiffResult,
   MemorySnapshotResult,
@@ -387,10 +385,7 @@ const MB = 1024 * 1024;
  * A debuggable process row; each caller overrides what it exercises. The
  * one fixture every Processes-panel test builds its table from.
  */
-export function processFixture(
-  pid: number,
-  overrides: Partial<ProcessInfo> = {},
-): ProcessInfo {
+export function processFixture(pid: number, overrides: Partial<ProcessInfo> = {}): ProcessInfo {
   return {
     pid,
     ppid: 1,
@@ -420,10 +415,14 @@ export function rowPid(item: vscode.TreeItem): number | undefined {
 }
 
 /** The row of `pid`, failing the test when the panel dropped it. */
-export function rowByPid(rows: readonly vscode.TreeItem[], pid: number, what: string): vscode.TreeItem {
+export function rowByPid(
+  rows: readonly vscode.TreeItem[],
+  pid: number,
+  what: string,
+): vscode.TreeItem {
   const row = rows.find((item) => rowPid(item) === pid);
   assert.ok(row !== undefined, `${what}: the PID ${pid} row must exist`);
-  return row!;
+  return row;
 }
 
 // ── Decoration ledgers ─────────────────────────────────────────────
@@ -438,9 +437,7 @@ export interface PaintedExpectation {
 
 /** Assert a decoration was applied and shows exactly what `expect` names. */
 export function assertPainted(
-  painted:
-    | { line: number; color: string; contentText: string }
-    | undefined,
+  painted: { line: number; color: string; contentText: string } | undefined,
   expect: PaintedExpectation,
   what: string,
 ): void {

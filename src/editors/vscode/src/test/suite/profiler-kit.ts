@@ -485,9 +485,7 @@ export async function trackedMemorySession(pid: number): Promise<string> {
  * Start a memory session on `pid` over the wire and return the handle every
  * memory step takes.
  */
-export async function startMemorySession(
-  pid: number,
-): Promise<{ memory_session_id: string }> {
+export async function startMemorySession(pid: number): Promise<{ memory_session_id: string }> {
   const started = await execute<MemoryStartResult>('memory.start', { pid });
   assert.ok(started.memory_session_id.length > 0, 'a memory session must be minted');
   return { memory_session_id: started.memory_session_id };
@@ -506,7 +504,7 @@ export async function assertWireError(
   const error = await executeError(name, params);
   assert.notEqual(error, undefined, `${what}: the call must be refused, not answered`);
   assert.equal(error?.code, code, `${what}: ${error?.message ?? 'no error'}`);
-  return error!;
+  return error;
 }
 
 /**
