@@ -71,7 +71,7 @@ function clearDecorations(): void {
 }
 
 async function listSessions(what: string): Promise<unknown[]> {
-  return sessionsOf(await runCommand(CPU('list')), what);
+  return sessionsOf(await runCommand(CPU('list'), {}), what);
 }
 
 function assertClientRunning(why: string): void {

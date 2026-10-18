@@ -81,7 +81,7 @@ suite('Profiler — Command Registration', () => {
   });
 
   test('profiler.list returns empty sessions initially', async () => {
-    const result = await runCommand('sharplsp.lspProfiler.cpu.list');
+    const result = await runCommand('sharplsp.lspProfiler.cpu.list', {});
     assert.ok(result !== undefined, 'profiler.list should return a result');
     assert.ok(result !== null, 'profiler.list should not return null');
 
@@ -94,7 +94,7 @@ suite('Profiler — Command Registration', () => {
   });
 
   test('profiler.list result has correct shape', async () => {
-    const result = await runCommand('sharplsp.lspProfiler.cpu.list');
+    const result = await runCommand('sharplsp.lspProfiler.cpu.list', {});
     assert.ok(result !== undefined, 'profiler.list must return a value');
 
     assert.ok(isRecord(result), 'result must be an object');
