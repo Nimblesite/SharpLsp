@@ -349,9 +349,11 @@ suite('F# CPU profiling — FsPricingEngine, one F# shape at a time', () => {
     const { target } = live;
     await command(target, 'run parse');
     await showSources(ENGINE, ['Csv.fs', 'Search.fs', 'Routing.fs']);
-    const before = await command(target, 'stats');
     await profileRow(await processRow(target.pid));
     await awaitLiveProgress();
+    // [PROF-AGGREGATION-LOGIC]: shares are of the profiled window, so the Stopwatch
+    // window opens once samples flow, never while the profiler is still attaching.
+    const before = await command(target, 'stats');
     for (const stage of GROUND_TRUTH) {
       await command(target, `run ${stage.stage}`);
       await delay(SAMPLE_MS);
