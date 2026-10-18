@@ -1,0 +1,31 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "C#": "C sharp", "NuGet": "new get", "VSX": "V S X" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "solution",
+      "en": "This is SharpLsp in VS Code. Open a folder with a solution or a project, and SharpLsp loads it, with C# and F# side by side.",
+      "ja": "これが VS Code の SharpLsp です。ソリューションやプロジェクトのあるフォルダーを開くと、SharpLsp が読み込みます。C# と F# が並んで表示されます。",
+      "zh": "这就是 VS Code 中的 SharpLsp。打开一个包含解决方案或项目的文件夹，SharpLsp 就会加载它，C# 和 F# 并排呈现。"
+    },
+    {
+      "scene": "fsharp",
+      "en": "F# is first class. The F# compiler answers every hover, completion and jump.",
+      "ja": "F# はファーストクラスです。ホバー、補完、ジャンプのすべてに F# コンパイラーが答えます。",
+      "zh": "F# 是一等公民。每一次悬停、补全和跳转，都由 F# 编译器作答。"
+    },
+    {
+      "scene": "csharp",
+      "en": "C# runs on Roslyn, the compiler itself, for completion, diagnostics, fixes and refactorings.",
+      "ja": "C# は、コンパイラーそのものである Roslyn で動きます。補完、診断、修正、リファクタリングまで。",
+      "zh": "C# 由编译器本身 Roslyn 驱动：补全、诊断、修复和重构。"
+    },
+    {
+      "scene": "tools",
+      "en": "And the tools come with it: a profiler, a NuGet browser, test lenses and debugging. Install SharpLsp from the Marketplace or Open VSX. It's free, and open source.",
+      "ja": "さらにツールも付いてきます。プロファイラー、NuGet ブラウザー、テストレンズ、デバッグ。SharpLsp は Marketplace または Open VSX からインストールできます。無料で、オープンソースです。",
+      "zh": "工具也一并奉上：性能分析器、NuGet 浏览器、测试 CodeLens 和调试。从 Marketplace 或 Open VSX 安装 SharpLsp。它免费，而且开源。"
+    }
+  ]
+}

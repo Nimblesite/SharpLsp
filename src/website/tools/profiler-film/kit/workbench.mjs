@@ -109,11 +109,18 @@ export async function toggleSideBar(page) {
   await sleep(800);
 }
 
+/** Put the cursor on `line`, at `column` (1-based), revealing the line; keys go to the editor once the box closes. */
+export async function goTo(page, line, column = 1) {
+  await page.keyboard.press('Control+G');
+  await page.locator('.quick-input-widget input').fill(`:${line}:${column}`);
+  await page.keyboard.press('Enter');
+  await page.locator('.quick-input-widget').waitFor({ state: 'hidden' });
+  await sleep(300);
+}
+
 /** Go to `line` and type `text` over it, or after its end when the edit appends; key by key, as a person types. */
 export async function typeAt(page, { line, text, append = false }) {
-  await page.keyboard.press('Control+G');
-  await page.locator('.quick-input-widget input').fill(`:${line}`);
-  await page.keyboard.press('Enter');
+  await goTo(page, line);
   await page.keyboard.press(append ? 'End' : 'Shift+End');
   for (const [index, part] of text.split('\n').entries()) {
     // Escape first: an editor widget left open would take the Enter instead of the line break.

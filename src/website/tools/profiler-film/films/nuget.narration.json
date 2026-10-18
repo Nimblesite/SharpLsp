@@ -1,0 +1,31 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "C#": "C sharp", "NuGet": "new get", "nuget.org": "new get dot org", "MSBuild": "M S Build", "FsToolkit": "F S Toolkit" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "open",
+      "en": "SharpLsp brings a NuGet browser into VS Code. Right-click a project, F# or C#, and choose Browse NuGet Packages.",
+      "ja": "SharpLsp は VS Code に NuGet ブラウザーを持ち込みます。F# でも C# でも、プロジェクトを右クリックして「NuGet パッケージの参照」を選びます。",
+      "zh": "SharpLsp 把 NuGet 浏览器带进了 VS Code。右键单击一个项目，无论 F# 还是 C#，选择“浏览 NuGet 包”。"
+    },
+    {
+      "scene": "search",
+      "en": "Search nuget.org, and pick a package to see its description, license, versions and tags.",
+      "ja": "nuget.org を検索し、パッケージを選ぶと、説明、ライセンス、バージョン、タグが表示されます。",
+      "zh": "搜索 nuget.org，选中一个包，就能看到它的描述、许可证、版本和标签。"
+    },
+    {
+      "scene": "install",
+      "en": "Install edits the project file through MSBuild, keeping its formatting, then restores in the background.",
+      "ja": "インストールでは、書式を保ったまま MSBuild でプロジェクトファイルを編集し、バックグラウンドで復元します。",
+      "zh": "安装会通过 MSBuild 编辑项目文件并保留其格式，然后在后台还原。"
+    },
+    {
+      "scene": "installed",
+      "en": "Now it's under Installed, and the project file has its package reference. No terminal, no guesswork.",
+      "ja": "これで「インストール済み」に表示され、プロジェクトファイルにはパッケージ参照が入りました。ターミナルも、当て推量も要りません。",
+      "zh": "现在它出现在“已安装”中，项目文件里也有了包引用。不用终端，也不用猜。"
+    }
+  ]
+}

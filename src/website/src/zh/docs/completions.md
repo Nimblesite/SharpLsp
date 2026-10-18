@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp 为 C# 和 F# 提供语义补全。Rust 宿主会将每个请求路由到 Roslyn 或 F# Compiler Service（FCS），然后返回带替换范围的标准 LSP 补全项。
 
+{% video "code-completions" %}
+
 ## C# 补全
 
 C# 补全使用 Roslyn 的 `CompletionService`。它涵盖 Roslyn 在光标位置提供的符号和关键字，包括成员、类型、命名空间、局部变量、参数和上下文关键字。

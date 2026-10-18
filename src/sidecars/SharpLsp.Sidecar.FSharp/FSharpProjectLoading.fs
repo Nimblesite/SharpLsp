@@ -174,17 +174,15 @@ let private compilerArgs fsprojPath projectFlags =
           projectIdentityArgs fsprojPath projectFlags
           projectFlags ]
 
-/// Build persistent FCS options with explicit source files and all references.
+/// Build persistent FCS options with explicit source files and all references. The
+/// sources go in SourceFiles alone: FCS also compiles every bare argument of the command
+/// line, so a source on both would be compiled twice (FS3551).
 let buildProjectOptions (checker: FSharpChecker) (fsprojPath: string) : FSharpProjectOptions =
-    let sourceFiles = parseFsprojSourceFiles fsprojPath
-    let projectFlags = parseFsprojOtherFlags fsprojPath
-    let otherOptions = compilerArgs fsprojPath projectFlags
-
     let options =
-        checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, Array.append otherOptions sourceFiles)
+        checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, compilerArgs fsprojPath (parseFsprojOtherFlags fsprojPath))
 
     { options with
-        SourceFiles = sourceFiles }
+        SourceFiles = parseFsprojSourceFiles fsprojPath }
 
 let scriptOptions (checker: FSharpChecker) (scriptPath: string) (source: string) (ct: CancellationToken) =
     let flags = [| "--define:INTERACTIVE"; "--define:EDITING" |]

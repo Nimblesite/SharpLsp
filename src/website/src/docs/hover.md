@@ -10,6 +10,8 @@ eleventyExcludeFromCollections: true
 
 Hover is implemented for both C# and F#. Requests are routed to Roslyn or FCS and are evaluated against the current unsaved document text.
 
+{% video "hover" %}
+
 ## C# Hover
 
 C# hover can include:

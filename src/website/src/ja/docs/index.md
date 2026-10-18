@@ -11,7 +11,7 @@ eleventyNavigation:
 
 SharpLsp は、1 つの Rust ホストから C# と F# のセマンティックエンジンを利用する、オープンソースの .NET 向け Language Server Protocol 実装です。プロプライエタリな言語サービスやユーザー単位のライセンスなしで、Visual Studio や Rider に匹敵するツールの実現を目指しています。現在も活発に開発されており、現時点でサポートされるエディター統合は VS Code です。
 
-{% video "sharplsp-tour" %}
+{% video "getting-started" %}
 
 ## インストール
 

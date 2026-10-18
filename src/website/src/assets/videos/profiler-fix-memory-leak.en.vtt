@@ -1,0 +1,26 @@
+WEBVTT
+
+00:00.000 --> 00:08.426
+[Gentle music]
+This is Storefront, a C# app whose memory keeps climbing. Track Memory on its process, right from VS Code.
+
+00:08.976 --> 00:14.019
+SharpLsp snapshots the heap every ten seconds, and the heap keeps growing.
+
+00:14.569 --> 00:22.273
+Leak suspects rank by consistent growth. CustomerSession climbs in every snapshot. Click it, and you jump to its code.
+
+00:27.402 --> 00:29.679
+So, what's keeping those sessions alive?
+
+00:30.404 --> 00:37.032
+The reference graph walks up to the root: a static dictionary that remembers every order, and never forgets one.
+
+00:41.470 --> 00:46.871
+The fix: keep the last thousand orders, and evict the oldest as each new one arrives.
+
+01:05.237 --> 01:08.495
+Rebuild, run it again, and track memory once more.
+
+01:19.674 --> 01:27.912
+This time the heap holds steady, and no suspect climbs past Low. The leak is found, fixed, and proven, without leaving your editor.

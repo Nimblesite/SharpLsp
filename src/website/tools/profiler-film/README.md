@@ -24,54 +24,77 @@ make _film FILM=fsharp PUBLISH=1   # publish the last shoot again
 
 A shoot takes a few minutes and lands in `out/<film>/`, which is gitignored. Publishing writes the MP4, WebM, poster, captions and stills into `src/website/src/assets/`. Add or update the video's entry in `src/website/src/_data/videos.json` (its length, its upload date, and its label and caption in each language), then place it on a page with `{% video "<name>" %}`.
 
-| Film | Video | What it shows |
+| Film | Video | Docs page |
 |---|---|---|
-| `fsharp` | `profiler-fsharp` | CPU and memory on FsStorefront, the F# demo. Narrated. |
-| `leak` | `profiler-fix-memory-leak` | The C# memory-leak loop on Storefront |
-| `films/profiler/` | `profiler-film` | The one-minute composited film: `capture.mjs`, then `render.mjs` |
+| `getting-started` | `getting-started` | Getting Started |
+| `editor-setup` | `editor-setup` | Editor Setup |
+| `configuration` | `configuration` | Configuration |
+| `fsharp-language` | `fsharp-language` | F# Language Support |
+| `completions` | `code-completions` | Code Completions |
+| `hover` | `hover` | Hover and Quick Info |
+| `navigation` | `navigation` | Go to Definition |
+| `diagnostics` | `diagnostics` | Diagnostics |
+| `refactoring` | `refactoring` | Refactoring & Code Actions |
+| `context-menus` | `context-menus` | Context Menus |
+| `nuget` | `nuget` | NuGet Package Manager |
+| `csharp` | `profiler-csharp` | Profiler |
+| `fsharp` | `profiler-fsharp` | Profiling F# (and the F# page) |
+| `leak` | `profiler-fix-memory-leak` | Fix a Memory Leak |
+| `architecture` | `architecture` | Architecture |
+| `contributing` | `contributing` | Contributing |
+| `films/profiler/` | `profiler-film` | The home page: the one-minute composited film (`capture.mjs`, then `render.mjs`) |
+
+Every film but `films/profiler/` is narrated. The Zed page has none: Zed is a native application, and filming it would mean recording the real desktop.
 
 ## Add a film
 
-A film is one file in `films/`. It exports the video's name, the demo it is shot on, the poster frame and its scenes:
+A film is one file in `films/`. It exports the video's name, the demo it is shot on, the poster frame and its scenes, and optionally the workspace `settings` it is shot with (the profiler's by default):
 
 ```js
-import { cpuLoop } from '../kit/acts/cpu.mjs';
-import { prepare } from '../kit/scenes.mjs';
-import { STOREFRONT } from '../kit/set.mjs';
+import { LANGUAGE, hoverEach, prepareCode, scene } from '../kit/acts/language.mjs';
+import { SHOP } from '../kit/set.mjs';
 
 export default {
-  name: 'profiler-cpu-tour',
-  demo: STOREFRONT,
-  narration: 'cpu-tour.narration.json', // optional
-  poster: { scene: 'heat', at: 4 },
+  name: 'hover',
+  demo: SHOP,
+  settings: LANGUAGE,
+  narration: 'hover.narration.json', // optional
+  poster: { scene: 'fsharp', at: 4 },
   scenes: [
-    { offCamera: prepare('CheckoutPipeline.cs') },
-    ...cpuLoop({ file: 'CheckoutPipeline.cs', captions: { profile: '…', heat: '…', results: '…' } }, 1),
+    { offCamera: prepareCode('Program.fs', { line: 9, word: 'generate' }) },
+    scene('fsharp', 1, 'F#: the inferred signature, with your doc comment', ({ page }) => hoverEach(page, [{ line: 9, word: 'generate' }])),
   ],
 };
 ```
 
 A scene is either a clip or a step off camera:
 
-- `{ clip, act, speed, retries }`: `act(shot)` is recorded in real time as `<clip>.mp4`. It plays back at `speed`, and the frame shows a speed badge whenever `speed` is above 1. `retries` shoots a flaky take again.
+- `{ clip, act, speed, retries }`: `act(shot)` is recorded in real time as `<clip>.mp4`. It plays back at `speed`, and the frame shows a speed badge whenever `speed` is above 1. `retries` shoots a failed take again. `scene(clip, step, caption, act, { speed, retries })` builds one with its numbered caption.
 - `{ offCamera }`: `offCamera(shot)` runs between clips and is never recorded. Use it for setup, rebuilds and stills.
 
 `shot` is `{ page, set, app, workspace, stills }`: the Playwright page, the recorder, the demo process, the staged workspace and the stills folder.
 
-The kit tells the common stories so a film only supplies its words:
+The kit tells the common stories, so a film only supplies its words:
 
 | Module | What it gives a film |
 |---|---|
 | `kit/acts/cpu.mjs` | `cpuLoop(story, first)`: Profile CPU, sampling at 4×, the heat map, the results panel, and optional stills |
 | `kit/acts/memory.mjs` | `memoryLoop(story, first)`: Track Memory, growth at 8×, a suspect, the retention graph, the fix typed in, and the fixed build tracked again |
+| `kit/acts/tour.mjs` | `profilerTour(cpu, memory)`: both loops on one demo, as the C# and F# profiler films tell them |
+| `kit/acts/language.mjs` | The language films' `LANGUAGE` settings, `prepareCode` and `warm` (wait until an engine answers a hover), `scene`, and the editor's own moves: `complete`, `quickFix`, `renameTo`, `navigate`, `peekReferences`, `hoverEach`, `settingsEditor` |
+| `kit/acts/shop.mjs` | Moves on the Shop demo several films share: code typed through completion in F# and C#, a generated match case, a rename across files |
+| `kit/acts/explorer.mjs` | The Solution Explorer: `openMenu` on a row, `pickMenu`, `unfold` |
+| `kit/code.mjs` | `wordOn`, `findWord`, `hoverOn` and `clickOn`: a word on a line of the editor, found on screen |
 | `kit/scenes.mjs` | `prepare(file)`, `switchTo(file)`, `restart`, `startOnRow(step, text, action, status)`, and the shoot and publish engine |
-| `kit/overlay.mjs` | `caption(page, step, text, speed)` and `ringClick(page, cues, locator, label)` |
-| `kit/workbench.mjs` | Editor moves: the Processes view and its demo row, `openFile`, `toggleMaximised`, `typeAt`, `panel` and more |
+| `kit/overlay.mjs` | `caption(page, step, text, speed)`, `pointAt(page, at)` (the pointer glides to what a film acts on) and `ringClick(page, cues, locator, label)` |
+| `kit/workbench.mjs` | Editor moves: the Processes view and its demo row, `openFile`, `goTo`, `typeAt`, `toggleMaximised`, `panel` and more |
 | `kit/camera.mjs` | `snap(shot, name)` takes a still, published as `<name>.webp` |
-| `kit/set.mjs` | The demos (`STOREFRONT`, `FS_STOREFRONT`) and `onSet`, which stages a demo beside an isolated editor |
+| `kit/set.mjs` | The sets (`STOREFRONT`, `FS_STOREFRONT`, `SHOP` with both in one solution, and `REPO`, a clean copy of this repository) and `onSet`, which stages one beside an isolated editor |
 | `kit/sound/` | Narration (`voice.mjs`), the original score (`score.mjs`) and the mix (`soundtrack.mjs`) |
 
 A new demo app goes in `demos/<folder>/`, with one project and an empty `Directory.Build.props`, and is declared in `kit/set.mjs`. It must print a line to stdout once it is running.
+
+**Nothing personal reaches a frame.** The demo is staged under `/tmp`. The editor runs on a copy-on-write clone of the .NET install at `/tmp/sharplsp-film-dotnet` (made once, sharing the original's blocks) with its login-shell environment off, so the SDK path the extension reports and the commands its terminals print are neutral. A failed shoot leaves `out/<film>/failure.png` and the editor's logs in `out/<film>/logs`.
 
 ## Narration
 

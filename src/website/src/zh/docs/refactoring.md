@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp 为 C# 和 F# 支持标准 LSP 代码操作。操作取决于上下文：sidecar 只会返回编译器或提供程序能够在当前诊断、光标位置或选区上执行的修复或重构。
 
+{% video "refactoring" %}
+
 在 VS Code 中，可以使用灯泡或**快速修复**命令（Windows/Linux 上为 `Ctrl+.`，macOS 上为 `Cmd+.`）。
 
 ## C# 操作

@@ -1190,6 +1190,33 @@ suite('NuGet Browser — pure html', () => {
     assert.ok(html.includes('<option value="13.0.3"'), 'version option rendered');
   });
 
+  test('buildHtml details panel shows the version Install installs, not the newest prerelease', () => {
+    // nuget.org lists versions newest first, prereleases included; search
+    // answers with the latest stable one, which is what Install sends.
+    const pkg = searchResult({
+      version: '5.2.0',
+      _versions: ['6.0.0-beta003', '6.0.0-beta002', '5.2.0', '5.1.0'],
+    });
+    const html = buildHtml(baseState({ selectedPackage: pkg }));
+    assert.ok(
+      html.includes(`installPackage('Newtonsoft.Json', '5.2.0')`),
+      'Install sends the stable version',
+    );
+    assert.ok(
+      html.includes('<option value="5.2.0" selected>'),
+      'the picker shows the version Install sends',
+    );
+    assert.ok(
+      !html.includes('<option value="6.0.0-beta003" selected>'),
+      'a prerelease is never shown as the one to install',
+    );
+    assert.strictEqual(
+      html.match(/ selected>/g)?.length,
+      1,
+      'exactly one version is shown as chosen',
+    );
+  });
+
   test('buildHtml details panel renders Remove button for installed pkg', () => {
     const pkg = searchResult();
     const html = buildHtml(

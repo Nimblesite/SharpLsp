@@ -12,6 +12,8 @@ eleventyNavigation:
 
 Most SharpLsp context-menu commands belong to the VS Code Solution Explorer. The extension does not currently add a Problems-panel context menu.
 
+{% video "context-menus" %}
+
 ## Solution Explorer
 
 | Node | Available actions |

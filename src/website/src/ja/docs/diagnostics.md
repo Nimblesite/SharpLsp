@@ -11,6 +11,8 @@ eleventyExcludeFromCollections: true
 
 SharpLsp は C# と F# の両方についてコンパイラー診断を報告します。C# ファイルは Roslyn が、F# ファイルは F# Compiler Service が処理します。各サイドカーは現在のエディターバッファを解析するため、未保存の変更も含まれます。
 
+{% video "diagnostics" %}
+
 ## 配信モデル
 
 SharpLsp は LSP の両方の診断モデルをサポートしています。

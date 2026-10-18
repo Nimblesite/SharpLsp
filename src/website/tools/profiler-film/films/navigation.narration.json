@@ -1,0 +1,41 @@
+{
+  "voice": "af_heart",
+  "say": {
+    "SharpLsp": "Sharp L S P",
+    "F#": "F sharp",
+    "C#": "C sharp",
+    "F12": "F twelve",
+    "JsonSerializer": "Jason Serializer"
+  },
+  "music": {
+    "en": "[Gentle music]",
+    "ja": "[穏やかな音楽]",
+    "zh": "[舒缓的音乐]"
+  },
+  "lines": [
+    {
+      "scene": "fsharp",
+      "en": "Press F12 on any symbol to jump to its definition. In F#, the F# compiler resolves it across files: here, a union case declared in another file.",
+      "ja": "シンボルの上で F12 を押すと、その定義へジャンプします。F# では F# コンパイラーがファイルをまたいで解決します。ここでは、別のファイルで宣言された共用体ケースです。",
+      "zh": "在任意符号上按 F12，即可跳转到它的定义。在 F# 中，由 F# 编译器跨文件解析：这里是在另一个文件中声明的联合用例。"
+    },
+    {
+      "scene": "csharp",
+      "en": "In C#, Roslyn does the same, from the program straight into the checkout pipeline.",
+      "ja": "C# では Roslyn が同じことをします。プログラムからチェックアウトパイプラインへ一直線です。",
+      "zh": "在 C# 中，Roslyn 也一样，从程序直接跳进结账管道。"
+    },
+    {
+      "scene": "references",
+      "en": "Shift F12 finds every reference across the solution, in a peek window you can browse without losing your place.",
+      "ja": "Shift+F12 でソリューション全体の参照をすべて見つけます。ピークウィンドウなので、今いる場所を見失わずに見て回れます。",
+      "zh": "Shift+F12 会找出整个解决方案中的所有引用，显示在速览窗口里，浏览时不会丢失当前位置。"
+    },
+    {
+      "scene": "metadata",
+      "en": "It works for the framework too. F12 on JsonSerializer opens its source, decompiled from the assembly.",
+      "ja": "フレームワークにも使えます。JsonSerializer の上で F12 を押すと、アセンブリから逆コンパイルしたソースが開きます。",
+      "zh": "对框架也同样有效。在 JsonSerializer 上按 F12，会打开从程序集反编译出的源代码。"
+    }
+  ]
+}

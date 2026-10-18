@@ -1,0 +1,55 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "C#": "C sharp", "CustomerSession": "Customer Session" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "track",
+      "en": "This is Storefront, a C# app whose memory keeps climbing. Track Memory on its process, right from VS Code.",
+      "ja": "これは Storefront、メモリが増え続ける C# アプリです。VS Code から、そのプロセスのメモリを追跡します。",
+      "zh": "这是 Storefront，一个内存不断上涨的 C# 应用。直接在 VS Code 里对它的进程开启内存跟踪。"
+    },
+    {
+      "scene": "grow",
+      "en": "SharpLsp snapshots the heap every ten seconds, and the heap keeps growing.",
+      "ja": "SharpLsp が 10 秒ごとにヒープのスナップショットを取りますが、ヒープは増え続けます。",
+      "zh": "SharpLsp 每十秒为堆拍一次快照，而堆一直在增长。"
+    },
+    {
+      "scene": "suspect",
+      "en": "Leak suspects rank by consistent growth. CustomerSession climbs in every snapshot. Click it, and you jump to its code.",
+      "ja": "リークの疑いは、一貫した増加の度合いで並びます。CustomerSession はどのスナップショットでも増えています。クリックすると、そのコードへジャンプします。",
+      "zh": "可疑泄漏按持续增长程度排序。CustomerSession 在每个快照里都在增长。点击它，就会跳到它的代码。"
+    },
+    {
+      "scene": "ask",
+      "en": "So, what's keeping those sessions alive?",
+      "ja": "では、何がそれらのセッションを生かし続けているのでしょうか？",
+      "zh": "那么，是什么让这些会话一直存活？"
+    },
+    {
+      "scene": "graph",
+      "en": "The reference graph walks up to the root: a static dictionary that remembers every order, and never forgets one.",
+      "ja": "参照グラフをたどるとルートに行き着きます。すべての注文を覚えていて、決して忘れない static な Dictionary です。",
+      "zh": "引用图一路追溯到根：一个静态字典，它记住了每一笔订单，从不遗忘。"
+    },
+    {
+      "scene": "fix",
+      "en": "The fix: keep the last thousand orders, and evict the oldest as each new one arrives.",
+      "ja": "修正は、直近 1,000 件の注文だけを残し、新しい注文が来るたびに一番古いものを追い出すことです。",
+      "zh": "修复方法：只保留最近一千笔订单，每来一笔新的，就淘汰最旧的一笔。"
+    },
+    {
+      "scene": "retrack",
+      "en": "Rebuild, run it again, and track memory once more.",
+      "ja": "再ビルドして、もう一度実行し、改めてメモリを追跡します。",
+      "zh": "重新构建，再次运行，然后再跟踪一次内存。"
+    },
+    {
+      "scene": "steady",
+      "en": "This time the heap holds steady, and no suspect climbs past Low. The leak is found, fixed, and proven, without leaving your editor.",
+      "ja": "今度はヒープが横ばいのまま、Low を超えるものはありません。エディターを離れることなく、リークを見つけ、直し、証明できました。",
+      "zh": "这一次，堆保持平稳，没有任何可疑项超过 Low。无需离开编辑器，就找到了泄漏、修复了它，并证明了修复有效。"
+    }
+  ]
+}

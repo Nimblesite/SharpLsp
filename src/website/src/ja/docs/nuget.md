@@ -13,6 +13,8 @@ eleventyNavigation:
 
 VS Code 拡張機能には、NuGet ブラウザーとパッケージ保守コマンドが含まれています。Rust ホストは、対象の検出、NuGet API へのクエリ、復元の進行状況、未使用パッケージの分析、統合処理のオーケストレーションを担います。プロジェクトファイルの変更には .NET サイドカーの MSBuild DOM を使用するため、既存の XML 構造と書式は維持されます。
 
+{% video "nuget" %}
+
 ## ブラウザーを開く
 
 プロジェクトを右クリックして **Browse NuGet Packages** を選ぶか、**SharpLsp: Browse NuGet Packages** を実行します。ワークスペースに複数の対象がある場合は、編集するプロジェクトまたは中央パッケージファイルを選択します。

@@ -11,6 +11,8 @@ F# 在 SharpLsp 中是**一等公民**。Rust LSP 主机会将 F# 语义请求�
 
 [FsAutoComplete (FSAC)](https://ionide.io/Tools/fsac.html) 是 Ionide 背后的引擎，也是 SharpLsp 的功能对齐目标。SharpLsp 目前已经覆盖了相当广泛的功能，但**尚未**宣称与 FSAC 完全一致。
 
+{% video "fsharp-language" %}
+
 ## 功能状态
 
 | 功能 | 状态 | 当前行为 |

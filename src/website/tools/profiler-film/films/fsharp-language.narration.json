@@ -1,0 +1,49 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "minBy": "min by", "F12": "F twelve", "F2": "F two", "Program.fs": "Program dot F S" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "hover",
+      "en": "This is F# in VS Code with SharpLsp. Hover any symbol, and the F# compiler tells you exactly what it is: the parser, the basket picker, the pricing.",
+      "ja": "これは SharpLsp を入れた VS Code の F# です。シンボルにホバーすると、F# コンパイラーがその正体を正確に教えてくれます。パーサー、バスケットの選択、価格計算。",
+      "zh": "这是装有 SharpLsp 的 VS Code 中的 F#。将鼠标悬停在任意符号上，F# 编译器会准确告诉你它是什么：解析器、购物篮挑选、价格计算。"
+    },
+    {
+      "scene": "complete",
+      "en": "Completion knows your types. Type List dot for every list function, and narrow it down to minBy. Inside the lambda, the record's fields are right there.",
+      "ja": "補完は型を理解しています。List. と打てばリスト関数がすべて並び、minBy まで絞り込めます。ラムダの中では、レコードのフィールドがすぐに出てきます。",
+      "zh": "补全了解你的类型。输入 List. 就能看到所有列表函数，再缩小到 minBy。在 lambda 里，记录的字段就在眼前。"
+    },
+    {
+      "scene": "define",
+      "en": "Press F12 on a type to jump to its definition, even in another file.",
+      "ja": "型の上で F12 を押すと、別のファイルにあっても定義へジャンプします。",
+      "zh": "在类型上按 F12，即使它在另一个文件里，也能跳转到定义。"
+    },
+    {
+      "scene": "references",
+      "en": "Shift F12 finds every reference across the project, including code you haven't saved yet.",
+      "ja": "Shift+F12 で、まだ保存していないコードも含めて、プロジェクト全体の参照をすべて見つけます。",
+      "zh": "Shift+F12 会找出整个项目中的所有引用，包括你还没保存的代码。"
+    },
+    {
+      "scene": "fix",
+      "en": "Quick fixes write code for you. This match misses a case. Press Command dot, and SharpLsp generates the missing case.",
+      "ja": "クイックフィックスがコードを書いてくれます。この match にはケースが足りません。Command+. を押すと、SharpLsp が足りないケースを生成します。",
+      "zh": "快速修复会替你写代码。这个 match 漏了一个分支。按 Command+.，SharpLsp 就会生成缺失的分支。"
+    },
+    {
+      "scene": "rename",
+      "en": "Rename a function with F2, and SharpLsp renames it across the whole project. Program.fs already calls it by its new name.",
+      "ja": "F2 で関数の名前を変えると、SharpLsp がプロジェクト全体で名前を変えます。Program.fs はもう新しい名前で呼び出しています。",
+      "zh": "用 F2 重命名一个函数，SharpLsp 会在整个项目中重命名它。Program.fs 已经在用新名字调用它了。"
+    },
+    {
+      "scene": "interactive",
+      "en": "And to try an idea, send code to F# Interactive and run it on the spot. That's F# in SharpLsp. First class, free, and open source.",
+      "ja": "アイデアを試したいときは、コードを F# Interactive に送ってその場で実行できます。これが SharpLsp の F# です。ファーストクラスで、無料、そしてオープンソースです。",
+      "zh": "想试试某个想法？把代码发送到 F# Interactive，当场运行。这就是 SharpLsp 中的 F#。一等公民，免费，而且开源。"
+    }
+  ]
+}

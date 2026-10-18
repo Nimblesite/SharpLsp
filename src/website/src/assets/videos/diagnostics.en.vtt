@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00.000 --> 00:13.365
+[Gentle music]
+SharpLsp checks your code as you type, before you save. In F#, its own analyzer marks an open that nothing uses, and the F# compiler catches a string where an int belongs.
+
+00:28.383 --> 00:33.965
+C# gets the same from Roslyn. Assign a string to an int, and it's flagged straight away.
+
+00:49.050 --> 00:55.889
+SharpLsp's analyzers go further. A private method that nothing calls is flagged as dead code.
+
+01:10.017 --> 01:15.963
+Errors and warnings land in the Problems panel, each with its code and its source, ready to fix.

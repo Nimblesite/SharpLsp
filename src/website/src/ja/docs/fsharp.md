@@ -11,6 +11,8 @@ F# は SharpLsp における **第一級市民** です。Rust LSP ホストは�
 
 Ionide を支えるエンジンである [FsAutoComplete（FSAC）](https://ionide.io/Tools/fsac.html)が、同等性の目標です。SharpLsp は現在、広範な機能が動作しますが、完全な FSAC 同等性を **まだ宣言していません**。
 
+{% video "fsharp-language" %}
+
 ## 機能の対応状況
 
 | 機能 | 状態 | 現在の動作 |

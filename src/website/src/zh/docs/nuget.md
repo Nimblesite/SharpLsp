@@ -13,6 +13,8 @@ eleventyNavigation:
 
 VS Code 扩展包含 NuGet 浏览器和包维护命令。Rust 宿主负责目标发现、NuGet API 查询、还原进度、未使用包分析和版本统一编排。项目文件的修改通过 .NET sidecar 的 MSBuild DOM 完成，以保留现有 XML 结构和格式。
 
+{% video "nuget" %}
+
 ## 打开浏览器
 
 右键单击项目并选择 **浏览 NuGet 包**，或运行 **SharpLsp: Browse NuGet Packages**。如果工作区包含多个目标，请选择要编辑的项目或中央包文件。

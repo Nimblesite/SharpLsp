@@ -8,7 +8,7 @@ eleventyExcludeFromCollections: true
 
 SharpLsp profiles CPU and memory for any running .NET process without leaving VS Code. Hot lines light up in your code, a flame graph and hot-function table land beside it, and a live heap timeline ranks leak suspects while the app runs. You don't install `dotnet-trace`, you don't take dumps, and you don't need a license.
 
-{% video "profiler-film" %}
+{% video "profiler-csharp" %}
 
 ## How It Works
 

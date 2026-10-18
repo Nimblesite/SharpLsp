@@ -1,0 +1,8 @@
+WEBVTT
+
+00:00.000 --> 00:19.004
+[Gentle music]
+SharpLsp is one Rust host with two .NET engines behind it. Watch its log: an F# hover goes to the F# compiler service, and a C# hover goes to Roslyn. Each engine runs in its own process, and speaks MessagePack over a local socket.
+
+00:24.817 --> 00:32.183
+Syntax features never leave the host. Folding comes straight from tree-sitter in Rust, with no round trip to either engine.

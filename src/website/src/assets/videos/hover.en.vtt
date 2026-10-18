@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00.000 --> 00:10.472
+[Gentle music]
+Hover a symbol to see exactly what it is. In F#, SharpLsp shows the signature the compiler inferred, with your doc comment underneath.
+
+00:19.217 --> 00:25.185
+Union cases work the same way, and so do .NET types, shown just as F# sees them.
+
+00:37.083 --> 00:43.715
+C# hovers come from Roslyn: your XML docs, rendered, and the real type behind every var.
+
+00:55.083 --> 01:01.061
+And hover reads the code you haven't saved. Change a doc comment, and the next hover already shows it.

@@ -11,6 +11,8 @@ eleventyExcludeFromCollections: true
 
 SharpLsp は、C# と F# の両方で LSP のナビゲーション機能群を実装しています。C# のクエリには読み込まれたソリューション全体を対象に Roslyn を使用し、F# のクエリには読み込まれた F# プロジェクト全体を対象に FCS を使用します。
 
+{% video "navigation" %}
+
 ## メソッド
 
 | LSP メソッド | 結果 |

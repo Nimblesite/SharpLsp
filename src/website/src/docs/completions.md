@@ -12,6 +12,8 @@ eleventyNavigation:
 
 SharpLsp provides semantic completion for both C# and F#. The Rust host routes each request to Roslyn or the F# Compiler Service (FCS), then returns standard LSP completion items with replacement ranges.
 
+{% video "code-completions" %}
+
 ## C# Completion
 
 C# completion uses Roslyn's `CompletionService`. It covers the symbols and keywords Roslyn makes available at the cursor, including members, types, namespaces, locals, parameters, and contextual keywords.

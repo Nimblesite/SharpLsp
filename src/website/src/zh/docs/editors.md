@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp 在协议层面与编辑器无关。目前受支持且已打包的客户端是 VS Code；其他集成仍在开发中。
 
+{% video "editor-setup" %}
+
 ## VS Code
 
 从 [VS Code Marketplace 安装 SharpLsp](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp)；在 Cursor、Windsurf 和 VSCodium 中则从 [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) 安装。VSIX 包含 Rust 宿主以及 C# 和 F# sidecar，因此无需单独安装 SharpLsp。

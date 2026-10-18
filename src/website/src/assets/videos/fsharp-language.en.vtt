@@ -1,0 +1,23 @@
+WEBVTT
+
+00:00.000 --> 00:12.144
+[Gentle music]
+This is F# in VS Code with SharpLsp. Hover any symbol, and the F# compiler tells you exactly what it is: the parser, the basket picker, the pricing.
+
+00:16.683 --> 00:26.025
+Completion knows your types. Type List dot for every list function, and narrow it down to minBy. Inside the lambda, the record's fields are right there.
+
+00:40.717 --> 00:45.265
+Press F12 on a type to jump to its definition, even in another file.
+
+00:48.550 --> 00:54.600
+Shift F12 finds every reference across the project, including code you haven't saved yet.
+
+00:59.817 --> 01:07.702
+Quick fixes write code for you. This match misses a case. Press Command dot, and SharpLsp generates the missing case.
+
+01:11.583 --> 01:20.580
+Rename a function with F2, and SharpLsp renames it across the whole project. Program.fs already calls it by its new name.
+
+01:30.917 --> 01:40.832
+And to try an idea, send code to F# Interactive and run it on the spot. That's F# in SharpLsp. First class, free, and open source.

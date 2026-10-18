@@ -1,0 +1,19 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "C#": "C sharp", ".NET": "dot net", "MessagePack": "Message Pack" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "routing",
+      "en": "SharpLsp is one Rust host with two .NET engines behind it. Watch its log: an F# hover goes to the F# compiler service, and a C# hover goes to Roslyn. Each engine runs in its own process, and speaks MessagePack over a local socket.",
+      "ja": "SharpLsp は、ひとつの Rust ホストの後ろに 2 つの .NET エンジンを持っています。ログを見てください。F# のホバーは F# コンパイラーサービスへ、C# のホバーは Roslyn へ送られます。各エンジンは別々のプロセスで動き、ローカルソケット越しに MessagePack でやり取りします。",
+      "zh": "SharpLsp 是一个 Rust 宿主，背后有两个 .NET 引擎。看它的日志：F# 的悬停请求发往 F# 编译器服务，C# 的悬停请求发往 Roslyn。每个引擎都在自己的进程中运行，通过本地套接字用 MessagePack 通信。"
+    },
+    {
+      "scene": "folding",
+      "en": "Syntax features never leave the host. Folding comes straight from tree-sitter in Rust, with no round trip to either engine.",
+      "ja": "構文の機能はホストの外に出ません。折りたたみは Rust の tree-sitter から直接届き、どちらのエンジンにも往復しません。",
+      "zh": "语法功能从不离开宿主。折叠直接来自 Rust 中的 tree-sitter，无需往返任何一个引擎。"
+    }
+  ]
+}

@@ -12,6 +12,8 @@ eleventyNavigation:
 
 SharpLsp separates editor protocol handling from compiler-backed semantic analysis.
 
+{% video "architecture" %}
+
 {% include "partials/architecture-diagram.njk" %}
 
 ## Tier 1 — Rust LSP Host
@@ -50,7 +52,7 @@ The host communicates with each sidecar using:
 - a 4-byte little-endian length prefix;
 - correlated request/response envelopes.
 
-A sidecar failure does not take down the host. The lifecycle manager marks the process unavailable, applies restart backoff, and can start a replacement.
+A sidecar failure does not take down the host. The lifecycle manager marks the process unavailable, applies restart backoff, and can start a replacement. The replacement does not yet reload the workspace or the open documents ([#386](https://github.com/Nimblesite/SharpLsp/issues/386)), so after a sidecar crash run **SharpLsp: Restart Language Server** to bring that language's features back.
 
 ## Request Routing
 

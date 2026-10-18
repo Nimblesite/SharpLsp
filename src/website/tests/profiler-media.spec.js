@@ -4,6 +4,7 @@ import { test, expect } from '@playwright/test';
 import { expectPlayable, playback, sourcesOf } from './media.js';
 
 const FILM_POSTER = '/assets/videos/profiler-film-poster.webp';
+const WALKTHROUGH_POSTER = '/assets/videos/profiler-csharp-poster.webp';
 const FILM_SOURCES = ['/assets/videos/profiler-film.webm', '/assets/videos/profiler-film.mp4'];
 const PROFILER_STILLS = 8;
 const STILL_WIDTH = 2400;
@@ -120,7 +121,8 @@ test.describe('Profiler docs media', () => {
         await expect(video).not.toHaveAttribute('autoplay', '');
         await expectPlayable(request, await sourcesOf(video), 'video/');
       }
-      await expect(videos.first()).toHaveAttribute('poster', FILM_POSTER);
+      // The page opens on its narrated C# walkthrough; the home page keeps the film.
+      await expect(videos.first()).toHaveAttribute('poster', WALKTHROUGH_POSTER);
     });
   }
 });

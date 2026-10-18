@@ -10,6 +10,8 @@ eleventyExcludeFromCollections: true
 
 SharpLsp reports compiler diagnostics for both C# and F#. Roslyn handles C# files; the F# Compiler Service handles F# files. Each sidecar analyzes the current editor buffer, so unsaved changes are included.
 
+{% video "diagnostics" %}
+
 ## Delivery Model
 
 SharpLsp supports both LSP diagnostic models:

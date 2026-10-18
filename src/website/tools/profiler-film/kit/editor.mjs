@@ -5,7 +5,6 @@
 // Prerequisite: `make _build-vsix VSIX_PREBUILT=1` (writes dist/sharplsp.vsix).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -15,6 +14,31 @@ export const repoRoot = path.resolve(here, '../../../../..');
 const testHome = path.join(repoRoot, 'src/editors/vscode/.vscode-test');
 const vsix = path.join(repoRoot, 'dist/sharplsp.vsix');
 const RUNTIME_EXTENSION = 'ms-dotnettools.vscode-dotnet-runtime';
+
+/**
+ * Where a shoot stages its demo and the editor keeps its temp files (decompiled
+ * sources, sidecar sockets): the shared /tmp, by its real path. macOS's per-user
+ * temp folder carries an id of the account, and a breadcrumb or log would show it.
+ */
+export const SCRATCH = fs.realpathSync('/tmp');
+
+/**
+ * The .NET install the editor runs on: a copy-on-write clone of the real one
+ * at `<SCRATCH>/sharplsp-film-dotnet`, first on its PATH and its DOTNET_ROOT.
+ * The extension reports the SDK it finds, and terminals print the `dotnet` they
+ * run; both read this neutral path, never a home folder and the account name in
+ * it. The clone is made once (`cp -c` shares the blocks) and reused.
+ */
+function neutralDotnet() {
+  const real = spawnSync('which', ['dotnet'], { encoding: 'utf8' }).stdout.trim();
+  if (!real) throw new Error('dotnet is not on PATH');
+  const root = path.join(SCRATCH, 'sharplsp-film-dotnet');
+  if (!fs.existsSync(path.join(root, 'dotnet'))) {
+    const clone = spawnSync('cp', ['-cR', path.dirname(fs.realpathSync(real)), root], { encoding: 'utf8' });
+    if (clone.status !== 0) throw new Error(`cloning the .NET install failed: ${clone.stderr}`);
+  }
+  return root;
+}
 
 /** The editor settings every shot is filmed with: one theme, no clutter. */
 const FILM_SETTINGS = {
@@ -30,6 +54,8 @@ const FILM_SETTINGS = {
   'window.commandCenter': true,
   'window.restoreWindows': 'none',
   'window.title': '${rootName}',
+  // Context menus drawn in the workbench, where the screencast sees them; a native menu never reaches a frame.
+  'window.menuStyle': 'custom',
   'editor.fontSize': 15,
   'editor.lineHeight': 24,
   'editor.minimap.enabled': false,
@@ -62,12 +88,14 @@ function vscodeApp() {
 }
 
 /**
- * The environment the editor starts in. A terminal inside VS Code exports
+ * The environment the editor starts in: its temp folder SCRATCH, and the neutral
+ * `dotnet` first on its PATH. A terminal inside VS Code exports
  * ELECTRON_RUN_AS_NODE, which turns the editor binary into plain Node; the
  * SHARPLSP_* path overrides would point the extension away from the VSIX.
  */
 function editorEnv() {
-  const env = { ...process.env };
+  const dotnet = neutralDotnet();
+  const env = { ...process.env, TMPDIR: `${SCRATCH}/`, DOTNET_ROOT: dotnet, PATH: `${dotnet}${path.delimiter}${process.env.PATH}` };
   for (const key of Object.keys(env)) {
     if (key.startsWith('ELECTRON_') || key.startsWith('VSCODE_') || key.startsWith('SHARPLSP_')) {
       delete env[key];
@@ -78,7 +106,7 @@ function editorEnv() {
 
 /** A short scratch root (the main IPC socket path must stay under ~104 chars). */
 function freshProfile() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-film-'));
+  const root = fs.mkdtempSync(path.join(SCRATCH, 'slsp-film-'));
   const userData = path.join(root, 'u');
   const extensions = path.join(root, 'x');
   fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
@@ -146,20 +174,21 @@ async function frameWindow(page, width, height) {
 }
 
 /**
- * Start the isolated editor on `workspace` and hand back the workbench page.
- * `close()` ends only the process this module spawned.
+ * Start the isolated editor on `workspace`, with the extensions `disabled` off,
+ * and hand back the workbench page and its `logs` folder. `close()` ends only
+ * the process this module spawned.
  */
-export async function launchVsCode({ workspace, port = 9241, width = 1600, height = 1000 }) {
+export async function launchVsCode({ workspace, port = 9241, width = 1600, height = 1000, disabled = [] }) {
   const profile = freshProfile();
-  const child = spawnEditor(profile, workspace, port);
+  const child = spawnEditor(profile, workspace, port, disabled);
   await waitForCdp(port);
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const page = await workbenchPage(browser);
   const cdp = await frameWindow(page, width, height);
-  return { page, cdp, close: () => closeEditor(browser, child, profile) };
+  return { page, cdp, logs: path.join(profile.userData, 'logs'), close: () => closeEditor(browser, child, profile) };
 }
 
-function spawnEditor(profile, workspace, port) {
+function spawnEditor(profile, workspace, port, disabled) {
   const args = [
     `--extensions-dir=${profile.extensions}`,
     `--user-data-dir=${profile.userData}`,
@@ -168,6 +197,9 @@ function spawnEditor(profile, workspace, port) {
     '--skip-release-notes',
     '--disable-workspace-trust',
     '--new-window',
+    // Keep the environment given here: VS Code would otherwise read the user's login shell's, PATH and all.
+    '--force-disable-user-env',
+    ...disabled.flatMap((id) => ['--disable-extension', id]),
     workspace,
   ];
   return spawn(path.join(vscodeApp(), 'MacOS/Code'), args, { stdio: 'ignore', env: editorEnv() });

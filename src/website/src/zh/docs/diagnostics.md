@@ -11,6 +11,8 @@ eleventyExcludeFromCollections: true
 
 SharpLsp 会报告 C# 和 F# 的编译器诊断。Roslyn 处理 C# 文件，F# Compiler Service 处理 F# 文件。每个 sidecar 都会分析编辑器中的当前缓冲区，因此尚未保存的更改也包含在内。
 
+{% video "diagnostics" %}
+
 ## 传递模型
 
 SharpLsp 同时支持两种 LSP 诊断模型：

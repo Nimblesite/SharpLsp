@@ -10,6 +10,8 @@ eleventyNavigation:
 
 This page is for contributors. VS Code users should normally install the Marketplace extension, which bundles the host and sidecars.
 
+{% video "contributing" %}
+
 ## Prerequisites
 
 - Rust stable, installed with [rustup](https://rustup.rs)

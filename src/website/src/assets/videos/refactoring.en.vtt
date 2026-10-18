@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00.000 --> 00:09.982
+[Gentle music]
+Code actions turn problems into code. This F# match misses a union case. Press Command dot, and SharpLsp writes it for you.
+
+00:14.033 --> 00:19.532
+Rename is built in. Press F2, and the new name reaches every file in the project.
+
+00:35.633 --> 00:44.097
+In C#, Roslyn's own fixes and refactorings are on hand. Call a method that doesn't exist yet, and generate it in one step.
+
+01:00.000 --> 01:04.431
+Use a type without its namespace, and one fix adds the using directive.

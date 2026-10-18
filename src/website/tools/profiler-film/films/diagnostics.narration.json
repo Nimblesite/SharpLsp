@@ -1,0 +1,39 @@
+{
+  "voice": "af_heart",
+  "say": {
+    "SharpLsp": "Sharp L S P",
+    "F#": "F sharp",
+    "C#": "C sharp"
+  },
+  "music": {
+    "en": "[Gentle music]",
+    "ja": "[穏やかな音楽]",
+    "zh": "[舒缓的音乐]"
+  },
+  "lines": [
+    {
+      "scene": "fsharp",
+      "en": "SharpLsp checks your code as you type, before you save. In F#, its own analyzer marks an open that nothing uses, and the F# compiler catches a string where an int belongs.",
+      "ja": "SharpLsp は、保存する前の入力中のコードをチェックします。F# では、独自のアナライザーが使われていない open に印を付け、F# コンパイラーが int のはずの場所にある文字列を捕まえます。",
+      "zh": "SharpLsp 会在你输入时、保存之前检查代码。在 F# 中，它自己的分析器会标出一个没被用到的 open，F# 编译器则会抓住本该是 int 的地方出现的字符串。"
+    },
+    {
+      "scene": "csharp",
+      "en": "C# gets the same from Roslyn. Assign a string to an int, and it's flagged straight away.",
+      "ja": "C# でも Roslyn が同じことをします。文字列を int に代入すると、すぐに指摘されます。",
+      "zh": "C# 也由 Roslyn 提供同样的检查。把字符串赋给 int，马上就会被标出来。"
+    },
+    {
+      "scene": "deadcode",
+      "en": "SharpLsp's analyzers go further. A private method that nothing calls is flagged as dead code.",
+      "ja": "SharpLsp のアナライザーはさらに踏み込みます。どこからも呼ばれていない private メソッドはデッドコードとして指摘されます。",
+      "zh": "SharpLsp 的分析器还会更进一步：一个没有任何地方调用的私有方法，会被标记为死代码。"
+    },
+    {
+      "scene": "problems",
+      "en": "Errors and warnings land in the Problems panel, each with its code and its source, ready to fix.",
+      "ja": "エラーと警告は、それぞれコードと出どころを添えて問題パネルに並び、すぐに修正できます。",
+      "zh": "错误和警告都会出现在问题面板中，各自附带代码和来源，随时可以修复。"
+    }
+  ]
+}

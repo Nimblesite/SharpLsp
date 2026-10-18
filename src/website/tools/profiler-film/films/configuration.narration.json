@@ -1,0 +1,31 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "sharplsp.toml": "sharp L S P dot toml", "NuGet": "new get" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "settings",
+      "en": "SharpLsp has two kinds of settings. Editor settings live in VS Code, under SharpLsp: logging, NuGet, test lenses and more.",
+      "ja": "SharpLsp には 2 種類の設定があります。エディターの設定は VS Code の SharpLsp の下にあります。ログ、NuGet、テストレンズなどです。",
+      "zh": "SharpLsp 有两类设置。编辑器设置位于 VS Code 中的 SharpLsp 下：日志、NuGet、测试 CodeLens 等等。"
+    },
+    {
+      "scene": "toml",
+      "en": "Server settings live in sharplsp.toml, beside your solution. Turn on monorepo mode, and SharpLsp treats this repository as the only code that will ever call yours.",
+      "ja": "サーバーの設定は、ソリューションの隣にある sharplsp.toml に書きます。monorepo モードをオンにすると、SharpLsp はこのリポジトリを、あなたのコードを呼び出す唯一のコードとして扱います。",
+      "zh": "服务器设置写在解决方案旁边的 sharplsp.toml 里。打开 monorepo 模式，SharpLsp 会把这个仓库当作唯一会调用你代码的代码。"
+    },
+    {
+      "scene": "restart",
+      "en": "Restart the language server to apply it.",
+      "ja": "言語サーバーを再起動して反映します。",
+      "zh": "重启语言服务器即可生效。"
+    },
+    {
+      "scene": "effect",
+      "en": "Now a public property that nothing uses is dead code too, and it's reported as an error.",
+      "ja": "これで、どこからも使われていない public プロパティもデッドコードとなり、エラーとして報告されます。",
+      "zh": "现在，一个没有任何地方使用的公共属性也算作死代码，并以错误的形式报告出来。"
+    }
+  ]
+}

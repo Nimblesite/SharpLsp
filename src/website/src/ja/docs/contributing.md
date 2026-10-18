@@ -11,6 +11,8 @@ eleventyNavigation:
 
 このページはコントリビューター向けです。通常、VS Code ユーザーはホストとサイドカーが同梱された Marketplace 拡張機能をインストールしてください。
 
+{% video "contributing" %}
+
 ## 前提条件
 
 - [rustup](https://rustup.rs) でインストールした Rust stable

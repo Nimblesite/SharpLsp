@@ -10,7 +10,7 @@ eleventyNavigation:
 
 SharpLsp is an open-source Language Server Protocol implementation for .NET, with C# and F# semantic engines behind one Rust host. The project is working toward Visual Studio- and Rider-grade tooling without proprietary language services or per-seat licensing. It is under active development and VS Code is the supported editor integration today.
 
-{% video "sharplsp-tour" %}
+{% video "getting-started" %}
 
 ## Install
 

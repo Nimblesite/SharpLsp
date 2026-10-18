@@ -1,0 +1,25 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "C#": "C sharp", "minBy": "min by", "MinBy": "min by", "LINQ": "link" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "fsharp",
+      "en": "SharpLsp completes F# with the F# compiler itself. Type List dot for every list function, narrow it to minBy, and inside the lambda, the record's fields are right there.",
+      "ja": "SharpLsp は F# コンパイラーそのものを使って F# を補完します。List. と打てばリスト関数がすべて並び、minBy まで絞り込めます。ラムダの中では、レコードのフィールドがすぐに出てきます。",
+      "zh": "SharpLsp 直接用 F# 编译器来补全 F#。输入 List. 就能看到所有列表函数，缩小到 minBy；在 lambda 里，记录的字段就在眼前。"
+    },
+    {
+      "scene": "csharp",
+      "en": "In C#, completion comes straight from Roslyn: LINQ's MinBy, then the product's properties. Accepting an item replaces the word you're typing, never appends to it.",
+      "ja": "C# では、補完は Roslyn から直接届きます。LINQ の MinBy、そして製品のプロパティ。項目を確定すると、入力中の単語が置き換わり、後ろに付け足されることはありません。",
+      "zh": "在 C# 中，补全直接来自 Roslyn：先是 LINQ 的 MinBy，然后是商品的属性。接受某一项会替换你正在输入的单词，而不是追加在后面。"
+    },
+    {
+      "scene": "import",
+      "en": "Need a type from a namespace you haven't imported? Press Control Space, accept it, and SharpLsp adds the using directive at the top of the file.",
+      "ja": "まだインポートしていない名前空間の型が必要ですか？Control+Space を押して確定すれば、SharpLsp がファイルの先頭に using ディレクティブを追加します。",
+      "zh": "需要一个尚未导入的命名空间里的类型？按 Control+Space 并接受，SharpLsp 就会在文件顶部加上 using 指令。"
+    }
+  ]
+}

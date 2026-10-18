@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp 将编辑器协议处理与由编译器提供支持的语义分析分离开来。
 
+{% video "architecture" %}
+
 {% include "partials/architecture-diagram.njk" %}
 
 ## 第一层 — Rust LSP 宿主
@@ -51,7 +53,7 @@ sidecar 内部已有 Fantomas 格式化代码，但宿主有意不对其进行�
 - 4 字节小端序长度前缀；
 - 带关联标识的请求/响应信封。
 
-sidecar 故障不会导致宿主退出。生命周期管理器会将该进程标记为不可用，应用重启退避，并可启动替代进程。
+sidecar 故障不会导致宿主退出。生命周期管理器会将该进程标记为不可用，应用重启退避，并可启动替代进程。但替代进程目前还不会重新加载工作区和已打开的文档（[#386](https://github.com/Nimblesite/SharpLsp/issues/386)），因此 sidecar 崩溃后，请运行 **SharpLsp: Restart Language Server** 来恢复该语言的功能。
 
 ## 请求路由
 

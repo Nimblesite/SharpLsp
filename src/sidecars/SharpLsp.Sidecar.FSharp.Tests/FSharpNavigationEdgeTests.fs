@@ -202,3 +202,36 @@ let ``renaming a binding inside a loaded script rewrites its uses`` () = task {
     finally
         cleanup dir
 }
+
+// ── Definition into a file the editor never opened ──────────────────
+
+/// A freshly loaded project, one file open: Go to Definition on a module-qualified
+/// call lands in the file that declares it, which the editor has not opened. The
+/// editor sends the open file's text first, then asks (#387).
+[<Fact>]
+let ``definition of a module-qualified call lands in the declaring file the editor never opened`` () = task {
+    let catalog = "module Shop.Catalog\n\nlet generate count = List.init count string\n"
+    let call = "let catalog = Catalog.generate 3"
+    let program = $"module Shop.Program\n\n{call}\n"
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Catalog.fs", catalog; "Program.fs", program ]
+
+    try
+        FSharpWorkspace.applyDidChange state paths[1] program
+        let character = call.IndexOf("generate", StringComparison.Ordinal) + 2
+        // The editor asks for CodeLens on the open file first: a project-wide check.
+        let! _ = FSharpCodeLens.getCodeLenses state paths[1]
+
+        let! hover = FSharpWorkspace.getHover state paths[1] 2 character
+        let! definition = FSharpWorkspace.getDefinition state paths[1] 2 character
+
+        Assert.True(hover.IsSome, "hover answers on the call")
+
+        match definition with
+        | Some location ->
+            Assert.Equal(NativePaths.NameOf paths[0], NativePaths.NameOf location.FilePath)
+            Assert.Equal(2, location.Line)
+            Assert.Equal(4, location.Character)
+        | None -> failwith "Go to Definition found nothing for Catalog.generate"
+    finally
+        cleanup dir
+}

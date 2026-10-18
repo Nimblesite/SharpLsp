@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp は、C# と F# の標準 LSP コードアクションに対応しています。アクションはコンテキストに依存し、サイドカーは、そのコンパイラーまたはプロバイダーが現在の診断、カーソル位置、選択範囲に対して実行できる修正やリファクタリングだけを返します。
 
+{% video "refactoring" %}
+
 VS Code では、電球または **Quick Fix** コマンド（Windows／Linux では `Ctrl+.`、macOS では `Cmd+.`）を使用します。
 
 ## C# のアクション

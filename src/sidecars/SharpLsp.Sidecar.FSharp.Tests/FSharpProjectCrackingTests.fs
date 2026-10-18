@@ -179,3 +179,27 @@ let ``a lowercase short output flag also suppresses the generated identity`` () 
         Assert.DoesNotContain("--out:CrackedC.dll", options.OtherOptions)
     finally
         cleanup dir
+
+[<Fact>]
+let ``hand-built options name each source once, so FCS never sees a file twice`` () =
+    let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
+
+    try
+        let fsproj = writeProject dir "CrackedD" "--nowarn:52" [||]
+        let state = FSharpWorkspace.create ()
+        let options = FSharpWorkspace.buildProjectOptions state fsproj
+        let library = NativePaths.Resolve(dir, "Library.fs")
+
+        // Sources belong in SourceFiles alone: FCS compiles every bare argument it
+        // finds in OtherOptions as a source too.
+        Assert.Equal<string array>([| library |], options.SourceFiles)
+        Assert.DoesNotContain(library, options.OtherOptions)
+        Assert.All(options.OtherOptions, fun option -> Assert.StartsWith("-", option))
+
+        let checkedProject = state.Checker.ParseAndCheckProject(options) |> Async.RunSynchronously
+
+        // FS3551: "The source file ... already appeared in the compilation list".
+        Assert.DoesNotContain(checkedProject.Diagnostics, fun diagnostic -> diagnostic.ErrorNumber = 3551)
+        Assert.Empty(checkedProject.Diagnostics)
+    finally
+        cleanup dir

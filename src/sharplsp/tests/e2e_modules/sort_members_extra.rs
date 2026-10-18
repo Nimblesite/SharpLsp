@@ -129,3 +129,38 @@ fn test_sort_members_preserves_region_blocks() {
     assert!(new_text.contains("#region"), "#region preserved");
     assert!(new_text.contains("#endregion"), "#endregion preserved");
 }
+
+// 62. SORT MEMBERS: ONE BLANK LINE BETWEEN MEMBERS, NEVER MORE
+
+#[test]
+fn test_sort_members_keeps_one_blank_line_between_members() {
+    // Members separated by one blank line, as most C# is written. Each member's
+    // leading blank line must travel with it once, not pile up beside the
+    // separators the sort adds between groups.
+    let source = "namespace Test\n{\n    public class Pipeline\n    {\n        private static int Zeta() => 1;\n\n        public void Run() { }\n\n        private int Alpha() => 2;\n    }\n}\n";
+    let new_text = sort_members_new_text(source, (2, 4, 9, 5));
+
+    assert!(
+        !new_text.contains("\n\n\n"),
+        "sorting must never leave two blank lines in a row: {new_text:?}"
+    );
+    assert_eq!(
+        new_text,
+        "\n        public void Run() { }\n\n        private int Alpha() => 2;\n\n        private static int Zeta() => 1;",
+        "public first, then the private methods alphabetically, one blank line apart"
+    );
+}
+
+// 63. SORT MEMBERS: COMPACT MEMBERS STAY COMPACT
+
+#[test]
+fn test_sort_members_keeps_compact_members_compact() {
+    // Members written without blank lines between them gain none within a group.
+    let source = "namespace Test\n{\n    public class Ids\n    {\n        public int Zed;\n        public int Bee;\n        public int Ant;\n    }\n}\n";
+    let new_text = sort_members_new_text(source, (2, 4, 7, 5));
+
+    assert_eq!(
+        new_text, "\n        public int Ant;\n        public int Bee;\n        public int Zed;",
+        "one group, written compactly, stays compact"
+    );
+}

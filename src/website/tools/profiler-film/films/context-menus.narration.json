@@ -1,0 +1,31 @@
+{
+  "voice": "af_heart",
+  "say": { "SharpLsp": "Sharp L S P", "C#": "C sharp", "XML": "X M L" },
+  "music": { "en": "[Gentle music]", "ja": "[穏やかな音楽]", "zh": "[舒缓的音乐]" },
+  "lines": [
+    {
+      "scene": "solution",
+      "en": "Right-click in the Solution Explorer, and every node has its own actions. The solution builds, and tidies packages across all of its projects.",
+      "ja": "ソリューションエクスプローラーで右クリックすると、ノードごとに専用のアクションがあります。ソリューションはビルドでき、すべてのプロジェクトのパッケージを整理できます。",
+      "zh": "在解决方案资源管理器中右键单击，每个节点都有自己的操作。解决方案可以生成，并整理所有项目的包。"
+    },
+    {
+      "scene": "build",
+      "en": "Build, rebuild or clean a project in one click. The build runs in a terminal, and its errors and warnings land in the Problems panel.",
+      "ja": "プロジェクトのビルド、リビルド、クリーンはワンクリックです。ビルドはターミナルで実行され、エラーと警告は問題パネルに並びます。",
+      "zh": "一键生成、重新生成或清理项目。生成在终端中运行，错误和警告会出现在问题面板里。"
+    },
+    {
+      "scene": "project",
+      "en": "Open Project File takes you straight to the project's XML.",
+      "ja": "「プロジェクト ファイルを開く」で、プロジェクトの XML へ直行します。",
+      "zh": "“打开项目文件”会直接带你到项目的 XML。"
+    },
+    {
+      "scene": "sort",
+      "en": "And on a C# type, Sort Members orders its members by accessibility, kind and name, in a single edit.",
+      "ja": "C# の型では、「メンバーの並べ替え」で、アクセシビリティ、種類、名前の順にメンバーを一度の編集で並べ替えます。",
+      "zh": "在 C# 类型上，“排序成员”会按可访问性、种类和名称，一次编辑就把成员排好。"
+    }
+  ]
+}

@@ -296,10 +296,13 @@ function buildDetailsHtml(state: RenderState): string {
       ? `<div class="section"><h4 class="section-title">Tags</h4><div class="tags">${pkg.tags.map((t) => `<span class="tag">${esc(t.toUpperCase())}</span>`).join('')}</div></div>`
       : '';
 
+  // The picker shows the installed version, else the one Install sends: never
+  // simply the newest listed, which is often a prerelease.
+  const shownVersion = pkg.installedVersion ?? pkg.version;
   const versionOptions = versions
     .map(
       (v) =>
-        `<option value="${escAttr(v)}" ${v === pkg.installedVersion ? 'selected' : ''}>${esc(v)}</option>`,
+        `<option value="${escAttr(v)}" ${v === shownVersion ? 'selected' : ''}>${esc(v)}</option>`,
     )
     .join('');
 
