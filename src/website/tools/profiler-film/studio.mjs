@@ -1,7 +1,8 @@
-// Implements [WEB-DESIGN-MEDIA]. The set every profiler film is shot on: the
-// Storefront demo staged and built at a neutral temp path, the isolated VS Code's
-// Processes view and editor moves, and the real-time screencast recorder.
-// capture.mjs (the profiler film) and leak.mjs (the leak walkthrough) both shoot here.
+// Implements [WEB-DESIGN-MEDIA]. The set every profiler film is shot on: a demo
+// app staged and built at a neutral temp path, the isolated VS Code's Processes
+// view and editor moves, and the real-time screencast recorder. capture.mjs (the
+// profiler film), leak.mjs (the C# leak walkthrough) and fsharp.mjs (the F#
+// walkthrough) all shoot here.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,55 +20,64 @@ export const DASHBOARD = 'SharpLsp Memory Dashboard';
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Build the staged Storefront; a failed build stops the shoot. */
-export function buildStorefront(workspace) {
+/**
+ * The demo apps the films are shot on: a folder here holding one project. The
+ * C# Storefront and its F# twin check out orders forever, with real hot paths
+ * and a cache that never evicts.
+ */
+export const STOREFRONT = { folder: 'storefront', project: 'Storefront' };
+export const FS_STOREFRONT = { folder: 'fs-storefront', project: 'FsStorefront' };
+
+/** Build the staged demo; a failed build stops the shoot. */
+export function buildDemo(workspace) {
   const build = spawnSync('dotnet', ['build', '-c', 'Debug', '--nologo', '-v', 'q'], {
     cwd: workspace,
     encoding: 'utf8',
   });
-  if (build.status !== 0) throw new Error(`Storefront build failed: ${build.stdout}`);
+  if (build.status !== 0) throw new Error(`${path.basename(workspace)} build failed: ${build.stdout}`);
 }
 
 /**
- * Copy the demo to a neutral temp path and build it there, so no home-directory
+ * Copy `demo` to a neutral temp path and build it there, so no home-directory
  * path (the user's name) can reach a frame name or tooltip on camera.
  */
-export function stageStorefront() {
+export function stageDemo(demo) {
   // The real path: macOS's tmpdir is a symlink the .NET runtime resolves, and
   // heat-map decorations only land when both sides spell the file the same way.
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'film-'));
-  const workspace = path.join(root, 'Storefront');
-  fs.cpSync(path.join(here, 'storefront'), workspace, {
+  const workspace = path.join(root, demo.project);
+  fs.cpSync(path.join(here, demo.folder), workspace, {
     recursive: true,
     filter: (source) => !['bin', 'obj', '.sharplsp'].includes(path.basename(source)),
   });
-  buildStorefront(workspace);
+  buildDemo(workspace);
   return { root, workspace };
 }
 
-/** Start Storefront by absolute path (discovery needs it) and wait for its banner. */
-async function startStorefront(workspace) {
-  const app = spawn(path.join(workspace, 'bin/Debug/net10.0/Storefront'), [], {
+/** Start the demo by absolute path (discovery needs it) and wait for its banner. */
+async function startDemo(workspace) {
+  const project = path.basename(workspace);
+  const app = spawn(path.join(workspace, `bin/Debug/net10.0/${project}`), [], {
     cwd: workspace,
     stdio: ['ignore', 'pipe', 'ignore'],
   });
   await new Promise((resolve, reject) => {
     app.stdout.once('data', resolve);
-    app.once('exit', (code) => reject(new Error(`Storefront exited with ${code}`)));
+    app.once('exit', (code) => reject(new Error(`${project} exited with ${code}`)));
   });
   return app;
 }
 
-/** The live Storefront's PID: its row, never a stale one from a restarted run. */
-let storefrontPid = 0;
+/** The live demo's PID: its row, never a stale one from a restarted run. */
+let demoPid = 0;
 
-/** The demo app, restartable so a memory act starts from a fresh, small heap. */
-export function storefront(workspace) {
+/** The staged demo app, restartable so a memory act starts from a fresh, small heap. */
+export function demoApp(workspace) {
   let app;
   return {
     start: async () => {
-      app = await startStorefront(workspace);
-      storefrontPid = app.pid;
+      app = await startDemo(workspace);
+      demoPid = app.pid;
     },
     stop: () => app?.kill(),
   };
@@ -113,8 +123,8 @@ export async function record({ cdp, cues, frames, clips }, name, act) {
 
 const processesHeader = (page) => page.locator('.pane-header', { hasText: 'Processes' });
 
-export const storefrontRow = (page) =>
-  page.getByRole('treeitem').filter({ hasText: `Storefront — StorefrontPID ${storefrontPid}` }).first();
+export const demoRow = (page) =>
+  page.getByRole('treeitem').filter({ hasText: new RegExp(`PID ${demoPid}(?!\\d)`) }).first();
 
 export async function headerButton(page, name) {
   await processesHeader(page).hover();
@@ -122,19 +132,19 @@ export async function headerButton(page, name) {
 }
 
 export async function rowButton(page, name) {
-  await storefrontRow(page).hover();
+  await demoRow(page).hover();
   await sleep(250);
-  return storefrontRow(page).getByRole('button', { name: new RegExp(`^${name}`) });
+  return demoRow(page).getByRole('button', { name: new RegExp(`^${name}`) });
 }
 
-/** Wait until the Processes view lists the live Storefront row. */
-export async function waitForStorefrontRow(page) {
+/** Wait until the Processes view lists the live demo's row. */
+export async function waitForDemoRow(page) {
   for (let attempt = 0; attempt < 30; attempt++) {
-    if (await storefrontRow(page).isVisible().catch(() => false)) return;
+    if (await demoRow(page).isVisible().catch(() => false)) return;
     await (await headerButton(page, 'Refresh Processes')).click();
     await sleep(1000);
   }
-  throw new Error('Storefront never appeared in the Processes view');
+  throw new Error(`PID ${demoPid} never appeared in the Processes view`);
 }
 
 /** A clean frame: no hover (Do Not Disturb keeps toasts off screen). */
@@ -170,7 +180,7 @@ export async function scrollDashboard(page, pixels) {
 }
 
 /**
- * Start memory tracking on the Storefront row and fold the side bar once the
+ * Start memory tracking on the demo's row and fold the side bar once the
  * dashboard opens. `click(locator, label)` is the act's own way of clicking.
  */
 export async function trackMemory(page, click) {
@@ -186,7 +196,31 @@ export async function awaitDashboard(page) {
   await page.mouse.move(PARK.x, PARK.y);
 }
 
+/**
+ * Toggle `title`'s editor group maximised by double-clicking its tab — no
+ * palette, which a refreshing webview would close by stealing focus.
+ */
+export async function toggleMaximised(page, title) {
+  await page.locator('.tab', { hasText: title }).first().dblclick();
+  await sleep(1200);
+}
+
 export async function toggleSideBar(page) {
   await runCommand(page, 'View: Toggle Primary Side Bar Visibility');
   await sleep(800);
+}
+
+/**
+ * After a CPU stop: `<prefix>-results`, the results panel maximised, and
+ * `<prefix>-heatmap`, `file` maximised with its heat bars and no side bar.
+ */
+export async function cpuStills(page, dir, file, prefix) {
+  await toggleMaximised(page, 'SharpLsp Profiler');
+  await still(page, dir, `${prefix}-results`);
+  await toggleMaximised(page, 'SharpLsp Profiler');
+  await toggleMaximised(page, file);
+  await toggleSideBar(page);
+  await still(page, dir, `${prefix}-heatmap`);
+  await toggleSideBar(page);
+  await toggleMaximised(page, file);
 }

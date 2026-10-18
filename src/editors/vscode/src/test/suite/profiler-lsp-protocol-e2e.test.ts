@@ -90,6 +90,35 @@ async function rawError(name: string, args: unknown[]): Promise<{ code: number; 
   assert.fail(`${name} with ${JSON.stringify(args)} should have failed`);
 }
 
+/** A refusal the registry defines, or a success: never anything else. */
+const REGISTRY_CODES: ReadonlySet<number> = new Set([
+  CODE.OTHER,
+  CODE.PROCESS_NOT_FOUND,
+  CODE.UNSUPPORTED_RUNTIME,
+  -32_003,
+  CODE.ALREADY_PROFILING,
+  -32_005,
+  -32_006,
+  CODE.INVALID_PARAMS,
+]);
+
+/** The outcome of one call: it succeeded, or it refused with a registry code. */
+async function outcomeOf(name: string, args: unknown[]): Promise<string> {
+  try {
+    await raw(name, args);
+    return 'ok';
+  } catch (error: unknown) {
+    const failure = error as { code?: unknown; message?: unknown };
+    const code = typeof failure.code === 'number' ? failure.code : 0;
+    assert.ok(
+      REGISTRY_CODES.has(code),
+      `[PROF-ERRORS] ${name} refuses with a registry code, not ${code}: ${String(failure.message)}`,
+    );
+    assert.ok(String(failure.message ?? '').length > 0, `${name} explains its refusal`);
+    return 'refused';
+  }
+}
+
 /** A running process no profiler runtime recognises: a plain `sleep`. */
 function sleeper(): ChildProcess {
   const child = spawn('sleep', ['240'], { stdio: 'ignore' });
@@ -149,6 +178,19 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
     if (typeof profiler === 'object' && profiler !== null) {
       assert.ok(Object.keys(profiler).length > 0, 'the profiler capabilities are not empty');
     }
+
+    // ── Every advertised id is a well-formed `<prefix>.lspProfiler.<area>.<action>`.
+    for (const commandId of COMMANDS) {
+      assert.match(
+        commandId,
+        /^sharplsp\.lspProfiler\.[A-Za-z]+\.[A-Za-z]+$/,
+        `the id composes from prefix, area and action: ${commandId}`,
+      );
+      assert.ok(!/\s/.test(commandId), `no whitespace in ${commandId}`);
+      const prefix = commandId.split('.').slice(0, 2).join('.');
+      assert.equal(prefix, 'sharplsp.lspProfiler', `one prefix for every operation: ${prefix}`);
+    }
+    assert.equal(new Set(COMMANDS).size, COMMANDS.length, 'the registry names no operation twice');
 
     // The profiler adds capabilities; it never replaces the language server's own.
     assert.ok(capabilities.textDocumentSync !== undefined, 'text sync survives');
@@ -213,6 +255,46 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
     );
   });
 
+  test('all eighteen operations answer a malformed call without wedging the loop, and none of them leaves a session behind', async function () {
+    this.timeout(STOP_MS * 4);
+    for (const commandId of COMMANDS) {
+      // ── [PROF-ERRORS] refuse-or-succeed, never an unclassified failure.
+      const outcome = await outcomeOf(commandId, [{}]);
+      assert.ok(outcome === 'ok' || outcome === 'refused', `${commandId} answered: ${outcome}`);
+      if (outcome === 'refused') {
+        const again = await outcomeOf(commandId, [{}]);
+        assert.equal(again, 'refused', `${commandId} refuses the same malformed call twice`);
+      }
+      // ── [PROF-HOST-ROUTING] the loop still serves the next request.
+      const sessions = await execute<ProfileSessionList>('cpu.list', {});
+      assert.ok(Array.isArray(sessions.sessions), `the loop answered after ${commandId}`);
+      // ── [PROF-CPU-START] a refused call leaves nothing running.
+      assert.deepEqual(sessions.sessions, [], `${commandId} created no CPU session`);
+    }
+    // ── The same sweep with no argument at all: still classified, still no session.
+    for (const commandId of COMMANDS) {
+      await outcomeOf(commandId, []);
+      assert.deepEqual(
+        (await execute<ProfileSessionList>('cpu.list', {})).sessions,
+        [],
+        `${commandId} with zero arguments created no session`,
+      );
+    }
+    // ── The process table still reads after the whole sweep.
+    const processes = await execute<ProcessList>('processes', { workspace_roots: [] });
+    assert.ok(processes.processes.length > 0, '[PROF-PROCESSES] discovery still works');
+    for (const entry of processes.processes) {
+      assert.ok(entry.pid > 0, 'a discovered process has a PID');
+      assert.ok(entry.name.length > 0, 'a discovered process has a name');
+      assert.ok(typeof entry.attachable === 'boolean', 'attachable is a boolean');
+      assert.ok(entry.cpu_percent >= 0, 'CPU is never negative');
+      assert.ok(entry.memory_bytes >= 0, 'memory is never negative');
+      if (!entry.attachable) {
+        assert.ok((entry.unattachable_reason ?? '').length > 0, 'a refusal explains itself');
+      }
+    }
+  });
+
   test('the error taxonomy: PROCESS_NOT_FOUND and UNSUPPORTED_RUNTIME, kill can never reach an unprofilable process, and processes sorts attachable first with a reason on every refusal', async function () {
     this.timeout(STOP_MS * 3);
     const { target } = live;
@@ -231,14 +313,16 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
       assert.equal(missingStart.code, CODE.PROCESS_NOT_FOUND, 'the same code for start');
 
       // ── [PROF-PROCESSES-KILL] kill never reaches a process no runtime recognises.
-      const decoyKill = await executeError('kill', { pid: decoy.pid as number });
+      const decoyPid = decoy.pid;
+      assert.ok(decoyPid !== undefined, 'the decoy has a pid');
+      const decoyKill = await executeError('kill', { pid: decoyPid });
       assert.ok(decoyKill, 'killing an unprofilable process fails');
       assert.equal(
         decoyKill.code,
         CODE.UNSUPPORTED_RUNTIME,
         `[PROF-PROCESSES-KILL] ${JSON.stringify(decoyKill)}`,
       );
-      assert.equal(isAlive(decoy.pid as number), true, 'the unprofilable process is still alive');
+      assert.equal(isAlive(decoyPid), true, 'the unprofilable process is still alive');
 
       // ── [PROF-ERRORS] the editor itself is not a profiler target either.
       const selfStart = await executeError('cpu.start', { pid: process.pid });
@@ -288,7 +372,7 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
         assert.ok(entry.cpu_percent >= 0, 'an attachable row has a CPU reading');
       }
       assert.ok(
-        !processes.some((entry) => entry.pid === (decoy.pid as number) && entry.attachable),
+        !processes.some((entry) => entry.pid === decoyPid && entry.attachable),
         'the decoy is never offered as attachable',
       );
 

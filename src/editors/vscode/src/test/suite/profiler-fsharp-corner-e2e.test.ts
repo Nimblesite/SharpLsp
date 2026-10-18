@@ -47,8 +47,16 @@ import {
   waitFor,
 } from './profiler-kit';
 import {
+  assertEveryShape,
+  assertPaletteDiscipline,
+  assertSitesCoherent,
+  assertStoreCoherent,
+  assertTimelineCoherent,
+} from './profiler-fsharp-soak-kit';
+import {
   assertAnchored,
   command,
+  SHAPES as SHAPE_TABLE,
   count,
   endProfiling,
   isFile,
@@ -274,6 +282,46 @@ suite('F# profiler corner cases — FsOrderLedger, wire first', () => {
       '[PROF-INVARIANTS] largest types first',
     );
 
+    for (const shape of Object.values(SHAPE_TABLE)) {
+      const listedType = (await step('memory.objectsByType', {
+        memory_session_id: id,
+        type_name: shape.type,
+      })) as Extract<MemoryOutcome, { kind: 'Objects' }>;
+      assert.equal(listedType.kind, 'Objects', `objectsByType(${shape.type}) yields Objects`);
+      assert.equal(
+        listedType.objects.type_name,
+        shape.type,
+        `[PROF-MEMORY-STEP] echoes ${shape.type}`,
+      );
+      assert.ok(
+        listedType.objects.objects.every((object) => object.type_name === shape.type),
+        `only ${shape.type} samples`,
+      );
+      assert.ok(listedType.objects.total_bytes >= 0, `${shape.type} bytes are never negative`);
+      assert.ok(
+        listedType.objects.objects.length <= listedType.objects.total_count,
+        `${shape.type} samples are a subset`,
+      );
+      assert.ok(
+        listedType.objects.type_summary.length > 0,
+        `${shape.type} still summarises the heap`,
+      );
+      const summary = listedType.objects.type_summary.map((stat) => stat.count);
+      assert.deepEqual(
+        summary,
+        [...summary].sort((a, b) => b - a),
+        'the summary is ranked',
+      );
+      assert.ok(
+        listedType.objects.type_summary.every((stat) => stat.count >= 0 && stat.size_bytes >= 0),
+        'summary numbers are non-negative',
+      );
+      assert.ok(
+        listedType.objects.type_summary.every((stat) => stat.type_name.length > 0),
+        'every summary row names a runtime type',
+      );
+    }
+
     // ── [PROF-DOTNET-HEAP-GRAPH] references: a graph with locations, edges and cycles.
     const graph = (await step('memory.references', {
       memory_session_id: id,
@@ -425,6 +473,11 @@ suite('F# profiler corner cases — FsOrderLedger through the dashboard', () => 
     }
     assert.equal(memoryDashboardState()?.title, 'SharpLsp Memory Dashboard');
     assertAnchored(first, SHAPES.quote, 250);
+    assertSitesCoherent(first);
+    assertTimelineCoherent(first);
+    assertPaletteDiscipline();
+    assertStoreCoherent();
+    assertEveryShape(first, { [SHAPES.quote.type]: 250 });
     for (const site of first.topAllocations) {
       assert.ok((site.typeName ?? '').length > 0, 'every top site names its runtime type');
       assert.ok(

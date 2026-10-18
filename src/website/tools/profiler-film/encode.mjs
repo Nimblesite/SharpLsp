@@ -1,12 +1,14 @@
 // Implements [WEB-DESIGN-MEDIA]. How every profiler video reaches the site: one
 // H.264 and one VP9 setting, a WebP poster per video, WebP stills.
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const out = path.join(here, 'out');
 export const videos = path.resolve(here, '../../src/assets/videos');
+export const shots = path.resolve(here, '../../src/assets/screenshots/profiler');
 
 /** H.264 for reach: every site video has an MP4. */
 export const H264 = ['-c:v', 'libx264', '-preset', 'veryslow', '-crf', '26', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an'];
@@ -28,4 +30,12 @@ export function poster(video, at, name) {
   const frame = path.join(out, `${name}-poster.png`);
   ffmpeg(['-ss', String(at), '-i', video, '-frames:v', '1', frame], `${name} poster`);
   webp(frame, path.join(videos, `${name}-poster.webp`), 1920);
+}
+
+/** Every PNG still under `dir`, as the site's 2400px WebP of the same name. */
+export function publishStills(dir) {
+  fs.mkdirSync(shots, { recursive: true });
+  for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.png'))) {
+    webp(path.join(dir, file), path.join(shots, file.replace(/\.png$/, '.webp')), 2400);
+  }
 }

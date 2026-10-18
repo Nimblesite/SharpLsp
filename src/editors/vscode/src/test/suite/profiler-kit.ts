@@ -9,11 +9,19 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
+  memoryStatusText,
   profilerStatusText,
   type ProcessesProvider,
   type ProfilerStore,
 } from '@nimblesite/lsp-profiler-ui';
-import type { MemoryStep, RefGraph } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
+import { activeMemorySession } from '@nimblesite/lsp-profiler-ui/out/src/memory-profiler';
+import type {
+  MemoryStartResult,
+  MemoryStep,
+  ProfileReport,
+  RefGraph,
+  StartProfileResult,
+} from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import type { SuspectedLeak as DashboardLeak } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import {
   closeAllEditors,
@@ -462,5 +470,66 @@ export async function trackMemory(pid: number): Promise<void> {
     (memory) => memory === 'active',
     30_000,
     'memory tracking active',
+  );
+}
+
+/** Start tracking `pid` through the real command and return the live session id. */
+export async function trackedMemorySession(pid: number): Promise<string> {
+  await trackMemory(pid);
+  const id = activeMemorySession();
+  assert.ok(id !== undefined, 'tracking must hold a live memory session');
+  return id;
+}
+
+/**
+ * Start a memory session on `pid` over the wire and return the handle every
+ * memory step takes.
+ */
+export async function startMemorySession(
+  pid: number,
+): Promise<{ memory_session_id: string }> {
+  const started = await execute<MemoryStartResult>('memory.start', { pid });
+  assert.ok(started.memory_session_id.length > 0, 'a memory session must be minted');
+  return { memory_session_id: started.memory_session_id };
+}
+
+/**
+ * Assert one wire call is refused with exactly `code`, and return the refusal
+ * so a caller can keep asserting over the message.
+ */
+export async function assertWireError(
+  name: string,
+  params: Record<string, unknown>,
+  code: number,
+  what: string,
+): Promise<{ code: number; message: string }> {
+  const error = await executeError(name, params);
+  assert.notEqual(error, undefined, `${what}: the call must be refused, not answered`);
+  assert.equal(error?.code, code, `${what}: ${error?.message ?? 'no error'}`);
+  return error!;
+}
+
+/**
+ * Attach the CPU sampler to `pid`, let it sample for `windowMs`, stop it, and
+ * return both the start reply and the report — the shape every "did the
+ * sampler really sample" assertion starts from.
+ */
+export async function sampleCpu(
+  pid: number,
+  windowMs: number,
+  extra: Record<string, unknown> = {},
+): Promise<{ started: StartProfileResult; report: ProfileReport }> {
+  const started = await execute<StartProfileResult>('cpu.start', { pid, ...extra });
+  await new Promise((resolve) => setTimeout(resolve, windowMs));
+  const report = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
+  return { started, report };
+}
+
+/** Assert the status bar names the live tracking session, as it must while one runs. */
+export function assertTrackingInStatusBar(): void {
+  const status = memoryStatusText();
+  assert.ok(
+    status?.includes('tracking') === true,
+    `status bar follows the session: ${String(status)}`,
   );
 }

@@ -10,10 +10,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
-import { H264, VP9, ffmpeg, out, poster, videos, webp } from './encode.mjs';
+import { H264, VP9, ffmpeg, out, poster, publishStills, videos } from './encode.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const shots = path.resolve(here, '../../src/assets/screenshots/profiler');
 const FPS = 30;
 const POSTER_AT = 25.5;
 
@@ -93,21 +92,15 @@ function publishRecordings() {
   poster(path.join(videos, 'profiler-memory-timelapse.mp4'), 14, 'profiler-memory-timelapse');
 }
 
-function publishStills() {
-  for (const file of fs.readdirSync(path.join(out, 'stills')).filter((name) => name.endsWith('.png'))) {
-    webp(path.join(out, 'stills', file), path.join(shots, file.replace(/\.png$/, '.webp')), 2400);
-  }
-}
-
 async function main() {
   const flag = process.argv.indexOf('--preview');
   if (flag > 0) return preview(process.argv[flag + 1].split(',').map(Number));
-  for (const dir of [videos, shots]) fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(videos, { recursive: true });
   const master = path.join(out, 'film-master.mp4');
   const duration = await renderMaster(master);
   publishFilm(master);
   publishRecordings();
-  publishStills();
+  publishStills(path.join(out, 'stills'));
   process.stdout.write(`rendered ${duration.toFixed(1)}s film and the profiler media\n`);
 }
 

@@ -17,11 +17,14 @@ import type { ProcessInfo as WireProcess } from '@nimblesite/lsp-profiler-ui/out
 import { delay } from '@nimblesite/lsp-profiler-ui/out/src/timeouts';
 import type { ProfileResult } from '@nimblesite/lsp-profiler-ui/out/src/profiler-decorations';
 import type {
+  MemoryDashboardSnapshot,
+} from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
+import type {
   MemoryDiffResult,
   MemorySnapshotResult,
   SuspectedLeak,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
-import { rawField } from '@nimblesite/lsp-profiler-ui/out/src/unknown-shape';
+import { numberField, rawField } from '@nimblesite/lsp-profiler-ui/out/src/unknown-shape';
 import * as assert from 'node:assert/strict';
 import { errorMessage } from './profiler-ui-caught-error';
 import { lspClient, profilerStore } from './profiler-kit';
@@ -374,4 +377,101 @@ export function assertHardened(html: string, what: string): void {
     `${what}: the inline script must be nonce-gated`,
   );
   assert.ok(!html.includes('</script><img'), `${what}: untrusted data must not close the <script>`);
+}
+
+// ── Process-row fixtures ([PROF-UI-PROCESSES]) ─────────────────────
+
+const MB = 1024 * 1024;
+
+/**
+ * A debuggable process row; each caller overrides what it exercises. The
+ * one fixture every Processes-panel test builds its table from.
+ */
+export function processFixture(
+  pid: number,
+  overrides: Partial<ProcessInfo> = {},
+): ProcessInfo {
+  return {
+    pid,
+    ppid: 1,
+    name: 'python3.12',
+    interpreterPath: '/usr/bin/python3.12',
+    script: null,
+    runtime: 'python',
+    runtimeVersion: '3.12.1',
+    cpuPercent: 0,
+    memoryBytes: MB,
+    runtimeSecs: 1,
+    user: null,
+    requiresElevation: false,
+    inWorkspace: false,
+    launcher: null,
+    debuggable: true,
+    undebuggableReason: null,
+    ...overrides,
+  };
+}
+
+/** Read the PID a process row carries (the arg passed to inline commands). */
+export function rowPid(item: vscode.TreeItem): number | undefined {
+  // `process` is attached to the row by the provider under test, not by
+  // `vscode.TreeItem`, so it is read back by name rather than asserted on.
+  return numberField(rawField(item, 'process'), 'pid');
+}
+
+/** The row of `pid`, failing the test when the panel dropped it. */
+export function rowByPid(rows: readonly vscode.TreeItem[], pid: number, what: string): vscode.TreeItem {
+  const row = rows.find((item) => rowPid(item) === pid);
+  assert.ok(row !== undefined, `${what}: the PID ${pid} row must exist`);
+  return row!;
+}
+
+// ── Decoration ledgers ─────────────────────────────────────────────
+
+/** What one applied decoration must show: its line, a colour, text it carries. */
+export interface PaintedExpectation {
+  readonly line?: number;
+  readonly color?: string;
+  /** A substring the decoration's after-line text must include. */
+  readonly includes?: string;
+}
+
+/** Assert a decoration was applied and shows exactly what `expect` names. */
+export function assertPainted(
+  painted:
+    | { line: number; color: string; contentText: string }
+    | undefined,
+  expect: PaintedExpectation,
+  what: string,
+): void {
+  assert.ok(painted !== undefined, `${what}: a decoration must be applied`);
+  if (expect.line !== undefined) {
+    assert.equal(painted.line, expect.line, `${what}: it lands on its line`);
+  }
+  if (expect.color !== undefined) {
+    assert.equal(painted.color, expect.color, `${what}: it wears its colour`);
+  }
+  if (expect.includes !== undefined) {
+    assert.ok(painted.contentText.includes(expect.includes), painted.contentText);
+  }
+}
+
+// ── Dashboard snapshots ────────────────────────────────────────────
+
+/** A minimal dashboard snapshot (fresh session: one capture, no diff yet). */
+export function dashboardSnapshot(
+  overrides: Partial<MemoryDashboardSnapshot> = {},
+): MemoryDashboardSnapshot {
+  return {
+    memorySessionId: 'mem-1',
+    snapshotId: 'snap-1',
+    currentMemory: 1_048_576,
+    peakMemory: 2_097_152,
+    gcObjects: 1200,
+    gcCounts: [700, 12, 3],
+    topAllocations: [{ file: '/app/Program.cs', line: 10, size: 4096, count: 8 }],
+    timeline: [],
+    heapProfilePath: '',
+    ...overrides,
+  };
 }
