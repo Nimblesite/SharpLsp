@@ -119,11 +119,14 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
         );
     }
 
-    [Fact]
-    public async Task A_single_target_project_has_no_framework_to_choose()
+    /// <summary>A name ending in <c>(tfm)</c> is the project's own name, not a framework context.</summary>
+    [Theory]
+    [InlineData("Single")]
+    [InlineData("Utility(net48)")]
+    public async Task A_single_target_project_has_no_framework_to_choose(string name)
     {
-        var single = WriteProject("Single", "<TargetFramework>net10.0</TargetFramework>");
-        var source = NativePaths.Join(_root, "Single", "Single.cs");
+        var single = WriteProject(name, "<TargetFramework>net10.0</TargetFramework>");
+        var source = NativePaths.Join(_root, name, "Single.cs");
         await File.WriteAllTextAsync(source, "namespace Fx;\n\npublic static class Single { }\n");
         Restore(single);
         using var manager = await OpenAsync(single);
@@ -131,6 +134,26 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
         Assert.Null(context.Active);
         Assert.Empty(context.Available);
         Assert.Equal(single, context.Project);
+        var refused = await manager.SetTargetFrameworkAsync(source, "net48", default);
+        Assert.True(refused.IsError, "a single-target project has no framework to switch to");
+    }
+
+    [Fact]
+    public async Task A_multi_targeted_project_named_like_a_framework_answers_its_declared_frameworks()
+    {
+        var name = "Tool(net10.0)";
+        var tool = WriteProject(name, "<TargetFrameworks>net48;net10.0</TargetFrameworks>");
+        var source = NativePaths.Join(_root, name, "Tool.cs");
+        await File.WriteAllTextAsync(source, "namespace Fx;\n\npublic static class Tool { }\n");
+        Restore(tool);
+        using var manager = await OpenAsync(tool);
+        var context = AssertOk(await manager.GetTargetFrameworksAsync(source, default));
+        Assert.Equal("net48", context.Active);
+        Assert.Equal(Declared, context.Available);
+        Assert.Equal(tool, context.Project);
+        var switched = AssertOk(await manager.SetTargetFrameworkAsync(source, "net10.0", default));
+        Assert.Equal(("net10.0", tool), (switched.Active, switched.Project));
+        Assert.Equal(Declared, switched.Available);
     }
 
     private const string SharedSource = """

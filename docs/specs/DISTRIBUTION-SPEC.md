@@ -1107,6 +1107,10 @@ Invariants:
   distinction the manifest carries is `"linuxOnly": true` or
   `"windowsOnly": true`, which drops a chunk from the other platform's matrix. A
   chunk MUST NOT be declared in CI YAML.
+- **A selection never runs nothing.** The in-host runner fails a run whose
+  `MOCHA_FILES` pattern matches no compiled suite, and, off Windows, one whose
+  pattern names only suites of `windowsOnly` chunks: dropping every one would
+  report a green run of zero tests (`test-runner-selection.test.ts`).
 - **One runner, one shard target.** `make _run-vsix-suite` is the single recipe;
   `CHUNK` selects the slice (empty runs every suite) and `VSIX_SUITE_PREBUILT`
   says the suite is already compiled. Coverage is NOT a knob — the runner always

@@ -22,6 +22,7 @@ public static class Probe
     public static string OnFramework => "framework";
 #else
     public static string OnModern => "modern";
+    public static int Modern() { int unused; return 0; }
 #endif
 }
 "#;
@@ -57,8 +58,16 @@ fn methods(messages: &[Value]) -> Vec<&str> {
         .collect()
 }
 
-/// The project answers from its first framework until switched; a switch announces
-/// itself and asks for exactly the refreshes the client declared; a bad switch fails.
+/// Where `method` first arrived, if it did.
+fn position(messages: &[Value], method: &str) -> Option<usize> {
+    messages
+        .iter()
+        .position(|message| message["method"] == method)
+}
+
+/// The project answers from its first framework until switched; a switch re-publishes
+/// the open document's diagnostics for the new framework, THEN announces itself, THEN
+/// asks for exactly the refreshes the client declared; a bad switch fails.
 #[test]
 fn test_full_stack_target_framework_switch() {
     require_dotnet();
@@ -108,6 +117,7 @@ fn test_full_stack_target_framework_switch() {
         !asked.contains(&"workspace/codeLens/refresh"),
         "not declared: {asked:?}"
     );
+    assert_switch_order(&arrived, &file_uri);
     let after = client.request("sharplsp/targetFramework", document);
     assert_eq!(after["result"]["active"], "net10.0");
 
@@ -127,4 +137,46 @@ fn test_full_stack_target_framework_switch() {
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
+}
+
+/// [NETFX-CONTEXT]'s order: the new framework's diagnostics (net10.0 alone compiles
+/// `Modern`'s unused local), then `sharplsp/targetFrameworkChanged`, then each refresh.
+fn assert_switch_order(arrived: &[Value], file_uri: &str) {
+    let republished = arrived
+        .iter()
+        .position(|message| {
+            message["method"] == "textDocument/publishDiagnostics"
+                && message["params"]["uri"] == json!(file_uri)
+                && message["params"]["diagnostics"]
+                    .as_array()
+                    .is_some_and(|all| all.iter().any(|d| d["code"] == "CS0168"))
+        })
+        .unwrap_or_else(|| panic!("net10.0's diagnostics before the answer: {arrived:?}"));
+    let warning = &arrived[republished]["params"]["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["code"] == "CS0168")
+        .unwrap()["range"]["start"];
+    assert_eq!(
+        (&warning["line"], &warning["character"]),
+        (&json!(8), &json!(37))
+    );
+    let changed = position(arrived, "sharplsp/targetFrameworkChanged").unwrap();
+    assert!(
+        republished < changed,
+        "diagnostics are re-published BEFORE the switch is announced: {:?}",
+        methods(arrived)
+    );
+    for refresh in [
+        "workspace/semanticTokens/refresh",
+        "workspace/inlayHint/refresh",
+    ] {
+        let asked = position(arrived, refresh).unwrap();
+        assert!(
+            changed < asked,
+            "{refresh} follows the announcement: {:?}",
+            methods(arrived)
+        );
+    }
 }
