@@ -318,18 +318,30 @@ export function assertHeatMap(result: ProfileResult, span: Span): void {
   }
 }
 
-/** [PROF-UI-CPU]: the branded results panel lists `identifiers` and links to source. */
-export function assertResultsPanel(result: ProfileResult, identifiers: readonly string[]): void {
-  const panel = flamegraphPanelState();
-  assert.ok(panel, 'the results panel is open');
-  assert.equal(panel.title, 'SharpLsp Profiler');
-  assert.ok(panel.html.includes('<span class="accent">SHARPLSP</span> PROFILER'), 'brand');
+/**
+ * [PROF-UI-WEBVIEW]: an open SharpLsp panel titled `title`, branded `brand`,
+ * naming no other product, behind a nonce-gated script. Returns its HTML.
+ */
+export function assertBrandedPanel(
+  panel: { readonly title: string; readonly html: string } | undefined,
+  title: string,
+  brand: string,
+): string {
+  assert.ok(panel, `the ${title} panel is open`);
+  assert.equal(panel.title, title);
+  assert.ok(panel.html.includes(`<span class="accent">SHARPLSP</span> ${brand}`), 'brand');
   assert.ok(!/basilisk/i.test(panel.html), 'no other product named');
   assert.ok(panel.html.includes('<script nonce="'), 'a nonce-gated script ([PROF-UI-WEBVIEW])');
-  assert.ok(panel.html.includes('navigateToSource'), 'rows navigate to their F# source');
-  assert.ok(panel.html.includes(String(result.totalSamples)), 'the summary shows the samples');
+  return panel.html;
+}
+
+/** [PROF-UI-CPU]: the branded results panel lists `identifiers` and links to source. */
+export function assertResultsPanel(result: ProfileResult, identifiers: readonly string[]): void {
+  const html = assertBrandedPanel(flamegraphPanelState(), 'SharpLsp Profiler', 'PROFILER');
+  assert.ok(html.includes('navigateToSource'), 'rows navigate to their F# source');
+  assert.ok(html.includes(String(result.totalSamples)), 'the summary shows the samples');
   for (const identifier of identifiers) {
-    assert.ok(panel.html.includes(identifier), `the panel lists the F# function ${identifier}`);
+    assert.ok(html.includes(identifier), `the panel lists the F# function ${identifier}`);
   }
 }
 

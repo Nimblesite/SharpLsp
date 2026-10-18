@@ -47,6 +47,7 @@ import {
 } from './profiler-kit';
 import {
   assertAnchored,
+  assertBrandedPanel,
   assertHeatMap,
   assertIdleRow,
   awaitLiveProgress,
@@ -123,15 +124,10 @@ function assertZoo(snapshot: MemoryDashboardSnapshot, counts: Counts): void {
 
 /** [PROF-UI-MEMORY]: the dashboard's own numbers are coherent and branded. */
 function assertDashboard(snapshot: MemoryDashboardSnapshot, types: readonly string[]): void {
-  const dashboard = memoryDashboardState();
-  assert.ok(dashboard, 'the dashboard is open');
-  assert.equal(dashboard.title, 'SharpLsp Memory Dashboard');
-  assert.ok(dashboard.html.includes('<span class="accent">SHARPLSP</span> MEMORY'), 'brand');
-  assert.ok(!/basilisk/i.test(dashboard.html), 'no other product named');
-  assert.ok(dashboard.html.includes('<script nonce="'), 'a nonce-gated script');
-  assert.ok(dashboard.html.includes('Generation sizes'), 'heap regions are labelled as bytes');
+  const html = assertBrandedPanel(memoryDashboardState(), 'SharpLsp Memory Dashboard', 'MEMORY');
+  assert.ok(html.includes('Generation sizes'), 'heap regions are labelled as bytes');
   assert.deepEqual(snapshot.gcCounts, [], 'generation bytes are never shown as counts');
-  for (const type of types) assert.ok(dashboard.html.includes(type), `the dashboard names ${type}`);
+  for (const type of types) assert.ok(html.includes(type), `the dashboard names ${type}`);
   assert.ok(snapshot.peakMemory >= snapshot.currentMemory, 'peak is never below current');
   const listed = snapshot.topAllocations.reduce((sum, site) => sum + site.size, 0);
   assert.ok(listed <= snapshot.currentMemory, `top sites (${listed}) fit in the live heap`);
