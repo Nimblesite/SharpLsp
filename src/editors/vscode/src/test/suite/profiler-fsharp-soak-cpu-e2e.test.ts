@@ -19,6 +19,10 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
+  formatSampleCount,
+  formatProfileDuration,
+} from '@nimblesite/lsp-profiler-ui/out/src/profiler-format';
+import {
   appliedMemoryDecorations,
   appliedProfileDecorations,
   flamegraphPanelState,
@@ -130,7 +134,16 @@ suite('F# soak — FsPricingEngine through five workloads in one long CPU sessio
       await assertCpuLive(target.pid);
       const top = await awaitLiveProgress();
       assert.ok(top.length > 0, '[PROF-CPU-PROGRESS] a live top function while profiling');
-      assert.ok(profilerStatusText()?.includes('Profiling'), 'the status bar names the session');
+      const state = profilerStore().profiler.value;
+      assert.ok(
+        profilerStatusText()?.includes(`${formatSampleCount(state.sampleCount)} samples`),
+        '[PROF-CPU-PROGRESS] the live status shows this session’s sample count',
+      );
+      assert.ok(
+        profilerStatusText()?.includes(formatProfileDuration(state.durationSecs)),
+        '[PROF-CPU-PROGRESS] the live status shows this session’s elapsed time',
+      );
+      assert.equal(state.cpuSessionId, sessionId, 'the counters belong to the clicked F# process');
       assertStoreCoherent();
       assert.deepEqual(keys(), {
         profiling: true,
@@ -351,6 +364,7 @@ suite('F# soak — FsOrderLedger with CPU and memory tracking at once', () => {
       `the burn loop is hot: ${liveResult.hotFunctions.map((f) => f.name).join(', ')}`,
     );
     assertHeatMap(liveResult, PRICE_ALL);
+    await vscode.commands.executeCommand(uiCommand('profileShowResults'));
     assertResultsPanel(liveResult, ['priceAll']);
     assert.ok(liveResult.totalSamples > 0, 'samples were recorded');
     assert.equal(profilerStore().profiler.value.memory, 'active', 'memory kept tracking');

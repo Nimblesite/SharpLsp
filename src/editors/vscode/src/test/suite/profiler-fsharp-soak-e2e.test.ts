@@ -1,30 +1,15 @@
-// Tests for [PROFILER-SHARED-LIBRARY-VSCODE] on F#. See docs/specs/PROFILER-SPEC.md#PROFILER-SHARED-LIBRARY-VSCODE.
-//
-// Memory soak suites: one long session per test, many user interactions, and every assertion
-// driven from a spec section quoted at the interaction that proves it. The confidence ladder is
-// the centrepiece:
-//
-//   [PROF-MEMORY-CONFIDENCE]  "One growth → Low", "Two consecutive growths, or one growth over
-//                             10 MiB → Medium", "Three consecutive growths → High", "A
-//                             non-growing diff resets that site's streak".
-//   [PROF-MEMORY-COMPARE]     sites match by location; growth in bytes and count; net = grown − freed.
-//   [PROF-MEMORY-OUTCOME]     a snapshot becomes the baseline and the timeline point.
-//   [PROF-MEMORY-TIMELINE]    one point per snapshot; peak never falls.
-//   [PROF-MEMORY-START]       Direct mode; the first step is a baseline snapshot.
-//   [PROF-MEMORY-SESSION]     CPU and memory sessions are independent.
-//   [PROF-UI-MEMORY]          the dashboard's numbers, rows and confidences.
-//   [PROF-UI-PROCESSES]       the row of a live F# program, with Track Memory on it.
-//   [PROF-UI-CAPABILITIES]    an assembly entry is never opened as source.
-//   [PROF-UI-HEATMAP]         the memory track clears on stop; CPU never paints a memory colour.
-//   [PROF-DOTNET-SOURCE]      F# records, union cases and closures anchor where they are built.
-//   [PROF-DOTNET-HEAP-GRAPH]  a closed generic FSharpMap record is one site.
+// Tests for [PROFILER-SHARED-LIBRARY-VSCODE] on real F# processes.
+// Contracts: docs/specs/PROFILER-SPEC.md and lspkit/docs/specs/LSP-PROFILER-SPEC.md.
+// Each interaction cites the confidence, retention, source and UI requirements it enforces.
 import * as assert from 'node:assert/strict';
 import {
   appliedMemoryDecorations,
   memoryStatusText,
   processesViewState,
   profilerStatusText,
+  refGraphState,
 } from '@nimblesite/lsp-profiler-ui';
+import { walkReferences } from '@nimblesite/lsp-profiler-ui/out/src/memory-ref-picker';
 import type { MemoryStep } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
   completed,
@@ -209,6 +194,12 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
     }
 
     // ── Interaction 7: [PROF-MEMORY-CONFIDENCE] "one growth over 10 MiB → Medium", single growth.
+    const flat = await compareMemory(wire);
+    assert.equal(
+      wireLeak(flat.leaks, 'System.Byte[]'),
+      undefined,
+      'a flat comparison resets the earlier Order payload array growth streak',
+    );
     const bloom = await command(target, 'blob 12');
     assert.equal(count(bloom, 'blobs'), 1, 'one retained 12 MiB array');
     assertConfidence((await compareMemory(wire)).leaks, 'System.Byte[]', 'Medium', []);
@@ -299,7 +290,13 @@ suite('F# soak — FsOrderLedger: mailbox, cache and immutable history retention
   test('a paused mailbox and a memoize cache in one session: the queue is a leak while paused and gone after resume, the cache never evicts, and the undo history is a closed generic record over FSharpMap', async function () {
     this.timeout(STOP_MS * 8);
     const { target } = live;
-    await showSources(LEDGER, ['Audit.fs', 'Quotes.fs', 'History.fs']);
+    await showSources(LEDGER, [
+      'Audit.fs',
+      'Quotes.fs',
+      'History.fs',
+      'Ledger.fs',
+      'Rejections.fs',
+    ]);
     await trackMemory(target.pid);
 
     // ── Interaction 1: pause the auditor, then grow it. [PROF-MEMORY-OUTCOME] mailbox leak.
@@ -338,18 +335,42 @@ suite('F# soak — FsOrderLedger: mailbox, cache and immutable history retention
     const historic = await command(target, 'history');
     assert.equal(count(historic, 'snapshots'), 2, 'two versioned snapshots recorded');
     const third = await uiSnapshot(second);
-    const versioned = third.topAllocations.filter((site) => site.typeName === VERSIONED);
-    assert.equal(
-      versioned.length,
-      1,
-      `[PROF-DOTNET-HEAP-GRAPH] one site for the closed generic: ${versioned.map((s) => s.typeName).join(', ')}`,
+    // A two-object type need not rank among the top 50 snapshot sites. Inspect it explicitly.
+    const versioned = completed(
+      await execute<MemoryStep>('memory.objectsByType', {
+        memory_session_id: third.memorySessionId,
+        type_name: VERSIONED,
+        limit: 2,
+      }),
     );
-    for (const site of versioned) {
-      assert.ok(isFile(site.file, 'History.fs'), `history anchors in History.fs: ${site.file}`);
-      assert.equal(site.count, 2, 'both snapshots are live');
-      assert.ok(site.size > 0, 'the snapshot map costs bytes');
-    }
-    assertDashboard(third, 3, [VERSIONED]);
+    assert.ok(versioned.outcome.kind === 'Objects', 'the generic type has an Objects result');
+    const objects = versioned.outcome.objects;
+    assert.equal(objects.total_count, 2, 'both closed generic history records are live');
+    assert.equal(objects.objects.length, 2, 'both records are returned at limit two');
+    assert.ok(
+      objects.objects.every((item) => item.type_name === VERSIONED),
+      '[PROF-DOTNET-HEAP-GRAPH] each object carries the full closed FSharpMap type',
+    );
+    const site = objects.type_summary.find((entry) => entry.type_name === VERSIONED);
+    assert.ok(site, '[PROF-DOTNET-MEMORY] the requested generic type has its own summary row');
+    assert.equal(site.count, 2, 'the summary counts both live records');
+    assert.equal(site.size_bytes, objects.total_bytes, 'the summary agrees with the object total');
+    assert.ok(site.size_bytes > 0, 'the history records cost live bytes');
+    assertDashboard(third, 3, [SHAPES.order.type, SHAPES.quote.type]);
+    // Grow the undo history until the generic record is a ranked site as well.
+    for (let index = 2; index < 400; index += 1) await command(target, 'history');
+    const history = await uiSnapshot(third);
+    const anchored = history.topAllocations.find((entry) => entry.typeName === VERSIONED);
+    assert.ok(anchored, 'the grown F# history is a ranked allocation site');
+    assertAnchored(history, { type: VERSIONED, file: 'History.fs', line: 14 }, 400);
+    assert.ok(anchored.size > site.size_bytes, 'growing history increases its live bytes');
+    assertDashboard(history, 4, [VERSIONED]);
+    await walkReferences(profilerStore(), VERSIONED);
+    assert.equal(
+      refGraphState()?.title,
+      `Retention Graph — ${VERSIONED}`,
+      '[PROF-UI-REFGRAPH] the full F# generic name reaches the real retention panel',
+    );
     assertSitesCoherent(third);
     assertTimelineCoherent(third);
     assertPaletteDiscipline();
@@ -378,7 +399,11 @@ suite('F# soak — FsOrderLedger: mailbox, cache and immutable history retention
       'drained audit entries are gone from the live heap',
     );
     assertAnchored(fourth, SHAPES.quote, 400);
-    assert.equal(fourth.timeline.length, 4, 'one timeline point per snapshot');
+    assert.equal(
+      fourth.timeline.length,
+      5,
+      'one timeline point per snapshot, including history growth',
+    );
     const firstPoint = fourth.timeline[0];
     const latestPoint = fourth.timeline[fourth.timeline.length - 1];
     assert.ok(firstPoint && latestPoint, 'the timeline carries its endpoints');
@@ -421,7 +446,11 @@ suite('F# soak — FsOrderLedger: mailbox, cache and immutable history retention
     assert.equal(count(released, 'audits'), 0, 'the mailbox is still drained');
     const sixth = await uiSnapshot(fifth);
     assertAnchored(sixth, SHAPES.order, 400);
-    assert.equal(count(released, 'snapshots'), 2, 'history still retains the first 400 orders');
+    assert.equal(
+      count(released, 'snapshots'),
+      400,
+      'every history record still retains the first 400 orders',
+    );
     assert.equal(
       handlerSite(sixth).count,
       count(released, 'handlers'),

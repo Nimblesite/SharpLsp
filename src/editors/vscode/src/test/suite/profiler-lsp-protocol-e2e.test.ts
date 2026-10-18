@@ -140,6 +140,12 @@ suite('LSP-level profiler protocol — FsOrderLedger behind the same server', ()
       );
       assert.ok(failure.message.length > 0, `${label} explains itself`);
     }
+    const extra = await rawError(cpuList, [{}, {}]);
+    assert.equal(
+      extra.code,
+      CODE.INVALID_PARAMS,
+      '[PROF-WIRE-METHODS] two valid parameter objects are rejected for their argument count',
+    );
     // A malformed field type is invalid parameters too.
     const wrongType = await rawError('sharplsp.lspProfiler.cpu.start', [{ pid: 'not-a-pid' }]);
     assert.equal(

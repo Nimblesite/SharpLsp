@@ -6,6 +6,7 @@ import type {
   ProfileSessionList,
 } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import { execute, executeError, profilingSuite } from './profiler-kit';
+import { pollUntilResult } from './profiler-ui-helpers';
 import { assertProfileShape } from './profiler-fsharp-soak-kit';
 import {
   command,
@@ -127,8 +128,12 @@ suite('LSP-level F# CPU protocol — FsOrderLedger', () => {
       duration_secs: 2,
     });
     assert.ok(started.session_id.length > 0, 'a session id with a duration');
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
-    const active = (await execute<ProfileSessionList>('cpu.list', {})).sessions;
+    const active = await pollUntilResult({
+      fn: async () => (await execute<ProfileSessionList>('cpu.list', {})).sessions,
+      until: (sessions) => !sessions.some((entry) => entry.session_id === started.session_id),
+      timeoutMs: STOP_MS,
+      description: '[PROF-CPU-SESSIONS] the timed session ends and drains its recorded segments',
+    });
     assert.equal(
       active.some((entry) => entry.session_id === started.session_id),
       false,
@@ -138,7 +143,7 @@ suite('LSP-level F# CPU protocol — FsOrderLedger', () => {
     const kept = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
     assert.equal(kept.session_id, started.session_id, 'the kept report belongs to the session');
     assert.ok(kept.total_samples > 0, 'the timed session sampled the running F# workload');
-    assert.ok(kept.duration_secs >= 2, 'the timed report covers its configured duration');
+    assert.equal(kept.duration_secs, 2, 'the report records exactly the requested two seconds');
     assertProfileShape(kept);
     assert.ok(
       kept.hot_lines.some((line) => within(PRICE_ALL, line.file, line.line)),

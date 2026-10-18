@@ -48,6 +48,7 @@ import {
   waitFor,
 } from './profiler-kit';
 import { captureToasts } from './profiler-ui-helpers';
+import { installUiStubs } from './ui-stubs';
 import {
   command,
   count,
@@ -339,16 +340,33 @@ suite('F# retention, objects, GC and refusals — FsOrderLedger', () => {
     }
 
     const offered = referenceTypeCandidates(snapshot);
-    const walk = vscode.commands.executeCommand(uiCommand('memoryReferences'));
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
-    await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
-    await walk;
-    await waitFor(
-      () => refGraphState()?.title,
-      (title) => title === `Retention Graph — ${offered[0] ?? ''}`,
-      STOP_MS,
-      'the picker’s first type to open in the same panel',
-    );
+    assert.ok(offered[0], 'the snapshot supplies a real first type to select');
+    const input = installUiStubs().queuePick(0);
+    try {
+      await vscode.commands.executeCommand(uiCommand('memoryReferences'));
+      await waitFor(
+        () => refGraphState()?.title,
+        (title) => title === `Retention Graph — ${offered[0]}`,
+        STOP_MS,
+        'the first runtime-ranked type opens through the real retention command',
+      );
+      assert.equal(input.log.quickPickItems.length, 1, 'one user choice');
+      const items = input.log.quickPickItems[0] as vscode.QuickPickItem[];
+      assert.deepEqual(
+        items.slice(0, offered.length).map((item) => item.label),
+        offered,
+        '[PROF-UI-REFGRAPH] the actual picker preserves the server’s ranked runtime names',
+      );
+      assert.equal(items.length, offered.length + 1, 'reported types plus the free-text option');
+      assert.equal(
+        input.log.inputBoxOptions.length,
+        0,
+        'a reported type never needs guessed input',
+      );
+      assert.deepEqual(input.log.errorMessages, [], 'the real retention walk succeeds');
+    } finally {
+      input.restore();
+    }
 
     // Release, then collect: the bytes come back and the session keeps tracking.
     const wire = await snapshotSession(target.pid);
