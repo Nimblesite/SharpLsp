@@ -30,10 +30,35 @@ fn install_engine_beside_server() {
         {
             let entry = entry.expect("engine dir entry");
             if entry.file_type().is_ok_and(|t| t.is_file()) {
-                let _ = std::fs::copy(entry.path(), dir.join(entry.file_name()));
+                install_atomically(&entry.path(), &dir.join(entry.file_name()));
             }
         }
     });
+}
+
+/// Put `from` at `to` without ever exposing a half-written file. Every nextest
+/// test is its own process, so another test's server may be starting the engine
+/// from this directory right now. An identical file is left alone; a changed one
+/// is staged beside it and renamed into place, which keeps a running engine on
+/// its old file.
+fn install_atomically(from: &std::path::Path, to: &std::path::Path) {
+    let wanted = std::fs::read(from).expect("read engine file");
+    if std::fs::read(to).is_ok_and(|have| have == wanted) {
+        return;
+    }
+    let name = to.file_name().expect("engine file name").to_string_lossy();
+    let staged = to.with_file_name(format!(".{name}.{}.staged", std::process::id()));
+    let _ = std::fs::copy(from, &staged).expect("stage engine file");
+    if let Err(error) = std::fs::rename(&staged, to) {
+        let _ = std::fs::remove_file(&staged);
+        // Windows refuses to replace a file a running engine holds open; that is
+        // fine only when another test already installed the same bytes.
+        assert!(
+            std::fs::read(to).is_ok_and(|have| have == wanted),
+            "install {}: {error}",
+            to.display()
+        );
+    }
 }
 
 /// Build `tests/fixtures/ProfileTarget` once and return its binary.

@@ -13,8 +13,8 @@ import * as vscode from 'vscode';
 import { lastMemorySnapshot } from '@nimblesite/lsp-profiler-ui/out/src/memory-capture';
 import { isDebuggeePaused } from '@nimblesite/lsp-profiler-ui/out/src/debuggee-pause';
 import { delay } from '@nimblesite/lsp-profiler-ui/out/src/timeouts';
-import type { MemoryStep, RefGraph } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
-import { completed, execute, trackMemory } from './profiler-kit';
+import type { MemoryStep } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
+import { completed, execute, retentionGraph, trackMemory } from './profiler-kit';
 import { captureWarnings, pollUntilResult } from './profiler-ui-helpers';
 import {
   LOOP_LINE,
@@ -51,22 +51,7 @@ suite('Memory introspection — real end-to-end', () => {
     this.timeout(120_000);
     const session = await debuggedSession();
     completed(await execute<MemoryStep>('memory.snapshot', session));
-    const refs = completed(
-      await execute<MemoryStep>('memory.references', {
-        ...session,
-        type_name: WIDGET_TYPE,
-        limit: 40,
-        max_depth: 4,
-      }),
-    );
-    assert.equal(refs.outcome.kind, 'Refs', 'references must answer with a graph');
-    const graph = (refs.outcome as { graph: RefGraph }).graph;
-    assert.ok(
-      graph.nodes.some((node) => node.is_target && node.type_name === WIDGET_TYPE),
-      `the retained Widget instances must appear as target nodes, got types: ${graph.nodes
-        .map((node) => node.type_name)
-        .join(', ')}`,
-    );
+    const graph = await retentionGraph(session, WIDGET_TYPE, 4, 40);
     assert.ok(graph.edges.length > 0, 'the graph must carry the retaining edges');
     assert.ok(
       graph.nodes.some((node) => node.is_root && node.label === 'static Cache'),

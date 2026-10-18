@@ -23,13 +23,12 @@ import {
   executeError,
   fixtureSource,
   openSource,
-  profilerStore,
+  profileFromRowFor,
+  profilingSuite,
   Target,
   uiCommand,
-  waitFor,
 } from './profiler-kit';
-import { closeAllEditors, setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
-import { ACTIVATION_MS, PROCESS_START_MS } from './test-timeouts';
+import { PROCESS_START_MS } from './test-timeouts';
 
 const SAMPLE_WINDOW_MS = 3_000;
 const STOP_MS = 60_000;
@@ -45,22 +44,11 @@ function isHot(report: ProfileReport): boolean {
 }
 
 suite('CPU profiling — real end-to-end', () => {
-  let tmpDir = '';
-  let target: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-cpu-'));
-    target = await Target.start('ProfileTarget');
-  });
-  suiteTeardown(async () => {
-    target?.stop();
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
+  const live = profilingSuite('profiler-cpu-', 'ProfileTarget');
 
   test('raw pipeline: hot functions attributed to the target, speedscope + .cpuprofile artifacts written and parseable', async function () {
     this.timeout(STOP_MS + SAMPLE_WINDOW_MS);
-    assert.ok(target);
+    const { target } = live;
     const started = await execute<{ session_id: string; runtime: string }>('cpu.start', {
       pid: target.pid,
     });
@@ -92,31 +80,9 @@ suite('CPU profiling — real end-to-end', () => {
 
   test('panel one-click flow: Profile CPU on a row → live status bar → Stop paints the heat map and opens the results panel', async function () {
     this.timeout(STOP_MS + SAMPLE_WINDOW_MS);
-    assert.ok(target);
-    const store = profilerStore();
+    const { target } = live;
     await openSource(fixtureSource('ProfileTarget'));
-    const row = { process: { pid: target.pid, debuggable: true } };
-    await vscode.commands.executeCommand(uiCommand('profileProcess'), row);
-    await waitFor(
-      () => store.profiler.value.cpu,
-      (cpu) => cpu === 'active',
-      PROCESS_START_MS,
-      'CPU session active',
-    );
-    assert.equal(store.profiler.value.cpuPid, target.pid);
-    assert.ok(
-      profilerStatusText()?.includes('Profiling'),
-      `status bar shows the live session: ${profilerStatusText()}`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, SAMPLE_WINDOW_MS));
-
-    await vscode.commands.executeCommand(uiCommand('profileStop'));
-    await waitFor(
-      () => store.profiler.value.cpu,
-      (cpu) => cpu === 'idle',
-      STOP_MS,
-      'CPU session stopped',
-    );
+    await profileFromRowFor(target.pid, SAMPLE_WINDOW_MS, STOP_MS);
     assert.equal(profilerStatusText(), undefined, 'the status bar hides after stop');
     const applied = appliedProfileDecorations();
     assert.ok(

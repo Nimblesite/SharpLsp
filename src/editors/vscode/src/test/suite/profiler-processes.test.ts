@@ -22,6 +22,7 @@ import {
   panelRows,
   processesProvider,
   profilerStore,
+  profilingSuite,
   rowOf,
   Target,
   tooltipText,
@@ -47,21 +48,11 @@ async function listedRow(pid: number): Promise<vscode.TreeItem> {
 }
 
 suite('Processes panel — the server lists live .NET processes', () => {
-  let tmpDir = '';
-  let target: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS);
-    ({ tmpDir } = await setupLspTestSuite('profiler-procs-'));
-    target = await Target.start('ProfileTarget');
-  });
-  suiteTeardown(() => {
-    target?.stop();
-    teardownLspTestSuite(tmpDir);
-  });
+  const live = profilingSuite('profiler-procs-', 'ProfileTarget');
 
   test('the wire listing carries the target with its runtime facts', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     const listing = await execute<ProcessList>('processes', { workspace_roots: [] });
     const entry = listing.processes.find((proc) => proc.pid === target?.pid);
     assert.ok(entry, `PID ${target.pid} listed: ${listing.processes.map((p) => p.pid).join(', ')}`);
@@ -83,7 +74,7 @@ suite('Processes panel — the server lists live .NET processes', () => {
 
   test('a process under a workspace root is marked in_workspace; outside every root it is not', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     const project = path.dirname(fixtureSource('ProfileTarget'));
     const inside = await execute<ProcessList>('processes', { workspace_roots: [project] });
     const outside = await execute<ProcessList>('processes', { workspace_roots: [os.tmpdir()] });
@@ -98,7 +89,7 @@ suite('Processes panel — the server lists live .NET processes', () => {
 
   test('refresh loads the store and flips the welcome key to loaded', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     await refreshed();
     const state = profilerStore().processes.value;
     assert.equal(state.fetch, 'loaded');
@@ -111,7 +102,7 @@ suite('Processes panel — the server lists live .NET processes', () => {
 
   test('the row has a stable id, the runtime’s advertised name, and every resolved detail', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     await refreshed();
     const row = await listedRow(target.pid);
     assert.equal(row.id, `process:${target.pid}`);
@@ -127,7 +118,7 @@ suite('Processes panel — the server lists live .NET processes', () => {
 
   test('a direct-memory runtime offers Track Memory on any attachable row, not only a debuggee', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(target);
+    const { target } = live;
     await refreshed();
     const row = await listedRow(target.pid);
     assert.equal(
@@ -143,7 +134,7 @@ suite('Processes panel — the server lists live .NET processes', () => {
 
   test('the row reveals no script and opens nothing when the process has none', async function () {
     this.timeout(COMMAND_MS);
-    assert.ok(target);
+    const { target } = live;
     const row = await listedRow(target.pid);
     assert.equal(row.command, undefined, 'a .NET process has no entry script to open on click');
     const before = vscode.window.activeTextEditor?.document.uri.toString();
@@ -167,7 +158,7 @@ suite('Processes panel — the server lists live .NET processes', () => {
 
   test('copy PID puts the row’s PID on the clipboard', async function () {
     this.timeout(COMMAND_MS);
-    assert.ok(target);
+    const { target } = live;
     const row = await listedRow(target.pid);
     await vscode.env.clipboard.writeText('');
     await vscode.commands.executeCommand(uiCommand('copyProcessPid'), row);
