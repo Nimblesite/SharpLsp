@@ -112,6 +112,10 @@ impl ProfilerHost {
         let Some((method, params)) = profiler_call(&req.params) else {
             return false;
         };
+        if let Some(reason) = malformed_arguments(&req.params) {
+            refuse(req.id.clone(), method, reason, sender);
+            return true;
+        }
         self.pending.retain(|_, cancel| !cancel.is_closed());
         let (cancel, cancelled) = oneshot::channel();
         let _ = self.pending.insert(req.id.clone(), cancel);
@@ -159,6 +163,42 @@ fn profiler_call(params: &Value) -> Option<(&'static str, Value)> {
         .and_then(|args| args.first().cloned())
         .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
     Some((method, arguments))
+}
+
+/// Why a profiler command's arguments are not exactly one params object
+/// ([PROF-WIRE-METHODS]); `None` when they are, or when the list is absent.
+fn malformed_arguments(params: &Value) -> Option<&'static str> {
+    match params.get("arguments") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(list)) => match list.as_slice() {
+            [Value::Object(_)] => None,
+            [_] => Some("the profiler params argument must be a JSON object"),
+            _ => Some("a profiler command takes exactly one argument, its params object"),
+        },
+        Some(_) => Some("a profiler command's arguments must be a list of one params object"),
+    }
+}
+
+/// Answer a profiler command whose arguments are malformed with `INVALID_PARAMS`.
+fn refuse(
+    id: RequestId,
+    method: &'static str,
+    reason: &'static str,
+    sender: &crossbeam_channel::Sender<Message>,
+) {
+    warn!(method, reason, "profiler request refused");
+    let error = lsp_profiler::ProfilerError::InvalidParams(reason.to_owned());
+    let code = i32::try_from(error.code()).unwrap_or(-32000);
+    if sender
+        .send(Message::Response(Response::new_err(
+            id,
+            code,
+            error.to_string(),
+        )))
+        .is_err()
+    {
+        warn!(method, "profiler response dropped: connection closed");
+    }
 }
 
 /// Emit exactly one response after completion or cancellation.
@@ -211,6 +251,38 @@ mod tests {
             profiler_call(&serde_json::json!({ "command": "basilisk.lspProfiler.cpu.start" }))
                 .is_none()
         );
+    }
+
+    #[test]
+    fn anything_but_one_params_object_is_malformed() {
+        let refused = [
+            serde_json::json!([]),
+            serde_json::json!([{}, {}]),
+            serde_json::json!([42]),
+            serde_json::json!(["pid=1"]),
+            serde_json::json!([null]),
+            serde_json::json!("pid=1"),
+        ];
+        for arguments in refused {
+            let params = serde_json::json!({ "command": "sharplsp.lspProfiler.capabilities", "arguments": arguments });
+            assert!(
+                malformed_arguments(&params).is_some(),
+                "{arguments} is not one params object"
+            );
+        }
+    }
+
+    #[test]
+    fn one_params_object_or_no_argument_list_is_well_formed() {
+        let accepted = [
+            serde_json::json!({ "command": "sharplsp.lspProfiler.cpu.list" }),
+            serde_json::json!({ "command": "sharplsp.lspProfiler.cpu.list", "arguments": null }),
+            serde_json::json!({ "command": "sharplsp.lspProfiler.cpu.list", "arguments": [{}] }),
+            serde_json::json!({ "command": "sharplsp.lspProfiler.cpu.start", "arguments": [{ "pid": 7 }] }),
+        ];
+        for params in accepted {
+            assert_eq!(malformed_arguments(&params), None, "{params}");
+        }
     }
 
     #[test]
