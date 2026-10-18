@@ -6,7 +6,7 @@ eleventyNavigation:
   order: 4
 ---
 
-![Code completions in VS Code](/assets/screenshots/vscode-completions-page.png)
+<img src="/assets/screenshots/docs/completions.webp" alt="F# completion in Checkout.fs: basket |> List.min with min and minBy offered by the F# Compiler Service" width="2400" height="1500">
 
 # Code Completions
 

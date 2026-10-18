@@ -97,19 +97,37 @@ export const settingsEditor = {
   },
 };
 
+/** The SharpLsp log in the panel, showing only the lines that mention `text`. */
+export async function showLog(page, text) {
+  await runCommand(page, 'SharpLsp: Show Output Channel');
+  await page.locator('.part.panel input[placeholder^="Filter"]').first().click();
+  await page.keyboard.press('Meta+A');
+  await typeText(page, text, 60);
+  await sleep(1200);
+}
+
+/** Hide the bottom panel when it is showing. */
+export async function hidePanel(page) {
+  if (await page.locator('.part.panel').isVisible().catch(() => false)) await runCommand(page, 'View: Toggle Panel Visibility');
+}
+
 /** Off camera: open `file` until `probe` answers a hover, so its language's engine is warm before it is filmed. */
 export const warm = (file, probe) => async ({ page }) => {
   await openFile(page, file);
   await awaitSemantics(page, probe);
 };
 
-/** Off camera: every editor closed without saving, `file` open. */
+/** Off camera: every editor closed without saving, `file` open. Fails if an edited editor survives. */
 export const reopen = (file) => async ({ page }) => {
   await runCommand(page, 'View: Close All Editors');
-  for (let attempt = 0; attempt < 3 && (await page.locator('.dialog-box').isVisible().catch(() => false)); attempt++) {
-    await page.locator('.dialog-box .monaco-button', { hasText: "Don't Save" }).click();
+  const edited = page.locator('.tabs-container .tab.dirty');
+  // The save prompt opens a moment after the close: answer it until no edited editor is left.
+  for (let attempt = 0; attempt < 10 && (await edited.count()) > 0; attempt++) {
+    const dontSave = page.getByRole('dialog').getByRole('button', { name: "Don't Save" });
+    if (await dontSave.isVisible().catch(() => false)) await dontSave.click();
     await sleep(500);
   }
+  if ((await edited.count()) > 0) throw new Error('an edited editor stayed open');
   await openFile(page, file);
 };
 

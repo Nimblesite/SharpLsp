@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 8
 ---
 
-![NuGet 包浏览器 — 浏览选项卡](/assets/screenshots/vscode-nuget-browse.png)
+<img src="/assets/screenshots/docs/nuget-browse.webp" alt="在 F# 项目 FsStorefront 上打开的 SharpLsp NuGet 浏览器，列出 nuget.org 上的包" width="2400" height="1500">
 
 # NuGet 包管理器
 

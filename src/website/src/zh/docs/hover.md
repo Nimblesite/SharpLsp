@@ -5,7 +5,7 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-![VS Code 中的悬停信息](/assets/screenshots/vscode-hover-page.png)
+<img src="/assets/screenshots/docs/hover.webp" alt="在 Catalog.Generate 上的 C# 悬停，显示其签名和渲染后的 XML 文档" width="2400" height="1500">
 
 # 悬停与快速信息
 

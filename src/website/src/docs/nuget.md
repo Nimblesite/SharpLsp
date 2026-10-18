@@ -6,7 +6,7 @@ eleventyNavigation:
   order: 8
 ---
 
-![NuGet Package Browser — browse tab](/assets/screenshots/vscode-nuget-browse.png)
+<img src="/assets/screenshots/docs/nuget-browse.webp" alt="The SharpLsp NuGet browser open on the F# project FsStorefront, listing packages from nuget.org" width="2400" height="1500">
 
 # NuGet Package Manager
 

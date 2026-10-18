@@ -9,7 +9,7 @@ eleventyNavigation:
 
 # 编辑器配置
 
-![SharpLsp 编辑器支持](/assets/screenshots/vscode-editors-page.png)
+<img src="/assets/screenshots/docs/editors.webp" alt="按 SharpLsp 过滤的 VS Code 命令面板，列出了扩展的 NuGet、生成、F# Interactive、调试和性能分析器命令" width="2400" height="1500">
 
 SharpLsp 在协议层面与编辑器无关。目前受支持且已打包的客户端是 VS Code；其他集成仍在开发中。
 

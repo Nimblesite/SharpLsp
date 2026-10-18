@@ -1,13 +1,12 @@
 // Tests for [WEB-DESIGN-MEDIA]: the profiler film and stills the profiler-film
 // tooling renders from the real extension.
 import { test, expect } from '@playwright/test';
-import { expectPlayable, playback, sourcesOf } from './media.js';
+import { expectPlayable, expectStills, playback, sourcesOf } from './media.js';
 
 const FILM_POSTER = '/assets/videos/profiler-film-poster.webp';
 const WALKTHROUGH_POSTER = '/assets/videos/profiler-csharp-poster.webp';
 const FILM_SOURCES = ['/assets/videos/profiler-film.webm', '/assets/videos/profiler-film.mp4'];
 const PROFILER_STILLS = 8;
-const STILL_WIDTH = 2400;
 const DOCS = ['/docs/profiler/', '/zh/docs/profiler/', '/ja/docs/profiler/'];
 
 const FSHARP_POSTER = '/assets/videos/profiler-fsharp-poster.webp';
@@ -16,19 +15,6 @@ const FSHARP_DOCS = ['/docs/fsharp-profiling/', '/zh/docs/fsharp-profiling/', '/
 
 const RECORDING_SOURCES = ['/assets/videos/profiler-cpu-recording.mp4'];
 const AUTOPLAYING = ['section.hero video', 'section[aria-labelledby="profiler-title"] video'];
-
-/** Every profiler still on the page loads as the 2400px render with real alt text. */
-async function expectStills(stills) {
-  for (const still of await stills.all()) {
-    await still.scrollIntoViewIfNeeded();
-    const rendered = await still.evaluate((img) => ({ complete: img.complete, width: img.naturalWidth, alt: img.alt }));
-    expect(rendered.complete, 'still finishes loading').toBe(true);
-    expect(rendered.width, 'still is the 2400px render').toBe(STILL_WIDTH);
-    // Characters, not words: a CJK description is dense, so the floor is low but real.
-    expect(rendered.alt.length, 'still has meaningful alt text').toBeGreaterThanOrEqual(8);
-    expect(rendered.alt, 'alt text describes the shot, not the file').not.toContain('.webp');
-  }
-}
 
 async function expectSilentLoop(request, video, sources) {
   await expect(video).toHaveAttribute('autoplay', '');

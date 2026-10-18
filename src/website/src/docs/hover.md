@@ -4,7 +4,7 @@ title: Hover and Quick Info
 eleventyExcludeFromCollections: true
 ---
 
-![Hover in VS Code](/assets/screenshots/vscode-hover-page.png)
+<img src="/assets/screenshots/docs/hover.webp" alt="A C# hover on Catalog.Generate showing its signature and rendered XML documentation" width="2400" height="1500">
 
 # Hover and Quick Info
 

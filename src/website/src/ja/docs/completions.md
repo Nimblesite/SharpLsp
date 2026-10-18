@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 4
 ---
 
-![VS Code でのコード補完](/assets/screenshots/vscode-completions-page.png)
+<img src="/assets/screenshots/docs/completions.webp" alt="Checkout.fs での F# の補完：basket |> List.min に対して F# Compiler Service が min と minBy を提示" width="2400" height="1500">
 
 # コード補完
 

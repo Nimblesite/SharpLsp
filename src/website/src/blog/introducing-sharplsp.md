@@ -109,8 +109,8 @@ The first thing you see when you open a .NET workspace in SharpLsp is a proper S
 This matters more than it sounds. Visual Studio's Solution Explorer has been the mental model for .NET projects since 2002. It represents how .NET developers think about their code — not as files in folders, but as types within namespaces within projects within solutions. Senior engineers who move between Visual Studio on Windows and any other tool on macOS or Linux feel the loss of this model acutely. Every file-tree-based alternative forces a context switch. SharpLsp refuses that context switch. The solution hierarchy is the primary navigation surface, derived directly from MSBuild, and it stays in sync as you edit.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/solution-explorer.png" alt="SharpLsp Solution Explorer showing MyApp.sln with project and namespace tree in VS Code">
-  <figcaption>Solution Explorer rendering a real .sln file with full project and type hierarchy.</figcaption>
+  <img src="/assets/screenshots/docs/solution-explorer.webp" alt="SharpLsp Solution Explorer in VS Code showing Shop.slnx with its F# and C# projects, their namespaces and their types" width="2400" height="1500">
+  <figcaption>Solution Explorer rendering a real solution with its full project and type hierarchy, F# and C# side by side.</figcaption>
 </figure>
 
 The tree also reflects type-level structure. Namespaces expand to show types. Types expand to show members. Reference counts appear inline on each node, giving you a continuous ambient signal about what is used and what might be dead code — without having to run an explicit Find All References query on every symbol you are curious about. When the solution changes on disk — a new file added, a project reference modified — the tree updates without requiring a restart.
@@ -122,7 +122,7 @@ Code folding in most editors is line-range-based — a blunt instrument that fol
 The fold ranges are computed entirely in the Rust host without any round-trip to the compiler sidecars. This means they resolve in under one millisecond regardless of whether the workspace has finished loading or whether the compiler is in the middle of a background build. Folding is structural information, not semantic information — and SharpLsp treats it as such, routing it to the fastest possible handler.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/code-folding.png" alt="Code folding showing collapsed namespace with 60 lines of code visible in one view">
+  <img src="/assets/screenshots/docs/code-folding.webp" alt="Code folding with the CheckoutPipeline class collapsed to its declaration line" width="2400" height="1500">
   <figcaption>Code folding powered by tree-sitter — sub-millisecond, no compiler needed.</figcaption>
 </figure>
 
@@ -135,7 +135,7 @@ Completions pull from the full Roslyn semantic model — the same `CompletionSer
 When you type a type name that is not yet imported, SharpLsp surfaces it with an auto-import suggestion. When you type `.`, you get the full member list including inherited members and extension methods from all imported namespaces. When you are in a LINQ chain, the completion context is aware of the element type and filters accordingly. This is what Roslyn knows — and SharpLsp exposes all of it directly.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-completions-page.png" alt="SharpLsp completion list showing Add, Count, and other members with full semantic context">
+  <img src="/assets/screenshots/docs/completions-csharp.webp" alt="SharpLsp C# completion list offering Min and MinBy on a List<Product>" width="2400" height="1500">
   <figcaption>Semantic completions powered by Roslyn's CompletionService — the same engine behind Visual Studio.</figcaption>
 </figure>
 
@@ -146,8 +146,8 @@ Completion latency targets are under 100ms at the 50th percentile and under 200m
 Hover shows the full method or type signature alongside its XML documentation — parameters, return value description, remarks, exceptions, and examples. This is rendered from the XML doc comments in your source or from the documentation embedded in NuGet packages when hovering over third-party APIs. Roslyn's `DocumentationCommentCompiler` surfaces all of this, including inherited documentation from base classes and interface implementations.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-hover-page.png" alt="Hover tooltip showing Factorial method signature with full XML documentation and parameter descriptions">
-  <figcaption>Hover rendering XML doc comments with parameter and return value documentation.</figcaption>
+  <img src="/assets/screenshots/docs/hover.webp" alt="Hover tooltip showing the Catalog.Generate signature with its XML documentation and parameter description, beside the Processes view" width="2400" height="1500">
+  <figcaption>Hover rendering XML doc comments with parameter documentation.</figcaption>
 </figure>
 
 The Profiler panel visible in the sidebar is not incidental decoration. SharpLsp surfaces all running .NET processes on the machine, so you always know what is executing. When you are tracking down a performance regression or verifying that a service has actually stopped, this ambient process list is immediately useful — you do not have to open Activity Monitor or run `ps aux | grep dotnet`.
@@ -163,8 +163,8 @@ Go to Definition navigates across the full solution graph — through project re
 This is not a text grep or an index lookup. It is a Roslyn symbol resolution — the same mechanism Visual Studio uses internally. It handles partial classes, source generators, and nested types correctly because Roslyn's workspace model accounts for all of them. When you press Go to Definition on a symbol defined in a source generator, SharpLsp navigates to the generated source — not the generator implementation. When you navigate into a BCL type, the C# sidecar decompiles the metadata using ICSharpCode.Decompiler and returns the reconstructed source code.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-go-to-definition-page.png" alt="Go to definition navigating to a method implementation with breadcrumb showing full type path">
-  <figcaption>Go to Definition navigating through a multi-level type hierarchy.</figcaption>
+  <img src="/assets/screenshots/docs/definition.webp" alt="Go to Definition landed on CheckoutPipeline.Checkout, with the breadcrumb showing its full type path" width="2400" height="1500">
+  <figcaption>Go to Definition jumping from a call to its declaration in another file.</figcaption>
 </figure>
 
 Go to Definition into decompiled metadata — navigating into `System.Collections.Generic.List<T>` and seeing the implementation — has historically been available only in Visual Studio and Rider. It is one of the features that made those tools worth paying for, because it eliminates the need to keep a browser tab open to docs.microsoft.com while reading unfamiliar code. SharpLsp delivers this in every editor that runs the binary.
@@ -172,8 +172,8 @@ Go to Definition into decompiled metadata — navigating into `System.Collection
 The Solution Explorer reflects the same structural understanding. Deeply nested types — inner classes, nested enums, compiler-generated state machine types from async methods — all appear in the correct position in the hierarchy, with reference counts shown inline.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/nested-classes.png" alt="Nested classes in the solution explorer showing Outer, Inner, and AnotherInner with reference counts">
-  <figcaption>Reference counts and nested type support in the Solution Explorer.</figcaption>
+  <img src="/assets/screenshots/docs/type-members.webp" alt="Solution Explorer showing the CustomerSession type expanded to its members" width="2400" height="1500">
+  <figcaption>Types expand to their members in the Solution Explorer.</figcaption>
 </figure>
 
 ### Diagnostics
@@ -183,8 +183,8 @@ Diagnostics come from the real Roslyn compiler — not approximations, not tree-
 SharpLsp uses the [LSP 3.17 pull-diagnostics model](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_diagnostic), which means diagnostics are only computed when the editor requests them. They are never pushed speculatively during workspace load — when the project graph is incomplete and packages are not yet restored. This solves the "phantom error" problem that has plagued C# tooling in VS Code for years. Anyone who has opened a large solution in OmniSharp and watched hundreds of CS0246 errors appear and then disappear as packages loaded knows exactly why this matters.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-diagnostics-page.png" alt="Diagnostics panel showing real Roslyn compiler errors with file and line references">
-  <figcaption>Real Roslyn diagnostics, pulled on demand, never pushed prematurely.</figcaption>
+  <img src="/assets/screenshots/docs/diagnostics.webp" alt="Problems panel showing a Roslyn CS0029 error and an F# type error, each with its file and line" width="2400" height="1500">
+  <figcaption>Real compiler diagnostics from Roslyn and the F# Compiler Service, on unsaved code.</figcaption>
 </figure>
 
 The NuGet restore gate runs before `MSBuildWorkspace` opens the solution. SharpLsp detects missing package restore state, runs `dotnet restore` automatically, and only then begins serving semantic requests. The first-open experience takes slightly longer than immediately returning empty state, but every diagnostic that appears is real — there are no red squiggles that exist only because the workspace has not finished loading. This is the behavior .NET developers expect and have historically only gotten in Visual Studio or Rider, where the build system integration ensures packages are present before the IDE begins analysis.
@@ -196,7 +196,7 @@ Code actions come from Roslyn's own `CodeFixProvider` and `CodeRefactoringProvid
 This also means third-party Roslyn analyzers work automatically. If your project references a Roslyn analyzer NuGet package — StyleCop, Roslynator, ErrorProne.NET — its diagnostic rules and code fixes appear in SharpLsp's action menu without any additional configuration. The analyzer pipeline is the same one Roslyn runs during compilation.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-refactoring.png" alt="Quick fix lightbulb showing Remove unused variable, Fix, and Explain options">
+  <img src="/assets/screenshots/docs/refactoring-csharp.webp" alt="Quick fix menu offering Generate method 'Receipt' for a call to a method that does not exist yet" width="2400" height="1500">
   <figcaption>Roslyn-powered quick fixes surfaced directly in the editor action menu.</figcaption>
 </figure>
 
@@ -209,7 +209,7 @@ Right-clicking a project in the Solution Explorer gives you build, rebuild, clea
 Build output appears in a dedicated panel, not mixed with LSP logs. Errors from the build link back to the source location in the editor, the same way Visual Studio's Error List does. When you add a project reference through the context menu, the `MSBuildWorkspace` is updated to reflect the new dependency, and the Solution Explorer tree updates to show the reference without requiring a full restart.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-context-menu-open-project.png" alt="Project context menu showing Build, Rebuild, Clean, Browse NuGet Packages, Add Project Reference options">
+  <img src="/assets/screenshots/docs/context-menus.webp" alt="Project context menu showing Build, Clean, Rebuild, Open Project File, Browse NuGet Packages and Remove Unused Packages" width="2400" height="1500">
   <figcaption>Project-level actions directly from the Solution Explorer context menu.</figcaption>
 </figure>
 
@@ -220,21 +220,21 @@ Project file mutations go through `Microsoft.Build.Construction` — the MSBuild
 The NuGet panel is a full package browser. Search nuget.org (or any configured package source via `nuget.config`), browse available versions, see what is currently installed, inspect package metadata — all without leaving the editor or opening a terminal. The search results pull live from the NuGet v3 API, returning packages with download counts, license identifiers, and version lists.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-search.png" alt="NuGet browser showing search results for Serilog packages with download counts">
+  <img src="/assets/screenshots/docs/nuget-browse.webp" alt="NuGet browser listing packages live from nuget.org with their download counts" width="2400" height="1500">
   <figcaption>NuGet package search pulling live results from nuget.org.</figcaption>
 </figure>
 
 Package management has always been a friction point for .NET developers in editors other than Visual Studio. The VS Code workflow typically involves either using the terminal (`dotnet add package Serilog`) or editing the `.csproj` by hand and waiting for a restore. Neither is as fast as a search-and-click UI with immediate feedback. SharpLsp brings that UI to every editor.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-installed.png" alt="NuGet installed packages panel showing Newtonsoft.Json with description and version">
+  <img src="/assets/screenshots/docs/nuget-installed.webp" alt="NuGet Installed tab showing FsToolkit.ErrorHandling 5.2.0 in the F# project FsStorefront" width="2400" height="1500">
   <figcaption>Installed packages tab showing what is in the active project.</figcaption>
 </figure>
 
 The installed packages view derives its data from the MSBuild project graph — specifically the `PackageReference` items resolved through the NuGet restore graph. This means it reflects the actual state of the project file, not a UI-side cache. If you add a package through the terminal and then open the panel, the new package is there. If you edit the `.csproj` directly, the panel reflects the change on next refresh.
 
 <figure class="article-figure">
-  <img src="/assets/screenshots/vscode-nuget-package-details.png" alt="NuGet package detail panel for Newtonsoft.Json showing license, project URL, and version">
+  <img src="/assets/screenshots/docs/nuget-package.webp" alt="NuGet package detail panel for FsToolkit.ErrorHandling showing its license, project URL, version and Install" width="2400" height="1500">
   <figcaption>Package details with license, metadata, and install/remove actions.</figcaption>
 </figure>
 

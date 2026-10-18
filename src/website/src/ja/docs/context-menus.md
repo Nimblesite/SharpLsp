@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 9
 ---
 
-![VS Code の SharpLsp ソリューションエクスプローラー](/assets/screenshots/solution-explorer.png)
+<img src="/assets/screenshots/docs/context-menus.webp" alt="C# プロジェクトに対するソリューションエクスプローラーのコンテキストメニュー：ビルド、クリーン、リビルド、プロジェクト ファイルを開く、デバッグなしで実行、プログラムのデバッグ、NuGet パッケージの参照、未使用パッケージの削除、名前のコピー" width="2400" height="1500">
 
 # コンテキストメニュー
 

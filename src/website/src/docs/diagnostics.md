@@ -4,7 +4,7 @@ title: Diagnostics
 eleventyExcludeFromCollections: true
 ---
 
-![Diagnostics in VS Code](/assets/screenshots/vscode-diagnostics-page.png)
+<img src="/assets/screenshots/docs/diagnostics.webp" alt="The Problems panel with an F# type error from the F# Compiler Service and a C# CS0029 error from Roslyn, both from unsaved edits" width="2400" height="1500">
 
 # Diagnostics
 

@@ -6,7 +6,7 @@ eleventyNavigation:
   order: 7
 ---
 
-![Code actions lightbulb in VS Code](/assets/screenshots/vscode-refactoring.png)
+<img src="/assets/screenshots/docs/refactoring.webp" alt="Quick fixes on an incomplete F# match: Generate 1 missing union case(s) and Add wildcard case" width="2400" height="1500">
 
 # Refactoring and Code Actions
 

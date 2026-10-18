@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectStills } from './media.js';
 
 const DOC_PATHS = [
   '/docs/architecture/',
@@ -55,6 +56,47 @@ test.describe('Docs screenshots', () => {
       expect(rendered.complete, `Screenshot should finish loading: ${src}`).toBe(true);
       expect(rendered.naturalWidth, `Screenshot should have pixel width: ${src}`).toBeGreaterThan(0);
       expect(rendered.naturalHeight, `Screenshot should have pixel height: ${src}`).toBeGreaterThan(0);
+    });
+  }
+});
+
+// [WEB-DESIGN-MEDIA] Each feature page opens on its still from the film kit
+// (films/doc-stills.mjs): the real extension on the Shop demo, never an old capture.
+const DOC_STILLS = {
+  'architecture/': 'architecture',
+  'editors/': 'editors',
+  'configuration/': 'configuration',
+  'completions/': 'completions',
+  'hover/': 'hover',
+  'go-to-definition/': 'navigation',
+  'diagnostics/': 'diagnostics',
+  'refactoring/': 'refactoring',
+  'context-menus/': 'context-menus',
+  'nuget/': 'nuget-browse',
+};
+
+test.describe('Docs stills', () => {
+  for (const [page, still] of Object.entries(DOC_STILLS)) {
+    for (const lang of ['', '/ja', '/zh']) {
+      test(`${lang}/docs/${page} opens on the ${still} still, at full size with alt text`, async ({ page: browser }) => {
+        await browser.goto(`${lang}/docs/${page}`);
+        const shot = browser.locator('img[src^="/assets/screenshots/docs/"]');
+        await expect(shot).toHaveCount(1);
+        await expect(shot).toHaveAttribute('src', `/assets/screenshots/docs/${still}.webp`);
+        await expect(shot).toHaveAttribute('width', '2400');
+        await expect(shot).toHaveAttribute('height', '1500');
+        await expectStills(shot);
+      });
+    }
+  }
+
+  for (const lang of ['', '/ja', '/zh']) {
+    test(`${lang}/blog/introducing-sharplsp/ shows twelve current stills, none of the old captures`, async ({ page }) => {
+      await page.goto(`${lang}/blog/introducing-sharplsp/`);
+      const stills = page.locator('figure img[src^="/assets/screenshots/docs/"]');
+      await expect(stills).toHaveCount(12);
+      await expectStills(stills);
+      await expect(page.locator('img[src$=".png"][src^="/assets/screenshots/"]')).toHaveCount(0);
     });
   }
 });

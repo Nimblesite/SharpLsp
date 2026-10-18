@@ -34,6 +34,9 @@ const TOML = [
   'monorepo = false',
 ];
 const MONOREPO = TOML.indexOf('monorepo = false') + 1;
+
+/** The file as staged beside the solution. */
+export const configurationToml = `${TOML.join('\n')}\n`;
 const SESSIONS = 'SessionCache.cs';
 const PROBE = { line: 8, word: 'Remember' };
 
@@ -76,7 +79,7 @@ export default {
   narration: 'configuration.narration.json',
   poster: { scene: 'toml', at: 5 },
   scenes: [
-    { offCamera: ({ workspace }) => fs.writeFileSync(path.join(workspace, 'sharplsp.toml'), `${TOML.join('\n')}\n`) },
+    { offCamera: ({ workspace }) => fs.writeFileSync(path.join(workspace, 'sharplsp.toml'), configurationToml) },
     { offCamera: prepareCode(SESSIONS, PROBE) },
     scene('settings', 1, 'Editor settings: VS Code\'s Settings, under SharpLsp', settings),
     scene('toml', 2, 'Server settings: sharplsp.toml, beside the solution', monorepo),

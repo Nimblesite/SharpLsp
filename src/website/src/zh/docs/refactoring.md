@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 7
 ---
 
-![VS Code 中的代码操作灯泡](/assets/screenshots/vscode-refactoring.png)
+<img src="/assets/screenshots/docs/refactoring.webp" alt="不完整的 F# match 上的快速修复：生成 1 个缺失的联合用例，以及添加通配符分支" width="2400" height="1500">
 
 # 重构与代码操作
 

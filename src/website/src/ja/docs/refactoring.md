@@ -7,7 +7,7 @@ eleventyNavigation:
   order: 7
 ---
 
-![VS Code のコードアクション電球](/assets/screenshots/vscode-refactoring.png)
+<img src="/assets/screenshots/docs/refactoring.webp" alt="不完全な F# の match に対するクイックフィックス：足りない共用体ケースの生成と、ワイルドカードケースの追加" width="2400" height="1500">
 
 # リファクタリングとコードアクション
 
