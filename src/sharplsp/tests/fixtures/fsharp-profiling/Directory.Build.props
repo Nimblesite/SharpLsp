@@ -1,0 +1,5 @@
+<Project>
+    <!-- Intentionally empty: this file shadows the repository-wide Directory.Build.props so
+         SharpLsp's C# analyzers, package references and warnings-as-errors settings do not
+         apply to these F# profiling fixtures. Each fixture .fsproj sets every property it needs. -->
+</Project>

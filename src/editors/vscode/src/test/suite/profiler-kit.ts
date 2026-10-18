@@ -14,6 +14,7 @@ import {
   type ProfilerStore,
 } from '@nimblesite/lsp-profiler-ui';
 import type { MemoryStep, RefGraph } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
+import type { SuspectedLeak as DashboardLeak } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import {
   closeAllEditors,
   EXTENSION_ID,
@@ -114,6 +115,8 @@ export async function executeError(
 const FIXTURES = path.resolve(__dirname, '../../../../../sharplsp/tests/fixtures');
 /** lspkit's own targets, which prove the engine on every .NET language. */
 const LSPKIT_FIXTURES = path.resolve(__dirname, '../../../../../../lspkit/dotnet/fixtures');
+/** SharpLsp's real-world F# programs: a pricing engine and an event-sourced order ledger. */
+const FSHARP_FIXTURES = path.join(FIXTURES, 'fsharp-profiling');
 
 /** A profiling target: its project folder, target framework and source file. */
 interface FixtureProject {
@@ -127,6 +130,10 @@ const FIXTURE_PROJECTS: Readonly<Record<string, FixtureProject>> = {
   ProfileLeakTarget: { dir: FIXTURES, framework: 'net10.0', source: 'Program.cs' },
   // F#: records holding union cases leak into a module value ([PROF-TESTING]).
   HotLeakAppFs: { dir: LSPKIT_FIXTURES, framework: 'net8.0', source: 'Program.fs' },
+  // F# CPU: CSV parsing, recursive discount rules, fuzzy search, route planning, reports.
+  FsPricingEngine: { dir: FSHARP_FIXTURES, framework: 'net10.0', source: 'Program.fs' },
+  // F# memory: event, memoize, mailbox and undo-history leaks in an order ledger.
+  FsOrderLedger: { dir: FSHARP_FIXTURES, framework: 'net10.0', source: 'Program.fs' },
 };
 
 function fixtureProject(name: string): FixtureProject {
@@ -179,10 +186,60 @@ export function fixtureSource(name: string): string {
   return path.join(dir, name, source);
 }
 
+/** Another source file of a multi-file fixture project. */
+export function fixtureFile(name: string, file: string): string {
+  return path.join(fixtureProject(name).dir, name, file);
+}
+
+/** How long a fixture may take to answer one stdin command. */
+const REPLY_MS = 60_000;
+
+/** A child's stdout as whole lines, handed out in order. */
+class LineFeed {
+  private buffer = '';
+  private readonly lines: string[] = [];
+  private readonly waiting: ((line: string | undefined) => void)[] = [];
+  private exited = false;
+
+  constructor(child: ChildProcess) {
+    child.stdout?.on('data', (chunk: Buffer) => {
+      this.buffer += chunk.toString();
+      const parts = this.buffer.split(/\r?\n/);
+      this.buffer = parts.pop() ?? '';
+      for (const line of parts) {
+        const waiter = this.waiting.shift();
+        if (waiter === undefined) this.lines.push(line);
+        else waiter(line);
+      }
+    });
+    child.once('exit', () => {
+      this.exited = true;
+      for (const resolve of this.waiting.splice(0)) resolve(undefined);
+    });
+  }
+
+  /** The next line, or a failure naming `what` when the child exits or stays silent. */
+  async next(timeoutMs: number, what: string): Promise<string> {
+    const queued = this.lines.shift();
+    if (queued !== undefined) return queued;
+    assert.ok(!this.exited, `${what}: the process already exited`);
+    const line = await new Promise<string | undefined>((resolve) => {
+      const timer = setTimeout(() => resolve(undefined), timeoutMs);
+      this.waiting.push((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      });
+    });
+    assert.ok(line !== undefined, `${what}: no reply within ${timeoutMs}ms or the process exited`);
+    return line;
+  }
+}
+
 /** A running fixture; `stop()` closes its stdin so it exits, then kills it. */
 export class Target {
   private constructor(
     private readonly child: ChildProcess,
+    private readonly feed: LineFeed,
     readonly pid: number,
   ) {}
 
@@ -191,22 +248,19 @@ export class Target {
       stdio: ['pipe', 'pipe', 'ignore'],
       env: { ...process.env, SHARPLSP_PROFILE_TARGET_PARENT_PID: String(process.pid) },
     });
-    const ready = await new Promise<string>((resolve, reject) => {
-      let buffer = '';
-      child.stdout?.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString();
-        if (buffer.includes('\n')) resolve(buffer.split('\n')[0] ?? '');
-      });
-      child.once('error', reject);
-      child.once('exit', (code) => {
-        reject(new Error(`${name} exited early with ${code}`));
-      });
-    });
+    const feed = new LineFeed(child);
+    const ready = await feed.next(PROCESS_START_MS, `${name} READY`);
     assert.ok(ready.startsWith('READY'), `${name} must print READY: ${ready}`);
     assert.ok(child.pid !== undefined, 'spawned pid');
     // Let the runtime open its diagnostics endpoint before anyone attaches.
     await new Promise((resolve) => setTimeout(resolve, 800));
-    return new Target(child, child.pid);
+    return new Target(child, feed, child.pid);
+  }
+
+  /** Send one stdin command and return the one line the fixture answers with. */
+  async send(command: string): Promise<string> {
+    this.child.stdin?.write(`${command}\n`);
+    return this.feed.next(REPLY_MS, `reply to "${command}"`);
   }
 
   stop(): void {
@@ -299,13 +353,13 @@ export function completed(step: MemoryStep): Extract<MemoryStep, { kind: 'Comple
 }
 
 /** The suspected leaks the dashboard embedded for its script (`const leaks = [...]`). */
-export function embeddedLeaks(html: string): { typeName?: string }[] {
+export function embeddedLeaks(html: string): Partial<DashboardLeak>[] {
   const marker = 'const leaks = ';
   const at = html.indexOf(marker);
   if (at < 0) return [];
   const end = html.indexOf(';\n', at);
   try {
-    return JSON.parse(html.slice(at + marker.length, end)) as { typeName?: string }[];
+    return JSON.parse(html.slice(at + marker.length, end)) as Partial<DashboardLeak>[];
   } catch {
     return [];
   }
@@ -389,6 +443,13 @@ export async function retentionGraph(
     `${typeName} instances are target nodes, got types: ${graph.nodes.map((n) => n.type_name).join(', ')}`,
   );
   return graph;
+}
+
+/** Write one `sharplsp.profiler.*` setting globally; `undefined` restores its default. */
+export async function setProfilerSetting(key: string, value: unknown): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('sharplsp.profiler')
+    .update(key, value, vscode.ConfigurationTarget.Global);
 }
 
 /** Start tracking `pid` through the real command; resolves once the store is tracking. */

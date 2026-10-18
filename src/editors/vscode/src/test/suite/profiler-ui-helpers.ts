@@ -254,21 +254,41 @@ export function isRegistered(commandId: string): boolean {
   }
 }
 
-/** Swap `showWarningMessage` for a recorder while `body` runs. */
-export async function captureWarnings(body: () => Promise<unknown>): Promise<string[]> {
-  const warnings: string[] = [];
-  const window = vscode.window as { showWarningMessage: unknown };
-  const original = window.showWarningMessage;
-  window.showWarningMessage = async (message: string): Promise<undefined> => {
-    warnings.push(message);
+/** The notifications shown while a body ran, by severity, with the actions each offered. */
+export interface Toasts {
+  readonly info: { message: string; actions: string[] }[];
+  readonly warning: string[];
+  readonly error: string[];
+}
+
+type ToastWindow = Record<'showInformationMessage' | 'showWarningMessage' | 'showErrorMessage', unknown>;
+
+/** Swap every notification for a recorder while `body` runs. */
+export async function captureToasts(body: () => Promise<unknown>): Promise<Toasts> {
+  const toasts: Toasts = { info: [], warning: [], error: [] };
+  const window = vscode.window as unknown as ToastWindow;
+  const original: ToastWindow = {
+    showInformationMessage: window.showInformationMessage,
+    showWarningMessage: window.showWarningMessage,
+    showErrorMessage: window.showErrorMessage,
+  };
+  window.showInformationMessage = async (message: string, ...items: unknown[]) => {
+    toasts.info.push({ message, actions: items.filter((i): i is string => typeof i === 'string') });
     return undefined;
   };
+  window.showWarningMessage = async (message: string) => void toasts.warning.push(message);
+  window.showErrorMessage = async (message: string) => void toasts.error.push(message);
   try {
     await body();
   } finally {
-    window.showWarningMessage = original;
+    Object.assign(window, original);
   }
-  return warnings;
+  return toasts;
+}
+
+/** Swap `showWarningMessage` for a recorder while `body` runs. */
+export async function captureWarnings(body: () => Promise<unknown>): Promise<string[]> {
+  return (await captureToasts(body)).warning;
 }
 
 /** A C# source with twelve numbered lines, for decorations to land on. */

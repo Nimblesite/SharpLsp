@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <Optimize>false</Optimize>
+        <Tailcalls>false</Tailcalls>
+        <DebugType>portable</DebugType>
+        <WarningLevel>5</WarningLevel>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+    <ItemGroup>
+        <Compile Include="Domain.fs" />
+        <Compile Include="Gate.fs" />
+        <Compile Include="Bus.fs" />
+        <Compile Include="Ledger.fs" />
+        <Compile Include="History.fs" />
+        <Compile Include="Quotes.fs" />
+        <Compile Include="Audit.fs" />
+        <Compile Include="Rejections.fs" />
+        <Compile Include="Program.fs" />
+    </ItemGroup>
+</Project>
