@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Architecture
+description: "How SharpLsp works: a Rust LSP host with tree-sitter parsing routes C# requests to a Roslyn sidecar and F# requests to an F# Compiler Service sidecar."
 eleventyNavigation:
   key: Architecture
   order: 2

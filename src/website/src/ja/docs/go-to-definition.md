@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: 定義へ移動
+description: "SharpLsp の C# と F# のナビゲーション：定義へ移動、参照の検索、実装と型定義へ移動。フレームワークの型は逆コンパイルしたソースで表示します。"
 lang: ja
-eleventyExcludeFromCollections: true
 ---
 
 <img src="/assets/screenshots/docs/navigation.webp" alt="CheckoutPipeline.cs の Product レコードに対するすべての参照の検索。ピークウィンドウにすべての使用箇所が並ぶ" width="2400" height="1500">

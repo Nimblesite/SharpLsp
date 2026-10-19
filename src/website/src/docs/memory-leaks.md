@@ -2,7 +2,6 @@
 layout: layouts/docs.njk
 title: How to Fix a Memory Leak in C# and .NET
 description: "How to fix a memory leak in C# and .NET, step by step: memory leak detection with a free .NET memory profiler in VS Code, the retention path that names the cause, fixes for static caches, event handlers, Dispose, timers and dependency injection, and the dotnet-counters, dotnet-gcdump and dotnet-dump route."
-eleventyExcludeFromCollections: true
 ---
 
 # How to Fix a Memory Leak in C# and .NET

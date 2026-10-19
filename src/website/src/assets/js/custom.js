@@ -6,7 +6,19 @@ document.addEventListener("DOMContentLoaded", () => {
   initLanguageSwitcher();
   initBlogSearch();
   initReducedMotionVideos();
+  initSeekToTime();
 });
+
+// Implements [WEB-DESIGN-MEDIA-DISCOVERY]: `?t=<seconds>` starts a watch page's film
+// there, the deep link Google's key moments (SeekToAction) open.
+function initSeekToTime() {
+  const start = Number(new URLSearchParams(window.location.search).get("t"));
+  const video = document.querySelector(".prose video");
+  if (!video || !(start > 0)) return;
+  const seek = () => { video.currentTime = start; };
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
+  else video.addEventListener("loadedmetadata", seek, { once: true });
+}
 
 // Implements [WEB-DESIGN-MEDIA]: autoplaying films hold still for readers who ask for less motion.
 function initReducedMotionVideos() {

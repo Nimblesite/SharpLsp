@@ -3,7 +3,6 @@ layout: layouts/docs.njk
 title: C# と .NET のメモリリークを修正する方法
 description: "C# と .NET のメモリリークを修正する方法をステップバイステップで解説：VS Code の無料の .NET メモリプロファイラーによるメモリリーク検出、原因を示す保持パス、静的キャッシュ・イベントハンドラー・Dispose・タイマー・依存性の注入が原因のリークの直し方、そして dotnet-counters・dotnet-gcdump・dotnet-dump を使う方法。"
 lang: ja
-eleventyExcludeFromCollections: true
 ---
 
 # C# と .NET のメモリリークを修正する方法

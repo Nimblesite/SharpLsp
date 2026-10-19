@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 编辑器配置
+description: "在 VS Code、Cursor、Windsurf 和 VSCodium 中设置 SharpLsp，并了解 Rider 插件、独立服务器以及 Zed、Neovim 等其他 LSP 客户端的现状。"
 lang: zh
 eleventyNavigation:
   key: 编辑器配置（中文）

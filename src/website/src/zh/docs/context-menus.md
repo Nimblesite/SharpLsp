@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 上下文菜单
+description: "VS Code 中 SharpLsp 解决方案资源管理器的上下文菜单：生成、重新生成、清理、包维护、打开项目文件和排序成员。"
 lang: zh
 eleventyNavigation:
   key: 上下文菜单（中文）

@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 参与贡献
+description: "从源代码构建 SharpLsp 并参与贡献：前置条件（Rust、.NET 10、Node.js）、Dev Container、仓库结构，以及构建和测试方法。"
 lang: zh
 eleventyNavigation:
   key: 参与贡献（中文）

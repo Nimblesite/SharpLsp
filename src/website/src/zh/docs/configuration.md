@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 配置
+description: "配置 SharpLsp：sharplsp.toml 中的工作区服务器设置、VS Code 中的 sharplsp.* 客户端设置、文件位置，以及 monorepo 模式。"
 lang: zh
 eleventyNavigation:
   key: 配置（中文）

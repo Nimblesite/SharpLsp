@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 快速入门
+description: "在 VS Code、Cursor、Windsurf 或 VSCodium 中安装 SharpLsp：一个扩展即包含 Rust 宿主，以及用于 C# 的 Roslyn 和用于 F# 的 F# Compiler Service sidecar。"
 lang: zh
 eleventyNavigation:
   key: 快速入门（中文）

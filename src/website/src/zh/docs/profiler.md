@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: 性能分析器
+description: "在 VS Code 中用 SharpLsp 分析任意正在运行的 .NET 进程的 CPU 与内存：热点行热度、火焰图、实时堆时间线和可疑泄漏。"
 lang: zh
-eleventyExcludeFromCollections: true
 ---
 
 # 性能分析器

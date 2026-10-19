@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 架构
+description: "SharpLsp 的工作原理：基于 tree-sitter 解析的 Rust LSP 宿主把 C# 请求路由到 Roslyn sidecar，把 F# 请求路由到 F# Compiler Service sidecar。"
 lang: zh
 eleventyNavigation:
   key: 架构（中文）

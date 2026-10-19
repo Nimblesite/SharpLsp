@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Configuration
+description: "Configure SharpLsp: workspace server settings in sharplsp.toml, client settings under sharplsp.* in VS Code, where the file lives, and monorepo mode."
 eleventyNavigation:
   key: Configuration
   order: 9

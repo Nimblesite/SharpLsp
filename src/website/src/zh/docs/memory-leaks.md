@@ -3,7 +3,6 @@ layout: layouts/docs.njk
 title: 如何修复 C# 和 .NET 中的内存泄漏
 description: "逐步讲解如何修复 C# 和 .NET 中的内存泄漏：在 VS Code 中用免费的 .NET 内存分析器检测内存泄漏，用保留路径找出原因，修复静态缓存、事件处理程序、Dispose、计时器和依赖注入引起的泄漏，以及使用 dotnet-counters、dotnet-gcdump 和 dotnet-dump 的方法。"
 lang: zh
-eleventyExcludeFromCollections: true
 ---
 
 # 如何修复 C# 和 .NET 中的内存泄漏

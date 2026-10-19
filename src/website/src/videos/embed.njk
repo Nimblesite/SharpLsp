@@ -1,0 +1,23 @@
+---
+pagination:
+  data: videoPages
+  size: 1
+  alias: watch
+permalink: "{{ watch.embed }}"
+eleventyExcludeFromCollections: true
+---
+<!DOCTYPE html>
+{# Implements [WEB-DESIGN-MEDIA-DISCOVERY]: the bare player that X's player card frames and Google's embedUrl names. #}
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <link rel="stylesheet" href="/assets/css/pages.css">
+</head>
+<body class="video-frame">
+{% videoPlayer watch.id, lang %}
+</body>
+</html>

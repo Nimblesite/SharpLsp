@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: 診断
+description: "SharpLsp の C# と F# の診断：未保存のコードに対する Roslyn と F# Compiler Service のエラー、プッシュとプルの配信、未使用 open とデッドコードのアナライザー。"
 lang: ja
-eleventyExcludeFromCollections: true
 ---
 
 <img src="/assets/screenshots/docs/diagnostics.webp" alt="問題パネル：未保存の編集から、F# Compiler Service による F# の型エラーと、Roslyn による C# の CS0029 エラー" width="2400" height="1500">

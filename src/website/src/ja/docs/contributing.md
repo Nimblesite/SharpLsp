@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: コントリビュート
+description: "SharpLsp をソースからビルドして貢献する：前提条件（Rust、.NET 10、Node.js）、Dev Container、リポジトリの構成、ビルドとテストの方法。"
 lang: ja
 eleventyNavigation:
   key: コントリビュート（日本語）

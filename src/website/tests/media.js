@@ -1,6 +1,15 @@
 // Shared probes for [WEB-DESIGN-MEDIA] tests: is a media URL really served, and
 // what does a page tell search engines about its videos?
 import { expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+// [WEB-DESIGN-MEDIA-DISCOVERY] The catalogue, and the URLs the spec gives each video.
+export const SITE = 'https://sharplsp.dev';
+export const VIDEOS = JSON.parse(readFileSync(new URL('../src/_data/videos.json', import.meta.url), 'utf8'));
+export const LANGS = ['en', 'ja', 'zh'];
+export const local = (lang, path) => (lang === 'en' ? path : `/${lang}${path}`);
+export const watchOf = (id, lang) => local(lang, `/videos/${id}/`);
+export const embedOf = (id, lang) => `${watchOf(id, lang)}embed/`;
 
 /** Fetch the first bytes of a media URL; returns its status and content type. */
 async function probe(request, url) {

@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: F# Language Support
-eleventyExcludeFromCollections: true
+description: "F# in VS Code with SharpLsp, powered by the F# Compiler Service: IntelliSense, navigation, rename, quick fixes, analyzers, Fantomas formatting and F# Interactive."
 ---
 
 # F# Language Support

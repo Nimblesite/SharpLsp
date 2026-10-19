@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Editor Setup
+description: "Set up SharpLsp in VS Code, Cursor, Windsurf and VSCodium, and see where the Rider plugin, the standalone server and other LSP clients such as Zed and Neovim stand."
 eleventyNavigation:
   key: Editor Setup
   order: 3

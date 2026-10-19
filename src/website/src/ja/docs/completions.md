@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: コード補完
+description: "SharpLsp の C# と F# のコード補完：C# は Roslyn、F# は F# Compiler Service。識別子を置き換える編集と、足りない using を追加するインポート補完。"
 lang: ja
 eleventyNavigation:
   key: コード補完（日本語）

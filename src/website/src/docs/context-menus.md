@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Context Menus
+description: "The SharpLsp Solution Explorer context menus in VS Code: Build, Rebuild, Clean, package maintenance, Open Project File and Sort Members for each node."
 eleventyNavigation:
   key: Context Menus
   order: 9

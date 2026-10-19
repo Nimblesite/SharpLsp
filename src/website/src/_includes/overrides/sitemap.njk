@@ -1,0 +1,46 @@
+---json
+{
+  "permalink": "sitemap.xml",
+  "eleventyExcludeFromCollections": true
+}
+---
+<?xml version="1.0" encoding="utf-8"?>
+{# [WEB-DESIGN-MEDIA-DISCOVERY] Every page, and on each watch page Google's video sitemap entry for its video. -#}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+  {%- for page in collections.all %}
+  {%- if not page.data.eleventyExcludeFromCollections %}
+  {%- set film = page.data.socialVideo %}
+  <url>
+    <loc>{{ site.url }}{{ page.url }}</loc>
+    <lastmod>{{ page.date | isoDate }}</lastmod>
+    {%- if page.url == "/" or page.url == "/index.html" %}
+    <priority>1.0</priority>
+    <changefreq>weekly</changefreq>
+    {%- elif "/docs/" in page.url %}
+    <priority>0.8</priority>
+    <changefreq>monthly</changefreq>
+    {%- elif "/blog/" in page.url %}
+    <priority>0.7</priority>
+    <changefreq>monthly</changefreq>
+    {%- else %}
+    <priority>0.5</priority>
+    <changefreq>monthly</changefreq>
+    {%- endif %}
+    {%- if film and film.watch == page.url %}
+    <video:video>
+      <video:thumbnail_loc>{{ site.url }}{{ film.poster }}</video:thumbnail_loc>
+      <video:title>{{ film.label }}</video:title>
+      <video:description>{{ film.caption }}</video:description>
+      <video:content_loc>{{ site.url }}{{ film.stream }}</video:content_loc>
+      <video:player_loc>{{ site.url }}{{ film.embed }}</video:player_loc>
+      <video:duration>{{ film.seconds }}</video:duration>
+      <video:publication_date>{{ film.uploadDate }}</video:publication_date>
+      <video:family_friendly>yes</video:family_friendly>
+      <video:requires_subscription>no</video:requires_subscription>
+      <video:live>no</video:live>
+    </video:video>
+    {%- endif %}
+  </url>
+  {%- endif %}
+  {%- endfor %}
+</urlset>

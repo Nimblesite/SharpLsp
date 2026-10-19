@@ -67,6 +67,8 @@
 .article-figure img { border: 0; margin: 0; }
 .article-figure video { border-radius: var(--radius-sm); display: block; height: auto; width: 100%; }
 .article-figure figcaption { color: var(--color-muted); font-size: 0.8rem; padding: 0.6rem 0.5rem 0.2rem; text-align: center; }
+/* [WEB-DESIGN-MEDIA-DISCOVERY] A watch page's heading is the video's full label, set at reading size under the player. */
+.prose .video-title { font-size: clamp(1.5rem, 3vw, 2.25rem); line-height: 1.2; margin: 0 0 1.5rem; }
 .article-note,
 .callout { background: var(--color-surface-subtle); border-left: 3px solid var(--color-primary); border-radius: var(--radius-sm); margin: 2rem 0; padding: 1.25rem; }
 .article-note h3,

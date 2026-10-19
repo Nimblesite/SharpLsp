@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: F# 言語サポート
+description: "F# Compiler Service による SharpLsp の F# サポート：IntelliSense、ナビゲーション、名前の変更、クイックフィックス、アナライザー、Fantomas の整形、F# Interactive。"
 lang: ja
-eleventyExcludeFromCollections: true
 ---
 
 # F# 言語サポート

@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: 跳转到定义
+description: "SharpLsp 的 C# 与 F# 导航：转到定义、查找引用、转到实现和类型定义，框架类型以反编译源代码显示。"
 lang: zh
-eleventyExcludeFromCollections: true
 ---
 
 <img src="/assets/screenshots/docs/navigation.webp" alt="在 CheckoutPipeline.cs 中对 Product 记录查找所有引用，速览窗口列出了每一处使用" width="2400" height="1500">

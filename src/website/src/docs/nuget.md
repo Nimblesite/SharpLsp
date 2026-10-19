@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: NuGet Package Manager
+description: "Browse and install NuGet packages in VS Code with SharpLsp: search nuget.org, edit project files or Directory.Packages.props, remove unused packages and consolidate versions."
 eleventyNavigation:
   key: NuGet Package Manager
   order: 8

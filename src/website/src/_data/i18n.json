@@ -189,6 +189,11 @@
         "semanticLatency": "semantic under 200ms"
       }
     },
+    "video": {
+      "watchPage": "Watch on its own page",
+      "transcript": "Transcript",
+      "guide": "Read the guide: "
+    },
     "footer": {
       "documentation": "Documentation",
       "features": "Features",
@@ -384,6 +389,11 @@
         "semanticLatency": "语义处理低于 200ms"
       }
     },
+    "video": {
+      "watchPage": "在单独页面观看",
+      "transcript": "文字稿",
+      "guide": "阅读指南："
+    },
     "footer": {
       "documentation": "文档",
       "features": "功能",
@@ -578,6 +588,11 @@
         "syntaxLatency": "構文処理 5ms 未満",
         "semanticLatency": "意味処理 200ms 未満"
       }
+    },
+    "video": {
+      "watchPage": "単独のページで見る",
+      "transcript": "文字起こし",
+      "guide": "ガイドを読む："
     },
     "footer": {
       "documentation": "ドキュメント",

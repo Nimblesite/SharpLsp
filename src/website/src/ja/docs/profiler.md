@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: プロファイラー
+description: "SharpLsp で実行中の .NET プロセスの CPU とメモリを VS Code からプロファイリング：ホットな行のヒート、フレームグラフ、ライブのヒープタイムライン、リークの疑い。"
 lang: ja
-eleventyExcludeFromCollections: true
 ---
 
 # プロファイラー

@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Profiler
-eleventyExcludeFromCollections: true
+description: "Profile CPU and memory of any running .NET process in VS Code with SharpLsp: heat on hot lines, a flame graph, a live heap timeline and leak suspects."
 ---
 
 # Profiler

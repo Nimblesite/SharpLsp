@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: F# 语言支持
+description: "SharpLsp 基于 F# Compiler Service 的 F# 支持：IntelliSense、导航、重命名、快速修复、分析器、Fantomas 格式化和 F# Interactive。"
 lang: zh
-eleventyExcludeFromCollections: true
 ---
 
 # F# 语言支持

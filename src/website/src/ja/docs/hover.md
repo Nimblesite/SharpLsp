@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: ホバーとクイック情報
+description: "SharpLsp の C# と F# のホバー：Roslyn と F# Compiler Service によるシグネチャー、ドキュメントコメント、XML ドキュメント、推論された型を未保存のコードから表示。"
 lang: ja
-eleventyExcludeFromCollections: true
 ---
 
 <img src="/assets/screenshots/docs/hover.webp" alt="Catalog.Generate に対する C# のホバー。シグネチャーと、整形された XML ドキュメント" width="2400" height="1500">
