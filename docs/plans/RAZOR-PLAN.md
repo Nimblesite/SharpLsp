@@ -29,11 +29,13 @@ The phases below are in dependency order. Each item is checked only when a test 
 - [x] Sidecar: build the Razor engine per project — configuration from the analyzer and parse options, an in-memory file system, tag helpers per compilation, the capture pass and markup facts
 - [x] Sidecar: build the HTML projection and the markup-context tokenizer ([RAZOR-ARCHITECTURE-HTML])
   - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 19 passing fixture cases (Blazor and MVC, comments, UTF-16, incomplete tags, unsaved edits)
-  - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 26 passing cases for tags, attributes, comments, quoted declarations, raw text, script escape states and caret positions
+  - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 33 passing cases for tags, attributes, comments, quoted declarations, raw text, script escape states, malformed HTML and caret positions; 100% line coverage
   - [x] Host: `sharplsp/razor/htmlProjection` answers `{ text }`, or `null` for a file no project lists — `test_full_stack_razor_routing_session`
   - [x] Verify `sharplsp/razor/htmlProjection` through editor integration — `razor-lsp.test.ts`: the projection keeps the editor's offsets, line breaks and unsaved text, and feeds VS Code's HTML completion and hover
 
 **Validation (2026-10-20):** the Release sidecar solution builds with zero warnings and errors; 642 C#, 440 F# and 125 Common tests pass, and all three coverage gates pass. `RazorSidecarTests` exercises the real IPC contract and malformed-request recovery; `RazorCompletionEditsTests` covers mapped edits, import deduplication, aliases, static imports and LF/CRLF insertion.
+
+**Editor validation (2026-10-20):** the final Razor chunk passes all 5 cases, the workspace chunk passes all 446 cases (including server-start lifecycle), and editor lint and formatting pass. The debugger group-outcome test that previously timed out passes unchanged in isolation; its full chunk is being rerun before PR readiness.
 
 ### Phase 2: C# Inside Razor
 

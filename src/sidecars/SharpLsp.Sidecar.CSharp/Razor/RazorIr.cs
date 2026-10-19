@@ -180,7 +180,7 @@ internal static class RazorIr
     }
 
     /// <summary>A directive attribute's name, <c>@</c> included, from the span of what follows the <c>@</c>.</summary>
-    private static TextSpan? DirectiveName(SourceSpan? original, string name, SourceText text)
+    public static TextSpan? DirectiveName(SourceSpan? original, string name, SourceText text)
     {
         if (original is not { } span)
         {

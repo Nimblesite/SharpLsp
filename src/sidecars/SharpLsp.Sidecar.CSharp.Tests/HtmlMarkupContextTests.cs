@@ -210,6 +210,13 @@ public sealed class HtmlMarkupContextTests
     [InlineData("<script><!--<script></script>--></script><div|", "TagName")]
     [InlineData("<script><!--<script>--></script><div|", "TagName")]
     [InlineData("<script><!-- x </script><div|", "TagName")]
+    [InlineData("</>|", "Content")]
+    [InlineData("<div / >|", "Content")]
+    [InlineData("<div disabled/>|", "Content")]
+    [InlineData("<div value=>|", "Content")]
+    [InlineData("<div value='x'/>|", "Content")]
+    [InlineData("<style></styleX></style>|", "Content")]
+    [InlineData("<!DOCTYPE html PUBLIC 'unfinished|", "Content")]
     public void Declaration_quotes_and_script_escape_states_follow_html_tokens(
         string html,
         string expected

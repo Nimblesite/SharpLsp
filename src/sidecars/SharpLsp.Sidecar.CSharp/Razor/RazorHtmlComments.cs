@@ -90,25 +90,24 @@ internal static class RazorHtmlComments
             {
                 start = ReadToken(token, start);
             }
-            if (start is { } remaining)
-            {
-                Spans.Add(TextSpan.FromBounds(remaining, document.Source.Text.Length));
-            }
+            // Incomplete comments remain one HTML token, without a standalone opening delimiter.
         }
 
         private int? ReadToken(HtmlIntermediateToken token, int? start)
         {
-            if (token.IsImported || token.Source is not { } source)
-            {
-                return start;
-            }
-            if (start is null && token.Content == "<!--")
+            if (
+                token is { IsImported: false, Source: { } source, Content: "<!--" }
+                && start is null
+            )
             {
                 return source.AbsoluteIndex;
             }
-            if (start is { } first && token.Content == "-->")
+            if (
+                token is { IsImported: false, Source: { } end, Content: "-->" }
+                && start is { } first
+            )
             {
-                Spans.Add(TextSpan.FromBounds(first, source.AbsoluteIndex + source.Length));
+                Spans.Add(TextSpan.FromBounds(first, end.AbsoluteIndex + end.Length));
                 return null;
             }
             return start;

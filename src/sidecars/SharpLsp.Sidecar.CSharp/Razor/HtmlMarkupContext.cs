@@ -28,7 +28,7 @@ internal static class HtmlMarkupContext
     /// <summary>The markup context at <paramref name="offset"/>; out-of-range offsets clamp.</summary>
     public static MarkupContext At(string html, int offset)
     {
-        return Context(ScanTo(html, Math.Clamp(offset, 0, html.Length)).State);
+        return Context(ScanTo(html, Math.Clamp(offset, 0, html.Length)));
     }
 
     /// <summary>The tokenizer states the caret context derives from.</summary>
@@ -84,23 +84,38 @@ internal static class HtmlMarkupContext
 
     private static Scan Step(Scan s, char c)
     {
-        return s.State switch
+        return (s.State, c) switch
         {
-            Scanner.Data => c == '<' ? Data(Scanner.TagOpen) : s,
-            Scanner.TagOpen => TagOpen(s, c),
-            Scanner.EndTagOpen => EndTagOpen(s, c),
-            Scanner.TagName => TagName(s, c),
-            Scanner.BeforeAttribute => BeforeAttribute(s, c),
-            Scanner.Attribute or Scanner.AfterAttribute => Attribute(s, c),
-            Scanner.BeforeValue => BeforeValue(s, c),
-            Scanner.ValueDoubleQuoted => c == '"' ? Kept(Scanner.AfterValue, s) : s,
-            Scanner.ValueSingleQuoted => c == '\'' ? Kept(Scanner.AfterValue, s) : s,
-            Scanner.ValueUnquoted => ValueUnquoted(s, c),
-            Scanner.AfterValue => AfterValue(s, c),
-            Scanner.SelfClosing => c == '>' ? Close(s) : Kept(Scanner.BeforeAttribute, s),
-            Scanner.RawText or Scanner.ScriptEscaped or Scanner.ScriptDoubleEscaped => s,
-            _ => s,
+            (Scanner.TagOpen, _) => TagOpen(s, c),
+            (Scanner.EndTagOpen, _) => EndTagOpen(s, c),
+            (Scanner.TagName, _) => TagName(s, c),
+            (Scanner.BeforeAttribute, _) => BeforeAttribute(s, c),
+            (Scanner.Attribute or Scanner.AfterAttribute, _) => Attribute(s, c),
+            (Scanner.BeforeValue, _) => BeforeValue(s, c),
+            (Scanner.ValueDoubleQuoted or Scanner.ValueSingleQuoted, _) => Quoted(s, c),
+            (Scanner.ValueUnquoted, _) => ValueUnquoted(s, c),
+            (Scanner.AfterValue, _) => AfterValue(s, c),
+            (Scanner.SelfClosing, _) => SelfClosing(s, c),
+            // Advance handles raw text separately; the remaining state is normal data.
+            _ => c == '<' ? Data(Scanner.TagOpen) : s,
         };
+    }
+
+    private static Scan Quoted(Scan scan, char value)
+    {
+        return
+            (scan.State, value)
+                is
+                    (Scanner.ValueDoubleQuoted, '"')
+                    or
+                    (Scanner.ValueSingleQuoted, '\'')
+            ? Kept(Scanner.AfterValue, scan)
+            : scan;
+    }
+
+    private static Scan SelfClosing(Scan scan, char value)
+    {
+        return value == '>' ? Close(scan) : Kept(Scanner.BeforeAttribute, scan);
     }
 
     private static Scan TagOpen(Scan s, char c)
@@ -307,26 +322,30 @@ internal static class HtmlMarkupContext
         return close < 0 ? html.Length : close + 1;
     }
 
-    private static MarkupContext Context(Scanner state)
+    private static MarkupContext Context(Scan scan)
     {
-        return state switch
-        {
-            Scanner.TagOpen or Scanner.EndTagOpen or Scanner.TagName => MarkupContext.TagName,
-            Scanner.SelfClosing
-            or Scanner.BeforeAttribute
-            or Scanner.Attribute
-            or Scanner.AfterAttribute
-            or Scanner.AfterValue => MarkupContext.AttributeName,
-            Scanner.BeforeValue
-            or Scanner.ValueDoubleQuoted
-            or Scanner.ValueSingleQuoted
-            or Scanner.ValueUnquoted => MarkupContext.AttributeValue,
-            Scanner.Data
-            or Scanner.RawText
-            or Scanner.ScriptEscaped
-            or Scanner.ScriptDoubleEscaped => MarkupContext.Content,
-            _ => MarkupContext.Content,
-        };
+        return scan.State is Scanner.TagOpen or Scanner.EndTagOpen or Scanner.TagName
+                ? MarkupContext.TagName
+            : scan.State
+                is Scanner.SelfClosing
+                    or Scanner.BeforeAttribute
+                    or Scanner.Attribute
+                    or Scanner.AfterAttribute
+                    or Scanner.AfterValue
+                ? MarkupContext.AttributeName
+            : ValueContext(scan.State);
+    }
+
+    private static MarkupContext ValueContext(Scanner state)
+    {
+        return
+            state
+                is Scanner.BeforeValue
+                    or Scanner.ValueDoubleQuoted
+                    or Scanner.ValueSingleQuoted
+                    or Scanner.ValueUnquoted
+            ? MarkupContext.AttributeValue
+            : MarkupContext.Content;
     }
 
     private static Scan Data(Scanner state = Scanner.Data)

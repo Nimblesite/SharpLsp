@@ -8,6 +8,19 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// <summary>Real workspace coverage of [RAZOR-ARCHITECTURE-HTML] and [RAZOR-TESTING].</summary>
 public sealed class RazorHtmlProjectionTests(RazorFixture fixture) : IClassFixture<RazorFixture>
 {
+    [Fact]
+    public async Task Source_less_directive_names_have_no_invented_span()
+    {
+        using var manager = await fixture.OpenManagerAsync();
+        var path = fixture.Path("BlazorApp", "Components", "Pages", "Board.razor");
+        var markup = await manager.FindRazorMarkupAsync(path, default);
+        Assert.NotNull(markup);
+        var click = Assert.Single(markup.Attributes, attribute => attribute.Name == "@onclick");
+        Assert.Null(RazorIr.DirectiveName(null, click.Name, markup.Text));
+        _ = Assert.NotNull(click.NameSpan);
+        Assert.Equal(click.Name, markup.Text.ToString(click.NameSpan.Value));
+    }
+
     [Theory]
     [InlineData("BlazorApp", "Components", "Pages", "Board.razor")]
     [InlineData("PagesApp", "Views", "Home", "Index.cshtml")]
