@@ -80,7 +80,7 @@ jobs:
     name: Build VSIX (${{ matrix.platform }})
     needs: version
     runs-on: "${{ matrix.os }}"
-    timeout-minutes: 45
+    timeout-minutes: "${{ matrix.timeout_minutes || 45 }}"
     strategy:
       fail-fast: false
       matrix:
@@ -97,11 +97,16 @@ jobs:
             os: macos-15
             rust_target: aarch64-apple-darwin
             can_execute: true
-          # This just spins forever on GitHub's hosted runners
-          # - platform: darwin-x64
-          #   os: macos-13
-          #   rust_target: x86_64-apple-darwin
-          #   can_execute: true
+          # macos-13 was retired 2025-12-04, so the old leg queued forever;
+          # macos-15-intel is GitHub's standard-runner Intel label for public
+          # repos, making this a NATIVE build (can_execute: true runs the real
+          # smoke test). 4 Intel cores compile the Rust release build slower
+          # than the ARM runners, hence the longer per-leg timeout.
+          - platform: darwin-x64
+            os: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            can_execute: true
+            timeout_minutes: 60
           - platform: win32-x64
             os: windows-latest
             rust_target: x86_64-pc-windows-msvc
@@ -319,7 +324,7 @@ jobs:
         env:
           # Kept beside the build-vsix matrix: adding a platform there without
           # updating this count fails the release loudly instead of shipping short.
-          PLATFORM_COUNT: '5'
+          PLATFORM_COUNT: '6'
       # Hyphenated SemVer tags (v0.2.0-rc.1, v0.2.0-beta) are marked prerelease so
       # they never become the "Latest release". [DIST-RELEASE] [DIST-RELEASE]
       - name: Create GitHub release
@@ -346,6 +351,11 @@ jobs:
   deploy-pages:
     name: Deploy website to GitHub Pages
     needs: release
+    # Publish-side jobs run ONLY on the canonical repo: forks carry neither the
+    # publish secrets nor the Pages setup, and the GitHub Release assets (the
+    # part forks DO want) are already uploaded by `release`. Guarding instead of
+    # deleting keeps this workflow upstream-compatible.
+    if: github.repository == 'Nimblesite/SharpLsp'
     permissions:
       contents: read
       pages: write
@@ -358,6 +368,7 @@ jobs:
     needs:
       - version
       - release
+    if: github.repository == 'Nimblesite/SharpLsp'
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # 20m: allows retry-with-backoff on transient Marketplace 5xx failures.
     timeout-minutes: 20
@@ -479,7 +490,7 @@ jobs:
     needs:
       - version
       - release
-    if: "${{ !contains(github.ref_name, '-') }}"
+    if: "${{ github.repository == 'Nimblesite/SharpLsp' && !contains(github.ref_name, '-') }}"
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
@@ -539,7 +550,7 @@ jobs:
     needs:
       - version
       - release
-    if: "${{ !contains(github.ref_name, '-') }}"
+    if: "${{ github.repository == 'Nimblesite/SharpLsp' && !contains(github.ref_name, '-') }}"
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
@@ -597,6 +608,7 @@ jobs:
     needs:
       - version
       - release
+    if: github.repository == 'Nimblesite/SharpLsp'
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # 20m: allows retry-with-backoff on transient Open VSX 5xx failures
     # (observed: 503 Service Unavailable mid-batch on 2026-08-29).
