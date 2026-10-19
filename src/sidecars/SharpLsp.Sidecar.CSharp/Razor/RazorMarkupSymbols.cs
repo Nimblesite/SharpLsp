@@ -90,7 +90,7 @@ internal static class RazorMarkupSymbols
             || (
                 attribute.Kind == MarkupAttributeKind.Directive
                 && attribute.TagHelper is { Kind: TagHelperKind.Bind } helper
-                && helper.TypeName != "Bind"
+                && helper.Name != "Bind"
             );
         return binds ? attribute.Bound?.PropertyName : null;
     }
