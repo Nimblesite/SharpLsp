@@ -67,6 +67,8 @@ internal static class RazorLocations
     /// <summary>
     /// The projection whose generated document lives at <paramref name="path"/>; null for a
     /// regular document, decompiled source, or a generated document that is not a projection.
+    /// Only projects that list a Razor file have projections, so no other project runs its
+    /// generators for the lookup.
     /// </summary>
     public static async Task<RazorProjection?> FindProjectionAsync(
         Solution solution,
@@ -79,7 +81,7 @@ internal static class RazorLocations
             return null;
         }
 
-        foreach (var project in solution.Projects)
+        foreach (var project in SolutionPaths.RazorProjects(solution))
         {
             var generated = await project
                 .GetSourceGeneratedDocumentsAsync(ct)

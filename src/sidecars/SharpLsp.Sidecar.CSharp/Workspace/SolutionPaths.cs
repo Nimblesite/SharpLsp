@@ -43,12 +43,18 @@ internal static class SolutionPaths
             .Where(document => NativePaths.AreEqual(document.FilePath, filePath));
     }
 
+    /// <summary>The projects that list a Razor file. [RAZOR-ARCHITECTURE-DOCUMENTS]</summary>
+    internal static IEnumerable<Project> RazorProjects(Solution solution)
+    {
+        return solution.Projects.Where(project =>
+            project.AdditionalDocuments.Any(document => NativePaths.IsRazor(document.FilePath))
+        );
+    }
+
     /// <summary>Whether any project lists a Razor file. [RAZOR-ARCHITECTURE-DOCUMENTS]</summary>
     internal static bool HasRazorDocuments(Solution solution)
     {
-        return solution
-            .Projects.SelectMany(project => project.AdditionalDocuments)
-            .Any(document => NativePaths.IsRazor(document.FilePath));
+        return RazorProjects(solution).Any();
     }
 
     /// <summary>Find a loaded project by its project-file path.</summary>
