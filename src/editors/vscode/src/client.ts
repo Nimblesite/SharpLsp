@@ -109,7 +109,6 @@ export async function start(
   // The middleware is built before the client it forwards for, and asks it for
   // projections only once requests flow through it. [RAZOR-FEATURES-HTML]
   const razorHtml = createRazorHtml(serverProjection(() => client));
-  context.subscriptions.push(razorHtml.provider);
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: DOCUMENT_SELECTOR,
@@ -146,7 +145,14 @@ export async function start(
   wireClientState(client, statusBar, openSync, context);
 
   statusBar.setState(ServerState.Starting);
-  await client.start();
+  try {
+    await client.start();
+  } catch (error: unknown) {
+    // A server that never started serves no projections. [RAZOR-FEATURES-HTML]
+    razorHtml.provider.dispose();
+    throw error;
+  }
+  context.subscriptions.push(razorHtml.provider);
   return client;
 }
 

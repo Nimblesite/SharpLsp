@@ -10,6 +10,15 @@ export function fileUri(value: string): Uri {
   return Uri.file(value);
 }
 
+/**
+ * The address of a virtual document embedded in `host`: under `scheme`, named after the
+ * host's whole URI with `extension`, so VS Code reads it as that language, and told
+ * apart by `query`. [SHARPLSP-ARCHITECTURE-PATHS] [RAZOR-FEATURES-HTML]
+ */
+export function embeddedUri(scheme: string, host: Uri, extension: string, query: string): Uri {
+  return Uri.from({ scheme, path: `/${encodeURIComponent(host.toString())}${extension}`, query });
+}
+
 /** The platform's directory separator. [SHARPLSP-ARCHITECTURE-PATHS] */
 export const pathSeparator = nodePath.sep;
 

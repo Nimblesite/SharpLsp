@@ -6,18 +6,19 @@
 // https://code.visualstudio.com/api/language-extensions/embedded-languages
 import {
   CompletionList,
-  Uri,
+  Disposable,
   commands,
   workspace,
   type CompletionItem,
-  type Disposable,
   type Hover,
   type Position,
   type TextDocument,
+  type Uri,
 } from 'vscode';
 import { State, type LanguageClient, type Middleware } from 'vscode-languageclient/node';
 import * as log from './log.js';
-import { getErrorMessage, isRecord } from './utils.js';
+import { embeddedUri } from './paths.js';
+import { isRecord } from './utils.js';
 
 /** Razor's language ids: VS Code's built-in `razor`, and the C# extension's own. */
 export const RAZOR_LANGUAGES: readonly string[] = ['razor', 'aspnetcorerazor'];
@@ -46,7 +47,9 @@ export function serverProjection(client: () => LanguageClient | undefined): Proj
       });
       return isRecord(answer) && typeof answer.text === 'string' ? answer.text : undefined;
     } catch (error) {
-      log.warn(`Razor HTML projection failed for ${uri}: ${getErrorMessage(error)}`);
+      log.warn(
+        JSON.stringify({ event: 'razor_html_projection_failed', uri, errorKind: typeof error }),
+      );
       return undefined;
     }
   };
@@ -68,10 +71,14 @@ type Completions = CompletionItem[] | CompletionList | null | undefined;
 export function createRazorHtml(source: ProjectionSource): RazorHtml {
   // Each Razor document's latest projection, by the projection's address.
   const projections = new Map<string, { readonly address: string; readonly text: string }>();
-  const provider = workspace.registerTextDocumentContentProvider(PROJECTION_SCHEME, {
-    provideTextDocumentContent: (uri) =>
-      [...projections.values()].find((entry) => entry.address === uri.toString())?.text ?? '',
-  });
+  const provider = Disposable.from(
+    workspace.registerTextDocumentContentProvider(PROJECTION_SCHEME, {
+      provideTextDocumentContent: (uri) =>
+        [...projections.values()].find((entry) => entry.address === uri.toString())?.text ?? '',
+    }),
+    // A closed document's projection is never asked for again.
+    workspace.onDidCloseTextDocument((document) => projections.delete(document.uri.toString())),
+  );
   const project = async (document: TextDocument): Promise<Uri | undefined> => {
     const text = await source(document.uri.toString());
     if (text === undefined) return undefined;
@@ -114,11 +121,7 @@ function isRazor(document: TextDocument): boolean {
  * Razor URI it projects and the version it projects, so no answer reads stale text.
  */
 function projectionUri(document: TextDocument): Uri {
-  return Uri.from({
-    scheme: PROJECTION_SCHEME,
-    path: `/${encodeURIComponent(document.uri.toString())}.html`,
-    query: `v=${document.version.toString()}`,
-  });
+  return embeddedUri(PROJECTION_SCHEME, document.uri, '.html', `v=${document.version.toString()}`);
 }
 
 /** The HTML service's completion items at `position` in the projection. */
