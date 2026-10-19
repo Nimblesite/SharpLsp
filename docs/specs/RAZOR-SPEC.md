@@ -302,7 +302,7 @@ The facts hold no C# fragment spans: C# positions come from the projection's map
 | `@` at the start of a markup line | The directives active for the file kind, from the parser options |
 | MVC element start tag | Tag helper attributes (`asp-for`, `asp-page`, …) |
 
-The client adds HTML element and attribute names ([RAZOR-FEATURES-HTML]).
+The client adds HTML element and attribute names ([RAZOR-FEATURES-HTML]). The host's postfix templates (`.if`, `.foreach`, …) never apply in a Razor file, where the same text can be markup.
 
 ### [RAZOR-FEATURES-SIGNATURE-HELP] Signature Help
 

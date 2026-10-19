@@ -230,6 +230,30 @@ mod tests {
         assert!(error.to_string().contains(HTML_PROJECTION), "{error}");
     }
 
+    /// Without the C# sidecar the structure requests fail and name themselves,
+    /// rather than answering that a file has no folds or linked tags.
+    /// [RAZOR-FEATURES-STRUCTURE]
+    #[test]
+    fn structure_requests_without_sidecar_error() {
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let board = serde_json::json!({ "uri": "file:///a/Board.razor" });
+        let linked = Request::new(
+            1.into(),
+            "textDocument/linkedEditingRange".into(),
+            serde_json::json!({ "textDocument": board, "position": { "line": 6, "character": 2 } }),
+        );
+        let error = handle_linked_editing_range(linked, &runtime, None).expect_err("no sidecar");
+        assert!(error.to_string().contains("linkedEditingRange"), "{error}");
+
+        let folds = Request::new(
+            2.into(),
+            "textDocument/foldingRange".into(),
+            serde_json::json!({ "textDocument": board }),
+        );
+        let error = handle_folding_ranges(folds, &runtime, None).expect_err("no sidecar");
+        assert!(error.to_string().contains("foldingRange"), "{error}");
+    }
+
     /// A sidecar fold keeps its lines and claims no characters or kind.
     #[test]
     fn sidecar_folds_become_line_folding_ranges() {
