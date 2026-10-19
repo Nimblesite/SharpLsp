@@ -1,6 +1,4 @@
-using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Razor;
@@ -25,7 +23,7 @@ public sealed class RazorLocationsTests
         // Every SDK project carries source generators, and running them means compiling.
         var solution = workspace
             .CurrentSolution.AddProject("Plain", "Plain", LanguageNames.CSharp)
-            .AddAnalyzerReference(new GeneratorReference())
+            .AddAnalyzerReference(new GeneratorReference(new FixedSources([])))
             .AddDocument("Program.cs", SourceText.From("class Program { }"))
             .Project.Solution;
 
@@ -41,34 +39,5 @@ public sealed class RazorLocationsTests
             project.TryGetCompilation(out _),
             "no project compiles just to look for a Razor projection"
         );
-    }
-
-    /// <summary>A generator that adds nothing, as most of a project's generators do.</summary>
-    private sealed class EmptyGenerator : IIncrementalGenerator
-    {
-        public void Initialize(IncrementalGeneratorInitializationContext context) { }
-    }
-
-    /// <summary>An analyzer reference that supplies <see cref="EmptyGenerator"/>.</summary>
-    private sealed class GeneratorReference : AnalyzerReference
-    {
-        public override string FullPath => "";
-
-        public override object Id => nameof(GeneratorReference);
-
-        public override ImmutableArray<DiagnosticAnalyzer> GetAnalyzers(string language)
-        {
-            return [];
-        }
-
-        public override ImmutableArray<DiagnosticAnalyzer> GetAnalyzersForAllLanguages()
-        {
-            return [];
-        }
-
-        public override ImmutableArray<ISourceGenerator> GetGenerators(string language)
-        {
-            return [new EmptyGenerator().AsSourceGenerator()];
-        }
     }
 }

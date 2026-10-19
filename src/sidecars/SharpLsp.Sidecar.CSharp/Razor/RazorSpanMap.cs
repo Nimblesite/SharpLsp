@@ -129,10 +129,10 @@ internal sealed class RazorSpanMap(ImmutableArray<RazorMapping> mappings)
         int bound
     )
     {
+        // The bound never runs past the Razor text, so only the generated end needs a check.
         var length = 0;
         while (
             length < bound
-            && razorStart + length < razor.Length
             && generatedStart + length < generated.Length
             && razor[razorStart + length] == generated[generatedStart + length]
         )

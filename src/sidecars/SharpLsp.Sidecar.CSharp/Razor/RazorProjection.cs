@@ -21,8 +21,8 @@ internal sealed record RazorProjection(
     RazorSpanMap Map
 )
 {
-    /// <summary>The Razor file's path.</summary>
-    public string RazorPath => Razor.FilePath ?? "";
+    /// <summary>The Razor file's path, which its projection's checksum names, so never null.</summary>
+    public string RazorPath => Razor.FilePath!;
 
     /// <summary>The projection of <paramref name="razor"/>, or null when its project generates none.</summary>
     public static async Task<RazorProjection?> ForRazorAsync(

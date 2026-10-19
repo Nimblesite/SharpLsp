@@ -26,7 +26,9 @@ The phases below are in dependency order. Each item is checked only when a test 
 - [x] Sidecar: bundle the Razor compiler from the build SDK, and list it in `THIRD-PARTY-NOTICES.md` ([RAZOR-ARCHITECTURE-ENGINE])
 - [x] Sidecar: find Razor files as additional documents, and sync their text in every framework context, including the pending-edit replay ([RAZOR-ARCHITECTURE-DOCUMENTS])
 - [x] Sidecar: build the C# projection — find the generated document by its checksum pragma, and build the verified span map in both directions ([RAZOR-ARCHITECTURE-PROJECTION])
+  - [x] Verify the checksum lookup, the mappings that never map (hidden, fileless, foreign, outside either text), carets at a fragment's end, and rename's check that a span holds the old name — `RazorProjectionTests`: 6 passing cases over hand-written generator output
 - [x] Sidecar: build the Razor engine per project — configuration from the analyzer and parse options, an in-memory file system, tag helpers per compilation, the capture pass and markup facts
+  - [x] Verify configuration fallbacks, target-path metadata, current file/import reads, missing files, missing paths, cancellation and failure recovery — `RazorEngineSettingsTests`: 12 passing cases; settings, filesystem and engine each have 100% line coverage
 - [x] Sidecar: build the HTML projection and the markup-context tokenizer ([RAZOR-ARCHITECTURE-HTML])
   - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 19 passing fixture cases (Blazor and MVC, comments, UTF-16, incomplete tags, unsaved edits)
   - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 33 passing cases for tags, attributes, comments, quoted declarations, raw text, script escape states, malformed HTML and caret positions; 100% line coverage

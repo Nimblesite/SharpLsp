@@ -15,20 +15,15 @@ internal static class RazorMarkupSymbols
     /// <summary>The type <paramref name="descriptor"/> names in <paramref name="compilation"/>.</summary>
     public static INamedTypeSymbol? TypeOf(Compilation compilation, TagHelperDescriptor descriptor)
     {
-        var name = SyntaxFactory.ParseTypeName(descriptor.TypeName) switch
-        {
-            QualifiedNameSyntax qualified => qualified.Right,
-            SimpleNameSyntax simple => simple,
-            _ => null,
-        };
-        var arity = name is GenericNameSyntax generic ? generic.Arity : 0;
+        // A generic component's type name ends in its type parameters: `Shared.Tally<TItem>`.
+        // A name's arity counts only its own, so a qualified name asks its rightmost part.
+        var name = SyntaxFactory.ParseName(descriptor.TypeName);
+        var arity = (name is QualifiedNameSyntax qualified ? qualified.Right : name).Arity;
         var prefix = string.IsNullOrEmpty(descriptor.TypeNamespace)
             ? ""
             : descriptor.TypeNamespace + ".";
         var suffix = arity > 0 ? "`" + arity : "";
-        return name is null
-            ? null
-            : compilation.GetTypeByMetadataName(prefix + descriptor.TypeNameIdentifier + suffix);
+        return compilation.GetTypeByMetadataName(prefix + descriptor.TypeNameIdentifier + suffix);
     }
 
     /// <summary>The property named <paramref name="name"/> on <paramref name="type"/> or a base type.</summary>

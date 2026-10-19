@@ -323,12 +323,10 @@ internal sealed partial class WorkspaceManager : IDisposable
     private static async Task<HoverResult?> HoverAtAsync(QueryTarget target, CancellationToken ct)
     {
         var text = await target.Document.GetTextAsync(ct).ConfigureAwait(false);
-        var model = await target.Document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        if (model is null)
-        {
-            return null;
-        }
-
+        // Every query target is a C# document, which always has a semantic model.
+        var model =
+            await target.Document.GetSemanticModelAsync(ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Hover found no semantic model");
         var position = text.Lines.GetPosition(new LinePosition(target.Line, target.Character));
         var built = CSharpHoverBuilder.Build(model, position, ct);
         // The hover's range is the token's mapped span, already in the Razor file for a
