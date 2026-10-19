@@ -41,6 +41,9 @@ fn test_full_stack_razor_routing_session() {
     assert_html_projection(&mut client, &ws, &board, &board_text);
     assert_markup_triggers_only_complete_razor(&mut client, &ws);
     assert_diagnostics_publish_as_razor(&mut client, &board, &board_text);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
 }
 
 /// documentSymbol, foldingRange and linkedEditingRange come from the sidecar's
