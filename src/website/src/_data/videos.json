@@ -1,6 +1,6 @@
 {
   "profiler-film": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1080,
     "duration": "PT1M4S",
@@ -63,7 +63,7 @@
     }
   },
   "profiler-fix-memory-leak": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M32S",
@@ -85,7 +85,7 @@
     "captions": ["en", "ja", "zh"]
   },
   "profiler-fsharp": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M52S",
@@ -107,7 +107,7 @@
     }
   },
   "sharplsp-tour": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1000,
     "height": 562,
     "duration": "PT22S",
@@ -128,7 +128,7 @@
     }
   },
   "getting-started": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M4S",
@@ -150,7 +150,7 @@
     }
   },
   "editor-setup": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT41S",
@@ -172,7 +172,7 @@
     }
   },
   "configuration": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT51S",
@@ -194,7 +194,7 @@
     }
   },
   "fsharp-language": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M53S",
@@ -216,7 +216,7 @@
     }
   },
   "code-completions": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M9S",
@@ -238,7 +238,7 @@
     }
   },
   "hover": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M15S",
@@ -260,7 +260,7 @@
     }
   },
   "navigation": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M0S",
@@ -282,7 +282,7 @@
     }
   },
   "diagnostics": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M24S",
@@ -304,7 +304,7 @@
     }
   },
   "refactoring": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M27S",
@@ -326,7 +326,7 @@
     }
   },
   "context-menus": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M10S",
@@ -348,7 +348,7 @@
     }
   },
   "nuget": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT1M18S",
@@ -370,7 +370,7 @@
     }
   },
   "profiler-csharp": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT2M16S",
@@ -392,7 +392,7 @@
     }
   },
   "architecture": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT38S",
@@ -414,7 +414,7 @@
     }
   },
   "contributing": {
-    "encodings": ["webm", "mp4"],
+    "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
     "duration": "PT38S",
