@@ -1,0 +1,4 @@
+# Stops the repository's .editorconfig, which raises every analyzer diagnostic to an
+# error, from reaching the Razor fixtures. With Directory.Build.props they build as a
+# user's projects would. [RAZOR-TESTING]
+root = true

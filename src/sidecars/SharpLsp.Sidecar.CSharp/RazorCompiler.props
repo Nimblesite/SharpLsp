@@ -8,8 +8,17 @@
         <RazorCompilerDirectory>$(MSBuildExtensionsPath)/Sdks/Microsoft.NET.Sdk.Razor/source-generators/</RazorCompilerDirectory>
     </PropertyGroup>
     <ItemGroup>
-        <Reference Include="$(RazorCompilerDirectory)Microsoft.CodeAnalysis.Razor.Compiler.dll" Private="true" />
-        <Reference Include="$(RazorCompilerDirectory)Microsoft.AspNetCore.Razor.Utilities.Shared.dll" Private="true" />
-        <Reference Include="$(RazorCompilerDirectory)Microsoft.Extensions.ObjectPool.dll" Private="true" />
+        <Reference
+            Include="$(RazorCompilerDirectory)Microsoft.CodeAnalysis.Razor.Compiler.dll"
+            Private="true"
+        />
+        <Reference
+            Include="$(RazorCompilerDirectory)Microsoft.AspNetCore.Razor.Utilities.Shared.dll"
+            Private="true"
+        />
+        <Reference
+            Include="$(RazorCompilerDirectory)Microsoft.Extensions.ObjectPool.dll"
+            Private="true"
+        />
     </ItemGroup>
 </Project>
