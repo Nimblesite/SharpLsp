@@ -368,7 +368,6 @@ jobs:
     needs:
       - version
       - release
-    if: github.repository == 'Nimblesite/SharpLsp'
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # 20m: allows retry-with-backoff on transient Marketplace 5xx failures.
     timeout-minutes: 20
@@ -396,6 +395,12 @@ jobs:
       # authorization is Marketplace publisher membership — hence
       # allow-no-subscriptions.
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        # STEP-level repo scoping, never job-level: security-gates.test.mjs
+        # asserts this job has no job-level `if`, so publishing can never bypass
+        # its audited `release` dependency. On forks the job still runs (and
+        # still requires the audited release) but has no Entra credentials, so
+        # only the credential-holding steps are scoped to the canonical repo.
+        if: github.repository == 'Nimblesite/SharpLsp'
         with:
           client-id: "${{ secrets.AZURE_CLIENT_ID }}"
           tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
@@ -412,6 +417,7 @@ jobs:
       # hyphenated tag is published with --pre-release (the VSIX is packaged with
       # --pre-release in the Makefile for hyphenated versions).
       - name: Publish each platform VSIX (Entra OIDC, no PAT)
+        if: github.repository == 'Nimblesite/SharpLsp'
         shell: bash
         run: |
           set -euo pipefail
@@ -608,7 +614,6 @@ jobs:
     needs:
       - version
       - release
-    if: github.repository == 'Nimblesite/SharpLsp'
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # 20m: allows retry-with-backoff on transient Open VSX 5xx failures
     # (observed: 503 Service Unavailable mid-batch on 2026-08-29).
@@ -630,6 +635,10 @@ jobs:
       # latest release at publish time, inside the job that holds the token — a
       # supply-chain risk. Bump deliberately. Secret: OPEN_VSX_PAT.
       - name: Publish to Open VSX Registry
+        # Step-level repo scoping, same invariant as publish-marketplace: the
+        # job keeps its unconditional audited-release gating, only the
+        # PAT-holding step is scoped to the canonical repo.
+        if: github.repository == 'Nimblesite/SharpLsp'
         env:
           OVSX_PAT: "${{ secrets.OPEN_VSX_PAT }}"
         shell: bash
