@@ -393,7 +393,7 @@ Blazor front ends often sit over F# domain libraries. A Razor project that refer
   - The client syncs `razor` documents (VS Code's built-in id) and `aspnetcorerazor` documents (the C# extension's id).
   - The extension activates on `onLanguage:razor`.
   - It forwards HTML requests ([RAZOR-FEATURES-HTML]).
-- **Zed:** Zed has no built-in Razor language, so Zed support is a plan item.
+- **Zed:** Zed has no built-in Razor language. The server attaches to `Razor`, the language community Razor extensions define, with language id `razor` ([DIST-ZED-REGISTRY]).
 - **Other LSP clients:** the language id is `razor`, and the file types are `.razor` and `.cshtml`.
 
 ## [RAZOR-ERRORS] Degradation
