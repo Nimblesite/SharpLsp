@@ -159,18 +159,50 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
             all,
             entry => IsImportFile(entry.Key) && entry.Value.Any(Unnecessary)
         );
+    }
 
-        // An unused using in a component is still unnecessary there.
+    [Fact]
+    public async Task Components_never_report_a_using_their_markup_may_need_as_unnecessary()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
         var original = await File.ReadAllTextAsync(Board);
+        // `<Virtualize>` resolves through the using, while the generated C# names the
+        // component by its full name, so Roslyn alone sees the using as unused.
+        // [RAZOR-FEATURES-DIAGNOSTICS]
+        const string markup =
+            "@using Microsoft.AspNetCore.Components.Web.Virtualization\n"
+            + "@using System.Text\n"
+            + "<Virtualize TItem=\"string\" ItemsProvider=\"null\" />\n";
+        _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Board, markup + original));
+
+        var diagnostics = RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board));
+        Assert.DoesNotContain(diagnostics, Unnecessary);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == "Error");
+        var all = RazorFixture.Ok(await manager.GetAllDiagnosticsAsync([]));
+        Assert.DoesNotContain(
+            all,
+            entry => NativePaths.AreEqual(entry.Key, Board) && entry.Value.Any(Unnecessary)
+        );
+        // The tag binds through that using, so removing it would unbind the component.
+        var facts = await manager.FindRazorMarkupAsync(Board, default);
+        Assert.NotNull(facts);
+        var virtualize = Assert.Single(facts.Tags, tag => tag.Name == "Virtualize");
+        Assert.Equal(
+            "Microsoft.AspNetCore.Components.Web.Virtualization",
+            virtualize.Component?.TypeNamespace
+        );
+
+        // A C# file, code-behind included, still reports an unused using.
+        var badge = _fixture.Path("BlazorApp", "Components", "Shared", "Badge.razor.cs");
+        var code = await File.ReadAllTextAsync(badge);
         _ = RazorFixture.Ok(
-            await manager.UpdateDocumentTextAsync(Board, "@using System.Text\n" + original)
+            await manager.UpdateDocumentTextAsync(badge, "using System.Text;\n" + code)
         );
         var unused = Assert.Single(
-            RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board)),
+            RazorFixture.Ok(await manager.GetDiagnosticsAsync(badge)),
             Unnecessary
         );
-        Assert.Equal((0, 1), (unused.StartLine, unused.StartCharacter));
-        Assert.True(NativePaths.AreEqual(Board, unused.FilePath), unused.FilePath);
+        Assert.Equal((0, 0), (unused.StartLine, unused.StartCharacter));
     }
 
     private static bool Unnecessary(DiagnosticResult diagnostic)

@@ -39,7 +39,7 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 **Editor validation (2026-10-20):** the final Razor chunk passes all 6 cases, the workspace chunk passes all 446 cases (including server-start lifecycle), the debugger chunk passes all 80 cases, and editor lint and formatting pass. The debugger group-outcome test that previously timed out passes unchanged in the full chunk in 6.5 seconds.
 
-**Template validation (2026-10-20):** the real host and sidecars run over a fresh `dotnet new blazor` app (.NET 10). Its files report no errors and keep their shape in the HTML projection. Hover, definition, references, member completion and signature help answer on its real code: layouts, `@inherits`, `@Body`, `NavLinkMatch`, `@Assets`, `typeof(Program)`. The one false report found, every `_Imports.razor` using marked unnecessary, is fixed with `Import_files_never_report_their_usings_as_unnecessary`.
+**Template validation (2026-10-20):** the real host and sidecars run over a fresh `dotnet new blazor` app (.NET 10). Its files report no errors and keep their shape in the HTML projection. Hover, definition, references, member completion and signature help answer on its real code: layouts, `@inherits`, `@Body`, `NavLinkMatch`, `@Assets`, `typeof(Program)`. The one false report found was usings marked unnecessary: every using in `_Imports.razor`, and, as review showed, a component's usings that only its markup needs. Razor files no longer report unnecessary usings (`Import_files_never_report_their_usings_as_unnecessary`, `Components_never_report_a_using_their_markup_may_need_as_unnecessary`).
 
 ### Phase 2: C# Inside Razor
 

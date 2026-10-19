@@ -30,7 +30,7 @@ internal sealed partial class WorkspaceManager
             if (
                 !span.IsValid
                 || !NativePaths.AreEqual(span.Path, filePath)
-                || ServesOtherFiles(diag, filePath)
+                || MayServeMarkup(diag, filePath)
             )
             {
                 continue;
@@ -43,13 +43,14 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>
-    /// Whether <paramref name="diag"/> calls a using unnecessary in a Razor import file, whose
-    /// usings serve the files beside and below it, which its own projection never sees.
-    /// [RAZOR-FEATURES-DIAGNOSTICS]
+    /// Whether <paramref name="diag"/> calls a using unnecessary in a Razor file, where Roslyn
+    /// sees only the projection: markup resolves component tags through usings that the
+    /// generated C# never needs, since it names each component in full, and an import file's
+    /// usings serve the files beside and below it. [RAZOR-FEATURES-DIAGNOSTICS]
     /// </summary>
-    private static bool ServesOtherFiles(Diagnostic diag, string filePath)
+    private static bool MayServeMarkup(Diagnostic diag, string filePath)
     {
-        return diag.Id is "CS8019" or "IDE0005" && NativePaths.IsRazorImport(filePath);
+        return diag.Id is "CS8019" or "IDE0005" && NativePaths.IsRazor(filePath);
     }
 
     private static DiagnosticResult MapOneDiagnostic(

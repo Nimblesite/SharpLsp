@@ -258,7 +258,7 @@ The facts hold no C# fragment spans: C# positions come from the projection's map
 
 ### [RAZOR-FEATURES-DIAGNOSTICS] Diagnostics
 
-- **C#:** every diagnostic of the file's projection whose mapped path is the Razor file. Diagnostics in hidden scaffolding are dropped. An import file (`_Imports.razor`, `_ViewImports.cshtml`) never calls a using unnecessary (`CS8019`, `IDE0005`): its usings serve the files beside and below it, which its own projection never sees.
+- **C#:** every diagnostic of the file's projection whose mapped path is the Razor file. Diagnostics in hidden scaffolding are dropped. A Razor file never calls a using unnecessary (`CS8019`, `IDE0005`), because Roslyn sees only the projection. Markup resolves component tags through usings that the generated C# never needs, since it names each component in full. An import file's (`_Imports.razor`, `_ViewImports.cshtml`) usings serve the files beside and below it.
 - **Razor:** the `RZ` diagnostics among the file's markup facts. Razor's error severity maps to LSP Error and its warning severity to LSP Warning.
 - **Solution-wide:** `workspace/diagnostics/all` reports Razor files as well.
 
