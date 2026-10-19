@@ -11,6 +11,8 @@
 // films/profiler/render.mjs). The tour is
 // the Marketplace GIF (assets/images/marketplace/sharplsp-tour.gif) re-encoded
 // with the same H.264/VP9 settings, because a GIF is eight times the bytes.
+// MP4 comes first in the catalogue: Windows Chrome/Edge can accept the VP9
+// source then fail decoding it, without falling back to the next source.
 import markdownIt from "markdown-it";
 import languages from "./src/_data/languages.json" with { type: "json" };
 import site from "./src/_data/site.json" with { type: "json" };
@@ -58,7 +60,7 @@ function structuredData(id, video, text) {
     name: text.label,
     description: text.caption,
     thumbnailUrl: `${site.url}${asset(id, "-poster.webp")}`,
-    contentUrl: `${site.url}${asset(id, `.${video.encodings.at(-1)}`)}`,
+    contentUrl: `${site.url}${asset(id, `.${video.encodings[0]}`)}`,
     uploadDate: video.uploadDate,
     duration: video.duration,
     width: video.width,

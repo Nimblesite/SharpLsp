@@ -131,6 +131,7 @@ Screenshots and video of a SharpLsp feature show the real extension, never a moc
 - **Privacy.** No frame may show a user name, home directory or hostname. The demo runs from a neutral temporary path, and the editor runs on a copy-on-write clone of the .NET install under that path, with its login-shell environment off, so every path it prints is neutral. A terminal appears only where the feature runs in one (F# Interactive, a build task, a contributor's command line), and a shell terminal starts with no profile and a bare `$ ` prompt.
 - **Formats.**
   - Films ship as H.264 MP4 and VP9 WebM with a WebP poster.
+  - Prefer H.264 MP4 before WebM: Windows Chrome/Edge may accept VP9 but fail during decoding, without trying the next source. Playback tests must verify advancing time and decoded frames, pause, seek and resume on installed Windows Chrome and Edge as well as desktop and phone browser projects.
   - Stills ship as WebP, 2400px wide, with `width` and `height` set.
   - Marketing pages may autoplay a film only when it is muted and looping; docs pages use controls and are never muted.
   - Every autoplaying video pauses and shows its controls under `prefers-reduced-motion: reduce`.

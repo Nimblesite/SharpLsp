@@ -65,7 +65,7 @@ function expectDescribed(object, id, label, sources) {
   expect(object.name, 'search sees the same title the reader hears').toBe(label);
   expect(object.description.length, 'a real description').toBeGreaterThanOrEqual(20);
   expect(object.thumbnailUrl).toBe(`${SITE}${poster(id)}`);
-  expect(object.contentUrl).toBe(`${SITE}${sources.at(-1)}`);
+  expect(object.contentUrl, 'search links to the preferred playable encoding').toBe(`${SITE}${sources[0]}`);
   expect(object.duration).toMatch(/^PT(\d+M)?\d+S$/);
   expect(Number.isNaN(Date.parse(object.uploadDate)), 'uploadDate is a real date').toBe(false);
 }

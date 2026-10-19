@@ -20,6 +20,19 @@ export async function expectPlayable(request, urls, kind) {
 export const playback = (video) =>
   video.evaluate((element) => ({ paused: element.paused, controls: element.controls, muted: element.muted }));
 
+/** Real decoding, including errors raised AFTER play() resolves. [WEB-DESIGN-MEDIA] */
+export async function expectFramesAdvance(video, from) {
+  const frames = await video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames);
+  await expect.poll(() => video.evaluate((v, start) => ({
+    error: v.error?.message ?? null,
+    paused: v.paused,
+    advancing: v.currentTime > start.time + 1,
+    decoding: v.getVideoPlaybackQuality().totalVideoFrames > start.frames + 5,
+  }), { time: from, frames }), { timeout: 15000 }).toEqual({
+    error: null, paused: false, advancing: true, decoding: true,
+  });
+}
+
 export const sourcesOf = (video) =>
   video.locator('source').evaluateAll((sources) => sources.map((s) => s.getAttribute('src')));
 

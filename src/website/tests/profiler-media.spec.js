@@ -5,7 +5,7 @@ import { expectPlayable, expectStills, playback, sourcesOf } from './media.js';
 
 const FILM_POSTER = '/assets/videos/profiler-film-poster.webp';
 const WALKTHROUGH_POSTER = '/assets/videos/profiler-csharp-poster.webp';
-const FILM_SOURCES = ['/assets/videos/profiler-film.webm', '/assets/videos/profiler-film.mp4'];
+const FILM_SOURCES = ['/assets/videos/profiler-film.mp4', '/assets/videos/profiler-film.webm'];
 const PROFILER_STILLS = 8;
 const DOCS = ['/docs/profiler/', '/zh/docs/profiler/', '/ja/docs/profiler/'];
 
