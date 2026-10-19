@@ -176,6 +176,32 @@ internal sealed partial class WorkspaceManager
             : RazorLocations.MapAsync(_solution, result, ct);
     }
 
+    /// <summary>
+    /// The location <paramref name="resolve"/> finds where the position lands, mapped to a
+    /// Razor file, or null when it is hidden scaffolding. [RAZOR-FEATURES-DEFINITION]
+    /// </summary>
+    private Task<Outcome.Result<LocationResult?, string>> RunLocationQueryAsync(
+        string filePath,
+        (int Line, int Character) at,
+        Func<Document, int, int, CancellationToken, Task<LocationResult?>> resolve,
+        CancellationToken ct
+    )
+    {
+        return RunPositionQueryAsync<LocationResult?>(
+            filePath,
+            at,
+            null,
+            async target =>
+                await MapLocationAsync(
+                        await resolve(target.Document, target.Line, target.Character, ct)
+                            .ConfigureAwait(false),
+                        ct
+                    )
+                    .ConfigureAwait(false),
+            ct
+        );
+    }
+
     /// <summary><paramref name="location"/> mapped to a Razor file, or null when it is hidden scaffolding.</summary>
     private async Task<LocationResult?> MapLocationAsync(
         LocationResult? location,

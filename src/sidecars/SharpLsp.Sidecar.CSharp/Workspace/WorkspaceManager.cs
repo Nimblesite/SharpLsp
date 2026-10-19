@@ -373,23 +373,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunPositionQueryAsync<LocationResult?>(
+        return RunLocationQueryAsync(
             filePath,
             (line, character),
-            null,
-            async target =>
-                await MapLocationAsync(
-                        await DefinitionResolver
-                            .ResolveTypeDefinitionAsync(
-                                target.Document,
-                                target.Line,
-                                target.Character,
-                                ct
-                            )
-                            .ConfigureAwait(false),
-                        ct
-                    )
-                    .ConfigureAwait(false),
+            DefinitionResolver.ResolveTypeDefinitionAsync,
             ct
         );
     }
@@ -402,23 +389,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunPositionQueryAsync<LocationResult?>(
+        return RunLocationQueryAsync(
             filePath,
             (line, character),
-            null,
-            async target =>
-                await MapLocationAsync(
-                        await DefinitionResolver
-                            .ResolveDeclarationAsync(
-                                target.Document,
-                                target.Line,
-                                target.Character,
-                                ct
-                            )
-                            .ConfigureAwait(false),
-                        ct
-                    )
-                    .ConfigureAwait(false),
+            DefinitionResolver.ResolveDeclarationAsync,
             ct
         );
     }
