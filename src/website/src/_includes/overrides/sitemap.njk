@@ -12,7 +12,7 @@
   {%- set film = page.data.socialVideo %}
   <url>
     <loc>{{ site.url }}{{ page.url }}</loc>
-    <lastmod>{{ page.date | isoDate }}</lastmod>
+    <lastmod>{{ page.data.published | isoDate }}</lastmod>
     {%- if page.url == "/" or page.url == "/index.html" %}
     <priority>1.0</priority>
     <changefreq>weekly</changefreq>

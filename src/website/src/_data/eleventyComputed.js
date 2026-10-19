@@ -4,4 +4,10 @@ import { socialVideo } from "../../video-pages.js";
 
 export default {
   socialVideo: (data) => socialVideo(data.page.url),
+  // When a page was published: a watch page when its video was uploaded, for it has
+  // no file of its own whose date means anything, and every other page on its own date.
+  published: (data) => {
+    const film = socialVideo(data.page.url);
+    return film?.watch === data.page.url ? film.uploadDate : data.page.date;
+  },
 };

@@ -41,7 +41,13 @@ async function expectWatchStructuredData(page, id, lang) {
   expect(described.potentialAction.target).toBe(`${SITE}${watchOf(id, lang)}?t={seek_to_second_number}`);
   expect(described.potentialAction['startOffset-input']).toBe('required name=seek_to_second_number');
   expect(Boolean(described.transcript), 'a narrated film carries its transcript').toBe((VIDEOS[id].captions ?? []).includes(lang));
+  const [webPage] = await page.locator('script[type="application/ld+json"]').evaluateAll((scripts) =>
+    scripts.flatMap((script) => JSON.parse(script.textContent)['@graph'] ?? []).filter((node) => node['@type'] === 'WebPage'));
+  expect(webPage.datePublished, 'the page is published when its video was').toBe(uploadedAt(id));
 }
+
+/** When video `id` was uploaded, as the ISO timestamp pages and the sitemap carry. */
+const uploadedAt = (id) => new Date(VIDEOS[id].uploadDate).toISOString();
 
 /** The narration as text: one paragraph per spoken cue, no sound cues. */
 async function expectTranscript(page, id, lang) {
@@ -108,6 +114,7 @@ const sitemapEntries = (page, xml) =>
     const field = (node, name) => node.getElementsByTagName(`video:${name}`)[0]?.textContent ?? null;
     return [...doc.getElementsByTagName('url')].map((url) => ({
       loc: url.getElementsByTagName('loc')[0].textContent,
+      lastmod: url.getElementsByTagName('lastmod')[0]?.textContent ?? null,
       videos: url.getElementsByTagName('video:video').length,
       ...Object.fromEntries(['title', 'description', 'thumbnail_loc', 'content_loc', 'player_loc', 'duration', 'publication_date']
         .map((name) => [name, field(url, name)])),
@@ -122,6 +129,7 @@ function expectVideoEntry(entry, id, lang) {
   expect(entry.player_loc).toBe(`${SITE}${watchOf(id, lang)}embed/`);
   expect(Number(entry.duration)).toBe(secondsOf(VIDEOS[id].duration));
   expect(entry.publication_date).toBe(VIDEOS[id].uploadDate);
+  expect(entry.lastmod, 'a watch page changes when its video does, not with each build').toBe(uploadedAt(id));
 }
 
 test('the sitemap lists every docs page and every watch page with its video', async ({ page, request }) => {

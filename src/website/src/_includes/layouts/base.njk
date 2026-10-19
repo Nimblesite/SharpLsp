@@ -122,8 +122,8 @@
         "name": "{{ title | default(site.title) }}",
         "description": {{ pageDescription | dump | safe }},
         "isPartOf": { "@id": "{{ site.url }}/#website" },
-        "inLanguage": "{{ lang | default('en') }}"{% if page.date %},
-        "datePublished": "{{ page.date | isoDate }}"{% endif %}{% if author %},
+        "inLanguage": "{{ lang | default('en') }}"{% if published %},
+        "datePublished": "{{ published | isoDate }}"{% endif %}{% if author %},
         "author": {
           "@type": "Person",
           "name": "{{ author }}"
