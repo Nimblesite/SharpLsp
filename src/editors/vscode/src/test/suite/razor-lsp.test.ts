@@ -4,18 +4,54 @@
 // the built-in HTML service's completion and hover over the server's HTML projection
 // (`sharplsp/razor/htmlProjection`, [RAZOR-ARCHITECTURE-HTML]).
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { DOCUMENT_SELECTOR } from '../../client.js';
+import { logFilePath } from '../../log.js';
+import { projectionUri, serverProjection } from '../../razor-html.js';
 import { completionList, hoverText } from './filebased-package-kit';
+import { lspClient } from './profiler-kit';
 import { openRepoFile, positionOf } from './real-repo-helpers';
 import { completionLabels } from './real-repo-kit';
-import { htmlProjection, RAZOR_FILES, useRazorFixture } from './razor-kit';
+import {
+  htmlProjection,
+  RAZOR_FILES,
+  STRAY_RAZOR,
+  useRazorFixture,
+  writeStrayRazor,
+} from './razor-kit';
 import { packageJson } from './run-debug-kit';
-import { closeAllEditors, pollProvider, waitForHoverResult } from './test-helpers';
+import {
+  closeAllEditors,
+  pollProvider,
+  pollUntilResult,
+  removeDirRecursive,
+  waitForHoverResult,
+} from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /** The C# expression the Counter page shows, and the field it reads. */
 const COUNT: readonly [string, string] = ['Current count: @currentCount', 'currentCount'];
+
+/**
+ * Elements the HTML service offers at any tag name that no fixture file holds as a
+ * word, so VS Code's word-based suggestions can never supply them.
+ */
+const HTML_ONLY: readonly string[] = ['blockquote', 'figcaption', 'fieldset'];
+
+/** The line the log holds for `uri`, once it holds one. */
+function loggedLine(uri: string): Promise<string | undefined> {
+  return pollUntilResult(
+    async () =>
+      (await fs.promises.readFile(logFilePath(), 'utf8'))
+        .split('\n')
+        .find((line) => line.includes(uri)),
+    (line) => line !== undefined,
+    LSP_RESPONSE_MS,
+    undefined,
+    `a log line naming ${uri}`,
+  );
+}
 
 /** Hover text at `position`, once it satisfies `until`. */
 async function hoverWhen(
@@ -145,6 +181,65 @@ suite('Razor in VS Code', () => {
     const csharp = hoverText(await waitForHoverResult(uri, positionOf(doc, ...COUNT)));
     assert.match(csharp, /\bint\b/, 'the field’s type');
     assert.ok(!fromMdn(csharp), 'no HTML documentation on C#');
+  });
+
+  test('markup without a projection keeps the server’s answers alone', async function () {
+    this.timeout(LSP_RESPONSE_MS * 4);
+    const root = writeStrayRazor('<h2>Stray</h2>\n<p>No project lists this file.</p>\n');
+    try {
+      const listed = await openRepoFile(fixture().root, RAZOR_FILES.counter);
+      const stray = await openRepoFile(root, STRAY_RAZOR);
+      const heading = positionOf(stray.doc, '<h2>Stray', 'h2');
+
+      // Interaction 1 — at a tag name, a listed file gets the HTML service's elements;
+      // a file no project lists has no projection, so the server's items stand alone.
+      const offered = completionLabels(
+        await completionList(listed.uri, positionOf(listed.doc, '<h1>Counter', 'h1'), 'fieldset'),
+      );
+      for (const element of HTML_ONLY) assert.ok(offered.has(element), `listed: <${element}>`);
+      assert.equal(
+        await htmlProjection(stray.uri),
+        undefined,
+        'an unlisted file has no projection',
+      );
+      const own = completionLabels(
+        await vscode.commands.executeCommand<vscode.CompletionList>(
+          'vscode.executeCompletionItemProvider',
+          stray.uri,
+          heading,
+        ),
+      );
+      for (const element of HTML_ONLY) assert.ok(!own.has(element), `unlisted: no <${element}>`);
+
+      // Interaction 2 — hover: the server has none there, and the HTML service is never
+      // asked; the address the file's projection would have reads as empty HTML.
+      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+        'vscode.executeHoverProvider',
+        stray.uri,
+        heading,
+      );
+      assert.equal(hoverText(hovers), '', 'no hover from the server or the HTML service');
+      const address = await vscode.workspace.openTextDocument(projectionUri(stray.doc));
+      assert.equal(address.languageId, 'html', 'a projection address reads as HTML');
+      assert.equal(address.getText(), '', 'and holds nothing for a file never projected');
+
+      // Interaction 3 — the server refuses a URI that names no file: the refusal is
+      // logged and answers no projection, as a stopped client does, while the running
+      // server still projects the listed file.
+      const unreadable = `untitled:Stray-${Date.now()}.razor`;
+      assert.equal(await serverProjection(lspClient)(unreadable), undefined, 'a refusal');
+      assert.match(
+        (await loggedLine(unreadable)) ?? '',
+        /\[WARN\] \{"event":"razor_html_projection_failed","uri":"untitled:/,
+        'is logged as a warning, by event and URI',
+      );
+      assert.equal(await serverProjection(() => undefined)(listed.uri.toString()), undefined);
+      const projection = await serverProjection(lspClient)(listed.uri.toString());
+      assert.ok(projection?.includes('<h1>Counter</h1>'), 'the running server projects');
+    } finally {
+      await closeAllEditors();
+      removeDirRecursive(root);
+    }
   });
 
   test('references to a field in Razor land in its Razor file, never generated code', async function () {

@@ -120,23 +120,26 @@ function isRazor(document: TextDocument): boolean {
  * The projection's address: an `.html` path, so VS Code reads it as HTML, carrying the
  * Razor URI it projects and the version it projects, so no answer reads stale text.
  */
-function projectionUri(document: TextDocument): Uri {
+export function projectionUri(document: TextDocument): Uri {
   return embeddedUri(PROJECTION_SCHEME, document.uri, '.html', `v=${document.version.toString()}`);
 }
 
-/** The HTML service's completion items at `position` in the projection. */
+/**
+ * The HTML service's completion items at `position` in the projection. The command
+ * always resolves to a list, an empty one when no provider answers.
+ */
 async function htmlCompletions(
   uri: Uri,
   position: Position,
   trigger: string | undefined,
 ): Promise<CompletionItem[]> {
-  const list = await commands.executeCommand<CompletionList | undefined>(
+  const list = await commands.executeCommand<CompletionList>(
     'vscode.executeCompletionItemProvider',
     uri,
     position,
     trigger,
   );
-  return list?.items ?? [];
+  return list.items;
 }
 
 /** The HTML service's hover at `position` in the projection, if it has one. */
