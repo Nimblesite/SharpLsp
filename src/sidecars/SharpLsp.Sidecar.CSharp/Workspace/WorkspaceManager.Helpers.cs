@@ -27,7 +27,11 @@ internal sealed partial class WorkspaceManager
             // A diagnostic belongs to the file its location maps to: a projection's hidden
             // scaffolding maps nowhere and drops out. [RAZOR-FEATURES-DIAGNOSTICS]
             var span = diag.Location.GetMappedLineSpan();
-            if (!span.IsValid || !NativePaths.AreEqual(span.Path, filePath))
+            if (
+                !span.IsValid
+                || !NativePaths.AreEqual(span.Path, filePath)
+                || ServesOtherFiles(diag, filePath)
+            )
             {
                 continue;
             }
@@ -36,6 +40,16 @@ internal sealed partial class WorkspaceManager
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="diag"/> calls a using unnecessary in a Razor import file, whose
+    /// usings serve the files beside and below it, which its own projection never sees.
+    /// [RAZOR-FEATURES-DIAGNOSTICS]
+    /// </summary>
+    private static bool ServesOtherFiles(Diagnostic diag, string filePath)
+    {
+        return diag.Id is "CS8019" or "IDE0005" && NativePaths.IsRazorImport(filePath);
     }
 
     private static DiagnosticResult MapOneDiagnostic(

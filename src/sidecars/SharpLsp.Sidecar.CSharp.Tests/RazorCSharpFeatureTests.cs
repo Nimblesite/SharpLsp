@@ -138,6 +138,53 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
     }
 
     [Fact]
+    public async Task Import_files_never_report_their_usings_as_unnecessary()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+        var imports = _fixture.Path("BlazorApp", "Components", "_Imports.razor");
+        var viewImports = _fixture.Path("PagesApp", "Pages", "_ViewImports.cshtml");
+
+        // An import file's usings serve the files beside and below it, which its own
+        // projection never sees. [RAZOR-FEATURES-DIAGNOSTICS]
+        Assert.DoesNotContain(
+            RazorFixture.Ok(await manager.GetDiagnosticsAsync(imports)),
+            Unnecessary
+        );
+        Assert.DoesNotContain(
+            RazorFixture.Ok(await manager.GetDiagnosticsAsync(viewImports)),
+            Unnecessary
+        );
+        var all = RazorFixture.Ok(await manager.GetAllDiagnosticsAsync([]));
+        Assert.DoesNotContain(
+            all,
+            entry => IsImportFile(entry.Key) && entry.Value.Any(Unnecessary)
+        );
+
+        // An unused using in a component is still unnecessary there.
+        var original = await File.ReadAllTextAsync(Board);
+        _ = RazorFixture.Ok(
+            await manager.UpdateDocumentTextAsync(Board, "@using System.Text\n" + original)
+        );
+        var unused = Assert.Single(
+            RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board)),
+            Unnecessary
+        );
+        Assert.Equal((0, 1), (unused.StartLine, unused.StartCharacter));
+        Assert.True(NativePaths.AreEqual(Board, unused.FilePath), unused.FilePath);
+    }
+
+    private static bool Unnecessary(DiagnosticResult diagnostic)
+    {
+        return diagnostic.Code is "CS8019" or "IDE0005";
+    }
+
+    private static bool IsImportFile(string path)
+    {
+        return NativePaths.SameName(path, "_Imports.razor")
+            || NativePaths.SameName(path, "_ViewImports.cshtml");
+    }
+
+    [Fact]
     public async Task Diagnostics_map_csharp_errors_into_the_razor_file_and_the_solution_scan()
     {
         using var manager = await _fixture.OpenManagerAsync();

@@ -35,7 +35,7 @@ internal sealed class WorkspaceRazorFileSystem : RazorProjectFileSystem
     {
         var items = new Dictionary<string, WorkspaceRazorItem>(NativePaths.Comparer);
         var documents = target.Project.AdditionalDocuments.Where(document =>
-            document.Id == target.Id || IsImport(document.FilePath)
+            document.Id == target.Id || NativePaths.IsRazorImport(document.FilePath)
         );
         foreach (var document in documents)
         {
@@ -65,15 +65,6 @@ internal sealed class WorkspaceRazorFileSystem : RazorProjectFileSystem
         return _items.TryGetValue(physical, out var item)
             ? item
             : new WorkspaceRazorItem(path, physical, null);
-    }
-
-    private static bool IsImport(string? path)
-    {
-        return path is not null
-            && (
-                NativePaths.SameName(path, "_Imports.razor")
-                || NativePaths.SameName(path, "_ViewImports.cshtml")
-            );
     }
 }
 
