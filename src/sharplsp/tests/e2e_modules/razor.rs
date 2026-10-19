@@ -38,6 +38,7 @@ fn test_full_stack_razor_routing_session() {
     );
 
     assert_syntax_requests_reach_the_sidecar(&mut client, &board);
+    assert_html_projection(&mut client, &ws, &board, &board_text);
     assert_markup_triggers_only_complete_razor(&mut client, &ws);
     assert_diagnostics_publish_as_razor(&mut client, &board, &board_text);
 }
@@ -122,6 +123,32 @@ fn assert_syntax_requests_reach_the_sidecar(client: &mut LspClient, board: &str)
     );
     assert_rpc_ok(&selection, "selectionRange(Board.razor)");
     assert_eq!(selection["result"], json!([]));
+}
+
+/// The HTML projection keeps markup at its own positions and blanks Razor; a
+/// C# file has none. [RAZOR-ARCHITECTURE-HTML]
+fn assert_html_projection(client: &mut LspClient, ws: &RazorWorkspace, board: &str, text: &str) {
+    let answer = document_request(client, "sharplsp/razor/htmlProjection", board);
+    assert_rpc_ok(&answer, "htmlProjection(Board.razor)");
+    let html = answer["result"]["text"].as_str().expect("projection text");
+    let widths = |source: &str| source.lines().map(str::len).collect::<Vec<_>>();
+    assert_eq!(widths(html), widths(text), "every line keeps its width");
+    let lines: Vec<&str> = html.lines().collect();
+    assert_eq!(
+        lines[4], "<PageTitle>Board    </PageTitle>",
+        "`@Id` is blanked"
+    );
+    assert!(lines[6].starts_with("<Panel"), "markup stays: {}", lines[6]);
+    assert_eq!(lines[10], "</Panel>");
+    assert!(
+        lines[0].trim().is_empty() && lines[14].trim().is_empty(),
+        "`@page` and `@code {{` are blanked"
+    );
+
+    let program = ws.uri(&["BlazorApp", "Program.cs"]);
+    let none = document_request(client, "sharplsp/razor/htmlProjection", &program);
+    assert_rpc_ok(&none, "htmlProjection(Program.cs)");
+    assert_eq!(none["result"], Value::Null, "a C# file has no projection");
 }
 
 /// `<` and `@` complete in Razor but answer `null` at once in C#.

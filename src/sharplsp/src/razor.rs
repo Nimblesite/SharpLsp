@@ -11,7 +11,7 @@ use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
     CompletionParams, FoldingRange, FoldingRangeParams, LinkedEditingRangeParams,
-    LinkedEditingRanges, Position, Range, Uri,
+    LinkedEditingRanges, Position, Range, TextDocumentIdentifier, Uri,
 };
 
 use crate::semantic::SidecarLocationListResult;
@@ -21,6 +21,17 @@ use crate::utils::{SidecarFileReq, SidecarPositionReq};
 
 /// Completion trigger characters that only Razor markup uses.
 pub const MARKUP_TRIGGERS: [&str; 2] = ["<", "@"];
+
+/// The request that answers a Razor document's HTML projection.
+pub const HTML_PROJECTION: &str = "sharplsp/razor/htmlProjection";
+
+/// Params of [`HTML_PROJECTION`]: the Razor document.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HtmlProjectionParams {
+    /// The Razor document to project.
+    text_document: TextDocumentIdentifier,
+}
 
 /// Whether `uri` names a Razor document.
 pub fn is_razor(uri: &Uri) -> bool {
@@ -45,12 +56,39 @@ pub fn handle_folding_ranges(
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let params: FoldingRangeParams = serde_json::from_value(req.params)?;
-    let request = SidecarFileReq {
-        file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
-    };
+    let request = file_request(&params.text_document.uri)?;
     let folds: Vec<(u32, u32)> = fetch(runtime, sidecar, "textDocument/foldingRange", &request)?;
     let ranges: Vec<FoldingRange> = folds.into_iter().map(to_folding_range).collect();
     Ok(serde_json::to_value(ranges)?)
+}
+
+/// Handle [`HTML_PROJECTION`] via the C# sidecar: `{ text }`, the document's
+/// text with every non-HTML character blanked, or `null` when no project
+/// lists the document. Implements [RAZOR-ARCHITECTURE-HTML].
+pub fn handle_html_projection(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let params: HtmlProjectionParams = serde_json::from_value(req.params)?;
+    let request = file_request(&params.text_document.uri)?;
+    let projection: Option<(String,)> = fetch(runtime, sidecar, HTML_PROJECTION, &request)?;
+    Ok(projection_answer(projection))
+}
+
+/// The wire answer for a sidecar projection: `{ text }`, or `null` for none.
+fn projection_answer(projection: Option<(String,)>) -> serde_json::Value {
+    projection.map_or(
+        serde_json::Value::Null,
+        |(text,)| serde_json::json!({ "text": text }),
+    )
+}
+
+/// The sidecar request naming the document at `uri`.
+fn file_request(uri: &Uri) -> Result<SidecarFileReq> {
+    Ok(SidecarFileReq {
+        file_path: crate::paths::uri_to_path(uri.as_str())?,
+    })
 }
 
 /// Handle `textDocument/linkedEditingRange` for a Razor document via the C#
@@ -160,6 +198,31 @@ mod tests {
             "file:///a/Program.cs",
             None
         )));
+    }
+
+    /// A projection answers `{ text }`; a document no project lists answers
+    /// `null`. [RAZOR-ARCHITECTURE-HTML]
+    #[test]
+    fn projections_answer_text_or_null() {
+        assert_eq!(
+            projection_answer(Some(("<p>   </p>".to_string(),))),
+            serde_json::json!({ "text": "<p>   </p>" })
+        );
+        assert_eq!(projection_answer(None), serde_json::Value::Null);
+    }
+
+    /// Without the C# sidecar the projection request fails and names itself,
+    /// rather than answering an empty projection.
+    #[test]
+    fn html_projection_without_sidecar_errors() {
+        let req = Request::new(
+            1.into(),
+            HTML_PROJECTION.into(),
+            serde_json::json!({ "textDocument": { "uri": "file:///a/Board.razor" } }),
+        );
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let error = handle_html_projection(req, &runtime, None).expect_err("no sidecar");
+        assert!(error.to_string().contains(HTML_PROJECTION), "{error}");
     }
 
     /// A sidecar fold keeps its lines and claims no characters or kind.

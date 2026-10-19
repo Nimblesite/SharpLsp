@@ -23,18 +23,19 @@ The phases below are in dependency order. Each item is checked only when a test 
 `SharpLspRazorClaude2` owns editor integration (Phase 5). Checkboxes require passing tests.
 
 - [x] Fixture solution `src/sharplsp/tests/fixtures/razor/` with `BlazorApp`, `Widgets` (RCL), `PagesApp` (Pages + MVC) and `Domain` (F#), isolated by its own `Directory.Build.props` ([RAZOR-TESTING])
-- [ ] Host: add `LangId::Razor` for `.razor` and `.cshtml`, owned by the C# sidecar ([RAZOR-ARCHITECTURE-ROUTING])
-- [ ] Host: route `documentSymbol`, `foldingRange` and `linkedEditingRange` for Razor to the sidecar, and answer `selectionRange` empty
-- [ ] Host: add `<` and `@` completion triggers, and short-circuit them for C# and F# documents
-- [ ] Host: publish Razor diagnostics under the source `sharplsp-razor`
+- [x] Host: add `LangId::Razor` for `.razor` and `.cshtml`, owned by the C# sidecar ([RAZOR-ARCHITECTURE-ROUTING])
+- [x] Host: route `documentSymbol`, `foldingRange` and `linkedEditingRange` for Razor to the sidecar, and answer `selectionRange` empty
+- [x] Host: add `<` and `@` completion triggers, and short-circuit them for C# and F# documents
+- [x] Host: publish Razor diagnostics under the source `sharplsp-razor`
 - [x] Sidecar: bundle the Razor compiler from the build SDK, and list it in `THIRD-PARTY-NOTICES.md` ([RAZOR-ARCHITECTURE-ENGINE])
 - [x] Sidecar: find Razor files as additional documents, and sync their text in every framework context, including the pending-edit replay ([RAZOR-ARCHITECTURE-DOCUMENTS])
 - [x] Sidecar: build the C# projection — find the generated document by its checksum pragma, and build the verified span map in both directions ([RAZOR-ARCHITECTURE-PROJECTION])
 - [x] Sidecar: build the Razor engine per project — configuration from the analyzer and parse options, an in-memory file system, tag helpers per compilation, the capture pass and markup facts
 - [ ] Sidecar: build the HTML projection and the markup-context tokenizer ([RAZOR-ARCHITECTURE-HTML])
-  - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 3 passing fixture tests (Blazor and MVC)
-  - [ ] HTML markup-context tokenizer
-  - [ ] Verify `sharplsp/razor/htmlProjection` through host and editor integration
+  - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 16 passing fixture cases (Blazor and MVC, comments, UTF-16, incomplete tags, unsaved edits)
+  - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 21 passing cases for tags, attributes, comments, declarations, raw text and caret positions
+  - [x] Host: `sharplsp/razor/htmlProjection` answers `{ text }`, or `null` for a file no project lists — `test_full_stack_razor_routing_session`
+  - [ ] Verify `sharplsp/razor/htmlProjection` through editor integration
 
 ### Phase 2: C# Inside Razor
 

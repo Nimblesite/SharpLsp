@@ -1164,6 +1164,7 @@ fn handle_custom_request(
         "sharplsp/sortMembers" => handle_sort_members(req, parsers, vfs),
         "sharplsp/statementStop" => handle_statement_stop(req, parsers, vfs),
         "sharplsp/hotReload" => hot_reload::handle(req, runtime, csharp_sidecar),
+        razor::HTML_PROJECTION => razor::handle_html_projection(req, runtime, csharp_sidecar),
         // NuGet package management
         "sharplsp/nuget/targets" => nuget::handlers::handle_targets(req),
         "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
