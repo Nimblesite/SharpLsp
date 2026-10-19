@@ -127,20 +127,104 @@ flowchart LR
 - **Features:**
   - `CompilerFeatures.Register` provides components;
   - MVC's `RazorExtensions.Register` provides pages, views and tag helpers;
-  - tag helpers are discovered by `CompilationTagHelperFeature` over the project's compilation, generated components included, plus its metadata references;
-  - a capture pass runs last in the optimization phase.
+  - tag helpers are discovered by `CompilationTagHelperFeature` over the project's compilation, generated components included, and over every reference of that compilation, project references included;
+  - capture passes read the IR while the compiler builds it ([RAZOR-ARCHITECTURE-ENGINE-CAPTURE]).
 - **File system:** the engine reads files through an in-memory Razor file system over the project's Razor documents. Imports therefore resolve as the compiler resolves them: the default imports, then hierarchical `_Imports.razor` or `_ViewImports.cshtml`, all from the workspace's current text.
-- **Markup facts:** processing a file returns its markup facts:
-  - **Components:** type, descriptor, tag-name span, element span.
-  - **Component attributes:** bound property, descriptor, name span, and the `@bind-X` origin.
-  - **Directive attributes:** kind and name span.
-  - **MVC tag helpers:** each tag helper and its bound attributes.
-  - **Other markup:** plain elements, directives with their tokens, C# fragment spans, and Razor diagnostics.
+- **Markup facts:** processing a file returns its markup facts ([RAZOR-ARCHITECTURE-ENGINE-FACTS]).
 - **State lifetime:** tag helpers are compiler state derived from one Roslyn compilation, and they are held only as long as that compilation lives (keyed to its instance). They are never held per request, and they are never feature results ([SHARPLSP-ARCHITECTURE-CACHING]).
+
+#### [RAZOR-ARCHITECTURE-ENGINE-CAPTURE] Capture Passes
+
+Later passes rewrite the IR, so each capture pass copies what it needs the moment it runs:
+
+| Pass | Runs | Reads |
+|---|---|---|
+| Directives | First in the directive-classifier phase, before `@code` becomes plain C# | Directives, `@using` included, and the HTML projection |
+| Tags | First in the optimization phase, before components are lowered and attribute names lose their spans | Elements, attributes, and the namespaces `@using` imports |
+| Diagnostics | Last in the optimization phase | `RZ` diagnostics |
+
+- **Spans:** every span comes from the compiler. Where a node has no span for a part (an end tag's name, a directive's name, a directive attribute's `@`), the part's span is derived from the node's span and kept only when the text there is that part.
+- **Imports:** directives and tags of imported files are skipped. A diagnostic is kept only when it lies in the processed file.
+
+#### [RAZOR-ARCHITECTURE-ENGINE-FACTS] Markup Facts
+
+```typediagram
+typeDiagram
+
+# A Razor file's markup facts, read from the compiler's IR.
+type RazorMarkup {
+  file_kind: RazorFileKind
+  # The namespace the file's class is generated in.
+  namespace: Option<String>
+  # Namespaces the file and its imports bring in with `@using`.
+  imported_namespaces: List<String>
+  tags: List<MarkupTag>
+  attributes: List<MarkupAttribute>
+  directives: List<MarkupDirective>
+  diagnostics: List<MarkupDiagnostic>
+  # Directives the file kind accepts.
+  available_directives: List<DirectiveDescriptor>
+  # Every tag helper the project's compilation provides, components included.
+  tag_helpers: List<TagHelperDescriptor>
+  # The HTML projection ([RAZOR-ARCHITECTURE-HTML]).
+  html_text: String
+}
+
+# An element bound to tag helpers, or any element of a component file.
+type MarkupTag {
+  name: String
+  element: TextSpan
+  start_name: TextSpan
+  # Absent for a self-closing or unclosed element.
+  end_name: Option<TextSpan>
+  # The component, child content and MVC tag helpers bound to the element.
+  tag_helpers: List<TagHelperDescriptor>
+}
+
+union MarkupAttributeKind {
+  # A component parameter or tag helper property: `Title="…"`, `asp-for="…"`.
+  Property
+  # A directive attribute: `@onclick`, `@bind-Value`, `@ref`.
+  Directive
+  # A directive attribute parameter: `@bind:event`, `@onclick:preventDefault`.
+  DirectiveParameter
+  # An attribute no tag helper binds.
+  Html
+}
+
+type MarkupAttribute {
+  kind: MarkupAttributeKind
+  name: String
+  name_span: Option<TextSpan>
+  owner: MarkupTag
+  tag_helper: Option<TagHelperDescriptor>
+  bound: Option<BoundAttributeDescriptor>
+  parameter: Option<BoundAttributeParameterDescriptor>
+}
+
+# A directive the file declares: `@page`, `@inject`, `@code`, `@using`.
+type MarkupDirective {
+  name: String
+  span: TextSpan
+  name_span: TextSpan
+  descriptor: Option<DirectiveDescriptor>
+}
+
+type MarkupDiagnostic {
+  # The `RZ` code.
+  id: String
+  message: String
+  severity: RazorDiagnosticSeverity
+  span: TextSpan
+}
+```
+
+`TextSpan` is a Roslyn text span, and the descriptor and severity types are the Razor compiler's own. The facts hold no C# fragment spans: C# positions come from the projection's map ([RAZOR-ARCHITECTURE-PROJECTION]).
 
 ### [RAZOR-ARCHITECTURE-HTML] HTML Projection
 
 - **What it is:** the HTML projection is the Razor text with every non-HTML character replaced by a space, newlines kept, so offsets and positions are unchanged. The replaced characters are C# fragments with their transitions and delimiters, directives, and Razor comments.
+- **HTML comments:** a component's IR drops HTML comments. The engine therefore parses a component a second time with component parsing off, which keeps each comment's `<!--` and `-->` tokens, and copies those comment spans back into the projection.
 - **How it is served:** `sharplsp/razor/htmlProjection` (`{ textDocument }` → `{ text }`) returns the projection for the document's current text.
 - **Markup context:** the server finds the markup context at a caret by running an HTML tokenizer over the projection. The tokenizer follows the WHATWG tokenizer states. The possible contexts are a tag name, an attribute name, an attribute value, or content.
 
@@ -222,9 +306,13 @@ Signature help in a C# fragment is computed at the mapped position.
 
 ### [RAZOR-FEATURES-STRUCTURE] Folding, Symbols and Linked Editing
 
-- **Folding:** elements that span lines, `@code` and `@functions` blocks, C# code blocks, and `@section` blocks.
-- **Document symbols:** the component's class, with the members declared in its `@code` and `@functions` blocks beneath it.
-- **Linked editing:** the start and end tag names of an element or component.
+- **Folding:** elements that span lines, `@code` and `@functions` blocks, C# code blocks, and `@section` blocks. A fold ends on the line before its last line, so the closing tag or brace stays visible.
+- **Document symbols:**
+  - directives (`@page`, `@inject`, `@code`, …) are `Key` symbols, named with their `@`;
+  - elements bound to components or tag helpers are `Class` symbols, named by their tag;
+  - symbols nest by containment, so a component inside another nests under it;
+  - the methods, properties and fields declared in `@code` and `@functions` nest under their block, and an `@inject` property under its directive.
+- **Linked editing:** the start and end tag names of a component, a tag helper element, or any element of a component file. A plain HTML element of a `.cshtml` file is not an element in the compiler's IR, so it does not link.
 
 ### [RAZOR-FEATURES-HTML] HTML in Editors
 
