@@ -33,6 +33,8 @@ The phases below are in dependency order. Each item is checked only when a test 
   - [x] Host: `sharplsp/razor/htmlProjection` answers `{ text }`, or `null` for a file no project lists — `test_full_stack_razor_routing_session`
   - [x] Verify `sharplsp/razor/htmlProjection` through editor integration — `razor-lsp.test.ts`: the projection keeps the editor's offsets, line breaks and unsaved text, and feeds VS Code's HTML completion and hover
 
+**Validation (2026-10-20):** the Release sidecar solution builds with zero warnings and errors; 642 C#, 440 F# and 125 Common tests pass, and all three coverage gates pass. `RazorSidecarTests` exercises the real IPC contract and malformed-request recovery; `RazorCompletionEditsTests` covers mapped edits, import deduplication, aliases, static imports and LF/CRLF insertion.
+
 ### Phase 2: C# Inside Razor
 
 - [ ] Diagnostics: C# diagnostics from projections, `RZ` diagnostics from facts, and Razor files in solution-wide diagnostics ([RAZOR-FEATURES-DIAGNOSTICS])
