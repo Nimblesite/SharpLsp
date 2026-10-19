@@ -18,10 +18,6 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 ### Phase 1: Foundation
 
-**In progress:** `SharpLspRazorClaude1` owns host routing and diagnostics;
-`SharpLspCodex1` owns the sidecar HTML projection and markup-context tokenizer.
-`SharpLspRazorClaude2` owns editor integration (Phase 5). Checkboxes require passing tests.
-
 - [x] Fixture solution `src/sharplsp/tests/fixtures/razor/` with `BlazorApp`, `Widgets` (RCL), `PagesApp` (Pages + MVC) and `Domain` (F#), isolated by its own `Directory.Build.props` ([RAZOR-TESTING])
 - [x] Host: add `LangId::Razor` for `.razor` and `.cshtml`, owned by the C# sidecar ([RAZOR-ARCHITECTURE-ROUTING])
 - [x] Host: route `documentSymbol`, `foldingRange` and `linkedEditingRange` for Razor to the sidecar, and answer `selectionRange` empty
@@ -31,11 +27,11 @@ The phases below are in dependency order. Each item is checked only when a test 
 - [x] Sidecar: find Razor files as additional documents, and sync their text in every framework context, including the pending-edit replay ([RAZOR-ARCHITECTURE-DOCUMENTS])
 - [x] Sidecar: build the C# projection — find the generated document by its checksum pragma, and build the verified span map in both directions ([RAZOR-ARCHITECTURE-PROJECTION])
 - [x] Sidecar: build the Razor engine per project — configuration from the analyzer and parse options, an in-memory file system, tag helpers per compilation, the capture pass and markup facts
-- [ ] Sidecar: build the HTML projection and the markup-context tokenizer ([RAZOR-ARCHITECTURE-HTML])
-  - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 16 passing fixture cases (Blazor and MVC, comments, UTF-16, incomplete tags, unsaved edits)
-  - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 21 passing cases for tags, attributes, comments, declarations, raw text and caret positions
+- [x] Sidecar: build the HTML projection and the markup-context tokenizer ([RAZOR-ARCHITECTURE-HTML])
+  - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 19 passing fixture cases (Blazor and MVC, comments, UTF-16, incomplete tags, unsaved edits)
+  - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 26 passing cases for tags, attributes, comments, quoted declarations, raw text, script escape states and caret positions
   - [x] Host: `sharplsp/razor/htmlProjection` answers `{ text }`, or `null` for a file no project lists — `test_full_stack_razor_routing_session`
-  - [ ] Verify `sharplsp/razor/htmlProjection` through editor integration
+  - [x] Verify `sharplsp/razor/htmlProjection` through editor integration — `razor-lsp.test.ts`: the projection keeps the editor's offsets, line breaks and unsaved text, and feeds VS Code's HTML completion and hover
 
 ### Phase 2: C# Inside Razor
 
@@ -65,10 +61,10 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 ### Phase 5: Editors
 
-- [ ] VS Code: sync `razor` and `aspnetcorerazor` documents, and activate on `onLanguage:razor` ([RAZOR-EDITORS])
-- [ ] VS Code: forward HTML completion and hover over `sharplsp/razor/htmlProjection` ([RAZOR-FEATURES-HTML])
-- [ ] VS Code: add a `razor` end-to-end chunk on both platforms
-- [ ] Zed: Razor language registration (Zed has no built-in Razor grammar)
+- [x] VS Code: sync `razor` and `aspnetcorerazor` documents, and activate on `onLanguage:razor` ([RAZOR-EDITORS]) — `razor-lsp.test.ts`: a Razor file opens as Razor, and its unsaved edits reach the server
+- [x] VS Code: forward HTML completion and hover over `sharplsp/razor/htmlProjection` ([RAZOR-FEATURES-HTML]) — `razor-lsp.test.ts`: element names and HTML hovers in markup, C# completion and hover in code
+- [x] VS Code: add a `razor` end-to-end chunk on both platforms — `test-chunks.json`, in both matrices
+- [x] Zed: Razor language registration (Zed has no built-in Razor grammar) — `the_server_attaches_to_the_csharp_fsharp_and_razor_languages`
 
 ### Phase 6: F#
 
