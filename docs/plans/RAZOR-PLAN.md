@@ -35,9 +35,9 @@ The phases below are in dependency order. Each item is checked only when a test 
   - [x] Host: `sharplsp/razor/htmlProjection` answers `{ text }`, or `null` for a file no project lists — `test_full_stack_razor_routing_session`
   - [x] Verify `sharplsp/razor/htmlProjection` through editor integration — `razor-lsp.test.ts`: the projection keeps the editor's offsets, line breaks and unsaved text, and feeds VS Code's HTML completion and hover
 
-**Validation (2026-10-20):** the Release sidecar solution builds with zero warnings and errors; 642 C#, 440 F# and 125 Common tests pass, and all three coverage gates pass. `RazorSidecarTests` exercises the real IPC contract and malformed-request recovery; `RazorCompletionEditsTests` covers mapped edits, import deduplication, aliases, static imports and LF/CRLF insertion.
+**Validation (2026-10-20):** the Release sidecar solution builds with zero warnings and errors; 671 C#, 440 F# and 125 Common tests pass, and all three coverage gates pass. C# coverage is 96.39%, with all 1,530 new C# executable lines covered. `RazorSidecarTests` exercises the real IPC contract and malformed-request recovery; `RazorCompletionEditsTests` covers mapped edits, import deduplication, aliases, static imports and LF/CRLF insertion.
 
-**Editor validation (2026-10-20):** the final Razor chunk passes all 5 cases, the workspace chunk passes all 446 cases (including server-start lifecycle), and editor lint and formatting pass. The debugger group-outcome test that previously timed out passes unchanged in isolation; its full chunk is being rerun before PR readiness.
+**Editor validation (2026-10-20):** the final Razor chunk passes all 6 cases, the workspace chunk passes all 446 cases (including server-start lifecycle), and editor lint and formatting pass. The debugger group-outcome test that previously timed out passes unchanged in isolation; its full chunk is being rerun before PR readiness.
 
 ### Phase 2: C# Inside Razor
 
