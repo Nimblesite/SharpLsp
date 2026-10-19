@@ -1,0 +1,27 @@
+@typeparam TItem
+
+<ul class="tally">
+    @foreach (var item in Items)
+    {
+        <li @key="item">@Format(item)</li>
+    }
+</ul>
+<span class="caption">@Label</span>
+@ChildContent
+
+@code {
+    /// <summary>The items to tally.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<TItem> Items { get; set; } = [];
+
+    /// <summary>How each item renders.</summary>
+    [Parameter] public Func<TItem, string> Format { get; set; } = item => item?.ToString() ?? "";
+
+    /// <summary>The tally's caption.</summary>
+    [Parameter] public string Label { get; set; } = "";
+
+    /// <summary>Raised when the caption changes.</summary>
+    [Parameter] public EventCallback<string> LabelChanged { get; set; }
+
+    /// <summary>Content under the tally.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

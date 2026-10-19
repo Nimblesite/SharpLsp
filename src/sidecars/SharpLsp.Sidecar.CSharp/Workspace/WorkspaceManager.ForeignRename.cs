@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.CSharp.Razor;
 using RenameEditResult = Outcome.Result<SharpLsp.Sidecar.CSharp.WorkspaceEditResult, string>;
 using RenameIdentityQueryResult = Outcome.Result<
     SharpLsp.Sidecar.CSharp.RenameIdentityResultWire,
@@ -144,7 +145,35 @@ internal sealed partial class WorkspaceManager
                 request.CancellationToken
             )
             .ConfigureAwait(false);
-        return ForeignRenameSuccess(edits);
+        var razor = await ForeignRazorEditsAsync(request).ConfigureAwait(false);
+        return ForeignRenameSuccess([.. edits, .. razor]);
+    }
+
+    /// <summary>
+    /// The Razor usages of the foreign symbol, edited in their Razor files: its C# usages in
+    /// the projections are hidden from the editable references above. [RAZOR-FSHARP]
+    /// </summary>
+    private static async Task<List<DocumentEditResult>> ForeignRazorEditsAsync(
+        ForeignRenameRequest request
+    )
+    {
+        var edits = new List<DocumentEditResult>();
+        var symbols = await ResolveForeignSymbolsAsync(
+                request.Solution,
+                request.Identity,
+                request.CancellationToken
+            )
+            .ConfigureAwait(false);
+        foreach (var symbol in symbols)
+        {
+            edits.AddRange(
+                await RazorRenameEdits
+                    .FindAsync(request.Solution, symbol, request.NewName, request.CancellationToken)
+                    .ConfigureAwait(false)
+            );
+        }
+
+        return edits;
     }
 
     private static bool IsForeignRequestValid(string assemblyName, string xmlDocSig, string newName)
@@ -253,6 +282,7 @@ internal sealed partial class WorkspaceManager
     private static bool IsEditableReference(ReferenceLocation location)
     {
         return location.Location.IsInSource
+            && location.Document is not SourceGeneratedDocument
             && location.Location.SourceSpan.Length > 0
             && location.Document.FilePath is not null
             && IsCSharpProject(location.Document.Project);

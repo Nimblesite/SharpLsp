@@ -1,0 +1,14 @@
+@page "/leaders"
+@using Domain
+
+<ul>
+    @foreach (var player in players)
+    {
+        <li>@player.Name: @player.Score</li>
+    }
+</ul>
+<p>Total: @Scoring.total(players)</p>
+
+@code {
+    private readonly Player[] players = [new Player("Ada", 3), new Player("Grace", 5)];
+}

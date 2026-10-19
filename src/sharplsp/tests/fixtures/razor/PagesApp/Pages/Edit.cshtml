@@ -1,0 +1,15 @@
+@page "{id:int}"
+@model EditModel
+@inject ILogger<EditModel> Log
+
+<form method="post">
+    <label asp-for="Title"></label>
+    <input asp-for="Title" class="form-control" />
+    <span asp-validation-for="Title"></span>
+    <a asp-page="/Edit" asp-route-id="@Model.Id">Reload</a>
+</form>
+<p>@Shout(Model.Title)</p>
+
+@functions {
+    string Shout(string text) => text.ToUpperInvariant();
+}

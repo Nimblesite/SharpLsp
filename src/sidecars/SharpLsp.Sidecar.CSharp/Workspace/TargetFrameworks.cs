@@ -73,9 +73,53 @@ internal static class TargetFrameworks
         ConcurrentDictionary<string, string> chosen
     )
     {
-        var candidates = SolutionPaths.DocumentsAt(solution, filePath).ToList();
+        return FindActive(solution, SolutionPaths.DocumentsAt(solution, filePath), chosen);
+    }
+
+    /// <summary>
+    /// The additional document (a Razor file) at <paramref name="filePath"/> in its project's
+    /// active framework. [RAZOR-ARCHITECTURE-DOCUMENTS]
+    /// </summary>
+    internal static TextDocument? FindActiveAdditionalDocument(
+        Solution solution,
+        string filePath,
+        ConcurrentDictionary<string, string> chosen
+    )
+    {
+        return FindActive(
+            solution,
+            SolutionPaths.AdditionalDocumentsAt(solution, filePath),
+            chosen
+        );
+    }
+
+    private static T? FindActive<T>(
+        Solution solution,
+        IEnumerable<T> documents,
+        ConcurrentDictionary<string, string> chosen
+    )
+        where T : TextDocument
+    {
+        var candidates = documents.ToList();
         return candidates.Find(document => IsActive(solution, document.Project, chosen))
             ?? candidates.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> applied to EVERY framework's copy of the additional document
+    /// (a Razor file) at <paramref name="filePath"/>. [RAZOR-ARCHITECTURE-DOCUMENTS]
+    /// </summary>
+    internal static Solution WithAdditionalTextInEveryContext(
+        Solution solution,
+        string filePath,
+        SourceText text
+    )
+    {
+        return SolutionPaths
+            .AdditionalDocumentsAt(solution, filePath)
+            .Select(document => document.Id)
+            .ToList()
+            .Aggregate(solution, (current, id) => current.WithAdditionalDocumentText(id, text));
     }
 
     /// <summary>

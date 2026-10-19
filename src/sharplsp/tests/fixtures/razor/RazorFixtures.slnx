@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="BlazorApp/BlazorApp.csproj" />
+  <Project Path="Domain/Domain.fsproj" />
+  <Project Path="PagesApp/PagesApp.csproj" />
+  <Project Path="Widgets/Widgets.csproj" />
+</Solution>

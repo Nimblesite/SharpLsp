@@ -29,6 +29,20 @@ internal static class SolutionPaths
             .Where(document => NativePaths.AreEqual(document.FilePath, filePath));
     }
 
+    /// <summary>
+    /// Every additional document at <paramref name="filePath"/>: a Razor file is one, once per
+    /// target framework of each project that lists it. [RAZOR-ARCHITECTURE-DOCUMENTS]
+    /// </summary>
+    internal static IEnumerable<TextDocument> AdditionalDocumentsAt(
+        Solution solution,
+        string filePath
+    )
+    {
+        return solution
+            .Projects.SelectMany(project => project.AdditionalDocuments)
+            .Where(document => NativePaths.AreEqual(document.FilePath, filePath));
+    }
+
     /// <summary>Find a loaded project by its project-file path.</summary>
     internal static Project? FindProject(Solution solution, string projectPath)
     {

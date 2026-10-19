@@ -1,6 +1,8 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.CSharp.Razor;
 using PrepareRenameQueryResult = Outcome.Result<
     SharpLsp.Sidecar.CSharp.PrepareRenameResult,
     string
@@ -37,9 +39,9 @@ internal sealed partial class WorkspaceManager
     {
         try
         {
-            var target = await FindRenameTargetAsync(filePath, line, character, ct)
+            var (target, origin) = await FindRenameTargetAsync(filePath, line, character, ct)
                 .ConfigureAwait(false);
-            return PrepareResult(target);
+            return PrepareSuccess(RazorResults.MapPrepareRename(PrepareResult(target), origin));
         }
         catch (Exception ex)
         {
@@ -76,7 +78,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var target = await FindRenameTargetAsync(filePath, line, character, ct)
+        var (target, _) = await FindRenameTargetAsync(filePath, line, character, ct)
             .ConfigureAwait(false);
         if (target is null || _solution is null || !CanUseNewName(target.Value, newName))
         {
@@ -85,20 +87,38 @@ internal sealed partial class WorkspaceManager
 
         var renamed = await RenameSolutionAsync(_solution, target.Value.Symbol, newName, ct)
             .ConfigureAwait(false);
-        return await BuildRenameResultAsync(_solution, renamed, newName, ct).ConfigureAwait(false);
+        var edits = await BuildRenameEditsAsync(_solution, renamed, newName, ct)
+            .ConfigureAwait(false);
+        var razor = await RazorRenameEdits
+            .FindAsync(_solution, target.Value.Symbol, newName, ct)
+            .ConfigureAwait(false);
+        return RenameSuccess(new WorkspaceEditResult { DocumentChanges = [.. edits, .. razor] });
     }
 
-    private async Task<RenameTarget?> FindRenameTargetAsync(
+    /// <summary>
+    /// The rename target at a position, and the Razor file it was asked from. A Razor position
+    /// outside every C# fragment has no target; any other file must be in the workspace.
+    /// [RAZOR-FEATURES-RENAME]
+    /// </summary>
+    private async Task<(RenameTarget? Target, RazorProjection? Origin)> FindRenameTargetAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct
     )
     {
-        var document =
-            await FindDocumentAsync(filePath, ct).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("Document not found");
-        return await FindRenameTargetAsync(document, line, character, ct).ConfigureAwait(false);
+        var resolved = await ResolveQueryTargetAsync(filePath, (line, character), ct)
+            .ConfigureAwait(false);
+        if (resolved is not { } at)
+        {
+            return NativePaths.IsRazor(filePath)
+                ? (null, null)
+                : throw new InvalidOperationException("Document not found");
+        }
+
+        var target = await FindRenameTargetAsync(at.Document, at.Line, at.Character, ct)
+            .ConfigureAwait(false);
+        return (target, at.Origin);
     }
 
     private static async Task<RenameTarget?> FindRenameTargetAsync(
@@ -146,15 +166,15 @@ internal sealed partial class WorkspaceManager
         return symbol.Locations.Any(location => location.IsInSource);
     }
 
-    private static PrepareRenameQueryResult PrepareResult(RenameTarget? target)
+    private static PrepareRenameResult PrepareResult(RenameTarget? target)
     {
         if (target is null)
         {
-            return PrepareSuccess(new PrepareRenameResult { CanRename = false });
+            return new PrepareRenameResult { CanRename = false };
         }
 
         var lineSpan = target.Value.Text.Lines.GetLinePositionSpan(target.Value.Token.Span);
-        return PrepareSuccess(CreatePrepareResult(target.Value.Token.Text, lineSpan));
+        return CreatePrepareResult(target.Value.Token.Text, lineSpan);
     }
 
     private static PrepareRenameResult CreatePrepareResult(
@@ -279,7 +299,7 @@ internal sealed partial class WorkspaceManager
         );
     }
 
-    private static async Task<RenameEditResult> BuildRenameResultAsync(
+    private static async Task<List<DocumentEditResult>> BuildRenameEditsAsync(
         Solution original,
         Solution renamed,
         string newName,
@@ -294,7 +314,7 @@ internal sealed partial class WorkspaceManager
                 .ConfigureAwait(false);
         }
 
-        return RenameSuccess(new WorkspaceEditResult { DocumentChanges = edits });
+        return edits;
     }
 
     private static async Task AddChangedDocumentsAsync(

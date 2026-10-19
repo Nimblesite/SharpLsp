@@ -1,0 +1,205 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.CSharp.Razor;
+
+namespace SharpLsp.Sidecar.CSharp.Workspace;
+
+/// <summary>
+/// Where a position query runs: a document, the position in it, and the Razor file the
+/// request named when the document is that file's projection.
+/// </summary>
+internal readonly record struct QueryTarget(
+    Document Document,
+    int Line,
+    int Character,
+    RazorProjection? Origin
+)
+{
+    /// <summary>The file the answer belongs to: the Razor file, else the document itself.</summary>
+    public string AnswerPath => Origin?.RazorPath ?? Document.FilePath ?? "";
+}
+
+/// <summary>
+/// Razor files in the workspace: their text, and position queries translated into their C#
+/// projections. Implements [RAZOR-ARCHITECTURE-DOCUMENTS] and [RAZOR-ARCHITECTURE-PROJECTION].
+/// </summary>
+internal sealed partial class WorkspaceManager
+{
+    /// <summary>The projection of the Razor file at <paramref name="razorPath"/> in its active framework.</summary>
+    internal async Task<RazorProjection?> FindRazorProjectionAsync(
+        string razorPath,
+        CancellationToken ct
+    )
+    {
+        var razor = FindRazorDocument(razorPath);
+        return razor is null
+            ? null
+            : await RazorProjection.ForRazorAsync(razor, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The markup facts of the Razor file at <paramref name="razorPath"/>; null when no project
+    /// lists it or the engine cannot read it. [RAZOR-ARCHITECTURE-ENGINE]
+    /// </summary>
+    internal async Task<RazorMarkup?> FindRazorMarkupAsync(string razorPath, CancellationToken ct)
+    {
+        var razor = FindRazorDocument(razorPath);
+        return razor is null
+            ? null
+            : await RazorMarkupEngine.ProcessAsync(razor, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The Razor file at <paramref name="razorPath"/> in its active framework; null when no project lists it.</summary>
+    internal TextDocument? FindRazorDocument(string razorPath)
+    {
+        return _solution is null
+            ? null
+            : TargetFrameworks.FindActiveAdditionalDocument(
+                _solution,
+                razorPath,
+                _activeFrameworks
+            );
+    }
+
+    /// <summary>
+    /// Run <paramref name="query"/> where the position lands: the document itself, or, for a
+    /// Razor file, its projection at the mapped position. A position outside every C#
+    /// fragment, or a file outside the workspace, answers <paramref name="empty"/>.
+    /// </summary>
+    private async Task<Outcome.Result<T, string>> RunPositionQueryAsync<T>(
+        string filePath,
+        (int Line, int Character) at,
+        T empty,
+        Func<QueryTarget, Task<T>> query,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            var target = await ResolveQueryTargetAsync(filePath, at, ct).ConfigureAwait(false);
+            var value = target is { } found ? await query(found).ConfigureAwait(false) : empty;
+            return new Outcome.Result<T, string>.Ok<T, string>(value);
+        }
+        catch (Exception ex)
+        {
+            return Outcome.Result<T, string>.Failure(ex.Message);
+        }
+    }
+
+    private async Task<QueryTarget?> ResolveQueryTargetAsync(
+        string filePath,
+        (int Line, int Character) at,
+        CancellationToken ct
+    )
+    {
+        if (!NativePaths.IsRazor(filePath))
+        {
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+            return document is null ? null : new QueryTarget(document, at.Line, at.Character, null);
+        }
+
+        var projection = await FindRazorProjectionAsync(filePath, ct).ConfigureAwait(false);
+        return projection?.ToGenerated(new LinePosition(at.Line, at.Character)) is { } mapped
+            ? new QueryTarget(projection.Generated, mapped.Line, mapped.Character, projection)
+            : null;
+    }
+
+    /// <summary>
+    /// Replace a Razor file's text in every framework context. Caller holds
+    /// <see cref="_solutionMutationLock"/>. A file no project lists has nothing to update.
+    /// </summary>
+    private void UpdateRazorText(string filePath, string newText)
+    {
+        _solution = TargetFrameworks.WithAdditionalTextInEveryContext(
+            _solution!,
+            filePath,
+            SourceText.From(newText)
+        );
+    }
+
+    /// <summary>
+    /// A Razor file's diagnostics: its projection's C# diagnostics that map into it.
+    /// [RAZOR-FEATURES-DIAGNOSTICS]
+    /// </summary>
+    private async Task<List<DiagnosticResult>> DiagnoseRazorAsync(
+        string filePath,
+        CancellationToken ct
+    )
+    {
+        var projection = await FindRazorProjectionAsync(filePath, ct).ConfigureAwait(false);
+        var model = projection is null
+            ? null
+            : await projection.Generated.GetSemanticModelAsync(ct).ConfigureAwait(false);
+        return model is null ? [] : MapDiagnostics(filePath, model, ct);
+    }
+
+    /// <summary>
+    /// A Razor file's semantic tokens, all of them or those that start in
+    /// <paramref name="range"/>. [RAZOR-FEATURES-SEMANTIC-TOKENS]
+    /// </summary>
+    private async Task<Outcome.Result<SemanticTokensResult, string>> GetRazorSemanticTokensAsync(
+        string filePath,
+        LinePositionSpan? range,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            var projection = await FindRazorProjectionAsync(filePath, ct).ConfigureAwait(false);
+            var data = projection is null
+                ? []
+                : await RazorTokensAsync(projection, range, ct).ConfigureAwait(false);
+            return new Outcome.Result<SemanticTokensResult, string>.Ok<
+                SemanticTokensResult,
+                string
+            >(new SemanticTokensResult { Data = data });
+        }
+        catch (Exception ex)
+        {
+            return Outcome.Result<SemanticTokensResult, string>.Failure(ex.Message);
+        }
+    }
+
+    private static async Task<int[]> RazorTokensAsync(
+        RazorProjection projection,
+        LinePositionSpan? range,
+        CancellationToken ct
+    )
+    {
+        var text = projection.RazorText;
+        var window = range is { } requested ? DocumentText.TrySpan(text, requested) : null;
+        var spans = await RazorSemanticTokens
+            .CSharpSpansAsync(projection, ct)
+            .ConfigureAwait(false);
+        return SemanticTokensResolver.Encode(
+            spans
+                .Where(span => window is not { } inside || inside.Contains(span.Span.Start))
+                .Where(span => span.Type >= 0)
+                .DistinctBy(span => span.Span.Start),
+            text
+        );
+    }
+
+    /// <summary><paramref name="result"/> with projection locations mapped to Razor files or dropped.</summary>
+    private Task<LocationListResult> MapLocationsAsync(
+        LocationListResult result,
+        CancellationToken ct
+    )
+    {
+        return _solution is null
+            ? Task.FromResult(result)
+            : RazorLocations.MapAsync(_solution, result, ct);
+    }
+
+    /// <summary><paramref name="location"/> mapped to a Razor file, or null when it is hidden scaffolding.</summary>
+    private async Task<LocationResult?> MapLocationAsync(
+        LocationResult? location,
+        CancellationToken ct
+    )
+    {
+        return _solution is null
+            ? location
+            : await RazorLocations.MapAsync(_solution, location, ct).ConfigureAwait(false);
+    }
+}

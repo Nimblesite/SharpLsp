@@ -1,0 +1,15 @@
+<Project>
+    <!-- Implements [RAZOR-ARCHITECTURE-ENGINE]. The Razor compiler ships only inside the .NET
+         SDK (no current NuGet package carries it), so the sidecar bundles the copy from the
+         SDK global.json pins. Private="true" copies it into the build, publish and tool
+         package output. The project's own SDK generator still produces the C# projection;
+         this copy only reads markup structure. Imported by the sidecar and its tests. -->
+    <PropertyGroup>
+        <RazorCompilerDirectory>$(MSBuildExtensionsPath)/Sdks/Microsoft.NET.Sdk.Razor/source-generators/</RazorCompilerDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+        <Reference Include="$(RazorCompilerDirectory)Microsoft.CodeAnalysis.Razor.Compiler.dll" Private="true" />
+        <Reference Include="$(RazorCompilerDirectory)Microsoft.AspNetCore.Razor.Utilities.Shared.dll" Private="true" />
+        <Reference Include="$(RazorCompilerDirectory)Microsoft.Extensions.ObjectPool.dll" Private="true" />
+    </ItemGroup>
+</Project>
