@@ -107,6 +107,11 @@ pub fn handle_linked_editing_range(
         "textDocument/linkedEditingRange",
         &request,
     )?;
+    linked_ranges(&found)
+}
+
+/// The linked ranges of a sidecar answer, or `null` when it found none.
+fn linked_ranges(found: &SidecarLocationListResult) -> Result<serde_json::Value> {
     let ranges: Vec<Range> = found.locations.iter().map(to_range).collect();
     Ok(if ranges.is_empty() {
         serde_json::Value::Null
