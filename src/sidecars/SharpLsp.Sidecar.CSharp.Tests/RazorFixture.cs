@@ -64,6 +64,12 @@ public sealed class RazorFixture : IDisposable
         return (line, character + offset);
     }
 
+    /// <summary>The value of a successful result; a failure fails the test with its message.</summary>
+    public static T Ok<T>(Outcome.Result<T, string> result)
+    {
+        return result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error));
+    }
+
     public void Dispose()
     {
         try

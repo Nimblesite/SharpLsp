@@ -38,7 +38,9 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         using var manager = await _fixture.OpenManagerAsync();
 
         var caption = RazorFixture.Locate(Board, "<input @bind=", "caption", 2);
-        var hover = Ok(await manager.GetHoverAsync(Board, caption.Line, caption.Character));
+        var hover = RazorFixture.Ok(
+            await manager.GetHoverAsync(Board, caption.Line, caption.Character)
+        );
         Assert.NotNull(hover);
         Assert.Contains("caption", hover.Contents, StringComparison.Ordinal);
         Assert.Contains("string", hover.Contents, StringComparison.Ordinal);
@@ -49,13 +51,15 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         Assert.Equal(caption.Character - 2 + "caption".Length, hover.EndCharacter);
 
         var id = RazorFixture.Locate(Board, "<PageTitle>", "@Id", 1);
-        var idHover = Ok(await manager.GetHoverAsync(Board, id.Line, id.Character));
+        var idHover = RazorFixture.Ok(await manager.GetHoverAsync(Board, id.Line, id.Character));
         Assert.NotNull(idHover);
         Assert.Contains("The board's number", idHover.Contents, StringComparison.Ordinal);
         Assert.Contains("int", idHover.Contents, StringComparison.Ordinal);
 
         var markup = RazorFixture.Locate(Board, "<button", "disabled");
-        Assert.Null(Ok(await manager.GetHoverAsync(Board, markup.Line, markup.Character)));
+        Assert.Null(
+            RazorFixture.Ok(await manager.GetHoverAsync(Board, markup.Line, markup.Character))
+        );
     }
 
     [Fact]
@@ -64,7 +68,9 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         using var manager = await _fixture.OpenManagerAsync();
 
         var call = RazorFixture.Locate(Board, "() => Add(1)", "Add(1)");
-        var definition = Ok(await manager.GetDefinitionAsync(Board, call.Line, call.Character));
+        var definition = RazorFixture.Ok(
+            await manager.GetDefinitionAsync(Board, call.Line, call.Character)
+        );
         var declared = Assert.Single(definition.Locations);
         Assert.True(NativePaths.AreEqual(Board, declared.FilePath), declared.FilePath);
         Assert.Equal(
@@ -75,7 +81,9 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
 
         var program = _fixture.Path("BlazorApp", "Program.cs");
         var app = RazorFixture.Locate(program, "MapRazorComponents<App>", "App>");
-        var component = Ok(await manager.GetDefinitionAsync(program, app.Line, app.Character));
+        var component = RazorFixture.Ok(
+            await manager.GetDefinitionAsync(program, app.Line, app.Character)
+        );
         var file = Assert.Single(component.Locations);
         Assert.True(
             NativePaths.AreEqual(
@@ -94,14 +102,14 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         var field = RazorFixture.Locate(Board, "private string caption", "caption");
         var expected = CaptionPositions();
 
-        var references = Ok(
+        var references = RazorFixture.Ok(
             await manager.GetReferencesAsync(Board, field.Line, field.Character, true)
         );
         Assert.All(references.Locations, location => Assert.Equal("caption", TextAt(location)));
         Assert.Equal(expected, references.Locations.Select(At).Order());
 
         var use = expected[1];
-        var highlights = Ok(
+        var highlights = RazorFixture.Ok(
             await manager.GetDocumentHighlightsAsync(Board, use.Line, use.Character)
         );
         Assert.Equal(
@@ -120,7 +128,7 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         using var manager = await _fixture.OpenManagerAsync();
         var argument = RazorFixture.Locate(Board, "() => Add(1)", "1)");
 
-        var help = Ok(
+        var help = RazorFixture.Ok(
             await manager.GetSignatureHelpAsync(Board, argument.Line, argument.Character)
         );
         Assert.NotNull(help);
@@ -134,16 +142,16 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
     {
         using var manager = await _fixture.OpenManagerAsync();
         Assert.DoesNotContain(
-            Ok(await manager.GetDiagnosticsAsync(Board)),
+            RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board)),
             diagnostic => diagnostic.Severity == "Error"
         );
 
         var original = await File.ReadAllTextAsync(Board);
         var broken = original.Replace("score + Id)", "score + Idd)", StringComparison.Ordinal);
-        _ = Ok(await manager.UpdateDocumentTextAsync(Board, broken));
+        _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Board, broken));
 
         var error = Assert.Single(
-            Ok(await manager.GetDiagnosticsAsync(Board)),
+            RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board)),
             d => d.Code == "CS0103"
         );
         Assert.True(NativePaths.AreEqual(Board, error.FilePath), error.FilePath);
@@ -153,7 +161,7 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         );
         Assert.Equal(error.StartCharacter + "Idd".Length, error.EndCharacter);
 
-        var all = Ok(await manager.GetAllDiagnosticsAsync([]));
+        var all = RazorFixture.Ok(await manager.GetAllDiagnosticsAsync([]));
         var key = Assert.Single(all.Keys, path => NativePaths.AreEqual(path, Board));
         Assert.Contains(all[key], d => d.Code == "CS0103" && d.StartLine == error.StartLine);
         Assert.DoesNotContain(all.Keys, path => NativePaths.HasExtension(path, ".g.cs"));
@@ -166,7 +174,9 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         var counter = _fixture.Path("BlazorApp", "Components", "Pages", "Counter.razor");
         var typed = RazorFixture.Locate(counter, "Current count:", "currentCount", 4);
 
-        var items = Ok(await manager.GetCompletionsAsync(counter, typed.Line, typed.Character));
+        var items = RazorFixture.Ok(
+            await manager.GetCompletionsAsync(counter, typed.Line, typed.Character)
+        );
         var field = Assert.Single(items, item => item.Label == "currentCount");
         Assert.NotNull(field.TextEdit);
         Assert.Equal(
@@ -184,7 +194,9 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         using var manager = await _fixture.OpenManagerAsync();
         var use = RazorFixture.Locate(Board, "<Badge Text=", "caption");
 
-        var prepared = Ok(await manager.PrepareRenameAsync(Board, use.Line, use.Character));
+        var prepared = RazorFixture.Ok(
+            await manager.PrepareRenameAsync(Board, use.Line, use.Character)
+        );
         Assert.True(prepared.CanRename);
         Assert.Equal("caption", prepared.Placeholder);
         Assert.Equal(
@@ -192,7 +204,9 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
             (prepared.StartLine, prepared.StartCharacter, prepared.EndCharacter)
         );
 
-        var edit = Ok(await manager.RenameAsync(Board, use.Line, use.Character, "heading"));
+        var edit = RazorFixture.Ok(
+            await manager.RenameAsync(Board, use.Line, use.Character, "heading")
+        );
         var document = Assert.Single(edit.DocumentChanges);
         Assert.True(NativePaths.AreEqual(Board, document.FilePath), document.FilePath);
         Assert.Equal(4, document.Edits.Count);
@@ -204,7 +218,9 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
 
         var markup = RazorFixture.Locate(Board, "<button", "disabled");
         Assert.False(
-            Ok(await manager.PrepareRenameAsync(Board, markup.Line, markup.Character)).CanRename
+            RazorFixture
+                .Ok(await manager.PrepareRenameAsync(Board, markup.Line, markup.Character))
+                .CanRename
         );
     }
 
@@ -212,7 +228,7 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
     public async Task Semantic_tokens_classify_csharp_fragments_at_their_razor_positions()
     {
         using var manager = await _fixture.OpenManagerAsync();
-        var tokens = Decode(Ok(await manager.GetSemanticTokensFullAsync(Board)).Data);
+        var tokens = Decode(RazorFixture.Ok(await manager.GetSemanticTokensFullAsync(Board)).Data);
 
         Assert.Contains(
             tokens,
@@ -234,9 +250,11 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
 
         var code = RazorFixture.Locate(Board, "private void Add", "private");
         var range = Decode(
-            Ok(
-                await manager.GetSemanticTokensRangeAsync(Board, code.Line, 0, code.Line + 1, 0)
-            ).Data
+            RazorFixture
+                .Ok(
+                    await manager.GetSemanticTokensRangeAsync(Board, code.Line, 0, code.Line + 1, 0)
+                )
+                .Data
         );
         Assert.NotEmpty(range);
         Assert.All(range, t => Assert.Equal(code.Line, t.At.Line));
@@ -272,10 +290,5 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
     private static (int Line, int Character) At(LocationResult location)
     {
         return (location.Line, location.Character);
-    }
-
-    private static T Ok<T>(Outcome.Result<T, string> result)
-    {
-        return result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error));
     }
 }

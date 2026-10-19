@@ -25,6 +25,7 @@ mod paths;
 mod postfix_completion;
 mod profiler;
 mod pull_diagnostics;
+mod razor;
 mod semantic;
 mod semantic_tokens;
 mod sidecar;
@@ -386,8 +387,14 @@ fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilit
             resolve_provider: Some(true),
             // `.` must be advertised so editors auto-send textDocument/completion
             // on member access (e.g. `this.`). Without it the popup never appears
-            // after a dot. Applies to both C# and F# member access.
-            trigger_characters: Some(vec![".".to_string()]),
+            // after a dot. Applies to both C# and F# member access. `<` and `@`
+            // complete Razor markup. [RAZOR-ARCHITECTURE-ROUTING]
+            trigger_characters: Some(
+                std::iter::once(".")
+                    .chain(razor::MARKUP_TRIGGERS)
+                    .map(str::to_string)
+                    .collect(),
+            ),
             ..lsp_types::CompletionOptions::default()
         }),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -802,15 +809,24 @@ fn handle_request(
         // deliberately served by the sidecar's FCS items (richer symbol data
         // than a syntax tree can give). The other syntax features —
         // foldingRange, selectionRange, linkedEditingRange — run on the F#
-        // tree-sitter grammar for both languages.
-        // [SHARPLSP-FEATURES-NAVIGATION]
-        DocumentSymbolRequest::METHOD => {
-            if is_fsharp_request(&req) {
+        // tree-sitter grammar for both languages. Razor has no grammar, so the
+        // C# sidecar answers its syntax requests, and selection ranges are not
+        // served yet. [SHARPLSP-FEATURES-NAVIGATION] [RAZOR-ARCHITECTURE-ROUTING]
+        DocumentSymbolRequest::METHOD => match request_lang(&req) {
+            Some(LangId::FSharp | LangId::Razor) => {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-                document_symbols::handle_fsharp(req, runtime, sidecar)
-            } else {
-                handlers::handle_document_symbols(req, vfs, parsers, trees)
+                document_symbols::handle_via_sidecar(req, runtime, sidecar)
             }
+            _ => handlers::handle_document_symbols(req, vfs, parsers, trees),
+        },
+        FoldingRangeRequest::METHOD if request_lang(&req) == Some(LangId::Razor) => {
+            razor::handle_folding_ranges(req, runtime, csharp_sidecar)
+        }
+        SelectionRangeRequest::METHOD if request_lang(&req) == Some(LangId::Razor) => {
+            Ok(serde_json::json!([]))
+        }
+        LinkedEditingRange::METHOD if request_lang(&req) == Some(LangId::Razor) => {
+            razor::handle_linked_editing_range(req, runtime, csharp_sidecar)
         }
         FoldingRangeRequest::METHOD => handlers::handle_folding_ranges(req, vfs, parsers, trees),
         SelectionRangeRequest::METHOD => {
@@ -821,8 +837,14 @@ fn handle_request(
         }
         // Semantic (sidecar)
         Completion::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            semantic::handle_completion(req, runtime, sidecar, vfs)
+            if serde_json::from_value(req.params.clone())
+                .is_ok_and(|params| razor::is_markup_trigger_outside_razor(&params))
+            {
+                Ok(serde_json::Value::Null)
+            } else {
+                let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+                semantic::handle_completion(req, runtime, sidecar, vfs)
+            }
         }
         ResolveCompletionItem::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -1228,9 +1250,9 @@ fn extract_document_uri(req: &Request) -> Option<Uri> {
         .or_else(|| nested_uri(&req.params, "data"))
 }
 
-/// Whether a request targets an F# document (by file extension).
-fn is_fsharp_request(req: &Request) -> bool {
-    extract_document_uri(req).and_then(|uri| LangId::from_uri(&uri)) == Some(LangId::FSharp)
+/// The language of the document a request targets (by file extension).
+fn request_lang(req: &Request) -> Option<LangId> {
+    extract_document_uri(req).and_then(|uri| LangId::from_uri(&uri))
 }
 
 /// Parse `params.<outer>.uri` into a [`Uri`], if present and valid.
@@ -1342,7 +1364,7 @@ fn handle_standard_workspace_symbol(
     let mut symbols = Vec::new();
     for entry in vfs.iter() {
         let uri = entry.key().clone();
-        let Some(lang) = LangId::from_uri(&uri) else {
+        let Some(lang) = LangId::from_uri(&uri).filter(|lang| lang.has_grammar()) else {
             continue;
         };
         if matches!(lang, LangId::FSharp) {
@@ -1664,7 +1686,7 @@ fn trigger_diagnostics(
 /// (index out of bounds) for shorter content.
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
 fn reparse(parsers: &TsParsers, trees: &mut HashMap<Uri, Tree>, uri: &Uri, source: &str) {
-    let Some(lang) = LangId::from_uri(uri) else {
+    let Some(lang) = LangId::from_uri(uri).filter(|lang| lang.has_grammar()) else {
         return;
     };
     match parsers.parse(lang, source, None) {

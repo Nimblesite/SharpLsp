@@ -250,6 +250,7 @@ pub fn get_postfix_completions(
             let snippet = match lang {
                 LangId::CSharp => t.csharp_snippet,
                 LangId::FSharp => t.fsharp_snippet,
+                LangId::Razor => None,
             }?;
 
             let expanded = snippet.replace("{expr}", &expr_text);

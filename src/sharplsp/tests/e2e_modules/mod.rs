@@ -35,6 +35,7 @@ pub use built_binary::built_sharplsp;
 pub mod fixtures;
 pub mod fixtures_cross_language;
 pub mod fixtures_medium;
+pub mod fixtures_razor;
 pub mod nav_helpers;
 pub mod session_helpers;
 
@@ -66,6 +67,7 @@ pub mod multi_solution;
 pub mod nuget_unused_full_stack;
 pub mod profiler_shared;
 pub mod pull_diagnostics;
+pub mod razor;
 pub mod references;
 pub mod selection;
 pub mod semantic_coverage;
@@ -89,6 +91,7 @@ pub mod workspace_symbols_selection;
 pub use fixtures::*;
 pub use fixtures_cross_language::*;
 pub use fixtures_medium::*;
+pub use fixtures_razor::*;
 pub use nav_helpers::*;
 pub use session_helpers::*;
 
