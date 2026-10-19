@@ -9,7 +9,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// Where a position query runs: a document, the position in it, and the Razor file the
 /// request named when the document is that file's projection.
 /// </summary>
-internal readonly record struct QueryTarget(
+internal sealed record QueryTarget(
     Document Document,
     int Line,
     int Character,
@@ -67,7 +67,7 @@ internal sealed partial class WorkspaceManager
     /// Razor file, its projection at the mapped position. A position outside every C#
     /// fragment, or a file outside the workspace, answers <paramref name="empty"/>.
     /// </summary>
-    private async Task<Outcome.Result<T, string>> RunPositionQueryAsync<T>(
+    private Task<Outcome.Result<T, string>> RunPositionQueryAsync<T>(
         string filePath,
         (int Line, int Character) at,
         T empty,
@@ -75,16 +75,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        try
-        {
-            var target = await ResolveQueryTargetAsync(filePath, at, ct).ConfigureAwait(false);
-            var value = target is { } found ? await query(found).ConfigureAwait(false) : empty;
-            return new Outcome.Result<T, string>.Ok<T, string>(value);
-        }
-        catch (Exception ex)
-        {
-            return Outcome.Result<T, string>.Failure(ex.Message);
-        }
+        return RunQueryAsync(() => ResolveQueryTargetAsync(filePath, at, ct), empty, query);
     }
 
     private async Task<QueryTarget?> ResolveQueryTargetAsync(
@@ -138,27 +129,20 @@ internal sealed partial class WorkspaceManager
     /// A Razor file's semantic tokens, all of them or those that start in
     /// <paramref name="range"/>. [RAZOR-FEATURES-SEMANTIC-TOKENS]
     /// </summary>
-    private async Task<Outcome.Result<SemanticTokensResult, string>> GetRazorSemanticTokensAsync(
+    private Task<Outcome.Result<SemanticTokensResult, string>> GetRazorSemanticTokensAsync(
         string filePath,
         LinePositionSpan? range,
         CancellationToken ct
     )
     {
-        try
-        {
-            var projection = await FindRazorProjectionAsync(filePath, ct).ConfigureAwait(false);
-            var data = projection is null
-                ? []
-                : await RazorTokensAsync(projection, range, ct).ConfigureAwait(false);
-            return new Outcome.Result<SemanticTokensResult, string>.Ok<
-                SemanticTokensResult,
-                string
-            >(new SemanticTokensResult { Data = data });
-        }
-        catch (Exception ex)
-        {
-            return Outcome.Result<SemanticTokensResult, string>.Failure(ex.Message);
-        }
+        return RunQueryAsync(
+            () => FindRazorProjectionAsync(filePath, ct),
+            new SemanticTokensResult(),
+            async projection => new SemanticTokensResult
+            {
+                Data = await RazorTokensAsync(projection, range, ct).ConfigureAwait(false),
+            }
+        );
     }
 
     private static async Task<int[]> RazorTokensAsync(

@@ -328,19 +328,32 @@ internal sealed partial class WorkspaceManager
     /// <paramref name="resolve"/> and wrap its payload in a success result. Any
     /// exception is mapped to a failure carrying its message.
     /// </summary>
-    private async Task<Outcome.Result<TValue, string>> RunDocumentQueryAsync<TValue>(
+    private Task<Outcome.Result<TValue, string>> RunDocumentQueryAsync<TValue>(
         string filePath,
         TValue emptyValue,
         Func<Document, Task<TValue>> resolve,
         CancellationToken ct
     )
     {
+        return RunQueryAsync(() => FindDocumentAsync(filePath, ct), emptyValue, resolve);
+    }
+
+    /// <summary>
+    /// The skeleton every query shares: find what it runs on, answer <paramref name="empty"/>
+    /// when there is nothing, else run <paramref name="query"/>. Any exception becomes a
+    /// failure carrying its message.
+    /// </summary>
+    private static async Task<Outcome.Result<TValue, string>> RunQueryAsync<TSubject, TValue>(
+        Func<Task<TSubject?>> find,
+        TValue empty,
+        Func<TSubject, Task<TValue>> query
+    )
+        where TSubject : class
+    {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            var value = document is null
-                ? emptyValue
-                : await resolve(document).ConfigureAwait(false);
+            var subject = await find().ConfigureAwait(false);
+            var value = subject is null ? empty : await query(subject).ConfigureAwait(false);
             return new Outcome.Result<TValue, string>.Ok<TValue, string>(value);
         }
         catch (Exception ex)

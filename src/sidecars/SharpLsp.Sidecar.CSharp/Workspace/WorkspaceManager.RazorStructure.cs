@@ -83,22 +83,13 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>Run <paramref name="query"/> on a Razor file's markup facts; <paramref name="empty"/> when it has none.</summary>
-    private async Task<Outcome.Result<T, string>> RunMarkupQueryAsync<T>(
+    private Task<Outcome.Result<T, string>> RunMarkupQueryAsync<T>(
         string filePath,
         T empty,
         Func<RazorMarkup, Task<T>> query,
         CancellationToken ct
     )
     {
-        try
-        {
-            var markup = await FindRazorMarkupAsync(filePath, ct).ConfigureAwait(false);
-            var value = markup is null ? empty : await query(markup).ConfigureAwait(false);
-            return new Outcome.Result<T, string>.Ok<T, string>(value);
-        }
-        catch (Exception ex)
-        {
-            return Outcome.Result<T, string>.Failure(ex.Message);
-        }
+        return RunQueryAsync(() => FindRazorMarkupAsync(filePath, ct), empty, query);
     }
 }
