@@ -232,10 +232,12 @@ mod manifest_tests {
         );
     }
 
-    /// Zed matches servers to languages by the names the C# and F# extensions define:
-    /// `CSharp` and `FSharp`. `C#` or `F#` silently attaches to nothing.
+    /// Zed matches servers to languages by the names the language extensions define:
+    /// `CSharp`, `FSharp`, and `Razor` from the Razor extensions, since Zed has no
+    /// Razor of its own. `C#` or `F#` silently attaches to nothing.
+    /// [DIST-ZED-REGISTRY] [RAZOR-EDITORS]
     #[test]
-    fn the_server_attaches_to_the_csharp_and_fsharp_languages() {
+    fn the_server_attaches_to_the_csharp_fsharp_and_razor_languages() {
         let manifest = manifest();
         let server = &manifest["language_servers"][LANGUAGE_SERVER];
 
@@ -243,9 +245,10 @@ mod manifest_tests {
             .as_array()
             .map(|names| names.iter().filter_map(toml::Value::as_str).collect())
             .unwrap_or_default();
-        assert_eq!(languages, ["CSharp", "FSharp"]);
+        assert_eq!(languages, ["CSharp", "FSharp", "Razor"]);
         assert_eq!(server["language_ids"]["CSharp"].as_str(), Some("csharp"));
         assert_eq!(server["language_ids"]["FSharp"].as_str(), Some("fsharp"));
+        assert_eq!(server["language_ids"]["Razor"].as_str(), Some("razor"));
         assert_eq!(server["name"].as_str(), Some("SharpLsp"));
     }
 

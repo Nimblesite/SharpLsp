@@ -23,6 +23,7 @@ import { getErrorMessage } from './utils.js';
 import * as config from './config.js';
 import * as log from './log.js';
 import { createOpenSync, type OpenSync } from './open-sync.js';
+import { createRazorHtml, RAZOR_LANGUAGES, serverProjection } from './razor-html.js';
 import { createAnsiStrippingChannel } from './output-filter.js';
 import { serverStdioOptions } from './server-stderr.js';
 import { detectRuntimePlatform } from './platform.js';
@@ -53,12 +54,16 @@ class SharpLspClient extends LanguageClient {
   }
 }
 
-/** The documents the client syncs to the server, and holds requests about. */
+/**
+ * The documents the client syncs to the server, and holds requests about. A Razor
+ * file is only ever a file: one no project lists has no semantics ([RAZOR-EDITORS]).
+ */
 export const DOCUMENT_SELECTOR = [
   { scheme: 'file', language: 'csharp' },
   { scheme: 'file', language: 'fsharp' },
   { scheme: 'untitled', language: 'csharp' },
   { scheme: 'untitled', language: 'fsharp' },
+  ...RAZOR_LANGUAGES.map((language) => ({ scheme: 'file', language })),
 ];
 
 export interface DeploymentPaths {
@@ -101,6 +106,10 @@ export async function start(
 
   const serverOptions: ServerOptions = { run, debug: run };
   const openSync = createOpenSync(DOCUMENT_SELECTOR);
+  // The middleware is built before the client it forwards for, and asks it for
+  // projections only once requests flow through it. [RAZOR-FEATURES-HTML]
+  const razorHtml = createRazorHtml(serverProjection(() => client));
+  context.subscriptions.push(razorHtml.provider);
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: DOCUMENT_SELECTOR,
@@ -127,8 +136,9 @@ export async function start(
     traceOutputChannel: log.trace(),
     errorHandler: makeErrorHandler(statusBar),
     // After every (re)start a request waits for its document's didOpen, so it
-    // never reaches a fresh server ahead of the document it is about.
-    middleware: openSync.middleware,
+    // never reaches a fresh server ahead of the document it is about. Razor
+    // markup adds the HTML service's completion and hover answers.
+    middleware: { ...openSync.middleware, ...razorHtml.middleware },
   };
 
   const client = new SharpLspClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);

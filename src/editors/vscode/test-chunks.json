@@ -48,6 +48,12 @@
         "fsharp-lsp-cross-language-rename.test.js"
       ]
     },
+    "razor": {
+      "description": "Razor and Blazor over the real Razor fixture solution, built once per job ([RAZOR-EDITORS], [RAZOR-TESTING]): Razor documents activate the extension and sync, unsaved edits included; the C# sidecar answers the C# inside them at Razor positions, references landing in the Razor file and never in generated code; and markup gets the built-in HTML service's completion and hover over the server's HTML projection ([RAZOR-FEATURES-HTML]).",
+      "files": [
+        "razor-lsp.test.js"
+      ]
+    },
     "debug": {
       "description": "Getting a program to START, and nothing about what happens once it has: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions, the [SCRIPT-CONE] launch-target walk with MSBuild output resolution, and the F5 / Ctrl+F5 / sharplsp.runProgram gestures over real projects, C# file-based apps and .fsx scripts.",
       "files": [

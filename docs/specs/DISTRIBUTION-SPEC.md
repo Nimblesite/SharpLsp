@@ -685,9 +685,12 @@ Every rule below binds the upstream server option and the dev extension alike.
 1. **A language server and nothing else.** The server id is `sharplsp` in both
    extensions, so `lsp.sharplsp.*` settings are the same in either. It declares
    no grammar: the C# and F# extensions define the `CSharp` and `FSharp`
-   languages it attaches to, with LSP language ids `csharp` and `fsharp`. Users
-   choose it with Zed's per-language `language_servers` setting. Zed has
-   removed extension slash commands, so it declares none.
+   languages it attaches to, with LSP language ids `csharp` and `fsharp`. It
+   also attaches to `Razor`, with LSP language id `razor`: Zed has no built-in
+   Razor language, and the community Razor extensions all name theirs `Razor`
+   ([RAZOR-EDITORS]). Users choose it with Zed's per-language
+   `language_servers` setting. Zed has removed extension slash commands, so it
+   declares none.
 2. **Never bundled.** The server resolves from `lsp.sharplsp.binary.path`, then
    `sharplsp` on the worktree's PATH, then a download: the latest stable release's
    [DIST-ARCHIVE] asset for this platform, unpacked into the extension's work

@@ -6,15 +6,17 @@ schema_version = 1
 authors = ["SharpLsp <sharplsp@users.noreply.github.com>"]
 repository = "https://github.com/Nimblesite/SharpLsp"
 
-# Pair with the C# and F# extensions, which define these languages and their
-# grammars. [DIST-ZED-REGISTRY]
+# Pair with the C# and F# extensions and a Razor extension, which define these
+# languages and their grammars. Zed has no built-in Razor language, and the
+# community Razor extensions all name theirs `Razor`. [DIST-ZED-REGISTRY]
 [language_servers.sharplsp]
 name = "SharpLsp"
-languages = ["CSharp", "FSharp"]
+languages = ["CSharp", "FSharp", "Razor"]
 
 [language_servers.sharplsp.language_ids]
 CSharp = "csharp"
 FSharp = "fsharp"
+Razor = "razor"
 
 # The server is never bundled: absent from PATH, the extension downloads the
 # release archive for this platform from this repository only.
