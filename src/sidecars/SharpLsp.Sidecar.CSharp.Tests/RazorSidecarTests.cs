@@ -1,0 +1,120 @@
+using MessagePack;
+using SharpLsp.Sidecar.CSharp.Razor;
+
+#pragma warning disable CA1515 // Public xUnit discovery type
+
+namespace SharpLsp.Sidecar.CSharp.Tests;
+
+/// <summary>Real IPC coverage of [RAZOR-ARCHITECTURE-ROUTING], [RAZOR-ARCHITECTURE-HTML] and [RAZOR-TESTING].</summary>
+public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture files)
+    : IClassFixture<CSharpSidecarFixture>,
+        IClassFixture<RazorFixture>
+{
+    private string Board => files.Path("BlazorApp", "Components", "Pages", "Board.razor");
+
+    [Fact]
+    public async Task Projection_round_trips_current_text_and_returns_null_for_unlisted_files()
+    {
+        await OpenAsync().ConfigureAwait(true);
+        var before = await AtAsync<HtmlProjectionResult?>("sharplsp/razor/htmlProjection", Board)
+            .ConfigureAwait(true);
+        Assert.NotNull(before);
+        Assert.Contains("<Panel", before.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("@code", before.Text, StringComparison.Ordinal);
+        const string changed = "<p>@DateTime.Now</p>\r\n";
+        await socket
+            .SendAndAssertOkAsync(
+                "textDocument/didChange",
+                new DidChangeRequest { FilePath = Board, NewText = changed }
+            )
+            .ConfigureAwait(true);
+        var after = await AtAsync<HtmlProjectionResult?>("sharplsp/razor/htmlProjection", Board)
+            .ConfigureAwait(true);
+        Assert.NotNull(after);
+        Assert.Equal("<p>             </p>\r\n", after.Text);
+        Assert.Equal(changed.Length, after.Text.Length);
+        Assert.Null(
+            await AtAsync<HtmlProjectionResult?>(
+                    "sharplsp/razor/htmlProjection",
+                    files.Path("Missing.razor")
+                )
+                .ConfigureAwait(true)
+        );
+    }
+
+    [Fact]
+    public async Task Syntax_requests_keep_their_wire_shapes_and_source_ranges()
+    {
+        await OpenAsync().ConfigureAwait(true);
+        var folds = await AtAsync<List<FoldingRangeResult>>("textDocument/foldingRange", Board)
+            .ConfigureAwait(true);
+        Assert.Equal(
+            [(6, 9), (7, 8), (14, 24)],
+            folds.Select(fold => (fold.StartLine, fold.EndLine))
+        );
+        var symbols = await AtAsync<List<DocumentSymbolResult>>(
+                "textDocument/documentSymbol",
+                Board
+            )
+            .ConfigureAwait(true);
+        Assert.Equal(
+            "Tally",
+            Assert.Single(symbols.Single(symbol => symbol.Name == "Panel").Children).Name
+        );
+        Assert.Contains(
+            symbols.Single(symbol => symbol.Name == "@code").Children,
+            child => child.Name == "Add"
+        );
+        var linked = await AtAsync<LocationListResult>(
+                "textDocument/linkedEditingRange",
+                Board,
+                6,
+                3
+            )
+            .ConfigureAwait(true);
+        Assert.Equal(
+            [(6, 1, 6, 6), (10, 2, 10, 7)],
+            linked.Locations.Select(at => (at.Line, at.Character, at.EndLine, at.EndCharacter))
+        );
+        Assert.All(linked.Locations, at => Assert.Equal(Board, at.FilePath));
+    }
+
+    [Theory]
+    [InlineData("sharplsp/razor/htmlProjection")]
+    [InlineData("textDocument/documentSymbol")]
+    [InlineData("textDocument/foldingRange")]
+    [InlineData("textDocument/linkedEditingRange")]
+    public async Task Malformed_payloads_return_errors_and_keep_the_socket_healthy(string method)
+    {
+        var error = await socket.SendAsync(method, [0xC1]).ConfigureAwait(true);
+        Assert.NotNull(error.Error);
+        var pong = await socket.SendAndDeserializeAsync<string>("ping", []).ConfigureAwait(true);
+        Assert.Equal("pong", pong);
+    }
+
+    private Task OpenAsync()
+    {
+        return socket.SendAndAssertOkAsync(
+            "workspace/open",
+            MessagePackSerializer.Serialize(files.SolutionPath)
+        );
+    }
+
+    private Task<T> AtAsync<T>(string method, string path, int? line = null, int character = 0)
+    {
+        return line is { } at
+            ? socket.SendAndDeserializeAsync<PositionRequest, T>(
+                method,
+                new PositionRequest
+                {
+                    FilePath = path,
+                    Line = at,
+                    Character = character,
+                }
+            )
+            : socket.SendAndDeserializeAsync<T>(
+                method,
+                MessagePackSerializer.Serialize(new[] { path })
+            );
+    }
+}
