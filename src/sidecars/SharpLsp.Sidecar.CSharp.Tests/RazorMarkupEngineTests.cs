@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Razor.Language;
 using SharpLsp.Sidecar.CSharp.Razor;
+using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1515 // Public xUnit discovery type
 #pragma warning disable CA2007 // xUnit executes without a synchronization context
@@ -112,6 +113,28 @@ public sealed class RazorMarkupEngineTests : IClassFixture<RazorFixture>
         Assert.Equal(RazorDiagnosticSeverity.Warning, unknown.Severity);
         Assert.Contains("Bdage", unknown.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(edited.Tags, tag => tag.Name == "Badge");
+    }
+
+    [Fact]
+    public async Task An_edit_that_arrives_before_the_workspace_loads_is_replayed_into_the_razor_file()
+    {
+        var text = await File.ReadAllTextAsync(Board);
+        var edited = text.Replace("<Badge Text", "<Bdage Text", StringComparison.Ordinal);
+        using var manager = new WorkspaceManager();
+        // No solution yet: the edit waits, and the load replays it. [RAZOR-ARCHITECTURE-DOCUMENTS]
+        Assert.False((await manager.UpdateDocumentTextAsync(Board, edited)).IsError);
+        Assert.Null(await manager.FindRazorMarkupAsync(Board, default));
+#pragma warning disable CS0618 // OpenAsync remains the real workspace-loading boundary
+        var open = await manager.OpenAsync(_fixture.SolutionPath);
+#pragma warning restore CS0618
+        Assert.False(open.IsError, open.Match(_ => "ok", error => error));
+
+        var markup = await manager.FindRazorMarkupAsync(Board, default);
+        Assert.NotNull(markup);
+        Assert.Equal(edited, markup.Text.ToString());
+        Assert.Contains(markup.Diagnostics, d => d.Id == "RZ10012");
+        var projection = await manager.FindRazorProjectionAsync(Board, default);
+        Assert.Equal(edited, projection?.RazorText.ToString());
     }
 
     [Fact]
