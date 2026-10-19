@@ -19,6 +19,7 @@ internal sealed class RazorMarkupCapture
     private readonly List<MarkupDiagnostic> _diagnostics = [];
     private readonly List<string> _namespaces = [];
     private RazorCodeDocument? _codeDocument;
+    private string _htmlText = "";
 
     /// <summary>Add the capture passes to an engine.</summary>
     public void Register(RazorProjectEngineBuilder builder)
@@ -44,12 +45,16 @@ internal sealed class RazorMarkupCapture
                 [.. _diagnostics.Distinct()],
                 document.ParserOptions.Directives,
                 tagHelpers
-            );
+            )
+            {
+                HtmlText = _htmlText,
+            };
     }
 
     private void ReadDirectives(RazorCodeDocument document, DocumentIntermediateNode root)
     {
         var text = document.Source.Text;
+        _htmlText = RazorHtmlProjection.Create(text, root);
         foreach (var node in RazorIr.Descendants(root).Where(node => !node.IsImported))
         {
             if (RazorIr.Directive(node, text) is { } directive)

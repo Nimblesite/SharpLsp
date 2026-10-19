@@ -169,7 +169,13 @@ internal static class RazorIr
     {
         var start = new TextSpan(element.Start + 1, name.Length);
         return Holds(text, start, name)
-            ? new MarkupTag(name, element, start, EndName(element, name, text), [])
+            ? new MarkupTag(
+                name,
+                element,
+                start,
+                EndName(element, name, text, StringComparison.OrdinalIgnoreCase),
+                []
+            )
             : null;
     }
 
@@ -188,14 +194,24 @@ internal static class RazorIr
     }
 
     /// <summary>The name of an element's end tag, <c>&lt;/Name&gt;</c> closing <paramref name="element"/>.</summary>
-    private static TextSpan? EndName(TextSpan element, string name, SourceText text)
+    private static TextSpan? EndName(
+        TextSpan element,
+        string name,
+        SourceText text,
+        StringComparison comparison = StringComparison.Ordinal
+    )
     {
-        var end = new TextSpan(element.End - 1 - name.Length, name.Length);
+        var nameEnd = element.End - 1;
+        while (nameEnd > element.Start && text[nameEnd - 1] is ' ' or '\t' or '\r' or '\n' or '\f')
+        {
+            nameEnd--;
+        }
+        var end = new TextSpan(nameEnd - name.Length, name.Length);
         return
             end.Start >= element.Start + 2
             && Holds(text, new TextSpan(end.Start - 2, 2), "</")
-            && Holds(text, end, name)
-            && Holds(text, new TextSpan(end.End, 1), ">")
+            && Holds(text, end, name, comparison)
+            && Holds(text, new TextSpan(element.End - 1, 1), ">")
             ? end
             : null;
     }
@@ -214,10 +230,14 @@ internal static class RazorIr
             : null;
     }
 
-    private static bool Holds(SourceText text, TextSpan span, string expected)
+    private static bool Holds(
+        SourceText text,
+        TextSpan span,
+        string expected,
+        StringComparison comparison = StringComparison.Ordinal
+    )
     {
-        return span.End <= text.Length
-            && string.Equals(text.ToString(span), expected, StringComparison.Ordinal);
+        return span.End <= text.Length && string.Equals(text.ToString(span), expected, comparison);
     }
 
     private static TextSpan Span(SourceSpan span)

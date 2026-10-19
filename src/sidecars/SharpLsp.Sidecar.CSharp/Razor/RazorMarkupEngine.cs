@@ -56,8 +56,10 @@ internal static class RazorMarkupEngine
         var tagHelpers = RazorTagHelpers.Of(compilation);
         var capture = new RazorMarkupCapture();
         var engine = CreateEngine(settings, fileSystem, tagHelpers, capture);
-        _ = engine.Process(fileSystem.GetItem(settings.RazorPathOf(razor), null), ct);
-        return capture.ToMarkup(tagHelpers);
+        var document = engine.Process(fileSystem.GetItem(settings.RazorPathOf(razor), null), ct);
+        return capture.ToMarkup(tagHelpers) is { } markup
+            ? RazorHtmlComments.Restore(engine, document, markup, ct)
+            : null;
     }
 
     private static RazorProjectEngine CreateEngine(

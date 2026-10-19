@@ -99,6 +99,15 @@ internal sealed record RazorMarkup(
     TagHelperCollection TagHelpers
 )
 {
+    /// <summary>Position-preserving HTML for [RAZOR-ARCHITECTURE-HTML].</summary>
+    public string HtmlText { get; init; } = "";
+
+    /// <summary>The caret's HTML context, [RAZOR-ARCHITECTURE-HTML].</summary>
+    public MarkupContext ContextAt(int offset)
+    {
+        return HtmlMarkupContext.At(HtmlText, offset);
+    }
+
     /// <summary>The innermost tag whose start or end name holds <paramref name="offset"/>.</summary>
     public MarkupTag? TagNamedAt(int offset)
     {
