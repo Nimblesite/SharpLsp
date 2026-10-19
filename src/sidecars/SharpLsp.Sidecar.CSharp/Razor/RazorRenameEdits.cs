@@ -22,6 +22,13 @@ internal static class RazorRenameEdits
         CancellationToken ct
     )
     {
+        // Without a Razor file there is no Razor use to edit, so a solution without one
+        // never pays for a second solution-wide search after the renamer's own.
+        if (!SolutionPaths.HasRazorDocuments(solution))
+        {
+            return [];
+        }
+
         var referenced = await SymbolFinder
             .FindReferencesAsync(symbol, solution, ct)
             .ConfigureAwait(false);
