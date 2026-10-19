@@ -114,6 +114,38 @@ public sealed class RazorMarkupEngineTests : IClassFixture<RazorFixture>
         Assert.DoesNotContain(edited.Tags, tag => tag.Name == "Badge");
     }
 
+    [Fact]
+    public async Task Names_at_an_offset_find_their_tag_attribute_and_directive()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+        var markup = await manager.FindRazorMarkupAsync(Board, default);
+        Assert.NotNull(markup);
+
+        var title = Offset(markup, RazorFixture.Locate(Board, "<Panel", "Title", 2));
+        Assert.Equal("Title", markup.AttributeNamedAt(title)?.Name);
+        var click = Offset(markup, RazorFixture.Locate(Board, "<button", "@onclick", 1));
+        Assert.Equal("@onclick", markup.AttributeNamedAt(click)?.Name);
+        var inject = Offset(markup, RazorFixture.Locate(Board, "@inject", "inject", 3));
+        Assert.Equal("inject", markup.DirectiveNamedAt(inject)?.Name);
+        var end = Offset(markup, RazorFixture.Locate(Board, "</Panel>", "Panel", 1));
+        Assert.Equal("Panel", markup.TagNamedAt(end)?.Name);
+
+        // HTML attributes belong to the HTML server, and content names nothing.
+        var disabled = Offset(markup, RazorFixture.Locate(Board, "<button", "disabled", 1));
+        Assert.Null(markup.AttributeNamedAt(disabled));
+        var content = Offset(markup, RazorFixture.Locate(Board, "<button", ">Add<", 2));
+        Assert.Null(markup.AttributeNamedAt(content));
+        Assert.Null(markup.DirectiveNamedAt(content));
+        Assert.Null(markup.TagNamedAt(content));
+    }
+
+    private static int Offset(RazorMarkup markup, (int Line, int Character) at)
+    {
+        return markup.Text.Lines.GetPosition(
+            new Microsoft.CodeAnalysis.Text.LinePosition(at.Line, at.Character)
+        );
+    }
+
     private static string Slice(RazorMarkup markup, Microsoft.CodeAnalysis.Text.TextSpan span)
     {
         return markup.Text.ToString(span);
