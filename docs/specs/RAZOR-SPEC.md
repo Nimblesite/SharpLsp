@@ -217,9 +217,35 @@ type MarkupDiagnostic {
   severity: RazorDiagnosticSeverity
   span: TextSpan
 }
+
+# A span of the file's text in UTF-16 code units (Roslyn's `TextSpan`).
+type TextSpan {
+  start: Int
+  length: Int
+}
+
+union RazorFileKind {
+  # A `.razor` component.
+  Component
+  # An `_Imports.razor` file.
+  ComponentImport
+  # A `.cshtml` page, view or `_ViewImports.cshtml`.
+  Legacy
+}
+
+union RazorDiagnosticSeverity {
+  Warning
+  Error
+}
+
+# The Razor compiler's descriptors, opaque here.
+type TagHelperDescriptor {}
+type BoundAttributeDescriptor {}
+type BoundAttributeParameterDescriptor {}
+type DirectiveDescriptor {}
 ```
 
-`TextSpan` is a Roslyn text span, and the descriptor and severity types are the Razor compiler's own. The facts hold no C# fragment spans: C# positions come from the projection's map ([RAZOR-ARCHITECTURE-PROJECTION]).
+The facts hold no C# fragment spans: C# positions come from the projection's map ([RAZOR-ARCHITECTURE-PROJECTION]).
 
 ### [RAZOR-ARCHITECTURE-HTML] HTML Projection
 
