@@ -176,6 +176,36 @@ public sealed class HtmlMarkupContextTests
     }
 
     [Fact]
+    public void Malformed_self_closing_syntax_reconsumes_the_following_attribute()
+    {
+        Assert.Equal(MarkupContext.AttributeName, Of("<div /x|"));
+        Assert.Equal(MarkupContext.AttributeValue, Of("<div /x=|"));
+        Assert.Equal(MarkupContext.AttributeValue, Of("<div /x=1|"));
+        Assert.Equal(MarkupContext.AttributeValue, Of("<div /x='value|"));
+        Assert.Equal(MarkupContext.AttributeName, Of("<div /x='value'|"));
+        Assert.Equal(MarkupContext.Content, Of("<div /x='value'>|"));
+    }
+
+    [Fact]
+    public void Stray_open_brackets_reconsume_the_next_tag_opening()
+    {
+        Assert.Equal(MarkupContext.TagName, Of("<<di|"));
+        Assert.Equal(MarkupContext.AttributeName, Of("<<div |"));
+        Assert.Equal(MarkupContext.AttributeValue, Of("<<div x=|"));
+        Assert.Equal(MarkupContext.Content, Of("<<div x=1>|"));
+        Assert.Equal(MarkupContext.AttributeName, Of("<<<div |"));
+    }
+
+    [Fact]
+    public void Invalid_end_tag_openings_remain_comments_until_their_close()
+    {
+        Assert.Equal(MarkupContext.Content, Of("</? <div x=|"));
+        Assert.Equal(MarkupContext.Content, Of("</ <p |"));
+        Assert.Equal(MarkupContext.Content, Of("</? <div x=>|<p>"));
+        Assert.Equal(MarkupContext.AttributeName, Of("</? <div x=><p |"));
+    }
+
+    [Fact]
     public void Offsets_outside_the_projection_clamp_into_range()
     {
         Assert.Equal(MarkupContext.Content, HtmlMarkupContext.At(string.Empty, 0));

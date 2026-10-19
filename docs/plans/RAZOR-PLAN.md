@@ -31,7 +31,7 @@ The phases below are in dependency order. Each item is checked only when a test 
   - [x] Verify configuration fallbacks, target-path metadata, current file/import reads, missing files, missing paths, cancellation and failure recovery — `RazorEngineSettingsTests`: 12 passing cases; settings, filesystem and engine each have 100% line coverage
 - [x] Sidecar: build the HTML projection and the markup-context tokenizer ([RAZOR-ARCHITECTURE-HTML])
   - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 19 passing fixture cases (Blazor and MVC, comments, UTF-16, incomplete tags, unsaved edits)
-  - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 33 passing cases for tags, attributes, comments, quoted declarations, raw text, script escape states, malformed HTML and caret positions; 100% line coverage
+  - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 36 passing cases with 100% line coverage, including malformed start/end tag recovery; the three character-reconsumption regressions were verified failing before the fix and pass unchanged afterward
   - [x] Host: `sharplsp/razor/htmlProjection` answers `{ text }`, or `null` for a file no project lists — `test_full_stack_razor_routing_session`
   - [x] Verify `sharplsp/razor/htmlProjection` through editor integration — `razor-lsp.test.ts`: the projection keeps the editor's offsets, line breaks and unsaved text, and feeds VS Code's HTML completion and hover
 

@@ -75,6 +75,10 @@ internal static class HtmlMarkupContext
         {
             (Scanner.TagOpen, '!') => Declaration(html, i),
             (Scanner.TagOpen, '?') => (Data(), Bogus(html, i + 1)),
+            (Scanner.EndTagOpen, var c) when c != '>' && !char.IsAsciiLetter(c) => (
+                Data(),
+                Bogus(html, i)
+            ),
             (Scanner.RawText, _) when s.Tag == "script" => Script(s, html, i),
             (Scanner.ScriptEscaped or Scanner.ScriptDoubleEscaped, _) => Script(s, html, i),
             (Scanner.RawText, _) => RawText(s, html, i, end),
@@ -89,13 +93,12 @@ internal static class HtmlMarkupContext
             (Scanner.TagOpen, _) => TagOpen(s, c),
             (Scanner.EndTagOpen, _) => EndTagOpen(s, c),
             (Scanner.TagName, _) => TagName(s, c),
-            (Scanner.BeforeAttribute, _) => BeforeAttribute(s, c),
+            (Scanner.BeforeAttribute or Scanner.SelfClosing, _) => BeforeAttribute(s, c),
             (Scanner.Attribute or Scanner.AfterAttribute, _) => Attribute(s, c),
             (Scanner.BeforeValue, _) => BeforeValue(s, c),
             (Scanner.ValueDoubleQuoted or Scanner.ValueSingleQuoted, _) => Quoted(s, c),
             (Scanner.ValueUnquoted, _) => ValueUnquoted(s, c),
             (Scanner.AfterValue, _) => AfterValue(s, c),
-            (Scanner.SelfClosing, _) => SelfClosing(s, c),
             // Advance handles raw text separately; the remaining state is normal data.
             _ => c == '<' ? Data(Scanner.TagOpen) : s,
         };
@@ -113,16 +116,12 @@ internal static class HtmlMarkupContext
             : scan;
     }
 
-    private static Scan SelfClosing(Scan scan, char value)
-    {
-        return value == '>' ? Close(scan) : Kept(Scanner.BeforeAttribute, scan);
-    }
-
     private static Scan TagOpen(Scan s, char c)
     {
         return c switch
         {
             '/' => Data(Scanner.EndTagOpen),
+            '<' => Data(Scanner.TagOpen),
             _ => char.IsAsciiLetter(c) ? Named(s, c, false) : Data(),
         };
     }
