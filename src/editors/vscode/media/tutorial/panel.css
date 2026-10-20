@@ -1,0 +1,67 @@
+/* The tutorial panel ([TUTORIAL-PANEL]). Colors come from the editor's theme. */
+body {
+  margin: 0;
+  padding: 16px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+button {
+  padding: 4px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  cursor: pointer;
+}
+
+button[aria-pressed='true'],
+#open-file {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 1.3em;
+  font-weight: 600;
+}
+
+#film video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  margin: 12px 0;
+  background: #000;
+}
+
+ol {
+  padding-left: 0;
+  list-style: none;
+}
+
+.step {
+  padding: 4px 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.step[data-done='true'] {
+  color: var(--vscode-testing-iconPassed);
+}
+
+.step[aria-current='step'] {
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+#offline {
+  color: var(--vscode-descriptionForeground);
+}

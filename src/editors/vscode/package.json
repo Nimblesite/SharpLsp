@@ -355,6 +355,13 @@
           "default": 30,
           "minimum": 1,
           "description": "Seconds between automatic memory snapshots when autoSnapshot is enabled."
+        },
+        "sharplsp.tutorial.showOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%setting.tutorial.showOnStartup%",
+          "scope": "application",
+          "order": 21
         }
       }
     },
@@ -1020,6 +1027,21 @@
         "title": "Kill Process",
         "category": "SharpLsp",
         "icon": "$(close)"
+      },
+      {
+        "command": "sharplsp.tutorial.open",
+        "title": "%cmd.tutorial.open%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.tutorial.openFile",
+        "title": "%cmd.tutorial.openFile%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.tutorial.reset",
+        "title": "%cmd.tutorial.reset%",
+        "category": "%category%"
       }
     ],
     "menus": {
@@ -1438,6 +1460,166 @@
         "key": "ctrl+alt+shift+p",
         "mac": "cmd+alt+shift+p"
       }
+    ],
+    "walkthroughs": [
+      {
+        "id": "sharplsp.tutorial.fsharp",
+        "title": "%walkthrough.FSharp.title%",
+        "description": "%walkthrough.FSharp.description%",
+        "steps": [
+          {
+            "id": "FSharp.OpenFile",
+            "title": "%walkthrough.FSharp.OpenFile.title%",
+            "description": "%walkthrough.FSharp.OpenFile.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.FSharp.OpenFile"
+            ]
+          },
+          {
+            "id": "FSharp.Hover",
+            "title": "%walkthrough.FSharp.Hover.title%",
+            "description": "%walkthrough.FSharp.Hover.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.FSharp.Hover"
+            ]
+          },
+          {
+            "id": "FSharp.Completion",
+            "title": "%walkthrough.FSharp.Completion.title%",
+            "description": "%walkthrough.FSharp.Completion.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.FSharp.Completion"
+            ]
+          },
+          {
+            "id": "FSharp.Definition",
+            "title": "%walkthrough.FSharp.Definition.title%",
+            "description": "%walkthrough.FSharp.Definition.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.FSharp.Definition"
+            ]
+          },
+          {
+            "id": "FSharp.References",
+            "title": "%walkthrough.FSharp.References.title%",
+            "description": "%walkthrough.FSharp.References.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.FSharp.References"
+            ]
+          },
+          {
+            "id": "FSharp.SolutionExplorer",
+            "title": "%walkthrough.FSharp.SolutionExplorer.title%",
+            "description": "%walkthrough.FSharp.SolutionExplorer.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.FSharp.SolutionExplorer"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "sharplsp.tutorial.csharp",
+        "title": "%walkthrough.CSharp.title%",
+        "description": "%walkthrough.CSharp.description%",
+        "steps": [
+          {
+            "id": "CSharp.OpenFile",
+            "title": "%walkthrough.CSharp.OpenFile.title%",
+            "description": "%walkthrough.CSharp.OpenFile.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.CSharp.OpenFile"
+            ]
+          },
+          {
+            "id": "CSharp.Hover",
+            "title": "%walkthrough.CSharp.Hover.title%",
+            "description": "%walkthrough.CSharp.Hover.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.CSharp.Hover"
+            ]
+          },
+          {
+            "id": "CSharp.Completion",
+            "title": "%walkthrough.CSharp.Completion.title%",
+            "description": "%walkthrough.CSharp.Completion.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.CSharp.Completion"
+            ]
+          },
+          {
+            "id": "CSharp.Definition",
+            "title": "%walkthrough.CSharp.Definition.title%",
+            "description": "%walkthrough.CSharp.Definition.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.CSharp.Definition"
+            ]
+          },
+          {
+            "id": "CSharp.References",
+            "title": "%walkthrough.CSharp.References.title%",
+            "description": "%walkthrough.CSharp.References.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.CSharp.References"
+            ]
+          },
+          {
+            "id": "CSharp.SolutionExplorer",
+            "title": "%walkthrough.CSharp.SolutionExplorer.title%",
+            "description": "%walkthrough.CSharp.SolutionExplorer.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.CSharp.SolutionExplorer"
+            ]
+          }
+        ]
+      }
     ]
   },
   "scripts": {
@@ -1501,6 +1683,7 @@
     "dist/profiler-graph-licenses.txt",
     "icons/",
     "language-configuration/",
+    "media/",
     "package.nls.json",
     "package.nls.*.json",
     "shipwright.json",

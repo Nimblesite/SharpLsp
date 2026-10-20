@@ -58,6 +58,7 @@ import {
 import { initProjectDepsStore } from './project-deps-store.js';
 import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
 import { samePath } from './paths';
+import { registerTutorial, type TutorialApi } from './tutorial/register.js';
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface SharpLspExtensionApi {
@@ -75,6 +76,8 @@ export interface SharpLspExtensionApi {
   readonly logUri: vscode.Uri;
   /** The focused project's active target framework, as the status bar shows it. [NETFX-CONTEXT] */
   readonly targetFrameworkStatus?: TargetFrameworkStatus;
+  /** The interactive tutorial's progress and panel ([TUTORIAL-TESTING]). */
+  readonly tutorial?: TutorialApi;
 }
 
 let lspClient: LanguageClient | undefined;
@@ -83,6 +86,7 @@ let explorerProvider: SolutionExplorerProvider | undefined;
 let profilerUi: SharpLspProfiler | undefined;
 let testController: SharpLspTestController | undefined;
 let targetFrameworks: TargetFrameworkUi | undefined;
+let tutorial: TutorialApi | undefined;
 
 interface DeploymentDiagnostic {
   readonly componentId: string;
@@ -182,6 +186,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   explorerProvider.initSortContext();
   log.info('step 8: registerCommands');
   registerCommands(context);
+  tutorial = registerTutorial(context, solutionTreeView);
   log.info('step 9: registerAllModuleCommands');
   registerBuildCommands(context);
   registerNuGetCommands(context);
@@ -282,6 +287,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     testController,
     logUri: context.logUri,
     targetFrameworkStatus: targetFrameworks.status,
+    tutorial,
   };
 }
 
@@ -315,6 +321,7 @@ function degradedApi(context: ExtensionContext): SharpLspExtensionApi {
     testController: testController ?? new SharpLspTestController(),
     logUri: context.logUri,
     ...(targetFrameworks === undefined ? {} : { targetFrameworkStatus: targetFrameworks.status }),
+    ...(tutorial === undefined ? {} : { tutorial }),
   };
 }
 

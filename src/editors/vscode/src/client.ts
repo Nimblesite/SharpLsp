@@ -30,6 +30,7 @@ import { detectRuntimePlatform } from './platform.js';
 import * as state from './state.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 import { dotnetHostEnvironment } from './dotnetRuntime.js';
+import { observeResponses } from './tutorial/detect.js';
 
 /**
  * The language client, without the stock `workspace/executeCommand` feature.
@@ -136,8 +137,13 @@ export async function start(
     errorHandler: makeErrorHandler(statusBar),
     // After every (re)start a request waits for its document's didOpen, so it
     // never reaches a fresh server ahead of the document it is about. Razor
-    // markup adds the HTML service's completion and hover answers.
-    middleware: { ...openSync.middleware, ...razorHtml.middleware },
+    // markup adds the HTML service's completion and hover answers. The tutorial
+    // watches the answers that come back ([TUTORIAL-DETECT-LSP]).
+    middleware: {
+      ...openSync.middleware,
+      ...razorHtml.middleware,
+      sendRequest: observeResponses(openSync.middleware.sendRequest),
+    },
   };
 
   const client = new SharpLspClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
