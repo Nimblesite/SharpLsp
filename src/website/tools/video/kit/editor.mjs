@@ -1,10 +1,12 @@
 // Implements [WEB-DESIGN-MEDIA]. The isolated VS Code the profiler film is shot in: the build @vscode/test-electron
 // downloaded for the e2e suites, a throwaway user-data and extensions dir with the
 // PACKAGED SharpLsp VSIX installed (the extension users get, not a dev host), and
-// a CDP port Playwright drives. It never touches the user's own VS Code.
+// a CDP port of its own that Playwright drives, so shoots run side by side. It
+// never touches the user's own VS Code.
 // Prerequisite: `make _build-vsix VSIX_PREBUILT=1` (writes dist/sharplsp.vsix).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -138,6 +140,17 @@ function installExtensions(extensions, userData) {
   if (result.status !== 0) throw new Error(`installing ${vsix} failed: ${result.stderr}`);
 }
 
+/** A port no other process listens on, so two shoots never drive each other's editor. */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer().once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 async function waitForCdp(port) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
@@ -182,8 +195,9 @@ async function frameWindow(page, width, height) {
  * and hand back the workbench page and its `logs` folder. `close()` ends only
  * the process this module spawned.
  */
-export async function launchVsCode({ workspace, port = 9241, width = 1600, height = 1000, disabled = [] }) {
+export async function launchVsCode({ workspace, width = 1600, height = 1000, disabled = [] }) {
   const profile = freshProfile();
+  const port = await freePort();
   const child = spawnEditor(profile, workspace, port, disabled);
   await waitForCdp(port);
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
