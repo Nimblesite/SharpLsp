@@ -39,6 +39,7 @@ fn test_full_stack_razor_routing_session() {
 
     assert_syntax_requests_reach_the_sidecar(&mut client, &board);
     assert_html_projection(&mut client, &ws, &board, &board_text);
+    assert_html_projection_only_in_markup(&mut client, &board);
     assert_markup_triggers_only_complete_razor(&mut client, &ws);
     assert_diagnostics_publish_as_razor(&mut client, &board, &board_text);
 
@@ -184,6 +185,23 @@ fn assert_html_projection(client: &mut LspClient, ws: &RazorWorkspace, board: &s
     let none = document_request(client, "sharplsp/razor/htmlProjection", &program);
     assert_rpc_ok(&none, "htmlProjection(Program.cs)");
     assert_eq!(none["result"], Value::Null, "a C# file has no projection");
+}
+
+/// A caret-aware projection forwards markup and excludes C# including whitespace.
+/// [RAZOR-FEATURES-HTML] GitHub #405.
+fn assert_html_projection_only_in_markup(client: &mut LspClient, board: &str) {
+    for (at, code) in [
+        ((4, 2), false),
+        ((6, 3), false),
+        ((11, 16), true),
+        ((22, 24), true),
+        ((22, 4), true),
+    ] {
+        let answer = position_request(client, "sharplsp/razor/htmlProjection", board, at);
+        assert_rpc_ok(&answer, "caret-aware HTML projection");
+        assert_eq!(answer["result"].is_null(), code, "caret {at:?}: {answer}");
+        assert_eq!(answer["result"]["text"].as_str().is_some(), !code);
+    }
 }
 
 /// `<` and `@` complete in Razor but answer `null` at once in C#.

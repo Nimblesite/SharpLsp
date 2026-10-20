@@ -50,6 +50,10 @@ Owner: SharpLspRazorClaude1. Status: fixed and pushed as b7d301d8; regression fa
 
 Owner: SharpLspRazorClaude2. Status: fixed in f12be294. Claude1 reproduced null completion with a nested unclosed `@(` expression after the first completion recovery fix. The first three reported cases failed because Price was missing, while closed-expression and code-block controls passed. All six cases, including a lambda block, now pass unchanged. The full C# suite passes 692/692. Roslyn supplies the missing closing tokens; the map preserves only the prefix before inserted text, keeping the original caret before synthetic closers. Issue: https://github.com/Nimblesite/SharpLsp/issues/404. [RAZOR-FEATURES-COMPLETION]
 
+### R9 — P1: HTML projection word suggestions leak into Razor C# completion
+
+Owner: SharpLspCodex1. Status: fixed. The real host test failed because a C# binding caret still returned an HTML projection. The fix sends an optional caret and reuses the compiler-backed completion target resolver; compiler markup names take precedence. Nineteen IPC tests pass, including thirteen new cases covering markup names and literal values, bindings, code, whitespace, implicit trailing dots and incomplete nested expressions. The unchanged host regression passes. The real editor regression registers an additional provider on the actual HTML projection: its marker must appear in markup and never in C#. The old unpositioned forwarding failed that assertion; the unchanged corrected regression passes with all six Razor editor cases. An initially overbroad new assertion rejected legitimate C# Text-kind fallback items; it was corrected to observe HTML forwarding specifically, retaining all original assertions and the real C#/HTML services. Issue: https://github.com/Nimblesite/SharpLsp/issues/405. [RAZOR-FEATURES-HTML]
+
 ## Review and validation checklist
 
 - [x] C# workspace/query changes and non-Razor compatibility reviewed
@@ -68,6 +72,7 @@ Owner: SharpLspRazorClaude2. Status: fixed in f12be294. Claude1 reproduced null 
 - [x] R6 F# category/span/operator regressions red/green (447-test full suite green)
 - [x] R7 non-finite video seek regression red/green across three projects
 - [x] R8 nested unfinished expression regression red/green
+- [x] R9 editor completion leak regression red/green (6/6 real-editor cases); final combined CI remains pending
 - [x] Value-type constructor follow-up green on final F# build (7/7 focused tests)
 - [ ] Full integrated suite and CI gates green
 

@@ -259,7 +259,7 @@ The facts hold no C# fragment spans: C# positions come from the projection's map
 
 - **What it is:** the HTML projection is the Razor text with every non-HTML character replaced by a space, newlines kept, so offsets and positions are unchanged. The replaced characters are C# fragments with their transitions and delimiters, directives, and Razor comments.
 - **HTML comments:** a component's IR drops HTML comments. The engine therefore parses a component a second time with component parsing off, which keeps each comment's `<!--` and `-->` tokens, and copies those comment spans back into the projection.
-- **How it is served:** `sharplsp/razor/htmlProjection` (`{ textDocument }` → `{ text }`) returns the projection for the document's current text.
+- **How it is served:** `sharplsp/razor/htmlProjection` (`{ textDocument, position? }` → `{ text } | null`) returns the projection for the document's current text. With a caret, it returns `null` for compiler-backed C# positions, including whitespace and incomplete expressions recovered for completion. Compiler markup name facts take precedence: component tag and attribute names remain markup even when they also have C# mappings. Without a caret, it returns the whole projection.
 - **Markup context:** the server finds the markup context at a caret by running an HTML tokenizer over the projection. The tokenizer follows the WHATWG tokenizer states. The possible contexts are a tag name, an attribute name, an attribute value, or content.
 
 ## [RAZOR-FEATURES] Features
@@ -358,7 +358,7 @@ Signature help in a C# fragment is computed at the mapped position.
 
 ### [RAZOR-FEATURES-HTML] HTML in Editors
 
-- **VS Code:** completion and hover in markup are forwarded to the built-in HTML language service over the HTML projection, following VS Code's request-forwarding pattern. The server's items come first and the HTML service's items are appended. Hover uses the HTML service only when the server has no answer.
+- **VS Code:** completion and hover in markup are forwarded to the built-in HTML language service over the HTML projection, following VS Code's request-forwarding pattern. The client sends the caret with the projection request; a C# position has no HTML forwarding, so projection word suggestions cannot enter C# completion lists. In markup, the server's items come first and the HTML service's items are appended. Hover uses the HTML service only when the server has no answer.
 - **Other editors:** they attach their own HTML language server to `razor` files.
 
 ### [RAZOR-FEATURES-DEFERRED] Not Yet Supported

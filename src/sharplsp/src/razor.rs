@@ -31,6 +31,8 @@ pub const HTML_PROJECTION: &str = "sharplsp/razor/htmlProjection";
 struct HtmlProjectionParams {
     /// The Razor document to project.
     text_document: TextDocumentIdentifier,
+    /// Only project markup at this caret; absent requests the whole projection.
+    position: Option<Position>,
 }
 
 /// Whether `uri` names a Razor document.
@@ -71,7 +73,11 @@ pub fn handle_html_projection(
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let params: HtmlProjectionParams = serde_json::from_value(req.params)?;
-    let request = file_request(&params.text_document.uri)?;
+    let file = file_request(&params.text_document.uri)?;
+    let request = (
+        file.file_path,
+        params.position.map(|at| (at.line, at.character)),
+    );
     let projection: Option<(String,)> = fetch(runtime, sidecar, HTML_PROJECTION, &request)?;
     Ok(projection_answer(projection))
 }

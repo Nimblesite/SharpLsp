@@ -42,6 +42,69 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
         );
     }
 
+    [Theory]
+    [InlineData(4, 2, true)]
+    [InlineData(4, 14, true)]
+    [InlineData(4, 19, false)]
+    [InlineData(6, 3, true)]
+    [InlineData(6, 8, true)]
+    [InlineData(6, 16, true)]
+    [InlineData(11, 16, false)]
+    [InlineData(22, 24, false)]
+    [InlineData(22, 4, false)]
+    public async Task Positioned_projection_forwards_markup_but_not_csharp_or_its_whitespace(
+        int line,
+        int character,
+        bool markup
+    )
+    {
+        // The compiler-backed position query decides ownership. [RAZOR-FEATURES-HTML]
+        await OpenAsync().ConfigureAwait(true);
+        var at = await socket
+            .SendAndDeserializeAsync<HtmlProjectionResult?>(
+                "sharplsp/razor/htmlProjection",
+                MessagePackSerializer.Serialize((Board, new[] { line, character }))
+            )
+            .ConfigureAwait(true);
+        var whole = await AtAsync<HtmlProjectionResult?>("sharplsp/razor/htmlProjection", Board)
+            .ConfigureAwait(true);
+        Assert.Equal(markup, at is not null);
+        Assert.NotNull(whole);
+        Assert.Contains("<Panel", whole.Text, StringComparison.Ordinal);
+        Assert.Equal(markup ? whole.Text : null, at?.Text);
+    }
+
+    [Theory]
+    [InlineData("<p>@scores.", "</p>")]
+    [InlineData("<p>@(scores.", "")]
+    [InlineData("<p>@(scores.MinBy(score => score.", "")]
+    [InlineData("<p>@(scores.MinBy(score => { return score.", "")]
+    public async Task Incomplete_csharp_keeps_html_forwarding_off(string before, string after)
+    {
+        // The generator can call a trailing dot markup; completion recovery still owns it.
+        // [RAZOR-FEATURES-HTML] [RAZOR-FEATURES-COMPLETION]
+        await OpenAsync().ConfigureAwait(true);
+        var text = before + after + "\n@code { private readonly List<int> scores = []; }";
+        await socket
+            .SendAndAssertOkAsync(
+                "textDocument/didChange",
+                new DidChangeRequest { FilePath = Board, NewText = text }
+            )
+            .ConfigureAwait(true);
+        var at = await socket
+            .SendAndDeserializeAsync<HtmlProjectionResult?>(
+                "sharplsp/razor/htmlProjection",
+                MessagePackSerializer.Serialize((Board, new[] { 0, before.Length }))
+            )
+            .ConfigureAwait(true);
+        Assert.Null(at);
+        var whole = await AtAsync<HtmlProjectionResult?>("sharplsp/razor/htmlProjection", Board)
+            .ConfigureAwait(true);
+        Assert.NotNull(whole);
+        Assert.StartsWith("<p>", whole.Text, StringComparison.Ordinal);
+        Assert.Equal(text.Length, whole.Text.Length);
+    }
+
     [Fact]
     public async Task Syntax_requests_keep_their_wire_shapes_and_source_ranges()
     {

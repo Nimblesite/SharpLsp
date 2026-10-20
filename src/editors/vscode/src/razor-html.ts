@@ -30,7 +30,7 @@ const PROJECTION_SCHEME = 'sharplsp-razor-html';
 const PROJECTION_REQUEST = 'sharplsp/razor/htmlProjection';
 
 /** The server's HTML projection of the document at `uri`; undefined when it has none. */
-export type ProjectionSource = (uri: string) => Promise<string | undefined>;
+export type ProjectionSource = (uri: string, position?: Position) => Promise<string | undefined>;
 
 /**
  * Projections from the running server. A server that cannot project the document
@@ -38,12 +38,13 @@ export type ProjectionSource = (uri: string) => Promise<string | undefined>;
  * completion and hover answers still reach the editor.
  */
 export function serverProjection(client: () => LanguageClient | undefined): ProjectionSource {
-  return async (uri) => {
+  return async (uri, position) => {
     const running = client();
     if (running?.state !== State.Running) return undefined;
     try {
       const answer: unknown = await running.sendRequest(PROJECTION_REQUEST, {
         textDocument: { uri },
+        ...(position === undefined ? {} : { position }),
       });
       return isRecord(answer) && typeof answer.text === 'string' ? answer.text : undefined;
     } catch (error) {
@@ -79,8 +80,8 @@ export function createRazorHtml(source: ProjectionSource): RazorHtml {
     // A closed document's projection is never asked for again.
     workspace.onDidCloseTextDocument((document) => projections.delete(document.uri.toString())),
   );
-  const project = async (document: TextDocument): Promise<Uri | undefined> => {
-    const text = await source(document.uri.toString());
+  const project = async (document: TextDocument, position: Position): Promise<Uri | undefined> => {
+    const text = await source(document.uri.toString(), position);
     if (text === undefined) return undefined;
     const uri = projectionUri(document);
     projections.set(document.uri.toString(), { address: uri.toString(), text });
@@ -91,13 +92,13 @@ export function createRazorHtml(source: ProjectionSource): RazorHtml {
 
 /** The middleware that adds the HTML service's answers to the server's. */
 function forwardingMiddleware(
-  project: (document: TextDocument) => Promise<Uri | undefined>,
+  project: (document: TextDocument, position: Position) => Promise<Uri | undefined>,
 ): RazorHtml['middleware'] {
   return {
     provideCompletionItem: async (document, position, context, token, next) => {
       const own = await next(document, position, context, token);
       if (!isRazor(document)) return own;
-      const uri = await project(document);
+      const uri = await project(document, position);
       return uri === undefined
         ? own
         : appended(own, await htmlCompletions(uri, position, context.triggerCharacter));
@@ -105,7 +106,7 @@ function forwardingMiddleware(
     provideHover: async (document, position, token, next) => {
       const own = await next(document, position, token);
       if (own !== null && own !== undefined) return own;
-      const uri = isRazor(document) ? await project(document) : undefined;
+      const uri = isRazor(document) ? await project(document, position) : undefined;
       return uri === undefined ? own : await htmlHover(uri, position);
     },
   };
