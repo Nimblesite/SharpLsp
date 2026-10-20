@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.CSharp.Razor;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -37,6 +38,7 @@ internal static class SignatureHelpResolver
         Document document,
         int line,
         int character,
+        RazorProjection? origin,
         CancellationToken ct
     )
     {
@@ -50,7 +52,14 @@ internal static class SignatureHelpResolver
 
         var position = text.Lines.GetPosition(new LinePosition(line, character));
         var arguments = EnclosingArgumentList(root, position);
-        return arguments is null ? null : Build(model, arguments, position);
+        // A Razor expression sits inside generated render-tree calls. Only a call whose
+        // opening parenthesis belongs to the user's C# can offer signatures.
+        // [RAZOR-FEATURES-SIGNATURE-HELP]
+        return
+            arguments is null
+            || (origin is not null && origin.Map.ToRazor(arguments.OpenParenToken.Span) is null)
+            ? null
+            : Build(model, arguments, position);
     }
 
     /// <summary>
