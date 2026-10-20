@@ -3,7 +3,7 @@
          SDK (no current NuGet package carries it), so the sidecar bundles the copy from the
          SDK global.json pins. Private="true" copies it into the build, publish and tool
          package output. The project's own SDK generator still produces the C# projection;
-         this copy only reads markup structure. Imported by the sidecar and its tests. -->
+         this copy reads markup structure and stands in for an SDK generator that requires a newer Roslyn. Imported by the sidecar and its tests. -->
     <PropertyGroup>
         <RazorCompilerDirectory>$(MSBuildExtensionsPath)/Sdks/Microsoft.NET.Sdk.Razor/source-generators/</RazorCompilerDirectory>
     </PropertyGroup>

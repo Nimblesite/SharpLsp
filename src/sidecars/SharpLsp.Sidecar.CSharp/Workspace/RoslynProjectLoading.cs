@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Solutions;
+using SharpLsp.Sidecar.CSharp.Razor;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -171,7 +172,10 @@ internal static class RoslynProjectLoading
     {
         return infos
             .Where(info => solution.GetProject(info.Id) is null)
-            .Aggregate(solution, (current, info) => current.AddProject(info));
+            .Aggregate(
+                solution,
+                (current, info) => current.AddProject(RazorGenerator.Compatible(info))
+            );
     }
 
     /// <summary>

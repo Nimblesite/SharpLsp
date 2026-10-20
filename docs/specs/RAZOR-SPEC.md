@@ -116,6 +116,14 @@ flowchart LR
   - An edit that adds a C# `using` becomes an `@using` line in the Razor file ([RAZOR-FEATURES-COMPLETION]).
   - Any other edit that cannot be mapped drops the item or action that carries it.
 
+### [RAZOR-ARCHITECTURE-GENERATOR] Generator Compatibility
+
+- The project's Razor source generator must run against the Roslyn version loaded by the sidecar.
+- When the project's Razor compiler references a newer `Microsoft.CodeAnalysis` assembly than the sidecar runs, project loading replaces that compiler and its sibling dependencies with the bundled copies before the SDK compiler can load.
+- The bundled compiler is loaded first: once the newer SDK compiler is loaded, Roslyn cannot replace it for that session.
+- A structured warning identifies the SDK compiler's required Roslyn version and the sidecar's Roslyn version when replacement is necessary.
+- The project's source-generated components remain available to ordinary C# files and Razor projection queries. End-to-end tests restore a real fixture without the repository SDK pin, then verify Razor hover and component references from C# ([RAZOR-TESTING]).
+
 ### [RAZOR-ARCHITECTURE-ENGINE] The Razor Engine
 
 - **The bundled compiler:** SharpLsp bundles the Razor compiler assemblies from the SDK that builds it: `Microsoft.CodeAnalysis.Razor.Compiler`, `Microsoft.AspNetCore.Razor.Utilities.Shared` and `Microsoft.Extensions.ObjectPool`, all MIT-licensed.
@@ -400,7 +408,7 @@ Blazor front ends often sit over F# domain libraries. A Razor project that refer
 
 - **Engine unavailable:** if the bundled engine fails to load or to process a file, markup features answer empty and the C# projection features keep working. The failure is logged once per project, with the project name and the exception type.
 - **No projection:** a file whose project does not run the generator has no projection, so its C# features answer empty. Its markup facts still answer.
-- **SDK newer than the sidecar's Roslyn:** the generator comes from the SDK that resolves for the project, which is the newest installed SDK when no `global.json` pins one. Roslyn does not load a generator built against a newer Roslyn than the sidecar bundles, so the project's Razor files have no projection, as above. The tests keep the repository's pin in their fixture copies. GitHub issue #399 tracks making the generator load with any SDK.
+- **SDK newer than the sidecar's Roslyn:** project loading replaces an incompatible SDK Razor compiler with the bundled compiler before generation ([RAZOR-ARCHITECTURE-GENERATOR]). Ordinary fixture tests retain the repository SDK pin for reproducibility; a separate unpinned fixture tests the newest installed SDK, and a controlled incompatible compiler tests the replacement rule regardless of installed SDK versions (GitHub #399).
 - **Nothing at the position:** a position that is neither in a C# fragment nor on a markup fact answers `null` or an empty list, never an error.
 - **No content logged:** no Razor or generated text is ever logged. Logs carry only paths, spans and lengths.
 
