@@ -46,6 +46,7 @@ import {
   commandConstants,
   commandEntry,
   configurationAttributes,
+  contributedViewIds,
   expectedPairs,
   frameworkSegments,
   initialConfigurations,
@@ -551,8 +552,11 @@ suite('Run/Debug manifest contributions', () => {
       '.resetViewLocation',
       '.toggleVisibility',
     ];
+    // Exactly `<contributed view id><suffix>`: a suffix match alone would also
+    // swallow SharpLsp's own `sharplsp.tutorial.open`.
+    const viewIds = contributedViewIds();
     const workbenchOwned = (id: string): boolean =>
-      VIEW_SUFFIXES.some((suffix) => id.endsWith(suffix));
+      viewIds.some((view) => VIEW_SUFFIXES.some((suffix) => id === `${view}${suffix}`));
     const registeredOurs = [...registered]
       .filter((id) => id.startsWith(PREFIX) && !workbenchOwned(id))
       .sort();
