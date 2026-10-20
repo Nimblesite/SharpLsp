@@ -31,6 +31,7 @@ import { waitForCodeActions } from './refactor-test-helpers';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  pollSymbols,
   pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
@@ -50,9 +51,16 @@ const CALL = '= Geometry.totalArea';
 const MEMBER = CALL.indexOf('totalArea');
 
 /** The first symbol with no children: a function, type or value, never a namespace keyword. */
-function firstLeaf(symbols: readonly vscode.DocumentSymbol[]): vscode.DocumentSymbol | undefined {
-  const [first] = symbols;
-  return first === undefined || first.children.length === 0 ? first : firstLeaf(first.children);
+/** Containers a hover on whose keyword (`namespace`, `module`) answers nothing. */
+const CONTAINERS = new Set([vscode.SymbolKind.Namespace, vscode.SymbolKind.Module, vscode.SymbolKind.Package]);
+
+/** The first symbol, depth first, that is a declaration rather than a container. */
+function firstDeclaration(symbols: readonly vscode.DocumentSymbol[]): vscode.DocumentSymbol | undefined {
+  for (const symbol of symbols) {
+    const found = CONTAINERS.has(symbol.kind) ? firstDeclaration(symbol.children) : symbol;
+    if (found) return found;
+  }
+  return undefined;
 }
 
 function done(tutorial: Tutorial): Set<string> {
@@ -431,18 +439,9 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     const doc = vscode.window.activeTextEditor?.document;
     assert.equal(doc?.languageId, 'fsharp', 'the command opened an F# file');
     assert.ok((await ticked(tutorial, 'FSharp.OpenFile')).has('FSharp.OpenFile'));
-    const symbols = await pollUntilResult(
-      async () =>
-        vscode.commands.executeCommand<vscode.DocumentSymbol[] | undefined>(
-          'vscode.executeDocumentSymbolProvider',
-          doc.uri,
-        ),
-      (found) => (found?.length ?? 0) > 0,
-      LSP_RESPONSE_MS,
-      500,
-      'the opened file to declare something',
-    );
-    const symbol = firstLeaf(symbols ?? []);
+    // FCS's first outline can hold the namespace alone; wait for the declarations inside it.
+    const symbols = await pollSymbols(doc.uri, (found) => firstDeclaration(found) !== undefined);
+    const symbol = firstDeclaration(symbols);
     assert.ok(symbol, 'the opened file declares a symbol to rest the mouse on');
     assert.ok(
       (await vscode.workspace.findFiles('**/*.fsproj')).length > 0,

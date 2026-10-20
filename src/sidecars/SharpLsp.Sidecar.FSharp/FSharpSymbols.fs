@@ -7,6 +7,7 @@ module SharpLsp.Sidecar.FSharp.FSharpSymbols
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Text
+open FSharp.Compiler.Tokenization
 open Serilog
 
 /// A document symbol in the sidecar's neutral domain shape. Maps onto the wire
@@ -69,11 +70,40 @@ let private posMin (a: pos) (b: pos) : pos =
 let private posMax (a: pos) (b: pos) : pos =
     if a.Line > b.Line || (a.Line = b.Line && a.Column >= b.Column) then a else b
 
+/// FCS's own lexer, which finds a declaration's name among its tokens.
+let private tokenizer = FSharpSourceTokenizer([], None, None, None)
+
+/// True when `token` on `text`, at or after `fromColumn`, is the identifier `name`
+/// (a backticked name's ticks stripped).
+let private isName (text: string) (name: string) fromColumn (token: FSharpTokenInfo) =
+    token.CharClass = FSharpTokenCharKind.Identifier
+    && token.ColorClass <> FSharpTokenColorKind.InactiveCode
+    && token.LeftColumn >= fromColumn
+    && text.Substring(token.LeftColumn, token.RightColumn - token.LeftColumn + 1).Trim('`') = name
+
+/// The range of `name`'s identifier token inside `range`, lexed with FCS's lexer:
+/// FCS widens a type's or module's range over its doc comment and attributes, and
+/// LSP's selectionRange is the name alone. None when no identifier token spells it.
+let private nameRange (lines: string[]) (name: string) (range: range) =
+    let rec search line fromColumn state =
+        if line >= min lines.Length range.EndLine then
+            None
+        else
+            let tokens, next = FSharpSemanticNavigation.scanLine tokenizer lines[line] state
+
+            match tokens |> List.tryFind (isName lines[line] name fromColumn) with
+            | Some token ->
+                let at column = Position.mkPos (line + 1) column
+                Some(Range.mkRange range.FileName (at token.LeftColumn) (at (token.RightColumn + 1)))
+            | None -> search (line + 1) 0 next
+
+    search (range.StartLine - 1) range.StartColumn FSharpTokenizerLexState.Initial
+
 /// Build a SymbolItem from a navigation item and its already-mapped children.
 /// The outer range is the union of the identifier range and the body range so
 /// it always contains the selection (LSP requires selectionRange ⊆ range).
-let private toItem (children: SymbolItem list) (nav: NavigationItem) : SymbolItem =
-    let ident = nav.Range
+let private toItem (lines: string[]) (children: SymbolItem list) (nav: NavigationItem) : SymbolItem =
+    let ident = nameRange lines nav.LogicalName nav.Range |> Option.defaultValue nav.Range
     let body = nav.BodyRange
     let outerStart = posMin ident.Start body.Start
     let outerEnd = posMax ident.End body.End
@@ -90,9 +120,9 @@ let private toItem (children: SymbolItem list) (nav: NavigationItem) : SymbolIte
       Children = children }
 
 /// Map one top-level declaration (and its nested members) to a SymbolItem tree.
-let private toTopLevel (decl: NavigationTopLevelDeclaration) : SymbolItem =
-    let children = decl.Nested |> Array.map (toItem []) |> Array.toList
-    toItem children decl.Declaration
+let private toTopLevel lines (decl: NavigationTopLevelDeclaration) : SymbolItem =
+    let children = decl.Nested |> Array.map (toItem lines []) |> Array.toList
+    toItem lines children decl.Declaration
 
 /// The parsing options of the project that compiles the file — its defines decide
 /// which `#if` branch outlines — or the defaults when no project is loaded.
@@ -112,7 +142,8 @@ let documentSymbols (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: str
             let options = parsingOptions state filePath
             let! parseResults = state.Checker.ParseFile(filePath, sourceText, options)
             let nav = parseResults.GetNavigationItems()
-            return nav.Declarations |> Array.map toTopLevel |> Array.toList
+            let lines = source.Split('\n')
+            return nav.Declarations |> Array.map (toTopLevel lines) |> Array.toList
         with ex ->
             Log.Debug(ex, "[F# DocumentSymbols] failed")
             return []
