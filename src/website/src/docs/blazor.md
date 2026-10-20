@@ -99,7 +99,6 @@ Until that is fixed, [install SDK 10.0.303](https://dotnet.microsoft.com/downloa
 
 Progress is tracked in [issue #397](https://github.com/Nimblesite/SharpLsp/issues/397).
 
-- **Completion straight after a dot:** in a markup expression such as `@basket.`, the member list appears when you type the member's first letter, not on the `.` itself ([issue #401](https://github.com/Nimblesite/SharpLsp/issues/401)).
 - **Component markup:** hover, definition, completion, references and semantic colors on component tags, component parameters, `@bind-X`, and directive attributes such as `@onclick`.
 - **Razor diagnostics:** the compiler's own `RZ` diagnostics, such as an unknown component.
 - **Tag helpers:** hover and completion for [tag helper](https://learn.microsoft.com/en-us/aspnet/core/mvc/views/tag-helpers/intro?view=aspnetcore-10.0) elements and attributes such as `asp-for`.
