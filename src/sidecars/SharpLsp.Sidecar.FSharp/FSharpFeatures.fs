@@ -105,6 +105,15 @@ let formatPreview (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: strin
 
 // ── Semantic Tokens ──────────────────────────────────────────────
 
+/// Keep values, functions and members in their standard LSP categories.
+let private mapFcsMemberKind (mfv: FSharpMemberOrFunctionOrValue) =
+    if mfv.IsProperty || mfv.IsPropertyGetterMethod || mfv.IsPropertySetterMethod then 9
+    elif mfv.IsEvent then 11
+    elif mfv.IsConstructor then 2
+    elif mfv.IsMember then 13
+    elif mfv.IsFunction then 12
+    else 8
+
 /// Map FCS symbol to LSP semantic token type index.
 let private mapFcsSymbolKind (symbol: FSharpSymbol) : int =
     match symbol with
@@ -115,38 +124,47 @@ let private mapFcsSymbolKind (symbol: FSharpSymbol) : int =
         elif ent.IsValueType then 5
         elif ent.IsFSharpModule then 0
         else 2
-    | :? FSharpMemberOrFunctionOrValue as mfv ->
-        if mfv.IsProperty then 9
-        elif mfv.IsEvent then 11
-        else 13
+    | :? FSharpMemberOrFunctionOrValue as mfv -> mapFcsMemberKind mfv
     | :? FSharpField -> 8
     | :? FSharpUnionCase -> 10
     | :? FSharpGenericParameter -> 6
     | _ -> -1
 
+/// FCS ranges may include a receiver (`box.Value`). Reuse the real lexer to
+/// color only the symbol token, never its receiver or punctuation.
+/// [SHARPLSP-FEATURES-HIGHLIGHTING]
+let private semanticSpans checker source (checkResults: FSharpCheckFileResults) =
+    let tokenized = FSharpRenameToken.tokenizeSource checker source
+    checkResults.GetAllUsesOfAllSymbolsInFile()
+    |> Seq.choose (fun symbolUse ->
+        let range = symbolUse.Range
+        FSharpRenameToken.tokenForUse checker tokenized symbolUse
+        |> Option.map (fun token ->
+            let kind =
+                match token.Kind with
+                | FSharpRenameToken.OperatorToken -> 21
+                | FSharpRenameToken.IdentifierToken -> mapFcsSymbolKind symbolUse.Symbol
+            range.EndLine - 1, token.StartCharacter,
+            token.EndCharacter - token.StartCharacter, kind))
+    |> Seq.distinct
+    |> Seq.sortBy (fun (line, character, _, _) -> line, character)
+    |> Seq.toArray
+
 /// Extract semantic tokens from check results using symbol uses.
 let private extractSemanticTokens
+    checker
     (checkResults: FSharpCheckFileResults)
-    (_source: string)
+    (source: string)
     (rangeFilter: (int -> bool) option)
     : int array =
     // Callers (getSemanticTokens / getSemanticTokensRange) wrap this in their own
     // try/with, so no exception needs to be re-caught here.
-    let uses = checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.toArray
+    let sorted = semanticSpans checker source checkResults
     let mutable prevLine = 0
     let mutable prevChar = 0
     let data = System.Collections.Generic.List<int>()
 
-    let sorted = uses |> Array.sortBy (fun u ->
-        let r = u.Range
-        r.StartLine, r.StartColumn)
-
-    for su in sorted do
-        let r = su.Range
-        let line = r.StartLine - 1
-        let character = r.StartColumn
-        let length = r.EndColumn - r.StartColumn
-        let tokenType = mapFcsSymbolKind su.Symbol
+    for line, character, length, tokenType in sorted do
         let inRange =
             match rangeFilter with
             | Some f -> f line
@@ -175,7 +193,7 @@ let getSemanticTokens
             let! result = FSharpWorkspace.checkFile state filePath
             match result with
             | Some(checkResults, source) ->
-                return extractSemanticTokens checkResults source None
+                return extractSemanticTokens state.Checker checkResults source None
             | None -> return [||]
         with ex ->
             Log.Debug(ex, "[F# SemanticTokens] failed")
@@ -195,7 +213,7 @@ let getSemanticTokensRange
             match result with
             | Some(checkResults, source) ->
                 let filter = fun line -> line >= startLine && line <= endLine
-                return extractSemanticTokens checkResults source (Some filter)
+                return extractSemanticTokens state.Checker checkResults source (Some filter)
             | None -> return [||]
         with ex ->
             Log.Debug(ex, "[F# SemanticTokensRange] failed")
