@@ -51,6 +51,28 @@ internal static class RoslynProjectLoading
     }
 
     /// <summary>
+    /// What loading <paramref name="project"/> adds to <paramref name="solution"/>: its own
+    /// info, any reference the solution lacks, and a placeholder per F# project it reaches.
+    /// A project the solution holds is linked, never loaded twice.
+    /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING].
+    /// </summary>
+    internal static async Task<IReadOnlyList<ProjectInfo>> LoadBesideAsync(
+        MSBuildWorkspace workspace,
+        Solution solution,
+        string project,
+        CancellationToken ct
+    )
+    {
+        var placeholders = FSharpReachedFrom([project]).Select(Placeholder).ToList();
+        var map = ProjectMap.Create(placeholders.Aggregate(solution, (s, p) => s.AddProject(p)));
+        var loader = new MSBuildProjectLoader(workspace, workspace.Properties);
+        var infos = await loader
+            .LoadProjectInfoAsync(project, map, cancellationToken: ct)
+            .ConfigureAwait(false);
+        return [.. placeholders, .. infos];
+    }
+
+    /// <summary>
     /// A solution no F# project is reachable from, in ONE batch. Roslyn starts and tears down
     /// a BuildHost process per <c>LoadProjectInfoAsync</c> call, so project-by-project loading
     /// cost NLog's 15 projects 21.5s against 8s batched. Nothing here can build an F# project,
@@ -168,7 +190,7 @@ internal static class RoslynProjectLoading
     /// <paramref name="solution"/> with the projects of <paramref name="infos"/> it lacks: a
     /// project loaded as one project's reference comes back again when it is asked for.
     /// </summary>
-    private static Solution WithNew(Solution solution, IEnumerable<ProjectInfo> infos)
+    internal static Solution WithNew(Solution solution, IEnumerable<ProjectInfo> infos)
     {
         return infos
             .Where(info => solution.GetProject(info.Id) is null)

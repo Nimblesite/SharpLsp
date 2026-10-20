@@ -32,7 +32,6 @@ internal static class FileBasedPackageResolver
 {
     private static readonly string DefaultTargetFramework = $"net{Environment.Version.Major}.0";
     private static readonly TimeSpan RestoreLockTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(10);
 
     public static async Task<FileBasedProjectResult> ResolveAsync(
         Closure closure,
@@ -248,19 +247,13 @@ internal static class FileBasedPackageResolver
         CancellationToken ct
     )
     {
-        using var process = Process.Start(RestoreStartInfo(context));
-        if (process is null)
-        {
-            return RestoreResult.Failure("Could not start `dotnet restore`.");
-        }
-
-        var standardOutput = process.StandardOutput.ReadToEndAsync(ct);
-        var standardError = process.StandardError.ReadToEndAsync(ct);
-        await WaitForExitAsync(process, ct).ConfigureAwait(false);
-        var detail = await RestoreDetailAsync(standardOutput, standardError).ConfigureAwait(false);
-        return process.ExitCode == 0
-            ? new RestoreResult.Ok<Unit, string>(Unit.Value)
-            : RestoreResult.Failure(RestoreFailure(packages, detail));
+        var restored = await DotnetRestore
+            .RunAsync(context.ProjectPath, context.AppDirectory, context.Properties, ct)
+            .ConfigureAwait(false);
+        return restored.Match(
+            ok => new RestoreResult.Ok<Unit, string>(ok),
+            detail => RestoreResult.Failure(RestoreFailure(packages, detail))
+        );
     }
 
     private static string RestoreFailure(IReadOnlyList<PackageRef> packages, string detail)
@@ -268,75 +261,6 @@ internal static class FileBasedPackageResolver
         return packages.Count == 0
             ? $"MSBuild evaluation failed: {detail}"
             : $"Restore failed for {Describe(packages)}: {detail}";
-    }
-
-    private static ProcessStartInfo RestoreStartInfo(RestoreContext context)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = context.AppDirectory,
-            CreateNoWindow = true,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(context.ProjectPath);
-        startInfo.ArgumentList.Add("--verbosity");
-        startInfo.ArgumentList.Add("quiet");
-        AddPropertyArguments(startInfo, context.Properties);
-        return startInfo;
-    }
-
-    private static void AddPropertyArguments(
-        ProcessStartInfo startInfo,
-        IReadOnlyDictionary<string, string> properties
-    )
-    {
-        foreach (var (name, value) in properties)
-        {
-            startInfo.ArgumentList.Add($"-p:{name}={value}");
-        }
-    }
-
-    private static async Task WaitForExitAsync(Process process, CancellationToken ct)
-    {
-        try
-        {
-            await process.WaitForExitAsync(ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            KillProcessTree(process);
-            throw;
-        }
-    }
-
-    private static void KillProcessTree(Process process)
-    {
-        try
-        {
-            process.Kill(entireProcessTree: true);
-            // Kill only STARTS termination. Until the restore has exited it still stands in the
-            // app's folder, which Windows refuses to delete. [SCRIPT-LIFECYCLE]
-            _ = process.WaitForExit(KillWait);
-        }
-        catch (Exception exception)
-        {
-            Log.Debug(exception, "Could not terminate cancelled file-based package restore");
-        }
-    }
-
-    private static async Task<string> RestoreDetailAsync(
-        Task<string> standardOutput,
-        Task<string> standardError
-    )
-    {
-        var error = (await standardError.ConfigureAwait(false)).Trim();
-        var output = (await standardOutput.ConfigureAwait(false)).Trim();
-        return error.Length > 0 ? error
-            : output.Length > 0 ? output
-            : "no output";
     }
 
     private static async Task<FileBasedProjectResult> LoadReferencesAsync(

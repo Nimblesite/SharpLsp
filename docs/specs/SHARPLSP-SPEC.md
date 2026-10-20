@@ -222,6 +222,16 @@ A file no loaded F# project compiles still answers, from the project that owns i
 
 The load runs once per owner, however many edits arrive while it runs. It never blocks the edit that started it, because the host forwards edits synchronously. A file with no owner answers as before, from the workspace's first project. The log names the project loaded and the file that needed it, or why it could not load.
 
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING] C# Files Outside the Loaded Solution
+
+C# follows the F# rule above. When the editor opens or edits a `.cs` file that no loaded project compiles, the C# sidecar finds its owner: the first `.csproj`, in name order, in the nearest directory at or above the file that holds one. An SDK project compiles every `.cs` file beneath it.
+
+The owner loads in the background into the same Roslyn solution:
+- F# projects it reaches load as placeholders ([SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP]).
+- A project the solution already holds is linked, never loaded twice.
+
+The edit that started the load is held and applied once the project lands, so hover, completion and navigation answer from the owner. The load runs once per owner and never blocks the edit. A project that is already loaded is never reloaded. The log names the project and the file, or why it could not load.
+
 ### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation
 
 Every per-platform VSIX MUST bundle `sharplsp`.

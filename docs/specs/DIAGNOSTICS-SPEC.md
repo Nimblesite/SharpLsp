@@ -314,6 +314,8 @@ The gate is mandatory because unresolved `<PackageReference>` items can produce 
 
 **F#.** Before the F# sidecar loads a project ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING] included), it restores it again (`dotnet msbuild -t:Restore`) when its `obj/project.assets.json` names a package that none of the assets file's package folders holds. Clearing the NuGet cache leaves a built project in exactly that state: MSBuild trusts the build's assets cache, so its design-time command line references none of the packages. The netstandard reference pack is one of them, and without its core library FCS aborts every check, so hover, completion and navigation answer nothing. A project that has never been restored is not restored by this gate. The log names the project, how many packages are gone and the first of them, then whether the restore succeeded.
 
+**C# owning projects.** The C# sidecar runs `dotnet restore` before it loads a project that owns a file outside the solution ([SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING]), but only when that project has no `obj/project.assets.json`. A fresh clone leaves a project in that state. A netstandard project is the case that matters: its reference assemblies come from the NETStandard.Library package, so before the restore the file checks against no framework at all. The log names the project, then whether the restore succeeded.
+
 ## [DIAG-PERFORMANCE] Performance Targets
 
 | Metric | Target |
