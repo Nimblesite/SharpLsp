@@ -88,7 +88,7 @@ The docs sidebar groups pages by what the reader is doing. The groups are declar
 | Group | Pages |
 |---|---|
 | Set up | Getting Started, Editor Setup, Configuration |
-| Write code | F# Language Support, Code Completions, Hover & Quick Info, Go to Definition, Diagnostics, Refactoring & Code Actions |
+| Write code | F# Language Support, Blazor & Razor, Code Completions, Hover & Quick Info, Go to Definition, Diagnostics, Refactoring & Code Actions |
 | Project tools | Context Menus, NuGet Package Manager, Profiler |
 | For contributors | Architecture, Contributing |
 
