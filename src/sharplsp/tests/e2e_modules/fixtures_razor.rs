@@ -38,13 +38,25 @@ impl RazorWorkspace {
     }
 }
 
-/// Copy the Razor fixture solution to a temp directory and restore it.
+/// Copy the Razor fixture solution to a temp directory, with the repository's SDK
+/// pin, and restore it.
 pub fn create_razor_workspace() -> RazorWorkspace {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/razor");
     let dir = tempfile::tempdir().expect("create Razor temp dir");
     copy_fixture_tree(&source, dir.path());
+    keep_sdk_pin(dir.path());
     restore_project(dir.path());
     RazorWorkspace { dir }
+}
+
+/// Pin `destination` to the SDK the repository builds with. A copy under the temp
+/// root has no `global.json` above it, so it would restore and load with the newest
+/// installed SDK, whose Razor generator can need a newer Roslyn than the sidecar
+/// bundles. [RAZOR-TESTING]
+fn keep_sdk_pin(destination: &Path) {
+    let pin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../global.json");
+    let _ = std::fs::copy(&pin, destination.join("global.json"))
+        .expect("copy the repository's global.json into the Razor fixture");
 }
 
 /// Copy a fixture tree, leaving out build output (`bin`, `obj`).

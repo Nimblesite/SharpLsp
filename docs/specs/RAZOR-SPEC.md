@@ -400,6 +400,7 @@ Blazor front ends often sit over F# domain libraries. A Razor project that refer
 
 - **Engine unavailable:** if the bundled engine fails to load or to process a file, markup features answer empty and the C# projection features keep working. The failure is logged once per project, with the project name and the exception type.
 - **No projection:** a file whose project does not run the generator has no projection, so its C# features answer empty. Its markup facts still answer.
+- **SDK newer than the sidecar's Roslyn:** the generator comes from the SDK that resolves for the project, which is the newest installed SDK when no `global.json` pins one. Roslyn does not load a generator built against a newer Roslyn than the sidecar bundles, so the project's Razor files have no projection, as above. The tests keep the repository's pin in their fixture copies. GitHub issue #399 tracks making the generator load with any SDK.
 - **Nothing at the position:** a position that is neither in a C# fragment nor on a markup fact answers `null` or an empty list, never an error.
 - **No content logged:** no Razor or generated text is ever logged. Logs carry only paths, spans and lengths.
 
