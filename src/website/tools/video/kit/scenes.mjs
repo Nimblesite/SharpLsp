@@ -5,15 +5,13 @@
 // lays a narrated film's voice, score and captions over the cut, and writes the
 // site's MP4, WebM and poster.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { cueLog, record } from './camera.mjs';
-import { AAC, H264, OPUS, VP9, audible, duration, ffmpeg, poster, videos } from './encode.mjs';
+import { duration, ffmpeg, poster } from './encode.mjs';
 import { runCommand } from './editor.mjs';
 import { caption, ringClick } from './overlay.mjs';
+import { narrated, publishEncodes } from './publish.mjs';
 import { onSet } from './set.mjs';
-import { soundtrack } from './sound/soundtrack.mjs';
-import { writeCaptions } from './sound/voice.mjs';
 import { clickSharpLspIcon, demoRow, openFile, rowButton, sleep, waitForDemoRow } from './workbench.mjs';
 
 /**
@@ -126,27 +124,11 @@ function cut(shots, master) {
   ffmpeg([...inputs, '-filter_complex', `${chains.join(';')};${joined}`, '-map', '[cut]', ...lossless, master], path.basename(master));
 }
 
-/** The site's MP4 and WebM of the cut, with `audio` as their soundtrack when there is one. */
-function encodeFilm(name, out, shots, audio) {
-  const master = path.join(out, `${name}-master.mp4`);
-  cut(shots, master);
-  for (const [video, sound, extension] of [[H264, AAC, 'mp4'], [VP9, OPUS, 'webm']]) {
-    const inputs = audio ? ['-i', master, '-i', audio, '-map', '0:v', '-map', '1:a', ...audible(video), ...sound, '-shortest'] : ['-i', master, ...video];
-    ffmpeg([...inputs, path.join(videos, `${name}.${extension}`)], `${name} ${extension}`);
-  }
-}
-
-/** The narrated film: speech, score and captions laid over the cut, which holds each shot until its line is spoken. */
-async function narrated(name, out, shots, script) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-sound-`));
-  try {
-    const film = await soundtrack(script, shots, dir);
-    encodeFilm(name, out, film.shots, film.audio);
-    writeCaptions(script, film.lines, videos, name);
-    return film.duration;
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+/** The cut of `shots` as a lossless master, `<out>/<name>-master.mp4`. */
+function master(name, out, shots) {
+  const file = path.join(out, `${name}-master.mp4`);
+  cut(shots, file);
+  return file;
 }
 
 /**
@@ -155,8 +137,10 @@ async function narrated(name, out, shots, script) {
  */
 export async function publishWalkthrough({ name, out, scenes, posterAt, narration }) {
   const shots = shotsOf(out, scenes);
-  const length = narration ? await narrated(name, out, shots, narration) : shots.reduce((total, shot) => total + shot.length, 0);
-  if (!narration) encodeFilm(name, out, shots);
+  const length = narration
+    ? await narrated(name, narration, shots, (film) => master(name, out, film.shots))
+    : shots.reduce((total, shot) => total + shot.length, 0);
+  if (!narration) publishEncodes(name, master(name, out, shots));
   poster(path.join(out, 'clips', `${posterAt.scene}.mp4`), posterAt.at, name);
   return length;
 }

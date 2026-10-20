@@ -1,0 +1,283 @@
+{
+  "voice": "af_bella",
+  "speed": 1.12,
+  "score": "drive",
+  "pacing": { "opening": 0.9, "lead": 0.25, "gap": 0.22, "tail": 0.35, "hold": 0.25, "closing": 2.4 },
+  "say": {
+    "SharpLsp": "Sharp L S P",
+    "FS0025": "F S zero zero twenty-five",
+    "Program.fs": "Program dot F S",
+    "System.Text": "System dot Text",
+    "CSharpier": "See Sharpier",
+    "F#": "F sharp",
+    "C#": "C sharp",
+    "F2": "F two"
+  },
+  "music": { "en": "[Upbeat electronic music]", "ja": "[アップテンポな電子音楽]", "zh": "[轻快的电子音乐]" },
+  "lines": [
+    {
+      "scene": "intro",
+      "en": "Welcome to a quick lesson on code actions in SharpLsp! In the next few minutes, you'll fix code, generate code, and rename across files, in F# and C#, on any OS.",
+      "ja": "SharpLsp のコードアクションのクイックレッスンへようこそ！数分で、コードの修正、コードの生成、ファイルをまたいだ名前の変更を、F# と C# で、どの OS でも学べます。",
+      "zh": "欢迎来到 SharpLsp 代码操作快速课程！接下来几分钟，你将学会在任何系统上用 F# 和 C# 修复代码、生成代码，以及跨文件重命名。"
+    },
+    {
+      "scene": "shortcut",
+      "en": "First, the one shortcut you need. On a Mac, press Command dot.",
+      "ja": "まずは、覚えるべきショートカットはひとつだけ。Mac では Command+. を押します。",
+      "zh": "首先，你只需要记住一个快捷键。在 Mac 上，按 Command+.。"
+    },
+    {
+      "scene": "shortcut",
+      "en": "On Windows and Linux, it's Control dot.",
+      "ja": "Windows と Linux では Ctrl+. です。",
+      "zh": "在 Windows 和 Linux 上，是 Ctrl+.。"
+    },
+    {
+      "scene": "shortcut",
+      "en": "Or just click the lightbulb.",
+      "ja": "または電球アイコンをクリックするだけです。",
+      "zh": "或者直接点击灯泡图标。"
+    },
+    {
+      "scene": "shortcut",
+      "en": "Either way, the menu only lists actions that apply to your cursor, your selection, or the diagnostic under it.",
+      "ja": "どの方法でも、メニューにはカーソル、選択範囲、またはその下の診断に当てはまるアクションだけが表示されます。",
+      "zh": "无论哪种方式，菜单只会列出适用于光标、选区或其下诊断的操作。"
+    },
+    {
+      "scene": "context",
+      "en": "So where do actions come from? Three places.",
+      "ja": "では、アクションはどこから来るのでしょう？三つあります。",
+      "zh": "那么，这些操作从哪里来？有三个来源。"
+    },
+    {
+      "scene": "context",
+      "en": "A diagnostic: a warning or an error asks for its own fix.",
+      "ja": "診断：警告やエラーが、それ自身の修正を求めます。",
+      "zh": "诊断：警告或错误会提供它自己的修复。"
+    },
+    {
+      "scene": "context",
+      "en": "The cursor: a type or member you can reshape.",
+      "ja": "カーソル：作り変えられる型やメンバー。",
+      "zh": "光标：可以重塑的类型或成员。"
+    },
+    {
+      "scene": "context",
+      "en": "And a selection: refactorings that work on the code you highlight.",
+      "ja": "そして選択範囲：選択したコードに働くリファクタリングです。",
+      "zh": "还有选区：作用于你所选代码的重构。"
+    },
+    {
+      "scene": "context",
+      "en": "On a blank line, you get an empty menu. SharpLsp never guesses.",
+      "ja": "空行では、メニューは空です。SharpLsp は推測しません。",
+      "zh": "在空行上，菜单是空的。SharpLsp 从不瞎猜。"
+    },
+    {
+      "scene": "fsharp",
+      "en": "Let's start with F#. This describe function matches on a stage, but it's missing a union case.",
+      "ja": "F# から始めましょう。この describe 関数は stage で match していますが、共用体ケースがひとつ足りません。",
+      "zh": "我们从 F# 开始。这个 describe 函数对 stage 做 match，但漏了一个联合用例。"
+    },
+    {
+      "scene": "fsharp",
+      "en": "The compiler flags it with warning FS0025: an incomplete pattern match.",
+      "ja": "コンパイラーは警告 FS0025、不完全なパターンマッチとして知らせます。",
+      "zh": "编译器用警告 FS0025 标出它：模式匹配不完整。"
+    },
+    {
+      "scene": "fsharp",
+      "en": "Press Command dot, pick Generate missing union case, and SharpLsp writes the arm for you.",
+      "ja": "Command+. を押して「Generate missing union case」を選べば、SharpLsp がその分岐を書いてくれます。",
+      "zh": "按 Command+.，选择 Generate missing union case，SharpLsp 就会替你写出这个分支。"
+    },
+    {
+      "scene": "fsharp",
+      "en": "Prefer a catch-all? Add wildcard case is right there too.",
+      "ja": "すべてを受け止めたいなら、「Add wildcard case」もすぐ隣にあります。",
+      "zh": "想要兜底分支？Add wildcard case 也就在旁边。"
+    },
+    {
+      "scene": "fsharp-code",
+      "en": "Here's the result. The new arm matches exactly the case that was missing,",
+      "ja": "これが結果です。新しい分岐は、足りなかったケースにぴったり一致します。",
+      "zh": "这是结果。新分支恰好匹配了缺失的那个用例，"
+    },
+    {
+      "scene": "fsharp-code",
+      "en": "because the F# compiler knows every case of the union. You just write the body.",
+      "ja": "F# コンパイラーが共用体のすべてのケースを知っているからです。あなたは本体を書くだけです。",
+      "zh": "因为 F# 编译器知道联合类型的每一个用例。你只需要写函数体。"
+    },
+    {
+      "scene": "fsharp-fixes",
+      "en": "That's one fix from a whole F# toolkit, each tied to a compiler diagnostic.",
+      "ja": "これは F# の修正ツールキットのひとつにすぎず、どれもコンパイラーの診断に結びついています。",
+      "zh": "这只是整套 F# 修复工具中的一个，每一个都对应一条编译器诊断。"
+    },
+    {
+      "scene": "fsharp-fixes",
+      "en": "Unresolved name? Add the open. Unused binding? Prefix it with an underscore. A discarded value? Pipe it to ignore.",
+      "ja": "名前が解決できない？open を追加。未使用の束縛？アンダースコアを付ける。捨てられた値？ignore にパイプする。",
+      "zh": "名字无法解析？添加 open。绑定未使用？加上下划线前缀。值被丢弃？用管道传给 ignore。"
+    },
+    {
+      "scene": "fsharp-fixes",
+      "en": "And beyond matches, SharpLsp generates missing record fields and interface member stubs.",
+      "ja": "match 以外にも、SharpLsp は足りないレコードのフィールドや、インターフェイスのメンバーのスタブを生成します。",
+      "zh": "除了 match，SharpLsp 还能生成缺失的记录字段和接口成员存根。"
+    },
+    {
+      "scene": "rename",
+      "en": "Renaming is separate from code actions. Put the cursor on a symbol and press F2.",
+      "ja": "名前の変更はコードアクションとは別です。シンボルにカーソルを置いて F2 を押します。",
+      "zh": "重命名和代码操作是分开的。把光标放在符号上，按 F2。"
+    },
+    {
+      "scene": "rename",
+      "en": "Type the new name and hit enter.",
+      "ja": "新しい名前を入力して Enter を押します。",
+      "zh": "输入新名字，然后按回车。"
+    },
+    {
+      "scene": "rename",
+      "en": "Every reference follows, even in other files. Here, the call in Program.fs updates too.",
+      "ja": "すべての参照が追従します。別のファイルでもです。ここでは Program.fs の呼び出しも更新されます。",
+      "zh": "所有引用都会跟着改，即使在其他文件里。这里，Program.fs 中的调用也更新了。"
+    },
+    {
+      "scene": "rename",
+      "en": "In C#, rename runs on Roslyn's loaded solution. In F#, on the loaded F# project.",
+      "ja": "C# では Roslyn が読み込んだソリューションで、F# では読み込んだ F# プロジェクトで名前を変更します。",
+      "zh": "在 C# 中，重命名基于 Roslyn 加载的解决方案；在 F# 中，基于已加载的 F# 项目。"
+    },
+    {
+      "scene": "generate",
+      "en": "Now C#. Here's a favourite workflow: write the call you wish existed. Receipt, of invoice.",
+      "ja": "次は C# です。お気に入りのやり方：あったらいいなと思う呼び出しを書きます。Receipt(invoice) です。",
+      "zh": "现在看 C#。一个很受欢迎的做法：先写出你希望存在的调用。比如 Receipt(invoice)。"
+    },
+    {
+      "scene": "generate",
+      "en": "It doesn't exist yet, so the compiler reports an error.",
+      "ja": "まだ存在しないので、コンパイラーはエラーを報告します。",
+      "zh": "它还不存在，所以编译器报错。"
+    },
+    {
+      "scene": "generate",
+      "en": "Command dot. Generate method.",
+      "ja": "Command+.、「Generate method」。",
+      "zh": "Command+.，选择 Generate method。"
+    },
+    {
+      "scene": "generate",
+      "en": "Roslyn writes the stub, and takes the parameter type from your call.",
+      "ja": "Roslyn がスタブを書き、パラメーターの型は呼び出しから決めます。",
+      "zh": "Roslyn 会写出存根，并根据你的调用确定参数类型。"
+    },
+    {
+      "scene": "using",
+      "en": "Next, use a type without importing its namespace. StringBuilder, say.",
+      "ja": "次に、名前空間をインポートせずに型を使います。たとえば StringBuilder。",
+      "zh": "接下来，在没有导入命名空间的情况下使用一个类型，比如 StringBuilder。"
+    },
+    {
+      "scene": "using",
+      "en": "Quick Fix puts using System.Text right at the top.",
+      "ja": "クイックフィックスは using System.Text をいちばん上に出します。",
+      "zh": "快速修复会把 using System.Text 放在最上面。"
+    },
+    {
+      "scene": "using",
+      "en": "You could also qualify it in place, or even generate a new class.",
+      "ja": "その場で完全修飾したり、新しいクラスを生成したりもできます。",
+      "zh": "你也可以就地写出完全限定名，甚至生成一个新类。"
+    },
+    {
+      "scene": "using",
+      "en": "These come straight from Roslyn's own code fix providers, bundled with SharpLsp.",
+      "ja": "これらは SharpLsp に同梱された Roslyn 自身のコード修正プロバイダーから直接来ています。",
+      "zh": "这些都直接来自 SharpLsp 内置的 Roslyn 代码修复提供程序。"
+    },
+    {
+      "scene": "under",
+      "en": "So what's happening underneath? Your editor asks for code actions at the cursor.",
+      "ja": "では、裏で何が起きているのでしょう？エディターがカーソル位置のコードアクションを問い合わせます。",
+      "zh": "那么底层发生了什么？编辑器会请求光标处的代码操作。"
+    },
+    {
+      "scene": "under",
+      "en": "Roslyn, or the F# compiler, sends back a list of titles. That keeps the menu fast.",
+      "ja": "Roslyn または F# コンパイラーがタイトルの一覧を返します。だからメニューは速いのです。",
+      "zh": "Roslyn 或 F# 编译器返回一个标题列表，这让菜单保持快速。"
+    },
+    {
+      "scene": "under",
+      "en": "Only when you pick one does SharpLsp resolve it and compute the edits.",
+      "ja": "ひとつ選んだときに初めて、SharpLsp がそれを解決して編集を計算します。",
+      "zh": "只有当你选中一项时，SharpLsp 才会解析它并计算编辑。"
+    },
+    {
+      "scene": "under",
+      "en": "The result is one workspace edit, which can touch several files.",
+      "ja": "結果はひとつのワークスペース編集で、複数のファイルに及ぶこともあります。",
+      "zh": "结果是一个工作区编辑，可以同时修改多个文件。"
+    },
+    {
+      "scene": "under",
+      "en": "And if an action has gone stale, you get no edit, never a guess.",
+      "ja": "そしてアクションが古くなっていたら、編集は返りません。推測はしません。",
+      "zh": "如果某个操作已经过时，你得到的是没有编辑，而绝不是瞎猜。"
+    },
+    {
+      "scene": "separate",
+      "en": "Two things that aren't code actions.",
+      "ja": "コードアクションではないものが二つあります。",
+      "zh": "有两样东西不属于代码操作。"
+    },
+    {
+      "scene": "separate",
+      "en": "SharpLsp doesn't format your code. Use CSharpier for C#, and Fantomas for F#.",
+      "ja": "SharpLsp はコードを整形しません。C# には CSharpier、F# には Fantomas を使ってください。",
+      "zh": "SharpLsp 不负责格式化代码。C# 用 CSharpier，F# 用 Fantomas。"
+    },
+    {
+      "scene": "separate",
+      "en": "And Sort Members is its own command. Right-click a C# type in the Solution Explorer to reorder its members.",
+      "ja": "そして Sort Members は独立したコマンドです。ソリューションエクスプローラーで C# の型を右クリックすると、メンバーを並べ替えられます。",
+      "zh": "Sort Members 则是一个独立命令。在解决方案资源管理器中右键点击一个 C# 类型，即可重新排列它的成员。"
+    },
+    {
+      "scene": "recap",
+      "en": "Let's recap. Command dot, or Control dot, opens every action that applies.",
+      "ja": "おさらいしましょう。Command+. または Ctrl+. で、当てはまるすべてのアクションが開きます。",
+      "zh": "来回顾一下。Command+. 或 Ctrl+. 会打开所有适用的操作。"
+    },
+    {
+      "scene": "recap",
+      "en": "F# fixes follow the compiler's diagnostics, and they can write whole match cases.",
+      "ja": "F# の修正はコンパイラーの診断に従い、match のケースを丸ごと書けます。",
+      "zh": "F# 修复跟随编译器诊断，还能写出完整的 match 用例。"
+    },
+    {
+      "scene": "recap",
+      "en": "F2 renames across files.",
+      "ja": "F2 でファイルをまたいで名前を変更できます。",
+      "zh": "F2 可以跨文件重命名。"
+    },
+    {
+      "scene": "recap",
+      "en": "And in C#, you can call first, and generate second.",
+      "ja": "そして C# では、先に呼び出しを書き、あとから生成できます。",
+      "zh": "在 C# 中，你可以先写调用，再生成方法。"
+    },
+    {
+      "scene": "recap",
+      "en": "The full lesson is in the SharpLsp docs. Now go fix some code!",
+      "ja": "レッスンの全文は SharpLsp のドキュメントにあります。さあ、コードを直しに行きましょう！",
+      "zh": "完整课程在 SharpLsp 文档里。现在就去修代码吧！"
+    }
+  ]
+}

@@ -20,20 +20,20 @@ const bell = { partials: [[1, 1, 1.1], [2, 0.3, 0.5], [3, 0.1, 0.25]], attack: 0
 const master = { fadeIn: 1.2, fadeOut: 2.4, drive: 1.4, peak: 0.89 };
 const space = { length: 2.6, decay: 0.6, preDelay: 0.018, stretch: 12.9898, seed: 78.233, scale: 43_758.5453 };
 const pcm = { format: 1, width: Int16Array.BYTES_PER_ELEMENT, full: 32_767, chunk: 16, bitsPerByte: 8 };
-const sides = [-1, 1];
+export const sides = [-1, 1];
 const ratios = pad.detune.map((cents) => 2 ** (cents / tuning.cents));
 
-function harmonics(count, rolloff) {
+export function harmonics(count, rolloff) {
   return Array.from({ length: count }, (_, index) => 1 / (index + 1) ** rolloff);
 }
 
-const pitch = (note) => tuning.pitch * 2 ** ((note - tuning.note) / tuning.octave);
-const smooth = (x) => x * x * (3 - 2 * x);
-const clamp = (x) => Math.min(1, Math.max(0, x));
-const gain = (pan, side) => (1 + pan * side) / 2;
+export const pitch = (note) => tuning.pitch * 2 ** ((note - tuning.note) / tuning.octave);
+export const smooth = (x) => x * x * (3 - 2 * x);
+export const clamp = (x) => Math.min(1, Math.max(0, x));
+export const gain = (pan, side) => (1 + pan * side) / 2;
 const alternate = (step) => (step % 2 === 0 ? 1 : -1);
 
-const timbre = (frequency, t, weights) =>
+export const timbre = (frequency, t, weights) =>
   weights.reduce((sum, weight, index) => sum + weight * Math.sin(tau * frequency * (index + 1) * t), 0);
 
 const swell = (t, section) => smooth(clamp((t - section.start) / pad.attack)) * smooth(clamp(1 - (t - section.end) / pad.release));
@@ -86,17 +86,20 @@ function sample(score, t, side) {
 }
 
 /** The stereo score for a film of `duration` seconds whose closing line starts at `resolve`. */
-export function compose(timeline) {
+function compose(timeline) {
   const chords = sections(timeline);
   const score = { duration: timeline.duration, chords, bells: [...arpeggio(chords, timeline), ...shimmer(chords, timeline)] };
   const frames = Math.round(timeline.duration * rate);
   return sides.map((side) => Float32Array.from({ length: frames }, (_, index) => sample(score, index / rate, side)));
 }
 
-function noise(index, seed) {
+export function noise(index, seed) {
   const value = Math.sin(index * space.stretch + seed * space.seed) * space.scale;
   return 2 * (value - Math.floor(value)) - 1;
 }
+
+/** The walkthroughs' score: gentle, and mixed low under the voice. */
+export const calm = { compose, level: 0.2, wet: 0.35 };
 
 /** A decaying stereo noise impulse response: a small, warm room for the score. */
 export function room() {

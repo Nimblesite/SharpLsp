@@ -6,7 +6,10 @@ import path from 'node:path';
 import { wav } from './score.mjs';
 
 const model = { id: 'onnx-community/Kokoro-82M-v1.0-ONNX', dtype: 'fp32', device: 'cpu', silence: 0.01 };
-export const pacing = { opening: 1.2, lead: 0.35, gap: 0.4, tail: 0.5, hold: 0.3, closing: 2.5 };
+const pacing = { opening: 1.2, lead: 0.35, gap: 0.4, tail: 0.5, hold: 0.3, closing: 2.5 };
+
+/** A script's pacing: the defaults, with whatever its `pacing` tightens or loosens. */
+export const pacingOf = (script) => ({ ...pacing, ...script.pacing });
 const clock = { minute: 60, digits: 3, minuteWidth: 2, secondWidth: 6 };
 
 function trim(samples) {
@@ -19,7 +22,7 @@ const spoken = (script, text) => Object.entries(script.say).reduce((words, [word
 
 /** Speak one line into `file`. */
 async function take(tts, script, line, file) {
-  const speech = await tts.generate(spoken(script, line.en), { voice: script.voice });
+  const speech = await tts.generate(spoken(script, line.en), { voice: script.voice, speed: script.speed ?? 1 });
   const samples = trim(speech.audio);
   await wav(file, [samples], speech.sampling_rate);
   return { ...line, path: file, length: samples.length / speech.sampling_rate };
@@ -43,7 +46,7 @@ function stamp(seconds) {
 /** One WebVTT cue per spoken line in `lang`; the first also names the music that opens the film. */
 export function captions(script, lines, lang) {
   const cue = (line, index) =>
-    [`${stamp(index === 0 ? 0 : line.start)} --> ${stamp(line.end + pacing.hold)}`, ...(index === 0 ? [script.music[lang]] : []), line[lang]].join('\n');
+    [`${stamp(index === 0 ? 0 : line.start)} --> ${stamp(line.end + pacingOf(script).hold)}`, ...(index === 0 ? [script.music[lang]] : []), line[lang]].join('\n');
   return `${['WEBVTT', ...lines.map(cue)].join('\n\n')}\n`;
 }
 
