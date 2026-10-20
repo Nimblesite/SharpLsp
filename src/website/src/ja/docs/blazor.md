@@ -100,6 +100,7 @@ Roslyn は、自身のバージョンまたはそれより古いバージョン�
 
 進捗は [issue #397](https://github.com/Nimblesite/SharpLsp/issues/397) で追跡しています。
 
+- **ドットの直後の補完:** `@basket.` のようなマークアップ内の式では、メンバーの一覧は `.` の入力時ではなく、メンバー名の最初の文字を入力したときに表示されます（[issue #401](https://github.com/Nimblesite/SharpLsp/issues/401)）。
 - **コンポーネントのマークアップ:** コンポーネントタグ、コンポーネントパラメーター、`@bind-X`、および `@onclick` などのディレクティブ属性に対するホバー、定義、補完、参照、セマンティックカラー。
 - **Razor の診断:** 未知のコンポーネントなど、コンパイラー自身の `RZ` 診断。
 - **タグヘルパー:** `asp-for` などの[タグヘルパー](https://learn.microsoft.com/ja-jp/aspnet/core/mvc/views/tag-helpers/intro?view=aspnetcore-10.0)の要素と属性に対するホバーと補完。

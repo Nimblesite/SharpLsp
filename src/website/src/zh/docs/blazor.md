@@ -100,6 +100,7 @@ Roslyn 只能加载为其自身版本或更早版本构建的生成器。SDK 10.
 
 进度在 [issue #397](https://github.com/Nimblesite/SharpLsp/issues/397) 中跟踪。
 
+- **紧跟在点号之后的补全**：在 `@basket.` 这样的标记表达式中，成员列表不会在输入 `.` 时出现，而是在你输入成员名的第一个字母时出现（[issue #401](https://github.com/Nimblesite/SharpLsp/issues/401)）。
 - **组件标记**：组件标签、组件参数、`@bind-X` 以及 `@onclick` 等指令属性上的悬停、定义、补全、引用和语义着色。
 - **Razor 诊断**：编译器自身的 `RZ` 诊断，例如未知组件。
 - **标记帮助程序**：`asp-for` 等[标记帮助程序](https://learn.microsoft.com/zh-cn/aspnet/core/mvc/views/tag-helpers/intro?view=aspnetcore-10.0)元素和属性上的悬停与补全。
