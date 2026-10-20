@@ -795,7 +795,7 @@ _test-tooling:
 	node --test tools/vsix/chunk-once.test.mjs
 	@echo "==> Running repo tooling tests..."
 	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/vsix/debug-cleanup.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
-		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs
+		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs tools/make/vsix-profiles.test.mjs
 
 _website-build:
 	@echo "==> Building website..."
@@ -1109,6 +1109,11 @@ _deploy-sidecars:
 # The extension identifier, read from the manifest that defines it. Hardcoding it
 # is how the previous uninstall target came to name an extension id that had not
 # existed for months, silently uninstalling nothing. [DIST-VSIX-DEV-INSTALL]
+# The VS Code profiles, joined by "|", that hold their own copy of SharpLsp: the
+# install loop replaces it in each, not only in the default profile. Override
+# with VSCODE_PROFILES='A|B', or VSCODE_PROFILES= for the default profile only.
+# [DIST-VSIX-DEV-INSTALL]
+VSCODE_PROFILES ?= $(shell node tools/vsix/vscode-profiles.mjs $(EXTENSION_ID))
 EXTENSION_ID = $(shell node -e "const p=require('./$(VSCODE_DIR)/package.json');process.stdout.write(p.publisher+'.'+p.name)")
 
 # The per-OS half of the install loop: where the VS Code CLI lives, and how stale
@@ -1156,13 +1161,17 @@ RESOLVE_CODE = \
 # SharpLsp loaded in VS Code pretending to be the change under test.
 # `_build-vsix` pulls in `_build-rust` and `_build-dotnet`, so the Rust host and
 # both sidecar binaries are rebuilt here, not reused from the cleaned tree.
+#
+# The profiles holding SharpLsp are read BEFORE the uninstall, which removes it
+# from them, and handed to both ends of the loop.
 reinstall-vsix:
 	@echo "==> Uninstall, full clean, rebuild and reinstall for $(HOST_PLATFORM)..."
-	$(MAKE) uninstall-vsix
-	$(MAKE) _kill
-	$(MAKE) _clean-artifacts
-	$(MAKE) _build-vsix
-	$(MAKE) install-vsix
+	@profiles='$(VSCODE_PROFILES)'; \
+		$(MAKE) uninstall-vsix VSCODE_PROFILES="$$profiles" && \
+		$(MAKE) _kill && \
+		$(MAKE) _clean-artifacts && \
+		$(MAKE) _build-vsix && \
+		$(MAKE) install-vsix VSCODE_PROFILES="$$profiles"
 
 install-vsix:
 	@test -f $(DEV_VSIX) || { \
@@ -1171,7 +1180,11 @@ install-vsix:
 	}
 	@echo "==> Installing $(DEV_VSIX)..."
 	@$(RESOLVE_CODE); \
-		"$$code_cli" --install-extension "$(DEV_VSIX)" --force
+		"$$code_cli" --install-extension "$(DEV_VSIX)" --force || exit 1; \
+		list='$(VSCODE_PROFILES)'; IFS='|'; for profile in $$list; do \
+			echo "==> ...and into VS Code profile '$$profile'"; \
+			"$$code_cli" --install-extension "$(DEV_VSIX)" --force --profile "$$profile" || exit 1; \
+		done
 	@echo "==> $(EXTENSION_ID) installed. Reload VS Code to pick it up."
 
 # Uninstalling what is not installed is a success, not a failure: the reinstall
@@ -1179,7 +1192,10 @@ install-vsix:
 uninstall-vsix:
 	@echo "==> Uninstalling $(EXTENSION_ID)..."
 	@$(RESOLVE_CODE); \
-		"$$code_cli" --uninstall-extension "$(EXTENSION_ID)" || true
+		"$$code_cli" --uninstall-extension "$(EXTENSION_ID)" || true; \
+		list='$(VSCODE_PROFILES)'; IFS='|'; for profile in $$list; do \
+			"$$code_cli" --uninstall-extension "$(EXTENSION_ID)" --profile "$$profile" || true; \
+		done
 
 # ── Install (private) ─────────────────────────────────────────────
 
