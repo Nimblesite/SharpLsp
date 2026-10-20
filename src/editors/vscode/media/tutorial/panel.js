@@ -107,12 +107,19 @@
 
   function renderFilm(current) {
     const source = current ? filmSource(current.film) : '';
-    if (source === playing) return;
-    playing = source;
-    document.getElementById('offline').setAttribute('hidden', '');
-    const video = current ? filmElement(current.film) : undefined;
+    // A step whose film has no usable URL still differs from "no step": it shows the fallback.
+    const key = current ? `film:${source}` : '';
+    if (key === playing) return;
+    playing = key;
+    const offline = document.getElementById('offline');
+    offline.toggleAttribute('hidden', !current || Boolean(source));
+    const video = source ? filmElement(current.film) : undefined;
     replaceChildren(document.getElementById('film'), video ? [video] : []);
     if (video) report('loading', video);
+    else if (current) {
+      const detail = 'the step names no film URL on an allowed origin';
+      vscode.postMessage({ type: 'film', state: 'error', src: '', detail });
+    }
   }
 
   function renderCurrent(view) {
