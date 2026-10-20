@@ -87,7 +87,7 @@ The manifest contributes two walkthroughs to VS Code's Get Started page: `sharpl
 
 - **Contents:** a language switch (F#, then C#), the selected language's six steps, each marked done or not, and the current step's film. The current step is the first step not yet done. When all six are done, the panel says so and shows no film.
 - **Reactivity:** the panel is a projection of the progress signal and the selected language. A change posts the new view to the webview, which updates in place. The film element is replaced only when the current step's film changes, so a tick that leaves the same film current does not restart it.
-- **Film:** `<video>` with `controls`, `autoplay`, `muted`, `loop` and `playsinline`. Its poster is `<film>-poster.webp`, and its captions are `<film>.en.vtt`. The content security policy allows media, images and captions from `https://sharplsp.dev` only, and scripts by nonce only. If the film cannot load (for example offline), the panel shows the step's instructions in its place.
+- **Film:** `<video>` with `controls`, `autoplay`, `muted`, `loop` and `playsinline`. Its poster is `<film>-poster.webp`, and its captions are `<film>.en.vtt`. A film the website publishes without captions (today `sharplsp-tour`) gets no caption track. The content security policy allows media, images and captions from `https://sharplsp.dev` only, and scripts by nonce only. If the film cannot load (for example offline), the panel shows the step's instructions in its place.
 - **Format:** WebM only. Desktop VS Code's webview cannot play H.264, so the panel never names an `.mp4`.
 
 ## First Run `[TUTORIAL-FIRST-RUN]`

@@ -161,8 +161,10 @@ suite('Interactive tutorial [TUTORIAL]', () => {
       const film = filmOf(step);
       assert.match(film.webm, /^https:\/\/sharplsp\.dev\/assets\/videos\/[a-z-]+\.webm$/);
       assert.match(film.poster, /-poster\.webp$/);
-      assert.match(film.captions, /\.en\.vtt$/);
+      assert.equal(film.captions === null || film.captions === film.webm.replace(/\.webm$/, '.en.vtt'), true);
     }
+    assert.equal(filmOf(stepOf('FSharp', 'Hover')).captions?.endsWith('/hover.en.vtt'), true);
+    assert.equal(filmOf(stepOf('CSharp', 'SolutionExplorer')).captions, null, 'sharplsp-tour has no captions');
     assert.equal(
       filmOf(stepOf('FSharp', 'OpenFile')).webm.endsWith('/fsharp-language.webm'),
       true,

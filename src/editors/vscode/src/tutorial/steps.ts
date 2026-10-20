@@ -20,6 +20,9 @@ export const ACTIONS: readonly ActionKind[] = [
 /** Where the website publishes its films ([TUTORIAL-PANEL]). */
 export const FILM_ORIGIN = 'https://sharplsp.dev';
 
+/** Films the website publishes without an English caption track. */
+const UNCAPTIONED_FILMS: ReadonlySet<string> = new Set(['sharplsp-tour']);
+
 interface LanguageFacts {
   /** VS Code's language id. */
   readonly id: string;
@@ -126,12 +129,14 @@ export function instructionOf(step: TutorialStep): string {
 export interface Film {
   readonly webm: string;
   readonly poster: string;
-  readonly captions: string;
+  /** `null` when the film has no English captions. */
+  readonly captions: string | null;
 }
 
 export function filmOf(step: TutorialStep): Film {
   const name =
     ACTION_FACTS[step.action.kind].film ?? LANGUAGE_FACTS[step.language.kind].openFileFilm;
   const base = `${FILM_ORIGIN}/assets/videos/${name}`;
-  return { webm: `${base}.webm`, poster: `${base}-poster.webp`, captions: `${base}.en.vtt` };
+  const captions = UNCAPTIONED_FILMS.has(name) ? null : `${base}.en.vtt`;
+  return { webm: `${base}.webm`, poster: `${base}-poster.webp`, captions };
 }

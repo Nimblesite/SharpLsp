@@ -46,8 +46,9 @@
     video.crossOrigin = 'anonymous';
     video.poster = film.poster;
     video.src = film.webm;
-    const track = Object.assign(document.createElement('track'), { kind: 'captions', srclang: 'en', label: 'English', src: film.captions, default: true });
-    video.append(track);
+    if (film.captions) {
+      video.append(Object.assign(document.createElement('track'), { kind: 'captions', srclang: 'en', label: 'English', src: film.captions, default: true }));
+    }
     video.addEventListener('error', () => document.getElementById('offline').removeAttribute('hidden'));
     return video;
   }
