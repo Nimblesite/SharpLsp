@@ -109,7 +109,10 @@ let formatPreview (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: strin
 let private mapFcsMemberKind (mfv: FSharpMemberOrFunctionOrValue) =
     if mfv.IsProperty || mfv.IsPropertyGetterMethod || mfv.IsPropertySetterMethod then 9
     elif mfv.IsEvent then 11
-    elif mfv.IsConstructor then 2
+    elif mfv.IsConstructor then
+        match mfv.DeclaringEntity with
+        | Some entity when entity.IsValueType -> 5
+        | _ -> 2
     elif mfv.IsMember then 13
     elif mfv.IsFunction then 12
     else 8

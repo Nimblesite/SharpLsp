@@ -18,7 +18,8 @@ let private code =
           "    member _.Value = number"
           "    member _.Add(value: int) = add value"
           "let box = Box()"
-          "let result = box.Add number" ]
+          "let result = box.Add number"
+          "let date = System.DateTime(2026, 1, 1)" ]
 
 /// Decode the LSP stream so assertions name absolute source spans and standard legend types.
 let private decode (data: int array) =
@@ -37,6 +38,7 @@ let private decode (data: int array) =
 [<InlineData(6, 13, 5, 9)>] // A member property remains a property.
 [<InlineData(7, 13, 3, 13)>] // A member method remains a method.
 [<InlineData(3, 22, 1, 21)>] // An overloaded operator keeps the standard operator category.
+[<InlineData(10, 18, 8, 5)>] // A value-type constructor has its standard struct color.
 let ``full and range tokens use standard FSharp symbol categories`` line column length expected = task {
     let! state, directory, _, files = loadWorkspace [ "Highlighting.fs", code ]
     try
