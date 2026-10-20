@@ -21,6 +21,19 @@ export const ACTIONS: readonly ActionKind[] = [
 /** Where the website publishes its films ([TUTORIAL-PANEL]). */
 export const FILM_ORIGIN = 'https://sharplsp.dev';
 
+/** The commit whose website assets hold films the site has not deployed yet. */
+const FILM_COMMIT = '8b0fa431ce701d73af897192247305864e216dd9';
+const FILM_PATH = `Nimblesite/SharpLsp/${FILM_COMMIT}/src/website/src/assets/videos`;
+/** GitHub serves a film's LFS WebM from one host, and its poster and captions from another. */
+const GITHUB_MEDIA = 'https://media.githubusercontent.com';
+const GITHUB_RAW = 'https://raw.githubusercontent.com';
+
+/** Every origin a film, its poster or its captions load from: the panel's policy allows these only. */
+export const FILM_ORIGINS: readonly string[] = [FILM_ORIGIN, GITHUB_MEDIA, GITHUB_RAW];
+
+/** Films still waiting for the site to deploy: GitHub serves them from `FILM_COMMIT` until then. */
+const UNDEPLOYED_FILMS: ReadonlySet<string> = new Set(['refactoring-lesson']);
+
 /** Films the website publishes without an English caption track. */
 const UNCAPTIONED_FILMS: ReadonlySet<string> = new Set(['sharplsp-tour']);
 
@@ -147,11 +160,23 @@ export interface Film {
   readonly start: number;
 }
 
+/** Where a film's WebM and its other assets live: the website, or GitHub until it deploys. */
+function filmBases(name: string): { readonly video: string; readonly assets: string } {
+  if (!UNDEPLOYED_FILMS.has(name)) {
+    const site = `${FILM_ORIGIN}/assets/videos/${name}`;
+    return { video: site, assets: site };
+  }
+  return {
+    video: `${GITHUB_MEDIA}/media/${FILM_PATH}/${name}`,
+    assets: `${GITHUB_RAW}/${FILM_PATH}/${name}`,
+  };
+}
+
 export function filmOf(step: TutorialStep): Film {
   const facts = ACTION_FACTS[step.action.kind];
   const name = facts.film ?? LANGUAGE_FACTS[step.language.kind].openFileFilm;
-  const base = `${FILM_ORIGIN}/assets/videos/${name}`;
-  const captions = UNCAPTIONED_FILMS.has(name) ? null : `${base}.en.vtt`;
+  const { video, assets } = filmBases(name);
+  const captions = UNCAPTIONED_FILMS.has(name) ? null : `${assets}.en.vtt`;
   const start = facts.filmStart?.[step.language.kind] ?? 0;
-  return { webm: `${base}.webm`, poster: `${base}-poster.webp`, captions, start };
+  return { webm: `${video}.webm`, poster: `${assets}-poster.webp`, captions, start };
 }

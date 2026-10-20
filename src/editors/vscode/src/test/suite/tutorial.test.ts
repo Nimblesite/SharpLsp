@@ -66,7 +66,7 @@ function assertCurrent(tutorial: Tutorial, key: string | null, film?: string): v
   const current = view(tutorial).current;
   assert.equal(current?.key ?? null, key, `the panel's current step is ${String(key)}`);
   if (film !== undefined)
-    assert.equal(current?.film.webm, `https://sharplsp.dev/assets/videos/${film}.webm`);
+    assert.equal(current?.film.webm.endsWith(`/${film}.webm`), true, `the panel plays ${film}`);
 }
 
 suite('Interactive tutorial [TUTORIAL]', () => {
@@ -181,15 +181,17 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     assert.equal(isTutorialProgress(undefined), false);
   });
 
-  test('[TUTORIAL-PANEL] every film is a WebM from the website, never an MP4', () => {
+  test('[TUTORIAL-PANEL] every film is a WebM from the website or its pinned commit, never an MP4', () => {
     for (const step of LANGUAGES.flatMap(stepsOf)) {
       const film = filmOf(step);
-      assert.match(film.webm, /^https:\/\/sharplsp\.dev\/assets\/videos\/[a-z-]+\.webm$/);
-      assert.match(film.poster, /-poster\.webp$/);
-      assert.equal(
-        film.captions === null || film.captions === film.webm.replace(/\.webm$/, '.en.vtt'),
-        true,
+      assert.match(
+        film.webm,
+        /^https:\/\/(sharplsp\.dev\/assets\/videos|media\.githubusercontent\.com\/media\/Nimblesite\/SharpLsp\/[0-9a-f]{40}\/src\/website\/src\/assets\/videos)\/[a-z-]+\.webm$/,
       );
+      assert.match(film.poster, /-poster\.webp$/);
+      const assets = film.poster.replace(/-poster\.webp$/, '');
+      assert.equal(film.captions === null || film.captions === `${assets}.en.vtt`, true);
+      assert.equal(film.webm.endsWith(`/${assets.split('/').pop() ?? ''}.webm`), true);
     }
     assert.equal(filmOf(stepOf('FSharp', 'Hover')).captions?.endsWith('/hover.en.vtt'), true);
     assert.equal(
@@ -205,8 +207,16 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     // Code actions play the FilmMakers' lesson, each language from its own chapter.
     const fsharpFix = filmOf(stepOf('FSharp', 'CodeAction'));
     const csharpFix = filmOf(stepOf('CSharp', 'CodeAction'));
-    assert.equal(fsharpFix.webm, 'https://sharplsp.dev/assets/videos/refactoring-lesson.webm');
-    assert.equal(fsharpFix.captions?.endsWith('/refactoring-lesson.en.vtt'), true);
+    // Not deployed yet: GitHub serves the LFS WebM, and the poster and captions, from one commit.
+    assert.match(
+      fsharpFix.webm,
+      /^https:\/\/media\.githubusercontent\.com\/media\/.+\/refactoring-lesson\.webm$/,
+    );
+    assert.match(
+      fsharpFix.poster,
+      /^https:\/\/raw\.githubusercontent\.com\/.+\/refactoring-lesson-poster\.webp$/,
+    );
+    assert.equal(fsharpFix.captions, fsharpFix.poster.replace('-poster.webp', '.en.vtt'));
     assert.deepEqual([fsharpFix.start, csharpFix.start], [44, 116], 'F# fixes at 0:44, C# at 1:56');
     assert.equal(filmOf(stepOf('FSharp', 'Hover')).start, 0, 'other films play from the start');
   });
@@ -268,7 +278,11 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     );
     const html = tutorial.panel.html() ?? '';
     assert.match(html, /default-src 'none'/, 'nothing loads unless the policy names it');
-    assert.match(html, /media-src https:\/\/sharplsp\.dev;/, 'films come from the website only');
+    assert.match(
+      html,
+      /media-src https:\/\/sharplsp\.dev https:\/\/media\.githubusercontent\.com https:\/\/raw\.githubusercontent\.com;/,
+      'films come from the website, or GitHub until it deploys, only',
+    );
     assert.match(
       html,
       /<script nonce="[^"]+" src="[^"]+panel\.js"><\/script>/,

@@ -5,7 +5,7 @@ import { effect, Signal } from '../signals.js';
 import { isRecord } from '../utils.js';
 import { type PanelView, panelView } from './panel-view.js';
 import { progress } from './progress.js';
-import { FILM_ORIGIN, type LanguageKind, LANGUAGES } from './steps.js';
+import { FILM_ORIGINS, type LanguageKind, LANGUAGES } from './steps.js';
 
 const VIEW_TYPE = 'sharplsp.tutorial';
 const TITLE = 'SharpLsp Tutorial';
@@ -27,8 +27,8 @@ function shellHtml(webview: vscode.Webview, media: vscode.Uri): string {
     "default-src 'none'",
     `style-src ${webview.cspSource}`,
     `script-src 'nonce-${nonce}'`,
-    `media-src ${FILM_ORIGIN}`,
-    `img-src ${FILM_ORIGIN}`,
+    `media-src ${FILM_ORIGINS.join(' ')}`,
+    `img-src ${FILM_ORIGINS.join(' ')}`,
   ].join('; ');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
