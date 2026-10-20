@@ -807,13 +807,13 @@ _website-dev:
 
 # [WEB-DESIGN-MEDIA] Shoot and publish one website film from the packaged VSIX:
 # `make _film FILM=fsharp`, or `PUBLISH=1` to publish the last shoot again.
-# The films live in src/website/tools/profiler-film/films; its README says how.
+# The films live in src/website/tools/video/films; its README says how.
 _film:
 	@test -n "$(FILM)" || { echo "usage: make _film FILM=<film> [PUBLISH=1]" >&2; exit 1; }
 	$(if $(PUBLISH),,$(MAKE) _build-vsix VSIX_PREBUILT=1)
 	@# Install once: npm ci would wipe the voice model kokoro-js caches in node_modules.
-	test -d src/website/tools/profiler-film/node_modules || npm ci --prefix src/website/tools/profiler-film
-	node src/website/tools/profiler-film/film.mjs $(FILM) $(if $(PUBLISH),--publish,)
+	test -d src/website/tools/video/node_modules || npm ci --prefix src/website/tools/video
+	node src/website/tools/video/film.mjs $(FILM) $(if $(PUBLISH),--publish,)
 
 _test-website:
 	@echo "==> Running website Playwright tests..."

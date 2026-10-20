@@ -2,7 +2,7 @@
 // (`nuget`): the browser opened on the F# project, a package found on
 // nuget.org, installed and restored, and its reference in the project file.
 //
-//   node src/website/tools/profiler-film/film.mjs nuget
+//   node src/website/tools/video/film.mjs nuget
 import { LANGUAGE, scene, typeText } from '../kit/acts/language.mjs';
 import { openMenu, pickMenu } from '../kit/acts/explorer.mjs';
 import { ringClick } from '../kit/overlay.mjs';

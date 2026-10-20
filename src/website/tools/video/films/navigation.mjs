@@ -2,7 +2,7 @@
 // (`navigation`): definitions in F# and C#, references in a peek window, and
 // a framework type opened as decompiled source.
 //
-//   node src/website/tools/profiler-film/film.mjs navigation
+//   node src/website/tools/video/film.mjs navigation
 import { LANGUAGE, navigate, peekReferences, scene } from '../kit/acts/language.mjs';
 import { AT_PROGRAM_CS, AT_SESSIONS, ready } from '../kit/acts/shop.mjs';
 import { SHOP } from '../kit/set.mjs';

@@ -3,7 +3,7 @@
 // followed to the static field that roots it, the fix typed in, the fixed build
 // tracked again.
 //
-//   node src/website/tools/profiler-film/film.mjs leak
+//   node src/website/tools/video/film.mjs leak
 import { memoryLoop } from '../kit/acts/memory.mjs';
 import { prepare } from '../kit/scenes.mjs';
 import { STOREFRONT } from '../kit/set.mjs';

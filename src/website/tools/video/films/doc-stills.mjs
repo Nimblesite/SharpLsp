@@ -2,7 +2,7 @@
 // (`screenshots/docs/<name>.webp`), shot on the Shop demo in the same isolated
 // editor as the films: no clips, only clean frames of each feature at work.
 //
-//   node src/website/tools/profiler-film/film.mjs doc-stills
+//   node src/website/tools/video/film.mjs doc-stills
 import fs from 'node:fs';
 import path from 'node:path';
 import { snap } from '../kit/camera.mjs';

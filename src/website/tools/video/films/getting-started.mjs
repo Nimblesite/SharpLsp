@@ -3,7 +3,7 @@
 // and F# side by side, an F# hover, a C# completion, and the tools that ship
 // with the extension.
 //
-//   node src/website/tools/profiler-film/film.mjs getting-started
+//   node src/website/tools/video/film.mjs getting-started
 import { LANGUAGE, hoverEach, scene, setPane } from '../kit/acts/language.mjs';
 import { unfold } from '../kit/acts/explorer.mjs';
 import { AT_CHECKOUT, AT_PIPELINE, csharpCheapest, ready } from '../kit/acts/shop.mjs';

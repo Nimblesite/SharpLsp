@@ -2,8 +2,8 @@
 // films/<film>.mjs. See README.md.
 //
 //   make _build-vsix VSIX_PREBUILT=1
-//   node src/website/tools/profiler-film/film.mjs <film>              (shoot, then publish)
-//   node src/website/tools/profiler-film/film.mjs <film> --publish    (publish the last shoot)
+//   node src/website/tools/video/film.mjs <film>              (shoot, then publish)
+//   node src/website/tools/video/film.mjs <film> --publish    (publish the last shoot)
 //
 // A shoot lands in out/<film>/ (gitignored); publishing writes the site's video,
 // poster, captions and stills under src/website/src/assets.

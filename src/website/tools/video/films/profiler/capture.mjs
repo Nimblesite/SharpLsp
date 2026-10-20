@@ -3,9 +3,9 @@
 // and real-time screencast clips, plus the click cues the film's cursor follows.
 //
 //   make _build-vsix VSIX_PREBUILT=1
-//   node src/website/tools/profiler-film/films/profiler/capture.mjs
+//   node src/website/tools/video/films/profiler/capture.mjs
 //
-// Output lands in tools/profiler-film/out/ (gitignored); render.mjs turns it into
+// Output lands in tools/video/out/ (gitignored); render.mjs turns it into
 // the website's assets.
 import fs from 'node:fs';
 import path from 'node:path';

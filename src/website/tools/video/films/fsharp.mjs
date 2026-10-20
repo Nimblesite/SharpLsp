@@ -3,7 +3,7 @@
 // stages, then its memory: records and union cases painted where the code
 // builds them, the module value that roots the leak, the fix, and a second run.
 //
-//   node src/website/tools/profiler-film/film.mjs fsharp
+//   node src/website/tools/video/film.mjs fsharp
 import { snap } from '../kit/camera.mjs';
 import { profilerTour } from '../kit/acts/tour.mjs';
 import { FS_STOREFRONT } from '../kit/set.mjs';

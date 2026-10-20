@@ -3,7 +3,7 @@
 // F# hover to the F# Compiler Service and a C# hover to Roslyn; then folding,
 // answered by tree-sitter in the host with no engine involved.
 //
-//   node src/website/tools/profiler-film/film.mjs architecture
+//   node src/website/tools/video/film.mjs architecture
 import { LANGUAGE, hoverEach, scene, showLog } from '../kit/acts/language.mjs';
 import { AT_CHECKOUT, AT_PIPELINE, ready } from '../kit/acts/shop.mjs';
 import { SHOP } from '../kit/set.mjs';

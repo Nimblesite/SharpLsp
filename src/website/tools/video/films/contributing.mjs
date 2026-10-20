@@ -3,7 +3,7 @@
 // test suite (the Rust host's unit tests) built and run from a terminal, on a
 // clean copy of the committed tree.
 //
-//   node src/website/tools/profiler-film/film.mjs contributing
+//   node src/website/tools/video/film.mjs contributing
 import { spawnSync } from 'node:child_process';
 import { runCommand } from '../kit/editor.mjs';
 import { scene, typeText } from '../kit/acts/language.mjs';

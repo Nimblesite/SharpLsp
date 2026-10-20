@@ -2,7 +2,7 @@
 // (`hover`): F# signatures and doc comments, union cases and .NET types, C#
 // XML docs and the type behind `var`, and a hover that reads unsaved edits.
 //
-//   node src/website/tools/profiler-film/film.mjs hover
+//   node src/website/tools/video/film.mjs hover
 import { hoverOn } from '../kit/code.mjs';
 import { LANGUAGE, hoverEach, scene } from '../kit/acts/language.mjs';
 import { AT_PROGRAM_CS, AT_PROGRAM_FS, ready } from '../kit/acts/shop.mjs';

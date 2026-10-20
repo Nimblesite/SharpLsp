@@ -1,6 +1,6 @@
-# Profiler films
+# Videos
 
-This folder holds the scripts that shoot and publish the videos and stills on sharplsp.dev. Every frame is the real extension: an isolated VS Code (its own user data and extensions, never yours) runs the packaged VSIX against a demo app. Nothing in the editor is mocked. The rules are in [WEB-DESIGN-MEDIA](../../../../docs/specs/DESIGN-SYSTEM.md).
+Every video and still on sharplsp.dev is made here, on one shared kit: the walkthroughs, the composited profiler film, the lessons and the blog heroes. Every frame is the real extension: an isolated VS Code (its own user data and extensions, never yours) runs the packaged VSIX against a demo app. Nothing in the editor is mocked. The rules are in [WEB-DESIGN-MEDIA](../../../../docs/specs/DESIGN-SYSTEM.md).
 
 ## Make a film
 
@@ -8,7 +8,7 @@ You need a packaged VSIX, ffmpeg with libvpx and libopus, cwebp, and the .NET 10
 
 ```sh
 npm ci --prefix src/website                            # Playwright
-npm ci --prefix src/website/tools/profiler-film        # kokoro-js, for narration
+npm ci --prefix src/website/tools/video        # kokoro-js, for narration
 ```
 
 The first narrated publish downloads the voice model (about 310 MB) into `node_modules`; a later `npm ci` there deletes it again.
@@ -20,7 +20,7 @@ make _film FILM=fsharp             # package the VSIX, shoot, then publish
 make _film FILM=fsharp PUBLISH=1   # publish the last shoot again
 ```
 
-`make _film` runs `node src/website/tools/profiler-film/film.mjs <film> [--publish]`, which you can also call directly after `make _build-vsix VSIX_PREBUILT=1`.
+`make _film` runs `node src/website/tools/video/film.mjs <film> [--publish]`, which you can also call directly after `make _build-vsix VSIX_PREBUILT=1`.
 
 A shoot takes a few minutes and lands in `out/<film>/`, which is gitignored. Publishing writes the MP4, WebM, poster, captions and stills into `src/website/src/assets/`. Add or update the video's entry in `src/website/src/_data/videos.json` (its length, its upload date, and its label and caption in each language), then place it on a page with `{% video "<name>" %}`.
 
@@ -93,6 +93,7 @@ The kit tells the common stories, so a film only supplies its words:
 | `kit/workbench.mjs` | Editor moves: the Processes view and its demo row, `openFile`, `goTo`, `typeAt`, `toggleMaximised`, `panel` and more |
 | `kit/camera.mjs` | `snap(shot, name)` takes a still, published as `<name>.webp` |
 | `kit/set.mjs` | The sets (`STOREFRONT`, `FS_STOREFRONT`, `SHOP` with both in one solution, and `REPO`, a clean copy of this repository) and `onSet`, which stages one beside an isolated editor |
+| `kit/frames.mjs` | `explode` (footage into numbered frames) and `renderMaster` / `previewFrames`: step a page whose `renderFrame(t)` draws every frame, into a lossless master. The profiler film and the lessons render through it |
 | `kit/sound/` | Narration (`voice.mjs`), the original score (`score.mjs`) and the mix (`soundtrack.mjs`) |
 
 A new demo app goes in `demos/<folder>/`, with one project and an empty `Directory.Build.props`, and is declared in `kit/set.mjs`. It must print a line to stdout once it is running.
@@ -117,3 +118,7 @@ A narrated film has a script next to it, `films/<film>.narration.json`:
 - **Timing.** Each line starts just after its scene's cut. A scene holds its last frame until its line has been spoken, so keep lines about as long as their scenes.
 - **Music.** `kit/sound/score.mjs` synthesises an original score, so no film carries licensed music. It ducks under the voice, and the mix is normalised to -16 LUFS.
 - **Captions.** Every language in `music` gets WebVTT captions, `<name>.<lang>.vtt`. List those languages under `captions` in `videos.json`, and the page's own language shows by default.
+
+## Heroes
+
+`heroes/` holds the blog posts' hero images as HTML pages, one per post, sized to the hero (1672x941). Screenshot the page at that size and publish it as WebP.

@@ -1,5 +1,5 @@
 {
-  "name": "sharplsp-profiler-film",
+  "name": "sharplsp-video",
   "private": true,
   "type": "module",
   "description": "Local tools that shoot and narrate the website's profiler films. Narration runs on this machine; nothing is sent to a speech service.",

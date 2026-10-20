@@ -2,7 +2,7 @@
 // (`diagnostics`): errors and SharpLsp's analyzer findings on unsaved F# and
 // C# edits, each read by hovering it, then the Problems panel that lists them.
 //
-//   node src/website/tools/profiler-film/film.mjs diagnostics
+//   node src/website/tools/video/film.mjs diagnostics
 import { LANGUAGE, hoverEach, scene } from '../kit/acts/language.mjs';
 import { AT_CHECKOUT, AT_PIPELINE, ready } from '../kit/acts/shop.mjs';
 import { SHOP } from '../kit/set.mjs';

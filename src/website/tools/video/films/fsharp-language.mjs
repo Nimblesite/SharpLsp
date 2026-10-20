@@ -3,7 +3,7 @@
 // references, a generated match case, a rename across files, and F#
 // Interactive, all on FsStorefront in the Shop solution.
 //
-//   node src/website/tools/profiler-film/film.mjs fsharp-language
+//   node src/website/tools/video/film.mjs fsharp-language
 import { runCommand } from '../kit/editor.mjs';
 import { LANGUAGE, hoverEach, navigate, peekReferences, scene, typeText } from '../kit/acts/language.mjs';
 import { AT_CHECKOUT, fsharpCheapest, missingCase, ready, renameAcrossFiles } from '../kit/acts/shop.mjs';

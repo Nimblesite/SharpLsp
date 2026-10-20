@@ -3,7 +3,7 @@
 // memory: the leak suspect, the static field that roots it, the fix, and a
 // second run. The memory half is the leak film's story.
 //
-//   node src/website/tools/profiler-film/film.mjs csharp
+//   node src/website/tools/video/film.mjs csharp
 import { profilerTour } from '../kit/acts/tour.mjs';
 import { STOREFRONT } from '../kit/set.mjs';
 import { leakStory } from './leak.mjs';

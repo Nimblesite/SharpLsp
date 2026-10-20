@@ -3,7 +3,7 @@
 // everything it adds under SharpLsp in the Command Palette, and the
 // trusted-workspace settings for development builds.
 //
-//   node src/website/tools/profiler-film/film.mjs editor-setup
+//   node src/website/tools/video/film.mjs editor-setup
 import { runCommand } from '../kit/editor.mjs';
 import { LANGUAGE, awaitSemantics, prepareCode, scene, settingsEditor, typeText } from '../kit/acts/language.mjs';
 import { pointAt } from '../kit/overlay.mjs';

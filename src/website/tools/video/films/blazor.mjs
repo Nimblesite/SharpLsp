@@ -4,7 +4,7 @@
 // VS Code's own HTML service, a component's definition reached from C#, and
 // linked tag editing and folding.
 //
-//   node src/website/tools/profiler-film/film.mjs blazor
+//   node src/website/tools/video/film.mjs blazor
 import { snap } from '../kit/camera.mjs';
 import { clickOn, hoverOn } from '../kit/code.mjs';
 import { LANGUAGE, hidePanel, hoverEach, navigate, peekReferences, renameTo, scene, typeText, typeThroughCompletion } from '../kit/acts/language.mjs';

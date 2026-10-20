@@ -2,7 +2,7 @@
 // (`code-completions`): F# and C# member completion typed live, then a type
 // from a namespace the file never imported, with its using added.
 //
-//   node src/website/tools/profiler-film/film.mjs completions
+//   node src/website/tools/video/film.mjs completions
 import { clickOn } from '../kit/code.mjs';
 import { LANGUAGE, complete, scene, typeText } from '../kit/acts/language.mjs';
 import { AT_CHECKOUT, AT_PIPELINE, csharpCheapest, fsharpCheapest, ready } from '../kit/acts/shop.mjs';

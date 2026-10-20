@@ -3,7 +3,7 @@
 // the solution, monorepo mode switched on, the server restarted, and an
 // unused public property reported as dead code.
 //
-//   node src/website/tools/profiler-film/film.mjs configuration
+//   node src/website/tools/video/film.mjs configuration
 import fs from 'node:fs';
 import path from 'node:path';
 import { runCommand } from '../kit/editor.mjs';

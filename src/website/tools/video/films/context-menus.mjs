@@ -2,7 +2,7 @@
 // (`context-menus`): the Solution Explorer's menus on the solution, a
 // project (Build, Open Project File) and a C# type (Sort Members).
 //
-//   node src/website/tools/profiler-film/film.mjs context-menus
+//   node src/website/tools/video/film.mjs context-menus
 import { LANGUAGE, scene } from '../kit/acts/language.mjs';
 import { openMenu, pickMenu, unfold } from '../kit/acts/explorer.mjs';
 import { AT_PROGRAM_CS, ready } from '../kit/acts/shop.mjs';

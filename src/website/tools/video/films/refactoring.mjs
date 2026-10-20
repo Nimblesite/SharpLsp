@@ -2,7 +2,7 @@
 // (`refactoring`): an F# match completed and a function renamed across files,
 // then C# fixes that generate a missing method and add a missing using.
 //
-//   node src/website/tools/profiler-film/film.mjs refactoring
+//   node src/website/tools/video/film.mjs refactoring
 import { LANGUAGE, quickFix, scene } from '../kit/acts/language.mjs';
 import { AT_PIPELINE, AT_SESSIONS, missingCase, ready, renameAcrossFiles } from '../kit/acts/shop.mjs';
 import { SHOP } from '../kit/set.mjs';
