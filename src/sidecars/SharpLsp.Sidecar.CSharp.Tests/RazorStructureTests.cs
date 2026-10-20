@@ -112,6 +112,34 @@ public sealed class RazorStructureTests : IClassFixture<RazorFixture>
     }
 
     [Fact]
+    public async Task Code_blocks_and_functions_blocks_fold_and_outline_their_members()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+        var text = await File.ReadAllTextAsync(Board);
+        const string blocks =
+            "\n@{\n    var total = scores.Sum();\n}\n@functions {\n    private int Twice(int value) => value * 2;\n}\n";
+        _ = Ok(await manager.UpdateDocumentTextAsync(Board, text + blocks));
+        var opened = text.Split('\n').Length;
+
+        // `@{` opens on the line after the file's end; `@functions` three lines on. Each fold
+        // keeps its closing brace visible.
+        var folds = Ok(await manager.GetFoldingRangesAsync(Board, default));
+        Assert.Contains((opened, opened + 1), folds.Select(fold => (fold.StartLine, fold.EndLine)));
+        Assert.Contains(
+            (opened + 3, opened + 4),
+            folds.Select(fold => (fold.StartLine, fold.EndLine))
+        );
+
+        var symbols = Ok(await manager.GetDocumentSymbolsAsync(Board, default));
+        var functions = Assert.Single(symbols, symbol => symbol.Name == "@functions");
+        Assert.Equal("Key", functions.Kind);
+        Assert.Equal(
+            ("Twice", "Method"),
+            (Assert.Single(functions.Children).Name, functions.Children[0].Kind)
+        );
+    }
+
+    [Fact]
     public async Task Start_and_end_tag_names_edit_together_and_self_closing_tags_have_none()
     {
         using var manager = await _fixture.OpenManagerAsync();

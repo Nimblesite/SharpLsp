@@ -104,7 +104,7 @@ function isOpenIn(selector: DocumentSelector, uri: string): boolean {
 }
 
 /** The document a request is about - its `textDocument.uri` - if it names one. */
-function requestDocumentUri(param: unknown): string | undefined {
+export function requestDocumentUri(param: unknown): string | undefined {
   const document = isRecord(param) ? param.textDocument : undefined;
   return isRecord(document) && typeof document.uri === 'string' ? document.uri : undefined;
 }

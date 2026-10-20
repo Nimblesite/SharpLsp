@@ -109,6 +109,28 @@ internal static class DocumentPosition
         };
     }
 
+    /// <summary>A diagnostic of the file <paramref name="span"/> names, at that span.</summary>
+    public static DiagnosticResult ToDiagnostic(
+        FileLinePositionSpan span,
+        string code,
+        string severity,
+        string message
+    )
+    {
+        var (path, line, character, endLine, endCharacter) = Coordinates(span);
+        return new DiagnosticResult
+        {
+            FilePath = path,
+            StartLine = line,
+            StartCharacter = character,
+            EndLine = endLine,
+            EndCharacter = endCharacter,
+            Message = message,
+            Severity = severity,
+            Code = code,
+        };
+    }
+
     /// <summary>
     /// Builds the <see cref="HierarchyItem"/> both hierarchies answer with, at the
     /// symbol's first in-source declaration. Returns <see langword="null"/> for a

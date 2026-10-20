@@ -59,17 +59,12 @@ internal sealed partial class WorkspaceManager
         FileLinePositionSpan span
     )
     {
-        return new DiagnosticResult
-        {
-            FilePath = filePath,
-            StartLine = span.StartLinePosition.Line,
-            StartCharacter = span.StartLinePosition.Character,
-            EndLine = span.EndLinePosition.Line,
-            EndCharacter = span.EndLinePosition.Character,
-            Message = diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
-            Severity = diag.Severity.ToString(),
-            Code = diag.Id,
-        };
+        return DocumentPosition.ToDiagnostic(
+            new FileLinePositionSpan(filePath, span.Span),
+            diag.Id,
+            diag.Severity.ToString(),
+            diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+        );
     }
 
     private async Task<List<CompletionItem>> GetCompletionsCoreAsync(

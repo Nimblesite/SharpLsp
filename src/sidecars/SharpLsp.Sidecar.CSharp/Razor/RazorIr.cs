@@ -30,6 +30,32 @@ internal static class RazorIr
         }
     }
 
+    /// <summary>
+    /// The spans of the C# code blocks (<c>@{ … }</c>) under <paramref name="root"/>: C# code
+    /// outside every directive, whose own blocks (<c>@code</c>) fold as directives.
+    /// </summary>
+    public static IEnumerable<TextSpan> CodeBlocks(IntermediateNode root)
+    {
+        var pending = new Stack<IntermediateNode>([root]);
+        while (pending.TryPop(out var node))
+        {
+            if (node is DirectiveIntermediateNode || node.IsImported)
+            {
+                continue;
+            }
+
+            if (node is CSharpCodeIntermediateNode { Source: { } source })
+            {
+                yield return Span(source);
+            }
+
+            foreach (var child in node.Children)
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
     /// <summary>The directive a node declares: a <c>DirectiveIntermediateNode</c> or an <c>@using</c>.</summary>
     public static MarkupDirective? Directive(IntermediateNode node, SourceText text)
     {

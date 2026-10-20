@@ -1,4 +1,5 @@
 using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1515 // Public xUnit discovery type
 #pragma warning disable CA2007 // xUnit executes without a synchronization context
@@ -406,9 +407,13 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
             t => t == (RazorFixture.Locate(Board, "private void Add", "Add"), 3, 13)
         );
         Assert.Contains(tokens, t => t == (RazorFixture.Locate(Board, "<PageTitle>", "Id"), 2, 9));
-        Assert.DoesNotContain(
-            tokens,
-            t => t.At.Line == RazorFixture.Locate(Board, "</Panel>", "Panel").Line
+        // A markup line carries its markup token alone: no C# scaffolding leaks onto it.
+        // [RAZOR-FEATURES-SEMANTIC-TOKENS]
+        var closing = RazorFixture.Locate(Board, "</Panel>", "Panel");
+        var classType = Array.IndexOf(SemanticTokensResolver.GetTokenTypes(), "class");
+        Assert.Equal(
+            [(closing, "Panel".Length, classType)],
+            tokens.Where(t => t.At.Line == closing.Line)
         );
 
         var code = RazorFixture.Locate(Board, "private void Add", "private");

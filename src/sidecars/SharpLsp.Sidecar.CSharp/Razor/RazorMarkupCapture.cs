@@ -20,6 +20,7 @@ internal sealed class RazorMarkupCapture
     private readonly List<string> _namespaces = [];
     private RazorCodeDocument? _codeDocument;
     private string _htmlText = "";
+    private TextSpan[] _codeBlocks = [];
 
     /// <summary>Add the capture passes to an engine.</summary>
     public void Register(RazorProjectEngineBuilder builder)
@@ -48,6 +49,7 @@ internal sealed class RazorMarkupCapture
             )
             {
                 HtmlText = _htmlText,
+                CodeBlocks = [.. _codeBlocks],
             };
     }
 
@@ -55,6 +57,7 @@ internal sealed class RazorMarkupCapture
     {
         var text = document.Source.Text;
         _htmlText = RazorHtmlProjection.Create(text, root);
+        _codeBlocks = [.. RazorIr.CodeBlocks(root)];
         foreach (var node in RazorIr.Descendants(root).Where(node => !node.IsImported))
         {
             if (RazorIr.Directive(node, text) is { } directive)

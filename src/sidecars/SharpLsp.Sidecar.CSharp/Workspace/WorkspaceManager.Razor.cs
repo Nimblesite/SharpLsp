@@ -261,22 +261,34 @@ internal sealed partial class WorkspaceManager
             new SemanticTokensResult(),
             async projection => new SemanticTokensResult
             {
-                Data = await RazorTokensAsync(projection, range, ct).ConfigureAwait(false),
+                Data = await RazorTokensAsync(
+                        projection,
+                        await FindRazorMarkupAsync(filePath, ct).ConfigureAwait(false),
+                        range,
+                        ct
+                    )
+                    .ConfigureAwait(false),
             }
         );
     }
 
     private static async Task<int[]> RazorTokensAsync(
         RazorProjection projection,
+        RazorMarkup? markup,
         LinePositionSpan? range,
         CancellationToken ct
     )
     {
         var text = projection.RazorText;
         var window = range is { } requested ? DocumentText.TrySpan(text, requested) : null;
-        var spans = await RazorSemanticTokens
+        var csharp = await RazorSemanticTokens
             .CSharpSpansAsync(projection, ct)
             .ConfigureAwait(false);
+        var spans = markup is null
+            ? csharp
+            : csharp.Concat(
+                RazorSemanticTokens.Beside(csharp, RazorSemanticTokens.MarkupSpans(markup))
+            );
         return SemanticTokensResolver.Encode(
             spans
                 .Where(span => window is not { } inside || inside.Contains(span.Span.Start))

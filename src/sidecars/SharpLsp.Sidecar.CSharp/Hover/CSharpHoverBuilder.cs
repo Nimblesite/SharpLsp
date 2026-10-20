@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common.Hover;
 using HoverQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.HoverResult?, string>;
 
@@ -174,7 +175,8 @@ internal static class CSharpHoverBuilder
         return markdown.Length == 0 ? null : MakeResult(markdown, token);
     }
 
-    private static string BuildMarkdown(ISymbol symbol)
+    /// <summary>A symbol's hover text: its signature, container, deprecation and documentation.</summary>
+    internal static string BuildMarkdown(ISymbol symbol)
     {
         var sb = new System.Text.StringBuilder();
         AppendSignature(sb, symbol);
@@ -262,14 +264,19 @@ internal static class CSharpHoverBuilder
 
     private static HoverResult MakeResult(string markdown, SyntaxToken token)
     {
-        var span = token.GetLocation().GetMappedLineSpan();
+        return MakeResult(markdown, token.GetLocation().GetMappedLineSpan().Span);
+    }
+
+    /// <summary>A hover with <paramref name="markdown"/>, ranged on <paramref name="span"/>.</summary>
+    internal static HoverResult MakeResult(string markdown, LinePositionSpan span)
+    {
         return new HoverResult
         {
             Contents = markdown,
-            StartLine = span.StartLinePosition.Line,
-            StartCharacter = span.StartLinePosition.Character,
-            EndLine = span.EndLinePosition.Line,
-            EndCharacter = span.EndLinePosition.Character,
+            StartLine = span.Start.Line,
+            StartCharacter = span.Start.Character,
+            EndLine = span.End.Line,
+            EndCharacter = span.End.Character,
         };
     }
 

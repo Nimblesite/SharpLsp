@@ -43,6 +43,7 @@ fn test_full_stack_razor_routing_session() {
     assert_markup_triggers_only_complete_razor(&mut client, &ws);
     assert_diagnostics_publish_as_razor(&mut client, &board, &board_text);
     assert_razor_compiler_diagnostics_publish(&mut client, &board, &board_text);
+    assert_markup_completion_reaches_the_client(&mut client, &board, &board_text);
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -333,4 +334,66 @@ fn assert_razor_compiler_diagnostics_publish(client: &mut LspClient, board: &str
                 .any(|d| d["code"].as_str().is_some_and(|c| c.starts_with("RZ")))
         },
     );
+}
+
+/// Markup completion reaches the client with the compiler's documentation and
+/// its order: a component after `<`, and a required parameter first in a
+/// component's start tag. [RAZOR-FEATURES-COMPLETION]
+fn assert_markup_completion_reaches_the_client(client: &mut LspClient, board: &str, text: &str) {
+    let components = complete_after(client, board, 6, &format!("{text}\n<Ba"));
+    let badge = components
+        .iter()
+        .find(|item| item["label"] == "Badge")
+        .expect("Badge after `<`");
+    assert_eq!(badge["documentation"]["kind"], "markdown", "{badge}");
+    assert!(
+        badge["documentation"]["value"]
+            .as_str()
+            .is_some_and(|value| value.contains("A small label beside a tally.")),
+        "{badge}"
+    );
+
+    let parameters = complete_after(client, board, 7, &format!("{text}\n<Tally "));
+    let first = parameters
+        .iter()
+        .min_by_key(|item| item["sortText"].as_str().unwrap_or_default().to_owned())
+        .expect("parameters in a start tag");
+    assert_eq!(
+        first["label"], "Items",
+        "the required parameter sorts first"
+    );
+    assert!(
+        first["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("required")),
+        "{first}"
+    );
+    assert!(parameters.iter().any(|item| item["label"] == "@bind-Label"));
+    client.change_document(board, 8, text);
+}
+
+/// The completion items at the end of `typed`, once Board holds it.
+fn complete_after(client: &mut LspClient, board: &str, version: i32, typed: &str) -> Vec<Value> {
+    client.change_document(board, version, typed);
+    let line = typed.lines().count() - 1;
+    let character = typed
+        .lines()
+        .last()
+        .map_or(0, |last| last.encode_utf16().count());
+    let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    loop {
+        let response = client.request(
+            "textDocument/completion",
+            json!({
+                "textDocument": { "uri": board },
+                "position": { "line": line, "character": character },
+            }),
+        );
+        assert_rpc_ok(&response, "completion(Board.razor, markup)");
+        let items = response["result"].as_array().cloned().unwrap_or_default();
+        if !items.is_empty() || std::time::Instant::now() > deadline {
+            return items;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
 }
