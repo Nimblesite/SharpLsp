@@ -57,8 +57,8 @@ export async function clickSharpLspIcon(page) {
  * never moves the cursor.
  */
 export async function openFile(page, name) {
-  const active = page.locator('.tabs-container .tab.active .label-name', { hasText: new RegExp(`^${name.replace(/\./g, '\\.')}$`) });
-  if ((await active.count()) > 0) return;
+  const active = await page.locator('.tabs-container .tab.active .label-name').allInnerTexts();
+  if (active.some((label) => label.trim() === name)) return;
   await page.keyboard.press('Meta+P');
   await page.locator('.quick-input-widget input').fill(name);
   await sleep(700);
