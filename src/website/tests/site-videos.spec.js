@@ -24,7 +24,7 @@ const WALKTHROUGHS = [
   ...everyLanguage('hover/', ['hover'], { en: 'Hover', ja: 'ホバー', zh: '悬停' }),
   ...everyLanguage('go-to-definition/', ['navigation'], { en: 'definition', ja: '定義', zh: '定义' }),
   ...everyLanguage('diagnostics/', ['diagnostics'], { en: 'Diagnostics', ja: '診断', zh: '诊断' }),
-  ...everyLanguage('refactoring/', ['refactoring'], { en: 'Refactoring', ja: 'リファクタリング', zh: '重构' }),
+  ...everyLanguage('refactoring/', ['refactoring-lesson', 'refactoring'], { en: 'Lesson', ja: 'レッスン', zh: '课程' }),
   ...everyLanguage('context-menus/', ['context-menus'], { en: 'context', ja: 'コンテキストメニュー', zh: '上下文菜单' }),
   ...everyLanguage('nuget/', ['nuget'], { en: 'NuGet', ja: 'NuGet', zh: 'NuGet' }),
   ...everyLanguage('profiler/', PROFILER_PAGE, { en: 'Profiling', ja: 'プロファイリング', zh: '分析' }),
