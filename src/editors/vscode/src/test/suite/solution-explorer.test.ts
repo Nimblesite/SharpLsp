@@ -6,11 +6,8 @@ import {
   EXTENSION_ID,
   flattenSymbolNames,
   openCSharpFile,
-  openSharpLspPanel,
   pollUntilResult,
   replaceDocumentContent,
-  settleForScreenshot,
-  takeScreenshot,
   waitForDocumentSymbols,
   pollSymbols,
   assertContainsAll,
@@ -260,8 +257,8 @@ suite('Solution Explorer & Workspace Symbols', () => {
       'declared exactly once',
     );
 
-    // Interaction 3 - it is the container `openSharpLspPanel` reveals, so the
-    // id in the manifest and the id the extension opens are the same string.
+    // Interaction 3 - the container id is openable, so the id in the manifest
+    // and the id the workbench opens are the same string.
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('workbench.view.extension.sharplsp-explorer');
     }, 'the container id must be openable as workbench.view.extension.<id>');
@@ -455,11 +452,7 @@ EndGlobal`,
     // Verify ICalculator has Add method too.
     childNamed(iface, 'Add', vscode.SymbolKind.Method);
 
-    await openSharpLspPanel();
-    // Refresh the tree view so the UI renders the loaded solution before screenshotting.
     await vscode.commands.executeCommand('sharplsp.refreshExplorer');
-    await settleForScreenshot(2000);
-    await takeScreenshot('solution-explorer.png');
 
     api.explorerProvider.getChildren; // keep reference
   });

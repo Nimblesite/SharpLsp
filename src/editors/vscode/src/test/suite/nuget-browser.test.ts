@@ -6,9 +6,7 @@ import { type LanguageClient } from 'vscode-languageclient/node';
 import { NuGetBrowserPanel } from '../../nuget-browser.js';
 import {
   EXTENSION_ID,
-  openSharpLspPanel,
   pollUntilResult,
-  takeScreenshot,
   assertContainsAll,
   assertContainsNone,
 } from './test-helpers';
@@ -231,11 +229,6 @@ suite('NuGet Browser', () => {
     return { panel, feed, getClient: feed.getClient };
   }
 
-  async function takeNuGetScreenshot(filename: string): Promise<void> {
-    await openSharpLspPanel();
-    await takeScreenshot(filename);
-  }
-
   /**
    * BUG REGRESSION: Browse tab was empty on initial panel load because
    * the constructor only called loadInstalledPackages() without ever
@@ -328,7 +321,6 @@ suite('NuGet Browser', () => {
         [],
         'no spinner may be left running once the initial load has resolved',
       );
-      await takeNuGetScreenshot('vscode-nuget-browse.png');
     } finally {
       panel.dispose();
     }
@@ -390,7 +382,6 @@ suite('NuGet Browser', () => {
           installedHtml.toLowerCase().includes('newtonsoft'),
         'Package details must show author or description',
       );
-      await takeNuGetScreenshot('vscode-nuget-installed.png');
     } finally {
       panel.dispose();
     }
@@ -527,7 +518,6 @@ suite('NuGet Browser', () => {
           `${pkg.id} does not match the query and must not still be on screen`,
         );
       }
-      await takeNuGetScreenshot('vscode-nuget-search.png');
     } finally {
       panel.dispose();
     }
@@ -718,7 +708,6 @@ suite('NuGet Browser', () => {
         INSTALLED_FIXTURE_PACKAGE.id,
         'clicking a package must select it',
       );
-      await takeNuGetScreenshot('vscode-nuget-package-details.png');
     } finally {
       panel.dispose();
     }

@@ -15,13 +15,9 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   closeAllEditors,
-  loadFixtureSolution,
   openExistingFile,
-  openSharpLspPanel,
   pollUntilResult,
   setupLspTestSuite,
-  settleForScreenshot,
-  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
   pollProvider,
@@ -417,24 +413,6 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
       actions.some((action) => /unused|remove/i.test(action.title)),
       `an unused local must offer its removal; offered: ${titles.join(' | ')}`,
     );
-
-    // Load fixture solution so SharpLsp panel shows Solution Explorer.
-    if (process.env['SHARPLSP_SCREENSHOTS']) {
-      await loadFixtureSolution(workspaceRoot);
-    }
-    await openSharpLspPanel();
-    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), {
-      preview: false,
-    });
-
-    // Trigger the lightbulb in the editor so it's visible in the screenshot.
-    const editor = vscode.window.activeTextEditor;
-    assert.ok(editor, 'Must have active editor');
-    editor.selection = new vscode.Selection(new vscode.Position(6, 18), new vscode.Position(6, 18));
-    editor.revealRange(new vscode.Range(new vscode.Position(6, 18), new vscode.Position(6, 18)));
-    await vscode.commands.executeCommand('editor.action.quickFix');
-    await settleForScreenshot(2000);
-    await takeScreenshot('vscode-refactoring.png');
   });
 });
 

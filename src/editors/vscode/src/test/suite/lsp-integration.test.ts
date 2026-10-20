@@ -20,14 +20,10 @@ import * as vscode from 'vscode';
 import {
   closeAllEditors,
   flattenSymbolNames,
-  loadFixtureSolution,
   openCSharpFile,
   openExistingFile,
-  openSharpLspPanel,
   pollUntilResult,
   replaceDocumentContent,
-  settleForScreenshot,
-  takeScreenshot,
   waitForDocumentSymbols,
   waitForFoldingRanges,
   waitForSelectionRanges,
@@ -647,13 +643,6 @@ suite('LSP Integration — Fixture Files', () => {
         `and ${method} sits inside it`,
       );
     }
-
-    // Load fixture solution so Solution Explorer is populated in the screenshot.
-    if (process.env['SHARPLSP_SCREENSHOTS']) {
-      await loadFixtureSolution(fixtureDir);
-    }
-    await openSharpLspPanel();
-    await takeScreenshot('vscode-getting-started-page.png');
   });
 
   test('Calculator.cs has folding ranges for regions', async function () {
@@ -716,12 +705,6 @@ suite('LSP Integration — Fixture Files', () => {
       'unfoldAll to restore every visible line',
     );
     assert.strictEqual(restored, linesBefore, 'and unfolding restores every line');
-
-    // Keep the editor focused so the folded regions are clearly visible.
-    await vscode.commands.executeCommand('editor.foldAll');
-    await vscode.commands.executeCommand('workbench.action.closePanel');
-    await settleForScreenshot(500);
-    await takeScreenshot('code-folding.png');
   });
 
   test('Nested.cs returns nested class hierarchy', async function () {
@@ -747,11 +730,6 @@ suite('LSP Integration — Fixture Files', () => {
     assertSymbolShape(symbolNamed(symbols, 'Inner'), vscode.SymbolKind.Class, doc);
     assertSymbolShape(symbolNamed(symbols, 'AnotherInner'), vscode.SymbolKind.Class, doc);
     assertSymbolShape(symbolNamed(symbols, 'InnerMethod'), vscode.SymbolKind.Method, doc);
-
-    // Keep editor focused so nested class structure is visible.
-    await vscode.commands.executeCommand('workbench.action.closePanel');
-    await settleForScreenshot(500);
-    await takeScreenshot('nested-classes.png');
   });
 
   test('Empty.cs returns no symbols', async function () {
