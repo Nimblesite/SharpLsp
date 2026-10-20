@@ -16,6 +16,7 @@ const everyLanguage = (page, videos, says) =>
 // Every docs page's narrated walkthrough. [WEB-DESIGN-MEDIA] Placement
 const WALKTHROUGHS = [
   ...everyLanguage('', ['getting-started'], { en: 'started', ja: '始める', zh: '开始' }),
+  ...everyLanguage('tutorial/', ['vscode-tutorial'], { en: 'tutorial', ja: 'チュートリアル', zh: '教程' }),
   ...everyLanguage('editors/', ['editor-setup'], { en: 'setup', ja: 'エディター設定', zh: '编辑器设置' }),
   ...everyLanguage('configuration/', ['configuration'], { en: 'Configuring', ja: '設定', zh: '配置' }),
   ...everyLanguage('fsharp/', FSHARP_PAGE, { en: 'completion', ja: '補完', zh: '补全' }),
@@ -38,9 +39,6 @@ const WALKTHROUGHS = [
 const PAGES = [
   { path: '/', videos: ['profiler-film', 'profiler-cpu-recording'], says: 'profiler' },
   ...WALKTHROUGHS,
-  { path: '/docs/tutorial/', videos: ['vscode-tutorial'], says: 'tutorial' },
-  { path: '/ja/docs/tutorial/', videos: ['vscode-tutorial'], says: 'チュートリアル' },
-  { path: '/zh/docs/tutorial/', videos: ['vscode-tutorial'], says: '教程' },
   { path: '/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'profiler' },
   { path: '/ja/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'プロファイラー' },
   { path: '/zh/blog/introducing-sharplsp/', videos: ['profiler-film'], says: '性能分析器' },

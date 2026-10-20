@@ -59,6 +59,7 @@ export default {
   name: 'vscode-tutorial',
   demo: SHOP,
   settings: LANGUAGE,
+  narration: 'narration.json',
   poster: { scene: 'fsharp-completion', at: 8 },
   scenes: [
     ...ready(AT_CHECKOUT, AT_SESSIONS, AT_PROGRAM_CS, AT_PIPELINE),
