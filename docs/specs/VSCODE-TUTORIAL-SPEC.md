@@ -85,9 +85,9 @@ The manifest contributes two walkthroughs to VS Code's Get Started page: `sharpl
 
 ## Video Panel `[TUTORIAL-PANEL]`
 
-`sharplsp.tutorial.open` shows a single webview panel, "SharpLsp Tutorial", beside the active editor. Running it again reveals the same panel. It takes an optional language, which defaults to F#.
+`sharplsp.tutorial.open` shows a single webview panel, "SharpLsp Tutorial", beside the active editor, or in column two when no editor is active (in column one, the next file opened would replace it). Running it again reveals the same panel where it is. It takes an optional language, which defaults to F#.
 
-- **Contents:** a language switch (F#, then C#), the selected language's six steps, each marked done or not, and the current step's film. The current step is the first step not yet done. When all six are done, the panel says so and shows no film.
+- **Contents:** a language switch (F#, then C#), the selected language's seven steps, each marked done or not, and the current step's film. The current step is the first step not yet done. When all seven are done, the panel says so and shows no film.
 - **Reactivity:** the panel is a projection of the progress signal and the selected language. A change posts the new view to the webview, which updates in place. The film element is replaced only when the current step's film changes, so a tick that leaves the same film current does not restart it.
 - **Film:** `<video>` with `controls`, `autoplay`, `muted`, `loop` and `playsinline`. Its poster is `<film>-poster.webp`, and its captions are `<film>.en.vtt`. A film the website publishes without captions (today `sharplsp-tour`) gets no caption track. A step with a chapter opens its film there with a media fragment (`<film>.webm#t=<seconds>`); the panel swaps the film when the film or its chapter changes. The content security policy allows media, images and captions from `https://sharplsp.dev` only, plus `media.githubusercontent.com` and `raw.githubusercontent.com` for a film the site has not deployed yet (served from one pinned commit until it does), and scripts by nonce only. If the film cannot load (for example offline), the panel shows the step's instructions in its place.
 - **Format:** WebM only. Desktop VS Code's webview cannot play H.264, so the panel never names an `.mp4`.

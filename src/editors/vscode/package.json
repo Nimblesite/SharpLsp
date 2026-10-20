@@ -282,6 +282,13 @@
           "scope": "resource",
           "order": 12
         },
+        "sharplsp.tutorial.showOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%setting.tutorial.showOnStartup%",
+          "scope": "application",
+          "order": 21
+        },
         "sharplsp.profiler.sampleRate": {
           "type": "number",
           "default": 100,
@@ -355,13 +362,6 @@
           "default": 30,
           "minimum": 1,
           "description": "Seconds between automatic memory snapshots when autoSnapshot is enabled."
-        },
-        "sharplsp.tutorial.showOnStartup": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%setting.tutorial.showOnStartup%",
-          "scope": "application",
-          "order": 21
         }
       }
     },
@@ -893,6 +893,21 @@
         "icon": "$(debug-alt)"
       },
       {
+        "command": "sharplsp.tutorial.open",
+        "title": "%cmd.tutorial.open%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.tutorial.openFile",
+        "title": "%cmd.tutorial.openFile%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.tutorial.reset",
+        "title": "%cmd.tutorial.reset%",
+        "category": "%category%"
+      },
+      {
         "command": "sharplsp.profiler.profileStart",
         "title": "Start Profiling",
         "category": "SharpLsp",
@@ -1027,21 +1042,6 @@
         "title": "Kill Process",
         "category": "SharpLsp",
         "icon": "$(close)"
-      },
-      {
-        "command": "sharplsp.tutorial.open",
-        "title": "%cmd.tutorial.open%",
-        "category": "%category%"
-      },
-      {
-        "command": "sharplsp.tutorial.openFile",
-        "title": "%cmd.tutorial.openFile%",
-        "category": "%category%"
-      },
-      {
-        "command": "sharplsp.tutorial.reset",
-        "title": "%cmd.tutorial.reset%",
-        "category": "%category%"
       }
     ],
     "menus": {

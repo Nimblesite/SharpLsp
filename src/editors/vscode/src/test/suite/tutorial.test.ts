@@ -58,7 +58,12 @@ async function ticked(tutorial: Tutorial, key: string): Promise<Set<string>> {
 
 function view(tutorial: Tutorial): PanelView {
   const shown = tutorial.panel.view();
-  assert.ok(shown, 'the tutorial panel is open and shows a view');
+  const tabs = vscode.window.tabGroups.all.map((group) =>
+    group.tabs.map(
+      (tab) => `${String(group.viewColumn)}:${tab.label}${tab.isPreview ? '(preview)' : ''}`,
+    ),
+  );
+  assert.ok(shown, `the tutorial panel is open and shows a view; tabs: ${JSON.stringify(tabs)}`);
   return shown;
 }
 
@@ -221,8 +226,14 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     assert.equal(filmOf(stepOf('FSharp', 'Hover')).start, 0, 'other films play from the start');
   });
 
-  test('[TUTORIAL-WALKTHROUGH] the F# walkthrough comes first, and each step completes on its own context key', () => {
-    const manifest = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON as {
+  test('[TUTORIAL-WALKTHROUGH] the F# walkthrough comes first, and each step completes on its own context key', async () => {
+    // The raw manifest: `packageJSON` arrives already localized, its `%keys%` replaced.
+    const extension = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(extension, 'the extension is installed');
+    const raw = await vscode.workspace.fs.readFile(
+      vscode.Uri.joinPath(extension.extensionUri, 'package.json'),
+    );
+    const manifest = JSON.parse(new TextDecoder().decode(raw)) as {
       contributes: {
         walkthroughs: {
           id: string;
@@ -267,7 +278,7 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     assertCurrent(tutorial, 'FSharp.OpenFile', 'fsharp-language');
     assert.deepEqual(
       view(tutorial).steps.map((s) => s.done),
-      [false, false, false, false, false, false],
+      [false, false, false, false, false, false, false],
     );
     assert.deepEqual(
       view(tutorial).languages.map((l) => [l.kind, l.selected, l.done]),

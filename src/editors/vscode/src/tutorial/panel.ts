@@ -44,6 +44,16 @@ function languageOf(message: Record<string, unknown>): LanguageKind | undefined 
   return LANGUAGES.find((kind) => kind === message.language);
 }
 
+/**
+ * Beside the active editor, or column two when none is active: `Beside` with no
+ * editor lands in column one, where the next file opened replaces the panel.
+ */
+function panelColumn(): vscode.ViewColumn {
+  return vscode.window.activeTextEditor === undefined
+    ? vscode.ViewColumn.Two
+    : vscode.ViewColumn.Beside;
+}
+
 /** The panel, created on first `open` and recreated after the user closes it. */
 class TutorialPanelHost implements TutorialPanel {
   private readonly language = new Signal<LanguageKind>('FSharp');
@@ -61,7 +71,7 @@ class TutorialPanelHost implements TutorialPanel {
   public open(language: LanguageKind): void {
     this.language.value = language;
     this.panel ??= this.create();
-    this.panel.reveal(vscode.ViewColumn.Beside, true);
+    this.panel.reveal(undefined, true);
   }
 
   public view(): PanelView | undefined {
@@ -76,7 +86,7 @@ class TutorialPanelHost implements TutorialPanel {
     const panel = vscode.window.createWebviewPanel(
       VIEW_TYPE,
       TITLE,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      { viewColumn: panelColumn(), preserveFocus: true },
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [this.media] },
     );
     panel.webview.html = shellHtml(panel.webview, this.media);
