@@ -11,10 +11,10 @@ use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, CompletionTextEdit,
-    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind,
-    OneOf, Position, PrepareRenameResponse, Range, ReferenceParams, RenameParams,
-    TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
+    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, Documentation,
+    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location,
+    MarkupContent, MarkupKind, OneOf, Position, PrepareRenameResponse, Range, ReferenceParams,
+    RenameParams, TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
 };
 use tracing::{debug, info, warn};
 
@@ -77,6 +77,13 @@ pub fn handle_completion(
                             .text_edit
                             .as_ref()
                             .map(|edit| CompletionTextEdit::Edit(map_text_edit(edit))),
+                        documentation: item.documentation.map(|value| {
+                            Documentation::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value,
+                            })
+                        }),
+                        sort_text: item.sort_text,
                         data: Some(data),
                         ..CompletionItem::default()
                     }
@@ -716,6 +723,12 @@ struct SidecarCompletionItem {
     /// not append the member name to the trigger text (GitHub #178).
     /// Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
     text_edit: Option<SidecarTextEdit>,
+    /// Markdown documentation, when the item has any. [RAZOR-FEATURES-COMPLETION]
+    #[serde(default)]
+    documentation: Option<String>,
+    /// The order an editor sorts the item in, when it is not the label's.
+    #[serde(default)]
+    sort_text: Option<String>,
 }
 
 /// Sidecar request to resolve additional details for a completion item.

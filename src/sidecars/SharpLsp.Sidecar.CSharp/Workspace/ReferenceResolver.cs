@@ -15,7 +15,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 internal static class ReferenceResolver
 {
     /// <summary>LSP <c>DocumentHighlightKind.Read</c>.</summary>
-    private const int ReadKind = 2;
+    internal const int ReadKind = 2;
 
     /// <summary>LSP <c>DocumentHighlightKind.Write</c>.</summary>
     private const int WriteKind = 3;
@@ -56,16 +56,26 @@ internal static class ReferenceResolver
                 document,
                 line,
                 character,
-                async symbol =>
-                    Distinct(
-                        ReferenceLocations(
-                            await scope.FindReferencesAsync(symbol, ct).ConfigureAwait(false),
-                            includeDeclaration
-                        )
-                    ),
+                symbol => ReferencesOfAsync(symbol, scope, includeDeclaration, ct),
                 ct
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>All references to <paramref name="symbol"/> in <paramref name="scope"/>.</summary>
+    internal static async Task<LocationListResult> ReferencesOfAsync(
+        ISymbol symbol,
+        SearchScope scope,
+        bool includeDeclaration,
+        CancellationToken ct
+    )
+    {
+        return Distinct(
+            ReferenceLocations(
+                await scope.FindReferencesAsync(symbol, ct).ConfigureAwait(false),
+                includeDeclaration
+            )
+        );
     }
 
     /// <summary>
@@ -84,11 +94,22 @@ internal static class ReferenceResolver
         var symbol = await DefinitionResolver
             .ResolveSymbolAsync(document, at.Line, at.Character, ct)
             .ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return [];
-        }
+        return symbol is null
+            ? []
+            : await HighlightsOfAsync(symbol, document, answerPath, ct).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// The highlights of <paramref name="symbol"/> in <paramref name="document"/>, kept to where
+    /// they map to <paramref name="answerPath"/>.
+    /// </summary>
+    internal static async Task<List<DocumentHighlightResult>> HighlightsOfAsync(
+        ISymbol symbol,
+        Document document,
+        string answerPath,
+        CancellationToken ct
+    )
+    {
         // A highlight never leaves the document, so no other document is searched.
         var referenced = await SymbolFinder
             .FindReferencesAsync(symbol, document.Project.Solution, [document], ct)
@@ -198,7 +219,7 @@ internal static class ReferenceResolver
     }
 
     /// <summary>Each place once: one place is found through every symbol that names it.</summary>
-    private static LocationListResult Distinct(IEnumerable<LocationResult> locations)
+    internal static LocationListResult Distinct(IEnumerable<LocationResult> locations)
     {
         return new LocationListResult
         {

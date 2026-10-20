@@ -49,6 +49,17 @@ internal sealed record MarkupTag(
         return Touches(StartName, offset) || (EndName is { } end && Touches(end, offset));
     }
 
+    /// <summary>The tag's names: its start's, then its end's when it has one.</summary>
+    public IEnumerable<TextSpan> Names => EndName is { } end ? [StartName, end] : [StartName];
+
+    /// <summary>The start or end tag's name that holds <paramref name="offset"/>, else the start's.</summary>
+    public TextSpan NameAt(int offset)
+    {
+        return !Touches(StartName, offset) && EndName is { } end && Touches(end, offset)
+            ? end
+            : StartName;
+    }
+
     private static bool Touches(TextSpan span, int offset)
     {
         return span.Start <= offset && offset <= span.End;
@@ -101,6 +112,9 @@ internal sealed record RazorMarkup(
 {
     /// <summary>Position-preserving HTML for [RAZOR-ARCHITECTURE-HTML].</summary>
     public string HtmlText { get; init; } = "";
+
+    /// <summary>The C# code blocks (<c>@{ … }</c>) of the file, which fold. [RAZOR-FEATURES-STRUCTURE]</summary>
+    public ImmutableArray<TextSpan> CodeBlocks { get; init; } = [];
 
     /// <summary>The caret's HTML context, [RAZOR-ARCHITECTURE-HTML].</summary>
     public MarkupContext ContextAt(int offset)

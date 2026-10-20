@@ -23,17 +23,26 @@ internal static class DefinitionResolver
                 document,
                 line,
                 character,
-                async symbol =>
-                {
-                    var sourceLocations = ToAllSourceLocations(symbol);
-                    return sourceLocations.Locations.Count > 0
-                        ? sourceLocations
-                        : await ResolveMetadataFallbackAsync(document, symbol, ct)
-                            .ConfigureAwait(false);
-                },
+                symbol => LocationsOfAsync(document.Project, symbol, ct),
                 ct
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A symbol's definition: every source declaration, else its decompiled metadata source.
+    /// [DEFINITION-CSHARP-DEFINITION]
+    /// </summary>
+    internal static async Task<LocationListResult> LocationsOfAsync(
+        Project project,
+        ISymbol symbol,
+        CancellationToken ct
+    )
+    {
+        var sourceLocations = ToAllSourceLocations(symbol);
+        return sourceLocations.Locations.Count > 0
+            ? sourceLocations
+            : await ResolveMetadataFallbackAsync(project, symbol, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -58,12 +67,12 @@ internal static class DefinitionResolver
     /// Fall back to decompiled metadata when no in-source locations exist.
     /// </summary>
     private static async Task<LocationListResult> ResolveMetadataFallbackAsync(
-        Document document,
+        Project project,
         ISymbol symbol,
         CancellationToken ct
     )
     {
-        var compilation = await document.Project.GetCompilationAsync(ct).ConfigureAwait(false);
+        var compilation = await project.GetCompilationAsync(ct).ConfigureAwait(false);
         if (compilation is null)
         {
             return new LocationListResult();

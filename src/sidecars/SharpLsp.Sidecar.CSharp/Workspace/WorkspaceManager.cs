@@ -7,7 +7,6 @@ using Serilog;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.Common.Solutions;
-using SharpLsp.Sidecar.CSharp.Hover;
 using AllDiagnosticsResult = Outcome.Result<
     System.Collections.Generic.Dictionary<
         string,
@@ -23,14 +22,6 @@ using CompletionsResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.CompletionItem>,
     string
 >;
-using DefinitionResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationResult?, string>;
-using HighlightsResult = Outcome.Result<
-    SharpLsp.Sidecar.CSharp.DocumentHighlightListResult,
-    string
->;
-using HoverQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.HoverResult?, string>;
-using ImplementationsResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;
-using ReferencesResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;
 using ResolveResult = Outcome.Result<SharpLsp.Sidecar.CSharp.WorkspaceEditResult, string>;
 using VoidResult = Outcome.Result<Outcome.Unit, string>;
 
@@ -295,154 +286,25 @@ internal sealed partial class WorkspaceManager : IDisposable
         {
             var items = await GetCompletionsCoreAsync(filePath, line, character, ct)
                 .ConfigureAwait(false);
+            // A Razor file's markup adds its own items. [RAZOR-FEATURES-COMPLETION]
+            if (NativePaths.IsRazor(filePath))
+            {
+                var markup = await MarkupCompletionsAsync(
+                        filePath,
+                        (line, character),
+                        items.Count > 0,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                items = [.. markup, .. items];
+            }
+
             return new CompletionsResult.Ok<List<CompletionItem>, string>(items);
         }
         catch (Exception ex)
         {
             return CompletionsResult.Failure(ex.Message);
         }
-    }
-
-    /// <summary>Get hover information at a position.</summary>
-    public Task<HoverQueryResult> GetHoverAsync(
-        string filePath,
-        int line,
-        int character,
-        CancellationToken ct = default
-    )
-    {
-        Log.Debug("[Hover] request {File}:{Line}:{Character}", filePath, line, character);
-        return RunPositionQueryAsync<HoverResult?>(
-            filePath,
-            (line, character),
-            null,
-            target => HoverAtAsync(target, ct),
-            ct
-        );
-    }
-
-    private static async Task<HoverResult?> HoverAtAsync(QueryTarget target, CancellationToken ct)
-    {
-        var text = await target.Document.GetTextAsync(ct).ConfigureAwait(false);
-        // Every query target is a C# document, which always has a semantic model.
-        var model =
-            await target.Document.GetSemanticModelAsync(ct).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("Hover found no semantic model");
-        var position = text.Lines.GetPosition(new LinePosition(target.Line, target.Character));
-        var built = CSharpHoverBuilder.Build(model, position, ct);
-        // The hover's range is the token's mapped span, already in the Razor file for a
-        // projection. [RAZOR-FEATURES-HOVER]
-        return built is HoverQueryResult.Ok<HoverResult?, string> { Value: var hover }
-            ? hover
-            : throw new InvalidOperationException(!built ?? "Hover failed");
-    }
-
-    /// <summary>Go to definition at a position (returns all locations for partial types).</summary>
-    public Task<ImplementationsResult> GetDefinitionAsync(
-        string filePath,
-        int line,
-        int character,
-        CancellationToken ct = default
-    )
-    {
-        return RunPositionQueryAsync(
-            filePath,
-            (line, character),
-            new LocationListResult(),
-            async target =>
-                await MapLocationsAsync(
-                        await DefinitionResolver
-                            .ResolveDefinitionLocationsAsync(
-                                target.Document,
-                                target.Line,
-                                target.Character,
-                                ct
-                            )
-                            .ConfigureAwait(false),
-                        ct
-                    )
-                    .ConfigureAwait(false),
-            ct
-        );
-    }
-
-    /// <summary>Go to type definition at a position.</summary>
-    public Task<DefinitionResult> GetTypeDefinitionAsync(
-        string filePath,
-        int line,
-        int character,
-        CancellationToken ct = default
-    )
-    {
-        return RunLocationQueryAsync(
-            filePath,
-            (line, character),
-            DefinitionResolver.ResolveTypeDefinitionAsync,
-            ct
-        );
-    }
-
-    /// <summary>Go to declaration (interface/base member) at a position.</summary>
-    public Task<DefinitionResult> GetDeclarationAsync(
-        string filePath,
-        int line,
-        int character,
-        CancellationToken ct = default
-    )
-    {
-        return RunLocationQueryAsync(
-            filePath,
-            (line, character),
-            DefinitionResolver.ResolveDeclarationAsync,
-            ct
-        );
-    }
-
-    /// <summary>Find all implementations of symbol at a position.</summary>
-    public Task<ImplementationsResult> GetImplementationsAsync(
-        string filePath,
-        int line,
-        int character,
-        CancellationToken ct = default
-    )
-    {
-        return RunScopedLocationQueryAsync(
-            filePath,
-            (line, character),
-            (target, scope) =>
-                ReferenceResolver.ResolveImplementationsAsync(
-                    target.Document,
-                    scope,
-                    target.Line,
-                    target.Character,
-                    ct
-                ),
-            ct
-        );
-    }
-
-    public Task<ReferencesResult> GetReferencesAsync(
-        string filePath,
-        int line,
-        int character,
-        bool includeDeclaration,
-        CancellationToken ct = default
-    )
-    {
-        return RunScopedLocationQueryAsync(
-            filePath,
-            (line, character),
-            (target, scope) =>
-                ReferenceResolver.ResolveReferencesAsync(
-                    target.Document,
-                    scope,
-                    target.Line,
-                    target.Character,
-                    includeDeclaration,
-                    ct
-                ),
-            ct
-        );
     }
 
     /// <summary>Get available code actions (fixes + refactorings) for a range.</summary>
@@ -496,32 +358,6 @@ internal sealed partial class WorkspaceManager : IDisposable
         {
             return ResolveResult.Failure(ex.Message);
         }
-    }
-
-    public Task<HighlightsResult> GetDocumentHighlightsAsync(
-        string filePath,
-        int line,
-        int character,
-        CancellationToken ct = default
-    )
-    {
-        return RunPositionQueryAsync(
-            filePath,
-            (line, character),
-            new DocumentHighlightListResult(),
-            async target => new DocumentHighlightListResult
-            {
-                Highlights = await ReferenceResolver
-                    .ResolveDocumentHighlightsAsync(
-                        target.Document,
-                        (target.Line, target.Character),
-                        target.AnswerPath,
-                        ct
-                    )
-                    .ConfigureAwait(false),
-            },
-            ct
-        );
     }
 
     // Names every candidate so the user can copy one straight into sharplsp.toml, and names
