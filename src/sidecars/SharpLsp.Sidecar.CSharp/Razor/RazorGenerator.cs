@@ -46,7 +46,7 @@ internal static class RazorGenerator
         );
         var required = compiler?.FullPath is { } path ? RequiredVersion(path) : null;
         var running = typeof(Compilation).Assembly.GetName().Version;
-        if (required is null || running is null || required <= running)
+        if (required is null || required <= running)
         {
             return project;
         }
