@@ -17,7 +17,7 @@ category: announcement
 excerpt: "Blazor コンポーネント、Razor Pages、MVC ビューが、C# ファイルと同じ Roslyn エンジンを使えるようになりました：マークアップの中で、ホバー、補完、診断、定義へ移動、参照、名前の変更が使えます。"
 ---
 
-SharpLsp は Razor を理解するようになりました。Blazor コンポーネント（`.razor` ファイル）、Razor Pages、MVC ビュー（`.cshtml` ファイル）が、残りの C# と同じ Roslyn エンジンを使えるようになりました。マークアップの中で、ホバー、補完、診断、定義へ移動、参照、名前の変更が使えます。このサポートは現在 `main` にあり、次のリリースで提供されます。
+SharpLsp は Razor を理解するようになりました。Blazor コンポーネント（`.razor` ファイル）、Razor Pages、MVC ビュー（`.cshtml` ファイル）が、残りの C# と同じ Roslyn エンジンを使えるようになりました。マークアップの中で、ホバー、補完、診断、定義へ移動、参照、名前の変更が使えます。このサポートは SharpLsp 0.30 で提供されます。
 
 小さな Blazor Web App で見てみましょう。
 
@@ -93,7 +93,7 @@ SharpLsp は、ソリューションに既にあるプロジェクトを読み�
 
 ## 試してみる
 
-1. [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から、または Cursor、Windsurf、VSCodium では [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) から SharpLsp をインストールします。Razor のサポートは次のリリースで提供されます。
+1. [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から、または Cursor、Windsurf、VSCodium では [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) から SharpLsp をインストールします。Razor のサポートにはバージョン 0.30 以降が必要です。
 2. `dotnet new blazor -o BlazorDemo` で Blazor Web App を作成し、そのフォルダーを開きます。
 3. `Components/Pages/Counter.razor` を開き、`currentCount` にホバーします。
 

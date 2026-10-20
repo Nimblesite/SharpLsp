@@ -16,7 +16,7 @@ category: announcement
 excerpt: "Blazor components, Razor Pages and MVC views now get the same Roslyn engine as your C# files: hover, completion, diagnostics, go to definition, references and rename, inside the markup."
 ---
 
-SharpLsp now understands Razor. Blazor components (`.razor` files), and Razor Pages and MVC views (`.cshtml` files), get the same Roslyn engine as the rest of your C#. You get hover, completion, diagnostics, go to definition, references and rename, inside the markup. The support is on `main` today and ships in the next release.
+SharpLsp now understands Razor. Blazor components (`.razor` files), and Razor Pages and MVC views (`.cshtml` files), get the same Roslyn engine as the rest of your C#. You get hover, completion, diagnostics, go to definition, references and rename, inside the markup. It ships in SharpLsp 0.30.
 
 Here it is on a small Blazor Web App:
 
@@ -92,7 +92,7 @@ This release covers the C# in Razor files. The markup itself is next, tracked in
 
 ## Try it
 
-1. Install SharpLsp from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf and VSCodium. Razor support arrives in the next release.
+1. Install SharpLsp from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp), or from [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) in Cursor, Windsurf and VSCodium. Razor support needs version 0.30 or later.
 2. Create a Blazor Web App with `dotnet new blazor -o BlazorDemo`, and open the folder.
 3. Open `Components/Pages/Counter.razor` and hover `currentCount`.
 

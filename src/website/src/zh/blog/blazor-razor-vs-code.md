@@ -17,7 +17,7 @@ category: announcement
 excerpt: "Blazor 组件、Razor Pages 和 MVC 视图现在与你的 C# 文件使用同一个 Roslyn 引擎：在标记内部提供悬停、补全、诊断、转到定义、引用和重命名。"
 ---
 
-SharpLsp 现在理解 Razor。Blazor 组件（`.razor` 文件），以及 Razor Pages 和 MVC 视图（`.cshtml` 文件），与你的其余 C# 代码使用同一个 Roslyn 引擎。在标记内部，你可以使用悬停、补全、诊断、转到定义、引用和重命名。这项支持现已进入 `main` 分支，并将在下一个版本中发布。
+SharpLsp 现在理解 Razor。Blazor 组件（`.razor` 文件），以及 Razor Pages 和 MVC 视图（`.cshtml` 文件），与你的其余 C# 代码使用同一个 Roslyn 引擎。在标记内部，你可以使用悬停、补全、诊断、转到定义、引用和重命名。这项支持随 SharpLsp 0.30 发布。
 
 下面是一个小型 Blazor Web App 上的效果：
 
@@ -93,7 +93,7 @@ SharpLsp 读取你的解决方案中已有的项目。它们都通过 `Microsoft
 
 ## 试一试
 
-1. 从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) 安装 SharpLsp，或在 Cursor、Windsurf 和 VSCodium 中从 [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) 安装。Razor 支持会在下一个版本中到来。
+1. 从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) 安装 SharpLsp，或在 Cursor、Windsurf 和 VSCodium 中从 [Open VSX](https://open-vsx.org/extension/nimblesite/sharplsp) 安装。Razor 支持需要 0.30 或更高版本。
 2. 用 `dotnet new blazor -o BlazorDemo` 创建一个 Blazor Web App，然后打开该文件夹。
 3. 打开 `Components/Pages/Counter.razor`，悬停 `currentCount`。
 
