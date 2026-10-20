@@ -52,10 +52,16 @@ const MEMBER = CALL.indexOf('totalArea');
 
 /** The first symbol with no children: a function, type or value, never a namespace keyword. */
 /** Containers a hover on whose keyword (`namespace`, `module`) answers nothing. */
-const CONTAINERS = new Set([vscode.SymbolKind.Namespace, vscode.SymbolKind.Module, vscode.SymbolKind.Package]);
+const CONTAINERS = new Set([
+  vscode.SymbolKind.Namespace,
+  vscode.SymbolKind.Module,
+  vscode.SymbolKind.Package,
+]);
 
 /** The first symbol, depth first, that is a declaration rather than a container. */
-function firstDeclaration(symbols: readonly vscode.DocumentSymbol[]): vscode.DocumentSymbol | undefined {
+function firstDeclaration(
+  symbols: readonly vscode.DocumentSymbol[],
+): vscode.DocumentSymbol | undefined {
   for (const symbol of symbols) {
     const found = CONTAINERS.has(symbol.kind) ? firstDeclaration(symbol.children) : symbol;
     if (found) return found;
