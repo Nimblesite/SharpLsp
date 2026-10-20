@@ -5,13 +5,6 @@
 'use strict';
 
 const LESSON = window.LESSON;
-const FPS = 30;
-const $ = (id) => document.getElementById(id);
-const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
-const ease = {
-  out: (p) => 1 - (1 - p) ** 3,
-  back: (p) => 1 + 2.4 * (p - 1) ** 3 + 1.4 * (p - 1) ** 2,
-};
 const ENTER = 0.42;
 const EXIT = 0.28;
 const REVEAL = 0.5;
@@ -80,7 +73,7 @@ function reveal(slide, t) {
   for (const { el, at: start } of slide.items) {
     const p = clamp((t - start) / REVEAL);
     el.style.opacity = String(clamp((t - start) / (REVEAL / 2)));
-    el.style.transform = `translateY(${(1 - ease.back(p)) * 34}px)`;
+    el.style.transform = `translateY(${(1 - ease.back(p, 1.4)) * 34}px)`;
     if (el.classList.contains('wipe')) el.style.clipPath = `inset(-20% ${(1 - ease.out(p)) * 100}% -20% 0)`;
   }
 }

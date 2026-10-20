@@ -6,17 +6,6 @@
 'use strict';
 
 const DATA = window.FILM_DATA;
-const FPS = 30;
-const $ = (id) => document.getElementById(id);
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const ease = {
-  linear: (p) => p,
-  inOut: (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2),
-  out: (p) => 1 - (1 - p) ** 3,
-  expo: (p) => (p === 1 ? 1 : 1 - 2 ** (-10 * p)),
-  back: (p) => 1 + 2.2 * (p - 1) ** 3 + 1.2 * (p - 1) ** 2,
-};
-const tween = (t, t0, t1, a, b, e = ease.inOut) => a + (b - a) * e(clamp((t - t0) / (t1 - t0), 0, 1));
 const window01 = (t, t0, t1, fade = 0.4) => Math.min(tween(t, t0, t0 + fade, 0, 1), tween(t, t1 - fade, t1, 1, 0));
 
 /** Scene boundaries, seconds. */

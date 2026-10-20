@@ -5,7 +5,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SCRATCH, launchVsCode, repoRoot } from './editor.mjs';
+import { SCRATCH, launchVsCode, repoRoot, writeSettings } from './editor.mjs';
 
 const demos = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../demos');
 
@@ -117,11 +117,6 @@ export function demoApp(workspace) {
   };
 }
 
-function writeSettings(workspace, settings) {
-  fs.mkdirSync(path.join(workspace, '.vscode'), { recursive: true });
-  fs.writeFileSync(path.join(workspace, '.vscode/settings.json'), JSON.stringify(settings));
-}
-
 /**
  * Stage `demo` with optional workspace `settings`, open it in an isolated VS Code
  * beside the running app, and run `shoot({ page, cdp, app, workspace })`. A failed
@@ -130,7 +125,7 @@ function writeSettings(workspace, settings) {
  */
 export async function onSet({ demo, out, settings }, shoot) {
   const { root, workspace } = (demo.stage ?? stageDemo)(demo);
-  if (settings) writeSettings(workspace, settings);
+  if (settings) writeSettings(path.join(workspace, '.vscode'), settings);
   const editor = await launchVsCode({ workspace, disabled: demo.disabled });
   const app = demo.runs === false ? { start: async () => undefined, stop: () => undefined } : demoApp(workspace);
   await app.start();

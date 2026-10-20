@@ -110,13 +110,18 @@ function editorEnv() {
   return env;
 }
 
+/** Write `settings` as `<folder>/settings.json`: the user's (`<user data>/User`) or a workspace's (`.vscode`). */
+export function writeSettings(folder, settings) {
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, 'settings.json'), JSON.stringify(settings));
+}
+
 /** A short scratch root (the main IPC socket path must stay under ~104 chars). */
 function freshProfile() {
   const root = fs.mkdtempSync(path.join(SCRATCH, 'slsp-film-'));
   const userData = path.join(root, 'u');
   const extensions = path.join(root, 'x');
-  fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
-  fs.writeFileSync(path.join(userData, 'User/settings.json'), JSON.stringify(FILM_SETTINGS));
+  writeSettings(path.join(userData, 'User'), FILM_SETTINGS);
   installExtensions(extensions, userData);
   return { root, userData, extensions };
 }
