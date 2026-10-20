@@ -50,7 +50,15 @@ export async function clickSharpLspIcon(page) {
   await sleep(900);
 }
 
+/**
+ * Open `name` through Quick Open (Cmd+P), unless it is already the active editor:
+ * quick-opening the editor in front of you leaves it holding the Cmd of Cmd+P
+ * (its key-up went to Quick Open), so its next click runs as a Cmd+click and
+ * never moves the cursor.
+ */
 export async function openFile(page, name) {
+  const active = page.locator('.tabs-container .tab.active .label-name', { hasText: new RegExp(`^${name.replace(/\./g, '\\.')}$`) });
+  if ((await active.count()) > 0) return;
   await page.keyboard.press('Meta+P');
   await page.locator('.quick-input-widget input').fill(name);
   await sleep(700);
