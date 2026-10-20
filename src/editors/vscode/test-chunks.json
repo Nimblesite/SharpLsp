@@ -45,7 +45,8 @@
         "fsharp-lsp-codefix-generation.test.js",
         "fsharp-lsp-rename-symbols.test.js",
         "fsharp-lsp-rename-edge.test.js",
-        "fsharp-lsp-cross-language-rename.test.js"
+        "fsharp-lsp-cross-language-rename.test.js",
+        "tutorial.test.js"
       ]
     },
     "razor": {
