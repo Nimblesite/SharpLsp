@@ -55,6 +55,7 @@
     <Compile Include="FSharpProjectGraph.fs" />
     <Compile Include="FSharpSemanticNavigation.fs" />
     <Compile Include="FSharpWorkspace.fs" />
+    <Compile Include="FSharpOwningProject.fs" />
     <Compile Include="FSharpTargetFrameworks.fs" />
     <Compile Include="FSharpPackages.fs" />
     <Compile Include="FSharpReferences.fs" />

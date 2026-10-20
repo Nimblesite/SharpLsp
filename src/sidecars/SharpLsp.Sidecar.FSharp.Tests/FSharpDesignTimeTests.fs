@@ -62,7 +62,8 @@ let private onFramework, onModern, sharedInFramework, sharedInModern = (5, 6), (
 
 let private frameworks (value: string) = element "TargetFrameworks" [ value ]
 
-let private dotnet (dir: string) (args: string) =
+/// Run the dotnet CLI in `dir`; the test fails when it does.
+let internal dotnet (dir: string) (args: string) =
     match Process.Start(ProcessStartInfo("dotnet", args, WorkingDirectory = dir, RedirectStandardOutput = true)) with
     | null -> failwith $"dotnet {args} did not start"
     | started ->

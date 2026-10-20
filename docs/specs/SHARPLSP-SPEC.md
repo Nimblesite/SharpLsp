@@ -216,6 +216,12 @@ Definition finds the declaration in Roslyn's compilation by the documentation id
 
 When MSBuild cannot report the command line, or Roslyn cannot emit an image at all, the reference stands on its DLL and a warning names the project and the reason. A DLL that does not exist is left for the compiler to report.
 
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING] F# Files Outside the Loaded Solution
+
+A file no loaded F# project compiles still answers, from the project that owns it (#414). When the editor opens or edits such a `.fs` or `.fsi` file, the F# sidecar looks for its owner: the nearest `.fsproj`, in the file's directory or a parent, whose `<Compile>` items list the file. It loads that project in the background beside the workspace's own, exactly as a solution project loads, with its references prepared. The workspace's projects stay loaded and keep answering.
+
+The load runs once per owner, however many edits arrive while it runs. It never blocks the edit that started it, because the host forwards edits synchronously. A file with no owner answers as before, from the workspace's first project. The log names the project loaded and the file that needed it, or why it could not load.
+
 ### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation
 
 Every per-platform VSIX MUST bundle `sharplsp`.

@@ -123,3 +123,39 @@ let packageReferenceArgs (assemblies: PackageAssembly list) : string array =
     |> List.filter (fun assembly -> File.Exists assembly.Path)
     |> List.map (fun assembly -> $"-r:{assembly.Path}")
     |> List.toArray
+
+/// The folder, relative to a package root, of a `libraries` entry that is a package.
+let private packageFolder (library: JsonProperty) =
+    match tryProp library.Value "type", tryProp library.Value "path" with
+    | Some kind, Some path when kind.GetString() = "package" -> path.GetString() |> Option.ofObj
+    | _ -> None
+
+/// The packages an assets document names that none of its package folders holds.
+let private absentFrom (document: JsonDocument) =
+    let roots =
+        tryProp document.RootElement "packageFolders"
+        |> Option.map (fun folders -> folders.EnumerateObject() |> Seq.map _.Name |> List.ofSeq)
+        |> Option.defaultValue []
+
+    let onDisk (folder: string) = roots |> List.exists (fun root -> Directory.Exists(NativePaths.Resolve(root, folder)))
+
+    tryProp document.RootElement "libraries"
+    |> Option.map (fun libraries -> libraries.EnumerateObject() |> Seq.choose packageFolder |> Seq.filter (onDisk >> not) |> List.ofSeq)
+    |> Option.defaultValue []
+
+/// The restored packages of `fsprojPath` that have left the disk since it was restored,
+/// as clearing the NuGet cache leaves them: its assets file names them, no package folder
+/// holds them. None for a project never restored, or whose assets file cannot be read.
+/// [DIAG-RESTORE]
+let missingPackages (fsprojPath: string) : string list =
+    let path = assetsPath fsprojPath
+
+    if not (File.Exists path) then
+        []
+    else
+        try
+            use document = JsonDocument.Parse(File.ReadAllText path)
+            absentFrom document
+        with ex ->
+            Log.Debug(ex, "[F# Assets] assets parse failed")
+            []

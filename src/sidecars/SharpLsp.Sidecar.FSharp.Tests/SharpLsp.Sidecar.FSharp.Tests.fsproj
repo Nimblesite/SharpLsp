@@ -34,6 +34,7 @@
     <Compile Include="FSharpMultiProjectTests.fs" />
     <Compile Include="FSharpResolvedReferenceTests.fs" />
     <Compile Include="FSharpCSharpReferenceTests.fs" />
+    <Compile Include="FSharpOwningProjectTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

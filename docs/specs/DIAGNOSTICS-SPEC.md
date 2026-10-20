@@ -312,6 +312,8 @@ Before workspace creation, SharpLsp applies this restore gate:
 
 The gate is mandatory because unresolved `<PackageReference>` items can produce CS0246/CS0234 diagnostics on the first pull.
 
+**F#.** Before the F# sidecar loads a project ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING] included), it restores it again (`dotnet msbuild -t:Restore`) when its `obj/project.assets.json` names a package that none of the assets file's package folders holds. Clearing the NuGet cache leaves a built project in exactly that state: MSBuild trusts the build's assets cache, so its design-time command line references none of the packages. The netstandard reference pack is one of them, and without its core library FCS aborts every check, so hover, completion and navigation answer nothing. A project that has never been restored is not restored by this gate. The log names the project, how many packages are gone and the first of them, then whether the restore succeeded.
+
 ## [DIAG-PERFORMANCE] Performance Targets
 
 | Metric | Target |

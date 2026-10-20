@@ -7,7 +7,6 @@
 module SharpLsp.Sidecar.FSharp.Tests.FSharpCSharpReferenceTests
 
 open System
-open System.Diagnostics
 open System.IO
 open System.Threading
 open System.Xml.Linq
@@ -18,6 +17,7 @@ open Xunit
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
+open SharpLsp.Sidecar.FSharp.Tests.FSharpResolvedReferenceTests
 
 /// `Base`: the abstract class `Greeter` derives from, declared at line 2 (0-based).
 let private namedSource =
@@ -99,18 +99,6 @@ let private writeProject root (name: string) extension (frameworks: string) file
     let path = NativePaths.Resolve(dir, file)
     File.WriteAllText(path, source)
     path
-
-/// Restore `project` with the dotnet CLI; the test fails when restore does.
-let private restore (project: string) =
-    let info = ProcessStartInfo("dotnet", $"restore \"{project}\" --nologo -v q", RedirectStandardOutput = true)
-
-    match Process.Start info with
-    | null -> failwith "dotnet restore did not start"
-    | started ->
-        use proc = started
-        let output = proc.StandardOutput.ReadToEnd()
-        proc.WaitForExit()
-        Assert.True((proc.ExitCode = 0), $"dotnet restore failed: {output}")
 
 /// Base, Core and App — App reading Core, Core reading Base, all `net48;net10.0` —
 /// restored, never built, loaded as one folder.

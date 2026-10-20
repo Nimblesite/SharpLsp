@@ -313,10 +313,26 @@ let private builtEntry checker fallback path (frameworks: string list) (built: s
 let private readsCSharp (fsprojPath: string) =
     FSharpProjectLoading.referencedProjects ".csproj" fsprojPath |> Seq.isEmpty |> not
 
-/// Load one project: from MSBuild when it targets several frameworks or reads a C#
-/// project, else by hand.
+/// Restore `path` again when packages it restored have left the disk: MSBuild trusts the
+/// build's assets cache, so it would report compiler arguments that reference none of
+/// them, and FCS cannot check a file without its core library. [DIAG-RESTORE]
+let private restoreWhenStale (path: string) ct =
+    task {
+        match FSharpAssets.missingPackages path with
+        | [] -> ()
+        | missing ->
+            Log.Information("F# project {Path} restores: {Count} restored packages are gone, {Package} first", path, missing.Length, missing.Head)
+
+            match! runMsbuild path [ "-t:Restore" ] ct with
+            | Ok _ -> Log.Information("F# project {Path} restored", path)
+            | Error reason -> Log.Warning("F# project {Path} could not restore: {Reason}", path, reason)
+    }
+
+/// Load one project, restored again first when its packages are gone: from MSBuild when
+/// it targets several frameworks or reads a C# project, else by hand.
 let loadEntry (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions) (path: string) ct =
     task {
+        do! restoreWhenStale path ct
         let options = fallback path
         let readsCSharp = readsCSharp path
 
