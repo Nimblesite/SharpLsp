@@ -202,7 +202,9 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
   - a hot function with no location reached the UI as file `""`, line 0 (lspkit#15);
   - the UI's Stop never sent `memory.stop`, so the server kept the session and its graphs and still answered steps (lspkit#15);
   - a timed CPU session never left `cpu.list` once its duration elapsed (lspkit#15);
-  - the host accepted a profiler command with no argument, two arguments or a non-object argument (`profiler/host.rs`).
+  - the host accepted a profiler command with no argument, two arguments or a non-object argument (`profiler/host.rs`);
+  - a sample in an F# `match`'s decision tree lost its file, so `Csv.parseLine` split into a located function and an unlocated twin holding 61% of its samples, and the Windows chunk failed on #406 (#408, lspkit#19);
+  - FsOrderLedger's burn tick took the process-wide gate around every `priceAll` call. EventPipe's sampler stops a thread at its next safe point, so the uncontended lock call drew 98% of the burn thread's samples, and `priceAll` sat at the 2% hot-function threshold. The joint CPU and memory soak failed two runs in three on macOS. The tick only reads, so it now runs outside the gate, and `priceAll` is on every burn sample (#408).
 - [ ] Assertions of the deleted suites with no replacement: counters webview and counter sessions, `openTrace`/`convertTrace` of a `.nettrace`, dump collection with cancellable progress, `inspectObject`, `diffSnapshots`/`detectLeaks` panels over dumps, graph browser interactions. Each maps to a parity gap above.
 
 ### Documentation and cutover
