@@ -347,6 +347,13 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     assert.equal(film?.state, 'ready', `the film loads in the editor's webview: ${film?.detail}`);
     assert.equal(film?.detail, '', 'no media error');
     assert.match(film?.src ?? '', /^https:\/\/sharplsp\.dev\/.+\/fsharp-language\.mp4$/);
+    // VS Code lets a webview autoplay only muted until the viewer clicks in it.
+    assert.equal(film?.muted, true, 'the narrated film autoplays muted, as VS Code requires');
+    assert.match(
+      html,
+      /<button id="sound" hidden>🔊 Sound on<\/button>/,
+      'the panel offers the narration a click away',
+    );
   });
 
   test('[TUTORIAL-DETECT] carrying out the F# steps in the live editor ticks each one, and no C# step', async function () {

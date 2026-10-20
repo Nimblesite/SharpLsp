@@ -24,7 +24,8 @@ button {
 }
 
 button[aria-pressed='true'],
-#open-file {
+#open-file,
+#sound {
   color: var(--vscode-button-foreground);
   background: var(--vscode-button-background);
 }

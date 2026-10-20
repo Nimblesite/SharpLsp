@@ -17,16 +17,21 @@ export interface FilmReport {
   readonly src: string;
   /** The media error, empty unless `state` is `error`. */
   readonly detail: string;
+  /** Whether the film plays without its sound. */
+  readonly muted: boolean;
 }
 
 const FILM_STATES: readonly FilmReport['state'][] = ['loading', 'ready', 'error'];
 
 function filmReportOf(message: Record<string, unknown>): FilmReport | undefined {
   const state = FILM_STATES.find((s) => s === message.state);
-  const { src, detail } = message;
-  return state === undefined || typeof src !== 'string' || typeof detail !== 'string'
+  const { src, detail, muted } = message;
+  return state === undefined ||
+    typeof src !== 'string' ||
+    typeof detail !== 'string' ||
+    typeof muted !== 'boolean'
     ? undefined
-    : { state, src, detail };
+    : { state, src, detail, muted };
 }
 
 /** The panel's handle, and the test seam onto what it shows. */
@@ -57,7 +62,7 @@ function shellHtml(webview: vscode.Webview, media: vscode.Uri): string {
 <link rel="stylesheet" href="${style}"><title>${TITLE}</title></head>
 <body data-film-origins="${FILM_ORIGINS.join(' ')}"><nav id="languages"></nav><h1 id="title"></h1><p id="instruction"></p>
 <button id="open-file" hidden>Open one for me</button>
-<div id="film"></div><p id="offline" hidden>The film could not load. Follow the instruction above.</p>
+<div id="film"></div><button id="sound" hidden>🔊 Sound on</button><p id="offline" hidden>The film could not load. Follow the instruction above.</p>
 <ol id="steps"></ol><script nonce="${nonce}" src="${script}"></script></body></html>`;
 }
 

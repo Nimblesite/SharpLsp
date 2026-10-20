@@ -70,7 +70,29 @@
       state,
       src: video.currentSrc || video.src,
       detail: error ? `MediaError ${error.code}: ${error.message}` : '',
+      muted: video.muted,
     });
+  }
+
+  /**
+   * Whether the viewer turned the sound on. VS Code lets a film autoplay only muted until
+   * the viewer clicks in the panel; from then on every film plays with its narration.
+   */
+  let soundOn = false;
+
+  /** Show "Sound on" while the shown film is muted. */
+  /** @param {HTMLVideoElement | undefined} video */
+  function renderSound(video) {
+    document.getElementById('sound').hidden = !video || !video.muted;
+  }
+
+  function turnSoundOn() {
+    soundOn = true;
+    const video = document.querySelector('#film video');
+    if (!(video instanceof HTMLVideoElement)) return;
+    video.muted = false;
+    video.play().catch(() => undefined);
+    report('ready', video);
   }
 
   function filmElement(film) {
@@ -78,7 +100,7 @@
     Object.assign(video, {
       controls: true,
       autoplay: true,
-      muted: true,
+      muted: !soundOn,
       loop: true,
       playsInline: true,
     });
@@ -98,6 +120,7 @@
       );
     }
     video.addEventListener('loadedmetadata', () => report('ready', video));
+    video.addEventListener('volumechange', () => renderSound(video));
     video.addEventListener('error', () => {
       document.getElementById('offline').removeAttribute('hidden');
       report('error', video);
@@ -115,10 +138,11 @@
     offline.toggleAttribute('hidden', !current || Boolean(source));
     const video = source ? filmElement(current.film) : undefined;
     replaceChildren(document.getElementById('film'), video ? [video] : []);
+    renderSound(video);
     if (video) report('loading', video);
     else if (current) {
       const detail = 'the step names no film URL on an allowed origin';
-      vscode.postMessage({ type: 'film', state: 'error', src: '', detail });
+      vscode.postMessage({ type: 'film', state: 'error', src: '', detail, muted: true });
     }
   }
 
@@ -148,6 +172,7 @@
     if (target.dataset.language)
       vscode.postMessage({ type: 'language', language: target.dataset.language });
     if (target.id === 'open-file') vscode.postMessage({ type: 'openFile' });
+    if (target.id === 'sound') turnSoundOn();
   });
 
   vscode.postMessage({ type: 'ready' });
