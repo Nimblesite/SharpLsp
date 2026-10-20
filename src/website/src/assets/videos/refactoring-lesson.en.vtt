@@ -1,0 +1,135 @@
+WEBVTT
+
+00:00.000 --> 00:12.584
+[Upbeat electronic music]
+Welcome to a quick lesson on code actions in SharpLsp! In the next few minutes, you'll fix code, generate code, and rename across files, in F# and C#, on any OS.
+
+00:12.934 --> 00:16.531
+First, the one shortcut you need. On a Mac, press Command dot.
+
+00:16.531 --> 00:18.866
+On Windows and Linux, it's Control dot.
+
+00:18.866 --> 00:20.261
+Or just click the lightbulb.
+
+00:20.261 --> 00:26.923
+Either way, the menu only lists actions that apply to your cursor, your selection, or the diagnostic under it.
+
+00:27.273 --> 00:29.886
+So where do actions come from? Three places.
+
+00:29.886 --> 00:33.697
+A diagnostic: a warning or an error asks for its own fix.
+
+00:33.697 --> 00:36.155
+The cursor: a type or member you can reshape.
+
+00:36.155 --> 00:39.549
+And a selection: refactorings that work on the code you highlight.
+
+00:39.549 --> 00:43.997
+On a blank line, you get an empty menu. SharpLsp never guesses.
+
+00:44.347 --> 00:50.219
+Let's start with F#. This describe function matches on a stage, but it's missing a union case.
+
+00:50.219 --> 00:56.028
+The compiler flags it with warning FS0025: an incomplete pattern match.
+
+00:56.028 --> 01:01.870
+Press Command dot, pick Generate missing union case, and SharpLsp writes the arm for you.
+
+01:01.870 --> 01:05.366
+Prefer a catch-all? Add wildcard case is right there too.
+
+01:05.716 --> 01:09.852
+Here's the result. The new arm matches exactly the case that was missing,
+
+01:09.852 --> 01:14.794
+because the F# compiler knows every case of the union. You just write the body.
+
+01:15.144 --> 01:20.216
+That's one fix from a whole F# toolkit, each tied to a compiler diagnostic.
+
+01:20.216 --> 01:27.652
+Unresolved name? Add the open. Unused binding? Prefix it with an underscore. A discarded value? Pipe it to ignore.
+
+01:27.652 --> 01:33.553
+And beyond matches, SharpLsp generates missing record fields and interface member stubs.
+
+01:33.903 --> 01:38.860
+Renaming is separate from code actions. Put the cursor on a symbol and press F2.
+
+01:38.860 --> 01:40.501
+Type the new name and hit enter.
+
+01:40.501 --> 01:46.675
+Every reference follows, even in other files. Here, the call in Program.fs updates too.
+
+01:46.675 --> 01:53.706
+In C#, rename runs on Roslyn's loaded solution. In F#, on the loaded F# project.
+
+01:56.537 --> 02:02.232
+Now C#. Here's a favourite workflow: write the call you wish existed. Receipt, of invoice.
+
+02:02.232 --> 02:05.377
+It doesn't exist yet, so the compiler reports an error.
+
+02:05.377 --> 02:07.309
+Command dot. Generate method.
+
+02:07.309 --> 02:10.944
+Roslyn writes the stub, and takes the parameter type from your call.
+
+02:21.970 --> 02:26.099
+Next, use a type without importing its namespace. StringBuilder, say.
+
+02:26.099 --> 02:29.328
+Quick Fix puts using System.Text right at the top.
+
+02:29.328 --> 02:33.072
+You could also qualify it in place, or even generate a new class.
+
+02:33.072 --> 02:38.206
+These come straight from Roslyn's own code fix providers, bundled with SharpLsp.
+
+02:50.403 --> 02:54.672
+So what's happening underneath? Your editor asks for code actions at the cursor.
+
+02:54.672 --> 03:00.413
+Roslyn, or the F# compiler, sends back a list of titles. That keeps the menu fast.
+
+03:00.413 --> 03:04.911
+Only when you pick one does SharpLsp resolve it and compute the edits.
+
+03:04.911 --> 03:08.685
+The result is one workspace edit, which can touch several files.
+
+03:08.685 --> 03:12.329
+And if an action has gone stale, you get no edit, never a guess.
+
+03:12.679 --> 03:14.455
+Two things that aren't code actions.
+
+03:14.455 --> 03:20.786
+SharpLsp doesn't format your code. Use CSharpier for C#, and Fantomas for F#.
+
+03:20.786 --> 03:27.098
+And Sort Members is its own command. Right-click a C# type in the Solution Explorer to reorder its members.
+
+03:27.448 --> 03:32.251
+Let's recap. Command dot, or Control dot, opens every action that applies.
+
+03:32.251 --> 03:37.564
+F# fixes follow the compiler's diagnostics, and they can write whole match cases.
+
+03:37.564 --> 03:39.331
+F2 renames across files.
+
+03:39.331 --> 03:42.627
+And in C#, you can call first, and generate second.
+
+03:42.627 --> 03:46.755
+The full lesson is in the SharpLsp docs. Now go fix some code!
+

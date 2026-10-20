@@ -45,8 +45,10 @@ function stamp(seconds) {
 
 /** One WebVTT cue per spoken line in `lang`; the first also names the music that opens the film. */
 export function captions(script, lines, lang) {
+  // A cue lingers `hold` past its line, but never into the next line's cue.
+  const until = (line, index) => Math.min(line.end + pacingOf(script).hold, lines[index + 1]?.start ?? Infinity);
   const cue = (line, index) =>
-    [`${stamp(index === 0 ? 0 : line.start)} --> ${stamp(line.end + pacingOf(script).hold)}`, ...(index === 0 ? [script.music[lang]] : []), line[lang]].join('\n');
+    [`${stamp(index === 0 ? 0 : line.start)} --> ${stamp(until(line, index))}`, ...(index === 0 ? [script.music[lang]] : []), line[lang]].join('\n');
   return `${['WEBVTT', ...lines.map(cue)].join('\n\n')}\n`;
 }
 

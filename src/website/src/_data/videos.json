@@ -254,7 +254,7 @@
     "width": 1920,
     "height": 1200,
     "duration": "PT2M38S",
-    "uploadDate": "2026-10-20T14:13:00+11:00",
+    "uploadDate": "2026-10-20T18:39:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -360,6 +360,29 @@
       "ja": {
         "label": "SharpLsp による VS Code の診断：入力中の F# と C# のエラー、SharpLsp の未使用 open とデッドコードのアナライザー、問題パネル",
         "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモを使って収録：F# と C# の未保存の編集と、ホバーで読む各指摘。"
+      }
+    }
+  },
+  "refactoring-lesson": {
+    "page": "/docs/refactoring/",
+    "encodings": ["mp4", "webm"],
+    "width": 1920,
+    "height": 1080,
+    "duration": "PT3M49S",
+    "uploadDate": "2026-10-20T18:42:00+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Lesson: code actions in SharpLsp, from Cmd+. to F# quick fixes, generated match cases, rename across files, C# generate method and add using",
+        "caption": "A narrated lesson with original music and captions. Slides teach each step; every editor clip is real footage from the refactoring walkthrough, recorded in VS Code. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "课程：SharpLsp 中的代码操作，从 Cmd+. 到 F# 快速修复、生成 match 用例、跨文件重命名、C# 生成方法和添加 using",
+        "caption": "带旁白、原创配乐和字幕的课程。幻灯片讲解每一步；所有编辑器片段都是重构演示中在 VS Code 里录制的真实画面。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "レッスン：SharpLsp のコードアクション。Cmd+. から F# のクイックフィックス、match ケースの生成、ファイルをまたぐ名前の変更、C# のメソッド生成と using の追加まで",
+        "caption": "ナレーション、オリジナル音楽、字幕付きのレッスン。スライドで各ステップを解説し、エディターの映像はすべてリファクタリングのウォークスルーで VS Code から収録した実際の映像です。早送りの部分は画面上に表示されます。"
       }
     }
   },
