@@ -84,7 +84,9 @@ async function linkedAndFolded({ page }) {
 export default {
   name: 'blazor',
   demo: BLAZOR_STOREFRONT,
-  settings: { ...LANGUAGE, 'editor.linkedEditing': true },
+  // VS Code's default bracket closing: Razor's language configuration closes `(`, so an
+  // expression stays balanced as it is typed, and each typed `)` steps over its closer.
+  settings: { ...LANGUAGE, 'editor.linkedEditing': true, 'editor.autoClosingBrackets': 'languageDefined' },
   narration: 'blazor.narration.json',
   stillsFolder: 'docs',
   poster: { scene: 'hover', at: 4 },

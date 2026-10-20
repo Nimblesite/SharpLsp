@@ -22,9 +22,9 @@
     },
     {
       "scene": "complete",
-      "en": "Completion works inside every Razor expression. The members come from Roslyn, and each edit lands in the Razor file, never in generated code.",
-      "ja": "補完は Razor のどの式の中でも動きます。メンバーは Roslyn から届き、編集はすべて、生成されたコードではなく Razor ファイルに反映されます。",
-      "zh": "补全在每个 Razor 表达式中都能使用。成员来自 Roslyn，每次编辑都落在 Razor 文件里，绝不会写进生成的代码。"
+      "en": "Completion works inside Razor expressions too. The members come from Roslyn, and each edit lands in the Razor file, never in generated code.",
+      "ja": "補完は Razor の式の中でも動きます。メンバーは Roslyn から届き、編集はすべて、生成されたコードではなく Razor ファイルに反映されます。",
+      "zh": "补全在 Razor 表达式中同样可用。成员来自 Roslyn，每次编辑都落在 Razor 文件里，绝不会写进生成的代码。"
     },
     {
       "scene": "html",
