@@ -62,7 +62,7 @@ Owner: SharpLspRazorClaude2. Status: fixed in f12be294. Claude1 reproduced null 
 - [x] lspkit submodule changes reviewed: only `.deslop/` added to its `.gitignore`; no runtime code changed.
 - [x] R1 reproduced red, fixed, unchanged tests green
 - [x] R2 reproduced red, fixed, unchanged tests green (Claude2 reports 4/4; integration suite pending)
-- [ ] R3 newest-SDK host regression proof green after sidecar fix
+- [x] R3 newest-SDK host regression proof green after sidecar fix (real SDK 10.0.401, isolated installation)
 - [x] R4 escaped rename fixed with unchanged real-fixture assertions (29-test focused run green)
 - [x] R5 standard keyword scope regression red/green in the real editor
 - [x] R6 F# category/span/operator regressions red/green (447-test full suite green)
@@ -97,5 +97,5 @@ Remaining unchecked validation tasks concern executing fixes together and CI; th
 - C#: the full 692-test suite passes after #399 and #404; final combined coverage gates remain pending.
 - Tooling: 72 tests pass. Rust/NuGet/npm dependency audits report no vulnerabilities at the configured threshold.
 - Zed: final archive executes all 27 tests successfully; 89.95% line coverage passes the ratchet. Final Rust and Zed lint passes.
-- #399: the unpinned host fixture passes on this machine, which has SDKs 10.0.100 and 10.0.303 only. Both deterministic incompatible-generator tests were confirmed red before the fix and now pass unchanged, including a fresh sidecar process and preservation of compatible SDK analyzer references.
+- #399: both deterministic incompatible-generator tests were confirmed red before the fix and now pass unchanged, including a fresh sidecar process and preservation of compatible SDK analyzer references. After the final rebuild, the unpinned host test also passes against real SDK 10.0.401, downloaded from Microsoft's release metadata into an isolated temporary directory and verified against the published SHA512. Only that test's PATH and DOTNET_ROOT use the temporary SDK; the user's installed SDKs remain untouched. The test verifies field hover/type, original Razor range and absence of generated-component CS0246.
 - Earlier full-editor attempts failed because VSIX packaging intentionally removed the staged `bin` directory; after restaging, the unchanged highlighting suite passed. No product/test assertion was weakened to bypass the missing artifact.
