@@ -244,6 +244,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             {
                 ct.ThrowIfCancellationRequested();
                 await CollectProjectDiagnosticsAsync(project, results, ct).ConfigureAwait(false);
+                await CollectRazorDiagnosticsAsync(project, results, ct).ConfigureAwait(false);
             }
 
             return new AllDiagnosticsResult.Ok<Dictionary<string, List<DiagnosticResult>>, string>(

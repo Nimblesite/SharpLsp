@@ -332,7 +332,7 @@ Signature help in a C# fragment is computed at the mapped position.
   - A `@bind-Old` attribute becomes `@bind-New`.
 - **prepareRename:**
   - On a C# fragment it answers the mapped identifier range.
-  - On markup it refuses with a message.
+  - On markup it refuses: it answers `null`, as [RENAME-PREPARE] does wherever no renameable symbol sits, and the client shows its own message.
   - A component type is renamed by renaming its file, so prepareRename refuses on a component tag.
 - **Cross-language:** renaming an F# symbol renames its Razor usages, and renaming a C# symbol from a Razor file renames its F# usages ([RAZOR-FSHARP], [RENAME-CROSSLANGUAGE]).
 

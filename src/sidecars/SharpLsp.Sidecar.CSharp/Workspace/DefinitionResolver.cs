@@ -100,27 +100,58 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var resolved = await ResolveModelAndPositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        if (resolved is null)
-        {
-            return null;
-        }
-
-        var (model, position) = resolved.Value;
-
-        var typeInfo = model.GetTypeInfo(
-            await GetNodeAtPositionAsync(document, position, ct).ConfigureAwait(false),
-            ct
-        );
-
-        var typeSymbol = typeInfo.Type ?? typeInfo.ConvertedType;
-
+        var typeSymbol = await TypeAtAsync(document, line, character, ct).ConfigureAwait(false);
         return typeSymbol is null
             ? null
             : ToFirstSourceLocation(typeSymbol)
                 ?? await ResolveMetadataFallbackSingleAsync(document, typeSymbol, ct)
                     .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The type at a position: the node's own type, else the type its symbol carries.
+    /// [DEFINITION-CSHARP-TYPE]
+    /// </summary>
+    private static async Task<ITypeSymbol?> TypeAtAsync(
+        Document document,
+        int line,
+        int character,
+        CancellationToken ct
+    )
+    {
+        var resolved = await ResolveModelAndPositionAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (resolved is not var (model, position))
+        {
+            return null;
+        }
+
+        var node = await GetNodeAtPositionAsync(document, position, ct).ConfigureAwait(false);
+        var typeInfo = model.GetTypeInfo(node, ct);
+        return typeInfo.Type
+            ?? typeInfo.ConvertedType
+            ?? SymbolType(
+                await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false)
+            );
+    }
+
+    /// <summary>
+    /// The type a symbol carries where the node under the cursor has none, a declaration's
+    /// name or a method's name: a variable's, field's, property's, parameter's or event's
+    /// type, or a method's return type. [DEFINITION-CSHARP-CASES]
+    /// </summary>
+    private static ITypeSymbol? SymbolType(ISymbol? symbol)
+    {
+        return symbol switch
+        {
+            ILocalSymbol local => local.Type,
+            IFieldSymbol field => field.Type,
+            IPropertySymbol property => property.Type,
+            IParameterSymbol parameter => parameter.Type,
+            IEventSymbol handler => handler.Type,
+            IMethodSymbol { ReturnsVoid: false } method => method.ReturnType,
+            _ => null,
+        };
     }
 
     /// <summary>Find the declaration (interface/base member) of the symbol.</summary>

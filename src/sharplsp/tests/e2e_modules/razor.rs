@@ -42,6 +42,7 @@ fn test_full_stack_razor_routing_session() {
     assert_html_projection_only_in_markup(&mut client, &board);
     assert_markup_triggers_only_complete_razor(&mut client, &ws);
     assert_diagnostics_publish_as_razor(&mut client, &board, &board_text);
+    assert_razor_compiler_diagnostics_publish(&mut client, &board, &board_text);
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -269,5 +270,67 @@ fn assert_diagnostics_publish_as_razor(client: &mut LspClient, board: &str, text
         "diagnostics(Board.razor) after the fix",
         Duration::from_mins(2),
         <[Value]>::is_empty,
+    );
+}
+
+/// The Razor compiler's own diagnostics publish under `sharplsp-razor` with
+/// LSP severities, and clear: an element no component binds is a warning, a
+/// component tag left open an error. [RAZOR-FEATURES-DIAGNOSTICS]
+fn assert_razor_compiler_diagnostics_publish(client: &mut LspClient, board: &str, text: &str) {
+    let broken = format!(
+        "{}\n<Badge Text=\"open\">\n",
+        text.replace("<Badge Text", "<Bdage Text")
+    );
+    let line_of = |needle: &str| broken.lines().position(|line| line.contains(needle));
+    client.change_document(board, 4, &broken);
+    let items = poll_diagnostics_until(
+        client,
+        board,
+        "Razor diagnostics(Board.razor)",
+        Duration::from_mins(2),
+        |items| {
+            ["RZ10012", "RZ1034"]
+                .iter()
+                .all(|code| items.iter().any(|d| d["code"] == *code))
+        },
+    );
+    let by_code = |code: &str| items.iter().find(|d| d["code"] == code).expect(code);
+    let unknown = by_code("RZ10012");
+    assert_eq!(
+        unknown["severity"], 2,
+        "Razor's warning is an LSP Warning: {unknown}"
+    );
+    assert_eq!(unknown["source"], "sharplsp-razor");
+    assert_eq!(
+        unknown["range"]["start"]["line"],
+        json!(line_of("<Bdage Text"))
+    );
+    assert!(unknown["message"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Bdage"));
+    let open = by_code("RZ1034");
+    assert_eq!(open["severity"], 1, "Razor's error is an LSP Error: {open}");
+    assert_eq!(open["source"], "sharplsp-razor");
+    assert_eq!(
+        open["range"]["start"]["line"],
+        json!(line_of("Text=\"open\""))
+    );
+    assert!(open["message"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Badge"));
+
+    client.change_document(board, 5, text);
+    let _ = poll_diagnostics_until(
+        client,
+        board,
+        "Razor diagnostics(Board.razor) after the fix",
+        Duration::from_mins(2),
+        |items| {
+            !items
+                .iter()
+                .any(|d| d["code"].as_str().is_some_and(|c| c.starts_with("RZ")))
+        },
     );
 }
