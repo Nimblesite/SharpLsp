@@ -391,7 +391,10 @@ async function buildCrossLanguageFixtures(): Promise<void> {
     'dotnet',
     ['build', FIXTURE_SOLUTION, '--configuration', 'Debug', '--nologo', '--verbosity', 'minimal'],
     { cwd: path.dirname(FIXTURE_SOLUTION), encoding: 'utf8', timeout: DOTNET_CLI_MS },
-  );
+  ).catch((error: { stdout?: string; stderr?: string }) => {
+    // A failed build names its cause only in its own output; surface it.
+    throw new Error(`fixture build failed:\n${error.stdout ?? ''}\n${error.stderr ?? ''}`);
+  });
   assert.strictEqual(typeof result.stdout, 'string');
   assert.strictEqual(typeof result.stderr, 'string');
   assert.ok(result.stdout.trim().length > 0, 'real fixture build must report output');
