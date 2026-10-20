@@ -26,7 +26,13 @@ public static partial class NativePaths
     /// <summary><paramref name="path"/> as the Razor compiler names it inside <paramref name="projectDirectory"/>.</summary>
     public static string ToRazorProjectPath(string projectDirectory, string path)
     {
-        return "/" + Slashed(RelativeTo(projectDirectory, path));
+        return ToRazorProjectPath(RelativeTo(projectDirectory, path));
+    }
+
+    /// <summary>A target path as the compiler's rooted, forward-slashed Razor project path.</summary>
+    public static string ToRazorProjectPath(string target)
+    {
+        return "/" + Slashed(target).TrimStart('/');
     }
 
     /// <summary>The file a Razor project path names inside <paramref name="projectDirectory"/>.</summary>

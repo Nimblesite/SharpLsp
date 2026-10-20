@@ -57,7 +57,7 @@ internal sealed record RazorEngineSettings(
         var target = TargetPath(razor);
         return target is null
             ? NativePaths.ToRazorProjectPath(ProjectDirectory, razor.FilePath ?? "")
-            : "/" + NativePaths.Slashed(target).TrimStart('/');
+            : NativePaths.ToRazorProjectPath(target);
     }
 
     private static string? TargetPath(TextDocument razor)
