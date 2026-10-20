@@ -85,6 +85,7 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 - [x] VS Code: sync `razor` and `aspnetcorerazor` documents, and activate on `onLanguage:razor` ([RAZOR-EDITORS]) — `razor-lsp.test.ts`: a Razor file opens as Razor, and its unsaved edits reach the server
 - [x] VS Code: forward HTML completion and hover over `sharplsp/razor/htmlProjection` ([RAZOR-FEATURES-HTML]) — `razor-lsp.test.ts`: element names and HTML hovers in markup, C# completion and hover in code
+  - [ ] A C# position offers C# items alone: no word suggestions from the HTML projection, including after a typed dot and inside an unfinished `@(` (#405, Codex1)
 - [x] VS Code: add a `razor` end-to-end chunk on both platforms — `test-chunks.json`, in both matrices
 - [x] Zed: Razor language registration (Zed has no built-in Razor grammar) — `the_server_attaches_to_the_csharp_fsharp_and_razor_languages`
 
