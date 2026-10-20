@@ -1,0 +1,41 @@
+WEBVTT
+
+00:00.000 --> 00:10.956
+[Gentle music]
+This is the SharpLsp tutorial, F# first. Press Cmd+P and open a source file, and SharpLsp starts working on it straight away.
+
+00:13.117 --> 00:20.689
+Rest the mouse on a function. SharpLsp shows the signature the F# compiler inferred, with its doc comment.
+
+00:26.317 --> 00:33.109
+Type a dot after a value, and completion lists what fits there: the List functions, then the fields of a product.
+
+00:49.450 --> 00:53.772
+Put the cursor on a symbol and press F12 to go to its definition.
+
+01:04.683 --> 01:08.723
+Shift+F12 finds every reference to it, across the solution.
+
+01:17.317 --> 01:25.415
+This match leaves a case out, so F# warns. Press Cmd+. on the warning, and pick the fix that generates the missing case.
+
+01:44.783 --> 01:53.189
+Click the SharpLsp icon in the Activity Bar to open the Solution Explorer: the solution, its projects and their files.
+
+02:04.117 --> 02:09.894
+Now C#. The same seven steps, starting with Cmd+P to open a C# file.
+
+02:17.050 --> 02:21.968
+Hover a method to read its XML docs, and hover var to see the type behind it.
+
+02:32.917 --> 02:37.632
+Type a dot, and completion offers LINQ's methods, then the record's properties.
+
+02:59.283 --> 03:01.855
+F12 jumps to where a method is defined.
+
+03:11.250 --> 03:14.236
+And Shift+F12 lists everywhere a type is used.
+
+03:23.783 --> 03:33.450
+This call names a method that does not exist yet. Press Cmd+. on the error, and generate it. Each step ticks itself off once SharpLsp answers.

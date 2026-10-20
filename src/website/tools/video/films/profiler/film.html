@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SharpLsp Profiler film</title>
+<!-- The profiler film: every frame is a pure function of t (renderFrame), so
+     render.mjs can step it deterministically. Frames and stills come from the shoot, out/profiler/. -->
+<style>
+  :root {
+    --bg: #070a08;
+    --ink: #eef3f0;
+    --muted: #93a39a;
+    --green: #2fe08a;
+    --flame: #ff6a2b;
+    --amber: #ffb02e;
+    --violet: #a979ff;
+    --font: "SF Pro Display", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--font); }
+  .layer { position: absolute; inset: 0; will-change: transform, opacity; }
+  #glow { background: radial-gradient(60% 60% at var(--gx, 50%) var(--gy, 45%), rgb(47 224 138 / 16%), transparent 70%); }
+  #grid {
+    background-image: linear-gradient(rgb(255 255 255 / 4%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 4%) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(70% 70% at 50% 50%, #000 30%, transparent 90%);
+  }
+  .center { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .kicker { font-size: 92px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.05; }
+  .kicker span { display: inline-block; }
+  .sub { font-size: 40px; font-weight: 500; color: var(--muted); letter-spacing: -0.01em; margin-top: 28px; }
+  .hot { color: var(--flame); text-shadow: 0 0 40px rgb(255 106 43 / 55%); }
+  #logo { width: 168px; height: 168px; border-radius: 34px; box-shadow: 0 30px 90px rgb(47 224 138 / 35%); }
+  .wordmark { font-size: 120px; font-weight: 800; letter-spacing: -0.045em; margin-top: 34px; }
+  .profiler { background: linear-gradient(90deg, var(--flame), var(--amber) 45%, var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #window {
+    position: absolute; left: 260px; top: 166px; width: 1400px; height: 875px;
+    border-radius: 16px; overflow: hidden; background: #181818;
+    box-shadow: 0 40px 120px rgb(0 0 0 / 70%), 0 0 0 1px rgb(255 255 255 / 9%);
+    transform-origin: 50% 100%;
+  }
+  #screen { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; transform-origin: 0 0; }
+  #screen img { position: absolute; inset: 0; width: 1600px; height: 1000px; }
+  #panel {
+    position: absolute; left: 160px; top: 300px; width: 1600px; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 40px 120px rgb(0 0 0 / 70%), 0 0 0 1px rgb(255 255 255 / 12%);
+  }
+  #panel img { display: block; width: 100%; }
+  #panel img + img { position: absolute; inset: 0; }
+  #caption { position: absolute; left: 262px; top: 46px; }
+  .eyebrow { font: 600 22px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); }
+  .headline { font-size: 50px; font-weight: 700; letter-spacing: -0.025em; margin-top: 14px; white-space: nowrap; }
+  #speed { position: absolute; left: 1548px; top: 186px; padding: 8px 14px; border-radius: 999px; background: rgb(7 10 8 / 78%); color: var(--green); font: 700 20px/1 var(--mono); box-shadow: 0 0 0 1px rgb(47 224 138 / 45%); }
+  #mark { position: absolute; right: 64px; top: 52px; display: flex; align-items: center; gap: 14px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  #mark img { width: 44px; height: 44px; border-radius: 10px; }
+  #cursor { position: absolute; left: 0; top: 0; width: 34px; height: 34px; filter: drop-shadow(0 4px 10px rgb(0 0 0 / 60%)); }
+  #ripple { position: absolute; left: 0; top: 0; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%; border: 4px solid var(--green); }
+  #focus { position: absolute; border: 3px solid var(--green); border-radius: 12px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 45%), 0 0 40px rgb(47 224 138 / 55%); }
+  #tiles { position: absolute; inset: 0; }
+  .tile { position: absolute; width: 700px; height: 438px; border-radius: 12px; overflow: hidden; box-shadow: 0 24px 70px rgb(0 0 0 / 65%), 0 0 0 1px rgb(255 255 255 / 10%); }
+  .tile img { width: 100%; height: 100%; object-fit: cover; object-position: 0 0; }
+  .tagline { font-size: 34px; font-weight: 500; color: var(--muted); margin-top: 26px; }
+  .url { font: 600 34px/1 var(--mono); color: var(--green); margin-top: 44px; letter-spacing: 0.02em; }
+</style>
+</head>
+<body>
+  <div class="layer" id="grid"></div>
+  <div class="layer" id="glow"></div>
+
+  <div class="layer center" id="cold">
+    <div class="kicker" id="coldLine"><span>Your</span> <span>.NET</span> <span>app</span> <span>is</span> <span id="slow">slow.</span></div>
+    <div class="sub" id="coldSub">Where is the time going? Where is the memory going?</div>
+  </div>
+
+  <div class="layer center" id="title">
+    <img id="logo" src="../../../../src/assets/images/sharplsp-logo.svg" alt="">
+    <div class="wordmark">SharpLsp <span class="profiler">Profiler</span></div>
+    <div class="sub" id="titleSub">CPU and memory profiling for .NET, inside VS Code.</div>
+  </div>
+
+  <div id="window"><div id="screen"><img id="frameA" alt=""><img id="frameB" alt=""></div><div id="focus"></div></div>
+  <div id="panel"><img id="panelA" alt=""><img id="panelB" alt=""></div>
+  <div id="tiles"></div>
+
+  <div id="caption"><div class="eyebrow" id="eyebrow"></div><div class="headline" id="headline"></div></div>
+  <div id="speed"></div>
+  <div id="mark"><img src="../../../../src/assets/images/sharplsp-logo.svg" alt="">SharpLsp</div>
+  <div id="ripple"></div>
+  <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2l16 9.5-7 1.6 4.2 7.4-2.9 1.6-4.2-7.4L4 19z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>
+
+  <div class="layer center" id="end">
+    <img id="endLogo" src="../../../../src/assets/images/sharplsp-logo.svg" alt="" style="width:132px;height:132px;border-radius:28px">
+    <div class="wordmark" style="font-size:96px">Profile .NET where you code.</div>
+    <div class="tagline">Free and open source. No license. No vendor lock-in.</div>
+    <div class="url">sharplsp.dev</div>
+  </div>
+
+<script src="../../kit/timeline.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

@@ -29,10 +29,12 @@ VSIX には `sharplsp` ホストと両方の .NET サイドカーが同梱され
   </ul>
 </section>
 
+SharpLsp は初回起動時に[インタラクティブ チュートリアル](/ja/docs/tutorial/)を開きます。ステップごとの短い映像（F# が先）を見ながら、自分のエディターでホバー、補完、定義へ移動、コードの修正を試せます。
+
 現在のリリースには、C# と F# の補完、ホバー、ナビゲーション、診断、シンボル、コードアクション、名前変更、セマンティックトークン、インレイヒントに加え、ソリューションツール、NuGet ワークフロー、デバッグ、プロファイリングが含まれます。.NET Framework 4.6.2〜4.8.1 を対象とするプロジェクトも、すべての OS で同じ言語機能を利用でき、Windows ではデスクトップ CLR で[実行・テスト](/ja/blog/dotnet-framework-windows-vs-code/)もできます。一部の機能はまだ部分的な実装です。現在の制限事項は各ページで説明しています。
 
 ### その他のエディター
 
 サーバーは可能な限り標準 LSP を使用します。各 GitHub リリースではスタンドアロンのサーバーアーカイブと Rider プラグインを公開しており、[Zed](/ja/docs/zed/) では開発用拡張機能で SharpLsp を動かせます。Neovim、Helix、Emacs 向けのパッケージ化された統合はまだリリースされていません。
 
-<p class="next-link"><a href="/ja/docs/architecture/">次へ: アーキテクチャ <span aria-hidden="true">→</span></a></p>
+<p class="next-link"><a href="/ja/docs/tutorial/">次へ: チュートリアル <span aria-hidden="true">→</span></a></p>

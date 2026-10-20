@@ -216,6 +216,26 @@ Definition finds the declaration in Roslyn's compilation by the documentation id
 
 When MSBuild cannot report the command line, or Roslyn cannot emit an image at all, the reference stands on its DLL and a warning names the project and the reason. A DLL that does not exist is left for the compiler to report.
 
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING] F# Files Outside the Loaded Solution
+
+A file no loaded F# project compiles still answers, from the project that owns it (#414). When the editor opens or edits such a `.fs` or `.fsi` file, the F# sidecar looks for its owner: the nearest `.fsproj`, in the file's directory or a parent, whose `<Compile>` items list the file. It loads that project in the background beside the workspace's own, exactly as a solution project loads, with its references prepared. The workspace's projects stay loaded and keep answering.
+
+The load runs once per owner, however many edits arrive while it runs. It never blocks the edit that started it, because the host forwards edits synchronously. A file with no owner answers as before, from the workspace's first project. The log names the project loaded and the file that needed it, or why it could not load.
+
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING] C# Files Outside the Loaded Solution
+
+C# follows the F# rule above. When the editor opens or edits a `.cs` file that no loaded project compiles, the C# sidecar finds its owner: the first `.csproj`, in name order, in the nearest directory at or above the file that holds one. An SDK project compiles every `.cs` file beneath it.
+
+The owner loads in the background into the same Roslyn solution:
+- F# projects it reaches load as placeholders ([SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP]).
+- A project the solution already holds is linked, never loaded twice.
+
+Opening a file never restores or builds a project the workspace did not load:
+- An owner with no `obj/project.assets.json` is not loaded. The edit fails with a message naming the owner and `dotnet restore`.
+- A restored owner loads with `$(OutDir)` in the sidecar's scratch folder. A design-time build creates its output folder, and the user's own output folders must stay exactly as they built them ([DEBUG-FEATURES-LAUNCH-BUILD]).
+
+The edit that started the load is held and applied once the project lands, so hover, completion and navigation answer from the owner. The load runs once per owner and never blocks the edit. A project that is already loaded is never reloaded. The log names the project and the file, or why it could not load.
+
 ### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation
 
 Every per-platform VSIX MUST bundle `sharplsp`.

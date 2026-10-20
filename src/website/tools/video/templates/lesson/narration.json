@@ -1,0 +1,30 @@
+{
+  "voice": "af_bella",
+  "speed": 1.12,
+  "score": "drive",
+  "pacing": { "opening": 0.9, "lead": 0.25, "gap": 0.22, "tail": 0.35, "hold": 0.25, "closing": 2.4 },
+  "say": { "SharpLsp": "Sharp L S P", "F#": "F sharp", "C#": "C sharp" },
+  "music": { "en": "[Upbeat electronic music]", "ja": "[アップテンポな電子音楽]", "zh": "[轻快的电子音乐]" },
+  "lines": [
+    { "scene": "intro", "en": "<Welcome, and what the viewer will be able to do.>", "ja": "<同じ内容の日本語>", "zh": "<同样内容的中文>" },
+    { "scene": "keys", "en": "<Line 0: reveals the macOS keys.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "keys", "en": "<Line 1: reveals the Windows and Linux keys.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "keys", "en": "<Line 2: reveals the sentence under the keys.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "points", "en": "<Line 0: the idea.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "points", "en": "<Line 1: the first row.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "points", "en": "<Line 2: the second row.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "footage", "en": "<Line 0: what to notice in the clip.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "footage", "en": "<Line 1: the key press.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "footage", "en": "<Line 2: the result.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "code", "en": "<Line 0: both panes.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "code", "en": "<Line 1: the caption.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "cards", "en": "<Line 0: the reference cards.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "flow", "en": "<Line 0: stage one.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "flow", "en": "<Line 1: stage two.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "flow", "en": "<Line 2: stage three.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "flow", "en": "<Line 3: the failure case.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "recap", "en": "<Line 0: takeaway.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "recap", "en": "<Line 1: takeaway.>", "ja": "<日本語>", "zh": "<中文>" },
+    { "scene": "recap", "en": "<Line 2: where the full lesson lives, and a send-off.>", "ja": "<日本語>", "zh": "<中文>" }
+  ]
+}

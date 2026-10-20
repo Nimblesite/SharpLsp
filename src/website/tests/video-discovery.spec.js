@@ -12,7 +12,7 @@ const mp4Of = (id) => `/assets/videos/${id}.mp4`;
 const PREVIEWS = {
   '/docs/': 'getting-started', '/docs/editors/': 'editor-setup', '/docs/configuration/': 'configuration',
   '/docs/fsharp/': 'fsharp-language', '/docs/blazor/': 'blazor', '/docs/completions/': 'code-completions', '/docs/hover/': 'hover',
-  '/docs/go-to-definition/': 'navigation', '/docs/diagnostics/': 'diagnostics', '/docs/refactoring/': 'refactoring',
+  '/docs/go-to-definition/': 'navigation', '/docs/diagnostics/': 'diagnostics', '/docs/refactoring/': 'refactoring-lesson',
   '/docs/context-menus/': 'context-menus', '/docs/nuget/': 'nuget', '/docs/profiler/': 'profiler-csharp',
   '/docs/memory-leaks/': 'profiler-fix-memory-leak', '/docs/fsharp-profiling/': 'profiler-fsharp',
   '/docs/architecture/': 'architecture', '/docs/contributing/': 'contributing',

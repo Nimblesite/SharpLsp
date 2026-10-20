@@ -36,7 +36,7 @@ let private definesOf (checkResults: FSharpCheckFileResults) =
 /// Every token of one line, and the lexer state the next line starts in. A CRLF
 /// line's `\r` is dropped first: left on a `#if` line, it keeps the lexer from
 /// entering the inactive branch at all.
-let private scanLine (tokenizer: FSharpSourceTokenizer) (text: string) state =
+let internal scanLine (tokenizer: FSharpSourceTokenizer) (text: string) state =
     let lineTokenizer = tokenizer.CreateLineTokenizer(text.TrimEnd '\r')
 
     let rec scan state tokens =

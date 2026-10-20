@@ -156,13 +156,37 @@
       }
     }
   },
+  "vscode-tutorial": {
+    "page": "/docs/tutorial/",
+    "encodings": ["mp4", "webm"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT3M49S",
+    "uploadDate": "2026-10-20T22:20:13+11:00",
+    "chapters": true,
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "The SharpLsp tutorial in VS Code: open an F# and a C# file, hover, complete, go to a definition, find references, fix code with a code action, and open the Solution Explorer",
+        "caption": "Narrated, with original music and captions. Every step of the interactive tutorial, F# first, then C#, recorded in VS Code on the Shop demo. One chapter per step; the tutorial panel in VS Code plays each step's chapter."
+      },
+      "zh": {
+        "label": "VS Code 中的 SharpLsp 教程：打开 F# 和 C# 文件、悬停、补全、转到定义、查找引用、用代码操作修复代码，以及打开解决方案资源管理器",
+        "caption": "带旁白、原创配乐和字幕。交互式教程的每一步，先 F# 后 C#，在 VS Code 中基于 Shop 演示录制。每一步一个章节；VS Code 中的教程面板会播放当前步骤的章节。"
+      },
+      "ja": {
+        "label": "VS Code の SharpLsp チュートリアル：F# と C# のファイルを開き、ホバー、補完、定義へ移動、参照の検索、コードアクションでの修正、ソリューションエクスプローラーを開く",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。インタラクティブ チュートリアルの全ステップを、F#、次に C# の順に、VS Code で Shop デモを使って収録しました。ステップごとに 1 チャプターで、VS Code のチュートリアル パネルが現在のステップのチャプターを再生します。"
+      }
+    }
+  },
   "getting-started": {
     "page": "/docs/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M4S",
-    "uploadDate": "2026-10-18T23:29:29+11:00",
+    "duration": "PT1M5S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -230,8 +254,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M53S",
-    "uploadDate": "2026-10-18T22:53:05+11:00",
+    "duration": "PT1M55S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -254,7 +278,7 @@
     "width": 1920,
     "height": 1200,
     "duration": "PT2M38S",
-    "uploadDate": "2026-10-20T14:13:00+11:00",
+    "uploadDate": "2026-10-20T18:39:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -276,8 +300,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M9S",
-    "uploadDate": "2026-10-18T22:59:43+11:00",
+    "duration": "PT1M13S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -299,8 +323,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M15S",
-    "uploadDate": "2026-10-18T23:16:35+11:00",
+    "duration": "PT1M17S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -322,8 +346,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M0S",
-    "uploadDate": "2026-10-18T23:57:10+11:00",
+    "duration": "PT1M1S",
+    "uploadDate": "2026-10-20T20:05:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -360,6 +384,29 @@
       "ja": {
         "label": "SharpLsp による VS Code の診断：入力中の F# と C# のエラー、SharpLsp の未使用 open とデッドコードのアナライザー、問題パネル",
         "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Shop デモを使って収録：F# と C# の未保存の編集と、ホバーで読む各指摘。"
+      }
+    }
+  },
+  "refactoring-lesson": {
+    "page": "/docs/refactoring/",
+    "encodings": ["mp4", "webm"],
+    "width": 1920,
+    "height": 1080,
+    "duration": "PT3M49S",
+    "uploadDate": "2026-10-20T18:42:00+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Lesson: code actions in SharpLsp, from Cmd+. to F# quick fixes, generated match cases, rename across files, C# generate method and add using",
+        "caption": "A narrated lesson with original music and captions. Slides teach each step; every editor clip is real footage from the refactoring walkthrough, recorded in VS Code. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "课程：SharpLsp 中的代码操作，从 Cmd+. 到 F# 快速修复、生成 match 用例、跨文件重命名、C# 生成方法和添加 using",
+        "caption": "带旁白、原创配乐和字幕的课程。幻灯片讲解每一步；所有编辑器片段都是重构演示中在 VS Code 里录制的真实画面。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "レッスン：SharpLsp のコードアクション。Cmd+. から F# のクイックフィックス、match ケースの生成、ファイルをまたぐ名前の変更、C# のメソッド生成と using の追加まで",
+        "caption": "ナレーション、オリジナル音楽、字幕付きのレッスン。スライドで各ステップを解説し、エディターの映像はすべてリファクタリングのウォークスルーで VS Code から収録した実際の映像です。早送りの部分は画面上に表示されます。"
       }
     }
   },

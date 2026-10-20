@@ -5,7 +5,7 @@ import markdownIt from "markdown-it";
 import { existsSync, lstatSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { videoFigure, videoPlayer } from "./video-figure.js";
+import { chapterList, videoFigure, videoPlayer } from "./video-figure.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginLayouts = join(__dirname, "node_modules/eleventy-plugin-techdoc/templates/layouts");
@@ -143,6 +143,10 @@ export default function (eleventyConfig) {
   });
   // [WEB-DESIGN-MEDIA-DISCOVERY] The bare player a video's embed page is made of.
   eleventyConfig.addShortcode("videoPlayer", (id, lang) => videoPlayer(id, lang));
+  // [WEB-DESIGN-MEDIA-CHAPTERS] `{% chapters "<id>" %}` lists a chaptered film's steps.
+  eleventyConfig.addShortcode("chapters", function (id) {
+    return chapterList(id, this.ctx?.lang ?? "en");
+  });
 
   eleventyConfig.addPassthroughCopy("src/assets");
   eleventyConfig.addPassthroughCopy("src/favicon.ico");

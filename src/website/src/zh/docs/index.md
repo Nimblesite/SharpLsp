@@ -29,10 +29,12 @@ VSIX 内含 `sharplsp` 宿主和两个 .NET sidecar。你不需要 Rust 工具�
   </ul>
 </section>
 
+SharpLsp 首次启动时会打开[交互式教程](/zh/docs/tutorial/)：每一步一段短片（先 F#），你同时在自己的编辑器中尝试悬停、补全、转到定义和修复代码。
+
 当前版本包含 C# 和 F# 代码补全、悬停信息、导航、诊断、符号、代码操作、重命名、语义令牌、内联提示、解决方案工具、NuGet 工作流、调试和性能分析。面向 .NET Framework 4.6.2–4.8.1 的项目在每个操作系统上都能获得相同的语言功能，在 Windows 上还能在桌面 CLR 上[运行和测试](/zh/blog/dotnet-framework-windows-vs-code/)。部分功能仍不完整；各功能页面记录了它们目前的限制。
 
 ### 其他编辑器
 
 服务器会尽可能使用标准 LSP。每次 GitHub 发布都会提供独立服务器归档和 Rider 插件，[Zed](/zh/docs/zed/) 则通过开发扩展运行 SharpLsp。Neovim、Helix 和 Emacs 的打包集成尚未发布。
 
-<p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span aria-hidden="true">→</span></a></p>
+<p class="next-link"><a href="/zh/docs/tutorial/">下一节：教程 <span aria-hidden="true">→</span></a></p>

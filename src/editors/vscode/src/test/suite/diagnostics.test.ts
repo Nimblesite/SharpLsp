@@ -4,12 +4,8 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   closeAllEditors,
-  loadFixtureSolution,
-  openSharpLspPanel,
   replaceDocumentContent,
   setupLspTestSuite,
-  settleForScreenshot,
-  takeScreenshot,
   teardownLspTestSuite,
   waitForDiagnostics,
   waitForDiagnosticsCleared,
@@ -205,15 +201,7 @@ suite('Diagnostics / Problems Panel', () => {
     );
     assert.deepEqual([...new Set(keys)], keys, 'no diagnostic may be published twice');
 
-    // Load fixture solution so Solution Explorer is populated in the screenshot.
-    if (process.env['SHARPLSP_SCREENSHOTS']) {
-      await loadFixtureSolution(workspaceRoot);
-    }
-    // Open Problems panel so diagnostics are visible in the screenshot.
     await vscode.commands.executeCommand('workbench.actions.view.problems');
-    await settleForScreenshot(1000);
-    await openSharpLspPanel();
-    await takeScreenshot('vscode-diagnostics-page.png');
   });
 
   test('file with missing type shows diagnostics', async function () {

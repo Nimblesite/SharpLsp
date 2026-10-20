@@ -1,0 +1,53 @@
+WEBVTT
+
+FSharp.OpenFile
+00:00.000 --> 00:12.767
+F#: open a source file (Cmd+P)
+
+FSharp.Hover
+00:12.767 --> 00:25.967
+Rest the mouse on a function: its F# signature
+
+FSharp.Completion
+00:25.967 --> 00:49.100
+Type a dot: completion lists what fits
+
+FSharp.Definition
+00:49.100 --> 01:04.333
+F12 goes to the definition
+
+FSharp.References
+01:04.333 --> 01:16.967
+Shift+F12 finds every reference
+
+FSharp.CodeAction
+01:16.967 --> 01:44.433
+Cmd+. on a warning: pick the fix
+
+SolutionExplorer
+01:44.433 --> 02:03.767
+The SharpLsp icon opens the Solution Explorer
+
+CSharp.OpenFile
+02:03.767 --> 02:16.700
+C#: open a source file (Cmd+P)
+
+CSharp.Hover
+02:16.700 --> 02:32.567
+Rest the mouse on a symbol: its docs and type
+
+CSharp.Completion
+02:32.567 --> 02:58.933
+Type a dot: completion lists what fits
+
+CSharp.Definition
+02:58.933 --> 03:10.900
+F12 goes to the definition
+
+CSharp.References
+03:10.900 --> 03:23.433
+Shift+F12 finds every reference
+
+CSharp.CodeAction
+03:23.433 --> 03:48.600
+Cmd+. on an error: generate the missing method

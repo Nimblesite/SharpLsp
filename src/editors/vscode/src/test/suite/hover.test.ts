@@ -9,8 +9,6 @@ import {
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
-  settleForScreenshot,
-  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
   waitForHoverResult,
@@ -147,15 +145,6 @@ suite('Hover / Quick Info', () => {
       completionEditor.selection.active.isEqual(completionPosition),
       'Completion cursor must be after this.',
     );
-    await vscode.commands.executeCommand('editor.action.triggerSuggest');
-    // Wait for widget to appear — no other commands that could dismiss it.
-    await settleForScreenshot(2500);
-    // No openSharpLspPanel() — the completion dropdown IS the feature; keep editor visible.
-    await takeScreenshot('vscode-completions-page.png');
-
-    // Dismiss suggestion widget then switch back to HoverMulti.cs for go-to-definition.
-    await vscode.commands.executeCommand('hideSuggestWidget');
-
     const goToEditor = await vscode.window.showTextDocument(
       await vscode.workspace.openTextDocument(completionUri),
       {
@@ -176,17 +165,12 @@ suite('Hover / Quick Info', () => {
     assert.ok(definitions[0]!.uri.fsPath.endsWith('.cs'), 'Definition must point to a .cs file');
     assert.ok(definitions[0]!.range.start.line >= 0, 'Definition must have valid line');
 
-    // Trigger peek definition on the call-site reference.
     goToEditor.selection = new vscode.Selection(definitionPosition, definitionPosition);
     goToEditor.revealRange(new vscode.Range(definitionPosition, definitionPosition));
     assert.ok(
       goToEditor.selection.active.isEqual(definitionPosition),
       'Definition cursor must be on Add',
     );
-    await settleForScreenshot(300);
-    await vscode.commands.executeCommand('editor.action.peekDefinition');
-    await settleForScreenshot(3000);
-    await takeScreenshot('vscode-go-to-definition-page.png');
   });
 
   // ── Hover Range ─────────────────────────────────────────────────
@@ -493,16 +477,6 @@ suite('Hover / Quick Info', () => {
       'the hover ranges over the method name',
     );
     assert.ok(md.includes('n'), 'and the parameter name appears in the rendered documentation');
-
-    // Position cursor on Factorial and trigger the hover widget visually.
-    const editor = vscode.window.activeTextEditor;
-    assert.ok(editor, 'Must have active text editor');
-    editor.selection = new vscode.Selection(new vscode.Position(7, 21), new vscode.Position(7, 21));
-    await vscode.commands.executeCommand('editor.action.showHover');
-    // Wait for the hover widget to render in the DOM before screenshotting.
-    await settleForScreenshot(2000);
-    // Screenshot with hover tooltip visible — sidecar waits for .monaco-hover to appear.
-    await takeScreenshot('vscode-hover-page.png');
   });
 
   // ── [Obsolete] deprecation ────────────────────────────────────

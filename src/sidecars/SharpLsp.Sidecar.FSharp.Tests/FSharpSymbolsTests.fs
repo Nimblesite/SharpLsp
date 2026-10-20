@@ -44,6 +44,55 @@ let ``documentSymbols returns top-level types and nested members`` () =
         Assert.Contains("Value", names)
     }
 
+/// A namespace of doc-commented declarations, the shape of the tutorial's fixture.
+let private documented =
+    String.concat
+        "\n"
+        [ "namespace Documented"
+          ""
+          "/// A geometric shape."
+          "type Shape ="
+          "    | Circle of radius: float"
+          ""
+          "/// Shapes and what they cover."
+          "module Geometry ="
+          "    /// The area of a shape."
+          "    let area (Circle r) = r * r"
+          "" ]
+
+/// Every symbol in a tree, top level and nested.
+let rec private allSymbols (items: FSharpSymbols.SymbolItem list) =
+    items |> List.collect (fun item -> item :: allSymbols item.Children)
+
+/// The text a symbol's selectionRange covers in `lines`.
+let private selected (lines: string[]) (item: FSharpSymbols.SymbolItem) =
+    Assert.Equal(item.SelStartLine, item.SelEndLine)
+    lines[item.SelStartLine].Substring(item.SelStartCharacter, item.SelEndCharacter - item.SelStartCharacter)
+
+/// LSP 3.17: selectionRange is "the range that should be selected and revealed when
+/// this symbol is being picked, e.g. the name of a function". A doc comment is not
+/// the name: an editor that reveals it, or hovers there, lands on `///`. [FS-DOCSYMBOL]
+[<Fact>]
+let ``documentSymbols selects each declaration's name, never its doc comment`` () =
+    task {
+        let file = NativePaths.Temp($"sharplsp-docsym-{System.Guid.NewGuid():N}.fs")
+        File.WriteAllText(file, documented)
+
+        try
+            let! symbols = FSharpSymbols.documentSymbols (FSharpWorkspace.create ()) file
+            let lines = documented.Split('\n')
+            let byName name = allSymbols symbols |> List.find (fun item -> item.Name = name)
+
+            Assert.Equal("Shape", selected lines (byName "Shape"))
+            Assert.Equal((3, 5), ((byName "Shape").SelStartLine, (byName "Shape").SelStartCharacter))
+            Assert.Equal("Geometry", selected lines (byName "Geometry"))
+            Assert.Equal("area", selected lines (byName "area"))
+            // The outer range still spans the declaration, so it contains the selection.
+            Assert.True((byName "Shape").StartLine <= 3 && (byName "Shape").EndLine >= 4)
+        finally
+            File.Delete file
+    }
+
 [<Fact>]
 let ``documentSymbols on a missing file returns empty`` () =
     task {

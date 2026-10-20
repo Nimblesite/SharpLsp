@@ -72,6 +72,12 @@ export const CMD_RUN_PROGRAM = 'sharplsp.runProgram';
 export const CMD_TEST_RUN_AT_CURSOR = 'sharplsp.test.runAtCursor';
 export const CMD_TEST_DEBUG_AT_CURSOR = 'sharplsp.test.debugAtCursor';
 
+// Interactive tutorial ([TUTORIAL])
+export const CMD_TUTORIAL_OPEN = 'sharplsp.tutorial.open';
+export const CMD_TUTORIAL_OPEN_FILE = 'sharplsp.tutorial.openFile';
+export const CMD_TUTORIAL_RESET = 'sharplsp.tutorial.reset';
+export const CONFIG_TUTORIAL_SHOW_ON_STARTUP = 'tutorial.showOnStartup';
+
 export const VIEW_SOLUTION_EXPLORER = 'sharplsp.solutionExplorer';
 export const VIEW_PROFILER = 'sharplsp.profiler.processes';
 export const VIEW_TEST_EXPLORER = 'sharplsp.testExplorer';

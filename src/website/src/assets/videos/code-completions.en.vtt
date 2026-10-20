@@ -4,8 +4,8 @@ WEBVTT
 [Gentle music]
 SharpLsp completes F# with the F# compiler itself. Type List dot for every list function, narrow it to minBy, and inside the lambda, the record's fields are right there.
 
-00:22.017 --> 00:32.605
+00:24.117 --> 00:34.705
 In C#, completion comes straight from Roslyn: LINQ's MinBy, then the product's properties. Accepting an item replaces the word you're typing, never appends to it.
 
-00:44.983 --> 00:54.218
+00:48.650 --> 00:57.885
 Need a type from a namespace you haven't imported? Press Control Space, accept it, and SharpLsp adds the using directive at the top of the file.

@@ -127,6 +127,16 @@ export function sharpLspIds(): string[] {
     .sort();
 }
 
+/** Every view id the manifest contributes, across all of `contributes.views`' containers. */
+export function contributedViewIds(): string[] {
+  const views: unknown = contributes().views;
+  assert.ok(isRecord(views), 'contributes.views must be an object');
+  return Object.values(views)
+    .flatMap((list: unknown) => (Array.isArray(list) ? list : []))
+    .map((view: unknown) => (isRecord(view) ? String(view.id) : ''))
+    .filter((id) => id !== '');
+}
+
 /** The single manifest entry for `id`; fails naming what IS contributed. */
 export function commandEntry(id: string): Record<string, any> {
   const matches = commandEntries().filter((entry) => entry.command === id);

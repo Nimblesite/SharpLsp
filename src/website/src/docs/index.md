@@ -28,10 +28,12 @@ The VSIX bundles the `sharplsp` host and both .NET sidecars. You do not need a R
   </ul>
 </section>
 
+The first time it starts, SharpLsp opens its [interactive tutorial](/docs/tutorial/): a short film for each step, F# first, while you hover, complete, go to a definition and fix code in your own editor.
+
 The current release includes C# and F# completion, hover, navigation, diagnostics, symbols, code actions, rename, semantic tokens, inlay hints, solution tooling, NuGet workflows, debugging, and profiling. Projects that target .NET Framework 4.6.2–4.8.1 get the same language features on every OS, and on Windows they also [run and test](/blog/dotnet-framework-windows-vs-code/) on the desktop CLR. Some features remain partial; the individual pages document their current limits.
 
 ### Other editors
 
 The server uses standard LSP wherever possible. Every GitHub release publishes standalone server archives and a Rider plugin, and [Zed](/docs/zed/) runs SharpLsp through a dev extension. Packaged integrations for Neovim, Helix, and Emacs are not released yet.
 
-<p class="next-link"><a href="/docs/architecture/">Next: Architecture <span aria-hidden="true">→</span></a></p>
+<p class="next-link"><a href="/docs/tutorial/">Next: Tutorial <span aria-hidden="true">→</span></a></p>

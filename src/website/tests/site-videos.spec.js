@@ -16,6 +16,7 @@ const everyLanguage = (page, videos, says) =>
 // Every docs page's narrated walkthrough. [WEB-DESIGN-MEDIA] Placement
 const WALKTHROUGHS = [
   ...everyLanguage('', ['getting-started'], { en: 'started', ja: '始める', zh: '开始' }),
+  ...everyLanguage('tutorial/', ['vscode-tutorial'], { en: 'tutorial', ja: 'チュートリアル', zh: '教程' }),
   ...everyLanguage('editors/', ['editor-setup'], { en: 'setup', ja: 'エディター設定', zh: '编辑器设置' }),
   ...everyLanguage('configuration/', ['configuration'], { en: 'Configuring', ja: '設定', zh: '配置' }),
   ...everyLanguage('fsharp/', FSHARP_PAGE, { en: 'completion', ja: '補完', zh: '补全' }),
@@ -24,7 +25,7 @@ const WALKTHROUGHS = [
   ...everyLanguage('hover/', ['hover'], { en: 'Hover', ja: 'ホバー', zh: '悬停' }),
   ...everyLanguage('go-to-definition/', ['navigation'], { en: 'definition', ja: '定義', zh: '定义' }),
   ...everyLanguage('diagnostics/', ['diagnostics'], { en: 'Diagnostics', ja: '診断', zh: '诊断' }),
-  ...everyLanguage('refactoring/', ['refactoring'], { en: 'Refactoring', ja: 'リファクタリング', zh: '重构' }),
+  ...everyLanguage('refactoring/', ['refactoring-lesson', 'refactoring'], { en: 'Lesson', ja: 'レッスン', zh: '课程' }),
   ...everyLanguage('context-menus/', ['context-menus'], { en: 'context', ja: 'コンテキストメニュー', zh: '上下文菜单' }),
   ...everyLanguage('nuget/', ['nuget'], { en: 'NuGet', ja: 'NuGet', zh: 'NuGet' }),
   ...everyLanguage('profiler/', PROFILER_PAGE, { en: 'Profiling', ja: 'プロファイリング', zh: '分析' }),
@@ -117,3 +118,24 @@ test('articles and docs never autoplay; readers start every film themselves', as
     expect((await playback(player)).paused, `${path} film waits for the reader`).toBe(true);
   }
 });
+
+// [WEB-DESIGN-MEDIA-CHAPTERS] The tutorial's film carries its chapters, and its page lists
+// them, each titled as the VS Code walkthrough titles the step and opening the film there.
+const TUTORIAL_STEPS = { '': ['Open an F# file', 0, 'Hover a symbol', 12], '/ja': ['F# ファイルを開く', 0, 'シンボルにホバーする', 12], '/zh': ['打开一个 F# 文件', 0, '悬停查看符号', 12] };
+for (const [prefix, [first, firstAt, second, secondAt]] of Object.entries(TUTORIAL_STEPS)) {
+  test(`${prefix}/docs/tutorial/ lists the film's chapters in its own language`, async ({ page, request }) => {
+    await page.goto(`${prefix}/docs/tutorial/`);
+    const track = page.locator('figure video track[kind="chapters"]');
+    await expect(track).toHaveAttribute('src', '/assets/videos/vscode-tutorial.chapters.vtt');
+    await expectPlayable(request, ['/assets/videos/vscode-tutorial.chapters.vtt'], 'text/vtt');
+    const chapters = page.locator('main ol li[data-step]');
+    await expect(chapters).toHaveCount(13);
+    await expect(chapters.first()).toHaveAttribute('data-step', 'FSharp.OpenFile');
+    await expect(chapters.first()).toContainText(first);
+    await expect(chapters.nth(1)).toContainText(second);
+    await expect(chapters.first().locator('a')).toHaveAttribute('href', `${prefix}/videos/vscode-tutorial/?t=${firstAt}`);
+    await expect(chapters.nth(1).locator('a')).toHaveAttribute('href', `${prefix}/videos/vscode-tutorial/?t=${secondAt}`);
+    await expect(chapters.nth(1).locator('a')).toHaveText('0:12');
+    await expect(chapters.nth(7), 'C# follows F#').toHaveAttribute('data-step', 'CSharp.OpenFile');
+  });
+}

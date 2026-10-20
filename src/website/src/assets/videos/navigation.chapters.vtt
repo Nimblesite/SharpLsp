@@ -1,0 +1,13 @@
+WEBVTT
+
+FSharp.Definition
+00:00.000 --> 00:14.667
+F12 jumps to a definition, in F#…
+
+CSharp.Definition
+00:14.667 --> 00:31.400
+…and in C#
+
+CSharp.References
+00:31.400 --> 00:44.400
+Shift+F12: every reference, in a peek window

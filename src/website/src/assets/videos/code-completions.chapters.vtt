@@ -1,0 +1,9 @@
+WEBVTT
+
+FSharp.Completion
+00:00.000 --> 00:23.767
+F#: list functions after a dot, then the record's fields
+
+CSharp.Completion
+00:23.767 --> 01:12.867
+C#: Roslyn completion, member by member
