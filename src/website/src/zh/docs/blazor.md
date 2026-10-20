@@ -104,7 +104,7 @@ Roslyn 只能加载为其自身版本或更早版本构建的生成器。SDK 10.
 - **Razor 诊断**：编译器自身的 `RZ` 诊断，例如未知组件。
 - **标记帮助程序**：`asp-for` 等[标记帮助程序](https://learn.microsoft.com/zh-cn/aspnet/core/mvc/views/tag-helpers/intro?view=aspnetcore-10.0)元素和属性上的悬停与补全。
 - **F#**：Razor 的代码语言是 C#，因为 Razor 编译器只生成 C#；但 Blazor 应用可以引用 F# 库。针对从 Razor 使用的 F# 类型的悬停、补全和定义，以及让 F# 重命名覆盖 Razor 中的使用，都在计划之中。
-- **编辑**：格式化、选择范围、代码操作、内联提示、CodeLens，以及从 Razor 位置发起的调用层级和类型层级。
+- **编辑**：格式化、选择范围、代码操作、内嵌提示、CodeLens，以及从 Razor 位置发起的调用层次结构和类型层次结构。
 - **并置文件**：对 [CSS 隔离](https://learn.microsoft.com/zh-cn/aspnet/core/blazor/components/css-isolation?view=aspnetcore-10.0)（`.razor.css`）和并置的 `.razor.js` 文件的识别。
 - **运行时**：Blazor WebAssembly 调试和热重载。
 

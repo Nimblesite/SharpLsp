@@ -17,7 +17,7 @@ category: announcement
 excerpt: "Blazor 组件、Razor Pages 和 MVC 视图现在与你的 C# 文件使用同一个 Roslyn 引擎：在标记内部提供悬停、补全、诊断、转到定义、引用和重命名。"
 ---
 
-SharpLsp 现在理解 Razor。Blazor 组件（`.razor` 文件），以及 Razor Pages 和 MVC 视图（`.cshtml` 文件），与你的其余 C# 代码使用同一个 Roslyn 引擎。在标记内部，你可以使用悬停、补全、诊断、转到定义、引用和重命名。这项支持今天就在 `main` 上，并会在下一个版本中发布。
+SharpLsp 现在理解 Razor。Blazor 组件（`.razor` 文件），以及 Razor Pages 和 MVC 视图（`.cshtml` 文件），与你的其余 C# 代码使用同一个 Roslyn 引擎。在标记内部，你可以使用悬停、补全、诊断、转到定义、引用和重命名。这项支持现已进入 `main` 分支，并将在下一个版本中发布。
 
 下面是一个小型 Blazor Web App 上的效果：
 
@@ -31,7 +31,7 @@ SharpLsp 现在理解 Razor。Blazor 组件（`.razor` 文件），以及 Razor 
 - **ASP.NET Core Razor Pages 和 MVC 视图**是服务器为每个请求呈现的 `.cshtml` 文件。请阅读 [ASP.NET Core 中的 Razor Pages](https://learn.microsoft.com/zh-cn/aspnet/core/razor-pages/?view=aspnetcore-10.0)和 [ASP.NET Core MVC 中的视图](https://learn.microsoft.com/zh-cn/aspnet/core/mvc/views/overview?view=aspnetcore-10.0)。
 - **Blazor** 是组件框架。[Razor 组件](https://learn.microsoft.com/zh-cn/aspnet/core/blazor/components/?view=aspnetcore-10.0)就是一个 `.razor` 文件。Blazor Web App 是 .NET 8 起的 `dotnet new blazor` 模板，它在服务器上或在浏览器中的 WebAssembly 上运行组件。每个组件选择自己的[呈现模式](https://learn.microsoft.com/zh-cn/aspnet/core/blazor/components/render-modes?view=aspnetcore-10.0)：静态服务器呈现、`InteractiveServer`、`InteractiveWebAssembly` 或 `InteractiveAuto`。
 
-在这三者之下是一个 Razor 编译器，它把每个 Razor 文件转换成 C#。这就是为什么 SharpLsp 中的一份实现就能同时服务 Blazor Server、Blazor WebAssembly、Razor Pages 和 MVC。
+在这三者之下是一个 Razor 编译器，它把每个 Razor 文件转换成 C#。这就是为什么 SharpLsp 中的一套实现就能同时服务 Blazor Server、Blazor WebAssembly、Razor Pages 和 MVC。
 
 ## 在 .razor 文件中你能得到什么
 
@@ -56,7 +56,7 @@ SharpLsp 现在理解 Razor。Blazor 组件（`.razor` 文件），以及 Razor 
 
 SharpLsp 根据这些指令建立双向映射：
 
-1. 位于 Razor 位置的请求映射到生成的 C# 中相同的字符。
+1. Razor 位置上的请求会映射到生成的 C# 中相同的字符。
 2. Roslyn 在那里作答，与处理 `.cs` 文件时完全相同。
 3. 答案中的每个位置都映射回 Razor 文件。
 

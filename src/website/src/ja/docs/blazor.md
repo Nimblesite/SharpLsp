@@ -37,7 +37,7 @@ Razor ファイルは `using` を不要として報告することはありま�
 ## マークアップ内の HTML
 
 - **VS Code:** 要素と属性の補完、および HTML のホバーは、VS Code 内蔵の HTML 言語サービスから提供されます。SharpLsp は、VS Code の [Embedded Programming Languages](https://code.visualstudio.com/api/language-extensions/embedded-languages) ガイドが説明するパターンで、ファイルの HTML ビューとともにリクエストを転送します。SharpLsp 自身の項目が先に表示されます。
-- **Zed:** Zed には Razor の組み込み言語がありません。Zed の拡張機能レジストリから Razor 拡張機能をインストールすると、SharpLsp はそれが定義する `Razor` 言語にアタッチします。
+- **Zed:** Zed には Razor 言語は組み込まれていません。Zed の拡張機能レジストリから Razor 拡張機能をインストールすると、SharpLsp はそれが定義する `Razor` 言語にアタッチします。
 - **その他の LSP クライアント:** `.razor` と `.cshtml` ファイルの言語 id は `razor` です。マークアップには、SharpLsp と HTML 言語サーバーを組み合わせてください。
 
 ## 仕組み
@@ -52,7 +52,7 @@ SharpLsp はこれらのディレクティブから双方向のマップを構�
 2. Roslyn がそこで応答します。`.cs` ファイルの場合とまったく同じです。
 3. 各応答は Razor ファイルへマップし直されます。
 
-コンパイラーの隠れた足場のコード内の位置には Razor のテキストがないため、そこに到達することはありません。
+コンパイラーの隠れた足場のコード内の位置には Razor のテキストがないため、利用者に届くことはありません。
 
 ```mermaid
 flowchart LR
