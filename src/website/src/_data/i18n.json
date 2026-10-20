@@ -45,7 +45,9 @@
         "diagnostics": "Diagnostics",
         "lsp": "LSP",
         "profiling": "Profiling",
-        "memory-leaks": "Memory leaks"
+        "memory-leaks": "Memory leaks",
+        "blazor": "Blazor",
+        "razor": "Razor"
       },
       "empty": "No blog posts yet. Check back soon!"
     },
@@ -142,6 +144,7 @@
       "title": "Documentation",
       "gettingStarted": "Getting Started",
       "fsharp": "F# Language Support",
+      "blazor": "Blazor & Razor",
       "architecture": "Architecture",
       "editorSetup": "Editor Setup",
       "zed": "Zed",
@@ -257,7 +260,9 @@
         "diagnostics": "诊断",
         "lsp": "LSP",
         "profiling": "性能分析",
-        "memory-leaks": "内存泄漏"
+        "memory-leaks": "内存泄漏",
+        "blazor": "Blazor",
+        "razor": "Razor"
       },
       "empty": "暂无博客文章，请稍后再来！"
     },
@@ -342,6 +347,7 @@
       "title": "文档",
       "gettingStarted": "快速入门",
       "fsharp": "F# 语言支持",
+      "blazor": "Blazor 与 Razor",
       "architecture": "架构",
       "editorSetup": "编辑器配置",
       "zed": "Zed",
@@ -457,7 +463,9 @@
         "diagnostics": "診断",
         "lsp": "LSP",
         "profiling": "プロファイリング",
-        "memory-leaks": "メモリリーク"
+        "memory-leaks": "メモリリーク",
+        "blazor": "Blazor",
+        "razor": "Razor"
       },
       "empty": "ブログ記事はまだありません。しばらくしてからご確認ください。"
     },
@@ -542,6 +550,7 @@
       "title": "ドキュメント",
       "gettingStarted": "はじめに",
       "fsharp": "F# 言語サポート",
+      "blazor": "Blazor と Razor",
       "architecture": "アーキテクチャ",
       "editorSetup": "エディター設定",
       "zed": "Zed",

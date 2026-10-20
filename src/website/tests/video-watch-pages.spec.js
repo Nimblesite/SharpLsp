@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
 import { seconds as secondsOf } from '../video-pages.js';
 import { LANGS, SITE, VIDEOS, embedOf, expectPlayable, local, videoObjects, watchOf } from './media.js';
 
-const DOC_SLUGS = ['', 'architecture/', 'completions/', 'configuration/', 'context-menus/', 'contributing/', 'diagnostics/',
+const DOC_SLUGS = ['', 'architecture/', 'blazor/', 'completions/', 'configuration/', 'context-menus/', 'contributing/', 'diagnostics/',
   'editors/', 'fsharp/', 'fsharp-profiling/', 'go-to-definition/', 'hover/', 'memory-leaks/', 'nuget/', 'profiler/',
   'refactoring/', 'zed/'];
 

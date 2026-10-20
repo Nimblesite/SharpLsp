@@ -1,0 +1,3 @@
+<Project>
+    <!-- The film's demo is a standalone app, not product code: stop the repo props applying. -->
+</Project>

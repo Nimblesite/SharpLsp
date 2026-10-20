@@ -101,6 +101,7 @@ for (const viewport of MOBILE_VIEWPORTS) {
         '/docs/hover/',
         '/docs/go-to-definition/',
         '/docs/configuration/',
+        '/docs/blazor/',
       ];
 
       for (const path of docsPaths) {

@@ -68,6 +68,7 @@ const DOC_STILLS = {
   'configuration/': 'configuration',
   'completions/': 'completions',
   'hover/': 'hover',
+  'blazor/': 'blazor',
   'go-to-definition/': 'navigation',
   'diagnostics/': 'diagnostics',
   'refactoring/': 'refactoring',

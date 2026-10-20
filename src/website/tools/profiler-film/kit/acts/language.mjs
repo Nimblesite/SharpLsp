@@ -5,7 +5,7 @@
 import { ACTIONS, HOVER, RENAME, SUGGEST, clickOn, hoverOn } from '../code.mjs';
 import { runCommand } from '../editor.mjs';
 import { caption, ringClick } from '../overlay.mjs';
-import { PARK, clickSharpLspIcon, openFile, sleep } from '../workbench.mjs';
+import { PARK, clickSharpLspIcon, openFile, sleep, typeAt } from '../workbench.mjs';
 
 /**
  * Workspace settings for a language film: hover, signature help, CodeLens and
@@ -150,6 +150,17 @@ export async function complete(page, filter) {
   await sleep(1200);
   await page.keyboard.press('Tab');
   await sleep(600);
+}
+
+/** Type `opening` after `line`, then for each `[filter, then]`: accept the completion `filter` narrows to, and type `then`. */
+export async function typeThroughCompletion(page, line, opening, steps) {
+  await typeAt(page, { line, append: true, text: opening });
+  for (const [filter, then] of steps) {
+    await complete(page, filter);
+    await typeText(page, then);
+  }
+  await page.keyboard.press('Escape');
+  await sleep(1500);
 }
 
 /** Open the quick fixes at `spot` (Cmd+.) and apply the one titled `title`. */

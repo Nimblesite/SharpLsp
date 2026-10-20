@@ -24,6 +24,14 @@ export const FS_STOREFRONT = { folder: 'fs-storefront', project: 'FsStorefront' 
  */
 export const SHOP = { folder: '.', project: 'Shop', omit: ['Storefront.slnx', 'FsStorefront.slnx'], runs: false };
 
+/**
+ * The Blazor Web App the Razor film is shot on: a basket page whose markup and
+ * `@code` block share one C# engine. Nothing runs. It keeps the repository's
+ * SDK pin, because the Razor generator comes from the SDK that builds it and
+ * must match the Roslyn the sidecar bundles (#399).
+ */
+export const BLAZOR_STOREFRONT = { folder: 'blazor-storefront', project: 'BlazorStorefront', runs: false, pinSdk: true };
+
 /** `git archive` of HEAD in `repo`, unpacked into `into`: the committed tree, nothing local. */
 function unpackHead(repo, into) {
   fs.mkdirSync(into, { recursive: true });
@@ -70,6 +78,7 @@ export function stageDemo(demo) {
     recursive: true,
     filter: (source) => !['bin', 'obj', '.sharplsp', ...(demo.omit ?? [])].includes(path.basename(source)),
   });
+  if (demo.pinSdk) fs.copyFileSync(path.join(repoRoot, 'global.json'), path.join(workspace, 'global.json'));
   buildDemo(workspace);
   return { root, workspace };
 }

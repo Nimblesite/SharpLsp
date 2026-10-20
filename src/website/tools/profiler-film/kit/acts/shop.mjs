@@ -3,18 +3,7 @@
 // match completed by a quick fix, and a rename that reaches another file.
 import { hoverOn } from '../code.mjs';
 import { openFile, sleep, typeAt } from '../workbench.mjs';
-import { complete, prepareCode, quickFix, renameTo, scrollEditor, typeText, warm } from './language.mjs';
-
-/** Type `opening` after `line`, then for each `[filter, then]`: accept the completion `filter` narrows to, and type `then`. */
-async function typeThroughCompletion(page, line, opening, steps) {
-  await typeAt(page, { line, append: true, text: opening });
-  for (const [filter, then] of steps) {
-    await complete(page, filter);
-    await typeText(page, then);
-  }
-  await page.keyboard.press('Escape');
-  await sleep(1500);
-}
+import { prepareCode, quickFix, renameTo, scrollEditor, typeThroughCompletion, warm } from './language.mjs';
 
 /** Checkout.fs: a new function typed through List's functions, then the record's fields. */
 export async function fsharpCheapest({ page }) {
