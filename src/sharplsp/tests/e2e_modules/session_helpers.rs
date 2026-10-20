@@ -109,15 +109,22 @@ pub fn find_symbol<'a>(symbols: &'a Value, name: &str) -> Option<&'a Value> {
     })
 }
 
-/// Pull diagnostics for `uri` and return only the Error-severity items.
-pub fn pull_error_diagnostics(client: &mut LspClient, uri: &str, label: &str) -> Vec<Value> {
+/// Pull diagnostics for `uri` and return every item.
+pub fn pull_diagnostics(client: &mut LspClient, uri: &str, label: &str) -> Vec<Value> {
     let resp = document_request(client, "textDocument/diagnostic", uri);
     assert_rpc_ok(&resp, label);
-    let items = resp["result"]["items"]
+    resp["result"]["items"]
         .as_array()
         .unwrap_or_else(|| panic!("{label}: diagnostic report must carry items: {resp}"))
-        .clone();
-    items.into_iter().filter(|d| d["severity"] == 1).collect()
+        .clone()
+}
+
+/// Pull diagnostics for `uri` and return only the Error-severity items.
+pub fn pull_error_diagnostics(client: &mut LspClient, uri: &str, label: &str) -> Vec<Value> {
+    pull_diagnostics(client, uri, label)
+        .into_iter()
+        .filter(|d| d["severity"] == 1)
+        .collect()
 }
 
 /// Poll pull-diagnostics until the Error-severity set satisfies `accept`,
@@ -131,15 +138,38 @@ pub fn poll_error_diagnostics_until(
     timeout: Duration,
     accept: impl Fn(&[Value]) -> bool,
 ) -> Vec<Value> {
+    poll_pulled_until(client, uri, label, timeout, pull_error_diagnostics, accept)
+}
+
+/// Poll pull-diagnostics until the whole set, warnings included, satisfies
+/// `accept`, panicking on timeout.
+pub fn poll_diagnostics_until(
+    client: &mut LspClient,
+    uri: &str,
+    label: &str,
+    timeout: Duration,
+    accept: impl Fn(&[Value]) -> bool,
+) -> Vec<Value> {
+    poll_pulled_until(client, uri, label, timeout, pull_diagnostics, accept)
+}
+
+fn poll_pulled_until(
+    client: &mut LspClient,
+    uri: &str,
+    label: &str,
+    timeout: Duration,
+    pull: fn(&mut LspClient, &str, &str) -> Vec<Value>,
+    accept: impl Fn(&[Value]) -> bool,
+) -> Vec<Value> {
     let deadline = Instant::now() + timeout;
     loop {
-        let errors = pull_error_diagnostics(client, uri, label);
-        if accept(&errors) {
-            return errors;
+        let items = pull(client, uri, label);
+        if accept(&items) {
+            return items;
         }
         assert!(
             Instant::now() < deadline,
-            "{label}: diagnostics never settled within {}s; last: {errors:?}",
+            "{label}: diagnostics never settled within {}s; last: {items:?}",
             timeout.as_secs()
         );
         std::thread::sleep(Duration::from_secs(1));

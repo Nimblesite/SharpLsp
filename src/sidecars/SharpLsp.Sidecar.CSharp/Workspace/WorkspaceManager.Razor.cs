@@ -203,8 +203,8 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>
-    /// A Razor file's diagnostics: its projection's C# diagnostics that map into it.
-    /// [RAZOR-FEATURES-DIAGNOSTICS]
+    /// A Razor file's diagnostics: its projection's C# diagnostics that map into it, then the
+    /// Razor compiler's own. [RAZOR-FEATURES-DIAGNOSTICS]
     /// </summary>
     private async Task<List<DiagnosticResult>> DiagnoseRazorAsync(
         string filePath,
@@ -215,7 +215,35 @@ internal sealed partial class WorkspaceManager
         var model = projection is null
             ? null
             : await projection.Generated.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        return model is null ? [] : MapDiagnostics(filePath, model, ct);
+        var csharp = model is null ? [] : MapDiagnostics(filePath, model, ct);
+        var markup = await FindRazorMarkupAsync(filePath, ct).ConfigureAwait(false);
+        return [.. csharp, .. RazorMarkupDiagnostics.Of(filePath, markup)];
+    }
+
+    /// <summary>
+    /// Adds the Razor compiler's diagnostics of every Razor file <paramref name="project"/>
+    /// lists to the solution scan, beside the file's C# diagnostics. [RAZOR-FEATURES-DIAGNOSTICS]
+    /// </summary>
+    private static async Task CollectRazorDiagnosticsAsync(
+        Project project,
+        Dictionary<string, List<DiagnosticResult>> results,
+        CancellationToken ct
+    )
+    {
+        foreach (
+            var razor in project.AdditionalDocuments.Where(d => NativePaths.IsRazor(d.FilePath))
+        )
+        {
+            var markup = await RazorMarkupEngine.ProcessAsync(razor, ct).ConfigureAwait(false);
+            var diagnostics = RazorMarkupDiagnostics.Of(razor.FilePath!, markup).ToList();
+            if (diagnostics.Count > 0)
+            {
+                var key =
+                    results.Keys.FirstOrDefault(path => NativePaths.AreEqual(path, razor.FilePath))
+                    ?? razor.FilePath!;
+                results[key] = [.. results.GetValueOrDefault(key) ?? [], .. diagnostics];
+            }
+        }
     }
 
     /// <summary>

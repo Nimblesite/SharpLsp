@@ -53,9 +53,15 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 ### Phase 2: C# Inside Razor
 
-- [ ] Diagnostics: C# diagnostics from projections, `RZ` diagnostics from facts, and Razor files in solution-wide diagnostics ([RAZOR-FEATURES-DIAGNOSTICS])
+- [x] Diagnostics: C# diagnostics from projections, `RZ` diagnostics from facts, and Razor files in solution-wide diagnostics ([RAZOR-FEATURES-DIAGNOSTICS])
+  - [x] The compiler's `RZ` diagnostics reach the file and the solution scan with LSP severities (Claude2). `RazorDiagnosticsTests` failed for the gap: the scan held no entry for a file whose only diagnostics were Razor's. It passed unchanged once both paths add the markup facts' diagnostics. The full-stack session's new step publishes RZ1034 as an Error and RZ10012 as a Warning under `sharplsp-razor`; it failed against the old sidecar and passes against the new one
 - [x] Hover at mapped positions ([RAZOR-FEATURES-HOVER])
-- [ ] Definition, type definition, declaration and implementation from mapped positions, with generated component classes landing in their `.razor` file ([RAZOR-FEATURES-DEFINITION])
+- [x] Definition, type definition, declaration and implementation from mapped positions, with generated component classes landing in their `.razor` file ([RAZOR-FEATURES-DEFINITION])
+  - [x] `RazorNavigationTests` (Claude2):
+    - Type definition from `@ref="tally"` and from the field lands in `Tally.razor`.
+    - The declaration of `Dispose` is `IDisposable.Dispose`.
+    - The implementations of `@implements IDisposable` include `Board.razor`.
+  - [x] Type definition at a declaration's name answered nothing, in C# as well. `TypeDefinitionFromSymbolTests` failed for it, then passed once the resolver falls back to the symbol's type ([DEFINITION-CSHARP-TYPE])
 - [x] References and document highlights across projections, with hidden scaffolding dropped ([RAZOR-FEATURES-REFERENCES])
 - [x] C# completion, with mapped edits and `using` → `@using` ([RAZOR-FEATURES-COMPLETION])
   - [x] Completion right after a typed dot offers members: `@scores.` and an unclosed `@(scores.` (#401, review R2). Red tests `RazorCompletionRecoveryTests` (Codex1) failed for the bug, then passed unchanged once completion asks a copy of the file with the expression finished at the caret (Claude2). An unclosed `@{` already completed and is kept as a control
@@ -64,8 +70,13 @@ The phases below are in dependency order. Each item is checked only when a test 
 - [x] Signature help ([RAZOR-FEATURES-SIGNATURE-HELP])
   - [x] Signature help after `@(` no longer lists the generator's scaffolding (`AddContent`, `AddAttribute`) (#400, review R1, Codex1): the regression cases failed for the bug, then passed unchanged
 - [x] Semantic tokens for C# fragments ([RAZOR-FEATURES-SEMANTIC-TOKENS])
-- [ ] Rename and prepareRename — Razor usages and `@code` declarations, from `.cs` and `.razor` origins ([RAZOR-FEATURES-RENAME])
+- [x] Rename and prepareRename — Razor usages and `@code` declarations, from `.cs` and `.razor` origins ([RAZOR-FEATURES-RENAME])
   - [x] Escaped identifiers (`@class`) get their Razor rename edits (review R4, Codex1): the real-fixture regression failed for the bug, then passed unchanged
+  - [x] `RazorRenameTests` (Claude2):
+    - Renaming `Badge.Text` from its code-behind edits `@Text` and Board's `Text=`.
+    - Renaming `Tally.Label` turns `@bind-Label` into `@bind-Title`.
+    - prepareRename refuses on a component's start and end tags.
+  - The F# half of the rename is Phase 6
 
 ### Phase 3: Blazor Markup
 

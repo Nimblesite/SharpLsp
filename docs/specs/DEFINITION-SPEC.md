@@ -76,7 +76,8 @@ Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs) and [syntax.r
 1. Steps 1–4 as above.
 2. Get the type via [`SemanticModel.GetTypeInfo()`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.semanticmodel.gettypeinfo).
 3. Use `TypeInfo.Type` (or `TypeInfo.ConvertedType` as fallback).
-4. Navigate to the type symbol's `Locations` as in step seven of [DEFINITION-CSHARP-DEFINITION].
+4. A declaration's name or a method's name has no type of its own. There, use the type the resolved symbol carries: a variable's, field's, property's, parameter's or event's type, or a method's return type unless it returns `void`.
+5. Navigate to the type symbol's `Locations` as in step seven of [DEFINITION-CSHARP-DEFINITION].
 
 ### `textDocument/declaration` `[DEFINITION-CSHARP-DECLARATION]`
 
