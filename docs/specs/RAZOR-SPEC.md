@@ -344,6 +344,7 @@ Signature help in a C# fragment is computed at the mapped position.
   - component attribute names are `property`;
   - directive attribute names (`@onclick`, `@bind-Value`) are `decorator`;
   - directive names (`@page`, `@code`) are `keyword`.
+- **Overlap:** tokens never overlap. Where a markup name holds C# (the `Label` of `@bind-Label`), the C# token wins and the markup token keeps only the part before it (`@bind-`).
 - **Everything else:** the client's TextMate grammar colors the rest.
 
 ### [RAZOR-FEATURES-STRUCTURE] Folding, Symbols and Linked Editing

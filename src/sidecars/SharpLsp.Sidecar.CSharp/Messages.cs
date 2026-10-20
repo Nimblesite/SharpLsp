@@ -53,6 +53,14 @@ internal sealed class CompletionItem
     /// </summary>
     [Key(5)]
     public TextEditResult? TextEdit { get; init; }
+
+    /// <summary>Markdown documentation for the item, when it has any. [RAZOR-FEATURES-COMPLETION]</summary>
+    [Key(6)]
+    public string? Documentation { get; init; }
+
+    /// <summary>The order an editor sorts the item in, when it is not the label's.</summary>
+    [Key(7)]
+    public string? SortText { get; init; }
 }
 
 [MessagePackObject(AllowPrivate = true)]

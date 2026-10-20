@@ -19,7 +19,7 @@ internal readonly record struct RazorOutline(
 /// </summary>
 internal static class RazorStructure
 {
-    /// <summary>Every element and directive that spans lines folds, keeping its last line visible.</summary>
+    /// <summary>Every element, directive and C# code block that spans lines folds, keeping its last line visible.</summary>
     public static List<FoldingRangeResult> Folds(RazorMarkup markup)
     {
         var lines = markup.Text.Lines;
@@ -28,6 +28,7 @@ internal static class RazorStructure
             .. markup
                 .Tags.Select(tag => tag.Element)
                 .Concat(markup.Directives.Select(directive => directive.Span))
+                .Concat(markup.CodeBlocks)
                 .Select(lines.GetLinePositionSpan)
                 .Where(span => span.End.Line - 1 > span.Start.Line)
                 .Select(span => (Start: span.Start.Line, End: span.End.Line - 1))

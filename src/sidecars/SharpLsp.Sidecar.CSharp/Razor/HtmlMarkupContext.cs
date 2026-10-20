@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis.Text;
+
 namespace SharpLsp.Sidecar.CSharp.Razor;
 
 /// <summary>
@@ -371,6 +373,39 @@ internal static class HtmlMarkupContext
     internal static bool IsSpace(char c)
     {
         return c is ' ' or '\t' or '\n' or '\f' or '\r';
+    }
+
+    /// <summary>
+    /// Where the tag or attribute name that ends at <paramref name="offset"/> begins: back over
+    /// the characters a name holds, to whitespace, <c>&lt;</c>, <c>&gt;</c>, <c>/</c>, <c>=</c>
+    /// or a quote, as the tokenizer ends a name. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    public static int NameStart(SourceText text, int offset)
+    {
+        var start = Math.Clamp(offset, 0, text.Length);
+        while (start > 0 && IsNameCharacter(text[start - 1]))
+        {
+            start--;
+        }
+
+        return start;
+    }
+
+    /// <summary>
+    /// Whether the name at <paramref name="start"/> opens its line with Razor's <c>@</c>
+    /// transition: only whitespace before it on the line. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    public static bool OpensLineWithTransition(SourceText text, int start)
+    {
+        var line = text.Lines.GetLineFromPosition(start);
+        return start < text.Length
+            && text[start] == '@'
+            && Enumerable.Range(line.Start, start - line.Start).All(at => IsSpace(text[at]));
+    }
+
+    private static bool IsNameCharacter(char c)
+    {
+        return !IsSpace(c) && c is not ('<' or '>' or '/' or '=' or '"' or '\'');
     }
 
     private static bool IsAt(string html, int i, string text)

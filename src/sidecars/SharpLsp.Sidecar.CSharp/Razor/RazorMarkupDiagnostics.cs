@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Razor.Language;
+using Microsoft.CodeAnalysis;
+using SharpLsp.Sidecar.CSharp.Workspace;
 
 namespace SharpLsp.Sidecar.CSharp.Razor;
 
@@ -22,17 +24,14 @@ internal static class RazorMarkupDiagnostics
         MarkupDiagnostic diagnostic
     )
     {
-        var span = markup.Text.Lines.GetLinePositionSpan(diagnostic.Span);
-        return new DiagnosticResult
-        {
-            FilePath = filePath,
-            StartLine = span.Start.Line,
-            StartCharacter = span.Start.Character,
-            EndLine = span.End.Line,
-            EndCharacter = span.End.Character,
-            Message = diagnostic.Message,
-            Severity = diagnostic.Severity == RazorDiagnosticSeverity.Error ? "Error" : "Warning",
-            Code = diagnostic.Id,
-        };
+        return DocumentPosition.ToDiagnostic(
+            new FileLinePositionSpan(
+                filePath,
+                markup.Text.Lines.GetLinePositionSpan(diagnostic.Span)
+            ),
+            diagnostic.Id,
+            diagnostic.Severity == RazorDiagnosticSeverity.Error ? "Error" : "Warning",
+            diagnostic.Message
+        );
     }
 }

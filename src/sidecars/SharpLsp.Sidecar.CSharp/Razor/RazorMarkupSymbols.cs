@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Razor.Language;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace SharpLsp.Sidecar.CSharp.Razor;
 
@@ -38,6 +39,36 @@ internal static class RazorMarkupSymbols
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The C# symbol the markup name at <paramref name="offset"/> names, with that name's span:
+    /// a tag's component type or the child-content parameter it sets, an attribute's property.
+    /// </summary>
+    public static (ISymbol Symbol, TextSpan Name)? At(
+        Compilation compilation,
+        RazorMarkup markup,
+        int offset
+    )
+    {
+        if (markup.TagNamedAt(offset) is { } tag && TagSymbol(compilation, markup, tag) is { } type)
+        {
+            return (type, tag.NameAt(offset));
+        }
+
+        return
+            markup.AttributeNamedAt(offset) is { NameSpan: { } name } attribute
+            && PropertyOf(compilation, attribute) is { } property
+            ? (property, name)
+            : null;
+    }
+
+    private static ISymbol? TagSymbol(Compilation compilation, RazorMarkup markup, MarkupTag tag)
+    {
+        return TypeOf(compilation, tag)
+            ?? (
+                tag.ChildContent is null ? null : (ISymbol?)ChildContentOf(compilation, markup, tag)
+            );
     }
 
     /// <summary>The type a tag instantiates: its component, else its first MVC tag helper.</summary>

@@ -80,12 +80,33 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 ### Phase 3: Blazor Markup
 
-- [ ] Component tags: hover, definition, references, highlights and linked editing
-- [ ] Component attributes and `@bind-X`: hover, definition, references and rename
-- [ ] Directive attributes and directives: hover
-- [ ] Completion: components, parameters (with `[EditorRequired]` first), `@bind-X`, directive attributes and their parameters, and directives
-- [ ] Semantic tokens for markup: component tags, attributes, directive attributes and directives
-- [ ] Folding ranges and document symbols ([RAZOR-FEATURES-STRUCTURE])
+- [x] Component tags: hover, definition, references, highlights and linked editing (Claude2)
+  - Hover: `RazorMarkupHoverTests`. A start or end tag answers its component's type and summary, ranged on the tag name.
+  - Definition: `RazorMarkupDefinitionTests`. A tag goes to the component's `.razor` file and its code-behind partial, or a framework component to its decompiled source.
+  - References: `RazorMarkupReferencesTests`. A component's references gain every tag that instantiates it, from markup or from C#, in every Razor file, the app's tags of a class-library component included.
+  - Highlights: a component's start and end tags highlight with its C# uses.
+  - Linked editing: `RazorStructureTests`.
+  - Each new test failed against the C#-only answers, then passed unchanged.
+- [x] Component attributes and `@bind-X`: hover, definition, references and rename (Claude2)
+  - Hover: a parameter answers its property; on `@bind-` the markup answers, ranged on the whole name, and on `Label` the C# the projection maps answers.
+  - Definition: `@bind-` goes to the parameter it binds.
+  - References: a parameter's references include every `@bind-X` that names it.
+  - Rename: `RazorRenameTests`.
+- [x] Directive attributes and directives: hover (Claude2). `@onclick` answers its descriptor's documentation and `@page` its directive's description, both from the compiler; HTML answers nothing
+- [x] Completion: components, parameters (with `[EditorRequired]` first), `@bind-X`, directive attributes and their parameters, and directives (Claude2, `RazorMarkupCompletionTests`)
+  - After `<`, components complete by their short name where their namespace is in scope: imported, the file's own, or one containing it, as the compiler binds them. Otherwise they complete by their full name, with their documentation. Inside a component, its child-content parameters complete too.
+  - In a component start tag: the parameters not yet set, `[EditorRequired]` first and marked, then `@bind-X` and the directive attributes.
+  - In an element start tag: the directive attributes and each of their parameters (`@bind:event`, `@onclick:preventDefault`).
+  - An `@` opening a markup line offers the parser's directives for the file's kind.
+  - Every item replaces the name typed at the caret.
+  - The host carries the new `documentation` and `sortText` to the client. The full-stack session proves both, and that the required parameter sorts first
+- [x] Semantic tokens for markup: component tags, attributes, directive attributes and directives (Claude2, `RazorMarkupTokensTests`)
+  - Component tags are classes, their parameters properties, directive attributes decorators and directives keywords.
+  - Where a name holds C#, the C# token wins and the markup keeps its part before it, so no tokens overlap.
+  - The C# token test now requires a markup line's markup token alone, where it used to require no token at all
+- [x] Folding ranges and document symbols ([RAZOR-FEATURES-STRUCTURE]) (Claude2)
+  - `RazorStructureTests` covers element, `@code` and `@functions` folds and the outline.
+  - C# code blocks (`@{ … }`) did not fold. They do now, from the code nodes the IR holds outside every directive.
 
 ### Phase 4: Razor Pages and MVC
 
