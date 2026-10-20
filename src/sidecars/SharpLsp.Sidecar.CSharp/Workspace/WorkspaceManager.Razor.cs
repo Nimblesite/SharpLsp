@@ -130,7 +130,8 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// <paramref name="projection"/>, or, when <paramref name="position"/> is in an expression the
-    /// compiler cannot finish yet, the projection of a copy of the file that finishes it.
+    /// compiler cannot finish yet, the projection of a copy of the file that finishes it. A copy
+    /// that does not map the caret leaves the file's own projection to answer.
     /// </summary>
     private static async Task<RazorProjection> FinishedAsync(
         RazorProjection projection,
@@ -138,21 +139,33 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
+        var insertions = DocumentText.TryOffset(projection.RazorText, position) is { } caret
+            ? await RazorCompletionRecovery
+                .FinishAsync(projection, caret, () => MarkupDiagnosticsAsync(projection, ct))
+                .ConfigureAwait(false)
+            : [];
+        var finished = insertions.IsEmpty
+            ? null
+            : await CopyFinishingAsync(projection, insertions, ct).ConfigureAwait(false);
+        return finished?.ToGenerated(position) is null ? projection : finished;
+    }
+
+    /// <summary>The Razor compiler's diagnostics for <paramref name="projection"/>'s file.</summary>
+    private static async Task<IEnumerable<MarkupDiagnostic>> MarkupDiagnosticsAsync(
+        RazorProjection projection,
+        CancellationToken ct
+    )
+    {
         var markup = await RazorMarkupEngine
             .ProcessAsync(projection.Razor, ct)
             .ConfigureAwait(false);
-        var insertions = DocumentText.TryOffset(projection.RazorText, position) is { } caret
-            ? RazorCompletionRecovery.Finish(projection, markup?.Diagnostics ?? [], caret)
-            : [];
-        return insertions.IsEmpty
-            ? projection
-            : await CopyFinishingAsync(projection, insertions, ct).ConfigureAwait(false)
-                ?? projection;
+        return markup?.Diagnostics ?? [];
     }
 
     /// <summary>
-    /// The projection of a copy of <paramref name="projection"/>'s file with
-    /// <paramref name="insertions"/> made, read in the file itself; null when the copy projects nothing.
+    /// The projection of a copy of <paramref name="projection"/>'s file, in its active framework,
+    /// with <paramref name="insertions"/> made, read in the file itself; null when the copy
+    /// projects nothing.
     /// </summary>
     private static async Task<RazorProjection?> CopyFinishingAsync(
         RazorProjection projection,
@@ -160,29 +173,20 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var copy = TargetFrameworks.WithAdditionalTextInEveryContext(
-            projection.Razor.Project.Solution,
-            projection.RazorPath,
+        var copy = projection.Razor.Project.Solution.WithAdditionalDocumentText(
+            projection.Razor.Id,
             projection.RazorText.WithChanges(insertions)
         );
-        var razor = copy.GetAdditionalDocument(projection.Razor.Id);
-        var finished = razor is null
-            ? null
-            : await RazorProjection.ForRazorAsync(razor, ct).ConfigureAwait(false);
+        var finished = copy.GetAdditionalDocument(projection.Razor.Id) is { } razor
+            ? await RazorProjection.ForRazorAsync(razor, ct).ConfigureAwait(false)
+            : null;
         Log.Debug(
             "[Completion] Razor expression finished in a copy {File} {Insertions} {Projected}",
             projection.RazorPath,
             insertions.Length,
             finished is not null
         );
-        return finished is null
-            ? null
-            : finished with
-            {
-                Razor = projection.Razor,
-                RazorText = projection.RazorText,
-                Map = finished.Map.Without(insertions),
-            };
+        return finished?.ReadIn(projection, insertions);
     }
 
     /// <summary>

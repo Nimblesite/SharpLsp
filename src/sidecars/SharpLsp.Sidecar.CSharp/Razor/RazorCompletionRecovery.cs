@@ -9,8 +9,9 @@ namespace SharpLsp.Sidecar.CSharp.Razor;
 /// <summary>
 /// Completion in a C# expression the Razor compiler cannot finish yet. The compiler leaves the
 /// dot of <c>@scores.</c> in the markup, and an <c>@(</c> that is missing its <c>)</c> runs on
-/// through the markup after it, so neither projection holds the member access being typed.
-/// Completion asks a copy of the file whose expression is finished at the caret.
+/// through the markup after it, calls and lambdas inside it included, so neither projection
+/// holds the member access being typed. Completion asks a copy of the file whose expression is
+/// finished at the caret.
 /// Implements [RAZOR-FEATURES-COMPLETION].
 /// </summary>
 internal static class RazorCompletionRecovery
@@ -25,17 +26,19 @@ internal static class RazorCompletionRecovery
 
     /// <summary>
     /// The insertions, in text order, that finish the expression at <paramref name="caret"/>;
-    /// none when the projection already holds it.
+    /// none when the projection already holds it. The compiler's <paramref name="diagnostics"/>
+    /// are read only when the projection's C# does not parse.
     /// </summary>
-    public static ImmutableArray<TextChange> Finish(
+    public static async Task<ImmutableArray<TextChange>> FinishAsync(
         RazorProjection projection,
-        IEnumerable<MarkupDiagnostic> diagnostics,
-        int caret
+        int caret,
+        Func<Task<IEnumerable<MarkupDiagnostic>>> diagnostics
     )
     {
-        return projection.Map.ToGenerated(caret) is null
-            ? TrailingDot(projection, caret)
-            : Unclosed(projection, diagnostics, caret);
+        return projection.Map.ToGenerated(caret) is null ? TrailingDot(projection, caret)
+            : projection.GeneratedRoot.ContainsDiagnostics
+                ? Unclosed(projection, await diagnostics().ConfigureAwait(false), caret)
+            : [];
     }
 
     /// <summary>
@@ -65,7 +68,8 @@ internal static class RazorCompletionRecovery
     }
 
     /// <summary>
-    /// <c>@(scores.</c> as <c>@(scores.)</c>: the fragment holding the caret opens just after a
+    /// <c>@(scores.</c> as <c>@(scores.)</c>, and <c>@(basket.MinBy(p => p.</c> as
+    /// <c>@(basket.MinBy(p => p.))</c>: the fragment holding the caret opens just after a
     /// <c>(</c> that the compiler reports missing its close. An unclosed <c>@{</c> needs no
     /// help: the compiler's recovery keeps its code.
     /// </summary>
@@ -85,8 +89,35 @@ internal static class RazorCompletionRecovery
                 && diagnostic.Span.End == fragment.RazorStart
                 && OpensExpression(projection.RazorText.ToString(diagnostic.Span))
             )
-            ? [Insert(caret, Close)]
+            ? [Insert(caret, Closing(TextSpan.FromBounds(fragment.RazorStart, caret), projection))]
             : [];
+    }
+
+    /// <summary>
+    /// What closes the explicit expression whose C# runs over <paramref name="typed"/>: each
+    /// <c>)</c>, <c>]</c> and <c>}</c> Roslyn's parser supplies for what the C# leaves open,
+    /// innermost first, then the expression's own <c>)</c>.
+    /// </summary>
+    private static string Closing(TextSpan typed, RazorProjection projection)
+    {
+        return SyntaxFactory
+            .TokenList(
+                SyntaxFactory
+                    .ParseExpression(projection.RazorText.ToString(typed))
+                    .DescendantTokens()
+                    .Where(token => token.IsMissing && Closes(token.Kind()))
+                    .Select(token => SyntaxFactory.Token(token.Kind()))
+                    .Append(SyntaxFactory.Token(SyntaxKind.CloseParenToken))
+            )
+            .ToFullString();
+    }
+
+    private static bool Closes(SyntaxKind kind)
+    {
+        return kind
+            is SyntaxKind.CloseParenToken
+                or SyntaxKind.CloseBracketToken
+                or SyntaxKind.CloseBraceToken;
     }
 
     /// <summary>Whether <paramref name="text"/> is the <c>(</c> that opens an explicit expression.</summary>

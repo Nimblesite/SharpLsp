@@ -28,6 +28,45 @@ public sealed class RazorCompletionRecoveryTests(RazorFixture fixture) : IClassF
         Assert.Equal(character, count.TextEdit.EndCharacter);
     }
 
+    [Theory]
+    [InlineData("<p>Cheapest: @(basket.MinBy(product => product.", "")]
+    [InlineData("<p>Cheapest: @(basket.MinBy(product => product.Pr", "")]
+    [InlineData("<p>Cheapest: @(basket.MinBy(product => product.", ")</p>")]
+    [InlineData("<p>Cheapest: @(basket.MinBy(product => product.", "))</p>")]
+    [InlineData("<p>First: @(new[] { basket[0].", "")]
+    [InlineData("@{ var cheapest = basket.MinBy(product => product.", " }")]
+    public async Task Completion_inside_a_call_in_an_unfinished_expression_offers_members(
+        string before,
+        string after
+    )
+    {
+        // A call or lambda inside an @( missing its ) completes too (#404), with its edit at
+        // the caret of a file whose fragments before and after the caret still map.
+        // [RAZOR-FEATURES-COMPLETION]
+        using var manager = await fixture.OpenManagerAsync();
+        const string heading = "<h1>@basket.Count</h1>\n";
+        const string code =
+            "\n@code { private readonly List<Product> basket = []; "
+            + "private sealed record Product(string Name, decimal Price); }";
+        _ = RazorFixture.Ok(
+            await manager.UpdateDocumentTextAsync(Board, heading + before + after + code)
+        );
+        var items = RazorFixture.Ok(await manager.GetCompletionsAsync(Board, 1, before.Length));
+        var price = Assert.Single(items, item => item.Label == "Price" && item.Kind == "Property");
+        Assert.Contains(items, item => item.Label == "Name" && item.Kind == "Property");
+        Assert.NotNull(price.TextEdit);
+        var member = before.LastIndexOf('.') + 1;
+        Assert.Equal(
+            (1, member, 1, before.Length),
+            (
+                price.TextEdit.StartLine,
+                price.TextEdit.StartCharacter,
+                price.TextEdit.EndLine,
+                price.TextEdit.EndCharacter
+            )
+        );
+    }
+
     [Fact]
     public async Task Completion_in_an_unclosed_block_replaces_what_was_typed_before_the_caret()
     {

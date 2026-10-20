@@ -42,7 +42,7 @@ The phases below are in dependency order. Each item is checked only when a test 
   - [x] Pass: the two failing tests pass unchanged, and a third proves a compiler that cannot be read leaves the project as it loaded
   - [ ] Full sidecar suite and coverage gates with the fix
   - [ ] CI proof on a real newer SDK: a Rust end-to-end Razor test whose fixture copy keeps no SDK pin, so runners carrying SDK 10.0.401 load it with that SDK (Codex1, 029fc3a; awaits CI)
-  - [ ] Docs and blog: drop the advice to pin SDK 10.0.303 once the fix lands (Claude1)
+  - [x] Docs and blog: drop the advice to pin SDK 10.0.303, and explain the bundled-compiler fallback (Claude1, 8c418ced)
 
 **Validation (2026-10-20):** the Release sidecar solution builds with zero warnings and errors; 671 C#, 440 F# and 125 Common tests pass, and all three coverage gates pass. C# coverage is 96.39%, with all 1,530 new C# executable lines covered. `RazorSidecarTests` exercises the real IPC contract and malformed-request recovery; `RazorCompletionEditsTests` covers mapped edits, import deduplication, aliases, static imports and LF/CRLF insertion.
 
@@ -59,6 +59,7 @@ The phases below are in dependency order. Each item is checked only when a test 
 - [x] C# completion, with mapped edits and `using` → `@using` ([RAZOR-FEATURES-COMPLETION])
   - [x] Completion right after a typed dot offers members: `@scores.` and an unclosed `@(scores.` (#401, review R2). Red tests `RazorCompletionRecoveryTests` (Codex1) failed for the bug, then passed unchanged once completion asks a copy of the file with the expression finished at the caret (Claude2). An unclosed `@{` already completed and is kept as a control
   - [ ] Coverage gates with the #401 fix; the full C# sidecar suite passes with it
+  - [x] Completion inside a call or lambda of an unfinished `@(` offers members (#404, review R8). Red tests from Claude1's report failed for the bug, then passed unchanged once the copy closes every construct Roslyn's parser reads as open, innermost first, and its map keeps the parts of a fragment outside the C# it inserted. Completion now reads the compiler's diagnostics only when the projection's C# does not parse, and forks only the file's active framework
 - [x] Signature help ([RAZOR-FEATURES-SIGNATURE-HELP])
   - [x] Signature help after `@(` no longer lists the generator's scaffolding (`AddContent`, `AddAttribute`) (#400, review R1, Codex1): the regression cases failed for the bug, then passed unchanged
 - [x] Semantic tokens for C# fragments ([RAZOR-FEATURES-SEMANTIC-TOKENS])

@@ -72,30 +72,42 @@ internal sealed class RazorSpanMap(ImmutableArray<RazorMapping> mappings)
 
     /// <summary>
     /// This map, built on a copy of the Razor file that <paramref name="insertions"/> made,
-    /// read in the file itself: each entry moves back past the insertions before it, and an
-    /// entry holding an inserted character has no place in the file. [RAZOR-FEATURES-COMPLETION]
+    /// read in the file itself. An entry keeps only its part before the first insertion it holds:
+    /// C# the copy finished inside a fragment has nothing in the file to map to, and a part
+    /// after it would start at the caret and claim it. Each part then moves back past the
+    /// insertions before it. [RAZOR-FEATURES-COMPLETION]
     /// </summary>
     public RazorSpanMap Without(ImmutableArray<TextChange> insertions)
     {
         var inserted = InCopy(insertions);
         return new([
             .. mappings
-                .Where(entry =>
-                    !inserted.Any(span =>
-                        span.OverlapsWith(new TextSpan(entry.RazorStart, entry.Length))
-                    )
-                )
-                .Select(entry =>
-                    entry with
+                .SelectMany(entry => Before(entry, inserted))
+                .Select(part =>
+                    part with
                     {
                         RazorStart =
-                            entry.RazorStart
+                            part.RazorStart
                             - inserted
-                                .Where(span => span.End <= entry.RazorStart)
+                                .Where(span => span.End <= part.RazorStart)
                                 .Sum(span => span.Length),
                     }
                 ),
         ]);
+    }
+
+    /// <summary>The part of <paramref name="entry"/> before the first span of <paramref name="inserted"/> it holds.</summary>
+    private static IEnumerable<RazorMapping> Before(
+        RazorMapping entry,
+        ImmutableArray<TextSpan> inserted
+    )
+    {
+        var end = inserted
+            .Where(span => span.OverlapsWith(new TextSpan(entry.RazorStart, entry.Length)))
+            .Select(span => span.Start)
+            .DefaultIfEmpty(entry.RazorEnd)
+            .Min();
+        return end > entry.RazorStart ? [entry with { Length = end - entry.RazorStart }] : [];
     }
 
     /// <summary>Where each of <paramref name="insertions"/>, in text order, lands in the copy they make.</summary>
