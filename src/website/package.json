@@ -10,10 +10,10 @@
     "test:mobile": "npx playwright test tests/mobile-nav.spec.js"
   },
   "dependencies": {
-    "@11ty/eleventy": "^3.1.6",
-    "@playwright/test": "^1.64.0",
+    "@11ty/eleventy": "^3.1.7",
+    "@playwright/test": "^1.64.1",
     "eleventy-plugin-techdoc": "0.2.0",
-    "markdown-it": "^15.0.2"
+    "markdown-it": "^15.0.3"
   },
   "devDependencies": {
     "luxon": "^3.7.2"
