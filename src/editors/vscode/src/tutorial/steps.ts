@@ -41,14 +41,28 @@ interface LanguageFacts {
   /** VS Code's language id. */
   readonly id: string;
   readonly label: string;
+  /** The indefinite article before the label: "an F# file", "a C# file". */
+  readonly article: 'a' | 'an';
   /** The workspace glob `sharplsp.tutorial.openFile` searches. */
   readonly sourceGlob: string;
   readonly openFileFilm: string;
 }
 
 const LANGUAGE_FACTS: Record<LanguageKind, LanguageFacts> = {
-  FSharp: { id: 'fsharp', label: 'F#', sourceGlob: '**/*.fs', openFileFilm: 'fsharp-language' },
-  CSharp: { id: 'csharp', label: 'C#', sourceGlob: '**/*.cs', openFileFilm: 'getting-started' },
+  FSharp: {
+    id: 'fsharp',
+    label: 'F#',
+    article: 'an',
+    sourceGlob: '**/*.fs',
+    openFileFilm: 'fsharp-language',
+  },
+  CSharp: {
+    id: 'csharp',
+    label: 'C#',
+    article: 'a',
+    sourceGlob: '**/*.cs',
+    openFileFilm: 'getting-started',
+  },
 };
 
 interface ActionFacts {
@@ -58,20 +72,20 @@ interface ActionFacts {
   readonly film?: string;
   /** Seconds into the film where each language's chapter starts; `undefined` plays from 0. */
   readonly filmStart?: Readonly<Record<LanguageKind, number>>;
-  readonly title: (language: string) => string;
-  readonly instruction: (language: string) => string;
+  readonly title: (language: LanguageFacts) => string;
+  readonly instruction: (language: LanguageFacts) => string;
 }
 
 const ACTION_FACTS: Record<ActionKind, ActionFacts> = {
   OpenFile: {
-    title: (l) => `Open an ${l} file`,
-    instruction: (l) => `Open any ${l} source file in the editor.`,
+    title: (l) => `Open ${l.article} ${l.label} file`,
+    instruction: (l) => `Open any ${l.label} source file in the editor.`,
   },
   Hover: {
     method: 'textDocument/hover',
     film: 'hover',
     title: () => 'Hover a symbol',
-    instruction: (l) => `Rest the mouse on a function, type or value in the ${l} file.`,
+    instruction: (l) => `Rest the mouse on a function, type or value in the ${l.label} file.`,
   },
   Completion: {
     method: 'textDocument/completion',
@@ -144,11 +158,11 @@ export function sourceGlob(language: LanguageKind): string {
 }
 
 export function titleOf(step: TutorialStep): string {
-  return ACTION_FACTS[step.action.kind].title(languageLabel(step.language.kind));
+  return ACTION_FACTS[step.action.kind].title(LANGUAGE_FACTS[step.language.kind]);
 }
 
 export function instructionOf(step: TutorialStep): string {
-  return ACTION_FACTS[step.action.kind].instruction(languageLabel(step.language.kind));
+  return ACTION_FACTS[step.action.kind].instruction(LANGUAGE_FACTS[step.language.kind]);
 }
 
 export interface Film {

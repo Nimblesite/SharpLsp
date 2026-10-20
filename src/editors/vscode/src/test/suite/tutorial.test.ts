@@ -11,7 +11,15 @@ import {
   withStep,
 } from '../../tutorial/progress.js';
 import type { PanelView } from '../../tutorial/panel-view.js';
-import { contextKey, filmOf, LANGUAGES, stepKey, stepOf, stepsOf } from '../../tutorial/steps.js';
+import {
+  contextKey,
+  filmOf,
+  LANGUAGES,
+  stepKey,
+  stepOf,
+  stepsOf,
+  titleOf,
+} from '../../tutorial/steps.js';
 import {
   openFSharpFixture,
   pollDefinition,
@@ -224,6 +232,11 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     assert.equal(fsharpFix.captions, fsharpFix.poster.replace('-poster.webp', '.en.vtt'));
     assert.deepEqual([fsharpFix.start, csharpFix.start], [44, 116], 'F# fixes at 0:44, C# at 1:56');
     assert.equal(filmOf(stepOf('FSharp', 'Hover')).start, 0, 'other films play from the start');
+    assert.deepEqual(
+      [titleOf(stepOf('FSharp', 'OpenFile')), titleOf(stepOf('CSharp', 'OpenFile'))],
+      ['Open an F# file', 'Open a C# file'],
+      'each language takes its own article',
+    );
   });
 
   test('[TUTORIAL-WALKTHROUGH] the F# walkthrough comes first, and each step completes on its own context key', async () => {
