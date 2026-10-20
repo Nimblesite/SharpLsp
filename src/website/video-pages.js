@@ -54,6 +54,31 @@ export function transcript(id, lang) {
   return vtt.split(/\r?\n\r?\n/).slice(1).map(cueText).filter(Boolean);
 }
 
+/** A WebVTT timestamp (`01:44.433`, or with hours) in seconds. */
+const clock = (stamp) => stamp.trim().split(":").reduce((total, part) => total * 60 + Number(part), 0);
+
+/** The tutorial walkthrough's own titles, per site language ([TUTORIAL-STEPS]). */
+const WALKTHROUGH_TITLES = { en: "package.nls.json", ja: "package.nls.ja.json", zh: "package.nls.zh-cn.json" };
+const walkthroughTitles = (lang) =>
+  JSON.parse(readFileSync(new URL(`../editors/vscode/${WALKTHROUGH_TITLES[lang] ?? WALKTHROUGH_TITLES.en}`, import.meta.url), "utf8"));
+
+/**
+ * The chapters of a chaptered film ([WEB-DESIGN-MEDIA-CHAPTERS]), read from
+ * <id>.chapters.vtt: each cue's step, start second and title. A step's title is
+ * the one the VS Code walkthrough shows in `lang`; a step both languages share
+ * (`SolutionExplorer`) takes the F# walkthrough's.
+ */
+export function chapters(id, lang) {
+  if (!catalogued(id).chapters) return [];
+  const titles = walkthroughTitles(lang);
+  const vtt = readFileSync(new URL(`./src${asset(id, ".chapters.vtt")}`, import.meta.url), "utf8");
+  return vtt.split(/\r?\n\r?\n/).slice(1).filter(Boolean).map((cue) => {
+    const [step, timing, ...words] = cue.trim().split(/\r?\n/);
+    const key = step.includes(".") ? step : `FSharp.${step}`;
+    return { step, start: Math.floor(clock(timing.split("-->")[0])), title: titles[`walkthrough.${key}.title`] ?? words.join(" ") };
+  });
+}
+
 /** Every watch page: each catalogued video in each site language. */
 export const watchPages = () =>
   Object.keys(languages).flatMap((lang) =>

@@ -38,6 +38,9 @@ const WALKTHROUGHS = [
 const PAGES = [
   { path: '/', videos: ['profiler-film', 'profiler-cpu-recording'], says: 'profiler' },
   ...WALKTHROUGHS,
+  { path: '/docs/tutorial/', videos: ['vscode-tutorial'], says: 'tutorial' },
+  { path: '/ja/docs/tutorial/', videos: ['vscode-tutorial'], says: 'チュートリアル' },
+  { path: '/zh/docs/tutorial/', videos: ['vscode-tutorial'], says: '教程' },
   { path: '/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'profiler' },
   { path: '/ja/blog/introducing-sharplsp/', videos: ['profiler-film'], says: 'プロファイラー' },
   { path: '/zh/blog/introducing-sharplsp/', videos: ['profiler-film'], says: '性能分析器' },
@@ -117,3 +120,24 @@ test('articles and docs never autoplay; readers start every film themselves', as
     expect((await playback(player)).paused, `${path} film waits for the reader`).toBe(true);
   }
 });
+
+// [WEB-DESIGN-MEDIA-CHAPTERS] The tutorial's film carries its chapters, and its page lists
+// them, each titled as the VS Code walkthrough titles the step and opening the film there.
+const TUTORIAL_STEPS = { '': ['Open an F# file', 0, 'Hover a symbol', 12], '/ja': ['F# ファイルを開く', 0, 'シンボルにホバーする', 12], '/zh': ['打开一个 F# 文件', 0, '悬停查看符号', 12] };
+for (const [prefix, [first, firstAt, second, secondAt]] of Object.entries(TUTORIAL_STEPS)) {
+  test(`${prefix}/docs/tutorial/ lists the film's chapters in its own language`, async ({ page, request }) => {
+    await page.goto(`${prefix}/docs/tutorial/`);
+    const track = page.locator('figure video track[kind="chapters"]');
+    await expect(track).toHaveAttribute('src', '/assets/videos/vscode-tutorial.chapters.vtt');
+    await expectPlayable(request, ['/assets/videos/vscode-tutorial.chapters.vtt'], 'text/vtt');
+    const chapters = page.locator('main ol li[data-step]');
+    await expect(chapters).toHaveCount(13);
+    await expect(chapters.first()).toHaveAttribute('data-step', 'FSharp.OpenFile');
+    await expect(chapters.first()).toContainText(first);
+    await expect(chapters.nth(1)).toContainText(second);
+    await expect(chapters.first().locator('a')).toHaveAttribute('href', `${prefix}/videos/vscode-tutorial/?t=${firstAt}`);
+    await expect(chapters.nth(1).locator('a')).toHaveAttribute('href', `${prefix}/videos/vscode-tutorial/?t=${secondAt}`);
+    await expect(chapters.nth(1).locator('a')).toHaveText('0:12');
+    await expect(chapters.nth(7), 'C# follows F#').toHaveAttribute('data-step', 'CSharp.OpenFile');
+  });
+}

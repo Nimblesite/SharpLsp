@@ -143,6 +143,7 @@
     "docs": {
       "title": "Documentation",
       "gettingStarted": "Getting Started",
+      "tutorial": "Tutorial",
       "fsharp": "F# Language Support",
       "blazor": "Blazor & Razor",
       "architecture": "Architecture",
@@ -346,6 +347,7 @@
     "docs": {
       "title": "文档",
       "gettingStarted": "快速入门",
+      "tutorial": "教程",
       "fsharp": "F# 语言支持",
       "blazor": "Blazor 与 Razor",
       "architecture": "架构",
@@ -549,6 +551,7 @@
     "docs": {
       "title": "ドキュメント",
       "gettingStarted": "はじめに",
+      "tutorial": "チュートリアル",
       "fsharp": "F# 言語サポート",
       "blazor": "Blazor と Razor",
       "architecture": "アーキテクチャ",

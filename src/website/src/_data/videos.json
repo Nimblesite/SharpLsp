@@ -156,6 +156,29 @@
       }
     }
   },
+  "vscode-tutorial": {
+    "page": "/docs/tutorial/",
+    "encodings": ["mp4", "webm"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT3M48S",
+    "uploadDate": "2026-10-20T19:35:12+11:00",
+    "chapters": true,
+    "text": {
+      "en": {
+        "label": "The SharpLsp tutorial in VS Code: open an F# and a C# file, hover, complete, go to a definition, find references, fix code with a code action, and open the Solution Explorer",
+        "caption": "Every step of the interactive tutorial, F# first, then C#, recorded in VS Code on the Shop demo. One chapter per step; the tutorial panel in VS Code plays each step's chapter."
+      },
+      "zh": {
+        "label": "VS Code 中的 SharpLsp 教程：打开 F# 和 C# 文件、悬停、补全、转到定义、查找引用、用代码操作修复代码，以及打开解决方案资源管理器",
+        "caption": "交互式教程的每一步，先 F# 后 C#，在 VS Code 中基于 Shop 演示录制。每一步一个章节；VS Code 中的教程面板会播放当前步骤的章节。"
+      },
+      "ja": {
+        "label": "VS Code の SharpLsp チュートリアル：F# と C# のファイルを開き、ホバー、補完、定義へ移動、参照の検索、コードアクションでの修正、ソリューションエクスプローラーを開く",
+        "caption": "インタラクティブ チュートリアルの全ステップを、F#、次に C# の順に、VS Code で Shop デモを使って収録しました。ステップごとに 1 チャプターで、VS Code のチュートリアル パネルが現在のステップのチャプターを再生します。"
+      }
+    }
+  },
   "getting-started": {
     "page": "/docs/",
     "encodings": ["mp4", "webm"],

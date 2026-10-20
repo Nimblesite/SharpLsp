@@ -17,7 +17,7 @@ import markdownIt from "markdown-it";
 import i18n from "./src/_data/i18n.json" with { type: "json" };
 import languages from "./src/_data/languages.json" with { type: "json" };
 import site from "./src/_data/site.json" with { type: "json" };
-import { asset, catalogued, embedPath, textOf, transcript, watchPath } from "./video-pages.js";
+import { asset, catalogued, chapters, embedPath, textOf, transcript, watchPath } from "./video-pages.js";
 
 const { escapeHtml } = markdownIt().utils;
 
@@ -42,6 +42,7 @@ export function videoPlayer(id, lang, { autoplay = false } = {}) {
     `<video ${autoplay ? "autoplay loop muted" : "controls"} playsinline preload="metadata" poster="${asset(id, "-poster.webp")}" width="${video.width}" height="${video.height}" aria-label="${escapeHtml(textOf(video, lang).label)}">`,
     ...video.encodings.map((encoding) => `<source src="${asset(id, `.${encoding}`)}" type="video/${encoding}">`),
     ...tracks(id, video, lang),
+    ...(video.chapters ? [`<track kind="chapters" src="${asset(id, ".chapters.vtt")}" srclang="en">`] : []),
     "</video>",
   ].join("\n");
 }
@@ -79,6 +80,19 @@ function watchOnly(id, lang) {
     },
     ...(spoken.length > 0 ? { transcript: spoken.join(" ") } : {}),
   };
+}
+
+/** `seconds` as the clock a reader sees: `1:44`. */
+const minutes = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+/**
+ * A chaptered film's chapters as a list, each opening the film's watch page at
+ * its start (`?t=`), titled as the VS Code walkthrough titles its step.
+ */
+export function chapterList(id, lang) {
+  const items = chapters(id, lang).map(({ step, start, title }) =>
+    `<li data-step="${escapeHtml(step)}"><a href="${watchPath(id, lang)}?t=${start}">${minutes(start)}</a> ${escapeHtml(title)}</li>`);
+  return items.length > 0 ? `<ol>\n${items.join("\n")}\n</ol>` : "";
 }
 
 // `<` is escaped so no description can close the script element early.
