@@ -3,6 +3,7 @@
 // cues a composited film's cursor follows, and clean stills.
 import fs from 'node:fs';
 import path from 'node:path';
+import { centre } from './overlay.mjs';
 import { startScreencast } from './screencast.mjs';
 import { saveTrack, startTrack, stopTrack } from './track.mjs';
 import { PARK, sleep } from './workbench.mjs';
@@ -18,7 +19,7 @@ export function cueLog(clips) {
     },
     async click(page, locator, label) {
       const box = await locator.boundingBox();
-      if (box) cues.push({ t: (Date.now() - start) / 1000, x: box.x + box.width / 2, y: box.y + box.height / 2, label });
+      if (box) cues.push({ t: (Date.now() - start) / 1000, ...centre(box), label });
       await locator.click({ force: true });
       await page.waitForTimeout(350);
       await page.mouse.move(PARK.x, PARK.y);

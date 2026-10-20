@@ -2,7 +2,7 @@
 // shot with: go to a line, find a word on screen, hover it, and trigger the
 // editor's own completion, navigation, quick fixes and rename. Every result on
 // camera comes from SharpLsp; nothing is drawn but the pointer.
-import { pointAt } from './overlay.mjs';
+import { centre, pointAt } from './overlay.mjs';
 import { goTo, sleep } from './workbench.mjs';
 
 /** The active editor's widgets: a hover, the suggest list, the code-action menu, the rename box. */
@@ -49,7 +49,6 @@ export const wordOn = (page, line, word, nth = 0) =>
     { line, word, nth },
   );
 
-const centre = (box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
 
 /** The centre of `word` on `line`, scrolled into view first. */
 export async function findWord(page, { line, word, nth = 0 }) {

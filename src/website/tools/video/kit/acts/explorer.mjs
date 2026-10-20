@@ -1,7 +1,7 @@
 // Implements [WEB-DESIGN-MEDIA]. Moves in the SharpLsp Solution Explorer: a
 // row by its label, its context menu opened with the pointer on it, an item
 // picked from that menu, and a folded row opened.
-import { pointAt, ringClick } from '../overlay.mjs';
+import { centre, pointAt, ringClick } from '../overlay.mjs';
 import { sleep } from '../workbench.mjs';
 
 /** The Solution Explorer row whose label matches `name` (a RegExp). */
@@ -12,7 +12,7 @@ export async function openMenu(page, name) {
   const target = row(page, name);
   const box = await target.boundingBox();
   if (!box) throw new Error(`no Solution Explorer row ${name}`);
-  const at = { x: box.x + Math.min(120, box.width / 2), y: box.y + box.height / 2 };
+  const at = centre(box, 120);
   await pointAt(page, at);
   await page.mouse.click(at.x, at.y, { button: 'right' });
   await page.locator('.monaco-menu').first().waitFor();

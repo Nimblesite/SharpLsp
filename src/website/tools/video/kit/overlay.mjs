@@ -48,18 +48,21 @@ export async function pointAt(page, { x, y }) {
 /** Caption step `step` from this moment of the clip, with a speed badge when the stretch is fast-forwarded. */
 export const caption = (page, step, text, speed = '') => logCaption(page, { step, text, speed });
 
+/** The middle of `box`, or `reach` px in from its left edge when that is nearer. */
+export const centre = (box, reach = box.width / 2) => ({ x: box.x + Math.min(reach, box.width / 2), y: box.y + box.height / 2 });
+
 /** Click `locator` with a ring where the click lands, then park the mouse. */
 export async function ringClick(page, cues, locator, label) {
   const box = await locator.boundingBox();
   if (!box) throw new Error(`nothing to click for ${label}`);
-  await pointAt(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  await pointAt(page, centre(box));
   await page.evaluate(({ style, x, y }) => {
     const ring = document.createElement('div');
     Object.assign(ring.style, style, { left: `${x}px`, top: `${y}px` });
     document.body.append(ring);
     ring.animate([{ transform: 'scale(.4)', opacity: 1 }, { transform: 'scale(1.6)', opacity: 0 }], { duration: 700, easing: 'ease-out', fill: 'forwards' })
       .finished.then(() => ring.remove());
-  }, { style: RING, x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  }, { style: RING, ...centre(box) });
   await sleep(250);
   await cues.click(page, locator, label);
   await page.mouse.move(PARK.x, PARK.y);

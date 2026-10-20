@@ -13,29 +13,31 @@ const REVEAL = 0.5;
 const cue = (slide, line, index) => (slide.lines[line] ?? slide.start + 0.35) + 0.12 * index;
 /** Each item's place among the items its own line reveals. */
 const ranks = (list) => list.map((item, i) => list.slice(0, i).filter((other) => other.line === item.line).length);
-const at = (slide, line, index) => `class="item" data-at="${cue(slide, line, index).toFixed(3)}"`;
+/** An item's attributes: its own class `kind`, plus `item` and the time it appears. */
+const at = (slide, line, index, kind = '') => `class="item ${kind}" data-at="${cue(slide, line, index).toFixed(3)}"`;
+const sub = (s, index = 0) => (s.sub ? `<p ${at(s, s.subLine, index, 'sub')}>${s.sub}</p>` : '');
 const heading = (slide) =>
   `<div class="kicker item" data-at="${slide.start.toFixed(3)}">${slide.kicker ?? ''}</div><h2 class="heading item wipe" data-at="${(slide.start + 0.08).toFixed(3)}">${slide.heading ?? ''}</h2>`;
 
 const layouts = {
   title: (s) => `<div class="kicker item" data-at="${s.start}">${s.kicker}</div>
     <h1 class="title item wipe" data-at="${s.start + 0.15}">${s.title}</h1>
-    <p class="sub" ${at(s, s.subLine, 1)}>${s.sub}</p>
+    ${sub(s, 1)}
     <div class="chips">${s.chips.map((chip, i) => `<div ${at(s, s.chipsLine, i + 2)}>${chip}</div>`).join('')}</div>`,
-  points: (s) => `${heading(s)}${s.sub ? `<p class="sub" ${at(s, s.subLine, 0)}>${s.sub}</p>` : ''}
-    <div class="rows">${s.rows.map((r, i) => `<div class="row" ${at(s, r.line, ranks(s.rows)[i])}><span class="k">${r.k}</span><span class="v">${r.v}</span><span class="w">${r.w ?? ''}</span></div>`).join('')}</div>`,
+  points: (s) => `${heading(s)}${sub(s)}
+    <div class="rows">${s.rows.map((r, i) => `<div ${at(s, r.line, ranks(s.rows)[i], 'row')}><span class="k">${r.k}</span><span class="v">${r.v}</span><span class="w">${r.w ?? ''}</span></div>`).join('')}</div>`,
   keys: (s) => `${heading(s)}<div class="keys">${s.keys.map((k, i) => `<div class="keyset${k.hot ? ' hot' : ''}" ${at(s, k.line, ranks(s.keys)[i])}>
     <div class="os">${k.os}</div><div class="caps">${k.caps.map((c) => (c === '+' ? '<span>+</span>' : `<div class="cap">${c}</div>`)).join('')}</div></div>`).join('')}</div>
-    ${s.sub ? `<p class="sub" ${at(s, s.subLine, 0)}>${s.sub}</p>` : ''}`,
+    ${sub(s)}`,
   footage: (s) => `${heading(s)}<div class="screen item" data-at="${s.start + 0.2}"><div class="bar"><i style="background:var(--red)"></i><i style="background:var(--orange)"></i><i style="background:var(--green)"></i><span>${s.footage.label}</span><em>Real footage · VS Code</em></div>
     <img class="frame" alt="">${s.footage.speed > 1 ? `<div class="speed">${s.footage.speed}× speed</div>` : ''}</div>
-    <div class="notes">${s.notes.map((n, i) => `<div class="note" ${at(s, n.line, ranks(s.notes)[i])}><span class="n">${i + 1}</span><span>${n.text}</span></div>`).join('')}</div>`,
-  cards: (s) => `${heading(s)}<div class="cards">${s.cards.map((c, i) => `<div class="card" ${at(s, c.line, ranks(s.cards)[i])}><code>${c.code}</code><p>${c.text}</p></div>`).join('')}</div>`,
-  code: (s) => `${heading(s)}<div class="pair">${s.panes.map((p, i) => `<div class="code" ${at(s, p.line, ranks(s.panes)[i])}><div class="label">${p.label}</div>
+    <div class="notes">${s.notes.map((n, i) => `<div ${at(s, n.line, ranks(s.notes)[i], 'note')}><span class="n">${i + 1}</span><span>${n.text}</span></div>`).join('')}</div>`,
+  cards: (s) => `${heading(s)}<div class="cards">${s.cards.map((c, i) => `<div ${at(s, c.line, ranks(s.cards)[i], 'card')}><code>${c.code}</code><p>${c.text}</p></div>`).join('')}</div>`,
+  code: (s) => `${heading(s)}<div class="pair">${s.panes.map((p, i) => `<div ${at(s, p.line, ranks(s.panes)[i], 'code')}><div class="label">${p.label}</div>
     <pre>${p.code.map((l) => `<div${l.mark ? ` class="${l.mark}"` : ''}>${l.text || ' '}</div>`).join('')}</pre></div>`).join('')}</div>
-    ${s.caption ? `<p class="caption" ${at(s, s.captionLine, 0)}>${s.caption}</p>` : ''}`,
-  flow: (s) => `${heading(s)}<div class="flow">${s.stages.map((g, i) => `<div class="stage" ${at(s, g.line, ranks(s.stages)[i])}><div class="n">${String(i + 1).padStart(2, '0')}</div><h3>${g.title}</h3><p>${g.text}</p></div>`).join('')}</div>
-    ${s.sub ? `<p class="sub" ${at(s, s.subLine, 0)}>${s.sub}</p>` : ''}`,
+    ${s.caption ? `<p ${at(s, s.captionLine, 0, 'caption')}>${s.caption}</p>` : ''}`,
+  flow: (s) => `${heading(s)}<div class="flow">${s.stages.map((g, i) => `<div ${at(s, g.line, ranks(s.stages)[i], 'stage')}><div class="n">${String(i + 1).padStart(2, '0')}</div><h3>${g.title}</h3><p>${g.text}</p></div>`).join('')}</div>
+    ${sub(s)}`,
   recap: (s) => `${heading(s)}<div class="recap">${s.items.map((r, i) => `<div ${at(s, r.line, ranks(s.items)[i])}><span>${i + 1}</span>${r.text}</div>`).join('')}</div>
     <div class="url item" data-at="${cue(s, s.urlLine, 0)}">${s.url}</div>`,
 };

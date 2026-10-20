@@ -4,7 +4,7 @@
 // and an offbeat bass come in after the intro, and everything stops on the
 // closing line for a C major strum that rings out. Voices are one-cycle
 // wavetables, rendered event by event, so a three-minute score takes seconds.
-import { clamp, gain, harmonics, noise, pitch, rate, sides, smooth } from './score.mjs';
+import { fade, gain, harmonics, noise, pitch, rate, sides } from './score.mjs';
 
 const beat = 60 / 124;
 const bar = 4 * beat;
@@ -34,7 +34,7 @@ const hat = (age, index) => crackle(index, 7) * Math.exp(-age / 0.028);
 const crash = (age, index) => crackle(index, 11) * Math.exp(-age / 0.9);
 const bassNote = (frequency) => (age) => osc(SAW, frequency * age) * attack(age, 0.004) * Math.exp(-age / 0.3);
 const pluck = (frequency, decay) => (age) => osc(SOFT, frequency * age) * attack(age, 0.003) * Math.exp(-age / decay);
-const padNote = (frequency, length) => (age) => osc(SOFT, frequency * age) * smooth(clamp(age / 0.3)) * smooth(clamp((length - age) / 0.4));
+const padNote = (frequency, length) => (age) => osc(SOFT, frequency * age) * fade(age, length, { fadeIn: 0.3, fadeOut: 0.4 });
 
 const event = (time, length, level, voice, pan = 0) => ({ time, length, level, voice, pan });
 
@@ -110,9 +110,8 @@ function compose(timeline) {
   const duck = pumping(beatEvents.filter((item) => item.voice === kick), frames);
   const music = render([...bass(grid), ...arpeggio(grid, timeline.resolve), ...pads(grid, timeline), ...strum(timeline)], frames);
   const hits = render(beatEvents, frames);
-  const fade = (t) => smooth(clamp(t / master.fadeIn)) * smooth(clamp((timeline.duration - t) / master.fadeOut));
   return sides.map((_, channel) =>
-    Float32Array.from({ length: frames }, (_, index) => Math.tanh(master.drive * (music[channel][index] * duck[index] + hits[channel][index])) * fade(index / rate)));
+    Float32Array.from({ length: frames }, (_, index) => Math.tanh(master.drive * (music[channel][index] * duck[index] + hits[channel][index])) * fade(index / rate, timeline.duration, master)));
 }
 
 /** The lessons' score: up front, so it sits higher in the mix and drier than the calm one. Its beat and the drums' entry let a picture move with it. */

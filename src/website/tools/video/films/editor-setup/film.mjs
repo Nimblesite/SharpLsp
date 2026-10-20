@@ -6,7 +6,7 @@
 //   node src/website/tools/video/film.mjs editor-setup
 import { runCommand } from '../../kit/editor.mjs';
 import { LANGUAGE, awaitSemantics, prepareCode, scene, settingsEditor, typeText } from '../../kit/acts/language.mjs';
-import { pointAt } from '../../kit/overlay.mjs';
+import { centre, pointAt } from '../../kit/overlay.mjs';
 import { SHOP } from '../../kit/set.mjs';
 import { sleep } from '../../kit/workbench.mjs';
 
@@ -14,7 +14,7 @@ const PROBE = { line: 10, word: 'Checkout' };
 
 async function activation({ page }) {
   const status = await page.locator('.statusbar-item', { hasText: 'SharpLsp' }).first().boundingBox();
-  if (status) await pointAt(page, { x: status.x + status.width / 2, y: status.y + status.height / 2 });
+  if (status) await pointAt(page, centre(status));
   await runCommand(page, 'SharpLsp: Restart Language Server');
   await awaitSemantics(page, PROBE);
   await sleep(1500);

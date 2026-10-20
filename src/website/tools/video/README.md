@@ -207,6 +207,7 @@ To add a demo, put one project and an empty `Directory.Build.props` in `demos/<f
 | `kit/scenes.mjs` | The walkthrough engine: `shootWalkthrough`, `publishWalkthrough`, and the scene helpers `prepare`, `switchTo`, `restart`, `startOnRow` |
 | `kit/lesson/` | The lesson engine: `deck.js` draws each layout from `t` alone, and `lesson.mjs` cuts the footage, times slides to speech and renders them |
 | `kit/frames.mjs` | Renders a page whose `renderFrame(t)` draws each frame: `renderMaster`, `previewFrames`, and `explode` (footage into numbered frames). Lessons and the profiler film use it |
+| `kit/timeline.js` | What such a page loads before its own script: `FPS`, `$`, `clamp`, `ease`, `tween` |
 | `kit/set.mjs` | The sets, and `onSet` |
 | `kit/editor.mjs` | The isolated VS Code, and the settings every shot is filmed with |
 | `kit/camera.mjs` | `record` shoots a clip with its track. `snap` and `still` take stills |

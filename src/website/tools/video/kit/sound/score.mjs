@@ -30,6 +30,8 @@ export function harmonics(count, rolloff) {
 export const pitch = (note) => tuning.pitch * 2 ** ((note - tuning.note) / tuning.octave);
 export const smooth = (x) => x * x * (3 - 2 * x);
 export const clamp = (x) => Math.min(1, Math.max(0, x));
+/** A score's level at `t`: up over `fadeIn`, down over the last `fadeOut` of `duration`. */
+export const fade = (t, duration, { fadeIn, fadeOut }) => smooth(clamp(t / fadeIn)) * smooth(clamp((duration - t) / fadeOut));
 export const gain = (pan, side) => (1 + pan * side) / 2;
 const alternate = (step) => (step % 2 === 0 ? 1 : -1);
 
@@ -81,8 +83,7 @@ function sample(score, t, side) {
     const level = swell(t, item);
     return level > 0 ? sum + level * chord(item, t, side) : sum;
   }, 0);
-  const fade = smooth(clamp(t / master.fadeIn)) * smooth(clamp((score.duration - t) / master.fadeOut));
-  return Math.tanh(master.drive * (harmony + ringing(score.bells, t, side))) * fade;
+  return Math.tanh(master.drive * (harmony + ringing(score.bells, t, side))) * fade(t, score.duration, master);
 }
 
 /** The stereo score for a film of `duration` seconds whose closing line starts at `resolve`. */
