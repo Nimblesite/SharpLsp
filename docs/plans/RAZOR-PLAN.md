@@ -40,7 +40,7 @@ The phases below are in dependency order. Each item is checked only when a test 
   - [x] Failing tests, failing for the bug: `RazorNewerSdkTests` gives the fixture's design-time builds a newer SDK's Razor compiler (a higher assembly version that references a newer Roslyn). In a fresh sidecar process, hover in `Counter.razor` answers null: the process loads that compiler from the SDK's folder, never its own copy, and Roslyn refuses it. In process, the projects keep the newer SDK's generator files. The fixture copies now keep the repository's SDK pin, as the editor suites' copies do
   - [x] Fix: at project load, an SDK Razor compiler that references a newer `Microsoft.CodeAnalysis` than the running one is swapped, with its two companion files, for the bundled copies, and a warning names both versions (`RazorGenerator`, Codex1, 029fc3a)
   - [x] Pass: the two failing tests pass unchanged, and a third proves a compiler that cannot be read leaves the project as it loaded
-  - [ ] Full sidecar suite and coverage gates with the fix
+  - [x] Full sidecar suite and coverage gates with the fix: C# 693/693, F# 447/447, Common 125/125; C# coverage 96.50% ratchets its threshold to 95.49%
   - [ ] CI proof on a real newer SDK: a Rust end-to-end Razor test whose fixture copy keeps no SDK pin, so runners carrying SDK 10.0.401 load it with that SDK (Codex1, 029fc3a; awaits CI)
   - [x] Docs and blog: drop the advice to pin SDK 10.0.303, and explain the bundled-compiler fallback (Claude1, 8c418ced)
 
@@ -58,7 +58,7 @@ The phases below are in dependency order. Each item is checked only when a test 
 - [x] References and document highlights across projections, with hidden scaffolding dropped ([RAZOR-FEATURES-REFERENCES])
 - [x] C# completion, with mapped edits and `using` → `@using` ([RAZOR-FEATURES-COMPLETION])
   - [x] Completion right after a typed dot offers members: `@scores.` and an unclosed `@(scores.` (#401, review R2). Red tests `RazorCompletionRecoveryTests` (Codex1) failed for the bug, then passed unchanged once completion asks a copy of the file with the expression finished at the caret (Claude2). An unclosed `@{` already completed and is kept as a control
-  - [ ] Coverage gates with the #401 fix; the full C# sidecar suite passes with it
+  - [x] Coverage gates with the #401 fix; the full C# sidecar suite passes with it
   - [x] Completion inside a call or lambda of an unfinished `@(` offers members (#404, review R8). Red tests from Claude1's report failed for the bug, then passed unchanged once the copy closes every construct Roslyn's parser reads as open, innermost first, and its map keeps the parts of a fragment outside the C# it inserted. Completion now reads the compiler's diagnostics only when the projection's C# does not parse, and forks only the file's active framework
 - [x] Signature help ([RAZOR-FEATURES-SIGNATURE-HELP])
   - [x] Signature help after `@(` no longer lists the generator's scaffolding (`AddContent`, `AddAttribute`) (#400, review R1, Codex1): the regression cases failed for the bug, then passed unchanged
