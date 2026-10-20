@@ -312,6 +312,14 @@ The facts hold no C# fragment spans: C# positions come from the projection's map
 
 The client adds HTML element and attribute names ([RAZOR-FEATURES-HTML]). The host's postfix templates (`.if`, `.foreach`, …) never apply in a Razor file, where the same text can be markup.
 
+**Unfinished expressions.** The Razor compiler cannot finish an implicit expression that ends in a dot (`@scores.`) or an explicit expression still missing its `)` (`@(basket.MinBy(product => product.`). The caret then has no mapping, or maps into C# that does not parse. Completion asks a copy of the file whose expression is finished at the caret:
+
+- `@scores.` becomes `@(scores.)`.
+- An unclosed `@(` gets each `)`, `]` and `}` that Roslyn's parser finds missing, innermost first, and then its own `)`. The compiler's markup diagnostics are read only when the projection's C# does not parse.
+- Only the file's active framework is forked.
+- The copy's projection is read in the file itself, keeping each fragment's part before the inserted text, so items and edits land at the real file's caret.
+- A copy that still cannot map the caret leaves completion to the file's own projection.
+
 ### [RAZOR-FEATURES-SIGNATURE-HELP] Signature Help
 
 Signature help in a C# fragment is computed at the mapped position.
