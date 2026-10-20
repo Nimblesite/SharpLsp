@@ -31,6 +31,7 @@ The phases below are in dependency order. Each item is checked only when a test 
   - [x] Verify configuration fallbacks, target-path metadata, current file/import reads, missing files, missing paths, cancellation and failure recovery — `RazorEngineSettingsTests`: 12 passing cases; settings, filesystem and engine each have 100% line coverage
 - [x] Sidecar: build the HTML projection and the markup-context tokenizer ([RAZOR-ARCHITECTURE-HTML])
   - [x] HTML projection from compiler IR, preserving offsets/newlines and current unsaved text — `RazorHtmlProjectionTests`: 19 passing fixture cases (Blazor and MVC, comments, UTF-16, incomplete tags, unsaved edits)
+  - [ ] The C# in an HTML attribute value (`disabled="@(…)"`) and in a directive attribute is blank in the projection, while the attribute's name, quotes and literal text stay (Claude1)
   - [x] HTML markup-context tokenizer — `HtmlMarkupContextTests`: 36 passing cases with 100% line coverage, including malformed start/end tag recovery; the three character-reconsumption regressions were verified failing before the fix and pass unchanged afterward
   - [x] Host: `sharplsp/razor/htmlProjection` answers `{ text }`, or `null` for a file no project lists — `test_full_stack_razor_routing_session`
   - [x] Verify `sharplsp/razor/htmlProjection` through editor integration — `razor-lsp.test.ts`: the projection keeps the editor's offsets, line breaks and unsaved text, and feeds VS Code's HTML completion and hover
@@ -85,7 +86,7 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 - [x] VS Code: sync `razor` and `aspnetcorerazor` documents, and activate on `onLanguage:razor` ([RAZOR-EDITORS]) — `razor-lsp.test.ts`: a Razor file opens as Razor, and its unsaved edits reach the server
 - [x] VS Code: forward HTML completion and hover over `sharplsp/razor/htmlProjection` ([RAZOR-FEATURES-HTML]) — `razor-lsp.test.ts`: element names and HTML hovers in markup, C# completion and hover in code
-  - [ ] A C# position offers C# items alone: no word suggestions from the HTML projection, including after a typed dot and inside an unfinished `@(` (#405, Codex1)
+  - [ ] A C# position offers C# items alone: no word suggestions from the HTML projection, including after a typed dot and inside an unfinished `@(` (#405, review R9, Codex1). Host and sidecar regressions failed for the bug and pass unchanged with the caret-gated projection; the editor red/green run is pending
 - [x] VS Code: add a `razor` end-to-end chunk on both platforms — `test-chunks.json`, in both matrices
 - [x] Zed: Razor language registration (Zed has no built-in Razor grammar) — `the_server_attaches_to_the_csharp_fsharp_and_razor_languages`
 
