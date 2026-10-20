@@ -44,4 +44,7 @@
     <ItemGroup>
         <ProjectReference Include="..\SharpLsp.Sidecar.CSharp\SharpLsp.Sidecar.CSharp.csproj" />
     </ItemGroup>
+
+    <!-- The tests read the engine's markup facts, which carry Razor compiler types. -->
+    <Import Project="..\SharpLsp.Sidecar.CSharp\RazorCompiler.props" />
 </Project>

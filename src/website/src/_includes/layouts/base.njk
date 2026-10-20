@@ -1,5 +1,14 @@
 {% set pageLang = lang | default(defaultLanguage) %}
 {% set pageDescription = description | default(i18n[pageLang].home.lede) | default(site.description) %}
+{% set isDocs = page.url.startsWith('/docs/') or page.url.startsWith('/' + pageLang + '/docs/') %}
+{% set pageTitle = title | default(site.title) %}
+{# A docs page title names the product too, so a search result or a tab says whose docs these are. #}
+{% set documentTitle = pageTitle + ' | ' + site.title if isDocs and not (site.title in pageTitle) else pageTitle %}
+{# [WEB-DESIGN-MEDIA-DISCOVERY] A page with a film shares it: its card, og:video and the X player card. #}
+{% set film = socialVideo %}
+{% set isWatch = film and film.watch == page.url %}
+{% set shareImage = film.card if film else site.ogImage %}
+{% set shareImageAlt = film.label if film else site.ogImageAlt %}
 <!DOCTYPE html>
 <html lang="{{ pageLang }}">
 <head>
@@ -22,8 +31,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Primary Meta Tags -->
-  <title>{{ title | default(site.title) }}</title>
-  <meta name="title" content="{{ title | default(site.title) }}">
+  <title>{{ documentTitle }}</title>
+  <meta name="title" content="{{ documentTitle }}">
   <meta name="description" content="{{ pageDescription }}">
   {% if site.author %}<meta name="author" content="{{ site.author }}">{% endif %}
   {% if site.keywords %}<meta name="keywords" content="{{ site.keywords }}">{% endif %}
@@ -45,7 +54,7 @@
   <link rel="alternate" hreflang="x-default" href="{{ site.url }}{{ page.url | altLangUrl(lang | default('en'), defaultLanguage) }}">
 
   <!-- Open Graph -->
-  <meta property="og:type" content="{% if (page.url.startsWith('/blog/') or page.url.startsWith('/' + pageLang + '/blog/')) and page.url != '/blog/' and page.url != '/' + pageLang + '/blog/' %}article{% else %}website{% endif %}">
+  <meta property="og:type" content="{% if isWatch %}video.other{% elif (page.url.startsWith('/blog/') or page.url.startsWith('/' + pageLang + '/blog/')) and page.url != '/blog/' and page.url != '/' + pageLang + '/blog/' %}article{% else %}website{% endif %}">
   <meta property="og:url" content="{{ site.url }}{{ page.url }}">
   <meta property="og:title" content="{{ title | default(site.title) }}">
   <meta property="og:description" content="{{ pageDescription }}">
@@ -54,20 +63,39 @@
   {% for langCode in supportedLanguages %}{% if langCode != (lang | default('en')) %}
   <meta property="og:locale:alternate" content="{{ langCode | toOgLocale }}">
   {% endif %}{% endfor %}
-  {% if site.ogImage %}
-  <meta property="og:image" content="{{ site.url }}{{ site.ogImage }}">
-  <meta property="og:image:width" content="{{ site.ogImageWidth | default('1200') }}">
-  <meta property="og:image:height" content="{{ site.ogImageHeight | default('630') }}">
+  <meta property="og:image" content="{{ site.url }}{{ shareImage }}">
+  <meta property="og:image:type" content="{{ 'image/jpeg' if film else 'image/png' }}">
+  <meta property="og:image:width" content="{{ site.ogImageWidth }}">
+  <meta property="og:image:height" content="{{ site.ogImageHeight }}">
+  <meta property="og:image:alt" content="{{ shareImageAlt }}">
+  {% if film %}
+  <meta property="og:video" content="{{ site.url }}{{ film.stream }}">
+  <meta property="og:video:secure_url" content="{{ site.url }}{{ film.stream }}">
+  <meta property="og:video:type" content="video/mp4">
+  <meta property="og:video:width" content="{{ film.width }}">
+  <meta property="og:video:height" content="{{ film.height }}">
+  {% endif %}
+  {% if isWatch %}
+  <meta property="video:duration" content="{{ film.seconds }}">
+  <meta property="video:release_date" content="{{ film.uploadDate }}">
   {% endif %}
 
   <!-- Twitter -->
-  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:card" content="{{ 'player' if film else 'summary_large_image' }}">
   <meta name="twitter:url" content="{{ site.url }}{{ page.url }}">
-  <meta name="twitter:title" content="{{ title | default(site.title) }}">
+  <meta name="twitter:title" content="{{ pageTitle }}">
   <meta name="twitter:description" content="{{ pageDescription }}">
   {% if site.twitterSite %}<meta name="twitter:site" content="{{ site.twitterSite }}">{% endif %}
   {% if site.twitterCreator %}<meta name="twitter:creator" content="{{ site.twitterCreator }}">{% endif %}
-  {% if site.ogImage %}<meta name="twitter:image" content="{{ site.url }}{{ site.ogImage }}">{% endif %}
+  <meta name="twitter:image" content="{{ site.url }}{{ shareImage }}">
+  <meta name="twitter:image:alt" content="{{ shareImageAlt }}">
+  {% if film %}
+  <meta name="twitter:player" content="{{ site.url }}{{ film.embed }}">
+  <meta name="twitter:player:width" content="{{ film.width }}">
+  <meta name="twitter:player:height" content="{{ film.height }}">
+  <meta name="twitter:player:stream" content="{{ site.url }}{{ film.stream }}">
+  <meta name="twitter:player:stream:content_type" content="video/mp4">
+  {% endif %}
 
   <!-- JSON-LD Structured Data -->
   <script type="application/ld+json">
@@ -88,14 +116,14 @@
         }{% endif %}
       },
       {
-        "@type": "{% if page.url.startsWith('/docs/') or page.url.startsWith('/' + pageLang + '/docs/') %}TechArticle{% elif (page.url.startsWith('/blog/') or page.url.startsWith('/' + pageLang + '/blog/')) and page.url != '/blog/' and page.url != '/' + pageLang + '/blog/' %}BlogPosting{% else %}WebPage{% endif %}",
+        "@type": "{% if isDocs %}TechArticle{% elif (page.url.startsWith('/blog/') or page.url.startsWith('/' + pageLang + '/blog/')) and page.url != '/blog/' and page.url != '/' + pageLang + '/blog/' %}BlogPosting{% else %}WebPage{% endif %}",
         "@id": "{{ site.url }}{{ page.url }}#webpage",
         "url": "{{ site.url }}{{ page.url }}",
         "name": "{{ title | default(site.title) }}",
         "description": {{ pageDescription | dump | safe }},
         "isPartOf": { "@id": "{{ site.url }}/#website" },
-        "inLanguage": "{{ lang | default('en') }}"{% if page.date %},
-        "datePublished": "{{ page.date | isoDate }}"{% endif %}{% if author %},
+        "inLanguage": "{{ lang | default('en') }}"{% if published %},
+        "datePublished": "{{ published | isoDate }}"{% endif %}{% if author %},
         "author": {
           "@type": "Person",
           "name": "{{ author }}"

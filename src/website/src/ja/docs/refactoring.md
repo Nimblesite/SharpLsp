@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: リファクタリングとコードアクション
+description: "SharpLsp の C# と F# のコードアクション：Roslyn のコード修正とリファクタリング、F# のクイックフィックス、名前の変更、整形、メンバーの並べ替え。"
 lang: ja
 eleventyNavigation:
   key: リファクタリングとコードアクション（日本語）

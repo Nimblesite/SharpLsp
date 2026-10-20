@@ -1,0 +1,26 @@
+@page "/board/{Id:int}"
+@implements IDisposable
+@inject NavigationManager Navigation
+
+<PageTitle>Board @Id</PageTitle>
+
+<Panel Title="Scores">
+    <Tally TItem="int" Items="scores" Format="@(score => $"#{score}")" @bind-Label="caption" @ref="tally">
+        <Badge Text="@caption" />
+    </Tally>
+</Panel>
+<input @bind="caption" @bind:event="oninput" />
+<button @onclick="() => Add(1)" disabled="@(scores.Count > 9)">Add</button>
+
+@code {
+    /// <summary>The board's number, from the route.</summary>
+    [Parameter] public int Id { get; set; }
+
+    private readonly List<int> scores = [];
+    private string caption = "Board";
+    private Tally<int>? tally;
+
+    private void Add(int score) => scores.Add(score + Id);
+
+    public void Dispose() => scores.Clear();
+}

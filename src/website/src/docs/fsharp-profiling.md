@@ -2,7 +2,6 @@
 layout: layouts/docs.njk
 title: Profiling F#
 description: "Profile F# CPU and memory in VS Code with SharpLsp: heat bars on .fs lines, closures and pipeline stages by name, records and union cases anchored on the line that builds them, and leaks traced to the module value that holds them."
-eleventyExcludeFromCollections: true
 ---
 
 # Profiling F#

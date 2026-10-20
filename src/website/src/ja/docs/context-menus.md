@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: コンテキストメニュー
+description: "VS Code の SharpLsp ソリューションエクスプローラーのコンテキストメニュー：ビルド、リビルド、クリーン、パッケージの整理、プロジェクトファイルを開く、メンバーの並べ替え。"
 lang: ja
 eleventyNavigation:
   key: コンテキストメニュー（日本語）

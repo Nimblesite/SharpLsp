@@ -1,0 +1,64 @@
+---json
+{
+  "permalink": "robots.txt",
+  "eleventyExcludeFromCollections": true
+}
+---
+# {{ site.title | default(site.name) }}
+# {{ site.url }}
+
+# Allow all crawlers. [WEB-DESIGN-MEDIA-DISCOVERY] /assets/ stays open: search
+# engines fetch video files and thumbnails from it, and social networks fetch
+# card images and videos (Twitterbot, LinkedInBot and Slackbot obey this group).
+User-agent: *
+Allow: /
+Disallow: /search?
+
+# AI Crawlers - Welcome!
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Anthropic-AI
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Cohere-ai
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: Meta-ExternalFetcher
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+# Sitemaps
+Sitemap: {{ site.url }}/sitemap.xml

@@ -25,6 +25,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/completion", HandleCompletionAsync);
         Register("completionItem/resolve", HandleCompletionResolveAsync);
         Register("textDocument/hover", HandleHoverAsync);
+        Register("sharplsp/razor/htmlProjection", HandleRazorHtmlProjectionAsync);
         Register("textDocument/signatureHelp", HandleSignatureHelpAsync);
         Register("textDocument/definition", HandleDefinitionAsync);
         Register("textDocument/typeDefinition", HandleTypeDefinitionAsync);
@@ -44,6 +45,9 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/formatting", HandleFormattingAsync);
         Register("textDocument/rangeFormatting", HandleRangeFormattingAsync);
         Register("textDocument/onTypeFormatting", HandleOnTypeFormattingAsync);
+        Register("textDocument/documentSymbol", HandleDocumentSymbolAsync);
+        Register("textDocument/foldingRange", HandleFoldingRangeAsync);
+        Register("textDocument/linkedEditingRange", HandleLinkedEditingRangeAsync);
         Register("textDocument/semanticTokens/full", HandleSemanticTokensFullAsync);
         Register("textDocument/semanticTokens/range", HandleSemanticTokensRangeAsync);
         Register("textDocument/inlayHint", HandleInlayHintAsync);

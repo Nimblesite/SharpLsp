@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Diagnostics
-eleventyExcludeFromCollections: true
+description: "C# and F# diagnostics in SharpLsp: Roslyn and F# Compiler Service errors on unsaved code, push and pull delivery, and SharpLsp's unused-open and dead-code analyzers."
 ---
 
 <img src="/assets/screenshots/docs/diagnostics.webp" alt="The Problems panel with an F# type error from the F# Compiler Service and a C# CS0029 error from Roslyn, both from unsaved edits" width="2400" height="1500">

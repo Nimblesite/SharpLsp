@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Refactoring & Code Actions
+description: "C# and F# code actions in SharpLsp: Roslyn code fixes and refactorings, F# quick fixes, rename, formatting and Sort Members, from the lightbulb or Ctrl+."
 eleventyNavigation:
   key: Refactoring & Code Actions
   order: 7

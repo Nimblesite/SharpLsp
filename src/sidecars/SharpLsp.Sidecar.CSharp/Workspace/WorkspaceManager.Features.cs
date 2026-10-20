@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 using CodeLensesResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.CodeLensResult>,
     string
@@ -101,17 +103,19 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync(
-            filePath,
-            new SemanticTokensResult(),
-            async document => new SemanticTokensResult
-            {
-                Data = await SemanticTokensResolver
-                    .GetFullAsync(document, ct)
-                    .ConfigureAwait(false),
-            },
-            ct
-        );
+        return NativePaths.IsRazor(filePath)
+            ? GetRazorSemanticTokensAsync(filePath, null, ct)
+            : RunDocumentQueryAsync(
+                filePath,
+                new SemanticTokensResult(),
+                async document => new SemanticTokensResult
+                {
+                    Data = await SemanticTokensResolver
+                        .GetFullAsync(document, ct)
+                        .ConfigureAwait(false),
+                },
+                ct
+            );
     }
 
     /// <summary>Get semantic tokens for a range.</summary>
@@ -124,6 +128,15 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
+        if (NativePaths.IsRazor(filePath))
+        {
+            var range = new LinePositionSpan(
+                new LinePosition(startLine, startCharacter),
+                new LinePosition(endLine, endCharacter)
+            );
+            return GetRazorSemanticTokensAsync(filePath, range, ct);
+        }
+
         return RunDocumentQueryAsync(
             filePath,
             new SemanticTokensResult(),

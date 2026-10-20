@@ -1,0 +1,25 @@
+---
+pagination:
+  data: videoPages
+  size: 1
+  alias: watch
+  addAllPagesToCollections: true
+permalink: "{{ watch.watch }}"
+layout: layouts/prose.njk
+---
+{# Implements [WEB-DESIGN-MEDIA-DISCOVERY]: one video as the page's main content, the watch page Google indexes it from. #}
+{% set videoText = i18n[lang].video %}
+{# The player leads, above the fold on a phone too; the long label follows as the heading. #}
+{% video watch.id, { watch: true } %}
+<h1 class="video-title">{{ watch.label }}</h1>
+{% for guide in collections.all %}{% if guide.url == watch.page %}
+<p><a href="{{ watch.page }}">{{ videoText.guide }}{{ guide.data.title }}</a></p>
+{% endif %}{% endfor %}
+{% if watch.transcript.length %}
+<section>
+  <h2>{{ videoText.transcript }}</h2>
+  {% for line in watch.transcript %}
+  <p>{{ line }}</p>
+  {% endfor %}
+</section>
+{% endif %}

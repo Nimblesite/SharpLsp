@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 設定
+description: "SharpLsp の設定：sharplsp.toml のワークスペース用サーバー設定、VS Code の sharplsp.* クライアント設定、ファイルの置き場所、monorepo モード。"
 lang: ja
 eleventyNavigation:
   key: 設定（日本語）

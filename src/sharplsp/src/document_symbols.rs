@@ -1,10 +1,11 @@
-//! F# document symbols (`textDocument/documentSymbol`).
+//! Sidecar document symbols (`textDocument/documentSymbol`) for F# and Razor.
 //!
 //! C# document symbols are answered syntactically by tree-sitter in
-//! [`crate::handlers::handle_document_symbols`]. F# has no tree-sitter grammar
-//! in the host, so F# symbols are sourced from the sidecar's FCS navigation
-//! items and mapped here into nested LSP [`DocumentSymbol`]s. The extraction
-//! contract is `[SE-FSHARP-SYMBOLS]`.
+//! [`crate::handlers::handle_document_symbols`]. F# symbols are sourced from the
+//! sidecar's FCS navigation items (`[SE-FSHARP-SYMBOLS]`), and Razor symbols
+//! from the C# sidecar's Razor compiler (`[RAZOR-FEATURES-STRUCTURE]`); both
+//! arrive in one wire shape and are mapped here into nested LSP
+//! [`DocumentSymbol`]s.
 
 use std::sync::Arc;
 
@@ -16,18 +17,19 @@ use tracing::warn;
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::SidecarFileReq;
 
-/// Handle `textDocument/documentSymbol` for an F# file via the sidecar. `[FS-DOCSYMBOL]`
-pub fn handle_fsharp(
+/// Handle `textDocument/documentSymbol` for an F# or Razor file via the sidecar
+/// that owns it. `[FS-DOCSYMBOL]` `[RAZOR-ARCHITECTURE-ROUTING]`
+pub fn handle_via_sidecar(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    // F# has no host tree-sitter grammar; symbols are only available when the
-    // FCS sidecar is running. With no sidecar (F# disabled / no workspace root)
-    // the request cannot be served — surface that as an error rather than a
-    // misleading empty outline. [SE-FSHARP-SYMBOLS]
+    // F# and Razor have no host tree-sitter grammar; symbols are only available
+    // when the owning sidecar is running. With no sidecar (language disabled / no
+    // workspace root) the request cannot be served — surface that as an error
+    // rather than a misleading empty outline. [SE-FSHARP-SYMBOLS]
     let Some(sidecar) = sidecar else {
-        anyhow::bail!("F# sidecar unavailable; cannot compute document symbols");
+        anyhow::bail!("sidecar unavailable; cannot compute document symbols");
     };
     let params: DocumentSymbolParams = serde_json::from_value(req.params)?;
     let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
@@ -161,6 +163,8 @@ fn parse_document_symbol_kind(kind: &str) -> SymbolKind {
         "EnumMember" => SymbolKind::ENUM_MEMBER,
         "Constructor" => SymbolKind::CONSTRUCTOR,
         "Function" => SymbolKind::FUNCTION,
+        "Method" => SymbolKind::METHOD,
+        "Key" => SymbolKind::KEY,
         "Property" => SymbolKind::PROPERTY,
         "Constant" => SymbolKind::CONSTANT,
         "Variable" => SymbolKind::VARIABLE,
@@ -241,6 +245,9 @@ mod tests {
         assert_eq!(parse_document_symbol_kind("Function"), SymbolKind::FUNCTION);
         assert_eq!(parse_document_symbol_kind("Property"), SymbolKind::PROPERTY);
         assert_eq!(parse_document_symbol_kind("Field"), SymbolKind::FIELD);
+        // Razor outline kinds: `@code` methods and directives. [RAZOR-FEATURES-STRUCTURE]
+        assert_eq!(parse_document_symbol_kind("Method"), SymbolKind::METHOD);
+        assert_eq!(parse_document_symbol_kind("Key"), SymbolKind::KEY);
     }
 
     #[test]
@@ -295,14 +302,14 @@ mod tests {
     }
 
     #[test]
-    fn handle_fsharp_without_sidecar_errors() {
+    fn handle_via_sidecar_without_sidecar_errors() {
         let req = Request {
             id: lsp_server::RequestId::from(1),
             method: "textDocument/documentSymbol".to_string(),
             params: serde_json::Value::Null,
         };
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        // No sidecar → F# symbols cannot be computed → error (not empty).
-        assert!(handle_fsharp(req, &runtime, None).is_err());
+        // No sidecar → F# or Razor symbols cannot be computed → error (not empty).
+        assert!(handle_via_sidecar(req, &runtime, None).is_err());
     }
 }

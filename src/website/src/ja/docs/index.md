@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: はじめに
+description: "VS Code、Cursor、Windsurf、VSCodium に SharpLsp をインストール。1 つの拡張機能に Rust ホストと、C# 用の Roslyn・F# 用の F# Compiler Service のサイドカーが同梱されています。"
 lang: ja
 eleventyNavigation:
   key: はじめに（日本語）

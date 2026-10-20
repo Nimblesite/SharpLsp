@@ -138,7 +138,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
-            if (_isProjectlessDirectory)
+            if (_isProjectlessDirectory && !NativePaths.IsRazor(filePath))
             {
                 await _projectlessLoadLock.WaitAsync(ct).ConfigureAwait(false);
                 try
@@ -168,6 +168,12 @@ internal sealed partial class WorkspaceManager : IDisposable
                     // Workspace still loading. Stash the edit; OpenAsync will
                     // replay it once the solution is materialized.
                     _pendingTextEdits[filePath] = newText;
+                    return new VoidResult.Ok<Unit, string>(Unit.Value);
+                }
+
+                if (NativePaths.IsRazor(filePath))
+                {
+                    UpdateRazorText(filePath, newText);
                     return new VoidResult.Ok<Unit, string>(Unit.Value);
                 }
 
@@ -297,44 +303,37 @@ internal sealed partial class WorkspaceManager : IDisposable
     }
 
     /// <summary>Get hover information at a position.</summary>
-    public async Task<HoverQueryResult> GetHoverAsync(
+    public Task<HoverQueryResult> GetHoverAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            Log.Debug("[Hover] request {File}:{Line}:{Character}", filePath, line, character);
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
-            {
-                Log.Debug("[Hover] document not found: {File}", filePath);
-                return new HoverQueryResult.Ok<HoverResult?, string>(null);
-            }
+        Log.Debug("[Hover] request {File}:{Line}:{Character}", filePath, line, character);
+        return RunPositionQueryAsync<HoverResult?>(
+            filePath,
+            (line, character),
+            null,
+            target => HoverAtAsync(target, ct),
+            ct
+        );
+    }
 
-            var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-            var position = text.Lines.GetPosition(new LinePosition(line, character));
-            var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-            if (model is null)
-            {
-                Log.Debug("[Hover] semantic model is null: {File}", filePath);
-                return new HoverQueryResult.Ok<HoverResult?, string>(null);
-            }
-
-            var result = CSharpHoverBuilder.Build(model, position, ct);
-            var outcome = result is HoverQueryResult.Ok<HoverResult?, string> { Value: not null }
-                ? "content"
-                : "null";
-            Log.Debug("[Hover] result: {Outcome}", outcome);
-            return result;
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[Hover] request failed");
-            return HoverQueryResult.Failure(ex.Message);
-        }
+    private static async Task<HoverResult?> HoverAtAsync(QueryTarget target, CancellationToken ct)
+    {
+        var text = await target.Document.GetTextAsync(ct).ConfigureAwait(false);
+        // Every query target is a C# document, which always has a semantic model.
+        var model =
+            await target.Document.GetSemanticModelAsync(ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Hover found no semantic model");
+        var position = text.Lines.GetPosition(new LinePosition(target.Line, target.Character));
+        var built = CSharpHoverBuilder.Build(model, position, ct);
+        // The hover's range is the token's mapped span, already in the Razor file for a
+        // projection. [RAZOR-FEATURES-HOVER]
+        return built is HoverQueryResult.Ok<HoverResult?, string> { Value: var hover }
+            ? hover
+            : throw new InvalidOperationException(!built ?? "Hover failed");
     }
 
     /// <summary>Go to definition at a position (returns all locations for partial types).</summary>
@@ -345,11 +344,23 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync(
+        return RunPositionQueryAsync(
             filePath,
+            (line, character),
             new LocationListResult(),
-            document =>
-                DefinitionResolver.ResolveDefinitionLocationsAsync(document, line, character, ct),
+            async target =>
+                await MapLocationsAsync(
+                        await DefinitionResolver
+                            .ResolveDefinitionLocationsAsync(
+                                target.Document,
+                                target.Line,
+                                target.Character,
+                                ct
+                            )
+                            .ConfigureAwait(false),
+                        ct
+                    )
+                    .ConfigureAwait(false),
             ct
         );
     }
@@ -362,11 +373,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync<LocationResult?>(
+        return RunLocationQueryAsync(
             filePath,
-            null,
-            document =>
-                DefinitionResolver.ResolveTypeDefinitionAsync(document, line, character, ct),
+            (line, character),
+            DefinitionResolver.ResolveTypeDefinitionAsync,
             ct
         );
     }
@@ -379,10 +389,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync<LocationResult?>(
+        return RunLocationQueryAsync(
             filePath,
-            null,
-            document => DefinitionResolver.ResolveDeclarationAsync(document, line, character, ct),
+            (line, character),
+            DefinitionResolver.ResolveDeclarationAsync,
             ct
         );
     }
@@ -395,11 +405,17 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunScopedQueryAsync(
+        return RunScopedLocationQueryAsync(
             filePath,
-            new LocationListResult(),
-            (document, scope) =>
-                ReferenceResolver.ResolveImplementationsAsync(document, scope, line, character, ct),
+            (line, character),
+            (target, scope) =>
+                ReferenceResolver.ResolveImplementationsAsync(
+                    target.Document,
+                    scope,
+                    target.Line,
+                    target.Character,
+                    ct
+                ),
             ct
         );
     }
@@ -412,15 +428,15 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunScopedQueryAsync(
+        return RunScopedLocationQueryAsync(
             filePath,
-            new LocationListResult(),
-            (document, scope) =>
+            (line, character),
+            (target, scope) =>
                 ReferenceResolver.ResolveReferencesAsync(
-                    document,
+                    target.Document,
                     scope,
-                    line,
-                    character,
+                    target.Line,
+                    target.Character,
                     includeDeclaration,
                     ct
                 ),
@@ -488,13 +504,19 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync(
+        return RunPositionQueryAsync(
             filePath,
+            (line, character),
             new DocumentHighlightListResult(),
-            async document => new DocumentHighlightListResult
+            async target => new DocumentHighlightListResult
             {
                 Highlights = await ReferenceResolver
-                    .ResolveDocumentHighlightsAsync(document, line, character, ct)
+                    .ResolveDocumentHighlightsAsync(
+                        target.Document,
+                        (target.Line, target.Character),
+                        target.AnswerPath,
+                        ct
+                    )
                     .ConfigureAwait(false),
             },
             ct
@@ -612,6 +634,12 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         foreach (var (filePath, newText) in _pendingTextEdits)
         {
+            if (NativePaths.IsRazor(filePath))
+            {
+                UpdateRazorText(filePath, newText);
+                continue;
+            }
+
             var document = SolutionPaths.FindDocument(_solution, filePath);
             if (document is not null)
             {

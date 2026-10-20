@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Getting Started
+description: "Install SharpLsp in VS Code, Cursor, Windsurf or VSCodium: one extension bundles the Rust host plus the Roslyn and F# Compiler Service sidecars for C# and F#."
 eleventyNavigation:
   key: Getting Started
   order: 1

@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: NuGet パッケージマネージャー
+description: "SharpLsp で VS Code から NuGet パッケージを参照・インストール：nuget.org の検索、プロジェクトファイルや Directory.Packages.props の編集、未使用パッケージの削除とバージョンの統合。"
 lang: ja
 eleventyNavigation:
   key: NuGet パッケージマネージャー（日本語）

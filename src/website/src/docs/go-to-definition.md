@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Go to Definition
-eleventyExcludeFromCollections: true
+description: "Go to definition, find references, implementations and type definitions for C# and F# in SharpLsp, with framework types shown as decompiled source."
 ---
 
 <img src="/assets/screenshots/docs/navigation.webp" alt="Find All References on the Product record in CheckoutPipeline.cs, every use listed in a peek window" width="2400" height="1500">

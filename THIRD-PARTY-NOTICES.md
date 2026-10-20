@@ -66,6 +66,8 @@ Copied into the VSIX at `bin/all/` alongside the sidecar executable.
 | Serilog | 4.4.0 | Apache-2.0 | Serilog Contributors |
 | Serilog.Sinks.File | 7.0.0 | Apache-2.0 | Serilog Contributors |
 | Outcome | 1.0.0 | MIT | Christian Findlay |
+| Microsoft.CodeAnalysis.Razor.Compiler and Microsoft.AspNetCore.Razor.Utilities.Shared (the Razor compiler, copied from the .NET SDK) | 10.0.0-preview.26377.103 (SDK 10.0.303) | MIT | .NET Foundation and Contributors |
+| Microsoft.Extensions.ObjectPool (copied from the .NET SDK with the Razor compiler) | 10.0.1 | MIT | .NET Foundation and Contributors |
 
 > `Microsoft.Build`, `Microsoft.Build.Framework`, and `Microsoft.NET.StringTools`
 > are referenced **compile-time only** (`ExcludeAssets="runtime"`); MSBuildLocator

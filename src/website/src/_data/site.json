@@ -11,6 +11,7 @@
   "ogImage": "/assets/images/og-image.png",
   "ogImageWidth": "1200",
   "ogImageHeight": "630",
+  "ogImageAlt": "SharpLsp: open-source C# and F# language server for every editor, built on Roslyn, FSharp.Compiler.Service and Rust",
   "searchUrl": "https://sharplsp.dev/blog",
   "organization": {
     "name": "SharpLsp",

@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Hover and Quick Info
-eleventyExcludeFromCollections: true
+description: "Hover in SharpLsp for C# and F#: signatures, doc comments, XML docs and inferred types from Roslyn and the F# Compiler Service, read from your unsaved code."
 ---
 
 <img src="/assets/screenshots/docs/hover.webp" alt="A C# hover on Catalog.Generate showing its signature and rendered XML documentation" width="2400" height="1500">

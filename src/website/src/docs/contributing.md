@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Contributing
+description: "Build SharpLsp from source and contribute: the prerequisites (Rust, .NET 10, Node.js), the dev container, the repository layout, and how to build and test."
 eleventyNavigation:
   key: Contributing
   order: 13

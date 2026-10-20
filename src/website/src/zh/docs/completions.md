@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 代码补全
+description: "SharpLsp 的 C# 与 F# 代码补全：C# 由 Roslyn 提供，F# 由 F# Compiler Service 提供，支持替换标识符的编辑，以及自动添加 using 的导入补全。"
 lang: zh
 eleventyNavigation:
   key: 代码补全（中文）

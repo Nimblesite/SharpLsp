@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -67,16 +68,21 @@ internal static class ReferenceResolver
             .ConfigureAwait(false);
     }
 
-    /// <summary>Find document highlights for the symbol at a position: this document only.</summary>
+    /// <summary>
+    /// Find document highlights for the symbol at a position: this document only, and only
+    /// where its locations map to <paramref name="answerPath"/>. For a Razor file the document
+    /// is its projection and the answer path is the Razor file, so hidden scaffolding and
+    /// <c>_Imports.razor</c> lines drop out. [RAZOR-FEATURES-REFERENCES]
+    /// </summary>
     public static async Task<List<DocumentHighlightResult>> ResolveDocumentHighlightsAsync(
         Document document,
-        int line,
-        int character,
+        (int Line, int Character) at,
+        string answerPath,
         CancellationToken ct
     )
     {
         var symbol = await DefinitionResolver
-            .ResolveSymbolAsync(document, line, character, ct)
+            .ResolveSymbolAsync(document, at.Line, at.Character, ct)
             .ConfigureAwait(false);
         if (symbol is null)
         {
@@ -90,7 +96,7 @@ internal static class ReferenceResolver
         return
         [
             .. referenced
-                .SelectMany(reference => HighlightsIn(document, reference))
+                .SelectMany(reference => HighlightsIn(document, reference, answerPath))
                 .DistinctBy(highlight =>
                     (
                         highlight.StartLine,
@@ -214,7 +220,8 @@ internal static class ReferenceResolver
     /// <summary>One referenced symbol's declaration (a write) and its uses in the document.</summary>
     private static IEnumerable<DocumentHighlightResult> HighlightsIn(
         Document document,
-        ReferencedSymbol reference
+        ReferencedSymbol reference,
+        string answerPath
     )
     {
         var declarations = reference
@@ -223,10 +230,12 @@ internal static class ReferenceResolver
                 && location.IsInSource
                 && location.SourceTree?.FilePath == document.FilePath
             )
-            .Select(location => ToHighlight(location, WriteKind));
+            .Select(location => ToHighlight(location, WriteKind, answerPath));
         var uses = reference
             .Locations.Where(use => use.Document.Id == document.Id)
-            .Select(use => ToHighlight(use.Location, IsWriteReference(use) ? WriteKind : ReadKind));
+            .Select(use =>
+                ToHighlight(use.Location, IsWriteReference(use) ? WriteKind : ReadKind, answerPath)
+            );
         return declarations.Concat(uses).OfType<DocumentHighlightResult>();
     }
 
@@ -240,10 +249,14 @@ internal static class ReferenceResolver
         return reference.Definition is not IMethodSymbol { AssociatedSymbol: not null };
     }
 
-    private static DocumentHighlightResult? ToHighlight(Location location, int kind)
+    private static DocumentHighlightResult? ToHighlight(
+        Location location,
+        int kind,
+        string answerPath
+    )
     {
         var span = location.GetMappedLineSpan();
-        return span.IsValid
+        return span.IsValid && NativePaths.AreEqual(span.Path, answerPath)
             ? new DocumentHighlightResult
             {
                 StartLine = span.StartLinePosition.Line,

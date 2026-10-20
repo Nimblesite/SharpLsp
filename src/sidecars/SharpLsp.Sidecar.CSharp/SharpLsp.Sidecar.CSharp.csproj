@@ -77,4 +77,7 @@
         <PackageReference Include="ICSharpCode.Decompiler" Version="11.1.0.9782" />
         <PackageReference Include="MessagePack" Version="3.1.12" />
     </ItemGroup>
+
+    <!-- The Razor compiler, bundled from the SDK: [RAZOR-ARCHITECTURE-ENGINE]. -->
+    <Import Project="RazorCompiler.props" />
 </Project>

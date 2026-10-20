@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: 诊断
+description: "SharpLsp 的 C# 与 F# 诊断：Roslyn 和 F# Compiler Service 针对未保存代码的错误、推送与拉取两种模式，以及未使用 open 和死代码分析器。"
 lang: zh
-eleventyExcludeFromCollections: true
 ---
 
 <img src="/assets/screenshots/docs/diagnostics.webp" alt="问题面板：来自未保存编辑的 F# Compiler Service F# 类型错误和 Roslyn C# CS0029 错误" width="2400" height="1500">

@@ -250,6 +250,7 @@ pub fn get_postfix_completions(
             let snippet = match lang {
                 LangId::CSharp => t.csharp_snippet,
                 LangId::FSharp => t.fsharp_snippet,
+                LangId::Razor => None,
             }?;
 
             let expanded = snippet.replace("{expr}", &expr_text);
@@ -343,6 +344,30 @@ mod tests {
             _ => panic!("expected text edit"),
         };
         assert!(text.contains("if (foo)"));
+    }
+
+    /// Postfix templates never expand in Razor files, where `foo.if` can be
+    /// markup text; C# there completes from the projection.
+    /// [RAZOR-FEATURES-COMPLETION]
+    #[test]
+    fn razor_documents_get_no_postfix_templates() {
+        assert!(
+            get_postfix_completions("foo.if", 0, 6, LangId::Razor).is_empty(),
+            "a C# template stays out of Razor"
+        );
+        assert!(
+            get_postfix_completions("xs.match", 0, 8, LangId::Razor).is_empty(),
+            "an F# template stays out of Razor"
+        );
+        assert!(
+            get_postfix_completions("items.", 0, 6, LangId::Razor).is_empty(),
+            "a bare dot lists no templates in Razor"
+        );
+        assert_eq!(
+            get_postfix_completions("foo.if", 0, 6, LangId::CSharp).len(),
+            1,
+            "the same text in C# offers the template"
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: アーキテクチャ
+description: "SharpLsp の仕組み：tree-sitter で解析する Rust の LSP ホストが、C# のリクエストを Roslyn のサイドカーへ、F# のリクエストを F# Compiler Service のサイドカーへ振り分けます。"
 lang: ja
 eleventyNavigation:
   key: アーキテクチャ（日本語）

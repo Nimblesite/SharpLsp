@@ -3,7 +3,6 @@ layout: layouts/docs.njk
 title: F# のプロファイリング
 description: "SharpLsp で F# の CPU とメモリを VS Code でプロファイリング：.fs の行に付くヒートバー、名前で示されるクロージャーとパイプラインのステージ、組み立てた行に固定されるレコードと共用体ケース、リークを保持するモジュール値の特定。"
 lang: ja
-eleventyExcludeFromCollections: true
 ---
 
 # F# のプロファイリング

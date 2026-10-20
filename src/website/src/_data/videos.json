@@ -1,5 +1,6 @@
 {
   "profiler-film": {
+    "page": "/blog/dotnet-profiler-vs-code-csharp-fsharp/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1080,
@@ -20,7 +21,31 @@
       }
     }
   },
+  "profiler-csharp": {
+    "page": "/docs/profiler/",
+    "encodings": ["mp4", "webm"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT2M16S",
+    "uploadDate": "2026-10-19T00:08:43+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Profiling a C# app in VS Code with SharpLsp: CPU heat on hot lines, the hottest functions, and a leaking static dictionary found and fixed",
+        "caption": "Narrated, with original music and captions. The C# loop on the Storefront demo, recorded in VS Code: Profile CPU and the heat map, Track Memory, the leak suspect, the retention graph rooted at a static field, the fix typed in, then a second run. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "在 VS Code 中用 SharpLsp 分析 C# 应用：热点行的 CPU 热度、最热的函数，以及发现并修复一个泄漏的静态字典",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中录制的 Storefront 演示 C# 完整流程：Profile CPU 和热力图、Track Memory、可疑泄漏、根为静态字段的保留图、输入修复代码，然后再次运行。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp で VS Code の C# アプリをプロファイリング：ホットな行の CPU ヒート、最もホットな関数、リークする static な Dictionary の発見と修正",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で収録した Storefront デモでの C# の一連の流れ：Profile CPU とヒートマップ、Track Memory、リークの疑い、static フィールドをルートとする保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
   "profiler-cpu-recording": {
+    "page": "/docs/profiler/",
     "encodings": ["mp4"],
     "width": 1920,
     "height": 1200,
@@ -42,6 +67,7 @@
     }
   },
   "profiler-memory-timelapse": {
+    "page": "/docs/profiler/",
     "encodings": ["mp4"],
     "width": 1920,
     "height": 1200,
@@ -63,6 +89,7 @@
     }
   },
   "profiler-fix-memory-leak": {
+    "page": "/docs/memory-leaks/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -85,6 +112,7 @@
     "captions": ["en", "ja", "zh"]
   },
   "profiler-fsharp": {
+    "page": "/docs/fsharp-profiling/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -107,6 +135,7 @@
     }
   },
   "sharplsp-tour": {
+    "page": "/blog/editor-agnostic-dotnet-lsp/",
     "encodings": ["mp4", "webm"],
     "width": 1000,
     "height": 562,
@@ -128,6 +157,7 @@
     }
   },
   "getting-started": {
+    "page": "/docs/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -150,6 +180,7 @@
     }
   },
   "editor-setup": {
+    "page": "/docs/editors/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -172,6 +203,7 @@
     }
   },
   "configuration": {
+    "page": "/docs/configuration/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -194,6 +226,7 @@
     }
   },
   "fsharp-language": {
+    "page": "/docs/fsharp/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -216,6 +249,7 @@
     }
   },
   "code-completions": {
+    "page": "/docs/completions/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -238,6 +272,7 @@
     }
   },
   "hover": {
+    "page": "/docs/hover/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -260,6 +295,7 @@
     }
   },
   "navigation": {
+    "page": "/docs/go-to-definition/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -282,6 +318,7 @@
     }
   },
   "diagnostics": {
+    "page": "/docs/diagnostics/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -304,6 +341,7 @@
     }
   },
   "refactoring": {
+    "page": "/docs/refactoring/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -326,6 +364,7 @@
     }
   },
   "context-menus": {
+    "page": "/docs/context-menus/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -348,6 +387,7 @@
     }
   },
   "nuget": {
+    "page": "/docs/nuget/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -369,29 +409,8 @@
       }
     }
   },
-  "profiler-csharp": {
-    "encodings": ["mp4", "webm"],
-    "width": 1920,
-    "height": 1200,
-    "duration": "PT2M16S",
-    "uploadDate": "2026-10-19T00:08:43+11:00",
-    "captions": ["en", "ja", "zh"],
-    "text": {
-      "en": {
-        "label": "Profiling a C# app in VS Code with SharpLsp: CPU heat on hot lines, the hottest functions, and a leaking static dictionary found and fixed",
-        "caption": "Narrated, with original music and captions. The C# loop on the Storefront demo, recorded in VS Code: Profile CPU and the heat map, Track Memory, the leak suspect, the retention graph rooted at a static field, the fix typed in, then a second run. Fast-forwarded stretches are marked on screen."
-      },
-      "zh": {
-        "label": "在 VS Code 中用 SharpLsp 分析 C# 应用：热点行的 CPU 热度、最热的函数，以及发现并修复一个泄漏的静态字典",
-        "caption": "带旁白、原创配乐和字幕。在 VS Code 中录制的 Storefront 演示 C# 完整流程：Profile CPU 和热力图、Track Memory、可疑泄漏、根为静态字段的保留图、输入修复代码，然后再次运行。快进的片段在画面上有标注。"
-      },
-      "ja": {
-        "label": "SharpLsp で VS Code の C# アプリをプロファイリング：ホットな行の CPU ヒート、最もホットな関数、リークする static な Dictionary の発見と修正",
-        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で収録した Storefront デモでの C# の一連の流れ：Profile CPU とヒートマップ、Track Memory、リークの疑い、static フィールドをルートとする保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
-      }
-    }
-  },
   "architecture": {
+    "page": "/docs/architecture/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
@@ -414,6 +433,7 @@
     }
   },
   "contributing": {
+    "page": "/docs/contributing/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,

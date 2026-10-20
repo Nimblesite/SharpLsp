@@ -15,6 +15,10 @@ pub enum LangId {
     CSharp,
     /// F# (.fs, .fsx, .fsi files).
     FSharp,
+    /// Razor (.razor components, .cshtml pages and views). The C# sidecar owns
+    /// it, and its Razor compiler is the only parser: there is no tree-sitter
+    /// Razor grammar. Implements [RAZOR-ARCHITECTURE-ROUTING].
+    Razor,
 }
 
 impl LangId {
@@ -36,8 +40,15 @@ impl LangId {
         match crate::paths::extension_key(path)?.as_str() {
             "CS" => Some(Self::CSharp),
             "FS" | "FSX" | "FSI" => Some(Self::FSharp),
+            "RAZOR" | "CSHTML" => Some(Self::Razor),
             _ => None,
         }
+    }
+
+    /// Whether the host parses this language with tree-sitter. Razor has no
+    /// grammar, so its syntax features come from the sidecar instead.
+    pub const fn has_grammar(self) -> bool {
+        !matches!(self, Self::Razor)
     }
 }
 
@@ -74,6 +85,7 @@ impl TsParsers {
                     .set_language(&self.fsharp_language)
                     .context("failed to set F# language")?;
             }
+            LangId::Razor => anyhow::bail!("Razor has no tree-sitter grammar"),
         }
         parser
             .parse(source, old_tree)
@@ -116,5 +128,26 @@ mod tests {
 
         let unknown: Uri = "file:///c:/dir/readme.txt".parse().expect("valid uri");
         assert_eq!(LangId::from_uri(&unknown), None);
+    }
+
+    /// Razor components and Razor pages and views are one language, owned by the
+    /// C# sidecar and never parsed by tree-sitter. [RAZOR-ARCHITECTURE-ROUTING]
+    #[test]
+    fn razor_and_cshtml_files_are_razor_without_a_grammar() {
+        let component: Uri = "file:///c:/app/Pages/Counter.razor"
+            .parse()
+            .expect("valid uri");
+        let view: Uri = "file:///c:/app/Views/Home/Index.CSHTML"
+            .parse()
+            .expect("valid uri");
+        assert_eq!(LangId::from_uri(&component), Some(LangId::Razor));
+        assert_eq!(LangId::from_uri(&view), Some(LangId::Razor));
+        assert!(!LangId::Razor.has_grammar());
+        assert!(LangId::CSharp.has_grammar() && LangId::FSharp.has_grammar());
+        let parsed = TsParsers::new().parse(LangId::Razor, "<p>@x</p>", None);
+        assert!(
+            parsed.is_err(),
+            "Razor must never reach a tree-sitter parser"
+        );
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.CSharp.Razor;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -12,6 +13,7 @@ internal sealed partial class WorkspaceManager
 {
     private CompletionList? _lastCompletionList;
     private Document? _lastCompletionDocument;
+    private RazorProjection? _lastCompletionOrigin;
 
     private static List<DiagnosticResult> MapDiagnostics(
         string filePath,
@@ -22,8 +24,14 @@ internal sealed partial class WorkspaceManager
         var results = new List<DiagnosticResult>();
         foreach (var diag in model.GetDiagnostics(cancellationToken: ct))
         {
+            // A diagnostic belongs to the file its location maps to: a projection's hidden
+            // scaffolding maps nowhere and drops out. [RAZOR-FEATURES-DIAGNOSTICS]
             var span = diag.Location.GetMappedLineSpan();
-            if (!span.IsValid)
+            if (
+                !span.IsValid
+                || !NativePaths.AreEqual(span.Path, filePath)
+                || MayServeMarkup(diag, filePath)
+            )
             {
                 continue;
             }
@@ -32,6 +40,17 @@ internal sealed partial class WorkspaceManager
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="diag"/> calls a using unnecessary in a Razor file, where Roslyn
+    /// sees only the projection: markup resolves component tags through usings that the
+    /// generated C# never needs, since it names each component in full, and an import file's
+    /// usings serve the files beside and below it. [RAZOR-FEATURES-DIAGNOSTICS]
+    /// </summary>
+    private static bool MayServeMarkup(Diagnostic diag, string filePath)
+    {
+        return diag.Id is "CS8019" or "IDE0005" && NativePaths.IsRazor(filePath);
     }
 
     private static DiagnosticResult MapOneDiagnostic(
@@ -60,14 +79,17 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-        if (document is null)
+        if (
+            await ResolveQueryTargetAsync(filePath, (line, character), ct).ConfigureAwait(false)
+            is not { } target
+        )
         {
             return [];
         }
 
+        var document = target.Document;
         var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        var position = text.Lines.GetPosition(new LinePosition(line, character));
+        var position = text.Lines.GetPosition(new LinePosition(target.Line, target.Character));
 
         var service = CompletionService.GetService(document);
         if (service is null)
@@ -85,8 +107,12 @@ internal sealed partial class WorkspaceManager
 
         _lastCompletionList = completions;
         _lastCompletionDocument = document;
+        _lastCompletionOrigin = target.Origin;
         var editSpan = ComputeCompletionEditSpan(service, text, position);
-        return MapCompletionItems(completions, editSpan);
+        return RazorResults.MapCompletions(
+            MapCompletionItems(completions, editSpan),
+            target.Origin
+        );
     }
 
     // Roslyn's default completion span covers the typed prefix to the LEFT of the
@@ -184,16 +210,14 @@ internal sealed partial class WorkspaceManager
         var text = await _lastCompletionDocument.GetTextAsync(ct).ConfigureAwait(false);
         var completionSpan = roslynItem.Span;
 
-        foreach (var textChange in change.TextChanges)
-        {
-            if (textChange.Span.IntersectsWith(completionSpan))
-            {
-                continue;
-            }
-
-            result.AdditionalEdits.Add(DocumentText.ToTextEdit(text, textChange));
-        }
-
+        var additional = change.TextChanges.Where(textChange =>
+            !textChange.Span.IntersectsWith(completionSpan)
+        );
+        result.AdditionalEdits.AddRange(
+            _lastCompletionOrigin is { } origin
+                ? RazorCompletionEdits.Map(origin, additional)
+                : additional.Select(textChange => DocumentText.ToTextEdit(text, textChange))
+        );
         return result;
     }
 
@@ -228,8 +252,8 @@ internal sealed partial class WorkspaceManager
         foreach (var tree in compilation.SyntaxTrees)
         {
             ct.ThrowIfCancellationRequested();
-            var filePath = tree.FilePath;
-            if (string.IsNullOrEmpty(filePath) || IsGeneratedBuildOutput(filePath))
+            var filePath = await AnswerPathAsync(tree, ct).ConfigureAwait(false);
+            if (filePath is null)
             {
                 continue;
             }
@@ -241,6 +265,20 @@ internal sealed partial class WorkspaceManager
                 results[filePath] = diagnostics;
             }
         }
+    }
+
+    /// <summary>
+    /// The file a tree's diagnostics belong to: the Razor file a projection names, else the
+    /// tree's own file; null for build output, whose diagnostics are never the user's.
+    /// [RAZOR-FEATURES-DIAGNOSTICS]
+    /// </summary>
+    private static async Task<string?> AnswerPathAsync(SyntaxTree tree, CancellationToken ct)
+    {
+        var root = await tree.GetRootAsync(ct).ConfigureAwait(false);
+        var razor = RazorProjection.ChecksumPath(root);
+        return NativePaths.IsRazor(razor) ? razor
+            : string.IsNullOrEmpty(tree.FilePath) || IsGeneratedBuildOutput(tree.FilePath) ? null
+            : tree.FilePath;
     }
 
     /// <summary>
@@ -305,25 +343,66 @@ internal sealed partial class WorkspaceManager
     /// <paramref name="resolve"/> and wrap its payload in a success result. Any
     /// exception is mapped to a failure carrying its message.
     /// </summary>
-    private async Task<Outcome.Result<TValue, string>> RunDocumentQueryAsync<TValue>(
+    private Task<Outcome.Result<TValue, string>> RunDocumentQueryAsync<TValue>(
         string filePath,
         TValue emptyValue,
         Func<Document, Task<TValue>> resolve,
         CancellationToken ct
     )
     {
+        return RunQueryAsync(() => FindDocumentAsync(filePath, ct), emptyValue, resolve);
+    }
+
+    /// <summary>
+    /// The skeleton every query shares: find what it runs on, answer <paramref name="empty"/>
+    /// when there is nothing, else run <paramref name="query"/>. Any exception becomes a
+    /// failure carrying its message.
+    /// </summary>
+    private static async Task<Outcome.Result<TValue, string>> RunQueryAsync<TSubject, TValue>(
+        Func<Task<TSubject?>> find,
+        TValue empty,
+        Func<TSubject, Task<TValue>> query
+    )
+        where TSubject : class
+    {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            var value = document is null
-                ? emptyValue
-                : await resolve(document).ConfigureAwait(false);
+            var subject = await find().ConfigureAwait(false);
+            var value = subject is null ? empty : await query(subject).ConfigureAwait(false);
             return new Outcome.Result<TValue, string>.Ok<TValue, string>(value);
         }
         catch (Exception ex)
         {
             return Outcome.Result<TValue, string>.Failure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// A position query that searches beyond the document: <paramref name="resolve"/> also
+    /// gets each project's active framework to search, and its locations come back mapped
+    /// out of Razor projections. [NETFX-PROJECTS-CSHARP] [RAZOR-FEATURES-REFERENCES]
+    /// </summary>
+    private Task<Outcome.Result<LocationListResult, string>> RunScopedLocationQueryAsync(
+        string filePath,
+        (int Line, int Character) at,
+        Func<QueryTarget, SearchScope, Task<LocationListResult>> resolve,
+        CancellationToken ct
+    )
+    {
+        return RunPositionQueryAsync(
+            filePath,
+            at,
+            new LocationListResult(),
+            async target =>
+            {
+                var scope = await SearchScope
+                    .OfAsync(target.Document, _activeFrameworks, ct)
+                    .ConfigureAwait(false);
+                var found = await resolve(target, scope).ConfigureAwait(false);
+                return await MapLocationsAsync(found, ct).ConfigureAwait(false);
+            },
+            ct
+        );
     }
 
     /// <summary>

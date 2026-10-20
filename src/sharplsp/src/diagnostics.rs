@@ -277,14 +277,21 @@ async fn publish_once(
 fn source_tag_for_uri(uri: &Uri) -> String {
     match crate::tree_sitter_parse::LangId::from_uri(uri) {
         Some(crate::tree_sitter_parse::LangId::FSharp) => "sharplsp-fsharp".to_string(),
+        Some(crate::tree_sitter_parse::LangId::Razor) => RAZOR_SOURCE.to_string(),
         _ => "sharplsp-csharp".to_string(),
     }
 }
+
+/// The diagnostic source of every Razor diagnostic, C# and `RZ` alike.
+/// [RAZOR-ARCHITECTURE-ROUTING]
+const RAZOR_SOURCE: &str = "sharplsp-razor";
 
 /// Determine the diagnostic source tag from a native document path.
 fn source_tag_for_path(file_path: &str) -> &'static str {
     if crate::paths::has_extension(file_path, &["fs", "fsx", "fsi", "fsscript"]) {
         "sharplsp-fsharp"
+    } else if crate::paths::has_extension(file_path, &["razor", "cshtml"]) {
+        RAZOR_SOURCE
     } else {
         "sharplsp-csharp"
     }
@@ -622,6 +629,28 @@ fn map_severity(severity: &str) -> DiagnosticSeverity {
 )]
 mod tests {
     use super::*;
+
+    /// Razor diagnostics publish under their own source, whether the file is
+    /// named by URI (push) or by path (pull and solution-wide).
+    /// [RAZOR-ARCHITECTURE-ROUTING]
+    #[test]
+    fn razor_files_publish_under_the_razor_source() {
+        let component: Uri = "file:///c:/app/Board.razor".parse().unwrap();
+        let view: Uri = "file:///c:/app/Index.cshtml".parse().unwrap();
+        let code: Uri = "file:///c:/app/Program.cs".parse().unwrap();
+        assert_eq!(source_tag_for_uri(&component), "sharplsp-razor");
+        assert_eq!(source_tag_for_uri(&view), "sharplsp-razor");
+        assert_eq!(source_tag_for_uri(&code), "sharplsp-csharp");
+        assert_eq!(
+            source_tag_for_path("/app/Pages/Board.razor"),
+            "sharplsp-razor"
+        );
+        assert_eq!(
+            source_tag_for_path("/app/Views/Index.CSHTML"),
+            "sharplsp-razor"
+        );
+        assert_eq!(source_tag_for_path("/app/Library.fs"), "sharplsp-fsharp");
+    }
 
     #[test]
     fn map_severity_error() {

@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: NuGet 包管理器
+description: "在 VS Code 中用 SharpLsp 浏览和安装 NuGet 包：搜索 nuget.org，编辑项目文件或 Directory.Packages.props，移除未使用的包并统一版本。"
 lang: zh
 eleventyNavigation:
   key: NuGet 包管理器（中文）

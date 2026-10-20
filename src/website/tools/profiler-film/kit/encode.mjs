@@ -46,6 +46,17 @@ export function poster(video, at, name) {
   const frame = path.join(out, `${name}-poster.png`);
   ffmpeg(['-ss', String(at), '-i', video, '-frames:v', '1', frame], `${name} poster`);
   webp(frame, path.join(videos, `${name}-poster.webp`), 1920);
+  card(frame, name);
+}
+
+/**
+ * `<name>-card.jpg`: the poster frame filled and centre-cropped to 1200x630, the
+ * social preview size. JPEG, because not every network reads WebP.
+ * [WEB-DESIGN-MEDIA-DISCOVERY]
+ */
+export function card(frame, name) {
+  const fill = 'scale=1200:630:force_original_aspect_ratio=increase,crop=1200:630';
+  ffmpeg(['-i', frame, '-vf', fill, '-q:v', '3', path.join(videos, `${name}-card.jpg`)], `${name} card`);
 }
 
 /** Every PNG still under `dir`, as the site's 2400px WebP of the same name in `screenshots/<folder>`. */

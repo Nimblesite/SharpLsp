@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Code Completions
+description: "C# and F# code completion in SharpLsp: Roslyn for C#, the F# Compiler Service for F#, with replacement edits and import completions that add the missing using."
 eleventyNavigation:
   key: Code Completions
   order: 4

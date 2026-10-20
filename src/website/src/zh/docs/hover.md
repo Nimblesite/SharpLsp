@@ -1,8 +1,8 @@
 ---
 layout: layouts/docs.njk
 title: 悬停与快速信息
+description: "SharpLsp 的 C# 与 F# 悬停：来自 Roslyn 和 F# Compiler Service 的签名、文档注释、XML 文档和推断类型，基于未保存的代码。"
 lang: zh
-eleventyExcludeFromCollections: true
 ---
 
 <img src="/assets/screenshots/docs/hover.webp" alt="在 Catalog.Generate 上的 C# 悬停，显示其签名和渲染后的 XML 文档" width="2400" height="1500">

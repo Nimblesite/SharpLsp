@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 重构与代码操作
+description: "SharpLsp 的 C# 与 F# 代码操作：Roslyn 代码修复与重构、F# 快速修复、重命名、格式化和成员排序。"
 lang: zh
 eleventyNavigation:
   key: 重构与代码操作（中文）

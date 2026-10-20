@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 using DiagnosticsResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.DiagnosticResult>,
     string
@@ -44,8 +45,14 @@ internal sealed partial class WorkspaceManager
             // the same instant, or a slow semantic-model computation can pair a
             // pre-restore compilation with a post-restore notice state and present
             // phantom package errors as final. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            var state = await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false);
-            var diagnostics = await DiagnoseAsync(filePath, state, ct).ConfigureAwait(false);
+            var diagnostics = NativePaths.IsRazor(filePath)
+                ? await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false)
+                : await DiagnoseAsync(
+                        filePath,
+                        await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false),
+                        ct
+                    )
+                    .ConfigureAwait(false);
             return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
         }
         catch (Exception ex)

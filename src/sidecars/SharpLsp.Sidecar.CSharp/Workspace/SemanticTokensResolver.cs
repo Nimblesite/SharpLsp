@@ -4,12 +4,27 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
+/// <summary>A span of text and its token type, the legend index.</summary>
+internal readonly record struct SemanticSpan(TextSpan Span, int Type);
+
 /// <summary>
 /// Computes semantic tokens for a document using Roslyn's Classifier API.
 /// Returns LSP-encoded token data (relative line, char, length, type, modifiers).
 /// </summary>
 internal static class SemanticTokensResolver
 {
+    /// <summary>The legend index of the <c>class</c> token type.</summary>
+    internal const int ClassType = 2;
+
+    /// <summary>The legend index of the <c>property</c> token type.</summary>
+    internal const int PropertyType = 9;
+
+    /// <summary>The legend index of the <c>keyword</c> token type.</summary>
+    internal const int KeywordType = 15;
+
+    /// <summary>The legend index of the <c>decorator</c> token type.</summary>
+    internal const int DecoratorType = 22;
+
     // LSP semantic token types — index into this array is the token type ID.
     private static readonly string[] TokenTypes =
     [
@@ -94,22 +109,37 @@ internal static class SemanticTokensResolver
 
     private static int[] EncodeTokens(IEnumerable<ClassifiedSpan> spans, SourceText text)
     {
+        return Encode(
+            spans.Select(span => new SemanticSpan(
+                span.TextSpan,
+                MapClassification(span.ClassificationType)
+            )),
+            text
+        );
+    }
+
+    /// <summary>
+    /// LSP-encode typed spans of <paramref name="text"/> in document order. A span with no
+    /// token type (negative) is skipped. Shared by C# documents and Razor files.
+    /// </summary>
+    internal static int[] Encode(IEnumerable<SemanticSpan> spans, SourceText text)
+    {
         var data = new List<int>();
         var prevLine = 0;
         var prevChar = 0;
 
-        foreach (var span in spans.OrderBy(s => s.TextSpan.Start))
+        foreach (var span in spans.OrderBy(s => s.Span.Start))
         {
-            var tokenType = MapClassification(span.ClassificationType);
+            var tokenType = span.Type;
             if (tokenType < 0)
             {
                 continue;
             }
 
-            var linePos = text.Lines.GetLinePosition(span.TextSpan.Start);
+            var linePos = text.Lines.GetLinePosition(span.Span.Start);
             var line = linePos.Line;
             var character = linePos.Character;
-            var length = span.TextSpan.Length;
+            var length = span.Span.Length;
 
             var deltaLine = line - prevLine;
             var deltaChar = deltaLine == 0 ? character - prevChar : character;
@@ -127,7 +157,8 @@ internal static class SemanticTokensResolver
         return [.. data];
     }
 
-    private static int MapClassification(string classification)
+    /// <summary>The token type of a Roslyn classification; -1 when it has none.</summary>
+    internal static int MapClassification(string classification)
     {
         return classification switch
         {

@@ -33,6 +33,32 @@ internal static class DocumentText
     }
 
     /// <summary>
+    /// The offset of <paramref name="position"/> in <paramref name="text"/>; null when the
+    /// line or character lies outside it, as a client position past a file's end does.
+    /// </summary>
+    public static int? TryOffset(SourceText text, LinePosition position)
+    {
+        return
+            position.Line >= 0
+            && position.Line < text.Lines.Count
+            && position.Character >= 0
+            && position.Character <= text.Lines[position.Line].Span.Length
+            ? text.Lines[position.Line].Start + position.Character
+            : null;
+    }
+
+    /// <summary>The span of <paramref name="span"/> in <paramref name="text"/>; null when either end lies outside it.</summary>
+    public static TextSpan? TrySpan(SourceText text, LinePositionSpan span)
+    {
+        return
+            TryOffset(text, span.Start) is { } start
+            && TryOffset(text, span.End) is { } end
+            && start <= end
+            ? TextSpan.FromBounds(start, end)
+            : null;
+    }
+
+    /// <summary>
     /// Project a single <see cref="TextChange"/> into a <see cref="TextEditResult"/>,
     /// resolving its span to start/end (line, character) coordinates against
     /// <paramref name="text"/>. Collapses the identical change-to-edit mapping that the

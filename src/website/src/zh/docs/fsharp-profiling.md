@@ -3,7 +3,6 @@ layout: layouts/docs.njk
 title: F# 性能分析
 description: "用 SharpLsp 在 VS Code 中分析 F# 的 CPU 和内存：.fs 行上的热力条、按名称显示的闭包和管道阶段、标在构造位置的记录和联合用例，以及追溯到持有泄漏的模块值。"
 lang: zh
-eleventyExcludeFromCollections: true
 ---
 
 # F# 性能分析

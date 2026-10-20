@@ -29,6 +29,34 @@ internal static class SolutionPaths
             .Where(document => NativePaths.AreEqual(document.FilePath, filePath));
     }
 
+    /// <summary>
+    /// Every additional document at <paramref name="filePath"/>: a Razor file is one, once per
+    /// target framework of each project that lists it. [RAZOR-ARCHITECTURE-DOCUMENTS]
+    /// </summary>
+    internal static IEnumerable<TextDocument> AdditionalDocumentsAt(
+        Solution solution,
+        string filePath
+    )
+    {
+        return solution
+            .Projects.SelectMany(project => project.AdditionalDocuments)
+            .Where(document => NativePaths.AreEqual(document.FilePath, filePath));
+    }
+
+    /// <summary>The projects that list a Razor file. [RAZOR-ARCHITECTURE-DOCUMENTS]</summary>
+    internal static IEnumerable<Project> RazorProjects(Solution solution)
+    {
+        return solution.Projects.Where(project =>
+            project.AdditionalDocuments.Any(document => NativePaths.IsRazor(document.FilePath))
+        );
+    }
+
+    /// <summary>Whether any project lists a Razor file. [RAZOR-ARCHITECTURE-DOCUMENTS]</summary>
+    internal static bool HasRazorDocuments(Solution solution)
+    {
+        return RazorProjects(solution).Any();
+    }
+
     /// <summary>Find a loaded project by its project-file path.</summary>
     internal static Project? FindProject(Solution solution, string projectPath)
     {

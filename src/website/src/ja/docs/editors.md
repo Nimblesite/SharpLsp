@@ -1,6 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: エディター設定
+description: "VS Code、Cursor、Windsurf、VSCodium での SharpLsp のセットアップと、Rider プラグイン、スタンドアロンサーバー、Zed や Neovim などほかの LSP クライアントの現状。"
 lang: ja
 eleventyNavigation:
   key: エディター設定（日本語）

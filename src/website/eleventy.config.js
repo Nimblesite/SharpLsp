@@ -5,7 +5,7 @@ import markdownIt from "markdown-it";
 import { existsSync, lstatSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { videoFigure } from "./video-figure.js";
+import { videoFigure, videoPlayer } from "./video-figure.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginLayouts = join(__dirname, "node_modules/eleventy-plugin-techdoc/templates/layouts");
@@ -39,18 +39,22 @@ for (const file of ["base.njk", "blog.njk", "docs.njk"]) {
   }
 }
 
-// Patch the virtual blog pages from stable, site-owned override files. Never
-// delete or move these sources: repeated builds must produce identical output.
+// Patch the virtual pages from stable, site-owned override files. Never delete
+// or move these sources: repeated builds must produce identical output.
+// [WEB-DESIGN-MEDIA-DISCOVERY] robots.txt and the sitemap are the site's own:
+// crawlers may fetch /assets/, and the sitemap lists every video.
 for (const [target, source] of [
-  ["index.njk", "blog-index.njk"],
-  ["tags.njk", "tags-index.njk"],
-  ["tags-pages.njk", "tags-pages.njk"],
-  ["categories.njk", "categories-index.njk"],
-  ["categories-pages.njk", "categories-pages.njk"],
+  ["blog/index.njk", "blog-index.njk"],
+  ["blog/tags.njk", "tags-index.njk"],
+  ["blog/tags-pages.njk", "tags-pages.njk"],
+  ["blog/categories.njk", "categories-index.njk"],
+  ["blog/categories-pages.njk", "categories-pages.njk"],
+  ["robots.txt.njk", "robots.txt.njk"],
+  ["sitemap.njk", "sitemap.njk"],
 ]) {
   const local = join(localOverrides, source);
   if (existsSync(local)) {
-    writeFileSync(join(pluginPages, "blog", target), readFileSync(local, "utf-8"));
+    writeFileSync(join(pluginPages, target), readFileSync(local, "utf-8"));
   }
 }
 
@@ -137,6 +141,8 @@ export default function (eleventyConfig) {
   eleventyConfig.addShortcode("video", function (id, options) {
     return videoFigure(id, this.ctx?.lang ?? "en", options);
   });
+  // [WEB-DESIGN-MEDIA-DISCOVERY] The bare player a video's embed page is made of.
+  eleventyConfig.addShortcode("videoPlayer", (id, lang) => videoPlayer(id, lang));
 
   eleventyConfig.addPassthroughCopy("src/assets");
   eleventyConfig.addPassthroughCopy("src/favicon.ico");

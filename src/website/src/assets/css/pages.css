@@ -38,6 +38,9 @@
 .trust-list li::before { color: var(--color-primary); content: "✓"; font-weight: 800; margin-right: 0.45rem; }
 
 .product-shot { margin: clamp(3rem, 7vw, 5.5rem) 0 0; }
+/* [WEB-DESIGN-MEDIA-DISCOVERY] An embed page is its player, letterboxed to fill whatever frames it. */
+.video-frame { background: var(--color-code); height: 100vh; margin: 0; }
+.video-frame video { display: block; height: 100%; object-fit: contain; width: 100%; }
 .product-shot img,
 .product-shot video { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display: block; height: auto; width: 100%; }
 .product-shot figcaption { color: var(--color-muted); font-size: 0.78rem; margin: 0.9rem auto 0; max-width: 48rem; text-align: center; }

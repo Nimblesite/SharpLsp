@@ -1,0 +1,5 @@
+<Project>
+    <!-- Intentionally empty: this file shadows the repository-wide Directory.Build.props so
+         SharpLsp's C# analyzers, package references and warnings-as-errors settings do not
+         reach the Razor fixtures. They build as a user's projects would. [RAZOR-TESTING] -->
+</Project>

@@ -752,24 +752,24 @@ struct SidecarHoverResult {
 
 /// A single location result from the sidecar (definition, references, etc.).
 #[derive(serde::Deserialize)]
-struct SidecarLocationResult {
+pub(crate) struct SidecarLocationResult {
     /// Absolute filesystem path of the target file.
     file_path: String,
     /// Start line of the target range.
-    line: u32,
+    pub(crate) line: u32,
     /// Start character of the target range.
-    character: u32,
+    pub(crate) character: u32,
     /// End line of the target range.
-    end_line: u32,
+    pub(crate) end_line: u32,
     /// End character of the target range.
-    end_character: u32,
+    pub(crate) end_character: u32,
 }
 
 /// Sidecar response containing a list of locations.
 #[derive(serde::Deserialize)]
-struct SidecarLocationListResult {
+pub(crate) struct SidecarLocationListResult {
     /// The resolved locations.
-    locations: Vec<SidecarLocationResult>,
+    pub(crate) locations: Vec<SidecarLocationResult>,
 }
 
 /// Sidecar request for find-references at a given position.
