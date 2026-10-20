@@ -13,6 +13,7 @@ video/
     acts/               stories several walkthroughs tell
   films/<name>/         one folder per film: film.mjs, and narration.json when it is narrated
   films/profiler/       the composited home-page film (capture.mjs, then render.mjs)
+  templates/walkthrough/  the starting point for a new walkthrough, cut through the camera
   templates/lesson/     the starting point for a new lesson
   demos/                the .NET apps the walkthroughs are shot on
   heroes/               the blog posts' hero images, as HTML pages
