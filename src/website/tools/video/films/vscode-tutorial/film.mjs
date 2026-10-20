@@ -4,7 +4,7 @@
 // the step's own chapter beside the editor while the reader does it live.
 //
 //   node src/website/tools/video/film.mjs vscode-tutorial
-import { LANGUAGE, closeAll, hoverEach, navigate, peekReferences, scene, typeText } from '../../kit/acts/language.mjs';
+import { LANGUAGE, closeAll, hoverEach, navigate, peekReferences, reopen, scene, typeText } from '../../kit/acts/language.mjs';
 import {
   AT_CHECKOUT,
   AT_PIPELINE,
@@ -80,10 +80,11 @@ export default {
     scene('csharp-open', 8, 'C#: open a source file (Cmd+P)', quickOpen('Program.cs'), { chapter: 'CSharp.OpenFile' }),
     scene('csharp-hover', 9, 'Rest the mouse on a symbol: its docs and type', ({ page }) =>
       hoverEach(page, [{ line: 5, word: 'Generate' }, { line: 10, word: 'var' }], { hold: 3200 }), { chapter: 'CSharp.Hover' }),
+    // Each take starts from the file as saved, so a retried take never types twice.
     scene('csharp-completion', 10, 'Type a dot: completion lists what fits', async (shot) => {
-      await openFile(shot.page, PIPELINE);
+      await reopen(PIPELINE)(shot);
       await csharpCheapest(shot);
-    }, { chapter: 'CSharp.Completion' }),
+    }, { retries: 3, chapter: 'CSharp.Completion' }),
     { offCamera: ({ page }) => closeAll(page) },
     scene('csharp-definition', 11, 'F12 goes to the definition', jump('Program.cs', { line: 10, word: 'Checkout' }, 'F12'), {
       retries: 3,
