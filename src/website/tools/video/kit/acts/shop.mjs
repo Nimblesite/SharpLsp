@@ -1,8 +1,10 @@
 // Implements [WEB-DESIGN-MEDIA]. Moves on the Shop demo (demos/Shop.slnx) that
 // several language films tell: code typed through completion in F# and C#, a
-// match completed by a quick fix, and a rename that reaches another file.
+// match completed by a quick fix, C# repaired by one, a rename that reaches
+// another file, and the solution unfolded.
 import { hoverOn } from '../code.mjs';
 import { openFile, sleep, typeAt } from '../workbench.mjs';
+import { unfold } from './explorer.mjs';
 import { prepareCode, quickFix, renameTo, scrollEditor, typeThroughCompletion, warm } from './language.mjs';
 
 /** Checkout.fs: a new function typed through List's functions, then the record's fields. */
@@ -47,5 +49,27 @@ export async function renameAcrossFiles({ page }) {
   await renameTo(page, { line: 8, word: 'remember' }, 'rememberOrder');
   await openFile(page, 'Program.fs');
   await hoverOn(page, { line: 11, word: 'rememberOrder' });
+  await sleep(3000);
+}
+
+/** The C# pipeline's file, where a fix repairs code typed to break it. */
+export const PIPELINE = 'CheckoutPipeline.cs';
+
+/** CheckoutPipeline.cs: type a line after `line` that breaks the build, then apply the fix titled `title` at `word`. */
+export const repair = (line, text, word, title) => async ({ page, set }) => {
+  await openFile(page, PIPELINE);
+  await typeAt(page, { line, append: true, text: `\n        ${text}` });
+  await page.keyboard.press('Escape');
+  await sleep(2000);
+  await quickFix(page, set.cues, { line: line + 1, word }, title);
+  await sleep(2500);
+};
+
+/** The Solution Explorer: the F# project unfolded, then the C# one and its folder. */
+export async function unfoldShop({ page }) {
+  await unfold(page, /^FsStorefront \(FsStorefront\.fsproj\)/);
+  await sleep(1500);
+  await unfold(page, /^Storefront \(Storefront\.csproj\)/);
+  await unfold(page, /^Storefront$/);
   await sleep(3000);
 }

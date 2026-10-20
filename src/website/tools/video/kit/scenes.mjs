@@ -1,5 +1,5 @@
-// Implements [WEB-DESIGN-MEDIA] and [WEB-DESIGN-MEDIA-CAMERA]. A walkthrough is
-// a list of scenes. A scene is either a clip, `{ clip, act, speed, retries }`,
+// Implements [WEB-DESIGN-MEDIA], [WEB-DESIGN-MEDIA-CAMERA] and
+// [WEB-DESIGN-MEDIA-CHAPTERS]. A walkthrough is a list of scenes. A scene is either a clip, `{ clip, act, speed, retries }`,
 // shot in real time and played back at `speed`, or an `{ offCamera }` step
 // between clips. shootWalkthrough shoots the list on a demo's set, each clip
 // with its track; publishWalkthrough frames every clip through the camera, lays
@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { cueLog, record } from './camera.mjs';
+import { startOf, writeChapters } from './chapters.mjs';
 import { captionFrames } from './captions.mjs';
 import { dimensions, duration, emptyDir, ffmpeg, poster } from './encode.mjs';
 import { runCommand } from './editor.mjs';
@@ -212,17 +213,19 @@ function silent(name, out, shots) {
 function cutTime(shots, { scene, at }) {
   const index = shots.findIndex((shot) => shot.clip === scene);
   if (index < 0) throw new Error(`the poster's scene "${scene}" is not a clip of this film`);
-  return shots.slice(0, index).reduce((total, shot) => total + shot.length + (shot.hold ?? 0), 0) + at / (shots[index].speed ?? 1);
+  return startOf(shots, index) + at / (shots[index].speed ?? 1);
 }
 
 /**
  * Publish the MP4, the WebM and the poster, a frame of the cut as it plays;
- * with a `narration` script, also its voice, score and captions. Resolves to
- * the film's length in seconds.
+ * with a `narration` script, also its voice, score and captions; and the
+ * chapters its scenes mark ([WEB-DESIGN-MEDIA-CHAPTERS]). Resolves to the
+ * film's length in seconds.
  */
 export async function publishWalkthrough({ name, out, scenes, posterAt, narration }) {
   const shots = await direct(out, shotsOf(out, scenes));
   const film = narration ? await spoken(name, out, shots, narration) : silent(name, out, shots);
   poster(path.join(out, `${name}-master.mp4`), cutTime(film.shots, posterAt), name);
+  writeChapters(name, film.shots);
   return film.duration;
 }

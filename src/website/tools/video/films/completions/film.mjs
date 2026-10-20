@@ -5,11 +5,9 @@
 //   node src/website/tools/video/film.mjs completions
 import { clickOn } from '../../kit/code.mjs';
 import { LANGUAGE, complete, scene, typeText } from '../../kit/acts/language.mjs';
-import { AT_CHECKOUT, AT_PIPELINE, csharpCheapest, fsharpCheapest, ready } from '../../kit/acts/shop.mjs';
+import { AT_CHECKOUT, AT_PIPELINE, PIPELINE, csharpCheapest, fsharpCheapest, ready } from '../../kit/acts/shop.mjs';
 import { SHOP } from '../../kit/set.mjs';
 import { openFile, sleep, typeAt } from '../../kit/workbench.mjs';
-
-const PIPELINE = 'CheckoutPipeline.cs';
 
 /** Completion invoked by hand on a type the file has no using for; accepting it adds one. */
 async function importing({ page }) {
@@ -31,11 +29,11 @@ export default {
   poster: { scene: 'csharp', at: 6 },
   scenes: [
     ...ready(AT_PIPELINE, AT_CHECKOUT),
-    scene('fsharp', 1, 'F#: list functions after a dot, then the record\'s fields', fsharpCheapest),
+    scene('fsharp', 1, 'F#: list functions after a dot, then the record\'s fields', fsharpCheapest, { chapter: 'FSharp.Completion' }),
     scene('csharp', 2, 'C#: Roslyn completion, member by member', async (shot) => {
       await openFile(shot.page, PIPELINE);
       await csharpCheapest(shot);
-    }),
-    scene('import', 3, 'Ctrl+Space finds types you never imported, and adds the using', importing),
+    }, { chapter: 'CSharp.Completion' }),
+    scene('import', 3, 'Ctrl+Space finds types you never imported, and adds the using', importing, { chapter: 'CSharp.Completion' }),
   ],
 };

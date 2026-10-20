@@ -32,9 +32,9 @@ export default {
   poster: { scene: 'csharp', at: 4 },
   scenes: [
     ...ready(AT_PROGRAM_CS, AT_PROGRAM_FS),
-    scene('fsharp', 1, 'F#: the inferred signature, with your doc comment', visit('Program.fs', [{ line: 9, word: 'generate' }, { line: 11, word: 'checkout' }])),
-    scene('union', 2, 'Union cases and .NET types, typed as F# sees them', visit('Sessions.fs', [{ line: 9, word: 'CheckedOut' }, { line: 6, word: 'Dictionary' }])),
-    scene('csharp', 3, 'C#: XML docs rendered, and the type behind var', visit('Program.cs', [{ line: 5, word: 'Generate' }, { line: 10, word: 'var' }])),
+    scene('fsharp', 1, 'F#: the inferred signature, with your doc comment', visit('Program.fs', [{ line: 9, word: 'generate' }, { line: 11, word: 'checkout' }]), { chapter: 'FSharp.Hover' }),
+    scene('union', 2, 'Union cases and .NET types, typed as F# sees them', visit('Sessions.fs', [{ line: 9, word: 'CheckedOut' }, { line: 6, word: 'Dictionary' }]), { chapter: 'FSharp.Hover' }),
+    scene('csharp', 3, 'C#: XML docs rendered, and the type behind var', visit('Program.cs', [{ line: 5, word: 'Generate' }, { line: 10, word: 'var' }]), { chapter: 'CSharp.Hover' }),
     scene('live', 4, 'Hover reads your unsaved edits', unsaved),
   ],
 };

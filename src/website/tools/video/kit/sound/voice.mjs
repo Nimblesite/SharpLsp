@@ -3,6 +3,7 @@
 // Nothing leaves this machine: kokoro-js runs Kokoro-82M (Apache-2.0) on the CPU.
 import fs from 'node:fs';
 import path from 'node:path';
+import { webVtt } from '../vtt.mjs';
 import { wav } from './score.mjs';
 
 const model = { id: 'onnx-community/Kokoro-82M-v1.0-ONNX', dtype: 'fp32', device: 'cpu', silence: 0.01 };
@@ -10,7 +11,6 @@ const pacing = { opening: 1.2, lead: 0.35, gap: 0.4, tail: 0.5, hold: 0.3, closi
 
 /** A script's pacing: the defaults, with whatever its `pacing` tightens or loosens. */
 export const pacingOf = (script) => ({ ...pacing, ...script.pacing });
-const clock = { minute: 60, digits: 3, minuteWidth: 2, secondWidth: 6 };
 
 function trim(samples) {
   const audible = (value) => Math.abs(value) > model.silence;
@@ -38,18 +38,12 @@ export async function speak(script, dir) {
   return takes;
 }
 
-function stamp(seconds) {
-  const minutes = String(Math.floor(seconds / clock.minute)).padStart(clock.minuteWidth, '0');
-  return `${minutes}:${(seconds % clock.minute).toFixed(clock.digits).padStart(clock.secondWidth, '0')}`;
-}
-
 /** One WebVTT cue per spoken line in `lang`; the first also names the music that opens the film. */
 export function captions(script, lines, lang) {
   // A cue lingers `hold` past its line, but never into the next line's cue.
   const until = (line, index) => Math.min(line.end + pacingOf(script).hold, lines[index + 1]?.start ?? Infinity);
-  const cue = (line, index) =>
-    [`${stamp(index === 0 ? 0 : line.start)} --> ${stamp(until(line, index))}`, ...(index === 0 ? [script.music[lang]] : []), line[lang]].join('\n');
-  return `${['WEBVTT', ...lines.map(cue)].join('\n\n')}\n`;
+  const cueOf = (line, index) => ({ from: index === 0 ? 0 : line.start, to: until(line, index), text: [...(index === 0 ? [script.music[lang]] : []), line[lang]] });
+  return webVtt(lines.map(cueOf));
 }
 
 /** `<name>.<lang>.vtt` beside the video, for each language the script is written in. */

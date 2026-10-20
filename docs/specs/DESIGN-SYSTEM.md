@@ -152,6 +152,14 @@ Every walkthrough is cut through one camera, `kit/zoom.mjs` in `src/website/tool
 - **Captions.** The step caption and speed badge are laid over the cut after the camera (`kit/captions.mjs`), in the same place in every frame, so the camera never moves or crops them. The camera keeps what it frames clear of their band at the foot of the frame.
 - **Poster.** A film's poster is a frame of the cut as it plays, camera and caption included.
 
+## [WEB-DESIGN-MEDIA-CHAPTERS] Film Chapters
+
+A film marks the runs of its cut that show one step of the VS Code tutorial ([TUTORIAL-STEPS]), so the tutorial panel ([TUTORIAL-PANEL]) plays a step's own run, not the whole film from a guessed second.
+
+- **Marks.** A scene names its step with `chapter` (`scene(clip, n, text, act, { chapter })`): a step key such as `FSharp.Hover`, or the action alone (`SolutionExplorer`) when both languages share the shot. Consecutive scenes with one mark make one chapter; a mark on scenes apart fails the film. The scene's step caption titles the chapter.
+- **Track.** Publishing writes `<id>.chapters.vtt` beside the video (`kit/chapters.mjs`, through `kit/vtt.mjs`, the one WebVTT writer captions use too): one cue per chapter, its identifier the mark, timed in the cut with every hold before it. A film with no marks publishes no track.
+- **The tutorial's film.** `films/vscode-tutorial/` is shot for the panel: one shot per tutorial step, F# first, each doing exactly what its step asks, so every step has a chapter of one film, framed by the camera ([WEB-DESIGN-MEDIA-CAMERA]).
+
 ## [WEB-DESIGN-MEDIA-DISCOVERY] Video Search and Sharing
 
 Every catalogued video can be found in Google's video results and plays in social previews. The rules follow Google's [video SEO best practices](https://developers.google.com/search/docs/appearance/video), [VideoObject structured data](https://developers.google.com/search/docs/appearance/structured-data/video) and [video sitemaps](https://developers.google.com/search/docs/crawling-indexing/sitemaps/video-sitemaps).

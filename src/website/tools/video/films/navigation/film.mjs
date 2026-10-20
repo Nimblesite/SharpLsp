@@ -23,9 +23,9 @@ export default {
   poster: { scene: 'references', at: 4 },
   scenes: [
     ...ready(AT_PROGRAM_CS, AT_SESSIONS),
-    scene('fsharp', 1, 'F12 jumps to a definition, in F#…', jump('Sessions.fs', { line: 9, word: 'CheckedOut' }), { retries: 3 }),
-    scene('csharp', 2, '…and in C#', jump('Program.cs', { line: 10, word: 'Checkout' }), { retries: 3 }),
-    scene('references', 3, 'Shift+F12: every reference, in a peek window', ({ page }) => peekReferences(page, { line: 16, word: 'Product' }, 6000)),
+    scene('fsharp', 1, 'F12 jumps to a definition, in F#…', jump('Sessions.fs', { line: 9, word: 'CheckedOut' }), { retries: 3, chapter: 'FSharp.Definition' }),
+    scene('csharp', 2, '…and in C#', jump('Program.cs', { line: 10, word: 'Checkout' }), { retries: 3, chapter: 'CSharp.Definition' }),
+    scene('references', 3, 'Shift+F12: every reference, in a peek window', ({ page }) => peekReferences(page, { line: 16, word: 'Product' }, 6000), { chapter: 'CSharp.References' }),
     scene('metadata', 4, 'Framework types open as decompiled source', async ({ page }) => {
       await navigate(page, { line: 17, word: 'JsonSerializer' }, 'F12');
       await sleep(4500);

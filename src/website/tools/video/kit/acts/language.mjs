@@ -117,8 +117,8 @@ export const warm = (file, probe) => async ({ page }) => {
   await awaitSemantics(page, probe);
 };
 
-/** Off camera: every editor closed without saving, `file` open. Fails if an edited editor survives. */
-export const reopen = (file) => async ({ page }) => {
+/** Every editor closed without saving. Fails if an edited editor survives. */
+export async function closeAll(page) {
   await runCommand(page, 'View: Close All Editors');
   const edited = page.locator('.tabs-container .tab.dirty');
   // The save prompt opens a moment after the close: answer it until no edited editor is left.
@@ -128,6 +128,11 @@ export const reopen = (file) => async ({ page }) => {
     await sleep(500);
   }
   if ((await edited.count()) > 0) throw new Error('an edited editor stayed open');
+}
+
+/** Off camera: every editor closed without saving, `file` open. */
+export const reopen = (file) => async ({ page }) => {
+  await closeAll(page);
   await openFile(page, file);
 };
 
@@ -224,12 +229,15 @@ export async function hoverEach(page, spots, { scroll = 0, hold = 2600 } = {}) {
 /**
  * Clip `clip`: step `number`'s caption while `act(shot)` runs. A `speed` above 1
  * plays it fast-forwarded, and the caption says so; `retries` shoots a failed
- * take again.
+ * take again; `chapter` names the tutorial step it shows, and the caption
+ * titles that chapter ([WEB-DESIGN-MEDIA-CHAPTERS]).
  */
-export const scene = (clip, number, text, act, { speed = 1, retries = 1 } = {}) => ({
+export const scene = (clip, number, text, act, { speed = 1, retries = 1, chapter } = {}) => ({
   clip,
   speed,
   retries,
+  chapter,
+  title: text,
   act: async (shot) => {
     await caption(shot.page, number, text, speed > 1 ? `${speed}×` : '');
     await sleep(900);
