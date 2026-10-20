@@ -68,7 +68,7 @@ SharpLsp はこれらのディレクティブから双方向のマップを作�
 
 新しい `dotnet new blazor` アプリで実際のホストを動かすと、1 つの誤報告が見つかりました。`_Imports.razor` のすべての `@using` が、不要なものとして淡色表示されていたのです。Roslyn は各ファイル自身の生成された C# しか見ないため、インポートファイルの using が、その隣や下にあるコンポーネントに役立っていることを知りません。コンポーネント自身の using も、マークアップだけがそれを必要とする場合には同じ問題を抱えていました。現在、Razor ファイルは不要な using を報告せず、C# ファイルはコードビハインドを含めて引き続き報告します。
 
-2 つ目の発見は SDK のバージョンについてです。Razor ジェネレーターはプロジェクトをビルドする SDK に由来し、`global.json` で別のバージョンを固定していない限り、インストールされている最新のものが使われます。SDK 10.0.401 のジェネレーターは、SharpLsp が同梱する Roslyn より新しいバージョンを必要とするため、その Razor ファイルでは C# の機能が使えません。[Issue #399](https://github.com/Nimblesite/SharpLsp/issues/399) で修正を追跡しています。修正が入るまでは、[Blazor と Razor のドキュメント](/ja/docs/blazor/)に示すとおり、`global.json` で SDK 10.0.303 を固定してください。
+2 つ目の発見は SDK のバージョンについてです。Razor ジェネレーターはプロジェクトをビルドする SDK に由来し、`global.json` で別のバージョンを固定していない限り、インストールされている最新のものが使われます。SDK 10.0.401 のジェネレーターは SharpLsp が同梱する Roslyn より新しいバージョンを必要とするため、当初はその Razor ファイルで C# の機能が使えませんでした（[issue #399](https://github.com/Nimblesite/SharpLsp/issues/399)）。現在の SharpLsp は、そのジェネレーターの代わりに同梱の Razor コンパイラーを読み込み、両方の Roslyn バージョンを示す警告をログに記録します。そのため、新しい SDK でもバージョンを固定する必要はありません。詳しくは [Blazor と Razor のドキュメント](/ja/docs/blazor/)をご覧ください。
 
 ## .NET 10 の Blazor：Server、WebAssembly、Razor クラスライブラリ
 

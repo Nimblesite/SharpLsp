@@ -68,7 +68,7 @@ SharpLsp 根据这些指令建立双向映射：
 
 在一个全新的 `dotnet new blazor` 应用上运行真实宿主时，发现了一个误报：`_Imports.razor` 中的每个 `@using` 都被淡显为不必要。Roslyn 只能看到每个文件自己生成的 C#，因此它无法看到导入文件的 using 是服务于它旁边和下方的组件的。当组件自身的 using 只被其标记需要时，也存在同样的问题。现在 Razor 文件不再报告不必要的 using，而 C# 文件（包括代码隐藏）仍然会报告。
 
-第二个发现与 SDK 版本有关。Razor 生成器来自构建你的项目的 SDK，也就是已安装的最新版本，除非 `global.json` 固定了另一个版本。SDK 10.0.401 的生成器需要比 SharpLsp 捆绑的 Roslyn 更新的版本，因此它的 Razor 文件得不到任何 C# 功能。[Issue #399](https://github.com/Nimblesite/SharpLsp/issues/399) 追踪这项修复。在修复落地之前，请按照 [Blazor 与 Razor 文档](/zh/docs/blazor/)中的说明，在 `global.json` 中固定 SDK 10.0.303。
+第二个发现与 SDK 版本有关。Razor 生成器来自构建你的项目的 SDK，也就是已安装的最新版本，除非 `global.json` 固定了另一个版本。SDK 10.0.401 的生成器需要比 SharpLsp 捆绑的 Roslyn 更新的版本，因此起初它的 Razor 文件得不到任何 C# 功能（[issue #399](https://github.com/Nimblesite/SharpLsp/issues/399)）。现在，SharpLsp 会加载自己捆绑的 Razor 编译器来代替该生成器，并记录一条写明两个 Roslyn 版本的警告，因此较新的 SDK 无需固定版本也能正常工作。详细信息请参阅 [Blazor 与 Razor 文档](/zh/docs/blazor/)。
 
 ## .NET 10 上的 Blazor：Server、WebAssembly 和 Razor 类库
 

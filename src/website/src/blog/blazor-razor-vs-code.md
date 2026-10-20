@@ -67,7 +67,7 @@ Because the generator is the compiler's, the C# inside every construct it maps g
 
 Running the real host over a fresh `dotnet new blazor` app found one false report: every `@using` in `_Imports.razor` was faded as unnecessary. Roslyn only sees each file's own generated C#, so it can't see that an import file's usings serve the components beside and below it. A component's own usings had the same problem when only its markup needed them. Razor files no longer report unnecessary usings, and C# files, code-behind included, still do.
 
-The second finding is about SDK versions. The Razor generator comes from the SDK that builds your project, which is the newest one installed unless a `global.json` pins another. SDK 10.0.401's generator needs a newer Roslyn than the one SharpLsp bundles, so its Razor files get no C# features. [Issue #399](https://github.com/Nimblesite/SharpLsp/issues/399) tracks the fix. Until it lands, pin SDK 10.0.303 in a `global.json`, as the [Blazor and Razor docs](/docs/blazor/) show.
+The second finding is about SDK versions. The Razor generator comes from the SDK that builds your project, which is the newest one installed unless a `global.json` pins another. SDK 10.0.401's generator needs a newer Roslyn than the one SharpLsp bundles, so at first its Razor files got no C# features ([issue #399](https://github.com/Nimblesite/SharpLsp/issues/399)). SharpLsp now loads the Razor compiler it bundles in that generator's place, and logs a warning that names both Roslyn versions, so a newer SDK works without a pin. The [Blazor and Razor docs](/docs/blazor/) have the details.
 
 ## Blazor on .NET 10: Server, WebAssembly and Razor class libraries
 

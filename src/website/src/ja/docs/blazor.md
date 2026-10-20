@@ -83,18 +83,7 @@ flowchart LR
 
 Razor ジェネレーターは、プロジェクトをビルドする SDK に由来します。`global.json` で固定されていない場合、それはインストール済みの最新 SDK です。
 
-Roslyn は、自身のバージョンまたはそれより古いバージョン向けにビルドされたジェネレーターしか読み込みません。SDK 10.0.303 のジェネレーターは SharpLsp が同梱する Roslyn に読み込まれますが、SDK 10.0.401 のものはより新しい Roslyn を必要とします。そのため 10.0.401 でビルドするプロジェクトでは、Razor ファイルの C# 機能が利用できませんが、マークアップ機能は引き続き動作します。[Issue #399](https://github.com/Nimblesite/SharpLsp/issues/399) で、すべての SDK を動作させる取り組みを追跡しています。
-
-それが修正されるまでは、[SDK 10.0.303 をインストール](https://dotnet.microsoft.com/download/dotnet/10.0)し、ソリューションの隣の `global.json` で固定してください。
-
-```json
-{
-  "sdk": {
-    "version": "10.0.303",
-    "rollForward": "latestPatch"
-  }
-}
-```
+Roslyn は、自身のバージョンまたはそれより古いバージョン向けにビルドされたジェネレーターしか読み込みません。そして新しい SDK のジェネレーターは、SharpLsp が同梱する Roslyn より新しい Roslyn を必要とする場合があります。SDK 10.0.401 のものがそうです。その場合 SharpLsp は、そのジェネレーターの代わりに同梱の Razor コンパイラーを読み込むため、プロジェクトの Razor ファイルでは引き続き C# の機能が使えます。また、両方の Roslyn バージョンを示す警告をログに記録します（[issue #399](https://github.com/Nimblesite/SharpLsp/issues/399)）。ご自身のビルドでは、引き続き SDK のジェネレーターが使われます。
 
 ## まだサポートされていない機能
 

@@ -82,18 +82,7 @@ The markup comes from the compiler's public [intermediate representation](https:
 
 The Razor generator comes from the SDK that builds your project. When no `global.json` pins one, that is the newest SDK you have installed.
 
-Roslyn only loads a generator built for its own version or an older one. SDK 10.0.303's generator loads in the Roslyn that SharpLsp bundles, but SDK 10.0.401's needs a newer Roslyn. A project that builds with 10.0.401 therefore gets no C# features in its Razor files, though its markup features keep working. [Issue #399](https://github.com/Nimblesite/SharpLsp/issues/399) tracks making every SDK work.
-
-Until that is fixed, [install SDK 10.0.303](https://dotnet.microsoft.com/download/dotnet/10.0) and pin it in a `global.json` beside your solution:
-
-```json
-{
-  "sdk": {
-    "version": "10.0.303",
-    "rollForward": "latestPatch"
-  }
-}
-```
+Roslyn only loads a generator built for its own version or an older one, and a newer SDK's generator can need a newer Roslyn than the one SharpLsp bundles. SDK 10.0.401's does. SharpLsp then loads the Razor compiler it bundles in that generator's place, so the project's Razor files keep their C# features, and it logs a warning that names both Roslyn versions ([issue #399](https://github.com/Nimblesite/SharpLsp/issues/399)). Your own builds still use the SDK's generator.
 
 ## Not Yet Supported
 

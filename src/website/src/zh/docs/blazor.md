@@ -83,18 +83,7 @@ flowchart LR
 
 Razor 生成器来自构建你的项目的 SDK。如果没有 `global.json` 固定版本，那它就是你所安装的最新 SDK。
 
-Roslyn 只能加载为其自身版本或更早版本构建的生成器。SDK 10.0.303 的生成器可以加载到 SharpLsp 捆绑的 Roslyn 中，但 SDK 10.0.401 的生成器需要更新的 Roslyn。因此，使用 10.0.401 构建的项目其 Razor 文件没有 C# 功能，不过标记功能仍会工作。[Issue #399](https://github.com/Nimblesite/SharpLsp/issues/399) 跟踪让所有 SDK 都能正常工作的修复。
-
-在修复之前，请[安装 SDK 10.0.303](https://dotnet.microsoft.com/download/dotnet/10.0)，并在解决方案旁边的 `global.json` 中固定它：
-
-```json
-{
-  "sdk": {
-    "version": "10.0.303",
-    "rollForward": "latestPatch"
-  }
-}
-```
+Roslyn 只能加载为其自身版本或更早版本构建的生成器，而较新 SDK 的生成器可能需要比 SharpLsp 捆绑的 Roslyn 更新的版本，SDK 10.0.401 的生成器就是如此。这时 SharpLsp 会加载它捆绑的 Razor 编译器来代替该生成器，因此项目的 Razor 文件仍然具备 C# 功能；它还会记录一条警告，写明两个 Roslyn 版本（[issue #399](https://github.com/Nimblesite/SharpLsp/issues/399)）。你自己的构建仍然使用 SDK 的生成器。
 
 ## 尚不支持
 
