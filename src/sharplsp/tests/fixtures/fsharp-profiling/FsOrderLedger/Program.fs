@@ -31,8 +31,8 @@ let private dripTick () : unit =
             placeOne () |> ignore)
     Thread.Sleep 50
 
-/// One burn tick: the gate is held for exactly one `priceAll` call, never across ticks.
-let private burnTick () : unit = lock Gate.sync (fun () -> Ledger.priceAll () |> ignore)
+/// One burn tick: one `priceAll` call. It only reads, under the ledger's own lock, so it takes no gate.
+let private burnTick () : unit = Ledger.priceAll () |> ignore
 
 let private workloadLoop () =
     while not (Volatile.Read(&stopping)) do
