@@ -2,7 +2,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
-import { isMeaningful, stepForResponse } from '../../tutorial/detect.js';
+import { isMeaningful, isUserRequest, stepForResponse } from '../../tutorial/detect.js';
 import type { TutorialProgress } from '../../tutorial/model.generated.js';
 import {
   currentStep,
@@ -19,6 +19,7 @@ import {
   pollReferences,
   positionOf,
 } from './fsharp-helpers';
+import { waitForCodeActions } from './refactor-test-helpers';
 import {
   EXTENSION_ID,
   closeAllEditors,
@@ -34,6 +35,9 @@ const LOCATION = {
   uri: 'file:///a.fs',
   range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
 };
+const QUICK_FIX = { title: 'Fix', kind: 'quickfix' };
+const INVOKED = { context: { diagnostics: [], triggerKind: 1 } };
+const AUTOMATIC = { context: { diagnostics: [], triggerKind: 2 } };
 const CALL = '= Geometry.totalArea';
 const MEMBER = CALL.indexOf('totalArea');
 
@@ -106,6 +110,27 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     assert.equal(isMeaningful('Definition', LOCATION), true);
     assert.equal(isMeaningful('References', []), false);
     assert.equal(isMeaningful('References', [LOCATION]), true);
+    // Code actions: at least one action offered.
+    assert.equal(isMeaningful('CodeAction', null), false);
+    assert.equal(isMeaningful('CodeAction', []), false);
+    assert.equal(isMeaningful('CodeAction', [QUICK_FIX]), true);
+  });
+
+  test('[TUTORIAL-DETECT-LSP] only a code action the user invoked ticks, never the automatic lightbulb', () => {
+    assert.equal(isUserRequest('CodeAction', INVOKED), true);
+    assert.equal(isUserRequest('CodeAction', AUTOMATIC), false);
+    assert.equal(isUserRequest('CodeAction', undefined), false, 'no context, no proof');
+    assert.equal(isUserRequest('Hover', undefined), true, 'only code actions run unasked');
+    assert.deepEqual(
+      stepForResponse('textDocument/codeAction', 'fsharp', [QUICK_FIX], INVOKED),
+      stepOf('FSharp', 'CodeAction'),
+    );
+    assert.equal(
+      stepForResponse('textDocument/codeAction', 'csharp', [QUICK_FIX], AUTOMATIC),
+      undefined,
+      'the editor asking on a caret move is not the user',
+    );
+    assert.equal(stepForResponse('textDocument/codeAction', 'fsharp', [], INVOKED), undefined);
   });
 
   test('[TUTORIAL-DETECT-LSP] the request method and the document language pick the step', () => {
@@ -161,15 +186,29 @@ suite('Interactive tutorial [TUTORIAL]', () => {
       const film = filmOf(step);
       assert.match(film.webm, /^https:\/\/sharplsp\.dev\/assets\/videos\/[a-z-]+\.webm$/);
       assert.match(film.poster, /-poster\.webp$/);
-      assert.equal(film.captions === null || film.captions === film.webm.replace(/\.webm$/, '.en.vtt'), true);
+      assert.equal(
+        film.captions === null || film.captions === film.webm.replace(/\.webm$/, '.en.vtt'),
+        true,
+      );
     }
     assert.equal(filmOf(stepOf('FSharp', 'Hover')).captions?.endsWith('/hover.en.vtt'), true);
-    assert.equal(filmOf(stepOf('CSharp', 'SolutionExplorer')).captions, null, 'sharplsp-tour has no captions');
+    assert.equal(
+      filmOf(stepOf('CSharp', 'SolutionExplorer')).captions,
+      null,
+      'sharplsp-tour has no captions',
+    );
     assert.equal(
       filmOf(stepOf('FSharp', 'OpenFile')).webm.endsWith('/fsharp-language.webm'),
       true,
       'F# opens on the F# film',
     );
+    // Code actions play the FilmMakers' lesson, each language from its own chapter.
+    const fsharpFix = filmOf(stepOf('FSharp', 'CodeAction'));
+    const csharpFix = filmOf(stepOf('CSharp', 'CodeAction'));
+    assert.equal(fsharpFix.webm, 'https://sharplsp.dev/assets/videos/refactoring-lesson.webm');
+    assert.equal(fsharpFix.captions?.endsWith('/refactoring-lesson.en.vtt'), true);
+    assert.deepEqual([fsharpFix.start, csharpFix.start], [44, 116], 'F# fixes at 0:44, C# at 1:56');
+    assert.equal(filmOf(stepOf('FSharp', 'Hover')).start, 0, 'other films play from the start');
   });
 
   test('[TUTORIAL-WALKTHROUGH] the F# walkthrough comes first, and each step completes on its own context key', () => {
@@ -271,7 +310,19 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     await pollDefinition(uri, member);
     await ticked(tutorial, 'FSharp.Definition');
     await pollReferences(uri, positionOf(doc, 'let double', 4), 2);
-    const keys = await ticked(tutorial, 'FSharp.References');
+    await ticked(tutorial, 'FSharp.References');
+    assertCurrent(tutorial, 'FSharp.CodeAction', 'refactoring-lesson');
+
+    const fixes = await openFSharpFixture('CodeFixes.fs');
+    const unusedOpen = fixes.doc.lineAt(positionOf(fixes.doc, 'open System.Text').line).range;
+    await waitForCodeActions({
+      uri: fixes.uri,
+      range: unusedOpen,
+      kind: vscode.CodeActionKind.QuickFix,
+      predicate: (items) => items.some((item) => item.title === 'Remove unused open'),
+      timeoutMs: LSP_RESPONSE_MS,
+    });
+    const keys = await ticked(tutorial, 'FSharp.CodeAction');
     assert.deepEqual(
       [...keys].filter((key) => key.startsWith('CSharp.')),
       [],
@@ -289,7 +340,7 @@ suite('Interactive tutorial [TUTORIAL]', () => {
       'the explorer is shared by both languages',
     );
     assertCurrent(tutorial, null);
-    assert.equal(view(tutorial).languages[0]?.done, 6, 'all six F# steps done');
+    assert.equal(view(tutorial).languages[0]?.done, 7, 'all seven F# steps done');
 
     await vscode.commands.executeCommand('sharplsp.tutorial.openFile', 'CSharp');
     assert.equal(

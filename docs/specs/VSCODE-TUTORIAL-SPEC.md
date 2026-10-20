@@ -29,7 +29,7 @@ flowchart LR
 
 ## Steps `[TUTORIAL-STEPS]`
 
-Each language has the same six steps, in this order. The F# walkthrough is contributed first and is the one the first run opens.
+Each language has the same seven steps, in this order. The F# walkthrough is contributed first and is the one the first run opens.
 
 | Action | The user | Ticks when | Film |
 |--------|----------|------------|------|
@@ -38,9 +38,10 @@ Each language has the same six steps, in this order. The F# walkthrough is contr
 | `Completion` | triggers completion | `textDocument/completion` answers with at least one item | `code-completions` |
 | `Definition` | goes to a definition | `textDocument/definition` answers with at least one location | `navigation` |
 | `References` | finds all references | `textDocument/references` answers with at least one location | `navigation` |
+| `CodeAction` | invokes code actions (Cmd+. or Ctrl+.) | `textDocument/codeAction`, invoked by the user, answers with at least one action | `refactoring-lesson`, from its F# chapter (0:44) or C# chapter (1:56) |
 | `SolutionExplorer` | shows the Solution Explorer | the Solution Explorer view becomes visible | `sharplsp-tour` |
 
-The films are the website's published films, served from `https://sharplsp.dev/assets/videos/<film>.webm`. The step table in `src/tutorial/steps.ts` is the only place that names them.
+The films are the website's published films, served from `https://sharplsp.dev/assets/videos/<film>.webm`. The step table in `src/tutorial/steps.ts` is the only place that names them, and the chapter a step starts at. `refactoring-lesson` is a narrated lesson film ([WEB-DESIGN-MEDIA] Lessons).
 
 ## Detection `[TUTORIAL-DETECT]`
 
@@ -50,12 +51,13 @@ A `sendRequest` middleware sits outside the request hold ([DIST-FAILURE-UX] rule
 
 A response counts toward a step when all of these hold:
 
-1. The request is one of the four methods in [TUTORIAL-STEPS].
+1. The request is one of the five methods in [TUTORIAL-STEPS]. A code action request counts only when its `context.triggerKind` is `Invoked` (1): VS Code also asks automatically as the caret moves, and that is not the user acting.
 2. Its `textDocument.uri` names a document VS Code has open, with language `fsharp` or `csharp`. That language picks the walkthrough.
 3. The response is *meaningful*:
    - for hover, a non-null result whose `contents` is a non-empty string, a non-empty array, or a markup or marked string with non-empty `value`;
    - for completion, a non-empty array, or a list whose `items` is non-empty;
-   - for definition and references, a single location or a non-empty array of locations.
+   - for definition and references, a single location or a non-empty array of locations;
+   - for code actions, a non-empty array.
 
 A request that fails, or is cancelled, never counts.
 
@@ -74,7 +76,7 @@ Progress is a `Signal<TutorialProgress>` in `src/tutorial/progress.ts`, the sing
 
 ## Walkthrough `[TUTORIAL-WALKTHROUGH]`
 
-The manifest contributes two walkthroughs to VS Code's Get Started page: `sharplsp.tutorial.fsharp` ("Learn SharpLsp with F#") first, then `sharplsp.tutorial.csharp`. Each lists the six steps in [TUTORIAL-STEPS] order.
+The manifest contributes two walkthroughs to VS Code's Get Started page: `sharplsp.tutorial.fsharp` ("Learn SharpLsp with F#") first, then `sharplsp.tutorial.csharp`. Each lists the seven steps in [TUTORIAL-STEPS] order.
 
 - Each step's `completionEvents` is exactly `onContext:sharplsp.tutorial.<Language>.<Action>`, so the tick comes from [TUTORIAL-PROGRESS], never from a click.
 - The `OpenFile` step's description links `sharplsp.tutorial.openFile` with the language, which opens the workspace's first source file of that language.
@@ -87,7 +89,7 @@ The manifest contributes two walkthroughs to VS Code's Get Started page: `sharpl
 
 - **Contents:** a language switch (F#, then C#), the selected language's six steps, each marked done or not, and the current step's film. The current step is the first step not yet done. When all six are done, the panel says so and shows no film.
 - **Reactivity:** the panel is a projection of the progress signal and the selected language. A change posts the new view to the webview, which updates in place. The film element is replaced only when the current step's film changes, so a tick that leaves the same film current does not restart it.
-- **Film:** `<video>` with `controls`, `autoplay`, `muted`, `loop` and `playsinline`. Its poster is `<film>-poster.webp`, and its captions are `<film>.en.vtt`. A film the website publishes without captions (today `sharplsp-tour`) gets no caption track. The content security policy allows media, images and captions from `https://sharplsp.dev` only, and scripts by nonce only. If the film cannot load (for example offline), the panel shows the step's instructions in its place.
+- **Film:** `<video>` with `controls`, `autoplay`, `muted`, `loop` and `playsinline`. Its poster is `<film>-poster.webp`, and its captions are `<film>.en.vtt`. A film the website publishes without captions (today `sharplsp-tour`) gets no caption track. A step with a chapter opens its film there with a media fragment (`<film>.webm#t=<seconds>`); the panel swaps the film when the film or its chapter changes. The content security policy allows media, images and captions from `https://sharplsp.dev` only, and scripts by nonce only. If the film cannot load (for example offline), the panel shows the step's instructions in its place.
 - **Format:** WebM only. Desktop VS Code's webview cannot play H.264, so the panel never names an `.mp4`.
 
 ## First Run `[TUTORIAL-FIRST-RUN]`

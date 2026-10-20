@@ -1528,6 +1528,18 @@
             ]
           },
           {
+            "id": "FSharp.CodeAction",
+            "title": "%walkthrough.FSharp.CodeAction.title%",
+            "description": "%walkthrough.FSharp.CodeAction.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.FSharp.CodeAction"
+            ]
+          },
+          {
             "id": "FSharp.SolutionExplorer",
             "title": "%walkthrough.FSharp.SolutionExplorer.title%",
             "description": "%walkthrough.FSharp.SolutionExplorer.description%",
@@ -1604,6 +1616,18 @@
             },
             "completionEvents": [
               "onContext:sharplsp.tutorial.CSharp.References"
+            ]
+          },
+          {
+            "id": "CSharp.CodeAction",
+            "title": "%walkthrough.CSharp.CodeAction.title%",
+            "description": "%walkthrough.CSharp.CodeAction.description%",
+            "media": {
+              "image": "icons/sharplsp.svg",
+              "altText": "SharpLsp"
+            },
+            "completionEvents": [
+              "onContext:sharplsp.tutorial.CSharp.CodeAction"
             ]
           },
           {

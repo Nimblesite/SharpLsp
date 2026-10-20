@@ -10,6 +10,7 @@ export type TutorialAction =
   | { kind: 'Completion' }
   | { kind: 'Definition' }
   | { kind: 'References' }
+  | { kind: 'CodeAction' }
   | { kind: 'SolutionExplorer' };
 
 export interface TutorialStep {

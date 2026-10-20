@@ -40,23 +40,44 @@
     replaceChildren(document.getElementById('steps'), items);
   }
 
+  /** The film's URL, opened at its chapter with a media fragment. */
+  function filmSource(film) {
+    return film.start > 0 ? `${film.webm}#t=${film.start}` : film.webm;
+  }
+
   function filmElement(film) {
     const video = document.createElement('video');
-    Object.assign(video, { controls: true, autoplay: true, muted: true, loop: true, playsInline: true });
+    Object.assign(video, {
+      controls: true,
+      autoplay: true,
+      muted: true,
+      loop: true,
+      playsInline: true,
+    });
     video.crossOrigin = 'anonymous';
     video.poster = film.poster;
-    video.src = film.webm;
+    video.src = filmSource(film);
     if (film.captions) {
-      video.append(Object.assign(document.createElement('track'), { kind: 'captions', srclang: 'en', label: 'English', src: film.captions, default: true }));
+      video.append(
+        Object.assign(document.createElement('track'), {
+          kind: 'captions',
+          srclang: 'en',
+          label: 'English',
+          src: film.captions,
+          default: true,
+        }),
+      );
     }
-    video.addEventListener('error', () => document.getElementById('offline').removeAttribute('hidden'));
+    video.addEventListener('error', () =>
+      document.getElementById('offline').removeAttribute('hidden'),
+    );
     return video;
   }
 
   function renderFilm(current) {
-    const webm = current ? current.film.webm : '';
-    if (webm === playing) return;
-    playing = webm;
+    const source = current ? filmSource(current.film) : '';
+    if (source === playing) return;
+    playing = source;
     document.getElementById('offline').setAttribute('hidden', '');
     replaceChildren(document.getElementById('film'), current ? [filmElement(current.film)] : []);
   }
@@ -82,7 +103,8 @@
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target.closest('button') : null;
     if (!target) return;
-    if (target.dataset.language) vscode.postMessage({ type: 'language', language: target.dataset.language });
+    if (target.dataset.language)
+      vscode.postMessage({ type: 'language', language: target.dataset.language });
     if (target.id === 'open-file') vscode.postMessage({ type: 'openFile' });
   });
 

@@ -14,6 +14,7 @@ export const ACTIONS: readonly ActionKind[] = [
   'Completion',
   'Definition',
   'References',
+  'CodeAction',
   'SolutionExplorer',
 ];
 
@@ -42,6 +43,8 @@ interface ActionFacts {
   readonly method?: string;
   /** The film; `undefined` means the language's own `openFileFilm`. */
   readonly film?: string;
+  /** Seconds into the film where each language's chapter starts; `undefined` plays from 0. */
+  readonly filmStart?: Readonly<Record<LanguageKind, number>>;
   readonly title: (language: string) => string;
   readonly instruction: (language: string) => string;
 }
@@ -74,6 +77,15 @@ const ACTION_FACTS: Record<ActionKind, ActionFacts> = {
     film: 'navigation',
     title: () => 'Find all references',
     instruction: () => 'Put the caret on a symbol and press Shift+F12.',
+  },
+  CodeAction: {
+    method: 'textDocument/codeAction',
+    // The FilmMakers' lesson: F# quick fixes at 0:44, C# generate method at 1:56.
+    film: 'refactoring-lesson',
+    filmStart: { FSharp: 44, CSharp: 116 },
+    title: () => 'Fix code with a code action',
+    instruction: () =>
+      'Put the caret on a warning or error, press Cmd+. (Ctrl+. on Windows and Linux), and pick a fix.',
   },
   SolutionExplorer: {
     film: 'sharplsp-tour',
@@ -131,12 +143,15 @@ export interface Film {
   readonly poster: string;
   /** `null` when the film has no English captions. */
   readonly captions: string | null;
+  /** Seconds into the film where the step's chapter starts. */
+  readonly start: number;
 }
 
 export function filmOf(step: TutorialStep): Film {
-  const name =
-    ACTION_FACTS[step.action.kind].film ?? LANGUAGE_FACTS[step.language.kind].openFileFilm;
+  const facts = ACTION_FACTS[step.action.kind];
+  const name = facts.film ?? LANGUAGE_FACTS[step.language.kind].openFileFilm;
   const base = `${FILM_ORIGIN}/assets/videos/${name}`;
   const captions = UNCAPTIONED_FILMS.has(name) ? null : `${base}.en.vtt`;
-  return { webm: `${base}.webm`, poster: `${base}-poster.webp`, captions };
+  const start = facts.filmStart?.[step.language.kind] ?? 0;
+  return { webm: `${base}.webm`, poster: `${base}-poster.webp`, captions, start };
 }

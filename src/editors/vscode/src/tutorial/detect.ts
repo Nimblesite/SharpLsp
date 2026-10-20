@@ -34,6 +34,7 @@ export function isMeaningful(action: ActionKind, result: unknown): boolean {
     case 'Hover':
       return isRecord(result) && hasContent(result.contents);
     case 'Completion':
+    case 'CodeAction':
       return hasItems(result);
     case 'Definition':
     case 'References':
@@ -44,16 +45,27 @@ export function isMeaningful(action: ActionKind, result: unknown): boolean {
   }
 }
 
+/** LSP `CodeActionTriggerKind.Invoked`: the user asked (Cmd+., the lightbulb), not the editor. */
+const INVOKED = 1;
+
+/** Whether the user, not the editor, made the request: code actions also run automatically. */
+export function isUserRequest(action: ActionKind, param: unknown): boolean {
+  if (action !== 'CodeAction') return true;
+  return isRecord(param) && isRecord(param.context) && param.context.triggerKind === INVOKED;
+}
+
 /** The step a response ticks, if any: a tracked method, a taught language, a meaningful answer. */
 export function stepForResponse(
   method: string,
   languageId: string | undefined,
   result: unknown,
+  param?: unknown,
 ): TutorialStep | undefined {
   const action = actionOfMethod(method);
   const language = languageId === undefined ? undefined : languageOfId(languageId);
   if (action === undefined || language === undefined) return undefined;
-  return isMeaningful(action, result) ? stepOf(language, action) : undefined;
+  const ticks = isUserRequest(action, param) && isMeaningful(action, result);
+  return ticks ? stepOf(language, action) : undefined;
 }
 
 function languageIdOf(param: unknown): string | undefined {
@@ -65,7 +77,7 @@ function languageIdOf(param: unknown): string | undefined {
 function note(type: string | MessageSignature, param: unknown, result: unknown): void {
   try {
     const method = typeof type === 'string' ? type : type.method;
-    const step = stepForResponse(method, languageIdOf(param), result);
+    const step = stepForResponse(method, languageIdOf(param), result, param);
     if (step !== undefined) record(step);
   } catch (error: unknown) {
     log.warn(`Tutorial could not observe a response: ${getErrorMessage(error)}`);

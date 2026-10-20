@@ -22,6 +22,8 @@ union TutorialAction {
   Definition
   # Find all references, and SharpLsp answers with locations.
   References
+  # Invoke code actions (Cmd+. / Ctrl+.), and SharpLsp answers with fixes and refactorings.
+  CodeAction
   # Show the Solution Explorer.
   SolutionExplorer
 }
