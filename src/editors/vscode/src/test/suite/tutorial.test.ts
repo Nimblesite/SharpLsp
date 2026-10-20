@@ -49,6 +49,12 @@ const AUTOMATIC = { context: { diagnostics: [], triggerKind: 2 } };
 const CALL = '= Geometry.totalArea';
 const MEMBER = CALL.indexOf('totalArea');
 
+/** The first symbol with no children: a function, type or value, never a namespace keyword. */
+function firstLeaf(symbols: readonly vscode.DocumentSymbol[]): vscode.DocumentSymbol | undefined {
+  const [first] = symbols;
+  return first === undefined || first.children.length === 0 ? first : firstLeaf(first.children);
+}
+
 function done(tutorial: Tutorial): Set<string> {
   return new Set(tutorial.progress.value.done.map(stepKey));
 }
@@ -79,7 +85,7 @@ function assertCurrent(tutorial: Tutorial, key: string | null, film?: string): v
   const current = view(tutorial).current;
   assert.equal(current?.key ?? null, key, `the panel's current step is ${String(key)}`);
   if (film !== undefined)
-    assert.equal(current?.film.webm.endsWith(`/${film}.webm`), true, `the panel plays ${film}`);
+    assert.equal(current?.film.video.endsWith(`/${film}.mp4`), true, `the panel plays ${film}`);
 }
 
 suite('Interactive tutorial [TUTORIAL]', () => {
@@ -194,17 +200,17 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     assert.equal(isTutorialProgress(undefined), false);
   });
 
-  test('[TUTORIAL-PANEL] every film is a WebM from the website or its pinned commit, never an MP4', () => {
+  test('[TUTORIAL-PANEL] every film is an MP4 from the website or its pinned commit, never a WebM, which VS Code cannot demux', () => {
     for (const step of LANGUAGES.flatMap(stepsOf)) {
       const film = filmOf(step);
       assert.match(
-        film.webm,
-        /^https:\/\/(sharplsp\.dev\/assets\/videos|media\.githubusercontent\.com\/media\/Nimblesite\/SharpLsp\/[0-9a-f]{40}\/src\/website\/src\/assets\/videos)\/[a-z-]+\.webm$/,
+        film.video,
+        /^https:\/\/(sharplsp\.dev\/assets\/videos|media\.githubusercontent\.com\/media\/Nimblesite\/SharpLsp\/[0-9a-f]{40}\/src\/website\/src\/assets\/videos)\/[a-z-]+\.mp4$/,
       );
       assert.match(film.poster, /-poster\.webp$/);
       const assets = film.poster.replace(/-poster\.webp$/, '');
       assert.equal(film.captions === null || film.captions === `${assets}.en.vtt`, true);
-      assert.equal(film.webm.endsWith(`/${assets.split('/').pop() ?? ''}.webm`), true);
+      assert.equal(film.video.endsWith(`/${assets.split('/').pop() ?? ''}.mp4`), true);
     }
     assert.equal(filmOf(stepOf('FSharp', 'Hover')).captions?.endsWith('/hover.en.vtt'), true);
     assert.equal(
@@ -213,17 +219,17 @@ suite('Interactive tutorial [TUTORIAL]', () => {
       'sharplsp-tour has no captions',
     );
     assert.equal(
-      filmOf(stepOf('FSharp', 'OpenFile')).webm.endsWith('/fsharp-language.webm'),
+      filmOf(stepOf('FSharp', 'OpenFile')).video.endsWith('/fsharp-language.mp4'),
       true,
       'F# opens on the F# film',
     );
     // Code actions play the FilmMakers' lesson, each language from its own chapter.
     const fsharpFix = filmOf(stepOf('FSharp', 'CodeAction'));
     const csharpFix = filmOf(stepOf('CSharp', 'CodeAction'));
-    // Not deployed yet: GitHub serves the LFS WebM, and the poster and captions, from one commit.
+    // Not deployed yet: GitHub serves the LFS MP4, and the poster and captions, from one commit.
     assert.match(
-      fsharpFix.webm,
-      /^https:\/\/media\.githubusercontent\.com\/media\/.+\/refactoring-lesson\.webm$/,
+      fsharpFix.video,
+      /^https:\/\/media\.githubusercontent\.com\/media\/.+\/refactoring-lesson\.mp4$/,
     );
     assert.match(
       fsharpFix.poster,
@@ -309,9 +315,24 @@ suite('Interactive tutorial [TUTORIAL]', () => {
     );
     assert.match(
       html,
+      /<body data-film-origins="https:\/\/sharplsp\.dev https:\/\/media\.githubusercontent\.com https:\/\/raw\.githubusercontent\.com">/,
+      'the script accepts film URLs only on the origins the policy names',
+    );
+    assert.match(
+      html,
       /<script nonce="[^"]+" src="[^"]+panel\.js"><\/script>/,
       'the one script runs by nonce',
     );
+    const film = await pollUntilResult(
+      async () => Promise.resolve(tutorial.panel.film()),
+      (report) => report !== undefined && report.state !== 'loading',
+      LSP_RESPONSE_MS,
+      200,
+      'the webview to report how the film fared',
+    );
+    assert.equal(film?.state, 'ready', `the film loads in the editor's webview: ${film?.detail}`);
+    assert.equal(film?.detail, '', 'no media error');
+    assert.match(film?.src ?? '', /^https:\/\/sharplsp\.dev\/.+\/fsharp-language\.mp4$/);
   });
 
   test('[TUTORIAL-DETECT] carrying out the F# steps in the live editor ticks each one, and no C# step', async function () {
@@ -401,5 +422,34 @@ suite('Interactive tutorial [TUTORIAL]', () => {
       view(tutorial).languages.map((l) => l.done),
       [0, 0],
     );
+  });
+
+  test('[TUTORIAL-OPEN-FILE] the file the tutorial opens is one SharpLsp answers hover in', async function () {
+    this.timeout(SIDECAR_COLD_MS * 2);
+    await closeAllEditors();
+    await vscode.commands.executeCommand('sharplsp.tutorial.openFile', 'FSharp');
+    const doc = vscode.window.activeTextEditor?.document;
+    assert.equal(doc?.languageId, 'fsharp', 'the command opened an F# file');
+    assert.ok((await ticked(tutorial, 'FSharp.OpenFile')).has('FSharp.OpenFile'));
+    const symbols = await pollUntilResult(
+      async () =>
+        vscode.commands.executeCommand<vscode.DocumentSymbol[] | undefined>(
+          'vscode.executeDocumentSymbolProvider',
+          doc.uri,
+        ),
+      (found) => (found?.length ?? 0) > 0,
+      LSP_RESPONSE_MS,
+      500,
+      'the opened file to declare something',
+    );
+    const symbol = firstLeaf(symbols ?? []);
+    assert.ok(symbol, 'the opened file declares a symbol to rest the mouse on');
+    assert.ok(
+      (await vscode.workspace.findFiles('**/*.fsproj')).length > 0,
+      'the workspace has an F# project, and the file opened lies in one',
+    );
+    const hovers = await pollHover(doc.uri, symbol.selectionRange.start);
+    assert.ok(hovers.length > 0, `hover answers on ${symbol.name} in ${doc.uri.fsPath}`);
+    assert.ok((await ticked(tutorial, 'FSharp.Hover')).has('FSharp.Hover'));
   });
 });

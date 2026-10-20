@@ -26,13 +26,12 @@ import {
   LANGUAGES,
   languageLabel,
   languageOfId,
-  sourceGlob,
   stepOf,
 } from './steps.js';
+import { tutorialSourceFile } from './source-file.js';
 
 const PROGRESS_KEY = 'sharplsp.tutorial.progress';
 const SHOWN_KEY = 'sharplsp.tutorial.shown';
-const OPEN_FILE_EXCLUDE = '**/{bin,obj,node_modules,.git}/**';
 
 /** The tutorial's test seam on the extension API ([TUTORIAL-TESTING]). */
 export interface TutorialApi {
@@ -82,16 +81,21 @@ function watchEditor(context: vscode.ExtensionContext, explorer: vscode.TreeView
   noteExplorer(explorer.visible);
 }
 
-/** Open the workspace's first source file of `language`. */
+/** Open a `language` file the server has loaded ([TUTORIAL-OPEN-FILE]). */
 async function openFirstFile(language: LanguageKind): Promise<void> {
-  const [file] = await vscode.workspace.findFiles(sourceGlob(language), OPEN_FILE_EXCLUDE, 1);
-  if (file === undefined) {
+  const file = await tutorialSourceFile(language);
+  if (file.kind === 'none') {
+    const where = file.where === 'solution' ? 'the loaded solution' : 'this workspace';
     void vscode.window.showInformationMessage(
-      `There is no ${languageLabel(language)} file in this workspace.`,
+      `There is no ${languageLabel(language)} file in ${where}.`,
     );
     return;
   }
-  await vscode.window.showTextDocument(file, { viewColumn: vscode.ViewColumn.One, preview: false });
+  log.info(`Tutorial: opening ${file.uri.toString()} for ${language}`);
+  await vscode.window.showTextDocument(file.uri, {
+    viewColumn: vscode.ViewColumn.One,
+    preview: false,
+  });
 }
 
 function languageArg(value: unknown): LanguageKind {

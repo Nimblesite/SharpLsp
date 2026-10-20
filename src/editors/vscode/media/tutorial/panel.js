@@ -40,9 +40,37 @@
     replaceChildren(document.getElementById('steps'), items);
   }
 
+  /** The origins the extension allows films from, written into the page by panel.ts. */
+  const filmOrigins = (document.body.dataset.filmOrigins || '').split(' ').filter(Boolean);
+
+  /** `raw` as a URL on an allowed film origin, or '' for anything else. */
+  /** @param {unknown} raw */
+  function filmUrl(raw) {
+    try {
+      const url = new URL(String(raw));
+      return filmOrigins.includes(url.origin) ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
   /** The film's URL, opened at its chapter with a media fragment. */
   function filmSource(film) {
-    return film.start > 0 ? `${film.webm}#t=${film.start}` : film.webm;
+    const video = filmUrl(film.video);
+    const start = Number(film.start);
+    return video && start > 0 ? `${video}#t=${start}` : video;
+  }
+
+  /** Tell the extension how the film fared, so a failure is logged, never silent. */
+  /** @param {'loading' | 'ready' | 'error'} state @param {HTMLVideoElement} video */
+  function report(state, video) {
+    const error = video.error;
+    vscode.postMessage({
+      type: 'film',
+      state,
+      src: video.currentSrc || video.src,
+      detail: error ? `MediaError ${error.code}: ${error.message}` : '',
+    });
   }
 
   function filmElement(film) {
@@ -55,22 +83,25 @@
       playsInline: true,
     });
     video.crossOrigin = 'anonymous';
-    video.poster = film.poster;
+    video.poster = filmUrl(film.poster);
     video.src = filmSource(film);
-    if (film.captions) {
+    const captions = filmUrl(film.captions);
+    if (captions) {
       video.append(
         Object.assign(document.createElement('track'), {
           kind: 'captions',
           srclang: 'en',
           label: 'English',
-          src: film.captions,
+          src: captions,
           default: true,
         }),
       );
     }
-    video.addEventListener('error', () =>
-      document.getElementById('offline').removeAttribute('hidden'),
-    );
+    video.addEventListener('loadedmetadata', () => report('ready', video));
+    video.addEventListener('error', () => {
+      document.getElementById('offline').removeAttribute('hidden');
+      report('error', video);
+    });
     return video;
   }
 
@@ -79,7 +110,9 @@
     if (source === playing) return;
     playing = source;
     document.getElementById('offline').setAttribute('hidden', '');
-    replaceChildren(document.getElementById('film'), current ? [filmElement(current.film)] : []);
+    const video = current ? filmElement(current.film) : undefined;
+    replaceChildren(document.getElementById('film'), video ? [video] : []);
+    if (video) report('loading', video);
   }
 
   function renderCurrent(view) {
@@ -93,6 +126,8 @@
   }
 
   window.addEventListener('message', (event) => {
+    // The extension's messages arrive from the webview's own origin; nothing else may drive it.
+    if (event.origin !== window.origin) return;
     if (event.data && event.data.type === 'view') {
       renderLanguages(event.data.view);
       renderSteps(event.data.view);

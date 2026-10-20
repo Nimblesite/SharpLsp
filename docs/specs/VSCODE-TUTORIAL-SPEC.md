@@ -41,7 +41,7 @@ Each language has the same seven steps, in this order. The F# walkthrough is con
 | `CodeAction` | invokes code actions (Cmd+. or Ctrl+.) | `textDocument/codeAction`, invoked by the user, answers with at least one action | `refactoring-lesson`, from its F# chapter (0:44) or C# chapter (1:56) |
 | `SolutionExplorer` | shows the Solution Explorer | the Solution Explorer view becomes visible | `sharplsp-tour` |
 
-The films are the website's published films, served from `https://sharplsp.dev/assets/videos/<film>.webm`. The step table in `src/tutorial/steps.ts` is the only place that names them, and the chapter a step starts at. `refactoring-lesson` is a narrated lesson film ([WEB-DESIGN-MEDIA] Lessons).
+The films are the website's published films, served from `https://sharplsp.dev/assets/videos/<film>.mp4`: H.264 MP4, never WebM, because VS Code's Electron has no WebM demuxer (a WebM fails with `DEMUXER_ERROR_COULD_NOT_OPEN`). The step table in `src/tutorial/steps.ts` is the only place that names them, and the chapter a step starts at. `refactoring-lesson` is a narrated lesson film ([WEB-DESIGN-MEDIA] Lessons).
 
 ## Detection `[TUTORIAL-DETECT]`
 
@@ -79,9 +79,17 @@ Progress is a `Signal<TutorialProgress>` in `src/tutorial/progress.ts`, the sing
 The manifest contributes two walkthroughs to VS Code's Get Started page: `sharplsp.tutorial.fsharp` ("Learn SharpLsp with F#") first, then `sharplsp.tutorial.csharp`. Each lists the seven steps in [TUTORIAL-STEPS] order.
 
 - Each step's `completionEvents` is exactly `onContext:sharplsp.tutorial.<Language>.<Action>`, so the tick comes from [TUTORIAL-PROGRESS], never from a click.
-- The `OpenFile` step's description links `sharplsp.tutorial.openFile` with the language, which opens the workspace's first source file of that language.
+- The `OpenFile` step's description links `sharplsp.tutorial.openFile` with the language, which opens a file of that language as [TUTORIAL-OPEN-FILE] picks it.
 - Every step's description links `sharplsp.tutorial.open`, which shows the video panel.
 - Step titles and descriptions are localized in `package.nls.json`, `package.nls.ja.json` and `package.nls.zh-cn.json`.
+
+## Open File `[TUTORIAL-OPEN-FILE]`
+
+`sharplsp.tutorial.openFile` (the panel's "Open one for me") opens a file SharpLsp answers in, so every later step works there. A file outside the loaded solution gets no semantic answers: no hover, completion or navigation.
+
+- With a solution loaded, it opens the solution's first file of the language that declares at least one symbol. If the solution has none, it says "There is no F# file in the loaded solution" and opens nothing. It never falls back to a file outside the solution.
+- With no solution loaded yet, it opens the workspace's first file of the language, skipping `bin`, `obj`, `node_modules` and `.git`.
+- It logs the file it opens.
 
 ## Video Panel `[TUTORIAL-PANEL]`
 
@@ -89,8 +97,12 @@ The manifest contributes two walkthroughs to VS Code's Get Started page: `sharpl
 
 - **Contents:** a language switch (F#, then C#), the selected language's seven steps, each marked done or not, and the current step's film. The current step is the first step not yet done. When all seven are done, the panel says so and shows no film.
 - **Reactivity:** the panel is a projection of the progress signal and the selected language. A change posts the new view to the webview, which updates in place. The film element is replaced only when the current step's film changes, so a tick that leaves the same film current does not restart it.
-- **Film:** `<video>` with `controls`, `autoplay`, `muted`, `loop` and `playsinline`. Its poster is `<film>-poster.webp`, and its captions are `<film>.en.vtt`. A film the website publishes without captions (today `sharplsp-tour`) gets no caption track. A step with a chapter opens its film there with a media fragment (`<film>.webm#t=<seconds>`); the panel swaps the film when the film or its chapter changes. The content security policy allows media, images and captions from `https://sharplsp.dev` only, plus `media.githubusercontent.com` and `raw.githubusercontent.com` for a film the site has not deployed yet (served from one pinned commit until it does), and scripts by nonce only. If the film cannot load (for example offline), the panel shows the step's instructions in its place.
-- **Format:** WebM only. Desktop VS Code's webview cannot play H.264, so the panel never names an `.mp4`.
+- **Film:** `<video>` with `controls`, `autoplay`, `muted`, `loop` and `playsinline`. Its poster is `<film>-poster.webp`, and its captions are `<film>.en.vtt`. A film the website publishes without captions (today `sharplsp-tour`) gets no caption track. A step with a chapter opens its film there with a media fragment (`<film>.mp4#t=<seconds>`); the panel swaps the film when the film or its chapter changes. The content security policy allows media, images and captions from `https://sharplsp.dev` only, plus `media.githubusercontent.com` and `raw.githubusercontent.com` for a film the site has not deployed yet (served from one pinned commit until it does), and scripts by nonce only. If the film cannot load (for example offline), the panel shows the step's instructions in its place.
+- **Format:** MP4 only. Desktop VS Code's Electron decodes H.264 and AAC but cannot open a WebM, so the panel never names a `.webm`.
+
+### Film Report `[TUTORIAL-PANEL-FILM-REPORT]`
+
+The webview reports each film to the extension: `loading` when it swaps the film in, `ready` once the film's metadata loads, and `error` with the `MediaError` code and message. The extension logs each report, `error` as a warning, so a film that will not play is never a silent failure. `TutorialPanel.film()` returns the last report as a test seam.
 
 ## First Run `[TUTORIAL-FIRST-RUN]`
 

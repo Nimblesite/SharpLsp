@@ -24,7 +24,7 @@ export const FILM_ORIGIN = 'https://sharplsp.dev';
 /** The commit whose website assets hold films the site has not deployed yet. */
 const FILM_COMMIT = '8b0fa431ce701d73af897192247305864e216dd9';
 const FILM_PATH = `Nimblesite/SharpLsp/${FILM_COMMIT}/src/website/src/assets/videos`;
-/** GitHub serves a film's LFS WebM from one host, and its poster and captions from another. */
+/** GitHub serves a film's LFS MP4 from one host, and its poster and captions from another. */
 const GITHUB_MEDIA = 'https://media.githubusercontent.com';
 const GITHUB_RAW = 'https://raw.githubusercontent.com';
 
@@ -43,8 +43,10 @@ interface LanguageFacts {
   readonly label: string;
   /** The indefinite article before the label: "an F# file", "a C# file". */
   readonly article: 'a' | 'an';
-  /** The workspace glob `sharplsp.tutorial.openFile` searches. */
-  readonly sourceGlob: string;
+  /** The source file extension, lower-case with its dot. */
+  readonly extension: string;
+  /** The project file extension, lower-case with its dot. */
+  readonly project: string;
   readonly openFileFilm: string;
 }
 
@@ -53,14 +55,16 @@ const LANGUAGE_FACTS: Record<LanguageKind, LanguageFacts> = {
     id: 'fsharp',
     label: 'F#',
     article: 'an',
-    sourceGlob: '**/*.fs',
+    extension: '.fs',
+    project: '.fsproj',
     openFileFilm: 'fsharp-language',
   },
   CSharp: {
     id: 'csharp',
     label: 'C#',
     article: 'a',
-    sourceGlob: '**/*.cs',
+    extension: '.cs',
+    project: '.csproj',
     openFileFilm: 'getting-started',
   },
 };
@@ -153,8 +157,12 @@ export function languageLabel(language: LanguageKind): string {
   return LANGUAGE_FACTS[language].label;
 }
 
-export function sourceGlob(language: LanguageKind): string {
-  return LANGUAGE_FACTS[language].sourceGlob;
+export function sourceExtension(language: LanguageKind): string {
+  return LANGUAGE_FACTS[language].extension;
+}
+
+export function projectExtension(language: LanguageKind): string {
+  return LANGUAGE_FACTS[language].project;
 }
 
 export function titleOf(step: TutorialStep): string {
@@ -166,7 +174,7 @@ export function instructionOf(step: TutorialStep): string {
 }
 
 export interface Film {
-  readonly webm: string;
+  readonly video: string;
   readonly poster: string;
   /** `null` when the film has no English captions. */
   readonly captions: string | null;
@@ -174,7 +182,7 @@ export interface Film {
   readonly start: number;
 }
 
-/** Where a film's WebM and its other assets live: the website, or GitHub until it deploys. */
+/** Where a film's MP4 and its other assets live: the website, or GitHub until it deploys. */
 function filmBases(name: string): { readonly video: string; readonly assets: string } {
   if (!UNDEPLOYED_FILMS.has(name)) {
     const site = `${FILM_ORIGIN}/assets/videos/${name}`;
@@ -192,5 +200,5 @@ export function filmOf(step: TutorialStep): Film {
   const { video, assets } = filmBases(name);
   const captions = UNCAPTIONED_FILMS.has(name) ? null : `${assets}.en.vtt`;
   const start = facts.filmStart?.[step.language.kind] ?? 0;
-  return { webm: `${video}.webm`, poster: `${assets}-poster.webp`, captions, start };
+  return { video: `${video}.mp4`, poster: `${assets}-poster.webp`, captions, start };
 }

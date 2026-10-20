@@ -28,7 +28,16 @@ const options = (await prettier.resolveConfig(target)) ?? {};
 // The extension's own lint fixes (e.g. `T[]` for `Array<T>`), then its formatting.
 const [linted] = await new ESLint({ cwd: extensionDir, fix: true }).lintText(`${HEADER}\n${emitted}`, { filePath: target });
 const generated = await prettier.format(linted.output ?? linted.source ?? "", { ...options, filepath: target });
-const current = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "";
+/** The generated file as it stands, or "" before the first run: one read, no check-then-use race. */
+function readCurrent() {
+  try {
+    return fs.readFileSync(target, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return "";
+    throw error;
+  }
+}
+const current = readCurrent();
 
 if (process.argv.includes("--check")) {
   if (current !== generated) {

@@ -2,6 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { effect, Signal } from '../signals.js';
+import * as log from '../log.js';
 import { isRecord } from '../utils.js';
 import { type PanelView, panelView } from './panel-view.js';
 import { progress } from './progress.js';
@@ -10,6 +11,24 @@ import { FILM_ORIGINS, type LanguageKind, LANGUAGES } from './steps.js';
 const VIEW_TYPE = 'sharplsp.tutorial';
 const TITLE = 'SharpLsp Tutorial';
 
+/** What the webview last reported about its film ([TUTORIAL-PANEL-FILM-REPORT]). */
+export interface FilmReport {
+  readonly state: 'loading' | 'ready' | 'error';
+  readonly src: string;
+  /** The media error, empty unless `state` is `error`. */
+  readonly detail: string;
+}
+
+const FILM_STATES: readonly FilmReport['state'][] = ['loading', 'ready', 'error'];
+
+function filmReportOf(message: Record<string, unknown>): FilmReport | undefined {
+  const state = FILM_STATES.find((s) => s === message.state);
+  const { src, detail } = message;
+  return state === undefined || typeof src !== 'string' || typeof detail !== 'string'
+    ? undefined
+    : { state, src, detail };
+}
+
 /** The panel's handle, and the test seam onto what it shows. */
 export interface TutorialPanel {
   open(language: LanguageKind): void;
@@ -17,6 +36,8 @@ export interface TutorialPanel {
   view(): PanelView | undefined;
   /** The panel's HTML, or `undefined` while it is closed. */
   html(): string | undefined;
+  /** How the shown film fared, or `undefined` before the webview reports. */
+  film(): FilmReport | undefined;
 }
 
 function shellHtml(webview: vscode.Webview, media: vscode.Uri): string {
@@ -34,7 +55,7 @@ function shellHtml(webview: vscode.Webview, media: vscode.Uri): string {
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${style}"><title>${TITLE}</title></head>
-<body><nav id="languages"></nav><h1 id="title"></h1><p id="instruction"></p>
+<body data-film-origins="${FILM_ORIGINS.join(' ')}"><nav id="languages"></nav><h1 id="title"></h1><p id="instruction"></p>
 <button id="open-file" hidden>Open one for me</button>
 <div id="film"></div><p id="offline" hidden>The film could not load. Follow the instruction above.</p>
 <ol id="steps"></ol><script nonce="${nonce}" src="${script}"></script></body></html>`;
@@ -60,6 +81,7 @@ class TutorialPanelHost implements TutorialPanel {
   private readonly media: vscode.Uri;
   private panel: vscode.WebviewPanel | undefined;
   private shown: PanelView | undefined;
+  private filmReport: FilmReport | undefined;
 
   constructor(
     extensionUri: vscode.Uri,
@@ -82,6 +104,10 @@ class TutorialPanelHost implements TutorialPanel {
     return this.panel?.webview.html;
   }
 
+  public film(): FilmReport | undefined {
+    return this.filmReport;
+  }
+
   private create(): vscode.WebviewPanel {
     const panel = vscode.window.createWebviewPanel(
       VIEW_TYPE,
@@ -101,6 +127,7 @@ class TutorialPanelHost implements TutorialPanel {
       listener.dispose();
       this.panel = undefined;
       this.shown = undefined;
+      this.filmReport = undefined;
     });
     return panel;
   }
@@ -118,6 +145,16 @@ class TutorialPanelHost implements TutorialPanel {
     if (message.type === 'language')
       this.language.value = languageOf(message) ?? this.language.value;
     if (message.type === 'openFile') this.openFile(this.language.value);
+    if (message.type === 'film') this.noteFilm(message);
+  }
+
+  private noteFilm(message: Record<string, unknown>): void {
+    const report = filmReportOf(message);
+    if (report === undefined) return;
+    this.filmReport = report;
+    const line = `Tutorial film ${report.state}: ${report.src} ${report.detail}`.trimEnd();
+    if (report.state === 'error') log.warn(line);
+    else log.info(line);
   }
 }
 
