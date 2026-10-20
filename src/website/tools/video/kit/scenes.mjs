@@ -1,18 +1,27 @@
-// Implements [WEB-DESIGN-MEDIA]. A walkthrough is a list of scenes. A scene is
-// either a clip, `{ clip, act, speed, retries }`, shot in real time and played
-// back at `speed`, or an `{ offCamera }` step between clips. shootWalkthrough
-// shoots the list on a demo's set; publishWalkthrough cuts the clips together,
-// lays a narrated film's voice, score and captions over the cut, and writes the
-// site's MP4, WebM and poster.
+// Implements [WEB-DESIGN-MEDIA] and [WEB-DESIGN-MEDIA-CAMERA]. A walkthrough is
+// a list of scenes. A scene is either a clip, `{ clip, act, speed, retries }`,
+// shot in real time and played back at `speed`, or an `{ offCamera }` step
+// between clips. shootWalkthrough shoots the list on a demo's set, each clip
+// with its track; publishWalkthrough frames every clip through the camera, lays
+// its step captions over it, cuts the clips together, lays a narrated film's
+// voice, score and captions over the cut, and writes the site's MP4, WebM and
+// poster.
 import fs from 'node:fs';
 import path from 'node:path';
 import { cueLog, record } from './camera.mjs';
-import { duration, ffmpeg, poster } from './encode.mjs';
+import { captionFrames } from './captions.mjs';
+import { dimensions, duration, emptyDir, ffmpeg, poster } from './encode.mjs';
 import { runCommand } from './editor.mjs';
 import { caption, ringClick } from './overlay.mjs';
 import { narrated, publishEncodes } from './publish.mjs';
 import { onSet } from './set.mjs';
+import { readTrack } from './track.mjs';
 import { clickSharpLspIcon, demoRow, openFile, rowButton, sleep, waitForDemoRow } from './workbench.mjs';
+import { writeCamera } from './zoom.mjs';
+
+/** Every film is cut 1920 pixels wide, at 30 frames a second. */
+const WIDTH = 1920;
+const FPS = 30;
 
 /**
  * Workspace settings: snapshots every 10 seconds, the interval the guide
@@ -99,29 +108,81 @@ export async function shootWalkthrough({ demo, out, scenes, settings = WORKSPACE
   const clips = path.join(out, 'clips');
   fs.mkdirSync(clips, { recursive: true });
   await onSet({ demo, out, settings }, ({ page, cdp, app, workspace }) => {
-    const set = { cdp, cues: cueLog(clips), frames: path.join(out, 'frames'), clips };
+    const set = { page, cdp, cues: cueLog(clips), frames: path.join(out, 'frames'), clips };
     return shootScenes({ page, set, app, workspace, stills: path.join(out, 'stills') }, scenes);
   });
 }
 
-/** Each shot scene with its clip and its length on screen, in seconds, at its speed. */
+/** Each shot scene with its clip, its track and its length on screen, in seconds, at its speed. */
 const shotsOf = (out, scenes) =>
   scenes
     .filter((scene) => scene.clip)
     .map((scene) => {
       const file = path.join(out, 'clips', `${scene.clip}.mp4`);
-      return { ...scene, file, length: duration(file) / (scene.speed ?? 1) };
+      const track = readTrack(path.join(out, 'clips', `${scene.clip}.track.json`));
+      return { ...scene, file, track, length: duration(file) / (scene.speed ?? 1) };
     });
 
-/** Cut the shots together at their speeds, each held on its last frame for its `hold`, into a lossless master. */
-function cut(shots, master) {
-  const inputs = shots.flatMap((shot) => ['-i', shot.file]);
-  const chains = shots.map(
-    (shot, i) => `[${i}:v]setpts=PTS/${shot.speed ?? 1},fps=30,scale=1920:-2:flags=lanczos,tpad=stop_mode=clone:stop_duration=${(shot.hold ?? 0).toFixed(3)}[v${i}]`,
+/** Shot `index`'s camera: the crop script, in `dir`, that frames its clip from its track. */
+function cameraFor(shot, index, dir) {
+  const [width, height] = dimensions(shot.file);
+  const camera = { file: path.join(dir, `${shot.clip}.cmd`), name: `camera${index}`, width, height };
+  const frames = Math.round(duration(shot.file) * FPS);
+  const shots = writeCamera(shot.track, { ...camera, frames, fps: FPS, scale: width / shot.track.size[0], speed: shot.speed ?? 1 });
+  process.stdout.write(`${shot.clip}: ${shots.length - 1} camera moves\n`);
+  return camera;
+}
+
+const captionKey = ({ step, text, speed }) => JSON.stringify([step, text, speed]);
+
+/** Each shot's captions, timed in its clip: its first from the cut; a clip that logs none keeps the caption before it. */
+const timedCaptions = (shots) =>
+  shots.reduce((list, shot) => {
+    const own = shot.track.captions.map((caption, index) => ({ ...caption, from: index === 0 ? 0 : caption.t }));
+    return [...list, own.length > 0 ? own : (list.at(-1) ?? []).slice(-1).map((caption) => ({ ...caption, from: 0 }))];
+  }, []);
+
+/** Each shot's caption overlays, `{ file, from, to }`, every distinct caption rendered once into `dir`. */
+async function captionOverlays(shots, dir) {
+  const timed = timedCaptions(shots);
+  const distinct = [...new Map(timed.flat().map((caption) => [captionKey(caption), caption])).values()];
+  const files = await captionFrames(distinct, shots[0].track.size, WIDTH, dir);
+  const fileOf = new Map(distinct.map((caption, index) => [captionKey(caption), files[index]]));
+  return timed.map((captions) =>
+    captions.map((caption, index) => ({ file: fileOf.get(captionKey(caption)), from: caption.from, to: captions[index + 1]?.from ?? Infinity })),
   );
+}
+
+/** Each shot with its `camera` and its caption `overlays`, written into `<out>/camera`. */
+async function direct(out, shots) {
+  const dir = emptyDir(path.join(out, 'camera'));
+  const overlays = await captionOverlays(shots, dir);
+  return shots.map((shot, index) => ({ ...shot, camera: cameraFor(shot, index, dir), overlays: overlays[index] }));
+}
+
+const quoted = (value) => `'${value}'`;
+const during = ({ from, to }) => (Number.isFinite(to) ? `gte(t,${from})*lt(t,${to})` : `gte(t,${from})`);
+
+/** Shot `index`'s chain: cropped by its camera, scaled to the film's width, captioned, played at its speed and held for its `hold`. */
+function chain(shot, index, firstOverlay) {
+  const { file, name, width, height } = shot.camera;
+  const scaled = `scale=${WIDTH}:${Math.round((WIDTH * height) / width / 2) * 2}:flags=lanczos,setsar=1`;
+  const label = (step) => (step < 0 ? `framed${index}` : `captioned${index}_${step}`);
+  const framed = `[${index}:v]format=yuv444p,sendcmd=f=${quoted(file)},crop@${name}=w=${width}:h=${height}:x=0:y=0:exact=1,${scaled}[${label(-1)}]`;
+  const captioned = shot.overlays.map((overlay, step) => `[${label(step - 1)}][${firstOverlay + step}:v]overlay=enable=${quoted(during(overlay))}[${label(step)}]`);
+  const hold = (shot.hold ?? 0).toFixed(3);
+  const played = `[${label(shot.overlays.length - 1)}]setpts=PTS/${shot.speed ?? 1},fps=${FPS},format=yuv420p,tpad=stop_mode=clone:stop_duration=${hold}[v${index}]`;
+  return [framed, ...captioned, played].join(';');
+}
+
+/** Cut the shots together, each through its camera and under its captions, held on its last frame for its `hold`, into a lossless master. */
+function cut(shots, master) {
+  const inputs = [...shots.map((shot) => shot.file), ...shots.flatMap((shot) => shot.overlays.map((overlay) => overlay.file))];
+  const firsts = shots.map((_, index) => shots.length + shots.slice(0, index).reduce((total, shot) => total + shot.overlays.length, 0));
+  const chains = shots.map((shot, index) => chain(shot, index, firsts[index]));
   const joined = `${shots.map((_, i) => `[v${i}]`).join('')}concat=n=${shots.length}:v=1:a=0[cut]`;
   const lossless = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '12', '-pix_fmt', 'yuv420p'];
-  ffmpeg([...inputs, '-filter_complex', `${chains.join(';')};${joined}`, '-map', '[cut]', ...lossless, master], path.basename(master));
+  ffmpeg([...inputs.flatMap((file) => ['-i', file]), '-filter_complex', `${chains.join(';')};${joined}`, '-map', '[cut]', ...lossless, master], path.basename(master));
 }
 
 /** The cut of `shots` as a lossless master, `<out>/<name>-master.mp4`. */
@@ -131,16 +192,37 @@ function master(name, out, shots) {
   return file;
 }
 
+/** The narrated film: speech, score and captions laid over the cut, which holds each shot until its line is spoken. */
+async function spoken(name, out, shots, script) {
+  const held = [];
+  const length = await narrated(name, script, shots, (film) => {
+    held.push(...film.shots);
+    return master(name, out, film.shots);
+  });
+  return { shots: held, duration: length };
+}
+
+/** A film without narration: the cut alone, its shots unheld. */
+function silent(name, out, shots) {
+  publishEncodes(name, master(name, out, shots));
+  return { shots, duration: shots.reduce((total, shot) => total + shot.length, 0) };
+}
+
+/** The second of the cut at which `scene`'s clip reaches `at` seconds of its own footage. */
+function cutTime(shots, { scene, at }) {
+  const index = shots.findIndex((shot) => shot.clip === scene);
+  if (index < 0) throw new Error(`the poster's scene "${scene}" is not a clip of this film`);
+  return shots.slice(0, index).reduce((total, shot) => total + shot.length + (shot.hold ?? 0), 0) + at / (shots[index].speed ?? 1);
+}
+
 /**
- * Publish the MP4, the WebM and the poster; with a `narration` script, also its
- * voice, score and captions. Resolves to the film's length in seconds.
+ * Publish the MP4, the WebM and the poster, a frame of the cut as it plays;
+ * with a `narration` script, also its voice, score and captions. Resolves to
+ * the film's length in seconds.
  */
 export async function publishWalkthrough({ name, out, scenes, posterAt, narration }) {
-  const shots = shotsOf(out, scenes);
-  const length = narration
-    ? await narrated(name, narration, shots, (film) => master(name, out, film.shots))
-    : shots.reduce((total, shot) => total + shot.length, 0);
-  if (!narration) publishEncodes(name, master(name, out, shots));
-  poster(path.join(out, 'clips', `${posterAt.scene}.mp4`), posterAt.at, name);
-  return length;
+  const shots = await direct(out, shotsOf(out, scenes));
+  const film = narration ? await spoken(name, out, shots, narration) : silent(name, out, shots);
+  poster(path.join(out, `${name}-master.mp4`), cutTime(film.shots, posterAt), name);
+  return film.duration;
 }

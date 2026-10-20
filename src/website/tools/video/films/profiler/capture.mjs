@@ -70,7 +70,7 @@ async function prepare(page) {
 }
 
 async function shoot(page, cdp, app) {
-  const set = { cdp, cues: cueLog(clips), frames: path.join(out, 'frames'), clips };
+  const set = { page, cdp, cues: cueLog(clips), frames: path.join(out, 'frames'), clips };
   await prepare(page);
   await record(set, 'cpu', () => cpuAct(page, set.cues));
   await cpuStills(page, stills, 'CheckoutPipeline.cs', 'profiler');

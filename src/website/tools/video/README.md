@@ -22,7 +22,7 @@ make _film FILM=fsharp PUBLISH=1   # publish the last shoot again
 
 `make _film` runs `node src/website/tools/video/film.mjs <film> [--publish]`, which you can also call directly after `make _build-vsix VSIX_PREBUILT=1`.
 
-A shoot takes a few minutes and lands in `out/<film>/`, which is gitignored. Publishing writes the MP4, WebM, poster, captions and stills into `src/website/src/assets/`. Add or update the video's entry in `src/website/src/_data/videos.json` (its length, its upload date, and its label and caption in each language), then place it on a page with `{% video "<name>" %}`.
+A shoot takes a few minutes and lands in `out/<film>/`, which is gitignored: each clip, and beside it the track its camera follows. Publishing frames every clip through the camera (see [Camera](#camera)), writing each clip's crop script and caption frames into `out/<film>/camera/`, then writes the MP4, WebM, poster, captions and stills into `src/website/src/assets/`. Add or update the video's entry in `src/website/src/_data/videos.json` (its length, its upload date, and its label and caption in each language), then place it on a page with `{% video "<name>" %}`.
 
 | Film | Video | Docs page |
 |---|---|---|
@@ -89,9 +89,12 @@ The kit tells the common stories, so a film only supplies its words:
 | `kit/acts/explorer.mjs` | The Solution Explorer: `openMenu` on a row, `pickMenu`, `unfold` |
 | `kit/code.mjs` | `wordOn`, `findWord`, `hoverOn` and `clickOn`: a word on a line of the editor, found on screen |
 | `kit/scenes.mjs` | `prepare(file)`, `switchTo(file)`, `restart`, `startOnRow(step, text, action, status)`, and the shoot and publish engine |
-| `kit/overlay.mjs` | `caption(page, step, text, speed)`, `pointAt(page, at)` (the pointer glides to what a film acts on) and `ringClick(page, cues, locator, label)` |
+| `kit/overlay.mjs` | `caption(page, step, text, speed)` (logs the step caption, drawn over the cut after the camera), `pointAt(page, at)` (the pointer glides to what a film acts on) and `ringClick(page, cues, locator, label)` |
+| `kit/track.mjs` | What the camera follows: the pointer, the text cursor and the editor's open widgets, sampled while a clip records |
+| `kit/zoom.mjs` | The camera: `writeCamera(track, clip)` frames a clip from its track, tuned in `CAMERA` |
+| `kit/captions.mjs` | `captionFrames`: the step captions and speed badges, rendered once each as transparent frames for the cut |
 | `kit/workbench.mjs` | Editor moves: the Processes view and its demo row, `openFile`, `goTo`, `typeAt`, `toggleMaximised`, `panel` and more |
-| `kit/camera.mjs` | `snap(shot, name)` takes a still, published as `<name>.webp` |
+| `kit/camera.mjs` | `record` shoots a clip with its track; `snap(shot, name)` takes a still, published as `<name>.webp` |
 | `kit/set.mjs` | The sets (`STOREFRONT`, `FS_STOREFRONT`, `SHOP` with both in one solution, and `REPO`, a clean copy of this repository) and `onSet`, which stages one beside an isolated editor |
 | `kit/frames.mjs` | `explode` (footage into numbered frames) and `renderMaster` / `previewFrames`: step a page whose `renderFrame(t)` draws every frame, into a lossless master. The profiler film and the lessons render through it |
 | `kit/sound/` | Narration (`voice.mjs`), the original score (`score.mjs`) and the mix (`soundtrack.mjs`) |
@@ -99,6 +102,18 @@ The kit tells the common stories, so a film only supplies its words:
 A new demo app goes in `demos/<folder>/`, with one project and an empty `Directory.Build.props`, and is declared in `kit/set.mjs`. It must print a line to stdout once it is running.
 
 **Nothing personal reaches a frame.** The demo is staged under `/tmp`. The editor runs on a copy-on-write clone of the .NET install at `/tmp/sharplsp-film-dotnet` (made once, sharing the original's blocks) with its login-shell environment off, so the SDK path the extension reports and the commands its terminals print are neutral. A failed shoot leaves `out/<film>/failure.png` and the editor's logs in `out/<film>/logs`.
+
+## Camera
+
+Every walkthrough is cut through one camera, `kit/zoom.mjs`, so no film keys a shot by hand ([WEB-DESIGN-MEDIA-CAMERA](../../../../docs/specs/DESIGN-SYSTEM.md)). While a clip records, `kit/track.mjs` samples where the pointer and the text cursor are, and every widget the editor has open beside them (a hover, the completion list, a peek, the rename box, a menu, the Problems panel), twenty times a second, and logs each step caption. The shoot saves the track beside the clip as `<clip>.track.json`. Publishing reads it:
+
+- **Push in.** A clip opens wide, then pushes in on the pointer or the text cursor, whichever moved last, with everything the editor has open beside it, at most 2×. A pointer gliding across the editor is framed where it comes to rest, not along its way.
+- **Look ahead.** A framing covers the next 1.5 seconds of action too, so typing does not drag the camera along. The camera holds while the action stays in frame and moves when it leaves.
+- **Ease.** Each move takes 0.8 seconds, starting 0.35 seconds before the action it frames. A fast-forwarded clip's moves are paced to look the same on screen.
+- **Pull back.** Two quiet seconds with nothing open pull the camera back out, when the quiet lasts at least 2.5 seconds longer.
+- **Stay sharp.** Each frame is cropped from the 3200×2000 footage, so the deepest zoom stays crisp. The step caption and speed badge (`kit/captions.mjs`) are laid over the cut after the camera, so they never move and are never cropped.
+
+Tune the camera in `CAMERA`. A shoot from before tracks existed has none: shoot it again.
 
 ## Narration
 

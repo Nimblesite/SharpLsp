@@ -24,11 +24,24 @@ export const OPUS = ['-c:a', 'libopus', '-b:a', '128k'];
 /** A video setting that keeps the soundtrack. */
 export const audible = (video) => video.filter((arg) => arg !== '-an');
 
-/** The length of `file` in seconds. */
-export function duration(file) {
-  const result = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8' });
+/** One ffprobe query of `file`, its answer as plain text. */
+function probe(file, query) {
+  const result = spawnSync('ffprobe', ['-v', 'error', ...query, '-of', 'csv=p=0', file], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`ffprobe ${file} failed: ${result.stderr}`);
-  return Number(result.stdout.trim());
+  return result.stdout.trim();
+}
+
+/** The length of `file` in seconds. */
+export const duration = (file) => Number(probe(file, ['-show_entries', 'format=duration']));
+
+/** The width and height of `file`'s video, in pixels. */
+export const dimensions = (file) => probe(file, ['-select_streams', 'v:0', '-show_entries', 'stream=width,height']).split(',').map(Number);
+
+/** `dir`, emptied: a shoot or a publish starts each working folder afresh. */
+export function emptyDir(dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 export function ffmpeg(args, label) {

@@ -1,13 +1,17 @@
 // Records a page through CDP's screencast and encodes it as a constant-rate clip.
 // The screencast only emits a frame when the compositor paints, so each frame is
 // held until the next one's timestamp: the encoded clip runs in real time.
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { emptyDir, ffmpeg } from './encode.mjs';
 
 const FPS = 30;
 
-/** Start recording `cdp`'s page into `dir`; resolves to a `stop(outFile)` that encodes the clip. */
+/**
+ * Start recording `cdp`'s page into `dir`; resolves to a `stop(outFile)` that
+ * encodes the clip and resolves to `{ file, start }`, `start` being the first
+ * frame's time in seconds since the epoch, the clock the track keeps.
+ */
 export async function startScreencast(cdp, dir) {
   const { frames, onFrame } = frameWriter(cdp, dir);
   cdp.on('Page.screencastFrame', onFrame);
@@ -22,14 +26,13 @@ export async function startScreencast(cdp, dir) {
     await cdp.send('Page.stopScreencast');
     cdp.off('Page.screencastFrame', onFrame);
     encode(frames, Date.now() / 1000, outFile);
-    return outFile;
+    return { file: outFile, start: frames[0].at };
   };
 }
 
 /** Writes each screencast frame to `dir` with its timestamp, and acknowledges it. */
 function frameWriter(cdp, dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true });
+  emptyDir(dir);
   const frames = [];
   const onFrame = ({ data, metadata, sessionId }) => {
     const file = path.join(dir, `${String(frames.length).padStart(6, '0')}.jpg`);
@@ -55,10 +58,6 @@ function encode(frames, endAt, outFile) {
   if (frames.length === 0) throw new Error(`no screencast frames for ${outFile}`);
   const list = path.join(path.dirname(frames[0].file), 'frames.ffconcat');
   fs.writeFileSync(list, concatList(frames, endAt));
-  const args = ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list];
   const video = ['-vf', `fps=${FPS},format=yuv420p`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '12'];
-  const result = spawnSync('ffmpeg', [...args, ...video, '-movflags', '+faststart', outFile], {
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) throw new Error(`ffmpeg failed for ${outFile}: ${result.stderr}`);
+  ffmpeg(['-f', 'concat', '-safe', '0', '-i', list, ...video, '-movflags', '+faststart', outFile], outFile);
 }
