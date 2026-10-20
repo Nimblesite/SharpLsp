@@ -4,23 +4,23 @@ WEBVTT
 [Gentle music]
 Blazor components get the same C# engine as the rest of your code. Hover any expression in the markup, and Roslyn answers, with your XML docs.
 
-00:16.817 --> 00:25.904
+00:16.617 --> 00:25.704
 Completion works inside Razor expressions too. The members come from Roslyn, and each edit lands in the Razor file, never in generated code.
 
-00:38.250 --> 00:47.168
+00:37.150 --> 00:46.068
 The markup around it is still HTML. Element names and HTML hovers come from VS Code's own HTML service.
 
-01:01.417 --> 01:07.765
+01:00.150 --> 01:06.498
 Make a mistake, and the error shows on the Razor line that caused it, in the editor and in the Problems panel.
 
-01:25.983 --> 01:35.729
+01:24.983 --> 01:34.729
 Go to Definition jumps from the markup into the code block. Find All References lists every use in the Razor file, with the generated scaffolding left out.
 
-01:44.217 --> 01:48.335
+01:43.350 --> 01:47.468
 Rename a field in the code block, and every use in the markup follows.
 
-02:01.083 --> 02:07.536
+02:00.283 --> 02:06.736
 From C#, Go to Definition on a component opens its Razor file, not a generated class.
 
-02:20.050 --> 02:25.848
+02:19.350 --> 02:25.148
 Rename a tag, and its closing tag changes with it. Elements and code blocks fold, too.
