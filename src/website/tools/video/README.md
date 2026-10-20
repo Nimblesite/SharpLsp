@@ -2,6 +2,25 @@
 
 Every video and still on sharplsp.dev is made here, on one shared kit: the walkthroughs, the composited profiler film, the lessons and the blog heroes. Every frame is the real extension: an isolated VS Code (its own user data and extensions, never yours) runs the packaged VSIX against a demo app. Nothing in the editor is mocked. The rules are in [WEB-DESIGN-MEDIA](../../../../docs/specs/DESIGN-SYSTEM.md).
 
+## Layout
+
+```text
+video/
+  film.mjs              one entry point: shoot, publish or preview any film by name
+  kit/                  the shared code every film is made with (see the table below)
+    lesson/             the lesson deck: slides drawn frame by frame (deck.html, deck.js, lesson.mjs)
+    sound/              voice, scores and mix
+    acts/               stories several walkthroughs tell
+  films/<name>/         one folder per film: film.mjs, and narration.json when it is narrated
+  films/profiler/       the composited home-page film (capture.mjs, then render.mjs)
+  templates/lesson/     the starting point for a new lesson
+  demos/                the .NET apps the walkthroughs are shot on
+  heroes/               the blog posts' hero images, as HTML pages
+  out/<name>/           every shoot's and render's working files (gitignored)
+```
+
+A film's own words, timings and edits live only in its folder; everything two films could share lives in `kit/`.
+
 ## Make a film
 
 You need a packaged VSIX, ffmpeg with libvpx and libopus, cwebp, and the .NET 10 SDK. Install the narration voice once:
@@ -13,7 +32,7 @@ npm ci --prefix src/website/tools/video        # kokoro-js, for narration
 
 The first narrated publish downloads the voice model (about 310 MB) into `node_modules`; a later `npm ci` there deletes it again.
 
-Then shoot and publish a film by its name in `films/`:
+Then shoot and publish a film by the name of its folder in `films/`:
 
 ```sh
 make _film FILM=fsharp             # package the VSIX, shoot, then publish
@@ -34,7 +53,8 @@ A shoot takes a few minutes and lands in `out/<film>/`, which is gitignored: eac
 | `hover` | `hover` | Hover and Quick Info |
 | `navigation` | `navigation` | Go to Definition |
 | `diagnostics` | `diagnostics` | Diagnostics |
-| `refactoring` | `refactoring` | Refactoring & Code Actions |
+| `refactoring` | `refactoring` | Refactoring & Code Actions (the one-take walkthrough) |
+| `refactoring-lesson` | `refactoring-lesson` | Refactoring & Code Actions (the lesson, see [Make a lesson](#make-a-lesson)) |
 | `context-menus` | `context-menus` | Context Menus |
 | `nuget` | `nuget` | NuGet Package Manager |
 | `csharp` | `profiler-csharp` | Profiler |
@@ -45,21 +65,21 @@ A shoot takes a few minutes and lands in `out/<film>/`, which is gitignored: eac
 | `films/profiler/` | `profiler-film` | The home page: the one-minute composited film (`capture.mjs`, then `render.mjs`) |
 | `doc-stills` | (stills only) | Each feature page's still and the launch post's figures, in `screenshots/docs/` |
 
-Every film but `films/profiler/` is narrated. The Zed page has none: Zed is a native application, and filming it would mean recording the real desktop.
+Every film but `films/profiler/` and `doc-stills` is narrated. The Zed page has none: Zed is a native application, and filming it would mean recording the real desktop.
 
 ## Add a film
 
-A film is one file in `films/`. It exports the video's name, the demo it is shot on, the poster frame and its scenes, and optionally the workspace `settings` it is shot with (the profiler's by default):
+A walkthrough is a folder, `films/<name>/`, whose `film.mjs` exports the video's name, the demo it is shot on, the poster frame and its scenes, and optionally the workspace `settings` it is shot with (the profiler's by default):
 
 ```js
-import { LANGUAGE, hoverEach, prepareCode, scene } from '../kit/acts/language.mjs';
-import { SHOP } from '../kit/set.mjs';
+import { LANGUAGE, hoverEach, prepareCode, scene } from '../../kit/acts/language.mjs';
+import { SHOP } from '../../kit/set.mjs';
 
 export default {
   name: 'hover',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'hover.narration.json', // optional
+  narration: 'narration.json', // optional, beside film.mjs
   poster: { scene: 'fsharp', at: 4 },
   scenes: [
     { offCamera: prepareCode('Program.fs', { line: 9, word: 'generate' }) },
@@ -96,8 +116,10 @@ The kit tells the common stories, so a film only supplies its words:
 | `kit/workbench.mjs` | Editor moves: the Processes view and its demo row, `openFile`, `goTo`, `typeAt`, `toggleMaximised`, `panel` and more |
 | `kit/camera.mjs` | `record` shoots a clip with its track; `snap(shot, name)` takes a still, published as `<name>.webp` |
 | `kit/set.mjs` | The sets (`STOREFRONT`, `FS_STOREFRONT`, `SHOP` with both in one solution, and `REPO`, a clean copy of this repository) and `onSet`, which stages one beside an isolated editor |
+| `kit/publish.mjs` | `narrated` and `publishEncodes`: the one way a film's picture becomes the site's MP4 and WebM, with its voice, score and captions |
+| `kit/lesson/` | The lesson deck: `deck.js` draws each slide layout from `t` alone, and `lesson.mjs` cuts the footage, times the slides to the speech and renders them |
 | `kit/frames.mjs` | `explode` (footage into numbered frames) and `renderMaster` / `previewFrames`: step a page whose `renderFrame(t)` draws every frame, into a lossless master. The profiler film and the lessons render through it |
-| `kit/sound/` | Narration (`voice.mjs`), the original score (`score.mjs`) and the mix (`soundtrack.mjs`) |
+| `kit/sound/` | Narration (`voice.mjs`), the original scores (`score.mjs`, calm, for walkthroughs; `drive.mjs`, quick, for lessons) and the mix (`soundtrack.mjs`) |
 
 A new demo app goes in `demos/<folder>/`, with one project and an empty `Directory.Build.props`, and is declared in `kit/set.mjs`. It must print a line to stdout once it is running.
 
@@ -115,9 +137,26 @@ Every walkthrough is cut through one camera, `kit/zoom.mjs`, so no film keys a s
 
 Tune the camera in `CAMERA`. A shoot from before tracks existed has none: shoot it again.
 
+## Make a lesson
+
+A lesson teaches one feature end to end, as a narrated slide film around real footage. Its footage is cut from the feature's published walkthrough, so a lesson never shows a mocked editor. The reference lesson is `films/refactoring-lesson/`; start every new one from the template:
+
+```sh
+cp -R src/website/tools/video/templates/lesson src/website/tools/video/films/<name>
+node src/website/tools/video/film.mjs <name> --preview 2,20,60   # stills, timed from word counts, no speech
+node src/website/tools/video/film.mjs <name>                     # speak, render and publish
+```
+
+- `film.mjs` exports `lesson: { series, slides }` instead of `scenes`. Each slide has an `id` and a `layout`: `title`, `keys`, `points`, `footage`, `code`, `cards`, `flow` or `recap` (`kit/lesson/deck.js` draws them; the template uses each once).
+- `narration.json` holds the lines. A line's `scene` is its slide's `id`; a slide holds until its lines are spoken, and an item with `line: n` appears as the slide's n-th line starts.
+- A `footage` slide names a published walkthrough (`video`), the seconds to cut (`from`, `to`), a `crop` of its 1920x1200 frame that leaves out the walkthrough's step caption, and `speed` when that stretch was fast-forwarded, so the speed badge stays on screen.
+- Lessons are quick: the af_bella voice at 1.12x, tight `pacing`, and the `drive` score (`kit/sound/drive.mjs`, 124 BPM). The deck's glow pulses on the score's beat.
+
+Then catalogue the video in `src/_data/videos.json`, before the walkthrough it cuts from, and lead the docs page with `{% video "<name>" %}`. Expand the page into the same lesson: what you will learn, numbered steps with code to try, what happens underneath, and a recap.
+
 ## Narration
 
-A narrated film has a script next to it, `films/<film>.narration.json`:
+A narrated film has its script beside it, `films/<name>/narration.json`:
 
 ```json
 {
@@ -131,7 +170,8 @@ A narrated film has a script next to it, `films/<film>.narration.json`:
 - **Voice.** Kokoro-82M (Apache-2.0) speaks each line in English on this machine, through `kokoro-js`. Never use a speech service or the operating system's voices: their licences forbid publishing.
 - **Pronunciation.** `say` respells words for the voice only. The captions keep the original spelling.
 - **Timing.** Each line starts just after its scene's cut. A scene holds its last frame until its line has been spoken, so keep lines about as long as their scenes.
-- **Music.** `kit/sound/score.mjs` synthesises an original score, so no film carries licensed music. It ducks under the voice, and the mix is normalised to -16 LUFS.
+- **Pace.** `speed` speeds the voice up (lessons use 1.12), and `pacing` tightens or loosens the gaps around lines (`kit/sound/voice.mjs` has the defaults).
+- **Music.** `score` picks an original score synthesised from code: `calm` (`kit/sound/score.mjs`, the default) or `drive` (`kit/sound/drive.mjs`), so no film carries licensed music. It ducks under the voice, and the mix is normalised to -16 LUFS.
 - **Captions.** Every language in `music` gets WebVTT captions, `<name>.<lang>.vtt`. List those languages under `captions` in `videos.json`, and the page's own language shows by default.
 
 ## Heroes

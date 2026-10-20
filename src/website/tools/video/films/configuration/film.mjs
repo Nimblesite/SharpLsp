@@ -6,10 +6,10 @@
 //   node src/website/tools/video/film.mjs configuration
 import fs from 'node:fs';
 import path from 'node:path';
-import { runCommand } from '../kit/editor.mjs';
-import { LANGUAGE, awaitSemantics, hoverEach, prepareCode, scene, settingsEditor } from '../kit/acts/language.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep, typeAt } from '../kit/workbench.mjs';
+import { runCommand } from '../../kit/editor.mjs';
+import { LANGUAGE, awaitSemantics, hoverEach, prepareCode, scene, settingsEditor } from '../../kit/acts/language.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep, typeAt } from '../../kit/workbench.mjs';
 
 /** The documented sharplsp.toml, every field at its default. */
 const TOML = [
@@ -76,7 +76,7 @@ export default {
   name: 'configuration',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'configuration.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'toml', at: 5 },
   scenes: [
     { offCamera: ({ workspace }) => fs.writeFileSync(path.join(workspace, 'sharplsp.toml'), configurationToml) },

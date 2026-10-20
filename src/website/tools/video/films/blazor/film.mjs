@@ -5,12 +5,12 @@
 // linked tag editing and folding.
 //
 //   node src/website/tools/video/film.mjs blazor
-import { snap } from '../kit/camera.mjs';
-import { clickOn, hoverOn } from '../kit/code.mjs';
-import { LANGUAGE, hidePanel, hoverEach, navigate, peekReferences, renameTo, scene, typeText, typeThroughCompletion } from '../kit/acts/language.mjs';
-import { ready } from '../kit/acts/shop.mjs';
-import { BLAZOR_STOREFRONT } from '../kit/set.mjs';
-import { goTo, openFile, sleep, typeAt } from '../kit/workbench.mjs';
+import { snap } from '../../kit/camera.mjs';
+import { clickOn, hoverOn } from '../../kit/code.mjs';
+import { LANGUAGE, hidePanel, hoverEach, navigate, peekReferences, renameTo, scene, typeText, typeThroughCompletion } from '../../kit/acts/language.mjs';
+import { ready } from '../../kit/acts/shop.mjs';
+import { BLAZOR_STOREFRONT } from '../../kit/set.mjs';
+import { goTo, openFile, sleep, typeAt } from '../../kit/workbench.mjs';
 
 const BASKET = 'Basket.razor';
 const AT_BASKET = [BASKET, { line: 18, word: 'Total' }];
@@ -87,7 +87,7 @@ export default {
   // VS Code's default bracket closing: Razor's language configuration closes `(`, so an
   // expression stays balanced as it is typed, and each typed `)` steps over its closer.
   settings: { ...LANGUAGE, 'editor.linkedEditing': true, 'editor.autoClosingBrackets': 'languageDefined' },
-  narration: 'blazor.narration.json',
+  narration: 'narration.json',
   stillsFolder: 'docs',
   poster: { scene: 'hover', at: 4 },
   scenes: [

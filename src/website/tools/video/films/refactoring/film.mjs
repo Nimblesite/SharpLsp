@@ -3,10 +3,10 @@
 // then C# fixes that generate a missing method and add a missing using.
 //
 //   node src/website/tools/video/film.mjs refactoring
-import { LANGUAGE, quickFix, scene } from '../kit/acts/language.mjs';
-import { AT_PIPELINE, AT_SESSIONS, missingCase, ready, renameAcrossFiles } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep, typeAt } from '../kit/workbench.mjs';
+import { LANGUAGE, quickFix, scene } from '../../kit/acts/language.mjs';
+import { AT_PIPELINE, AT_SESSIONS, missingCase, ready, renameAcrossFiles } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep, typeAt } from '../../kit/workbench.mjs';
 
 const PIPELINE = 'CheckoutPipeline.cs';
 
@@ -24,7 +24,7 @@ export default {
   name: 'refactoring',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'refactoring.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'generate', at: 7 },
   scenes: [
     ...ready(AT_PIPELINE, AT_SESSIONS),

@@ -5,15 +5,15 @@
 //   node src/website/tools/video/film.mjs doc-stills
 import fs from 'node:fs';
 import path from 'node:path';
-import { snap } from '../kit/camera.mjs';
-import { ACTIONS, SUGGEST, clickOn, hoverOn } from '../kit/code.mjs';
-import { runCommand } from '../kit/editor.mjs';
-import { openMenu, unfold } from '../kit/acts/explorer.mjs';
-import { LANGUAGE, hidePanel, navigate, reopen, setPane, showLog, typeText } from '../kit/acts/language.mjs';
-import { AT_CHECKOUT, AT_PIPELINE, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, panel, sleep, typeAt } from '../kit/workbench.mjs';
-import { configurationToml } from './configuration.mjs';
+import { snap } from '../../kit/camera.mjs';
+import { ACTIONS, SUGGEST, clickOn, hoverOn } from '../../kit/code.mjs';
+import { runCommand } from '../../kit/editor.mjs';
+import { openMenu, unfold } from '../../kit/acts/explorer.mjs';
+import { LANGUAGE, hidePanel, navigate, reopen, setPane, showLog, typeText } from '../../kit/acts/language.mjs';
+import { AT_CHECKOUT, AT_PIPELINE, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, panel, sleep, typeAt } from '../../kit/workbench.mjs';
+import { configurationToml } from '../configuration/film.mjs';
 
 const CSHARP = /^Storefront \(Storefront\.csproj\)/;
 const FSHARP = /^FsStorefront \(FsStorefront\.fsproj\)/;

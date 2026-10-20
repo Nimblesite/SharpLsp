@@ -1,4 +1,4 @@
-// Implements [WEB-DESIGN-MEDIA]. Shoots and publishes one film from films/<film>.mjs:
+// Implements [WEB-DESIGN-MEDIA]. Shoots and publishes one film from films/<film>/film.mjs:
 // a walkthrough (scenes shot in a real editor) or a lesson (slides around footage
 // cut from a published walkthrough). See README.md.
 //
@@ -17,13 +17,15 @@ import { previewLesson, publishLesson } from './kit/lesson/lesson.mjs';
 import { publishWalkthrough, shootWalkthrough } from './kit/scenes.mjs';
 
 const films = path.join(path.dirname(fileURLToPath(import.meta.url)), 'films');
-const available = fs.readdirSync(films).filter((file) => file.endsWith('.mjs')).map((file) => file.replace(/\.mjs$/, ''));
+/** Every film is a folder of its own, `films/<film>/`, holding its `film.mjs` and anything it reads. */
+const available = fs.readdirSync(films).filter((name) => fs.existsSync(path.join(films, name, 'film.mjs')));
 const [id] = process.argv.slice(2).filter((arg) => !arg.startsWith('--'));
 if (!available.includes(id)) throw new Error(`usage: film.mjs <${available.join('|')}> [--publish | --preview <seconds,...>]`);
 
-const film = (await import(path.join(films, `${id}.mjs`))).default;
+const folder = path.join(films, id);
+const film = (await import(path.join(folder, 'film.mjs'))).default;
 const out = path.join(filmsOut, id);
-const narration = film.narration && JSON.parse(fs.readFileSync(path.join(films, film.narration), 'utf8'));
+const narration = film.narration && JSON.parse(fs.readFileSync(path.join(folder, film.narration), 'utf8'));
 
 /** A lesson renders from its slides: `--preview` writes stills at the given seconds, otherwise it publishes. */
 async function lesson() {

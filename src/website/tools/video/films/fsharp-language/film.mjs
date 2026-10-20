@@ -4,11 +4,11 @@
 // Interactive, all on FsStorefront in the Shop solution.
 //
 //   node src/website/tools/video/film.mjs fsharp-language
-import { runCommand } from '../kit/editor.mjs';
-import { LANGUAGE, hoverEach, navigate, peekReferences, scene, typeText } from '../kit/acts/language.mjs';
-import { AT_CHECKOUT, fsharpCheapest, missingCase, ready, renameAcrossFiles } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { goTo, openFile, sleep } from '../kit/workbench.mjs';
+import { runCommand } from '../../kit/editor.mjs';
+import { LANGUAGE, hoverEach, navigate, peekReferences, scene, typeText } from '../../kit/acts/language.mjs';
+import { AT_CHECKOUT, fsharpCheapest, missingCase, ready, renameAcrossFiles } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { goTo, openFile, sleep } from '../../kit/workbench.mjs';
 
 /** The catalog's code sent to F# Interactive, then called there. */
 async function interactive({ page }) {
@@ -29,7 +29,7 @@ export default {
   name: 'fsharp-language',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'fsharp-language.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'complete', at: 9 },
   scenes: [
     ...ready(AT_CHECKOUT),

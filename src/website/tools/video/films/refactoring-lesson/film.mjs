@@ -16,7 +16,7 @@ const clip = (from, to, crop, label, speed = 1) => ({ video: 'refactoring', from
 
 export default {
   name: 'refactoring-lesson',
-  narration: 'refactoring-lesson.narration.json',
+  narration: 'narration.json',
   poster: 32,
   lesson: {
     series: 'Lesson · Code actions',

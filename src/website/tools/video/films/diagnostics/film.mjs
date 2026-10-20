@@ -3,10 +3,10 @@
 // C# edits, each read by hovering it, then the Problems panel that lists them.
 //
 //   node src/website/tools/video/film.mjs diagnostics
-import { LANGUAGE, hoverEach, scene } from '../kit/acts/language.mjs';
-import { AT_CHECKOUT, AT_PIPELINE, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep, typeAt } from '../kit/workbench.mjs';
+import { LANGUAGE, hoverEach, scene } from '../../kit/acts/language.mjs';
+import { AT_CHECKOUT, AT_PIPELINE, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep, typeAt } from '../../kit/workbench.mjs';
 
 /** Type `edits` into `file` (each a `typeAt` edit), let the engine catch up, and hover each of `spots`. */
 const flag = (file, edits, spots) => async ({ page }) => {
@@ -21,7 +21,7 @@ export default {
   name: 'diagnostics',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'diagnostics.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'problems', at: 3 },
   scenes: [
     ...ready(AT_PIPELINE, AT_CHECKOUT),

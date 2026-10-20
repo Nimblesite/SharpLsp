@@ -5,10 +5,10 @@
 //
 //   node src/website/tools/video/film.mjs contributing
 import { spawnSync } from 'node:child_process';
-import { runCommand } from '../kit/editor.mjs';
-import { scene, typeText } from '../kit/acts/language.mjs';
-import { REPO } from '../kit/set.mjs';
-import { openFile, sleep } from '../kit/workbench.mjs';
+import { runCommand } from '../../kit/editor.mjs';
+import { scene, typeText } from '../../kit/acts/language.mjs';
+import { REPO } from '../../kit/set.mjs';
+import { openFile, sleep } from '../../kit/workbench.mjs';
 
 const SUITE = 'cargo test -p sharplsp --bins';
 
@@ -64,7 +64,7 @@ export default {
   name: 'contributing',
   demo: REPO,
   settings: SETTINGS,
-  narration: 'contributing.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'layout', at: 5 },
   scenes: [
     {

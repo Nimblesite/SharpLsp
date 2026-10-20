@@ -4,14 +4,14 @@
 // second run. The memory half is the leak film's story.
 //
 //   node src/website/tools/video/film.mjs csharp
-import { profilerTour } from '../kit/acts/tour.mjs';
-import { STOREFRONT } from '../kit/set.mjs';
-import { leakStory } from './leak.mjs';
+import { profilerTour } from '../../kit/acts/tour.mjs';
+import { STOREFRONT } from '../../kit/set.mjs';
+import { leakStory } from '../leak/film.mjs';
 
 export default {
   name: 'profiler-csharp',
   demo: STOREFRONT,
-  narration: 'csharp.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'heat', at: 5 },
   scenes: profilerTour(
     {

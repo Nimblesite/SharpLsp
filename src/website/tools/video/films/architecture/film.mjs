@@ -4,10 +4,10 @@
 // answered by tree-sitter in the host with no engine involved.
 //
 //   node src/website/tools/video/film.mjs architecture
-import { LANGUAGE, hoverEach, scene, showLog } from '../kit/acts/language.mjs';
-import { AT_CHECKOUT, AT_PIPELINE, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep } from '../kit/workbench.mjs';
+import { LANGUAGE, hoverEach, scene, showLog } from '../../kit/acts/language.mjs';
+import { AT_CHECKOUT, AT_PIPELINE, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep } from '../../kit/workbench.mjs';
 
 const PIPELINE = 'CheckoutPipeline.cs';
 
@@ -32,7 +32,7 @@ export default {
   name: 'architecture',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'architecture.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'routing', at: 10 },
   scenes: [
     ...ready(AT_PIPELINE, AT_CHECKOUT),

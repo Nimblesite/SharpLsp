@@ -3,10 +3,10 @@
 // a framework type opened as decompiled source.
 //
 //   node src/website/tools/video/film.mjs navigation
-import { LANGUAGE, navigate, peekReferences, scene } from '../kit/acts/language.mjs';
-import { AT_PROGRAM_CS, AT_SESSIONS, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep } from '../kit/workbench.mjs';
+import { LANGUAGE, navigate, peekReferences, scene } from '../../kit/acts/language.mjs';
+import { AT_PROGRAM_CS, AT_SESSIONS, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep } from '../../kit/workbench.mjs';
 
 /** Open `file`, press `key` on `spot`, and hold on where it lands. */
 const jump = (file, spot, key = 'F12') => async ({ page }) => {
@@ -19,7 +19,7 @@ export default {
   name: 'navigation',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'navigation.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'references', at: 4 },
   scenes: [
     ...ready(AT_PROGRAM_CS, AT_SESSIONS),

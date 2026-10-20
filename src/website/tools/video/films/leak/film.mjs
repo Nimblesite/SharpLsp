@@ -4,9 +4,9 @@
 // tracked again.
 //
 //   node src/website/tools/video/film.mjs leak
-import { memoryLoop } from '../kit/acts/memory.mjs';
-import { prepare } from '../kit/scenes.mjs';
-import { STOREFRONT } from '../kit/set.mjs';
+import { memoryLoop } from '../../kit/acts/memory.mjs';
+import { prepare } from '../../kit/scenes.mjs';
+import { STOREFRONT } from '../../kit/set.mjs';
 
 const FILE = 'SessionCache.cs';
 
@@ -42,7 +42,7 @@ export const leakStory = {
 export default {
   name: 'profiler-fix-memory-leak',
   demo: STOREFRONT,
-  narration: 'leak.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'graph', at: 5 },
   scenes: [{ offCamera: prepare(FILE) }, ...memoryLoop(leakStory, 1)],
 };

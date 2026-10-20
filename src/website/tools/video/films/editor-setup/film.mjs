@@ -4,11 +4,11 @@
 // trusted-workspace settings for development builds.
 //
 //   node src/website/tools/video/film.mjs editor-setup
-import { runCommand } from '../kit/editor.mjs';
-import { LANGUAGE, awaitSemantics, prepareCode, scene, settingsEditor, typeText } from '../kit/acts/language.mjs';
-import { pointAt } from '../kit/overlay.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { sleep } from '../kit/workbench.mjs';
+import { runCommand } from '../../kit/editor.mjs';
+import { LANGUAGE, awaitSemantics, prepareCode, scene, settingsEditor, typeText } from '../../kit/acts/language.mjs';
+import { pointAt } from '../../kit/overlay.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { sleep } from '../../kit/workbench.mjs';
 
 const PROBE = { line: 10, word: 'Checkout' };
 
@@ -42,7 +42,7 @@ export default {
   name: 'editor-setup',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'editor-setup.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'palette', at: 6 },
   scenes: [
     { offCamera: prepareCode('Program.cs', PROBE) },

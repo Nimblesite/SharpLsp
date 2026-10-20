@@ -4,9 +4,9 @@
 // builds them, the module value that roots the leak, the fix, and a second run.
 //
 //   node src/website/tools/video/film.mjs fsharp
-import { snap } from '../kit/camera.mjs';
-import { profilerTour } from '../kit/acts/tour.mjs';
-import { FS_STOREFRONT } from '../kit/set.mjs';
+import { snap } from '../../kit/camera.mjs';
+import { profilerTour } from '../../kit/acts/tour.mjs';
+import { FS_STOREFRONT } from '../../kit/set.mjs';
 
 const CHECKOUT = 'Checkout.fs';
 const SESSIONS = 'Sessions.fs';
@@ -14,7 +14,7 @@ const SESSIONS = 'Sessions.fs';
 export default {
   name: 'profiler-fsharp',
   demo: FS_STOREFRONT,
-  narration: 'fsharp.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'suspect', at: 6 },
   scenes: profilerTour(
     {

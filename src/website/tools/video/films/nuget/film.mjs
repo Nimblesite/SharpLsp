@@ -3,12 +3,12 @@
 // nuget.org, installed and restored, and its reference in the project file.
 //
 //   node src/website/tools/video/film.mjs nuget
-import { LANGUAGE, scene, typeText } from '../kit/acts/language.mjs';
-import { openMenu, pickMenu } from '../kit/acts/explorer.mjs';
-import { ringClick } from '../kit/overlay.mjs';
-import { AT_PROGRAM_FS, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { panel, sleep } from '../kit/workbench.mjs';
+import { LANGUAGE, scene, typeText } from '../../kit/acts/language.mjs';
+import { openMenu, pickMenu } from '../../kit/acts/explorer.mjs';
+import { ringClick } from '../../kit/overlay.mjs';
+import { AT_PROGRAM_FS, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { panel, sleep } from '../../kit/workbench.mjs';
 
 const PROJECT = /^FsStorefront \(FsStorefront\.fsproj\)/;
 const PACKAGE = 'FsToolkit.ErrorHandling';
@@ -50,7 +50,7 @@ export default {
   name: 'nuget',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'nuget.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'search', at: 9 },
   scenes: [
     ...ready(AT_PROGRAM_FS),

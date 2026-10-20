@@ -3,11 +3,11 @@
 // XML docs and the type behind `var`, and a hover that reads unsaved edits.
 //
 //   node src/website/tools/video/film.mjs hover
-import { hoverOn } from '../kit/code.mjs';
-import { LANGUAGE, hoverEach, scene } from '../kit/acts/language.mjs';
-import { AT_PROGRAM_CS, AT_PROGRAM_FS, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep, typeAt } from '../kit/workbench.mjs';
+import { hoverOn } from '../../kit/code.mjs';
+import { LANGUAGE, hoverEach, scene } from '../../kit/acts/language.mjs';
+import { AT_PROGRAM_CS, AT_PROGRAM_FS, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep, typeAt } from '../../kit/workbench.mjs';
 
 /** Catalog.fs: the doc comment rewritten and left unsaved; the next hover shows the new words. */
 async function unsaved({ page }) {
@@ -28,7 +28,7 @@ export default {
   name: 'hover',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'hover.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'csharp', at: 4 },
   scenes: [
     ...ready(AT_PROGRAM_CS, AT_PROGRAM_FS),

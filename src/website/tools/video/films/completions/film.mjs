@@ -3,11 +3,11 @@
 // from a namespace the file never imported, with its using added.
 //
 //   node src/website/tools/video/film.mjs completions
-import { clickOn } from '../kit/code.mjs';
-import { LANGUAGE, complete, scene, typeText } from '../kit/acts/language.mjs';
-import { AT_CHECKOUT, AT_PIPELINE, csharpCheapest, fsharpCheapest, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep, typeAt } from '../kit/workbench.mjs';
+import { clickOn } from '../../kit/code.mjs';
+import { LANGUAGE, complete, scene, typeText } from '../../kit/acts/language.mjs';
+import { AT_CHECKOUT, AT_PIPELINE, csharpCheapest, fsharpCheapest, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep, typeAt } from '../../kit/workbench.mjs';
 
 const PIPELINE = 'CheckoutPipeline.cs';
 
@@ -27,7 +27,7 @@ export default {
   name: 'code-completions',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'completions.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'csharp', at: 6 },
   scenes: [
     ...ready(AT_PIPELINE, AT_CHECKOUT),

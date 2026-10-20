@@ -3,11 +3,11 @@
 // project (Build, Open Project File) and a C# type (Sort Members).
 //
 //   node src/website/tools/video/film.mjs context-menus
-import { LANGUAGE, scene } from '../kit/acts/language.mjs';
-import { openMenu, pickMenu, unfold } from '../kit/acts/explorer.mjs';
-import { AT_PROGRAM_CS, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep } from '../kit/workbench.mjs';
+import { LANGUAGE, scene } from '../../kit/acts/language.mjs';
+import { openMenu, pickMenu, unfold } from '../../kit/acts/explorer.mjs';
+import { AT_PROGRAM_CS, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep } from '../../kit/workbench.mjs';
 
 const PROJECT = /^Storefront \(Storefront\.csproj\)/;
 
@@ -22,7 +22,7 @@ export default {
   name: 'context-menus',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'context-menus.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'solution', at: 3 },
   scenes: [
     ...ready(AT_PROGRAM_CS),

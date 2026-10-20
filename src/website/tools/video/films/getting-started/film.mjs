@@ -4,11 +4,11 @@
 // with the extension.
 //
 //   node src/website/tools/video/film.mjs getting-started
-import { LANGUAGE, hoverEach, scene, setPane } from '../kit/acts/language.mjs';
-import { unfold } from '../kit/acts/explorer.mjs';
-import { AT_CHECKOUT, AT_PIPELINE, csharpCheapest, ready } from '../kit/acts/shop.mjs';
-import { SHOP } from '../kit/set.mjs';
-import { openFile, sleep } from '../kit/workbench.mjs';
+import { LANGUAGE, hoverEach, scene, setPane } from '../../kit/acts/language.mjs';
+import { unfold } from '../../kit/acts/explorer.mjs';
+import { AT_CHECKOUT, AT_PIPELINE, csharpCheapest, ready } from '../../kit/acts/shop.mjs';
+import { SHOP } from '../../kit/set.mjs';
+import { openFile, sleep } from '../../kit/workbench.mjs';
 
 async function solution({ page }) {
   await unfold(page, /^FsStorefront \(FsStorefront\.fsproj\)/);
@@ -37,7 +37,7 @@ export default {
   name: 'getting-started',
   demo: SHOP,
   settings: LANGUAGE,
-  narration: 'getting-started.narration.json',
+  narration: 'narration.json',
   poster: { scene: 'solution', at: 4 },
   scenes: [
     ...ready(AT_PIPELINE, AT_CHECKOUT),
