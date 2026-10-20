@@ -48,7 +48,7 @@ Owner: SharpLspRazorClaude1. Status: fixed and pushed as b7d301d8; regression fa
 
 ### R8 — P1: nested unfinished Razor expressions lose completion
 
-Owner: SharpLspRazorClaude2. Status: Claude1 reproduced null completion with a nested unclosed `@(` expression after the first completion recovery fix. A distinct regression test and fix are in progress. Issue: https://github.com/Nimblesite/SharpLsp/issues/404. [RAZOR-FEATURES-COMPLETION]
+Owner: SharpLspRazorClaude2. Status: fixed in f12be294. Claude1 reproduced null completion with a nested unclosed `@(` expression after the first completion recovery fix. The first three reported cases failed because Price was missing, while closed-expression and code-block controls passed. All six cases, including a lambda block, now pass unchanged. The full C# suite passes 692/692. Roslyn supplies the missing closing tokens; the map preserves only the prefix before inserted text, keeping the original caret before synthetic closers. Issue: https://github.com/Nimblesite/SharpLsp/issues/404. [RAZOR-FEATURES-COMPLETION]
 
 ## Review and validation checklist
 
@@ -67,7 +67,7 @@ Owner: SharpLspRazorClaude2. Status: Claude1 reproduced null completion with a n
 - [x] R5 standard keyword scope regression red/green in the real editor
 - [x] R6 F# category/span/operator regressions red/green (447-test full suite green)
 - [x] R7 non-finite video seek regression red/green across three projects
-- [ ] R8 nested unfinished expression regression red/green
+- [x] R8 nested unfinished expression regression red/green
 - [x] Value-type constructor follow-up green on final F# build (7/7 focused tests)
 - [ ] Full integrated suite and CI gates green
 
@@ -94,6 +94,7 @@ Remaining unchecked validation tasks concern executing fixes together and CI; th
 - Rust: 224 host unit tests pass; Rust fmt and clippy pass. Zed fmt/clippy pass.
 - Editor: all three highlighting cases pass against the staged host/sidecars after restaging the packaged payload; extension lint/typecheck pass.
 - F#: all 447 sidecar tests pass with coverage after the final value-type constructor correction.
+- C#: the full 692-test suite passes after #399 and #404; final combined coverage gates remain pending.
 - Tooling: 72 tests pass. Rust/NuGet/npm dependency audits report no vulnerabilities at the configured threshold.
 - Zed: final archive executes all 27 tests successfully; 89.95% line coverage passes the ratchet. Final Rust and Zed lint passes.
 - #399: the unpinned host fixture passes on this machine, which has SDKs 10.0.100 and 10.0.303 only. Both deterministic incompatible-generator tests were confirmed red before the fix and now pass unchanged, including a fresh sidecar process and preservation of compatible SDK analyzer references.
