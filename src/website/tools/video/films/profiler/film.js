@@ -1,7 +1,7 @@
 // Implements [WEB-DESIGN-MEDIA]. The profiler film's timeline. renderFrame(t) sets every element from t alone
 // and resolves once the frame's images are decoded, so render.mjs can step it.
-// FILM_DATA (injected by render.mjs) carries each clip's frame count and the
-// click cues capture.mjs recorded; SHOTS below are focus points in the
+// FILM_DATA (injected by render.mjs) carries the shoot's folder, each clip's frame
+// count and the click cues capture.mjs recorded; SHOTS below are focus points in the
 // 1600x1000 workbench the stills and clips were shot at.
 'use strict';
 
@@ -120,8 +120,8 @@ function show(img, src) {
   pending.push(img.decode().catch(() => undefined));
 }
 const clipFrame = (name, clipT) =>
-  `../../out/film/${name}/${String(clamp(Math.round(clipT * FPS) + 1, 1, DATA[name].frames)).padStart(5, '0')}.jpg`;
-const still = (name) => `../../out/stills/${name}.png`;
+  `${DATA.out}/film/${name}/${String(clamp(Math.round(clipT * FPS) + 1, 1, DATA[name].frames)).padStart(5, '0')}.jpg`;
+const still = (name) => `${DATA.out}/stills/${name}.png`;
 
 // ── Camera ──
 

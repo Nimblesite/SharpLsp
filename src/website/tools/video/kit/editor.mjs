@@ -73,6 +73,8 @@ const FILM_SETTINGS = {
   'extensions.autoCheckUpdates': false,
   'security.workspace.trust.enabled': false,
   'git.enabled': false,
+  // The in-app tutorial opens itself on a first start, and every shoot is one.
+  'sharplsp.tutorial.showOnStartup': false,
   // The memory timeline grows on camera: a snapshot every few seconds while tracking.
   'sharplsp.profiler.autoSnapshot': true,
   'sharplsp.profiler.autoSnapshotInterval': 3,

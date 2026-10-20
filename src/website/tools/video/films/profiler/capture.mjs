@@ -1,18 +1,13 @@
 // Implements [WEB-DESIGN-MEDIA]. Shoots the profiler film's raw material in a real, isolated VS Code running the
 // packaged SharpLsp VSIX against the Storefront demo app: stills (PNG, 3200x2000)
 // and real-time screencast clips, plus the click cues the film's cursor follows.
-//
-//   make _build-vsix VSIX_PREBUILT=1
-//   node src/website/tools/video/films/profiler/capture.mjs
-//
-// Output lands in tools/video/out/ (gitignored); render.mjs turns it into
-// the website's assets.
+// film.mjs runs it as this film's shoot; render.mjs turns its output into the
+// website's assets.
 import fs from 'node:fs';
 import path from 'node:path';
 import { cpuStills } from '../../kit/acts/cpu.mjs';
 import { cueLog, record, still } from '../../kit/camera.mjs';
 import { runCommand } from '../../kit/editor.mjs';
-import { out } from '../../kit/encode.mjs';
 import { STOREFRONT, onSet } from '../../kit/set.mjs';
 import {
   PARK,
@@ -29,12 +24,10 @@ import {
 } from '../../kit/workbench.mjs';
 import { captureFlameGraph } from './flamegraph.mjs';
 
-const stills = path.join(out, 'stills');
-const clips = path.join(out, 'clips');
 const PROFILE_SECONDS = 10;
 const MEMORY_SECONDS = 26;
 
-async function cpuAct(page, cues) {
+async function cpuAct(page, cues, stills) {
   await cues.click(page, await rowButton(page, 'Profile CPU'), 'Profile CPU');
   await sleep(7000);
   await still(page, stills, 'profiler-live');
@@ -50,14 +43,14 @@ async function memoryAct(page, cues) {
 }
 
 /** The autopilot's consecutive snapshots already rank the leak suspects: no Compare step. */
-async function memoryStills(page) {
+async function memoryStills(page, stills) {
   await scrollDashboard(page, 250);
   await still(page, stills, 'profiler-memory');
   await scrollDashboard(page, 8000);
   await still(page, stills, 'profiler-leaks');
 }
 
-async function prepare(page) {
+async function prepare(page, stills) {
   await runCommand(page, 'Notifications: Toggle Do Not Disturb Mode');
   await clickSharpLspIcon(page);
   await openFile(page, 'CheckoutPipeline.cs');
@@ -69,10 +62,11 @@ async function prepare(page) {
   await page.screenshot({ path: path.join(stills, 'profiler-processes.png') });
 }
 
-async function shoot(page, cdp, app) {
+async function acts({ page, cdp, app }, out, stills) {
+  const clips = path.join(out, 'clips');
   const set = { page, cdp, cues: cueLog(clips), frames: path.join(out, 'frames'), clips };
-  await prepare(page);
-  await record(set, 'cpu', () => cpuAct(page, set.cues));
+  await prepare(page, stills);
+  await record(set, 'cpu', () => cpuAct(page, set.cues, stills));
   await cpuStills(page, stills, 'CheckoutPipeline.cs', 'profiler');
   await runCommand(page, 'View: Close All Editors');
   await openFile(page, 'SessionCache.cs');
@@ -80,16 +74,16 @@ async function shoot(page, cdp, app) {
   await app.start();
   await waitForDemoRow(page);
   await record(set, 'memory', () => memoryAct(page, set.cues));
-  await memoryStills(page);
+  await memoryStills(page, stills);
 }
 
-async function main() {
+/** Shoot the stills, the CPU and memory clips with their click cues, and the flame graph into `out`. */
+export async function shoot(out) {
+  const stills = path.join(out, 'stills');
   fs.mkdirSync(stills, { recursive: true });
-  fs.mkdirSync(clips, { recursive: true });
-  await onSet({ demo: STOREFRONT, out }, async ({ page, cdp, app, workspace }) => {
-    await shoot(page, cdp, app);
-    await captureFlameGraph(path.join(workspace, '.sharplsp/profiles'), out);
+  fs.mkdirSync(path.join(out, 'clips'), { recursive: true });
+  await onSet({ demo: STOREFRONT, out }, async (shot) => {
+    await acts(shot, out, stills);
+    await captureFlameGraph(path.join(shot.workspace, '.sharplsp/profiles'), out);
   });
 }
-
-await main();

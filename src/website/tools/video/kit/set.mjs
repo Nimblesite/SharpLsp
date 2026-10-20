@@ -19,10 +19,11 @@ export const FS_STOREFRONT = { folder: 'fs-storefront', project: 'FsStorefront' 
 
 /**
  * Both demos in one workspace under Shop.slnx, the language films' set: C# and
- * F# side by side in one solution. Each demo's own solution is left out, so the
- * workspace holds exactly one, and nothing runs.
+ * F# side by side in one solution. Each demo's own solution, and the Blazor demo
+ * (a set of its own), are left out, so the workspace holds exactly one solution,
+ * and nothing runs.
  */
-export const SHOP = { folder: '.', project: 'Shop', omit: ['Storefront.slnx', 'FsStorefront.slnx'], runs: false };
+export const SHOP = { folder: '.', project: 'Shop', omit: ['Storefront.slnx', 'FsStorefront.slnx', 'blazor-storefront'], runs: false };
 
 /**
  * The Blazor Web App the Razor film is shot on: a basket page whose markup and

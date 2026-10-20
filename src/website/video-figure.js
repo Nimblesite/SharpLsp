@@ -7,8 +7,8 @@
 // page names a video with `{% video "<id>" %}` and never repeats its markup; files
 // live at /assets/videos/<id>.<encoding> beside /assets/videos/<id>-poster.webp
 // and <id>-card.jpg, and a narrated video's captions at /assets/videos/<id>.<lang>.vtt.
-// The profiler media is shot and published by tools/video (film.mjs and
-// films/profiler/render.mjs). The tour is
+// The profiler media is shot and published by tools/video
+// (`film.mjs profiler`). The tour is
 // the Marketplace GIF (assets/images/marketplace/sharplsp-tour.gif) re-encoded
 // with the same H.264/VP9 settings, because a GIF is eight times the bytes.
 // MP4 comes first in the catalogue: Windows Chrome/Edge can accept the VP9
