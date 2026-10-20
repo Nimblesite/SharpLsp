@@ -161,8 +161,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M4S",
-    "uploadDate": "2026-10-18T23:29:29+11:00",
+    "duration": "PT1M5S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -230,8 +230,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M53S",
-    "uploadDate": "2026-10-18T22:53:05+11:00",
+    "duration": "PT1M55S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -276,8 +276,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M9S",
-    "uploadDate": "2026-10-18T22:59:43+11:00",
+    "duration": "PT1M13S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {
@@ -299,8 +299,8 @@
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1200,
-    "duration": "PT1M15S",
-    "uploadDate": "2026-10-18T23:16:35+11:00",
+    "duration": "PT1M17S",
+    "uploadDate": "2026-10-20T19:40:00+11:00",
     "captions": ["en", "ja", "zh"],
     "text": {
       "en": {

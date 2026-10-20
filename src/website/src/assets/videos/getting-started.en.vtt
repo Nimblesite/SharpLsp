@@ -4,11 +4,11 @@ WEBVTT
 [Gentle music]
 This is SharpLsp in VS Code. Open a folder with a solution or a project, and SharpLsp loads it, with C# and F# side by side.
 
-00:13.150 --> 00:18.934
+00:13.383 --> 00:19.168
 F# is first class. The F# compiler answers every hover, completion and jump.
 
-00:27.550 --> 00:34.396
+00:27.917 --> 00:34.763
 C# runs on Roslyn, the compiler itself, for completion, diagnostics, fixes and refactorings.
 
-00:50.017 --> 01:02.286
+00:50.450 --> 01:02.720
 And the tools come with it: a profiler, a NuGet browser, test lenses and debugging. Install SharpLsp from the Marketplace or Open VSX. It's free, and open source.

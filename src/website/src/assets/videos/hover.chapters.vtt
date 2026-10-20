@@ -1,0 +1,9 @@
+WEBVTT
+
+FSharp.Hover
+00:00.000 --> 00:37.533
+F#: the inferred signature, with your doc comment
+
+CSharp.Hover
+00:37.533 --> 00:56.200
+C#: XML docs rendered, and the type behind var
