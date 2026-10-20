@@ -232,7 +232,8 @@ suite('Standard language keyword scopes', () => {
     );
     const defaults: unknown = contributes().configurationDefaults;
     assert.ok(
-      defaults === undefined || !JSON.stringify(defaults).includes('TokenColorCustomizations'),
+      defaults === undefined ||
+        !JSON.stringify(defaults).toLowerCase().includes('tokencolorcustomizations'),
       'the extension never hard-codes token colors over the selected theme',
     );
   });
