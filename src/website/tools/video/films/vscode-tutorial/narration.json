@@ -1,0 +1,97 @@
+{
+  "voice": "af_heart",
+  "say": {
+    "SharpLsp": "Sharp L S P",
+    "F#": "F sharp",
+    "C#": "C sharp",
+    "Shift+F12": "Shift F twelve",
+    "F12": "F twelve",
+    "Cmd+P": "Command P",
+    "Cmd+.": "Command dot"
+  },
+  "music": {
+    "en": "[Gentle music]",
+    "ja": "[穏やかな音楽]",
+    "zh": "[舒缓的音乐]"
+  },
+  "lines": [
+    {
+      "scene": "fsharp-open",
+      "en": "This is the SharpLsp tutorial, F# first. Press Cmd+P and open a source file, and SharpLsp starts working on it straight away.",
+      "ja": "SharpLsp のチュートリアルです。最初は F# から。Cmd+P でソース ファイルを開くと、SharpLsp はすぐに動き始めます。",
+      "zh": "这是 SharpLsp 教程，先从 F# 开始。按 Cmd+P 打开一个源文件，SharpLsp 立刻开始工作。"
+    },
+    {
+      "scene": "fsharp-hover",
+      "en": "Rest the mouse on a function. SharpLsp shows the signature the F# compiler inferred, with its doc comment.",
+      "ja": "関数の上にマウスを置いてください。F# コンパイラーが推論したシグネチャーを、ドキュメントコメントと一緒に表示します。",
+      "zh": "把鼠标停在一个函数上。SharpLsp 会显示 F# 编译器推断出的签名，以及它的文档注释。"
+    },
+    {
+      "scene": "fsharp-completion",
+      "en": "Type a dot after a value, and completion lists what fits there: the List functions, then the fields of a product.",
+      "ja": "値の後にドットを入力すると、そこに合う候補が並びます。List の関数、次に製品のフィールドです。",
+      "zh": "在值后面输入一个点，补全会列出此处适用的内容：先是 List 的函数，然后是产品的字段。"
+    },
+    {
+      "scene": "fsharp-definition",
+      "en": "Put the cursor on a symbol and press F12 to go to its definition.",
+      "ja": "シンボルにカーソルを置いて F12 を押すと、その定義へ移動します。",
+      "zh": "把光标放在符号上，按 F12 即可转到它的定义。"
+    },
+    {
+      "scene": "fsharp-references",
+      "en": "Shift+F12 finds every reference to it, across the solution.",
+      "ja": "Shift+F12 で、ソリューション全体からその参照をすべて見つけます。",
+      "zh": "按 Shift+F12，可以在整个解决方案中找到它的所有引用。"
+    },
+    {
+      "scene": "fsharp-action",
+      "en": "This match leaves a case out, so F# warns. Press Cmd+. on the warning, and pick the fix that generates the missing case.",
+      "ja": "この match はケースが足りないので、F# が警告します。警告の上で Cmd+. を押し、足りないケースを生成する修正を選びます。",
+      "zh": "这个 match 漏掉了一个用例，所以 F# 发出警告。在警告上按 Cmd+.，选择生成缺失用例的修复。"
+    },
+    {
+      "scene": "solution",
+      "en": "Click the SharpLsp icon in the Activity Bar to open the Solution Explorer: the solution, its projects and their files.",
+      "ja": "アクティビティ バーの SharpLsp アイコンをクリックすると、ソリューション エクスプローラーが開き、ソリューション、プロジェクト、ファイルが表示されます。",
+      "zh": "点击活动栏中的 SharpLsp 图标，打开解决方案资源管理器：解决方案、其中的项目和文件。"
+    },
+    {
+      "scene": "csharp-open",
+      "en": "Now C#. The same seven steps, starting with Cmd+P to open a C# file.",
+      "ja": "次は C# です。同じ 7 つのステップを、Cmd+P で C# ファイルを開くところから始めます。",
+      "zh": "接下来是 C#。同样的七个步骤，先按 Cmd+P 打开一个 C# 文件。"
+    },
+    {
+      "scene": "csharp-hover",
+      "en": "Hover a method to read its XML docs, and hover var to see the type behind it.",
+      "ja": "メソッドにホバーすると XML ドキュメントが読め、var にホバーするとその背後にある型がわかります。",
+      "zh": "悬停在方法上可以阅读它的 XML 文档，悬停在 var 上可以看到它背后的类型。"
+    },
+    {
+      "scene": "csharp-completion",
+      "en": "Type a dot, and completion offers LINQ's methods, then the record's properties.",
+      "ja": "ドットを入力すると、LINQ のメソッド、次にレコードのプロパティが候補に出ます。",
+      "zh": "输入一个点，补全会先给出 LINQ 的方法，然后是记录的属性。"
+    },
+    {
+      "scene": "csharp-definition",
+      "en": "F12 jumps to where a method is defined.",
+      "ja": "F12 で、メソッドが定義されている場所へ移動します。",
+      "zh": "按 F12 跳转到方法定义的位置。"
+    },
+    {
+      "scene": "csharp-references",
+      "en": "And Shift+F12 lists everywhere a type is used.",
+      "ja": "そして Shift+F12 で、型が使われている場所をすべて一覧にします。",
+      "zh": "按 Shift+F12 则会列出某个类型被使用的所有位置。"
+    },
+    {
+      "scene": "csharp-action",
+      "en": "This call names a method that does not exist yet. Press Cmd+. on the error, and generate it. Each step ticks itself off once SharpLsp answers.",
+      "ja": "この呼び出しは、まだ存在しないメソッドを指しています。エラーの上で Cmd+. を押し、メソッドを生成します。SharpLsp が応答すると、各ステップは自動で完了します。",
+      "zh": "这个调用指向一个尚不存在的方法。在错误上按 Cmd+.，生成它。SharpLsp 一旦响应，每个步骤都会自动打勾。"
+    }
+  ]
+}

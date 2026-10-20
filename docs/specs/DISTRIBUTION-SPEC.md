@@ -285,8 +285,17 @@ and types `make` finds the actions where `make` looks for them.
 | Target | Contract |
 |---|---|
 | `make reinstall-vsix` | uninstall → kill → `clean` → `_build-vsix` (Rust host + both sidecars + extension, payload verified, packaged for the host platform) → install. The whole loop. |
-| `make install-vsix` | install `dist/sharplsp.vsix` as it stands. Fails if it is absent. |
-| `make uninstall-vsix` | remove the installed extension. Succeeds when nothing is installed. |
+| `make install-vsix` | install `dist/sharplsp.vsix` as it stands, into the default profile and every VS Code profile that holds its own copy of SharpLsp. Fails if it is absent. |
+| `make uninstall-vsix` | remove the installed extension from the default profile and those profiles. Succeeds when nothing is installed. |
+
+**Profiles.** The VS Code CLI installs into the default profile unless told
+`--profile`, and a window whose workspace is associated with another profile keeps
+running that profile's copy: a reinstall that misses it leaves the developer on an
+old build. `tools/vsix/vscode-profiles.mjs` lists the profiles whose own
+`extensions.json` holds SharpLsp (a profile sharing the default profile's extensions
+needs nothing more). `reinstall-vsix` reads that list before it uninstalls, and the
+install puts the new build into each profile on it. `VSCODE_PROFILES='A|B'` overrides
+the list; an empty value means the default profile only.
 
 Requirements:
 

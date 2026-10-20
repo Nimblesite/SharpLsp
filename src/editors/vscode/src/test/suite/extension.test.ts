@@ -15,11 +15,7 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   flattenSymbolNames,
-  loadFixtureSolution,
   openCSharpFile,
-  openSharpLspPanel,
-  settleForScreenshot,
-  takeScreenshot,
   waitForDocumentSymbols,
   assertContainsAll,
   openCSharpOutline,
@@ -229,16 +225,9 @@ suite('Extension Activation & Configuration', () => {
   // ── Configuration ────────────────────────────────────────────
 
   test('sharplsp.lspPath setting is contributed', async function () {
-    // The ASSERTIONS here are instant — `config.inspect` reads a contribution
-    // point out of the extension manifest — and on CI so is the rest: the
-    // documentation screenshot and its render settle are both no-ops unless
-    // SHARPLSP_SCREENSHOTS is set, leaving one command round trip.
-    //
-    // The budget has to cover the SCREENSHOT run as well, though, and there the
-    // workbench must paint the filtered Settings list before the capture is worth
-    // anything. That settle is longer than `COMMAND_MS` on its own, so this asks
-    // for one round trip plus one settle.
-    this.timeout(COMMAND_MS + SETTLE_MS);
+    // The assertions are instant — `config.inspect` reads a contribution point
+    // out of the extension manifest — leaving one command round trip.
+    this.timeout(COMMAND_MS);
     // Interaction 1 — contributed, documented, defaulted to "use the bundled binary".
     const property = assertContributedSetting('sharplsp.lspPath', '');
     assert.strictEqual(property.type, 'string', 'lspPath names a path, so it is a string setting');
@@ -260,8 +249,6 @@ suite('Extension Activation & Configuration', () => {
 
     // Interaction 4 — the user opens Settings filtered to sharplsp and sees it.
     await vscode.commands.executeCommand('workbench.action.openSettings', 'sharplsp');
-    await settleForScreenshot(1500);
-    await takeScreenshot('vscode-configuration-page.png');
     await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
   });
 
@@ -401,13 +388,6 @@ suite('Extension Activation & Configuration', () => {
     );
     assert.strictEqual(fsDoc.languageId, 'fsharp', 'the F# split keeps its own language');
     assert.strictEqual(doc.languageId, 'csharp', 'and the C# side is unchanged by the split');
-    // Nothing below asserts on the split settling; the pause is for the picture.
-    await settleForScreenshot(800);
-    if (process.env['SHARPLSP_SCREENSHOTS']) {
-      await loadFixtureSolution(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
-    }
-    await openSharpLspPanel();
-    await takeScreenshot('vscode-editors-page.png');
   });
 
   test('extension contributes fsharp language', async function () {
@@ -499,20 +479,6 @@ suite('Extension Activation & Configuration', () => {
       'and answer identically — a restart changes nothing about the document',
     );
     assert.ok(sharpLspExtension().isActive, 'the extension survives its own restart');
-
-    if (process.env['SHARPLSP_SCREENSHOTS']) {
-      const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-      const calcUri = vscode.Uri.file(`${ws}/Calculator.cs`);
-      const calcDoc = await vscode.workspace.openTextDocument(calcUri);
-      await vscode.window.showTextDocument(calcDoc, { preview: false });
-      await waitForDocumentSymbols(calcUri);
-      await loadFixtureSolution(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
-    }
-    // Close any bottom panel, open SharpLsp sidebar — shows Rust host + Roslyn sidecar in action.
-    await vscode.commands.executeCommand('workbench.action.closePanel');
-    await openSharpLspPanel();
-    await settleForScreenshot(1_000);
-    await takeScreenshot('vscode-architecture-page.png');
   });
 
   // ── C# Language Configuration ──────────────────────────────

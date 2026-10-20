@@ -795,7 +795,7 @@ _test-tooling:
 	node --test tools/vsix/chunk-once.test.mjs
 	@echo "==> Running repo tooling tests..."
 	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/vsix/debug-cleanup.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
-		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs
+		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs tools/make/vsix-profiles.test.mjs
 
 _website-build:
 	@echo "==> Building website..."
@@ -807,13 +807,13 @@ _website-dev:
 
 # [WEB-DESIGN-MEDIA] Shoot and publish one website film from the packaged VSIX:
 # `make _film FILM=fsharp`, or `PUBLISH=1` to publish the last shoot again.
-# The films live in src/website/tools/profiler-film/films; its README says how.
+# The films live in src/website/tools/video/films; its README says how.
 _film:
 	@test -n "$(FILM)" || { echo "usage: make _film FILM=<film> [PUBLISH=1]" >&2; exit 1; }
 	$(if $(PUBLISH),,$(MAKE) _build-vsix VSIX_PREBUILT=1)
 	@# Install once: npm ci would wipe the voice model kokoro-js caches in node_modules.
-	test -d src/website/tools/profiler-film/node_modules || npm ci --prefix src/website/tools/profiler-film
-	node src/website/tools/profiler-film/film.mjs $(FILM) $(if $(PUBLISH),--publish,)
+	test -d src/website/tools/video/node_modules || npm ci --prefix src/website/tools/video
+	node src/website/tools/video/film.mjs $(FILM) $(if $(PUBLISH),--publish,)
 
 _test-website:
 	@echo "==> Running website Playwright tests..."
@@ -839,6 +839,8 @@ _lint-zed:
 _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
 	# The profiler contributions are generated from the shared UI library ([PROFILER-SHARED-LIBRARY-VSCODE]).
 	node tools/vsix/sync-profiler-contributions.mjs --check
+	# The tutorial's types are generated from its typeDiagram model ([TUTORIAL-MODEL]).
+	node tools/vsix/tutorial-model.mjs --check
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs tools/ci/vsix-coverage.test.mjs \
 		tools/ci/spec-citations.test.mjs tools/vsix/signals-bundle.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
@@ -1107,6 +1109,11 @@ _deploy-sidecars:
 # The extension identifier, read from the manifest that defines it. Hardcoding it
 # is how the previous uninstall target came to name an extension id that had not
 # existed for months, silently uninstalling nothing. [DIST-VSIX-DEV-INSTALL]
+# The VS Code profiles, joined by "|", that hold their own copy of SharpLsp: the
+# install loop replaces it in each, not only in the default profile. Override
+# with VSCODE_PROFILES='A|B', or VSCODE_PROFILES= for the default profile only.
+# [DIST-VSIX-DEV-INSTALL]
+VSCODE_PROFILES ?= $(shell node tools/vsix/vscode-profiles.mjs $(EXTENSION_ID))
 EXTENSION_ID = $(shell node -e "const p=require('./$(VSCODE_DIR)/package.json');process.stdout.write(p.publisher+'.'+p.name)")
 
 # The per-OS half of the install loop: where the VS Code CLI lives, and how stale
@@ -1154,13 +1161,17 @@ RESOLVE_CODE = \
 # SharpLsp loaded in VS Code pretending to be the change under test.
 # `_build-vsix` pulls in `_build-rust` and `_build-dotnet`, so the Rust host and
 # both sidecar binaries are rebuilt here, not reused from the cleaned tree.
+#
+# The profiles holding SharpLsp are read BEFORE the uninstall, which removes it
+# from them, and handed to both ends of the loop.
 reinstall-vsix:
 	@echo "==> Uninstall, full clean, rebuild and reinstall for $(HOST_PLATFORM)..."
-	$(MAKE) uninstall-vsix
-	$(MAKE) _kill
-	$(MAKE) _clean-artifacts
-	$(MAKE) _build-vsix
-	$(MAKE) install-vsix
+	@profiles='$(VSCODE_PROFILES)'; \
+		$(MAKE) uninstall-vsix VSCODE_PROFILES="$$profiles" && \
+		$(MAKE) _kill && \
+		$(MAKE) _clean-artifacts && \
+		$(MAKE) _build-vsix && \
+		$(MAKE) install-vsix VSCODE_PROFILES="$$profiles"
 
 install-vsix:
 	@test -f $(DEV_VSIX) || { \
@@ -1169,7 +1180,11 @@ install-vsix:
 	}
 	@echo "==> Installing $(DEV_VSIX)..."
 	@$(RESOLVE_CODE); \
-		"$$code_cli" --install-extension "$(DEV_VSIX)" --force
+		"$$code_cli" --install-extension "$(DEV_VSIX)" --force || exit 1; \
+		list='$(VSCODE_PROFILES)'; IFS='|'; for profile in $$list; do \
+			echo "==> ...and into VS Code profile '$$profile'"; \
+			"$$code_cli" --install-extension "$(DEV_VSIX)" --force --profile "$$profile" || exit 1; \
+		done
 	@echo "==> $(EXTENSION_ID) installed. Reload VS Code to pick it up."
 
 # Uninstalling what is not installed is a success, not a failure: the reinstall
@@ -1177,7 +1192,10 @@ install-vsix:
 uninstall-vsix:
 	@echo "==> Uninstalling $(EXTENSION_ID)..."
 	@$(RESOLVE_CODE); \
-		"$$code_cli" --uninstall-extension "$(EXTENSION_ID)" || true
+		"$$code_cli" --uninstall-extension "$(EXTENSION_ID)" || true; \
+		list='$(VSCODE_PROFILES)'; IFS='|'; for profile in $$list; do \
+			"$$code_cli" --uninstall-extension "$(EXTENSION_ID)" --profile "$$profile" || true; \
+		done
 
 # ── Install (private) ─────────────────────────────────────────────
 

@@ -8,7 +8,6 @@
 module SharpLsp.Sidecar.FSharp.Tests.FSharpResolvedReferenceTests
 
 open System
-open System.Diagnostics
 open System.IO
 open System.Threading
 open System.Xml.Linq
@@ -78,16 +77,8 @@ let private writeMultiTargeted root name (source: string) (references: string li
     writeTargeting root name "net48;net10.0" source references
 
 /// Restore `project` with the dotnet CLI; the test fails when restore does.
-let private restore (project: string) =
-    let info = ProcessStartInfo("dotnet", $"restore \"{project}\" --nologo -v q", RedirectStandardOutput = true)
-
-    match Process.Start info with
-    | null -> failwith "dotnet restore did not start"
-    | started ->
-        use proc = started
-        let output = proc.StandardOutput.ReadToEnd()
-        proc.WaitForExit()
-        Assert.True((proc.ExitCode = 0), $"dotnet restore failed: {output}")
+let internal restore (project: string) =
+    FSharpDesignTimeTests.dotnet (NativePaths.DirectoryOf project) $"restore \"{project}\" --nologo -v q"
 
 /// Lib and App — App referencing Lib, both `net48;net10.0` — restored, never built, loaded as one folder.
 let private openSolution () =

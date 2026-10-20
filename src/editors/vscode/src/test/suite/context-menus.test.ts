@@ -30,9 +30,7 @@ import { activeExplorerProvider } from './explorer-kit';
 import { useLspTestSuite } from './lsp-suite-kit';
 import {
   EXTENSION_ID,
-  openSharpLspPanel,
   pollUntilResult,
-  takeScreenshot,
   assertContainsAll,
   assertContainsNone,
 } from './test-helpers';
@@ -264,8 +262,6 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
   test("solution node has contextValue 'solution'", async function () {
     this.timeout(COMMAND_MS);
     requireSolutionNode(tree);
-    await openSharpLspPanel();
-    await takeScreenshot('vscode-solution-explorer-context-menu.png');
   });
 
   for (const [contextValue, label] of CONTEXT_VALUES) {
@@ -619,8 +615,6 @@ suite('Context Menu — Project Node Commands Execute', () => {
     );
     // Assert solution explorer tree still has project node visible.
     requireNode(tree().getChildren(), '', 'project');
-    await openSharpLspPanel();
-    await takeScreenshot('vscode-context-menu-open-project.png');
   });
 
   for (const cmd of BUILD_COMMANDS) {

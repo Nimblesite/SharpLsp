@@ -1,4 +1,4 @@
-// Tests for [WEB-DESIGN-MEDIA]: the profiler film and stills the profiler-film
+// Tests for [WEB-DESIGN-MEDIA]: the profiler film and stills tools/video
 // tooling renders from the real extension.
 import { test, expect } from '@playwright/test';
 import { expectPlayable, expectStills, playback, sourcesOf } from './media.js';

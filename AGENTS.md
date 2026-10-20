@@ -3,6 +3,8 @@
 
 SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust: one server, the complete .NET development experience in every editor. Stack: C#, Rust, TypeScript
 
+All large files like videos MUST go in Git LFS
+
 **Aim #1: Fix the .NET developer experience.**
 Match and surpass Visual Studio, Rider, and C# Dev Kit — no proprietary dependencies, licenses, or vendor lock-in.
 
@@ -104,8 +106,9 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 
 # Git
 
-> ⛔️ **Don't touch git** unless the user asks or a skill demands it.
-
+> ⛔️ **Don't make git changes like creating new branches** unless the user asks or a skill demands it.
+- Commit and push to submodules before commiting and pushing the feature branch
+- Commit and push after each major change
 - **One feature branch**, never `git worktree`. Work the open one; several open → merge them immediately
 - **Never push to `main`.** PR → CI green → squash-merge → delete the branch
 - **Own every PR until green**: `gh pr merge --auto --squash`, then fix and push until all checks pass

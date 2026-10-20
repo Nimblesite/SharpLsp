@@ -61,7 +61,7 @@ test.describe('Docs screenshots', () => {
 });
 
 // [WEB-DESIGN-MEDIA] Each feature page opens on its still from the film kit
-// (films/doc-stills.mjs): the real extension on the Shop demo, never an old capture.
+// (films/doc-stills/film.mjs): the real extension on the Shop demo, never an old capture.
 const DOC_STILLS = {
   'architecture/': 'architecture',
   'editors/': 'editors',

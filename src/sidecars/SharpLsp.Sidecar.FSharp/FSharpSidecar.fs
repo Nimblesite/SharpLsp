@@ -85,6 +85,9 @@ type FSharpSidecar() =
                 try
                     let request = MessagePackSerializer.Deserialize<DidChangeRequest>(payload, cancellationToken = ct)
                     FSharpWorkspace.applyDidChange workspace request.FilePath request.NewText
+                    // A file no loaded project compiles loads its own project, in the
+                    // background: the host waits on this reply. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+                    FSharpOwningProject.adoptOwner workspace request.FilePath |> ignore
                     return Helpers.serializeOk "ok" ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)

@@ -12,12 +12,13 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 internal static class DotnetBuild
 {
     /// <summary>
-    /// Build <paramref name="project"/> and its project references, returning the exit code
+    /// Build <paramref name="project"/> and its project references, with any extra
+    /// <paramref name="arguments"/> such as a framework, returning the exit code
     /// and merged output. Build servers are off: on Linux an MSBuild node kept for reuse
     /// inherits the redirected pipes and outlives the build, so its output never ends and
     /// reading it never returns — a multi-targeted project builds on such a node.
     /// </summary>
-    public static (int ExitCode, string Output) Run(string project)
+    public static (int ExitCode, string Output) Run(string project, params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("dotnet")
         {
@@ -33,6 +34,10 @@ internal static class DotnetBuild
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
         using var build =
             Process.Start(startInfo) ?? throw new InvalidOperationException("dotnet did not start");
         // Drain both pipes at once: reading them in turn deadlocks once the unread one fills.

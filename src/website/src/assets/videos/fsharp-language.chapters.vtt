@@ -1,0 +1,21 @@
+WEBVTT
+
+FSharp.Hover
+00:00.000 --> 00:16.000
+Hover any F# symbol: its signature, from the F# compiler
+
+FSharp.Completion
+00:16.000 --> 00:39.367
+Completion knows your types: List functions, then record fields
+
+FSharp.Definition
+00:39.367 --> 00:47.333
+Go to Definition (F12) crosses files
+
+FSharp.References
+00:47.333 --> 00:58.600
+Find All References (Shift+F12), project-wide
+
+FSharp.CodeAction
+00:58.600 --> 01:11.433
+Quick fixes write code: generate the missing union case
