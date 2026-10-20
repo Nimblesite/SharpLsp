@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -70,6 +71,20 @@ internal sealed record RazorProjection(
                 is PragmaChecksumDirectiveTriviaSyntax pragma
             ? pragma.File.ValueText
             : null;
+    }
+
+    /// <summary>
+    /// This projection, of a copy of <paramref name="file"/>'s Razor file that
+    /// <paramref name="insertions"/> made, read in the file itself. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    public RazorProjection ReadIn(RazorProjection file, ImmutableArray<TextChange> insertions)
+    {
+        return this with
+        {
+            Razor = file.Razor,
+            RazorText = file.RazorText,
+            Map = Map.Without(insertions),
+        };
     }
 
     /// <summary>The generated position of a Razor position inside a C# fragment.</summary>

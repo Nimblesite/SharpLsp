@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
@@ -90,11 +91,13 @@ internal static class RazorRenameEdits
             : new DocumentEditResult { FilePath = file.Key, Edits = edits };
     }
 
-    /// <summary>Whether <paramref name="span"/> of <paramref name="text"/> is exactly <paramref name="name"/>.</summary>
+    /// <summary>Whether the span is one C# identifier whose semantic name matches, escapes included.</summary>
     private static bool Holds(SourceText text, LinePositionSpan span, string name)
     {
         return DocumentText.TrySpan(text, span) is { } found
-            && found.Length == name.Length
-            && string.Equals(text.ToString(found), name, StringComparison.Ordinal);
+            && SyntaxFactory.ParseToken(text.ToString(found))
+                is { RawKind: (int)SyntaxKind.IdentifierToken } token
+            && token.Span.Length == found.Length
+            && string.Equals(token.ValueText, name, StringComparison.Ordinal);
     }
 }

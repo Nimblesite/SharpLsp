@@ -171,6 +171,43 @@ public sealed class RazorProjectionTests
         Assert.Empty(RazorSpanMap.Build(tree, generated, razor, Stale).Mappings);
     }
 
+    [Theory]
+    [InlineData(")", false)]
+    [InlineData("))", false)]
+    [InlineData("]})", false)]
+    [InlineData("))", true)]
+    public void Completion_carets_stay_before_inserted_closers_and_later_fragments_still_map(
+        string closing,
+        bool earlierInsertion
+    )
+    {
+        // A temporary completion copy can map a whole fragment containing its synthetic
+        // closers. Only the prefix belongs to the user's expression; a surviving suffix
+        // would claim the caret after the closers. [RAZOR-FEATURES-COMPLETION]
+        var shift = earlierInsertion ? 1 : 0;
+        var close = new TextChange(new TextSpan(8, 0), closing);
+        var copy = new RazorSpanMap([
+            new(4 + shift, 100, 12 + closing.Length),
+            new(8 + shift, 150, closing.Length),
+            new(22 + shift + closing.Length, 200, 5),
+        ]);
+        var map = copy.Without(
+            earlierInsertion ? [new TextChange(new TextSpan(2, 0), "("), close] : [close]
+        );
+        Assert.Equal<RazorMapping>([new(4, 100, 4), new(22, 200, 5)], map.Mappings);
+        Assert.Equal(100, map.ToGenerated(4));
+        Assert.Equal(104, map.ToGenerated(8));
+        Assert.Null(map.ToGenerated(9));
+        Assert.Null(map.ToGenerated(3));
+        Assert.Equal(new TextSpan(4, 4), map.ToRazor(new TextSpan(100, 4)));
+        Assert.Null(map.ToRazor(new TextSpan(104, 1)));
+        Assert.Null(map.ToRazor(new TextSpan(150, closing.Length)));
+        Assert.Equal(200, map.ToGenerated(22));
+        Assert.Equal(205, map.ToGenerated(27));
+        Assert.Equal(new TextSpan(22, 5), map.ToRazor(new TextSpan(200, 5)));
+        Assert.Equal<RazorMapping>(map.Mappings, map.Without([]).Mappings);
+    }
+
     private static Project Create(AdhocWorkspace workspace)
     {
         return AdhocRazorProject.Create(

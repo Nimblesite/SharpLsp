@@ -19,6 +19,7 @@ const WALKTHROUGHS = [
   ...everyLanguage('editors/', ['editor-setup'], { en: 'setup', ja: 'エディター設定', zh: '编辑器设置' }),
   ...everyLanguage('configuration/', ['configuration'], { en: 'Configuring', ja: '設定', zh: '配置' }),
   ...everyLanguage('fsharp/', FSHARP_PAGE, { en: 'completion', ja: '補完', zh: '补全' }),
+  ...everyLanguage('blazor/', ['blazor'], { en: 'Blazor and Razor', ja: 'コンポーネント', zh: '组件' }),
   ...everyLanguage('completions/', ['code-completions'], { en: 'completion', ja: '補完', zh: '补全' }),
   ...everyLanguage('hover/', ['hover'], { en: 'Hover', ja: 'ホバー', zh: '悬停' }),
   ...everyLanguage('go-to-definition/', ['navigation'], { en: 'definition', ja: '定義', zh: '定义' }),
@@ -44,6 +45,9 @@ const PAGES = [
   { path: '/ja/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: 'ツアー' },
   { path: '/zh/blog/editor-agnostic-dotnet-lsp/', videos: ['sharplsp-tour'], says: '导览' },
   { path: '/blog/dotnet-profiler-vs-code-csharp-fsharp/', videos: PROFILER_DOC, says: 'profiler' },
+  { path: '/blog/blazor-razor-vs-code/', videos: ['blazor'], says: 'Blazor and Razor' },
+  { path: '/ja/blog/blazor-razor-vs-code/', videos: ['blazor'], says: 'コンポーネント' },
+  { path: '/zh/blog/blazor-razor-vs-code/', videos: ['blazor'], says: '组件' },
   { path: '/ja/blog/dotnet-profiler-vs-code-csharp-fsharp/', videos: PROFILER_DOC, says: 'プロファイラー' },
   { path: '/zh/blog/dotnet-profiler-vs-code-csharp-fsharp/', videos: PROFILER_DOC, says: '性能分析器' },
 ];

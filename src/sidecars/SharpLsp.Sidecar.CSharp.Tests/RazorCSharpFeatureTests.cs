@@ -137,6 +137,90 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         Assert.Equal(0, help.ActiveParameter);
     }
 
+    [Theory]
+    [InlineData("disabled=", "scores.Count")]
+    [InlineData("<Tally", "score =>")]
+    public async Task Signature_help_never_exposes_generated_render_tree_calls(
+        string anchor,
+        string token
+    )
+    {
+        // Explicit Razor parentheses belong to the expression, not a call the user wrote.
+        // [RAZOR-FEATURES-SIGNATURE-HELP]
+        using var manager = await _fixture.OpenManagerAsync();
+        var argument = RazorFixture.Locate(Board, anchor, token);
+        Assert.Null(
+            RazorFixture.Ok(
+                await manager.GetSignatureHelpAsync(Board, argument.Line, argument.Character)
+            )
+        );
+    }
+
+    [Fact]
+    public async Task Signature_help_never_exposes_generated_content_calls()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+        _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Board, "<p>@(1)</p>"));
+        Assert.Null(RazorFixture.Ok(await manager.GetSignatureHelpAsync(Board, 0, 5)));
+    }
+
+    [Theory]
+    [InlineData("<p>@(Math.Max(1, 2))</p>", 5, 14, 17)]
+    [InlineData("<button disabled=\"@(Math.Max(1, 2) > 0)\">OK</button>", 20, 29, 32)]
+    public async Task Signature_help_tracks_real_calls_and_active_arguments_in_unsaved_razor(
+        string source,
+        int expression,
+        int first,
+        int second
+    )
+    {
+        // All three requests use the current unsaved text and the same real projection.
+        // [RAZOR-FEATURES-SIGNATURE-HELP] [RAZOR-ARCHITECTURE-DOCUMENTS]
+        using var manager = await _fixture.OpenManagerAsync();
+        _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Board, source));
+        AssertMax(RazorFixture.Ok(await manager.GetSignatureHelpAsync(Board, 0, first)), 0);
+        AssertMax(RazorFixture.Ok(await manager.GetSignatureHelpAsync(Board, 0, second)), 1);
+        Assert.Null(RazorFixture.Ok(await manager.GetSignatureHelpAsync(Board, 0, expression)));
+    }
+
+    private static void AssertMax(SignatureHelpResult? help, int parameter)
+    {
+        Assert.NotNull(help);
+        Assert.Equal(parameter, help.ActiveParameter);
+        var signature = help.Signatures[help.ActiveSignature];
+        Assert.Equal("int Math.Max(int val1, int val2)", signature.Label);
+        Assert.Equal(["int val1", "int val2"], signature.Parameters);
+        Assert.All(
+            help.Signatures,
+            item => Assert.Contains("Math.Max(", item.Label, StringComparison.Ordinal)
+        );
+    }
+
+    [Fact]
+    public async Task Rename_edits_every_escaped_identifier_in_razor_without_leaving_the_escape()
+    {
+        // Escapes are C# identifier syntax; the semantic name excludes the leading @.
+        // [RAZOR-FEATURES-RENAME] [RAZOR-ARCHITECTURE-PROJECTION]
+        using var manager = await _fixture.OpenManagerAsync();
+        const string source =
+            "<p>@(@class)</p>\n<input value=\"@(@class)\" />\n@code { private string @class = \"Board\"; }";
+        _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Board, source));
+        var prepared = RazorFixture.Ok(await manager.PrepareRenameAsync(Board, 2, 25));
+        Assert.True(prepared.CanRename);
+        Assert.Equal("@class", prepared.Placeholder);
+        Assert.Equal(
+            (2, 23, 29),
+            (prepared.StartLine, prepared.StartCharacter, prepared.EndCharacter)
+        );
+        var result = RazorFixture.Ok(await manager.RenameAsync(Board, 2, 25, "heading"));
+        var file = Assert.Single(result.DocumentChanges);
+        Assert.True(NativePaths.AreEqual(Board, file.FilePath));
+        Assert.Equal(3, file.Edits.Count);
+        Assert.Equal([0, 1, 2], file.Edits.Select(edit => edit.StartLine));
+        Assert.All(file.Edits, edit => Assert.Equal("heading", edit.NewText));
+        Assert.All(file.Edits, edit => Assert.Equal(6, edit.EndCharacter - edit.StartCharacter));
+    }
+
     [Fact]
     public async Task Import_files_never_report_their_usings_as_unnecessary()
     {

@@ -1362,6 +1362,30 @@
             "keyword.control"
           ]
         }
+      },
+      {
+        "language": "csharp",
+        "scopes": {
+          "keyword": [
+            "keyword.other.cs"
+          ]
+        }
+      },
+      {
+        "language": "razor",
+        "scopes": {
+          "keyword": [
+            "keyword.other.cs"
+          ]
+        }
+      },
+      {
+        "language": "aspnetcorerazor",
+        "scopes": {
+          "keyword": [
+            "keyword.other.cs"
+          ]
+        }
       }
     ],
     "breakpoints": [

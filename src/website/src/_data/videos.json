@@ -248,6 +248,29 @@
       }
     }
   },
+  "blazor": {
+    "page": "/docs/blazor/",
+    "encodings": ["mp4", "webm"],
+    "width": 1920,
+    "height": 1200,
+    "duration": "PT2M38S",
+    "uploadDate": "2026-10-20T14:13:00+11:00",
+    "captions": ["en", "ja", "zh"],
+    "text": {
+      "en": {
+        "label": "Blazor and Razor in VS Code with SharpLsp: C# hover, completion, diagnostics, go to definition, references and rename in a .razor component, and HTML from VS Code's HTML service",
+        "caption": "Narrated, with original music and captions. Recorded in VS Code on a Blazor Web App: Roslyn hovers in the markup, completion inside a Razor expression, HTML completion and hover, a C# error on its Razor line, F12 into the @code block, references and rename, F12 from Program.cs into App.razor, then linked tag editing and folding."
+      },
+      "zh": {
+        "label": "在 VS Code 中用 SharpLsp 编辑 Blazor 和 Razor：在 .razor 组件中进行 C# 悬停、补全、诊断、转到定义、查找引用和重命名，HTML 由 VS Code 的 HTML 服务提供",
+        "caption": "带旁白、原创配乐和字幕。在 VS Code 中基于一个 Blazor Web App 录制：标记中的 Roslyn 悬停、Razor 表达式中的补全、HTML 补全与悬停、显示在对应 Razor 行上的 C# 错误、按 F12 跳进 @code 代码块、查找引用与重命名、从 Program.cs 按 F12 打开 App.razor，最后是链接标签编辑和折叠。"
+      },
+      "ja": {
+        "label": "SharpLsp による VS Code の Blazor と Razor：.razor コンポーネント内の C# のホバー、補完、診断、定義へ移動、参照、名前の変更と、VS Code の HTML サービスによる HTML",
+        "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で Blazor Web App を使って収録：マークアップでの Roslyn のホバー、Razor の式の中での補完、HTML の補完とホバー、原因の Razor の行に表示される C# のエラー、F12 による @code ブロックへの移動、参照と名前の変更、Program.cs から App.razor への F12、そしてタグのリンクされた編集と折りたたみ。"
+      }
+    }
+  },
   "code-completions": {
     "page": "/docs/completions/",
     "encodings": ["mp4", "webm"],

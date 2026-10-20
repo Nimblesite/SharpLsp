@@ -29,6 +29,7 @@ internal sealed partial class WorkspaceManager
                     target.Document,
                     target.Line,
                     target.Character,
+                    target.Origin,
                     ct
                 ),
             ct

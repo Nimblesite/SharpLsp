@@ -39,11 +39,26 @@ internal sealed partial class CSharpSidecar
     {
         return HandleRequestAsync(
             payload,
-            (PositionRequest request) =>
-                _workspace.GetRazorHtmlProjectionAsync(request.FilePath, ct),
+            (HtmlProjectionRequest request) =>
+                _workspace.GetRazorHtmlProjectionAsync(
+                    request.FilePath,
+                    ct,
+                    request.Position is [var line, var character] ? (line, character) : null
+                ),
             ct
         );
     }
+}
+
+/// <summary>An optional caret restricts HTML forwarding to markup. [RAZOR-FEATURES-HTML]</summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class HtmlProjectionRequest
+{
+    [Key(0)]
+    public string FilePath { get; set; } = "";
+
+    [Key(1)]
+    public int[]? Position { get; init; }
 }
 
 /// <summary>The position-preserving HTML projection, [RAZOR-ARCHITECTURE-HTML].</summary>

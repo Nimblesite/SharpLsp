@@ -88,6 +88,34 @@ public sealed class RazorHtmlProjectionTests(RazorFixture fixture) : IClassFixtu
     [InlineData("<!-- @DateTime.Now -->", "<!-- @DateTime.Now -->")]
     [InlineData("<!-- unfinished", "<!-- unfinished")]
     [InlineData("@* <!-- hidden --> *@<!-- keep -->", "                     <!-- keep -->")]
+    // [RAZOR-ARCHITECTURE-HTML]: a directive attribute and the C# inside an HTML attribute
+    // value are both blank; HTML names, quotes and literal text stay.
+    [InlineData(
+        "<button @onclick=\"() => Add(1)\" disabled=\"@(scores.Count > 9)\">Add</button>",
+        "<button                         disabled=\"                   \">Add</button>"
+    )]
+    [InlineData(
+        "<button disabled=\"@(scores.Count > 9)\">Add</button>",
+        "<button disabled=\"                   \">Add</button>"
+    )]
+    [InlineData(
+        "<button @onclick=\"() => Add(1)\" @onclick:stopPropagation>Add</button>",
+        "<button                                                 >Add</button>"
+    )]
+    [InlineData(
+        "<input @bind=\"name\" @bind:event=\"oninput\" />",
+        "<input                                    />"
+    )]
+    // The compiler gives a minimized directive parameter no span, nor a minimized HTML
+    // attribute before it; both are read in order, and only the directive is blank.
+    [InlineData(
+        "<button disabled @onclick:stopPropagation @onclick=\"() => Add(1)\">Add</button>",
+        "<button disabled                                                 >Add</button>"
+    )]
+    [InlineData(
+        "<button title=\"Add one\" @onclick:stopPropagation>Add</button>",
+        "<button title=\"Add one\"                         >Add</button>"
+    )]
     public async Task Projection_query_preserves_html_and_utf16_offsets(
         string text,
         string expected
@@ -147,6 +175,11 @@ public sealed class RazorHtmlProjectionTests(RazorFixture fixture) : IClassFixtu
         Assert.Contains("<Panel", before.HtmlText, StringComparison.Ordinal);
         Assert.Contains("</Panel>", before.HtmlText, StringComparison.Ordinal);
         Assert.DoesNotContain("@code", before.HtmlText, StringComparison.Ordinal);
+        // The fixture's C# attribute value and directive attributes are blank too (#407).
+        Assert.DoesNotContain("scores.Count", before.HtmlText, StringComparison.Ordinal);
+        Assert.DoesNotContain("@bind", before.HtmlText, StringComparison.Ordinal);
+        Assert.DoesNotContain("oninput", before.HtmlText, StringComparison.Ordinal);
+        Assert.Contains("<input", before.HtmlText, StringComparison.Ordinal);
         _ = await manager.UpdateDocumentTextAsync(
             path,
             "<article data-test='changed'>@DateTime.Now</article>"

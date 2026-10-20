@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 import { expectFramesAdvance } from './media.js';
 
 const FILMS = [
-  ['/docs/fsharp/', 0], ['/docs/fsharp-profiling/', 0],
+  ['/docs/fsharp/', 0], ['/docs/fsharp-profiling/', 0], ['/docs/blazor/', 0],
   ['/docs/', 0], ['/docs/editors/', 0], ['/docs/configuration/', 0],
   ['/docs/completions/', 0], ['/docs/hover/', 0], ['/docs/go-to-definition/', 0],
   ['/docs/diagnostics/', 0], ['/docs/refactoring/', 0], ['/docs/context-menus/', 0],
@@ -13,6 +13,7 @@ const FILMS = [
   ['/docs/profiler/', 2], ['/docs/memory-leaks/', 0],
   ['/docs/architecture/', 0], ['/docs/contributing/', 0],
   ['/blog/introducing-sharplsp/', 0], ['/blog/editor-agnostic-dotnet-lsp/', 0],
+  ['/blog/blazor-razor-vs-code/', 0],
 ];
 
 for (const [route, index] of FILMS) {

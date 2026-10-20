@@ -116,6 +116,14 @@ flowchart LR
   - An edit that adds a C# `using` becomes an `@using` line in the Razor file ([RAZOR-FEATURES-COMPLETION]).
   - Any other edit that cannot be mapped drops the item or action that carries it.
 
+### [RAZOR-ARCHITECTURE-GENERATOR] Generator Compatibility
+
+- The project's Razor source generator must run against the Roslyn version loaded by the sidecar.
+- When the project's Razor compiler references a newer `Microsoft.CodeAnalysis` assembly than the sidecar runs, project loading replaces that compiler and its sibling dependencies with the bundled copies before the SDK compiler can load.
+- The bundled compiler is loaded first: once the newer SDK compiler is loaded, Roslyn cannot replace it for that session.
+- A structured warning identifies the SDK compiler's required Roslyn version and the sidecar's Roslyn version when replacement is necessary.
+- The project's source-generated components remain available to ordinary C# files and Razor projection queries. End-to-end tests restore a real fixture without the repository SDK pin, then verify Razor hover and component references from C# ([RAZOR-TESTING]).
+
 ### [RAZOR-ARCHITECTURE-ENGINE] The Razor Engine
 
 - **The bundled compiler:** SharpLsp bundles the Razor compiler assemblies from the SDK that builds it: `Microsoft.CodeAnalysis.Razor.Compiler`, `Microsoft.AspNetCore.Razor.Utilities.Shared` and `Microsoft.Extensions.ObjectPool`, all MIT-licensed.
@@ -251,7 +259,7 @@ The facts hold no C# fragment spans: C# positions come from the projection's map
 
 - **What it is:** the HTML projection is the Razor text with every non-HTML character replaced by a space, newlines kept, so offsets and positions are unchanged. The replaced characters are C# fragments with their transitions and delimiters, directives, and Razor comments.
 - **HTML comments:** a component's IR drops HTML comments. The engine therefore parses a component a second time with component parsing off, which keeps each comment's `<!--` and `-->` tokens, and copies those comment spans back into the projection.
-- **How it is served:** `sharplsp/razor/htmlProjection` (`{ textDocument }` → `{ text }`) returns the projection for the document's current text.
+- **How it is served:** `sharplsp/razor/htmlProjection` (`{ textDocument, position? }` → `{ text } | null`) returns the projection for the document's current text. With a caret, it returns `null` for compiler-backed C# positions, including whitespace and incomplete expressions recovered for completion. Compiler markup name facts take precedence: component tag and attribute names remain markup even when they also have C# mappings. Without a caret, it returns the whole projection.
 - **Markup context:** the server finds the markup context at a caret by running an HTML tokenizer over the projection. The tokenizer follows the WHATWG tokenizer states. The possible contexts are a tag name, an attribute name, an attribute value, or content.
 
 ## [RAZOR-FEATURES] Features
@@ -304,6 +312,14 @@ The facts hold no C# fragment spans: C# positions come from the projection's map
 
 The client adds HTML element and attribute names ([RAZOR-FEATURES-HTML]). The host's postfix templates (`.if`, `.foreach`, …) never apply in a Razor file, where the same text can be markup.
 
+**Unfinished expressions.** The Razor compiler cannot finish an implicit expression that ends in a dot (`@scores.`) or an explicit expression still missing its `)` (`@(basket.MinBy(product => product.`). The caret then has no mapping, or maps into C# that does not parse. Completion asks a copy of the file whose expression is finished at the caret:
+
+- `@scores.` becomes `@(scores.)`.
+- An unclosed `@(` gets each `)`, `]` and `}` that Roslyn's parser finds missing, innermost first, and then its own `)`. The compiler's markup diagnostics are read only when the projection's C# does not parse.
+- Only the file's active framework is forked.
+- The copy's projection is read in the file itself, keeping each fragment's part before the inserted text, so items and edits land at the real file's caret.
+- A copy that still cannot map the caret leaves completion to the file's own projection.
+
 ### [RAZOR-FEATURES-SIGNATURE-HELP] Signature Help
 
 Signature help in a C# fragment is computed at the mapped position.
@@ -342,7 +358,7 @@ Signature help in a C# fragment is computed at the mapped position.
 
 ### [RAZOR-FEATURES-HTML] HTML in Editors
 
-- **VS Code:** completion and hover in markup are forwarded to the built-in HTML language service over the HTML projection, following VS Code's request-forwarding pattern. The server's items come first and the HTML service's items are appended. Hover uses the HTML service only when the server has no answer.
+- **VS Code:** completion and hover in markup are forwarded to the built-in HTML language service over the HTML projection, following VS Code's request-forwarding pattern. The client sends the caret with the projection request; a C# position has no HTML forwarding, so projection word suggestions cannot enter C# completion lists. In markup, the server's items come first and the HTML service's items are appended. Hover uses the HTML service only when the server has no answer.
 - **Other editors:** they attach their own HTML language server to `razor` files.
 
 ### [RAZOR-FEATURES-DEFERRED] Not Yet Supported
@@ -400,7 +416,7 @@ Blazor front ends often sit over F# domain libraries. A Razor project that refer
 
 - **Engine unavailable:** if the bundled engine fails to load or to process a file, markup features answer empty and the C# projection features keep working. The failure is logged once per project, with the project name and the exception type.
 - **No projection:** a file whose project does not run the generator has no projection, so its C# features answer empty. Its markup facts still answer.
-- **SDK newer than the sidecar's Roslyn:** the generator comes from the SDK that resolves for the project, which is the newest installed SDK when no `global.json` pins one. Roslyn does not load a generator built against a newer Roslyn than the sidecar bundles, so the project's Razor files have no projection, as above. The tests keep the repository's pin in their fixture copies. GitHub issue #399 tracks making the generator load with any SDK.
+- **SDK newer than the sidecar's Roslyn:** project loading replaces an incompatible SDK Razor compiler with the bundled compiler before generation ([RAZOR-ARCHITECTURE-GENERATOR]). Ordinary fixture tests retain the repository SDK pin for reproducibility; a separate unpinned fixture tests the newest installed SDK, and a controlled incompatible compiler tests the replacement rule regardless of installed SDK versions (GitHub #399).
 - **Nothing at the position:** a position that is neither in a C# fragment nor on a markup fact answers `null` or an empty list, never an error.
 - **No content logged:** no Razor or generated text is ever logged. Logs carry only paths, spans and lengths.
 

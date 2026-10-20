@@ -367,7 +367,8 @@ internal static class HtmlMarkupContext
         return k >= end || IsSpace(html[k]) || html[k] is '/' or '>';
     }
 
-    private static bool IsSpace(char c)
+    /// <summary>HTML's whitespace, which separates a tag's name and attributes.</summary>
+    internal static bool IsSpace(char c)
     {
         return c is ' ' or '\t' or '\n' or '\f' or '\r';
     }

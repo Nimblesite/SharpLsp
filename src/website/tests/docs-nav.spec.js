@@ -6,7 +6,7 @@ import { docsSidebar as sidebar, openDocsMenu as openDrawer } from './docs-menu.
 
 const GROUPS = {
   'Set up': ['Getting Started', 'Editor Setup', 'Zed', 'Configuration'],
-  'Write code': ['F# Language Support', 'Code Completions', 'Hover & Quick Info', 'Go to Definition', 'Diagnostics', 'Refactoring & Code Actions'],
+  'Write code': ['F# Language Support', 'Blazor & Razor', 'Code Completions', 'Hover & Quick Info', 'Go to Definition', 'Diagnostics', 'Refactoring & Code Actions'],
   'Project tools': ['Context Menus', 'NuGet Package Manager', 'Profiler', 'Profiling F#', 'Fix a Memory Leak'],
 };
 const CONTRIBUTOR_PAGES = ['Architecture', 'Contributing'];

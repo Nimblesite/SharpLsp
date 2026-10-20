@@ -11,15 +11,34 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 /// <summary>
 /// A built copy of the Razor fixture solution ([RAZOR-TESTING]): BlazorApp, the Widgets
 /// Razor class library, PagesApp and the F# Domain library. Copied to a temp directory so
-/// tests can edit it, and built so the F# DLL that BlazorApp references exists.
+/// tests can edit it, and built so the F# DLL that BlazorApp references exists. The copy
+/// keeps the SDK the repository pins: with no <c>global.json</c> above it, it would load with
+/// the newest installed SDK, as the editor suites' copies would.
 /// </summary>
 public sealed class RazorFixture : IDisposable
 {
+    /// <summary>The fixture solution's directory, relative to the repository root.</summary>
+    private static readonly string[] FixtureDirectory =
+    [
+        "src",
+        "sharplsp",
+        "tests",
+        "fixtures",
+        "razor",
+    ];
+
     private readonly string _root = NativePaths.Temp($"sharplsp-razor-{Guid.NewGuid():N}");
 
     public RazorFixture()
+        : this(_ => { }) { }
+
+    /// <summary>The fixture, built once <paramref name="prepare"/> has changed the copy at its root.</summary>
+    internal RazorFixture(Action<string> prepare)
     {
-        CopyTree(FindRepositoryFixture(), _root);
+        var repository = FindRepository();
+        CopyTree(NativePaths.Join([repository, .. FixtureDirectory]), _root);
+        File.Copy(NativePaths.Join(repository, "global.json"), Path("global.json"));
+        prepare(_root);
         SolutionPath = Path("RazorFixtures.slnx");
         var (exitCode, output) = DotnetBuild.Run(SolutionPath);
         Assert.True(exitCode == 0, $"Razor fixture build failed ({exitCode}):{output}");
@@ -98,22 +117,23 @@ public sealed class RazorFixture : IDisposable
         }
     }
 
-    private static string FindRepositoryFixture()
+    /// <summary>The repository root: the nearest ancestor holding the fixture solution.</summary>
+    private static string FindRepository()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            var candidate = NativePaths.Join(
-                directory.FullName,
-                "src",
-                "sharplsp",
-                "tests",
-                "fixtures",
-                "razor"
-            );
-            if (File.Exists(NativePaths.Join(candidate, "RazorFixtures.slnx")))
+            if (
+                File.Exists(
+                    NativePaths.Join([
+                        directory.FullName,
+                        .. FixtureDirectory,
+                        "RazorFixtures.slnx",
+                    ])
+                )
+            )
             {
-                return candidate;
+                return directory.FullName;
             }
 
             directory = directory.Parent;

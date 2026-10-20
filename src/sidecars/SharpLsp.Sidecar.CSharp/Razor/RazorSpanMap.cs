@@ -70,6 +70,66 @@ internal sealed class RazorSpanMap(ImmutableArray<RazorMapping> mappings)
         return null;
     }
 
+    /// <summary>
+    /// This map, built on a copy of the Razor file that <paramref name="insertions"/> made,
+    /// read in the file itself. An entry keeps only its part before the first insertion it holds:
+    /// C# the copy finished inside a fragment has nothing in the file to map to, and a part
+    /// after it would start at the caret and claim it. Each part then moves back past the
+    /// insertions before it. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    public RazorSpanMap Without(ImmutableArray<TextChange> insertions)
+    {
+        var inserted = InCopy(insertions);
+        return new([
+            .. mappings
+                .SelectMany(entry => Before(entry, inserted))
+                .Select(part =>
+                    part with
+                    {
+                        RazorStart =
+                            part.RazorStart
+                            - inserted
+                                .Where(span => span.End <= part.RazorStart)
+                                .Sum(span => span.Length),
+                    }
+                ),
+        ]);
+    }
+
+    /// <summary>The part of <paramref name="entry"/> before the first span of <paramref name="inserted"/> it holds.</summary>
+    private static IEnumerable<RazorMapping> Before(
+        RazorMapping entry,
+        ImmutableArray<TextSpan> inserted
+    )
+    {
+        var end = inserted
+            .Where(span => span.OverlapsWith(new TextSpan(entry.RazorStart, entry.Length)))
+            .Select(span => span.Start)
+            .DefaultIfEmpty(entry.RazorEnd)
+            .Min();
+        return end > entry.RazorStart ? [entry with { Length = end - entry.RazorStart }] : [];
+    }
+
+    /// <summary>Where each of <paramref name="insertions"/>, in text order, lands in the copy they make.</summary>
+    private static ImmutableArray<TextSpan> InCopy(ImmutableArray<TextChange> insertions)
+    {
+        return
+        [
+            .. insertions.Select(
+                (insertion, index) =>
+                    new TextSpan(
+                        insertion.Span.Start + insertions.Take(index).Sum(Inserted),
+                        Inserted(insertion)
+                    )
+            ),
+        ];
+    }
+
+    private static int Inserted(TextChange insertion)
+    {
+        return insertion.NewText?.Length ?? 0;
+    }
+
     private RazorMapping? EndingAt(int razorOffset)
     {
         foreach (var entry in mappings)

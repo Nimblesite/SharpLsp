@@ -41,10 +41,22 @@ impl RazorWorkspace {
 /// Copy the Razor fixture solution to a temp directory, with the repository's SDK
 /// pin, and restore it.
 pub fn create_razor_workspace() -> RazorWorkspace {
+    create_razor_workspace_with_pin(true)
+}
+
+/// Restore under the newest installed SDK to catch compiler/sidecar version skew.
+/// [RAZOR-ARCHITECTURE-GENERATOR]
+pub fn create_razor_workspace_with_latest_sdk() -> RazorWorkspace {
+    create_razor_workspace_with_pin(false)
+}
+
+fn create_razor_workspace_with_pin(pin_sdk: bool) -> RazorWorkspace {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/razor");
     let dir = tempfile::tempdir().expect("create Razor temp dir");
     copy_fixture_tree(&source, dir.path());
-    keep_sdk_pin(dir.path());
+    if pin_sdk {
+        keep_sdk_pin(dir.path());
+    }
     restore_project(dir.path());
     RazorWorkspace { dir }
 }

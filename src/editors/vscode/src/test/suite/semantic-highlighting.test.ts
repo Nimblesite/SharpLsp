@@ -204,3 +204,37 @@ suite('Semantic highlighting — keyword classes (#251)', () => {
     );
   });
 });
+
+suite('Standard language keyword scopes', () => {
+  test('C# plain keywords use the standard language scope instead of the control-flow fallback', () => {
+    // VS Code's default `keyword` fallback is `keyword.control`. Without a C#
+    // mapping, declaration/type keywords become control-flow purple in Dark+.
+    // [SHARPLSP-FEATURES-HIGHLIGHTING]
+    const scopes: unknown = contributes().semanticTokenScopes;
+    assert.ok(Array.isArray(scopes), 'semantic scope mappings exist');
+    const entries = scopes as { language?: string; scopes?: Record<string, string[]> }[];
+    const csharp = entries.find((entry) => entry.language === 'csharp');
+    assert.ok(csharp, 'plain keyword mapping is scoped to C#, preserving F# grammar colors');
+    assert.deepStrictEqual(csharp.scopes?.['keyword'], ['keyword.other.cs']);
+    for (const language of ['razor', 'aspnetcorerazor']) {
+      assert.deepStrictEqual(
+        entries.find((entry) => entry.language === language)?.scopes?.['keyword'],
+        ['keyword.other.cs'],
+        `C# inside ${language} uses the same standard keyword scope`,
+      );
+    }
+    assert.ok(!csharp.scopes?.['keyword']?.some((scope) => scope.startsWith('keyword.control')));
+    const control = entries.find((entry) => entry.scopes?.['controlKeyword']);
+    assert.deepStrictEqual(control?.scopes?.['controlKeyword'], ['keyword.control']);
+    assert.ok(
+      !entries.some((entry) => entry.language === 'fsharp' && entry.scopes?.['keyword']),
+      'F# keyword coloring stays with its standard grammar',
+    );
+    const defaults: unknown = contributes().configurationDefaults;
+    assert.ok(
+      defaults === undefined ||
+        !JSON.stringify(defaults).toLowerCase().includes('tokencolorcustomizations'),
+      'the extension never hard-codes token colors over the selected theme',
+    );
+  });
+});

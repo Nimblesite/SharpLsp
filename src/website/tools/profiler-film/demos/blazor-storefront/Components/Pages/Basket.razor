@@ -1,0 +1,28 @@
+@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>Basket</PageTitle>
+
+<h1>Basket</h1>
+
+<ul>
+    @foreach (var product in Catalog.Products)
+    {
+        <li>
+            @product.Name, @product.Price.ToString("C")
+            <button @onclick="() => Add(product)">Add</button>
+        </li>
+    }
+</ul>
+
+<p>@basket.Count items, @Total().ToString("C") in total</p>
+
+@code {
+    private readonly List<Product> basket = [];
+
+    /// <summary>Puts one more <paramref name="product"/> in the basket.</summary>
+    private void Add(Product product) => basket.Add(product);
+
+    /// <summary>What the basket costs: every product's price, summed.</summary>
+    private decimal Total() => basket.Sum(product => product.Price);
+}

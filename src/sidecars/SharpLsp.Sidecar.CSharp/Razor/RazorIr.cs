@@ -193,6 +193,19 @@ internal static class RazorIr
             : Span(span);
     }
 
+    /// <summary>The span of <paramref name="name"/> at the first non-space offset from <paramref name="start"/>, when the text holds it there.</summary>
+    public static TextSpan? NameAfter(SourceText text, int start, string name)
+    {
+        var at = start;
+        while (at < text.Length && HtmlMarkupContext.IsSpace(text[at]))
+        {
+            at++;
+        }
+
+        var span = new TextSpan(at, name.Length);
+        return Holds(text, span, name) ? span : null;
+    }
+
     /// <summary>The name of an element's end tag, <c>&lt;/Name&gt;</c> closing <paramref name="element"/>.</summary>
     private static TextSpan? EndName(
         TextSpan element,
@@ -202,7 +215,7 @@ internal static class RazorIr
     )
     {
         var nameEnd = element.End - 1;
-        while (nameEnd > element.Start && text[nameEnd - 1] is ' ' or '\t' or '\r' or '\n' or '\f')
+        while (nameEnd > element.Start && HtmlMarkupContext.IsSpace(text[nameEnd - 1]))
         {
             nameEnd--;
         }

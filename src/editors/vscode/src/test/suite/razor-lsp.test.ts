@@ -144,22 +144,44 @@ suite('Razor in VS Code', () => {
     this.timeout(LSP_RESPONSE_MS * 3);
     const { doc, uri } = await openRepoFile(fixture().root, RAZOR_FILES.counter);
 
-    // Interaction 1 — in a tag name, the HTML service's element names arrive through
-    // the projection, and no C# member does.
-    const tag = completionLabels(
-      await completionList(uri, positionOf(doc, '<h1>Counter', 'h1'), 'div'),
+    const projectionWord = 'HtmlProjectionOnlyWord';
+    const provider = vscode.languages.registerCompletionItemProvider(
+      { scheme: projectionUri(doc).scheme, language: 'html' },
+      {
+        provideCompletionItems: () => [
+          new vscode.CompletionItem(projectionWord, vscode.CompletionItemKind.Text),
+        ],
+      },
     );
-    for (const element of ['div', 'span', 'h1']) assert.ok(tag.has(element), `offers <${element}>`);
-    assert.ok(!tag.has('currentCount'), 'markup offers no C# member');
+    try {
+      // Interaction 1 — in a tag name, the HTML service's element names arrive through
+      // the projection, and no C# member does.
+      const tag = completionLabels(
+        await completionList(uri, positionOf(doc, '<h1>Counter', 'h1'), 'div'),
+      );
+      for (const element of ['div', 'span', 'h1'])
+        assert.ok(tag.has(element), `offers <${element}>`);
+      assert.ok(!tag.has('currentCount'), 'markup offers no C# member');
+      assert.ok(
+        tag.has(projectionWord),
+        'markup really forwards to providers on the HTML projection',
+      );
 
-    // Interaction 2 — in @code, the server's C# members answer, and the HTML
-    // service adds no element name: the projection blanks the C#.
-    const code = completionLabels(
-      await completionList(uri, positionOf(doc, 'currentCount++;', 'currentCount'), 'currentCount'),
-    );
-    assert.ok(code.has('currentCount'), 'the field');
-    assert.ok(code.has('IncrementCount'), 'the method');
-    assert.ok(!code.has('div'), 'C# offers no HTML element');
+      // Interaction 2 — in @code, the server's C# members answer, and the HTML
+      // service adds no element name: the projection blanks the C#.
+      const codeItems = await completionList(
+        uri,
+        positionOf(doc, 'currentCount++;', 'currentCount'),
+        'currentCount',
+      );
+      const code = completionLabels(codeItems);
+      assert.ok(code.has('currentCount'), 'the field');
+      assert.ok(code.has('IncrementCount'), 'the method');
+      assert.ok(!code.has('div'), 'C# offers no HTML element');
+      assert.ok(!code.has(projectionWord), 'C# never forwards to the HTML projection (#405)');
+    } finally {
+      provider.dispose();
+    }
   });
 
   test('markup hovers come from the HTML service when the server has none', async function () {

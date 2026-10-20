@@ -80,7 +80,8 @@ internal sealed partial class WorkspaceManager
     )
     {
         if (
-            await ResolveQueryTargetAsync(filePath, (line, character), ct).ConfigureAwait(false)
+            await ResolveCompletionTargetAsync(filePath, (line, character), ct)
+                .ConfigureAwait(false)
             is not { } target
         )
         {

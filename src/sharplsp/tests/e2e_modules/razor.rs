@@ -39,11 +39,44 @@ fn test_full_stack_razor_routing_session() {
 
     assert_syntax_requests_reach_the_sidecar(&mut client, &board);
     assert_html_projection(&mut client, &ws, &board, &board_text);
+    assert_html_projection_only_in_markup(&mut client, &board);
     assert_markup_triggers_only_complete_razor(&mut client, &ws);
     assert_diagnostics_publish_as_razor(&mut client, &board, &board_text);
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
+}
+
+/// A newer SDK still generates components for Razor and ordinary C# queries.
+/// [RAZOR-ARCHITECTURE-GENERATOR] [RAZOR-TESTING] GitHub #399.
+#[test]
+fn test_latest_sdk_razor_generator_remains_usable() {
+    require_dotnet();
+    let ws = create_razor_workspace_with_latest_sdk();
+    let mut client = LspClient::start_verbose();
+    let init = client.initialize_with_root(json!(path_to_file_uri(ws.root())));
+    assert_rpc_ok(&init, "initialize newest SDK fixture");
+    assert_latest_sdk_razor_hover(&mut client, &ws);
+    let program = ws.uri(&["BlazorApp", "Program.cs"]);
+    client.open_document(&program, &ws.text(&["BlazorApp", "Program.cs"]));
+    let errors = pull_error_diagnostics(&mut client, &program, "newest SDK Program.cs");
+    assert!(
+        errors.iter().all(|d| d["code"] != "CS0246"),
+        "generated App must resolve: {errors:?}"
+    );
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+fn assert_latest_sdk_razor_hover(client: &mut LspClient, ws: &RazorWorkspace) {
+    let file = &["BlazorApp", "Components", "Pages", "Counter.razor"];
+    let counter = ws.uri(file);
+    client.open_document(&counter, &ws.text(file));
+    let hover = poll_hover_until_ready(client, &counter, 7, 35, Duration::from_mins(3));
+    let markdown = hover["contents"]["value"].as_str().unwrap_or_default();
+    assert!(markdown.contains("currentCount"), "field hover: {markdown}");
+    assert!(markdown.contains("int"), "field type: {markdown}");
+    assert_eq!(hover["range"]["start"], json!({"line": 7, "character": 33}));
 }
 
 /// documentSymbol, foldingRange and linkedEditingRange come from the sidecar's
@@ -152,6 +185,23 @@ fn assert_html_projection(client: &mut LspClient, ws: &RazorWorkspace, board: &s
     let none = document_request(client, "sharplsp/razor/htmlProjection", &program);
     assert_rpc_ok(&none, "htmlProjection(Program.cs)");
     assert_eq!(none["result"], Value::Null, "a C# file has no projection");
+}
+
+/// A caret-aware projection forwards markup and excludes C# including whitespace.
+/// [RAZOR-FEATURES-HTML] GitHub #405.
+fn assert_html_projection_only_in_markup(client: &mut LspClient, board: &str) {
+    for (at, code) in [
+        ((4, 2), false),
+        ((6, 3), false),
+        ((11, 16), true),
+        ((22, 24), true),
+        ((22, 4), true),
+    ] {
+        let answer = position_request(client, "sharplsp/razor/htmlProjection", board, at);
+        assert_rpc_ok(&answer, "caret-aware HTML projection");
+        assert_eq!(answer["result"].is_null(), code, "caret {at:?}: {answer}");
+        assert_eq!(answer["result"]["text"].as_str().is_some(), !code);
+    }
 }
 
 /// `<` and `@` complete in Razor but answer `null` at once in C#.
