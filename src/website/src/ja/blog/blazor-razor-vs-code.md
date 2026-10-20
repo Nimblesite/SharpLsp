@@ -6,7 +6,7 @@ lang: ja
 date: 2026-10-20
 author: SharpLsp チーム
 image: /assets/images/blog/blazor-razor-vs-code.png
-imageAlt: "VS Code の Blazor コンポーネントのマークアップ内に表示された C# のホバーと、その横の「Blazor and Razor in VS Code」という見出し"
+imageAlt: "シアンの光に縁取られたガラスの層の上で、琥珀色の炎をまとって輝く金属製の @ の彫刻"
 tags:
   - posts
   - blazor

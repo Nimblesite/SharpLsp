@@ -101,11 +101,15 @@ Remaining unchecked validation tasks concern executing fixes together and CI; th
 
 ## Current CI-prep evidence
 
-- Rust: 224 host unit tests pass; Rust fmt and clippy pass. Zed fmt/clippy pass.
+- Rust: the final archive passes all 567 tests (301 + 266 across the two CI partitions) against the final #405/#407 sidecars. Merged coverage is 8938/9399 lines (95.0952%), passing the gate. Rust fmt/clippy and Zed fmt/clippy pass.
 - Editor: all three highlighting cases pass against the staged host/sidecars after restaging the packaged payload; extension lint/typecheck pass.
 - F#: all 447 sidecar tests pass with coverage after the final value-type constructor correction.
-- C#: the full 692-test suite passes after #399 and #404; final combined coverage gates remain pending.
+- .NET: the final full suites pass: C# 716/716, F# 447/447 and Common 125/125; C# coverage is 96.54%, raising its ratchet to 95.54%.
 - Tooling: 72 tests pass. Rust/NuGet/npm dependency audits report no vulnerabilities at the configured threshold.
 - Zed: final archive executes all 27 tests successfully; 89.95% line coverage passes the ratchet. Final Rust and Zed lint passes.
 - #399: both deterministic incompatible-generator tests were confirmed red before the fix and now pass unchanged, including a fresh sidecar process and preservation of compatible SDK analyzer references. After the final rebuild, the unpinned host test also passes against real SDK 10.0.401, downloaded from Microsoft's release metadata into an isolated temporary directory and verified against the published SHA512. Only that test's PATH and DOTNET_ROOT use the temporary SDK; the user's installed SDKs remain untouched. The test verifies field hover/type, original Razor range and absence of generated-component CS0246.
 - Earlier full-editor attempts failed because VSIX packaging intentionally removed the staged `bin` directory; after restaging, the unchanged highlighting suite passed. No product/test assertion was weakened to bypass the missing artifact.
+
+## Final PR validation follow-up
+
+PR #406, head d3697e70: both host shards, the .NET sidecar suite, Linux and Windows artifact builds, lint, audit and CodeQL pass remotely. The Windows workspace check that timed out on the earlier head passes unchanged. The Windows profiler chunk fails nine assertions: six F# CPU attribution/heat-map checks, followed by two decoration checks and a setting-default check. A failed soak assertion can leave showInlineHeatMap disabled before its normal reset, explaining the later configuration failures; the F# attribution failures remain under investigation. All existing assertions remain required. Full CI stays unchecked until this failure is resolved. Logs: /tmp/sharplsp-pr406-profiler-failed.txt; reviewed the complete log with a read-only pi session and inspected the assertions and cleanup directly. Pi's suggestion that the declared default was false was rejected: the observed value was mutable test configuration.

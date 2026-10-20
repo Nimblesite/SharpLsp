@@ -5,7 +5,7 @@ description: "SharpLsp now edits Blazor components, Razor Pages and MVC views in
 date: 2026-10-20
 author: SharpLsp Team
 image: /assets/images/blog/blazor-razor-vs-code.png
-imageAlt: "A C# hover inside a Blazor component's markup in VS Code, beside the headline Blazor and Razor in VS Code"
+imageAlt: "A polished metal @ sculpture glowing with amber fire above layered glass, edged in cyan light"
 tags:
   - posts
   - blazor

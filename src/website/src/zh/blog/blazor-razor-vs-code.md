@@ -6,7 +6,7 @@ lang: zh
 date: 2026-10-20
 author: SharpLsp 团队
 image: /assets/images/blog/blazor-razor-vs-code.png
-imageAlt: "VS Code 中 Blazor 组件标记内的 C# 悬停，旁边是 Blazor and Razor in VS Code 的标题"
+imageAlt: "抛光金属 @ 雕塑燃起琥珀色火焰，立于青色光线勾勒的层叠玻璃之上"
 tags:
   - posts
   - blazor
