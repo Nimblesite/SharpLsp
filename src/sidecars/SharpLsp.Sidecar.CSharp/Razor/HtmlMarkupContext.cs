@@ -33,6 +33,16 @@ internal static class HtmlMarkupContext
         return Context(ScanTo(html, Math.Clamp(offset, 0, html.Length)));
     }
 
+    /// <summary>
+    /// The name of the start tag whose attributes hold <paramref name="offset"/>, lowercased as
+    /// the tokenizer reads it; null outside a start tag's attributes. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    public static string? StartTagAt(string html, int offset)
+    {
+        var scan = ScanTo(html, Math.Clamp(offset, 0, html.Length));
+        return Context(scan) == MarkupContext.AttributeName && !scan.EndTag ? scan.Tag : null;
+    }
+
     /// <summary>The tokenizer states the caret context derives from.</summary>
     private enum Scanner
     {

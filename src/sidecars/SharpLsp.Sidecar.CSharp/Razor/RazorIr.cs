@@ -14,7 +14,7 @@ namespace SharpLsp.Sidecar.CSharp.Razor;
 /// verified against the text, so a span the compiler did not shape that way is never
 /// reported. Implements [RAZOR-ARCHITECTURE-ENGINE].
 /// </summary>
-internal static class RazorIr
+internal static partial class RazorIr
 {
     /// <summary>Every node under <paramref name="root"/>, parents before children.</summary>
     public static IEnumerable<IntermediateNode> Descendants(IntermediateNode root)
@@ -79,6 +79,22 @@ internal static class RazorIr
         };
     }
 
+    /// <summary>The tag helper directives under <paramref name="root"/>, its imports' first, in order.</summary>
+    public static IEnumerable<TagHelperDirective> TagHelperDirectives(IntermediateNode root)
+    {
+        return Descendants(root)
+            .OfType<DirectiveIntermediateNode>()
+            .Where(directive => RazorTagHelperScope.Declares(directive.DirectiveName))
+            .Select(directive => new TagHelperDirective(
+                directive.DirectiveName,
+                directive
+                    .Children.OfType<DirectiveTokenIntermediateNode>()
+                    .FirstOrDefault()
+                    ?.Content
+                    ?? ""
+            ));
+    }
+
     /// <summary>The namespace an <c>@using</c> imports, without a <c>global::</c> qualifier; null for an alias or static using.</summary>
     public static string? Namespace(UsingDirectiveIntermediateNode use)
     {
@@ -94,21 +110,20 @@ internal static class RazorIr
         return (global is null ? name : name.ReplaceNode(global, global.Name)).ToString();
     }
 
-    /// <summary>The tag a node is: an element bound to tag helpers, or a plain component-file element.</summary>
-    public static MarkupTag? Tag(IntermediateNode node, SourceText text)
+    /// <summary>
+    /// The tag a node is: an element bound to tag helpers, or a plain component-file element.
+    /// A legacy file's tag helper element is spelled with the file's <c>@tagHelperPrefix</c>.
+    /// </summary>
+    public static MarkupTag? Tag(IntermediateNode node, SourceText text, string prefix)
     {
         return node switch
         {
-            TagHelperIntermediateNode { Source: { } source, StartTagSpan: { } start } bound =>
-                new MarkupTag(
-                    bound.TagName,
-                    Span(source),
-                    Span(start),
-                    bound.TagMode == TagMode.StartTagAndEndTag
-                        ? EndName(Span(source), bound.TagName, text)
-                        : null,
-                    [.. bound.TagHelpers]
-                ),
+            TagHelperIntermediateNode { Source: { } source } bound => BoundTag(
+                bound,
+                Span(source),
+                text,
+                prefix
+            ),
             MarkupElementIntermediateNode { Source: { } source } element => PlainTag(
                 element.TagName,
                 Span(source),
@@ -116,16 +131,6 @@ internal static class RazorIr
             ),
             _ => null,
         };
-    }
-
-    /// <summary>The attributes of a tag node, each with what binds it.</summary>
-    public static IEnumerable<MarkupAttribute> Attributes(
-        IntermediateNode node,
-        MarkupTag tag,
-        SourceText text
-    )
-    {
-        return node.Children.Select(child => Attribute(child, tag, text)).OfType<MarkupAttribute>();
     }
 
     /// <summary>Whether a diagnostic belongs to the processed file, not to one of its imports.</summary>
@@ -137,58 +142,35 @@ internal static class RazorIr
             && (string.IsNullOrEmpty(span.FilePath) || NativePaths.AreEqual(span.FilePath, path));
     }
 
-    private static MarkupAttribute? Attribute(
-        IntermediateNode child,
-        MarkupTag tag,
-        SourceText text
+    /// <summary>
+    /// An element tag helpers bind. A component's IR carries its start tag name's span; a
+    /// legacy file's does not, so its name, prefix first, is read just after the element's
+    /// <c>&lt;</c>, as HTML spells it in any case, and only where the text holds it.
+    /// </summary>
+    private static MarkupTag? BoundTag(
+        TagHelperIntermediateNode bound,
+        TextSpan element,
+        SourceText text,
+        string prefix
     )
     {
-        return child switch
-        {
-            TagHelperPropertyIntermediateNode property => new MarkupAttribute(
-                MarkupAttributeKind.Property,
-                property.AttributeName,
-                property.OriginalAttributeSpan is { } span ? Span(span) : null,
-                tag,
-                property.TagHelper,
-                property.BoundAttribute,
-                null
-            ),
-            TagHelperDirectiveAttributeIntermediateNode directive => new MarkupAttribute(
-                MarkupAttributeKind.Directive,
-                directive.OriginalAttributeName,
-                DirectiveName(
-                    directive.OriginalAttributeSpan,
-                    directive.OriginalAttributeName,
-                    text
-                ),
-                tag,
-                directive.TagHelper,
-                directive.BoundAttribute,
-                null
-            ),
-            TagHelperDirectiveAttributeParameterIntermediateNode parameter => new MarkupAttribute(
-                MarkupAttributeKind.DirectiveParameter,
-                parameter.OriginalAttributeName,
-                DirectiveName(
-                    parameter.OriginalAttributeSpan,
-                    parameter.OriginalAttributeName,
-                    text
-                ),
-                tag,
-                parameter.TagHelper,
-                parameter.BoundAttribute,
-                parameter.BoundAttributeParameter
-            ),
-            TagHelperHtmlAttributeIntermediateNode html => Html(html.AttributeName, tag),
-            HtmlAttributeIntermediateNode html => Html(html.AttributeName, tag),
-            _ => null,
-        };
-    }
-
-    private static MarkupAttribute Html(string name, MarkupTag tag)
-    {
-        return new MarkupAttribute(MarkupAttributeKind.Html, name, null, tag, null, null, null);
+        var legacy = bound.StartTagSpan is null;
+        var comparison = legacy ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var spelled = legacy ? prefix + bound.TagName : bound.TagName;
+        var start = bound.StartTagSpan is { } span
+            ? Span(span)
+            : new TextSpan(element.Start + 1, spelled.Length);
+        return Holds(text, start, spelled, comparison)
+            ? new MarkupTag(
+                bound.TagName,
+                element,
+                start,
+                bound.TagMode == TagMode.StartTagAndEndTag
+                    ? EndName(element, spelled, text, comparison)
+                    : null,
+                [.. bound.TagHelpers]
+            )
+            : null;
     }
 
     private static MarkupTag? PlainTag(string name, TextSpan element, SourceText text)

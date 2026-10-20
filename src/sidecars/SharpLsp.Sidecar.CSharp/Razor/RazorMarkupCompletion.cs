@@ -6,12 +6,12 @@ using SharpLsp.Sidecar.CSharp.Workspace;
 namespace SharpLsp.Sidecar.CSharp.Razor;
 
 /// <summary>
-/// Completion in Blazor markup, from the compiler's tag helpers. After <c>&lt;</c>: components,
+/// Completion in Razor markup, from the compiler's tag helpers. After <c>&lt;</c>: components,
 /// by their short name where their namespace is in scope and their full name otherwise, and
 /// inside a component its child-content parameters. In a start tag: the parameters not yet
-/// set, <c>[EditorRequired]</c> ones first and marked, then <c>@bind-X</c> and the directive
-/// attributes with their parameters. Each item replaces the name typed at the caret.
-/// Implements [RAZOR-FEATURES-COMPLETION].
+/// set, <c>[EditorRequired]</c> ones first and marked, the attributes of the MVC tag helpers in
+/// scope, then <c>@bind-X</c> and the directive attributes with their parameters. Each item
+/// replaces the name typed at the caret. Implements [RAZOR-FEATURES-COMPLETION] and [RAZOR-MVC].
 /// </summary>
 internal static class RazorMarkupCompletion
 {
@@ -47,8 +47,8 @@ internal static class RazorMarkupCompletion
         var context = markup.ContextAt(offset);
         var entries =
             context == MarkupContext.TagName ? TagEntries(markup, offset)
-            : context == MarkupContext.AttributeName && OwnerAt(markup, offset) is { } tag
-                ? AttributeEntries(markup, compilation, tag)
+            : HtmlMarkupContext.StartTagAt(markup.HtmlText, offset) is { } spelled
+                ? AttributeEntries(markup, compilation, OwnerAt(markup, offset, spelled), spelled)
             : null;
         var replace = TextSpan.FromBounds(HtmlMarkupContext.NameStart(markup.Text, offset), offset);
         return entries is null
@@ -134,26 +134,58 @@ internal static class RazorMarkupCompletion
             ));
     }
 
+    /// <summary>
+    /// The attributes not yet set on the start tag spelled <paramref name="spelled"/>: a
+    /// component's parameters, the attributes its MVC tag helpers in scope bind, and in a
+    /// component file the directive attributes.
+    /// </summary>
     private static IEnumerable<Entry> AttributeEntries(
         RazorMarkup markup,
         Compilation compilation,
-        MarkupTag tag
+        MarkupTag? tag,
+        string spelled
     )
     {
         var set = markup
             .Attributes.Where(attribute => attribute.Owner == tag)
             .Select(attribute => attribute.Name)
             .ToHashSet(StringComparer.Ordinal);
-        var parameters = tag.Component is { } component ? Parameters(compilation, component) : [];
-        var directives = markup
-            .TagHelpers.Where(helper =>
-                DirectiveKinds.Contains(helper.Kind) && Applies(helper, tag)
-            )
-            .SelectMany(DirectiveEntries);
+        var parameters = tag?.Component is { } component ? Parameters(compilation, component) : [];
+        var helpers = markup.Scope.Targeting(spelled).SelectMany(TagHelperEntries);
+        var directives =
+            markup.FileKind == RazorFileKind.Component
+                ? markup
+                    .TagHelpers.Where(helper =>
+                        DirectiveKinds.Contains(helper.Kind)
+                        && Applies(helper, tag?.Name ?? spelled)
+                    )
+                    .SelectMany(DirectiveEntries)
+                : [];
         return parameters
+            .Concat(helpers)
             .Concat(directives)
             .Where(entry => !set.Contains(entry.Label))
             .DistinctBy(entry => entry.Label);
+    }
+
+    /// <summary>An MVC tag helper's attributes, and each indexer's prefix (<c>asp-route-</c>).</summary>
+    private static IEnumerable<Entry> TagHelperEntries(TagHelperDescriptor helper)
+    {
+        return helper.BoundAttributes.SelectMany(attribute =>
+            new[]
+            {
+                (Label: attribute.Name, Type: attribute.TypeName),
+                (Label: attribute.IndexerNamePrefix, Type: attribute.IndexerTypeName),
+            }
+                .Where(named => !string.IsNullOrEmpty(named.Label))
+                .Select(named => new Entry(
+                    named.Label!,
+                    "Property",
+                    named.Type,
+                    attribute.Documentation,
+                    1
+                ))
+        );
     }
 
     /// <summary>A component's parameters; one its property marks <c>[EditorRequired]</c> sorts first.</summary>
@@ -210,24 +242,30 @@ internal static class RazorMarkupCompletion
         );
     }
 
-    /// <summary>Whether a directive attribute's tag helper matches <paramref name="tag"/>'s name.</summary>
-    private static bool Applies(TagHelperDescriptor helper, MarkupTag tag)
+    /// <summary>Whether a directive attribute's tag helper targets a tag named <paramref name="name"/>.</summary>
+    private static bool Applies(TagHelperDescriptor helper, string name)
     {
-        return helper.TagMatchingRules.Any(rule =>
-            rule.TagName == "*"
-            || string.Equals(
-                rule.TagName,
-                tag.Name,
-                rule.CaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase
-            )
-        );
+        return helper.TagMatchingRules.Any(rule => RazorTagHelperScope.Targets(rule, name));
     }
 
-    /// <summary>The tag whose start tag holds <paramref name="offset"/>: the nearest one before it.</summary>
-    private static MarkupTag? OwnerAt(RazorMarkup markup, int offset)
+    /// <summary>
+    /// The tag whose start tag holds <paramref name="offset"/>: the innermost one holding the
+    /// caret whose name is spelled as the tokenizer read it. A legacy file's plain HTML element
+    /// is no tag, so none owns its start tag.
+    /// </summary>
+    private static MarkupTag? OwnerAt(RazorMarkup markup, int offset, string spelled)
     {
         return markup
-            .Tags.Where(tag => tag.StartName.End <= offset && tag.Element.Start < offset)
+            .Tags.Where(tag =>
+                tag.StartName.End <= offset
+                && tag.Element.Start < offset
+                && offset <= tag.Element.End
+                && string.Equals(
+                    markup.Text.ToString(tag.StartName),
+                    spelled,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             .MaxBy(tag => tag.StartName.Start);
     }
 

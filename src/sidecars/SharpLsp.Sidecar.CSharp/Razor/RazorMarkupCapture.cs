@@ -6,7 +6,8 @@ namespace SharpLsp.Sidecar.CSharp.Razor;
 
 /// <summary>
 /// Reads markup facts out of the compiler's IR while it is built. Directives are read first
-/// in the directive-classifier phase, before <c>@code</c> becomes plain C#; tags and
+/// in the directive-classifier phase, before <c>@code</c> becomes plain C#, and with them the
+/// tag helper directives that scope a legacy file's tag helpers ([RAZOR-MVC-SCOPE]); tags and
 /// attributes first in the optimization phase, before components are lowered and attribute
 /// names lose their spans; diagnostics last. The IR is mutated after each read, so each
 /// pass copies what it needs at once. Implements [RAZOR-ARCHITECTURE-ENGINE].
@@ -21,6 +22,8 @@ internal sealed class RazorMarkupCapture
     private RazorCodeDocument? _codeDocument;
     private string _htmlText = "";
     private TextSpan[] _codeBlocks = [];
+    private TagHelperDirective[] _tagHelperDirectives = [];
+    private string _prefix = "";
 
     /// <summary>Add the capture passes to an engine.</summary>
     public void Register(RazorProjectEngineBuilder builder)
@@ -50,13 +53,16 @@ internal sealed class RazorMarkupCapture
             {
                 HtmlText = _htmlText,
                 CodeBlocks = [.. _codeBlocks],
+                Scope = RazorTagHelperScope.Of(_tagHelperDirectives, tagHelpers),
             };
     }
 
     private void ReadDirectives(RazorCodeDocument document, DocumentIntermediateNode root)
     {
         var text = document.Source.Text;
-        _htmlText = RazorHtmlProjection.Create(text, root);
+        _tagHelperDirectives = [.. RazorIr.TagHelperDirectives(root)];
+        _prefix = RazorTagHelperScope.Of(_tagHelperDirectives, []).Prefix;
+        _htmlText = RazorHtmlProjection.Create(text, root, _prefix);
         _codeBlocks = [.. RazorIr.CodeBlocks(root)];
         foreach (var node in RazorIr.Descendants(root).Where(node => !node.IsImported))
         {
@@ -77,7 +83,7 @@ internal sealed class RazorMarkupCapture
             {
                 _namespaces.Add(ns);
             }
-            else if (!node.IsImported && RazorIr.Tag(node, text) is { } tag)
+            else if (!node.IsImported && RazorIr.Tag(node, text, _prefix) is { } tag)
             {
                 _tags.Add(tag);
                 _attributes.AddRange(RazorIr.Attributes(node, tag, text));
