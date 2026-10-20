@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function initSeekToTime() {
   const start = Number(new URLSearchParams(window.location.search).get("t"));
   const video = document.querySelector(".prose video");
-  if (!video || !(start > 0)) return;
+  if (!video || !(Number.isFinite(start) && start > 0)) return;
   const seek = () => { video.currentTime = start; };
   if (video.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
   else video.addEventListener("loadedmetadata", seek, { once: true });

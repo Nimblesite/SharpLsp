@@ -91,6 +91,23 @@ test('docs figures link to their watch page, which opens at ?t= seconds', async 
   expect(await page.locator('main video').evaluate((v) => v.currentTime)).toBe(0);
 });
 
+test('a watch page ignores a ?t= that is not a finite number of seconds, without an error', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  for (const t of ['Infinity', '1e400', '-5', 'abc']) {
+    await page.goto(`/videos/hover/?t=${t}`);
+    const video = page.locator('main video');
+    const real = await loadedMetadata(video);
+    expect(real.duration, `?t=${t} still loads the film`).toBeGreaterThan(0);
+    expect(await video.evaluate((v) => v.currentTime), `?t=${t} leaves the film at its start`).toBe(0);
+    await expect(video).toHaveJSProperty('paused', true);
+  }
+  expect(errors, 'no seek throws').toEqual([]);
+  await page.goto('/videos/hover/?t=12');
+  await expect.poll(() => page.locator('main video').evaluate((v) => Math.floor(v.currentTime)), { timeout: 15000 }).toBe(12);
+  expect(errors, 'a finite seek still works without an error').toEqual([]);
+});
+
 for (const lang of LANGS) {
   test(`every ${lang} embed page is the bare player, kept out of the index`, async ({ page, request }) => {
     for (const id of Object.keys(VIDEOS)) {
