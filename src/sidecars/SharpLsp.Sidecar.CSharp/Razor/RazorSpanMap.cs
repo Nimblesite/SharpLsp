@@ -70,6 +70,54 @@ internal sealed class RazorSpanMap(ImmutableArray<RazorMapping> mappings)
         return null;
     }
 
+    /// <summary>
+    /// This map, built on a copy of the Razor file that <paramref name="insertions"/> made,
+    /// read in the file itself: each entry moves back past the insertions before it, and an
+    /// entry holding an inserted character has no place in the file. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    public RazorSpanMap Without(ImmutableArray<TextChange> insertions)
+    {
+        var inserted = InCopy(insertions);
+        return new([
+            .. mappings
+                .Where(entry =>
+                    !inserted.Any(span =>
+                        span.OverlapsWith(new TextSpan(entry.RazorStart, entry.Length))
+                    )
+                )
+                .Select(entry =>
+                    entry with
+                    {
+                        RazorStart =
+                            entry.RazorStart
+                            - inserted
+                                .Where(span => span.End <= entry.RazorStart)
+                                .Sum(span => span.Length),
+                    }
+                ),
+        ]);
+    }
+
+    /// <summary>Where each of <paramref name="insertions"/>, in text order, lands in the copy they make.</summary>
+    private static ImmutableArray<TextSpan> InCopy(ImmutableArray<TextChange> insertions)
+    {
+        return
+        [
+            .. insertions.Select(
+                (insertion, index) =>
+                    new TextSpan(
+                        insertion.Span.Start + insertions.Take(index).Sum(Inserted),
+                        Inserted(insertion)
+                    )
+            ),
+        ];
+    }
+
+    private static int Inserted(TextChange insertion)
+    {
+        return insertion.NewText?.Length ?? 0;
+    }
+
     private RazorMapping? EndingAt(int razorOffset)
     {
         foreach (var entry in mappings)

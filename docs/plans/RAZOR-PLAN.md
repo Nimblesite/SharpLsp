@@ -56,9 +56,13 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 - [ ] Component tags: hover, definition, references, highlights and linked editing
 - [ ] Component attributes and `@bind-X`: hover, definition, references and rename
+  - [x] Completion right after a typed dot offers members: `@scores.` and an unclosed `@(scores.` (#401, review R2). Red tests `RazorCompletionRecoveryTests` (Codex1) failed for the bug, then passed unchanged once completion asks a copy of the file with the expression finished at the caret (Claude2). An unclosed `@{` already completed and is kept as a control
+  - [ ] Coverage gates with the #401 fix; the full C# sidecar suite passes with it
 - [ ] Directive attributes and directives: hover
+  - [x] Signature help after `@(` no longer lists the generator's scaffolding (`AddContent`, `AddAttribute`) (#400, review R1, Codex1): the regression cases failed for the bug, then passed unchanged
 - [ ] Completion: components, parameters (with `[EditorRequired]` first), `@bind-X`, directive attributes and their parameters, and directives
 - [ ] Semantic tokens for markup: component tags, attributes, directive attributes and directives
+  - [x] Escaped identifiers (`@class`) get their Razor rename edits (review R4, Codex1): the real-fixture regression failed for the bug, then passed unchanged
 - [ ] Folding ranges and document symbols ([RAZOR-FEATURES-STRUCTURE])
 
 ### Phase 4: Razor Pages and MVC

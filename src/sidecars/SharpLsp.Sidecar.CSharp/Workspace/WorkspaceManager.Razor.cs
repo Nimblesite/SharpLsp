@@ -1,5 +1,7 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
+using Serilog;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Razor;
 
@@ -91,9 +93,96 @@ internal sealed partial class WorkspaceManager
         }
 
         var projection = await FindRazorProjectionAsync(filePath, ct).ConfigureAwait(false);
-        return projection?.ToGenerated(new LinePosition(at.Line, at.Character)) is { } mapped
+        return projection is null
+            ? null
+            : Target(projection, new LinePosition(at.Line, at.Character));
+    }
+
+    /// <summary>Where a query at <paramref name="position"/> in a Razor file runs in its projection.</summary>
+    private static QueryTarget? Target(RazorProjection projection, LinePosition position)
+    {
+        return projection.ToGenerated(position) is { } mapped
             ? new QueryTarget(projection.Generated, mapped.Line, mapped.Character, projection)
             : null;
+    }
+
+    /// <summary>
+    /// Where completion runs: where any position query runs, except in a Razor expression the
+    /// compiler cannot finish yet, where it runs in a copy that finishes it. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    private async Task<QueryTarget?> ResolveCompletionTargetAsync(
+        string filePath,
+        (int Line, int Character) at,
+        CancellationToken ct
+    )
+    {
+        if (!NativePaths.IsRazor(filePath))
+        {
+            return await ResolveQueryTargetAsync(filePath, at, ct).ConfigureAwait(false);
+        }
+
+        var position = new LinePosition(at.Line, at.Character);
+        var projection = await FindRazorProjectionAsync(filePath, ct).ConfigureAwait(false);
+        return projection is null
+            ? null
+            : Target(await FinishedAsync(projection, position, ct).ConfigureAwait(false), position);
+    }
+
+    /// <summary>
+    /// <paramref name="projection"/>, or, when <paramref name="position"/> is in an expression the
+    /// compiler cannot finish yet, the projection of a copy of the file that finishes it.
+    /// </summary>
+    private static async Task<RazorProjection> FinishedAsync(
+        RazorProjection projection,
+        LinePosition position,
+        CancellationToken ct
+    )
+    {
+        var markup = await RazorMarkupEngine
+            .ProcessAsync(projection.Razor, ct)
+            .ConfigureAwait(false);
+        var insertions = DocumentText.TryOffset(projection.RazorText, position) is { } caret
+            ? RazorCompletionRecovery.Finish(projection, markup?.Diagnostics ?? [], caret)
+            : [];
+        return insertions.IsEmpty
+            ? projection
+            : await CopyFinishingAsync(projection, insertions, ct).ConfigureAwait(false)
+                ?? projection;
+    }
+
+    /// <summary>
+    /// The projection of a copy of <paramref name="projection"/>'s file with
+    /// <paramref name="insertions"/> made, read in the file itself; null when the copy projects nothing.
+    /// </summary>
+    private static async Task<RazorProjection?> CopyFinishingAsync(
+        RazorProjection projection,
+        ImmutableArray<TextChange> insertions,
+        CancellationToken ct
+    )
+    {
+        var copy = TargetFrameworks.WithAdditionalTextInEveryContext(
+            projection.Razor.Project.Solution,
+            projection.RazorPath,
+            projection.RazorText.WithChanges(insertions)
+        );
+        var razor = copy.GetAdditionalDocument(projection.Razor.Id);
+        var finished = razor is null
+            ? null
+            : await RazorProjection.ForRazorAsync(razor, ct).ConfigureAwait(false);
+        Log.Debug(
+            "[Completion] Razor expression finished in a copy {File} {Insertions} {Projected}",
+            projection.RazorPath,
+            insertions.Length,
+            finished is not null
+        );
+        return finished is null
+            ? null
+            : finished with
+            {
+                Razor = projection.Razor,
+                RazorText = projection.RazorText,
+                Map = finished.Map.Without(insertions),
+            };
     }
 
     /// <summary>
