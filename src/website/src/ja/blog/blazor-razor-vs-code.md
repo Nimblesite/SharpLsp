@@ -37,7 +37,7 @@ SharpLsp は Razor を理解するようになりました。Blazor コンポー
 
 以下はすべて、動画のデモの `Basket.razor` ページで示したものであり、それぞれが自動テストでカバーされています。
 
-- **ホバー。** `@Total()` にホバーすると、Roslyn が `decimal Basket.Total()` とその XML サマリーを返します。レイアウトの `@Body` にホバーすると、`RenderFragment? LayoutComponentBase.Body` が表示されます。
+- **ホバー。** `@Total()` にホバーすると、Roslyn が `Basket.Total()` のシグネチャーと XML サマリーを表示します。レイアウトの `@Body` にホバーすると、それがレンダリングする `LayoutComponentBase.Body` プロパティが表示されます。
 - **補完。** `@` 式と `@code` ブロックの中で、Roslyn によるメンバーの補完が働きます。編集はすべて `.razor` ファイルに反映され、補完が追加する `using` は `@using` 行になります。
 - **診断。** C# の誤りは、その原因となった Razor の行に、コンパイラーのコードとともに、エディターと問題パネルに報告されます。ソリューション全体のスキャンには Razor ファイルも含まれます。
 - **定義へ移動。** `@onclick="() => Add(product)"` の `Add` で F12 を押すと、`@code` ブロックに移動します。`Catalog.Products` で F12 を押すと `Catalog.cs` が開きます。C# 側から、`app.MapRazorComponents<App>()` の `App` で F12 を押すと、生成されたクラスではなく `App.razor` が開きます。

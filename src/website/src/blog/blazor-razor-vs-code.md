@@ -36,7 +36,7 @@ Under all three sits one Razor compiler, which turns every Razor file into C#. T
 
 Everything below is shown on the `Basket.razor` page of the demo in the video, and each item is covered by an automated test.
 
-- **Hover.** Hover `@Total()` and Roslyn answers with `decimal Basket.Total()` and its XML summary. Hover `@Body` in a layout and you see `RenderFragment? LayoutComponentBase.Body`.
+- **Hover.** Hover `@Total()` and Roslyn shows the signature of `Basket.Total()` with its XML summary. Hover `@Body` in a layout and you see the `LayoutComponentBase.Body` property it renders.
 - **Completion.** Roslyn's member completion inside `@` expressions and `@code` blocks. Every edit lands in the `.razor` file, and a `using` that completion adds becomes an `@using` line.
 - **Diagnostics.** A C# mistake is reported on the Razor line that caused it, with its compiler code, in the editor and in the Problems panel. The solution-wide scan includes Razor files.
 - **Go to definition.** F12 on `Add` in `@onclick="() => Add(product)"` jumps into the `@code` block. F12 on `Catalog.Products` opens `Catalog.cs`. From C#, F12 on `App` in `app.MapRazorComponents<App>()` opens `App.razor`, not a generated class.

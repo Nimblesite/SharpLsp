@@ -37,7 +37,7 @@ SharpLsp 现在理解 Razor。Blazor 组件（`.razor` 文件），以及 Razor 
 
 下面的一切都展示在视频演示的 `Basket.razor` 页面上，每一项都有自动化测试覆盖。
 
-- **悬停。** 悬停 `@Total()`，Roslyn 会返回 `decimal Basket.Total()` 及其 XML 摘要。在布局中悬停 `@Body`，你会看到 `RenderFragment? LayoutComponentBase.Body`。
+- **悬停。** 悬停 `@Total()`，Roslyn 会显示 `Basket.Total()` 的签名及其 XML 摘要。在布局中悬停 `@Body`，你会看到它所呈现的 `LayoutComponentBase.Body` 属性。
 - **补全。** 在 `@` 表达式和 `@code` 块中提供 Roslyn 的成员补全。每次编辑都落在 `.razor` 文件里，补全添加的 `using` 会变成一行 `@using`。
 - **诊断。** C# 的错误会带着编译器代码，报告在导致它的那一行 Razor 上，并显示在编辑器和“问题”面板中。整个解决方案的扫描涵盖 Razor 文件。
 - **转到定义。** 在 `@onclick="() => Add(product)"` 中的 `Add` 上按 F12 会跳到 `@code` 块。在 `Catalog.Products` 上按 F12 会打开 `Catalog.cs`。从 C# 一侧，在 `app.MapRazorComponents<App>()` 的 `App` 上按 F12 会打开 `App.razor`，而不是生成的类。
