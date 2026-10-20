@@ -54,6 +54,10 @@ Owner: SharpLspRazorClaude2. Status: fixed in f12be294. Claude1 reproduced null 
 
 Owner: SharpLspCodex1. Status: fixed. The real host test failed because a C# binding caret still returned an HTML projection. The fix sends an optional caret and reuses the compiler-backed completion target resolver; compiler markup names take precedence. Nineteen IPC tests pass, including thirteen new cases covering markup names and literal values, bindings, code, whitespace, implicit trailing dots and incomplete nested expressions. The unchanged host regression passes. The real editor regression registers an additional provider on the actual HTML projection: its marker must appear in markup and never in C#. The old unpositioned forwarding failed that assertion; the unchanged corrected regression passes with all six Razor editor cases. An initially overbroad new assertion rejected legitimate C# Text-kind fallback items; it was corrected to observe HTML forwarding specifically, retaining all original assertions and the real C#/HTML services. Issue: https://github.com/Nimblesite/SharpLsp/issues/405. [RAZOR-FEATURES-HTML]
 
+### R10 — P1: directive attributes and embedded C# remain in the HTML projection
+
+Owner: SharpLspRazorClaude2; reviewed by SharpLspCodex1. The compiler sometimes omits the span of a minimized directive parameter or a quoted parameter value. The projection now derives boundaries from compiler attribute structure and descendant spans, and validates span-less names at the preceding compiler-owned attribute boundary. Directive children are never copied back as HTML. Six new exact-output cases cover ordinary C# attribute values, directive values, minimized parameters, quoted binding parameters and preceding literal/minimized HTML attributes. The real Board fixture also asserts that C# expressions, binding names and binding values are absent while its input element remains. Three regression cases were confirmed failing with the fix disabled; all 56 focused Razor cases pass unchanged. The full .NET leg passes with the fix: C# 716/716, F# 447/447, Common 125/125; C# coverage 96.54% ratchets its threshold to 95.54%, and every line of the changed projection and IR files is covered. Issue: https://github.com/Nimblesite/SharpLsp/issues/407. [RAZOR-ARCHITECTURE-HTML]
+
 ## Review and validation checklist
 
 - [x] C# workspace/query changes and non-Razor compatibility reviewed
@@ -74,6 +78,7 @@ Owner: SharpLspCodex1. Status: fixed. The real host test failed because a C# bin
 - [x] R8 nested unfinished expression regression red/green
 - [x] R9 editor completion leak regression red/green (6/6 real-editor cases); final combined CI remains pending
 - [x] Value-type constructor follow-up green on final F# build (7/7 focused tests)
+- [x] R10 source-less directive attribute regressions red/green; full .NET leg and coverage gate green
 - [ ] Full integrated suite and CI gates green
 
 Pi performed the SDK test reuse inspection, which was reviewed against the source and used. The subsequent read-only website/host/Razor/F# review requests all returned provider timeouts without findings. The primary agent inspected those changes directly; no review item relies on missing delegation output.
