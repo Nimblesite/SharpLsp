@@ -230,6 +230,10 @@ The owner loads in the background into the same Roslyn solution:
 - F# projects it reaches load as placeholders ([SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP]).
 - A project the solution already holds is linked, never loaded twice.
 
+Opening a file never restores or builds a project the workspace did not load:
+- An owner with no `obj/project.assets.json` is not loaded. The edit fails with a message naming the owner and `dotnet restore`.
+- A restored owner loads with `$(OutDir)` in the sidecar's scratch folder. A design-time build creates its output folder, and the user's own output folders must stay exactly as they built them ([DEBUG-FEATURES-LAUNCH-BUILD]).
+
 The edit that started the load is held and applied once the project lands, so hover, completion and navigation answer from the owner. The load runs once per owner and never blocks the edit. A project that is already loaded is never reloaded. The log names the project and the file, or why it could not load.
 
 ### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation

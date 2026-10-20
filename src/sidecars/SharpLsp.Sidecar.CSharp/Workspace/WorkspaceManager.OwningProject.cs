@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using Outcome;
 using Serilog;
 using SharpLsp.Sidecar.Common;
+using VoidResult = Outcome.Result<Outcome.Unit, string>;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -16,24 +18,36 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// Start loading the project that owns <paramref name="filePath"/>, holding
-    /// <paramref name="newText"/> until it lands. False when no unloaded project owns it.
-    /// The caller holds <see cref="_solutionMutationLock" />.
+    /// <paramref name="newText"/> until it lands. A failure when no unloaded project owns it,
+    /// or when its owner was never restored: opening a file never restores or builds a
+    /// project the workspace did not load ([DIAG-RESTORE]). The caller holds
+    /// <see cref="_solutionMutationLock" />.
     /// </summary>
-    private bool AdoptOwner(string filePath, string newText)
+    private VoidResult AdoptOwner(string filePath, string newText)
     {
+        var owner =
+            _workspace is null || !NativePaths.HasExtension(filePath, ".cs")
+                ? null
+                : OwningProject(filePath);
+        if (owner is null || _solution!.Projects.Any(p => NativePaths.AreEqual(p.FilePath, owner)))
+        {
+            return VoidResult.Failure($"Document not found: {filePath}");
+        }
+
         if (
-            _workspace is null
-            || !NativePaths.HasExtension(filePath, ".cs")
-            || OwningProject(filePath) is not { } owner
-            || _solution!.Projects.Any(project => NativePaths.AreEqual(project.FilePath, owner))
+            !File.Exists(
+                NativePaths.Join(NativePaths.DirectoryOf(owner), "obj", "project.assets.json")
+            )
         )
         {
-            return false;
+            return VoidResult.Failure(
+                $"{filePath} belongs to {owner}, which was never restored: run `dotnet restore {owner}`."
+            );
         }
 
         _pendingTextEdits[filePath] = newText;
         _ = _owningLoads.GetOrAdd(owner, _ => Task.Run(() => AdoptNowAsync(owner, filePath)));
-        return true;
+        return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 
     /// <summary>
@@ -78,9 +92,6 @@ internal sealed partial class WorkspaceManager
     {
         try
         {
-            await DotnetRestore
-                .RestoreWhenMissingAsync(owner, CancellationToken.None)
-                .ConfigureAwait(false);
             var infos = await RoslynProjectLoading
                 .LoadBesideAsync(_workspace!, _solution!, owner, CancellationToken.None)
                 .ConfigureAwait(false);

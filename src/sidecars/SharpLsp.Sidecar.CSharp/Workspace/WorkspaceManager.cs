@@ -171,9 +171,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                 var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
                 if (document is null)
                 {
-                    return AdoptOwner(filePath, newText)
-                        ? new VoidResult.Ok<Unit, string>(Unit.Value)
-                        : VoidResult.Failure($"Document not found: {filePath}");
+                    return AdoptOwner(filePath, newText);
                 }
 
                 _solution = TargetFrameworks.WithTextInEveryContext(

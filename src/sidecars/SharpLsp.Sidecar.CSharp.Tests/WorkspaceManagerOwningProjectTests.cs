@@ -53,9 +53,9 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
         Build(_home);
     }
 
-    private static void Build(string project)
+    private static void Build(string project, params string[] arguments)
     {
-        var (exitCode, output) = DotnetBuild.Run(project);
+        var (exitCode, output) = DotnetBuild.Run(project, arguments);
         Assert.True(exitCode == 0, $"dotnet build {project} must succeed:\n{output}");
     }
 
@@ -97,50 +97,77 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
     }
 
     /// <summary>
-    /// [DIAG-RESTORE]: an owner never restored, as a freshly cloned repository leaves it, is
-    /// restored before it loads. Serilog's shape: several frameworks, netstandard first, whose
-    /// reference assemblies come from the NETStandard.Library package, so until a restore
-    /// fetches it the file checks against no framework at all.
+    /// [DIAG-RESTORE]: opening a file never builds or restores a project the workspace did not
+    /// load. An owner never restored, as a fresh clone leaves Serilog, is left exactly as it
+    /// is, and the edit says why the file has no project and what to run.
     /// </summary>
     [Fact]
-    public async Task A_file_whose_owning_project_was_never_restored_answers_once_it_is()
+    public async Task A_file_whose_owning_project_was_never_restored_leaves_it_untouched()
     {
-        var assets = NativePaths.Join(NativePaths.DirectoryOf(_lone), "obj", "project.assets.json");
+        var obj = NativePaths.Join(NativePaths.DirectoryOf(_lone), "obj");
+        Assert.False(Directory.Exists(obj), "the owner starts unrestored");
+        using var manager = await OpenHomeAsync();
+
+        var opened = await manager.UpdateDocumentTextAsync(
+            _guard,
+            await File.ReadAllTextAsync(_guard)
+        );
+        var message = opened.Match(_ => "ok", err => err);
+        Assert.Contains("Lone.csproj", message, StringComparison.Ordinal);
+        Assert.Contains("dotnet restore", message, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(obj), "opening the file restored nothing");
+
+        var hover = await manager.GetHoverAsync(_guard, 5, 23);
+        Assert.Null(+hover);
+        Assert.False(Directory.Exists(obj), "asking it a question built nothing either");
+    }
+
+    /// <summary>
+    /// Loading an owner writes nothing a build would: one built for net8.0 of its two
+    /// frameworks still has net8.0 output only, so a launch that reads the output folders
+    /// still sees what the user built ([DEBUG-FEATURES-LAUNCH-BUILD]).
+    /// </summary>
+    [Fact]
+    public async Task Loading_an_owner_built_for_one_of_its_frameworks_adds_no_output_for_the_other()
+    {
         _ = Write(
             "Lone/Lone.csproj",
             Project.Replace(
                 "<TargetFramework>net10.0</TargetFramework>",
-                "<TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>"
-                    + "<LangVersion>latest</LangVersion>",
+                "<TargetFrameworks>net8.0;net10.0</TargetFrameworks><LangVersion>latest</LangVersion>",
                 StringComparison.Ordinal
             )
         );
-        Assert.False(File.Exists(assets), "the owner starts unrestored");
-        using var manager = await OpenGuardAsync();
+        Build(_lone, "--framework", "net8.0");
+        var outputs = NativePaths.Join(NativePaths.DirectoryOf(_lone), "bin", "Debug");
+        using var manager = await OpenHomeAsync();
+        var opened = await manager.UpdateDocumentTextAsync(
+            _guard,
+            await File.ReadAllTextAsync(_guard)
+        );
+        Assert.False(opened.IsError, opened.Match(_ => "ok", err => err));
 
         var length = await HoverWithinAsync(manager, _guard, 8, 47);
-        Assert.True(length is not null, $"hover answers in {_guard} once Lone.csproj is restored");
+        Assert.True(length is not null, $"hover answers in {_guard} from its built owner");
         Assert.Contains("string.Length", length.Contents, StringComparison.Ordinal);
-        Assert.True(File.Exists(assets), "Lone.csproj was restored");
-
-        var againstNull = await HoverWithinAsync(manager, _guard, 5, 23);
-        Assert.True(againstNull is not null, "a second symbol answers from the restored owner");
-        Assert.Contains(
-            "Throws when the value is null.",
-            againstNull.Contents,
-            StringComparison.Ordinal
-        );
+        Assert.Equal(["net8.0"], [.. Directory.GetDirectories(outputs).Select(NativePaths.NameOf)]);
     }
 
-    /// <summary>A manager on the Home project, with Guard.cs, which Home never compiles, opened.</summary>
-    private async Task<WorkspaceManager> OpenGuardAsync()
+    /// <summary>A manager on the Home project, which never compiles Guard.cs.</summary>
+    private async Task<WorkspaceManager> OpenHomeAsync()
     {
         var manager = new WorkspaceManager();
 #pragma warning disable CS0618 // Obsolete OpenAsync placeholder
         var open = await manager.OpenAsync(_home);
 #pragma warning restore CS0618
         Assert.False(open.IsError, open.Match(_ => "ok", err => err));
+        return manager;
+    }
 
+    /// <summary>A manager on the Home project, with Guard.cs, which Home never compiles, opened.</summary>
+    private async Task<WorkspaceManager> OpenGuardAsync()
+    {
+        var manager = await OpenHomeAsync();
         var opened = await manager.UpdateDocumentTextAsync(
             _guard,
             await File.ReadAllTextAsync(_guard)

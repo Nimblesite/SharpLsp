@@ -65,11 +65,24 @@ internal static class RoslynProjectLoading
     {
         var placeholders = FSharpReachedFrom([project]).Select(Placeholder).ToList();
         var map = ProjectMap.Create(placeholders.Aggregate(solution, (s, p) => s.AddProject(p)));
-        var loader = new MSBuildProjectLoader(workspace, workspace.Properties);
+        var loader = new MSBuildProjectLoader(workspace, OutsideTheProject(workspace));
         var infos = await loader
             .LoadProjectInfoAsync(project, map, cancellationToken: ct)
             .ConfigureAwait(false);
         return [.. placeholders, .. infos];
+    }
+
+    /// <summary>
+    /// The workspace's properties with <c>$(OutDir)</c> in the sidecar's own scratch folder:
+    /// a design-time build creates its output folder, and a project the user never loaded
+    /// keeps exactly the output folders they built ([DEBUG-FEATURES-LAUNCH-BUILD]).
+    /// </summary>
+    private static ImmutableDictionary<string, string> OutsideTheProject(MSBuildWorkspace workspace)
+    {
+        return workspace.Properties.SetItem(
+            "OutDir",
+            NativePaths.AsDirectory(NativePaths.Temp("sharplsp-owning-output"))
+        );
     }
 
     /// <summary>
