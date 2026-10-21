@@ -39,9 +39,7 @@ internal sealed record MarkupTag(
 
     /// <summary>The MVC tag helpers bound to this tag.</summary>
     public IEnumerable<TagHelperDescriptor> MvcTagHelpers =>
-        TagHelpers.Where(helper =>
-            helper.Kind is TagHelperKind.ITagHelper or TagHelperKind.ViewComponent
-        );
+        TagHelpers.Where(RazorTagHelperScope.IsMvc);
 
     /// <summary>Whether <paramref name="offset"/> lies on the start or end tag's name.</summary>
     public bool NameContains(int offset)
@@ -66,11 +64,16 @@ internal sealed record MarkupTag(
     }
 }
 
-/// <summary>An attribute of a tag, with what binds it.</summary>
+/// <summary>
+/// An attribute of a tag, with what binds it. <paramref name="End"/> is where the attribute
+/// ends — its value and closing quote, or a minimized attribute's name — as the compiler's
+/// spans say; null when they do not.
+/// </summary>
 internal sealed record MarkupAttribute(
     MarkupAttributeKind Kind,
     string Name,
     TextSpan? NameSpan,
+    int? End,
     MarkupTag Owner,
     TagHelperDescriptor? TagHelper,
     BoundAttributeDescriptor? Bound,
@@ -115,6 +118,9 @@ internal sealed record RazorMarkup(
 
     /// <summary>The C# code blocks (<c>@{ … }</c>) of the file, which fold. [RAZOR-FEATURES-STRUCTURE]</summary>
     public ImmutableArray<TextSpan> CodeBlocks { get; init; } = [];
+
+    /// <summary>The MVC tag helpers the file's directives bring into scope. [RAZOR-MVC-SCOPE]</summary>
+    public RazorTagHelperScope Scope { get; init; } = RazorTagHelperScope.Empty;
 
     /// <summary>The caret's HTML context, [RAZOR-ARCHITECTURE-HTML].</summary>
     public MarkupContext ContextAt(int offset)

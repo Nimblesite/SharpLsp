@@ -39,6 +39,10 @@ The supported project SDKs are `Microsoft.NET.Sdk.Web`, `Microsoft.NET.Sdk.Razor
 
 Razor's code language is C#, because the Razor compiler generates only C#. [RAZOR-FSHARP] states what F# gets.
 
+### [RAZOR-SCOPE-FORMATTING] Formatting
+
+SharpLsp formats no language ([SHARPLSP-FEATURES-FORMATTING]), so Razor files get no formatting either. The server advertises no formatting capability, and an editor's own Razor formatter, if it has one, stays in charge.
+
 ## [RAZOR-RESEARCH] How the Razor Toolchain Works
 
 These findings come from research against SDK 10.0.303 in October 2026. They are the facts this design rests on.
@@ -91,7 +95,7 @@ flowchart LR
 ### [RAZOR-ARCHITECTURE-ROUTING] Host Routing
 
 - **Ownership:** `.razor` and `.cshtml` URIs are `LangId::Razor`, and the C# sidecar owns them. It receives their `didOpen` and `didChange` text and their diagnostics pulls, and it answers every request about them.
-- **Syntax requests:** for C#, the host answers `documentSymbol`, `foldingRange`, `selectionRange` and `linkedEditingRange` from tree-sitter. For a Razor file it forwards `documentSymbol`, `foldingRange` and `linkedEditingRange` to the sidecar instead, because the Razor compiler is the parser and no tree-sitter Razor grammar is trusted. `selectionRange` on a Razor file answers empty until it is implemented ([RAZOR-FEATURES-DEFERRED]).
+- **Syntax requests:** for C#, the host answers `documentSymbol`, `foldingRange`, `selectionRange` and `linkedEditingRange` from tree-sitter. For a Razor file it forwards all four to the sidecar instead, because the Razor compiler is the parser and no tree-sitter Razor grammar is trusted ([RAZOR-FEATURES-STRUCTURE], [RAZOR-FEATURES-SELECTION]).
 - **Completion triggers:** the server adds `<` and `@` as completion triggers. A C# or F# document triggered by one of these two characters answers `null` at once, without reaching a sidecar.
 - **Diagnostic source:** Razor diagnostics publish under the source `sharplsp-razor`.
 
@@ -176,6 +180,17 @@ type RazorMarkup {
   tag_helpers: List<TagHelperDescriptor>
   # The HTML projection ([RAZOR-ARCHITECTURE-HTML]).
   html_text: String
+  # The C# code blocks (`@{ … }`) of the file.
+  code_blocks: List<TextSpan>
+  # The MVC tag helpers the file's directives bring into scope ([RAZOR-MVC-SCOPE]).
+  scope: RazorTagHelperScope
+}
+
+# The tag helpers `@addTagHelper`, `@removeTagHelper` and `@tagHelperPrefix` leave in scope.
+type RazorTagHelperScope {
+  # The `@tagHelperPrefix` an element must carry; empty when the file sets none.
+  prefix: String
+  tag_helpers: List<TagHelperDescriptor>
 }
 
 # An element bound to tag helpers, or any element of a component file.
@@ -204,6 +219,9 @@ type MarkupAttribute {
   kind: MarkupAttributeKind
   name: String
   name_span: Option<TextSpan>
+  # Where the attribute ends — its value and closing quote, or a minimized
+  # attribute's name — as the compiler's spans say.
+  end: Option<Int>
   owner: MarkupTag
   tag_helper: Option<TagHelperDescriptor>
   bound: Option<BoundAttributeDescriptor>
@@ -357,18 +375,112 @@ Signature help in a C# fragment is computed at the mapped position.
   - the methods, properties and fields declared in `@code` and `@functions` nest under their block, and an `@inject` property under its directive.
 - **Linked editing:** the start and end tag names of a component, a tag helper element, or any element of a component file. A plain HTML element of a `.cshtml` file is not an element in the compiler's IR, so it does not link.
 
+### [RAZOR-FEATURES-SELECTION] Selection Ranges
+
+- **The chain:** every position answers its ranges from the innermost span out to the whole document, each strictly holding the one before. A candidate that does not hold the chain so far, or that repeats it, drops out; nothing is approximated.
+- **C# fragments:** the position maps through the projection ([RAZOR-ARCHITECTURE-PROJECTION]). The chain starts at the Roslyn token there, when it holds the caret, and climbs every enclosing syntax node, keeping only the spans the map turns back into one Razor span. A span that crosses two entries or touches hidden scaffolding drops out.
+- **Markup:** the facts ([RAZOR-ARCHITECTURE-ENGINE-FACTS]) answer, innermost first:
+  - the attribute whose name or value holds the position: its name, then the whole attribute up to the end the compiler's spans give it (a minimized attribute is its name);
+  - the start or end tag name holding the position;
+  - every element holding the position;
+  - the directives and C# code blocks holding the position.
+- **The document:** the whole file closes every chain. A position no fragment or fact holds, such as whitespace between elements, answers the document alone.
+- **Unlisted files:** a file no project lists has no chain, so the answer is `null` (LSP types it `SelectionRange[] | null`).
+- **Wire:** the host sends the file and every position to the sidecar, which answers each position's ranges innermost first. The host nests each chain into `SelectionRange` parents.
+
+### [RAZOR-FEATURES-INLAY-HINTS] Inlay Hints
+
+- **Where hints come from:** the C# hints of the generated lines that the requested Razor lines map to. Every C# fragment those lines touch contributes its generated lines, and the window from the first of them to the last is what the resolver reads.
+- **Which hints survive:** a hint whose position maps into the Razor file and whose Razor line is in the requested range. The generated builder's own arguments (`sequence:`, `elementName:`, `markupContent:`) have no place in the file, so they drop out.
+- **Shape:** labels and kinds stay the C# ones (`: int` is a type hint, `by:` a parameter hint); positions are Razor positions.
+- **One coordinate system:** the resolver reads every hint's position in its document's own text, never through a mapped span, so a hint is never published at another file's coordinates.
+- **Empty answers:** a range that covers no C# fragment answers no hints.
+
+### [RAZOR-FEATURES-CODE-LENS] Code Lens
+
+- **Which declarations:** the types, methods, properties and constructors a C# fragment declares (`@code`, `@functions`), each lensed on its Razor declaration.
+- **Which have none:** a declaration that does not lie inside one fragment: the generated class, its render members, tag helper fields, and an `@inject` property, whose declaration spans several fragments.
+- **Counts:** reference counts come from the projection in each project's active framework ([NETFX-PROJECTS-CSHARP]), so Razor uses count: `@onclick="Increment"` is one reference to `Increment`.
+
+### [RAZOR-FEATURES-HIERARCHY] Call and Type Hierarchy
+
+- **Where a request runs:** at the mapped C# position. At the very start of a Razor file, where nothing maps, it runs on the component class the file generates: the inverse of the rule that lands that class there ([RAZOR-ARCHITECTURE-PROJECTION]), so a follow-up from a component item expands.
+- **Items:** an item maps like a definition. A declaration that the file's own generated class holds — a render member such as `BuildRenderTree` or `ExecuteAsync` — is the component: it lands at the start of the Razor file, named by the file (`Counter.razor`) and kind `Class`. Any other declaration in a projection is hidden scaffolding, so it drops out with its call sites.
+- **Calls from markup:** the caller of a handler named in markup (`@onclick="Increment"`), or of an expression written there (`@Shout(Model.Title)`), is that component item. Its call site is the markup range.
+- **Call sites:** a call's ranges lie inside its caller's declaration, so they are published in the caller's file. Inside a C# fragment they already carry their Razor range.
+- **Outgoing calls:** each declaration of the symbol is read through its own syntax tree: the queried document's, a projection included, when the declaration is there, else that regular document's.
+- **Types:** `@inherits` and `@implements` names, and types named in `@code`, prepare an item like any C# position. A component class lands in its `.razor` file, so a component's subtypes land in theirs. A framework base class has no source and drops out.
+- **Kinds:** the sidecars name item kinds in PascalCase (`Method`, `Class`, `Interface`), the names the host maps to LSP `SymbolKind`.
+
 ### [RAZOR-FEATURES-HTML] HTML in Editors
 
 - **VS Code:** completion and hover in markup are forwarded to the built-in HTML language service over the HTML projection, following VS Code's request-forwarding pattern. The client sends the caret with the projection request; a C# position has no HTML forwarding, so projection word suggestions cannot enter C# completion lists. In markup, the server's items come first and the HTML service's items are appended. Hover uses the HTML service only when the server has no answer.
 - **Other editors:** they attach their own HTML language server to `razor` files.
 
-### [RAZOR-FEATURES-DEFERRED] Not Yet Supported
+## [RAZOR-CODE-ACTIONS] Code Actions
 
-- **Editing features:** formatting; selection ranges; code actions (extract a block to code-behind, extract a component, generate an event handler, add `@using`); inlay hints; code lens; call and type hierarchy from Razor positions.
-- **Collocated files:** awareness of `.razor.css` CSS isolation and `.razor.js` collocated JavaScript.
-- **Runtime features:** Blazor WebAssembly debugging and Razor Hot Reload.
+A Razor file's code actions come from SharpLsp, not from Roslyn's providers: Roslyn's fixes edit the projection, which no one can save. Each action is offered with its edit already computed, under a negative id that never meets a Roslyn action's, and a new request replaces the last offers. A file no project lists offers none.
 
-Each of these is a separate plan item.
+### [RAZOR-CODE-ACTIONS-USING] Add `@using`
+
+- **Unbound types:** for a `CS0246` or `CS0103` name in the projection whose Razor span meets the range, each namespace that declares an accessible top-level type of that name and arity (`SymbolFinder.FindDeclarationsAsync`, source and metadata) and that the file does not import yet is offered as `@using Namespace`. The only choice is preferred.
+- **Unknown components:** for an `RZ10012` element, each namespace holding a component that the element names is offered the same way, since the compiler binds a component tag only where its namespace is in scope.
+- **Where the line goes:** after the file's last own `@using`, else after its `@page` directive (a Razor Page must open with it), else at the start. Completion's added usings land on the same line ([RAZOR-FEATURES-COMPLETION]).
+
+### [RAZOR-CODE-ACTIONS-HANDLER] Generate Event Handler
+
+- An unbound name that the projection passes to `EventCallbackFactory.Create` (an event attribute such as `@onclick="Reset"`, or a component's `EventCallback` parameter) offers `Generate event handler 'Reset'`.
+- The handler is `private void Reset(T args)`, where `T` is the callback's argument type as the file can spell it, or `private void Reset()` for a plain `EventCallback`.
+- It goes before the closing brace of the file's last `@code` or `@functions` block, or into a new `@code` block at the end of the file.
+
+### [RAZOR-CODE-ACTIONS-CODE-BEHIND] Extract Block to Code-Behind
+
+- Offered on a component's `@code` directive (its `@` or its name) when the component has no `Name.razor.cs` yet.
+- The new file is a `public partial class Name` in the component's namespace. It holds the block's C#, from its first fragment to its last, and a `using` for each namespace the file imports that the project does not import with `global using`.
+- The Razor file loses the block and its line break. The edit creates the new file before writing it.
+
+### [RAZOR-CODE-ACTIONS-COMPONENT] Extract Element to New Component
+
+- Offered when the selection, without its surrounding whitespace, starts at one element and ends at a sibling's end in a component file.
+- The selection's C# must stand alone: it may not name a member of the component, or a local or parameter declared outside the selection, which the new component could not see. Otherwise nothing is offered.
+- The new component is `Component.razor`, or the first free `ComponentN.razor`, beside the file. It holds the file's own `@using` lines and the elements, dedented, and the selection becomes `<Component />`.
+
+### [RAZOR-CODE-ACTIONS-EDITS] New Files
+
+A sidecar document edit that creates its file says so (`Create`). The host then answers the code action with document changes that create each new file (`overwrite: false`) before writing its text, because a text edit cannot reach a file that does not exist. Roslyn's own added documents use the same route.
+
+## [RAZOR-COLLOCATION] Collocated Styles and Scripts
+
+A Razor file's collocated files sit beside it and share its name: the stylesheet of its CSS isolation (`Counter.razor.css` beside `Counter.razor`, `Index.cshtml.css` beside `Index.cshtml`) and the JavaScript module it imports (`Counter.razor.js`, `Index.cshtml.js`). The C# sidecar answers both, so every editor gets them. `NativePaths` names both files ([SHARPLSP-ARCHITECTURE-PATHS]).
+
+### [RAZOR-COLLOCATION-CSS] CSS Isolation
+
+- **Completion:** inside the value of a plain HTML `class` attribute, a file with a collocated stylesheet offers each class the stylesheet declares, once. The item's kind is `Value`, which the host maps to LSP `CompletionItemKind.Value`, and its detail is the stylesheet's file name. It replaces the class name at the caret, the whitespace-delimited token, never the whole value.
+- **Definition:** a class name in such a value defines to every selector of that class in the stylesheet, each ranged on the name after its `.`. It runs only where neither C# nor markup answers ([RAZOR-FEATURES-DEFINITION]). A class the stylesheet does not declare answers nothing.
+- **Which attribute:** only a plain HTML `class`. A `class` that a component parameter or tag helper binds is not one, and neither is an attribute of an end tag. The attribute is the one the HTML tokenizer ([RAZOR-ARCHITECTURE-HTML]) is reading at the caret, from its name to the end of its value: an attribute after a bare one (`<span hidden class="…">`) is a new attribute, and a caret after an attribute's value is in none.
+- **Reading the stylesheet:** an editor never sends a stylesheet, so the sidecar reads it from disk. When the project lists it as an additional document, that text is read instead.
+- **Parsing:** the stylesheet is tokenized by the [CSS Syntax Level 3](https://www.w3.org/TR/css-syntax-3/#tokenization) algorithm, and classes come from rule preludes only: a `.` directly followed by an ident, its escapes decoded (`p-1\.5` is `p-1.5`). A `.` in a comment, string, declaration value, number or url is never a class. An at-rule's prelude names none, but the rules inside it do, at any depth.
+
+### [RAZOR-COLLOCATION-JS] Collocated JavaScript Modules
+
+- **Definition:** the string literal that names a module in `InvokeAsync<IJSObjectReference>("import", "<path>")` defines to the start of the module file. The call is read with Roslyn's semantic model: the literal is the second argument of an `InvokeAsync` on `IJSRuntime` or `IJSObjectReference`, an extension method on either included, and the first argument is the constant `"import"`. A non-constant path, or another first argument, answers no module.
+- **Resolution:** the path resolves against the project directory, which `./` and a leading `/` both name. Only an existing `.razor.js` or `.cshtml.js` is a module.
+- **From anywhere:** it answers from a `.razor` `@code` block, a code-behind and a plain `.cs` file. The module check runs before the symbol's own definition, which for a literal would be its enclosing member.
+
+### [RAZOR-COLLOCATION-NESTING] Explorer Nesting
+
+- VS Code nests a Razor file's collocated files under it. The extension's `contributes.configurationDefaults` gives `explorer.fileNesting.patterns` the entries `*.razor` → `${capture}.razor.cs, ${capture}.razor.css, ${capture}.razor.js` and `*.cshtml` → `${capture}.cshtml.cs, ${capture}.cshtml.css, ${capture}.cshtml.js`.
+- They are defaults only. They apply when the user turns on `explorer.fileNesting.enabled`, and the user's own patterns take precedence.
+
+## [RAZOR-HOT-RELOAD] Hot Reload
+
+A saved Razor file in the debugged project hot reloads like a saved `.cs` file ([DEBUG-FEATURES-HOT-RELOAD]).
+
+- **The save:** a Razor file is an additional document, so the session swaps its text in every framework copy of it, as a live edit does ([RAZOR-ARCHITECTURE-DOCUMENTS]). The SDK's Razor generator reruns when the emit reads the candidate's compilations, and Edit and Continue emits the deltas of the generated C#. One batch may hold `.cs` and Razor saves; they apply together, as one candidate.
+- **Rude edits:** the signature guard compares the baseline and candidate projections, never the Razor text ([RAZOR-ARCHITECTURE-PROJECTION]). Changing a method's signature in `@code` requires a restart, with an `ENC0110` diagnostic naming the method. A refusal leaves the session usable: the next supported save applies.
+- **Nothing to apply:** when Roslyn finds no change at all (a re-save of committed text), the save answers `applied` with no deltas. The baseline advances and nothing is left pending, since Roslyn holds no update to commit or discard.
+- **Unlisted files:** a Razor file no project lists has no semantics, so its save fails with an error naming the file. The session stays usable.
+- **VS Code:** both save paths take Razor documents (`razor`, `aspnetcorerazor`, the one `RAZOR_LANGUAGES` list) as well as C# ones: the debug session's pipeline for a file inside the debugged project, and `dotnet watch`.
 
 ## [RAZOR-BLAZOR] Blazor Coverage
 
@@ -390,19 +502,67 @@ Each of these is a separate plan item.
 
 ## [RAZOR-MVC] Razor Pages and MVC Views
 
-- **Directives:** `@page`, `@model`, `@inject`, `@inherits`, `@functions`, `@section`, `@namespace`, `@addTagHelper`, `@removeTagHelper` and `@tagHelperPrefix` follow the directive rows above. `@model`'s type is C#, and so is `Model.X`.
-- **Tag helpers:** a tag helper element or attribute (`<partial>`, `asp-for`, `asp-page`, `asp-route-*`) answers hover and completion from its descriptor. An `asp-for` value is a model expression, so it gets C# features.
-- **Imports:** `_ViewImports.cshtml` is an import. `_ViewStart.cshtml`, layouts and partials are ordinary legacy files.
+Razor Pages and MVC views are legacy Razor files (`.cshtml`). They answer through the same projection and markup facts as components, with MVC's directives and tag helpers in place of components.
+
+### [RAZOR-MVC-DIRECTIVES] Directives
+
+- `@page`, `@model`, `@inject`, `@inherits`, `@functions`, `@section`, `@namespace`, `@addTagHelper`, `@removeTagHelper` and `@tagHelperPrefix` follow the directive rows above.
+- `@model`'s type is C#, and so is `Model.X`. `@inject` declares a property of its type and name.
+- `@functions` members and the C# inside a `@section` block are C# fragments of the projection.
+- A `@section` block folds and is a `Key` symbol ([RAZOR-FEATURES-STRUCTURE]).
+
+### [RAZOR-MVC-TAGHELPERS] Tag Helpers
+
+- **Binding:** an element that a tag helper in scope targets (`<a asp-page>`, `<form>`, `<partial>`) is a tag of the file's markup facts, with the tag helpers bound to it. Its attributes that the tag helpers bind (`asp-for`, `asp-page`, `asp-route-*`) are `Property` attributes.
+- **Hover:** a bound element answers the tag helper type's hover, and a bound attribute the hover of the property it sets.
+- **Completion after `<`:** each element a tag helper in scope targets by name, spelled with the scope's prefix, once, as a `Class` item whose detail names the tag helpers that bind it. A rule that targets every element (`*`) names no element. The client drops its own HTML item with the same label.
+- **Completion in a start tag:** the attributes that the tag helpers targeting the element bind, not yet set, and each indexer's prefix (`asp-route-`).
+- **Model expressions:** an attribute whose property is a `ModelExpression` (`asp-for="Title"`) holds a C# model expression, so it gets C# hover, definition, references and rename through the projection. Its value is blank in the HTML projection; every other literal value stays.
+
+### [RAZOR-MVC-SCOPE] Tag Helper Scope
+
+The tag helpers a legacy file can use are those its imports' and its own `@addTagHelper`, `@removeTagHelper` and `@tagHelperPrefix` directives declare, applied in order, as the compiler applies them:
+
+- `@addTagHelper TypePattern, Assembly` adds the assembly's tag helpers whose full name the pattern names: all of them for `*`, those whose name starts with what precedes a trailing `*`, or the one so named. A `global::` prefix is ignored. A lookup the compiler rejects adds none.
+- `@removeTagHelper` removes the tag helpers its lookup names, wherever in the file it is written.
+- `@tagHelperPrefix p:` makes only elements spelled `p:name` tag helper elements. They bind, complete and answer hover under the prefixed name, and unprefixed elements do none of it.
+- A component file has no tag helper scope: its MVC tag helpers never bind. A legacy file binds no component by its tag, so components never complete after `<` there.
+
+### [RAZOR-MVC-IMPORTS] Imports
+
+- `_ViewImports.cshtml` is an import. Its `@using`, `@addTagHelper` and other directives reach every view and page in its folder and below, read from the workspace's current text ([RAZOR-ARCHITECTURE-ENGINE]).
+- `_ViewStart.cshtml`, layouts and partials are ordinary legacy files.
 
 ## [RAZOR-FSHARP] F# in Razor Solutions
 
-Blazor front ends often sit over F# domain libraries. A Razor project that references an F# project reads it as its built DLL, like any C# project does ([DEFINITION-CROSSLANG]).
+Blazor front ends often sit over F# domain libraries. A Razor project that references an F# project reads it as its built DLL, like any C# project does ([DEFINITION-CROSSLANG]). Every feature below reaches the F# project through the symbol's identity, its assembly and XML doc signature, so F# symbols in Razor files are as navigable and renameable as C# ones ([DEFINITION-CROSSLANG-IDENTITY]).
 
-- **Hover, completion and signature help:** these work on F# types and members used in Razor through that metadata.
-- **Definition:** definition on an F# symbol from Razor lands where it lands from C#: in decompiled metadata-as-source for the symbol's type ([DEFINITION-CROSSLANG]).
-- **Rename from F#:** renaming an F# symbol renames its Razor usages too. The Rust host asks the C# sidecar for the C# usages of the symbol ([RENAME-CROSSLANGUAGE]). Those usages include the projections, and each one is mapped back to its Razor file, never edited in generated code.
-- **References from F#:** references that start in F# reach C# and Razor usages only where they reach C# usages today ([DEFINITION-CROSSLANG]).
-- **No F# Razor:** F# is not a Razor code language. A Razor `@code` block is C#.
+### [RAZOR-FSHARP-METADATA] Hover, Completion and Signature Help
+
+- These work on F# types and members used in Razor, through Domain's metadata: records and their fields, unions and their cases' tests (`IsLeading`), and module functions.
+- Hover shows the F# documentation, read from the F# project's XML documentation file.
+- A curried F# function is a method of all its parameters to C#, so signature help lists them all.
+
+### [RAZOR-FSHARP-DEFINITION] Definition
+
+- Definition, type definition and declaration on an F# symbol from Razor land on its F# declaration in the `.fs` file, ranged on its name.
+- A record's or union's constructor (`new Player(…)`) lands on its type.
+- Until the F# sidecar has loaded, the answer is the decompiled source, and it is not cached.
+
+### [RAZOR-FSHARP-REFERENCES] References
+
+- References from Razor on an F# symbol hold its Razor and C# uses, its F# uses and, when asked for, its F# declaration ([REFERENCES-CROSS-LANGUAGE]).
+- References that start in F# hold the symbol's C# and Razor uses too. Each Razor use is mapped back to its Razor file and never reported in generated code.
+
+### [RAZOR-FSHARP-RENAME] Rename
+
+- **From F#:** renaming an F# symbol renames its Razor uses too. The Rust host asks the C# sidecar for the C# uses of the symbol ([RENAME-CROSSLANGUAGE]). Those uses include the projections, and each one is mapped back to its Razor file, never edited in generated code.
+- **From Razor or C#:** `prepareRename` accepts an F# symbol on its name. The C# sidecar edits its C# and Razor uses, and the F# sidecar renames its declaration and F# uses, in one workspace edit.
+- **A C# symbol from Razor:** the identity a rename sends to the F# sidecar resolves through the projection, so the symbol's F# uses are renamed too.
+
+### [RAZOR-FSHARP-LANGUAGE] No F# Razor
+
+F# is not a Razor code language, because the Razor compiler generates only C#. A Razor `@code` block is C#.
 
 ## [RAZOR-EDITORS] Editors
 

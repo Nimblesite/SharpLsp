@@ -293,6 +293,11 @@ type FSharpSidecar() =
         base.Register("textDocument/renameIdentity", Helpers.renameIdentityHandler workspace)
         base.Register("workspace/renameForeign", Helpers.renameForeignHandler workspace)
 
+        // A symbol C# or Razor uses, named by identity: where F# declares it and every F#
+        // use. [DEFINITION-CROSSLANG-IDENTITY] [REFERENCES-CROSS-LANGUAGE]
+        base.Register("workspace/declarationForeign", Helpers.foreignLocationsHandler (FSharpForeignSymbols.declarations workspace))
+        base.Register("workspace/referencesForeign", Helpers.foreignLocationsHandler (FSharpForeignSymbols.uses workspace))
+
         // Call hierarchy prepare [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("textDocument/prepareCallHierarchy", Helpers.atPosition (FSharpHierarchy.prepareCall workspace) (Helpers.optionOf Helpers.toHierItem))
 

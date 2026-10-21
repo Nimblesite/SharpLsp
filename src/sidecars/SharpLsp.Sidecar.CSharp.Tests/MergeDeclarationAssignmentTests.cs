@@ -1,6 +1,6 @@
-using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
+using static SharpLsp.Sidecar.CSharp.Tests.TextEditing;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
 #pragma warning disable CA1515 // Public xUnit discovery type
@@ -257,19 +257,5 @@ public sealed class MergeDeclarationAssignmentTests : IDisposable
     {
         Assert.False(result.IsError, result.Match(_ => "ok", error => error));
         return +result;
-    }
-
-    private static string ApplyEdits(string source, IEnumerable<TextEditResult> edits)
-    {
-        var text = SourceText.From(source);
-        var changes = edits.Select(edit => new TextChange(EditSpan(text, edit), edit.NewText));
-        return text.WithChanges(changes).ToString();
-    }
-
-    private static TextSpan EditSpan(SourceText text, TextEditResult edit)
-    {
-        var start = text.Lines.GetPosition(new LinePosition(edit.StartLine, edit.StartCharacter));
-        var end = text.Lines.GetPosition(new LinePosition(edit.EndLine, edit.EndCharacter));
-        return TextSpan.FromBounds(start, end);
     }
 }

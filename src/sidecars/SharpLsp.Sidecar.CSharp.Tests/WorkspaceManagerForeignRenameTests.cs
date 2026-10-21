@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
+using static SharpLsp.Sidecar.CSharp.Tests.TextEditing;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
 #pragma warning disable CA1515 // Public xUnit discovery type
@@ -197,17 +198,6 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
         Assert.Equal(count, edits.Select(EditKey).Distinct().Count());
     }
 
-    private static string ApplyEdits(string source, IEnumerable<TextEditResult> edits)
-    {
-        var sourceText = SourceText.From(source);
-        foreach (var edit in edits.OrderByDescending(item => EditSpan(sourceText, item).Start))
-        {
-            var span = EditSpan(sourceText, edit);
-            source = source.Remove(span.Start, span.Length).Insert(span.Start, edit.NewText);
-        }
-        return source;
-    }
-
     private static string TextAtEdit(string source, TextEditResult edit)
     {
         var sourceText = SourceText.From(source);
@@ -217,13 +207,6 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
     private static int CountOccurrences(string source, string value)
     {
         return source.Split(value, StringSplitOptions.None).Length - 1;
-    }
-
-    private static TextSpan EditSpan(SourceText source, TextEditResult edit)
-    {
-        var start = source.Lines.GetPosition(new LinePosition(edit.StartLine, edit.StartCharacter));
-        var end = source.Lines.GetPosition(new LinePosition(edit.EndLine, edit.EndCharacter));
-        return TextSpan.FromBounds(start, end);
     }
 
     private static string EditKey(TextEditResult edit)

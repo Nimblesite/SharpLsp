@@ -34,6 +34,21 @@ internal sealed partial class CSharpSidecar
         );
     }
 
+    // Implements [RAZOR-FEATURES-SELECTION].
+    private Task<ByteResult> HandleSelectionRangeAsync(byte[] payload, CancellationToken ct)
+    {
+        return HandleRequestAsync(
+            payload,
+            (SelectionRangeRequest request) =>
+                _workspace.GetSelectionRangesAsync(
+                    request.FilePath,
+                    [.. request.Positions.Select(position => (position.Line, position.Character))],
+                    ct
+                ),
+            ct
+        );
+    }
+
     // Implements [RAZOR-ARCHITECTURE-HTML].
     private Task<ByteResult> HandleRazorHtmlProjectionAsync(byte[] payload, CancellationToken ct)
     {
@@ -67,4 +82,51 @@ internal sealed class HtmlProjectionResult
 {
     [Key(0)]
     public string Text { get; set; } = "";
+}
+
+/// <summary>The Razor file and the carets whose selection ranges to chain. [RAZOR-FEATURES-SELECTION]</summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class SelectionRangeRequest
+{
+    [Key(0)]
+    public string FilePath { get; set; } = "";
+
+    [Key(1)]
+    public List<SelectionRangePosition> Positions { get; set; } = [];
+}
+
+/// <summary>One caret of a <see cref="SelectionRangeRequest"/>.</summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class SelectionRangePosition
+{
+    [Key(0)]
+    public int Line { get; init; }
+
+    [Key(1)]
+    public int Character { get; init; }
+}
+
+/// <summary>One position's selection ranges, innermost first. [RAZOR-FEATURES-SELECTION]</summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class SelectionRangeResult
+{
+    [Key(0)]
+    public List<SelectionSpanResult> Ranges { get; set; } = [];
+}
+
+/// <summary>A range of the Razor file.</summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class SelectionSpanResult
+{
+    [Key(0)]
+    public int StartLine { get; init; }
+
+    [Key(1)]
+    public int StartCharacter { get; init; }
+
+    [Key(2)]
+    public int EndLine { get; init; }
+
+    [Key(3)]
+    public int EndCharacter { get; init; }
 }

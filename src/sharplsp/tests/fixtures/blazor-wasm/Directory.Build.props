@@ -1,0 +1,6 @@
+<Project>
+    <!-- Intentionally empty: this file shadows the repository-wide Directory.Build.props so
+         SharpLsp's analyzers, package references and warnings-as-errors settings do not reach
+         the Blazor WebAssembly fixture. It builds as a user's template-generated app would.
+         [DEBUG-FEATURES-LAUNCH-BLAZOR-WASM] -->
+</Project>

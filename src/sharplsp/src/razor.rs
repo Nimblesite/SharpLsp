@@ -1,7 +1,8 @@
 //! Razor documents (`.razor`, `.cshtml`) in the host.
 //!
 //! The host has no Razor grammar, so the syntax requests it answers from
-//! tree-sitter for C# go to the C# sidecar for Razor, whose Razor compiler is
+//! tree-sitter for C# — documentSymbol, foldingRange, selectionRange and
+//! linkedEditingRange — go to the C# sidecar for Razor, whose Razor compiler is
 //! the parser. The two Razor completion triggers are useless in C# and F#
 //! documents, so those answer at once. Implements [RAZOR-ARCHITECTURE-ROUTING].
 
@@ -11,7 +12,7 @@ use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
     CompletionParams, FoldingRange, FoldingRangeParams, LinkedEditingRangeParams,
-    LinkedEditingRanges, Position, Range, TextDocumentIdentifier, Uri,
+    LinkedEditingRanges, Position, Range, SelectionRangeParams, TextDocumentIdentifier, Uri,
 };
 
 use crate::semantic::SidecarLocationListResult;
@@ -126,6 +127,70 @@ fn linked_ranges(found: &SidecarLocationListResult) -> Result<serde_json::Value>
             ranges,
             word_pattern: None,
         })?
+    })
+}
+
+/// Handle `textDocument/selectionRange` for a Razor document via the C# sidecar:
+/// each position's chain of Razor ranges, innermost first, nested into LSP
+/// parents. Implements [RAZOR-FEATURES-SELECTION].
+pub fn handle_selection_ranges(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let params: SelectionRangeParams = serde_json::from_value(req.params)?;
+    let request = SidecarSelectionRangesReq {
+        file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
+        positions: params
+            .positions
+            .iter()
+            .map(|at| (at.line, at.character))
+            .collect(),
+    };
+    let chains: Vec<SidecarRangeList> =
+        fetch(runtime, sidecar, "textDocument/selectionRange", &request)?;
+    Ok(serde_json::to_value(selection_ranges(&chains))?)
+}
+
+/// The host's request for a Razor file's selection ranges: the file and its
+/// carets, matching the sidecar's `SelectionRangeRequest` Key layout.
+#[derive(serde::Serialize)]
+struct SidecarSelectionRangesReq {
+    /// Absolute path of the Razor file.
+    file_path: String,
+    /// The carets, in request order.
+    positions: Vec<(u32, u32)>,
+}
+
+/// One position's answer: its Razor ranges, innermost first.
+#[derive(serde::Deserialize)]
+struct SidecarRangeList {
+    /// The chain, innermost first, as `(start_line, start_character, end_line,
+    /// end_character)`.
+    ranges: Vec<(u32, u32, u32, u32)>,
+}
+
+/// The sidecar's chains as LSP selection ranges, one per position. LSP 3.17
+/// types the answer `SelectionRange[] | null`, so a position with no chain — a
+/// file no project lists — makes the whole answer none.
+fn selection_ranges(chains: &[SidecarRangeList]) -> Option<Vec<lsp_types::SelectionRange>> {
+    chains
+        .iter()
+        .map(|chain| nest(chain.ranges.as_slice()))
+        .collect()
+}
+
+/// Ranges innermost first as one [`lsp_types::SelectionRange`], each range its
+/// successor's `parent`; none when the chain is empty.
+fn nest(ranges: &[(u32, u32, u32, u32)]) -> Option<lsp_types::SelectionRange> {
+    ranges.iter().rev().fold(None, |parent, range| {
+        Some(lsp_types::SelectionRange {
+            range: Range::new(
+                Position::new(range.0, range.1),
+                Position::new(range.2, range.3),
+            ),
+            parent: parent.map(Box::new),
+        })
     })
 }
 
@@ -267,5 +332,39 @@ mod tests {
         assert_eq!((fold.start_line, fold.end_line), (6, 9));
         assert_eq!((fold.start_character, fold.end_character), (None, None));
         assert!(fold.kind.is_none());
+    }
+
+    /// A sidecar chain nests into LSP parents, innermost first; an empty chain
+    /// answers none. [RAZOR-FEATURES-SELECTION]
+    #[test]
+    fn selection_range_chains_nest_innermost_first() {
+        let nested = selection_ranges(&[SidecarRangeList {
+            ranges: vec![(1, 2, 1, 8), (1, 0, 3, 4)],
+        }]);
+        let inner = nested
+            .as_ref()
+            .and_then(|chains| chains.first())
+            .expect("the innermost range");
+        assert_eq!(
+            inner.range,
+            Range::new(Position::new(1, 2), Position::new(1, 8))
+        );
+        let outer = inner.parent.as_ref().expect("the outer range");
+        assert_eq!(
+            outer.range,
+            Range::new(Position::new(1, 0), Position::new(3, 4))
+        );
+        assert!(outer.parent.is_none(), "the document has no parent");
+
+        let empty = selection_ranges(&[
+            SidecarRangeList {
+                ranges: vec![(0, 0, 0, 1)],
+            },
+            SidecarRangeList { ranges: vec![] },
+        ]);
+        assert_eq!(
+            empty, None,
+            "a position with no chain makes the whole answer none"
+        );
     }
 }

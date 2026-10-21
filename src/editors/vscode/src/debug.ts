@@ -20,6 +20,8 @@ import { findNetcoredbg, getNetcoredbgCandidates } from './netcoredbg';
 import { info, warn } from './log';
 import { DapRouter } from './dap-router';
 import { resolveAttachTarget } from './attach-target';
+import { BlazorWasmDebugProvider } from './blazor-wasm-launch';
+import { BLAZOR_WASM_DEBUG_TYPE } from './blazor-wasm-debug';
 import {
   NO_TARGET_MESSAGE,
   folderFor,
@@ -509,6 +511,7 @@ export function registerDebugAdapter(
 ): void {
   activeFrameworkReader = readActiveFramework;
   const provider = new SharpLspLaunchProvider();
+  const blazorWasm = new BlazorWasmDebugProvider();
   context.subscriptions.push(
     // Both trigger kinds: `Initial` fills a generated launch.json, `Dynamic`
     // puts SharpLsp in the "Show all automatic debug configurations" dropdown.
@@ -525,6 +528,20 @@ export function registerDebugAdapter(
     vscode.debug.registerDebugAdapterDescriptorFactory(
       DEBUG_TYPE,
       new SharpLspDebugAdapterFactory(context.extensionPath),
+    ),
+    // The Blazor WebAssembly debugger has no adapter of its own: it starts `dotnet run`
+    // and hands the app to js-debug ([DEBUG-FEATURES-LAUNCH-BLAZOR-WASM]), so only its
+    // configuration providers are registered — both trigger kinds, as
+    // [DEBUG-FEATURES-LAUNCH-DYNAMIC] requires of every SharpLsp debugger.
+    vscode.debug.registerDebugConfigurationProvider(
+      BLAZOR_WASM_DEBUG_TYPE,
+      blazorWasm,
+      vscode.DebugConfigurationProviderTriggerKind.Initial,
+    ),
+    vscode.debug.registerDebugConfigurationProvider(
+      BLAZOR_WASM_DEBUG_TYPE,
+      blazorWasm,
+      vscode.DebugConfigurationProviderTriggerKind.Dynamic,
     ),
     vscode.commands.registerCommand(CMD_DEBUG_PROGRAM, async (argument?: LaunchArgument) => {
       await launch(argument, false);

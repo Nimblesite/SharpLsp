@@ -294,6 +294,16 @@ type RenameIdentityResultWire =
       [<Key(1)>] AssemblyName: string
       [<Key(2)>] XmlDocSig: string }
 
+/// A symbol another sidecar names by identity, for its F# declarations or uses.
+/// [DEFINITION-CROSSLANG-IDENTITY] [REFERENCES-CROSS-LANGUAGE]
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type ForeignSymbolRequest =
+    { [<Key(0)>] AssemblyName: string
+      [<Key(1)>] XmlDocSig: string
+      /// Whether references include the declaration; a declaration request ignores it.
+      [<Key(2)>] IncludeDeclaration: bool }
+
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
 type RenameForeignRequest =
@@ -382,6 +392,18 @@ module internal Helpers =
         : Func<byte[], CancellationToken, Task<ByteResult>> =
         atPosition (getLocations workspace) (fun locations ct ->
             serializeOk { Locations = locations |> List.map toLocationResult |> Array.ofList } ct)
+
+    /// Answer a request naming a symbol by identity with the locations `query` finds for it.
+    let foreignLocationsHandler
+        (query: FSharpForeignSymbols.SymbolIdentity -> bool -> Task<FSharpWorkspace.DefinitionLocation list>)
+        : Func<byte[], CancellationToken, Task<ByteResult>> =
+        handle
+            (fun (request: ForeignSymbolRequest) ->
+                query
+                    { AssemblyName = request.AssemblyName; XmlDocSig = request.XmlDocSig }
+                    request.IncludeDeclaration)
+            (fun locations ct ->
+                serializeOk { Locations = locations |> List.map toLocationResult |> Array.ofList } ct)
 
     /// Map a hierarchy domain item to its wire shape (call + type hierarchy).
     let toHierItem (item: FSharpHierarchy.HierItem) : HierarchyItemResult =

@@ -24,18 +24,23 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal sealed partial class WorkspaceManager
 {
-    /// <summary>Get code lenses for a document.</summary>
+    /// <summary>
+    /// Get code lenses for a document, or, for a Razor file, those of the members its C#
+    /// fragments declare, each on its Razor declaration. [RAZOR-FEATURES-CODE-LENS]
+    /// </summary>
     public Task<CodeLensesResult> GetCodeLensesAsync(
         string filePath,
         CancellationToken ct = default
     )
     {
-        return RunScopedQueryAsync<List<CodeLensResult>>(
-            filePath,
-            [],
-            (document, scope) => CodeLensResolver.GetLensesAsync(document, scope, ct),
-            ct
-        );
+        return NativePaths.IsRazor(filePath)
+            ? GetRazorCodeLensesAsync(filePath, ct)
+            : RunScopedQueryAsync<List<CodeLensResult>>(
+                filePath,
+                [],
+                (document, scope) => CodeLensResolver.GetLensesAsync(document, scope, ct),
+                ct
+            );
     }
 
     /// <summary>Format an entire document. SEQUESTERED — not called by the LSP server.</summary>
@@ -150,7 +155,10 @@ internal sealed partial class WorkspaceManager
         );
     }
 
-    /// <summary>Get inlay hints for a range.</summary>
+    /// <summary>
+    /// Get inlay hints for a range, or, for a Razor file, those of the C# its lines hold, each
+    /// placed back in the file. [RAZOR-FEATURES-INLAY-HINTS]
+    /// </summary>
     public Task<InlayHintsResult> GetInlayHintsAsync(
         string filePath,
         int startLine,
@@ -158,11 +166,13 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync<List<InlayHintResult>>(
-            filePath,
-            [],
-            document => InlayHintResolver.GetHintsAsync(document, startLine, endLine, ct),
-            ct
-        );
+        return NativePaths.IsRazor(filePath)
+            ? GetRazorInlayHintsAsync(filePath, startLine, endLine, ct)
+            : RunDocumentQueryAsync<List<InlayHintResult>>(
+                filePath,
+                [],
+                document => InlayHintResolver.GetHintsAsync(document, startLine, endLine, ct),
+                ct
+            );
     }
 }

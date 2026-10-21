@@ -564,6 +564,7 @@ internal sealed class CodeActionResolver
         {
             FilePath = filePath,
             Edits = [CreateWholeDocumentEdit(text)],
+            Create = true,
         };
     }
 

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { hotReloadOnSave } from './config.js';
 import { info } from './log.js';
+import { RAZOR_LANGUAGES } from './razor-html.js';
 
 declare global {
   var __sharplspHotReloadRunning: boolean | undefined;
@@ -106,9 +107,9 @@ function handleDocumentSave(doc: vscode.TextDocument): void {
   info(`Hot Reload triggered on save: ${doc.uri.fsPath}`);
 }
 
-/** Check if the language is C# or F#. */
+/** Check if the language is C#, F#, or Razor ([RAZOR-HOT-RELOAD]). */
 export function isRelevantLanguage(languageId: string): boolean {
-  return languageId === 'csharp' || languageId === 'fsharp';
+  return languageId === 'csharp' || languageId === 'fsharp' || RAZOR_LANGUAGES.includes(languageId);
 }
 
 /** Stop hot reload when a debug session ends. */

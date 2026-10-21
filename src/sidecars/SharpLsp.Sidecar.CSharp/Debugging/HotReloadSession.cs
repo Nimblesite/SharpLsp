@@ -5,6 +5,8 @@ using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Serilog;
 using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.CSharp.Razor;
+using SharpLsp.Sidecar.CSharp.Workspace;
 
 namespace SharpLsp.Sidecar.CSharp.Debugging;
 
@@ -135,19 +137,45 @@ internal sealed class HotReloadSession : IAsyncDisposable
         _pending = null;
     }
 
+    /// <summary>
+    /// The saved batch as one candidate solution. A Razor file is an ADDITIONAL document,
+    /// so its text swaps in every framework copy (`FindDocument` cannot see it), and the
+    /// SDK's Razor generator reruns when the emit reads the candidate's compilations.
+    /// Implements [RAZOR-HOT-RELOAD].
+    /// </summary>
     private Solution BuildCandidate(IReadOnlyList<HotReloadDocument> documents)
     {
         var candidate = _solution;
         foreach (var document in documents)
         {
-            var target = FindDocument(candidate, document.FilePath);
-            candidate = candidate.WithDocumentText(
-                target.Id,
-                SourceText.From(document.NewText, Encoding.UTF8)
-            );
+            var text = SourceText.From(document.NewText, Encoding.UTF8);
+            candidate = NativePaths.IsRazor(document.FilePath)
+                ? WithRazorText(candidate, document.FilePath, text)
+                : candidate.WithDocumentText(FindDocument(candidate, document.FilePath).Id, text);
         }
 
         return candidate;
+    }
+
+    /// <summary>
+    /// The saved Razor file's text in EVERY framework copy of the additional document, the
+    /// same swap a live edit makes. A file no project lists has no semantics and fails
+    /// loudly. Implements [RAZOR-HOT-RELOAD] and [RAZOR-ARCHITECTURE-DOCUMENTS].
+    /// </summary>
+    private static Solution WithRazorText(Solution solution, string filePath, SourceText text)
+    {
+        var path = NativePaths.WithLinksResolved(filePath);
+        _ = ListedRazor(solution, path);
+        return TargetFrameworks.WithAdditionalTextInEveryContext(solution, path, text);
+    }
+
+    /// <summary>The additional document at <paramref name="path"/>; null only when no project lists it.</summary>
+    private static TextDocument ListedRazor(Solution solution, string path)
+    {
+        return SolutionPaths.AdditionalDocumentsAt(solution, path).FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"Hot reload Razor file is not listed by any project: {path}"
+            );
     }
 
     private async Task<string?> ChangedSignatureAsync(
@@ -158,10 +186,11 @@ internal sealed class HotReloadSession : IAsyncDisposable
     {
         foreach (var document in documents)
         {
-            var baseline = FindDocument(_solution, document.FilePath);
-            var changed = await HotReloadSignatureGuard
-                .ChangedMethodSignatureAsync(baseline, candidate.GetDocument(baseline.Id)!, ct)
-                .ConfigureAwait(false);
+            var changed = NativePaths.IsRazor(document.FilePath)
+                ? await ChangedRazorSignatureAsync(candidate, document.FilePath, ct)
+                    .ConfigureAwait(false)
+                : await ChangedDocumentSignatureAsync(candidate, document.FilePath, ct)
+                    .ConfigureAwait(false);
             if (changed is not null)
             {
                 return changed;
@@ -171,12 +200,54 @@ internal sealed class HotReloadSession : IAsyncDisposable
         return null;
     }
 
+    private Task<string?> ChangedDocumentSignatureAsync(
+        Solution candidate,
+        string filePath,
+        CancellationToken ct
+    )
+    {
+        var baseline = FindDocument(_solution, filePath);
+        return HotReloadSignatureGuard.ChangedMethodSignatureAsync(
+            baseline,
+            candidate.GetDocument(baseline.Id)!,
+            ct
+        );
+    }
+
+    /// <summary>
+    /// The signature guard judges a Razor save through the GENERATED documents whose text
+    /// changed — the baseline versus candidate projection (`RazorProjection.ForRazorAsync`)
+    /// — never by parsing Razor text. A project that generates no projection has no C# a
+    /// Razor save could reshape, so the guard abstains and Roslyn's own analysis decides.
+    /// Implements [RAZOR-HOT-RELOAD] and [RAZOR-ARCHITECTURE-PROJECTION].
+    /// </summary>
+    private async Task<string?> ChangedRazorSignatureAsync(
+        Solution candidate,
+        string filePath,
+        CancellationToken ct
+    )
+    {
+        var path = NativePaths.WithLinksResolved(filePath);
+        var before = await RazorProjection
+            .ForRazorAsync(ListedRazor(_solution, path), ct)
+            .ConfigureAwait(false);
+        var after = await RazorProjection
+            .ForRazorAsync(ListedRazor(candidate, path), ct)
+            .ConfigureAwait(false);
+        return before is null || after is null
+            ? null
+            : await HotReloadSignatureGuard
+                .ChangedMethodSignatureAsync(before.Generated, after.Generated, ct)
+                .ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Judge one emit. Errors mean nothing can be applied: rude edits (ENC0xxx)
     /// require a restart, while compiler errors and Roslyn's operational
     /// ENC1xxx diagnostics resolve on a later save. A ready emit with deltas
     /// stays pending for the client's commit or discard; a ready emit with
-    /// nothing to deliver commits immediately.
+    /// nothing to deliver, and an emit that names nothing to apply, commit
+    /// immediately.
     /// </summary>
     private HotReloadResponse Verdict(EncEmitResult emitted, Solution candidate)
     {
@@ -190,13 +261,25 @@ internal sealed class HotReloadSession : IAsyncDisposable
             Log.Warning("Hot reload {Status}: {Diagnostics}", status, rendered);
             return Response(status, [], [.. errors.Select(HotReloadEncService.Render)]);
         }
-        if (!emitted.Ready)
-        {
-            Log.Warning("Hot reload emit was not ready and named no diagnostic");
-            return Response("notCompilable", [], ["The change could not be applied; save again."]);
-        }
+        return !emitted.Ready
+            ? QuietlyApplied(candidate, rendered)
+            : Emitted(emitted, candidate, rendered);
+    }
 
-        return Emitted(emitted, candidate, rendered);
+    /// <summary>
+    /// An emit Roslyn answered with Status None, which a not-ready emit with no error is: its
+    /// solution diff found no changed, added or removed document — regular, additional or
+    /// source-generated — so the candidate changes nothing at runtime (a re-save of committed
+    /// text). Roslyn holds no pending update to commit or discard, and its deltas are empty
+    /// unless ready, so the baseline advances and the save answers <c>applied</c>; a save-again
+    /// error would send the client into a pointless retry loop. Implements [RAZOR-HOT-RELOAD]
+    /// and [DEBUG-FEATURES-HOT-RELOAD].
+    /// </summary>
+    private HotReloadResponse QuietlyApplied(Solution candidate, List<string> warnings)
+    {
+        _solution = candidate;
+        Log.Information("Hot reload emit had nothing to apply; committed quietly");
+        return Response("applied", [], warnings);
     }
 
     /// <summary>A ready emit: hold deltas pending, or self-commit an empty one.</summary>

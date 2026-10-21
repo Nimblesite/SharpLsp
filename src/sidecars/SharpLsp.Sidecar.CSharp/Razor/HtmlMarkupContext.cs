@@ -25,12 +25,22 @@ internal enum MarkupContext
 /// prefix up to the caret. Pure — every step maps an immutable state and an input character to
 /// the next state. Implements [RAZOR-ARCHITECTURE-HTML].
 /// </summary>
-internal static class HtmlMarkupContext
+internal static partial class HtmlMarkupContext
 {
     /// <summary>The markup context at <paramref name="offset"/>; out-of-range offsets clamp.</summary>
     public static MarkupContext At(string html, int offset)
     {
         return Context(ScanTo(html, Math.Clamp(offset, 0, html.Length)));
+    }
+
+    /// <summary>
+    /// The name of the start tag whose attributes hold <paramref name="offset"/>, lowercased as
+    /// the tokenizer reads it; null outside a start tag's attributes. [RAZOR-FEATURES-COMPLETION]
+    /// </summary>
+    public static string? StartTagAt(string html, int offset)
+    {
+        var scan = ScanTo(html, Math.Clamp(offset, 0, html.Length));
+        return Context(scan) == MarkupContext.AttributeName && !scan.EndTag ? scan.Tag : null;
     }
 
     /// <summary>The tokenizer states the caret context derives from.</summary>
@@ -57,7 +67,19 @@ internal static class HtmlMarkupContext
     /// <param name="State">The tokenizer state.</param>
     /// <param name="Tag">The current start tag's name; the raw-text target while in <see cref="Scanner.RawText"/>.</param>
     /// <param name="EndTag">Whether the current tag is an end tag.</param>
-    private readonly record struct Scan(Scanner State, string Tag, bool EndTag);
+    /// <param name="AttributeStart">Where the current attribute's name begins; -1 when no start tag has one.</param>
+    /// <param name="NameEnd">Where the current attribute's name ends; -1 while the tokenizer reads it.</param>
+    /// <param name="ValueStart">Where the current attribute's value begins, its quote excluded; -1 before it.</param>
+    /// <param name="ValueEnd">Where the current attribute's value ends, its quote excluded; -1 while it is read.</param>
+    private readonly record struct Scan(
+        Scanner State,
+        string Tag,
+        bool EndTag,
+        int AttributeStart = -1,
+        int NameEnd = -1,
+        int ValueStart = -1,
+        int ValueEnd = -1
+    );
 
     private static Scan ScanTo(string html, int end)
     {
@@ -73,7 +95,7 @@ internal static class HtmlMarkupContext
 
     private static (Scan Next, int Index) Advance(Scan s, string html, int i, int end)
     {
-        return (s.State, html[i]) switch
+        var (next, index) = (s.State, html[i]) switch
         {
             (Scanner.TagOpen, '!') => Declaration(html, i),
             (Scanner.TagOpen, '?') => (Data(), Bogus(html, i + 1)),
@@ -86,6 +108,7 @@ internal static class HtmlMarkupContext
             (Scanner.RawText, _) => RawText(s, html, i, end),
             _ => (Step(s, html[i]), i + 1),
         };
+        return (Track(s, next, i), index);
     }
 
     private static Scan Step(Scan s, char c)
@@ -164,7 +187,7 @@ internal static class HtmlMarkupContext
             '>' => Close(s),
             '/' => Kept(Scanner.SelfClosing, s),
             '=' => Kept(Scanner.BeforeValue, s),
-            _ => IsSpace(c) ? Kept(Scanner.AfterAttribute, s) : s,
+            _ => IsSpace(c) ? Kept(Scanner.AfterAttribute, s) : Kept(Scanner.Attribute, s),
         };
     }
 
@@ -356,7 +379,7 @@ internal static class HtmlMarkupContext
 
     private static Scan Kept(Scanner state, Scan s)
     {
-        return new(state, s.Tag, s.EndTag);
+        return s with { State = state };
     }
 
     private static Scan Named(Scan s, char c, bool endTag)

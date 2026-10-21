@@ -78,11 +78,29 @@ internal static class DefinitionResolver
             return new LocationListResult();
         }
 
-        var metadataLocation = MetadataNavigator.ResolveMetadataSymbol(symbol, compilation);
-
+        var metadataLocation = NamedMetadataLocation(project, symbol, compilation);
         return metadataLocation is null
             ? new LocationListResult()
             : new LocationListResult { Locations = [metadataLocation] };
+    }
+
+    /// <summary>
+    /// The decompiled source of <paramref name="symbol"/>, carrying its identity when an F#
+    /// project declares it, so the host can land in its F# source instead. [DEFINITION-CROSSLANG-IDENTITY]
+    /// </summary>
+    private static LocationResult? NamedMetadataLocation(
+        Project project,
+        ISymbol symbol,
+        Compilation compilation
+    )
+    {
+        var decompiled = MetadataNavigator.ResolveMetadataSymbol(symbol, compilation);
+        return decompiled is null
+            ? null
+            : FSharpProjectSymbols.Naming(
+                decompiled,
+                FSharpProjectSymbols.IdentityOf(project, symbol)
+            );
     }
 
     /// <summary>
@@ -95,10 +113,9 @@ internal static class DefinitionResolver
     )
     {
         var compilation = await document.Project.GetCompilationAsync(ct).ConfigureAwait(false);
-
         return compilation is null
             ? null
-            : MetadataNavigator.ResolveMetadataSymbol(symbol, compilation);
+            : NamedMetadataLocation(document.Project, symbol, compilation);
     }
 
     /// <summary>Find the type definition of the symbol at a position.</summary>

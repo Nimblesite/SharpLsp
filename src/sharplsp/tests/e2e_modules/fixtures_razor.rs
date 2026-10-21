@@ -44,6 +44,24 @@ pub fn create_razor_workspace() -> RazorWorkspace {
     create_razor_workspace_with_pin(true)
 }
 
+/// [`create_razor_workspace`] with the F# `Domain` library built: C# reads an F#
+/// project only as its built DLL, so a C# or Razor use of an F# symbol resolves
+/// only once that DLL exists. [DEFINITION-CROSSLANG] [RAZOR-FSHARP]
+pub fn create_razor_workspace_with_fsharp_built() -> RazorWorkspace {
+    let ws = create_razor_workspace();
+    super::fixtures_cross_language::dotnet(
+        &[
+            "build",
+            "Domain/Domain.fsproj",
+            "--verbosity",
+            "quiet",
+            "--nologo",
+        ],
+        ws.root(),
+    );
+    ws
+}
+
 /// Restore under the newest installed SDK to catch compiler/sidecar version skew.
 /// [RAZOR-ARCHITECTURE-GENERATOR]
 pub fn create_razor_workspace_with_latest_sdk() -> RazorWorkspace {

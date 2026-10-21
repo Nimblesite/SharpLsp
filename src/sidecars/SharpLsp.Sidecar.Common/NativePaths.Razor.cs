@@ -40,4 +40,47 @@ public static partial class NativePaths
     {
         return Resolve(projectDirectory, razorPath.TrimStart('/'));
     }
+
+    /// <summary>
+    /// The code-behind partial class file of a component: <c>Counter.razor.cs</c> beside
+    /// <c>Counter.razor</c>. [RAZOR-CODE-ACTIONS-CODE-BEHIND]
+    /// </summary>
+    public static string CodeBehindOf(string componentPath)
+    {
+        return componentPath + ".cs";
+    }
+
+    /// <summary>
+    /// The stylesheet that scopes a Razor file's CSS: <c>Counter.razor.css</c> beside
+    /// <c>Counter.razor</c>. [RAZOR-COLLOCATION-CSS]
+    /// </summary>
+    public static string StylesheetOf(string razorPath)
+    {
+        return razorPath + ".css";
+    }
+
+    /// <summary>
+    /// The file a JavaScript module path names, the app's base path being the project directory:
+    /// <c>./Components/Card.razor.js</c> and <c>/Components/Card.razor.js</c> both name
+    /// <c>Components/Card.razor.js</c> in it. Null for a path that names no file. [RAZOR-COLLOCATION-JS]
+    /// </summary>
+    public static string? FromModulePath(string projectDirectory, string modulePath)
+    {
+        var relative = AppRelative(Slashed(modulePath));
+        return relative.Length > 0 ? Resolve(projectDirectory, relative) : null;
+    }
+
+    /// <summary>A module path with the app's base path removed: <c>./a/b.js</c> is <c>a/b.js</c>.</summary>
+    private static string AppRelative(string path)
+    {
+        return path.StartsWith("./", StringComparison.Ordinal) ? AppRelative(path[2..])
+            : path.StartsWith('/') ? AppRelative(path[1..])
+            : path;
+    }
+
+    /// <summary>The component file named <paramref name="name"/> in <paramref name="folder"/>: <c>Name.razor</c>.</summary>
+    public static string ComponentIn(string folder, string name)
+    {
+        return Join(folder, name + ".razor");
+    }
 }

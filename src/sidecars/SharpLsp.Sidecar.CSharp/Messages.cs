@@ -116,6 +116,13 @@ internal sealed class LocationResult
 
     [Key(4)]
     public int EndCharacter { get; init; }
+
+    /// <summary>
+    /// For decompiled source of a symbol an F# project declares, the symbol's identity, so the
+    /// host can ask the F# sidecar for its F# declaration. [DEFINITION-CROSSLANG-IDENTITY]
+    /// </summary>
+    [Key(5)]
+    public RenameIdentityResultWire? Symbol { get; init; }
 }
 
 [MessagePackObject(AllowPrivate = true)]
@@ -288,6 +295,10 @@ internal sealed class DocumentEditResult
 
     [Key(1)]
     public List<TextEditResult> Edits { get; set; } = [];
+
+    /// <summary>Whether the edit creates the file: it holds the new file's whole text. [RAZOR-CODE-ACTIONS]</summary>
+    [Key(2)]
+    public bool Create { get; init; }
 }
 
 [MessagePackObject(AllowPrivate = true)]

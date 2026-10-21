@@ -1,11 +1,11 @@
 //! Full-stack cross-language go-to-definition: C# ↔ F#.
 //!
 //! A C# project and an F# project reference each other across the language
-//! boundary. Each sidecar sees the *other* language only as a compiled
-//! assembly, so navigating from a use site into the other-language definition
-//! resolves through metadata-as-source (the referenced type is decompiled to a
-//! navigable location) — the same behavior mature IDEs give for a compiled
-//! cross-language reference. Implements [DEFINITION-CROSSLANG].
+//! boundary. Navigating from a use site into the other-language definition
+//! lands in its source: F# compiles the C# project in memory, and C# names the
+//! F# symbol it reads from the DLL by its identity, which the F# sidecar
+//! places in the `.fs` file. Implements [DEFINITION-CROSSLANG] and
+//! [DEFINITION-CROSSLANG-IDENTITY].
 
 use super::*;
 
@@ -51,8 +51,8 @@ fn poll_cross_language_definition(
 
 // ── C# → F# ──────────────────────────────────────────────────────────
 
-// FULL-STACK: go-to-definition from C# onto an F#-defined type resolves into
-// the F# assembly (decompiled metadata-as-source), not the C# consumer file.
+// FULL-STACK: go-to-definition from C# onto an F#-defined type lands on its
+// declaration in the F# source, not in decompiled source or the C# consumer.
 #[test]
 fn test_cross_language_definition_csharp_to_fsharp() {
     require_dotnet();
@@ -79,6 +79,54 @@ fn test_cross_language_definition_csharp_to_fsharp() {
     assert!(
         uri.contains("Shape"),
         "C#→F# definition must land on the F#-defined `Shape` type, got: {uri}"
+    );
+
+    // Once the F# sidecar has loaded, the answer is the F# declaration: the
+    // decompiled answer before it is never cached. [DEFINITION-CROSSLANG-IDENTITY]
+    let source = poll_cross_language_definition(
+        &mut client,
+        &file_uri,
+        8,
+        22,
+        ".cs",
+        Duration::from_mins(3),
+    );
+    let uri = source["uri"].as_str().unwrap();
+    assert!(
+        uri.ends_with("/Shapes.fs"),
+        "C#→F# lands in the F# source, got: {uri}"
+    );
+    // `type Shape(name: string, sides: int) =` (line 3)
+    //  0123456789
+    assert_eq!(
+        source["range"]["start"],
+        json!({ "line": 3, "character": 5 })
+    );
+    assert_eq!(
+        source["range"]["end"],
+        json!({ "line": 3, "character": 10 })
+    );
+
+    // With the F# sidecar loaded, a C# local has no cross-language identity, so
+    // its references are C#'s alone: the declaration and its one use.
+    // [REFERENCES-CROSS-LANGUAGE]
+    let local = references(&mut client, &file_uri, 8, 12, true);
+    let starts: Vec<(Value, Value)> = local["result"]
+        .as_array()
+        .map(|found| {
+            found
+                .iter()
+                .map(|at| (at["uri"].clone(), at["range"]["start"].clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        starts,
+        vec![
+            (json!(file_uri), json!({ "line": 8, "character": 12 })),
+            (json!(file_uri), json!({ "line": 9, "character": 15 })),
+        ],
+        "the local's references stay in C#: {local}"
     );
 
     client.shutdown_and_exit();

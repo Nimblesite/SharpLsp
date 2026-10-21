@@ -2,50 +2,33 @@
 // repository's src/sharplsp/tests/fixtures/razor, copied without its build output
 // to a scratch root, built so the SDK's Razor generator has run, and loaded
 // through the real extension.
-import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type * as vscode from 'vscode';
-import { findGlobalJson } from '../../global-json.js';
 import { serverProjection } from '../../razor-html.js';
-import { dotnet } from './dotnet-project-kit';
+import { copyPinnedFixture, dotnet } from './dotnet-project-kit';
 import { type LoadedFixture, useLoadedFixture } from './netfx-language-kit';
 import { lspClient } from './profiler-kit';
 
 /** The fixture in the repository. */
 const SOURCE = path.resolve(__dirname, '../../../../../sharplsp/tests/fixtures/razor');
 
-/** Build output a copy leaves behind: a copied `obj` would point back at the source. */
-const BUILD_OUTPUT = new Set(['bin', 'obj']);
-
 /** The Razor files the suite opens, relative to the fixture root. */
 export const RAZOR_FILES = {
   counter: 'BlazorApp/Components/Pages/Counter.razor',
   board: 'BlazorApp/Components/Pages/Board.razor',
+  leaders: 'BlazorApp/Components/Pages/Leaders.razor',
+  card: 'BlazorApp/Components/Shared/Card.razor',
+  edit: 'PagesApp/Pages/Edit.cshtml',
 } as const;
 
 /** The Razor file the suite writes where no project lists it. */
 export const STRAY_RAZOR = 'Stray.razor';
 
-/**
- * Pin `root` to the SDK the fixture has in the repository. A scratch copy has no
- * `global.json` above it, so it would build and load with the newest installed SDK,
- * whose Razor generator can need a newer Roslyn than the sidecar's.
- */
-function keepSdkPin(root: string): void {
-  const pin = findGlobalJson(SOURCE);
-  assert.ok(pin, 'the repository pins the fixture SDK in a global.json');
-  fs.copyFileSync(pin, path.join(root, 'global.json'));
-}
-
-/** Copy the fixture to `root`, with its SDK pin, and build it. */
+/** Copy the fixture to `root`, pinned to the repository SDK, and build it. */
 async function writeRazorFixture(root: string): Promise<LoadedFixture> {
-  fs.cpSync(SOURCE, root, {
-    recursive: true,
-    filter: (source) => !BUILD_OUTPUT.has(path.basename(source)),
-  });
-  keepSdkPin(root);
+  copyPinnedFixture(SOURCE, root);
   const solution = path.join(root, 'RazorFixtures.slnx');
   await dotnet(['build', solution], root);
   return {

@@ -123,7 +123,7 @@ SharpLsp targets **DAP specification version 1.71.0**.
 | Launch with environment variables | `launch` (env) | P1 | |
 | Launch with custom working directory | `launch` (cwd) | P1 | |
 | Restart the same configuration | `restart` | P1 | Emulated by respawning netcoredbg. The outgoing adapter is retired with `disconnect` (`restart: true`) before any signal, so a launched debuggee is terminated and an attached one only detached; a restart never leaves the previous run behind |
-| Launch browser for Blazor WASM | `launch` (browser) | P3 | Requires browser devtools bridge |
+| Launch browser for Blazor WASM | `launch` (browser) | P2 | Own debug type `sharplsp-blazorwasm`; hands the app to VS Code's built-in js-debug — [DEBUG-FEATURES-LAUNCH-BLAZOR-WASM] |
 | Hot Reload enabled launch | `launch` (hotReload: true) | P2 | See [DEBUG-FEATURES-HOT-RELOAD] |
 | Child process auto-attach | `launch` event | P2 | Phase 5: `ICorDebugManagedCallback::CreateProcess` |
 
@@ -365,6 +365,47 @@ The profile file belongs to the **resolved project**, not the workspace root. A 
 4. Parsing MUST be total. `{"profiles": null}`, `{"profiles": "text"}`, `{"profiles": [1,2]}`, a truncated document and a missing file all yield **no profiles** and no exception. A type guard that checks only for the presence of a `profiles` key is unsound — it admits `null` and throws downstream in `Object.entries`.
 5. A candidate path that exists but is not a launch-settings document MUST NOT abort the scan; the resolver continues to the next candidate.
 6. Only an interactive launch may prompt. `resolveDebugConfiguration` — the user pressing F5 — MUST be free to ask; `provideDebugConfigurations`, which VS Code may call unprompted to populate a list, MUST NOT prompt and instead emits one configuration per eligible profile, each carrying its own `args` and `env`.
+
+### Blazor WebAssembly launch `[DEBUG-FEATURES-LAUNCH-BLAZOR-WASM]`
+
+A Blazor WebAssembly app is not an assembly netcoredbg can attach to: it runs in the
+browser. SharpLsp therefore contributes a second debug type, `sharplsp-blazorwasm`, which
+starts the app with `dotnet run` and hands it to VS Code's **built-in JavaScript debugger**
+(js-debug, debug types `pwa-chrome` / `pwa-msedge`) through the DevServer's .NET debug proxy.
+The pieces it relies on are public: `Microsoft.AspNetCore.Components.WebAssembly.DevServer`
+(MIT, referenced by the `blazorwasm` template) and `app.UseWebAssemblyDebugging()`, both of
+which serve `/_framework/debug/ws-proxy`.
+
+**Launch configuration**
+
+| Property | Type | Meaning |
+|---|---|---|
+| `project` | string | The `.csproj`/`.fsproj` to run. Omitted: the project is resolved per [DEBUG-FEATURES-LAUNCH-TARGET] |
+| `launchProfile` | string | A `Properties/launchSettings.json` profile, by name |
+| `browser` | `"chrome"` \| `"edge"` | Which js-debug type drives the session. Default `chrome` |
+| `url` | string | The page to open. Omitted: the address the DevServer announces |
+| `webRoot` | string | Where served URLs map onto source. Omitted: `<project>/wwwroot` |
+| `timeout` | number | How long js-debug waits for the page. Default 30000 |
+
+`required` MUST be empty: every field has a resolution rule.
+
+**Rules**
+
+1. The type MUST be a single value across `contributes.debuggers`, the constants module and this specification, and it MUST declare **no `languages`** — the F5 auto-pick for `csharp` and `fsharp` belongs to `sharplsp-coreclr` alone ([DEBUG-FEATURES-LAUNCH-DYNAMIC] rule 4). The type is reached from `launch.json`, from `configurationSnippets` and from the dynamic configuration list.
+2. Both activation events — `onDebugResolve:sharplsp-blazorwasm` and `onDebugDynamicConfigurations:sharplsp-blazorwasm` — and both configuration-provider trigger kinds MUST be declared, and `initialConfigurations` and `configurationSnippets` MUST be present ([DEBUG-FEATURES-LAUNCH-DYNAMIC] rules 1–5).
+3. Every attribute the resolver writes MUST be declared in `configurationAttributes`, and no attribute VS Code core injects MAY be re-declared ([DEBUG-FEATURES-LAUNCH-OUTPUT] rules 2 and 5).
+4. `provideDebugConfigurations` MUST offer one configuration per Blazor WebAssembly project reachable from the folder, silently — the project's `Sdk` attribute read with an XML parser, never by matching text, because a commented-out `Sdk`, an `<Sdk>` item and a property whose value names the SDK are different facts that read the same.
+5. The project MUST be the configuration's stated `project`, or the one [DEBUG-FEATURES-LAUNCH-TARGET] resolves; a stated project that does not exist MUST be refused by name.
+6. The launch profile MUST be the one named, or the project's **sole** `Project` profile ([DEBUG-FEATURES-LAUNCH-PROFILES]); a name the project does not declare MUST be refused, naming the project, never silently ignored.
+7. `launchSettings.json` parsing MUST carry the profile's `inspectUri` alongside its arguments, environment and URLs, from the one reader that already owns that document.
+8. The app MUST be started as `dotnet run --project <project> [--launch-profile <profile>]` — an argv array handed to a process, never a shell command line.
+9. The launch MUST wait for the `Now listening on: <url>` line the ASP.NET Core host logs and MUST take the FIRST http(s) address it announces. Only a line carrying that prefix announces an address; text that merely contains a URL does not. Output arriving in arbitrary chunks MUST be reassembled per line, and the whole launch MUST be bounded by a startup timeout whose message names the project.
+10. `inspectUri` MUST be expanded from the listening address — `{wsProtocol}` to `ws` for http and `wss` for https, `{url.hostname}`, `{url.port}` — with a profile that states none defaulting to the `blazorwasm` template's pattern. `{browserInspectUri}` MUST be passed through untouched: js-debug owns it, and without an `inspectUri` no .NET breakpoint in a `.razor` file or a C# class can ever bind.
+11. The browser session MUST be started with `vscode.debug.startDebugging`, as a `pwa-chrome`/`pwa-msedge` `launch` configuration carrying `url`, `inspectUri`, `webRoot` and `timeout`, and the provider MUST then answer `undefined` so VS Code starts no session for `sharplsp-blazorwasm` itself.
+12. When the browser session ends the `dotnet run` process MUST be terminated, and only the tree that process started — the DevServer runs as its child, so signalling the parent alone leaves the port bound by a process nothing owns. A launch whose process died before the handoff completed MUST be refused rather than registered.
+13. A second launch of the SAME project MUST stop the launch already running, so two DevServers never compete for one port, and an exit MUST un-register only the process that owns the entry.
+14. Every `dotnet run` line MUST go to the SharpLsp channel logger, with structured context and no file contents or PII, through the same `dotnet` supervisor process control, locale pinning and whole-tree stop every other `dotnet` child uses.
+15. The suite MUST prove it against a real app: a real `dotnet run`, the address the real DevServer announced, a real `GET <url>/_framework/debug` answering 200, and the process gone once the browser session ends. Only the browser session itself may be replaced, and only through the shipped seam.
 
 ### Debuggee output routing `[DEBUG-FEATURES-LAUNCH-OUTPUT]`
 

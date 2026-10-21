@@ -255,6 +255,72 @@ public sealed class HtmlMarkupContextTests
         Assert.Equal(expected, Of(html).ToString());
     }
 
+    [Fact]
+    public void The_attribute_at_a_caret_is_the_one_the_tokenizer_reads_there()
+    {
+        // In a value: the attribute's name, and its value without the quotes.
+        Assert.Equal(("class", "class", "a b"), AttributeOf("<span class=\"a |b\">"));
+        Assert.Equal(("class", "class", "a"), AttributeOf("<span class='|a'>"));
+        Assert.Equal(("data-x", "data-x", "1"), AttributeOf("<p data-x=1| id=2>"));
+        Assert.Equal(("x", "x", "ab"), AttributeOf("<p x=ab|>"));
+        Assert.Equal(("class", "class", ""), AttributeOf("<p class=\"|\">"));
+
+        // On a name: the whole name, and the value the tokenizer reads after the caret.
+        Assert.Equal(("class", "class", "x"), AttributeOf("<p cl|ass=\"x\">"));
+        Assert.Equal(("b", "b", "x"), AttributeOf("<a b | = \"x\">"));
+        Assert.Equal(("hidden", "hidden", null), AttributeOf("<a hidden|>"));
+        Assert.Equal(("x", "x", null), AttributeOf("<div /x|"));
+    }
+
+    [Fact]
+    public void An_attribute_after_a_bare_attribute_is_a_new_attribute()
+    {
+        Assert.Equal(("class", "class", "card"), AttributeOf("<span hidden class=\"ca|rd\">"));
+        Assert.Equal(("class", "class", "card"), AttributeOf("<span hidden cl|ass=\"card\">"));
+        Assert.Equal(("c", "c", null), AttributeOf("<a b c|>"));
+        Assert.Equal(("b", "b", null), AttributeOf("<a b| c>"));
+
+        // The context at each of those carets is unchanged: still on an attribute's name.
+        Assert.Equal(MarkupContext.AttributeName, Of("<a b c|>"));
+        Assert.Equal(MarkupContext.AttributeValue, Of("<span hidden class=\"ca|rd\">"));
+    }
+
+    [Fact]
+    public void An_unfinished_attribute_runs_to_the_end_of_the_projection()
+    {
+        Assert.Equal(("class", "class", "a b"), AttributeOf("<span class=\"a b|"));
+        Assert.Equal(("class", "class", "a"), AttributeOf("<span class=a|"));
+        Assert.Equal(("cla", "cla", null), AttributeOf("<span cla|"));
+        Assert.Equal(("class", "class", null), AttributeOf("<span class=|"));
+    }
+
+    [Fact]
+    public void A_caret_outside_every_attribute_has_none()
+    {
+        Assert.Null(AttributeOf("<p>te|xt</p>"));
+        Assert.Null(AttributeOf("<p |>"));
+        Assert.Null(AttributeOf("<p a=\"1\" |>"));
+        Assert.Null(AttributeOf("<p a=\"1\"|>"));
+        Assert.Null(AttributeOf("</p cl|ass>"));
+        Assert.Null(AttributeOf("<p a=\"1\">|"));
+        Assert.Null(HtmlMarkupContext.AttributeAt(string.Empty, 0));
+        Assert.Equal(("a", "a", "1"), AttributeOf("<p a=\"1|\">"));
+    }
+
+    /// <summary>The attribute at the caret: its name, the text its name span covers, and its value's text.</summary>
+    private static (string Name, string NameText, string? Value)? AttributeOf(string withCaret)
+    {
+        var at = withCaret.IndexOf('|', StringComparison.Ordinal);
+        var html = withCaret.Remove(at, 1);
+        return HtmlMarkupContext.AttributeAt(html, at) is { } attribute
+            ? (
+                attribute.Name,
+                html[attribute.NameSpan.Start..attribute.NameSpan.End],
+                attribute.Value is { } value ? html[value.Start..value.End] : null
+            )
+            : null;
+    }
+
     private static MarkupContext Of(string withCaret)
     {
         var at = withCaret.IndexOf('|', StringComparison.Ordinal);

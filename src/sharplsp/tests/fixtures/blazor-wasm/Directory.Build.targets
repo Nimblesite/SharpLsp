@@ -1,0 +1,4 @@
+<Project>
+    <!-- The Directory.Build.targets twin of this folder's Directory.Build.props: stop the
+         upward search at the fixture root. [DEBUG-FEATURES-LAUNCH-BLAZOR-WASM] -->
+</Project>

@@ -1,0 +1,9 @@
+@* The root component the host mounts into `#app`. [DEBUG-FEATURES-LAUNCH-BLAZOR-WASM] *@
+<Router AppAssembly="@typeof(Program).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" />
+    </Found>
+    <NotFound>
+        <p role="alert">Sorry, there is nothing at this address.</p>
+    </NotFound>
+</Router>

@@ -56,11 +56,13 @@
       ]
     },
     "debug": {
-      "description": "Getting a program to START, and nothing about what happens once it has: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions, the [SCRIPT-CONE] launch-target walk with MSBuild output resolution, and the F5 / Ctrl+F5 / sharplsp.runProgram gestures over real projects, C# file-based apps and .fsx scripts.",
+      "description": "Getting a program to START, and nothing about what happens once it has: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions, the [SCRIPT-CONE] launch-target walk with MSBuild output resolution, and the F5 / Ctrl+F5 / sharplsp.runProgram gestures over real projects, C# file-based apps and .fsx scripts. Also the Blazor WebAssembly launch ([DEBUG-FEATURES-LAUNCH-BLAZOR-WASM]), which starts `dotnet run`, hands the DevServer's debug proxy to js-debug and dies with that browser session.",
       "files": [
         "debug-e2e.test.js",
         "debug-adapter-e2e.test.js",
         "debug-adapter-startup.test.js",
+        "blazor-wasm-debug.test.js",
+        "blazor-wasm-debug-resolution.test.js",
         "run-debug-profiles.test.js",
         "run-debug-contributions.test.js",
         "run-debug-target.test.js",

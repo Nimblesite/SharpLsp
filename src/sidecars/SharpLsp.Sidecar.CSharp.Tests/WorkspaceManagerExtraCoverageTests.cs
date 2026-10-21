@@ -310,7 +310,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         var item = Unwrap(await manager.PrepareCallHierarchyAsync(_sourcePath, line, character));
 
         Assert.NotNull(item);
-        Assert.Equal("class", item!.Kind);
+        Assert.Equal("Class", item!.Kind);
     }
 
     [Fact]
@@ -322,7 +322,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         var item = Unwrap(await manager.PrepareCallHierarchyAsync(_sourcePath, line, character));
 
         Assert.NotNull(item);
-        Assert.Equal("property", item!.Kind);
+        Assert.Equal("Property", item!.Kind);
     }
 
     [Fact]
@@ -334,7 +334,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         var item = Unwrap(await manager.PrepareCallHierarchyAsync(_sourcePath, line, character));
 
         Assert.NotNull(item);
-        Assert.Equal("field", item!.Kind);
+        Assert.Equal("Field", item!.Kind);
     }
 
     [Fact]
@@ -346,7 +346,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         var item = Unwrap(await manager.PrepareCallHierarchyAsync(_sourcePath, line, character));
 
         Assert.NotNull(item);
-        Assert.Equal("event", item!.Kind);
+        Assert.Equal("Event", item!.Kind);
     }
 
     [Fact]
@@ -358,7 +358,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         var item = Unwrap(await manager.PrepareCallHierarchyAsync(_sourcePath, line, character));
 
         Assert.NotNull(item);
-        Assert.Equal("variable", item!.Kind);
+        Assert.Equal("Variable", item!.Kind);
     }
 
     [Fact]
@@ -370,7 +370,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         var item = Unwrap(await manager.PrepareCallHierarchyAsync(_sourcePath, line, character));
 
         Assert.NotNull(item);
-        Assert.Equal("parameter", item!.Kind);
+        Assert.Equal("Parameter", item!.Kind);
     }
 
     [Fact]
@@ -382,7 +382,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
         var item = Unwrap(await manager.PrepareTypeHierarchyAsync(_sourcePath, line, character));
 
         Assert.NotNull(item);
-        Assert.Equal("interface", item!.Kind);
+        Assert.Equal("Interface", item!.Kind);
     }
 
     [Fact]

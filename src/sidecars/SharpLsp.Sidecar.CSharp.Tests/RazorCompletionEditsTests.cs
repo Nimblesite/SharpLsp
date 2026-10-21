@@ -26,7 +26,8 @@ public sealed class RazorCompletionEditsTests(RazorFixture fixture) : IClassFixt
         var edit = Assert.Single(
             RazorCompletionEdits.Map(
                 projection,
-                [new TextChange(declaration.Identifier.Span, "changed")]
+                [new TextChange(declaration.Identifier.Span, "changed")],
+                null
             )
         );
         var (expectedLine, expectedCharacter) = RazorFixture.Locate(
@@ -57,7 +58,7 @@ public sealed class RazorCompletionEditsTests(RazorFixture fixture) : IClassFixt
         const string added =
             "using System.Text; using System.Linq; using System.Linq; using static System.Math; using Alias = System.String; using NewAlias = System.Uri; using static System.Console;";
         var edits = RazorCompletionEdits
-            .Map(projection, [new TextChange(new TextSpan(0, 0), added)])
+            .Map(projection, [new TextChange(new TextSpan(0, 0), added)], null)
             .ToArray();
         Assert.Equal(
             [
@@ -94,13 +95,18 @@ public sealed class RazorCompletionEditsTests(RazorFixture fixture) : IClassFixt
             invalid,
             text =>
                 Assert.Empty(
-                    RazorCompletionEdits.Map(projection, [new TextChange(new TextSpan(0, 0), text)])
+                    RazorCompletionEdits.Map(
+                        projection,
+                        [new TextChange(new TextSpan(0, 0), text)],
+                        null
+                    )
                 )
         );
         var edit = Assert.Single(
             RazorCompletionEdits.Map(
                 projection,
-                [new TextChange(new TextSpan(0, 0), "using System.Text;")]
+                [new TextChange(new TextSpan(0, 0), "using System.Text;")],
+                null
             )
         );
         Assert.Equal("@using System.Text\n", edit.NewText);
@@ -108,5 +114,39 @@ public sealed class RazorCompletionEditsTests(RazorFixture fixture) : IClassFixt
             (0, 0, 0, 0),
             (edit.StartLine, edit.StartCharacter, edit.EndLine, edit.EndCharacter)
         );
+    }
+
+    [Fact]
+    public async Task A_new_import_follows_the_page_directive_a_Razor_Page_opens_with()
+    {
+        using var manager = await fixture.OpenManagerAsync().ConfigureAwait(true);
+        var edit = fixture.Path("PagesApp", "Pages", "Edit.cshtml");
+        var projection = await manager.FindRazorProjectionAsync(edit, default).ConfigureAwait(true);
+        var markup = await manager.FindRazorMarkupAsync(edit, default).ConfigureAwait(true);
+        Assert.NotNull(projection);
+        Assert.NotNull(markup);
+
+        // A Razor Page must open with `@page`, so an import goes on the line after it,
+        // not at the start the file would otherwise get. [RAZOR-CODE-ACTIONS-USING]
+        var added = Assert.Single(
+            RazorCompletionEdits.Map(
+                projection,
+                [new TextChange(new TextSpan(0, 0), "using System.Text;")],
+                markup
+            )
+        );
+        Assert.Equal("@using System.Text\n", added.NewText);
+        Assert.Equal(
+            (1, 0, 1, 0),
+            (added.StartLine, added.StartCharacter, added.EndLine, added.EndCharacter)
+        );
+        var unplaced = Assert.Single(
+            RazorCompletionEdits.Map(
+                projection,
+                [new TextChange(new TextSpan(0, 0), "using System.Text;")],
+                null
+            )
+        );
+        Assert.Equal(0, unplaced.StartLine);
     }
 }

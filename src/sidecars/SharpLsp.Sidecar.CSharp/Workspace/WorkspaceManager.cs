@@ -317,6 +317,15 @@ internal sealed partial class WorkspaceManager : IDisposable
         CancellationToken ct = default
     )
     {
+        if (IsRazorRequest(filePath))
+        {
+            var range = new LinePositionSpan(
+                new LinePosition(startLine, startCharacter),
+                new LinePosition(endLine, endCharacter)
+            );
+            return GetRazorCodeActionsAsync(filePath, range, ct);
+        }
+
         return RunDocumentQueryAsync<List<CodeActionItem>>(
             filePath,
             [],
@@ -347,9 +356,11 @@ internal sealed partial class WorkspaceManager : IDisposable
                 return ResolveResult.Failure("No solution loaded");
             }
 
-            var result = await _codeActionResolver
-                .ResolveAsync(actionId, _solution, ct)
-                .ConfigureAwait(false);
+            var result = IsRazorAction(actionId)
+                ? ResolveRazorAction(actionId)
+                : await _codeActionResolver
+                    .ResolveAsync(actionId, _solution, ct)
+                    .ConfigureAwait(false);
             return result is null
                 ? ResolveResult.Failure($"Code action {actionId} not found")
                 : new ResolveResult.Ok<WorkspaceEditResult, string>(result);
@@ -596,6 +607,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             solution = solution.RemoveProjectReference(projectId, stubRef);
         }
 
+        solution = FSharpProjectSymbols.WithDocumentedOutput(solution, projectId, dll);
         project = solution.GetProject(projectId)!;
 
         // Add the referenced project's output DLL *and its sibling assemblies*.
@@ -616,7 +628,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             {
                 solution = solution.AddMetadataReference(
                     projectId,
-                    MetadataReference.CreateFromFile(sibling)
+                    FSharpProjectSymbols.Reference(sibling)
                 );
             }
         }

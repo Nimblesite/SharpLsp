@@ -111,7 +111,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
             fixture.PosPayload(119, 20)
         );
         Assert.Equal("Use", item.Name);
-        Assert.Equal("method", item.Kind);
+        Assert.Equal("Method", item.Kind);
     }
 
     [Fact]

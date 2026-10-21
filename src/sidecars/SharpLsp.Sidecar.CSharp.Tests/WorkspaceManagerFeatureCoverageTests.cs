@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
+using static SharpLsp.Sidecar.CSharp.Tests.TextEditing;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
 #pragma warning disable CA1515 // Types can be internal
@@ -104,20 +105,6 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     {
         Assert.False(result.IsError, result.Match(_ => "ok", err => err));
         return result.Match(value => value, _ => throw new InvalidOperationException("error"));
-    }
-
-    private static string ApplyEdits(string source, IEnumerable<TextEditResult> edits)
-    {
-        var text = SourceText.From(source);
-        var changes = edits.Select(edit => new TextChange(EditSpan(text, edit), edit.NewText));
-        return text.WithChanges(changes).ToString();
-    }
-
-    private static TextSpan EditSpan(SourceText text, TextEditResult edit)
-    {
-        var start = text.Lines.GetPosition(new LinePosition(edit.StartLine, edit.StartCharacter));
-        var end = text.Lines.GetPosition(new LinePosition(edit.EndLine, edit.EndCharacter));
-        return TextSpan.FromBounds(start, end);
     }
 
     private static string ReplacedText(string source, TextEditResult edit)
@@ -476,7 +463,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
 
         var item = Unwrap(result);
         Assert.NotNull(item);
-        Assert.Equal("method", item!.Kind);
+        Assert.Equal("Method", item!.Kind);
         Assert.Contains("Run", item.Name);
     }
 
@@ -539,7 +526,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
 
         var item = Unwrap(result);
         Assert.NotNull(item);
-        Assert.Equal("class", item!.Kind);
+        Assert.Equal("Class", item!.Kind);
         Assert.Contains("Calculator", item.Name);
     }
 

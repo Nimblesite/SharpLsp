@@ -8,6 +8,7 @@ mod code_lens;
 mod config;
 mod config_debug;
 mod configuration;
+mod cross_language;
 mod diagnostics;
 mod document_symbols;
 mod folding;
@@ -810,8 +811,9 @@ fn handle_request(
         // than a syntax tree can give). The other syntax features —
         // foldingRange, selectionRange, linkedEditingRange — run on the F#
         // tree-sitter grammar for both languages. Razor has no grammar, so the
-        // C# sidecar answers its syntax requests, and selection ranges are not
-        // served yet. [SHARPLSP-FEATURES-NAVIGATION] [RAZOR-ARCHITECTURE-ROUTING]
+        // C# sidecar answers every one of its syntax requests, selection
+        // ranges chained out to the whole document.
+        // [SHARPLSP-FEATURES-NAVIGATION] [RAZOR-ARCHITECTURE-ROUTING]
         DocumentSymbolRequest::METHOD => match request_lang(&req) {
             Some(LangId::FSharp | LangId::Razor) => {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -823,7 +825,7 @@ fn handle_request(
             razor::handle_folding_ranges(req, runtime, csharp_sidecar)
         }
         SelectionRangeRequest::METHOD if request_lang(&req) == Some(LangId::Razor) => {
-            Ok(serde_json::json!([]))
+            razor::handle_selection_ranges(req, runtime, csharp_sidecar)
         }
         LinkedEditingRange::METHOD if request_lang(&req) == Some(LangId::Razor) => {
             razor::handle_linked_editing_range(req, runtime, csharp_sidecar)

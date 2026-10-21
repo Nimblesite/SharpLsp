@@ -211,7 +211,11 @@ internal sealed partial class WorkspaceManager
         );
         result.AdditionalEdits.AddRange(
             _lastCompletionOrigin is { } origin
-                ? RazorCompletionEdits.Map(origin, additional)
+                ? RazorCompletionEdits.Map(
+                    origin,
+                    additional,
+                    await RazorMarkupEngine.ProcessAsync(origin.Razor, ct).ConfigureAwait(false)
+                )
                 : additional.Select(textChange => DocumentText.ToTextEdit(text, textChange))
         );
         return result;

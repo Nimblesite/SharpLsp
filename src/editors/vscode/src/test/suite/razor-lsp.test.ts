@@ -23,6 +23,7 @@ import {
 import { packageJson } from './run-debug-kit';
 import {
   closeAllEditors,
+  comparablePath,
   pollProvider,
   pollUntilResult,
   removeDirRecursive,
@@ -300,4 +301,175 @@ suite('Razor in VS Code', () => {
       'every usage finds the same references',
     );
   });
+
+  test('F# symbols in Razor navigate to, find and rename in their F# source', async function () {
+    this.timeout(LSP_RESPONSE_MS * 3);
+    const { doc, uri } = await openRepoFile(fixture().root, RAZOR_FILES.leaders);
+    const inScores = (target: vscode.Uri): boolean => target.path.endsWith('/Domain/Scores.fs');
+
+    // Interaction 1 — definition on an F# record lands on its F# declaration, not
+    // decompiled source. [RAZOR-FSHARP-DEFINITION]
+    const definitions = await pollProvider<vscode.Location | vscode.LocationLink>(
+      'vscode.executeDefinitionProvider',
+      [uri, positionOf(doc, 'private readonly Player[]', 'Player')],
+      (found) => found.some((target) => inScores(targetUri(target))),
+      LSP_RESPONSE_MS * 2,
+    );
+    const declared = definitions.find((target) => inScores(targetUri(target)));
+    assert.ok(declared, 'a definition in Scores.fs');
+    const scores = await vscode.workspace.openTextDocument(targetUri(declared));
+    assert.equal(scores.getText(targetRange(declared)), 'Player', 'ranged on the name');
+    assert.ok(
+      scores.lineAt(targetRange(declared).start.line).text.startsWith('type Player'),
+      'on the type declaration',
+    );
+
+    // Interaction 2 — references on an F# field span F# and Razor, each on its name.
+    // [RAZOR-FSHARP-REFERENCES]
+    const score = positionOf(doc, '@player.Score', 'Score');
+    const references = await pollProvider<vscode.Location>(
+      'vscode.executeReferenceProvider',
+      [uri, score],
+      (found) =>
+        found.some((location) => inScores(location.uri)) &&
+        found.some((location) => location.uri.toString() === uri.toString()),
+    );
+    assert.equal(references.filter((location) => inScores(location.uri)).length, 5);
+    for (const location of references) {
+      const holder = inScores(location.uri) ? scores : doc;
+      assert.equal(holder.getText(location.range), 'Score', 'every reference spans the name');
+      assert.ok(!location.uri.path.endsWith('.g.cs'), 'never generated code');
+    }
+
+    // Interaction 3 — renaming it from Razor renames its F# declaration and uses.
+    // [RAZOR-FSHARP-RENAME]
+    const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+      'vscode.executeDocumentRenameProvider',
+      uri,
+      score,
+      'Points',
+    );
+    // Keyed as the file system compares paths: on Windows a drive letter may be
+    // spelled in either case, and one file must never count as two.
+    const byFile = new Map<string, vscode.TextEdit[]>();
+    for (const [target, edits] of edit.entries()) {
+      const key = comparablePath(target.fsPath);
+      byFile.set(key, [...(byFile.get(key) ?? []), ...edits]);
+    }
+    assert.equal(byFile.get(comparablePath(uri.fsPath))?.length, 1, 'the Razor use');
+    assert.equal(
+      byFile.get(comparablePath(scores.uri.fsPath))?.length,
+      5,
+      'the F# declaration and four uses',
+    );
+    assert.equal(byFile.size, 2, 'the Razor file and the F# file, and nothing else');
+    assert.ok(
+      [...byFile.values()].flat().every((change) => change.newText === 'Points'),
+      'every edit renames to Points',
+    );
+    assert.ok(![...byFile.keys()].some((file) => file.endsWith('.g.cs')), 'no generated file');
+  });
+
+  test('a Razor Page completes tag helper elements once, before the HTML service', async function () {
+    this.timeout(LSP_RESPONSE_MS * 2);
+    const { doc, uri, editor } = await openRepoFile(fixture().root, RAZOR_FILES.edit);
+    const end = doc.lineAt(doc.lineCount - 1).range.end;
+    await editor.edit((builder) => {
+      builder.insert(end, '\n<');
+    });
+    const caret = doc.lineAt(doc.lineCount - 1).range.end;
+
+    // The tag helper's element comes from the server, HTML's own from the HTML
+    // service, and `a`, which both offer, appears once. [RAZOR-MVC-TAGHELPERS]
+    const list = await completionList(uri, caret, 'partial');
+    const labels = list.items.map((item) =>
+      typeof item.label === 'string' ? item.label : item.label.label,
+    );
+    assert.ok(labels.includes('environment'), 'every tag helper element');
+    assert.ok(
+      HTML_ONLY.every((element) => labels.includes(element)),
+      "and the HTML service's",
+    );
+    assert.equal(labels.filter((label) => label === 'a').length, 1, '`a` once');
+    const anchor = list.items.find((item) => item.label === 'a');
+    assert.match(
+      String(anchor?.detail),
+      /AnchorTagHelper/,
+      "the server's item, naming its tag helper",
+    );
+    assert.ok(!labels.includes('ErrorBoundary'), 'no component completes in a Razor Page');
+  });
+
+  test('a component completes and defines its stylesheet classes, and nests its collocated files', async function () {
+    this.timeout(LSP_RESPONSE_MS * 3);
+    const { doc, uri, editor } = await openRepoFile(fixture().root, RAZOR_FILES.card);
+    const inStylesheet = (target: vscode.Uri): boolean =>
+      target.path.endsWith('/Shared/Card.razor.css');
+
+    // Interaction 1 — a class name defines to every selector that declares it, each on
+    // the name after its `.`. [RAZOR-COLLOCATION-CSS]
+    const definitions = await pollProvider<vscode.Location | vscode.LocationLink>(
+      'vscode.executeDefinitionProvider',
+      [uri, positionOf(doc, 'class="card title"', 'title')],
+      (found) => found.length > 0 && found.every((target) => inStylesheet(targetUri(target))),
+      LSP_RESPONSE_MS * 2,
+    );
+    assert.equal(definitions.length, 5, 'the five rules whose selectors hold .title');
+    const [first] = definitions;
+    assert.ok(first, 'a definition');
+    const stylesheet = await vscode.workspace.openTextDocument(targetUri(first));
+    for (const definition of definitions) {
+      assert.equal(
+        stylesheet.getText(targetRange(definition)),
+        'title',
+        'ranged on the class name',
+      );
+    }
+
+    // Interaction 2 — inside a class value, the stylesheet's classes complete as values
+    // that replace the class name at the caret. [RAZOR-COLLOCATION-CSS]
+    const end = doc.lineAt(doc.lineCount - 1).range.end;
+    await editor.edit((builder) => {
+      builder.insert(end, '\n<div class="card ti');
+    });
+    const caret = doc.lineAt(doc.lineCount - 1).range.end;
+    const list = await completionList(uri, caret, 'card__title');
+    const titles = list.items.filter((item) => item.label.toString() === 'title');
+    assert.equal(titles.length, 1, 'each class once');
+    const [title] = titles;
+    assert.ok(title, 'the stylesheet class completes');
+    assert.equal(title.kind, vscode.CompletionItemKind.Value, 'a value');
+    assert.equal(title.detail, 'Card.razor.css', 'naming its stylesheet');
+    const replaced = title.range instanceof vscode.Range ? title.range : title.range?.replacing;
+    assert.deepEqual(replaced, new vscode.Range(caret.translate(0, -2), caret), 'replacing `ti`');
+
+    // Interaction 3 — the explorer nests a component's and a page's collocated files under
+    // them, VS Code's own patterns kept. [RAZOR-COLLOCATION-NESTING]
+    const nesting = vscode.workspace
+      .getConfiguration('explorer.fileNesting')
+      .inspect<Record<string, string>>('patterns')?.defaultValue;
+    const defaults = packageJson().contributes.configurationDefaults as Record<
+      string,
+      Record<string, string> | undefined
+    >;
+    const contributed = defaults['explorer.fileNesting.patterns'] ?? {};
+    for (const kind of ['razor', 'cshtml']) {
+      const nested = ['cs', 'css', 'js']
+        .map((extension) => `$\{capture}.${kind}.${extension}`)
+        .join(', ');
+      assert.equal(contributed[`*.${kind}`], nested, `the manifest nests ${kind} files`);
+      assert.equal(nesting?.[`*.${kind}`], nested, `VS Code applies the ${kind} default`);
+    }
+    assert.ok(Object.keys(nesting ?? {}).length > 2, "VS Code's own patterns stay");
+  });
 });
+
+/** The file a definition result points into. */
+function targetUri(target: vscode.Location | vscode.LocationLink): vscode.Uri {
+  return 'targetUri' in target ? target.targetUri : target.uri;
+}
+
+/** The range a definition result selects. */
+function targetRange(target: vscode.Location | vscode.LocationLink): vscode.Range {
+  return 'targetUri' in target ? (target.targetSelectionRange ?? target.targetRange) : target.range;
+}

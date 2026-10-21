@@ -13,11 +13,16 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 
 internal sealed partial class WorkspaceManager
 {
+    /// <summary>
+    /// What a rename at a position renames. A foreign target is a symbol an F# project
+    /// declares, which C# reads from its DLL: F# renames its declaration. [RAZOR-FSHARP-RENAME]
+    /// </summary>
     private readonly record struct RenameTarget(
         Document Document,
         SourceText Text,
         ISymbol Symbol,
-        SyntaxToken Token
+        SyntaxToken Token,
+        bool Foreign
     );
 
     private readonly record struct RenameSolutions(
@@ -80,19 +85,46 @@ internal sealed partial class WorkspaceManager
     {
         var (target, _) = await FindRenameTargetAsync(filePath, line, character, ct)
             .ConfigureAwait(false);
-        if (target is null || _solution is null || !CanUseNewName(target.Value, newName))
-        {
-            return EmptyRenameResult();
-        }
+        return target is null || _solution is null || !CanUseNewName(target.Value, newName)
+                ? EmptyRenameResult()
+            : target.Value.Foreign
+                ? await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
+                    .ConfigureAwait(false)
+            : await RenameSourceSymbolAsync(_solution, target.Value.Symbol, newName, ct)
+                .ConfigureAwait(false);
+    }
 
-        var renamed = await RenameSolutionAsync(_solution, target.Value.Symbol, newName, ct)
+    /// <summary>A C# source symbol's rename: Roslyn's edits, and its Razor uses'.</summary>
+    private static async Task<RenameEditResult> RenameSourceSymbolAsync(
+        Solution solution,
+        ISymbol symbol,
+        string newName,
+        CancellationToken ct
+    )
+    {
+        var renamed = await RenameSolutionAsync(solution, symbol, newName, ct)
             .ConfigureAwait(false);
-        var edits = await BuildRenameEditsAsync(_solution, renamed, newName, ct)
+        var edits = await BuildRenameEditsAsync(solution, renamed, newName, ct)
             .ConfigureAwait(false);
         var razor = await RazorRenameEdits
-            .FindAsync(_solution, target.Value.Symbol, newName, ct)
+            .FindAsync(solution, symbol, newName, ct)
             .ConfigureAwait(false);
         return RenameSuccess(new WorkspaceEditResult { DocumentChanges = [.. edits, .. razor] });
+    }
+
+    /// <summary>
+    /// An F# project's symbol, renamed from C# or Razor: its C# and Razor uses here. The host
+    /// adds F#'s edits, its declaration included, through the symbol's identity.
+    /// [RAZOR-FSHARP-RENAME] [RENAME-CROSSLANGUAGE]
+    /// </summary>
+    private Task<RenameEditResult> RenameFSharpSymbolAsync(
+        ISymbol symbol,
+        string newName,
+        CancellationToken ct
+    )
+    {
+        var identity = FSharpProjectSymbols.Identity(symbol);
+        return RenameForeignCoreAsync(identity.AssemblyName, identity.XmlDocSig, newName, ct);
     }
 
     /// <summary>
@@ -139,8 +171,11 @@ internal sealed partial class WorkspaceManager
 
         var symbol = await FindSymbolAsync(document, position, ct).ConfigureAwait(false);
         var targetSymbol = symbol is null ? null : RenameConflictTarget(symbol);
-        return targetSymbol is not null && IsSourceSymbol(targetSymbol)
-            ? new RenameTarget(document, text, targetSymbol, token!.Value)
+        var foreign =
+            targetSymbol is not null
+            && FSharpProjectSymbols.Declares(document.Project, targetSymbol);
+        return targetSymbol is not null && (foreign || IsSourceSymbol(targetSymbol))
+            ? new RenameTarget(document, text, targetSymbol, token!.Value, foreign)
             : null;
     }
 

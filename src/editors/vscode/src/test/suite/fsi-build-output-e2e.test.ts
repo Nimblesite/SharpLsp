@@ -420,11 +420,16 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
 
   // ── hot-reload.ts ───────────────────────────────────────────────
 
-  test('isRelevantLanguage classifies C#/F# vs other languages within a save flow', async function () {
+  test('isRelevantLanguage classifies C#/F#/Razor vs other languages within a save flow', async function () {
     this.timeout(COMMAND_MS);
 
     assert.ok(isRelevantLanguage('csharp'));
     assert.ok(isRelevantLanguage('fsharp'));
+    assert.ok(isRelevantLanguage('razor'), 'a .razor save feeds hot reload ([RAZOR-HOT-RELOAD])');
+    assert.ok(
+      isRelevantLanguage('aspnetcorerazor'),
+      "the C# extension's Razor id feeds hot reload too ([RAZOR-HOT-RELOAD])",
+    );
     assert.ok(!isRelevantLanguage('json'));
     assert.ok(!isRelevantLanguage('plaintext'));
 
@@ -472,6 +477,26 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     }, 'Saving a non-relevant doc during hot reload must not throw');
     assert.ok(!isRelevantLanguage(txtDoc.languageId));
     assert.ok(isHotReloadRunning());
+
+    // Saving a Razor document must also be harmless: its language is relevant,
+    // so the onSave path runs instead of early-returning ([RAZOR-HOT-RELOAD]).
+    const razorPath = path.join(tmpDir, 'Saved.razor');
+    fs.writeFileSync(razorPath, '<h1>Saved</h1>\n', 'utf8');
+    const razorDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(razorPath));
+    assert.strictEqual(
+      razorDoc.languageId,
+      'razor',
+      'VS Code opens a .razor file as the razor language',
+    );
+    const razorEditor = await vscode.window.showTextDocument(razorDoc);
+    await razorEditor.edit((b) => {
+      b.insert(new vscode.Position(0, 0), '<p>touched</p>');
+    });
+    await assert.doesNotReject(async () => {
+      await razorDoc.save();
+    }, 'Saving a Razor doc during hot reload must not throw');
+    assert.ok(isRelevantLanguage(razorDoc.languageId));
+    assert.ok(isHotReloadRunning(), 'Hot reload must remain running after a Razor save');
 
     await vscode.commands.executeCommand('sharplsp.hotReload.stop');
     assert.ok(!isHotReloadRunning());

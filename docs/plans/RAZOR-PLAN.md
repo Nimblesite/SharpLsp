@@ -20,7 +20,7 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 - [x] Fixture solution `src/sharplsp/tests/fixtures/razor/` with `BlazorApp`, `Widgets` (RCL), `PagesApp` (Pages + MVC) and `Domain` (F#), isolated by its own `Directory.Build.props` ([RAZOR-TESTING])
 - [x] Host: add `LangId::Razor` for `.razor` and `.cshtml`, owned by the C# sidecar ([RAZOR-ARCHITECTURE-ROUTING])
-- [x] Host: route `documentSymbol`, `foldingRange` and `linkedEditingRange` for Razor to the sidecar, and answer `selectionRange` empty
+- [x] Host: route `documentSymbol`, `foldingRange` and `linkedEditingRange` for Razor to the sidecar, and answer `selectionRange` empty (the Deferred selection-range item has since routed it to the sidecar too)
 - [x] Host: add `<` and `@` completion triggers, and short-circuit them for C# and F# documents
 - [x] Host: publish Razor diagnostics under the source `sharplsp-razor`
 - [x] Sidecar: bundle the Razor compiler from the build SDK, and list it in `THIRD-PARTY-NOTICES.md` ([RAZOR-ARCHITECTURE-ENGINE])
@@ -76,7 +76,7 @@ The phases below are in dependency order. Each item is checked only when a test 
     - Renaming `Badge.Text` from its code-behind edits `@Text` and Board's `Text=`.
     - Renaming `Tally.Label` turns `@bind-Label` into `@bind-Title`.
     - prepareRename refuses on a component's start and end tags.
-  - The F# half of the rename is Phase 6
+  - The F# half of the rename is Phase 5
 
 ### Phase 3: Blazor Markup
 
@@ -110,11 +110,30 @@ The phases below are in dependency order. Each item is checked only when a test 
 
 ### Phase 4: Razor Pages and MVC
 
-- [ ] `@model`, `@inject`, `@section` and `@functions` through the projection ([RAZOR-MVC])
-- [ ] Tag helper elements and attributes: hover and completion
-- [ ] `_ViewImports.cshtml` imports resolved by the engine
+- [x] `@model`, `@inject`, `@section` and `@functions` through the projection ([RAZOR-MVC-DIRECTIVES])
+  - `RazorMvcTests.Model_inject_and_functions_answer_through_the_projection`: `@model EditModel` and `Model.Title` hover their docs, `@inject` hovers `ILogger<…>`, and `@Shout` goes to its `@functions` declaration.
+  - `Model_expressions_and_section_code_get_csharp_features`: `asp-for="Title"` hovers and goes to `EditModel.Title`, finds its 4 references in `Edit.cshtml`, and renames them all with no generated-file edit; `@Model.Price` inside `@section` hovers. `Section_blocks_fold_and_outline` folds and outlines `@section`.
+  - Full stack: `test_full_stack_razor_pages_and_mvc_views` (`razor_mvc.rs`).
+- [x] Tag helper elements and attributes: hover and completion ([RAZOR-MVC-TAGHELPERS], [RAZOR-MVC-SCOPE])
+  - Hover: `Tag_helper_elements_and_attributes_answer_hover_from_their_descriptors` (`<input>` answers `InputTagHelper`, `asp-for` its `ModelExpression`).
+  - Completion: `Tag_helper_attributes_complete_in_an_element_start_tag` (`asp-page`, `asp-controller`, `asp-route-`) and `Tag_helper_elements_complete_after_an_open_angle_bracket` (`partial`, `environment`, `a` once, the `th:` prefix, `@removeTagHelper`). That test found components completing after `<` in `.cshtml` files, where no component binds by tag; they no longer do.
+  - Scope: `Tag_helper_directives_scope_completion_and_binding`. VS Code: `a Razor Page completes tag helper elements once, before the HTML service` (an element that both HTML and a tag helper name is listed once).
+- [x] `_ViewImports.cshtml` imports resolved by the engine ([RAZOR-MVC-IMPORTS]) — `ViewImports_imports_reach_the_views_below_them`: `@model Item` resolves through `Views/_ViewImports.cshtml`'s `@using`, the view reports no error, and its `@addTagHelper` binds `<a>`
 
-### Phase 5: Editors
+### Phase 5: F#
+
+- [x] Hover, completion and definition from Razor into F# types of a referenced F# project ([RAZOR-FSHARP-METADATA], [RAZOR-FSHARP-DEFINITION])
+  - Hover shows the F# XML docs: the design-time build references Domain's `refint` assembly, which has no XML, so the sidecar swaps in the built DLL with its documentation. `RazorFSharpTests.Hover_and_signature_help_read_FSharp_symbols_from_their_assembly` and `Completion_offers_FSharp_members_in_markup_and_code`.
+  - Definition lands in `Scores.fs`, not decompiled source: the C# sidecar names each F# symbol by assembly and XML doc ID, and the F# sidecar finds its declaration (`workspace/declarationForeign`, [DEFINITION-CROSSLANG-IDENTITY]). `Definition_names_each_FSharp_symbol_for_the_FSharp_sidecar`; F#: `FSharpForeignSymbolsTests`. The C#→F# definition e2e now lands in `Shapes.fs` too.
+  - References merge both sides by the same identity (`workspace/referencesForeign`, [REFERENCES-CROSS-LANGUAGE]): `Foreign_references_and_rename_reach_Razor_uses_of_an_FSharp_symbol`.
+  - F# references and highlights placed a dotted use (`player.Score`) over its whole path. They now sit on the name, the same span the foreign path reports (`F# references and foreign uses place each use on its name alike`).
+- [x] F#-origin rename that includes Razor usages, mapped back from the projections ([RAZOR-FSHARP-RENAME])
+  - From F#: `Foreign_references_and_rename_reach_Razor_uses_of_an_FSharp_symbol` renames `Leaders.razor`'s `@player.Score`.
+  - From Razor or C#: the rename resolves to the F# symbol and renames it everywhere (`Rename_from_Razor_renames_an_FSharp_symbol_in_CSharp_and_Razor`).
+  - Full stack: `test_full_stack_fsharp_in_razor_session` (hover, definition into `Scores.fs`, references with and without the declaration, rename from Razor and from F#). VS Code: `F# symbols in Razor navigate to, find and rename in their F# source`.
+  - That full-stack test only restored the fixture, so C# had no `Domain.dll` to read and every F# symbol stayed unresolved ([DEFINITION-CROSSLANG]: the F# project must be built). Its workspace now builds the F# library (`create_razor_workspace_with_fsharp_built`).
+
+### Phase 6: Editors
 
 - [x] VS Code: sync `razor` and `aspnetcorerazor` documents, and activate on `onLanguage:razor` ([RAZOR-EDITORS]) — `razor-lsp.test.ts`: a Razor file opens as Razor, and its unsaved edits reach the server
 - [x] VS Code: forward HTML completion and hover over `sharplsp/razor/htmlProjection` ([RAZOR-FEATURES-HTML]) — `razor-lsp.test.ts`: element names and HTML hovers in markup, C# completion and hover in code
@@ -122,16 +141,21 @@ The phases below are in dependency order. Each item is checked only when a test 
 - [x] VS Code: add a `razor` end-to-end chunk on both platforms — `test-chunks.json`, in both matrices
 - [x] Zed: Razor language registration (Zed has no built-in Razor grammar) — `the_server_attaches_to_the_csharp_fsharp_and_razor_languages`
 
-### Phase 6: F#
+### Deferred
 
-- [ ] Hover, completion and definition from Razor into F# types of a referenced F# project ([RAZOR-FSHARP])
-- [ ] F#-origin rename that includes Razor usages, mapped back from the projections
-
-### Deferred ([RAZOR-FEATURES-DEFERRED])
-
-- [ ] Razor formatting
-- [ ] Selection ranges
-- [ ] Code actions: extract a block to code-behind, extract a component, generate an event handler, add `@using`
-- [ ] Inlay hints, code lens, and call and type hierarchy from Razor positions
-- [ ] `.razor.css` and `.razor.js` collocation awareness
-- [ ] Blazor WebAssembly debugging and Razor Hot Reload
+- [x] Razor formatting — resolved as out of scope: SharpLsp formats no language ([SHARPLSP-FEATURES-FORMATTING]), so the spec now says so for Razor ([RAZOR-SCOPE-FORMATTING]) and nothing is advertised
+- [x] Selection ranges ([RAZOR-FEATURES-SELECTION]) — `RazorSelectionRangesTests` (6 cases: C# chains through syntax nodes, tag names through enclosing elements, attribute names and values, implicit expressions, legacy files, unlisted files); `test_full_stack_razor_selection_ranges`; the routing session's `selectionRange` now asserts the exact chain. An attribute's whole span comes from the compiler's spans (a new `MarkupAttribute.End` fact), not a scan of the text
+- [x] Code actions: extract a block to code-behind, extract a component, generate an event handler, add `@using` ([RAZOR-CODE-ACTIONS]) — `RazorCodeActionsTests` (5 cases). A new `@using` goes after a Razor Page's `@page` line, never above it (`A_new_import_follows_the_page_directive_a_Razor_Page_opens_with`). New files arrive as LSP `CreateFile` operations (`map_workspace_edit_creates_new_files_before_editing_them`)
+- [x] Inlay hints, code lens, and call and type hierarchy from Razor positions ([RAZOR-FEATURES-INLAY-HINTS], [RAZOR-FEATURES-CODE-LENS], [RAZOR-FEATURES-HIERARCHY]) — `RazorHintsAndLensesTests` (2), `RazorHierarchyTests` (3), `test_full_stack_razor_hierarchy_and_hints`
+  - Outgoing calls from a Razor projection threw: the resolver read the declaration through `Solution.GetDocument`, which is null for a source-generated document. It now reads each declaration through its own tree
+  - Markup callers are the component, named by its file with kind `Class`, never the generated `BuildRenderTree`
+  - The C# sidecar named hierarchy kinds in lowercase, while the host maps PascalCase (the F# sidecar's casing). So every C# class, property or interface item reached the client as a method or class. The C# kinds are now PascalCase, and the e2e asserts the LSP kinds
+- [x] `.razor.css` and `.razor.js` collocation awareness ([RAZOR-COLLOCATION]) — `RazorCollocationTests` (6), `RazorStylesheetTests` (10), `HtmlMarkupContextTests` (attribute at a caret), `test_full_stack_razor_collocated_styles_and_scripts`, VS Code `a component completes and defines its stylesheet classes, and nests its collocated files`
+  - Classes come from a CSS Syntax Level 3 tokenizer over rule preludes; a class completes as LSP `Value` and defines to every selector that declares it. A module literal in an `"import"` call defines to its `.razor.js`, from Razor, a code-behind and plain C#
+  - The attribute at a caret is read by the HTML tokenizer, continued past the caret. Review found three bugs in a text-scanning first version: an attribute after a bare one (`<span hidden class="…">`) was read as the bare one, a caret on a name had no value, and a caret after a value still named its attribute. Each failed in `HtmlMarkupContextTests` first
+  - The host mapped the `Value` kind to `Text`; it now maps to LSP `Value`
+- [x] Blazor WebAssembly debugging and Razor Hot Reload ([DEBUG-FEATURES-LAUNCH-BLAZOR-WASM], [RAZOR-HOT-RELOAD])
+  - WebAssembly: the `sharplsp-blazorwasm` debugger runs `dotnet run` and hands the DevServer's debug proxy to js-debug — `blazor-wasm-debug.test.ts`, `blazor-wasm-debug-resolution.test.ts`
+  - Hot Reload: a Razor save swaps the additional document in every framework copy, the generator reruns and Edit and Continue emits the generated C#'s deltas — `RazorHotReloadTests` (5: markup and `@code` body edits, a mixed `.cs` and Razor batch, a signature change that demands a restart, an unlisted file named in its refusal). Each failed with the Razor branch disabled
+  - A re-save of committed text answered `notCompilable`, sending the client to save again forever. Roslyn's Edit and Continue log showed the emit was Status None, nothing to apply, with no update pending. It now answers `applied` with no deltas, for `.cs` saves too (`Two_phase_updates_commit_discard_and_span_documents`)
+  - VS Code: both save paths take Razor documents — `debug-hot-reload-e2e.test.ts` (a Razor save reaches the sidecar and is refused by name), `fsi-build-output-e2e.test.ts`

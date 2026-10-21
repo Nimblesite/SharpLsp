@@ -85,7 +85,16 @@ internal sealed partial class WorkspaceManager
         var markup = csharpAnswered
             ? null
             : RazorMarkupCompletion.At(found.Markup, found.Compilation, found.Offset);
-        return [.. RazorMarkupCompletion.Directives(found.Markup, found.Offset), .. markup ?? []];
+        // The collocated stylesheet's classes complete inside a `class` value.
+        // [RAZOR-COLLOCATION-CSS]
+        var classes = await CollocatedClassCompletionsAsync(razor, found.Markup, found.Offset, ct)
+            .ConfigureAwait(false);
+        return
+        [
+            .. RazorMarkupCompletion.Directives(found.Markup, found.Offset),
+            .. markup ?? [],
+            .. classes,
+        ];
     }
 
     /// <summary>What a markup query at a position works on: the facts, the compilation, the offset.</summary>

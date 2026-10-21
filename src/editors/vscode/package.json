@@ -42,7 +42,9 @@
     "workspaceContains:**/*.fsproj",
     "onLanguage:razor",
     "onDebugResolve:sharplsp-coreclr",
-    "onDebugDynamicConfigurations:sharplsp-coreclr"
+    "onDebugDynamicConfigurations:sharplsp-coreclr",
+    "onDebugResolve:sharplsp-blazorwasm",
+    "onDebugDynamicConfigurations:sharplsp-blazorwasm"
   ],
   "main": "./dist/extension.js",
   "capabilities": {
@@ -365,6 +367,12 @@
         }
       }
     },
+    "configurationDefaults": {
+      "explorer.fileNesting.patterns": {
+        "*.razor": "${capture}.razor.cs, ${capture}.razor.css, ${capture}.razor.js",
+        "*.cshtml": "${capture}.cshtml.cs, ${capture}.cshtml.css, ${capture}.cshtml.js"
+      }
+    },
     "debuggers": [
       {
         "type": "sharplsp-coreclr",
@@ -571,6 +579,67 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "stopAtEntry": false
+          }
+        ]
+      },
+      {
+        "type": "sharplsp-blazorwasm",
+        "label": "Blazor WebAssembly",
+        "configurationAttributes": {
+          "launch": {
+            "required": [],
+            "properties": {
+              "project": {
+                "type": "string",
+                "description": "The Blazor WebAssembly .csproj/.fsproj to run. Omit to use the project the active document belongs to."
+              },
+              "launchProfile": {
+                "type": "string",
+                "description": "The Properties/launchSettings.json profile to run, by name. Omit to use the project's only Project profile."
+              },
+              "browser": {
+                "type": "string",
+                "enum": [
+                  "chrome",
+                  "edge"
+                ],
+                "default": "chrome",
+                "description": "The browser to debug, through VS Code's built-in JavaScript debugger."
+              },
+              "url": {
+                "type": "string",
+                "description": "The page to open. Omit to use the address the DevServer announces."
+              },
+              "webRoot": {
+                "type": "string",
+                "description": "The directory served URLs map onto. Omit to use the project's wwwroot."
+              },
+              "timeout": {
+                "type": "number",
+                "default": 30000,
+                "description": "How long the browser debugger waits for the page to load."
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "Blazor WebAssembly: Launch",
+            "description": "Run a Blazor WebAssembly project and debug it in the browser",
+            "body": {
+              "type": "sharplsp-blazorwasm",
+              "request": "launch",
+              "name": "Launch Blazor WebAssembly",
+              "browser": "chrome"
+            }
+          }
+        ],
+        "initialConfigurations": [
+          {
+            "type": "sharplsp-blazorwasm",
+            "request": "launch",
+            "name": "Launch Blazor WebAssembly",
+            "browser": "chrome"
           }
         ]
       }
