@@ -33,7 +33,7 @@ internal static class InlayHintResolver
         var span = TextSpan.FromBounds(start, Math.Max(start, endPos));
 
         var hints = new List<InlayHintResult>();
-        CollectParameterHints(root, model, span, hints, ct);
+        CollectParameterHints(root, model, text, span, hints, ct);
         CollectTypeHints(root, model, text, span, hints, ct);
         CollectLambdaTypeHints(root, model, text, span, hints, ct);
         return hints;
@@ -42,6 +42,7 @@ internal static class InlayHintResolver
     private static void CollectParameterHints(
         SyntaxNode root,
         SemanticModel model,
+        SourceText text,
         TextSpan span,
         List<InlayHintResult> hints,
         CancellationToken ct
@@ -50,7 +51,7 @@ internal static class InlayHintResolver
         foreach (var invocation in root.DescendantNodes(span).OfType<InvocationExpressionSyntax>())
         {
             ct.ThrowIfCancellationRequested();
-            AddParameterHintsForArgs(invocation.ArgumentList, model, hints, ct);
+            AddParameterHintsForArgs(invocation.ArgumentList, model, text, hints, ct);
         }
 
         foreach (
@@ -60,7 +61,7 @@ internal static class InlayHintResolver
             ct.ThrowIfCancellationRequested();
             if (creation.ArgumentList is not null)
             {
-                AddParameterHintsForArgs(creation.ArgumentList, model, hints, ct);
+                AddParameterHintsForArgs(creation.ArgumentList, model, text, hints, ct);
             }
         }
     }
@@ -68,6 +69,7 @@ internal static class InlayHintResolver
     private static void AddParameterHintsForArgs(
         ArgumentListSyntax argList,
         SemanticModel model,
+        SourceText text,
         List<InlayHintResult> hints,
         CancellationToken ct
     )
@@ -85,17 +87,15 @@ internal static class InlayHintResolver
                 continue;
             }
 
-            var pos = arg.Expression.GetLocation().GetMappedLineSpan();
-            if (!pos.IsValid)
-            {
-                continue;
-            }
-
+            // The position is in this document's own text, like every other hint's, so a caller
+            // reading it in another file — a Razor projection read in its Razor file — can place
+            // it, and a generated argument it cannot place is dropped rather than misplaced.
+            var pos = text.Lines.GetLinePosition(arg.Expression.SpanStart);
             hints.Add(
                 new InlayHintResult
                 {
-                    Line = pos.StartLinePosition.Line,
-                    Character = pos.StartLinePosition.Character,
+                    Line = pos.Line,
+                    Character = pos.Character,
                     Label = $"{paramSymbol.Name}:",
                     Kind = 2, // Parameter
                 }

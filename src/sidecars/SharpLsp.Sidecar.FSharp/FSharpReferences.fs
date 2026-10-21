@@ -16,6 +16,39 @@ type HighlightLocation =
       EndCharacter: int
       Kind: int }
 
+/// Where `symbolUse` names its symbol, as zero-based (startLine, start, endLine, end). FCS
+/// ranges a dotted use (`player.Score`) over the whole path, so the name is the token at the
+/// range's end that spells the symbol's name; a use no token spells keeps FCS's range.
+let internal nameSpan checker tokenized (symbolUse: FSharpSymbolUse) =
+    let range = symbolUse.Range
+    match FSharpRenameToken.tokenForUse checker tokenized symbolUse with
+    | Some token -> range.EndLine - 1, token.StartCharacter, range.EndLine - 1, token.EndCharacter
+    | None -> range.StartLine - 1, range.StartColumn, range.EndLine - 1, range.EndColumn
+
+/// Each use's name as a location, each file read and tokenized once, each place once.
+let internal nameLocations (state: FSharpWorkspace.FSharpWorkspaceState) (uses: FSharpSymbolUse seq) =
+    uses
+    |> Seq.filter (fun symbolUse ->
+        let range = symbolUse.Range
+        range.FileName <> "")
+    |> Seq.groupBy (fun symbolUse ->
+        let range = symbolUse.Range
+        range.FileName)
+    |> Seq.collect (fun (filePath, inFile) ->
+        let tokenized = FSharpRenameToken.tokenizeSource state.Checker (FSharpWorkspace.readSource state filePath)
+        inFile
+        |> Seq.map (fun symbolUse ->
+            let line, start, endLine, finish = nameSpan state.Checker tokenized symbolUse
+            let location: FSharpWorkspace.DefinitionLocation =
+                { FilePath = filePath
+                  Line = line
+                  Character = start
+                  EndLine = endLine
+                  EndCharacter = finish }
+            location))
+    |> Seq.distinctBy (fun location -> NativePaths.NormalizeFullPath location.FilePath, location.Line, location.Character)
+    |> List.ofSeq
+
 /// Check whether an FSharpSymbolUse represents a write (definition or pattern).
 let private isWriteUse (su: FSharpSymbolUse) =
     su.IsFromDefinition || su.IsFromPattern
@@ -144,10 +177,8 @@ let getReferences
         let! uses = getProjectUsages state filePath line character
         return
             uses
-            |> Array.choose (fun (su: FSharpSymbolUse) ->
-                if not includeDeclaration && su.IsFromDefinition then None
-                else FSharpWorkspace.rangeToLocation su.Range)
-            |> Array.toList
+            |> Array.filter (fun (su: FSharpSymbolUse) -> includeDeclaration || not su.IsFromDefinition)
+            |> nameLocations state
     }
 
 /// Find document highlights for the symbol at a position (current file only).
@@ -168,20 +199,21 @@ let getDocumentHighlights
                 | Some symbolUse ->
                     let usesInFile =
                         checkResults.GetUsesOfSymbolInFile(symbolUse.Symbol)
+                    let tokenized = FSharpRenameToken.tokenizeSource state.Checker source
                     return
                         usesInFile
                         |> Array.choose (fun (su: FSharpSymbolUse) ->
                             let r = su.Range
                             if r.FileName = "" then None
                             else
-                                let kind = if isWriteUse su then 3 else 2
+                                let line, start, endLine, finish = nameSpan state.Checker tokenized su
                                 Some
                                     { FilePath = r.FileName
-                                      StartLine = r.StartLine - 1
-                                      StartCharacter = r.StartColumn
-                                      EndLine = r.EndLine - 1
-                                      EndCharacter = r.EndColumn
-                                      Kind = kind })
+                                      StartLine = line
+                                      StartCharacter = start
+                                      EndLine = endLine
+                                      EndCharacter = finish
+                                      Kind = if isWriteUse su then 3 else 2 })
                         |> Array.toList
         with ex ->
             Log.Debug(ex, "[F# DocumentHighlight] failed")

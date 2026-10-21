@@ -9,7 +9,8 @@ namespace SharpLsp.Sidecar.CSharp.Razor;
 /// <summary>
 /// A completion's additional edits, moved from a projection into its Razor file: an edit
 /// inside one C# fragment maps across, an added C# <c>using</c> becomes an <c>@using</c> line
-/// after the file's own, and anything else cannot be placed and is dropped.
+/// after the file's own (else after its <c>@page</c>, which a Razor Page must open with), and
+/// anything else cannot be placed and is dropped.
 /// Implements [RAZOR-ARCHITECTURE-PROJECTION] and [RAZOR-FEATURES-COMPLETION].
 /// </summary>
 internal static class RazorCompletionEdits
@@ -17,7 +18,8 @@ internal static class RazorCompletionEdits
     /// <summary>The Razor edits for <paramref name="changes"/> computed on <paramref name="origin"/>'s projection.</summary>
     public static IEnumerable<TextEditResult> Map(
         RazorProjection origin,
-        IEnumerable<TextChange> changes
+        IEnumerable<TextChange> changes,
+        RazorMarkup? markup
     )
     {
         var existing = OwnUsings(origin).Select(Spelling).ToHashSet(StringComparer.Ordinal);
@@ -34,7 +36,7 @@ internal static class RazorCompletionEdits
 
             foreach (var added in AddedUsings(change).Where(existing.Add))
             {
-                yield return UsingLine(origin, added);
+                yield return UsingLine(origin, added, markup);
             }
         }
     }
@@ -72,25 +74,32 @@ internal static class RazorCompletionEdits
         return isStatic + alias + directive.NamespaceOrType.ToString();
     }
 
-    /// <summary>An <c>@using</c> line inserted after the file's last own using, else at its start.</summary>
-    private static TextEditResult UsingLine(RazorProjection origin, string spelling)
+    /// <summary>
+    /// An <c>@using</c> line inserted after the file's last own using, else after its
+    /// <c>@page</c> directive, else at its start. [RAZOR-CODE-ACTIONS-USING]
+    /// </summary>
+    /// <summary>The line holding the last character of <paramref name="span"/>, which may end in its line break.</summary>
+    private static int LastLineOf(SourceText text, TextSpan span)
     {
-        var after = OwnUsings(origin)
-            .Select(directive => directive.NamespaceOrType.GetLocation().GetMappedLineSpan())
-            .Select(span => span.EndLinePosition.Line + 1)
-            .DefaultIfEmpty(0)
-            .Max();
-        var line = Math.Min(after, origin.RazorText.Lines.Count - 1);
-        var at = origin.RazorText.Lines[line].Start;
-        var text = "@using " + spelling + LineBreak(origin.RazorText);
-        return DocumentText.ToTextEdit(origin.RazorText, new TextChange(new TextSpan(at, 0), text));
+        return text.Lines.GetLineFromPosition(Math.Max(span.Start, span.End - 1)).LineNumber;
     }
 
-    private static string LineBreak(SourceText text)
+    private static TextEditResult UsingLine(
+        RazorProjection origin,
+        string spelling,
+        RazorMarkup? markup
+    )
     {
-        var first = text.Lines[0];
-        return first.SpanIncludingLineBreak.Length > first.Span.Length
-            ? text.ToString(TextSpan.FromBounds(first.End, first.EndIncludingLineBreak))
-            : "\n";
+        var usings = OwnUsings(origin)
+            .Select(directive => directive.NamespaceOrType.GetLocation().GetMappedLineSpan())
+            .Select(span => span.EndLinePosition.Line + 1);
+        var page = (markup?.Directives ?? [])
+            .Where(directive => directive.Name == "page")
+            .Select(directive => LastLineOf(origin.RazorText, directive.Span) + 1);
+        var after = usings.Concat(page).DefaultIfEmpty(0).Max();
+        var line = Math.Min(after, origin.RazorText.Lines.Count - 1);
+        var at = origin.RazorText.Lines[line].Start;
+        var text = "@using " + spelling + RazorHandlerText.LineBreak(origin.RazorText);
+        return DocumentText.ToTextEdit(origin.RazorText, new TextChange(new TextSpan(at, 0), text));
     }
 }

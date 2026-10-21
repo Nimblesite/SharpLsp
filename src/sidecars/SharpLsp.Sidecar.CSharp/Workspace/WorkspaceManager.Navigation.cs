@@ -74,30 +74,69 @@ internal sealed partial class WorkspaceManager
                 filePath,
                 (line, character),
                 new LocationListResult(),
-                async target =>
-                    await MapLocationsAsync(
-                            await DefinitionResolver
-                                .ResolveDefinitionLocationsAsync(
-                                    target.Document,
-                                    target.Line,
-                                    target.Character,
-                                    ct
-                                )
-                                .ConfigureAwait(false),
-                            ct
-                        )
-                        .ConfigureAwait(false),
+                target => DefinitionAtAsync(target, ct),
                 ct
             )
             .ConfigureAwait(false);
-        // Where no C# fragment answers in a Razor file, the markup name there does.
-        // [RAZOR-FEATURES-DEFINITION]
-        return
-            csharp
-                is ImplementationsResult.Ok<LocationListResult, string> { Value.Locations.Count: 0 }
-            && NativePaths.IsRazor(filePath)
-            ? await MarkupDefinitionAsync(filePath, line, character, ct).ConfigureAwait(false)
+        return IsEmpty(csharp) && NativePaths.IsRazor(filePath)
+            ? await RazorMarkupDefinitionAsync(filePath, line, character, ct).ConfigureAwait(false)
             : csharp;
+    }
+
+    /// <summary>
+    /// The definition at a target: the collocated module an import call names, ahead of any
+    /// enclosing declaration the position would fall back to ([RAZOR-COLLOCATION-JS]); else the
+    /// declarations of the symbol there.
+    /// </summary>
+    private async Task<LocationListResult> DefinitionAtAsync(
+        QueryTarget target,
+        CancellationToken ct
+    )
+    {
+        var module = await ModuleStartAsync(target, ct).ConfigureAwait(false);
+        return module.Locations.Count > 0
+            ? module
+            : await MapLocationsAsync(
+                    await DefinitionResolver
+                        .ResolveDefinitionLocationsAsync(
+                            target.Document,
+                            target.Line,
+                            target.Character,
+                            ct
+                        )
+                        .ConfigureAwait(false),
+                    ct
+                )
+                .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Where no C# fragment answers in a Razor file: the markup name there
+    /// ([RAZOR-FEATURES-DEFINITION]), else the collocated stylesheet's selectors of the class at
+    /// the caret ([RAZOR-COLLOCATION-CSS]).
+    /// </summary>
+    private async Task<ImplementationsResult> RazorMarkupDefinitionAsync(
+        string filePath,
+        int line,
+        int character,
+        CancellationToken ct
+    )
+    {
+        var markup = await MarkupDefinitionAsync(filePath, line, character, ct)
+            .ConfigureAwait(false);
+        return IsEmpty(markup)
+            ? new ImplementationsResult.Ok<LocationListResult, string>(
+                await CollocatedClassDefinitionAsync(filePath, line, character, ct)
+                    .ConfigureAwait(false)
+            )
+            : markup;
+    }
+
+    /// <summary>Whether a definition answered, and found nothing.</summary>
+    private static bool IsEmpty(ImplementationsResult result)
+    {
+        return result
+            is ImplementationsResult.Ok<LocationListResult, string> { Value.Locations.Count: 0 };
     }
 
     /// <summary>Go to type definition at a position.</summary>

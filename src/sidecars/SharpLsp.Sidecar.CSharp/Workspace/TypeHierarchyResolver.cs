@@ -133,10 +133,10 @@ internal static class TypeHierarchyResolver
 
     private static string MapKind(INamedTypeSymbol symbol)
     {
-        return symbol.TypeKind == TypeKind.Interface ? "interface"
-            : symbol.TypeKind == TypeKind.Struct ? "struct"
-            : symbol.TypeKind == TypeKind.Enum ? "enum"
-            : symbol.TypeKind == TypeKind.Delegate ? "delegate"
-            : "class";
+        return symbol.TypeKind == TypeKind.Interface ? "Interface"
+            : symbol.TypeKind == TypeKind.Struct ? "Struct"
+            : symbol.TypeKind == TypeKind.Enum ? "Enum"
+            : symbol.TypeKind == TypeKind.Delegate ? "Delegate"
+            : "Class";
     }
 }

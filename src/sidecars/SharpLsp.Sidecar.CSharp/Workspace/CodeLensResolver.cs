@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -10,11 +11,16 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class CodeLensResolver
 {
-    /// <summary>Get code lenses for a document.</summary>
+    /// <summary>
+    /// Get code lenses for a document, each on its declaration. A declaration <paramref name="place"/>
+    /// moves is lensed where it puts it, and one it maps nowhere has no lens: that is how a Razor
+    /// file's lenses land on the declarations in its C# fragments ([RAZOR-FEATURES-CODE-LENS]).
+    /// </summary>
     public static async Task<List<CodeLensResult>> GetLensesAsync(
         Document document,
         SearchScope scope,
-        CancellationToken ct
+        CancellationToken ct,
+        Func<LinePositionSpan, LinePositionSpan?>? place = null
     )
     {
         var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
@@ -25,7 +31,7 @@ internal static class CodeLensResolver
         }
 
         var lenses = new List<CodeLensResult>();
-        await CollectLensesAsync(root, model, scope, lenses, ct).ConfigureAwait(false);
+        await CollectLensesAsync(root, model, scope, lenses, place, ct).ConfigureAwait(false);
         return lenses;
     }
 
@@ -34,6 +40,7 @@ internal static class CodeLensResolver
         SemanticModel model,
         SearchScope scope,
         List<CodeLensResult> lenses,
+        Func<LinePositionSpan, LinePositionSpan?>? place,
         CancellationToken ct
     )
     {
@@ -54,13 +61,7 @@ internal static class CodeLensResolver
             }
 
             var symbol = model.GetDeclaredSymbol(node, ct);
-            if (symbol is null)
-            {
-                continue;
-            }
-
-            var span = node.GetLocation().GetMappedLineSpan();
-            if (!span.IsValid)
+            if (symbol is null || Declared(node, place) is not { } span)
             {
                 continue;
             }
@@ -79,6 +80,28 @@ internal static class CodeLensResolver
                 lenses.Add(LensAt(span, FormatImplTitle(implCount)));
             }
         }
+    }
+
+    /// <summary>
+    /// Where the lens for <paramref name="node"/> sits: its declaration's own mapped range, or,
+    /// when <paramref name="place"/> maps it, that range in the file it belongs to; null when the
+    /// declaration maps nowhere and its lens is dropped.
+    /// </summary>
+    private static FileLinePositionSpan? Declared(
+        SyntaxNode node,
+        Func<LinePositionSpan, LinePositionSpan?>? place
+    )
+    {
+        var location = node.GetLocation();
+        if (place is null)
+        {
+            var mapped = location.GetMappedLineSpan();
+            return mapped.IsValid ? mapped : null;
+        }
+
+        return place(location.GetLineSpan().Span) is { } placed
+            ? new FileLinePositionSpan(location.SourceTree?.FilePath ?? "", placed)
+            : null;
     }
 
     /// <summary>A lens titled <paramref name="title"/> at the start of <paramref name="span"/>.</summary>

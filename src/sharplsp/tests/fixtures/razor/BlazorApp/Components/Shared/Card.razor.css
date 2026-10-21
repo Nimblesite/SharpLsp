@@ -1,0 +1,52 @@
+/*
+ * Card.razor.css — the collocated stylesheet of Card.razor.
+ * A comment holds braces and class names: } .commented { .alsoCommented { }
+ */
+
+.card {
+    color: #1a1a1a;
+    margin: .5rem;
+    padding: 0.25rem 0.5rem;
+    background: url(card.bg.png);
+}
+
+.card .title {
+    font-weight: 600;
+}
+
+.card::deep .card__title {
+    text-transform: uppercase;
+    grid-area: zone;
+}
+
+.title:is(.accent, .muted) {
+    letter-spacing: 0.05em;
+}
+
+a[href$=".pdf"] .title {
+    text-decoration: underline;
+}
+
+.panel .title {
+    font-size: 1.25rem;
+}
+
+.p-1\.5 {
+    padding: 0.375rem;
+}
+
+.labeled {
+    content: "a.b";
+}
+
+@media (min-width: 641px) {
+    .title {
+        font-size: 2rem;
+    }
+
+    @supports (display: grid) {
+        .card--grid .meta {
+            display: grid;
+        }
+    }
+}

@@ -21,10 +21,7 @@ type PrepareRename =
       Placeholder: string }
 
 /// Stable compiler identity shared with the other language sidecar.
-[<NoComparison; NoEquality>]
-type RenameIdentity =
-    { AssemblyName: string
-      XmlDocSig: string }
+type RenameIdentity = FSharpForeignSymbols.SymbolIdentity
 
 [<NoComparison; NoEquality>]
 type private ResolvedRename =
@@ -52,27 +49,6 @@ type private ProjectedCandidate =
     { Original: TokenCandidate
       StartCharacter: int
       EndCharacter: int }
-
-let private xmlDocSignature (symbol: FSharpSymbol) =
-    match symbol with
-    | :? FSharpEntity as entity -> entity.XmlDocSig
-    | :? FSharpMemberOrFunctionOrValue as memberValue -> memberValue.XmlDocSig
-    | :? FSharpField as field -> field.XmlDocSig
-    | :? FSharpUnionCase as unionCase -> unionCase.XmlDocSig
-    | _ -> ""
-
-let private symbolAssemblyName (symbol: FSharpSymbol) =
-    try symbol.Assembly.SimpleName |> string
-    with _ -> ""
-
-let private identityForSymbol symbol =
-    let assemblyName = symbolAssemblyName symbol
-    let xmlDocSig = xmlDocSignature symbol
-    if String.IsNullOrWhiteSpace(assemblyName) || String.IsNullOrWhiteSpace(xmlDocSig) then None
-    else Some { AssemblyName = assemblyName; XmlDocSig = xmlDocSig }
-
-let private requireCheckedFile filePath checkedFile =
-    checkedFile |> Option.defaultWith (fun () -> raise (InvalidOperationException($"FCS could not check {filePath}")))
 
 /// Pure prepare-rename computation over an already-checked file. Kept separate
 /// from the `task` so the async wrapper has a single bind + single return — the
@@ -217,7 +193,7 @@ let prepareRename
 
 let private computeRenameIdentity state parseResults checkResults source line character =
     resolveRenameUse state checkResults parseResults source line character
-    |> Option.bind (fun resolved -> identityForSymbol (normalizeSymbol resolved.SymbolUse.Symbol))
+    |> Option.bind (fun resolved -> FSharpForeignSymbols.identityOf (normalizeSymbol resolved.SymbolUse.Symbol))
 
 /// Return the compiler-stable identity for the renameable symbol at a position.
 let getRenameIdentity (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
@@ -227,7 +203,7 @@ let getRenameIdentity (state: FSharpWorkspace.FSharpWorkspaceState) filePath lin
                 return raise (InvalidOperationException("F# workspace is not loaded"))
             else
                 let! fileCheck = FSharpWorkspace.checkFileWithParse state filePath
-                let parseResults, checkResults, source = requireCheckedFile filePath fileCheck
+                let parseResults, checkResults, source = FSharpForeignSymbols.requireCheckedFile filePath fileCheck
                 return computeRenameIdentity state parseResults checkResults source line character
         with ex ->
             Log.Debug(ex, "[F# RenameIdentity] failed")
@@ -306,32 +282,10 @@ let private renameChecked state parseResults checkResults source line character 
             | Some resolved -> return! standardRename state newName resolved
     }
 
-let private matchesIdentity assemblyName xmlDocSig (symbolUse: FSharpSymbolUse) =
-    String.Equals(symbolAssemblyName symbolUse.Symbol, assemblyName, StringComparison.Ordinal)
-    && String.Equals(xmlDocSignature symbolUse.Symbol, xmlDocSig, StringComparison.Ordinal)
-
-let private matchingUsesInFile state assemblyName xmlDocSig filePath =
-    task {
-        let! fileCheck = FSharpWorkspace.checkFile state filePath
-        let checkResults, _ = requireCheckedFile filePath fileCheck
-        return
-            checkResults.GetAllUsesOfAllSymbolsInFile()
-            |> Seq.filter (matchesIdentity assemblyName xmlDocSig)
-            |> Seq.toArray
-    }
-
-let private collectMatchingUses
-    (state: FSharpWorkspace.FSharpWorkspaceState)
-    assemblyName
-    xmlDocSig =
-    task {
-        let collected = ResizeArray<FSharpSymbolUse>()
-        let files = FSharpWorkspace.allSourceFiles state
-        for filePath in files do
-            let! uses = matchingUsesInFile state assemblyName xmlDocSig filePath
-            collected.AddRange(uses)
-        return collected.ToArray()
-    }
+/// Every use of the symbol `assemblyName` and `xmlDocSig` name. A rename by identity, from
+/// the other language with no F# file to anchor on, walks every loaded project.
+let private collectMatchingUses (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig =
+    FSharpForeignSymbols.usesIn state assemblyName xmlDocSig (FSharpWorkspace.allSourceFiles state)
 
 let private signatureHeaderEnd (xmlDocSig: string) =
     [| xmlDocSig.IndexOf('('); xmlDocSig.IndexOf('~') |]
@@ -432,7 +386,7 @@ let private matchingProjectedEdits
         FSharpWorkspace.getSymbolUse
             checkResults source candidate.Original.Line candidate.StartCharacter
         |> Option.filter (matchesProjectedRange candidate)
-        |> Option.filter (matchesIdentity assemblyName staleXml)
+        |> Option.filter (FSharpForeignSymbols.matches assemblyName staleXml)
         |> Option.map (fun _ -> candidateEdit newName candidate.Original))
 
 let private transientFileEdits
@@ -446,7 +400,7 @@ let private transientFileEdits
             let projectedCandidates = projectCandidatePositions newName candidates
             let projectedSource = projectSource source newName candidates
             let! checkedFile = FSharpWorkspace.checkFileWithSource state filePath projectedSource
-            let _, checkResults, checkedSource = requireCheckedFile filePath checkedFile
+            let _, checkResults, checkedSource = FSharpForeignSymbols.requireCheckedFile filePath checkedFile
             return matchingProjectedEdits
                 assemblyName staleXml newName checkResults checkedSource projectedCandidates
     }

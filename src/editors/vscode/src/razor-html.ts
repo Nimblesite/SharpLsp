@@ -153,9 +153,19 @@ async function htmlHover(uri: Uri, position: Position): Promise<Hover | undefine
   return hovers?.[0];
 }
 
-/** The server's items first, then `extra`, keeping the server's incompleteness. */
+/**
+ * The server's items first, then each of `extra` the server has not already offered by
+ * label (a tag helper element such as `a` is both), keeping the server's incompleteness.
+ */
 function appended(own: Completions, extra: CompletionItem[]): CompletionList {
   const items = Array.isArray(own) ? own : (own?.items ?? []);
   const incomplete = !Array.isArray(own) && own?.isIncomplete === true;
-  return new CompletionList([...items, ...extra], incomplete);
+  const offered = new Set(items.map(labelOf));
+  const added = extra.filter((item) => !offered.has(labelOf(item)));
+  return new CompletionList([...items, ...added], incomplete);
+}
+
+/** A completion item's label text. */
+function labelOf(item: CompletionItem): string {
+  return typeof item.label === 'string' ? item.label : item.label.label;
 }

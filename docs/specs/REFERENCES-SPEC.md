@@ -131,7 +131,7 @@ F# references MUST search every compile item in the loaded project; a file-local
 3. From the `FSharpSymbolUse.Symbol`, call [`GetUsesOfSymbolInFile()`](https://fsharp.github.io/fsharp-compiler-docs/) for document-scoped results.
 4. For project-wide results, iterate all project files and call `GetAllUsesOfAllSymbolsInFile()` on each, filtering to the target symbol by `FSharpSymbol` equality.
 5. If `context.includeDeclaration` is true, include the symbol's declaration range.
-6. Map each `FSharpSymbolUse.Range` to LSP `Location`.
+6. Map each use to an LSP `Location` on the symbol's name. FCS ranges a dotted use (`player.Score`) over the whole path, so the name is the identifier token at the range's end that spells the symbol's name; a use no token spells keeps FCS's range. Document highlights use the same name ranges.
 
 ### textDocument/documentHighlight `[REFERENCES-FSHARP-HIGHLIGHT]`
 
@@ -158,10 +158,13 @@ When a C# project references an F# project (or vice versa), find-all-references 
 
 | Scenario | Approach |
 |---|---|
-| C# symbol used in F# code | C# sidecar finds references in C# projects → Rust host also dispatches to F# sidecar for F# projects |
-| F# symbol used in C# code | F# sidecar finds references in F# projects → Rust host also dispatches to C# sidecar for C# projects |
+| C# symbol used in F# code | C# sidecar finds references in C# projects and Razor files → the Rust host asks it for the symbol's identity, then asks the F# sidecar for the F# uses of that identity |
+| F# symbol used in C# or Razor code | F# sidecar finds references in F# projects → the Rust host asks it for the symbol's identity, then asks the C# sidecar for the C# and Razor uses of that identity |
+| F# symbol, asked from a C# or Razor use | C# sidecar finds the C# and Razor uses of the metadata symbol → the Rust host asks the F# sidecar for its F# declaration and uses by the same identity |
 
-The Rust host merges results from both sidecars and deduplicates by location.
+- **Identity:** the symbol's assembly and XML doc signature, from `textDocument/renameIdentity` ([DEFINITION-CROSSLANG-IDENTITY]). A Razor position resolves through its projection.
+- **Request:** `workspace/referencesForeign` (`{ assemblyName, xmlDocSig, includeDeclaration }`) answers a location list. The C# sidecar searches every C# project and maps Razor uses back to their Razor files, dropping hidden scaffolding. The F# sidecar searches only the project that builds the assembly and its in-memory readers, or, for an assembly no F# project builds, the F# projects that reference it. It never walks every file of the workspace.
+- **Merge:** the Rust host appends the other side's locations to the primary's, each place once. A missing, loading or failing other sidecar adds nothing, so the primary answer always stands.
 
 ## Extended Results `[REFERENCES-EXTENSIONS]`
 

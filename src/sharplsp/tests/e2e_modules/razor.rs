@@ -81,8 +81,8 @@ fn assert_latest_sdk_razor_hover(client: &mut LspClient, ws: &RazorWorkspace) {
     assert_eq!(hover["range"]["start"], json!({"line": 7, "character": 33}));
 }
 
-/// documentSymbol, foldingRange and linkedEditingRange come from the sidecar's
-/// Razor compiler; selectionRange answers empty. [RAZOR-FEATURES-STRUCTURE]
+/// documentSymbol, foldingRange, linkedEditingRange and selectionRange come from
+/// the sidecar's Razor compiler. [RAZOR-FEATURES-STRUCTURE] [RAZOR-FEATURES-SELECTION]
 fn assert_syntax_requests_reach_the_sidecar(client: &mut LspClient, board: &str) {
     let symbols = document_request(client, "textDocument/documentSymbol", board);
     assert_rpc_ok(&symbols, "documentSymbol(Board.razor)");
@@ -160,7 +160,19 @@ fn assert_syntax_requests_reach_the_sidecar(client: &mut LspClient, board: &str)
         json!({ "textDocument": { "uri": board }, "positions": [{ "line": 6, "character": 3 }] }),
     );
     assert_rpc_ok(&selection, "selectionRange(Board.razor)");
-    assert_eq!(selection["result"], json!([]));
+    assert_eq!(
+        selection["result"],
+        json!([{
+            "range": { "start": { "line": 6, "character": 1 }, "end": { "line": 6, "character": 6 } },
+            "parent": {
+                "range": { "start": { "line": 6, "character": 0 }, "end": { "line": 10, "character": 8 } },
+                "parent": {
+                    "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 26, "character": 0 } }
+                }
+            }
+        }]),
+        "the tag name, then its element, then the document [RAZOR-FEATURES-SELECTION]"
+    );
 }
 
 /// The HTML projection keeps markup at its own positions and blanks Razor; a
@@ -372,8 +384,13 @@ fn assert_markup_completion_reaches_the_client(client: &mut LspClient, board: &s
     client.change_document(board, 8, text);
 }
 
-/// The completion items at the end of `typed`, once Board holds it.
-fn complete_after(client: &mut LspClient, board: &str, version: i32, typed: &str) -> Vec<Value> {
+/// The completion items at the end of `typed`, once the Razor file holds it.
+pub(super) fn complete_after(
+    client: &mut LspClient,
+    board: &str,
+    version: i32,
+    typed: &str,
+) -> Vec<Value> {
     client.change_document(board, version, typed);
     let line = typed.lines().count() - 1;
     let character = typed
@@ -389,7 +406,7 @@ fn complete_after(client: &mut LspClient, board: &str, version: i32, typed: &str
                 "position": { "line": line, "character": character },
             }),
         );
-        assert_rpc_ok(&response, "completion(Board.razor, markup)");
+        assert_rpc_ok(&response, "completion(Razor markup)");
         let items = response["result"].as_array().cloned().unwrap_or_default();
         if !items.is_empty() || std::time::Instant::now() > deadline {
             return items;

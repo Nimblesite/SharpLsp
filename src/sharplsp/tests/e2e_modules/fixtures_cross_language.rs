@@ -18,7 +18,7 @@ use super::*;
 use std::path::Path;
 
 /// Run a `dotnet` subcommand in `cwd`, asserting success.
-fn dotnet(args: &[&str], cwd: &Path) {
+pub fn dotnet(args: &[&str], cwd: &Path) {
     let status = std::process::Command::new("dotnet")
         .args(args)
         .current_dir(cwd)

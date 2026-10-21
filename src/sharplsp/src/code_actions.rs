@@ -8,7 +8,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
-    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, TextEdit, Uri, WorkspaceEdit,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CreateFile,
+    CreateFileOptions, DocumentChangeOperation, DocumentChanges, OneOf,
+    OptionalVersionedTextDocumentIdentifier, ResourceOp, TextDocumentEdit, TextEdit, Uri,
+    WorkspaceEdit,
 };
 use tracing::debug;
 
@@ -104,11 +107,59 @@ fn map_action_kind(kind: &str) -> CodeActionKind {
 }
 
 /// Convert a sidecar workspace edit into an LSP `WorkspaceEdit`.
+/// The LSP edit for a sidecar edit: a map of text edits by file, or, when it
+/// creates a file, document changes that create each new file before editing
+/// it, since a text edit cannot reach a file that does not exist yet.
+/// [RAZOR-CODE-ACTIONS]
+fn map_workspace_edit(edit: &SidecarWorkspaceEdit) -> WorkspaceEdit {
+    if edit.document_changes.iter().any(|change| change.create) {
+        WorkspaceEdit {
+            document_changes: Some(DocumentChanges::Operations(
+                edit.document_changes
+                    .iter()
+                    .flat_map(document_operations)
+                    .collect(),
+            )),
+            ..WorkspaceEdit::default()
+        }
+    } else {
+        map_text_changes(edit)
+    }
+}
+
+/// A document's operations: its creation when it is new, then its edits.
+fn document_operations(change: &SidecarDocumentEdit) -> Vec<DocumentChangeOperation> {
+    let Ok(uri) = crate::paths::path_to_lsp_uri(&change.file_path) else {
+        return Vec::new();
+    };
+    let create = change.create.then(|| {
+        DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
+            uri: uri.clone(),
+            options: Some(CreateFileOptions {
+                overwrite: Some(false),
+                ignore_if_exists: Some(false),
+            }),
+            annotation_id: None,
+        }))
+    });
+    let edits = DocumentChangeOperation::Edit(TextDocumentEdit {
+        text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
+        edits: change
+            .edits
+            .iter()
+            .map(map_text_edit)
+            .map(OneOf::Left)
+            .collect(),
+    });
+    create.into_iter().chain([edits]).collect()
+}
+
+/// A sidecar edit that creates no file, as per-document text changes.
 #[expect(
     clippy::mutable_key_type,
     reason = "Uri is the key type mandated by lsp-types WorkspaceEdit"
 )]
-fn map_workspace_edit(edit: &SidecarWorkspaceEdit) -> WorkspaceEdit {
+fn map_text_changes(edit: &SidecarWorkspaceEdit) -> WorkspaceEdit {
     let mut changes = std::collections::HashMap::new();
     for doc_edit in &edit.document_changes {
         if let Ok(uri) = crate::paths::path_to_lsp_uri(&doc_edit.file_path) {
@@ -166,6 +217,9 @@ struct SidecarDocumentEdit {
     file_path: String,
     /// Text edits to apply to this document.
     edits: Vec<SidecarTextEdit>,
+    /// Whether the edit creates the file, whose whole text it then holds.
+    #[serde(default)]
+    create: bool,
 }
 
 /// A workspace-wide set of edits returned by the sidecar.
@@ -238,6 +292,7 @@ mod tests {
         use crate::paths::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
         let edit = SidecarWorkspaceEdit {
             document_changes: vec![SidecarDocumentEdit {
+                create: false,
                 file_path: NATIVE_FILE.to_string(),
                 edits: vec![
                     SidecarTextEdit {
@@ -271,11 +326,129 @@ mod tests {
     fn map_workspace_edit_skips_unparseable_paths() {
         let edit = SidecarWorkspaceEdit {
             document_changes: vec![SidecarDocumentEdit {
+                create: false,
                 file_path: "\u{0}".to_string(),
                 edits: vec![],
             }],
         };
         let workspace_edit = map_workspace_edit(&edit);
         assert!(workspace_edit.changes.unwrap().is_empty());
+    }
+
+    /// An edit that creates a file creates it before writing its text, and
+    /// edits the other files in the same document changes. [RAZOR-CODE-ACTIONS]
+    #[test]
+    fn map_workspace_edit_creates_new_files_before_editing_them() {
+        use crate::paths::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
+        let text = |new_text: &str| SidecarTextEdit {
+            start_line: 0,
+            start_character: 0,
+            end_line: 0,
+            end_character: 0,
+            new_text: new_text.to_string(),
+        };
+        let created = format!("{NATIVE_FILE}.cs");
+        let edit = SidecarWorkspaceEdit {
+            document_changes: vec![
+                SidecarDocumentEdit {
+                    create: true,
+                    file_path: created.clone(),
+                    edits: vec![text("public partial class Counter {}")],
+                },
+                SidecarDocumentEdit {
+                    create: false,
+                    file_path: NATIVE_FILE.to_string(),
+                    edits: vec![text("")],
+                },
+            ],
+        };
+        let workspace_edit = map_workspace_edit(&edit);
+        assert!(workspace_edit.changes.is_none());
+        let operations = match workspace_edit.document_changes {
+            Some(DocumentChanges::Operations(operations)) => operations,
+            _ => Vec::new(),
+        };
+        let steps: Vec<(&str, &str, Option<bool>, usize)> =
+            operations.iter().map(operation_step).collect();
+        let created_uri = crate::paths::path_to_lsp_uri(&created).unwrap();
+        assert_eq!(
+            steps,
+            [
+                ("create", created_uri.as_str(), Some(false), 0),
+                ("edit", created_uri.as_str(), None, 1),
+                ("edit", NATIVE_FILE_URI, None, 1),
+            ],
+            "the new file is created, then written, then the existing file is edited"
+        );
+        assert!(
+            operations.iter().all(|operation| !matches!(
+                operation,
+                DocumentChangeOperation::Edit(TextDocumentEdit {
+                    text_document: OptionalVersionedTextDocumentIdentifier {
+                        version: Some(_),
+                        ..
+                    },
+                    ..
+                })
+            )),
+            "no edit pins a document version"
+        );
+    }
+
+    /// A creating edit drops a document whose path is no URI, and keeps the
+    /// others: the new file is still created. [RAZOR-CODE-ACTIONS]
+    #[test]
+    fn map_workspace_edit_creating_files_skips_unparseable_paths() {
+        use crate::paths::test_paths::NATIVE_FILE;
+        let created = format!("{NATIVE_FILE}.cs");
+        let edit = SidecarWorkspaceEdit {
+            document_changes: vec![
+                SidecarDocumentEdit {
+                    create: true,
+                    file_path: created.clone(),
+                    edits: vec![],
+                },
+                SidecarDocumentEdit {
+                    create: false,
+                    file_path: "\u{0}".to_string(),
+                    edits: vec![],
+                },
+            ],
+        };
+        let operations = match map_workspace_edit(&edit).document_changes {
+            Some(DocumentChanges::Operations(operations)) => operations,
+            _ => Vec::new(),
+        };
+        let created_uri = crate::paths::path_to_lsp_uri(&created).unwrap();
+        let steps: Vec<_> = operations.iter().map(operation_step).collect();
+        assert_eq!(
+            steps,
+            [
+                ("create", created_uri.as_str(), Some(false), 0),
+                ("edit", created_uri.as_str(), None, 0),
+            ]
+        );
+    }
+
+    /// An operation as `(kind, uri, overwrite, edit count)`.
+    fn operation_step(operation: &DocumentChangeOperation) -> (&str, &str, Option<bool>, usize) {
+        match operation {
+            DocumentChangeOperation::Op(ResourceOp::Create(create)) => (
+                "create",
+                create.uri.as_str(),
+                create
+                    .options
+                    .as_ref()
+                    .and_then(|options| options.overwrite),
+                0,
+            ),
+            DocumentChangeOperation::Edit(edit) => (
+                "edit",
+                edit.text_document.uri.as_str(),
+                None,
+                edit.edits.len(),
+            ),
+            DocumentChangeOperation::Op(_) => ("other", "", None, 0),
+        }
     }
 }

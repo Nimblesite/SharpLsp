@@ -11,6 +11,8 @@
 // their locals, and the state they spent minutes reaching. So the session id is
 // asserted unchanged across every edit.
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { MODE, type DebugFixture } from './debug-fixture-programs';
 import { CMD_CONTINUE, assertStoppedAt, topFrame } from './debug-drive-kit';
@@ -235,6 +237,64 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
       assert.ok(
         recorder.outputText().includes('total=8'),
         'a refused edit leaves the ORIGINAL IL running, so the original result must appear',
+      );
+    },
+  );
+
+  // Implements [RAZOR-HOT-RELOAD]: the DAP save pipeline owns Razor documents
+  // as well as C#. A saved .razor file inside the debugged project reaches the
+  // sidecar — which refuses an unlisted Razor file BY NAME — instead of
+  // vanishing as a foreign language, and the session survives the refusal.
+  debugTest(
+    'a saved Razor document is owned by the pipeline and names itself when unlisted',
+    debuggee,
+    async ({ fixture, recorder, stubs }) => {
+      // Interaction 1 — run the debuggee with hot reload enabled.
+      const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
+        mode: MODE.plain,
+        extra: { hotReload: true },
+      });
+
+      // Interaction 2 — save a Razor document inside the debugged project.
+      // This console debuggee lists no Razor file, so the sidecar must refuse
+      // the save by name rather than apply anything.
+      const razorPath = path.join(fixture.dir, 'Owned.razor');
+      fs.writeFileSync(razorPath, '<h1>Owned</h1>\n', 'utf8');
+      const razorDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(razorPath));
+      eq(razorDoc.languageId, 'razor', 'VS Code opens a .razor file as the razor language');
+      const razorEditor = await vscode.window.showTextDocument(razorDoc);
+      await razorEditor.edit((b) => {
+        b.insert(new vscode.Position(0, 0), '<p>touched</p>');
+      });
+      assert.ok(await razorDoc.save(), 'the Razor document must save — that is the trigger');
+      await sleep(RELOAD_SETTLE_MS);
+
+      // Interaction 3 — the save REACHED the pipeline: one refusal, naming the
+      // file. An unowned language would leave `refusalsOf` empty here.
+      const reported = refusalsOf(stubs);
+      eq(
+        reported.length,
+        1,
+        `exactly one refusal for the unlisted Razor save: ${JSON.stringify(reported)}`,
+      );
+      const message = requireAt(reported, 0, 'the unlisted-Razor refusal');
+      assert.ok(
+        message.includes('Owned.razor'),
+        `the refusal must name the Razor file; it said: '${message}'`,
+      );
+
+      // Interaction 4 — the session SURVIVED the refusal, and the original IL
+      // still runs: a refused save is a verdict, not a lost debuggee.
+      eq(
+        vscode.debug.activeDebugSession?.id,
+        session.id,
+        'an unlisted Razor save must not restart or kill the session',
+      );
+      await vscode.commands.executeCommand(CMD_CONTINUE);
+      await assertRanToCompletion(recorder, 0, 'a session after an unlisted Razor save');
+      assert.ok(
+        recorder.outputText().includes('total=8'),
+        'nothing was applied, so the original result must appear',
       );
     },
   );

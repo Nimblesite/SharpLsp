@@ -372,6 +372,33 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
             .ConfigureAwait(true);
         Assert.Equal("committed", committed.Status);
 
+        // A re-save of the committed text changes nothing at runtime: Roslyn has nothing to
+        // apply, so it is applied with no deltas and leaves nothing to commit.
+        var quiet = await SendAsync(
+                registry,
+                new HotReloadRequest
+                {
+                    Action = "update",
+                    SessionId = started.SessionId,
+                    FilePath = sourcePath,
+                    NewText = UpdatedSource,
+                }
+            )
+            .ConfigureAwait(true);
+        Assert.Equal(
+            ("applied", 0, 0),
+            (quiet.Status, quiet.Updates.Count, quiet.Diagnostics.Count)
+        );
+        _ = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                _ = await SendAsync(
+                        registry,
+                        new HotReloadRequest { Action = "commit", SessionId = started.SessionId }
+                    )
+                    .ConfigureAwait(true)
+            )
+            .ConfigureAwait(true);
+
         // A cross-file-consistent batch: the call in Calculator.cs needs the
         // method added in Helper.cs — only a single candidate spanning both
         // documents can emit it.

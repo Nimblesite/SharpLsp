@@ -119,6 +119,8 @@ Public symbols used across C# and F# project boundaries MUST be renamed across b
 
 - C# symbol renamed with F# references: C# sidecar computes C# edits; Rust host asks F# sidecar for F# usages and merges edits.
 - F# symbol renamed with C# references: F# sidecar computes F# edits; Rust host asks C# sidecar for C# usages and merges edits.
+- F# symbol renamed from a C# or Razor use: C# reads it from the F# project's DLL. `prepareRename` accepts it on its name, and the C# sidecar computes the C# and Razor edits by the symbol's identity ([DEFINITION-CROSSLANG-IDENTITY]); the Rust host asks the F# sidecar to rename the declaration and its F# uses, and merges the edits.
+- A rename asked from a Razor file resolves the symbol's identity through the file's projection, so its other-language uses are renamed too ([RAZOR-FSHARP-RENAME]).
 - Conflicting or overlapping edits MUST fail the rename with a clear error instead of returning a partial edit.
 
 ## [RENAME-ERRORS] Error Handling

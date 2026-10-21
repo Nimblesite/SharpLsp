@@ -75,6 +75,7 @@ fn parse_symbol_kind(kind: &str) -> SymbolKind {
         "Property" => SymbolKind::PROPERTY,
         "Field" => SymbolKind::FIELD,
         "Class" => SymbolKind::CLASS,
+        "Event" => SymbolKind::EVENT,
         "Interface" => SymbolKind::INTERFACE,
         "Struct" => SymbolKind::STRUCT,
         "Enum" => SymbolKind::ENUM,

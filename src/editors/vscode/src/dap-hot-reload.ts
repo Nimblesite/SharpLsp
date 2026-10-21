@@ -11,7 +11,11 @@ import * as vscode from 'vscode';
 import type { DapMessage } from './dap-emulate';
 import { error, traceInfo } from './log';
 import * as state from './state';
+import { RAZOR_LANGUAGES } from './razor-html';
 import { getErrorMessage, isRecord, removeDirRecursive } from './utils';
+
+/** The languages whose saves this pipeline owns: C# and Razor ([RAZOR-HOT-RELOAD]). */
+const OWNED_LANGUAGES: readonly string[] = ['csharp', ...RAZOR_LANGUAGES];
 
 interface HotReloadHost {
   request(command: string, args: Record<string, unknown>): Promise<DapMessage>;
@@ -353,7 +357,11 @@ export class DapHotReload implements vscode.Disposable {
   }
 
   private owns(document: vscode.TextDocument): boolean {
-    if (!this.enabled || document.languageId !== 'csharp' || this.projectPath === undefined) {
+    if (
+      !this.enabled ||
+      !OWNED_LANGUAGES.includes(document.languageId) ||
+      this.projectPath === undefined
+    ) {
       return false;
     }
     return isLexicallyWithin(directoryOf(this.projectPath), document.uri.fsPath);

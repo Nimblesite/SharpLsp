@@ -1,0 +1,36 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="card title">
+    <span class="card__title">@Title</span>
+</div>
+
+@code {
+    private IJSObjectReference? module;
+
+    /// <summary>The card's title.</summary>
+    [Parameter]
+    public string Title { get; set; } = "";
+
+    /// <summary>Loads the card's collocated JavaScript module.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>(
+                "import",
+                "./Components/Shared/Card.razor.js"
+            );
+        }
+    }
+
+    /// <summary>Releases the collocated module.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+        {
+            await module.DisposeAsync();
+        }
+    }
+}

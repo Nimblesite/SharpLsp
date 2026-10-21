@@ -297,9 +297,9 @@ pub fn handle_implementation(
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let method = "textDocument/implementation";
-    let value = handle_multi_location_nav(req.clone(), runtime, sidecar, method)?;
+    let (value, _) = handle_multi_location_nav(req.clone(), runtime, (sidecar, fallback), method)?;
     Ok(or_fallback(value, fallback, method, |fb| {
-        handle_multi_location_nav(req, runtime, Some(fb), method)
+        handle_multi_location_nav(req, runtime, (Some(fb), None), method).map(|(value, _)| value)
     }))
 }
 
@@ -319,12 +319,12 @@ pub fn handle_references(
         "textDocument/references:nodecl"
     };
     cached_at_position(req, vfs, nav_cache, cache_method, |req| {
-        let value = handle_references_nav(req.clone(), runtime, sidecar)?;
+        let value = handle_references_nav(req.clone(), runtime, (sidecar, fallback))?;
         Ok(or_fallback(
             value,
             fallback,
             "textDocument/references",
-            |fb| handle_references_nav(req, runtime, Some(fb)),
+            |fb| handle_references_nav(req, runtime, (Some(fb), None)),
         ))
     })
 }
@@ -393,10 +393,13 @@ fn to_document_highlight(h: &SidecarDocumentHighlightResult) -> DocumentHighligh
 }
 
 /// Inner handler for references (serializes `ReferencesRequest` with `include_declaration`).
+/// References from the sidecar that owns the document, merged with the other
+/// language's uses of the same symbol, found by its identity.
+/// [REFERENCES-CROSS-LANGUAGE]
 fn handle_references_nav(
     req: Request,
     runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
+    (sidecar, other): NavRoute<'_>,
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: ReferenceParams| {
         let at = SidecarPositionReq::at(
@@ -412,7 +415,7 @@ fn handle_references_nav(
             "References request dispatching to sidecar"
         );
         let request = SidecarReferencesReq {
-            file_path: at.file_path,
+            file_path: at.file_path.clone(),
             line: at.line,
             character: at.character,
             include_declaration,
@@ -423,12 +426,21 @@ fn handle_references_nav(
         else {
             return Ok(serde_json::Value::Null);
         };
-        let locations: Vec<Location> = result
+        let own: Vec<Location> = result
             .locations
             .iter()
             .filter_map(sidecar_location_to_lsp)
             .collect();
-        Ok(serde_json::to_value(locations)?)
+        let foreign = crate::cross_language::foreign_references(
+            runtime,
+            sidecar,
+            other,
+            &at,
+            include_declaration,
+        );
+        Ok(serde_json::to_value(crate::cross_language::merged(
+            own, foreign,
+        ))?)
     })
 }
 
@@ -440,9 +452,9 @@ fn handle_references_nav(
 fn dispatch_position_request(
     req: Request,
     runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
+    (sidecar, foreign): NavRoute<'_>,
     method: &str,
-) -> Result<Option<SidecarLocationListResult>> {
+) -> Result<Option<(SidecarLocationListResult, bool)>> {
     let Some(sidecar) = sidecar else {
         debug!("{method}: no sidecar available");
         return Ok(None);
@@ -457,19 +469,28 @@ fn dispatch_position_request(
         character = request.character,
         "request dispatching to sidecar"
     );
-    request_sidecar(runtime, sidecar, method, &request)
+    let found: Option<SidecarLocationListResult> =
+        request_sidecar(runtime, sidecar, method, &request)?;
+    Ok(found.map(|result| crate::cross_language::in_fsharp_source(runtime, foreign, result)))
 }
+
+/// The sidecar a navigation request goes to, and the F# sidecar that places
+/// the F# symbols its decompiled answers show. [DEFINITION-CROSSLANG-IDENTITY]
+type NavRoute<'a> = (
+    Option<&'a Arc<SidecarManager>>,
+    Option<&'a Arc<SidecarManager>>,
+);
 
 /// Shared handler for multi-location navigation requests
 /// (definition, implementation).
 fn handle_multi_location_nav(
     req: Request,
     runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
+    route: NavRoute<'_>,
     method: &str,
-) -> Result<serde_json::Value> {
-    let Some(result) = dispatch_position_request(req, runtime, sidecar, method)? else {
-        return Ok(serde_json::Value::Null);
+) -> Result<(serde_json::Value, bool)> {
+    let Some((result, settled)) = dispatch_position_request(req, runtime, route, method)? else {
+        return Ok((serde_json::Value::Null, true));
     };
     let locations: Vec<Location> = result
         .locations
@@ -478,7 +499,7 @@ fn handle_multi_location_nav(
         .collect();
 
     let response = (!locations.is_empty()).then(|| GotoDefinitionResponse::Array(locations));
-    Ok(serde_json::to_value(response)?)
+    Ok((serde_json::to_value(response)?, settled))
 }
 
 /// Cached navigation with cross-language fallback.
@@ -501,9 +522,18 @@ fn handle_cached_nav_with_fallback(
     method: &str,
     multi: bool,
 ) -> Result<serde_json::Value> {
-    let value = handle_cached_nav(req.clone(), vfs, nav_cache, runtime, sidecar, method, multi)?;
+    let route = (sidecar, fallback);
+    let value = handle_cached_nav(req.clone(), vfs, nav_cache, runtime, route, method, multi)?;
     Ok(or_fallback(value, fallback, method, |fb| {
-        handle_cached_nav(req, vfs, nav_cache, runtime, Some(fb), method, multi)
+        handle_cached_nav(
+            req,
+            vfs,
+            nav_cache,
+            runtime,
+            (Some(fb), None),
+            method,
+            multi,
+        )
     }))
 }
 
@@ -543,6 +573,22 @@ fn cached_at_position(
     method: &str,
     dispatch: impl FnOnce(Request) -> Result<serde_json::Value>,
 ) -> Result<serde_json::Value> {
+    cached_at_position_when_settled(req, vfs, nav_cache, method, |req| {
+        dispatch(req).map(|value| (value, true))
+    })
+}
+
+/// [`cached_at_position`] for an answer that may not be settled yet: one that
+/// still shows an F# symbol in decompiled source, because the F# sidecar could
+/// not place it yet, is answered but not remembered, so the next request asks
+/// again. [DEFINITION-CROSSLANG-IDENTITY]
+fn cached_at_position_when_settled(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    method: &str,
+    dispatch: impl FnOnce(Request) -> Result<(serde_json::Value, bool)>,
+) -> Result<serde_json::Value> {
     let at: TextDocumentPositionParams = serde_json::from_value(req.params.clone())?;
     let uri = at.text_document.uri.as_str();
     let version = vfs.get_version(&at.text_document.uri).unwrap_or(0);
@@ -550,8 +596,10 @@ fn cached_at_position(
     if let Some(cached) = cached_nav_hit(nav_cache, uri, version, line, character, method, method) {
         return Ok(cached);
     }
-    let value = dispatch(req)?;
-    nav_cache.insert(uri, version, line, character, method, value.clone());
+    let (value, settled) = dispatch(req)?;
+    if settled {
+        nav_cache.insert(uri, version, line, character, method, value.clone());
+    }
     Ok(value)
 }
 
@@ -581,15 +629,15 @@ fn handle_cached_nav(
     vfs: &crate::vfs::Vfs,
     nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
+    route: NavRoute<'_>,
     method: &str,
     multi: bool,
 ) -> Result<serde_json::Value> {
-    cached_at_position(req, vfs, nav_cache, method, |req| {
+    cached_at_position_when_settled(req, vfs, nav_cache, method, |req| {
         if multi {
-            handle_multi_location_nav(req, runtime, sidecar, method)
+            handle_multi_location_nav(req, runtime, route, method)
         } else {
-            handle_single_location_nav(req, runtime, sidecar, method)
+            handle_single_location_nav(req, runtime, route, method)
         }
     })
 }
@@ -599,22 +647,22 @@ fn handle_cached_nav(
 fn handle_single_location_nav(
     req: Request,
     runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
+    route: NavRoute<'_>,
     method: &str,
-) -> Result<serde_json::Value> {
-    let Some(result) = dispatch_position_request(req, runtime, sidecar, method)? else {
-        return Ok(serde_json::Value::Null);
+) -> Result<(serde_json::Value, bool)> {
+    let Some((result, settled)) = dispatch_position_request(req, runtime, route, method)? else {
+        return Ok((serde_json::Value::Null, true));
     };
     let response = result.locations.first().and_then(|loc| {
         let location = sidecar_location_to_lsp(loc)?;
         Some(GotoDefinitionResponse::Scalar(location))
     });
 
-    Ok(serde_json::to_value(response)?)
+    Ok((serde_json::to_value(response)?, settled))
 }
 
 /// Convert a sidecar `LocationResult` to an LSP `Location`.
-fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Location> {
+pub(crate) fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Location> {
     let uri: Uri = path_to_lsp_uri(&loc.file_path).ok()?;
     Some(Location {
         uri,
@@ -658,6 +706,7 @@ fn map_completion_kind(tag: &str) -> CompletionItemKind {
         "Constant" => CompletionItemKind::CONSTANT,
         "Delegate" => CompletionItemKind::FUNCTION,
         "TypeParameter" => CompletionItemKind::TYPE_PARAMETER,
+        "Value" => CompletionItemKind::VALUE,
         _ => CompletionItemKind::TEXT,
     }
 }
@@ -776,6 +825,10 @@ pub(crate) struct SidecarLocationResult {
     pub(crate) end_line: u32,
     /// End character of the target range.
     pub(crate) end_character: u32,
+    /// For decompiled source of an F# project's symbol, the symbol's identity,
+    /// which the F# sidecar places. [DEFINITION-CROSSLANG-IDENTITY]
+    #[serde(default)]
+    pub(crate) symbol: Option<SidecarRenameIdentityResult>,
 }
 
 /// Sidecar response containing a list of locations.
@@ -956,7 +1009,7 @@ fn foreign_rename_edits(
 }
 
 /// Check whether the other-language sidecar has a project that can contain references.
-fn sidecar_workspace_loaded(
+pub(crate) fn sidecar_workspace_loaded(
     runtime: &tokio::runtime::Runtime,
     sidecar: &Arc<SidecarManager>,
 ) -> Result<bool> {
@@ -997,7 +1050,18 @@ fn request_rename_identity(
         line: rename.line,
         character: rename.character,
     };
-    let payload = rmp_serde::to_vec(&request)?;
+    request_symbol_identity(runtime, sidecar, &request)
+}
+
+/// Ask the sidecar that owns `at`'s document for the identity of the symbol
+/// there: a C# source symbol, an F# one, or an F# project's symbol that C# or
+/// Razor reads from its DLL. [DEFINITION-CROSSLANG-IDENTITY]
+pub(crate) fn request_symbol_identity(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &SidecarManager,
+    at: &SidecarPositionReq,
+) -> Result<SidecarRenameIdentityResult> {
+    let payload = rmp_serde::to_vec(at)?;
     let bytes = runtime.block_on(sidecar.request("textDocument/renameIdentity", payload))?;
     Ok(rmp_serde::from_slice(&bytes)?)
 }
@@ -1211,13 +1275,13 @@ struct SidecarRenameRequest {
 
 /// Portable metadata identity returned by the symbol's owning sidecar.
 #[derive(serde::Deserialize)]
-struct SidecarRenameIdentityResult {
+pub(crate) struct SidecarRenameIdentityResult {
     /// Whether the source position resolved to a cross-language-visible symbol.
-    found: bool,
+    pub(crate) found: bool,
     /// Simple name of the assembly that owns the symbol.
-    assembly_name: String,
+    pub(crate) assembly_name: String,
     /// Standard .NET XML documentation signature for the symbol.
-    xml_doc_sig: String,
+    pub(crate) xml_doc_sig: String,
 }
 
 /// Request for references to a metadata symbol owned by the other sidecar.
@@ -1281,6 +1345,10 @@ struct SidecarDocumentEditResult {
     file_path: String,
     /// Text edits to apply.
     edits: Vec<SidecarTextEditResult>,
+    /// Whether the edit creates the file: decoded to keep the positional wire
+    /// shape, since a rename never creates one.
+    #[serde(default)]
+    _create: bool,
 }
 
 /// A workspace-wide set of edits from the sidecar rename operation.
@@ -1408,6 +1476,7 @@ mod rename_merge_tests {
         SidecarDocumentEditResult {
             file_path: path.to_string(),
             edits,
+            _create: false,
         }
     }
 

@@ -167,16 +167,18 @@ Implementation: [FSharpWorkspace.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/
 
 ## Cross-Language Navigation `[DEFINITION-CROSSLANG]`
 
-The two directions are not symmetric. An F# project reads a referenced C# project compiled in
-memory, so F# → C# navigation lands in the C# source, unbuilt. A C# project sees a referenced F#
-project only as its built DLL, so C# → F# navigation lands in decompiled metadata-as-source. No
-cross-sidecar symbol index exists in either direction.
+Both directions land in source. An F# project reads a referenced C# project compiled in memory,
+so F# → C# navigation lands in the C# source, unbuilt. A C# project sees a referenced F# project
+only as its built DLL, so the C# sidecar resolves an F# symbol as metadata; the host then asks the
+F# sidecar for that symbol's F# declaration by its identity, so C# → F# navigation lands in the
+`.fs` file too ([DEFINITION-CROSSLANG-IDENTITY]). Razor files take the same route, through their
+C# projection ([RAZOR-FSHARP]).
 
 | Scenario | Approach |
 |---|---|
 | F# code references C# type | The F# sidecar compiles the referenced C# project with Roslyn in memory, for the framework MSBuild picked for that reference, and FCS reads the image as a `PEReference` under MSBuild's own `-r:` ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]). Definition, type definition and declaration resolve the symbol's documentation id in that Roslyn compilation and land in the `.cs` file and range that declares it. A C# reference the options do not carry keeps the DLL route below |
 | F# code references a type in a DLL | `FSharpMetadataNavigator` decompiles the external symbol's type through the shared `MetadataDecompiler` and lands in the metadata-as-source file |
-| C# code references F# type | Roslyn drops the F# `<ProjectReference>` (loads it as an empty stub); `WorkspaceManager.AddCrossLanguageMetadataReferences` re-attaches the built F# DLL as a metadata reference and removes the stub, then `MetadataNavigator` decompiles the resolved symbol. The F# project must be built for resolution to succeed |
+| C# code references F# type | Roslyn drops the F# `<ProjectReference>` (loads it as an empty stub); `WorkspaceManager.AddCrossLanguageMetadataReferences` re-attaches the built F# DLL as a metadata reference and removes the stub, then `MetadataNavigator` decompiles the resolved symbol, and the decompiled location carries the symbol's identity. The host replaces it with the F# declaration ([DEFINITION-CROSSLANG-IDENTITY]). The F# project must be built for resolution to succeed |
 
 Before a symbol is decompiled, the sidecar resolves what it stands for:
 
@@ -191,12 +193,35 @@ Before a symbol is decompiled, the sidecar resolves what it stands for:
 
 Both directions compare paths only through the tier's path module
 ([SHARPLSP-ARCHITECTURE-PATHS]). Requirement: navigating from a use site in one language onto a
-symbol defined in the other resolves to the declaring C# source (F# → C#) or to a decompiled
-metadata-as-source location for that symbol's type (C# → F#), and never to `null` because the
-target was an abbreviation or a forwarded type.
+symbol defined in the other resolves to the declaring C# source (F# → C#) or the declaring F#
+source (C# → F#), falls back to a decompiled metadata-as-source location only when the F# sidecar
+cannot place the symbol, and never answers `null` because the target was an abbreviation or a
+forwarded type.
 
-Source-to-source navigation from C# into an `.fs` file is not implemented; it requires a Rust-host
-cross-sidecar symbol index.
+### Identity Navigation `[DEFINITION-CROSSLANG-IDENTITY]`
+
+A symbol's **identity** is the simple name of the assembly that declares it and its XML doc
+signature (`T:Domain.Player`, `P:Domain.Player.Score`,
+`M:Domain.Scoring.total(System.Collections.Generic.IEnumerable{Domain.Player})`). Roslyn
+(`DocumentationCommentId`) and FCS (`XmlDocSig`) give a symbol the same signature, so identity is
+the one name both sidecars share. No cross-sidecar index is kept: each request resolves it.
+
+- **Which symbols carry one:** a metadata symbol whose assembly is the built DLL of an F# project
+  that the using C# project references. A constructor is named by its type, because F# declares a
+  record's or union's constructor nowhere but in the type. A framework or package symbol carries
+  none.
+- **C# sidecar:** definition, type definition and declaration still decompile the symbol, and the
+  decompiled `LocationResult` carries its identity (`Symbol`).
+- **Host:** for each location that carries an identity, it sends `workspace/declarationForeign`
+  (`{ assemblyName, xmlDocSig, includeDeclaration }`) to the F# sidecar and answers the F#
+  declarations it returns in that location's place.
+- **F# sidecar:** it searches only the F# project that builds the assembly and the projects reading
+  that one in memory ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]), and answers the name of
+  each defining use of the symbol. A symbol it does not declare has none.
+- **Fallback:** a location the F# sidecar cannot place, because it is still loading or the symbol is
+  not one of its own, keeps the decompiled source. That answer is not cached, so the next request
+  asks again once the F# sidecar has loaded. With no F# sidecar running, the decompiled answer is
+  final and cached.
 
 ## Caching Strategy `[DEFINITION-CACHE]`
 

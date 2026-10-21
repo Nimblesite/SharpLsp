@@ -64,11 +64,16 @@ internal sealed record MarkupTag(
     }
 }
 
-/// <summary>An attribute of a tag, with what binds it.</summary>
+/// <summary>
+/// An attribute of a tag, with what binds it. <paramref name="End"/> is where the attribute
+/// ends — its value and closing quote, or a minimized attribute's name — as the compiler's
+/// spans say; null when they do not.
+/// </summary>
 internal sealed record MarkupAttribute(
     MarkupAttributeKind Kind,
     string Name,
     TextSpan? NameSpan,
+    int? End,
     MarkupTag Owner,
     TagHelperDescriptor? TagHelper,
     BoundAttributeDescriptor? Bound,

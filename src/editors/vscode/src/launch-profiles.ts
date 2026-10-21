@@ -19,6 +19,17 @@ export interface LaunchProfile {
   readonly commandLineArgs?: string;
   readonly environmentVariables?: Readonly<Record<string, string>>;
   readonly applicationUrl?: string;
+  /**
+   * The .NET debug proxy URL a Blazor WebAssembly profile carries.
+   *
+   * `Microsoft.AspNetCore.Components.WebAssembly.DevServer` writes the template's
+   * `{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser=
+   * {browserInspectUri}` here, and that value is the whole bridge to .NET
+   * breakpoints ([DEBUG-FEATURES-LAUNCH-BLAZOR-WASM]). It is parsed with the rest
+   * of the profile rather than re-read at the launch site, so one reader owns the
+   * profile document.
+   */
+  readonly inspectUri?: string;
 }
 
 /** ASP.NET reads its listening URLs from this variable. */
@@ -65,6 +76,7 @@ function toProfile(name: string, raw: unknown): LaunchProfile | undefined {
     commandName,
     ...optional('commandLineArgs', stringOf(raw, 'commandLineArgs')),
     ...optional('applicationUrl', stringOf(raw, 'applicationUrl')),
+    ...optional('inspectUri', stringOf(raw, 'inspectUri')),
     ...optional('environmentVariables', envOf(raw, 'environmentVariables')),
   };
   return profile;

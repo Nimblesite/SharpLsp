@@ -48,6 +48,11 @@ internal sealed partial class WorkspaceManager
         }
     }
 
+    /// <summary>
+    /// The identity of the symbol a rename at the position targets: a C# source symbol, or an
+    /// F# project's symbol C# uses. A Razor position resolves through its projection, so a
+    /// rename asked from a Razor file reaches the other language too. [RAZOR-FSHARP-RENAME]
+    /// </summary>
     private async Task<RenameIdentityResultWire> ResolveRenameIdentityAsync(
         string filePath,
         int line,
@@ -55,29 +60,13 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-        if (document is null)
-        {
-            return new RenameIdentityResultWire();
-        }
-
-        var target = await FindRenameTargetAsync(document, line, character, ct)
+        var at = await ResolveQueryTargetAsync(filePath, (line, character), ct)
             .ConfigureAwait(false);
-        return CreateRenameIdentity(target?.Symbol);
-    }
-
-    private static RenameIdentityResultWire CreateRenameIdentity(ISymbol? symbol)
-    {
-        var assemblyName = symbol?.ContainingAssembly?.Name;
-        var xmlDocSig = symbol is null ? null : DocumentationCommentId.CreateDeclarationId(symbol);
-        return string.IsNullOrEmpty(assemblyName) || string.IsNullOrEmpty(xmlDocSig)
-            ? new RenameIdentityResultWire()
-            : new RenameIdentityResultWire
-            {
-                Found = true,
-                AssemblyName = assemblyName,
-                XmlDocSig = xmlDocSig,
-            };
+        var target = at is null
+            ? null
+            : await FindRenameTargetAsync(at.Document, at.Line, at.Character, ct)
+                .ConfigureAwait(false);
+        return FSharpProjectSymbols.Identity(target?.Symbol);
     }
 
     public async Task<RenameEditResult> RenameForeignAsync(

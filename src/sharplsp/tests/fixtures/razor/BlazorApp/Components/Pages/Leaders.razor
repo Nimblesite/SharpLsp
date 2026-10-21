@@ -4,11 +4,13 @@
 <ul>
     @foreach (var player in players)
     {
-        <li>@player.Name: @player.Score</li>
+        <li>@player.Name: @player.Score (@Describe(Scoring.standing(players, player)))</li>
     }
 </ul>
 <p>Total: @Scoring.total(players)</p>
 
 @code {
     private readonly Player[] players = [new Player("Ada", 3), new Player("Grace", 5)];
+
+    private static string Describe(Standing standing) => standing.IsLeading ? "leading" : "chasing";
 }

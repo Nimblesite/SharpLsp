@@ -27,6 +27,7 @@ internal static partial class RazorIr
                         bound.Kind,
                         bound.Name,
                         named.Name,
+                        named.End,
                         tag,
                         bound.TagHelper,
                         bound.Attribute,

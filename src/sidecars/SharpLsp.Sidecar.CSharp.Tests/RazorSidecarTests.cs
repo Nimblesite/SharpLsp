@@ -1,4 +1,5 @@
 using MessagePack;
+using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Razor;
 
 #pragma warning disable CA1515 // Public xUnit discovery type
@@ -142,17 +143,112 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
         Assert.All(linked.Locations, at => Assert.Equal(Board, at.FilePath));
     }
 
+    [Fact]
+    public async Task Selection_ranges_chain_each_caret_out_to_the_document_over_the_socket()
+    {
+        await OpenAsync().ConfigureAwait(true);
+
+        // One chain per caret, in request order, innermost first. [RAZOR-FEATURES-SELECTION]
+        var chains = await socket
+            .SendAndDeserializeAsync<SelectionRangeRequest, List<SelectionRangeResult>>(
+                "textDocument/selectionRange",
+                new SelectionRangeRequest
+                {
+                    FilePath = Board,
+                    Positions =
+                    [
+                        new SelectionRangePosition { Line = 7, Character = 5 },
+                        new SelectionRangePosition { Line = 0, Character = 0 },
+                    ],
+                }
+            )
+            .ConfigureAwait(true);
+        Assert.Equal(2, chains.Count);
+        var tally = chains[0].Ranges;
+        Assert.Equal((7, 5, 7, 10), Span(tally[0]));
+        Assert.Equal((7, 4, 9, 12), Span(tally[1]));
+        Assert.Equal((6, 0, 10, 8), Span(tally[2]));
+        Assert.All(chains, chain => Assert.Equal((0, 0, 26, 0), Span(chain.Ranges[^1])));
+
+        // A file no project lists has no chain at all, never an error.
+        var unlisted = await socket
+            .SendAndDeserializeAsync<SelectionRangeRequest, List<SelectionRangeResult>>(
+                "textDocument/selectionRange",
+                new SelectionRangeRequest
+                {
+                    FilePath = files.Path("Missing.razor"),
+                    Positions = [new SelectionRangePosition { Line = 0, Character = 0 }],
+                }
+            )
+            .ConfigureAwait(true);
+        Assert.Empty(Assert.Single(unlisted).Ranges);
+    }
+
+    [Fact]
+    public async Task Foreign_references_name_the_razor_uses_of_an_fsharp_symbol_over_the_socket()
+    {
+        await OpenAsync().ConfigureAwait(true);
+        var leaders = files.Path("BlazorApp", "Components", "Pages", "Leaders.razor");
+
+        // The F# sidecar names `Player` by identity; C# answers its three Razor uses.
+        // [REFERENCES-CROSS-LANGUAGE]
+        var player = await socket
+            .SendAndDeserializeAsync<ForeignSymbolRequest, LocationListResult>(
+                "workspace/referencesForeign",
+                new ForeignSymbolRequest
+                {
+                    AssemblyName = "Domain",
+                    XmlDocSig = "T:Domain.Player",
+                    IncludeDeclaration = false,
+                }
+            )
+            .ConfigureAwait(true);
+        Assert.Equal(3, player.Locations.Count);
+        Assert.All(
+            player.Locations,
+            location =>
+            {
+                Assert.True(NativePaths.AreEqual(leaders, location.FilePath), location.FilePath);
+                Assert.Equal("Player".Length, location.EndCharacter - location.Character);
+            }
+        );
+        Assert.Contains(
+            RazorFixture.Locate(leaders, "private readonly Player[]", "Player"),
+            player.Locations.Select(location => (location.Line, location.Character))
+        );
+
+        // Another assembly's symbol of that name has no C# use.
+        var elsewhere = await socket
+            .SendAndDeserializeAsync<ForeignSymbolRequest, LocationListResult>(
+                "workspace/referencesForeign",
+                new ForeignSymbolRequest
+                {
+                    AssemblyName = "Elsewhere",
+                    XmlDocSig = "T:Domain.Player",
+                }
+            )
+            .ConfigureAwait(true);
+        Assert.Empty(elsewhere.Locations);
+    }
+
     [Theory]
     [InlineData("sharplsp/razor/htmlProjection")]
     [InlineData("textDocument/documentSymbol")]
     [InlineData("textDocument/foldingRange")]
     [InlineData("textDocument/linkedEditingRange")]
+    [InlineData("textDocument/selectionRange")]
+    [InlineData("workspace/referencesForeign")]
     public async Task Malformed_payloads_return_errors_and_keep_the_socket_healthy(string method)
     {
         var error = await socket.SendAsync(method, [0xC1]).ConfigureAwait(true);
         Assert.NotNull(error.Error);
         var pong = await socket.SendAndDeserializeAsync<string>("ping", []).ConfigureAwait(true);
         Assert.Equal("pong", pong);
+    }
+
+    private static (int, int, int, int) Span(SelectionSpanResult span)
+    {
+        return (span.StartLine, span.StartCharacter, span.EndLine, span.EndCharacter);
     }
 
     private Task OpenAsync()

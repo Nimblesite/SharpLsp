@@ -48,6 +48,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/documentSymbol", HandleDocumentSymbolAsync);
         Register("textDocument/foldingRange", HandleFoldingRangeAsync);
         Register("textDocument/linkedEditingRange", HandleLinkedEditingRangeAsync);
+        Register("textDocument/selectionRange", HandleSelectionRangeAsync);
         Register("textDocument/semanticTokens/full", HandleSemanticTokensFullAsync);
         Register("textDocument/semanticTokens/range", HandleSemanticTokensRangeAsync);
         Register("textDocument/inlayHint", HandleInlayHintAsync);
@@ -55,6 +56,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/rename", HandleRenameAsync);
         Register("textDocument/renameIdentity", HandleRenameIdentityAsync);
         Register("workspace/renameForeign", HandleRenameForeignAsync);
+        Register("workspace/referencesForeign", HandleReferencesForeignAsync);
         Register("project/unusedPackages", HandleUnusedPackagesAsync);
         Register("project/addPackage", HandleAddPackageAsync);
         Register("project/removePackage", HandleRemovePackageAsync);

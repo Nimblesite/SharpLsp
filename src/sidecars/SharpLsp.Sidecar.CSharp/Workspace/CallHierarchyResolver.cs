@@ -67,25 +67,38 @@ internal static class CallHierarchyResolver
     {
         foreach (var location in symbol.Locations.Where(l => l.IsInSource))
         {
-            var tree = location.SourceTree;
-            if (tree is null)
-            {
-                continue;
-            }
-
-            var model = await document
-                .Project.Solution.GetDocument(document.Id)!
-                .GetSemanticModelAsync(ct)
+            var (model, root) = await DeclarationAsync(document, location, ct)
                 .ConfigureAwait(false);
-            if (model is null)
+            if (model is not null && root is not null)
             {
-                continue;
+                CollectOutgoingCalls(root.FindNode(location.SourceSpan), model, results, ct);
             }
-
-            var root = await tree.GetRootAsync(ct).ConfigureAwait(false);
-            var node = root.FindNode(location.SourceSpan);
-            CollectOutgoingCalls(node, model, results, ct);
         }
+    }
+
+    /// <summary>
+    /// The semantic model and syntax root of the tree <paramref name="location"/> is declared in:
+    /// the queried document's own — a Razor projection's included, which has no document of its
+    /// own in the solution — or, for a declaration in another regular document, that document's.
+    /// </summary>
+    private static async Task<(SemanticModel? Model, SyntaxNode? Root)> DeclarationAsync(
+        Document document,
+        Location location,
+        CancellationToken ct
+    )
+    {
+        var tree = location.SourceTree;
+        var own = await document.GetSyntaxTreeAsync(ct).ConfigureAwait(false);
+        var owner =
+            tree is null ? null
+            : tree == own ? document
+            : document.Project.Solution.GetDocument(tree);
+        return owner is null
+            ? (null, null)
+            : (
+                await owner.GetSemanticModelAsync(ct).ConfigureAwait(false),
+                await owner.GetSyntaxRootAsync(ct).ConfigureAwait(false)
+            );
     }
 
     private static void CollectOutgoingCalls(
@@ -203,19 +216,23 @@ internal static class CallHierarchyResolver
         };
     }
 
-    private static string MapSymbolKind(ISymbol symbol)
+    /// <summary>
+    /// The PascalCase kind the host maps to an LSP <c>SymbolKind</c>; a symbol LSP has no kind for
+    /// is a <c>Function</c>. [RAZOR-FEATURES-HIERARCHY]
+    /// </summary>
+    internal static string MapSymbolKind(ISymbol symbol)
     {
         return symbol.Kind switch
         {
-            SymbolKind.Method => "method",
-            SymbolKind.Property => "property",
-            SymbolKind.Field => "field",
-            SymbolKind.NamedType => "class",
-            SymbolKind.Event => "event",
-            SymbolKind.Namespace => "namespace",
-            SymbolKind.Local => "variable",
-            SymbolKind.Parameter => "parameter",
-            SymbolKind.TypeParameter => "typeParameter",
+            SymbolKind.Method => "Method",
+            SymbolKind.Property => "Property",
+            SymbolKind.Field => "Field",
+            SymbolKind.NamedType => "Class",
+            SymbolKind.Event => "Event",
+            SymbolKind.Namespace => "Namespace",
+            SymbolKind.Local => "Variable",
+            SymbolKind.Parameter => "Parameter",
+            SymbolKind.TypeParameter => "TypeParameter",
             SymbolKind.ArrayType
             or SymbolKind.PointerType
             or SymbolKind.FunctionPointerType
@@ -227,8 +244,8 @@ internal static class CallHierarchyResolver
             or SymbolKind.RangeVariable
             or SymbolKind.Assembly
             or SymbolKind.NetModule
-            or SymbolKind.Discard => "function",
-            _ => "function",
+            or SymbolKind.Discard => "Function",
+            _ => "Function",
         };
     }
 }

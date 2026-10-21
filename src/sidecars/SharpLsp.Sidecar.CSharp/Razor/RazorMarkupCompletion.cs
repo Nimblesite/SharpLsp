@@ -94,14 +94,42 @@ internal static class RazorMarkupCompletion
             )
             .MinBy(tag => tag.Element.Length);
         var children = parent is null ? [] : ChildContents(markup, parent);
-        return children.Concat(Components(markup));
+        return children.Concat(Components(markup)).Concat(TagHelperElements(markup.Scope));
     }
 
-    /// <summary>Each component once: its short name where its namespace is in scope, else its full one.</summary>
+    /// <summary>
+    /// Each element an MVC tag helper in scope targets by name (<c>partial</c>, <c>environment</c>,
+    /// <c>a</c>), spelled with the scope's prefix, once, with the tag helpers that bind it. A rule
+    /// for every element (<c>*</c>) names none. [RAZOR-MVC-TAGHELPERS]
+    /// </summary>
+    private static IEnumerable<Entry> TagHelperElements(RazorTagHelperScope scope)
+    {
+        return scope
+            .TagHelpers.SelectMany(helper =>
+                helper
+                    .TagMatchingRules.Where(rule => rule.TagName is not (null or "*"))
+                    .Select(rule => (Label: scope.Prefix + rule.TagName, Helper: helper))
+            )
+            .GroupBy(element => element.Label, StringComparer.OrdinalIgnoreCase)
+            .Select(element => new Entry(
+                element.Key,
+                "Class",
+                string.Join(", ", element.Select(bound => bound.Helper.Name).Distinct()),
+                element.First().Helper.Documentation,
+                1
+            ));
+    }
+
+    /// <summary>
+    /// Each component once: its short name where its namespace is in scope, else its full one.
+    /// A legacy file binds no component by its tag, so it completes none. [RAZOR-MVC-SCOPE]
+    /// </summary>
     private static IEnumerable<Entry> Components(RazorMarkup markup)
     {
         return markup
-            .TagHelpers.Where(helper => helper.Kind == TagHelperKind.Component)
+            .TagHelpers.Where(helper =>
+                helper.Kind == TagHelperKind.Component && markup.FileKind != RazorFileKind.Legacy
+            )
             .GroupBy(helper => helper.TypeName, StringComparer.Ordinal)
             .Select(group =>
                 group.FirstOrDefault(helper =>

@@ -56,7 +56,7 @@ public static class ProjectReferences
                 return null;
             }
 
-            var dllName = AssemblyName(projectFilePath) + ".dll";
+            var dllName = AssemblyNameOf(projectFilePath) + ".dll";
             return Directory
                 .EnumerateFiles(binDir, dllName, SearchOption.AllDirectories)
                 .OrderByDescending(File.GetLastWriteTimeUtc)
@@ -69,7 +69,7 @@ public static class ProjectReferences
     }
 
     /// <summary>Simple assembly name: <c>&lt;AssemblyName&gt;</c> or the file stem.</summary>
-    private static string AssemblyName(string projectFilePath)
+    public static string AssemblyNameOf(string projectFilePath)
     {
         try
         {

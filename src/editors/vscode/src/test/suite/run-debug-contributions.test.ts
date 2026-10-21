@@ -119,8 +119,15 @@ suite('Run/Debug manifest contributions', () => {
     assert.strictEqual(DEBUG_TYPE, DEBUG_TYPE_ID, 'constants and the kit name one debug type');
     const debuggers: unknown = block.debuggers;
     assert.ok(Array.isArray(debuggers), 'contributes.debuggers must be an array');
-    assert.strictEqual(debuggers.length, 1, 'a second debugger would split the F5 auto-pick');
-    assert.strictEqual(debuggers[0], contribution, 'the only entry IS the sharplsp-coreclr one');
+    // Judged on `languages`, not on the array's length: a debugger that declares
+    // NONE ([DEBUG-FEATURES-LAUNCH-BLAZOR-WASM]'s `sharplsp-blazorwasm`, reached
+    // from launch.json and the Select Debugger list) takes no part in the F5
+    // auto-pick, so only an entry that DOES declare them can split it.
+    const autoPicked = debuggers.filter(
+      (item) => Array.isArray(item?.languages) && item.languages.length > 0,
+    );
+    assert.strictEqual(autoPicked.length, 1, 'a second debugger would split the F5 auto-pick');
+    assert.strictEqual(autoPicked[0], contribution, 'the auto-picked entry IS sharplsp-coreclr');
     const bodies = snippetBodies();
     assert.strictEqual(bodies.length, 2, 'a launch and an attach snippet are both offered');
     const types = bodies.map((body) => String(body.type));

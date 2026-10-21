@@ -1,0 +1,19 @@
+@inherits Panel
+
+<span class="ticker">@Describe(count)</span>
+<button @onclick="Hit">Hit</button>
+
+@code {
+    private int count;
+
+    private void Hit()
+    {
+        var next = Counting.Bump(count);
+        count = next;
+    }
+
+    private static string Describe(int value)
+    {
+        return $"Count: {value}";
+    }
+}

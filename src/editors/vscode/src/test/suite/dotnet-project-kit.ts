@@ -10,10 +10,12 @@
 // Solutions are produced by `dotnet new sln` + `dotnet sln add`, never authored:
 // .NET 10 emits the XML `.slnx` format by default and the extension has to cope
 // with whichever the CLI chose, so the fixture must not assume an extension.
+import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { XMLBuilder } from 'fast-xml-parser';
+import { findGlobalJson } from '../../global-json.js';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** A `<PackageReference Include=".." Version=".." />`. */
@@ -432,4 +434,23 @@ export async function installedFrameworkPair(cwd: string): Promise<string[]> {
     );
   }
   return targets.slice(-2);
+}
+
+/** Build output a copied fixture must not bring along: a copied `obj` points back at the source. */
+const BUILD_OUTPUT = new Set(['bin', 'obj']);
+
+/**
+ * Copy the repository fixture at `source` to `root`, without its build output, pinned to
+ * the SDK the repository builds it with. A copy under the OS temp directory has no
+ * `global.json` above it, so it would build with whatever SDK is newest on the machine,
+ * whose Razor generator can need a newer Roslyn than the sidecar's.
+ */
+export function copyPinnedFixture(source: string, root: string): void {
+  fs.cpSync(source, root, {
+    recursive: true,
+    filter: (entry) => !BUILD_OUTPUT.has(path.basename(entry)),
+  });
+  const pin = findGlobalJson(source);
+  assert.ok(pin, 'the repository pins the fixture SDK in a global.json');
+  fs.copyFileSync(pin, path.join(root, 'global.json'));
 }

@@ -81,11 +81,11 @@ internal static class HotReloadSignatureGuard
     }
 
     /// <summary>
-    /// Strip everything that is legal to edit under hot reload from the
+    /// Strip what is legal to edit under hot reload from the
     /// declaration: the body, attributes, parameter names, parameter
     /// defaults, and nullable annotations (reference-type annotations are
     /// metadata-only; value-type ones that DO change the signature still fall
-    /// through to Roslyn's real analysis).
+    /// through to Roslyn's real analysis). [RAZOR-HOT-RELOAD]
     /// </summary>
     private static MethodDeclarationSyntax Normalize(MethodDeclarationSyntax method)
     {
@@ -98,7 +98,7 @@ internal static class HotReloadSignatureGuard
         stripped = stripped.WithParameterList(
             stripped.ParameterList.WithParameters(SyntaxFactory.SeparatedList(parameters))
         );
-        return (MethodDeclarationSyntax)new NullableAnnotationStripper().Visit(stripped);
+        return (MethodDeclarationSyntax)new SignatureIgnorer().Visit(stripped);
     }
 
     private static ParameterSyntax NormalizeParameter(ParameterSyntax parameter)
@@ -128,12 +128,23 @@ internal static class HotReloadSignatureGuard
         );
     }
 
-    /// <summary>Replace every `T?` with `T`, recursively.</summary>
-    private sealed class NullableAnnotationStripper : CSharpSyntaxRewriter
+    /// <summary>
+    /// Strip what cannot distinguish two versions of one method: every `T?`
+    /// becomes `T`, recursively, and every trivia disappears — a doc comment
+    /// or comment edit, and the `#line` and checksum directives a Razor
+    /// projection's generated document carries, which a markup edit shifts for
+    /// every method, never touch a signature. [RAZOR-HOT-RELOAD]
+    /// </summary>
+    private sealed class SignatureIgnorer : CSharpSyntaxRewriter
     {
         public override SyntaxNode? VisitNullableType(NullableTypeSyntax node)
         {
             return Visit(node.ElementType);
+        }
+
+        public override SyntaxTrivia VisitTrivia(SyntaxTrivia trivia)
+        {
+            return default;
         }
     }
 }

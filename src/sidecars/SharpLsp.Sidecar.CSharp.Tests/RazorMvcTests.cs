@@ -138,6 +138,96 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
     }
 
     [Fact]
+    public async Task Tag_helper_elements_complete_after_an_open_angle_bracket()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+        var original = await File.ReadAllTextAsync(Edit);
+
+        // After `<`, every element a tag helper in scope targets by name completes, with the
+        // tag helper that binds it, replacing the name typed so far. [RAZOR-MVC-TAGHELPERS]
+        var items = await CompletedAsync(manager, original + "\n<pa");
+        var partial = Assert.Single(items, item => item.Label == "partial");
+        Assert.Equal("Class", partial.Kind);
+        Assert.Contains("PartialTagHelper", partial.Detail, StringComparison.Ordinal);
+        Assert.Equal("pa", ReplacedText(original + "\n<pa", partial));
+        Assert.Contains(items, item => item.Label == "environment");
+        var anchor = Assert.Single(items, item => item.Label == "a");
+        Assert.Contains("AnchorTagHelper", anchor.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(items, item => item.Label == "*");
+
+        // `@tagHelperPrefix` spells each element with its prefix...
+        var prefixed = await CompletedAsync(manager, "@tagHelperPrefix th:\n" + original + "\n<");
+        Assert.Contains(prefixed, item => item.Label == "th:partial");
+        Assert.DoesNotContain(prefixed, item => item.Label == "partial");
+
+        // ...and `@removeTagHelper *` takes the assembly's elements away, leaving those of the
+        // default imports' URL resolution tag helper, which still binds `a`.
+        const string none = "@removeTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers";
+        var removed = await CompletedAsync(manager, original + "\n" + none + "\n<");
+        Assert.DoesNotContain(removed, item => item.Label is "partial" or "environment");
+        var resolved = Assert.Single(removed, item => item.Label == "a");
+        Assert.Contains("UrlResolutionTagHelper", resolved.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("AnchorTagHelper", resolved.Detail, StringComparison.Ordinal);
+
+        // A legacy file binds no component by its tag, so none completes. [RAZOR-MVC-SCOPE]
+        Assert.DoesNotContain(items, item => item.Label is "ErrorBoundary" or "Virtualize");
+        Assert.DoesNotContain(
+            items,
+            item =>
+                item.Detail?.StartsWith("Microsoft.AspNetCore.Components", StringComparison.Ordinal)
+                == true
+        );
+    }
+
+    [Fact]
+    public async Task Model_expressions_and_section_code_get_csharp_features()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+
+        // An `asp-for` value is a model expression: C# hover and definition. [RAZOR-MVC]
+        var at = RazorFixture.Locate(Edit, "<input asp-for", "Title");
+        var hover = await HoverAsync(manager, Edit, at);
+        Assert.Contains("The item's title.", hover, StringComparison.Ordinal);
+        var title = Assert.Single(
+            RazorFixture.Ok(await manager.GetDefinitionAsync(Edit, at.Line, at.Character)).Locations
+        );
+        var code = _fixture.Path("PagesApp", "Pages", "Edit.cshtml.cs");
+        Assert.True(NativePaths.AreEqual(code, title.FilePath), title.FilePath);
+        Assert.Equal(RazorFixture.Locate(code, "public string Title", "Title").Line, title.Line);
+        var references = RazorFixture.Ok(
+            await manager.GetReferencesAsync(code, title.Line, title.Character, true)
+        );
+        Assert.Equal(
+            4,
+            references.Locations.Count(location => NativePaths.AreEqual(Edit, location.FilePath))
+        );
+        var rename = RazorFixture.Ok(
+            await manager.RenameAsync(code, title.Line, title.Character, "Heading")
+        );
+        var view = Assert.Single(
+            rename.DocumentChanges,
+            d => NativePaths.AreEqual(Edit, d.FilePath)
+        );
+        Assert.Equal(4, view.Edits.Count);
+        Assert.Contains(view.Edits, e => (e.StartLine, e.StartCharacter) == at);
+        Assert.All(view.Edits, e => Assert.Equal("Heading", e.NewText));
+        Assert.DoesNotContain(
+            rename.DocumentChanges,
+            d => NativePaths.HasExtension(d.FilePath, ".g.cs")
+        );
+
+        // The C# inside a `@section` block answers through the projection too.
+        var text = await File.ReadAllTextAsync(Index);
+        const string section = "\n@section Scripts {\n    <p>@Model.Price</p>\n}\n";
+        _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Index, text + section));
+        var line = text.Split('\n').Length + 1;
+        var price = RazorFixture.Ok(await manager.GetHoverAsync(Index, line, 17));
+        Assert.NotNull(price);
+        Assert.Contains("decimal", price.Contents, StringComparison.Ordinal);
+        Assert.Contains("Price", price.Contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Section_blocks_fold_and_outline()
     {
         using var manager = await _fixture.OpenManagerAsync();
@@ -251,6 +341,23 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
         var markup = await manager.FindRazorMarkupAsync(Edit, default);
         Assert.NotNull(markup);
         return (markup, items);
+    }
+
+    /// <summary>The completion at the end of <paramref name="text"/>, once it is Edit.cshtml's.</summary>
+    private async Task<List<CompletionItem>> CompletedAsync(WorkspaceManager manager, string text)
+    {
+        return (await EditedAsync(manager, text)).Items;
+    }
+
+    /// <summary>The text of <paramref name="text"/> that <paramref name="item"/>'s edit replaces.</summary>
+    private static string ReplacedText(string text, CompletionItem item)
+    {
+        Assert.NotNull(item.TextEdit);
+        var lines = text.Split('\n');
+        Assert.Equal(item.TextEdit.StartLine, item.TextEdit.EndLine);
+        return lines[item.TextEdit.StartLine][
+            item.TextEdit.StartCharacter..item.TextEdit.EndCharacter
+        ];
     }
 
     private static async Task<string> HoverAsync(
