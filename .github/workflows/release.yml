@@ -80,7 +80,7 @@ jobs:
     name: Build VSIX (${{ matrix.platform }})
     needs: version
     runs-on: "${{ matrix.os }}"
-    timeout-minutes: 45
+    timeout-minutes: "${{ matrix.timeout_minutes || 45 }}"
     strategy:
       fail-fast: false
       matrix:
@@ -97,11 +97,16 @@ jobs:
             os: macos-15
             rust_target: aarch64-apple-darwin
             can_execute: true
-          # This just spins forever on GitHub's hosted runners
-          # - platform: darwin-x64
-          #   os: macos-13
-          #   rust_target: x86_64-apple-darwin
-          #   can_execute: true
+          # macos-13 was retired 2025-12-04, so the old leg queued forever;
+          # macos-15-intel is GitHub's standard-runner Intel label for public
+          # repos, making this a NATIVE build (can_execute: true runs the real
+          # smoke test). 4 Intel cores compile the Rust release build slower
+          # than the ARM runners, hence the longer per-leg timeout.
+          - platform: darwin-x64
+            os: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            can_execute: true
+            timeout_minutes: 60
           - platform: win32-x64
             os: windows-latest
             rust_target: x86_64-pc-windows-msvc
@@ -319,7 +324,7 @@ jobs:
         env:
           # Kept beside the build-vsix matrix: adding a platform there without
           # updating this count fails the release loudly instead of shipping short.
-          PLATFORM_COUNT: '5'
+          PLATFORM_COUNT: '6'
       # Hyphenated SemVer tags (v0.2.0-rc.1, v0.2.0-beta) are marked prerelease so
       # they never become the "Latest release". [DIST-RELEASE] [DIST-RELEASE]
       - name: Create GitHub release
@@ -346,6 +351,11 @@ jobs:
   deploy-pages:
     name: Deploy website to GitHub Pages
     needs: release
+    # Publish-side jobs run ONLY on the canonical repo: forks carry neither the
+    # publish secrets nor the Pages setup, and the GitHub Release assets (the
+    # part forks DO want) are already uploaded by `release`. Guarding instead of
+    # deleting keeps this workflow upstream-compatible.
+    if: github.repository == 'Nimblesite/SharpLsp'
     permissions:
       contents: read
       pages: write
@@ -385,6 +395,12 @@ jobs:
       # authorization is Marketplace publisher membership — hence
       # allow-no-subscriptions.
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        # STEP-level repo scoping, never job-level: security-gates.test.mjs
+        # asserts this job has no job-level `if`, so publishing can never bypass
+        # its audited `release` dependency. On forks the job still runs (and
+        # still requires the audited release) but has no Entra credentials, so
+        # only the credential-holding steps are scoped to the canonical repo.
+        if: github.repository == 'Nimblesite/SharpLsp'
         with:
           client-id: "${{ secrets.AZURE_CLIENT_ID }}"
           tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
@@ -401,6 +417,7 @@ jobs:
       # hyphenated tag is published with --pre-release (the VSIX is packaged with
       # --pre-release in the Makefile for hyphenated versions).
       - name: Publish each platform VSIX (Entra OIDC, no PAT)
+        if: github.repository == 'Nimblesite/SharpLsp'
         shell: bash
         run: |
           set -euo pipefail
@@ -479,7 +496,7 @@ jobs:
     needs:
       - version
       - release
-    if: "${{ !contains(github.ref_name, '-') }}"
+    if: "${{ github.repository == 'Nimblesite/SharpLsp' && !contains(github.ref_name, '-') }}"
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
@@ -539,7 +556,7 @@ jobs:
     needs:
       - version
       - release
-    if: "${{ !contains(github.ref_name, '-') }}"
+    if: "${{ github.repository == 'Nimblesite/SharpLsp' && !contains(github.ref_name, '-') }}"
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
@@ -618,6 +635,10 @@ jobs:
       # latest release at publish time, inside the job that holds the token — a
       # supply-chain risk. Bump deliberately. Secret: OPEN_VSX_PAT.
       - name: Publish to Open VSX Registry
+        # Step-level repo scoping, same invariant as publish-marketplace: the
+        # job keeps its unconditional audited-release gating, only the
+        # PAT-holding step is scoped to the canonical repo.
+        if: github.repository == 'Nimblesite/SharpLsp'
         env:
           OVSX_PAT: "${{ secrets.OPEN_VSX_PAT }}"
         shell: bash
