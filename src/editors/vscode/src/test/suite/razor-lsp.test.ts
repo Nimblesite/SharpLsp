@@ -23,6 +23,7 @@ import {
 import { packageJson } from './run-debug-kit';
 import {
   closeAllEditors,
+  comparablePath,
   pollProvider,
   pollUntilResult,
   removeDirRecursive,
@@ -348,9 +349,20 @@ suite('Razor in VS Code', () => {
       score,
       'Points',
     );
-    const byFile = new Map(edit.entries().map(([target, edits]) => [target.path, edits]));
-    assert.equal(byFile.get(uri.path)?.length, 1, 'the Razor use');
-    assert.equal(byFile.get(scores.uri.path)?.length, 5, 'the F# declaration and four uses');
+    // Keyed as the file system compares paths: on Windows a drive letter may be
+    // spelled in either case, and one file must never count as two.
+    const byFile = new Map<string, vscode.TextEdit[]>();
+    for (const [target, edits] of edit.entries()) {
+      const key = comparablePath(target.fsPath);
+      byFile.set(key, [...(byFile.get(key) ?? []), ...edits]);
+    }
+    assert.equal(byFile.get(comparablePath(uri.fsPath))?.length, 1, 'the Razor use');
+    assert.equal(
+      byFile.get(comparablePath(scores.uri.fsPath))?.length,
+      5,
+      'the F# declaration and four uses',
+    );
+    assert.equal(byFile.size, 2, 'the Razor file and the F# file, and nothing else');
     assert.ok(
       [...byFile.values()].flat().every((change) => change.newText === 'Points'),
       'every edit renames to Points',
