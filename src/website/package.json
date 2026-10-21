@@ -14,7 +14,7 @@
     "@11ty/eleventy-plugin-syntaxhighlight": "5.0.2",
     "@playwright/test": "^1.64.0",
     "eleventy-plugin-techdoc": "0.2.0",
-    "markdown-it": "^15.0.2"
+    "markdown-it": "^15.0.3"
   },
   "devDependencies": {
     "luxon": "^3.7.2"
