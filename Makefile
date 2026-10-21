@@ -795,7 +795,7 @@ _test-tooling:
 	node --test tools/vsix/chunk-once.test.mjs
 	@echo "==> Running repo tooling tests..."
 	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/vsix/debug-cleanup.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
-		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs tools/make/vsix-profiles.test.mjs
+		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs tools/make/vsix-profiles.test.mjs tools/vsix/model-generators.test.mjs
 
 _website-build:
 	@echo "==> Building website..."

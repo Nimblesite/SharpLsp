@@ -250,22 +250,29 @@ public sealed class RazorCollocationTests : IClassFixture<RazorFixture>
     [Fact]
     public void Collocated_files_are_named_after_the_razor_file()
     {
-        Assert.Equal("/app/Card.razor.css", NativePaths.StylesheetOf("/app/Card.razor"));
-        Assert.Equal("/app/Index.cshtml.css", NativePaths.StylesheetOf("/app/Index.cshtml"));
+        var app = _fixture.Path("BlazorApp");
+        Assert.Equal(
+            _fixture.Path("BlazorApp", "Card.razor.css"),
+            NativePaths.StylesheetOf(_fixture.Path("BlazorApp", "Card.razor"))
+        );
+        Assert.Equal(
+            _fixture.Path("BlazorApp", "Index.cshtml.css"),
+            NativePaths.StylesheetOf(_fixture.Path("BlazorApp", "Index.cshtml"))
+        );
 
         // A module is spelled relative to the app's base path, which is the project directory,
         // and only a collocated module is one.
         Assert.Equal(
-            "/app/Components/Shared/Card.razor.js",
-            RazorCollocation.ModuleFile("/app", "./Components/Shared/Card.razor.js")
+            _fixture.Path("BlazorApp", "Components", "Shared", "Card.razor.js"),
+            RazorCollocation.ModuleFile(app, "./Components/Shared/Card.razor.js")
         );
         Assert.Equal(
-            "/app/Pages/Index.cshtml.js",
-            RazorCollocation.ModuleFile("/app", "/Pages/Index.cshtml.js")
+            _fixture.Path("BlazorApp", "Pages", "Index.cshtml.js"),
+            RazorCollocation.ModuleFile(app, "/Pages/Index.cshtml.js")
         );
-        Assert.Null(RazorCollocation.ModuleFile("/app", "./js/site.js"));
-        Assert.Null(RazorCollocation.ModuleFile("/app", "./Components/Shared/Card.razor.css"));
-        Assert.Null(RazorCollocation.ModuleFile("/app", "import"));
+        Assert.Null(RazorCollocation.ModuleFile(app, "./js/site.js"));
+        Assert.Null(RazorCollocation.ModuleFile(app, "./Components/Shared/Card.razor.css"));
+        Assert.Null(RazorCollocation.ModuleFile(app, "import"));
     }
 
     /// <summary>Completion at the end of <paramref name="suffix"/>, appended to <paramref name="file"/>'s text.</summary>

@@ -106,7 +106,11 @@ async function sessions(): Promise<readonly SessionInfo[]> {
 }
 
 suite('F# soak — FsPricingEngine through five workloads in one long CPU session', () => {
-  const live = profilingSuite('profiler-fs-soak-engine-', ENGINE, { stopping: endProfiling });
+  // The test turns the heat map off mid-way; a failure there must not leave it off for later suites.
+  const live = profilingSuite('profiler-fs-soak-engine-', ENGINE, {
+    stopping: endProfiling,
+    stopped: () => setProfilerSetting('showInlineHeatMap', undefined),
+  });
 
   test('five stages, one program, one row: each stage is attributed to its own F# file with ranked shares, the artifacts validate, a second session is refused, and the heat map follows its setting', async function () {
     this.timeout(STOP_MS * 12);

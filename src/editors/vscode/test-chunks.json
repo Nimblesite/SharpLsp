@@ -63,6 +63,7 @@
         "debug-adapter-startup.test.js",
         "blazor-wasm-debug.test.js",
         "blazor-wasm-debug-resolution.test.js",
+        "blazor-wasm-session.test.js",
         "run-debug-profiles.test.js",
         "run-debug-contributions.test.js",
         "run-debug-target.test.js",

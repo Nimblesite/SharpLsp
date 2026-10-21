@@ -35,7 +35,7 @@ import {
   assertContainsNone,
 } from './test-helpers';
 import { installUiStubs } from './ui-stubs';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 // ── C# source used for all "AllTypes" suites ──────────────────────
 
@@ -617,9 +617,11 @@ suite('Context Menu — Project Node Commands Execute', () => {
     requireNode(tree().getChildren(), '', 'project');
   });
 
+  // Each build command awaits a real `dotnet` run to completion ([SE-ACTIONS-BUILD]),
+  // so it is a CLI run, not a command round trip.
   for (const cmd of BUILD_COMMANDS) {
     test(`${cmd} executes without error`, async function () {
-      this.timeout(COMMAND_MS);
+      this.timeout(DOTNET_CLI_MS);
       await assertRuns(cmd);
     });
   }
@@ -634,7 +636,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
 
   for (const cmd of BUILD_COMMANDS) {
     test(`${cmd} executes without error on the solution node`, async function () {
-      this.timeout(COMMAND_MS);
+      this.timeout(DOTNET_CLI_MS);
       await assertRuns(cmd, requireSolutionNode(tree()));
     });
   }

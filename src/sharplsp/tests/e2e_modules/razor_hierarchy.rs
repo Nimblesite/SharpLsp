@@ -31,8 +31,9 @@ fn test_full_stack_razor_hierarchy_and_hints() {
         "hover on `Describe` must show the method: {markdown}"
     );
 
-    assert_call_hierarchy(&mut client, &ticker);
-    assert_type_hierarchy(&mut client, &ws, &ticker);
+    let canonical_ticker = path_to_file_uri(&ws.file(TICKER));
+    assert_call_hierarchy(&mut client, &ticker, &canonical_ticker);
+    assert_type_hierarchy(&mut client, &ws, &ticker, &canonical_ticker);
     assert_inlay_hints(&mut client, &ticker);
 
     client.shutdown_and_exit();
@@ -41,11 +42,11 @@ fn test_full_stack_razor_hierarchy_and_hints() {
 
 /// `prepareCallHierarchy` and `incomingCalls` from a Razor position: the item is the Razor
 /// declaration, and the markup that clicks it is a caller in the same file.
-fn assert_call_hierarchy(client: &mut LspClient, ticker: &str) {
+fn assert_call_hierarchy(client: &mut LspClient, ticker: &str, canonical_ticker: &str) {
     let hit = prepared(client, "textDocument/prepareCallHierarchy", ticker, 8, 17);
     assert_eq!(hit["name"], "Hit", "{hit}");
     assert_eq!(hit["kind"], 6, "a method: {hit}");
-    assert_eq!(hit["uri"], json!(ticker), "{hit}");
+    assert_eq!(hit["uri"], json!(canonical_ticker), "{hit}");
     assert_eq!(
         hit["range"],
         json!({
@@ -65,7 +66,7 @@ fn assert_call_hierarchy(client: &mut LspClient, ticker: &str) {
         "the component's own markup calls it: {call}"
     );
     assert_eq!(call["from"]["kind"], 5, "the component is a class: {call}");
-    assert_eq!(call["from"]["uri"], json!(ticker), "{call}");
+    assert_eq!(call["from"]["uri"], json!(canonical_ticker), "{call}");
     assert_eq!(
         call["from"]["selectionRange"]["start"],
         json!({ "line": 0, "character": 0 }),
@@ -83,11 +84,20 @@ fn assert_call_hierarchy(client: &mut LspClient, ticker: &str) {
 
 /// `prepareTypeHierarchy` from `@inherits`, and its subtypes: the base component is its own
 /// file, and the subtype is this one's.
-fn assert_type_hierarchy(client: &mut LspClient, ws: &RazorWorkspace, ticker: &str) {
+fn assert_type_hierarchy(
+    client: &mut LspClient,
+    ws: &RazorWorkspace,
+    ticker: &str,
+    canonical_ticker: &str,
+) {
     let panel = prepared(client, "textDocument/prepareTypeHierarchy", ticker, 0, 10);
     assert_eq!(panel["name"], "Panel", "{panel}");
     assert_eq!(panel["kind"], 5, "a component is a class: {panel}");
-    assert_eq!(panel["uri"], json!(ws.uri(PANEL)), "{panel}");
+    assert_eq!(
+        panel["uri"],
+        json!(path_to_file_uri(&ws.file(PANEL))),
+        "{panel}"
+    );
     assert_eq!(
         panel["selectionRange"],
         json!({
@@ -102,7 +112,7 @@ fn assert_type_hierarchy(client: &mut LspClient, ws: &RazorWorkspace, ticker: &s
     let items = subtypes["result"].as_array().expect("subtypes");
     assert_eq!(items.len(), 1, "{subtypes}");
     assert_eq!(items[0]["name"], "Ticker", "{subtypes}");
-    assert_eq!(items[0]["uri"], json!(ticker), "{subtypes}");
+    assert_eq!(items[0]["uri"], json!(canonical_ticker), "{subtypes}");
 }
 
 /// `textDocument/inlayHint` over the file: the hints of its C# fragments sit at their Razor

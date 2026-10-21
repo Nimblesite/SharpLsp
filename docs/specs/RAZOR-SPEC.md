@@ -1,6 +1,6 @@
 # [RAZOR-SPEC] Razor: Blazor Components, Razor Pages and MVC Views
 
-**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md) · **Plan:** [RAZOR-PLAN.md](../plans/RAZOR-PLAN.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## [RAZOR-OVERVIEW] Overview
 

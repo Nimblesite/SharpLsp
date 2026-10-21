@@ -181,7 +181,7 @@ fn test_full_stack_ambiguous_root_shows_error_until_settings_choose_a_solution()
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
 
-    let shown = client.wait_for_notification("window/showMessage", Duration::from_secs(120));
+    let shown = client.wait_for_notification("window/showMessage", Duration::from_mins(2));
     assert_eq!(
         shown["params"]["type"], 1,
         "an ambiguous root is an error: {shown}"

@@ -28,6 +28,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
+        _razorActions = [];
         return RunQueryAsync(
             async () =>
             {

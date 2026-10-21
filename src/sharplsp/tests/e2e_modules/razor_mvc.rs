@@ -25,7 +25,11 @@ fn test_full_stack_razor_pages_and_mvc_views() {
     let text = ws.text(EDIT);
     client.open_document(&edit, &text);
 
-    assert_directives_answer_through_the_projection(&mut client, &edit);
+    assert_directives_answer_through_the_projection(
+        &mut client,
+        &edit,
+        &path_to_file_uri(&ws.file(EDIT)),
+    );
     assert_tag_helpers_answer_from_their_descriptors(&mut client, &edit, &text);
     assert_view_imports_reach_the_view(&mut client, &ws);
 
@@ -34,7 +38,11 @@ fn test_full_stack_razor_pages_and_mvc_views() {
 }
 
 /// `@model`'s type, `@inject`'s property and a `@functions` method are C#.
-fn assert_directives_answer_through_the_projection(client: &mut LspClient, edit: &str) {
+fn assert_directives_answer_through_the_projection(
+    client: &mut LspClient,
+    edit: &str,
+    canonical_edit: &str,
+) {
     let model = poll_hover_until_ready(client, edit, 1, 8, Duration::from_mins(3));
     let markdown = model["contents"]["value"].as_str().unwrap_or_default();
     assert!(
@@ -62,7 +70,7 @@ fn assert_directives_answer_through_the_projection(client: &mut LspClient, edit:
     let target = first_location(&shout["result"]);
     assert_eq!(
         target["uri"],
-        json!(edit),
+        json!(canonical_edit),
         "the method is the page's: {shout}"
     );
     assert_location_line(&target, 13, "`@Shout` goes to its `@functions` declaration");

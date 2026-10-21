@@ -33,17 +33,22 @@ internal static class RazorExtractActions
         );
         var path = NativePaths.CodeBehindOf(projection.RazorPath);
         var body = block is { Name: "code" } ? BodyOf(projection, block.Span) : null;
-        if (markup.FileKind != RazorFileKind.Component || body is null || File.Exists(path))
+        var declaration = projection.FileClass;
+        if (
+            markup.FileKind != RazorFileKind.Component
+            || body is null
+            || declaration is null
+            || File.Exists(path)
+        )
         {
             return null;
         }
 
-        var name = NativePaths.StemOf(projection.RazorPath);
         var newline = RazorHandlerText.LineBreak(markup.Text);
         var text = PartialClass(
             markup,
             compilation,
-            name,
+            declaration,
             markup.Text.ToString(body.Value),
             newline
         );
@@ -112,7 +117,7 @@ internal static class RazorExtractActions
     private static string PartialClass(
         RazorMarkup markup,
         Compilation compilation,
-        string name,
+        ClassDeclarationSyntax declaration,
         string body,
         string newline
     )
@@ -130,7 +135,22 @@ internal static class RazorExtractActions
         return string.Concat(usings)
             + (global.Count < markup.ImportedNamespaces.Length ? newline : "")
             + space
-            + $"public partial class {name}{newline}{{{newline}{members}{newline}}}{newline}";
+            + $"{ClassHeader(declaration, newline)}{newline}{{{newline}{members}{newline}}}{newline}";
+    }
+
+    /// <summary>The compiler's class identity, including generic parameters and constraints.</summary>
+    private static string ClassHeader(ClassDeclarationSyntax declaration, string newline)
+    {
+        return declaration
+            .WithAttributeLists(default)
+            .WithBaseList(null)
+            .WithMembers(default)
+            .WithOpenBraceToken(default)
+            .WithCloseBraceToken(default)
+            .WithoutTrivia()
+            .NormalizeWhitespace(eol: newline)
+            .ToFullString()
+            .TrimEnd();
     }
 
     /// <summary>The namespaces the compilation imports with <c>global using</c>, as their symbols name them.</summary>
@@ -220,9 +240,9 @@ internal static class RazorExtractActions
             )
             .Select(mapping => new TextSpan(mapping.GeneratedStart, mapping.Length))
             .ToList();
-        var component = model.GetDeclaredSymbol(
-            projection.GeneratedRoot.DescendantNodes().OfType<ClassDeclarationSyntax>().First()
-        );
+        var component = projection.FileClass is { } declared
+            ? model.GetDeclaredSymbol(declared)
+            : null;
         return generated
             .SelectMany(span =>
                 projection.GeneratedRoot.DescendantNodes(span).OfType<IdentifierNameSyntax>()
