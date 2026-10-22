@@ -124,6 +124,22 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
 
+  # Local video tooling has native image dependencies too.
+  - package-ecosystem: npm
+    directory: "/src/website/tools/video"
+    target-branch: "dependabot-upgrades"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      video-tooling:
+        applies-to: version-updates
+        patterns: ["*"]
+      video-tooling-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
   # ── GitHub Actions: all workflows ───────────────────────────────────
   # Version-only: GitHub publishes no Dependabot security advisories for
   # actions, so there is no security channel to group.

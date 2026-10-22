@@ -459,9 +459,10 @@ ci: lint test build audit
 # touches node_modules.
 
 AUDIT_LEVEL       ?= moderate
-AUDIT_CARGO_LOCKS  = Cargo.lock $(ZED_DIR)/Cargo.lock
-AUDIT_NPM_DIRS     = $(VSCODE_DIR) src/website
+AUDIT_CARGO_LOCKS  = Cargo.lock $(ZED_DIR)/Cargo.lock lspkit/Cargo.lock
+AUDIT_NPM_DIRS     = $(VSCODE_DIR) src/website src/website/tools/video lspkit/packages/lspkit-debug lspkit/packages/lsp-profiler-ui
 AUDIT_DOTNET_JSON  = target/audit-dotnet.json
+AUDIT_DOTNET_TARGETS = $(SIDECAR_SLN) lspkit/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj
 
 .PHONY: audit _audit-rust _audit-dotnet _audit-npm
 
@@ -489,11 +490,13 @@ _audit-rust:
 	done; exit $$status
 
 _audit-dotnet:
-	@echo "==> dotnet list package --vulnerable $(SIDECAR_SLN)"
 	@mkdir -p $(dir $(AUDIT_DOTNET_JSON))
-	$(DOTNET) restore $(SIDECAR_SLN) --verbosity quiet
-	$(DOTNET) list $(SIDECAR_SLN) package --vulnerable --include-transitive --format json > $(AUDIT_DOTNET_JSON)
-	@node tools/audit/dotnet-vulnerable.mjs $(AUDIT_DOTNET_JSON) $(AUDIT_LEVEL)
+	@status=0; for project in $(AUDIT_DOTNET_TARGETS); do \
+		echo "==> dotnet list package --vulnerable $$project"; \
+		$(DOTNET) restore "$$project" --verbosity quiet && \
+		$(DOTNET) list "$$project" package --vulnerable --include-transitive --format json > $(AUDIT_DOTNET_JSON) && \
+		node tools/audit/dotnet-vulnerable.mjs $(AUDIT_DOTNET_JSON) $(AUDIT_LEVEL) || status=1; \
+	done; exit $$status
 
 _audit-npm:
 	@status=0; for dir in $(AUDIT_NPM_DIRS); do \
