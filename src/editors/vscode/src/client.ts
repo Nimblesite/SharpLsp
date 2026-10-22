@@ -28,6 +28,7 @@ import { createAnsiStrippingChannel } from './output-filter.js';
 import { serverStdioOptions } from './server-stderr.js';
 import { detectRuntimePlatform } from './platform.js';
 import * as state from './state.js';
+import { wireBuildDiscovery } from './test-builds.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 import { dotnetHostEnvironment } from './dotnetRuntime.js';
 import { observeResponses } from './tutorial/detect.js';
@@ -149,6 +150,7 @@ export async function start(
   const client = new SharpLspClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
 
   wireClientState(client, statusBar, openSync, context);
+  wireBuildDiscovery(client, context);
 
   statusBar.setState(ServerState.Starting);
   try {

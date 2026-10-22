@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { effect } from './signals';
+import { effect, Signal } from './signals';
 import { info } from './log';
 import * as state from './state';
 import type { TestListing } from './test-listing-model';
@@ -72,16 +72,17 @@ export class SharpLspTestController {
   private readonly solutionSubscription: () => void;
   /** Cancels the reactive `dotnet` executable subscription. */
   private readonly dotnetSubscription: () => void;
+  private readonly buildSubscription: () => void;
+  private readonly renderSubscription: () => void;
+  /** One atomic discovery result drives the visible tree and its run plans. */
+  private readonly tree = new Signal<
+    { readonly sweep: Sweep; readonly targetCount: number } | undefined
+  >(undefined);
   /** Pending debounced discovery timer, if any. */
   private debounceHandle: ReturnType<typeof setTimeout> | undefined;
   /** Monotonic id so a superseded discovery sweep never clobbers a newer one. */
   private discoverGeneration = 0;
-  /**
-   * True once the user has engaged the Test Explorer (revealed the view or hit
-   * refresh). Discovery runs `dotnet test` — a full build — so we do NOT do that
-   * as a side effect of merely loading a solution; only once tests are actually
-   * being shown does a solution change reactively re-discover.
-   */
+  /** Engaged by the Testing view; observing a build never enables implicit builds. */
   private active = false;
   /** One `dotnet` invocation at a time, discovery and runs alike. */
   private readonly dotnetQueue = new DotnetQueue();
@@ -173,14 +174,20 @@ export class SharpLspTestController {
         await this.activateAndDiscover();
       }
     };
-    // Reactive: once tests are being shown, a change to the loaded solution (or the
-    // server that locates its tests coming up) must re-discover with no manual
-    // refresh. Debounced to collapse the burst a solution load emits. Gated on
-    // `active` so loading a solution never builds before the user looks at tests.
+    // Debounce solution/server changes once discovery is engaged.
     this.solutionSubscription = onDiscoveryInputs(() => {
       if (this.active) {
         this.scheduleDiscovery();
       }
+    });
+    this.renderSubscription = effect(() => {
+      const tree = this.tree.value;
+      if (tree !== undefined) this.renderTree(tree.sweep, tree.targetCount);
+    });
+    this.buildSubscription = state.buildCompleted.subscribe(() => {
+      if (this.debounceHandle !== undefined) clearTimeout(this.debounceHandle);
+      this.debounceHandle = undefined;
+      void this.discover(true);
     });
   }
 
@@ -193,6 +200,8 @@ export class SharpLspTestController {
   public dispose(): void {
     this.solutionSubscription();
     this.dotnetSubscription();
+    this.buildSubscription();
+    this.renderSubscription();
     if (this.debounceHandle !== undefined) {
       clearTimeout(this.debounceHandle);
     }
@@ -216,44 +225,46 @@ export class SharpLspTestController {
   }
 
   /**
-   * Discover every test in the loaded solution (or, absent one, each workspace
-   * folder) and replace the tree. A superseded sweep never clobbers a newer one,
-   * and a sweep where NO target could be enumerated leaves the previous tree
-   * standing — with an error row appended saying why — rather than blanking the
-   * view on a transient `dotnet` failure.
-   *
-   * The sweep AND its result are ONE queued job, so a run queued behind it runs
-   * with the runners it found, and a superseded sweep resolves only once the
-   * newest one has applied ([TEST-REACTIVITY], [TEST-MTP-ROUTING]).
+   * Discover every target and publish its tree and runners in ONE queued job.
+   * Superseded sweeps await the newest result; failed sweeps keep the old tree.
+   * Build completions list existing outputs. [TEST-REACTIVITY] [TEST-MTP-ROUTING]
    */
-  public async discover(): Promise<void> {
+  public async discover(noBuild = false): Promise<void> {
     const generation = ++this.discoverGeneration;
     const targets = discoveryTargets();
     const job = this.enqueue(async () => {
-      const sweep = await this.sweep(targets, generation);
+      const sweep = await this.sweep(targets, generation, noBuild);
       if (sweep === undefined || generation !== this.discoverGeneration) return;
-      const anyOk = targets.length === 0 || sweep.listings.some((listing) => listing.ok);
-      if (this.applyDiscovery(sweep.items, sweep.errors, anyOk, targets.length)) {
-        this.runners = runnersFor(sweep.listings);
-        this.frameworks = new FrameworkIndex(sweep.listings.flatMap((each) => each.byAssembly));
-        this.frameworkRuns.update(this.frameworks.multiTargetFrameworks());
-      }
+      this.tree.value = { sweep, targetCount: targets.length };
     });
     await this.sweeps.settle(job);
   }
 
   /** Enumerate every target; `undefined` once a newer sweep supersedes this one. */
-  private async sweep(targets: readonly string[], generation: number): Promise<Sweep | undefined> {
+  private async sweep(
+    targets: readonly string[],
+    generation: number,
+    noBuild: boolean,
+  ): Promise<Sweep | undefined> {
     const sweep: Sweep = { items: [], errors: [], listings: [] };
     for (const target of targets) {
       // A newer sweep supersedes this one: stop before paying for another build
       // rather than enumerating targets whose results will be thrown away.
       if (generation !== this.discoverGeneration) return undefined;
-      const listing = await this.safeList(target);
+      const listing = await this.safeList(target, noBuild);
       sweep.listings.push(listing);
       this.rowsFor(target, listing, sweep.items, sweep.errors);
     }
     return sweep;
+  }
+
+  /** [TEST-REACTIVITY-BUILD]: signal state renders tests and their matching runners together. */
+  private renderTree(sweep: Sweep, targetCount: number): void {
+    const anyOk = targetCount === 0 || sweep.listings.some((listing) => listing.ok);
+    if (!this.applyDiscovery(sweep.items, sweep.errors, anyOk, targetCount)) return;
+    this.runners = runnersFor(sweep.listings);
+    this.frameworks = new FrameworkIndex(sweep.listings.flatMap((each) => each.byAssembly));
+    this.frameworkRuns.update(this.frameworks.multiTargetFrameworks());
   }
 
   /** Turn one target's listing into tree rows, or into the row that explains it. */
@@ -316,8 +327,8 @@ export class SharpLspTestController {
   }
 
   /** List one target (inside the sweep's queued job), logging its diagnostics. */
-  private async safeList(target: string): Promise<TestListing> {
-    const listing = await listLocatedTests(target);
+  private async safeList(target: string, noBuild: boolean): Promise<TestListing> {
+    const listing = await listLocatedTests(target, noBuild);
     for (const warning of listing.warnings) {
       info(`Test discovery (${target}): ${warning}`);
     }

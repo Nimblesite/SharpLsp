@@ -4,6 +4,7 @@ import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from './constants';
 import { currentDotnetExecutable } from './dotnet-process';
 import { describeSdkPinFailure } from './dotnetRuntime.js';
 import { info } from './log';
+import { buildCompleted } from './state';
 
 const diagnosticCollection = vscode.languages.createDiagnosticCollection('sharplsp-build');
 
@@ -198,6 +199,15 @@ export function registerBuildCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(diagnosticCollection);
   context.subscriptions.push(
     vscode.tasks.onDidEndTaskProcess((event) => {
+      // Implements [TEST-REACTIVITY-BUILD], including builds before the view is opened.
+      const definition = event.execution.task.definition;
+      if (
+        definition.type === SharpLspBuildTaskProvider.Type &&
+        (definition.command === 'build' || definition.command === 'rebuild') &&
+        event.exitCode === 0
+      ) {
+        buildCompleted.value += 1;
+      }
       void reportBuildFailure(event);
     }),
   );

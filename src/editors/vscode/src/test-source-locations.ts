@@ -48,8 +48,8 @@ export function onDiscoveryInputs(rediscover: () => void): () => void {
 }
 
 /** Enumerate `target`, locating every test it declares. */
-export async function listLocatedTests(target: string): Promise<TestListing> {
-  return await withSourceLocations(target, await listTests(target));
+export async function listLocatedTests(target: string, noBuild = false): Promise<TestListing> {
+  return await withSourceLocations(target, await listTests(target, undefined, noBuild));
 }
 
 /**

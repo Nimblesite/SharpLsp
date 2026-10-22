@@ -222,6 +222,35 @@ pub fn directory_of(path: impl AsRef<Path>) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// The directory to monitor for a discovery target. [TEST-REACTIVITY-BUILD]
+fn build_watch_root(target: &str) -> Option<PathBuf> {
+    let target = Path::new(target);
+    let root = if has_extension(target, &["sln", "slnx", "slnf", "csproj", "fsproj"]) {
+        directory_of(target)?
+    } else {
+        target.to_path_buf()
+    };
+    root.is_dir().then_some(root)
+}
+
+/// Distinct native watch roots, using the tier's canonical comparison rules.
+pub fn build_watch_roots(targets: &[String]) -> Vec<PathBuf> {
+    targets
+        .iter()
+        .filter_map(|target| build_watch_root(target))
+        .map(|root| (normalized_rename_path(&root.to_string_lossy()), root))
+        .collect::<std::collections::BTreeMap<_, _>>()
+        .into_values()
+        .collect()
+}
+
+/// Compiler outputs and `MSBuild`'s end-of-build file list, including custom output folders.
+/// Reading these files never invalidates discovery. [TEST-REACTIVITY-BUILD]
+pub fn is_build_output(path: &Path) -> bool {
+    has_extension(path, &["dll", "exe"])
+        || file_name_of(path).is_some_and(|name| fold(name).ends_with(".FILELISTABSOLUTE.TXT"))
+}
+
 /// `path` relative to `root`, when it lies beneath it. [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn relative_to(path: &Path, root: &Path) -> Option<String> {
     path.strip_prefix(root)

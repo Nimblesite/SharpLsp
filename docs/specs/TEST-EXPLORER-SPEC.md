@@ -514,6 +514,22 @@ had already moved on sent that run to the runners of the sweep BEFORE it: a proj
 onto MTP went to `dotnet test --filter … --logger trx`, which MTP refuses with exit code 5, and
 a Debug press left the module waiting for a debugger that never came.
 
+### Build completion `[TEST-REACTIVITY-BUILD]`
+
+A successful extension Build or Rebuild invalidates discovery immediately, even before the
+Testing view is opened. The LSP also monitors compiler outputs and MSBuild file lists under
+the discovery targets with the shared lspkit native watcher. It coalesces output writes until
+they have been quiet for 500 ms and sends `sharplsp/buildCompleted`. The client updates its
+shared build-completion signal; discovery publishes one atomic signal snapshot containing
+the tree and its matching runner plans. Neither path requires a click or manual refresh.
+
+Build-triggered discovery lists existing outputs without building or restoring, for VSTest
+and MTP alike, so monitoring cannot cause a build/discovery feedback loop. Source writes and
+output reads do not trigger discovery. Changing solutions replaces the watched roots;
+restarting the LSP reattaches them, and shutdown releases the watchers. Failed extension
+tasks do not announce a successful build. Existing generation, queue and failed-sweep rules
+continue to preserve the current tree when output listing fails.
+
 ## Environment `[TEST-ENV-LOCALE]`
 
 Every outcome the extension parses is decided by matching ENGLISH text the .NET CLI and

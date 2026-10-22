@@ -53,6 +53,7 @@ anyhow = "1"
 # (https://github.com/Nimblesite/lspkit) until its next release is published.
 lsp-profiler = { path = "../../lspkit/crates/lsp-profiler" }
 lsp-profiler-dotnet = { path = "../../lspkit/crates/lsp-profiler-dotnet" }
+lspkit-live = { path = "../../lspkit/crates/lspkit-live" }
 async-trait = "0.1"
 
 # HTTP client (NuGet API)

@@ -124,6 +124,8 @@
         "test-explorer-e2e.test.js",
         "test-explorer-refusals.test.js",
         "test-explorer-reactive.test.js",
+        "test-explorer-build-refresh.test.js",
+        "test-build-configuration.test.js",
         "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",

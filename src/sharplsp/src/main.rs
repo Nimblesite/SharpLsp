@@ -2,6 +2,7 @@
 //!
 //! Implements LSP 3.17 lifecycle over stdio using `lsp-server`.
 
+mod build_monitor;
 mod call_hierarchy;
 mod code_actions;
 mod code_lens;
@@ -299,6 +300,15 @@ fn run_server() -> Result<()> {
         &connection,
         &runtime,
     );
+    if let Some(folders) = &init_params.workspace_folders {
+        let targets: Vec<_> = folders
+            .iter()
+            .filter_map(|folder| paths::uri_to_path(folder.uri.as_str()).ok())
+            .collect();
+        services
+            .builds
+            .replace(&targets, &runtime, &connection.sender);
+    }
     main_loop(
         &connection,
         &runtime,
@@ -584,6 +594,8 @@ async fn handle_csharp_event(
 /// The per-connection services the main loop routes to: live configuration
 /// and the mounted profiler ([PROFILER-SHARED-LIBRARY-HOST]).
 struct HostServices {
+    /// Native build-output observations for reactive test discovery.
+    builds: build_monitor::BuildMonitor,
     /// Configuration requests and change notifications.
     configuration: configuration::Configuration,
     /// Profiler commands, notifications and cancellation.
@@ -628,7 +640,14 @@ fn host_services(
         connection.sender.clone(),
         runtime,
     );
+    let mut builds = build_monitor::BuildMonitor::default();
+    builds.replace(
+        &[profiler_root.to_string_lossy().into_owned()],
+        runtime,
+        &connection.sender,
+    );
     HostServices {
+        builds,
         configuration,
         profiler,
         solution,
@@ -691,6 +710,17 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
+                if notif.method == "sharplsp/watchBuilds" {
+                    match serde_json::from_value::<build_monitor::WatchTargets>(notif.params) {
+                        Ok(watch) => {
+                            services
+                                .builds
+                                .replace(&watch.targets, runtime, &connection.sender);
+                        }
+                        Err(error) => warn!(%error, "Invalid build monitoring targets"),
+                    }
+                    continue;
+                }
                 if notif.method == "$/cancelRequest" {
                     services.profiler.cancel(&notif.params);
                     continue;

@@ -38,6 +38,7 @@ import {
 import {
   probeMtpProjects,
   scanMtpProjects,
+  builtMtpProjects,
   type MtpProject,
   type MtpProjectScan,
 } from './test-mtp-modules.js';
@@ -180,6 +181,11 @@ export const listMtpTests = sweepOf(scanMtpProjects);
  * [TEST-MTP-DETECT].
  */
 export const probeMtpTests = sweepOf(probeMtpProjects);
+
+/** [TEST-REACTIVITY-BUILD]: list completed outputs without starting another build. */
+export const listBuiltMtpTests = sweepOf(
+  async (target, _cwd, timeoutMs) => await builtMtpProjects(target, timeoutMs),
+);
 
 /** A sweep that lists every test of the MTP projects `scan` finds in its target. */
 function sweepOf(

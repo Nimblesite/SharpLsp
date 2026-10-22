@@ -37,7 +37,7 @@ import {
   type TestListing,
 } from './test-listing-model.js';
 import { frameworkMoniker } from './test-frameworks.js';
-import { listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
+import { listBuiltMtpTests, listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
 import { usesMtpRunner } from './test-mtp.js';
 import { removeDirRecursive } from './utils.js';
 
@@ -202,16 +202,18 @@ export function batchAssemblies(
 export async function listTests(
   target: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
+  noBuild = false,
 ): Promise<TestListing> {
   const cwd = targetCwd(target);
   if (cwd === undefined) return missingTarget(target);
   // [TEST-MTP-DETECT]: a `global.json` opt-in makes the whole target MTP, and
   // every VSTest command below would fail against it — `--nologo` alone exits
   // with code 5 and lists nothing. Go straight to the runner that can answer.
-  if (usesMtpRunner(cwd)) return await listMtpTests(target, cwd, timeoutMs);
-  const vstest = await listWithVsTest(target, cwd, timeoutMs);
+  if (usesMtpRunner(cwd))
+    return await (noBuild ? listBuiltMtpTests : listMtpTests)(target, cwd, timeoutMs);
+  const vstest = await listWithVsTest(target, cwd, timeoutMs, noBuild);
   if (vstest.byAssembly.length > 0) return vstest;
-  return await withMtpProbe(vstest, target, cwd, timeoutMs);
+  return await withMtpProbe(vstest, target, cwd, timeoutMs, noBuild);
 }
 
 /** A target that is not on disk: nothing to enumerate, and the reason why. */
@@ -237,8 +239,9 @@ async function withMtpProbe(
   target: string,
   cwd: string,
   timeoutMs: number,
+  noBuild: boolean,
 ): Promise<TestListing> {
-  const mtp = await probeMtpTests(target, cwd, timeoutMs);
+  const mtp = await (noBuild ? listBuiltMtpTests : probeMtpTests)(target, cwd, timeoutMs);
   const warnings = [...vstest.warnings, ...mtp.warnings];
   return mtp.names.length === 0 ? { ...vstest, warnings } : { ...mtp, warnings };
 }
@@ -248,11 +251,13 @@ async function listWithVsTest(
   target: string,
   cwd: string,
   timeoutMs: number,
+  noBuild: boolean,
 ): Promise<TestListing> {
   const positional = cwd === target ? [] : [target];
   const args = [
     'test',
     ...positional,
+    ...(noBuild ? ['--no-build', '--no-restore'] : []),
     '--list-tests',
     '--nologo',
     '--verbosity',
