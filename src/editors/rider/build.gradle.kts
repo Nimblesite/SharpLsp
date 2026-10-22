@@ -3,9 +3,22 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.gradle.api.tasks.compile.AbstractCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
+// [DIST-CI-AUDIT] IntelliJ's build tooling still resolves vulnerable transitives.
+// Keep their patched versions on the build classpath until upstream catches up.
+buildscript {
+    configurations.all {
+        resolutionStrategy.force(
+            "org.freemarker:freemarker:2.3.35", // GHSA-27j2-h3m2-8237
+            "org.jsoup:jsoup:1.23.2", // GHSA-65r4-943x-97jj
+            "com.fasterxml.jackson.core:jackson-core:2.21.7", // GHSA-7hhh-6rmp-j9qf
+            "com.fasterxml.jackson.core:jackson-databind:2.21.7", // GHSA-cxp5-3px4-pw24
+        )
+    }
+}
+
 plugins {
     id("java")
-    kotlin("jvm") version "2.3.21"
+    kotlin("jvm") version "2.4.21"
     // The 2.x plugin requires Gradle 9.0+, matching the wrapper pin.
     id("org.jetbrains.intellij.platform") version "2.19.0"
     // Line coverage for the Rider plugin, gated by the repo-wide ratchet in

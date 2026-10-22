@@ -913,7 +913,7 @@ repository default never reaches a job that does not need it.
 
 ### [DIST-CI-AUDIT] Dependency Vulnerability Gate
 
-`make audit` MUST scan both Cargo lockfiles (host and Zed), the sidecar NuGet solution including transitive packages, and both npm lockfiles (VS Code and website) against current advisory databases. Rust vulnerability findings fail the gate; NuGet and npm fail at moderate or higher by default, including every high/critical finding. Lower-severity findings remain visible. Scanner or restore failures MUST fail, not count as a clean result.
+`make audit` MUST scan the host, Zed and shared lspkit Cargo lockfiles, the sidecar NuGet solution and profiler engine including transitive packages, and all shipping/development npm lockfiles (VS Code, website, video tooling, lspkit debug and profiler UI) against current advisory databases. Rust vulnerability findings fail the gate; NuGet and npm fail at moderate or higher by default, including every high/critical finding. Lower-severity findings remain visible. Scanner or restore failures MUST fail, not count as a clean result.
 
 CI and tagged releases MUST call the same reusable `ci-audit.yml` workflow. The final CI job MUST include `audit` in its dependencies and fail on its failure/cancellation. GitHub Release creation MUST depend on a successful audit of the tagged revision, and Marketplace/Open VSX publishing MUST depend on that release. No `continue-on-error` or publish bypass is permitted. New advisories require a fresh release-time scan even when the PR previously passed.
 
