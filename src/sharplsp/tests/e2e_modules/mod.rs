@@ -40,6 +40,7 @@ pub mod nav_helpers;
 pub mod session_helpers;
 
 // ── Test sub-modules ──────────────────────────────────────────────
+pub mod build_monitor;
 pub mod call_hierarchy_tests;
 pub mod code_actions_tests;
 pub mod coverage_boost;
