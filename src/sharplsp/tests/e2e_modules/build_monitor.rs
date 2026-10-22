@@ -44,7 +44,7 @@ fn assert_one_build(client: &mut LspClient, root: &str) {
 fn native_build_monitor_follows_real_builds_and_releases_old_roots() {
     require_dotnet();
     let (fsharp, fsharp_uri, _, _) = create_fsharp_test_workspace();
-    let (csharp, _, _, _) = create_test_workspace();
+    let (csharp, csharp_uri, _, csharp_source) = create_test_workspace();
     std::fs::write(
         fsharp.path().join("sharplsp.toml"),
         "[csharp]\nenabled=false\n[fsharp]\nenabled=false\n",
@@ -52,8 +52,14 @@ fn native_build_monitor_follows_real_builds_and_releases_old_roots() {
     .expect("write sidecar-free fixture configuration");
     let mut client = LspClient::spawn_in(Stdio::null(), Some(fsharp.path()));
     assert_rpc_ok(
-        &client.initialize_with_root(json!(fsharp_uri)),
-        "initialize real F# workspace",
+        &client.initialize_with_params(json!({
+            "processId": null, "capabilities": {},
+            "workspaceFolders": [
+                {"uri": fsharp_uri, "name": "F#"},
+                {"uri": csharp_uri, "name": "C#"}
+            ]
+        })),
+        "initialize real F# and C# workspace folders",
     );
     assert!(
         build_messages(&mut client, Duration::ZERO).is_empty(),
@@ -70,6 +76,16 @@ fn native_build_monitor_follows_real_builds_and_releases_old_roots() {
         fsharp.path(),
     );
     assert_one_build(&mut client, &fsharp_uri);
+    dotnet(
+        &[
+            "build",
+            "TestHover/TestHover.csproj",
+            "--no-restore",
+            "--nologo",
+        ],
+        csharp.path(),
+    );
+    assert_one_build(&mut client, &csharp_uri);
     std::fs::write(
         fsharp.path().join("Unbuilt.fs"),
         "module Unbuilt\nlet value = 1\n",
@@ -82,6 +98,8 @@ fn native_build_monitor_follows_real_builds_and_releases_old_roots() {
 
     let csharp_root = csharp.path().join("TestHover");
     let project = csharp_root.join("TestHover.csproj");
+    std::fs::write(csharp_root.join("Program.cs"), csharp_source)
+        .expect("touch the real source for an incremental compile");
     client.notify(
         "sharplsp/watchBuilds",
         json!({"targets": [project, project]}),
@@ -126,6 +144,11 @@ fn native_build_monitor_follows_real_builds_and_releases_old_roots() {
     assert!(
         build_messages(&mut client, Duration::from_secs(1)).is_empty(),
         "an empty watch set releases every root"
+    );
+    client.notify("sharplsp/watchBuilds", json!({"targets": [fsharp.path()]}));
+    assert!(
+        build_messages(&mut client, Duration::ZERO).is_empty(),
+        "rearming an idle watcher is not a build"
     );
     client.shutdown_and_exit();
     client.wait_with_timeout();
