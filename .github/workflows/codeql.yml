@@ -20,9 +20,7 @@ on:
     inputs:
       gate:
         description: >-
-          When true, fail the job on any High/Critical finding so the calling
-          workflow (release.yml) blocks publishing. PR and weekly runs leave this
-          false and stay advisory (the PR check-failure threshold governs merges).
+          When true, fail the job on any High/Critical finding so the calling workflow (release.yml) blocks publishing. PR and weekly runs leave this false and stay advisory (the PR check-failure threshold governs merges).
         type: boolean
         default: false
 
@@ -70,7 +68,7 @@ jobs:
         with:
           submodules: true
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -78,7 +76,7 @@ jobs:
           # PR, weekly, and gated release scans stay identical. [DIST-CI-SECURITY]
           config-file: ./.github/codeql/codeql-config.yml
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           category: "/language:${{ matrix.language }}"
           # Drop the SARIF on disk so the gate step can read it. `upload` stays on
