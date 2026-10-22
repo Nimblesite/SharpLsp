@@ -49,8 +49,13 @@ const REQUESTED = [
 ] as const;
 
 /** `-getProperty:` arguments for a project, optionally pinned to one TFM. */
-function evaluateArgs(projectFile: string, framework?: string): string[] {
-  const args = ['msbuild', projectFile, '-nologo'];
+function evaluateArgs(projectFile: string, framework?: string, configuration?: string): string[] {
+  const args = [
+    'msbuild',
+    projectFile,
+    '-nologo',
+    ...(configuration === undefined ? [] : [`-p:Configuration=${configuration}`]),
+  ];
   if (framework !== undefined && framework.length > 0) {
     args.push(`-p:TargetFramework=${framework}`);
   }
@@ -91,9 +96,10 @@ function splitList(value: string | undefined): string[] {
 export async function evaluateProject(
   projectFile: string,
   framework?: string,
+  configuration?: string,
 ): Promise<Result<ProjectProperties>> {
   const run = await runDotnet(
-    evaluateArgs(projectFile, framework),
+    evaluateArgs(projectFile, framework, configuration),
     directoryOf(projectFile),
     EVALUATE_TIMEOUT_MS,
   );

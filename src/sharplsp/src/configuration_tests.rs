@@ -12,6 +12,62 @@ use super::*;
 mod contract {
     use super::*;
 
+    // Implements [TEST-BUILD-CONFIGURATION], [CONFIG-RESOLUTION].
+    #[test]
+    fn test_build_configuration_defaults_to_debug_and_resolves_overrides() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let defaults = resolve(dir.path(), None, &json!({}), json!({}))?;
+        assert_eq!(defaults["testing"]["configuration"], "Debug");
+        std::fs::write(
+            dir.path().join("sharplsp.toml"),
+            "[testing]\nconfiguration = 'Release'\n",
+        )?;
+        assert_eq!(
+            resolve(dir.path(), None, &json!({}), json!({}))?["testing"]["configuration"],
+            "Release"
+        );
+        let client = json!({"testing":{"configuration":"Checked"}});
+        assert_eq!(
+            resolve(dir.path(), None, &client, json!({}))?["testing"]["configuration"],
+            "Checked"
+        );
+        assert_eq!(
+            resolve(
+                dir.path(),
+                None,
+                &client,
+                json!({"testing":{"configuration":"Debug"}})
+            )?["testing"]["configuration"],
+            "Debug"
+        );
+        Ok(())
+    }
+
+    // Implements [TEST-BUILD-CONFIGURATION]: reject empty and injected MSBuild values.
+    #[test]
+    fn test_build_configuration_rejects_invalid_values_atomically() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut config = Configuration::new(dir.path().to_path_buf());
+        config.update(&json!({"sharplsp":{"testing":{"configuration":"Release"}}}))?;
+        for invalid in ["", " ", "Debug;Optimize=true", "Debug\n", "Debug,Release"] {
+            assert!(config
+                .update(&json!({"sharplsp":{"testing":{"configuration":invalid}}}))
+                .is_err());
+            assert_eq!(config.client["testing"]["configuration"], "Release");
+        }
+        config.update(&json!({"sharplsp":{}}))?;
+        assert_eq!(
+            resolve(
+                dir.path(),
+                None,
+                &config.client,
+                json!({"testing":{"configuration":"Debug"}})
+            )?["testing"]["configuration"],
+            "Debug"
+        );
+        Ok(())
+    }
+
     #[test]
     fn client_overrides_are_atomic_and_session_overrides_take_precedence() -> Result<()> {
         let dir = tempfile::tempdir()?;

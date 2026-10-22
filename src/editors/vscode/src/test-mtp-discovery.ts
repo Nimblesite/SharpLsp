@@ -17,7 +17,7 @@
  * Implements [TEST-MTP-DISCOVERY].
  */
 
-import { extensionOf, fileNameOf } from './paths';
+import { extensionOf, fileNameOf, samePath } from './paths';
 import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import { runModule } from './test-mtp-report.js';
 import {
@@ -238,7 +238,15 @@ async function listScanned(scan: MtpProjectScan, sweep: SweepContext): Promise<T
     ok: names.length > 0 || warnings.length === 0,
     warnings,
     byAssembly: mergeMultiTargeted(byAssembly.filter((assembly) => assembly.names.length > 0)),
-    mtp: { modules: runs },
+    mtp: {
+      modules: runs.map((run) => ({
+        ...run,
+        buildTarget:
+          scan.projects.find((project) =>
+            project.modules.some((module) => samePath(module, run.modulePath)),
+          )?.projectFile ?? run.buildTarget,
+      })),
+    },
     locations,
   };
 }

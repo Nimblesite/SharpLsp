@@ -69,6 +69,13 @@ can execute its own handler and return without a visible exception stop. Throws 
 user code still obey the selected filters. Set `just_my_code = false` with
 `break_on = "all"` to inspect every throw, including inside libraries. This option
 controls exception stops independently of the launch setting for normal stepping.
+When a launch supplies `cwd`, that root defines the user-source boundary; a broader
+editor workspace must not expand it to include sibling dependency sources. Without
+a launch root, workspace folders define user sources. Having symbols for external
+code does not make that source user code. Both Just My Code values crossed with
+both `external_code` values must be verified through actual VS Code debug sessions,
+including original external sources with portable PDBs, caller source/line mapping,
+preserved exception details, handled continuation and unhandled-only controls.
 User-unhandled and terminal unhandled stops remain visible. Failed classification
 or resume requests retain the original stop.
 
@@ -98,3 +105,21 @@ VS Code settings continue to own extension installation paths, UI layout, status
 bars, tree presentation and terminal preferences. `.editorconfig` remains the source
 for language formatting conventions. Shared behavior should be added to the typed
 server schema and documented here rather than first introduced as an editor setting.
+
+## Test builds `[CONFIG-TESTING]`
+
+```toml
+[testing]
+configuration = "Debug"
+```
+
+`configuration` defaults to `Debug` and accepts custom MSBuild configuration names.
+Empty names, control characters, commas and semicolons are invalid. Discovery,
+execution, coverage and debugging resolve this setting for the project scope on
+each operation. The selected configuration must be passed explicitly to MSBuild;
+a project's own Release default must not override the testing default. Build and
+output evaluation use the same configuration. See [TEST-BUILD-CONFIGURATION].
+
+Test-platform dependencies may themselves be optimized Release binaries. Their
+debugger warnings do not imply that the user's test assembly was built in Release;
+verification must inspect the user assembly and prove that its breakpoints bind.

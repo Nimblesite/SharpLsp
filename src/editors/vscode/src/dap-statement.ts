@@ -5,7 +5,7 @@
 // asks it whether a stop carries code instead of guessing from source text.
 
 import * as vscode from 'vscode';
-import { isLexicallyWithin } from './paths';
+import { fileUri, isLexicallyWithin } from './paths';
 import * as state from './state';
 
 /** One source position reported by the adapter, in DAP's one-based coordinates. */
@@ -29,10 +29,12 @@ export async function carriesUserCode(
 
 export function belongsToUserCode(location: StatementLocation, launchRoot?: string): boolean {
   if (location.path === undefined) return false;
-  return (
-    vscode.workspace.getWorkspaceFolder(vscode.Uri.file(location.path)) !== undefined ||
-    (launchRoot !== undefined && isLexicallyWithin(launchRoot, location.path))
-  );
+  // A configured launch root narrows user code. A broad workspace containing a
+  // sibling dependency must not turn that library's symbols into user code.
+  // Implements [CONFIG-DEBUG-EXCEPTIONS]. Attach without a root uses the workspace.
+  return launchRoot === undefined
+    ? vscode.workspace.getWorkspaceFolder(fileUri(location.path)) !== undefined
+    : isLexicallyWithin(launchRoot, location.path);
 }
 
 interface StatementStopResponse {

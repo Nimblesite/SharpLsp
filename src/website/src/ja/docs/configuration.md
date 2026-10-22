@@ -30,6 +30,15 @@ SharpLsp には 2 つの設定方法があります。
 ## 完全な TOML スキーマ
 
 ```toml
+[testing]
+configuration = "Debug"
+
+[debug.exceptions]
+break_on = "editor"
+just_my_code = true
+external_code = "throw-site"
+ignore = []
+
 [server]
 log_level = "info"
 debounce_ms = 150
@@ -56,6 +65,14 @@ output_directory = ".sharplsp/profiles"
 ```
 
 すべてのフィールドは任意です。省略したフィールドには、上記の値が使われます。
+
+## テストとデバッグ
+
+`testing.configuration` は、テストの検出、実行、カバレッジ、デバッグに使う MSBuild 構成です。プロジェクトの既定値が Release でも、既定では `Debug` を使用します。必要に応じて `Release` や独自の構成名を指定できます。変更は次の操作から反映されます。選択したテストのプロジェクトと依存先だけを増分ビルドし、無関係なテストプロジェクトはビルドしません。ビルドに失敗した場合、古いアセンブリは実行しません。
+
+例外で停止するには `debug.exceptions.break_on` を `all` にします。`unhandled` は未処理の例外だけで停止し、`editor` はデバッガーのチェックボックスに従います。Just My Code は外部コード内で処理される例外をスキップします。`just_my_code = false` では外部の例外でも停止し、`external_code = "throw-site"` は元のソースを、`"user-boundary"` はユーザーコードの呼び出し元を表示します。例外の詳細は保持されます。起動設定の `cwd` が指定されていればユーザーソースのルートとなり、未指定ならワークスペースのフォルダーを使います。
+
+テストプラットフォーム自身の DLL は Release ビルドの場合があります。その警告は、ユーザーのテストアセンブリが Release でビルドされたことを意味しません。
 
 ## 実行時の動作に影響する設定
 

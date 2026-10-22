@@ -26,6 +26,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { testConfigurationArgs } from './test-configuration';
 import { directoryOf, extensionOf, fileNameOf, joinPath } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
 import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
@@ -257,6 +258,7 @@ async function listWithVsTest(
   const args = [
     'test',
     ...positional,
+    ...(await testConfigurationArgs(target)),
     ...(noBuild ? ['--no-build', '--no-restore'] : []),
     '--list-tests',
     '--nologo',

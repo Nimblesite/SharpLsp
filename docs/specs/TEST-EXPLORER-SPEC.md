@@ -4,9 +4,9 @@
 
 The Test Explorer is the VS Code Testing-API surface for .NET test projects. It discovers
 every test in the loaded solution (or, absent one, in each workspace folder), runs and
-debugs them, and collects coverage. It is editor-side only: discovery and execution shell
-out to the `dotnet` CLI, so no Roslyn or FCS sidecar is involved and no proprietary test
-host is required.
+debugs them, and collects coverage. Discovery and execution shell out to the `dotnet`
+CLI; workspace symbols supply source locations and owning-project metadata for selected
+builds. No proprietary test host is required.
 
 It supports xUnit, NUnit, MSTest, Expecto and FsCheck, in **both C# and F#**. F# is not a
 second-class case here: idiomatic F# backtick bindings produce fully-qualified names that
@@ -32,6 +32,35 @@ flowchart LR
     RUN --> TRX["TRX report<br/>→ per-test outcome<br/>test-trx.ts"]
     MTPRUN --> TRX
 ```
+
+## Test build configuration `[TEST-BUILD-CONFIGURATION]`
+
+Test discovery, Run, Coverage, per-framework Run and Debug explicitly select the
+shared `[testing].configuration` setting ([CONFIG-TESTING]), defaulting to `Debug`.
+This overrides a project's own Release default. Resolve settings for each new
+operation; changing the setting must change both the build and output evaluation.
+VSTest and MTP must execute assemblies from that same configuration. Never guess
+output paths or reuse the previous configuration's assembly after a setting change.
+Real C# and F# tests must prove which assembly executed through conditional code,
+and debugger tests must prove user breakpoints bind and locals are inspectable.
+
+## Incremental test builds `[TEST-BUILD-GRAPH]`
+
+Every run, coverage or debug gesture ensures the selected tests' owning projects
+and transitive project references are up to date before execution. Use ordinary
+incremental MSBuild targets; never clean or force Rebuild for a run. Preserve project
+ownership from real workspace/discovery metadata rather than deriving project paths
+from assembly filenames. A selection must not build unrelated test projects. When
+ownership is unavailable, retain the original safe discovery target instead of
+guessing or silently omitting a dependency.
+
+Unchanged assemblies retain their build timestamps. Editing a referenced library
+must change the selected test's behavior on the next run. A compilation failure
+must report a build error and execute no stale output for that project; repairing
+the project must allow the next run. Framework-specific runs and MTP modules
+resolve their current configured outputs after building, preserving test filters
+and reporting only the selected results. Cancellation must prevent subsequent
+projects from starting.
 
 ## Discovery by Fully-Qualified Name `[TEST-DISCOVERY-FQN]`
 

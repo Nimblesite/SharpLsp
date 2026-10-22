@@ -86,7 +86,8 @@
         "dap-exception-policy.test.js",
         "debug-just-my-code-e2e.test.js",
         "debug-policy-e2e.test.js",
-        "debug-terminal-exception-e2e.test.js"
+        "debug-terminal-exception-e2e.test.js",
+        "debug-exception-permutations-e2e.test.js"
       ]
     },
     "debug-inspection": {
@@ -124,7 +125,7 @@
         "test-explorer-e2e.test.js",
         "test-explorer-refusals.test.js",
         "test-explorer-reactive.test.js",
-        "test-explorer-build-refresh.test.js",
+        "01-test-explorer-build-refresh.test.js",
         "test-build-configuration.test.js",
         "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
@@ -134,7 +135,8 @@
         "testing-lens-status.test.js",
         "test-explorer-coverage.test.js",
         "test-explorer-mtp-parsers.test.js",
-        "test-explorer-mtp-merges.test.js"
+        "test-explorer-mtp-merges.test.js",
+        "test-build-graph.test.js"
       ]
     },
     "testexplorer-frameworks": {

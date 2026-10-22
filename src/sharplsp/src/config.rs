@@ -13,6 +13,8 @@ use tracing::{info, warn};
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SharpLspConfig {
+    /// Editor-independent test build settings. Implements [TEST-BUILD-CONFIGURATION].
+    pub testing: TestingConfig,
     /// Editor-independent debugger policy.
     pub debug: crate::config_debug::DebugConfig,
     /// General server settings.
@@ -27,6 +29,22 @@ pub struct SharpLspConfig {
     pub analyzers: AnalyzersConfig,
     /// Profiler settings.
     pub profiler: ProfilerConfig,
+}
+
+/// Configuration shared by test discovery, execution and debugging.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TestingConfig {
+    /// `MSBuild` configuration, explicitly Debug unless the user overrides it.
+    pub configuration: String,
+}
+
+impl Default for TestingConfig {
+    fn default() -> Self {
+        Self {
+            configuration: "Debug".to_owned(),
+        }
+    }
 }
 
 /// Server-level settings.

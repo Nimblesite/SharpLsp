@@ -12,7 +12,7 @@
       "language": "dotnet"
     },
     "sharplsp-sidecar-csharp": {
-      "threshold": 96.16,
+      "threshold": 96.2,
       "language": "dotnet"
     },
     "sharplsp-sidecar-fsharp": {

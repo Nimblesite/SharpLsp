@@ -62,13 +62,25 @@ export async function withSourceLocations(
   listing: TestListing,
 ): Promise<TestListing> {
   if (listing.names.length === 0) return listing;
-  const declared = await declarations(target);
+  const response = await declarations(target);
+  const declared = indexDeclarations(response);
   const locations = new Map(listing.locations);
+  const projects = new Map(listing.projects);
+  for (const project of response.projects) {
+    for (const name of indexDeclarations({ projects: [project] }).keys())
+      projects.set(name, project.path);
+  }
   for (const name of listing.names) {
     const found = declared.get(name) ?? declared.get(withoutArguments(name));
     if (found !== undefined && !locations.has(name)) locations.set(name, found);
+    const project = projects.get(name) ?? projects.get(withoutArguments(name));
+    if (project !== undefined) projects.set(name, project);
   }
-  return { ...listing, locations };
+  const byAssembly = listing.byAssembly.map((assembly) => {
+    const projectFile = assembly.names.flatMap((id) => projects.get(id) ?? [])[0];
+    return projectFile === undefined ? assembly : { ...assembly, projectFile };
+  });
+  return { ...listing, byAssembly, locations, projects };
 }
 
 /** Every declaration in `response`, by each qualified name it can be reported as. */
@@ -83,17 +95,17 @@ export function indexDeclarations(
 }
 
 /** The target's declarations, or none while the language server is unavailable. */
-async function declarations(target: string): Promise<ReadonlyMap<string, TestLocation>> {
+async function declarations(target: string): Promise<WorkspaceSymbolsResponse> {
   const lsp = state.client.value;
-  if (lsp?.state !== State.Running) return new Map();
+  if (lsp?.state !== State.Running) return { projects: [] };
   try {
     const response = await lsp.sendRequest<WorkspaceSymbolsResponse>('sharplsp/workspaceSymbols', {
       solution: target,
     });
-    return indexDeclarations(response);
+    return response;
   } catch (error: unknown) {
     info(`Test discovery: no source locations for ${target}: ${getErrorMessage(error)}`);
-    return new Map();
+    return { projects: [] };
   }
 }
 

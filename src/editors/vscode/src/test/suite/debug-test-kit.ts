@@ -19,12 +19,12 @@ import { AnchoredSource } from './debug-anchors';
 import type { DapRecorder } from './debug-dap-kit';
 import {
   MTP_XUNIT_PACKAGES,
+  MTP_PROPERTIES,
   XUNIT_DECORATING_PACKAGES,
   XUNIT_PACKAGES,
   createSolution,
   dotnet,
-  mtpProjectXml,
-  projectXml,
+  buildProjectXml,
   writeMtpGlobalJson,
   type PackageRef,
 } from './dotnet-project-kit';
@@ -214,10 +214,13 @@ export type FixtureRunner = 'vstest' | 'mtp' | 'vstest-decorating';
 
 /** The project file for one language on one runner. */
 function fixtureProjectXml(csharp: boolean, runner: FixtureRunner, sourceName: string): string {
-  const compile = csharp ? [] : [sourceName];
-  return runner === 'mtp'
-    ? mtpProjectXml(MTP_XUNIT_PACKAGES, ...compile)
-    : projectXml(vstestPackages(runner), ...compile);
+  // [TEST-BUILD-CONFIGURATION]: debug suites must override a Release default,
+  // bind actual breakpoints and inspect unoptimized locals.
+  return buildProjectXml({
+    packages: runner === 'mtp' ? MTP_XUNIT_PACKAGES : vstestPackages(runner),
+    compileIncludes: csharp ? [] : [sourceName],
+    properties: { ...(runner === 'mtp' ? MTP_PROPERTIES : {}), Configuration: 'Release' },
+  });
 }
 
 /**

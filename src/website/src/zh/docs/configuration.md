@@ -30,6 +30,15 @@ SharpLsp 有两类配置入口：
 ## 完整 TOML 模式
 
 ```toml
+[testing]
+configuration = "Debug"
+
+[debug.exceptions]
+break_on = "editor"
+just_my_code = true
+external_code = "throw-site"
+ignore = []
+
 [server]
 log_level = "info"
 debounce_ms = 150
@@ -56,6 +65,14 @@ output_directory = ".sharplsp/profiles"
 ```
 
 每个字段都是可选的。省略字段时会使用上面显示的值。
+
+## 测试和调试
+
+`testing.configuration` 选择测试发现、执行、覆盖率和调试所用的 MSBuild 配置。即使项目默认为 Release，此设置也默认为 `Debug`。需要时可改为 `Release` 或自定义配置名，更改会在下一次操作时生效。运行选定测试时，仅增量构建所属项目及其依赖项，不构建无关的测试项目。构建失败时不会运行旧程序集。
+
+将 `debug.exceptions.break_on` 设为 `all` 可在已处理的异常处暂停；`unhandled` 仅在未处理的终止异常处暂停，`editor` 则遵循调试器的异常复选框。Just My Code 会跳过外部代码内部处理的异常。设置 `just_my_code = false` 后，外部异常也会触发暂停：`external_code = "throw-site"` 显示原始源码，`"user-boundary"` 显示用户代码中的调用位置，并保留异常详情。显式指定的启动 `cwd` 定义用户源码根目录；未指定时使用工作区文件夹。
+
+测试平台自己的 DLL 可能预先以 Release 模式构建。相关警告不表示用户的测试程序集也使用了 Release 模式。
 
 ## 会影响运行时行为的设置
 

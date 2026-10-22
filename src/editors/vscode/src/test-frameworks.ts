@@ -150,6 +150,7 @@ export class FrameworkIndex {
   private readonly multiTargeted = new Set<string>();
   private readonly unlistedByTest = new Map<string, readonly string[]>();
   private readonly projectByTest = new Map<string, string>();
+  private readonly projectFiles = new Map<string, string>();
 
   /** Index every framework build the listings reported. */
   constructor(listings: readonly TestAssemblyListing[] = []) {
@@ -160,6 +161,7 @@ export class FrameworkIndex {
     const builds = listing.frameworks ?? [];
     const unlisted = builds.filter((build) => build.names.length === 0).map((b) => b.framework);
     for (const name of listing.names) {
+      if (listing.projectFile !== undefined) this.projectFiles.set(name, listing.projectFile);
       this.unlistedByTest.set(name, unlisted);
       this.projectByTest.set(name, listing.name);
     }
@@ -184,6 +186,11 @@ export class FrameworkIndex {
   /** The project that builds `testId`: its assembly name, the root row's label. */
   public projectOf(testId: string): string | undefined {
     return this.projectByTest.get(testId);
+  }
+
+  /** Owning project for incremental test builds. Implements [TEST-BUILD-GRAPH]. */
+  public projectFileOf(testId: string): string | undefined {
+    return this.projectFiles.get(testId);
   }
 
   /** Every built assembly of `framework`. */

@@ -19,6 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { testConfigurationArgs } from './test-configuration';
 import { joinPath } from './paths';
 import type * as vscode from 'vscode';
 import {
@@ -223,7 +224,10 @@ async function invoke(
 ): Promise<TestRunOutcome> {
   fs.mkdirSync(resultsDirectory, { recursive: true });
   const before = new Set(trxFiles(resultsDirectory));
-  const args = runArgs(testIds, resultsDirectory, options);
+  const args = [
+    ...runArgs(testIds, resultsDirectory, options),
+    ...(await testConfigurationArgs(options.target ?? cwd)),
+  ];
   const started = Date.now();
   const run = await runDotnet(
     args,

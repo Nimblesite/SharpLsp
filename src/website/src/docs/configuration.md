@@ -29,6 +29,15 @@ The schema uses `deny_unknown_fields`. A misspelled or unsupported key is a star
 ## Complete TOML Schema
 
 ```toml
+[testing]
+configuration = "Debug"
+
+[debug.exceptions]
+break_on = "editor"
+just_my_code = true
+external_code = "throw-site"
+ignore = []
+
 [server]
 log_level = "info"
 debounce_ms = 150
@@ -55,6 +64,14 @@ output_directory = ".sharplsp/profiles"
 ```
 
 Every field is optional. Omitted fields use the values shown above.
+
+## Testing and Debugging
+
+`testing.configuration` selects the MSBuild configuration for test discovery, execution, coverage and debugging. It defaults to `Debug`, even when the project defaults to Release. Set it to `Release` or a custom configuration when needed; changes apply to the next operation. Selected tests build their owning projects and dependencies incrementally. Unrelated test projects are excluded, and a failed build never runs stale assemblies.
+
+For exception debugging, set `debug.exceptions.break_on` to `all` to stop on handled throws, or `unhandled` to stop only on terminal exceptions. `editor` follows the debugger's exception checkboxes. Just My Code skips handled exceptions in external code. With `just_my_code = false`, external throws also stop: `external_code = "throw-site"` shows their original source, while `"user-boundary"` shows the caller in your code and preserves the exception details. An explicit launch `cwd` defines the user-source root; otherwise workspace folders are used.
+
+The test platform's own DLLs can be prebuilt in Release. Their debugger warnings do not mean your test assembly was compiled in Release.
 
 ## Settings That Affect Runtime Behavior
 
