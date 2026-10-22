@@ -81,11 +81,11 @@ interface DiscoverSpy {
 function spyOnDiscover(controller: SharpLspTestController): DiscoverSpy {
   const stacks: string[] = [];
   const original = controller.discover.bind(controller);
-  controller.discover = async (): Promise<void> => {
+  controller.discover = async (noBuild?: boolean): Promise<void> => {
     // Drop the `Error:` line and the spy's own frame: the caller is frame zero.
     const trace = (new Error('discover').stack ?? '<no stack>').split('\n');
     stacks.push(trace.slice(2).join('\n'));
-    await original();
+    await original(noBuild);
   };
   return {
     stacks,
