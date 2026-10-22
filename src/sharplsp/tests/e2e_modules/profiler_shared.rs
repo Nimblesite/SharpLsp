@@ -372,6 +372,43 @@ fn invalid_pids_and_foreign_commands_fail_with_protocol_codes() {
     client.shutdown_and_exit();
 }
 
+/// [PROFILER-SHARED-LIBRARY-HOST]: malformed editor calls cannot poison later requests.
+#[test]
+fn profiler_argument_failures_and_stale_cancellations_preserve_the_session() {
+    let mut client = start_server();
+    for arguments in [json!([]), json!([42]), json!([{}, {}]), json!({})] {
+        let response = client.request(
+            "workspace/executeCommand",
+            json!({"command": "sharplsp.lspProfiler.cpu.list", "arguments": arguments}),
+        );
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert!(response["id"].is_number());
+        assert_eq!(
+            error_code(&response, "malformed profiler arguments"),
+            -32602
+        );
+        assert!(response.get("result").is_none());
+        assert!(response["error"]["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty()));
+        let valid = command(&mut client, "cpu.list", json!({}));
+        assert_rpc_ok(&valid, "a malformed command leaves the profiler usable");
+        assert_eq!(valid["result"]["sessions"], json!([]));
+        client.notify("$/cancelRequest", json!({"id": valid["id"]}));
+    }
+    for params in [
+        json!({}),
+        json!({"id": {}}),
+        json!({"id": "already-finished"}),
+    ] {
+        client.notify("$/cancelRequest", params);
+        let valid = command(&mut client, "cpu.list", json!({}));
+        assert_rpc_ok(&valid, "invalid and stale cancellations are harmless");
+        assert_eq!(valid["result"]["sessions"], json!([]));
+    }
+    client.shutdown_and_exit();
+}
+
 /// A heap snapshot of a live target takes seconds, so a cancel sent right after
 /// it is still in flight: the answer is `RequestCancelled`, the target keeps
 /// running, and the same session snapshots normally afterwards ([PROFILER-SHARED-LIBRARY-HOST]).

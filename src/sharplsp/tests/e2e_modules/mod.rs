@@ -43,6 +43,7 @@ pub mod session_helpers;
 pub mod build_monitor;
 pub mod call_hierarchy_tests;
 pub mod code_actions_tests;
+pub mod completion_acceptance;
 pub mod coverage_boost;
 pub mod coverage_boost2;
 pub mod coverage_boost3;
@@ -59,6 +60,7 @@ pub mod full_stack;
 pub mod full_stack_features;
 pub mod full_stack_hierarchy;
 pub mod full_stack_semantic;
+pub mod hot_reload;
 pub mod hover;
 pub mod inlay_hints_tests;
 pub mod lifecycle;
@@ -318,7 +320,13 @@ impl LspClient {
     pub fn shutdown_and_exit(&mut self) {
         let resp = self.request("shutdown", json!(null));
         assert!(resp.get("error").is_none(), "shutdown failed: {resp}");
+        assert_eq!(
+            resp["result"],
+            Value::Null,
+            "shutdown acknowledges with null"
+        );
         self.notify("exit", json!(null));
+        self.wait_with_timeout();
     }
 
     /// Open a C# document.
@@ -422,6 +430,10 @@ impl LspClient {
             .wait_timeout(Duration::from_secs(30))
             .expect("wait failed");
         assert!(result.is_some(), "server did not exit within 30 seconds");
+        assert!(
+            result.is_some_and(|status| status.success()),
+            "the real server must exit successfully after shutdown: {result:?}"
+        );
     }
 }
 
