@@ -61,7 +61,9 @@ pub fn handle_completion(
             Ok(response_bytes) => {
                 let items: Vec<SidecarCompletionItem> = rmp_serde::from_slice(&response_bytes)?;
                 let sidecar_items = items.into_iter().map(|item| {
+                    // Resolve must return to the same language. [SHARPLSP-FEATURES-INTELLIGENCE]
                     let data = serde_json::json!({
+                        "uri": uri.as_str(),
                         "file_path": &request.file_path,
                         "index": item.index,
                     });

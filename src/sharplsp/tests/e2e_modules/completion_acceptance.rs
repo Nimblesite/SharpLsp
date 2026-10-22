@@ -4,6 +4,61 @@ use fixtures_cross_language::dotnet;
 
 const SOURCE: &str = "namespace TestHover;\npublic static class Writer\n{\n    public static object Create() => new StringB();\n}\n";
 
+/// [SHARPLSP-FEATURES-INTELLIGENCE]: F# completion resolve belongs to FCS.
+#[test]
+fn fsharp_completion_resolves_without_a_csharp_sidecar() {
+    require_dotnet();
+    let (workspace, root, uri, _) = create_fsharp_test_workspace();
+    let source = "module TestFSharp\nlet value = System.Text.StringBuilder()\n";
+    std::fs::write(workspace.path().join("TestFSharp/Library.fs"), source)
+        .expect("write complete F# completion fixture");
+    std::fs::write(
+        workspace.path().join("sharplsp.toml"),
+        "[csharp]\nenabled=false\n",
+    )
+    .expect("disable C# so F# routing is observable");
+    dotnet(
+        &["build", "TestFSharp/TestFSharp.fsproj", "--no-restore"],
+        workspace.path(),
+    );
+    let mut client = LspClient::spawn_in(Stdio::null(), Some(workspace.path()));
+    assert_rpc_ok(
+        &client.initialize_with_root(json!(root)),
+        "initialize F# only",
+    );
+    client.notify(
+        "textDocument/didOpen",
+        json!({"textDocument": {
+        "uri": uri, "languageId": "fsharp", "version": 1, "text": source}}),
+    );
+    let _ = poll_hover_until_ready(&mut client, &uri, 1, 30, Duration::from_secs(90));
+    let response = position_request(&mut client, "textDocument/completion", &uri, (1, 24));
+    assert_rpc_ok(&response, "FCS completion");
+    let item = response["result"]
+        .as_array()
+        .expect("F# completions")
+        .iter()
+        .find(|item| item["label"] == "StringBuilder")
+        .expect("F# framework type completion");
+    assert!(item["data"]["file_path"].is_string());
+    assert!(item["data"]["index"]
+        .as_i64()
+        .is_some_and(|index| index >= 0));
+    assert!(item["textEdit"].is_object());
+    let resolved = client.request("completionItem/resolve", item.clone());
+    assert_rpc_ok(&resolved, "F# resolve is served by FCS");
+    assert_eq!(
+        resolved["result"], *item,
+        "FCS keeps the accepted item intact without C#"
+    );
+    let again = position_request(&mut client, "textDocument/completion", &uri, (1, 24));
+    assert_rpc_ok(&again, "F# completion remains usable after resolve");
+    assert!(again["result"]
+        .as_array()
+        .is_some_and(|items| !items.is_empty()));
+    client.shutdown_and_exit();
+}
+
 #[test]
 fn resolved_auto_import_completion_produces_a_real_compilable_project() {
     require_dotnet();
