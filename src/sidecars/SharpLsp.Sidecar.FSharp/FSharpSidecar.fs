@@ -37,7 +37,7 @@ type FSharpSidecar() as this =
                 Task.FromResult<ByteResult>(Helpers.serializeOk "ok" ct)
             with ex ->
                 Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
-        base.Register("workspace/open", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+        base.RegisterWorkspaceOpen(Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
                     let path = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
@@ -56,7 +56,7 @@ type FSharpSidecar() as this =
                         return ByteResult.Failure(msg)
                 with ex ->
                     return ByteResult.Failure(ex.Message)
-            }))
+            }), Func<bool>(fun () -> refreshSupported))
 
         base.Register("solution/read", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {

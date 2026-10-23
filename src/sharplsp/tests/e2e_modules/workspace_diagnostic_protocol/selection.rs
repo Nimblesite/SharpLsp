@@ -29,7 +29,7 @@ fn changing_selected_solution_replaces_closed_errors_and_retires_previous_report
 }
 
 /// First successful compiler truth must belong to the new selection, with explicit retirements.
-fn assert_selected(
+pub(super) fn assert_selected(
     client: &mut LspClient,
     workspace: &fixtures_medium::MediumWorkspace,
     previous: &[Value],

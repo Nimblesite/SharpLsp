@@ -7,6 +7,7 @@ use workspace_diagnostic_support::*;
 mod analyzer_configuration;
 mod configuration_responsiveness;
 mod idle_restore;
+mod initialization;
 mod input_reload;
 mod invalid_selection;
 mod recovery;

@@ -84,6 +84,40 @@ public abstract class SidecarHost : IAsyncDisposable
         _router.Register(method, handler);
     }
 
+    /// <summary>Announce successful compiler loading to hosts accepting unsolicited IPC.</summary>
+    protected void RegisterWorkspaceOpen(
+        Func<byte[], CancellationToken, Task<ByteResult>> handler,
+        Func<bool> notificationsSupported
+    )
+    {
+        Register(
+            "workspace/open",
+            async (payload, ct) =>
+                await CompleteWorkspaceAsync(
+                        await handler(payload, ct).ConfigureAwait(false),
+                        notificationsSupported(),
+                        ct
+                    )
+                    .ConfigureAwait(false)
+        );
+    }
+
+    // Implements [DIAG-IPC-INITIALIZED]; failed opens never announce completion.
+    private async Task<ByteResult> CompleteWorkspaceAsync(
+        ByteResult result,
+        bool notificationsSupported,
+        CancellationToken ct
+    )
+    {
+        if (result.IsError || !notificationsSupported)
+        {
+            return result;
+        }
+        var notification = await NotifyAsync("workspace/initializationComplete", string.Empty, ct)
+            .ConfigureAwait(false);
+        return notification.IsError ? notification : result;
+    }
+
     /// <summary>Send a sidecar-originated IPC notification, including while idle.</summary>
     protected async Task<ByteResult> NotifyAsync<T>(
         string method,

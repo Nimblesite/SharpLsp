@@ -18,7 +18,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         : base("csharp")
     {
         _workspace = new WorkspaceManager(NotifyDiagnosticsChangedAsync);
-        Register("workspace/open", HandleWorkspaceOpenAsync);
+        RegisterWorkspaceOpen(HandleWorkspaceOpenAsync, () => _refreshSupported);
         Register("workspace/status", HandleWorkspaceStatusAsync);
         Register("solution/read", HandleSolutionReadAsync);
         Register("workspace/diagnostics", HandleDiagnosticsAsync);
