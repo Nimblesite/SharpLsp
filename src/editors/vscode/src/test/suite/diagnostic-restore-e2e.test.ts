@@ -2,13 +2,10 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import {
-  ResponseError,
-  type LanguageClient,
-  type WorkspaceDiagnosticReport,
-} from 'vscode-languageclient/node';
+import { type LanguageClient, type WorkspaceDiagnosticReport } from 'vscode-languageclient/node';
 import { filePathFromUri, fileUri, joinPath, samePath } from '../../paths';
 import type { SharpLspExtensionApi } from '../../extension';
+import { firstDiagnosticReport } from './diagnostic-accuracy-fixtures';
 import {
   buildProjectXml,
   createSolution,
@@ -152,32 +149,12 @@ async function removeRestoreInputs(fixture: RestoreFixture): Promise<void> {
   assert.ok(!fs.existsSync(fixture.assets));
 }
 
-/** Workspace pulls complete the load before testing absence of restore side effects. */
-function requestsRetrigger(error: unknown): boolean {
-  if (!(error instanceof ResponseError) || error.code !== -32802) return false;
-  const data: unknown = error.data;
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    'retriggerRequest' in data &&
-    data.retriggerRequest === true
-  );
-}
-
 /** Follow only the standard retrigger response; all other request failures remain failures. */
 async function settledWorkspaceReport(client: LanguageClient): Promise<WorkspaceDiagnosticReport> {
-  const report = await pollUntilResult(
-    async () => {
-      try {
-        return await client.sendRequest<WorkspaceDiagnosticReport>('workspace/diagnostic', {
-          previousResultIds: [],
-        });
-      } catch (error) {
-        if (requestsRetrigger(error)) return undefined;
-        throw error;
-      }
-    },
-    (report) => report !== undefined,
+  const report = await firstDiagnosticReport<WorkspaceDiagnosticReport>(
+    client,
+    'workspace/diagnostic',
+    { previousResultIds: [] },
     SIDECAR_COLD_MS,
   );
   assert.ok(report);

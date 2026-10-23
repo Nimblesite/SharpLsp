@@ -2,6 +2,14 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
+import {
+  ResponseError,
+  type DocumentDiagnosticParams,
+  type DocumentDiagnosticReport,
+  type LanguageClient,
+  type WorkspaceDiagnosticParams,
+  type WorkspaceDiagnosticReport,
+} from 'vscode-languageclient/node';
 import { joinPath, samePath } from '../../paths';
 import type { SharpLspExtensionApi } from '../../extension';
 import {
@@ -17,6 +25,35 @@ import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import { activateWithScratch, teardownFixtureSolution } from './test-explorer-kit';
 import { closeAllEditors, pollUntilResult, removeDirRecursive } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
+
+/** Retry only an explicitly incomplete snapshot; inspect the first successful report as-is. */
+export async function firstDiagnosticReport<
+  Report extends DocumentDiagnosticReport | WorkspaceDiagnosticReport,
+>(
+  client: LanguageClient,
+  method: 'textDocument/diagnostic' | 'workspace/diagnostic',
+  params: DocumentDiagnosticParams | WorkspaceDiagnosticParams,
+  timeoutMs = LSP_RESPONSE_MS,
+  waitingFor = 'the first successful diagnostic report',
+): Promise<Report> {
+  const report = await pollUntilResult(
+    () => client.sendRequest<Report>(method, params).catch(retryIncompleteDiagnostic),
+    (result) => result !== undefined,
+    timeoutMs,
+    100,
+    waitingFor,
+  );
+  assert.ok(report);
+  return report;
+}
+
+/** Cancellation, malformed requests and every other error remain immediate failures. */
+function retryIncompleteDiagnostic(error: unknown): undefined {
+  assert.ok(error instanceof ResponseError);
+  assert.equal(error.code, -32802, 'only explicitly incomplete snapshots can retry');
+  assert.deepEqual(error.data, { retriggerRequest: true });
+  return undefined;
+}
 
 export const ACCURACY_CASES = [
   {
@@ -225,5 +262,15 @@ export function assertFileStillClosed(fixture: AccuracyFixture): void {
     ),
     false,
     'the erroneous file was never opened',
+  );
+}
+
+/** Assert clean compiler truth immediately after the caller's positive readiness barrier. */
+export function assertNoCompilerErrors(uri: vscode.Uri): void {
+  assert.deepEqual(
+    vscode.languages
+      .getDiagnostics(uri)
+      .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error),
+    [],
   );
 }

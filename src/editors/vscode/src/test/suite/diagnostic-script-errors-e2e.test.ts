@@ -3,9 +3,12 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import type { DocumentDiagnosticReport } from 'vscode-languageclient/node';
-import { ResponseError } from 'vscode-languageclient/node';
 import { joinPath } from '../../paths';
 import type { SharpLspExtensionApi } from '../../extension';
+import {
+  assertNoCompilerErrors as assertSourceHasNoErrors,
+  firstDiagnosticReport,
+} from './diagnostic-accuracy-fixtures';
 import { diagnosticCode } from './document-anchors';
 import { hoverText } from './fsharp-helpers';
 import { dotnet } from './dotnet-project-kit';
@@ -136,12 +139,7 @@ suite('Diagnostic accuracy — F# script reference ownership', () => {
       report.items.filter((item) => item.severity === 1),
       [],
     );
-    assert.deepEqual(
-      vscode.languages
-        .getDiagnostics(script)
-        .filter((item) => item.severity === vscode.DiagnosticSeverity.Error),
-      [],
-    );
+    assertSourceHasNoErrors(script);
   }
 
   async function assertStep(broken: boolean, reload = false): Promise<void> {
@@ -177,27 +175,15 @@ suite('Diagnostic accuracy — F# script reference ownership', () => {
   async function firstScriptReport(broken: boolean): Promise<DocumentDiagnosticReport> {
     const client = api.getLspClient();
     assert.ok(client);
-    const report = await pollUntilResult(
-      () =>
-        client
-          .sendRequest<DocumentDiagnosticReport>('textDocument/diagnostic', {
-            textDocument: { uri: script.toString() },
-          })
-          .catch(retryIncomplete),
-      (result) => result !== undefined,
+    const report = await firstDiagnosticReport<DocumentDiagnosticReport>(
+      client,
+      'textDocument/diagnostic',
+      { textDocument: { uri: script.toString() } },
       LSP_RESPONSE_MS,
-      100,
       `the first successful script report (missing reference: ${String(broken)})`,
     );
     assert.ok(report);
     return report;
-  }
-
-  function retryIncomplete(error: unknown): undefined {
-    assert.ok(error instanceof ResponseError);
-    assert.equal(error.code, -32802, 'only explicitly incomplete snapshots can retry');
-    assert.deepEqual(error.data, { retriggerRequest: true });
-    return undefined;
   }
 
   function assertMissingReference(report: DocumentDiagnosticReport, broken: boolean): void {
