@@ -32,6 +32,7 @@
 #[path = "../support/built_binary.rs"]
 mod built_binary;
 pub use built_binary::built_sharplsp;
+mod client_spawn;
 pub mod fixtures;
 pub mod fixtures_cross_language;
 pub mod fixtures_medium;
@@ -44,6 +45,7 @@ pub mod build_monitor;
 pub mod call_hierarchy_tests;
 pub mod code_actions_tests;
 pub mod completion_acceptance;
+pub mod configuration_session;
 pub mod coverage_boost;
 pub mod coverage_boost2;
 pub mod coverage_boost3;
@@ -69,6 +71,7 @@ pub mod lifecycle;
 pub mod logging;
 pub mod lsp_features;
 pub mod multi_solution;
+pub mod navigation_session;
 pub mod nuget_restore;
 pub mod nuget_unused_full_stack;
 pub mod profiler_shared;
@@ -80,6 +83,7 @@ pub mod razor_hierarchy;
 pub mod razor_mvc;
 pub mod razor_selection;
 pub mod references;
+pub mod region_session;
 pub mod selection;
 pub mod semantic_coverage;
 pub mod semantic_tokens_tests;
@@ -88,9 +92,11 @@ pub mod sidecar_shutdown;
 pub mod sort_members;
 pub mod sort_members_extra;
 pub mod standalone_csproj;
+pub mod startup_session;
 pub mod statement_stop;
 pub mod symbols;
 pub mod target_framework;
+pub mod tokens_session;
 pub mod type_hierarchy_tests;
 pub mod user_session_csharp;
 pub mod user_session_fsharp;
@@ -180,31 +186,7 @@ impl LspClient {
     }
 
     pub fn spawn_in(stderr: Stdio, cwd: Option<&std::path::Path>) -> Self {
-        let binary = sharplsp_binary_path();
-        let debug = launcher_debug(&binary);
-        let failure = format!("failed to spawn sharplsp\n{debug}");
-        eprintln!("{debug}");
-        let mut command = Command::new(&binary);
-        if let Some(dir) = cwd {
-            let _ = command.current_dir(dir);
-        }
-        let mut child = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(stderr)
-            .spawn()
-            .expect(&failure);
-        let stdin = child.stdin.take().expect("no stdin");
-        let stdout = child.stdout.take().expect("no stdout");
-        let stderr = child.stderr.take();
-        let reader = BufReader::new(stdout);
-        Self {
-            child,
-            stdin: Some(stdin),
-            reader,
-            stderr,
-            config_dir: None,
-        }
+        Self::spawn_in_with_env(stderr, cwd, &[])
     }
 
     /// Drain the captured stderr pipe to a string. Only meaningful when the
