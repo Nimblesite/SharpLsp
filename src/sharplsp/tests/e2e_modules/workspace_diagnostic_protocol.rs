@@ -5,15 +5,21 @@ use workspace_diagnostic_interruption::*;
 use workspace_diagnostic_support::*;
 
 mod analyzer_configuration;
+mod selection;
 
 /// Retry explicitly superseded work; inspect the first successful real compiler report.
 fn complete_workspace_pull(client: &mut LspClient, traffic: &mut Vec<Value>) -> Value {
+    workspace_pull(client, &[], traffic)
+}
+
+/// Preserve previous-result tokens through explicitly superseded workspace scans.
+fn workspace_pull(client: &mut LspClient, previous: &[Value], traffic: &mut Vec<Value>) -> Value {
     let deadline = std::time::Instant::now() + Duration::from_mins(1);
     loop {
         let (response, messages) = target_framework::request_answering(
             client,
             "workspace/diagnostic",
-            json!({"previousResultIds":[]}),
+            json!({"previousResultIds":previous}),
         );
         traffic.extend(messages);
         if response.get("error").is_none() {
