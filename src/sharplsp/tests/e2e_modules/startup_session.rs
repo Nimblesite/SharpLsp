@@ -7,7 +7,9 @@ fn broken_sidecar(client_root: &std::path::Path, key: &str) -> PathBuf {
     let directory = client_root.join("incomplete-installation");
     std::fs::create_dir(&directory).expect("create isolated broken installation");
     let destination = directory.join("sidecar.exe");
-    std::fs::copy(source, &destination).expect("copy the actual apphost without its managed files");
+    let copied = std::fs::copy(source, &destination)
+        .expect("copy the actual apphost without its managed files");
+    assert!(copied > 0, "the actual apphost copy must not be empty");
     destination
 }
 
