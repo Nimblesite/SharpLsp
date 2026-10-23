@@ -130,7 +130,7 @@
       ]
     },
     "testexplorer": {
-      "description": "The Test Explorer a user READS: discovery, the reactive tree, the target `dotnet` refuses while still exiting zero, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library — one Cobertura report per test project, every one parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS] and [TEST-COVERAGE].",
+      "description": "The Test Explorer a user READS: discovery, the reactive tree, the target `dotnet` refuses while still exiting zero, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library — one Cobertura report per invoked test project, selections scoped to their owning project, every invoked report parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS], [TEST-COVERAGE] and [TEST-BUILD-GRAPH].",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-refusals.test.js",
