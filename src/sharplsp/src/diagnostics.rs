@@ -18,6 +18,8 @@ use tracing::{info, warn};
 use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
 
+mod policy;
+
 /// Delay between retries of a failed push fetch. [DIAG-PUSH-GATE]
 const PUSH_RETRY_DELAY: Duration = Duration::from_secs(1);
 
@@ -343,7 +345,8 @@ pub async fn fetch_from_sidecar(
     sidecar: &SidecarManager,
     file_path: &str,
 ) -> Result<Vec<Diagnostic>> {
-    fetch(sidecar, file_path, source_tag_for_path(file_path)).await
+    let diagnostics = fetch(sidecar, file_path, source_tag_for_path(file_path)).await?;
+    policy::configured(diagnostics)
 }
 
 /// Fetch diagnostics from the sidecar for a single file.
@@ -423,6 +426,7 @@ fn publish(
     diagnostics: Vec<Diagnostic>,
 ) -> Result<()> {
     let _ = PROVISIONAL_PUBLISHED.insert(uri.to_string(), has_restore_pending(&diagnostics));
+    let diagnostics = policy::configured(diagnostics)?;
     let params = PublishDiagnosticsParams {
         uri,
         diagnostics,

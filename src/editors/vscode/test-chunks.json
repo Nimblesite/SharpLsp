@@ -13,6 +13,7 @@
         "diagnostics.test.js",
         "diagnostic-accuracy-e2e.test.js",
         "diagnostic-analyzers-e2e.test.js",
+        "diagnostic-policy-e2e.test.js",
         "lsp-integration.test.js",
         "lsp-integration-semantic.test.js",
         "semantic-highlighting.test.js",

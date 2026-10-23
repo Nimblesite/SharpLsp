@@ -46,6 +46,12 @@ project_filter = []
 # Run analyzer diagnostics without hiding compiler errors
 analyzers_enabled = true
 
+# Minimum severity: error, warning, info or hint
+min_severity = "hint"
+
+# Cap each file after severity filtering; 0 means unlimited
+max_per_file = 0
+
 [analyzers]
 # SharpLsp dead-code analyzers for C# and F#
 dead_code = true

@@ -47,6 +47,12 @@ project_filter = []
 # 启用分析器诊断，同时保留编译器错误
 analyzers_enabled = true
 
+# 最低严重级别：error、warning、info 或 hint
+min_severity = "hint"
+
+# 按严重级别筛选后限制每个文件的数量；0 表示不限制
+max_per_file = 0
+
 [analyzers]
 # SharpLsp 的 C# 和 F# 死代码分析器
 dead_code = true

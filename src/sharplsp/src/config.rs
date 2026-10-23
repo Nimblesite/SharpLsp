@@ -85,6 +85,37 @@ pub struct DiagnosticsConfig {
     pub solution_wide_analysis: bool,
     /// Project name patterns to include (empty = all projects).
     pub project_filter: Vec<String>,
+    /// Drop diagnostics below this severity. Implements [DIAG-CONFIG].
+    pub min_severity: MinimumDiagnosticSeverity,
+    /// Maximum diagnostics per file after filtering; zero is unlimited. [DIAG-CONFIG]
+    pub max_per_file: usize,
+}
+
+/// Validated diagnostic severity threshold. Implements [DIAG-CONFIG].
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MinimumDiagnosticSeverity {
+    /// Compiler or analyzer errors only.
+    Error,
+    /// Errors and warnings.
+    Warning,
+    /// Errors, warnings and informational diagnostics.
+    Info,
+    /// Include hints as well.
+    #[default]
+    Hint,
+}
+
+impl MinimumDiagnosticSeverity {
+    /// The threshold uses the protocol's existing severity ordering.
+    pub fn lsp(self) -> lsp_types::DiagnosticSeverity {
+        match self {
+            Self::Error => lsp_types::DiagnosticSeverity::ERROR,
+            Self::Warning => lsp_types::DiagnosticSeverity::WARNING,
+            Self::Info => lsp_types::DiagnosticSeverity::INFORMATION,
+            Self::Hint => lsp_types::DiagnosticSeverity::HINT,
+        }
+    }
 }
 
 impl Default for ServerConfig {
@@ -156,6 +187,8 @@ impl Default for DiagnosticsConfig {
             analyzers_enabled: true,
             solution_wide_analysis: true,
             project_filter: Vec::new(),
+            min_severity: MinimumDiagnosticSeverity::default(),
+            max_per_file: 0,
         }
     }
 }

@@ -54,6 +54,8 @@ enabled = true
 analyzers_enabled = true
 solution_wide_analysis = true
 project_filter = []
+min_severity = "hint"
+max_per_file = 0
 
 [analyzers]
 dead_code = true
@@ -84,6 +86,8 @@ output_directory = ".sharplsp/profiles"
 | `diagnostics.analyzers_enabled` | 启用 F# 和 C# 分析器诊断；不会隐藏编译器错误 |
 | `diagnostics.solution_wide_analysis` | 解决方案诊断包含未打开的 F# 和 C# 文件；默认启用 |
 | `diagnostics.project_filter` | 按项目名称或相对于所选解决方案的项目路径筛选 F# 和 C# 工作区结果；直接文档拉取不受影响 |
+| `diagnostics.min_severity` | 设置最低严重级别：`error`、`warning`、`info` 或 `hint`；默认为 `hint` |
+| `diagnostics.max_per_file` | 先按严重级别筛选，再限制每个文件的数量；`0` 表示不限制 |
 | `analyzers.dead_code` | 启用 SharpLsp 的 C# 和 F# 死代码分析器 |
 | `analyzers.monorepo` | 将未使用的公共符号视为死代码，并将其报告为错误 |
 | `profiler.max_concurrent_sessions` | 限制同时运行的性能分析器会话数 |

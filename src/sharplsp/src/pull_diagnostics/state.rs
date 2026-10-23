@@ -85,8 +85,11 @@ pub fn is_pull() -> bool {
     PULL.load(Ordering::Acquire)
 }
 
-/// Effective solution-scope policy.
+/// Effective policy; standalone protocol publications use defaults before session creation.
 pub fn configuration() -> Result<DiagnosticsConfig> {
+    if SESSION.get().is_none() {
+        return Ok(DiagnosticsConfig::default());
+    }
     with_session(|session| Ok(session.config.clone()))
 }
 
