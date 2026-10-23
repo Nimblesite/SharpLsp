@@ -53,6 +53,9 @@ min_severity = "hint"
 # 重要度で絞り込んだ後のファイルごとの上限。0 は無制限
 max_per_file = 0
 
+# ソースやプロジェクトの変更後の更新をまとめる時間（ミリ秒）
+refresh_debounce_ms = 2000
+
 [analyzers]
 # C# と F# 向けの SharpLsp デッドコードアナライザー
 dead_code = true

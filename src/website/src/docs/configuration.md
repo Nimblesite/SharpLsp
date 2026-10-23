@@ -55,6 +55,7 @@ solution_wide_analysis = true
 project_filter = []
 min_severity = "hint"
 max_per_file = 0
+refresh_debounce_ms = 2000
 
 [analyzers]
 dead_code = true
@@ -87,6 +88,7 @@ The test platform's own DLLs can be prebuilt in Release. Their debugger warnings
 | `diagnostics.project_filter` | Filters F# and C# workspace results by project name or project path relative to the selected solution; direct document pulls remain unfiltered |
 | `diagnostics.min_severity` | Includes diagnostics at or above `error`, `warning`, `info` or `hint`; defaults to `hint` |
 | `diagnostics.max_per_file` | Limits each file after severity filtering; `0` means unlimited |
+| `diagnostics.refresh_debounce_ms` | Coalesces diagnostic refresh requests over this many milliseconds; defaults to `2000` and updates live |
 | `analyzers.dead_code` | Enables SharpLsp's C# and F# dead-code analyzers |
 | `analyzers.monorepo` | Treats unused public symbols as dead and reports them as errors |
 | `profiler.max_concurrent_sessions` | Caps simultaneous profiler sessions |

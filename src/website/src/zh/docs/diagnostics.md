@@ -53,6 +53,9 @@ min_severity = "hint"
 # 按严重级别筛选后限制每个文件的数量；0 表示不限制
 max_per_file = 0
 
+# 合并源文件或项目更改后的刷新请求（毫秒）
+refresh_debounce_ms = 2000
+
 [analyzers]
 # SharpLsp 的 C# 和 F# 死代码分析器
 dead_code = true

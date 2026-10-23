@@ -52,6 +52,9 @@ min_severity = "hint"
 # Cap each file after severity filtering; 0 means unlimited
 max_per_file = 0
 
+# Coalesce refreshes after source or project changes (milliseconds)
+refresh_debounce_ms = 2000
+
 [analyzers]
 # SharpLsp dead-code analyzers for C# and F#
 dead_code = true
