@@ -1,5 +1,40 @@
 use super::*;
 
+/// Real CLI bootstrap errors exit before starting the language server.
+/// Implements [DIST-VERSION-OUTPUT] and [DIST-CLEAN-OUTPUT].
+#[test]
+fn closed_version_output_reports_failure_without_starting_the_server() {
+    for arguments in [vec!["--version"], vec!["--version", "--json"]] {
+        let (reader, writer) = std::io::pipe().expect("create a real CLI stdout pipe");
+        drop(reader);
+        let output = Command::new(built_sharplsp())
+            .args(arguments)
+            .stdout(writer)
+            .output()
+            .expect("run the actual version CLI against a closed output consumer");
+        assert_version_write_failure(output);
+    }
+}
+
+fn assert_version_write_failure(output: std::process::Output) {
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "failed version writes fail CLI"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "bootstrap failure emits no LSP frames"
+    );
+    let error = String::from_utf8(output.stderr).expect("bootstrap errors are UTF-8");
+    assert!(error.starts_with("version dispatch error:"), "{error}");
+    assert_eq!(
+        error.lines().count(),
+        1,
+        "bootstrap produces one actionable error"
+    );
+}
+
 // ── CLI version flag ─────────────────────────────────────────────
 
 /// `sharplsp --version` prints "sharplsp X.Y.Z" and exits 0.
