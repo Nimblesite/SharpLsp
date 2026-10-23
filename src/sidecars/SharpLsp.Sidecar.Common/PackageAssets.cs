@@ -43,19 +43,23 @@ public static class PackageAssets
 
     private static string[] PackageRoots(JsonElement document)
     {
-        return document.TryGetProperty("packageFolders", out var folders)
-            ? [.. folders.EnumerateObject().Select(folder => folder.Name)]
-            : [];
+        // Missing SDK tables are invalid assets, even when the JSON itself is readable.
+        return
+        [
+            .. document
+                .GetProperty("packageFolders")
+                .EnumerateObject()
+                .Select(folder => folder.Name),
+        ];
     }
 
     private static IEnumerable<string> PackageFolders(JsonElement document)
     {
-        return document.TryGetProperty("libraries", out var libraries)
-            ? libraries
-                .EnumerateObject()
-                .Select(library => PackageFolder(library.Value))
-                .OfType<string>()
-            : [];
+        return document
+            .GetProperty("libraries")
+            .EnumerateObject()
+            .Select(library => PackageFolder(library.Value))
+            .OfType<string>();
     }
 
     private static string? PackageFolder(JsonElement library)

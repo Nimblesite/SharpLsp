@@ -95,13 +95,11 @@ type WorkspaceRestoreTests(fixture: EngineDiagnosticsFixture) =
         do! this.CleanCompiler()
     }
 
-    member private this.RestoreTruncated() = task {
+    member private this.RestoreInvalidAssets(contents: string) = task {
         File.Delete(marker)
-        do
-            use stream = File.OpenWrite(assets)
-            stream.SetLength(1L)
+        File.WriteAllText(assets, contents)
         do! this.Open(true, true)
-        Assert.True(FileInfo(assets).Length > 1L)
+        Assert.True(FileInfo(assets).Length > int64 contents.Length)
         Assert.True(File.Exists(marker))
         this.Build()
         do! this.CleanCompiler()
@@ -128,7 +126,8 @@ type WorkspaceRestoreTests(fixture: EngineDiagnosticsFixture) =
         do! this.Open(true, true)
         do! this.CleanCompiler()
         do! this.RestoreMissing()
-        do! this.RestoreTruncated()
+        do! this.RestoreInvalidAssets("{")
+        do! this.RestoreInvalidAssets("{}")
         do! this.RecoverFailedRestore()
         do! this.Configure(true, false)
         do! this.Open(true, false)
