@@ -14,7 +14,7 @@ import {
   type AccuracyCase,
   type AccuracyFixture,
 } from './diagnostic-accuracy-fixtures';
-import { dotnet } from './dotnet-project-kit';
+import { dotnet, type ProjectOptions } from './dotnet-project-kit';
 import { loadSolutionInServer } from './real-repo-helpers';
 import { activateWithScratch } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers';
@@ -33,13 +33,18 @@ interface OwnershipFixture {
 }
 
 /** Both independent SDK solutions contain a genuine closed-file compiler error. */
-async function prepareOwnership(scenario: {
-  readonly primary: AccuracyCase;
-  readonly external: AccuracyCase;
-}): Promise<OwnershipFixture> {
+async function prepareOwnership(
+  scenario: { readonly primary: AccuracyCase; readonly external: AccuracyCase },
+  options: ProjectOptions = {},
+): Promise<OwnershipFixture> {
   const { api, root } = await activateWithScratch('slsp-diagnostic-owner-');
   const primary = await writeAccuracyFixture(api, joinPath(root, 'Selected'), scenario.primary);
-  const external = await writeAccuracyFixture(api, joinPath(root, 'External'), scenario.external);
+  const external = await writeAccuracyFixture(
+    api,
+    joinPath(root, 'External'),
+    scenario.external,
+    options,
+  );
   await loadSolutionInServer(primary.solution);
   await api.explorerProvider.loadSolution(primary.solution);
   return { root, primary, external };
@@ -98,21 +103,50 @@ async function assertExternalEdit(fixture: OwnershipFixture, broken: boolean): P
   await assertOwnershipTruth(fixture, broken ? 1 : 0);
 }
 
+/** Reuse actual SDK fixture lifecycle for every owning-project interaction. */
+function useOwnershipFixture(
+  scenario: Parameters<typeof prepareOwnership>[0],
+  options: ProjectOptions = {},
+): () => OwnershipFixture {
+  let fixture: OwnershipFixture;
+  suiteSetup(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    fixture = await prepareOwnership(scenario, options);
+  });
+  suiteTeardown(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    await teardownOwnership(fixture);
+  });
+  return () => fixture;
+}
+
+/** Remove only this fixture's package and independently prove its SDK references are broken. */
+async function removeOwnerPackage(fixture: AccuracyFixture): Promise<string> {
+  fs.writeFileSync(fixture.closedUri.fsPath, fixture.scenario.clean);
+  await assertSdkOutcome(fixture, false);
+  const folder = joinPath(fixture.root, 'packages', 'newtonsoft.json', '13.0.3');
+  assert.ok(fs.existsSync(folder));
+  removeDirRecursive(folder);
+  await assert.rejects(
+    dotnet(
+      ['build', fixture.solution, '--no-restore', '--no-incremental', '--nologo'],
+      fixture.root,
+    ),
+    (error: unknown) => error instanceof Error && error.message.includes('Newtonsoft.Json'),
+  );
+  assert.ok(!fs.existsSync(folder));
+  fs.writeFileSync(fixture.closedUri.fsPath, fixture.scenario.broken);
+  return folder;
+}
+
 for (const scenario of OWNERSHIP_CASES) {
   suite(
     `Diagnostic owning projects — ${scenario.external.language} beside ${scenario.primary.language}`,
     () => {
-      let fixture: OwnershipFixture;
-      suiteSetup(async function () {
-        this.timeout(FIXTURE_BUILD_MS);
-        fixture = await prepareOwnership(scenario);
-      });
-      suiteTeardown(async function () {
-        this.timeout(FIXTURE_BUILD_MS);
-        await teardownOwnership(fixture);
-      });
+      const current = useOwnershipFixture(scenario);
       test('opening an external source adopts its closed-file errors and refreshes repairs', async function () {
         this.timeout(FIXTURE_BUILD_MS + 4 * LSP_RESPONSE_MS);
+        const fixture = current();
         await assertInitiallyUnselected(fixture);
         await openExternalEntry(fixture);
         await assertExternalEdit(fixture, false);
@@ -121,3 +155,28 @@ for (const scenario of OWNERSHIP_CASES) {
     },
   );
 }
+
+suite('F# owning projects — restore completion', () => {
+  const scenario = {
+    ...OWNERSHIP_CASES[0],
+    external: {
+      ...ACCURACY_CASES[0],
+      source:
+        'module DiagnosticAccuracy.Entry\nlet value = Newtonsoft.Json.JsonConvert.SerializeObject(42).Length\n',
+    },
+  };
+  const current = useOwnershipFixture(scenario, {
+    properties: { RestorePackagesPath: '$(MSBuildProjectDirectory)/../packages' },
+    packages: [{ id: 'Newtonsoft.Json', version: '13.0.3' }],
+  });
+  test('restoring an external owner refreshes closed errors without a semantic or file-event rescue', async function () {
+    this.timeout(FIXTURE_BUILD_MS + 4 * LSP_RESPONSE_MS);
+    const fixture = current();
+    const folder = await removeOwnerPackage(fixture.external);
+    await assertInitiallyUnselected(fixture);
+    await openExternalEntry(fixture);
+    assert.ok(fs.existsSync(folder), 'owning-project loading must restore its missing package');
+    await assertExternalEdit(fixture, false);
+    await assertExternalEdit(fixture, true);
+  });
+});

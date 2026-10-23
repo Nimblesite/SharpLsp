@@ -43,7 +43,8 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Preserve a visible terminal error for truncated native IPC prefixes/payloads, including after valid responses; zero-byte EOF remains clean (lspkit #21, native RED/GREEN regression).
 - [x] Prove C# background SDK restore completion emits a standard refresh through idle typed IPC, independently of filesystem or semantic-request rescue (81da7b24).
 - [x] Prove completed owning-project adoption refreshes closed-file diagnostics, including the first F# owner of a C#-only solution (#462, #463).
-- [ ] Prove F# restore completion refreshes diagnostics independently of filesystem or semantic-request rescue.
+- [x] Verify the F# owning-file restore path recreates a fixture-owned missing package cache and updates closed-file Problems automatically. A real Newtonsoft API builds successfully before cache removal; an SDK build without restore then fails for that package. Opening the unselected external F# owner restores its cache and reveals the real closed FS0001, followed by SDK-verified repair and regression. All four ownership VSIX cases pass together without a manual pull or hover; direct idle-IPC notification proof remains separate.
+- [x] Prove F# restore completion refreshes diagnostics independently of filesystem or semantic-request rescue (e40d30a6): the actual compiler IPC has no queued notification at the didChange acknowledgment, then emits a typed diagnostics refresh while idle before any further request. The real package cache is restored and the closed FS0001 retains its exact source and range; all 470 F# tests pass with the CI runsettings.
 - [ ] Coalesce refreshes and preserve generation ordering across edits, workspace replacement and process recovery.
 - [ ] Invalidate only the required dependency graph when a compiler input changes; verify unrelated result identities remain stable where safe.
 
