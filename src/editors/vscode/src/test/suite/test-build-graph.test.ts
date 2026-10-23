@@ -73,7 +73,7 @@ suite('Incremental test build graph', () => {
             'Other.cs',
             'public class Other { [Xunit.Fact] public void Unselected() => Xunit.Assert.True(true); }',
           );
-          const selected = writeProject(
+          writeProject(
             selectedRoot,
             fixture.project,
             buildProjectXml({
@@ -85,6 +85,7 @@ suite('Incremental test build graph', () => {
             fixture.file,
             fixture.source,
           );
+          const selected = joinPath(selectedRoot, fixture.project);
           const solution = await createSolution(root, 'Graph', [library, selected, other]);
           const counter = writeBuildCounter(root);
           const listing = await listLocatedTests(solution);
@@ -95,7 +96,7 @@ suite('Incremental test build graph', () => {
           assert.equal(projects.length, 1, 'discovery records one owning project');
           assert.ok(
             samePath(projects[0] ?? '', selected),
-            'ownership comes from workspace metadata',
+            `ownership comes from workspace metadata: ${JSON.stringify({ projects, selected })}`,
           );
           const run = async () =>
             await runRouted(runners, [fixture.id], root, { target: solution });
