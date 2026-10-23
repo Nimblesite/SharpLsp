@@ -72,6 +72,7 @@ pub mod logging;
 pub mod lsp_features;
 pub mod multi_solution;
 pub mod navigation_session;
+pub mod nuget_project_contract;
 pub mod nuget_restore;
 pub mod nuget_unused_full_stack;
 pub mod profiler_shared;
