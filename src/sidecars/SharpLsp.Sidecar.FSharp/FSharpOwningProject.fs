@@ -45,19 +45,22 @@ let private load (state: FSharpWorkspaceState) (owner: string) (ct: Cancellation
     task {
         let! entry = FSharpDesignTime.loadEntry state.Checker (buildProjectOptions state) owner ct
         let key = NativePaths.NormalizeFullPath owner
-        state.References[key] <- FSharpProjectGraph.fsharpReferences owner
-        state.Projects[key] <- entry
-
         match FSharpDesignTime.builtFramework entry with
         | Some framework -> do! prepareReferencedBuilds state entry framework ct
         | None -> ()
+        state.References[key] <- FSharpProjectGraph.fsharpReferences owner
+        state.Projects[key] <- entry
+        if state.LastLoadWasEmpty then
+            state.ProjectOptions <- Some entry.Options
+            state.LastLoadWasEmpty <- false
+            state.IsLoaded <- true
     }
 
 /// The owning-project loads in flight for each workspace, so a burst of edits loads once.
 let private pending = ConditionalWeakTable<FSharpWorkspaceState, ConcurrentDictionary<string, Task>>()
 
 let private needsOwner (state: FSharpWorkspaceState) (filePath: string) =
-    state.IsLoaded
+    (state.IsLoaded || state.LastLoadWasEmpty)
     && (NativePaths.HasExtension(filePath, ".fs") || NativePaths.HasExtension(filePath, ".fsi"))
     && (projectOf state filePath).IsNone
 

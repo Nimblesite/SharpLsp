@@ -312,6 +312,49 @@ pub fn build_watch_roots(targets: &[String]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Compiler source and project directories, including linked files outside the solution.
+/// [DIAG-LSP-REFRESH] [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn diagnostic_watch_roots<'a>(inputs: impl IntoIterator<Item = &'a str>) -> Vec<PathBuf> {
+    inputs
+        .into_iter()
+        .filter_map(directory_of)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+/// Keep one native subscription for a directory and all of its descendants.
+pub fn minimal_watch_roots(
+    roots: impl IntoIterator<Item = PathBuf>,
+) -> std::collections::BTreeMap<String, PathBuf> {
+    let roots = roots
+        .into_iter()
+        .filter(|root| root.is_dir())
+        .map(|root| (normalized_rename_path(&root.to_string_lossy()), root))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    roots.into_iter().fold(
+        std::collections::BTreeMap::<String, PathBuf>::new(),
+        |mut minimal, (key, root)| {
+            if !minimal
+                .keys()
+                .any(|parent| watch_key_contains(parent, &key))
+            {
+                let _previous = minimal.insert(key, root);
+            }
+            minimal
+        },
+    )
+}
+
+/// A directory prefix must end at a component boundary, including filesystem roots.
+fn watch_key_contains(parent: &str, child: &str) -> bool {
+    let parent = parent.trim_end_matches('/');
+    child == parent
+        || child
+            .strip_prefix(parent)
+            .is_some_and(|tail| tail.starts_with('/'))
+}
+
 /// Compiler outputs and `MSBuild`'s end-of-build file list, including custom output folders.
 /// Reading these files never invalidates discovery. [TEST-REACTIVITY-BUILD]
 pub fn is_build_output(path: &Path) -> bool {

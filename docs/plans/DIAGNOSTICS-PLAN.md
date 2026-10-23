@@ -34,6 +34,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 
 - [x] Invalidate dependent reports before and after source mutations, including unsaved overlays and closed-file disk changes; input revisions cannot block behind compiler queries.
 - [x] Follow selected solutions outside editor workspace folders using reactive input watchers, without retaining diagnostic data in the extension.
+- [x] Follow compiler-owned source and project directories outside the selected solution root. Three unchanged real VSIX regressions fail before the fix and pass after it: an external F# owner activates an empty F# slice beside a C# solution, and both languages clear and restore unopened external errors after SDK-verified disk edits. Two unchanged native protocol/SDK cases also pass after genuine failures, with standard refreshes, changed Salsa result identities, no editor file-change notifications and no semantic rescue after edits (#462, #463). Existing selected-project errors remain visible.
 - [x] Reload changed project/analyzer/editorconfig inputs; real CA1822/NoWarn transitions prove policy changes.
 - [x] Preserve generated compiler errors through analyzer opt-out and reference changes: a real SDK-built IIncrementalGenerator emits CS0029, reported once at the owning project URI with a zero-length 0:0 range. Adding, removing and restoring its Analyzer ProjectReference produces error/clean/error in Problems and workspace pulls while ordinary sources stay clean; all three F#/C#/generated project editor cases pass together.
 - [x] Prove unsaved F# overlay replay through actual SDK source creation and metadata reload, retire a deleted C# source explicitly, and restore saved F# errors when its overlay closes. Real SDK build oracles and native reports pass (9321d87d).
@@ -41,7 +42,8 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Emit actual compiler workspace completion after successful loading in both engines, gated by negotiated IPC notifications. The unchanged native mixed-solution regression fails with zero notifications before the fix and passes through initial load, another solution and switching back with two completion notifications per selection. All 832 C#, 463 F# and 130 Common engine tests pass without skips (#460).
 - [x] Preserve a visible terminal error for truncated native IPC prefixes/payloads, including after valid responses; zero-byte EOF remains clean (lspkit #21, native RED/GREEN regression).
 - [x] Prove C# background SDK restore completion emits a standard refresh through idle typed IPC, independently of filesystem or semantic-request rescue (81da7b24).
-- [ ] Prove owning-project adoption and F# restore completion refresh diagnostics.
+- [x] Prove completed owning-project adoption refreshes closed-file diagnostics, including the first F# owner of a C#-only solution (#462, #463).
+- [ ] Prove F# restore completion refreshes diagnostics independently of filesystem or semantic-request rescue.
 - [ ] Coalesce refreshes and preserve generation ordering across edits, workspace replacement and process recovery.
 - [ ] Invalidate only the required dependency graph when a compiler input changes; verify unrelated result identities remain stable where safe.
 
@@ -51,7 +53,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Share the C# analyzer pipeline with the existing resolver; honor the evaluated SDK/NuGet analyzer references and effective editorconfig options without injecting analyzers the project disables.
 - [x] Prove unopened default Razor SDK components participate in workspace pulls, map CS0029 to the component source and clear after a compiler-verified disk repair.
 - [x] Respect NoWarn, source suppressions, analyzer opt-out and effective severity without suppressing compiler errors.
-- [ ] Prove actual generated-source and global/project diagnostic errors remain visible at an appropriate user/project location.
+- [x] Prove actual generated-source and global/project diagnostic errors remain visible at their owning project with a zero-length 0:0 range: real FS0084, CS5001 and generated CS0029 editor cases pass in the verified 61-case combined suite, with exact counts and SDK build oracles (8b325497, 57e4a445).
 - [ ] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly.
 - [ ] Preserve F# FSharpLint/FSharp.Analyzers.SDK and SharpLsp static analyzer behavior.
 - [ ] Supply codeDescription URLs and unnecessary tags where specified.

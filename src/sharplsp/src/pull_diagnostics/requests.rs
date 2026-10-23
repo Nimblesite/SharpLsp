@@ -32,7 +32,7 @@ pub(super) struct Snapshot {
     /// Shared Salsa owner; computed values are retained only there.
     pub store: PullStore,
     /// Input revision captured before work was scheduled.
-    revision: u64,
+    pub(super) revision: u64,
     /// Canonical dispatcher cancellation token.
     cancel: CancellationToken,
     /// Serializes partial sends against the terminal reply.

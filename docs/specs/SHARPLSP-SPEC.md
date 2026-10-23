@@ -221,6 +221,8 @@ When MSBuild cannot report the command line, or Roslyn cannot emit an image at a
 
 A file no loaded F# project compiles still answers, from the project that owns it (#414). When the editor opens or edits such a `.fs` or `.fsi` file, the F# sidecar looks for its owner: the nearest `.fsproj`, in the file's directory or a parent, whose `<Compile>` items list the file. It loads that project in the background beside the workspace's own, exactly as a solution project loads, with its references prepared. The workspace's projects stay loaded and keep answering.
 
+A valid selected solution without F# projects is an empty language slice, not a reason to disable owning-project discovery. Its first adopted F# owner activates the compiler slice after its references are ready. Publishing the completed owner emits the normal diagnostic refresh, including its unopened sources; the other language's selected projects remain loaded.
+
 The load runs once per owner, however many edits arrive while it runs. It never blocks the edit that started it, because the host forwards edits synchronously. A file with no owner answers as before, from the workspace's first project. The log names the project loaded and the file that needed it, or why it could not load.
 
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING] C# Files Outside the Loaded Solution

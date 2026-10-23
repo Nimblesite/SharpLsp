@@ -56,7 +56,10 @@ fn handle_workspace_diagnostic(
     let params: WorkspaceDiagnosticParams = serde_json::from_value(req.params)?;
     let config = state::configuration()?;
     let documents = if config.solution_wide_analysis {
-        runtime.block_on(documents(sidecars))?
+        let documents = runtime.block_on(documents(sidecars))?;
+        snapshot.check()?;
+        state::watch_documents(&documents, snapshot.revision)?;
+        documents
     } else {
         Vec::new()
     };
@@ -191,6 +194,15 @@ async fn documents(sidecars: [Option<&Arc<SidecarManager>>; 2]) -> Result<Vec<Di
         documents.extend(engine_documents(sidecar).await?);
     }
     Ok(documents)
+}
+
+/// Source and project metadata define input scope independently of rendered diagnostics.
+fn document_roots(documents: &[DiagnosticDocument]) -> Vec<std::path::PathBuf> {
+    paths::diagnostic_watch_roots(
+        documents
+            .iter()
+            .flat_map(|document| [document.file_path.as_str(), document.project_path.as_str()]),
+    )
 }
 
 /// Preserve the source-only metadata RPC and enumerate project identities separately.

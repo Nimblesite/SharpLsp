@@ -1,5 +1,7 @@
 //! Native source watching is editor independent. [DIAG-LSP-REFRESH]
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -12,7 +14,12 @@ use crate::paths;
 
 /// Watch task ownership ends when the active workspace or server changes.
 #[derive(Default)]
-pub struct InputMonitor(Option<tokio::task::JoinHandle<()>>);
+pub struct InputMonitor {
+    /// The selected solution stays watched while compiler membership changes.
+    base: Vec<PathBuf>,
+    /// Canonical path keys own subscriptions, never diagnostic results.
+    tasks: HashMap<String, tokio::task::JoinHandle<()>>,
+}
 
 impl InputMonitor {
     /// Monitor the selected solution, including a target outside editor folders.
@@ -23,25 +30,53 @@ impl InputMonitor {
         inbound: &Sender<Message>,
     ) -> Result<()> {
         self.clear();
-        let roots = paths::build_watch_roots(&[target.to_owned()]);
-        let Some(root) = roots.first() else {
-            return Ok(());
-        };
-        let watcher = FileWatcher::new(root)?;
-        let _entered = runtime.enter();
-        let mut config = ScheduleConfig::default();
-        config.quiet = Duration::from_millis(150);
-        let watcher = watcher.coalesced(config);
-        self.0 = Some(runtime.spawn(observe(watcher, inbound.clone())));
+        self.base = paths::build_watch_roots(&[target.to_owned()]);
+        self.follow(Vec::new(), runtime, inbound)
+    }
+
+    /// Follow actual compiler inputs without replacing unchanged native subscriptions.
+    pub fn follow(
+        &mut self,
+        roots: Vec<PathBuf>,
+        runtime: &tokio::runtime::Handle,
+        inbound: &Sender<Message>,
+    ) -> Result<()> {
+        let roots = paths::minimal_watch_roots(self.base.iter().cloned().chain(roots));
+        for (key, root) in &roots {
+            if !self.tasks.contains_key(key) {
+                let task = watch(root, runtime, inbound)?;
+                let _previous = self.tasks.insert(key.clone(), task);
+            }
+        }
+        self.tasks.retain(|key, task| {
+            let keep = roots.contains_key(key);
+            if !keep {
+                task.abort();
+            }
+            keep
+        });
         Ok(())
     }
 
     /// Cancel native watching before the request queue is joined.
     fn clear(&mut self) {
-        if let Some(task) = self.0.take() {
+        for (_, task) in self.tasks.drain() {
             task.abort();
         }
     }
+}
+
+/// lspkit owns native watching and event coalescing; this adapter supplies compiler scope.
+fn watch(
+    root: &Path,
+    runtime: &tokio::runtime::Handle,
+    inbound: &Sender<Message>,
+) -> Result<tokio::task::JoinHandle<()>> {
+    let watcher = FileWatcher::new(root)?;
+    let _entered = runtime.enter();
+    let mut config = ScheduleConfig::default();
+    config.quiet = Duration::from_millis(150);
+    Ok(runtime.spawn(observe(watcher.coalesced(config), inbound.clone())))
 }
 
 impl Drop for InputMonitor {

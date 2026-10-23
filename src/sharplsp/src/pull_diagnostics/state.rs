@@ -145,10 +145,40 @@ pub fn configure(config: &DiagnosticsConfig) -> Result<()> {
 /// Compiler callbacks never block Tokio's reader workers behind a synchronous Salsa query.
 pub fn engine_changed() {
     drop(tokio::task::spawn_blocking(|| {
-        if let Err(error) = invalidate() {
-            warn!(%error, "Compiler diagnostic invalidation failed");
+        if let Err(error) = invalidate().and_then(|()| refresh_inputs()) {
+            warn!(%error, "Compiler diagnostic inputs could not refresh");
         }
     }));
+}
+
+/// Enumerate current compiler inputs without holding the session lock across IPC.
+fn refresh_inputs() -> Result<()> {
+    let (runtime, engines, revision) = with_session(|session| {
+        Ok((
+            session.runtime.clone(),
+            session.engines.clone(),
+            session.store.revision(),
+        ))
+    })?;
+    let documents = runtime.block_on(super::documents([engines.first(), engines.get(1)]))?;
+    watch_documents(&documents, revision)
+}
+
+/// An obsolete query cannot attach previous workspace inputs to the current monitor.
+pub(super) fn watch_documents(
+    documents: &[super::DiagnosticDocument],
+    revision: u64,
+) -> Result<()> {
+    with_session(|session| {
+        if session.store.revision() != revision {
+            return Ok(());
+        }
+        if let Some(inbound) = &session.inbound {
+            let roots = super::document_roots(documents);
+            session.inputs.follow(roots, &session.runtime, inbound)?;
+        }
+        Ok(())
+    })
 }
 
 /// Invalidate dependencies after a completed compiler-workspace mutation.
