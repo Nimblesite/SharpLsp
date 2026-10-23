@@ -73,10 +73,8 @@ percent-encoding = "2"
 tempfile = "3"
 wait-timeout = "0.2"
 serde_json = "1"
+# Native recovery and descendant sessions validate their own child processes.
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 
 [lints]
 workspace = true
-
-# Only the Windows descendant e2e walks the process table.
-[target."cfg(windows)".dev-dependencies]
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
