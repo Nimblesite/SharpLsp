@@ -795,6 +795,7 @@ For `MailboxProcessor<'Msg>`, SharpLsp exposes:
 | Expression evaluation | netcoredbg T1/T2 | Roslyn `ScriptingWorkspace` to `ICorDebugEval` |
 | Debugger attributes | DapRouter emulates `[DebuggerDisplay]` | Native `[DebuggerDisplay]`, `[DebuggerTypeProxy]`, and `[DebuggerBrowsable]` |
 | Attach error `0x80070057` | Retry with exponential backoff and contribute issue #205 upstream | Race-free `DbgShim.RegisterForRuntimeStartup` |
+| Windows attach stacks | PID/name attach can pause a process without inspectable managed frames; track [#438](https://github.com/Nimblesite/SharpLsp/issues/438). The two stack-inspection cases remain pending when this condition occurs | Walk managed frames in already-running processes |
 | macOS ARM64 | CI-built `darwin-arm64` netcoredbg | Managed sidecar |
 | musl/Alpine SIGSEGV | CI build patches stack-size pre-reservation; track dotnet/runtime#103741 | Keep the patch while the wrapped C++ ICorDebug shim remains affected |
 | Logpoints | DapRouter evaluate/log/continue emulation | Native zero-visible-pause implementation |
