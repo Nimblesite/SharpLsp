@@ -330,9 +330,9 @@ let private restoreWhenStale (path: string) ct =
 
 /// Load one project, restored again first when its packages are gone: from MSBuild when
 /// it targets several frameworks or reads a C# project, else by hand.
-let loadEntry (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions) (path: string) ct =
+let loadEntryWithRestore (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions) (path: string) autoRestore ct =
     task {
-        do! restoreWhenStale path ct
+        if autoRestore then do! restoreWhenStale path ct
         let options = fallback path
         let readsCSharp = readsCSharp path
 
@@ -347,3 +347,7 @@ let loadEntry (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions
                 Log.Warning("F# project {Path}: target frameworks unknown: {Reason}", path, reason)
                 return singleTarget options path
     }
+
+/// Owning-file loads keep their established missing-package recovery contract. [DIAG-RESTORE]
+let loadEntry checker fallback path ct =
+    loadEntryWithRestore checker fallback path true ct

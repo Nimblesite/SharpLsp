@@ -3,13 +3,13 @@ using Outcome;
 using Serilog;
 using RestoreResult = Outcome.Result<Outcome.Unit, string>;
 
-namespace SharpLsp.Sidecar.CSharp.Workspace;
+namespace SharpLsp.Sidecar.Common;
 
 /// <summary>
 /// Runs <c>dotnet restore</c> on one project, such as a file-based app's generated project.
 /// Implements [DIAG-RESTORE].
 /// </summary>
-internal static class DotnetRestore
+public static class DotnetRestore
 {
     private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(10);
 
@@ -17,7 +17,7 @@ internal static class DotnetRestore
     /// The project at <paramref name="projectPath"/> restored, with
     /// <paramref name="properties"/> set; a failure carries what the restore printed.
     /// </summary>
-    internal static async Task<RestoreResult> RunAsync(
+    public static async Task<RestoreResult> RunAsync(
         string projectPath,
         string workingDirectory,
         IReadOnlyDictionary<string, string> properties,

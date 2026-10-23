@@ -309,6 +309,8 @@ Sidecar → host notification fired exactly once after NuGet restore + `MSBuildW
 
 Before workspace creation, SharpLsp applies this restore gate:
 
+Explicit workspace opens honor `diagnostics.auto_restore_on_open`, enabled by default. The host sends that policy before `workspace/open`, including after process recovery. With opt-out, workspace opening leaves missing assets untouched. With opt-in, both compiler engines restore missing or older SDK assets before creating their compiler workspace. Live configuration applies to the next workspace open. Owning-file loads retain the language-specific contracts below.
+
 1. Before calling `MSBuildWorkspace.OpenSolutionAsync`, the sidecar inspects each project's `obj/project.assets.json`.
 2. If `assets.json` is missing, older than the `.csproj`, or its `PackageReference` set differs from the `.csproj`, the sidecar shells `dotnet restore <path>` via a `DotnetCliHelper` equivalent. Restore progress is reported via LSP `$/progress` (work-done token established at workspace open).
 3. Only after restore completes does the sidecar create `MSBuildWorkspace`.
@@ -316,7 +318,7 @@ Before workspace creation, SharpLsp applies this restore gate:
 
 The gate is mandatory because unresolved `<PackageReference>` items can produce CS0246/CS0234 diagnostics on the first pull.
 
-**F#.** Before the F# sidecar loads a project ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING] included), it restores it again (`dotnet msbuild -t:Restore`) when its `obj/project.assets.json` names a package that none of the assets file's package folders holds. Clearing the NuGet cache leaves a built project in exactly that state: MSBuild trusts the build's assets cache, so its design-time command line references none of the packages. The netstandard reference pack is one of them, and without its core library FCS aborts every check, so hover, completion and navigation answer nothing. A project that has never been restored is not restored by this gate. The log names the project, how many packages are gone and the first of them, then whether the restore succeeded.
+**F# owning projects.** Before an owning-file load ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]), the F# sidecar restores the owner again (`dotnet msbuild -t:Restore`) when its `obj/project.assets.json` names a package that none of the assets file's package folders holds. Clearing the NuGet cache leaves a built project in exactly that state: MSBuild trusts the build's assets cache, so its design-time command line references none of the packages. The netstandard reference pack is one of them, and without its core library FCS aborts every check, so hover, completion and navigation answer nothing. A project that has never been restored is not restored by this owning-file gate. The log names the project, how many packages are gone and the first of them, then whether the restore succeeded.
 
 **C# owning projects.** The C# sidecar never restores a project it loads only because the user opened one of its files ([SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING]). An owner with no `obj/project.assets.json` stays unloaded, and the edit reports `dotnet restore <owner>` as the remedy. Opening a file must leave the user's project exactly as it was.
 

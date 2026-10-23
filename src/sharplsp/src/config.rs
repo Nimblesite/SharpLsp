@@ -91,6 +91,8 @@ pub struct DiagnosticsConfig {
     pub max_per_file: usize,
     /// Coalesce diagnostic refreshes for this many milliseconds. [DIAG-LSP-REFRESH]
     pub refresh_debounce_ms: u64,
+    /// Restore stale project assets before explicitly opening a workspace. [DIAG-RESTORE]
+    pub auto_restore_on_open: bool,
 }
 
 /// Validated diagnostic severity threshold. Implements [DIAG-CONFIG].
@@ -192,6 +194,7 @@ impl Default for DiagnosticsConfig {
             min_severity: MinimumDiagnosticSeverity::default(),
             max_per_file: 0,
             refresh_debounce_ms: 2_000,
+            auto_restore_on_open: true,
         }
     }
 }

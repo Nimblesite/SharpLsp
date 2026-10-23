@@ -429,6 +429,17 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         await ResetProjectlessStateAsync(ct).ConfigureAwait(false);
 
+        if (AutoRestoreOnOpen)
+        {
+            var restored = await WorkspaceRestore
+                .EnsureTargetAsync(target, ct)
+                .ConfigureAwait(false);
+            if (restored.IsError)
+            {
+                return restored;
+            }
+        }
+
         var properties = new Dictionary<string, string>
         {
             ["DesignTimeBuild"] = "true",

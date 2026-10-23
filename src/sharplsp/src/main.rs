@@ -1398,8 +1398,8 @@ fn handle_load_solution(
     info!("Loading solution: {sln_path}");
     pull_diagnostics::state::select_workspace(sln_path)?;
 
-    let payload = rmp_serde::to_vec(sln_path).context("serialize solution path")?;
-    let analyzers_enabled = pull_diagnostics::state::configuration()?.analyzers_enabled;
+    let payload = sln_path.to_owned();
+    let diagnostic_config = pull_diagnostics::state::configuration()?;
 
     if let Some(cs) = csharp_sidecar {
         let cs = Arc::clone(cs);
@@ -1407,11 +1407,15 @@ fn handle_load_solution(
         let sender = connection.sender.clone();
         let vfs_for_diagnostics = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match cs.request("workspace/open", p).await {
-                Ok(_) => {
+            match workspace_open::open_workspace(&cs, &p).await {
+                Ok(()) => {
                     info!("Solution loaded in C# (Roslyn) sidecar");
-                    if let Err(error) =
-                        workspace_open::configure_diagnostics(&cs, analyzers_enabled).await
+                    if let Err(error) = workspace_open::configure_diagnostics(
+                        &cs,
+                        diagnostic_config.analyzers_enabled,
+                        diagnostic_config.auto_restore_on_open,
+                    )
+                    .await
                     {
                         warn!(%error, "C# diagnostic configuration failed");
                     }
@@ -1437,11 +1441,15 @@ fn handle_load_solution(
         let sender = connection.sender.clone();
         let vfs = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match fs.request("workspace/open", p).await {
-                Ok(_) => {
+            match workspace_open::open_workspace(&fs, &p).await {
+                Ok(()) => {
                     info!("Solution loaded in F# (FCS) sidecar");
-                    if let Err(error) =
-                        workspace_open::configure_diagnostics(&fs, analyzers_enabled).await
+                    if let Err(error) = workspace_open::configure_diagnostics(
+                        &fs,
+                        diagnostic_config.analyzers_enabled,
+                        diagnostic_config.auto_restore_on_open,
+                    )
+                    .await
                     {
                         warn!(%error, "F# diagnostic configuration failed");
                     }

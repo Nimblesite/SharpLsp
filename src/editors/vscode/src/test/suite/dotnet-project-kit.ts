@@ -161,7 +161,7 @@ export const TEST_FRAMEWORKS = {
 // shipping API of a library `src/test-coverage.ts` already depends on. Revisit
 // once `fast-xml-builder` has a track record.
 // eslint-disable-next-line @typescript-eslint/no-deprecated -- see above; the replacement package is days old
-const projectBuilder = new XMLBuilder({
+export const projectBuilder = new XMLBuilder({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   format: true,

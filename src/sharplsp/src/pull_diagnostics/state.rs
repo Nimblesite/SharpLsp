@@ -128,8 +128,12 @@ pub fn configure(config: &DiagnosticsConfig) -> Result<()> {
         session.config = config.clone();
         session.runtime.block_on(async {
             for engine in &session.engines {
-                crate::workspace_open::configure_diagnostics(engine, config.analyzers_enabled)
-                    .await?;
+                crate::workspace_open::configure_diagnostics(
+                    engine,
+                    config.analyzers_enabled,
+                    config.auto_restore_on_open,
+                )
+                .await?;
             }
             Ok::<(), anyhow::Error>(())
         })?;

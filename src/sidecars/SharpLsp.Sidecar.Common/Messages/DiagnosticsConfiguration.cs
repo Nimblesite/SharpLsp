@@ -13,4 +13,8 @@ public sealed class DiagnosticsConfiguration
     /// <summary>Older hosts do not accept unsolicited IPC envelopes.</summary>
     [Key(1)]
     public bool RefreshSupported { get; set; }
+
+    /// <summary>Null preserves the default for older two-field hosts. [DIAG-RESTORE]</summary>
+    [Key(2)]
+    public bool? AutoRestoreOnOpen { get; set; }
 }

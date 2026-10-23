@@ -10,6 +10,11 @@ export function fileUri(value: string): Uri {
   return Uri.file(value);
 }
 
+/** The native file path carried by a protocol URI. [SHARPLSP-ARCHITECTURE-PATHS] */
+export function filePathFromUri(value: string): string {
+  return Uri.parse(value).fsPath;
+}
+
 /**
  * The address of a virtual document embedded in `host`: under `scheme`, named after the
  * host's whole URI with `extension`, so VS Code reads it as that language, and told

@@ -56,6 +56,9 @@ max_per_file = 0
 # ソースやプロジェクトの変更後の更新をまとめる時間（ミリ秒）
 refresh_debounce_ms = 2000
 
+# ワークスペースを開く前に不足または古い SDK アセットとパッケージファイルを復元
+auto_restore_on_open = true
+
 [analyzers]
 # C# と F# 向けの SharpLsp デッドコードアナライザー
 dead_code = true

@@ -14,6 +14,7 @@
         "diagnostic-accuracy-e2e.test.js",
         "diagnostic-analyzers-e2e.test.js",
         "diagnostic-policy-e2e.test.js",
+        "diagnostic-restore-e2e.test.js",
         "diagnostic-project-errors-e2e.test.js",
         "lsp-integration.test.js",
         "lsp-integration-semantic.test.js",

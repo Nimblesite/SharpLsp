@@ -55,6 +55,9 @@ max_per_file = 0
 # Coalesce refreshes after source or project changes (milliseconds)
 refresh_debounce_ms = 2000
 
+# Restore missing or stale SDK assets and package files before workspace open
+auto_restore_on_open = true
+
 [analyzers]
 # SharpLsp dead-code analyzers for C# and F#
 dead_code = true

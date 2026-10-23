@@ -57,6 +57,7 @@ project_filter = []
 min_severity = "hint"
 max_per_file = 0
 refresh_debounce_ms = 2000
+auto_restore_on_open = true
 
 [analyzers]
 dead_code = true
@@ -90,6 +91,7 @@ output_directory = ".sharplsp/profiles"
 | `diagnostics.min_severity` | `error`、`warning`、`info`、`hint` で最低の重要度を指定します。既定は `hint` です |
 | `diagnostics.max_per_file` | 重要度で絞り込んだ後、ファイルごとの件数を制限します。`0` は無制限です |
 | `diagnostics.refresh_debounce_ms` | 指定したミリ秒の間に発生した診断更新要求をまとめます。既定は `2000` で、変更は即時反映されます |
+| `diagnostics.auto_restore_on_open` | ワークスペースを開く前に、不足または古い SDK アセットとパッケージファイルを復元します。既定は `true` で、変更は次回のワークスペース読み込み時に反映されます |
 | `analyzers.dead_code` | SharpLsp の C# および F# デッドコードアナライザーを有効にします |
 | `analyzers.monorepo` | 未使用の public シンボルをデッドコードとして扱い、エラーとして報告します |
 | `profiler.max_concurrent_sessions` | 同時に実行できるプロファイラーセッション数を制限します |

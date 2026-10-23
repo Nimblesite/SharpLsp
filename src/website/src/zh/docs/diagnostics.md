@@ -56,6 +56,9 @@ max_per_file = 0
 # 合并源文件或项目更改后的刷新请求（毫秒）
 refresh_debounce_ms = 2000
 
+# 打开工作区前还原缺失或过期的 SDK 资产和包文件
+auto_restore_on_open = true
+
 [analyzers]
 # SharpLsp 的 C# 和 F# 死代码分析器
 dead_code = true

@@ -358,7 +358,7 @@ let private clearWorkspace (state: FSharpWorkspaceState) =
     state.Checker.InvalidateAll()
 
 /// Load EVERY project; the first one is the workspace's for project-wide queries.
-let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string array) ct =
+let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string array) autoRestore ct =
     task {
         if fsprojFiles.Length = 0 then
             clearWorkspace state
@@ -366,7 +366,7 @@ let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string arra
         else
             try
                 let fallback = buildProjectOptions state
-                let! entries = fsprojFiles |> Array.map (fun path -> FSharpDesignTime.loadEntry state.Checker fallback path ct) |> Task.WhenAll
+                let! entries = fsprojFiles |> Array.map (fun path -> FSharpDesignTime.loadEntryWithRestore state.Checker fallback path autoRestore ct) |> Task.WhenAll
                 state.Projects.Clear()
                 state.References.Clear()
 
@@ -403,14 +403,14 @@ let private loadScript (state: FSharpWorkspaceState) scriptPath ct =
         return Ok()
     }
 
-let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Result<string array, string>) ct =
+let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Result<string array, string>) autoRestore ct =
     task {
         match discovered with
         | Error message ->
             Log.Debug("F# workspace diagnostic: {Message}", message)
             return Error message
         | Ok projectFiles ->
-            match! loadProjects state projectFiles ct with
+            match! loadProjects state projectFiles autoRestore ct with
             | Ok() -> return Ok()
             | Error message ->
                 Log.Debug("F# workspace load failed: {Message}", message)
@@ -426,7 +426,7 @@ let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct
                 return! loadScript state (NativePaths.NormalizeFullPath path) ct
             else
                 let! discovered = FSharpProjectLoading.discoverFsprojFiles path ct
-                return! loadDiscoveredProject state discovered ct
+                return! loadDiscoveredProject state discovered true ct
         with ex ->
             Log.Debug(ex, "F# workspace load failed")
             return Error ex.Message
@@ -434,6 +434,30 @@ let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct
 
 let loadProject (state: FSharpWorkspaceState) (path: string) =
     loadProjectWithCancellation state path CancellationToken.None
+
+let private restoreWorkspaceInputs projects autoRestore ct =
+    task {
+        if not autoRestore then return Ok()
+        else
+            let! result = WorkspaceRestore.EnsureProjectsAsync(projects, ct)
+            return result.Match((fun _ -> Ok()), Error)
+    }
+
+/// Explicit workspace opens restore stale SDK inputs before compiler creation. [DIAG-RESTORE]
+let loadWorkspaceWithCancellation (state: FSharpWorkspaceState) path autoRestore ct =
+    task {
+        state.LastLoadWasEmpty <- false
+        if FSharpProjectLoading.isScriptPath path then
+            return! loadProjectWithCancellation state path ct
+        else
+            let! discovered = FSharpProjectLoading.discoverFsprojFiles path ct
+            match discovered with
+            | Error message -> return Error message
+            | Ok projects ->
+                match! restoreWorkspaceInputs projects autoRestore ct with
+                | Error message -> return Error message
+                | Ok () -> return! loadDiscoveredProject state (Ok projects) autoRestore ct
+    }
 
 let getHover state filePath line character =
     FSharpSemanticNavigation.getHover (checkFileWithParse state) filePath line character

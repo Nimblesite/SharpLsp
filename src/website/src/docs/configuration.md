@@ -56,6 +56,7 @@ project_filter = []
 min_severity = "hint"
 max_per_file = 0
 refresh_debounce_ms = 2000
+auto_restore_on_open = true
 
 [analyzers]
 dead_code = true
@@ -89,6 +90,7 @@ The test platform's own DLLs can be prebuilt in Release. Their debugger warnings
 | `diagnostics.min_severity` | Includes diagnostics at or above `error`, `warning`, `info` or `hint`; defaults to `hint` |
 | `diagnostics.max_per_file` | Limits each file after severity filtering; `0` means unlimited |
 | `diagnostics.refresh_debounce_ms` | Coalesces diagnostic refresh requests over this many milliseconds; defaults to `2000` and updates live |
+| `diagnostics.auto_restore_on_open` | Restores missing or stale SDK assets and package files before opening a workspace; defaults to `true`. Changes apply on the next workspace open |
 | `analyzers.dead_code` | Enables SharpLsp's C# and F# dead-code analyzers |
 | `analyzers.monorepo` | Treats unused public symbols as dead and reports them as errors |
 | `profiler.max_concurrent_sessions` | Caps simultaneous profiler sessions |

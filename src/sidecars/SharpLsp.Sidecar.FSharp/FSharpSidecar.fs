@@ -21,6 +21,7 @@ type FSharpSidecar() as this =
     // the FCS compiler diagnostics always stand. Default on.
     let mutable analyzersEnabled = true
     let mutable refreshSupported = false
+    let mutable autoRestoreOnOpen = true
 
     let diagnosticMetadata enumerate =
         Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
@@ -44,7 +45,7 @@ type FSharpSidecar() as this =
                     // callers break MSBuild-style project resolution —
                     // normalize at the boundary. [GitHub #110]
                     let path = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath path
-                    let! result = FSharpWorkspace.loadProjectWithCancellation workspace path ct
+                    let! result = FSharpWorkspace.loadWorkspaceWithCancellation workspace path autoRestoreOnOpen ct
                     match result with
                     | Ok () ->
                         return Helpers.serializeOk "ok" ct
@@ -126,6 +127,7 @@ type FSharpSidecar() as this =
                 let request = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(payload, cancellationToken = ct)
                 analyzersEnabled <- request.AnalyzersEnabled
                 refreshSupported <- request.RefreshSupported
+                autoRestoreOnOpen <- request.AutoRestoreOnOpen.GetValueOrDefault(true)
                 Task.FromResult<ByteResult>(Helpers.serializeOk "ok" ct)
             with ex ->
                 Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))

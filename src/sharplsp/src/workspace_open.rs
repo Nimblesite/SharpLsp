@@ -24,6 +24,8 @@ use crate::vfs::Vfs;
 pub(crate) struct OpenFollowUp {
     /// Standard and static analyzer opt-out applies before the first pull.
     analyzers_enabled: bool,
+    /// Workspace restore opt-out must reach the compiler before loading projects.
+    auto_restore_on_open: bool,
     /// Pushed to the sidecar once the workspace opens.
     analyzers: AnalyzersConfig,
     /// Where solution-wide diagnostics publish, and the projects they cover;
@@ -49,6 +51,7 @@ impl OpenFollowUp {
             .map(|sender| (sender.clone(), config.diagnostics.project_filter.clone()));
         Self {
             analyzers_enabled: config.diagnostics.analyzers_enabled,
+            auto_restore_on_open: config.diagnostics.auto_restore_on_open,
             analyzers: config.analyzers.clone(),
             diagnostics,
             report: report.cloned(),
@@ -96,7 +99,13 @@ async fn open_and_follow_up(
         return false;
     }
     configure_analyzers(sidecar, &follow_up.analyzers).await;
-    if let Err(error) = configure_diagnostics(sidecar, follow_up.analyzers_enabled).await {
+    if let Err(error) = configure_diagnostics(
+        sidecar,
+        follow_up.analyzers_enabled,
+        follow_up.auto_restore_on_open,
+    )
+    .await
+    {
         warn!(%error, "Diagnostic analyzer configuration failed");
     }
     if crate::pull_diagnostics::state::is_pull() {
@@ -117,6 +126,13 @@ async fn open_and_follow_up(
 
 /// Open the workspace in a sidecar.
 pub(crate) async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
+    let config = crate::pull_diagnostics::state::configuration()?;
+    configure_diagnostics(
+        sidecar,
+        config.analyzers_enabled,
+        config.auto_restore_on_open,
+    )
+    .await?;
     let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
     let _ = sidecar.request("workspace/open", payload).await?;
     info!("Workspace opened in {} sidecar", sidecar.name());
@@ -124,8 +140,12 @@ pub(crate) async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Resu
 }
 
 /// Configure diagnostic analysis without changing compiler-error visibility.
-pub(crate) async fn configure_diagnostics(sidecar: &SidecarManager, enabled: bool) -> Result<()> {
-    let payload = rmp_serde::to_vec(&(enabled, true))?;
+pub(crate) async fn configure_diagnostics(
+    sidecar: &SidecarManager,
+    analyzers_enabled: bool,
+    auto_restore_on_open: bool,
+) -> Result<()> {
+    let payload = rmp_serde::to_vec(&(analyzers_enabled, true, auto_restore_on_open))?;
     let _response = sidecar.request("diagnostics/configure", payload).await?;
     Ok(())
 }
