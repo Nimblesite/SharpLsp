@@ -11,6 +11,7 @@ mod initialization;
 mod input_reload;
 mod invalid_selection;
 mod owned_projects;
+mod project_filter;
 mod recovery;
 mod refresh_debounce;
 mod selection;

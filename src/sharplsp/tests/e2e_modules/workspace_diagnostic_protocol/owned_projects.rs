@@ -71,7 +71,11 @@ fn owner_client(primary: &MediumWorkspace, core_only: bool) -> LspClient {
 }
 
 /// Semantic readiness applies only to initial asynchronous owner adoption, never disk repairs.
-fn open_owners(external: &MediumWorkspace, client: &mut LspClient, traffic: &mut Vec<Value>) {
+pub(super) fn open_owners(
+    external: &MediumWorkspace,
+    client: &mut LspClient,
+    traffic: &mut Vec<Value>,
+) {
     for (path, source, language, position) in clean_entries(external) {
         let uri = path_to_file_uri(&path);
         client.notify(
