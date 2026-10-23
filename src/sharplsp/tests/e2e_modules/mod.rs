@@ -54,6 +54,7 @@ pub mod definition_no_sidecar;
 pub mod diagnostics;
 pub mod diagnostics_full_stack;
 pub mod document_sync;
+pub mod filebased_diagnostics;
 pub mod folding;
 pub mod formatting_contract;
 pub mod fsharp;
@@ -94,6 +95,7 @@ pub mod type_hierarchy_tests;
 pub mod user_session_csharp;
 pub mod user_session_fsharp;
 pub mod version;
+pub mod workspace_symbol_search;
 pub mod workspace_symbols;
 pub mod workspace_symbols_selection;
 

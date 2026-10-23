@@ -30,6 +30,11 @@ Per-file symbols are sourced by language, never by a single parser:
 
 The F# path reuses the sidecar `documentSymbol` request that powers the editor outline. It maps nested FCS modules, namespaces, types, DU cases, and members into the shared `FileSymbol`/`SymbolNode` tree using full ranges. `workspace_symbols::handle` receives the F# sidecar; when unavailable, `.fs` files contribute no symbols without failing the request.
 
+Function bindings with parameters and lambda-valued bindings use the `Function` kind,
+including when FCS supplies a field glyph. Classification uses the FCS binding AST;
+ordinary value bindings keep their field kind. The outline and standard workspace
+symbol search share this classification.
+
 ### Live-Buffer Path Identity [SE-LIVE-BUFFER]
 
 `sharplsp/workspaceSymbols` MUST parse the latest open VFS text, including unsaved successive edits; disk content is used only when no open document denotes the source file.

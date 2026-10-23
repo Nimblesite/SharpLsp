@@ -6,6 +6,7 @@ module SharpLsp.Sidecar.FSharp.FSharpSymbols
 
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
+open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
 open FSharp.Compiler.Tokenization
 open Serilog
@@ -53,13 +54,23 @@ let private kindOfGlyph (glyph: FSharpGlyph) : string =
     | FSharpGlyph.TypeParameter -> "TypeParameter"
     | _ -> "Field"
 
-/// A navigation item's kind. FCS draws a namespace with the module glyph, but a
-/// namespace and a module compile differently - a module is a static class, so a
-/// type inside it is `Module+Type` - and consumers that rebuild runtime names
-/// ([TEST-GOTO-SOURCE]) must be able to tell them apart.
-let private kindOf (nav: NavigationItem) : string =
+/// FCS also uses the field glyph for let-functions; classify their real binding AST.
+let private isFunctionAt (parseTree: ParsedInput) position =
+    let visitor =
+        { new SyntaxVisitorBase<bool>() with
+            member _.VisitBinding(_path, _traverse, SynBinding(headPat = pattern; expr = expression)) =
+                match pattern, expression with
+                | SynPat.LongIdent(argPats = SynArgPats.Pats(_ :: _)), _
+                | _, SynExpr.Lambda _ -> Some true
+                | _ -> Some false }
+
+    SyntaxTraversal.Traverse(position, parseTree, visitor) = Some true
+
+/// Distinguish namespaces, modules, functions and values. [SE-FSHARP-SYMBOLS]
+let private kindOf parseTree position (nav: NavigationItem) : string =
     match nav.Kind with
     | NavigationItemKind.Namespace -> "Namespace"
+    | _ when nav.Glyph = FSharpGlyph.Field && isFunctionAt parseTree position -> "Function"
     | _ -> kindOfGlyph nav.Glyph
 
 /// Smaller of two source positions (line, then column).
@@ -102,13 +113,13 @@ let private nameRange (lines: string[]) (name: string) (range: range) =
 /// Build a SymbolItem from a navigation item and its already-mapped children.
 /// The outer range is the union of the identifier range and the body range so
 /// it always contains the selection (LSP requires selectionRange ⊆ range).
-let private toItem (lines: string[]) (children: SymbolItem list) (nav: NavigationItem) : SymbolItem =
+let private toItem parseTree (lines: string[]) (children: SymbolItem list) (nav: NavigationItem) : SymbolItem =
     let ident = nameRange lines nav.LogicalName nav.Range |> Option.defaultValue nav.Range
     let body = nav.BodyRange
     let outerStart = posMin ident.Start body.Start
     let outerEnd = posMax ident.End body.End
     { Name = nav.LogicalName
-      Kind = kindOf nav
+      Kind = kindOf parseTree ident.Start nav
       StartLine = outerStart.Line - 1
       StartCharacter = outerStart.Column
       EndLine = outerEnd.Line - 1
@@ -120,9 +131,9 @@ let private toItem (lines: string[]) (children: SymbolItem list) (nav: Navigatio
       Children = children }
 
 /// Map one top-level declaration (and its nested members) to a SymbolItem tree.
-let private toTopLevel lines (decl: NavigationTopLevelDeclaration) : SymbolItem =
-    let children = decl.Nested |> Array.map (toItem lines []) |> Array.toList
-    toItem lines children decl.Declaration
+let private toTopLevel parseTree lines (decl: NavigationTopLevelDeclaration) : SymbolItem =
+    let children = decl.Nested |> Array.map (toItem parseTree lines []) |> Array.toList
+    toItem parseTree lines children decl.Declaration
 
 /// The parsing options of the project that compiles the file — its defines decide
 /// which `#if` branch outlines — or the defaults when no project is loaded.
@@ -143,7 +154,7 @@ let documentSymbols (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: str
             let! parseResults = state.Checker.ParseFile(filePath, sourceText, options)
             let nav = parseResults.GetNavigationItems()
             let lines = source.Split('\n')
-            return nav.Declarations |> Array.map (toTopLevel lines) |> Array.toList
+            return nav.Declarations |> Array.map (toTopLevel parseResults.ParseTree lines) |> Array.toList
         with ex ->
             Log.Debug(ex, "[F# DocumentSymbols] failed")
             return []
