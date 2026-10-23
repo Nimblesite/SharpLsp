@@ -108,7 +108,7 @@ fn filebased_app() -> tempfile::TempDir {
 }
 
 /// Requests observe the connection without causing diagnostic analysis or source mutations.
-fn drain_for(client: &mut LspClient, duration: Duration, traffic: &mut Vec<Value>) {
+pub(super) fn drain_for(client: &mut LspClient, duration: Duration, traffic: &mut Vec<Value>) {
     let deadline = Instant::now() + duration;
     while Instant::now() < deadline {
         let _response = observed_request(client, "sharplsp/configuration", json!({}), traffic);

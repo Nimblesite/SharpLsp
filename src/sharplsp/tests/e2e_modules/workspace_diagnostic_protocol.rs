@@ -10,6 +10,7 @@ mod idle_restore;
 mod input_reload;
 mod invalid_selection;
 mod recovery;
+mod refresh_debounce;
 mod selection;
 
 /// Retry explicitly superseded work; inspect the first successful real compiler report.

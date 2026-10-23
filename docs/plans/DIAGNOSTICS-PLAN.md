@@ -61,7 +61,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Replay analyzer configuration after process recovery (#453): real F# crash restores unsaved FS0039 and closed C# CS0029; real Roslyn crash preserves SDK-confirmed CA1822 opt-out before the first successful pull, then live opt-in restores the analyzer error and opt-out clears it. Both native sessions pass with the same host and new owned compiler PIDs (0c8953e1).
 - [x] Validate all four min_severity values and apply max_per_file after filtering, with zero unlimited. Four real F#/C# editor cases fail before the fix and pass afterward; all 21 accuracy/analyzer/policy editor cases and all 236 existing Rust unit cases pass (f4c5ef77, #452).
 - [x] Preserve raw restore-pending state before publication filtering. With min_severity=error, a real legacy client receives the final CS0029 automatically after SDK restore, without a hover/pull rescue or visible informational notice (ee42c874).
-- [ ] Implement and validate refresh_debounce_ms.
+- [x] Implement and validate refresh_debounce_ms: actual F# source bursts coalesce into one standard refresh at live 100 → 1000 → 100 millisecond settings; the 2000 millisecond default is exposed, and negative/fractional/string/unknown controls reject without replacing the default or last valid policy. Two native sessions pass after genuine pre-fix rejection (bb2a3d92, #457).
 - [ ] Implement and validate auto_restore_on_open.
 
 ## [DIAG-PLAN-VERIFY] Integration and Delivery
