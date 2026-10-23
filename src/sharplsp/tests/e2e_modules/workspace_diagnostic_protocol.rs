@@ -9,6 +9,7 @@ mod configuration_responsiveness;
 mod idle_restore;
 mod input_reload;
 mod invalid_selection;
+mod recovery;
 mod selection;
 
 /// Retry explicitly superseded work; inspect the first successful real compiler report.

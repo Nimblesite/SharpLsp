@@ -25,7 +25,7 @@ fn initial_analyzer_opt_out_and_live_opt_in_apply_to_real_closed_source() {
 }
 
 /// Real SDK files configure an independently reproducible analyzer error.
-fn analyzer_workspace() -> fixtures_medium::MediumWorkspace {
+pub(super) fn analyzer_workspace() -> fixtures_medium::MediumWorkspace {
     let workspace = broken_workspace();
     for (path, source) in [
         ("Core/AnalyzerProbe.cs", ANALYZER_SOURCE),
@@ -59,7 +59,7 @@ fn assert_sdk_analyzer(workspace: &fixtures_medium::MediumWorkspace) {
 }
 
 /// Never accept a transient incorrect success and wait for a later corrected result.
-fn assert_analyzer_state(
+pub(super) fn assert_analyzer_state(
     client: &mut LspClient,
     uri: &str,
     broken_uri: &str,
