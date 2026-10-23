@@ -25,6 +25,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Stream workspace partial results and explicit empty reports for excluded documents; live solution opt-out proves retirement of closed-file results.
 - [x] Keep compiler/IPC failures as retriable request errors and invalidate failed query results for retry, including unavailable language engines.
 - [x] Prove cancellation (-32800), supersession (-32802/retrigger), malformed parameters (-32602), foreground hover responsiveness and no post-terminal/stale-version partial reports through a real 128-source mixed solution.
+- [ ] Propagate per-request cancellation through IPC into Roslyn/FCS compiler work; current protocol cancellation replies promptly and stops scanning between documents, but cannot abort an in-flight compiler request.
 - [ ] Remove the bulk workspace/diagnostics/all RPC and its eager compilation/verification implementation.
 
 ## [DIAG-PLAN-INPUTS] Changes and Lifetime
@@ -34,6 +35,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Reload changed project/analyzer/editorconfig inputs; real CA1822/NoWarn transitions prove policy changes.
 - [ ] Add an explicit integration assertion for unsaved overlay replay during project reload and closed overlay retirement across that reload.
 - [x] Deliver typed background compiler notifications while IPC is idle; shared transport belongs to lspkit and refresh is explicitly negotiated for older callers.
+- [x] Preserve a visible terminal error for truncated native IPC prefixes/payloads, including after valid responses; zero-byte EOF remains clean (lspkit #21, native RED/GREEN regression).
 - [ ] Wire restore completion and owning-project adoption to diagnostic refresh for both language engines.
 - [ ] Coalesce refreshes and preserve generation ordering across edits, workspace replacement and process recovery.
 - [ ] Invalidate only the required dependency graph when a compiler input changes; verify unrelated result identities remain stable where safe.
@@ -42,6 +44,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 
 - [x] F# first: include every loaded project's compiled source and preserve compiler parse/type errors.
 - [x] Share the C# analyzer pipeline with the existing resolver; honor the evaluated SDK/NuGet analyzer references and effective editorconfig options without injecting analyzers the project disables.
+- [x] Prove unopened default Razor SDK components participate in workspace pulls, map CS0029 to the component source and clear after a compiler-verified disk repair.
 - [x] Respect NoWarn, source suppressions, analyzer opt-out and effective severity without suppressing compiler errors.
 - [ ] Prove actual generated-source and global/project diagnostic errors remain visible at an appropriate user/project location.
 - [ ] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly.
@@ -62,6 +65,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [ ] Promote only reviewed, proven private changes with coordinated source locks; preserve the separate CI collector's artifacts until it exits naturally.
 - [ ] Commit/push shared lspkit changes before the parent feature branch pointer.
 - [ ] Run the exact complete CI preparation workflow on the final branch, then coordinate PR/CI/release ownership.
+- [x] Make the shared toolkit coverage gate fail closed for missing tools/inputs and invalid thresholds; twelve real CLI regressions pass on Windows and Ubuntu without lowering any coverage floor (lspkit #22).
 
 ## [DIAG-PLAN-ADVANCED] Subsequent Analysis
 
