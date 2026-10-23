@@ -1,7 +1,8 @@
 // Regression #302: Stop owns the test host, not just its adapter. Exercise the
 // real Test Explorer, netcoredbg, runner and terminal in both languages/runners.
-// Implements [DEBUG-FEATURES-TESTS] and [TEST-MTP-DEBUG].
+// Implements [DEBUG-FEATURES-TESTS], [TEST-MTP-DEBUG] and [TEST-BUILD-GRAPH].
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { TEST_DEBUG_TERMINAL_NAME } from '../../test-debug';
 import { DapRecorder } from './debug-dap-kit';
@@ -32,26 +33,32 @@ import { installUiStubs, type UiStubs } from './ui-stubs';
 // attachment BEFORE Stop: checking it after detach would skip the delay and
 // let a broken detach-only implementation pass by completing the test normally.
 const SOURCES = {
-  fsharp: new AnchoredSource([
-    'module Fs.Debug.Fixtures',
-    'open Xunit',
-    '[<Fact>]',
-    'let ``adds two numbers with spaces`` () =',
-    '    let attached = System.Diagnostics.Debugger.IsAttached',
-    '    System.Threading.Thread.Sleep(if attached then 30000 else 0) // @anchor:wait',
-    '    Assert.Equal(42, 20 + 22)',
-  ]),
-  csharp: new AnchoredSource([
-    'using Xunit;',
-    'namespace DebugTestTarget.Math;',
-    'public class CalculatorTests {',
-    '    [Fact] public void Adds_Two_Numbers() {',
-    '        var attached = System.Diagnostics.Debugger.IsAttached;',
-    '        System.Threading.Thread.Sleep(attached ? 30000 : 0); // @anchor:wait',
-    '        Assert.Equal(42, 20 + 22);',
-    '    }',
-    '}',
-  ]),
+  fsharp: (revision = 1) =>
+    new AnchoredSource([
+      'module Fs.Debug.Fixtures',
+      'open Xunit',
+      '[<Fact>]',
+      'let ``adds two numbers with spaces`` () =',
+      `    let revision = ${String(revision)}`,
+      `    Assert.Equal(${String(revision)}, revision)`,
+      '    let attached = System.Diagnostics.Debugger.IsAttached',
+      '    System.Threading.Thread.Sleep(if attached then 30000 else 0) // @anchor:wait',
+      '    Assert.Equal(42, 20 + 22)',
+    ]),
+  csharp: (revision = 1) =>
+    new AnchoredSource([
+      'using Xunit;',
+      'namespace DebugTestTarget.Math;',
+      'public class CalculatorTests {',
+      '    [Fact] public void Adds_Two_Numbers() {',
+      `        var revision = ${String(revision)};`,
+      `        Assert.Equal(${String(revision)}, revision);`,
+      '        var attached = System.Diagnostics.Debugger.IsAttached;',
+      '        System.Threading.Thread.Sleep(attached ? 30000 : 0); // @anchor:wait',
+      '        Assert.Equal(42, 20 + 22);',
+      '    }',
+      '}',
+    ]),
 };
 
 /** Wait for the actual terminal object to close, not an unrelated queue. */
@@ -82,7 +89,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           'debug-stop-',
           language,
           runner,
-          SOURCES[language].text,
+          SOURCES[language]().text,
         );
         clearAllBreakpoints();
         recorder = new DapRecorder();
@@ -111,7 +118,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
         const cached = api.testController.getResult(id);
         assert.equal(cached?.outcome, 'passed', 'the fixture passes without the debugger');
-        vscode.debug.addBreakpoints([breakpointAt(SOURCES[language], fixture.sourceUri, 'wait')]);
+        vscode.debug.addBreakpoints([breakpointAt(SOURCES[language](), fixture.sourceUri, 'wait')]);
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Debug, [item]);
         const stopped = requireAt(await recorder.waitForStops(1), 0, 'the user breakpoint');
         assert.equal(
@@ -127,6 +134,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           'true',
           'the fixture must retain its 30-second wait even after the debugger detaches',
         );
+        assert.equal((await evaluate(active, 'revision', frame.id, 'watch')).value, '1');
         const first = requireAt(sessions.ours, 0, 'the owned test session');
         const pid = Number(first.configuration['processId']);
         assert.ok(pid > 0 && pid !== process.pid, 'the debuggee is the owned test host');
@@ -152,6 +160,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
 
         // A real subsequent run supplies a progress barrier: no sleep can mask a
         // deferred retry that starts another waiting host after the Stop gesture.
+        fs.writeFileSync(fixture.sourceFile, SOURCES[language](2).text);
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
         assert.equal(
           api.testController.getResult(id)?.outcome,
@@ -159,8 +168,20 @@ for (const language of ['fsharp', 'csharp'] as const) {
           'Run still works after Stop',
         );
         assert.equal(sessions.ours.length, 1, 'no delayed debug retry started during the next run');
+        const beforeDebug = api.testController.getResult(id);
+        // No rediscovery or manual build: Debug must compile this newer source.
+        fs.writeFileSync(fixture.sourceFile, SOURCES[language](3).text);
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Debug, [item]);
-        await recorder.waitForStops(2);
+        const secondStop = requireAt(await recorder.waitForStops(2), 1, 'the rebuilt user test');
+        assert.equal(secondStop.reason, 'breakpoint', 'the rebuilt PDB binds the user breakpoint');
+        const rebuilt = requireActive('the source edited after the last Run');
+        const rebuiltFrame = await topFrame(rebuilt, secondStop.threadId);
+        assert.equal(rebuiltFrame.line, SOURCES[language](3).dapLine('wait'));
+        assert.equal(
+          (await evaluate(rebuilt, 'revision', rebuiltFrame.id, 'watch')).value,
+          '3',
+          'Debug incrementally builds current sources instead of attaching to stale test code',
+        );
         const second = requireAt(sessions.ours, 1, 'the next explicit debug session');
         assert.equal(
           sessions.ours.length,
@@ -181,6 +202,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
         await stopDebuggee();
         await assertTerminalClosed(ownedTerminal);
         assert.equal(sessions.ours.length, 2, 'the second Stop does not restart either');
+        assert.equal(api.testController.getResult(id), beforeDebug, 'Debug preserves Run results');
         assert.deepEqual(stubs.log.errorMessages, [], 'the lifecycle reports no user-facing error');
       });
     });

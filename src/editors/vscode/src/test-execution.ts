@@ -318,5 +318,12 @@ function runFailure(
 ): string | undefined {
   if (killed) return `dotnet test was killed (timeout or signal): ${errorMessage ?? 'no detail'}`;
   if (!failed || resultCount > 0) return undefined;
-  return parseFailureMessage(output) ?? errorMessage ?? 'dotnet test failed';
+  // A failed build has no TRX error block. Keep its diagnostics. [TEST-BUILD-GRAPH]
+  const detail = output.trim().slice(-2_000);
+  return (
+    parseFailureMessage(output) ??
+    (detail.length === 0
+      ? (errorMessage ?? 'dotnet test failed')
+      : `${errorMessage ?? 'dotnet test failed'}\n${detail}`)
+  );
 }

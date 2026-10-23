@@ -35,7 +35,7 @@ import {
   writeMtpGlobalJson,
   writeProject,
 } from './dotnet-project-kit';
-import { COVERAGE_DIR_NAME } from './test-coverage-fixtures';
+import { COVERAGE_DIR_NAME, MTP_CODE_COVERAGE } from './test-coverage-fixtures';
 import {
   discoverSolution,
   teardownFixtureSolution,
@@ -44,9 +44,6 @@ import {
 import { assertPassed, cachedFor, runIds } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-
-/** The collector MTP's `--coverage` needs, on the platform the fixtures pin. */
-const CODE_COVERAGE = { id: 'Microsoft.Testing.Extensions.CodeCoverage', version: '18.11.0' };
 
 const LIBRARY = 'CovLibFs';
 const LIBRARY_FILE = 'Calc.fs';
@@ -96,7 +93,7 @@ async function writeCoverageFixture(root: string): Promise<string> {
     path.join(root, TESTS),
     `${TESTS}.csproj`,
     buildProjectXml({
-      packages: [...MTP_XUNIT_PACKAGES, CODE_COVERAGE],
+      packages: [...MTP_XUNIT_PACKAGES, MTP_CODE_COVERAGE],
       projectReferences: [path.join('..', LIBRARY, `${LIBRARY}.fsproj`)],
       properties: MTP_PROPERTIES,
     }),

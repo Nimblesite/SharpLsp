@@ -62,6 +62,11 @@ resolve their current configured outputs after building, preserving test filters
 and reporting only the selected results. Cancellation must prevent subsequent
 projects from starting.
 
+The Testing view must preserve compiler/MSBuild diagnostics for a failed build,
+including the source file, diagnostic code and message when available, rather
+than reporting only the process exit code. Coverage gestures clear previous
+reports before building; a failed build must not publish stale coverage.
+
 ## Discovery by Fully-Qualified Name `[TEST-DISCOVERY-FQN]`
 
 A test item's id MUST be the VSTest `TestCase.FullyQualifiedName`, because that is the only
