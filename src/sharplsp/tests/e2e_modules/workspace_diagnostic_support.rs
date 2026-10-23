@@ -25,6 +25,23 @@ pub fn broken_workspace() -> MediumWorkspace {
     workspace
 }
 
+/// Enough genuine SDK source documents to observe and interrupt streamed analysis.
+pub fn loaded_workspace() -> MediumWorkspace {
+    let workspace = broken_workspace();
+    for index in 0..128 {
+        std::fs::write(
+            workspace
+                .root
+                .join("Core")
+                .join(format!("ScanLoad{index:03}.cs")),
+            "file static class ScanLoad { public static int Value => 42; }\n",
+        )
+        .expect("write real SDK source file");
+    }
+    assert_build(&workspace.root.join("Core/Core.csproj"), Some("CS0029"));
+    workspace
+}
+
 /// Check the actual SDK compiler's status and expected diagnostic code.
 pub fn assert_build(project: &std::path::Path, error: Option<&str>) {
     let output = Command::new("dotnet")

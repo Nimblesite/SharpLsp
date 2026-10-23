@@ -102,6 +102,7 @@ pub mod user_session_csharp;
 pub mod user_session_fsharp;
 pub mod version;
 pub mod workspace_diagnostic_interruption;
+pub mod workspace_diagnostic_protocol;
 pub mod workspace_diagnostic_session;
 mod workspace_diagnostic_support;
 pub mod workspace_symbol_search;

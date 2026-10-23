@@ -3,25 +3,12 @@
 use super::*;
 use workspace_diagnostic_support::*;
 
-/// Complete file-local C# declarations remain valid when repeated across real files.
-const LOAD_SOURCE: &str = "file static class ScanLoad { public static int Value => 42; }\n";
 /// A complete replacement buffer whose own compiler error is unambiguous.
-const CHANGED_SOURCE: &str = "namespace Medium.Core;\npublic static class Customer {\n public static int Value => \"changed during scan\";\n}\n";
+pub(super) const CHANGED_SOURCE: &str = "namespace Medium.Core;\npublic static class Customer {\n public static int Value => \"changed during scan\";\n}\n";
 
 #[test]
 fn cancelling_a_partial_workspace_pull_does_not_block_hover_or_publish_stale_edits() {
-    let workspace = broken_workspace();
-    for index in 0..128 {
-        std::fs::write(
-            workspace
-                .root
-                .join("Core")
-                .join(format!("ScanLoad{index:03}.cs")),
-            LOAD_SOURCE,
-        )
-        .expect("write real SDK source file");
-    }
-    assert_build(&workspace.root.join("Core/Core.csproj"), Some("CS0029"));
+    let workspace = loaded_workspace();
     let mut client = LspClient::spawn_in(Stdio::null(), Some(&workspace.root));
     let initialized = client.initialize_with_capabilities(
         json!(workspace.root_uri()),
@@ -94,7 +81,7 @@ fn cancelling_a_partial_workspace_pull_does_not_block_hover_or_publish_stale_edi
 }
 
 /// Observe the first real streamed report before issuing cancellation.
-fn first_partial(client: &mut LspClient, scan_id: i32, traffic: &mut Vec<Value>) {
+pub(super) fn first_partial(client: &mut LspClient, scan_id: i32, traffic: &mut Vec<Value>) {
     loop {
         let message = client.recv();
         if message.get("id").is_some() && message.get("method").is_some() {
@@ -121,7 +108,11 @@ fn first_partial(client: &mut LspClient, scan_id: i32, traffic: &mut Vec<Value>)
 }
 
 /// Lightweight requests keep pumping the connection while cancellation settles.
-fn cancellation_response(client: &mut LspClient, scan_id: i32, traffic: &mut Vec<Value>) -> Value {
+pub(super) fn cancellation_response(
+    client: &mut LspClient,
+    scan_id: i32,
+    traffic: &mut Vec<Value>,
+) -> Value {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(response) = traffic
@@ -140,7 +131,7 @@ fn cancellation_response(client: &mut LspClient, scan_id: i32, traffic: &mut Vec
 }
 
 /// Cancelled progress cannot resume or claim old truth belongs to a newer buffer.
-fn assert_no_stale_chunks(traffic: &[Value], finished_at: usize, entity_uri: &str) {
+pub(super) fn assert_no_stale_chunks(traffic: &[Value], finished_at: usize, entity_uri: &str) {
     for (index, message) in traffic.iter().enumerate() {
         if message["method"] != "$/progress" || message["params"]["token"] != "cancelled-scan" {
             continue;
