@@ -45,6 +45,25 @@ const OWNERSHIP_CASES = [
     suffix: ' with independent package references',
     options: OWNER_PACKAGE_OPTIONS,
   },
+  {
+    primary: ACCURACY_CASES[1],
+    external: {
+      ...ACCURACY_CASES[0],
+      broken: 'module DiagnosticAccuracy.Closed\nlet answer: int = )\n',
+      code: 'FS0010',
+    },
+    suffix: ' with syntax errors',
+  },
+  {
+    primary: ACCURACY_CASES[0],
+    external: {
+      ...ACCURACY_CASES[1],
+      broken:
+        'namespace DiagnosticAccuracy;\npublic static class Closed { public static int Value => 42;\n',
+      code: 'CS1513',
+    },
+    suffix: ' with syntax errors',
+  },
 ] as const;
 
 interface OwnershipFixture {
