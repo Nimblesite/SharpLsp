@@ -14,6 +14,8 @@ use tracing::{debug, error, info, warn};
 use super::protocol::Envelope;
 use super::transport::FramedTransport;
 
+mod exchange;
+mod recovery;
 mod shutdown;
 
 #[cfg(test)]
@@ -67,6 +69,12 @@ pub struct SidecarManager {
     shutting_down: AtomicBool,
     /// Set once the health monitor runs, so each manager runs one.
     monitored: AtomicBool,
+    /// A new process must receive its previous compiler inputs before serving requests.
+    ever_connected: AtomicBool,
+    /// Compiler-specific session metadata, with weak access to canonical VFS inputs.
+    session: recovery::SessionInputs,
+    /// Source ownership for replaying open documents to the correct compiler.
+    language: Option<crate::tree_sitter_parse::LangId>,
     /// Out-of-band event lines the sidecar writes to its stdout after the
     /// READY handshake (`SHARPLSP-EVENT <name> <payload>`). Forwarded by a
     /// per-child reader task so the pipe never fills; survives respawns
@@ -104,6 +112,9 @@ impl SidecarManager {
             spawn_retry_after: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             monitored: AtomicBool::new(false),
+            ever_connected: AtomicBool::new(false),
+            session: recovery::SessionInputs::default(),
+            language: None,
             events_tx,
             events_rx: std::sync::Mutex::new(Some(events_rx)),
             notifications_tx,
@@ -147,7 +158,10 @@ impl SidecarManager {
             "SharpLsp.Sidecar.CSharp",
             &socket_path,
         );
-        Self::new("C# (Roslyn)", &command, args, &socket_path)
+        Self {
+            language: Some(crate::tree_sitter_parse::LangId::CSharp),
+            ..Self::new("C# (Roslyn)", &command, args, &socket_path)
+        }
     }
 
     /// Create a manager for the F# sidecar.
@@ -160,7 +174,10 @@ impl SidecarManager {
             "SharpLsp.Sidecar.FSharp",
             &socket_path,
         );
-        Self::new("F# (FCS)", &command, args, &socket_path)
+        Self {
+            language: Some(crate::tree_sitter_parse::LangId::FSharp),
+            ..Self::new("F# (FCS)", &command, args, &socket_path)
+        }
     }
 
     /// Spawn and connect unless `connection` already holds a transport. The
@@ -261,47 +278,11 @@ impl SidecarManager {
         // releasing it between connecting and writing let a later request
         // overtake an earlier one. `[SIDECAR-IPC-DRIVER]`
         let mut transport_guard = self.transport.lock().await;
+        self.session.remember(method, &payload)?;
+        let fresh = transport_guard.is_none();
         self.connect_if_needed(&mut transport_guard).await?;
-
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        info!(sidecar = %self.name, method = %method, id = id, "Sidecar request");
-        let envelope = Envelope::request(id, method, payload);
-        let transport = transport_guard.as_mut().context("sidecar not connected")?;
-
-        let exchange = async {
-            transport.write_envelope(&envelope).await?;
-            transport
-                .read_envelope()
-                .await?
-                .context("sidecar closed connection")
-        };
-        let Ok(exchange_result) = tokio::time::timeout(budget, exchange).await else {
-            return self
-                .fail_timed_out_request(&mut transport_guard, method, id, budget)
-                .await;
-        };
-        let response = exchange_result?;
-        if response.id != Some(id) {
-            bail!("sidecar response does not match current request {id}");
-        }
-
-        if let Some(err) = response.error {
-            error!(sidecar = %self.name, method = %method, id = id, "Sidecar error: {err}");
-            bail!("sidecar error: {err}");
-        }
-
-        info!(
-            sidecar = %self.name,
-            method = %method,
-            id = id,
-            bytes = response.payload.len(),
-            "Sidecar response"
-        );
-
-        // TODO [SIDECAR-RECOVERY-BACKOFF]: reset only after 60 seconds continuously Ready.
-        *self.backoff.lock().await = INITIAL_BACKOFF;
-
-        Ok(response.payload)
+        self.request_connected(&mut transport_guard, method, payload, budget, fresh)
+            .await
     }
 
     /// Tear down the connection after a request timeout. The late response
@@ -315,10 +296,7 @@ impl SidecarManager {
         id: u32,
         budget: Duration,
     ) -> Result<Vec<u8>> {
-        *transport = None;
-        if let Some(mut child) = self.child.lock().await.take() {
-            let _ = child.kill().await;
-        }
+        self.disconnect(transport).await;
         error!(
             sidecar = %self.name,
             method = %method,

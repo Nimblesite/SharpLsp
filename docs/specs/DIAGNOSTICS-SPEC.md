@@ -379,6 +379,12 @@ When a file changes:
 - A diagnostic in the Problems panel corresponds to a real Roslyn compiler or analyzer diagnostic from the current `Solution` snapshot.
 - A workspace mutation that changes a file's diagnostics produces an LSP `workspace/diagnostic/refresh` within 2000ms (the debounce window). Editors converge to truth one pull cycle after that.
 
+### [DIAG-TRUTH-RECOVERY] Compiler Recovery
+
+A restarted compiler receives the selected workspace and current analyzer policy before it can answer semantic or diagnostic requests. Open documents are replayed from the authoritative host VFS, preserving unsaved text. The host retains bounded workspace/configuration inputs and weak access to the VFS; it retains no second buffer store or diagnostic result cache.
+
+Workspace restoration and document replay run under the same FIFO transport lock as the requesting operation. If restoration fails, the host discards that compiler connection and returns a retriable request error. The first successful pull after recovery must include both closed-file compiler errors and current unsaved-buffer errors from the selected workspace.
+
 ### [DIAG-TRUTH-LIMITS] Limits
 
 - The first pull during workspace load may be incomplete. The response reflects the current snapshot; after [DIAG-RESTORE], project-reference and NuGet types are resolved, but source-generator output may still be missing.

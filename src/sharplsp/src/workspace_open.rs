@@ -67,6 +67,9 @@ pub(crate) fn start_sidecar(
     follow_up: OpenFollowUp,
     runtime: &tokio::runtime::Runtime,
 ) {
+    if let Some(sidecar) = sidecar {
+        sidecar.set_document_source(&follow_up.vfs);
+    }
     if let (Some(sidecar), Some(target)) = (sidecar, target) {
         let sidecar = Arc::clone(sidecar);
         let target = target.to_string_lossy().to_string();

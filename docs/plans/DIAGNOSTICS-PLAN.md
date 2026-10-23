@@ -13,7 +13,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Run all regression assertions green against final staged binaries: 45 real VSIX cases including Razor, 832 C# and 463 F# engine cases. Existing asynchronous package assertions wait for their intended current Problems state without removing assertions or extending their existing response budgets.
 - [x] Preserve the observable legacy restore-pending notice without speculative package errors, then clear it before the first resolved package hover. The unchanged native regression, all 832 C# cases and all 45 diagnostic VSIX cases pass after the reactive IPC fix.
 - [x] Prove solution replacement removes previous workspace errors without a window restart; two real solutions switch and switch back in one native session, retiring old reports explicitly.
-- [ ] Prove sidecar failures/restarts cannot memoize an empty false-clean result.
+- [x] Prove sidecar failures/restarts cannot memoize an empty false-clean result. The unchanged native #453 regression fails against the prior compiler session and passes after input restoration: the first successful post-crash pull retains an unsaved FS0039 and closed-file CS0029, the real compiler PID changes, and the host survives. All 36 existing manager regressions pass.
 - [ ] Re-run the real FluentValidation and Serilog diagnostic edit/clear cases that failed the full Windows baseline.
 
 ## [DIAG-PLAN-PULL] Protocol and Query Ownership
