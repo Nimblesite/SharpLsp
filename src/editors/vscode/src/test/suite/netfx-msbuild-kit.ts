@@ -243,13 +243,6 @@ export const EXIT_ON_NET = 10;
 /** What a console program writes its exit code to, beside its own binary. */
 const RESULT_FILE = 'exit-code.txt';
 
-/**
- * The exit code VS Code reports when its Windows pty lost the real one:
- * node-pty can close conout before ConPTY hands over the code, and VS Code's
- * terminal process then fires `exitCode || 0`. These programs never return 0.
- */
-const LOST_EXIT = 0;
-
 /** One runnable fixture project. */
 export interface RunnableProject {
   readonly name: string;
@@ -344,8 +337,7 @@ export function resultFileOf(root: string, project: RunnableProject, tfm: string
 
 /**
  * `project`'s `tfm` build really returned `code`: the code it wrote, and the
- * ONE task exit VS Code reported — that code, or {@link LOST_EXIT} when the
- * Windows pty dropped it.
+ * ONE task exit VS Code reported must both match the expected code.
  */
 export function assertRanWith(
   result: string,
@@ -355,9 +347,7 @@ export function assertRanWith(
 ): void {
   const why = `it really ran on ${tfm}: it returned ${String(code)}`;
   assert.strictEqual(fs.readFileSync(result, 'utf8'), String(code), why);
-  assert.strictEqual(exits.length, 1, `one task process ended: ${exits.join(', ')}`);
-  const [reported = -1] = exits;
-  assert.ok([code, LOST_EXIT].includes(reported), `${why}; the task reported ${String(reported)}`);
+  assert.deepStrictEqual(exits, [code], why);
 }
 
 /** A started task's definition, and whether it runs a process with no shell. */

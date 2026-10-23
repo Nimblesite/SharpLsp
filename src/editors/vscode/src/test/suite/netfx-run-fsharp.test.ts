@@ -7,10 +7,9 @@
 // message, as a warning, starting nothing.
 //
 // Each console program returns 48 on .NET Framework and 10 on .NET, PLUS its
-// argument count, and writes that code beside its binary, so the code proves
-// the framework that really ran and the profile arguments that really reached
-// it — read from the file, because VS Code's Windows pty can report a lost
-// exit code as 0. RunProbe declares two .NET
+// argument count, and writes that code beside its binary. Both the task exit
+// and the fresh file prove the framework that really ran and the profile
+// arguments that really reached it. RunProbe declares two .NET
 // versions, so F5's "active .NET" and "first .NET" cases are told apart.
 //
 // Covers [NETFX-DEBUG] and [NETFX-CONTEXT].
