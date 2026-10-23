@@ -130,7 +130,8 @@ fn published_fsharp_uri() -> String {
 /// Published apphosts use the same canonical fixture path conversion.
 fn published_apphost_uri(key: &str, description: &str) -> String {
     let executable = std::env::var_os(key).expect(description);
-    path_to_file_uri(std::path::Path::new(&executable))
+    canonical_file_uri(std::path::Path::new(&executable))
+        .expect("resolve actual published compiler apphost")
 }
 
 /// Parent PID and the actual configured apphost must both match before a process can be killed.
@@ -142,7 +143,8 @@ fn is_owned_compiler(
     process.parent() == Some(parent)
         && process
             .exe()
-            .is_some_and(|path| path_to_file_uri(path) == executable_uri)
+            .and_then(|path| canonical_file_uri(path).ok())
+            .is_some_and(|uri| uri == executable_uri)
 }
 
 /// A real crash must leave the editor's native host running.
