@@ -23,6 +23,11 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 public sealed class HoverEndToEndTests(CSharpSidecarFixture fixture)
     : IClassFixture<CSharpSidecarFixture>
 {
+    private const string AsyncTasksSignature =
+        "System.Collections.Generic.IEnumerable<System.Threading.Tasks.Task<(System.Collections.Generic.List<TestProject.Person>?, System.Exception?)>> tasks";
+    private const string AsyncResultsSignature =
+        "(System.Collections.Generic.List<TestProject.Person>?, System.Exception?)[] results";
+
     private async Task<HoverResult> HoverAsync(int line, int character)
     {
         var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(line, character));
@@ -186,6 +191,10 @@ public sealed class HoverEndToEndTests(CSharpSidecarFixture fixture)
     [InlineData(172, 12, "string name", 4)]
     [InlineData(173, 12, "System.Collections.Generic.List<string?> nested", 6)]
     [InlineData(174, 12, "System.Collections.Generic.List<string?> nested", 6)]
+    [InlineData(175, 12, AsyncTasksSignature, 5)]
+    [InlineData(176, 12, AsyncResultsSignature, 7)]
+    [InlineData(177, 12, AsyncResultsSignature, 7)]
+    [InlineData(178, 12, AsyncTasksSignature, 5)]
     public async Task Hover_on_local_identifier_includes_inferred_type(
         int line,
         int character,

@@ -211,7 +211,7 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
 
         public static class NullableFlow
         {
-            public static void Use(bool missing)
+            public static async System.Threading.Tasks.Task Use(bool missing)
             {
                 string? name = missing ? null : "value";
                 _ = name;
@@ -219,6 +219,10 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
                 _ = name;
                 var nested = new System.Collections.Generic.List<string?>();
                 _ = nested;
+                var tasks = System.Linq.Enumerable.Select(System.Array.Empty<int>(), _ => System.Threading.Tasks.Task.FromResult<(System.Collections.Generic.List<Person>?, System.Exception?)>((null, null)));
+                var results = await System.Threading.Tasks.Task.WhenAll(tasks);
+                _ = results;
+                _ = tasks;
             }
         }
         """;
