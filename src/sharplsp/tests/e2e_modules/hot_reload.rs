@@ -29,7 +29,13 @@ fn real_hot_reload_emits_deltas_discards_commits_and_explains_rude_edits() {
     let source = workspace.path().join("TestHover/Program.cs");
     std::fs::write(&source, BASELINE).expect("write complete baseline source");
     dotnet(
-        &["build", "TestHover/TestHover.csproj", "-c", "Debug", "--nologo"],
+        &[
+            "build",
+            "TestHover/TestHover.csproj",
+            "-c",
+            "Debug",
+            "--nologo",
+        ],
         workspace.path(),
     );
     let mut client = LspClient::start();
