@@ -70,6 +70,7 @@ type EngineDiagnosticsFixture() =
     let sidecar = new FSharpSidecar()
     let mutable transport: FramedTransport option = None
     let mutable nextId = 0
+    let notifications = ResizeArray<Envelope>()
 
     member _.Dir = dir
     member _.Project = NativePaths.Resolve(dir, "TestProject.fsproj")
@@ -77,6 +78,22 @@ type EngineDiagnosticsFixture() =
     member _.Extra = NativePaths.Resolve(dir, "Extra.fs")
     member _.Hints = NativePaths.Resolve(dir, "Hints.fs")
     member _.Orphan = NativePaths.Resolve(dir, "Orphan.fs")
+    member _.Notifications = notifications.ToArray()
+
+    member private this.ReadResponse(transport: FramedTransport, id: uint32) : Task<Envelope> = task {
+        let! raw = transport.ReadFrameAsync()
+        match raw with
+        | null -> return failwith "Connection closed"
+        | bytes ->
+            let response = deserialize<Envelope>(bytes)
+            if response.Id.HasValue then
+                Assert.Equal(id, response.Id.Value)
+                return response
+            else
+                Assert.NotNull(response.Method)
+                notifications.Add(response)
+                return! this.ReadResponse(transport, id)
+    }
 
     member this.Send(meth: string, payload: byte array) : Task<Envelope> =
         task {
@@ -86,10 +103,7 @@ type EngineDiagnosticsFixture() =
                 let id = Interlocked.Increment(&nextId)
                 let request = Envelope(Id = Nullable(uint32 id), Method = meth, Payload = payload)
                 do! t.WriteFrameAsync(MessagePackSerializer.Serialize(request))
-                let! raw = t.ReadFrameAsync()
-                match raw with
-                | null -> return failwith "Connection closed"
-                | bytes -> return deserialize<Envelope>(bytes)
+                return! this.ReadResponse(t, uint32 id)
         }
 
     member this.SendFor(meth: string, path: string) : Task<Envelope> =
@@ -135,16 +149,18 @@ type EngineDiagnosticsFixture() =
             try File.Delete(sock) with _ -> ()
         }
 
-    member this.Diagnostics(path: string) : Task<DiagnosticResult array> =
+    member this.Diagnostics(path: string, ?project: bool) : Task<DiagnosticResult array> =
         task {
-            let! response = this.SendFor("workspace/diagnostics", path)
+            let method = if defaultArg project false then "workspace/diagnostics/project" else "workspace/diagnostics"
+            let! response = this.SendFor(method, path)
             Assert.Null(response.Error)
             return deserialize<DiagnosticResult array>(response.Payload)
         }
 
-    member this.Documents() : Task<DiagnosticDocument array> =
+    member this.Documents(?projects: bool) : Task<DiagnosticDocument array> =
         task {
-            let! response = this.Send("workspace/diagnostics/documents", [||])
+            let method = if defaultArg projects false then "workspace/diagnostics/projects" else "workspace/diagnostics/documents"
+            let! response = this.Send(method, [||])
             Assert.Null(response.Error)
             return deserialize<DiagnosticDocument array>(response.Payload)
         }
