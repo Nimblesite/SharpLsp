@@ -63,9 +63,65 @@ fn source_creation_metadata_reload_and_deletion_preserve_unsaved_fsharp_truth() 
         report_for(&retired, &added_uri)["resultId"],
         previous[0]["value"]
     );
+    let (native_added, reports) =
+        native_source_created(&workspace, &mut client, &fs_uri, &mut traffic);
+    native_source_removed(
+        &workspace,
+        &mut client,
+        &fs_uri,
+        &native_added,
+        &reports,
+        &mut traffic,
+    );
     assert_saved_truth_returns(&workspace, &mut client, &fs_uri, &mut traffic);
     assert_no_push(&traffic);
     client.shutdown_and_exit();
+}
+
+/// Native subscriptions must discover SDK implicit sources without editor file events.
+fn native_source_created(
+    workspace: &fixtures_medium::MediumWorkspace,
+    client: &mut LspClient,
+    fs_uri: &str,
+    traffic: &mut Vec<Value>,
+) -> (PathBuf, Vec<Value>) {
+    idle_restore::drain_for(client, Duration::from_secs(3), traffic);
+    let added = workspace.root.join("Core/NativeAdded.cs");
+    let uri = path_to_file_uri(&added);
+    std::fs::write(&added, ADDED_SOURCE).expect("create native-watched SDK source");
+    assert_build(&workspace.root.join("Core/Core.csproj"), Some("CS0103"));
+    let mut invalidation = Vec::new();
+    idle_restore::await_compiler_refresh(client, &mut invalidation);
+    traffic.extend(invalidation);
+    let reports = assert_loaded(client, workspace, fs_uri, Some(&uri), &[], traffic);
+    (added, reports)
+}
+
+/// Removing that actual source must retire its prior result without a client notification.
+fn native_source_removed(
+    workspace: &fixtures_medium::MediumWorkspace,
+    client: &mut LspClient,
+    fs_uri: &str,
+    added: &Path,
+    reports: &[Value],
+    traffic: &mut Vec<Value>,
+) {
+    idle_restore::drain_for(client, Duration::from_secs(3), traffic);
+    let uri = path_to_file_uri(added);
+    let previous = vec![json!({"uri":uri,"value":report_for(reports, &uri)["resultId"]})];
+    std::fs::remove_file(added).expect("delete this test's native-watched SDK source");
+    assert_build(&workspace.root.join("Core/Core.csproj"), Some("CS0029"));
+    let mut invalidation = Vec::new();
+    idle_restore::await_compiler_refresh(client, &mut invalidation);
+    traffic.extend(invalidation);
+    let retired = assert_loaded(client, workspace, fs_uri, None, &previous, traffic);
+    assert_eq!(report_for(&retired, &uri)["items"], json!([]));
+    assert_ne!(report_for(&retired, &uri)["resultId"], previous[0]["value"]);
+    let current = complete_workspace_pull(client, traffic);
+    let sources = current["result"]["items"]
+        .as_array()
+        .expect("current source metadata");
+    assert!(sources.iter().all(|report| report["uri"] != uri));
 }
 
 /// Send the standard event only after the real filesystem operation has completed.

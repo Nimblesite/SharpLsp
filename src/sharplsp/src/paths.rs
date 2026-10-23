@@ -190,6 +190,17 @@ pub fn is_diagnostic_input(path: &Path) -> bool {
         || has_file_name(path, "sharplsp.toml")
 }
 
+/// SDK-generated sources are absent from user diagnostic metadata. [DIAG-ARCHITECTURE-SCOPE]
+pub fn is_user_diagnostic_source(path: impl AsRef<Path>) -> bool {
+    let path = path.as_ref();
+    has_extension(path, &["cs", "fs", "fsi", "razor", "cshtml"])
+        && !path.ancestors().skip(1).any(|directory| {
+            ["obj", "bin"]
+                .into_iter()
+                .any(|name| has_file_name(directory, name))
+        })
+}
+
 /// `text` folded the one way the host folds a path: [`ntfs_upcase`] per character.
 /// [SHARPLSP-ARCHITECTURE-PATHS] (GitHub #171)
 fn fold(text: &str) -> String {

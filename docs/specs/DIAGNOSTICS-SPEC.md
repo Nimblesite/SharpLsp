@@ -56,6 +56,8 @@ Solution-wide analysis is the default. The VS Code extension explicitly drives t
 
 Native input subscriptions follow actual compiler source and project metadata, including adopted projects and linked sources outside the selected solution directory. Directory identity and containment use the host's canonical path module. One subscription covers its descendants; unchanged subscriptions survive scope updates, and obsolete subscriptions are removed when the compiler scope changes.
 
+Native watchers may combine source creation and modification into one event. The host compares touched SDK source identities with current compiler metadata once per event batch; an unknown source requires a project graph reload before diagnostics are returned. This must discover new implicit SDK sources and retire deleted sources without an editor file notification, while preserving unsaved overlays.
+
 Compiler notifications refresh this input scope independently of the configured Problems visibility. A workspace pull establishes subscriptions before publishing its successful report. Subscription updates carry the captured input revision so an obsolete query cannot reattach an earlier workspace's roots. Compiler metadata requests run without holding the session lock; watch ownership retains input paths and tasks, while diagnostic result reuse remains exclusively in Salsa.
 
 ## [DIAG-CONFIG] Configuration

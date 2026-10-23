@@ -20,7 +20,7 @@ pub fn watched(
     let params: DidChangeWatchedFilesParams = serde_json::from_value(params)?;
     super::state::invalidate()?;
     tracing::info!(count = params.changes.len(), "Diagnostic inputs changed");
-    if requires_reload(&params)? {
+    if requires_reload(&params, runtime, sidecars)? {
         reload(runtime, sidecars, vfs)?;
     }
     for change in params.changes {
@@ -53,17 +53,42 @@ pub fn watched(
 }
 
 /// Source additions/deletions and metadata edits alter the loaded compiler snapshot.
-fn requires_reload(params: &DidChangeWatchedFilesParams) -> Result<bool> {
+fn requires_reload(
+    params: &DidChangeWatchedFilesParams,
+    runtime: &tokio::runtime::Runtime,
+    sidecars: [Option<&Arc<SidecarManager>>; 2],
+) -> Result<bool> {
+    let mut sources = Vec::new();
     for change in &params.changes {
         let path = paths::uri_to_path(change.uri.as_str())?;
+        let source = paths::is_user_diagnostic_source(&path);
         if paths::diagnostic_requires_reload(&path)
-            || (change.typ != lsp_types::FileChangeType::CHANGED
-                && paths::has_extension(&path, &["cs", "fs", "fsi", "razor", "cshtml"]))
+            || (change.typ != lsp_types::FileChangeType::CHANGED && source)
         {
             return Ok(true);
         }
+        if source {
+            sources.push(path);
+        }
     }
-    Ok(false)
+    unknown_sources(&sources, runtime, sidecars)
+}
+
+/// Coarse native events also include creations; compare current compiler inputs once per batch.
+fn unknown_sources(
+    sources: &[String],
+    runtime: &tokio::runtime::Runtime,
+    sidecars: [Option<&Arc<SidecarManager>>; 2],
+) -> Result<bool> {
+    if sources.is_empty() {
+        return Ok(false);
+    }
+    let documents = runtime.block_on(super::documents(sidecars))?;
+    Ok(sources.iter().any(|source| {
+        !documents
+            .iter()
+            .any(|document| paths::native_paths_equal(&document.file_path, source))
+    }))
 }
 
 /// Reload compiler inputs, then replay live overlays before any diagnostic pull runs.
