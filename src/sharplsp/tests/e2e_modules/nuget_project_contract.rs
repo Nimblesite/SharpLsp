@@ -150,3 +150,72 @@ fn assert_unavailable_package_editor(response: &Value) {
     );
     assert!(response["result"].get("modifiedFiles").is_none());
 }
+
+/// [NUGET-FEEDBACK-RESTORE]: an unavailable CLI reports failure without losing real edits.
+#[test]
+fn failed_restore_spawn_preserves_real_sdk_package_edits_and_recovers() {
+    require_dotnet();
+    let (workspace, props, saved) = imported_props_workspace();
+    let target = nuget_restore::props_target(&props, "Imported SDK properties");
+    let mut client = client_without_restore_command(&workspace);
+    for action in ["install", "uninstall"] {
+        let messages = nuget_restore::edit_props(&mut client, &target, &props, action);
+        let messages = nuget_restore::await_failed_restore(&mut client, messages);
+        let reason = nuget_restore::assert_failed_restore_progress(&messages, &props);
+        assert!(
+            reason
+                .as_str()
+                .is_some_and(|message| message.starts_with("spawn failed:")),
+            "the editor sees an actual command-start failure: {reason}"
+        );
+        nuget_restore::assert_installed_package_state(&mut client, &target, action);
+        verify_projects_unchanged_and_build(&workspace, &saved);
+    }
+    client.shutdown_and_exit();
+}
+
+/// The props file is imported by both SDK languages, whose original sources build.
+fn imported_props_workspace() -> (fixtures_medium::MediumWorkspace, PathBuf, [Vec<u8>; 2]) {
+    let workspace = fixtures_medium::create_medium_workspace();
+    let props = workspace.root.join("Directory.Build.props");
+    std::fs::write(&props, "<Project />\n").expect("write actual imported MSBuild properties");
+    let saved = PROJECTS.map(|(relative, _)| {
+        let path = workspace.root.join(relative);
+        workspace_diagnostic_support::assert_build(&path, None);
+        std::fs::read(path).expect("read original SDK project")
+    });
+    (workspace, props, saved)
+}
+
+/// Only the server child's executable search is empty; real absolute sidecar apphosts remain.
+fn client_without_restore_command(workspace: &fixtures_medium::MediumWorkspace) -> LspClient {
+    let empty = workspace.root.join("without-tools");
+    std::fs::create_dir(&empty).expect("create actual empty command search directory");
+    let mut client = LspClient::spawn_in_with_env(
+        Stdio::null(),
+        Some(&workspace.root),
+        &[("PATH", empty.as_os_str())],
+    );
+    assert_rpc_ok(
+        &client.initialize_with_root(json!(workspace.root_uri())),
+        "initialize SDK workspace with an unavailable restore command",
+    );
+    client
+}
+
+/// A healthy SDK independently recovers each committed edit without changing either project.
+fn verify_projects_unchanged_and_build(
+    workspace: &fixtures_medium::MediumWorkspace,
+    saved: &[Vec<u8>; 2],
+) {
+    for ((relative, _), before) in PROJECTS.iter().zip(saved) {
+        let path = workspace.root.join(relative);
+        assert_eq!(
+            std::fs::read(&path)
+                .expect("read unchanged SDK project")
+                .as_slice(),
+            before.as_slice()
+        );
+        workspace_diagnostic_support::assert_build(&path, None);
+    }
+}
