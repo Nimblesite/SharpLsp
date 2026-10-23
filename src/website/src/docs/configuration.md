@@ -80,6 +80,7 @@ The test platform's own DLLs can be prebuilt in Release. Their debugger warnings
 | `csharp.enabled` | Starts or skips the C# sidecar |
 | `csharp.solution_path` | Selects a `.sln` or `.slnx`, absolute or relative to the workspace |
 | `fsharp.enabled` | Starts or skips the F# sidecar |
+| `diagnostics.analyzers_enabled` | Enables F# and C# analyzer diagnostics; compiler errors remain visible |
 | `diagnostics.solution_wide_analysis` | Includes closed F# and C# files in solution diagnostics; enabled by default |
 | `diagnostics.project_filter` | Filters C# startup scans by project name for clients using pushed diagnostics |
 | `analyzers.dead_code` | Enables SharpLsp's C# and F# dead-code analyzers |
@@ -96,7 +97,6 @@ The following fields are parsed and retained for compatibility, but changing the
 
 - `server.log_level`;
 - `server.debounce_ms`;
-- `diagnostics.analyzers_enabled`;
 - all `profiler.*` defaults except `max_concurrent_sessions`.
 
 For VS Code logging, use `sharplsp.logging.level`, which is forwarded to the host as `RUST_LOG`. Profiler commands currently use their request defaults and write under `.sharplsp/profiles`.

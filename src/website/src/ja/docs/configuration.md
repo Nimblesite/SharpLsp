@@ -81,6 +81,7 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | C# サイドカーを起動するかスキップします |
 | `csharp.solution_path` | ワークスペースからの絶対パスまたは相対パスで `.sln` または `.slnx` を選択します |
 | `fsharp.enabled` | F# サイドカーを起動するかスキップします |
+| `diagnostics.analyzers_enabled` | F# と C# のアナライザー診断を有効にします。コンパイラーエラーは無効になりません |
 | `diagnostics.solution_wide_analysis` | 開いていない F# と C# のファイルもソリューションの診断に含めます。既定で有効です |
 | `diagnostics.project_filter` | プッシュ診断を使うクライアントでは、C# 起動時スキャンを一致する名前のプロジェクトに限定します |
 | `analyzers.dead_code` | SharpLsp の C# および F# デッドコードアナライザーを有効にします |
@@ -97,7 +98,6 @@ output_directory = ".sharplsp/profiles"
 
 - `server.log_level`
 - `server.debounce_ms`
-- `diagnostics.analyzers_enabled`
 - すべての `profiler.*` 既定値（`max_concurrent_sessions` を除く）
 
 VS Code のログには `sharplsp.logging.level` を使用します。この値は `RUST_LOG` としてホストへ転送されます。現在、プロファイラーコマンドは各リクエストの既定値を使用し、`.sharplsp/profiles` 以下へ書き込みます。

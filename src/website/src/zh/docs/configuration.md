@@ -81,6 +81,7 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | 启动或跳过 C# sidecar |
 | `csharp.solution_path` | 选择一个 `.sln` 或 `.slnx`；可使用绝对路径或相对于工作区的路径 |
 | `fsharp.enabled` | 启动或跳过 F# sidecar |
+| `diagnostics.analyzers_enabled` | 启用 F# 和 C# 分析器诊断；不会隐藏编译器错误 |
 | `diagnostics.solution_wide_analysis` | 解决方案诊断包含未打开的 F# 和 C# 文件；默认启用 |
 | `diagnostics.project_filter` | 对使用推送诊断的客户端，按项目名称筛选 C# 启动扫描 |
 | `analyzers.dead_code` | 启用 SharpLsp 的 C# 和 F# 死代码分析器 |
@@ -97,7 +98,6 @@ output_directory = ".sharplsp/profiles"
 
 - `server.log_level`；
 - `server.debounce_ms`；
-- `diagnostics.analyzers_enabled`；
 - 除 `max_concurrent_sessions` 以外的所有 `profiler.*` 默认值。
 
 如需配置 VS Code 日志，请使用 `sharplsp.logging.level`；它会作为 `RUST_LOG` 转发给宿主。性能分析器命令目前使用请求自身的默认值，并将文件写入 `.sharplsp/profiles`。
