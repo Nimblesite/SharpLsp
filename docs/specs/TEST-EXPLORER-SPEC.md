@@ -349,7 +349,7 @@ Each module's target is BUILT first, then each module is invoked once for the wh
 never once per test:
 
 ```
-dotnet build <target> --nologo
+dotnet build <project> --nologo -p:Configuration=<configuration>
 dotnet exec <module.dll> --filter-uid <uid> <uid> … \
     --report-trx --report-trx-filename <module>.<n>.trx \
     --results-directory <dir> --no-banner --no-ansi
@@ -358,10 +358,11 @@ dotnet exec <module.dll> --filter-uid <uid> <uid> … \
 * The build is the one `dotnet test` performs on the VSTest path. `dotnet exec` builds
   nothing, so without it a test edited since the last discovery would run from its STALE
   module — reporting the old outcome, caching it and painting it on the status lens. What is
-  built is the module's own DISCOVERY target — the solution, or the workspace folder it was
-  found in — each target once per run, never the run's working directory: in a multi-root
-  workspace that is the FIRST folder, and building it would run another folder's module as it
-  was before the edit. A FAILED build fails that target's modules with the build's output; the
+  built is the module's owning PROJECT and its transitive references, each project once per
+  run ([TEST-BUILD-GRAPH]), using the current test configuration ([TEST-BUILD-CONFIGURATION]).
+  Discovery records that project through MSBuild. If ownership is unavailable, retain the
+  original safe discovery target; never guess a project or substitute the run's working
+  directory. A FAILED build fails that target's modules with the build's output; the
   modules an earlier build left behind MUST NOT be run instead, and another target's modules
   are unaffected. A selection that starts no module builds nothing, and ⏹ kills the build
   like any other invocation.
