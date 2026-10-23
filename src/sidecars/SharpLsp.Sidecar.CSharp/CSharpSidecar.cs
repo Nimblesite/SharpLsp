@@ -25,7 +25,23 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("workspace/diagnostics/all", HandleAllDiagnosticsAsync);
         // Enumeration only: the host pulls per document afterwards. The payload is
         // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
-        Register("workspace/diagnostics/documents", HandleDocumentsAsync);
+        Register(
+            "workspace/diagnostics/documents",
+            (payload, ct) => HandleDiagnosticMetadataAsync(payload, projectsOnly: false, ct)
+        );
+        Register(
+            "workspace/diagnostics/projects",
+            (payload, ct) => HandleDiagnosticMetadataAsync(payload, projectsOnly: true, ct)
+        );
+        Register(
+            "workspace/diagnostics/project",
+            (payload, ct) =>
+                HandleRequestAsync(
+                    payload,
+                    (string projectPath) => _workspace.GetProjectDiagnosticsAsync(projectPath, ct),
+                    ct
+                )
+        );
         Register("diagnostics/configure", HandleConfigureDiagnosticsAsync);
         Register("textDocument/didChange", HandleDidChangeAsync);
         // The host re-sends the on-disk text on close, so a closed file's Roslyn text
@@ -114,12 +130,18 @@ internal sealed partial class CSharpSidecar : SidecarHost
     }
 
     /// <summary>The payload is reserved and ignored; the answer is the enumeration.</summary>
-    private async Task<ByteResult> HandleDocumentsAsync(byte[] payload, CancellationToken ct)
+    private async Task<ByteResult> HandleDiagnosticMetadataAsync(
+        byte[] payload,
+        bool projectsOnly,
+        CancellationToken ct
+    )
     {
         _ = payload;
         try
         {
-            var result = await _workspace.GetDocumentsAsync(ct).ConfigureAwait(false);
+            var result = await (
+                projectsOnly ? _workspace.GetProjectsAsync(ct) : _workspace.GetDocumentsAsync(ct)
+            ).ConfigureAwait(false);
             return SerializeResult(result, ct);
         }
         catch (Exception ex)

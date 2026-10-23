@@ -22,6 +22,11 @@ type FSharpSidecar() as this =
     let mutable analyzersEnabled = true
     let mutable refreshSupported = false
 
+    let diagnosticMetadata enumerate =
+        Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
+            try Task.FromResult(Helpers.serializeOk (enumerate workspace) ct)
+            with ex -> Task.FromResult(ByteResult.Failure(ex.Message)))
+
     do
         // Analyzer configuration push from the host ([analyzers] in sharplsp.toml).
         base.Register("analyzers/configure", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
@@ -127,14 +132,10 @@ type FSharpSidecar() as this =
 
         // Enumeration only: the host pulls per document afterwards. The payload is
         // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
-        base.Register("workspace/diagnostics/documents", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                let _payload = payload
-                try
-                    return Helpers.serializeOk (FSharpDocuments.sourceDocuments workspace) ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("workspace/diagnostics/documents", diagnosticMetadata FSharpDocuments.sourceDocuments)
+        base.Register("workspace/diagnostics/projects", diagnosticMetadata FSharpDocuments.projectDocuments)
+        base.Register("workspace/diagnostics/project", Helpers.handleWithCancellation
+            (FSharpProjectDiagnostics.getDiagnostics workspace) Helpers.resultOf)
 
         // Unused-package detection [PKG-UNUSED-DETECT-FS].
         base.Register("project/unusedPackages", Helpers.handle (FSharpPackages.getReferenceUsage workspace) (fun usage ct ->
@@ -251,23 +252,10 @@ type FSharpSidecar() as this =
                     let! checkedFile = FSharpWorkspace.checkFile workspace filePath
                     match checkedFile with
                     | Some(check, source) ->
-                        for d in check.Diagnostics do
-                            let severity =
-                                match d.Severity with
-                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error -> "Error"
-                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning -> "Warning"
-                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Info -> "Info"
-                                | _ -> "Hint"
-                            let r = d.Range
-                            results.Add(
-                                { FilePath = filePath
-                                  StartLine = r.StartLine - 1
-                                  StartCharacter = r.StartColumn
-                                  EndLine = r.EndLine - 1
-                                  EndCharacter = r.EndColumn
-                                  Message = d.Message
-                                  Severity = severity
-                                  Code = $"FS{d.ErrorNumber:D4}" })
+                        // Startup failures belong to the project report, and a source
+                        // diagnostic belongs only to its actual compiler location.
+                        for d in check.Diagnostics |> Array.filter (fun diagnostic -> NativePaths.AreEqual(diagnostic.FileName, filePath)) do
+                            results.Add(FSharpProjectDiagnostics.compilerDiagnostic filePath false d)
                         // [ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]
                         // FSAC-parity file-local analyzers — gated like every static
                         // analyzer, without ever suppressing the compiler diagnostics.

@@ -19,16 +19,26 @@ let private documentOf (options: FSharpProjectOptions) (file: string) =
         ProjectPath = NativePaths.NormalizeFullPath options.ProjectFileName
     )
 
+/// Source and project metadata use the same native path identity.
+let private distinctDocuments (documents: DiagnosticDocument seq) =
+    System.Linq.Enumerable.DistinctBy(
+        documents,
+        (fun document -> document.FilePath),
+        NativePaths.Comparer
+    )
+    |> Array.ofSeq
+
+/// Real loaded projects, without compiling them or changing the source-only RPC.
+/// Implements [DIAG-CATEGORIES-COMPILER].
+let projectDocuments (state: FSharpWorkspace.FSharpWorkspaceState) : DiagnosticDocument array =
+    state.Projects.Values
+    |> Seq.map (fun entry -> documentOf entry.Options entry.Options.ProjectFileName)
+    |> distinctDocuments
+
 /// Every source document of every loaded project, the workspace's first, each once —
 /// by the one path identity, so a multi-framework build and a file two projects
 /// compile are answered once, by their first owner, matching who checks them.
 let sourceDocuments (state: FSharpWorkspace.FSharpWorkspaceState) : DiagnosticDocument array =
     FSharpWorkspace.projectOptions state
     |> Seq.collect (fun options -> options.SourceFiles |> Array.map (documentOf options))
-    |> fun documents ->
-        System.Linq.Enumerable.DistinctBy(
-            documents,
-            (fun document -> document.FilePath),
-            NativePaths.Comparer
-        )
-    |> Array.ofSeq
+    |> distinctDocuments

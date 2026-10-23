@@ -233,14 +233,15 @@ fn analyzer(
         let uri = raw
             .parse::<lsp_types::Uri>()
             .map_err(|error| AnalysisError(error.to_string()))?;
-        let sidecar = match crate::tree_sitter_parse::LangId::from_uri(&uri) {
-            Some(crate::tree_sitter_parse::LangId::FSharp) => fsharp.as_ref(),
-            _ => csharp.as_ref(),
+        let path = crate::paths::uri_to_path(uri.as_str())
+            .map_err(|error| AnalysisError(error.to_string()))?;
+        let sidecar = if crate::paths::is_fsharp_diagnostic_input(&path) {
+            fsharp.as_ref()
+        } else {
+            csharp.as_ref()
         };
         let sidecar = sidecar
             .ok_or_else(|| AnalysisError("requested compiler engine unavailable".to_owned()))?;
-        let path =
-            crate::paths::uri_to_path(raw).map_err(|error| AnalysisError(error.to_string()))?;
         runtime
             .block_on(crate::diagnostics::fetch_from_sidecar(sidecar, &path))
             .map(Arc::new)

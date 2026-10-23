@@ -122,6 +122,8 @@ Static analyzer configuration and its monorepo-only gate are specified by [ANALY
 | Missing references | `CS0246`, `CS0103`, ... | `FS0039`, ... |
 | Nullable warnings | `CS8600`–`CS8798` | N/A (F# uses `option`) |
 
+Compiler errors without a user-source location belong to the owning project and appear once at its project URI with a zero-length range at line zero. Source diagnostics keep their actual source owner. Generated-source edit hints such as unused imports do not become project-level Problems entries; compiler errors and warnings remain eligible.
+
 ### [DIAG-CATEGORIES-ANALYZER] Analyzer Diagnostics
 
 | Source | API | Examples |
@@ -276,9 +278,11 @@ class DiagnosticResult
 }
 ```
 
-### [DIAG-IPC-WORKSPACE-PULL] Workspace Pull: `workspace/diagnostics/pull`
+### [DIAG-IPC-WORKSPACE-PULL] Workspace Diagnostic Metadata
 
-Called by the Rust host for salsa misses during LSP `workspace/diagnostic`. The host streams one `WorkspaceDocumentDiagnosticReport` per document; salsa hits produce `DiagnosticReport.Unchanged` without sidecar IPC.
+The Rust host calls `workspace/diagnostics/documents` to enumerate user-source identities and `workspace/diagnostics/projects` to enumerate project identities. Both return the same three-field `DiagnosticDocument` records (file path, project name, project path), without compiling or retaining diagnostic results. The source-only contract remains unchanged.
+
+For each salsa miss, `workspace/diagnostics` computes a source document and `workspace/diagnostics/project` computes the requested project-level compiler findings. Both accept the native path and return `DiagnosticResult[]`. The host owns LSP workspace partials and result identities; stable salsa hits skip compiler IPC. A clean project needs no initial editor entry, while a previous project report receives an explicit empty result after repair.
 
 The legacy `workspace/diagnostics/all` bulk RPC MUST NOT be restored; workspace-wide analysis happens lazily through per-document pulls as specified by [DIAG-ARCHITECTURE-EAGER-SCAN].
 

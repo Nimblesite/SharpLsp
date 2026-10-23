@@ -270,11 +270,8 @@ async fn publish_once(
 
 /// Determine the diagnostic source tag based on the document language.
 fn source_tag_for_uri(uri: &Uri) -> String {
-    match crate::tree_sitter_parse::LangId::from_uri(uri) {
-        Some(crate::tree_sitter_parse::LangId::FSharp) => "sharplsp-fsharp".to_string(),
-        Some(crate::tree_sitter_parse::LangId::Razor) => RAZOR_SOURCE.to_string(),
-        _ => "sharplsp-csharp".to_string(),
-    }
+    let path = crate::paths::uri_to_path(uri.as_str()).unwrap_or_else(|_| uri.as_str().to_owned());
+    source_tag_for_path(&path).to_owned()
 }
 
 /// The diagnostic source of every Razor diagnostic, C# and `RZ` alike.
@@ -283,7 +280,7 @@ const RAZOR_SOURCE: &str = "sharplsp-razor";
 
 /// Determine the diagnostic source tag from a native document path.
 fn source_tag_for_path(file_path: &str) -> &'static str {
-    if crate::paths::has_extension(file_path, &["fs", "fsx", "fsi", "fsscript"]) {
+    if crate::paths::is_fsharp_diagnostic_input(file_path) {
         "sharplsp-fsharp"
     } else if crate::paths::has_extension(file_path, &["razor", "cshtml"]) {
         RAZOR_SOURCE
@@ -356,8 +353,13 @@ async fn fetch(
     source_tag: &str,
 ) -> Result<Vec<Diagnostic>> {
     let payload = rmp_serde::to_vec(file_path).context("serialize file path")?;
+    let method = if crate::paths::has_extension(file_path, &["csproj", "fsproj"]) {
+        "workspace/diagnostics/project"
+    } else {
+        "workspace/diagnostics"
+    };
     let response_bytes = sidecar
-        .request("workspace/diagnostics", payload)
+        .request(method, payload)
         .await
         .context("sidecar diagnostics request")?;
     let results: Vec<SidecarDiagnostic> =

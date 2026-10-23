@@ -83,7 +83,7 @@ export interface AccuracyFixture {
 }
 
 /** The project XML: both files compiled for F#, SDK globbing for C#. */
-function accuracyProjectXml(scenario: AccuracyCase, options: ProjectOptions): string {
+export function accuracyProjectXml(scenario: AccuracyCase, options: ProjectOptions): string {
   return buildProjectXml({
     ...options,
     compileIncludes: scenario.language === 'F#' ? [scenario.entry, scenario.closed] : [],

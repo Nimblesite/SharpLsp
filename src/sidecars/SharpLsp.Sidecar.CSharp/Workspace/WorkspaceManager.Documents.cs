@@ -22,10 +22,24 @@ internal sealed partial class WorkspaceManager
     /// </summary>
     public Task<DocumentsResult> GetDocumentsAsync(CancellationToken ct = default)
     {
+        return GetDiagnosticMetadataAsync(projectsOnly: false, ct);
+    }
+
+    /// <summary>Project identities are enumerated separately from the source-only contract.</summary>
+    public Task<DocumentsResult> GetProjectsAsync(CancellationToken ct = default)
+    {
+        return GetDiagnosticMetadataAsync(projectsOnly: true, ct);
+    }
+
+    private Task<DocumentsResult> GetDiagnosticMetadataAsync(
+        bool projectsOnly,
+        CancellationToken ct
+    )
+    {
         try
         {
             ct.ThrowIfCancellationRequested();
-            return Task.FromResult(EnumerateDocuments());
+            return Task.FromResult(EnumerateDocuments(projectsOnly));
         }
         catch (Exception ex)
         {
@@ -33,7 +47,7 @@ internal sealed partial class WorkspaceManager
         }
     }
 
-    private DocumentsResult EnumerateDocuments()
+    private DocumentsResult EnumerateDocuments(bool projectsOnly)
     {
         // Read-modify-write races aside, the immutable Solution reference itself is
         // atomically swapped, so one read is a consistent snapshot.
@@ -55,21 +69,38 @@ internal sealed partial class WorkspaceManager
                 continue;
             }
 
-            foreach (var document in project.Documents)
+            foreach (var path in DiagnosticPaths(project, projectsOnly))
             {
-                AddDocument(documents, seen, project, project.FilePath, document.FilePath);
-            }
-
-            foreach (var razor in project.AdditionalDocuments)
-            {
-                if (razor.FilePath is not null && NativePaths.IsRazor(razor.FilePath))
-                {
-                    AddDocument(documents, seen, project, project.FilePath, razor.FilePath);
-                }
+                AddDocument(documents, seen, project, project.FilePath, path);
             }
         }
 
         return new DocumentsResult.Ok<List<DiagnosticDocument>, string>(documents);
+    }
+
+    /// <summary>The source-only contract remains distinct from project metadata.</summary>
+    private static IEnumerable<string> DiagnosticPaths(Project project, bool projectsOnly)
+    {
+        return projectsOnly
+            ? new[] { project.FilePath }.OfType<string>()
+            : project
+                .Documents.Select(document => document.FilePath)
+                .Concat(
+                    project
+                        .AdditionalDocuments.Where(document =>
+                            document.FilePath is { } path && NativePaths.IsRazor(path)
+                        )
+                        .Select(document => document.FilePath)
+                )
+                .OfType<string>();
+    }
+
+    /// <summary>One source-visibility predicate for metadata and generated-error ownership.</summary>
+    private static bool IsUserDiagnosticPath(string filePath)
+    {
+        return filePath.Length > 0
+            && !NativePaths.HasDirectory(filePath, "obj")
+            && !NativePaths.HasDirectory(filePath, "bin");
     }
 
     /// <summary>
@@ -82,20 +113,10 @@ internal sealed partial class WorkspaceManager
         HashSet<string> seen,
         Project project,
         string projectPath,
-        string? filePath
+        string filePath
     )
     {
-        if (
-            filePath is null
-            || filePath.Length == 0
-            || NativePaths.HasDirectory(filePath, "obj")
-            || NativePaths.HasDirectory(filePath, "bin")
-        )
-        {
-            return;
-        }
-
-        if (!seen.Add(filePath))
+        if (!IsUserDiagnosticPath(filePath) || !seen.Add(filePath))
         {
             return;
         }

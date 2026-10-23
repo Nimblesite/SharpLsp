@@ -168,6 +168,11 @@ pub fn project_matches_globs(
         })
 }
 
+/// Source and project diagnostics owned by the F# engine. [DIAG-CATEGORIES-COMPILER]
+pub fn is_fsharp_diagnostic_input(path: impl AsRef<Path>) -> bool {
+    has_extension(path, &["fs", "fsx", "fsi", "fsscript", "fsproj"])
+}
+
 /// Metadata that changes project graphs, analyzer policy, references or generated inputs.
 pub fn diagnostic_requires_reload(path: &str) -> bool {
     has_extension(

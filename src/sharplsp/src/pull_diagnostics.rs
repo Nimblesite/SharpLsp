@@ -84,6 +84,9 @@ fn collect_reports(
         let uri = paths::path_to_lsp_uri(&document.file_path)?;
         if seen.insert(paths::comparison_key(&document.file_path)) {
             let report = workspace_report(uri.as_str(), params, vfs, snapshot)?;
+            if is_new_clean_project(&document.file_path, uri.as_str(), &report, params) {
+                continue;
+            }
             if let Some(token) = &params.partial_result_params.partial_result_token {
                 snapshot.partial(token, &report)?;
             } else {
@@ -124,11 +127,7 @@ fn workspace_report(
     vfs: &Vfs,
     snapshot: &requests::Snapshot,
 ) -> Result<Value> {
-    let previous = params
-        .previous_result_ids
-        .iter()
-        .find(|previous| paths::same_uri(previous.uri.as_str(), uri))
-        .map(|previous| previous.value.as_str());
+    let previous = previous_result_id(uri, params);
     let version = uri
         .parse()
         .ok()
@@ -140,6 +139,30 @@ fn workspace_report(
     let _ = fields.insert("uri".to_owned(), json!(uri));
     let _ = fields.insert("version".to_owned(), json!(version));
     Ok(report)
+}
+
+/// One identity lookup for both source and project reports.
+fn previous_result_id<'a>(uri: &str, params: &'a WorkspaceDiagnosticParams) -> Option<&'a str> {
+    params
+        .previous_result_ids
+        .iter()
+        .find(|previous| paths::same_uri(previous.uri.as_str(), uri))
+        .map(|previous| previous.value.as_str())
+}
+
+/// New clean projects need no editor entry; previous project errors must still be retired.
+fn is_new_clean_project(
+    path: &str,
+    uri: &str,
+    report: &Value,
+    params: &WorkspaceDiagnosticParams,
+) -> bool {
+    paths::has_extension(path, &["csproj", "fsproj"])
+        && previous_result_id(uri, params).is_none()
+        && report
+            .get("items")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
 }
 
 /// Explicit empty reports retire diagnostics that left the active scope.
@@ -165,12 +188,22 @@ fn retire_previous(
 async fn documents(sidecars: [Option<&Arc<SidecarManager>>; 2]) -> Result<Vec<DiagnosticDocument>> {
     let mut documents = Vec::new();
     for sidecar in sidecars.into_iter().flatten() {
-        let payload = sidecar
-            .request("workspace/diagnostics/documents", rmp_serde::to_vec(&())?)
-            .await?;
+        documents.extend(engine_documents(sidecar).await?);
+    }
+    Ok(documents)
+}
+
+/// Preserve the source-only metadata RPC and enumerate project identities separately.
+async fn engine_documents(sidecar: &SidecarManager) -> Result<Vec<DiagnosticDocument>> {
+    let mut documents = Vec::new();
+    for method in [
+        "workspace/diagnostics/documents",
+        "workspace/diagnostics/projects",
+    ] {
+        let payload = sidecar.request(method, rmp_serde::to_vec(&())?).await?;
         documents.extend(
             rmp_serde::from_slice::<Vec<DiagnosticDocument>>(&payload)
-                .context("decode diagnostic documents")?,
+                .context("decode diagnostic metadata")?,
         );
     }
     Ok(documents)
@@ -181,10 +214,7 @@ pub async fn paths_for_sidecar(
     sidecar: &SidecarManager,
     patterns: &[String],
 ) -> Result<Vec<String>> {
-    let payload = sidecar
-        .request("workspace/diagnostics/documents", rmp_serde::to_vec(&())?)
-        .await?;
-    let documents: Vec<DiagnosticDocument> = rmp_serde::from_slice(&payload)?;
+    let documents = engine_documents(sidecar).await?;
     let filter = paths::project_glob_filter(patterns)?;
     let workspace = state::workspace()?;
     Ok(documents
