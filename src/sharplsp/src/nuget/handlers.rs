@@ -456,13 +456,19 @@ fn spawn_restore(
                 );
             }
             Ok(o) => {
-                let stderr = String::from_utf8_lossy(&o.stderr).to_string();
-                error!("nuget restore failed for {target_id}: {stderr}");
+                // MSBuild reports failures on stdout too. [NUGET-REQUESTS]
+                let diagnostic = [o.stdout, o.stderr]
+                    .into_iter()
+                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                    .filter(|message| !message.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                error!(target_id, exit_code = ?o.status.code(), "NuGet restore failed");
                 send_restore_progress(
                     &sender,
                     &target_id,
                     types::RestorePhase::Failed,
-                    Some(stderr),
+                    Some(diagnostic),
                 );
             }
             Err(err) => {
