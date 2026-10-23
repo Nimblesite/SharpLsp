@@ -9,13 +9,31 @@ using DiagnosticsResult = Outcome.Result<
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
 /// <summary>
-/// Per-file diagnostics: compiler diagnostics, the tier-2 degradation notice and,
-/// when the analyzer is on, dead code.
+/// Per-file diagnostics: compiler diagnostics, the tier-2 degradation notice, the
+/// project analyzer diagnostics (when the analyzer gate is on) and the dead-code
+/// analyzer (when both gates are on).
 /// </summary>
 internal sealed partial class WorkspaceManager
 {
     private bool _deadCodeEnabled;
     private bool _monorepo;
+
+    /// <summary>
+    /// Whether project analyzers — the SDK/NuGet analyzers the project references and
+    /// the IDE style analyzers — report beside the compiler diagnostics. Toggled by
+    /// the host's <c>diagnostics/configure</c> push; compiler diagnostics are never
+    /// suppressed by it ([DIAG-CATEGORIES-ANALYZER]).
+    /// </summary>
+    private bool _analyzersEnabled = true;
+
+    /// <summary>
+    /// Configure the analyzer gate from the host's <c>diagnostics/configure</c> push.
+    /// The flag persists across workspace re-opens, like the analyzer flags do.
+    /// </summary>
+    public void ConfigureDiagnostics(bool analyzersEnabled)
+    {
+        _analyzersEnabled = analyzersEnabled;
+    }
 
     /// <summary>
     /// Configure the static analyzers from the host's <c>analyzers/configure</c>
@@ -30,9 +48,9 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>
-    /// Get diagnostics for a file: FCS-style compiler diagnostics plus, when the
-    /// dead-code analyzer is enabled, project-wide unused-symbol diagnostics
-    /// (`SLSPC0101`, [ANALYZERS-UNUSED-PUBLIC]).
+    /// Get diagnostics for a file: compiler diagnostics, then the degradation notice,
+    /// then — when the analyzer gate is on — the project analyzers and the project-wide
+    /// unused-symbol dead-code analyzer (`SLSPC0101`, [ANALYZERS-UNUSED-PUBLIC]).
     /// </summary>
     public async Task<DiagnosticsResult> GetDiagnosticsAsync(
         string filePath,
@@ -49,7 +67,8 @@ internal sealed partial class WorkspaceManager
                 ? await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false)
                 : await DiagnoseAsync(
                         filePath,
-                        await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false),
+                        await CaptureSettledDiagnosticsStateAsync(filePath, ct)
+                            .ConfigureAwait(false),
                         ct
                     )
                     .ConfigureAwait(false);
@@ -81,9 +100,42 @@ internal sealed partial class WorkspaceManager
 
         var diagnostics = MapDiagnostics(filePath, model, ct);
         AppendDegradation(filePath, state.Degradation, diagnostics);
+        diagnostics.AddRange(
+            await DocumentAnalyzerDiagnosticsAsync(document, model, filePath, ct)
+                .ConfigureAwait(false)
+        );
         diagnostics.AddRange(await DeadCodeAsync(document, ct).ConfigureAwait(false));
         LogAnswer(filePath, diagnostics);
         return diagnostics;
+    }
+
+    /// <summary>
+    /// The document's project-analyzer diagnostics — SDK/NuGet and IDE style
+    /// analyzers under the effective .editorconfig — when the analyzer gate is on.
+    /// Runs beside the compiler diagnostics, never instead of them.
+    /// </summary>
+    private async Task<List<DiagnosticResult>> DocumentAnalyzerDiagnosticsAsync(
+        Document document,
+        SemanticModel model,
+        string filePath,
+        CancellationToken ct
+    )
+    {
+        if (!_analyzersEnabled)
+        {
+            return [];
+        }
+
+        var analyzers = AnalyzerDiagnosticResolver.DiscoverDocumentAnalyzers(document.Project);
+        if (analyzers.IsEmpty)
+        {
+            return [];
+        }
+
+        var found = await AnalyzerDiagnosticResolver
+            .ResolveDocumentAsync(document, model, analyzers, ct)
+            .ConfigureAwait(false);
+        return MapAnalyzerDiagnostics(filePath, found);
     }
 
     /// <summary>
@@ -95,7 +147,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        if (!_deadCodeEnabled || _solution is null)
+        if (!_deadCodeEnabled || !_analyzersEnabled || _solution is null)
         {
             return [];
         }

@@ -155,7 +155,7 @@ Console.WriteLine(clone.ToString());
       vscode.CompletionItemKind.Method,
       'JObject.Properties must retain its Roslyn symbol kind',
     );
-    assertNoPackageBindingErrors(uri);
+    await assertNoPackageBindingErrors(uri);
   });
 
   // Implements [SCRIPT-RELOAD] and [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
@@ -185,7 +185,7 @@ Console.WriteLine(payload.Count);
       await waitForHoverText(uri, positionInside(withDirective, 'JObject'), 'Newtonsoft.Json.Linq'),
     );
     assert.ok(packageHover.includes('JObject'), 'adding the directive binds the package type');
-    assertNoPackageBindingErrors(uri);
+    await assertNoPackageBindingErrors(uri);
 
     const versionWithPackage = doc.version;
     assert.ok(await replaceDocumentContent(doc, withoutDirective));
@@ -202,7 +202,7 @@ Console.WriteLine(payload.Count);
       'DeepClone',
     );
     assert.strictEqual(itemNamed(restored, 'DeepClone').kind, vscode.CompletionItemKind.Method);
-    assertNoPackageBindingErrors(uri);
+    await assertNoPackageBindingErrors(uri);
   });
 
   // Implements [SCRIPT-FILEBASED], [SCRIPT-FILEBASED-DIRECTIVES], and [SCRIPT-TESTS].
@@ -239,7 +239,7 @@ Console.WriteLine(payload.Count);
     const members = await completionList(uri, positionAfter(root, 'payload.'), 'DeepClone');
     assert.strictEqual(itemNamed(members, 'DeepClone').kind, vscode.CompletionItemKind.Method);
     assert.strictEqual(itemNamed(members, 'Properties').kind, vscode.CompletionItemKind.Method);
-    assertNoPackageBindingErrors(uri);
+    await assertNoPackageBindingErrors(uri);
   });
 
   // Implements [SCRIPT-MULTIROOT] and guards package-reference leakage.
@@ -280,7 +280,7 @@ Console.WriteLine(isolated.Count);
     );
     assert.strictEqual(itemNamed(bound, 'Properties').kind, vscode.CompletionItemKind.Method);
     assert.ok(itemNamed(bound, 'Properties').detail !== '', 'a bound symbol carries detail');
-    assertNoPackageBindingErrors(packageFile.uri);
+    await assertNoPackageBindingErrors(packageFile.uri);
     const settled = errorsFor(packageFile.uri).map(diagnosticCode);
     assertContainsNone(settled, [RESTORE_PENDING, 'CS0246'], 'settled');
     assert.deepStrictEqual(
@@ -333,7 +333,7 @@ Console.WriteLine(isolated.Count);
       `the packaged root must not lose members to a neighbour's open: ` +
         `${bound.items.length.toString()} before, ${stillBound.items.length.toString()} after`,
     );
-    assertNoPackageBindingErrors(packageFile.uri);
+    await assertNoPackageBindingErrors(packageFile.uri);
   });
 
   // Implements the required tier-2 behavior in [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
@@ -457,7 +457,9 @@ Console.WriteLine(json.Count + plural.Length);
       await waitForHoverText(uri, positionInside(second, 'Pluralize'), 'Humanizer'),
     );
     assertContainsAll(humanizerHover, ['Pluralize', 'Humanizer'], 'humanizerHover');
-    const staleReferenceErrors = await waitForErrorCode(uri, 'CS0246');
+    const staleReferenceErrors = await waitForErrorCode(uri, 'CS0246', (diagnostic) =>
+      diagnostic.message.includes('JObject'),
+    );
     assert.ok(staleReferenceErrors.some((diagnostic) => diagnostic.message.includes('JObject')));
     assert.ok(
       !staleReferenceErrors.some((diagnostic) => diagnostic.message.includes('Pluralize')),

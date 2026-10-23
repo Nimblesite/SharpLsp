@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.Text;
@@ -21,8 +22,17 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
+        return MapAnalyzerDiagnostics(filePath, model.GetDiagnostics(cancellationToken: ct));
+    }
+
+    /// <summary>Compiler and analyzer locations share one canonical mapping pipeline.</summary>
+    private static List<DiagnosticResult> MapAnalyzerDiagnostics(
+        string filePath,
+        IEnumerable<Diagnostic> diagnostics
+    )
+    {
         var results = new List<DiagnosticResult>();
-        foreach (var diag in model.GetDiagnostics(cancellationToken: ct))
+        foreach (var diag in diagnostics)
         {
             // A diagnostic belongs to the file its location maps to: a projection's hidden
             // scaffolding maps nowhere and drops out. [RAZOR-FEATURES-DIAGNOSTICS]

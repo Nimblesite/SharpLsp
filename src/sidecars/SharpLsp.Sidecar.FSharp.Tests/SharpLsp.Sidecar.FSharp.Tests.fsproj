@@ -35,6 +35,7 @@
     <Compile Include="FSharpResolvedReferenceTests.fs" />
     <Compile Include="FSharpCSharpReferenceTests.fs" />
     <Compile Include="FSharpOwningProjectTests.fs" />
+    <Compile Include="FSharpDiagnosticsDocumentsTests.fs" />
     <Compile Include="FSharpForeignSymbolsTests.fs" />
     <Compile Include="FSharpForeignSymbolsWireTests.fs" />
   </ItemGroup>

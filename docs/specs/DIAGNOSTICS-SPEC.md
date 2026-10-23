@@ -162,11 +162,11 @@ Live diagnostics flow through [DIAG-ARCHITECTURE-PULL-REFRESH]:
 
 The push and pull models are **mutually exclusive per client**. A client offered both runs both: `vscode-languageclient` creates one `DiagnosticCollection` for `publishDiagnostics` and a second one for `textDocument/diagnostic`, and `vscode.languages.getDiagnostics` concatenates every collection, so each diagnostic is reported — and counted — twice.
 
-`diagnosticProvider` is therefore advertised **only** to clients that do not declare the `textDocument.publishDiagnostics` client capability. Clients that declare it are served by the push pipeline ([DIAG-PUSH-GATE]), which is the model this host implements end to end: background fetch, generation gate, solution-wide publication, and republication until a file-based restore settles. The pull handlers stay registered and answer any client that asks, so a pull-only editor is never left without diagnostics.
+Clients declaring `textDocument.diagnostic` MUST be offered `diagnosticProvider` and served exclusively through pull, even when they also declare `textDocument.publishDiagnostics`. Modern VS Code declares both capabilities; preferring push in that case prevents its workspace diagnostic client from running. Clients that support only publication use the generation-gated fallback in [DIAG-PUSH-GATE]. No pull client receives a second copy through publication.
 
 ### [DIAG-LSP-PULL] Pull Model (`textDocument/diagnostic`, `workspace/diagnostic`)
 
-LSP 3.17 pull diagnostics is the **target** model, served to every client that is not already receiving pushes ([DIAG-LSP-CAPABILITIES-EXCLUSIVE]). The server returns whatever Roslyn currently knows for the requested document(s); it never preemptively asserts.
+LSP 3.17 pull diagnostics is the primary model negotiated by modern clients ([DIAG-LSP-CAPABILITIES-EXCLUSIVE]). Both Roslyn and FCS contribute the current diagnostics of their loaded documents. Compiler or sidecar failures MUST produce a retriable request error; they MUST NOT become empty successful reports that falsely claim the source is clean.
 
 Per-document request:
 

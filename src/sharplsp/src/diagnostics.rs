@@ -4,7 +4,6 @@
 //! analysis (on solution load). Solution-wide results are streamed
 //! incrementally — one `publishDiagnostics` notification per file.
 
-use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
@@ -76,13 +75,6 @@ struct SidecarDiagnostic {
     severity: String,
     /// Compiler or analyzer diagnostic code (e.g. `CS0219`).
     code: String,
-}
-
-/// Wire type matching C# `SolutionDiagnosticsRequest` `[Key(N)]` ordering.
-#[derive(serde::Serialize)]
-struct SolutionDiagnosticsRequest {
-    /// Optional list of project paths to restrict analysis to.
-    project_filter: Vec<String>,
 }
 
 /// A document to push diagnostics for: its owning sidecar, URI and native path.
@@ -215,13 +207,14 @@ fn publish_provisional(
 }
 
 /// Whether a fetched set still reports an unfinished file-based restore.
-fn has_restore_pending(diagnostics: &[Diagnostic]) -> bool {
-    diagnostics.iter().any(|diagnostic| {
-        matches!(
-            diagnostic.code,
-            Some(NumberOrString::String(ref code)) if code == RESTORE_PENDING_CODE
-        )
-    })
+pub(crate) fn has_restore_pending(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics.iter().any(pending_notice)
+}
+
+/// The explicit loading notice, independently of message wording. [DIAG-RESTORE]
+fn pending_notice(diagnostic: &Diagnostic) -> bool {
+    matches!(&diagnostic.code,
+        Some(NumberOrString::String(code)) if code == RESTORE_PENDING_CODE)
 }
 
 /// Fetch diagnostics and publish them under the generation gate, retrying
@@ -306,144 +299,34 @@ pub fn request_solution_in_background(
     sidecar: Arc<SidecarManager>,
     sender: crossbeam_channel::Sender<Message>,
     project_filter: Vec<String>,
-    vfs: Arc<Vfs>,
+    _vfs: Arc<Vfs>,
 ) {
-    let _handle = tokio::spawn(async move {
-        match fetch_all(&sidecar, &project_filter).await {
-            Ok(file_diagnostics) => {
-                let file_count = file_diagnostics.len();
-                // Collect files with errors/warnings for verification pass.
-                let mut error_files: Vec<String> = Vec::new();
-                for (file_path, diagnostics) in &file_diagnostics {
-                    let has_issues = diagnostics.iter().any(|d| {
-                        d.severity == Some(DiagnosticSeverity::ERROR)
-                            || d.severity == Some(DiagnosticSeverity::WARNING)
-                    });
-                    if has_issues {
-                        error_files.push(file_path.clone());
-                    }
-                }
-                for (file_path, diagnostics) in file_diagnostics {
-                    let uri = match crate::paths::path_to_lsp_uri(&file_path) {
-                        Ok(uri) => uri,
-                        Err(err) => {
-                            warn!("Skip diagnostics for {file_path}: {err:#}");
-                            continue;
-                        }
-                    };
-                    if let Err(err) = publish(&sender, uri, diagnostics) {
-                        warn!("Failed to publish diagnostics for {file_path}: {err:#}");
-                    }
-                }
-                info!("Solution-wide diagnostics published for {file_count} file(s)");
-
-                // Verification pass: re-check files with errors/warnings.
-                if !error_files.is_empty() {
-                    info!(
-                        "Starting verification pass for {} file(s) with errors/warnings",
-                        error_files.len()
-                    );
-                    verify_error_files(&sidecar, &sender, &error_files, &vfs).await;
-                }
-            }
-            Err(err) => {
-                warn!("Solution-wide diagnostics unavailable: {err:#}");
-            }
+    drop(tokio::spawn(async move {
+        if let Err(error) = publish_solution(&sidecar, &sender, &project_filter).await {
+            warn!(%error, "Solution-wide diagnostics unavailable");
         }
-    });
+    }));
 }
 
-/// Low-priority verification pass: re-check files that had errors or
-/// warnings during the initial solution-wide scan.
-///
-/// The initial `GetCompilationAsync` may return incomplete results
-/// (unresolved references, pending source generators). This pass
-/// re-reads each file from disk, sends `textDocument/didChange` to
-/// update the sidecar's in-memory compilation, then re-fetches
-/// diagnostics. Files that still have errors are real — files where
-/// errors disappeared were false positives that get cleared.
-async fn verify_error_files(
+/// Legacy editors use the same per-document truth with generation-gated pushes.
+async fn publish_solution(
     sidecar: &SidecarManager,
     sender: &crossbeam_channel::Sender<Message>,
-    error_files: &[String],
-    vfs: &Vfs,
-) {
-    // Small delay to let the workspace settle after initial load.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    for file_path in error_files {
-        let source_tag = source_tag_for_path(file_path);
-
-        // Skip the disk-resync step for documents the editor has open. The
-        // VFS holds the live, possibly-unsaved text — overwriting the sidecar
-        // with on-disk bytes would silently destroy the editor's edits and
-        // leave Roslyn analyzing yesterday's source. Matching must be by
-        // native path, not a rebuilt URI: editors percent-encode URIs (VS Code
-        // sends `file:///c%3A/…` on Windows), so a rebuilt canonical URI never
-        // string-matches the stored key and the guard silently fails open.
-        // The canonical retry also unifies 8.3 short names and mapped drives
-        // with the editor's long-form spelling. [GitHub #110]
-        let in_vfs = vfs.get_content_for_path_canonical(file_path).is_some();
-
-        if !in_vfs {
-            // Re-read from disk so the sidecar gets fresh text.
-            let disk_text = match tokio::fs::read_to_string(file_path).await {
-                Ok(text) => text,
-                Err(err) => {
-                    info!("Cannot read {file_path} from disk: {err:#}");
-                    continue;
-                }
-            };
-
-            // Update the sidecar's in-memory compilation with disk content.
-            if let Err(err) = sync_text_to_sidecar(sidecar, file_path, &disk_text).await {
-                warn!("Failed to sync {file_path} to sidecar: {err:#}");
-            }
-        }
-
-        match fetch(sidecar, file_path, source_tag).await {
-            Ok(diagnostics) => {
-                let uri = match crate::paths::path_to_lsp_uri(file_path) {
-                    Ok(uri) => uri,
-                    Err(err) => {
-                        warn!("Skip verification for {file_path}: {err:#}");
-                        continue;
-                    }
-                };
-                if let Err(err) = publish(sender, uri, diagnostics) {
-                    warn!("Failed to publish verified diagnostics for {file_path}: {err:#}");
-                }
-            }
-            Err(err) => {
-                info!("Verification fetch failed for {file_path}: {err:#}");
-            }
-        }
-
-        // Yield between files to avoid starving other sidecar requests.
-        tokio::task::yield_now().await;
-    }
-
-    info!(
-        "Verification pass complete for {} file(s)",
-        error_files.len()
-    );
-}
-
-/// Send `textDocument/didChange` to the sidecar with fresh text.
-async fn sync_text_to_sidecar(
-    sidecar: &SidecarManager,
-    file_path: &str,
-    new_text: &str,
+    filter: &[String],
 ) -> Result<()> {
-    let request = crate::semantic::SidecarDidChangeReq {
-        file_path: file_path.to_string(),
-        new_text: new_text.to_string(),
-    };
-    let payload = rmp_serde::to_vec(&request).context("serialize didChange")?;
-    let _response = sidecar
-        .request("textDocument/didChange", payload)
-        .await
-        .context("sidecar didChange for verification")?;
+    for path in crate::pull_diagnostics::paths_for_sidecar(sidecar, filter).await? {
+        let uri = crate::paths::path_to_lsp_uri(&path)?;
+        let generation = next_generation(&uri);
+        fetch_and_publish_gated(
+            sidecar,
+            sender,
+            &uri,
+            &path,
+            source_tag_for_path(&path),
+            generation,
+        )
+        .await;
+    }
     Ok(())
 }
 
@@ -480,36 +363,6 @@ async fn fetch(
         .into_iter()
         .map(|r| to_lsp_diagnostic(r, source_tag))
         .collect())
-}
-
-/// Fetch diagnostics for all files in the solution, batched by file.
-async fn fetch_all(
-    sidecar: &SidecarManager,
-    project_filter: &[String],
-) -> Result<HashMap<String, Vec<Diagnostic>>> {
-    let request = SolutionDiagnosticsRequest {
-        project_filter: project_filter.to_vec(),
-    };
-    let payload = rmp_serde::to_vec(&request).context("serialize solution diagnostics request")?;
-    let response_bytes = sidecar
-        .request("workspace/diagnostics/all", payload)
-        .await
-        .context("sidecar solution diagnostics request")?;
-    let results: HashMap<String, Vec<SidecarDiagnostic>> =
-        rmp_serde::from_slice(&response_bytes).context("deserialize solution diagnostics")?;
-    let mapped = results
-        .into_iter()
-        .map(|(path, diags)| {
-            (
-                path,
-                diags
-                    .into_iter()
-                    .map(|d| to_lsp_diagnostic(d, "sharplsp-csharp"))
-                    .collect(),
-            )
-        })
-        .collect();
-    Ok(mapped)
 }
 
 /// Whether the latest publication for `uri` is a tier-2 placeholder that a

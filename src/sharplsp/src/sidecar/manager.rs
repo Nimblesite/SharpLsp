@@ -76,6 +76,10 @@ pub struct SidecarManager {
     /// The receiving half of `events_tx`, handed out once via
     /// [`SidecarManager::take_event_receiver`].
     events_rx: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<String>>>,
+    /// Typed IPC notifications, independent of request/response traffic.
+    notifications_tx: tokio::sync::mpsc::UnboundedSender<Envelope>,
+    /// Single consumer for compiler-workspace invalidations.
+    notifications_rx: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<Envelope>>>,
 }
 
 impl SidecarManager {
@@ -87,6 +91,7 @@ impl SidecarManager {
         socket_path: &str,
     ) -> Self {
         let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (notifications_tx, notifications_rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
             name: name.to_string(),
             spawn_command: spawn_command.to_string(),
@@ -101,6 +106,8 @@ impl SidecarManager {
             monitored: AtomicBool::new(false),
             events_tx,
             events_rx: std::sync::Mutex::new(Some(events_rx)),
+            notifications_tx,
+            notifications_rx: std::sync::Mutex::new(Some(notifications_rx)),
         }
     }
 
@@ -113,6 +120,16 @@ impl SidecarManager {
     /// events (`SHARPLSP-EVENT` lines). Returns `None` after the first call.
     pub fn take_event_receiver(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<String>> {
         self.events_rx.lock().ok().and_then(|mut slot| slot.take())
+    }
+
+    /// Receive sidecar-originated notifications even with no request in flight.
+    pub fn take_notification_receiver(
+        &self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<Envelope>> {
+        self.notifications_rx
+            .lock()
+            .ok()
+            .and_then(|mut receiver| receiver.take())
     }
 
     /// Whether graceful shutdown has begun for this manager.
@@ -157,7 +174,17 @@ impl SidecarManager {
         self.enforce_spawn_backoff().await?;
 
         match self.spawn_process().await {
-            Ok((child, transport)) => {
+            Ok((child, mut transport)) => {
+                if let Some(mut notifications) = transport.take_notifications() {
+                    let sender = self.notifications_tx.clone();
+                    drop(tokio::spawn(async move {
+                        while let Some(notification) = notifications.recv().await {
+                            if sender.send(notification).is_err() {
+                                return;
+                            }
+                        }
+                    }));
+                }
                 *self.child.lock().await = Some(child);
                 *connection = Some(transport);
                 *self.backoff.lock().await = INITIAL_BACKOFF;
@@ -254,6 +281,9 @@ impl SidecarManager {
                 .await;
         };
         let response = exchange_result?;
+        if response.id != Some(id) {
+            bail!("sidecar response does not match current request {id}");
+        }
 
         if let Some(err) = response.error {
             error!(sidecar = %self.name, method = %method, id = id, "Sidecar error: {err}");

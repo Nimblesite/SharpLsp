@@ -54,6 +54,9 @@ anyhow = "1"
 lsp-profiler = { path = "../../lspkit/crates/lsp-profiler" }
 lsp-profiler-dotnet = { path = "../../lspkit/crates/lsp-profiler-dotnet" }
 lspkit-live = { path = "../../lspkit/crates/lspkit-live" }
+lspkit-server = { path = "../../lspkit/crates/lspkit-server", features = ["pull"] }
+lspkit-sidecar = { path = "../../lspkit/crates/lspkit-sidecar" }
+globset = "0.4"
 async-trait = "0.1"
 
 # HTTP client (NuGet API)

@@ -6,15 +6,21 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open SharpLsp.Sidecar.Common
+open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.Common.Solutions
 open MessagePack
 
-type FSharpSidecar() =
+type FSharpSidecar() as this =
     inherit SidecarHost("fsharp")
 
     let workspace = FSharpWorkspace.create ()
     let codeFixState = FSharpCodeFixes.createState ()
     let mutable analyzerConfig = FSharpAnalyzers.AnalyzerConfig.Default
+    // The analyzer gate from `diagnostics/configure` ([DIAG-CATEGORIES-ANALYZER]):
+    // when false the F# file analyzers and the dead-code analyzer fall silent, but
+    // the FCS compiler diagnostics always stand. Default on.
+    let mutable analyzersEnabled = true
+    let mutable refreshSupported = false
 
     do
         // Analyzer configuration push from the host ([analyzers] in sharplsp.toml).
@@ -36,6 +42,9 @@ type FSharpSidecar() =
                     let! result = FSharpWorkspace.loadProjectWithCancellation workspace path ct
                     match result with
                     | Ok () ->
+                        return Helpers.serializeOk "ok" ct
+                    | Error _ when workspace.LastLoadWasEmpty ->
+                        // An empty language slice is a successful server-workspace selection.
                         return Helpers.serializeOk "ok" ct
                     | Error msg ->
                         return ByteResult.Failure(msg)
@@ -87,8 +96,42 @@ type FSharpSidecar() =
                     FSharpWorkspace.applyDidChange workspace request.FilePath request.NewText
                     // A file no loaded project compiles loads its own project, in the
                     // background: the host waits on this reply. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
-                    FSharpOwningProject.adoptOwner workspace request.FilePath |> ignore
+                    this.AdoptOwnerAsync(request.FilePath, ct) |> ignore
                     return Helpers.serializeOk "ok" ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // didClose hands the file back to disk: the overlay must not outlive its
+        // document, or a closed file checks against a buffer nobody edits anymore.
+        // [HOVER-FSHARP-OVERLAY]
+        base.Register("textDocument/didClose", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<DidChangeRequest>(payload, cancellationToken = ct)
+                    FSharpWorkspace.removeOverlay workspace request.FilePath
+                    return Helpers.serializeOk "ok" ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // The analyzer gate from the host's `[diagnostics] analyzers_enabled`.
+        base.Register("diagnostics/configure", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            try
+                let request = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(payload, cancellationToken = ct)
+                analyzersEnabled <- request.AnalyzersEnabled
+                refreshSupported <- request.RefreshSupported
+                Task.FromResult<ByteResult>(Helpers.serializeOk "ok" ct)
+            with ex ->
+                Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
+
+        // Enumeration only: the host pulls per document afterwards. The payload is
+        // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
+        base.Register("workspace/diagnostics/documents", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                let _payload = payload
+                try
+                    return Helpers.serializeOk (FSharpDocuments.sourceDocuments workspace) ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))
@@ -226,13 +269,15 @@ type FSharpSidecar() =
                                   Severity = severity
                                   Code = $"FS{d.ErrorNumber:D4}" })
                         // [ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]
-                        // FSAC-parity file-local analyzers (always-on hints).
-                        let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
-                        fileDiags |> List.iter results.Add
+                        // FSAC-parity file-local analyzers — gated like every static
+                        // analyzer, without ever suppressing the compiler diagnostics.
+                        if analyzersEnabled then
+                            let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
+                            fileDiags |> List.iter results.Add
                     | None -> ()
                     // [ANALYZERS-DEADCODE-SEVERITY] Merge project-wide dead-code diagnostics
                     // for this file (monorepo mode promotes public deadness to errors).
-                    if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then
+                    if workspace.IsLoaded && analyzersEnabled && analyzerConfig.DeadCodeEnabled then
                         // The file's own project decides: a symbol that is not public cannot
                         // be used from another project, and a public one is reported only in
                         // monorepo mode, where the projects reading this one in memory count.
@@ -315,3 +360,20 @@ type FSharpSidecar() =
 
         // Subtypes [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("typeHierarchy/subtypes", Helpers.atPosition (FSharpHierarchy.subtypes workspace) (Helpers.listOf Helpers.toHierItem))
+
+    /// The owning project changes compiler inputs after didChange has returned.
+    /// Invalidate the host query even when the IPC request stream is idle. [DIAG-IPC-REFRESH]
+    member private this.NotifyDiagnosticChange(ct: CancellationToken) =
+        this.NotifyAsync("diagnostics/refresh", String.Empty, ct)
+
+    member private this.AdoptOwnerAsync(filePath: string, ct: CancellationToken) =
+        task {
+            match FSharpOwningProject.adoptOwner workspace filePath with
+            | None -> ()
+            | Some adoption ->
+                do! adoption
+                if refreshSupported then
+                    let! result = this.NotifyDiagnosticChange(ct)
+                    if result.IsError then
+                        Serilog.Log.Warning("F# diagnostic invalidation delivery failed")
+        }

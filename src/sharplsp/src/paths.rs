@@ -124,6 +124,55 @@ pub fn native_paths_equal(left: &str, right: &str) -> bool {
     }
 }
 
+/// Compare file URIs through the tier's canonical native-path rules.
+/// Implements [SHARPLSP-ARCHITECTURE-PATHS].
+pub fn same_uri(left: &str, right: &str) -> bool {
+    match (uri_to_path(left), uri_to_path(right)) {
+        (Ok(left), Ok(right)) => native_paths_equal(&left, &right),
+        _ => left == right,
+    }
+}
+
+/// Match project names or native project paths against diagnostic scope globs.
+pub fn project_glob_filter(
+    patterns: &[String],
+) -> Result<Option<globset::GlobSet>, globset::Error> {
+    if patterns.is_empty() {
+        return Ok(None);
+    }
+    let mut builder = globset::GlobSetBuilder::new();
+    for pattern in patterns {
+        let _ = builder.add(
+            globset::GlobBuilder::new(pattern)
+                .case_insensitive(true)
+                .build()?,
+        );
+    }
+    Ok(Some(builder.build()?))
+}
+
+/// Match project names or native project paths against diagnostic scope globs.
+pub fn project_matches_globs(filter: &globset::GlobSet, name: &str, path: &str) -> bool {
+    filter.is_match(name) || filter.is_match(slashed(path))
+}
+
+/// Metadata that changes project graphs, analyzer policy, references or generated inputs.
+pub fn diagnostic_requires_reload(path: &str) -> bool {
+    has_extension(
+        path,
+        &["csproj", "fsproj", "sln", "slnx", "props", "targets"],
+    ) || [".editorconfig", "project.assets.json", "global.json"]
+        .into_iter()
+        .any(|name| has_file_name(path, name))
+}
+
+/// Native inputs relevant to compiler errors or analyzer policy.
+pub fn is_diagnostic_input(path: &Path) -> bool {
+    has_extension(path, &["cs", "csx", "fs", "fsi", "fsx", "razor", "cshtml"])
+        || diagnostic_requires_reload(&path.to_string_lossy())
+        || has_file_name(path, "sharplsp.toml")
+}
+
 /// `text` folded the one way the host folds a path: [`ntfs_upcase`] per character.
 /// [SHARPLSP-ARCHITECTURE-PATHS] (GitHub #171)
 fn fold(text: &str) -> String {

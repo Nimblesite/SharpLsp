@@ -22,6 +22,8 @@ use crate::vfs::Vfs;
 /// What follows a sidecar's `workspace/open`: its analyzers, the solution-wide
 /// diagnostics scan, and where a failure is shown.
 pub(crate) struct OpenFollowUp {
+    /// Standard and static analyzer opt-out applies before the first pull.
+    analyzers_enabled: bool,
     /// Pushed to the sidecar once the workspace opens.
     analyzers: AnalyzersConfig,
     /// Where solution-wide diagnostics publish, and the projects they cover;
@@ -46,6 +48,7 @@ impl OpenFollowUp {
             .filter(|_| config.diagnostics.solution_wide_analysis)
             .map(|sender| (sender.clone(), config.diagnostics.project_filter.clone()));
         Self {
+            analyzers_enabled: config.diagnostics.analyzers_enabled,
             analyzers: config.analyzers.clone(),
             diagnostics,
             report: report.cloned(),
@@ -90,6 +93,13 @@ async fn open_and_follow_up(
         return false;
     }
     configure_analyzers(sidecar, &follow_up.analyzers).await;
+    if let Err(error) = configure_diagnostics(sidecar, follow_up.analyzers_enabled).await {
+        warn!(%error, "Diagnostic analyzer configuration failed");
+    }
+    if crate::pull_diagnostics::state::is_pull() {
+        crate::pull_diagnostics::state::engine_changed();
+        return true;
+    }
     if let Some((sender, project_filter)) = follow_up.diagnostics {
         info!("Starting solution-wide diagnostics scan");
         diagnostics::request_solution_in_background(
@@ -107,6 +117,13 @@ pub(crate) async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Resu
     let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
     let _ = sidecar.request("workspace/open", payload).await?;
     info!("Workspace opened in {} sidecar", sidecar.name());
+    Ok(())
+}
+
+/// Configure diagnostic analysis without changing compiler-error visibility.
+pub(crate) async fn configure_diagnostics(sidecar: &SidecarManager, enabled: bool) -> Result<()> {
+    let payload = rmp_serde::to_vec(&(enabled, true))?;
+    let _response = sidecar.request("diagnostics/configure", payload).await?;
     Ok(())
 }
 

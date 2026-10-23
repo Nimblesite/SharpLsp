@@ -170,8 +170,8 @@ fn run_server() -> Result<()> {
     // Capabilities depend on what the client itself supports, so the initialize
     // request is answered by hand instead of through `Connection::initialize`.
     let (initialize_id, init_params) = connection.initialize_start()?;
-    let init_params: InitializeParams =
-        serde_json::from_value(init_params).context("deserialize InitializeParams")?;
+    let init_params: InitializeParams = lspkit_server::capabilities::decode_initialize(init_params)
+        .context("deserialize InitializeParams")?;
     let server_capabilities = build_capabilities(&init_params.capabilities);
     target_framework::remember_client(&init_params.capabilities);
     let capabilities_json = serde_json::json!({
@@ -251,6 +251,19 @@ fn run_server() -> Result<()> {
         None
     };
 
+    pull_diagnostics::state::initialize(
+        &init_params.capabilities,
+        &sharplsp_config.diagnostics,
+        &runtime,
+        [csharp_sidecar.as_ref(), fsharp_sidecar.as_ref()],
+        connection.sender.clone(),
+    )?;
+    pull_diagnostics::events::start(
+        [fsharp_sidecar.as_ref(), csharp_sidecar.as_ref()],
+        &runtime,
+        &connection.sender,
+    );
+
     let csharp_event_pump =
         start_csharp_event_pump(csharp_sidecar.as_ref(), &runtime, connection.sender.clone());
 
@@ -272,6 +285,9 @@ fn run_server() -> Result<()> {
     );
 
     if workspace_root.is_some() {
+        if let Some(target) = solution.target() {
+            pull_diagnostics::state::select_workspace(&target.to_string_lossy())?;
+        }
         workspace_open::start_sidecar(
             csharp_sidecar.as_ref(),
             solution.target(),
@@ -286,7 +302,7 @@ fn run_server() -> Result<()> {
         workspace_open::start_sidecar(
             fsharp_sidecar.as_ref(),
             workspace_root.as_ref(),
-            OpenFollowUp::new(&sharplsp_config, &vfs, None, None),
+            OpenFollowUp::new(&sharplsp_config, &vfs, Some(&connection.sender), None),
             &runtime,
         );
     }
@@ -326,6 +342,8 @@ fn run_server() -> Result<()> {
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
     );
+    pull_diagnostics::state::shutdown()?;
+    drop(runtime);
 
     // Drop the connection so the writer thread's channel closes,
     // allowing io_threads.join() to complete.
@@ -484,11 +502,12 @@ fn pull_diagnostics_capability(
         .text_document
         .as_ref()
         .is_some_and(|text_document| text_document.publish_diagnostics.is_some());
-    if supports_push {
+    if supports_push && !pull_diagnostics::state::supports_pull(client) {
         return None;
     }
     Some(lsp_types::DiagnosticServerCapabilities::Options(
         lsp_types::DiagnosticOptions {
+            identifier: Some("sharplsp".to_owned()),
             inter_file_dependencies: true,
             workspace_diagnostics: true,
             ..lsp_types::DiagnosticOptions::default()
@@ -604,6 +623,23 @@ struct HostServices {
     solution: workspace_open::SolutionChoice,
 }
 
+/// Route native build input subscriptions without occupying request dispatch.
+fn handle_build_watch(
+    notif: &Notification,
+    services: &mut HostServices,
+    runtime: &tokio::runtime::Runtime,
+    sender: &crossbeam_channel::Sender<Message>,
+) -> bool {
+    if notif.method != "sharplsp/watchBuilds" {
+        return false;
+    }
+    match serde_json::from_value::<build_monitor::WatchTargets>(notif.params.clone()) {
+        Ok(watch) => services.builds.replace(&watch.targets, runtime, sender),
+        Err(error) => warn!(%error, "Invalid build monitoring targets"),
+    }
+    true
+}
+
 /// Apply a `workspace/didChangeConfiguration`, reopening the C# workspace when
 /// the change chose another solution. A rejected change keeps the previous one.
 fn settings_changed(
@@ -615,12 +651,21 @@ fn settings_changed(
 ) {
     let settings = params.get("settings").unwrap_or(&serde_json::Value::Null);
     match services.configuration.update(settings) {
-        Ok(()) => services.solution.settings_changed(
-            &services.configuration,
-            csharp_sidecar,
-            vfs,
-            runtime,
-        ),
+        Ok(()) => {
+            services.solution.settings_changed(
+                &services.configuration,
+                csharp_sidecar,
+                vfs,
+                runtime,
+            );
+            if let Err(error) = services
+                .configuration
+                .config()
+                .and_then(|config| pull_diagnostics::state::configure(&config.diagnostics))
+            {
+                warn!(%error, "Diagnostic configuration could not be applied");
+            }
+        }
         Err(error) => warn!("Configuration change rejected: {error:#}"),
     }
 }
@@ -672,7 +717,9 @@ fn main_loop(
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
-    let inbound = spawn_shutdown_fast_path(connection);
+    let inbound = inbound_with_inputs(connection)?;
+    let diagnostic_requests =
+        diagnostic_requests(runtime, [fsharp_sidecar, csharp_sidecar], vfs, connection);
 
     for msg in &inbound {
         match msg {
@@ -697,6 +744,9 @@ fn main_loop(
                 {
                     continue;
                 }
+                if diagnostic_requests.dispatch(&req, runtime)? {
+                    continue;
+                }
                 handle_request(
                     req,
                     vfs,
@@ -710,18 +760,11 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
-                if notif.method == "sharplsp/watchBuilds" {
-                    match serde_json::from_value::<build_monitor::WatchTargets>(notif.params) {
-                        Ok(watch) => {
-                            services
-                                .builds
-                                .replace(&watch.targets, runtime, &connection.sender);
-                        }
-                        Err(error) => warn!(%error, "Invalid build monitoring targets"),
-                    }
+                if handle_build_watch(&notif, services, runtime, &connection.sender) {
                     continue;
                 }
                 if notif.method == "$/cancelRequest" {
+                    diagnostic_requests.cancel(&notif.params);
                     services.profiler.cancel(&notif.params);
                     continue;
                 }
@@ -729,7 +772,20 @@ fn main_loop(
                     settings_changed(services, &notif.params, csharp_sidecar, vfs, runtime);
                     continue;
                 }
+                if notif.method == "workspace/didChangeWatchedFiles" {
+                    if let Err(error) = pull_diagnostics::changes::watched(
+                        notif.params,
+                        runtime,
+                        [csharp_sidecar, fsharp_sidecar],
+                        vfs,
+                        &connection.sender,
+                    ) {
+                        warn!(%error, "Diagnostic input update failed");
+                    }
+                    continue;
+                }
                 if notif.method == SHUTDOWN_ANSWERED {
+                    diagnostic_requests.cancel_all();
                     shutdown_requested = true;
                     continue;
                 }
@@ -766,6 +822,16 @@ fn main_loop(
 /// has already answered.
 const SHUTDOWN_ANSWERED: &str = "sharplsp/shutdownAnswered";
 
+/// Mount diagnostic request work separately from the foreground LSP loop.
+fn diagnostic_requests(
+    runtime: &tokio::runtime::Runtime,
+    engines: [Option<&Arc<SidecarManager>>; 2],
+    vfs: &Arc<Vfs>,
+    connection: &Connection,
+) -> pull_diagnostics::requests::Requests {
+    pull_diagnostics::requests::Requests::new(runtime, engines, vfs, connection.sender.clone())
+}
+
 /// Answer `shutdown` the moment it arrives, ahead of whatever the loop is
 /// busy with. Implements [SHARPLSP-ARCHITECTURE-TIERS].
 ///
@@ -779,10 +845,23 @@ const SHUTDOWN_ANSWERED: &str = "sharplsp/shutdownAnswered";
 /// reads the client stream ahead of the loop, answers `shutdown` itself, and
 /// hands the loop [`SHUTDOWN_ANSWERED`] in its place so the loop still refuses
 /// everything that follows.
-fn spawn_shutdown_fast_path(connection: &Connection) -> crossbeam_channel::Receiver<Message> {
+fn inbound_with_inputs(connection: &Connection) -> Result<crossbeam_channel::Receiver<Message>> {
+    let (inbound, inputs) = spawn_shutdown_fast_path(connection);
+    pull_diagnostics::state::connect_inputs(inputs)?;
+    Ok(inbound)
+}
+
+/// Read client messages while the foreground handler is occupied.
+fn spawn_shutdown_fast_path(
+    connection: &Connection,
+) -> (
+    crossbeam_channel::Receiver<Message>,
+    crossbeam_channel::Sender<Message>,
+) {
     let (to_loop, from_client) = crossbeam_channel::unbounded();
     let inbound = connection.receiver.clone();
     let outbound = connection.sender.clone();
+    let inputs = to_loop.clone();
     // The thread ends with the client stream; nothing waits on it.
     drop(std::thread::spawn(move || {
         for msg in &inbound {
@@ -805,7 +884,7 @@ fn spawn_shutdown_fast_path(connection: &Connection) -> crossbeam_channel::Recei
             }
         }
     }));
-    from_client
+    (from_client, inputs)
 }
 
 // ── Request Handling ──────────────────────────────────────────────
@@ -987,12 +1066,6 @@ fn handle_request(
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             code_actions::handle_code_action_resolve(req, runtime, sidecar)
         }
-        // Pull diagnostics (LSP 3.17)
-        DocumentDiagnosticRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
-        }
-        WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
         // Standard workspace/symbol
         WorkspaceSymbolRequest::METHOD => {
             handle_standard_workspace_symbol(req, parsers, vfs, runtime, fsharp_sidecar)
@@ -1319,8 +1392,10 @@ fn handle_load_solution(
         .context("sharplsp/loadSolution requires { solutionPath: string }")?;
 
     info!("Loading solution: {sln_path}");
+    pull_diagnostics::state::select_workspace(sln_path)?;
 
     let payload = rmp_serde::to_vec(sln_path).context("serialize solution path")?;
+    let analyzers_enabled = pull_diagnostics::state::configuration()?.analyzers_enabled;
 
     if let Some(cs) = csharp_sidecar {
         let cs = Arc::clone(cs);
@@ -1331,6 +1406,15 @@ fn handle_load_solution(
             match cs.request("workspace/open", p).await {
                 Ok(_) => {
                     info!("Solution loaded in C# (Roslyn) sidecar");
+                    if let Err(error) =
+                        workspace_open::configure_diagnostics(&cs, analyzers_enabled).await
+                    {
+                        warn!(%error, "C# diagnostic configuration failed");
+                    }
+                    if pull_diagnostics::state::is_pull() {
+                        pull_diagnostics::state::engine_changed();
+                        return;
+                    }
                     diagnostics::request_solution_in_background(
                         cs,
                         sender,
@@ -1346,9 +1430,22 @@ fn handle_load_solution(
     if let Some(fs) = fsharp_sidecar {
         let fs = Arc::clone(fs);
         let p = payload;
+        let sender = connection.sender.clone();
+        let vfs = Arc::clone(vfs);
         drop(runtime.spawn(async move {
             match fs.request("workspace/open", p).await {
-                Ok(_) => info!("Solution loaded in F# (FCS) sidecar"),
+                Ok(_) => {
+                    info!("Solution loaded in F# (FCS) sidecar");
+                    if let Err(error) =
+                        workspace_open::configure_diagnostics(&fs, analyzers_enabled).await
+                    {
+                        warn!(%error, "F# diagnostic configuration failed");
+                    }
+                    pull_diagnostics::state::engine_changed();
+                    if !pull_diagnostics::state::is_pull() {
+                        diagnostics::request_solution_in_background(fs, sender, vec![], vfs);
+                    }
+                }
                 Err(err) => error!("F# sidecar workspace/open failed: {err:#}"),
             }
         }));
@@ -1588,6 +1685,7 @@ fn handle_notification(
             {
                 let doc = &params.text_document;
                 info!("Opened: {}", doc.uri.as_str());
+                pull_diagnostics::state::begin_change();
                 vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
                 reparse(parsers, trees, &doc.uri, &doc.text);
                 // Sync text to the document's own sidecar so the semantic engine
@@ -1619,6 +1717,7 @@ fn handle_notification(
                 );
                 // Full sync — last content change is the full text.
                 if let Some(change) = params.content_changes.into_iter().next_back() {
+                    pull_diagnostics::state::begin_change();
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
                     nav_cache.invalidate(uri);
@@ -1651,10 +1750,28 @@ fn handle_notification(
                 serde_json::from_value::<lsp_types::DidCloseTextDocumentParams>(notif.params)
             {
                 info!("Closed: {}", params.text_document.uri.as_str());
+                pull_diagnostics::state::begin_change();
                 vfs.close(&params.text_document.uri);
                 let _ = trees.remove(&params.text_document.uri);
                 nav_cache.invalidate(&params.text_document.uri);
-                if let Err(err) = diagnostics::clear(&connection.sender, params.text_document.uri) {
+                if pull_diagnostics::state::is_pull() {
+                    if let Err(error) = pull_diagnostics::changes::closed(
+                        &params.text_document.uri,
+                        runtime,
+                        [csharp_sidecar, fsharp_sidecar],
+                    ) {
+                        warn!(%error, "Closed document could not reload disk text");
+                    }
+                    trigger_diagnostics(
+                        &params.text_document.uri,
+                        runtime,
+                        csharp_sidecar,
+                        fsharp_sidecar,
+                        connection,
+                    );
+                } else if let Err(err) =
+                    diagnostics::clear(&connection.sender, params.text_document.uri)
+                {
                     warn!("Failed to clear diagnostics: {err:#}");
                 }
             }
@@ -1675,6 +1792,12 @@ fn republish_open_diagnostics(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     connection: &Connection,
 ) {
+    if pull_diagnostics::state::is_pull() {
+        if let Err(error) = pull_diagnostics::state::invalidate() {
+            warn!(%error, "Framework diagnostic refresh failed");
+        }
+        return;
+    }
     let open = vfs
         .iter()
         .filter_map(|entry| push_target(entry.key(), csharp_sidecar, fsharp_sidecar))
@@ -1704,6 +1827,12 @@ fn trigger_diagnostics(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     connection: &Connection,
 ) {
+    if pull_diagnostics::state::is_pull() {
+        if let Err(error) = pull_diagnostics::state::invalidate() {
+            warn!(%error, "Diagnostic dependencies could not be invalidated");
+        }
+        return;
+    }
     let Some((sidecar, uri, file_path)) = push_target(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };

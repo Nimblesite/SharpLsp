@@ -27,6 +27,8 @@ type FSharpWorkspaceState =
         Checker: FSharpChecker
         mutable ProjectOptions: FSharpProjectOptions option
         mutable IsLoaded: bool
+        /// A valid selected workspace may have no F# projects; old projects must be retired.
+        mutable LastLoadWasEmpty: bool
         /// Live editor buffers keyed by canonical absolute file path.
         Overlays: ConcurrentDictionary<string, string>
         /// Every loaded project, keyed by its project file. [NETFX-PROJECTS-FSHARP]
@@ -54,6 +56,7 @@ let create () : FSharpWorkspaceState =
     { Checker = FSharpWorkspaceRuntime.createOverlayAwareChecker readDocument
       ProjectOptions = None
       IsLoaded = false
+      LastLoadWasEmpty = false
       Overlays = overlays
       Projects = ConcurrentDictionary(NativePaths.Comparer)
       References = ConcurrentDictionary(NativePaths.Comparer)
@@ -161,13 +164,16 @@ let private distinctFiles (files: string seq) =
     Linq.Enumerable.DistinctBy(files, (fun file -> NativePaths.NormalizeFullPath file), NativePaths.Comparer)
     |> Array.ofSeq
 
+/// Every loaded project's options, the workspace's first — the ordered owners of
+/// every source document. A script or lone project has just the workspace's.
+let internal projectOptions (state: FSharpWorkspaceState) : FSharpProjectOptions list =
+    Option.toList state.ProjectOptions @ otherProjectOptions state
+
 /// Every source file of every loaded project, the workspace's first, each once. Only a
 /// rename by identity — from the other language, with no F# file to anchor on — walks
 /// them all.
 let internal allSourceFiles (state: FSharpWorkspaceState) : string array =
-    Option.toList state.ProjectOptions @ otherProjectOptions state
-    |> Seq.collect _.SourceFiles
-    |> distinctFiles
+    projectOptions state |> Seq.collect _.SourceFiles |> distinctFiles
 
 /// True when `options` read `project` in memory, directly or through another project.
 let rec private readsInMemory (project: string) (options: FSharpProjectOptions) =
@@ -224,6 +230,18 @@ let private buildsCompiling (state: FSharpWorkspaceState) (filePath: string) =
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
     let normalizedPath = NativePaths.NormalizeFullPath filePath
     state.Overlays[normalizedPath] <- newText
+
+    for options in buildsCompiling state normalizedPath do
+        match FSharpWorkspaceRuntime.tryProjectSourcePath options normalizedPath with
+        | Some projectPath -> FSharpWorkspaceRuntime.notifyFileChanged state.Checker projectPath options
+        | None -> ()
+
+/// Drop the editor buffer for `filePath` (the file's didClose) and invalidate the
+/// builds that compile it, so the next check reads the file from disk again — the
+/// overlay must not outlive its document ([HOVER-FSHARP-OVERLAY]).
+let removeOverlay (state: FSharpWorkspaceState) (filePath: string) =
+    let normalizedPath = NativePaths.NormalizeFullPath filePath
+    state.Overlays.TryRemove(normalizedPath) |> ignore
 
     for options in buildsCompiling state normalizedPath do
         match FSharpWorkspaceRuntime.tryProjectSourcePath options normalizedPath with
@@ -329,10 +347,21 @@ let private activateWorkspace
     let files = String.Join(", ", options.SourceFiles |> Array.map NativePaths.NameOf)
     Log.Debug("F# {Kind} loaded from {Path} with files: [{Files}]", kind, path, files)
 
+/// Replace the loaded project graph when a valid workspace has no F# projects.
+let private clearWorkspace (state: FSharpWorkspaceState) =
+    state.LastLoadWasEmpty <- true
+    state.ProjectOptions <- None
+    state.IsLoaded <- false
+    state.Projects.Clear()
+    state.References.Clear()
+    state.CSharpBuilds.Clear()
+    state.Checker.InvalidateAll()
+
 /// Load EVERY project; the first one is the workspace's for project-wide queries.
 let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string array) ct =
     task {
         if fsprojFiles.Length = 0 then
+            clearWorkspace state
             return Error "No .fsproj found"
         else
             try
@@ -368,6 +397,8 @@ let private loadScript (state: FSharpWorkspaceState) scriptPath ct =
         let source = readSource state scriptPath
         let! options, diagnostics = FSharpProjectLoading.scriptOptions state.Checker scriptPath source ct
         logScriptDiagnostics scriptPath diagnostics
+        clearWorkspace state
+        state.LastLoadWasEmpty <- false
         activateWorkspace state options scriptPath "script"
         return Ok()
     }
@@ -390,6 +421,7 @@ let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Res
 let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct: CancellationToken) =
     task {
         try
+            state.LastLoadWasEmpty <- false
             if File.Exists(path) && FSharpProjectLoading.isScriptPath path then
                 return! loadScript state (NativePaths.NormalizeFullPath path) ct
             else

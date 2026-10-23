@@ -33,6 +33,14 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal sealed partial class WorkspaceManager : IDisposable
 {
+    private readonly Func<CancellationToken, Task<VoidResult>>? _diagnosticsChanged;
+
+    /// <summary>The host invalidates its diagnostic query after a background compiler mutation.</summary>
+    public WorkspaceManager(Func<CancellationToken, Task<VoidResult>>? diagnosticsChanged = null)
+    {
+        _diagnosticsChanged = diagnosticsChanged;
+    }
+
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
     private bool _isProjectlessDirectory;
@@ -101,7 +109,6 @@ internal sealed partial class WorkspaceManager : IDisposable
         : "not_loaded";
 
     /// <summary>Open a solution or project file via MSBuildWorkspace.</summary>
-    [Obsolete("Placeholder until workspace loading is redesigned")]
     public async Task<VoidResult> OpenAsync(string path, CancellationToken ct = default)
     {
         try

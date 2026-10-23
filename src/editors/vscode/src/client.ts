@@ -114,6 +114,7 @@ export async function start(
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: DOCUMENT_SELECTOR,
+    diagnosticPullOptions: { onChange: true, onSave: true, onFocus: true },
     // The Solution Explorer's picker settles a root holding several solutions,
     // so the server shows no error for one
     // ([SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]).

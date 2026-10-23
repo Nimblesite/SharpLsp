@@ -120,6 +120,16 @@ impl Vfs {
         self.documents.get(uri).map(|d| d.version)
     }
 
+    /// Match the same file aliases as live-buffer reads. [DIAG-TRUTH-GUARANTEES]
+    pub fn get_version_canonical(&self, uri: &Uri) -> Option<i32> {
+        self.get_version(uri).or_else(|| {
+            let path = canonical_native_path(uri)?;
+            self.documents.iter().find_map(|entry| {
+                document_denotes_path(entry.key(), entry.value(), &path).then_some(entry.version)
+            })
+        })
+    }
+
     /// Iterate over all open documents.
     pub fn iter(&self) -> dashmap::iter::Iter<'_, Uri, DocumentState> {
         self.documents.iter()

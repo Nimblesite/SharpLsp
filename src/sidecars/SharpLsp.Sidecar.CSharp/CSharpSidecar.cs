@@ -1,6 +1,7 @@
 using MessagePack;
 using Outcome;
 using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.Common.Messages;
 using SharpLsp.Sidecar.Common.Solutions;
 using SharpLsp.Sidecar.CSharp.Workspace;
 using ByteResult = Outcome.Result<byte[], string>;
@@ -16,12 +17,21 @@ internal sealed partial class CSharpSidecar : SidecarHost
     public CSharpSidecar()
         : base("csharp")
     {
+        _workspace = new WorkspaceManager(NotifyDiagnosticsChangedAsync);
         Register("workspace/open", HandleWorkspaceOpenAsync);
         Register("workspace/status", HandleWorkspaceStatusAsync);
         Register("solution/read", HandleSolutionReadAsync);
         Register("workspace/diagnostics", HandleDiagnosticsAsync);
         Register("workspace/diagnostics/all", HandleAllDiagnosticsAsync);
+        // Enumeration only: the host pulls per document afterwards. The payload is
+        // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
+        Register("workspace/diagnostics/documents", HandleDocumentsAsync);
+        Register("diagnostics/configure", HandleConfigureDiagnosticsAsync);
         Register("textDocument/didChange", HandleDidChangeAsync);
+        // The host re-sends the on-disk text on close, so a closed file's Roslyn text
+        // is exactly what the source watcher last wrote to disk — the same real disk
+        // update didChange carries, on the same DidChangeRequest shape.
+        Register("textDocument/didClose", HandleDidChangeAsync);
         Register("textDocument/completion", HandleCompletionAsync);
         Register("completionItem/resolve", HandleCompletionResolveAsync);
         Register("textDocument/hover", HandleHoverAsync);
@@ -84,7 +94,64 @@ internal sealed partial class CSharpSidecar : SidecarHost
         }
     }
 
-    private readonly WorkspaceManager _workspace = new();
+    private Task<ByteResult> HandleConfigureDiagnosticsAsync(byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(
+                payload,
+                cancellationToken: ct
+            );
+            _workspace.ConfigureDiagnostics(request.AnalyzersEnabled);
+            _refreshSupported = request.RefreshSupported;
+            var bytes = MessagePackSerializer.Serialize("ok", cancellationToken: ct);
+            return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(ByteResult.Failure(ex.Message));
+        }
+    }
+
+    /// <summary>The payload is reserved and ignored; the answer is the enumeration.</summary>
+    private async Task<ByteResult> HandleDocumentsAsync(byte[] payload, CancellationToken ct)
+    {
+        _ = payload;
+        try
+        {
+            var result = await _workspace.GetDocumentsAsync(ct).ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+    private readonly WorkspaceManager _workspace;
+    private bool _refreshSupported;
+
+    /// <summary>Compiler-originated invalidation, including while IPC is idle. [DIAG-IPC-REFRESH]</summary>
+    private async Task<Outcome.Result<Outcome.Unit, string>> NotifyDiagnosticsChangedAsync(
+        CancellationToken ct
+    )
+    {
+        if (!_refreshSupported)
+        {
+            return new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
+                Outcome.Unit.Value
+            );
+        }
+
+        var result = await NotifyAsync("diagnostics/refresh", string.Empty, ct)
+            .ConfigureAwait(false);
+        return result.Match(
+            _ => new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
+                Outcome.Unit.Value
+            ),
+            Outcome.Result<Outcome.Unit, string>.Failure
+        );
+    }
 
     /// <summary>
     /// The MSBuild workspace keeps its out-of-process BuildHost alive for as long as

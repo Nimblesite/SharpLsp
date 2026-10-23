@@ -113,7 +113,7 @@ Console.WriteLine(payload.Count);
     assertContainsAll(hover, ['JObject', 'Newtonsoft.Json.Linq'], 'hover');
     const members = await completionList(uri, positionAfter(source, 'payload.'), 'Properties');
     assert.strictEqual(itemNamed(members, 'Properties').kind, vscode.CompletionItemKind.Method);
-    assertNoPackageBindingErrors(uri);
+    await assertNoPackageBindingErrors(uri);
   });
 
   // Implements the app-directory configuration cone in
@@ -147,7 +147,7 @@ Console.WriteLine(payload.Count);
       !diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
       'the app-cone constant must suppress the #error branch',
     );
-    assertNoPackageBindingErrors(uri);
+    await assertNoPackageBindingErrors(uri);
   });
 
   // Implements #:property evaluation in [SCRIPT-FILEBASED-DIRECTIVES] and

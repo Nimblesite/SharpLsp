@@ -79,7 +79,7 @@ let adoptOwner (state: FSharpWorkspaceState) (filePath: string) =
     let path = NativePaths.NormalizeFullPath filePath
 
     match if needsOwner state path then tryOwningProject path else None with
-    | None -> Task.CompletedTask
+    | None -> None
     | Some owner ->
         let inFlight = pending.GetValue(state, fun _ -> ConcurrentDictionary(NativePaths.Comparer))
-        inFlight.GetOrAdd(owner, fun _ -> Task.Run(fun () -> adoptNow state inFlight owner path))
+        Some(inFlight.GetOrAdd(owner, fun _ -> Task.Run(fun () -> adoptNow state inFlight owner path)))

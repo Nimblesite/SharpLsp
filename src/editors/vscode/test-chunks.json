@@ -11,6 +11,8 @@
         "completions-visible.test.js",
         "hover.test.js",
         "diagnostics.test.js",
+        "diagnostic-accuracy-e2e.test.js",
+        "diagnostic-analyzers-e2e.test.js",
         "lsp-integration.test.js",
         "lsp-integration-semantic.test.js",
         "semantic-highlighting.test.js",
@@ -119,14 +121,20 @@
         "debug-multisession-e2e.test.js"
       ]
     },
+    "testexplorer-build": {
+      "description": "Completed-build refresh, explicit build configuration and fresh owning-project graphs through Run, Coverage and Debug for F# and C#, VSTest and MTP. Implements [TEST-REACTIVITY-BUILD], [TEST-BUILD-CONFIGURATION] and [TEST-BUILD-GRAPH]; this group keeps real compiler builds within the shard ceiling required by [DIST-CI-WIN-VSIX].",
+      "files": [
+        "01-test-explorer-build-refresh.test.js",
+        "test-build-configuration.test.js",
+        "test-build-graph.test.js"
+      ]
+    },
     "testexplorer": {
       "description": "The Test Explorer a user READS: discovery, the reactive tree, the target `dotnet` refuses while still exiting zero, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library — one Cobertura report per test project, every one parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS] and [TEST-COVERAGE].",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-refusals.test.js",
         "test-explorer-reactive.test.js",
-        "01-test-explorer-build-refresh.test.js",
-        "test-build-configuration.test.js",
         "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",
@@ -135,8 +143,7 @@
         "testing-lens-status.test.js",
         "test-explorer-coverage.test.js",
         "test-explorer-mtp-parsers.test.js",
-        "test-explorer-mtp-merges.test.js",
-        "test-build-graph.test.js"
+        "test-explorer-mtp-merges.test.js"
       ]
     },
     "testexplorer-frameworks": {

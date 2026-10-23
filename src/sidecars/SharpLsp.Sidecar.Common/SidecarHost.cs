@@ -84,6 +84,35 @@ public abstract class SidecarHost : IAsyncDisposable
         _router.Register(method, handler);
     }
 
+    /// <summary>Send a sidecar-originated IPC notification, including while idle.</summary>
+    protected async Task<ByteResult> NotifyAsync<T>(
+        string method,
+        T value,
+        CancellationToken ct = default
+    )
+    {
+        try
+        {
+            if (_transport is not { } transport)
+            {
+                return ByteResult.Failure("Sidecar notification transport unavailable");
+            }
+            var payload = MessagePackSerializer.Serialize(value, cancellationToken: ct);
+            await WriteResponseAsync(
+                    transport,
+                    new Envelope { Method = method, Payload = payload },
+                    ct
+                )
+                .ConfigureAwait(false);
+            return new ByteResult.Ok<byte[], string>(payload);
+        }
+        catch (Exception error)
+        {
+            Log.Warning(error, "Sidecar notification failed for {Method}", method);
+            return ByteResult.Failure(error.Message);
+        }
+    }
+
     /// <summary>Run an unsupervised sidecar (no host PID): listen, accept, dispatch until shutdown.</summary>
     public Task RunAsync(string socketPath)
     {

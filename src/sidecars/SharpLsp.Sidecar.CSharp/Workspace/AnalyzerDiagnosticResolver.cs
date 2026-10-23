@@ -40,6 +40,81 @@ internal static class AnalyzerDiagnosticResolver
                 .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Every reportable analyzer diagnostic of one document: the project's
+    /// <see cref="Project.AnalyzerReferences"/> (SDK/NuGet) and the IDE style
+    /// analyzers run once over the whole file under the project's effective
+    /// .editorconfig ([DIAG-CATEGORIES-ANALYZER]). Suppressed and disabled
+    /// diagnostics — NoWarn, editorconfig `none`, pragma suppressions, default
+    /// Hidden IDE rules — are filtered, so defaults never flood the report.
+    /// </summary>
+    public static async Task<ImmutableArray<Diagnostic>> ResolveDocumentAsync(
+        Document document,
+        SemanticModel model,
+        ImmutableArray<DiagnosticAnalyzer> analyzers,
+        CancellationToken ct
+    )
+    {
+        if (analyzers.IsDefaultOrEmpty)
+        {
+            return [];
+        }
+
+        var compilation = await document.Project.GetCompilationAsync(ct).ConfigureAwait(false);
+        if (compilation is null)
+        {
+            return [];
+        }
+
+        var runner = compilation.WithAnalyzers(analyzers, CreateOptions(document.Project));
+        var syntax = await runner
+            .GetAnalyzerSyntaxDiagnosticsAsync(model.SyntaxTree, ct)
+            .ConfigureAwait(false);
+        var semantic = await runner
+            .GetAnalyzerSemanticDiagnosticsAsync(model, null, ct)
+            .ConfigureAwait(false);
+        return
+        [
+            .. syntax
+                .AddRange(semantic)
+                .Where(diagnostic => Reportable(compilation, diagnostic))
+                .DistinctBy(DiagnosticKey),
+        ];
+    }
+
+    /// <summary>
+    /// The analyzers selected by the evaluated project, including SDK code-style
+    /// analyzers when enabled and NuGet analyzers. Adding every feature-host
+    /// analyzer would bypass AnalysisMode/EnforceCodeStyleInBuild and manufacture
+    /// diagnostics that the project's real build deliberately disabled.
+    /// </summary>
+    public static ImmutableArray<DiagnosticAnalyzer> DiscoverDocumentAnalyzers(Project project)
+    {
+        return
+        [
+            .. project
+                .AnalyzerReferences.SelectMany(reference =>
+                    reference.GetAnalyzers(LanguageNames.CSharp)
+                )
+                .DistinctBy(analyzer => analyzer.GetType()),
+        ];
+    }
+
+    /// <summary>
+    /// Whether the compilation's own options still report the diagnostic: a
+    /// <c>NoWarn</c> id (or one hidden by <c>warnaserror</c>/specific options)
+    /// is a compiler-level decision that stands for analyzers too.
+    /// </summary>
+    private static bool Reportable(Compilation compilation, Diagnostic diagnostic)
+    {
+        var suppressed =
+            diagnostic.IsSuppressed || diagnostic.Severity == DiagnosticSeverity.Hidden;
+        var silencedById =
+            compilation.Options.SpecificDiagnosticOptions.TryGetValue(diagnostic.Id, out var report)
+            && report is ReportDiagnostic.Suppress or ReportDiagnostic.Hidden;
+        return !suppressed && !silencedById;
+    }
+
     public static ImmutableArray<DiagnosticAnalyzer> DiscoverFixableAnalyzers(
         ImmutableArray<CodeFixProvider> providers
     )

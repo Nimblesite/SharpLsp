@@ -1,286 +1,69 @@
-# DIAGNOSTICS-PLAN
+# [DIAG-PLAN] Diagnostic Truth and Refresh Plan
 
-Implementation plan for [DIAGNOSTICS-SPEC](../specs/DIAGNOSTICS-SPEC.md).
+Release regression: [#441](https://github.com/Nimblesite/SharpLsp/issues/441). Analyzer false negatives: [#343](https://github.com/Nimblesite/SharpLsp/issues/343).
 
-> **Architecture pivot (current).** The previous push-based, eager-solution-scan plan produced phantom CS0246/CS0234 errors during workspace load and could not be repaired by the verification pass. The plan now mirrors `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit): NuGet restore gate → workspace open → pull-driven diagnostics with `global_state_version`-keyed `resultId` → debounced `workspace/diagnostic/refresh`. See [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md). Phases 1–2 below are partially completed; the parts that still apply are kept, the parts that contradict the new architecture are marked obsolete with rationale.
+Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The published pull-diagnostics article remains a promise to implement. Compiler build oracles and real editor observations determine success.
 
-## Phase 1: Per-Document Diagnostics IPC (P0) — DONE
+## [DIAG-PLAN-PROOF] Regression Evidence
 
-The sidecar's per-document diagnostics path is correct and survives the pivot. The Rust host's push wiring stays as the LSP-3.16 fallback for editors that don't negotiate pull.
+- [x] Real VSIX fixtures independently fail the F# and C# compiler with FS0001 and CS0029 while an unrelated clean file resolves through its real sidecar.
+- [x] Confirm 12 genuine VSIX failures for capability negotiation, closed-file workspace reports, automatic Problems publication, disk fix/regression cycles, unsaved dependency edits and live solution scope.
+- [x] Confirm three native LSP process failures for modern capability negotiation, closed-file pull reports and missing F# closed-file legacy publications.
+- [x] Confirm three real VSIX analyzer failures after a genuine CA1822 compiler build oracle: live fixes, analyzer configuration and suppression changes.
+- [x] Run all regression assertions green against final staged binaries: 45 real VSIX cases including Razor, 832 C# and 463 F# engine cases. Existing asynchronous package assertions wait for their intended current Problems state without removing assertions or extending their existing response budgets.
+- [ ] Prove solution replacement removes previous workspace errors without a window restart.
+- [ ] Prove sidecar failures/restarts cannot memoize an empty false-clean result.
+- [ ] Re-run the real FluentValidation and Serilog diagnostic edit/clear cases that failed the full Windows baseline.
 
-### Rust LSP Host
+## [DIAG-PLAN-PULL] Protocol and Query Ownership
 
-- [x] Create `diagnostics` module in Rust host (`src/sharplsp/src/diagnostics.rs`)
-- [x] Map sidecar `DiagnosticResult` → LSP `Diagnostic` struct
-  - Map severity: `"Error"` → 1, `"Warning"` → 2, `"Info"` → 3, `"Hidden"` → 4
-  - Map code, message, range
-  - Set `source: "sharplsp-csharp"`
-- [x] On `textDocument/didOpen` / `textDocument/didChange` / `textDocument/didSave`: request diagnostics from sidecar (background task) — kept as the push fallback path
-- [x] Send `textDocument/publishDiagnostics` notification with mapped results — push fallback only; pull is primary (Phase 5)
-- [x] Clear diagnostics on `textDocument/didClose`
-- [x] Version-gate the push pipeline ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md)): per-URI push generations, stale results never published, failed fetch for the newest generation retried until published or superseded. Hardening found while investigating GitHub #160 — that issue's actual root cause was path-qualified `_._` placeholder references poisoning FCS ([PKG-ASSETS-FS](../specs/PACKAGE-MAINTENANCE-SPEC.md)), fixed in `FSharpAssets.packageAssemblies` with regression test `path-qualified placeholder compile entries are never handed to FCS as references`. Rust test: `failed_fetch_after_revert_must_not_strand_stale_published_diagnostics`; F# sidecar guard: `diagnostics clear after an error edit is reverted`
-- [x] Republish a *provisional* set until it settles ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md)): a file-based app's first set is a tier-2 placeholder carrying `SLSPC0002` plus phantom `CS0246`s, and the background restore that replaces it fires no client event, so the push loop keeps fetching until the code clears. Rust test: `provisional_filebased_set_must_be_republished_once_restore_settles`
-- [x] Advertise pull diagnostics only to clients without push support ([DIAG-LSP-CAPABILITIES-EXCLUSIVE](../specs/DIAGNOSTICS-SPEC.md)) — a client offered both keeps one `DiagnosticCollection` per model and reports every diagnostic twice. Rust e2e test: `test_push_capable_client_is_not_offered_pull_diagnostics`
-- [ ] Add debounce (150ms window) before sidecar push request — superseded by Phase 5's 2000ms refresh debounce; only relevant if push fallback is in use
-- [x] Rust e2e tests: `test_diagnostics_cleared_on_close`, `test_request_works_after_diagnostic_notification`
-- [x] VSCode extension tests: `diagnostics.test.ts` (6 tests — error detection, missing type, clean file, edit cycle, range check, close clears)
-- [ ] Full-stack test: open a file with real errors → errors appear in Problems panel (requires sidecar)
+- [x] Prefer textDocument.diagnostic when the client also supports publishDiagnostics; advertise stable sharplsp identifier and inter-file/workspace support.
+- [x] Suppress publications to negotiated pull clients, preserving one diagnostic identity and exact counts.
+- [x] Enumerate actual Roslyn/FCS source metadata without eager compilation; route every source to its language engine.
+- [x] Keep all computed diagnostic memoization in shared lspkit Salsa infrastructure. Extension/sidecar state retains no parallel diagnostic result cache.
+- [x] Return full/unchanged reports with opaque snapshot IDs; stable pulls skip IPC and semantic recomputation.
+- [x] Stream workspace partial results and explicit empty reports for excluded documents; live solution opt-out proves retirement of closed-file results.
+- [x] Keep compiler/IPC failures as retriable request errors and invalidate failed query results for retry, including unavailable language engines.
+- [x] Prove cancellation (-32800), supersession (-32802/retrigger), malformed parameters (-32602), foreground hover responsiveness and no post-terminal/stale-version partial reports through a real 128-source mixed solution.
+- [ ] Remove the bulk workspace/diagnostics/all RPC and its eager compilation/verification implementation.
 
-### C# Sidecar
+## [DIAG-PLAN-INPUTS] Changes and Lifetime
 
-- [x] `workspace/diagnostics` handler exists (`CSharpSidecar.HandleDiagnosticsAsync`) — extended in Phase 5 to accept `previousResultId` and emit `Changed` flag
-- [x] `WorkspaceManager.GetDiagnosticsAsync` extracts from `SemanticModel.GetDiagnostics()`
-- [x] `DiagnosticResult` MessagePack type defined
+- [x] Invalidate dependent reports before and after source mutations, including unsaved overlays and closed-file disk changes; input revisions cannot block behind compiler queries.
+- [x] Follow selected solutions outside editor workspace folders using reactive input watchers, without retaining diagnostic data in the extension.
+- [x] Reload changed project/analyzer/editorconfig inputs; real CA1822/NoWarn transitions prove policy changes.
+- [ ] Add an explicit integration assertion for unsaved overlay replay during project reload and closed overlay retirement across that reload.
+- [x] Deliver typed background compiler notifications while IPC is idle; shared transport belongs to lspkit and refresh is explicitly negotiated for older callers.
+- [ ] Wire restore completion and owning-project adoption to diagnostic refresh for both language engines.
+- [ ] Coalesce refreshes and preserve generation ordering across edits, workspace replacement and process recovery.
+- [ ] Invalidate only the required dependency graph when a compiler input changes; verify unrelated result identities remain stable where safe.
 
-## Phase 2: Solution-Wide Eager Scan (P0) — REMOVED
+## [DIAG-PLAN-ENGINES] Compiler and Analyzer Truth
 
-> ⚠️ **Removed by architecture pivot.** This phase implemented the eager `workspace/diagnostics/all` bulk RPC and the post-load solution scan. The eager scan iterates `Solution.Projects` and calls `GetCompilationAsync()` on each, which produces phantom CS0246/CS0234 because consumer projects are compiled before their dependencies are cached as `CompilationReference`s. The replacement is Phase 5 (pull-driven workspace diagnostics) plus Phase 5.6 (NuGet restore gate). See [DIAG-ARCHITECTURE-EAGER-SCAN](../specs/DIAGNOSTICS-SPEC.md).
+- [x] F# first: include every loaded project's compiled source and preserve compiler parse/type errors.
+- [x] Share the C# analyzer pipeline with the existing resolver; honor the evaluated SDK/NuGet analyzer references and effective editorconfig options without injecting analyzers the project disables.
+- [x] Respect NoWarn, source suppressions, analyzer opt-out and effective severity without suppressing compiler errors.
+- [ ] Prove actual generated-source and global/project diagnostic errors remain visible at an appropriate user/project location.
+- [ ] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly.
+- [ ] Preserve F# FSharpLint/FSharp.Analyzers.SDK and SharpLsp static analyzer behavior.
+- [ ] Supply codeDescription URLs and unnecessary tags where specified.
 
-### Rust LSP Host
+## [DIAG-PLAN-CONFIG] Configuration
 
-- [x] Read `diagnostics.solution_wide_analysis` from config (default: `true`) — kept; now controls whether the server answers `workspace/diagnostic` pulls
-- [x] Read `diagnostics.project_filter` from config (default: empty = all projects) — kept; now restricts `workspace/diagnostic` results
-- [x] On solution load: request solution-wide diagnostics — ⚠️ **OBSOLETE.** Removed. The host no longer triggers a scan on load; the editor pulls when it wants data. `request_solution_in_background` in `src/sharplsp/src/diagnostics.rs` will be deleted in Phase 5.
-- [x] Stream diagnostics incrementally (batch by file) to avoid blocking — ⚠️ **OBSOLETE.** Replaced by `workspace/diagnostic` partial-result streaming in Phase 5.
-- [ ] On file change: re-request diagnostics for changed file + dependents — ⚠️ **OBSOLETE.** Replaced by `diagnostics/refresh` IPC + debounced `workspace/diagnostic/refresh` in Phase 5.
-- [x] Advertise `workspaceDiagnostics: true` in server capabilities — kept; required for pull workspace diagnostics
+- [x] Default solution_wide_analysis to true; live opt-out clears closed-file results while preserving open-file errors.
+- [ ] Implement project filter globs for workspace pulls without filtering direct document requests.
+- [ ] Apply analyzers_enabled before the first analysis and after live configuration changes/restarts.
+- [ ] Implement and validate min_severity, max_per_file, refresh_debounce_ms and auto_restore_on_open.
 
-### C# Sidecar
+## [DIAG-PLAN-VERIFY] Integration and Delivery
 
-- [x] Add `workspace/diagnostics/all` IPC handler — ⚠️ **TO BE DELETED in Phase 5.** Caused phantom CS0246s on workspace load.
-- [x] Add `GetAllDiagnosticsAsync(string[]? projectFilter, CancellationToken)` to `WorkspaceManager` — ⚠️ **TO BE DELETED in Phase 5.** Same reason.
-  - The topological-order patch landed on `OrderProjectsByDependencies` (`WorkspaceManager.cs`) was a partial mitigation. It does not survive: source generators and NuGet still race even with topological iteration. The function is removed entirely.
-- [ ] Stream results — send partial diagnostics as each project completes — **moved to Phase 5** as part of `workspace/diagnostic` partial-result streaming.
+- [ ] Meet source size/function limits; reuse canonical helpers and pass the existing Deslop duplication ratchet.
+- [ ] Run strict Rust format/clippy, sidecar checks, VSIX type/lint/format checks and relevant existing suites.
+- [ ] Promote only reviewed, proven private changes with coordinated source locks; preserve the separate CI collector's artifacts until it exits naturally.
+- [ ] Commit/push shared lspkit changes before the parent feature branch pointer.
+- [ ] Run the exact complete CI preparation workflow on the final branch, then coordinate PR/CI/release ownership.
 
-### Configuration
+## [DIAG-PLAN-ADVANCED] Subsequent Analysis
 
-- [x] `DiagnosticsConfig.solution_wide_analysis` field exists (default: `true`)
-- [x] `DiagnosticsConfig.analyzers_enabled` field exists (default: `true`)
-- [x] Add `project_filter: Vec<String>` to `DiagnosticsConfig`
-- [ ] Add `min_severity: String` to `DiagnosticsConfig` (default: `"hint"`)
-- [ ] Add `max_per_file: u32` to `DiagnosticsConfig` (default: `0` = unlimited)
-- [ ] Hot-reload config via `workspace/didChangeConfiguration`
-
-## Phase 3: F# Diagnostics (P0 — parallel with C#)
-
-- [ ] `FSharpCheckFileResults.Diagnostics` integration in F# sidecar
-- [ ] Map F# diagnostic severity to LSP
-- [ ] Solution-wide F# analysis via `FSharpChecker`
-- [ ] FSharpLint integration for code style
-- [ ] FSharp.Analyzers.SDK plugin loading
-
-## Phase 4: Analyzer Diagnostics (P0)
-
-- [ ] Enable Roslyn `DiagnosticAnalyzer` framework in sidecar
-  - `CompilationWithAnalyzers.GetAnalyzerDiagnosticsAsync()`
-- [ ] Load analyzers from project NuGet references
-- [ ] Load .editorconfig severity overrides
-- [ ] IDE0005 (unused usings) detection
-- [ ] Map analyzer diagnostic codes to LSP `Diagnostic.code` + `codeDescription` URL
-
-SharpLsp-owned static analyzers are tracked in
-[DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md](DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md).
-The first rules are monorepo-gated, solution-wide unused-public-code analyzers
-for both C# and F#.
-
-## Phase 5: Pull Diagnostics + Refresh Cycle (P0 — primary path)
-
-This is the target diagnostic pipeline. Until the `resultId` / refresh work below lands, push (Phase 1 wiring) is what actually converges, so the two models are advertised **exclusively**: `diagnosticProvider` is offered only to clients that declare no `textDocument.publishDiagnostics` support. A client given both builds a `DiagnosticCollection` per model and reports every diagnostic twice ([DIAG-LSP-CAPABILITIES-EXCLUSIVE](../specs/DIAGNOSTICS-SPEC.md)). Implements [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md), [DIAG-LSP-PULL](../specs/DIAGNOSTICS-SPEC.md), and [DIAG-LSP-REFRESH](../specs/DIAGNOSTICS-SPEC.md).
-
-### Rust LSP Host
-
-- [x] Implement `textDocument/diagnostic` request handler (LSP 3.17 pull model) — `pull_diagnostics.rs`
-- [x] Implement `workspace/diagnostic` request handler — `pull_diagnostics.rs`
-- [ ] Forward `previousResultId` to sidecar in IPC payload
-- [ ] Return `RelatedFullDocumentDiagnosticReport` when changed, `RelatedUnchangedDocumentDiagnosticReport` (`{ kind: "unchanged" }`) when sidecar reports `Changed = false`
-- [ ] Construct `resultId = "p:{project_version}|d:{doc_version}|g:{global_state_version}"` from sidecar response fields
-- [ ] `workspace/diagnostic` partial-result streaming via `WorkDoneProgress` partialResultToken — emit one `WorkspaceDocumentDiagnosticReport` per project as it completes
-- [ ] Subscribe to the [DIAG-IPC-REFRESH](../specs/DIAGNOSTICS-SPEC.md) sidecar notification
-- [ ] Implement debounced refresh queue: `tokio::sync::Notify` + 2000ms `tokio::time::sleep` collapse, matches `Microsoft.CodeAnalysis.LanguageServer`'s `AsyncBatchingWorkQueue`
-- [ ] Send LSP `workspace/diagnostic/refresh` notification when the debounce drains
-- [ ] **Delete** `request_solution_in_background` from `src/sharplsp/src/diagnostics.rs` (the eager-scan trigger)
-- [ ] **Delete** `verify_error_files`, `sync_text_to_sidecar` from `src/sharplsp/src/diagnostics.rs` (verification pass — see Phase 5.5)
-- [ ] Cancel in-flight per-document IPC pulls when editor sends a fresh pull for the same document
-- [ ] Server capability: add `diagnosticProvider.identifier = "sharplsp"` so editors distinguish SharpLsp's diagnostics
-
-### C# Sidecar
-
-- [ ] Extend `workspace/diagnostics` IPC payload to `DiagnosticsRequest { FilePath, PreviousResultId? }`
-- [ ] Extend response to include `ResultId` and `Changed` flag; return empty items when `Changed = false`
-- [ ] Add `workspace/diagnostics/pull` IPC handler — streams per-document `WorkspaceDocumentDiagnosticReport`s via partial responses (replaces the deleted `workspace/diagnostics/all`)
-- [ ] Add `WorkspaceDiagnosticsCache` keyed by `(DocumentId, ProjectVersion, DocumentVersion, GlobalStateVersion)` — mirrors Roslyn's `VersionedPullCache`
-- [ ] Add `IDiagnosticsRefresher` equivalent: `GlobalStateVersion: ulong` field + `RefreshRequested` event
-- [ ] Subscribe to `_workspace.RegisterWorkspaceChangedHandler` — on `ProjectAdded`, `ProjectReloaded`, `ProjectRemoved`, `SolutionAdded`, `SolutionChanged`, `SolutionReloaded`, `DocumentChanged`, increment `GlobalStateVersion` and fire `RefreshRequested`
-- [ ] Add `diagnostics/refresh` outbound IPC notification (sidecar → host) carrying `{ GlobalStateVersion, AffectedProjectIds[] }`
-- [ ] Add `workspace/initializationComplete` outbound IPC notification fired once after restore + `OpenSolutionAsync` complete
-- [ ] **Delete** `GetAllDiagnosticsAsync` from `WorkspaceManager`
-- [ ] **Delete** `OrderProjectsByDependencies` (added as a partial mitigation; obsolete now that the eager scan is gone)
-- [ ] **Delete** `workspace/diagnostics/all` handler from `CSharpSidecar`
-- [ ] Skip auto-generated syntax trees (`syntaxTree.IsAutoGenerated`, `GeneratedKind.MarkedGenerated`) — matches OmniSharp's behavior; prevents diagnostics on `obj/Debug/.../*.AssemblyInfo.cs` etc.
-
-### Tests
-
-- [ ] Full-stack: pull diagnostics during workspace load returns "loading" or partial results, never CS0246 for resolvable types
-- [ ] Full-stack: `previousResultId` round-trip — repeat pull returns `{ kind: "unchanged" }`
-- [ ] Full-stack: workspace mutation triggers `workspace/diagnostic/refresh` within 2.5s (debounce + slack)
-- [ ] Full-stack: editing a file invalidates only its project's `resultId`s; unrelated files' pulls return unchanged
-- [ ] Full-stack: 8-project diamond graph (the current `test_full_stack_cross_project_references_no_false_positives` fixture) — pull never returns phantom CS0246
-
-## Phase 5.5: Diagnostic Verification (P0) — REMOVED
-
-> ⚠️ **Removed by architecture pivot.** The verification pass re-sent `textDocument/didChange` with the same disk text and re-fetched diagnostics, expecting Roslyn to clear false positives. It does not work — `Solution.WithDocumentText` does not re-resolve metadata references or re-run source generators, so the same phantom errors come back. The pull + refresh model in Phase 5 removes the pass's reason to exist: SharpLsp no longer asserts diagnostics until the editor pulls. See [DIAG-ARCHITECTURE-EAGER-SCAN](../specs/DIAGNOSTICS-SPEC.md).
-
-Original tasks (kept here for traceability — every item is undone in Phase 5):
-
-- [x] `didOpen` syncs document text to sidecar via `notify_did_change` — kept (it's a correct text-sync operation, just no longer part of a verification pipeline)
-- [x] After solution-wide scan, verification pass re-checks files with errors/warnings — ⚠️ **DELETED** (`verify_error_files` removed in Phase 5)
-- [x] Verification publishes corrected diagnostics per-file (clears false positives) — ⚠️ **DELETED** (no push during load)
-- [x] Verification yields between files to avoid starving other sidecar requests — ⚠️ **DELETED**
-- [x] Test: `test_full_stack_diagnostics_cleared_after_error_fixed` (deterministic) — kept; now exercises pull semantics (close → fixed file → pull returns clean)
-- [ ] Exponential backoff for persistent errors (1s, 2s, 4s, max 30s) — ⚠️ **NOT NEEDED.** Pulls run only when the editor asks; there is no retry loop to back off.
-- [ ] Periodic re-verification for long-running sessions — ⚠️ **NOT NEEDED.** Workspace events drive `diagnostics/refresh`; the editor re-pulls on its own schedule.
-
-## Phase 5.6: NuGet Restore Gate (P0)
-
-The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReference>` items at workspace open. Mirrors `Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.ProjectDependencyHelper`. Implements [DIAG-RESTORE](../specs/DIAGNOSTICS-SPEC.md).
-
-### C# Sidecar
-
-- [ ] Add `Workspace/ProjectRestorer.cs`: inspect each project's `obj/project.assets.json`, compare timestamp + `PackageReference` set against `.csproj`
-- [ ] Add `Workspace/DotnetCliHelper.cs`: shell `dotnet restore <path> --verbosity quiet`, capture stdout/stderr, surface failures as a structured error
-- [ ] In `WorkspaceManager.OpenCoreAsync`: call `ProjectRestorer.RestoreIfStaleAsync(target, ct)` BEFORE `MSBuildWorkspace.Create(...)`
-- [ ] Honor `diagnostics.auto_restore_on_open` config flag (default true) — when false, skip restore and surface a server-side warning notification
-- [ ] After restore completes successfully, increment `GlobalStateVersion` and fire `diagnostics/refresh`
-- [ ] After restore + `OpenSolutionAsync` complete, fire `workspace/initializationComplete` outbound IPC notification
-
-### Rust LSP Host
-
-- [ ] On workspace open: create LSP `$/progress` work-done token (`workspace/sharplsp-load`)
-- [ ] Forward sidecar restore progress (start, per-project status, end) via `$/progress` notifications
-- [ ] On `workspace/initializationComplete` from sidecar: send LSP `workspace/projectInitializationComplete` (custom notification, matches Roslyn LSP contract); end the work-done progress
-- [ ] Add `diagnostics.auto_restore_on_open` to `DiagnosticsConfig` (default true)
-
-### Tests
-
-- [ ] Full-stack: workspace with stale `assets.json` (delete it) → server triggers restore on open, no CS0246 for NuGet types after init complete
-- [ ] Full-stack: workspace with `diagnostics.auto_restore_on_open = false` → server publishes a warning, leaves diagnostics in incomplete state, does not lie about success
-- [ ] Full-stack: `workspace/projectInitializationComplete` notification fires exactly once per workspace open
-
-## Phase 6: Background Analysis Optimization (P1)
-
-- [ ] Cache `Project.GetCompilationAsync` results across pulls within the same `Solution` snapshot (Roslyn does this internally — verify our IPC layer doesn't defeat it)
-- [ ] Cancel stale per-document IPC pulls on new pulls for the same document
-- [ ] Memory budget: cap `WorkspaceDiagnosticsCache` size; LRU-evict by `GlobalStateVersion` age
-- [ ] Progress reporting via `$/progress` for `workspace/diagnostic` pulls (in addition to load progress from Phase 5.6)
-
----
-
-## TODO
-
-### Done
-- [x] **Rust host**: Create `diagnostics` module (`src/sharplsp/src/diagnostics.rs`)
-- [x] **Rust host**: Map sidecar `DiagnosticResult` → LSP `Diagnostic`
-- [x] **Rust host**: On `didOpen`/`didChange`/`didSave` → request diagnostics from sidecar (push fallback path)
-- [x] **Rust host**: Send `textDocument/publishDiagnostics` to editor (push fallback path)
-- [x] **Rust host**: Clear diagnostics on `textDocument/didClose`
-- [x] **Rust host**: Read `diagnostics.solution_wide_analysis` from config
-- [x] **Rust host**: Read `diagnostics.project_filter` from config
-- [x] **Rust host**: `didOpen` syncs text to sidecar via `notify_did_change` (text-sync, kept)
-- [x] **Rust host**: Advertise `workspaceDiagnostics: true` in capabilities
-- [x] **Rust host**: Implement `textDocument/diagnostic` pull handler (LSP 3.17) — `pull_diagnostics.rs`
-- [x] **Rust host**: Implement `workspace/diagnostic` pull handler — `pull_diagnostics.rs`
-- [x] **Config**: Add `project_filter: Vec<String>` to `DiagnosticsConfig`
-- [x] **Test**: Rust e2e — didClose sends empty publishDiagnostics
-- [x] **Test**: Rust e2e — request() skips diagnostic notifications
-- [x] **Test**: VSCode — file with type error shows diagnostics
-- [x] **Test**: VSCode — file with missing type shows diagnostics
-- [x] **Test**: VSCode — valid file has no error diagnostics
-- [x] **Test**: VSCode — fixing an error clears the diagnostic
-- [x] **Test**: VSCode — diagnostics have correct severity and range
-- [x] **Test**: VSCode — closing a document clears its diagnostics
-- [x] **Test**: Full-stack — close/reopen with fixed source clears stale diagnostics
-- [x] **Test**: Full-stack — `test_full_stack_cross_project_references_no_false_positives` (8-project diamond, regression guard)
-
-### Removed (obsolete after architecture pivot)
-- [x] ~~**Rust host**: On solution load, request solution-wide diagnostics~~ — `request_solution_in_background` to be deleted in Phase 5; eager scan caused phantom CS0246s
-- [x] ~~**Rust host**: Stream diagnostics incrementally by file~~ — push streaming replaced by `workspace/diagnostic` partial-result streaming
-- [x] ~~**Rust host**: Verification pass re-checks files with errors after solution-wide scan~~ — `verify_error_files` to be deleted in Phase 5; band-aid that didn't work
-- [x] ~~**C# sidecar**: Add `workspace/diagnostics/all` IPC handler~~ — to be deleted in Phase 5
-- [x] ~~**C# sidecar**: Add `GetAllDiagnosticsAsync` to `WorkspaceManager`~~ — to be deleted in Phase 5
-- [ ] ~~**Rust host**: Add debounce (150ms) before sidecar request~~ — superseded by Phase 5's 2000ms refresh debounce
-- [ ] ~~**Rust host**: Re-request diagnostics for changed file + dependents~~ — replaced by `diagnostics/refresh` in Phase 5
-- [ ] ~~**Rust host**: Priority queue: active > visible > recent > rest~~ — pull model makes the editor the prioritizer; not needed
-- [ ] ~~**Rust host**: Cancel stale analysis on new edits~~ — moved to Phase 5 (cancel stale per-document IPC pulls)
-
-### Phase 5 — Pull + refresh (P0, primary path)
-- [ ] **Rust host**: Forward `previousResultId` to sidecar in IPC payload
-- [ ] **Rust host**: Return `{ kind: "unchanged" }` when sidecar reports `Changed = false`
-- [ ] **Rust host**: Construct `resultId = "p:{pv}|d:{dv}|g:{gsv}"` from sidecar response
-- [ ] **Rust host**: `workspace/diagnostic` partial-result streaming via `partialResultToken`
-- [ ] **Rust host**: Subscribe to `diagnostics/refresh` IPC notification
-- [ ] **Rust host**: Debounced refresh queue (2000ms) → LSP `workspace/diagnostic/refresh`
-- [ ] **Rust host**: Delete `request_solution_in_background`, `verify_error_files`, `sync_text_to_sidecar`
-- [ ] **Rust host**: Cancel in-flight per-document IPC pulls when fresher pull arrives
-- [ ] **Rust host**: Server capability `diagnosticProvider.identifier = "sharplsp"`
-- [ ] **C# sidecar**: Extend `workspace/diagnostics` IPC payload with `PreviousResultId`; response with `ResultId` + `Changed`
-- [ ] **C# sidecar**: Add `workspace/diagnostics/pull` handler with partial-response streaming
-- [ ] **C# sidecar**: Add `WorkspaceDiagnosticsCache` keyed on `(DocumentId, ProjectVersion, DocumentVersion, GlobalStateVersion)`
-- [ ] **C# sidecar**: Add `IDiagnosticsRefresher` equivalent (`GlobalStateVersion: ulong` + `RefreshRequested` event)
-- [ ] **C# sidecar**: Subscribe to `_workspace.RegisterWorkspaceChangedHandler`; bump version on relevant `WorkspaceChangeKind`s
-- [ ] **C# sidecar**: Emit `diagnostics/refresh` outbound notification with `{ GlobalStateVersion, AffectedProjectIds[] }`
-- [ ] **C# sidecar**: Emit `workspace/initializationComplete` outbound notification once after init
-- [ ] **C# sidecar**: Delete `GetAllDiagnosticsAsync`, `OrderProjectsByDependencies`, `workspace/diagnostics/all` handler
-- [ ] **C# sidecar**: Skip auto-generated syntax trees (`syntaxTree.IsAutoGenerated`)
-- [ ] **Test**: Pull during workspace load returns "loading" or partial — never CS0246 for resolvable types
-- [ ] **Test**: `previousResultId` round-trip → `{ kind: "unchanged" }`
-- [ ] **Test**: Workspace mutation triggers `workspace/diagnostic/refresh` within 2.5s
-- [ ] **Test**: Editing a file invalidates only its project's `resultId`s
-
-### Phase 5.6 — NuGet restore gate (P0)
-- [ ] **C# sidecar**: `Workspace/ProjectRestorer.cs` (assets.json staleness check)
-- [ ] **C# sidecar**: `Workspace/DotnetCliHelper.cs` (shell `dotnet restore`)
-- [ ] **C# sidecar**: Call `RestoreIfStaleAsync` in `OpenCoreAsync` before `MSBuildWorkspace.Create`
-- [ ] **C# sidecar**: Honor `auto_restore_on_open` config flag
-- [ ] **C# sidecar**: Bump `GlobalStateVersion` + `diagnostics/refresh` after restore
-- [ ] **Rust host**: `$/progress` work-done token for workspace load
-- [ ] **Rust host**: Forward sidecar restore progress as `$/progress` events
-- [ ] **Rust host**: Send LSP `workspace/projectInitializationComplete` on init complete
-- [ ] **Config**: Add `auto_restore_on_open: bool` to `DiagnosticsConfig` (default true)
-- [ ] **Config**: Add `refresh_debounce_ms: u32` to `DiagnosticsConfig` (default 2000)
-- [ ] **Test**: Stale `assets.json` → restore on open → no CS0246 for NuGet types
-- [ ] **Test**: `auto_restore_on_open = false` → server warns, does not lie about success
-- [ ] **Test**: `workspace/projectInitializationComplete` fires exactly once per open
-
-### Analyzer pipeline (Phase 4 unchanged, depends on Phase 5)
-- [ ] **C# sidecar**: Enable `CompilationWithAnalyzers.GetAnalyzerSemanticDiagnosticsAsync()` in per-document pull path
-- [ ] **C# sidecar**: Load NuGet analyzer references
-- [ ] **C# sidecar**: Load .editorconfig severity overrides
-- [ ] **C# sidecar**: IDE0005 (unused usings) detection
-- [ ] **C# sidecar**: Map analyzer codes to `codeDescription` URLs
-- [ ] **Static analyzers**: Implement
-  [DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md](DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md)
-  for monorepo-only unused public C#/F# code elements
-
-### F# sidecar (Phase 3 unchanged)
-- [ ] **F# sidecar**: `FSharpCheckFileResults.Diagnostics` integration
-- [ ] **F# sidecar**: Map F# diagnostic severity to LSP
-- [ ] **F# sidecar**: Solution-wide F# analysis via `FSharpChecker` (per-document, pull-driven)
-- [ ] **F# sidecar**: Equivalent `IDiagnosticsRefresher` + workspace event subscription
-- [ ] **F# sidecar**: FSharpLint integration
-- [ ] **F# sidecar**: FSharp.Analyzers.SDK plugin loading
-
-### Config remaining
-- [ ] **Config**: Add `min_severity: String` to `DiagnosticsConfig`
-- [ ] **Config**: Add `max_per_file: u32` to `DiagnosticsConfig`
-- [ ] **Config**: Hot-reload via `workspace/didChangeConfiguration` (bump `global_state_version`, fire refresh)
-
-### Tests remaining
-- [ ] **Test**: Full-stack — open file with errors → errors in Problems panel via pull
-- [ ] **Test**: Solution-wide pull surfaces errors in unopened files
-- [ ] **Test**: Project filter excludes specified projects from `workspace/diagnostic`
-- [ ] **Test**: Sidecar crash recovery preserves last-known `resultId` cache (or invalidates atomically)
-
-## Phase 7: Advanced Analysis
-
-- [ ] Code metrics (cyclomatic complexity)
-- [ ] Value tracking / data flow analysis
+- [ ] Code metrics (cyclomatic complexity).
+- [ ] Value tracking/data-flow analysis.
