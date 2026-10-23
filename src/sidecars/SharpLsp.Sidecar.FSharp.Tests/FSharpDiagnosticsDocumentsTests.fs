@@ -80,19 +80,38 @@ type EngineDiagnosticsFixture() =
     member _.Orphan = NativePaths.Resolve(dir, "Orphan.fs")
     member _.Notifications = notifications.ToArray()
 
-    member private this.ReadResponse(transport: FramedTransport, id: uint32) : Task<Envelope> = task {
-        let! raw = transport.ReadFrameAsync()
+    member private _.ReadEnvelope(transport: FramedTransport, ct: CancellationToken) : Task<Envelope> = task {
+        let! raw = transport.ReadFrameAsync(ct)
         match raw with
         | null -> return failwith "Connection closed"
-        | bytes ->
-            let response = deserialize<Envelope>(bytes)
-            if response.Id.HasValue then
-                Assert.Equal(id, response.Id.Value)
-                return response
-            else
-                Assert.NotNull(response.Method)
-                notifications.Add(response)
-                return! this.ReadResponse(transport, id)
+        | bytes -> return deserialize<Envelope>(bytes)
+    }
+
+    member private _.RecordNotification(response: Envelope) =
+        Assert.False(response.Id.HasValue)
+        Assert.NotNull(response.Method)
+        notifications.Add(response)
+
+    member private this.ReadResponse(transport: FramedTransport, id: uint32) : Task<Envelope> = task {
+        let! response = this.ReadEnvelope(transport, CancellationToken.None)
+        if response.Id.HasValue then
+            Assert.Equal(id, response.Id.Value)
+            return response
+        else
+            this.RecordNotification(response)
+            return! this.ReadResponse(transport, id)
+    }
+
+    member this.AwaitNotification(method: string, after: int, ct: CancellationToken) : Task<Envelope> = task {
+        match notifications |> Seq.skip after |> Seq.tryFind (fun item -> item.Method = method) with
+        | Some response -> return response
+        | None ->
+            match transport with
+            | None -> return failwith "sidecar transport is not connected"
+            | Some connected ->
+                let! response = this.ReadEnvelope(connected, ct)
+                this.RecordNotification(response)
+                return! this.AwaitNotification(method, after, ct)
     }
 
     member this.Send(meth: string, payload: byte array) : Task<Envelope> =

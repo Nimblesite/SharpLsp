@@ -37,6 +37,7 @@
     <Compile Include="FSharpOwningProjectTests.fs" />
     <Compile Include="FSharpDiagnosticsDocumentsTests.fs" />
     <Compile Include="FSharpWorkspaceRestoreEndToEndTests.fs" />
+    <Compile Include="FSharpOwnerRestoreNotificationsTests.fs" />
     <Compile Include="FSharpScriptDiagnosticsTests.fs" />
     <Compile Include="FSharpForeignSymbolsTests.fs" />
     <Compile Include="FSharpForeignSymbolsWireTests.fs" />
