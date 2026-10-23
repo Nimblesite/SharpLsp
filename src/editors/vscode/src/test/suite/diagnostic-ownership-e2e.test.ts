@@ -23,10 +23,28 @@ import { activateWithScratch } from './test-explorer-kit';
 import { pollUntilResult, removeDirRecursive } from './test-helpers';
 import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
+const OWNER_PACKAGE_OPTIONS: ProjectOptions = {
+  properties: { RestorePackagesPath: '$(MSBuildProjectDirectory)/../packages' },
+  packages: [{ id: 'Newtonsoft.Json', version: '13.0.3' }],
+};
+
 const OWNERSHIP_CASES = [
   { primary: ACCURACY_CASES[1], external: ACCURACY_CASES[0] },
   { primary: ACCURACY_CASES[0], external: ACCURACY_CASES[0] },
   { primary: ACCURACY_CASES[0], external: ACCURACY_CASES[1] },
+  {
+    primary: ACCURACY_CASES[0],
+    external: {
+      ...ACCURACY_CASES[0],
+      broken:
+        'module DiagnosticAccuracy.Closed\nlet answer: int = Newtonsoft.Json.JsonConvert.SerializeObject(42)\n',
+      clean:
+        'module DiagnosticAccuracy.Closed\nlet answer: string = Newtonsoft.Json.JsonConvert.SerializeObject(42)\n',
+      code: 'FS0193',
+    },
+    suffix: ' with independent package references',
+    options: OWNER_PACKAGE_OPTIONS,
+  },
 ] as const;
 
 interface OwnershipFixture {
@@ -174,9 +192,9 @@ async function removeOwnerPackage(fixture: AccuracyFixture): Promise<string> {
 
 for (const scenario of OWNERSHIP_CASES) {
   suite(
-    `Diagnostic owning projects — ${scenario.external.language} beside ${scenario.primary.language}`,
+    `Diagnostic owning projects — ${scenario.external.language} beside ${scenario.primary.language}${'suffix' in scenario ? scenario.suffix : ''}`,
     () => {
-      const current = useOwnershipFixture(scenario);
+      const current = useOwnershipFixture(scenario, 'options' in scenario ? scenario.options : {});
       test('opening an external source adopts its closed-file errors and refreshes repairs', async function () {
         this.timeout(FIXTURE_BUILD_MS + 4 * LSP_RESPONSE_MS);
         const fixture = current();
@@ -199,10 +217,7 @@ suite('F# owning projects — restore completion', () => {
         'module DiagnosticAccuracy.Entry\nlet value = Newtonsoft.Json.JsonConvert.SerializeObject(42).Length\n',
     },
   };
-  const current = useOwnershipFixture(scenario, {
-    properties: { RestorePackagesPath: '$(MSBuildProjectDirectory)/../packages' },
-    packages: [{ id: 'Newtonsoft.Json', version: '13.0.3' }],
-  });
+  const current = useOwnershipFixture(scenario, OWNER_PACKAGE_OPTIONS);
   test('restoring an external owner refreshes closed errors without a semantic or file-event rescue', async function () {
     this.timeout(FIXTURE_BUILD_MS + 4 * LSP_RESPONSE_MS);
     const fixture = current();
