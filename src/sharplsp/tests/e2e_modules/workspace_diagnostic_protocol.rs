@@ -10,6 +10,7 @@ mod idle_restore;
 mod initialization;
 mod input_reload;
 mod invalid_selection;
+mod owned_projects;
 mod recovery;
 mod refresh_debounce;
 mod selection;

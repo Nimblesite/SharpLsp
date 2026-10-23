@@ -193,20 +193,7 @@ pub(super) fn warm_clean_documents(
     client: &mut LspClient,
     traffic: &mut Vec<Value>,
 ) {
-    for (path, source, language, position) in [
-        (
-            workspace.domain_path(),
-            fixtures_medium::DOMAIN_FS,
-            "fsharp",
-            fixtures_medium::fs_med_pos::PRODUCT_TYPE,
-        ),
-        (
-            workspace.entities_path(),
-            fixtures_medium::ENTITIES_CS,
-            "csharp",
-            fixtures_medium::cs_med_pos::CUSTOMER_CLASS,
-        ),
-    ] {
+    for (path, source, language, position) in clean_entries(workspace) {
         let uri = path_to_file_uri(&path);
         client.notify(
             "textDocument/didOpen",

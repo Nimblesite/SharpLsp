@@ -2,6 +2,26 @@
 use super::*;
 use fixtures_medium::{create_medium_workspace, MediumWorkspace, CALCULATIONS_FS};
 
+/// The same real clean compiler inputs and load-bearing coordinates serve every mixed session.
+pub type CleanEntry = (std::path::PathBuf, &'static str, &'static str, (u32, u32));
+
+pub fn clean_entries(workspace: &MediumWorkspace) -> [CleanEntry; 2] {
+    [
+        (
+            workspace.domain_path(),
+            fixtures_medium::DOMAIN_FS,
+            "fsharp",
+            fixtures_medium::fs_med_pos::PRODUCT_TYPE,
+        ),
+        (
+            workspace.entities_path(),
+            fixtures_medium::ENTITIES_CS,
+            "csharp",
+            fixtures_medium::cs_med_pos::CUSTOMER_CLASS,
+        ),
+    ]
+}
+
 /// Complete F# source with one compiler-confirmed type error.
 pub const BROKEN_FS: &str = "module Medium.FsDomain.Calculations\n\nlet value: int = \"oops\"\n";
 /// Complete C# source with one compiler-confirmed type error.

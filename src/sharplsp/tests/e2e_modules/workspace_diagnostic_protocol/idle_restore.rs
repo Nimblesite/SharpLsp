@@ -129,7 +129,7 @@ fn await_marker(client: &mut LspClient, root: &Path, marker: &str, traffic: &mut
 }
 
 /// No client file notification or semantic request can manufacture this second invalidation.
-fn await_compiler_refresh(client: &mut LspClient, traffic: &mut Vec<Value>) {
+pub(super) fn await_compiler_refresh(client: &mut LspClient, traffic: &mut Vec<Value>) {
     let deadline = Instant::now() + Duration::from_secs(15);
     while !traffic.iter().any(is_refresh) {
         assert!(
