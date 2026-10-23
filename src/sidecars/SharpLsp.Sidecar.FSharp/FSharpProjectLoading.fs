@@ -185,7 +185,7 @@ let buildProjectOptions (checker: FSharpChecker) (fsprojPath: string) : FSharpPr
         SourceFiles = parseFsprojSourceFiles fsprojPath }
 
 let scriptOptions (checker: FSharpChecker) (scriptPath: string) (source: string) (ct: CancellationToken) =
-    let flags = [| "--define:INTERACTIVE"; "--define:EDITING" |]
+    let flags = [| "--define:INTERACTIVE"; "--define:EDITING"; "--simpleresolution" |]
 
     checker.GetProjectOptionsFromScript(
         scriptPath,

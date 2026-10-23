@@ -170,6 +170,14 @@ Invocation parameters:
 - `useFsiAuxLib = true` — makes the `fsi` object bind, so `fsi.CommandLineArgs` resolves.
 - `previewEnabled` follows the resolved language version.
 
+### Current compiler inputs and diagnostics `[SCRIPT-FSX-DIAGNOSTICS]`
+
+The published sidecar includes the SDK's `FSharp.Compiler.Interactive.Settings.dll` required by `useFsiAuxLib`. Script resolution enables FCS simple resolution so a missing assembly reference produces the compiler's real diagnostic rather than an empty successful report.
+
+Every script edit refreshes its compiler input options before the sidecar acknowledges the change, so the next semantic query observes the current `#r` and `#load` directives. Changed source membership triggers diagnostic invalidation. Compiler input options may persist; computed diagnostic arrays remain request-local, with result reuse owned by [DIAG-ARCHITECTURE-SALSA](DIAGNOSTICS-SPEC.md).
+
+Compiler option-resolution errors appear once on their actual owning script range; a global setup failure belongs to the root script at 0:0. Invalid compiler inputs report their real setup failures before semantic or analyzer work can invent downstream errors. Repairing and reintroducing a missing reference must clear and restore the error without restarting the editor, including after explicit workspace reloads. Valid `fsi` bindings and relative references to real SDK-built assemblies remain error-free and resolve their actual types without a preceding diagnostic request.
+
 ### Preprocessor symbols `[SCRIPT-FSX-SYMBOLS]`
 
 Scripts opened in the editor define both `INTERACTIVE` and `EDITING`. `COMPILED` is **not** defined. Getting this wrong makes `#if INTERACTIVE` blocks appear greyed-out-dead in the editor while being live at runtime.

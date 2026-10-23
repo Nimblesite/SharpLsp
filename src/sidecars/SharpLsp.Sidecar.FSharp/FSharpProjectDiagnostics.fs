@@ -35,7 +35,7 @@ let compilerDiagnostic filePath projectScope (diagnostic: FSharpDiagnostic) : Di
       Code = $"FS{diagnostic.ErrorNumber:D4}" }
 
 /// Source-file failures are answered by their existing document query, once.
-let private belongsToProject (options: FSharp.Compiler.CodeAnalysis.FSharpProjectOptions) (diagnostic: FSharpDiagnostic) =
+let internal belongsToProject (options: FSharp.Compiler.CodeAnalysis.FSharpProjectOptions) (diagnostic: FSharpDiagnostic) =
     options.SourceFiles
     |> Array.exists (fun source -> NativePaths.AreEqual(source, diagnostic.FileName))
     |> not
@@ -54,7 +54,7 @@ let private configurationDiagnostics (state: FSharpWorkspace.FSharpWorkspaceStat
     }
 
 /// Preserve distinct compiler findings while combining its diagnostic streams.
-let private diagnosticIdentity (diagnostic: FSharpDiagnostic) =
+let internal diagnosticIdentity (diagnostic: FSharpDiagnostic) =
     let range = diagnostic.Range
     diagnostic.ErrorNumber, diagnostic.Severity, range, diagnostic.Message
 

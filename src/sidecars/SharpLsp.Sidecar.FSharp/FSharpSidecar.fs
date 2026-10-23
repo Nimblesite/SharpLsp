@@ -100,10 +100,13 @@ type FSharpSidecar() as this =
                 try
                     let request = MessagePackSerializer.Deserialize<DidChangeRequest>(payload, cancellationToken = ct)
                     FSharpWorkspace.applyDidChange workspace request.FilePath request.NewText
+                    let! changed = FSharpDiagnosticQueries.refreshInputs workspace request.FilePath ct
+                    let! notified = this.NotifyScopeChangeAsync(changed, ct)
                     // A file no loaded project compiles loads its own project, in the
                     // background: the host waits on this reply. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
                     this.AdoptOwnerAsync(request.FilePath, ct) |> ignore
-                    return Helpers.serializeOk "ok" ct
+                    return if notified then Helpers.serializeOk "ok" ct
+                           else ByteResult.Failure("F# script input invalidation delivery failed.")
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))
@@ -238,51 +241,14 @@ type FSharpSidecar() as this =
         base.Register("textDocument/inlayHint", Helpers.handle (fun (request: InlayHintRequest) ->
             FSharpFeatures.getInlayHints workspace request.FilePath request.StartLine request.EndLine) (Helpers.listOf id))
 
-        // Diagnostics (FCS compiler errors + FSharpLint warnings)
-        base.Register("workspace/diagnostics", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let requestPath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
-                    // Resolve onto the project's spelling of the file — FCS
-                    // filename comparisons are case-sensitive while hosts vary
-                    // the casing. [REFERENCES-FSHARP-FIND]
-                    let filePath = FSharpWorkspace.projectFilePath workspace requestPath
-                    let mutable results = ResizeArray<DiagnosticResult>()
-                    // FCS compiler diagnostics, computed from the live buffer
-                    // (didChange overlay), never stale disk text — so a reverted
-                    // buffer clears its errors on the next pull. [HOVER-FSHARP-OVERLAY]
-                    let! checkedFile = FSharpWorkspace.checkFile workspace filePath
-                    match checkedFile with
-                    | Some(check, source) ->
-                        // Startup failures belong to the project report, and a source
-                        // diagnostic belongs only to its actual compiler location.
-                        for d in check.Diagnostics |> Array.filter (fun diagnostic -> NativePaths.AreEqual(diagnostic.FileName, filePath)) do
-                            results.Add(FSharpProjectDiagnostics.compilerDiagnostic filePath false d)
-                        // [ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]
-                        // FSAC-parity file-local analyzers — gated like every static
-                        // analyzer, without ever suppressing the compiler diagnostics.
-                        if analyzersEnabled then
-                            let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
-                            fileDiags |> List.iter results.Add
-                    | None -> ()
-                    // [ANALYZERS-DEADCODE-SEVERITY] Merge project-wide dead-code diagnostics
-                    // for this file (monorepo mode promotes public deadness to errors).
-                    if workspace.IsLoaded && analyzersEnabled && analyzerConfig.DeadCodeEnabled then
-                        // The file's own project decides: a symbol that is not public cannot
-                        // be used from another project, and a public one is reported only in
-                        // monorepo mode, where the projects reading this one in memory count.
-                        let scope = FSharpWorkspace.queryScope workspace filePath
-                        let! projects =
-                            FSharpWorkspace.checkAll
-                                workspace
-                                (if analyzerConfig.Monorepo then scope else List.truncate 1 scope)
-                        let allUses = projects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
-                        FSharpAnalyzers.deadCodeDiagnosticsForFile analyzerConfig allUses filePath
-                        |> List.iter results.Add
-                    return Helpers.serializeOk (results.ToArray()) ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        // Compiler truth and analyzers share one uncached query boundary.
+        base.Register("workspace/diagnostics", Helpers.handleWithCancellation (fun (requestPath: string) ct ->
+            FSharpDiagnosticQueries.get
+                { Workspace = workspace
+                  AnalyzersEnabled = analyzersEnabled
+                  Analyzers = analyzerConfig
+                  NotifyScopeChanged = fun changed token -> this.NotifyScopeChangeAsync(changed, token) }
+                requestPath ct) Helpers.resultOf)
 
         // Formatting preview (Fantomas diff)
         base.Register("textDocument/formattingPreview", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
@@ -355,6 +321,14 @@ type FSharpSidecar() as this =
     /// Invalidate the host query even when the IPC request stream is idle. [DIAG-IPC-REFRESH]
     member private this.NotifyDiagnosticChange(ct: CancellationToken) =
         this.NotifyAsync("diagnostics/refresh", String.Empty, ct)
+
+    member private this.NotifyScopeChangeAsync(changed: bool, ct: CancellationToken) =
+        task {
+            if changed && refreshSupported then
+                let! result = this.NotifyDiagnosticChange(ct)
+                return not result.IsError
+            else return true
+        }
 
     member private this.AdoptOwnerAsync(filePath: string, ct: CancellationToken) =
         task {

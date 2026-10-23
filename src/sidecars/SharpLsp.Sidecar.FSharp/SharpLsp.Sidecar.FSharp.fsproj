@@ -31,6 +31,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- FCS script resolution needs the actual SDK's interactive settings assembly. -->
+    <Reference Include="FSharp.Compiler.Interactive.Settings">
+      <HintPath>$(MSBuildToolsPath)/FSharp/FSharp.Compiler.Interactive.Settings.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="10.1.402" />
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.402" />
     <!-- Roslyn compiles the C# projects an F# project references, in memory, so the
@@ -78,6 +86,7 @@
     <Compile Include="FSharpWire.fs" />
     <Compile Include="FSharpProjectDiagnostics.fs" />
     <Compile Include="FSharpAnalyzers.fs" />
+    <Compile Include="FSharpDiagnosticQueries.fs" />
     <Compile Include="FSharpSidecar.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
