@@ -23,24 +23,12 @@ fn complete_workspace_pull(client: &mut LspClient, traffic: &mut Vec<Value>) -> 
 
 /// Preserve previous-result tokens through explicitly superseded workspace scans.
 fn workspace_pull(client: &mut LspClient, previous: &[Value], traffic: &mut Vec<Value>) -> Value {
-    let deadline = std::time::Instant::now() + Duration::from_mins(1);
-    loop {
-        let (response, messages) = target_framework::request_answering(
-            client,
-            "workspace/diagnostic",
-            json!({"previousResultIds":previous}),
-        );
-        traffic.extend(messages);
-        if response.get("error").is_none() {
-            return response;
-        }
-        assert_superseded(&response);
-        assert!(
-            std::time::Instant::now() < deadline,
-            "compiler analysis did not complete: {response}"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    completed_pull(
+        client,
+        "workspace/diagnostic",
+        json!({"previousResultIds":previous}),
+        traffic,
+    )
 }
 
 #[test]
@@ -106,16 +94,6 @@ fn initialized(workspace: &fixtures_medium::MediumWorkspace) -> LspClient {
     );
     assert_rpc_ok(&response, "initialize protocol recovery session");
     client
-}
-
-/// Superseded truth is explicitly retryable and cannot masquerade as clean output.
-fn assert_superseded(response: &Value) {
-    assert_eq!(
-        response["error"]["code"], -32802,
-        "superseded scan: {response}"
-    );
-    assert_eq!(response["error"]["data"]["retriggerRequest"], true);
-    assert!(response.get("result").is_none());
 }
 
 /// A subsequent valid request must produce the independently confirmed compiler error.

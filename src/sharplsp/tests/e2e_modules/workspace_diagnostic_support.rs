@@ -122,6 +122,40 @@ pub fn observed_request(
     response
 }
 
+/// Retry only standard superseded snapshots; return the first successful compiler truth.
+pub fn completed_pull(
+    client: &mut LspClient,
+    method: &str,
+    params: Value,
+    traffic: &mut Vec<Value>,
+) -> Value {
+    let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    loop {
+        let (response, messages) =
+            target_framework::request_answering(client, method, params.clone());
+        traffic.extend(messages);
+        if response.get("error").is_none() {
+            return response;
+        }
+        assert_superseded(&response);
+        assert!(
+            std::time::Instant::now() < deadline,
+            "compiler analysis did not complete: {response}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Superseded truth is explicitly retryable and cannot masquerade as clean output.
+pub fn assert_superseded(response: &Value) {
+    assert_eq!(
+        response["error"]["code"], -32802,
+        "superseded scan: {response}"
+    );
+    assert_eq!(response["error"]["data"]["retriggerRequest"], true);
+    assert!(response.get("result").is_none());
+}
+
 /// Require one report per document, rejecting both missing and duplicate reports.
 pub fn report_for<'a>(items: &'a [Value], uri: &str) -> &'a Value {
     let matching: Vec<_> = items.iter().filter(|item| item["uri"] == uri).collect();

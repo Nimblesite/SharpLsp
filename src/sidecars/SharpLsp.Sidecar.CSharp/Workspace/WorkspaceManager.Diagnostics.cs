@@ -97,7 +97,7 @@ internal sealed partial class WorkspaceManager
     )
     {
         return NativePaths.IsRazor(filePath)
-            ? SuccessfulDiagnostics(await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false))
+            ? await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false)
             : await DiagnoseAsync(
                     filePath,
                     await (

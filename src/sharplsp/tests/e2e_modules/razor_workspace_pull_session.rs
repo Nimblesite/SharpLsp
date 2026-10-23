@@ -154,3 +154,76 @@ fn assert_repaired(response: &Value, previous: &[Value], uri: &str) {
         .iter()
         .all(|item| item["severity"] != 1));
 }
+
+/// Unavailable compiler ownership cannot be memoized as a clean Razor document.
+#[test]
+fn unowned_razor_diagnostics_fail_until_actual_solution_selection() {
+    let target = fixture();
+    let other = create_razor_workspace_with_fsharp_built();
+    let mut client = initialized(&other);
+    let uri = path_to_file_uri(&target.file(CLOSED));
+    let mut traffic = Vec::new();
+    let (missing, messages) = client.request_collecting_notifications(
+        "textDocument/diagnostic",
+        json!({"textDocument":{"uri":uri}}),
+    );
+    traffic.extend(messages);
+    assert_unavailable(&missing);
+    select_razor_owner(&mut client, &target, &mut traffic);
+    let selected = document_pull(&mut client, &uri, &mut traffic);
+    assert_document_error(&selected);
+    assert_no_push(&traffic);
+    client.shutdown_and_exit();
+}
+
+/// First successful owner-scoped truth has the SDK-confirmed mapped C# error.
+fn assert_document_error(response: &Value) {
+    assert_rpc_ok(
+        response,
+        "selected Razor owner reports actual compiler truth",
+    );
+    assert_eq!(response["result"]["kind"], "full");
+    assert!(response["result"]["resultId"]
+        .as_str()
+        .is_some_and(|id| !id.is_empty()));
+    assert_error(
+        response["result"]["items"]
+            .as_array()
+            .expect("mapped Razor errors"),
+        "CS0029",
+        "sharplsp-razor",
+    );
+}
+
+/// Exercise the standard document request without an editor open or semantic rescue.
+fn document_pull(client: &mut LspClient, uri: &str, traffic: &mut Vec<Value>) -> Value {
+    workspace_diagnostic_support::completed_pull(
+        client,
+        "textDocument/diagnostic",
+        json!({"textDocument":{"uri":uri}}),
+        traffic,
+    )
+}
+
+/// The retryable standard error contains no fabricated clean report or result identity.
+fn assert_unavailable(response: &Value) {
+    assert_eq!(response["jsonrpc"], "2.0");
+    assert!(response["id"].is_number());
+    workspace_diagnostic_support::assert_superseded(response);
+}
+
+/// Select the actual SDK solution through the same user command as an editor.
+fn select_razor_owner(
+    client: &mut LspClient,
+    workspace: &RazorWorkspace,
+    traffic: &mut Vec<Value>,
+) {
+    let selected = observed_request(
+        client,
+        "sharplsp/loadSolution",
+        json!({"solutionPath":workspace.file(&["RazorFixtures.slnx"])}),
+        traffic,
+    );
+    assert_rpc_ok(&selected, "select actual Razor owner");
+    assert_eq!(selected["result"]["success"], true);
+}
