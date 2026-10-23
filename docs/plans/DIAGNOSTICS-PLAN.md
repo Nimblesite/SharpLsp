@@ -15,7 +15,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Preserve the observable legacy restore-pending notice without speculative package errors, then clear it before the first resolved package hover. The unchanged native regression, all 832 C# cases and all 45 diagnostic VSIX cases pass after the reactive IPC fix.
 - [x] Prove solution replacement removes previous workspace errors without a window restart; two real solutions switch and switch back in one native session, retiring old reports explicitly.
 - [x] Prove sidecar failures/restarts cannot memoize an empty false-clean result. The unchanged native #453 regression fails against the prior compiler session and passes after input restoration: the first successful post-crash pull retains an unsaved FS0039 and closed-file CS0029, the real compiler PID changes, and the host survives. All 36 existing manager regressions pass.
-- [ ] Re-run the real FluentValidation and Serilog diagnostic edit/clear cases that failed the full Windows baseline.
+- [x] Re-run the real FluentValidation and Serilog diagnostic edit/clear cases that failed the full Windows baseline. Both unchanged real-repository cases pass together against the reviewed native host and matching compiler/Common payloads: the FluentValidation constraint error and Serilog type error appear and clear after repair (2/2, 44.654s). No assertions, response budgets or semantic rescue calls were changed. The entire unchanged GitReader F# .NET Framework suite also passes all 11 cases and teardown (583.307s, normal editor exit), covering the hook that failed the older full run; final integrated CI remains required.
 
 ## [DIAG-PLAN-PULL] Protocol and Query Ownership
 
