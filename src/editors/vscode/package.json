@@ -349,6 +349,15 @@
           "default": "default",
           "description": "Profiling preset that configures sample rate and duration."
         },
+        "sharplsp.profiler.palette": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "description": "Override profiler colors: critical, hot, warm, memory, memoryHot, memoryWarm, memoryCool, leak, success."
+        },
         "sharplsp.profiler.autoSnapshotOnPause": {
           "type": "boolean",
           "default": true,
@@ -1043,6 +1052,12 @@
         "icon": "$(trash)"
       },
       {
+        "command": "sharplsp.profiler.inspectVariable",
+        "title": "Inspect Variable in Profiler",
+        "category": "SharpLsp",
+        "icon": "$(graph)"
+      },
+      {
         "command": "sharplsp.profiler.memoryReferences",
         "title": "Show Reference Graph",
         "category": "SharpLsp",
@@ -1436,6 +1451,20 @@
           "command": "sharplsp.profiler.memoryStop",
           "when": "debugType == sharplsp-coreclr && sharplsp.profiler.memoryTracking",
           "group": "navigation@3"
+        }
+      ],
+      "debug/variables/context": [
+        {
+          "command": "sharplsp.profiler.inspectVariable",
+          "when": "debugType == sharplsp-coreclr",
+          "group": "inline@10"
+        }
+      ],
+      "debug/watch/context": [
+        {
+          "command": "sharplsp.profiler.inspectVariable",
+          "when": "debugType == sharplsp-coreclr",
+          "group": "inline@10"
         }
       ]
     },

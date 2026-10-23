@@ -28,6 +28,8 @@ export function registerProfiler(context: vscode.ExtensionContext): SharpLspProf
   const host: ProfilerHost = {
     idPrefix: 'sharplsp',
     brand: 'SharpLsp',
+    palette: { critical: '#3eaa67', hot: '#61c481', warm: '#a1d9a4',
+      memory: '#42b89d', memoryHot: '#82cfb7', memoryWarm: '#6bb69e', memoryCool: '#479880', leak: '#f87171', success: '#34d399' },
     configSection: 'sharplsp',
     debugType: DEBUG_TYPE,
     languageIds: ['csharp', 'fsharp'],

@@ -51,11 +51,11 @@ export const ENGINE = 'FsPricingEngine';
 export const LEDGER = 'FsOrderLedger';
 
 /** The CPU heat palette, critical to cool ([PROF-UI-WEBVIEW]: orange/amber for CPU). */
-export const CPU_PALETTE = ['#e8500a', '#f97316', '#fbbf24', '#4a5468'];
+export const CPU_PALETTE = ['#3eaa67', '#61c481', '#a1d9a4', '#4a5468'];
 /** The purple memory-allocation palette ([PROF-UI-WEBVIEW]: purple for memory). */
-export const MEMORY_PALETTE = ['#c084fc', '#a78bfa', '#8b5cf6', '#7c3aed'];
+export const MEMORY_PALETTE = ['#42b89d', '#82cfb7', '#6bb69e', '#479880'];
 /** The leak-confidence palette ([PROF-UI-WEBVIEW]: red for leaks). */
-export const LEAK_PALETTE = ['#ef4444', '#f87171', '#fb923c', '#a78bfa'];
+export const LEAK_PALETTE = ['#ef4444', '#f87171', '#fb923c', '#82cfb7'];
 /** How long one profiler step may take: an attach, a stop with symbolization, a heap capture. */
 export const STOP_MS = 90_000;
 /** A leak badge names its confidence in its after-line text. */
@@ -250,9 +250,9 @@ export async function assertCpuIdle(pid: number): Promise<void> {
 /** The heat tier a share paints with, including its exact threshold. */
 export function cpuTier(percentage: number): string | undefined {
   const tiers: readonly [number, string][] = [
-    [20, '#e8500a'],
-    [10, '#f97316'],
-    [5, '#fbbf24'],
+    [20, '#3eaa67'],
+    [10, '#61c481'],
+    [5, '#a1d9a4'],
     [0, '#4a5468'],
   ];
   return tiers.find(([floor]) => percentage >= floor)?.[1];

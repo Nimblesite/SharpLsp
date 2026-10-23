@@ -26,7 +26,7 @@ import {
 } from './profiler-ui-helpers';
 
 /** The heat palette, hottest first ([PROF-UI-HEATMAP]). */
-const HEAT = { critical: '#e8500a', hot: '#f97316', warm: '#fbbf24', cool: '#4a5468' } as const;
+const HEAT = { critical: '#3eaa67', hot: '#61c481', warm: '#a1d9a4', cool: '#4a5468' } as const;
 type Heat = keyof typeof HEAT | 'none';
 
 function clearDecorations(): void {
@@ -202,7 +202,7 @@ suite('Profiler — Decoration Modules', () => {
       appliedMemoryDecorations()
         .map((entry) => entry.color)
         .sort(),
-      ['#7c3aed', '#c084fc'],
+      ['#42b89d', '#479880'],
       'every allocation of the snapshot is painted, coloured by size',
     );
   });

@@ -6,6 +6,8 @@
 // disk. Ported from Basilisk's profiler-cpu-e2e suite: the raw pipeline, the
 // panel flow, the exited-process classification and the results panel keep
 // their assertions; the Python-only cooperative sampler has no .NET analogue.
+import { registerCpuCaptureContract } from '@nimblesite/lsp-profiler-ui/out/src/testing/cpu-capture-contract';
+import { toProfileResult } from '@nimblesite/lsp-profiler-ui/out/src/wire-adapters';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
@@ -45,6 +47,11 @@ function isHot(report: ProfileReport): boolean {
 
 suite('CPU profiling — real end-to-end', () => {
   const live = profilingSuite('profiler-cpu-', 'ProfileTarget');
+  registerCpuCaptureContract(async () => {
+    const started = await execute<{ session_id: string }>('cpu.start', { pid: live.target.pid });
+    await new Promise(resolve => setTimeout(resolve, SAMPLE_WINDOW_MS));
+    return toProfileResult(await execute<ProfileReport>('cpu.stop', { session_id: started.session_id }));
+  });
 
   test('raw pipeline: hot functions attributed to the target, speedscope + .cpuprofile artifacts written and parseable', async function () {
     this.timeout(STOP_MS + SAMPLE_WINDOW_MS);
