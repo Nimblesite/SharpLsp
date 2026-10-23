@@ -43,6 +43,7 @@
         "fsharp-lsp-syntax.test.js",
         "fsharp-lsp-diagnostics.test.js",
         "diagnostic-script-errors-e2e.test.js",
+        "diagnostic-ownership-e2e.test.js",
         "fsharp-lsp-hierarchy.test.js",
         "fsharp-lsp-workspace-symbol.test.js",
         "fsharp-lsp-codefixes.test.js",
