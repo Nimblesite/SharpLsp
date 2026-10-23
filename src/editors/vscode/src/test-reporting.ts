@@ -76,7 +76,7 @@ export function reportOutcome(
   frameworks?: FrameworkIndex,
 ): void {
   if (outcome.failure !== undefined) {
-    info(`Test run failed: ${singleLine(outcome.failure)}`);
+    info('Test run failed');
   }
   reportResults(run, tests, outcome, cache, frameworks);
 }
