@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import Mocha from 'mocha';
 import { globSync } from 'glob';
 import { splitTrimmed } from '../../utils';
+import { pathKey, resolvePath } from '../../paths';
 import { DEFAULT_TEST_MS } from './test-timeouts';
 
 /** Every compiled suite — the default when no chunk filter is supplied. */
@@ -39,21 +40,62 @@ function matchesShape(file: string): boolean {
 }
 
 /** The slice of `test-chunks.json` the platform guard reads. */
-interface ChunkManifest {
-  readonly chunks: Record<string, { readonly files: string[]; readonly windowsOnly?: boolean }>;
+export interface ChunkManifest {
+  readonly chunks: Record<
+    string,
+    {
+      readonly files: string[];
+      readonly windowsOnly?: boolean;
+      readonly linuxOnly?: boolean;
+    }
+  >;
 }
 
 /**
- * Suites of `windowsOnly` chunks: .NET Framework test hosts run only on Windows
- * ([NETFX-SCOPE]), so they never load elsewhere — not even in a local full run.
+ * Full local runs honor the same platform ownership as CI's feature chunks.
+ * Implements [DIST-CI-VSIX-SHARDS] and [NETFX-SCOPE].
  */
-function windowsOnlySuites(platform: NodeJS.Platform): ReadonlySet<string> {
-  if (platform === 'win32') return new Set();
-  const manifest = path.resolve(__dirname, '..', '..', '..', 'test-chunks.json');
+function platformExclusions(platform: NodeJS.Platform): ReadonlyMap<string, 'Windows' | 'Linux'> {
+  const manifest = resolvePath(__dirname, '..', '..', '..', 'test-chunks.json');
   const { chunks } = JSON.parse(fs.readFileSync(manifest, 'utf8')) as ChunkManifest;
-  return new Set(
-    Object.values(chunks).flatMap((chunk) => (chunk.windowsOnly === true ? chunk.files : [])),
+  return new Map(
+    Object.values(chunks).flatMap((chunk) => {
+      const owner =
+        chunk.windowsOnly === true && platform !== 'win32'
+          ? 'Windows'
+          : chunk.linuxOnly === true && platform !== 'linux'
+            ? 'Linux'
+            : undefined;
+      return owner ? chunk.files.map((file) => [pathKey(file), owner] as const) : [];
+    }),
   );
+}
+
+/** Preserve a useful failure when every match belongs to another platform. */
+function platformReason(matches: readonly string[], excluded: ReadonlyMap<string, string>): string {
+  const owners = new Set(matches.map((file) => excluded.get(pathKey(file))));
+  if (owners.size > 1) return 'platform-specific suites, which do not share a runnable platform';
+  return owners.has('Windows')
+    ? 'Windows-only suites, which run on Windows alone ([NETFX-SCOPE])'
+    : 'Linux-only suites, which run on Linux alone ([DIST-CI-VSIX-SHARDS])';
+}
+
+/** Match real compiled files; an unsupported explicit pattern cannot turn into a zero-test pass. */
+function matchingSuites(
+  testsRoot: string,
+  pattern: string,
+  excluded: ReadonlyMap<string, string>,
+): string[] {
+  const matches = globSync(pattern, { cwd: testsRoot });
+  if (matches.length === 0)
+    throw new Error(`MOCHA_FILES pattern matched no compiled suite: ${pattern}`);
+  const runnable = matches.filter((match) => !excluded.has(pathKey(match)));
+  if (runnable.length === 0) {
+    throw new Error(
+      `MOCHA_FILES pattern selects only ${platformReason(matches, excluded)}: ${pattern}`,
+    );
+  }
+  return runnable;
 }
 
 /**
@@ -68,18 +110,9 @@ export function resolveSuiteFiles(
   platform: NodeJS.Platform = process.platform,
 ): string[] {
   const selected = new Set<string>();
-  const windowsOnly = windowsOnlySuites(platform);
+  const excluded = platformExclusions(platform);
   for (const pattern of globs) {
-    const matches = globSync(pattern, { cwd: testsRoot });
-    if (matches.length === 0) {
-      throw new Error(`MOCHA_FILES pattern matched no compiled suite: ${pattern}`);
-    }
-    const runnable = matches.filter((match) => !windowsOnly.has(match.split(path.sep).join('/')));
-    if (runnable.length === 0) {
-      throw new Error(
-        `MOCHA_FILES pattern selects only Windows-only suites, which run on Windows alone ([NETFX-SCOPE]): ${pattern}`,
-      );
-    }
+    const runnable = matchingSuites(testsRoot, pattern, excluded);
     for (const match of runnable.filter(matchesShape)) {
       selected.add(match);
     }

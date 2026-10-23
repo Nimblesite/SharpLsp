@@ -42,6 +42,7 @@
         "fsharp-lsp-intelligence.test.js",
         "fsharp-lsp-syntax.test.js",
         "fsharp-lsp-diagnostics.test.js",
+        "diagnostic-script-errors-e2e.test.js",
         "fsharp-lsp-hierarchy.test.js",
         "fsharp-lsp-workspace-symbol.test.js",
         "fsharp-lsp-codefixes.test.js",
@@ -56,9 +57,7 @@
     },
     "razor": {
       "description": "Razor and Blazor over the real Razor fixture solution, built once per job ([RAZOR-EDITORS], [RAZOR-TESTING]): Razor documents activate the extension and sync, unsaved edits included; the C# sidecar answers the C# inside them at Razor positions, references landing in the Razor file and never in generated code; and markup gets the built-in HTML service's completion and hover over the server's HTML projection ([RAZOR-FEATURES-HTML]).",
-      "files": [
-        "razor-lsp.test.js"
-      ]
+      "files": ["razor-lsp.test.js"]
     },
     "debug": {
       "description": "Getting a program to START, and nothing about what happens once it has: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions, the [SCRIPT-CONE] launch-target walk with MSBuild output resolution, and the F5 / Ctrl+F5 / sharplsp.runProgram gestures over real projects, C# file-based apps and .fsx scripts. Also the Blazor WebAssembly launch ([DEBUG-FEATURES-LAUNCH-BLAZOR-WASM]), which starts `dotnet run`, hands the DevServer's debug proxy to js-debug and dies with that browser session.",
@@ -221,10 +220,7 @@
     },
     "profiler": {
       "description": "The shared lsp-profiler mounted in SharpLsp ([PROFILER-SHARED-LIBRARY-VSCODE]), end to end over the real LSP and the bundled .NET engine against live ProfileTarget / ProfileLeakTarget processes and lspkit's F# HotLeakAppFs (heat map, memory track, union-case names and module-value roots on F# code): command registration and advertisement, generated manifest contributions, settings, wire error codes, the processes panel (rows, sort, group, filter, kill, copy, reveal), CPU sessions (one-click attach, live status, stop, snapshot, presets, results panel, heat map, artifacts, concurrency, a target that dies mid-session), memory sessions (snapshot, diff and leak scoring, retention graph, objects, induced GC, dashboard, decorations, autopilot, every refusal path), and Basilisk's profiler suites ported onto SharpLsp: the processes panel, decorations, webviews, entry points, reactive chrome, the profile server, and the debug-launched flows (Run & Profile CPU, Run & Track Memory, the autopilot, introspection of a paused debuggee) against a .NET debuggee built in the workspace. Its own job because every suite attaches the engine to real processes.",
-      "files": [
-        "profiler*.test.js",
-        "memory-*.test.js"
-      ]
+      "files": ["profiler*.test.js", "memory-*.test.js"]
     },
     "realrepo": {
       "linuxOnly": true,
@@ -238,10 +234,7 @@
     "netfx-testexplorer": {
       "windowsOnly": true,
       "description": ".NET Framework in the Test Explorer, Windows only ([NETFX-SCOPE]): C# and F# test projects multi-targeting net462/net472/net48 beside the installed .NET runtimes, through VSTest and Microsoft.Testing.Platform. Framework tags and root descriptions, per-framework failure messages, `Run on <tfm>` profiles, framework-exclusive tests, .NET Framework MTP modules executed directly, and the debug refusal ([NETFX-TEST], [NETFX-DEBUG]).",
-      "files": [
-        "test-explorer-netfx.test.js",
-        "test-explorer-mtp-netfx.test.js"
-      ]
+      "files": ["test-explorer-netfx.test.js", "test-explorer-mtp-netfx.test.js"]
     },
     "netfx-language": {
       "windowsOnly": true,
@@ -257,17 +250,12 @@
     "realrepo-netfx": {
       "windowsOnly": true,
       "description": "Real C# .NET Framework repositories at pinned commits, Windows only ([NETFX-CORPUS]): CsvHelper and NLog, each targeting several .NET Framework and .NET Standard versions: load, LSP inside .NET Framework code, the active framework, and Test Explorer discovery and runs across every framework they target.",
-      "files": [
-        "real-repo-netfx-csharp.test.js",
-        "real-repo-netfx-nlog.test.js"
-      ]
+      "files": ["real-repo-netfx-csharp.test.js", "real-repo-netfx-nlog.test.js"]
     },
     "realrepo-netfx-fsharp": {
       "windowsOnly": true,
       "description": "GitReader at a pinned commit, Windows only ([NETFX-CORPUS]): its F# library and its F# and C# tests across .NET Framework, .NET Standard and .NET. Its own job: sharing one with CsvHelper and NLog ran the three repositories into the whole-run ceiling.",
-      "files": [
-        "real-repo-netfx-fsharp.test.js"
-      ]
+      "files": ["real-repo-netfx-fsharp.test.js"]
     }
   },
   "excluded": {
