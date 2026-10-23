@@ -3,7 +3,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import { joinPath } from '../../paths';
+import { isWithin, joinPath } from '../../paths';
 import {
   ACCURACY_CASES,
   assertClosedProblem,
@@ -17,7 +17,7 @@ import {
 import { dotnet, type ProjectOptions } from './dotnet-project-kit';
 import { loadSolutionInServer } from './real-repo-helpers';
 import { activateWithScratch } from './test-explorer-kit';
-import { removeDirRecursive } from './test-helpers';
+import { pollUntilResult, removeDirRecursive } from './test-helpers';
 import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const OWNERSHIP_CASES = [
@@ -53,7 +53,21 @@ async function prepareOwnership(
 /** Restore the default compiler workspace before removing these fixture-owned directories. */
 async function teardownOwnership(fixture: OwnershipFixture): Promise<void> {
   await teardownAccuracyFixture(fixture.primary);
-  removeDirRecursive(fixture.root);
+  await vscode.workspace.fs.delete(vscode.Uri.file(fixture.root), {
+    recursive: true,
+    useTrash: false,
+  });
+  await pollUntilResult(
+    async () =>
+      vscode.workspace.textDocuments.filter(
+        (document) => !document.isClosed && isWithin(document.uri.fsPath, fixture.root),
+      ).length,
+    (count) => count === 0,
+    LSP_RESPONSE_MS,
+    100,
+    'every fixture-owned editor model must actually close before the next suite',
+  );
+  assert.ok(!fs.existsSync(fixture.root), 'the complete owning-project fixture was removed');
 }
 
 /** An unselected project contributes no errors until opening its source adopts it. */
@@ -66,8 +80,10 @@ async function assertInitiallyUnselected(fixture: OwnershipFixture): Promise<voi
 
 /** Opening one clean source must expose its owner's unopened erroneous source. */
 async function openExternalEntry(fixture: OwnershipFixture): Promise<void> {
-  const document = await vscode.workspace.openTextDocument(fixture.external.entryUri);
-  await vscode.window.showTextDocument(document);
+  await vscode.commands.executeCommand('vscode.open', fixture.external.entryUri);
+  const document = vscode.window.activeTextEditor?.document;
+  assert.ok(document, 'the actual editor opened the owning-project source');
+  assert.equal(document.uri.toString(), fixture.external.entryUri.toString());
   assert.equal(document.isDirty, false);
   assert.equal(document.getText(), fixture.external.scenario.source);
   await assertOwnershipTruth(fixture, 1);
