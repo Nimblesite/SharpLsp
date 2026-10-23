@@ -150,17 +150,18 @@ export async function start(
   const client = new SharpLspClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
 
   wireClientState(client, statusBar, openSync, context);
-  wireBuildDiscovery(client, context);
+  const buildDiscovery = wireBuildDiscovery(client);
 
   statusBar.setState(ServerState.Starting);
   try {
     await client.start();
   } catch (error: unknown) {
+    buildDiscovery.dispose();
     // A server that never started serves no projections. [RAZOR-FEATURES-HTML]
     razorHtml.provider.dispose();
     throw error;
   }
-  context.subscriptions.push(razorHtml.provider);
+  context.subscriptions.push(buildDiscovery, razorHtml.provider);
   return client;
 }
 
