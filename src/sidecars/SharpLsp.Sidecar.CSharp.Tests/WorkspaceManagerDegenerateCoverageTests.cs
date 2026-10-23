@@ -97,11 +97,21 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
     }
 
     [Fact]
-    public async Task Diagnostics_before_load_returns_empty()
+    public async Task Diagnostics_before_load_reports_unavailable_and_recovers_after_open()
     {
         using var manager = new WorkspaceManager();
 
-        // FindDocumentAsync short-circuits on the null solution.
+        // [DIAG-TRUTH-GUARANTEES]: absence of compiler inputs is not clean source.
+        Assert.False(manager.IsLoaded);
+        var unavailable = await manager.GetDiagnosticsAsync(_sourcePath);
+        Assert.True(unavailable.IsError);
+        Assert.Equal(
+            "The requested compiler document is not loaded.",
+            unavailable.Match(_ => string.Empty, error => error)
+        );
+        var opened = await manager.OpenAsync(_csprojPath);
+        Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
+        Assert.True(manager.IsLoaded);
         Assert.Empty(Unwrap(await manager.GetDiagnosticsAsync(_sourcePath)));
     }
 

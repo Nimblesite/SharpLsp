@@ -81,9 +81,7 @@ internal sealed partial class WorkspaceManager
     {
         try
         {
-            var diagnostics = await DiagnoseSnapshotAsync(filePath, settled, ct)
-                .ConfigureAwait(false);
-            return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
+            return await DiagnoseSnapshotAsync(filePath, settled, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -92,14 +90,14 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>The source and restore notice always belong to one atomic snapshot.</summary>
-    private async Task<List<DiagnosticResult>> DiagnoseSnapshotAsync(
+    private async Task<DiagnosticsResult> DiagnoseSnapshotAsync(
         string filePath,
         bool settled,
         CancellationToken ct
     )
     {
         return NativePaths.IsRazor(filePath)
-            ? await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false)
+            ? SuccessfulDiagnostics(await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false))
             : await DiagnoseAsync(
                     filePath,
                     await (
@@ -114,32 +112,43 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// The compiler diagnostics of the captured document, then its degradation notice,
-    /// then its dead code; none when the file is not in the workspace or has no model.
+    /// then its dead code. [DIAG-TRUTH-GUARANTEES]: unavailable inputs remain a failure.
     /// </summary>
-    private async Task<List<DiagnosticResult>> DiagnoseAsync(
+    private async Task<DiagnosticsResult> DiagnoseAsync(
         string filePath,
         DiagnosticsState state,
         CancellationToken ct
     )
     {
         return state.Degradation is { IsPending: true } pending
-                ? [DegradationDiagnostic(filePath, pending)]
+                ? SuccessfulDiagnostics([DegradationDiagnostic(filePath, pending)])
             : state.Document is { } document
-            && await document.GetSemanticModelAsync(ct).ConfigureAwait(false) is { } model
-                ? await DiagnoseModelAsync(filePath, document, model, state.Degradation, ct)
+                ? await DiagnoseModelAsync(filePath, document, state.Degradation, ct)
                     .ConfigureAwait(false)
-            : [];
+            : DiagnosticsResult.Failure("The requested compiler document is not loaded.");
+    }
+
+    /// <summary>Only completed compiler analysis produces successful diagnostic truth.</summary>
+    private static DiagnosticsResult SuccessfulDiagnostics(List<DiagnosticResult> diagnostics)
+    {
+        return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
     }
 
     /// <summary>Compiler and analyzer truth from the captured, resolved document.</summary>
-    private async Task<List<DiagnosticResult>> DiagnoseModelAsync(
+    private async Task<DiagnosticsResult> DiagnoseModelAsync(
         string filePath,
         Document document,
-        SemanticModel model,
         ProjectlessDegradation? degradation,
         CancellationToken ct
     )
     {
+        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
+        if (model is null)
+        {
+            return DiagnosticsResult.Failure(
+                "The requested compiler semantic model is unavailable."
+            );
+        }
         var diagnostics = MapDiagnostics(filePath, model, ct);
         AppendDegradation(filePath, degradation, diagnostics);
         diagnostics.AddRange(
@@ -148,7 +157,7 @@ internal sealed partial class WorkspaceManager
         );
         diagnostics.AddRange(await DeadCodeAsync(document, ct).ConfigureAwait(false));
         LogAnswer(filePath, diagnostics);
-        return diagnostics;
+        return SuccessfulDiagnostics(diagnostics);
     }
 
     /// <summary>

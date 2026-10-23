@@ -105,13 +105,14 @@ let private scriptSnapshot state filePath ((root, _, _) as input) ct =
         else return! checkedSnapshot state filePath root resolved
     }
 
-/// Existing project compiler behavior remains source-owned and uncached here.
+/// [DIAG-TRUTH-GUARANTEES]: an unavailable check never becomes a clean snapshot.
 let private projectSnapshot state filePath =
     task {
-        let! checkedFile = FSharpWorkspace.checkFile state filePath
-        let diagnostics = checkedFile |> Option.map (fun (check, _) -> check.Diagnostics) |> Option.defaultValue [||]
-        return { Diagnostics = diagnostics |> Array.filter (fun diagnostic -> NativePaths.AreEqual(diagnostic.FileName, filePath))
-                 CheckedFile = checkedFile; ScopeChanged = false }
+        match! FSharpWorkspace.checkFile state filePath with
+        | None -> return Error "The F# compiler check did not complete."
+        | Some(check, source) ->
+            return Ok { Diagnostics = check.Diagnostics |> Array.filter (fun diagnostic -> NativePaths.AreEqual(diagnostic.FileName, filePath))
+                        CheckedFile = Some(check, source); ScopeChanged = false }
     }
 
 /// Select compiler inputs without duplicating the actual per-file FCS check.
@@ -123,8 +124,7 @@ let private snapshot state filePath ct =
             return! scriptSnapshot state filePath input ct
         | None ->
             Serilog.Log.Debug("File diagnostic compiler input: {Script}", false)
-            let! result = projectSnapshot state filePath
-            return Ok result
+            return! projectSnapshot state filePath
     }
 
 /// File-local analyzers retain their existing opt-out and checked source.

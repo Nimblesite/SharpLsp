@@ -14,6 +14,7 @@ import {
   activateAccuracyFixture,
   assertClosedProblem,
   assertCompilerProblem,
+  assertCompilerReport,
   assertFileStillClosed,
   teardownAccuracyFixture,
   type AccuracyFixture,
@@ -40,12 +41,7 @@ function assertWorkspaceReportsClosedError(
     document,
     'workspace/diagnostic must report every loaded source, including closed files',
   );
-  assert.equal(document.kind, 'full');
-  if (document.kind !== 'full') assert.fail('the first report cannot be unchanged');
-  const errors = document.items.filter((item) => item.code === fixture.scenario.code);
-  assert.equal(errors.length, 1, 'the real build failure is present exactly once');
-  assert.equal(errors[0]?.severity, 1);
-  assert.equal(errors[0]?.source, fixture.scenario.sourceTag);
+  assertCompilerReport(fixture, document);
 }
 
 /** Every unsaved entry overlay must move the closed file's error with it, in both directions. */

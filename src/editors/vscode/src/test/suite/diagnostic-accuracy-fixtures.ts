@@ -48,7 +48,7 @@ export async function firstDiagnosticReport<
 }
 
 /** Cancellation, malformed requests and every other error remain immediate failures. */
-function retryIncompleteDiagnostic(error: unknown): undefined {
+export function retryIncompleteDiagnostic(error: unknown): undefined {
   assert.ok(error instanceof ResponseError);
   assert.equal(error.code, -32802, 'only explicitly incomplete snapshots can retry');
   assert.deepEqual(error.data, { retriggerRequest: true });
@@ -117,6 +117,22 @@ export interface AccuracyFixture {
   readonly entryUri: vscode.Uri;
   readonly closedUri: vscode.Uri;
   readonly scenario: AccuracyCase;
+}
+
+/** Every successful first pull must carry the independently SDK-proven error. */
+export function assertCompilerReport(
+  fixture: AccuracyFixture,
+  report: DocumentDiagnosticReport,
+): void {
+  assert.equal(report.kind, 'full');
+  if (report.kind !== 'full') assert.fail('the first successful report must carry current truth');
+  const errors = report.items.filter((item) => item.code === fixture.scenario.code);
+  assert.equal(errors.length, 1, 'the real build failure is present exactly once');
+  assert.equal(errors[0]?.severity, 1);
+  assert.equal(errors[0]?.source, fixture.scenario.sourceTag);
+  assert.equal(errors[0]?.range.start.line, 1);
+  assert.ok(errors[0]?.message);
+  assert.ok(report.resultId);
 }
 
 /** The project XML: both files compiled for F#, SDK globbing for C#. */

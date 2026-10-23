@@ -3,12 +3,15 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
+import type { DocumentDiagnosticReport } from 'vscode-languageclient/node';
 import { isWithin, joinPath } from '../../paths';
 import {
   ACCURACY_CASES,
   assertClosedProblem,
+  assertCompilerReport,
   assertFileStillClosed,
   assertNoCompilerErrors,
+  retryIncompleteDiagnostic,
   teardownAccuracyFixture,
   writeAccuracyFixture,
   type AccuracyCase,
@@ -76,6 +79,20 @@ async function assertInitiallyUnselected(fixture: OwnershipFixture): Promise<voi
   assertNoCompilerErrors(fixture.external.closedUri);
   assertFileStillClosed(fixture.primary);
   assertFileStillClosed(fixture.external);
+}
+
+/** An unavailable compiler can request a retry; it cannot claim broken source is clean. */
+async function assertPreAdoptionPull(fixture: OwnershipFixture): Promise<void> {
+  const client = fixture.primary.api.getLspClient();
+  assert.ok(client);
+  const report = await client
+    .sendRequest<DocumentDiagnosticReport>('textDocument/diagnostic', {
+      textDocument: { uri: fixture.external.closedUri.toString() },
+    })
+    .catch(retryIncompleteDiagnostic);
+  if (report !== undefined) assertCompilerReport(fixture.external, report);
+  assertFileStillClosed(fixture.external);
+  await assertClosedProblem(fixture.primary, 1);
 }
 
 /** Opening one clean source must expose its owner's unopened erroneous source. */
@@ -164,6 +181,7 @@ for (const scenario of OWNERSHIP_CASES) {
         this.timeout(FIXTURE_BUILD_MS + 4 * LSP_RESPONSE_MS);
         const fixture = current();
         await assertInitiallyUnselected(fixture);
+        await assertPreAdoptionPull(fixture);
         await openExternalEntry(fixture);
         await assertExternalEdit(fixture, false);
         await assertExternalEdit(fixture, true);
