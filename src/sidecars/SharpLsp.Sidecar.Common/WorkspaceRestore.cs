@@ -93,11 +93,16 @@ public static class WorkspaceRestore
             "obj",
             "project.assets.json"
         );
+        var packages = PackageAssets.MissingPackages(project);
+        if (packages.IsError)
+        {
+            // NuGet's no-op cache skips corrupt assets; discard only its unreadable output.
+            File.Delete(assets);
+            return false;
+        }
         return File.Exists(assets)
             && File.GetLastWriteTimeUtc(project) <= File.GetLastWriteTimeUtc(assets)
-            && PackageAssets
-                .MissingPackages(project)
-                .Match(missing => missing.Length == 0, _ => false);
+            && packages.Match(missing => missing.Length == 0, _ => false);
     }
 
     private static RestoreResult CompletedRestore(string project, RestoreResult result)
