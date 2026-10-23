@@ -7,6 +7,7 @@ use workspace_diagnostic_support::*;
 mod analyzer_configuration;
 mod configuration_responsiveness;
 mod idle_restore;
+mod input_reload;
 mod selection;
 
 /// Retry explicitly superseded work; inspect the first successful real compiler report.
