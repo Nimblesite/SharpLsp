@@ -34,6 +34,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Invalidate dependent reports before and after source mutations, including unsaved overlays and closed-file disk changes; input revisions cannot block behind compiler queries.
 - [x] Follow selected solutions outside editor workspace folders using reactive input watchers, without retaining diagnostic data in the extension.
 - [x] Reload changed project/analyzer/editorconfig inputs; real CA1822/NoWarn transitions prove policy changes.
+- [x] Preserve generated compiler errors through analyzer opt-out and reference changes: a real SDK-built IIncrementalGenerator emits CS0029, reported once at the owning project URI with a zero-length 0:0 range. Adding, removing and restoring its Analyzer ProjectReference produces error/clean/error in Problems and workspace pulls while ordinary sources stay clean; all three F#/C#/generated project editor cases pass together.
 - [x] Prove unsaved F# overlay replay through actual SDK source creation and metadata reload, retire a deleted C# source explicitly, and restore saved F# errors when its overlay closes. Real SDK build oracles and native reports pass (9321d87d).
 - [x] Deliver typed background compiler notifications while IPC is idle; shared transport belongs to lspkit and refresh is explicitly negotiated for older callers.
 - [x] Preserve a visible terminal error for truncated native IPC prefixes/payloads, including after valid responses; zero-byte EOF remains clean (lspkit #21, native RED/GREEN regression).
@@ -62,7 +63,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Validate all four min_severity values and apply max_per_file after filtering, with zero unlimited. Four real F#/C# editor cases fail before the fix and pass afterward; all 21 accuracy/analyzer/policy editor cases and all 236 existing Rust unit cases pass (f4c5ef77, #452).
 - [x] Preserve raw restore-pending state before publication filtering. With min_severity=error, a real legacy client receives the final CS0029 automatically after SDK restore, without a hover/pull rescue or visible informational notice (ee42c874).
 - [x] Implement and validate refresh_debounce_ms: actual F# source bursts coalesce into one standard refresh at live 100 → 1000 → 100 millisecond settings; the 2000 millisecond default is exposed, and negative/fractional/string/unknown controls reject without replacing the default or last valid policy. Two native sessions pass after genuine pre-fix rejection (bb2a3d92, #457).
-- [ ] Implement and validate auto_restore_on_open.
+- [x] Implement and validate auto_restore_on_open in both engines: four real F#/C# editor cases compare default restoration, explicit opt-out/live opt-in, and missing fixture-owned package caches against actual SDK effects. All four pass together after genuine pre-fix failures; 130 Common and 236 Rust cases also pass (33cfa885, #459). The broader restore gate and props-trigger guarantees remain tracked separately.
 
 ## [DIAG-PLAN-VERIFY] Integration and Delivery
 

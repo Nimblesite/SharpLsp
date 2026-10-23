@@ -15,6 +15,7 @@ import {
   type AccuracyFixture,
 } from './diagnostic-accuracy-fixtures';
 import { dotnet } from './dotnet-project-kit';
+import { setCompilerGenerator, writeCompilerGenerator } from './diagnostic-generator-fixtures';
 import { waitForHoverResult } from './test-helpers';
 import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
@@ -155,4 +156,51 @@ for (const scenario of PROJECT_CASES) {
       }
     });
   });
+}
+
+suite('Diagnostic accuracy — generated compiler errors', () => {
+  let fixture: AccuracyFixture;
+  suiteSetup(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    const selected = PROJECT_CASES.find((item) => item.language === 'C#');
+    assert.ok(selected);
+    fixture = await prepareProjectCase(selected);
+    writeCompilerGenerator(fixture);
+    const client = fixture.api.getLspClient();
+    assert.ok(client);
+    await client.sendNotification('workspace/didChangeConfiguration', {
+      settings: { sharplsp: { diagnostics: { analyzers_enabled: false } } },
+    });
+  });
+  suiteTeardown(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    const client = fixture.api.getLspClient();
+    assert.ok(client);
+    await client.sendNotification('workspace/didChangeConfiguration', { settings: {} });
+    await teardownAccuracyFixture(fixture);
+  });
+  test('real generated compiler errors survive analyzer opt-out and clear when the reference is removed', async function () {
+    this.timeout(4 * FIXTURE_BUILD_MS);
+    const client = fixture.api.getLspClient();
+    assert.ok(client);
+    const policy = await client.sendRequest<{ diagnostics: { analyzers_enabled: boolean } }>(
+      'sharplsp/configuration',
+      {},
+    );
+    assert.equal(policy.diagnostics.analyzers_enabled, false);
+    for (const enabled of [true, false, true]) {
+      await assertGeneratorStep(fixture, enabled);
+    }
+  });
+});
+
+async function assertGeneratorStep(fixture: AccuracyFixture, enabled: boolean): Promise<void> {
+  const project = setCompilerGenerator(fixture, enabled);
+  await dotnet(['restore', fixture.solution, '--nologo'], fixture.root);
+  const build = dotnet(['build', fixture.solution, '--no-restore', '--nologo'], fixture.root);
+  if (enabled) await assert.rejects(build, /CS0029/, 'the SDK compiles the generated source');
+  else await build;
+  await assertCompilerProblem(fixture, vscode.Uri.file(project), enabled ? 1 : 0, 0);
+  await assertProjectPull(fixture, project, enabled ? 1 : 0);
+  await assertClosedProblem(fixture, 0);
 }
