@@ -133,6 +133,22 @@ fn test_unsolicited_response_ignored() {
 }
 
 #[test]
+fn test_stdin_close_after_initialize_without_shutdown() {
+    // Implements [SHARPLSP-ARCHITECTURE-TIERS]: the real stdio host ends on client EOF.
+    let mut client = LspClient::start();
+    assert_rpc_ok(&client.initialize(), "initialize before editor disconnects");
+    drop(client.stdin.take());
+    let status = client
+        .child
+        .wait_timeout(Duration::from_secs(5))
+        .expect("wait for EOF exit");
+    assert!(
+        status.is_some_and(|exit| exit.success()),
+        "EOF must terminate the real host cleanly without an exit notification"
+    );
+}
+
+#[test]
 fn test_stdin_close_without_exit() {
     let mut client = LspClient::start();
     let _ = client.initialize();

@@ -883,6 +883,10 @@ fn spawn_shutdown_fast_path(
                 break;
             }
         }
+        // [SHARPLSP-ARCHITECTURE-TIERS] Input watchers retain the queue sender after EOF.
+        // End the protocol explicitly rather than waiting for their senders to drop.
+        let exit = Notification::new("exit".to_string(), serde_json::Value::Null);
+        let _closed = to_loop.send(Message::Notification(exit));
     }));
     (from_client, inputs)
 }
