@@ -19,6 +19,8 @@ import {
   type TestDebugFixture,
 } from './debug-test-kit';
 import { DebugSessionRecorder } from './run-debug-kit';
+import { addDebugGraph, updateDebugGraph, type DebugGraph } from './debug-test-graph-fixture';
+import { buildsLogged } from './dotnet-project-kit';
 import {
   activateTestExplorer,
   discoverSolution,
@@ -39,7 +41,7 @@ const SOURCES = {
       'open Xunit',
       '[<Fact>]',
       'let ``adds two numbers with spaces`` () =',
-      `    let revision = ${String(revision)}`,
+      '    let revision = DebugGraph.Value.Current()',
       `    Assert.Equal(${String(revision)}, revision)`,
       '    let attached = System.Diagnostics.Debugger.IsAttached',
       '    System.Threading.Thread.Sleep(if attached then 30000 else 0) // @anchor:wait',
@@ -51,7 +53,7 @@ const SOURCES = {
       'namespace DebugTestTarget.Math;',
       'public class CalculatorTests {',
       '    [Fact] public void Adds_Two_Numbers() {',
-      `        var revision = ${String(revision)};`,
+      '        var revision = DebugGraph.Value.Current();',
       `        Assert.Equal(${String(revision)}, revision);`,
       '        var attached = System.Diagnostics.Debugger.IsAttached;',
       '        System.Threading.Thread.Sleep(attached ? 30000 : 0); // @anchor:wait',
@@ -72,10 +74,20 @@ async function assertTerminalClosed(terminal: vscode.Terminal): Promise<void> {
   assert.equal(closed, true, 'Stop must settle the owned runner and close its debug terminal');
 }
 
+/** Debug must preserve unchanged outputs and never compile the broken sibling. */
+function assertUnchangedGraph(graph: DebugGraph, stamps: readonly number[]): void {
+  assert.deepEqual(
+    graph.assemblies.map((file) => fs.statSync(file).mtimeMs),
+    stamps,
+  );
+  assert.ok(!buildsLogged(graph.counter).includes('Unrelated'), 'only the selected graph builds');
+}
+
 for (const language of ['fsharp', 'csharp'] as const) {
   for (const runner of ['vstest', 'mtp'] as const) {
     suite(`Test debug Stop lifecycle — ${language} ${runner}`, () => {
       let fixture: TestDebugFixture;
+      let graph: DebugGraph;
       let recorder: DapRecorder;
       let sessions: DebugSessionRecorder;
       let stubs: UiStubs;
@@ -85,12 +97,9 @@ for (const language of ['fsharp', 'csharp'] as const) {
 
       suiteSetup(async function () {
         this.timeout(FIXTURE_BUILD_MS);
-        fixture = await writeDebugTestFixture(
-          'debug-stop-',
-          language,
-          runner,
-          SOURCES[language]().text,
-        );
+        fixture = await writeDebugTestFixture('debug-stop-', language, runner);
+        graph = await addDebugGraph(fixture, language, runner);
+        fs.writeFileSync(fixture.sourceFile, SOURCES[language]().text);
         clearAllBreakpoints();
         recorder = new DapRecorder();
         sessions = new DebugSessionRecorder();
@@ -112,9 +121,13 @@ for (const language of ['fsharp', 'csharp'] as const) {
       test('Stop ends its host and terminal, never retries, and the next Debug starts clean', async function () {
         this.timeout(DEBUG_TEST_MS * 2);
         const api = await activateTestExplorer();
-        await discoverSolution(api, fixture.solutionPath, [id]);
+        await discoverSolution(api, fixture.solutionPath, [id, 'Other.Unselected']);
         const item = findItem(api.testController.items, id);
         assert.ok(item, 'the real test must be discovered before debugging');
+        const stamps = graph.assemblies.map((file) => fs.statSync(file).mtimeMs);
+        const unrelated = api.testController.getResult('Other.Unselected');
+        fs.writeFileSync(graph.siblingFile, 'deliberately broken unrelated project');
+        fs.writeFileSync(graph.counter, '');
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
         const cached = api.testController.getResult(id);
         assert.equal(cached?.outcome, 'passed', 'the fixture passes without the debugger');
@@ -135,6 +148,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           'the fixture must retain its 30-second wait even after the debugger detaches',
         );
         assert.equal((await evaluate(active, 'revision', frame.id, 'watch')).value, '1');
+        assertUnchangedGraph(graph, stamps);
         const first = requireAt(sessions.ours, 0, 'the owned test session');
         const pid = Number(first.configuration['processId']);
         assert.ok(pid > 0 && pid !== process.pid, 'the debuggee is the owned test host');
@@ -160,6 +174,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
 
         // A real subsequent run supplies a progress barrier: no sleep can mask a
         // deferred retry that starts another waiting host after the Stop gesture.
+        updateDebugGraph(graph, 2);
         fs.writeFileSync(fixture.sourceFile, SOURCES[language](2).text);
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
         assert.equal(
@@ -170,6 +185,9 @@ for (const language of ['fsharp', 'csharp'] as const) {
         assert.equal(sessions.ours.length, 1, 'no delayed debug retry started during the next run');
         const beforeDebug = api.testController.getResult(id);
         // No rediscovery or manual build: Debug must compile this newer source.
+        const libraryAssembly = requireAt(graph.assemblies, 0, 'the referenced library assembly');
+        const libraryStamp = fs.statSync(libraryAssembly).mtimeMs;
+        updateDebugGraph(graph, 3);
         fs.writeFileSync(fixture.sourceFile, SOURCES[language](3).text);
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Debug, [item]);
         const secondStop = requireAt(await recorder.waitForStops(2), 1, 'the rebuilt user test');
@@ -181,6 +199,24 @@ for (const language of ['fsharp', 'csharp'] as const) {
           (await evaluate(rebuilt, 'revision', rebuiltFrame.id, 'watch')).value,
           '3',
           'Debug incrementally builds current sources instead of attaching to stale test code',
+        );
+        assert.notEqual(
+          fs.statSync(libraryAssembly).mtimeMs,
+          libraryStamp,
+          'Debug rebuilds the changed project reference',
+        );
+        assert.ok(
+          buildsLogged(graph.counter).includes('GraphLibrary'),
+          'the transitive dependency participates in the selected build graph',
+        );
+        assert.ok(
+          !buildsLogged(graph.counter).includes('Unrelated'),
+          'the broken sibling never blocks Run or either Debug gesture',
+        );
+        assert.equal(
+          api.testController.getResult('Other.Unselected'),
+          unrelated,
+          'no unrelated test executes',
         );
         const second = requireAt(sessions.ours, 1, 'the next explicit debug session');
         assert.equal(
