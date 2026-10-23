@@ -11,6 +11,8 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { stopDebuggee } from './debug-suite-kit';
+import { TEST_DEBUG_TERMINAL_NAME } from '../../test-debug';
+import { assertTerminalClosed } from './debug-test-kit';
 import {
   buildProjectXml,
   createSolution,
@@ -123,12 +125,17 @@ async function recordingDebug(
   body: (sessions: DebugSessionRecorder, mark: number) => Promise<void>,
 ): Promise<void> {
   const sessions = new DebugSessionRecorder();
+  const terminalsBefore = new Set(vscode.window.terminals);
   const mark = logMark(api);
   try {
     await body(sessions, mark);
   } finally {
+    const ownedTerminals = vscode.window.terminals.filter(
+      (terminal) => terminal.name === TEST_DEBUG_TERMINAL_NAME && !terminalsBefore.has(terminal),
+    );
     sessions.dispose();
     await stopDebuggee();
+    await Promise.all(ownedTerminals.map(assertTerminalClosed));
   }
 }
 

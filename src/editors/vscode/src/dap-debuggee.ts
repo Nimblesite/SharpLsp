@@ -26,7 +26,7 @@ function launchedPid(message: DapMessage): number | undefined {
 }
 
 /** True for the events that say the debuggee has already ended. */
-function announcesEnd(message: DapMessage): boolean {
+export function announcesEnd(message: DapMessage): boolean {
   return message.type === 'event' && (message.event === 'exited' || message.event === 'terminated');
 }
 

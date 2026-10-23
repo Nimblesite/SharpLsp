@@ -17,6 +17,9 @@ import {
   writeDebugTestFixture,
   requireActive,
   type TestDebugFixture,
+  assertTerminalClosed,
+  assertOneTerminal,
+  assertDebugCache,
 } from './debug-test-kit';
 import { DebugSessionRecorder } from './run-debug-kit';
 import { addDebugGraph, updateDebugGraph, type DebugGraph } from './debug-test-graph-fixture';
@@ -26,9 +29,10 @@ import {
   discoverSolution,
   findItem,
   runViaProfile,
+  runAlreadyCancelled,
 } from './test-explorer-kit';
-import { closeAllEditors, pollUntilResult, requireAt } from './test-helpers';
-import { COMMAND_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { closeAllEditors, requireAt } from './test-helpers';
+import { DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 // The attached host cannot finish naturally within COMMAND_MS. Remember the
@@ -62,17 +66,6 @@ const SOURCES = {
       '}',
     ]),
 };
-
-/** Wait for the actual terminal object to close, not an unrelated queue. */
-async function assertTerminalClosed(terminal: vscode.Terminal): Promise<void> {
-  const closed = await pollUntilResult(
-    async () => !vscode.window.terminals.includes(terminal),
-    (done) => done,
-    COMMAND_MS,
-    50,
-  );
-  assert.equal(closed, true, 'Stop must settle the owned runner and close its debug terminal');
-}
 
 /** Debug must preserve unchanged outputs and never compile the broken sibling. */
 function assertUnchangedGraph(graph: DebugGraph, stamps: readonly number[]): void {
@@ -131,6 +124,16 @@ for (const language of ['fsharp', 'csharp'] as const) {
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
         const cached = api.testController.getResult(id);
         assert.equal(cached?.outcome, 'passed', 'the fixture passes without the debugger');
+        // A cancelled gesture can finish before VS Code opens its pseudoterminal.
+        const buildsBeforeCancellation = buildsLogged(graph.counter);
+        await runAlreadyCancelled(api.testController, vscode.TestRunProfileKind.Debug, [item]);
+        assert.equal(sessions.ours.length, 0, 'a pre-cancelled Debug starts no session');
+        assertDebugCache(api, id, cached, 'a pre-cancelled Debug keeps Run results');
+        assert.deepEqual(
+          buildsLogged(graph.counter),
+          buildsBeforeCancellation,
+          'a pre-cancelled Debug builds nothing',
+        );
         vscode.debug.addBreakpoints([breakpointAt(SOURCES[language](), fixture.sourceUri, 'wait')]);
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Debug, [item]);
         const stopped = requireAt(await recorder.waitForStops(1), 0, 'the user breakpoint');
@@ -153,10 +156,11 @@ for (const language of ['fsharp', 'csharp'] as const) {
         const pid = Number(first.configuration['processId']);
         assert.ok(pid > 0 && pid !== process.pid, 'the debuggee is the owned test host');
         assert.doesNotThrow(() => process.kill(pid, 0), 'the owned host is alive before Stop');
-        ownedTerminal = vscode.window.terminals.find(
-          (terminal) => terminal.name === TEST_DEBUG_TERMINAL_NAME,
+        ownedTerminal = assertOneTerminal(
+          TEST_DEBUG_TERMINAL_NAME,
+          'the cancelled gesture leaves no ghost terminal beside the live debug run',
+          'the live run has its output terminal',
         );
-        assert.ok(ownedTerminal, 'the live run has its output terminal');
 
         await stopDebuggee();
         await assertTerminalClosed(ownedTerminal);
@@ -165,11 +169,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           { code: 'ESRCH' },
           'Stop terminates the owned host',
         );
-        assert.equal(
-          api.testController.getResult(id),
-          cached,
-          'stopping debug never overwrites the real result',
-        );
+        assertDebugCache(api, id, cached, 'stopping debug never overwrites the real result');
         assert.equal(sessions.ours.length, 1, 'a stopped invocation must not retry unfiltered');
 
         // A real subsequent run supplies a progress barrier: no sleep can mask a
@@ -225,20 +225,15 @@ for (const language of ['fsharp', 'csharp'] as const) {
           'only the next explicit Debug creates another session',
         );
         assert.notEqual(second.id, first.id, 'the next Debug owns a fresh session');
-        ownedTerminal = vscode.window.terminals.find(
-          (terminal) => terminal.name === TEST_DEBUG_TERMINAL_NAME,
-        );
-        assert.ok(ownedTerminal, 'the new run has its own terminal');
-        assert.equal(
-          vscode.window.terminals.filter((terminal) => terminal.name === TEST_DEBUG_TERMINAL_NAME)
-            .length,
-          1,
+        ownedTerminal = assertOneTerminal(
+          TEST_DEBUG_TERMINAL_NAME,
           'no terminal leaked from the stopped run',
+          'the new run has its own terminal',
         );
         await stopDebuggee();
         await assertTerminalClosed(ownedTerminal);
         assert.equal(sessions.ours.length, 2, 'the second Stop does not restart either');
-        assert.equal(api.testController.getResult(id), beforeDebug, 'Debug preserves Run results');
+        assertDebugCache(api, id, beforeDebug, 'Debug preserves Run results');
         assert.deepEqual(stubs.log.errorMessages, [], 'the lifecycle reports no user-facing error');
       });
     });

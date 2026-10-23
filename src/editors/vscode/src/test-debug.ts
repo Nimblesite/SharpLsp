@@ -23,11 +23,14 @@ import * as vscode from 'vscode';
 import { DEBUG_TYPE } from './constants';
 import { whenDebugSessionArmed } from './debug';
 import { TEST_HOST_ATTACH_FLAG } from './dap-attach';
+import { announcesEnd } from './dap-debuggee';
+import { asksToStop } from './dap-shutdown';
 import { error, info, warn } from './log';
 import type { TestRunOptions, TestRunOutcome } from './test-execution';
 import { TestHostWatcher } from './test-host-announce';
 import { filterBatches } from './test-filter';
 import { runTarget } from './test-targets';
+import { isRecord } from './utils';
 
 /**
  * The child environment of a test DEBUG run.
@@ -169,6 +172,10 @@ export async function debugSelectedTests(
 class DebugRunFlow {
   /** Aborting kills the whole `dotnet test` tree — no host is left waiting. */
   private readonly stop = new AbortController();
+  private readonly ownedPids = new Set<number>();
+  private readonly stopObserver = vscode.debug.registerDebugAdapterTrackerFactory(DEBUG_TYPE, {
+    createDebugAdapterTracker: (session) => this.trackStop(session),
+  });
   private readonly terminal = new DebugRunTerminal(() => {
     this.stop.abort();
   });
@@ -212,6 +219,7 @@ class DebugRunFlow {
     } catch (cause) {
       error(`Test debug run failed to settle: ${String(cause)}`);
     } finally {
+      this.stopObserver.dispose();
       this.run.end();
       this.terminal.end();
     }
@@ -285,6 +293,7 @@ class DebugRunFlow {
    * and ABORTS the run: an unattached host waits forever.
    */
   private async attach(pid: number): Promise<void> {
+    this.ownedPids.add(pid);
     info(`Test debug: attaching to waiting test host pid ${String(pid)}`);
     try {
       const config = testHostAttachConfig(pid, this.label());
@@ -305,6 +314,22 @@ class DebugRunFlow {
     } finally {
       this.onFirstAttach();
     }
+  }
+
+  /** Stop owns every host of this invocation; natural completion may advance frameworks. */
+  private trackStop(session: vscode.DebugSession): vscode.DebugAdapterTracker | undefined {
+    if (!this.ownedPids.has(Number(session.configuration.processId))) return undefined;
+    let ended = false;
+    return {
+      onDidSendMessage: (message: unknown) => {
+        if (isRecord(message) && announcesEnd(message)) ended = true;
+      },
+      onWillReceiveMessage: (message: unknown) => {
+        if (!isRecord(message) || ended || !asksToStop(message)) return;
+        if (isRecord(message.arguments) && message.arguments.restart === true) return;
+        this.stop.abort();
+      },
+    };
   }
 
   /**

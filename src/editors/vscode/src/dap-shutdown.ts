@@ -29,7 +29,7 @@ export const SHUTDOWN_DEADLINE_MS = 15_000;
 const STOP_COMMANDS: readonly string[] = ['terminate', 'disconnect'];
 
 /** True for a client request that asks the adapter to stop. */
-function asksToStop(message: DapMessage): boolean {
+export function asksToStop(message: DapMessage): boolean {
   return (
     message.type === 'request' &&
     typeof message.command === 'string' &&
