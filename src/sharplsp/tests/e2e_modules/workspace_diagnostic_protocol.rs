@@ -4,6 +4,30 @@ use super::*;
 use workspace_diagnostic_interruption::*;
 use workspace_diagnostic_support::*;
 
+mod analyzer_configuration;
+
+/// Retry explicitly superseded work; inspect the first successful real compiler report.
+fn complete_workspace_pull(client: &mut LspClient, traffic: &mut Vec<Value>) -> Value {
+    let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    loop {
+        let (response, messages) = target_framework::request_answering(
+            client,
+            "workspace/diagnostic",
+            json!({"previousResultIds":[]}),
+        );
+        traffic.extend(messages);
+        if response.get("error").is_none() {
+            return response;
+        }
+        assert_superseded(&response);
+        assert!(
+            std::time::Instant::now() < deadline,
+            "compiler analysis did not complete: {response}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 #[test]
 fn an_edit_supersedes_a_streamed_workspace_scan_without_mislabeling_old_truth() {
     let workspace = loaded_workspace();
