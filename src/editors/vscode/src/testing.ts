@@ -46,11 +46,7 @@ interface Sweep {
   readonly listings: TestListing[];
 }
 
-/**
- * Debounce for reactive re-discovery. Loading a solution can churn the
- * `solutionPath` signal several times in quick succession; collapse the burst
- * into a single `dotnet test --list-tests` sweep.
- */
+/** Collapse solution changes into one discovery sweep. */
 const DISCOVERY_DEBOUNCE_MS = 1_000;
 
 /**
@@ -84,6 +80,7 @@ export class SharpLspTestController {
   private discoverGeneration = 0;
   /** Engaged by the Testing view; observing a build never enables implicit builds. */
   private active = false;
+  private disposed = false;
   /** One `dotnet` invocation at a time, discovery and runs alike. */
   private readonly dotnetQueue = new DotnetQueue();
   /**
@@ -157,15 +154,11 @@ export class SharpLspTestController {
         await runFrameworkProfile(this.frameworkHost(), framework, request, token);
       },
     );
-    // `dotnet` is not necessarily on `$PATH`: [DIST-RUNTIME-ACQUIRE] resolves an
-    // SDK that may live anywhere and publishes its path on a signal. Track it
-    // reactively so discovery and runs follow a late or re-acquired SDK instead
-    // of failing with ENOENT on a bare `dotnet`.
+    // Follow SDK acquisition and replacement. [DIST-RUNTIME-ACQUIRE]
     this.dotnetSubscription = effect(() => {
       configureDotnet(state.dotnetPath.value);
     });
-    // VS Code's refresh affordance and the initial view reveal drive the first
-    // discovery and mark the controller active.
+    // Revealing or refreshing the view engages discovery.
     this.controller.refreshHandler = async (): Promise<void> => {
       await this.activateAndDiscover();
     };
@@ -184,10 +177,10 @@ export class SharpLspTestController {
       const tree = this.tree.value;
       if (tree !== undefined) this.renderTree(tree.sweep, tree.targetCount);
     });
-    this.buildSubscription = state.buildCompleted.subscribe(() => {
+    this.buildSubscription = state.buildCompleted.subscribe((revision) => {
       if (this.debounceHandle !== undefined) clearTimeout(this.debounceHandle);
       this.debounceHandle = undefined;
-      void this.discover(true);
+      void this.refreshAfterBuild(revision);
     });
   }
 
@@ -198,6 +191,7 @@ export class SharpLspTestController {
   }
 
   public dispose(): void {
+    this.disposed = true;
     this.solutionSubscription();
     this.dotnetSubscription();
     this.buildSubscription();
@@ -211,6 +205,12 @@ export class SharpLspTestController {
     this.frameworkRuns.dispose();
     this.results.dispose();
     this.controller.dispose();
+  }
+
+  /** Finish every building target before listing outputs. [TEST-REACTIVITY-BUILD] */
+  private async refreshAfterBuild(revision: number): Promise<void> {
+    await this.whenIdle();
+    if (!this.disposed && revision === state.buildCompleted.value) await this.discover(true);
   }
 
   /** Debounced trigger for reactive re-discovery on solution change. */

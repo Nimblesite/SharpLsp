@@ -51,6 +51,7 @@ import {
 } from '../test-explorer-outcome-assertions';
 import { comparablePath } from '../test-helpers';
 import { FIXTURE_BUILD_MS } from '../test-timeouts';
+import { spyOnDiscover } from '../test-discovery-spy';
 
 /** The F# VSTest project, alone in the FIRST workspace folder. */
 const VSTEST_PROJECT = 'MixedVsTestFs';
@@ -159,7 +160,21 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
     await drainDiscovery(() => {
       api.explorerProvider.clear();
     }, api.testController);
-    await api.testController.activateAndDiscover();
+    // [TEST-REACTIVITY-BUILD]: the first folder's real build must not supersede
+    // discovery before the second folder's MTP module has ever been built.
+    const spy = spyOnDiscover(api.testController);
+    try {
+      await api.testController.activateAndDiscover();
+      await api.testController.whenIdle();
+      assert.ok(spy.modes.includes(true), 'native build completions refresh initial discovery');
+      assert.deepStrictEqual(
+        sorted(collectLeafIds(api.testController.items)),
+        sorted(EXPECTED),
+        'a build completion cannot skip the never-built second workspace folder',
+      );
+    } finally {
+      spy.restore();
+    }
     await pollUntilDiscovered(api.testController, EXPECTED);
   });
 

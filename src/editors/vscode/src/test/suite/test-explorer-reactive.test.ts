@@ -37,6 +37,7 @@ import {
 import { comparablePath, removeDirRecursive, assertContainsAll } from './test-helpers.js';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { CS, CS_MIXED_THEORY } from './test-explorer-xunit-pair';
+import { spyOnDiscover } from './test-discovery-spy';
 
 /** Exactly the FQNs the xUnit C# fixture exposes — theory rows collapse to one. */
 const EXPECTED = [CS.passing, CS.failing, CS.skipped, CS.parameterized, CS_MIXED_THEORY] as const;
@@ -70,29 +71,6 @@ function fromController(stack: string): boolean {
   return (
     !stack.includes(THIS_FILE) && (stack.includes('extension.js') || stack.includes('testing'))
   );
-}
-
-interface DiscoverSpy {
-  readonly stacks: string[];
-  restore: () => void;
-}
-
-/** Record every `discover()` call and WHERE from — reactivity is a claim about who called. */
-function spyOnDiscover(controller: SharpLspTestController): DiscoverSpy {
-  const stacks: string[] = [];
-  const original = controller.discover.bind(controller);
-  controller.discover = async (noBuild?: boolean): Promise<void> => {
-    // Drop the `Error:` line and the spy's own frame: the caller is frame zero.
-    const trace = (new Error('discover').stack ?? '<no stack>').split('\n');
-    stacks.push(trace.slice(2).join('\n'));
-    await original(noBuild);
-  };
-  return {
-    stacks,
-    restore: (): void => {
-      Reflect.deleteProperty(controller, 'discover');
-    },
-  };
 }
 
 function insertMethod(sourcePath: string, method: string): void {

@@ -559,6 +559,11 @@ restarting the LSP reattaches them, and shutdown releases the watchers. Failed e
 tasks do not announce a successful build. Existing generation, queue and failed-sweep rules
 continue to preserve the current tree when output listing fails.
 
+A build completion during a building discovery sweep waits for that entire sweep,
+including every workspace folder, before listing outputs. Pending completions coalesce
+to the latest revision; they never supersede discovery before an unbuilt target is built.
+Disposing the controller cancels deferred refreshes.
+
 ## Environment `[TEST-ENV-LOCALE]`
 
 Every outcome the extension parses is decided by matching ENGLISH text the .NET CLI and
