@@ -298,6 +298,8 @@ fn build_watch_root(target: &str) -> Option<PathBuf> {
 pub fn build_watch_roots(targets: &[String]) -> Vec<PathBuf> {
     targets
         .iter()
+        // Invalid selectors cannot broaden watching to unrelated parents. [DIAG-ARCHITECTURE-SCOPE]
+        .filter(|target| Path::new(target).exists())
         .filter_map(|target| build_watch_root(target))
         .map(|root| (normalized_rename_path(&root.to_string_lossy()), root))
         .collect::<std::collections::BTreeMap<_, _>>()
