@@ -208,6 +208,19 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
         }
 
         public class Bare { }
+
+        public static class NullableFlow
+        {
+            public static void Use(bool missing)
+            {
+                string? name = missing ? null : "value";
+                _ = name;
+                name = "value";
+                _ = name;
+                var nested = new System.Collections.Generic.List<string?>();
+                _ = nested;
+            }
+        }
         """;
 
     private static readonly Lock MsBuildRegistrationLock = new();

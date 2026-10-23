@@ -27,6 +27,7 @@ internal static class CSharpHoverBuilder
             | SymbolDisplayParameterOptions.IncludeName
             | SymbolDisplayParameterOptions.IncludeDefaultValue
             | SymbolDisplayParameterOptions.IncludeParamsRefOut,
+        localOptions: SymbolDisplayLocalOptions.IncludeType,
         propertyStyle: SymbolDisplayPropertyStyle.ShowReadWriteDescriptor,
         kindOptions: SymbolDisplayKindOptions.IncludeTypeKeyword
             | SymbolDisplayKindOptions.IncludeMemberKeyword
@@ -96,7 +97,7 @@ internal static class CSharpHoverBuilder
         var symbol = ResolveSymbol(model, token, ct);
         if (symbol is not null)
         {
-            return BuildFromSymbol(symbol, token);
+            return BuildFromSymbol(symbol, token, model, ct);
         }
 
         // Fallback: lambda params, tuple elements, pattern variables —
@@ -164,31 +165,43 @@ internal static class CSharpHoverBuilder
         return MakeResult(markdown, token);
     }
 
-    private static HoverResult? BuildFromSymbol(ISymbol symbol, SyntaxToken token)
+    private static HoverResult? BuildFromSymbol(
+        ISymbol symbol,
+        SyntaxToken token,
+        SemanticModel model,
+        CancellationToken ct
+    )
     {
         // NO hover beats an EMPTY hover. A symbol we cannot describe renders as a
         // code fence with nothing between its rules — a blank popup over, say, an
         // unresolvable `JsonConvert` before its package restores. `SymbolAt` and
         // `BuildVarHover` already refuse an `IErrorTypeSymbol`; this is the same
         // guard for every other route into `BuildMarkdown`.
-        var markdown = BuildMarkdown(symbol);
+        var signature = symbol is ILocalSymbol local
+            ? CSharpLocalSignature.Render(local, model, token, SignatureFormat, ct)
+            : null;
+        var markdown = BuildMarkdown(symbol, signature);
         return markdown.Length == 0 ? null : MakeResult(markdown, token);
     }
 
     /// <summary>A symbol's hover text: its signature, container, deprecation and documentation.</summary>
-    internal static string BuildMarkdown(ISymbol symbol)
+    internal static string BuildMarkdown(ISymbol symbol, string? signature = null)
     {
         var sb = new System.Text.StringBuilder();
-        AppendSignature(sb, symbol);
+        AppendSignature(sb, symbol, signature);
         AppendContainingType(sb, symbol);
         AppendDeprecation(sb, symbol);
         AppendDocumentation(sb, symbol);
         return sb.ToString().TrimEnd();
     }
 
-    private static void AppendSignature(System.Text.StringBuilder sb, ISymbol symbol)
+    private static void AppendSignature(
+        System.Text.StringBuilder sb,
+        ISymbol symbol,
+        string? localSignature
+    )
     {
-        var signature = symbol.ToDisplayString(SignatureFormat);
+        var signature = localSignature ?? symbol.ToDisplayString(SignatureFormat);
         if (string.IsNullOrWhiteSpace(signature))
         {
             return;

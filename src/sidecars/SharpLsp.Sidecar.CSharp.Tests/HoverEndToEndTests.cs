@@ -173,4 +173,31 @@ public sealed class HoverEndToEndTests(CSharpSidecarFixture fixture)
         var h = await HoverAsync(121, 8);
         Assert.Contains("DocumentedService", h.Contents);
     }
+
+    // Implements [HOVER-CSHARP-RENDERING]: a resolved local must show its type,
+    // including constructed generics and named tuple elements, at declarations and uses.
+    [Theory]
+    [InlineData(121, 12, "TestProject.DocumentedService<int> service", 7)]
+    [InlineData(123, 12, "System.Collections.Generic.IEnumerable<int> doubled", 7)]
+    [InlineData(129, 29, "System.Collections.Generic.List<int> numbers", 7)]
+    [InlineData(134, 12, "(int Count, string Label) tuple", 5)]
+    [InlineData(169, 16, "string? name", 4)]
+    [InlineData(170, 12, "string? name", 4)]
+    [InlineData(172, 12, "string name", 4)]
+    [InlineData(173, 12, "System.Collections.Generic.List<string?> nested", 6)]
+    [InlineData(174, 12, "System.Collections.Generic.List<string?> nested", 6)]
+    public async Task Hover_on_local_identifier_includes_inferred_type(
+        int line,
+        int character,
+        string signature,
+        int length
+    )
+    {
+        var h = await HoverAsync(line, character);
+        Assert.Contains($"```csharp\n{signature}\n```", h.Contents.ReplaceLineEndings("\n"));
+        Assert.Equal(line, h.StartLine);
+        Assert.Equal(line, h.EndLine);
+        Assert.Equal(character, h.StartCharacter);
+        Assert.Equal(character + length, h.EndCharacter);
+    }
 }
