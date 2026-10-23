@@ -1,10 +1,10 @@
 //! Real SDK restore converges before semantic answers. [SCRIPT-FILEBASED-REFERENCES-FALLBACK] [DIAG-PUSH-GATE]
 use super::*;
 
-const SOURCE: &str = "#:package Newtonsoft.Json@13.0.3\nusing Newtonsoft.Json;\nvar value = JsonConvert.SerializeObject(new { Answer = 42 });\nSystem.Console.WriteLine(value);\n";
+pub(super) const SOURCE: &str = "#:package Newtonsoft.Json@13.0.3\nusing Newtonsoft.Json;\nvar value = JsonConvert.SerializeObject(new { Answer = 42 });\nSystem.Console.WriteLine(value);\n";
 // A genuine custom MSBuild target makes the pending-restore interaction observable
 // even with a warm NuGet cache, without replacing the SDK or the Roslyn engine.
-const TARGETS: &str = r#"<Project>
+pub(super) const TARGETS: &str = r#"<Project>
   <UsingTask TaskName="SlowRestore" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
     <Task><Code Type="Fragment" Language="cs">System.Threading.Thread.Sleep(3000);</Code></Task>
   </UsingTask>

@@ -5,6 +5,7 @@ use workspace_diagnostic_interruption::*;
 use workspace_diagnostic_support::*;
 
 mod analyzer_configuration;
+mod idle_restore;
 mod selection;
 
 /// Retry explicitly superseded work; inspect the first successful real compiler report.
