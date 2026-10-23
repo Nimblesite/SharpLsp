@@ -75,9 +75,10 @@ fn collect_reports(
 ) -> Result<Vec<Value>> {
     let mut seen = HashSet::new();
     let mut items = Vec::new();
+    let workspace = state::workspace()?;
     for document in documents
         .into_iter()
-        .filter(|document| project_matches(document, filter))
+        .filter(|document| project_matches(document, filter, workspace.as_deref()))
     {
         snapshot.check()?;
         let uri = paths::path_to_lsp_uri(&document.file_path)?;
@@ -185,16 +186,26 @@ pub async fn paths_for_sidecar(
         .await?;
     let documents: Vec<DiagnosticDocument> = rmp_serde::from_slice(&payload)?;
     let filter = paths::project_glob_filter(patterns)?;
+    let workspace = state::workspace()?;
     Ok(documents
         .into_iter()
-        .filter(|document| project_matches(document, filter.as_ref()))
+        .filter(|document| project_matches(document, filter.as_ref(), workspace.as_deref()))
         .map(|document| document.file_path)
         .collect())
 }
 
 /// Workspace-only project filtering leaves individual document pulls intact.
-fn project_matches(document: &DiagnosticDocument, filter: Option<&globset::GlobSet>) -> bool {
+fn project_matches(
+    document: &DiagnosticDocument,
+    filter: Option<&globset::GlobSet>,
+    workspace: Option<&str>,
+) -> bool {
     filter.is_none_or(|filter| {
-        paths::project_matches_globs(filter, &document.project_name, &document.project_path)
+        paths::project_matches_globs(
+            filter,
+            &document.project_name,
+            &document.project_path,
+            workspace,
+        )
     })
 }

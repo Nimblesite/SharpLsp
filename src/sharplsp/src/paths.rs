@@ -151,9 +151,21 @@ pub fn project_glob_filter(
     Ok(Some(builder.build()?))
 }
 
-/// Match project names or native project paths against diagnostic scope globs.
-pub fn project_matches_globs(filter: &globset::GlobSet, name: &str, path: &str) -> bool {
-    filter.is_match(name) || filter.is_match(slashed(path))
+/// Match names and native/workspace-relative paths. Implements [DIAG-CONFIG-PROJECT-FILTER].
+pub fn project_matches_globs(
+    filter: &globset::GlobSet,
+    name: &str,
+    path: &str,
+    workspace: Option<&str>,
+) -> bool {
+    filter.is_match(name)
+        || filter.is_match(slashed(path))
+        || workspace.and_then(build_watch_root).is_some_and(|root| {
+            let root = normalized_rename_path(&root.to_string_lossy());
+            let path = normalized_rename_path(path);
+            relative_to(Path::new(&path), Path::new(&root))
+                .is_some_and(|relative| filter.is_match(slashed(&relative)))
+        })
 }
 
 /// Metadata that changes project graphs, analyzer policy, references or generated inputs.

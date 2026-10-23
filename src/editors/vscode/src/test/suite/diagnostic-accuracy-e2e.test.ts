@@ -2,7 +2,12 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import type { LanguageClient, WorkspaceDiagnosticReport } from 'vscode-languageclient/node';
+import type {
+  DocumentDiagnosticReport,
+  LanguageClient,
+  PreviousResultId,
+  WorkspaceDiagnosticReport,
+} from 'vscode-languageclient/node';
 import { samePath } from '../../paths';
 import {
   ACCURACY_CASES,
@@ -15,6 +20,13 @@ import {
 } from './diagnostic-accuracy-fixtures';
 import { replaceDocumentContent, waitForHoverResult } from './test-helpers';
 import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
+
+const PROJECT_FILTER_STEPS = [
+  [['NoSuchProject*'], 0],
+  [['Accuracy*'], 1],
+  [['**/Accuracy*.?sproj'], 1],
+  [['Project/Accuracy*.?sproj'], 1],
+] as const;
 
 /** The workspace report must carry the closed file, with the error exactly once, from the real build. */
 function assertWorkspaceReportsClosedError(
@@ -111,6 +123,59 @@ async function restoreSolutionAnalysisState(
   await client.sendNotification('workspace/didChangeConfiguration', { settings: {} });
   assert.equal(await replaceDocumentContent(document, fixture.scenario.source), true);
   await document.save();
+}
+
+/** Excluding the loaded project explicitly retires the previously reported closed error. */
+function assertFilteredWorkspaceEmpty(
+  fixture: AccuracyFixture,
+  report: WorkspaceDiagnosticReport,
+): void {
+  assert.equal(report.items.length, 1, 'the prior closed report must be explicitly cleared');
+  const [closed] = report.items;
+  assert.ok(closed);
+  assert.equal(closed.uri, fixture.closedUri.toString(), 'retirement echoes the prior report URI');
+  assert.equal(closed.kind, 'full');
+  if (closed.kind !== 'full') assert.fail('retirement must carry an explicit empty report');
+  assert.ok(closed.resultId);
+  assert.equal(closed.version, null);
+  assert.deepStrictEqual(closed.items, []);
+}
+
+/** Workspace policy never hides the compiler error from an explicit document request. */
+async function assertDirectPullUnfiltered(
+  fixture: AccuracyFixture,
+  client: LanguageClient,
+): Promise<string> {
+  const direct = await client.sendRequest<DocumentDiagnosticReport>('textDocument/diagnostic', {
+    textDocument: { uri: fixture.closedUri.toString() },
+    identifier: 'sharplsp',
+  });
+  assert.ok(direct.resultId, 'the direct report has its own opaque identity');
+  assertWorkspaceReportsClosedError(fixture, {
+    items: [{ ...direct, uri: fixture.closedUri.toString(), version: null }],
+  });
+  assertFileStillClosed(fixture);
+  return direct.resultId;
+}
+
+/** One live project scope change: wire reports, Problems, and direct compiler truth. */
+async function assertProjectFilterStep(
+  fixture: AccuracyFixture,
+  client: LanguageClient,
+  previous: PreviousResultId[],
+  patterns: string[],
+  count: number,
+): Promise<void> {
+  await client.sendNotification('workspace/didChangeConfiguration', {
+    settings: { sharplsp: { diagnostics: { project_filter: patterns } } },
+  });
+  const report = await client.sendRequest<WorkspaceDiagnosticReport>('workspace/diagnostic', {
+    previousResultIds: previous,
+  });
+  if (count === 0) assertFilteredWorkspaceEmpty(fixture, report);
+  else assertWorkspaceReportsClosedError(fixture, report);
+  await assertDirectPullUnfiltered(fixture, client);
+  await assertClosedProblem(fixture, count);
 }
 
 for (const scenario of ACCURACY_CASES) {
@@ -212,6 +277,29 @@ for (const scenario of ACCURACY_CASES) {
         await assertFixedEntryKeepsClosedRegression(fixture, document, line);
       } finally {
         await restoreSolutionAnalysisState(fixture, client, document);
+      }
+    });
+
+    // Implements [DIAG-CONFIG-PROJECT-FILTER]: names and relative/native paths, F# first.
+    test('project filters retire workspace errors, match names and paths, and leave direct pulls intact', async function () {
+      this.timeout(6 * LSP_RESPONSE_MS);
+      const client = fixture.api.getLspClient();
+      assert.ok(client);
+      await assertClosedProblem(fixture, 1);
+      const previous = [
+        {
+          uri: fixture.closedUri.toString(),
+          value: await assertDirectPullUnfiltered(fixture, client),
+        },
+      ];
+      try {
+        for (const [patterns, count] of PROJECT_FILTER_STEPS) {
+          await assertProjectFilterStep(fixture, client, previous, [...patterns], count);
+        }
+      } finally {
+        await client.sendNotification('workspace/didChangeConfiguration', {
+          settings: { sharplsp: { diagnostics: { project_filter: [] } } },
+        });
       }
     });
   });
