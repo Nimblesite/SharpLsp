@@ -55,6 +55,7 @@ pub mod diagnostics;
 pub mod diagnostics_full_stack;
 pub mod document_sync;
 pub mod folding;
+pub mod formatting_contract;
 pub mod fsharp;
 pub mod full_stack;
 pub mod full_stack_features;
