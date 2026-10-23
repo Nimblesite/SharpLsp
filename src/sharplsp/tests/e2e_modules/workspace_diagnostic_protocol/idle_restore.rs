@@ -3,6 +3,8 @@
 use super::*;
 use filebased_diagnostics::{SOURCE, TARGETS};
 
+mod legacy_policy;
+
 const OBSERVE: &str = r#"<Project>
   <Target Name="MarkRestoreEntered" BeforeTargets="ObservePendingRestore">
     <WriteLinesToFile File="$(MSBuildThisFileDirectory)restore-entered.marker" Lines="entered" Overwrite="true" />
