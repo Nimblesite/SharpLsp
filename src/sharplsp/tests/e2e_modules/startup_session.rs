@@ -33,6 +33,25 @@ fn assert_degraded_session(client: &mut LspClient, uri: &str, line: u32, column:
     assert_unavailable_tokens(client, uri);
 }
 
+/// Failed or unavailable analysis must never become a cached clean result. [DIAG-LSP-PULL]
+fn assert_unavailable_diagnostics(client: &mut LspClient, uri: &str) {
+    for _ in 0..2 {
+        let response = document_request(client, "textDocument/diagnostic", uri);
+        assert_eq!(
+            response["error"]["code"], -32802,
+            "unavailable compiler: {response}"
+        );
+        assert_eq!(response["error"]["data"]["retriggerRequest"], true);
+        assert!(
+            response.get("result").is_none(),
+            "no false clean report: {response}"
+        );
+        assert!(response["error"]["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty()));
+    }
+}
+
 /// Highlight requests recover with no result while their real engine cannot start.
 fn assert_unavailable_tokens(client: &mut LspClient, uri: &str) {
     for (method, params) in [
@@ -98,7 +117,13 @@ fn actual_sidecar_apphosts_missing_managed_files_degrade_without_respawn_storms(
             ],
         );
         assert_rpc_ok(
-            &client.initialize_with_root(json!(root)),
+            &client.initialize_with_capabilities(
+                json!(root),
+                json!({
+                    "textDocument":{"diagnostic":{"dynamicRegistration":false}},
+                    "workspace":{"diagnostics":{"refreshSupport":true}}
+                }),
+            ),
             "initialize an incomplete sidecar installation",
         );
         client.notify(
@@ -106,6 +131,13 @@ fn actual_sidecar_apphosts_missing_managed_files_degrade_without_respawn_storms(
             json!({"textDocument":{"uri":uri,"languageId":language,"version":1,"text":source}}),
         );
         assert_degraded_session(&mut client, uri, cursor.0, cursor.1);
+        let unavailable_uri = if language == "fsharp" {
+            &csharp.2
+        } else {
+            &fsharp.2
+        };
+        assert_unavailable_diagnostics(&mut client, unavailable_uri);
+        assert_unavailable_diagnostics(&mut client, uri);
         client.shutdown_and_exit();
         let output = std::fs::read_to_string(log.path()).expect("read failed startup evidence");
         assert!(
