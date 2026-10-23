@@ -52,32 +52,64 @@ internal sealed partial class WorkspaceManager
     /// then — when the analyzer gate is on — the project analyzers and the project-wide
     /// unused-symbol dead-code analyzer (`SLSPC0101`, [ANALYZERS-UNUSED-PUBLIC]).
     /// </summary>
-    public async Task<DiagnosticsResult> GetDiagnosticsAsync(
+    public Task<DiagnosticsResult> GetDiagnosticsAsync(
         string filePath,
         CancellationToken ct = default
     )
     {
+        return QueryDiagnosticsAsync(filePath, settled: true, ct);
+    }
+
+    /// <summary>
+    /// Report the current restore state promptly for reactive editors. A pending
+    /// restore reports its notice without speculative compiler errors.
+    /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK] and [DIAG-PUSH-GATE].
+    /// </summary>
+    public Task<DiagnosticsResult> GetCurrentDiagnosticsAsync(
+        string filePath,
+        CancellationToken ct = default
+    )
+    {
+        return QueryDiagnosticsAsync(filePath, settled: false, ct);
+    }
+
+    private async Task<DiagnosticsResult> QueryDiagnosticsAsync(
+        string filePath,
+        bool settled,
+        CancellationToken ct
+    )
+    {
         try
         {
-            // The document snapshot and the tier-2 degradation notice MUST come from
-            // the same instant, or a slow semantic-model computation can pair a
-            // pre-restore compilation with a post-restore notice state and present
-            // phantom package errors as final. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            var diagnostics = NativePaths.IsRazor(filePath)
-                ? await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false)
-                : await DiagnoseAsync(
-                        filePath,
-                        await CaptureSettledDiagnosticsStateAsync(filePath, ct)
-                            .ConfigureAwait(false),
-                        ct
-                    )
-                    .ConfigureAwait(false);
+            var diagnostics = await DiagnoseSnapshotAsync(filePath, settled, ct)
+                .ConfigureAwait(false);
             return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
         }
         catch (Exception ex)
         {
             return DiagnosticsResult.Failure(ex.Message);
         }
+    }
+
+    /// <summary>The source and restore notice always belong to one atomic snapshot.</summary>
+    private async Task<List<DiagnosticResult>> DiagnoseSnapshotAsync(
+        string filePath,
+        bool settled,
+        CancellationToken ct
+    )
+    {
+        return NativePaths.IsRazor(filePath)
+            ? await DiagnoseRazorAsync(filePath, ct).ConfigureAwait(false)
+            : await DiagnoseAsync(
+                    filePath,
+                    await (
+                        settled
+                            ? CaptureSettledDiagnosticsStateAsync(filePath, ct)
+                            : CaptureDiagnosticsStateAsync(filePath, ct)
+                    ).ConfigureAwait(false),
+                    ct
+                )
+                .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -90,16 +122,26 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        if (
-            state.Document is not { } document
-            || await document.GetSemanticModelAsync(ct).ConfigureAwait(false) is not { } model
-        )
-        {
-            return [];
-        }
+        return state.Degradation is { IsPending: true } pending
+                ? [DegradationDiagnostic(filePath, pending)]
+            : state.Document is { } document
+            && await document.GetSemanticModelAsync(ct).ConfigureAwait(false) is { } model
+                ? await DiagnoseModelAsync(filePath, document, model, state.Degradation, ct)
+                    .ConfigureAwait(false)
+            : [];
+    }
 
+    /// <summary>Compiler and analyzer truth from the captured, resolved document.</summary>
+    private async Task<List<DiagnosticResult>> DiagnoseModelAsync(
+        string filePath,
+        Document document,
+        SemanticModel model,
+        ProjectlessDegradation? degradation,
+        CancellationToken ct
+    )
+    {
         var diagnostics = MapDiagnostics(filePath, model, ct);
-        AppendDegradation(filePath, state.Degradation, diagnostics);
+        AppendDegradation(filePath, degradation, diagnostics);
         diagnostics.AddRange(
             await DocumentAnalyzerDiagnosticsAsync(document, model, filePath, ct)
                 .ConfigureAwait(false)

@@ -264,7 +264,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         return HandleRequestAsync(
             payload,
-            (string filePath) => _workspace.GetDiagnosticsAsync(filePath, ct),
+            (string filePath) => _workspace.GetCurrentDiagnosticsAsync(filePath, ct),
             ct
         );
     }
