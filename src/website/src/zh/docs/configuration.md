@@ -81,8 +81,8 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | 启动或跳过 C# sidecar |
 | `csharp.solution_path` | 选择一个 `.sln` 或 `.slnx`；可使用绝对路径或相对于工作区的路径 |
 | `fsharp.enabled` | 启动或跳过 F# sidecar |
-| `diagnostics.solution_wide_analysis` | 启用 C# 启动时的解决方案扫描 |
-| `diagnostics.project_filter` | 将该 C# 扫描限制为名称匹配的项目 |
+| `diagnostics.solution_wide_analysis` | 解决方案诊断包含未打开的 F# 和 C# 文件；默认启用 |
+| `diagnostics.project_filter` | 对使用推送诊断的客户端，按项目名称筛选 C# 启动扫描 |
 | `analyzers.dead_code` | 启用 SharpLsp 的 C# 和 F# 死代码分析器 |
 | `analyzers.monorepo` | 将未使用的公共符号视为死代码，并将其报告为错误 |
 | `profiler.max_concurrent_sessions` | 限制同时运行的性能分析器会话数 |

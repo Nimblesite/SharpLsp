@@ -80,8 +80,8 @@ The test platform's own DLLs can be prebuilt in Release. Their debugger warnings
 | `csharp.enabled` | Starts or skips the C# sidecar |
 | `csharp.solution_path` | Selects a `.sln` or `.slnx`, absolute or relative to the workspace |
 | `fsharp.enabled` | Starts or skips the F# sidecar |
-| `diagnostics.solution_wide_analysis` | Enables the C# startup solution scan |
-| `diagnostics.project_filter` | Limits that C# scan to matching project names |
+| `diagnostics.solution_wide_analysis` | Includes closed F# and C# files in solution diagnostics; enabled by default |
+| `diagnostics.project_filter` | Filters C# startup scans by project name for clients using pushed diagnostics |
 | `analyzers.dead_code` | Enables SharpLsp's C# and F# dead-code analyzers |
 | `analyzers.monorepo` | Treats unused public symbols as dead and reports them as errors |
 | `profiler.max_concurrent_sessions` | Caps simultaneous profiler sessions |

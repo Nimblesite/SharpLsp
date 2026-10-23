@@ -81,8 +81,8 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | C# サイドカーを起動するかスキップします |
 | `csharp.solution_path` | ワークスペースからの絶対パスまたは相対パスで `.sln` または `.slnx` を選択します |
 | `fsharp.enabled` | F# サイドカーを起動するかスキップします |
-| `diagnostics.solution_wide_analysis` | C# の起動時ソリューションスキャンを有効にします |
-| `diagnostics.project_filter` | C# スキャンを一致するプロジェクト名に限定します |
+| `diagnostics.solution_wide_analysis` | 開いていない F# と C# のファイルもソリューションの診断に含めます。既定で有効です |
+| `diagnostics.project_filter` | プッシュ診断を使うクライアントでは、C# 起動時スキャンを一致する名前のプロジェクトに限定します |
 | `analyzers.dead_code` | SharpLsp の C# および F# デッドコードアナライザーを有効にします |
 | `analyzers.monorepo` | 未使用の public シンボルをデッドコードとして扱い、エラーとして報告します |
 | `profiler.max_concurrent_sessions` | 同時に実行できるプロファイラーセッション数を制限します |
