@@ -82,6 +82,7 @@ pub mod razor_fsharp;
 pub mod razor_hierarchy;
 pub mod razor_mvc;
 pub mod razor_selection;
+pub mod razor_workspace_pull_session;
 pub mod references;
 pub mod region_session;
 pub mod selection;
