@@ -89,6 +89,8 @@ pub struct DiagnosticsConfig {
     pub min_severity: MinimumDiagnosticSeverity,
     /// Maximum diagnostics per file after filtering; zero is unlimited. [DIAG-CONFIG]
     pub max_per_file: usize,
+    /// Coalesce diagnostic refreshes for this many milliseconds. [DIAG-LSP-REFRESH]
+    pub refresh_debounce_ms: u64,
 }
 
 /// Validated diagnostic severity threshold. Implements [DIAG-CONFIG].
@@ -189,6 +191,7 @@ impl Default for DiagnosticsConfig {
             project_filter: Vec::new(),
             min_severity: MinimumDiagnosticSeverity::default(),
             max_per_file: 0,
+            refresh_debounce_ms: 2_000,
         }
     }
 }

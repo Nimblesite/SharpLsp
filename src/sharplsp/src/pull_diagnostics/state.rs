@@ -206,8 +206,9 @@ fn schedule_refresh(session: &Session) {
     }
     let revision = REFRESH.fetch_add(1, Ordering::SeqCst).saturating_add(1);
     let sender = session.sender.clone();
+    let delay = Duration::from_millis(session.config.refresh_debounce_ms);
     drop(session.runtime.spawn(async move {
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(delay).await;
         if REFRESH.load(Ordering::SeqCst) != revision {
             return;
         }
