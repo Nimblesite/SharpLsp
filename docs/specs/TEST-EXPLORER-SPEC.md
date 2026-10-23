@@ -200,9 +200,11 @@ on the adapter's own say-so — never on a filter that legitimately matched noth
 
 ## Execution and Outcome Attribution `[TEST-RUN-TRX]`
 
-A run is ONE `dotnet test` invocation for the whole selection, never one per test: a class of
-twenty tests otherwise pays twenty restores and builds, which exceeds any sane timeout on a
-Windows agent. Per-test outcomes come from the TRX report VSTest writes for that run:
+A run starts ONE `dotnet test` invocation per selected owning project, never one per test:
+a class of twenty tests otherwise pays twenty restores and builds, which exceeds any sane
+timeout on a Windows agent. Each invocation includes every selected test owned by that project
+and builds only its dependency graph ([TEST-BUILD-GRAPH]). When ownership is unavailable, use
+the original safe discovery target. Per-test outcomes come from the TRX reports VSTest writes:
 
 * `--logger trx` is used WITHOUT `LogFileName`. A solution runs one VSTest session per
   project, and a fixed file name makes each session overwrite the previous one, losing every
@@ -593,13 +595,19 @@ Testing API's three states: `$(pass) Passed (<duration>)`, `$(debug-step-over) S
 The Run-with-Coverage profile adds `--collect:XPlat Code Coverage` and points
 `--results-directory` at a freshly emptied `<solution folder>/.sharplsp-coverage` — reusing the
 directory would show the previous run's report. The collector writes one Cobertura report per
-test project, each in its own run-id folder one level down, and **every** one of them is parsed
+INVOKED test project, each in its own run-id folder one level down, and **every** one of them is parsed
 into `vscode.FileCoverage` entries and attached to the run; taking only the first drops every
 other project's coverage, and which one is "first" is directory order. An MTP run collects
 with `--coverage --coverage-output-format cobertura` instead, and that extension writes
 `<guid>.cobertura.xml` DIRECTLY into the results directory. Both depths are read, so one
 rule covers both runners ([TEST-MTP-RUN]). Per-file detail is
 resolved lazily through `loadDetailedCoverage`.
+
+An assembly-root selection invokes only that root's owning project and builds its transitive
+references ([TEST-BUILD-GRAPH]). It writes one real TRX and one coverage report for that owner;
+unselected test projects are neither built nor executed, their assemblies and cached results
+remain unchanged, and no empty sibling report is fabricated. Selecting both owning projects
+produces both reports, and their executed lines are merged without dropping either project.
 
 `coverlet.collector` leaves the TEST assembly out of its report by default
 (`IncludeTestAssembly` is false) and only reports assemblies the run actually loaded, so a
