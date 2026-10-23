@@ -12,7 +12,7 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Confirm three real VSIX analyzer failures after a genuine CA1822 compiler build oracle: live fixes, analyzer configuration and suppression changes.
 - [x] Run all regression assertions green against final staged binaries: 45 real VSIX cases including Razor, 832 C# and 463 F# engine cases. Existing asynchronous package assertions wait for their intended current Problems state without removing assertions or extending their existing response budgets.
 - [x] Preserve the observable legacy restore-pending notice without speculative package errors, then clear it before the first resolved package hover. The unchanged native regression, all 832 C# cases and all 45 diagnostic VSIX cases pass after the reactive IPC fix.
-- [ ] Prove solution replacement removes previous workspace errors without a window restart.
+- [x] Prove solution replacement removes previous workspace errors without a window restart; two real solutions switch and switch back in one native session, retiring old reports explicitly.
 - [ ] Prove sidecar failures/restarts cannot memoize an empty false-clean result.
 - [ ] Re-run the real FluentValidation and Serilog diagnostic edit/clear cases that failed the full Windows baseline.
 
@@ -34,10 +34,11 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 - [x] Invalidate dependent reports before and after source mutations, including unsaved overlays and closed-file disk changes; input revisions cannot block behind compiler queries.
 - [x] Follow selected solutions outside editor workspace folders using reactive input watchers, without retaining diagnostic data in the extension.
 - [x] Reload changed project/analyzer/editorconfig inputs; real CA1822/NoWarn transitions prove policy changes.
-- [ ] Add an explicit integration assertion for unsaved overlay replay during project reload and closed overlay retirement across that reload.
+- [x] Prove unsaved F# overlay replay through actual SDK source creation and metadata reload, retire a deleted C# source explicitly, and restore saved F# errors when its overlay closes. Real SDK build oracles and native reports pass (9321d87d).
 - [x] Deliver typed background compiler notifications while IPC is idle; shared transport belongs to lspkit and refresh is explicitly negotiated for older callers.
 - [x] Preserve a visible terminal error for truncated native IPC prefixes/payloads, including after valid responses; zero-byte EOF remains clean (lspkit #21, native RED/GREEN regression).
-- [ ] Wire restore completion and owning-project adoption to diagnostic refresh for both language engines.
+- [x] Prove C# background SDK restore completion emits a standard refresh through idle typed IPC, independently of filesystem or semantic-request rescue (81da7b24).
+- [ ] Prove owning-project adoption and F# restore completion refresh diagnostics.
 - [ ] Coalesce refreshes and preserve generation ordering across edits, workspace replacement and process recovery.
 - [ ] Invalidate only the required dependency graph when a compiler input changes; verify unrelated result identities remain stable where safe.
 
@@ -55,9 +56,13 @@ Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The 
 ## [DIAG-PLAN-CONFIG] Configuration
 
 - [x] Default solution_wide_analysis to true; live opt-out clears closed-file results while preserving open-file errors.
-- [ ] Implement project filter globs for workspace pulls without filtering direct document requests.
-- [ ] Apply analyzers_enabled before the first analysis and after live configuration changes/restarts.
-- [ ] Implement and validate min_severity, max_per_file, refresh_debounce_ms and auto_restore_on_open.
+- [x] Match project names, native paths and selected-solution-relative globs for F# and C# workspace pulls; exclusions retire prior reports and direct document requests remain unfiltered. Four live filter transitions per engine and all 14 accuracy cases pass (21253bc3, #451).
+- [x] Prove initial analyzer opt-out and live false/true/false transitions through real compiler sessions, preserving compiler errors (83836651).
+- [ ] Replay analyzer configuration after process recovery (#453).
+- [x] Validate all four min_severity values and apply max_per_file after filtering, with zero unlimited. Four real F#/C# editor cases fail before the fix and pass afterward; all 21 accuracy/analyzer/policy editor cases and all 236 existing Rust unit cases pass (f4c5ef77, #452).
+- [x] Preserve raw restore-pending state before publication filtering. With min_severity=error, a real legacy client receives the final CS0029 automatically after SDK restore, without a hover/pull rescue or visible informational notice (ee42c874).
+- [ ] Implement and validate refresh_debounce_ms.
+- [ ] Implement and validate auto_restore_on_open.
 
 ## [DIAG-PLAN-VERIFY] Integration and Delivery
 
