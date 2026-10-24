@@ -46,16 +46,18 @@ import {
 import { isFile } from './profiler-fsharp-artifacts';
 export { isFile, assertArtifacts } from './profiler-fsharp-artifacts';
 import { LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
+import { SHARPLSP_PALETTE } from '../../profiler-host';
 
 export const ENGINE = 'FsPricingEngine';
 export const LEDGER = 'FsOrderLedger';
 
-/** The CPU heat palette, critical to cool ([PROF-UI-WEBVIEW]: orange/amber for CPU). */
-export const CPU_PALETTE = ['#3eaa67', '#61c481', '#a1d9a4', '#4a5468'];
-/** The purple memory-allocation palette ([PROF-UI-WEBVIEW]: purple for memory). */
-export const MEMORY_PALETTE = ['#42b89d', '#82cfb7', '#6bb69e', '#479880'];
-/** The leak-confidence palette ([PROF-UI-WEBVIEW]: red for leaks). */
-export const LEAK_PALETTE = ['#ef4444', '#f87171', '#fb923c', '#82cfb7'];
+const P = SHARPLSP_PALETTE;
+/** SharpLsp's CPU heat colours, critical to cool ([PROF-UI-PALETTE]). */
+export const CPU_PALETTE = [P.critical, P.hot, P.warm, '#4a5468'];
+/** SharpLsp's memory-allocation ramp, largest to smallest ([PROF-UI-PALETTE]). */
+export const MEMORY_PALETTE = [P.memory, P.memoryHot, P.memoryWarm ?? P.memoryHot, P.memoryCool ?? P.memoryHot];
+/** A leak's colour by confidence: leak for definite and high, warm for medium, memory for low ([PROF-UI-PALETTE]). */
+export const LEAK_PALETTE = [P.leak, P.warm, P.memoryHot];
 /** How long one profiler step may take: an attach, a stop with symbolization, a heap capture. */
 export const STOP_MS = 90_000;
 /** A leak badge names its confidence in its after-line text. */
@@ -432,7 +434,7 @@ export function assertAnchored(
   const painted = memoryTrackOn(shape.file).filter((d) => d.line === shape.line);
   assert.ok(
     painted.some((d) => MEMORY_PALETTE.includes(d.color)),
-    `the memory track paints ${shape.file}:${shape.line} purple: ${JSON.stringify(painted)}`,
+    `the memory track paints ${shape.file}:${shape.line} in the memory ramp: ${JSON.stringify(painted)}`,
   );
 }
 
