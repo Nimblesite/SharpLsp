@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Implements [DIAG-CATEGORIES-ANALYZER]. Compile reviewed pinned source;
+       do not ship a private, irreproducible replacement assembly. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>FSharpLint.Core</AssemblyName>
+    <RootNamespace>FSharpLint.Core</RootNamespace>
+    <Version>0.27.1-sharplsp.1</Version>
+    <IsPackable>false</IsPackable>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DebugType>embedded</DebugType>
+    <EmbedAllSources>true</EmbedAllSources>
+    <Deterministic>true</Deterministic>
+    <FSharpLintRevision>d2607f5c68fe0e8c0366e815692cb8d314e254a3</FSharpLintRevision>
+    <FSharpLintCache>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'pinned-source'))</FSharpLintCache>
+    <FSharpLintSourceArchive Condition="'$(FSharpLintSourceArchive)' == ''">$(FSharpLintCache)upstream.tar.gz</FSharpLintSourceArchive>
+    <FSharpLintSourceRoot>$(FSharpLintCache)FSharpLint-$(FSharpLintRevision)/</FSharpLintSourceRoot>
+    <FSharpLintProjectDirectory>$(FSharpLintSourceRoot)src/FSharpLint.Core/</FSharpLintProjectDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../tools/fsharp-lint-source/LintSourceBuild.fsproj"
+                      ReferenceOutputAssembly="false" Private="false" PrivateAssets="all"
+                      OutputItemType="FSharpLintSourceBuilder" />
+    <PackageReference Include="FSharp.Core" Version="10.1.402" />
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.402" />
+    <PackageReference Include="FParsec" Version="1.1.1" />
+    <PackageReference Include="FSharpx.Collections" Version="3.1.0" />
+    <PackageReference Include="Ionide.ProjInfo" Version="0.70.2" />
+    <PackageReference Include="Ionide.ProjInfo.FCS" Version="0.70.2" />
+    <PackageReference Include="Ionide.ProjInfo.ProjectSystem" Version="0.70.2" />
+    <PackageReference Include="Microsoft.Build" Version="17.14.28" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.14.28" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Tasks.Core" Version="17.14.28" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.14.28" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Locator" Version="1.9.1" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.13" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+  </ItemGroup>
+  <Target Name="PreparePinnedFSharpLint" AfterTargets="ResolveProjectReferences"
+          Inputs="$(FSharpLintSourceArchive);@(FSharpLintSourceBuilder);$(MSBuildProjectFullPath)"
+          Outputs="$(FSharpLintCache).lint-source-build.fingerprint.json;$(FSharpLintProjectDirectory)FSharpLint.Core.fsproj;$(FSharpLintProjectDirectory)Rules/NamingHelper.fs;$(FSharpLintProjectDirectory)Rules/Conventions/CyclomaticComplexity.fs">
+    <MakeDir Directories="$(FSharpLintCache)" />
+    <DownloadFile SourceUrl="https://codeload.github.com/fsprojects/FSharpLint/tar.gz/$(FSharpLintRevision)"
+                  DestinationFolder="$(FSharpLintCache)" DestinationFileName="upstream.tar.gz"
+                  Condition="!Exists('$(FSharpLintSourceArchive)')" />
+    <Error Condition="'@(FSharpLintSourceBuilder)' == ''" Text="The FSharpLint source builder did not produce an executable." />
+    <Exec Command="dotnet &quot;@(FSharpLintSourceBuilder)&quot; &quot;$(FSharpLintSourceArchive)&quot; &quot;$(FSharpLintCache).&quot;" />
+  </Target>
+  <Target Name="IncludePinnedFSharpLint" AfterTargets="PreparePinnedFSharpLint">
+    <XmlPeek XmlInputPath="$(FSharpLintProjectDirectory)FSharpLint.Core.fsproj" Query="/Project/ItemGroup/Compile/@Include">
+      <Output TaskParameter="Result" ItemName="FSharpLintCompileOrder" />
+    </XmlPeek>
+    <ItemGroup>
+      <Compile Include="@(FSharpLintCompileOrder->'$(FSharpLintProjectDirectory)%(Identity)')" />
+      <EmbeddedResource Include="$(FSharpLintProjectDirectory)fsharplint.json" LogicalName="FSharpLint.Core.fsharplint.json" />
+      <EmbeddedResource Include="$(FSharpLintProjectDirectory)Text.resx" LogicalName="FSharpLint.Core.Text.resources" />
+      <None Include="$(FSharpLintSourceRoot)LICENSE" Link="ThirdParty/FSharpLint/LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <None Include="$(FSharpLintCache)PROVENANCE.md" Link="ThirdParty/FSharpLint/PROVENANCE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

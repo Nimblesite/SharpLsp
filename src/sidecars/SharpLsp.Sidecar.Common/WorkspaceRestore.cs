@@ -102,6 +102,7 @@ public static class WorkspaceRestore
         }
         return File.Exists(assets)
             && File.GetLastWriteTimeUtc(project) <= File.GetLastWriteTimeUtc(assets)
+            && WorkspaceRestoreInputs.AreCurrent(project, File.GetLastWriteTimeUtc(assets))
             && packages.Match(missing => missing.Length == 0, _ => false);
     }
 

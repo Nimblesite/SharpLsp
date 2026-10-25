@@ -67,7 +67,7 @@ pub(super) fn assert_selected(
 }
 
 /// Old diagnostics disappear through explicit empty reports, never an omitted stale owner.
-fn assert_retired(items: &[Value], previous: &[Value]) {
+pub(crate) fn assert_retired(items: &[Value], previous: &[Value]) {
     for old in previous {
         let retired = report_for(items, old["uri"].as_str().expect("previous document URI"));
         assert_eq!(retired["kind"], "full");

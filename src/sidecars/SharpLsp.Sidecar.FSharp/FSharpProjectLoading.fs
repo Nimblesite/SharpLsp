@@ -12,7 +12,7 @@ open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Solutions
 
 let parseFsprojSourceFiles (fsprojPath: string) : string array =
-    let document = XDocument.Load(fsprojPath)
+    let document = ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error))
     let projectDirectory = NativePaths.DirectoryOf fsprojPath
 
     document.Descendants(XName.Get("Compile"))
@@ -25,7 +25,7 @@ let parseFsprojSourceFiles (fsprojPath: string) : string array =
 let parseFsprojOtherFlags (fsprojPath: string) : string array =
     let separators = [| ' '; '\t'; '\r'; '\n' |]
 
-    XDocument.Load(fsprojPath).Descendants(XName.Get("OtherFlags"))
+    ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get("OtherFlags"))
     |> Seq.collect (fun element -> element.Value.Split(separators, StringSplitOptions.RemoveEmptyEntries))
     |> Seq.filter (fun value -> not (value.StartsWith("$(", StringComparison.Ordinal)))
     |> Seq.toArray
@@ -43,7 +43,7 @@ let private validAssemblyName (value: string) =
 
 let parseFsprojAssemblyName (fsprojPath: string) =
     let explicitName =
-        XDocument.Load(fsprojPath).Descendants(XName.Get("AssemblyName"))
+        ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get("AssemblyName"))
         |> Seq.choose (_.Value >> validAssemblyName)
         |> Seq.tryLast
 
@@ -185,14 +185,11 @@ let buildProjectOptions (checker: FSharpChecker) (fsprojPath: string) : FSharpPr
         SourceFiles = parseFsprojSourceFiles fsprojPath }
 
 let scriptOptions (checker: FSharpChecker) (scriptPath: string) (source: string) (ct: CancellationToken) =
-    let flags = [| "--define:INTERACTIVE"; "--define:EDITING"; "--simpleresolution" |]
-
-    checker.GetProjectOptionsFromScript(
-        scriptPath,
-        SourceText.ofString source,
-        otherFlags = flags,
-        useFsiAuxLib = true,
-        useSdkRefs = true,
-        assumeDotNetFramework = false
-    )
-    |> fun computation -> Async.StartAsTask(computation, cancellationToken = ct)
+    task {
+        use sourceScope = FSharpScriptSource.enter scriptPath source
+        let flags = [| "--define:INTERACTIVE"; "--define:EDITING"; "--simpleresolution" |]
+        let computation = checker.GetProjectOptionsFromScript(
+            scriptPath, SourceText.ofString source, otherFlags = flags,
+            useFsiAuxLib = true, useSdkRefs = true, assumeDotNetFramework = false)
+        return! Async.StartAsTask(computation, cancellationToken = ct)
+    }

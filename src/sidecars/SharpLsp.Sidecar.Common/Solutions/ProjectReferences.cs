@@ -1,5 +1,3 @@
-using System.Xml.Linq;
-
 namespace SharpLsp.Sidecar.Common.Solutions;
 
 /// <summary>
@@ -24,7 +22,9 @@ public static class ProjectReferences
         try
         {
             var projectDir = NativePaths.DirectoryOf(projectFilePath);
-            var doc = XDocument.Load(projectFilePath);
+            var doc = ProjectXml
+                .Read(projectFilePath)
+                .Match(document => document, error => throw error);
             return
             [
                 .. doc.Descendants()
@@ -73,8 +73,9 @@ public static class ProjectReferences
     {
         try
         {
-            var explicitName = XDocument
-                .Load(projectFilePath)
+            var explicitName = ProjectXml
+                .Read(projectFilePath)
+                .Match(document => document, error => throw error)
                 .Descendants()
                 .FirstOrDefault(element => element.Name.LocalName == "AssemblyName")
                 ?.Value;

@@ -72,7 +72,7 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
     {
         using var manager = new WorkspaceManager();
 
-        var result = Unwrap(await manager.GetAllDiagnosticsAsync([]));
+        var result = Unwrap(await manager.PullDiagnosticsAsync());
 
         Assert.Empty(result);
     }
@@ -144,7 +144,7 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
 
         await Assert
             .ThrowsAnyAsync<OperationCanceledException>(() =>
-                manager.GetAllDiagnosticsAsync([], new CancellationToken(canceled: true))
+                manager.PullDiagnosticsAsync(new CancellationToken(canceled: true))
             )
             .ConfigureAwait(true);
     }

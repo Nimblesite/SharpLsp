@@ -108,8 +108,19 @@ pub fn observed_request(
     params: Value,
     traffic: &mut Vec<Value>,
 ) -> Value {
-    let (response, messages) = target_framework::request_answering(client, method, params);
+    let response = observed_response(client, method, params, traffic);
     assert_rpc_ok(&response, method);
+    response
+}
+
+/// Record server traffic before classifying the current request's terminal response.
+fn observed_response(
+    client: &mut LspClient,
+    method: &str,
+    params: Value,
+    traffic: &mut Vec<Value>,
+) -> Value {
+    let (response, messages) = target_framework::request_answering(client, method, params);
     for message in &messages {
         if message.get("id").is_some() && message.get("method").is_some() {
             assert_eq!(
@@ -130,11 +141,21 @@ pub fn completed_pull(
     traffic: &mut Vec<Value>,
 ) -> Value {
     let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    completed_pull_before(client, method, params, traffic, deadline)
+}
+
+/// A caller's convergence deadline includes every correctly superseded attempt.
+pub fn completed_pull_before(
+    client: &mut LspClient,
+    method: &str,
+    params: Value,
+    traffic: &mut Vec<Value>,
+    deadline: Instant,
+) -> Value {
     loop {
-        let (response, messages) =
-            target_framework::request_answering(client, method, params.clone());
-        traffic.extend(messages);
+        let response = observed_response(client, method, params.clone(), traffic);
         if response.get("error").is_none() {
+            assert_rpc_ok(&response, method);
             return response;
         }
         assert_superseded(&response);
@@ -161,6 +182,13 @@ pub fn report_for<'a>(items: &'a [Value], uri: &str) -> &'a Value {
     let matching: Vec<_> = items.iter().filter(|item| item["uri"] == uri).collect();
     assert_eq!(matching.len(), 1, "exactly one report for {uri}: {items:?}");
     matching[0]
+}
+
+/// Borrow the complete workspace report array without changing any compiler report.
+pub fn workspace_reports(response: &Value) -> &[Value] {
+    response["result"]["items"]
+        .as_array()
+        .expect("workspace diagnostic reports")
 }
 
 /// Check the exact compiler error count, origin, severity, and source range.

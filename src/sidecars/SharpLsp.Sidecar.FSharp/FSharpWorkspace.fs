@@ -48,9 +48,9 @@ let create () : FSharpWorkspaceState =
 
     let readDocument filePath =
         async {
-            return
-                FSharpWorkspaceRuntime.tryReadSource overlays filePath
-                |> Option.map SourceText.ofString
+            let! ct = Async.CancellationToken
+            let! source = FSharpWorkspaceRuntime.tryReadSourceAsync overlays filePath ct |> Async.AwaitTask
+            return source |> Option.map SourceText.ofString
         }
 
     { Checker = FSharpWorkspaceRuntime.createOverlayAwareChecker readDocument
@@ -263,15 +263,20 @@ let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : 
     | None -> NativePaths.NormalizeFullPath filePath
 
 /// The one raw per-file FCS check; version deliberately remains the literal 0.
-let internal parseAndCheckOnce (state: FSharpWorkspaceState) filePath options =
+let internal parseAndCheckOnceWithCancellation (state: FSharpWorkspaceState) filePath options (ct: CancellationToken) =
     task {
-        let source = readSource state filePath
+        let! input = FSharpWorkspaceRuntime.tryReadSourceAsync state.Overlays filePath ct
+        let source = input |> Option.defaultValue String.Empty
+        ct.ThrowIfCancellationRequested()
 
         let! parseResults, checkAnswer =
-            state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options)
+            Async.StartAsTask(state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options), cancellationToken = ct)
 
         return parseResults, checkAnswer, source
     }
+
+let internal parseAndCheckOnce state filePath options =
+    parseAndCheckOnceWithCancellation state filePath options CancellationToken.None
 
 let private interpretAnswer
     (parseResults: FSharpParseFileResults)
@@ -284,7 +289,7 @@ let private interpretAnswer
         Log.Debug("[F# Check] aborted; parse diagnostics: {@Diagnostics}", parseResults.Diagnostics)
         None
 
-let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string) =
+let internal checkFileWithParseWithCancellation (state: FSharpWorkspaceState) (filePath: string) ct =
     task {
         if not state.IsLoaded then
             return None
@@ -292,10 +297,13 @@ let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string)
             let projectPath = projectFilePath state filePath
 
             let options = (optionsFor state projectPath).Value
-            let! parseResults, checkAnswer, source = parseAndCheckOnce state projectPath options
+            let! parseResults, checkAnswer, source = parseAndCheckOnceWithCancellation state projectPath options ct
 
             return interpretAnswer parseResults checkAnswer source
     }
+
+let internal checkFileWithParse state filePath =
+    checkFileWithParseWithCancellation state filePath CancellationToken.None
 
 let internal checkFileWithSource state filePath source =
     task {
@@ -315,11 +323,14 @@ let internal checkFileWithSource state filePath source =
             return interpretAnswer parseResults checkAnswer source
     }
 
-let internal checkFile (state: FSharpWorkspaceState) (filePath: string) =
+let internal checkFileWithCancellation (state: FSharpWorkspaceState) (filePath: string) ct =
     task {
-        let! result = checkFileWithParse state filePath
+        let! result = checkFileWithParseWithCancellation state filePath ct
         return result |> Option.map (fun (_, check, source) -> check, source)
     }
+
+let internal checkFile state filePath =
+    checkFileWithCancellation state filePath CancellationToken.None
 
 let internal parseFsprojSourceFiles path =
     FSharpProjectLoading.parseFsprojSourceFiles path
@@ -475,17 +486,20 @@ let internal checkProject (state: FSharpWorkspaceState) =
 /// Whole-project results for `projects` — a query's scope, or its head alone — one after
 /// another: checking them concurrently starved the thread pool and took five times as
 /// long once the builders were warm. Empty until a workspace loads.
-let internal checkAll (state: FSharpWorkspaceState) (projects: FSharpProjectOptions list) =
+let internal checkAllWithCancellation (state: FSharpWorkspaceState) (projects: FSharpProjectOptions list) ct =
     task {
         let results = ResizeArray<FSharpCheckProjectResults>()
 
         if state.IsLoaded then
             for (options: FSharpProjectOptions) in projects do
-                let! checkedProject = state.Checker.ParseAndCheckProject options
+                let! checkedProject = Async.StartAsTask(state.Checker.ParseAndCheckProject options, cancellationToken = ct)
                 results.Add checkedProject
 
         return List.ofSeq results
     }
+
+let internal checkAll state projects =
+    checkAllWithCancellation state projects CancellationToken.None
 
 let internal isSymbolInProject (state: FSharpWorkspaceState) (symbol: FSharpSymbol) =
     FSharpSemanticNavigation.isSymbolInProject state.ProjectOptions symbol

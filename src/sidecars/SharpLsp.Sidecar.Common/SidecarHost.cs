@@ -14,7 +14,7 @@ namespace SharpLsp.Sidecar.Common;
 /// message dispatch, ping/pong health checks, and graceful shutdown.
 /// Managed listener/dispatch portion of [SIDECAR-ARCHITECTURE-OWNERSHIP].
 /// </summary>
-public abstract class SidecarHost : IAsyncDisposable
+public abstract partial class SidecarHost : IAsyncDisposable
 {
     /// After this many consecutive message-loop failures the host gives up
     /// instead of hot-looping. A transport broken mid-frame makes every
@@ -352,72 +352,13 @@ public abstract class SidecarHost : IAsyncDisposable
 
     private async Task MessageLoopAsync(FramedTransport transport)
     {
-        // Terminal and bounded failure behavior: [SIDECAR-IPC-MESSAGE-LOOP].
-        var ct = _shutdownCts.Token;
-        var consecutiveFailures = 0;
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                if (!await ProcessOneMessageAsync(transport, ct).ConfigureAwait(false))
-                {
-                    break;
-                }
-
-                consecutiveFailures = 0;
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-            {
-                // The transport is permanently broken (peer died mid-frame); every
-                // further read would throw rather than signal EOF. Exit the loop
-                // instead of spinning on it (GitHub #153).
-                Log.Error(ex, "Sidecar transport failed; ending message loop");
-                break;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Sidecar message loop error");
-                if (++consecutiveFailures >= MaxConsecutiveMessageFailures)
-                {
-                    Log.Fatal(
-                        "Sidecar message loop aborting after {Count} consecutive failures",
-                        consecutiveFailures
-                    );
-                    break;
-                }
-            }
-        }
+        await RunRequestsAsync(transport).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Read, dispatch and answer one frame; false once the loop must end — at
     /// end of stream, or once a shutdown's acknowledgement is flushed.
     /// </summary>
-    private async Task<bool> ProcessOneMessageAsync(FramedTransport transport, CancellationToken ct)
-    {
-        var frameBytes = await transport.ReadFrameAsync(ct).ConfigureAwait(false);
-        if (frameBytes is null)
-        {
-            return false;
-        }
-
-        var envelope = MessagePackSerializer.Deserialize<Envelope>(
-            frameBytes,
-            cancellationToken: ct
-        );
-        var response = await _router.HandleAsync(envelope, ct).ConfigureAwait(false);
-        if (response is not null)
-        {
-            await WriteResponseAsync(transport, response, ct).ConfigureAwait(false);
-        }
-
-        return !_stopRequested;
-    }
-
     /// Write and flush one response within <see cref="ResponseWriteBudget" />.
     private static async Task WriteResponseAsync(
         FramedTransport transport,

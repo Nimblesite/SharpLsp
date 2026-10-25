@@ -175,13 +175,6 @@ internal sealed class DocumentHighlightListResult
 }
 
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class SolutionDiagnosticsRequest
-{
-    [Key(0)]
-    public string[] ProjectFilter { get; set; } = [];
-}
-
-[MessagePackObject(AllowPrivate = true)]
 internal sealed class DiagnosticResult
 {
     [Key(0)]

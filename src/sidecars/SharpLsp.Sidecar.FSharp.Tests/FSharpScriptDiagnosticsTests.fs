@@ -1,6 +1,7 @@
 /// Real compiler IPC script snapshots. [SCRIPT-FSX-DIAGNOSTICS] [HOVER-FSHARP-OVERLAY]
 module SharpLsp.Sidecar.FSharp.Tests.FSharpScriptDiagnosticsTests
 
+open System
 open System.IO
 open System.Threading.Tasks
 open System.Xml.Linq
@@ -8,6 +9,30 @@ open Xunit
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpDiagnosticsDocumentsTests
+
+/// One canonical script-error contract is shared by ordinary and cancelled compiler sessions.
+let internal assertErrors (fixture: EngineDiagnosticsFixture) path code = task {
+    let! diagnostics = fixture.Diagnostics(path)
+    let errors = diagnostics |> Array.filter (fun item -> item.Severity = "Error")
+    match code with
+    | None -> Assert.Empty(errors)
+    | Some expected ->
+        let diagnostic = Assert.Single(errors)
+        Assert.Equal(expected, diagnostic.Code)
+        Assert.True(NativePaths.AreEqual(path, diagnostic.FilePath))
+        Assert.True(diagnostic.StartLine >= 0 && diagnostic.EndLine >= diagnostic.StartLine)
+        Assert.False(System.String.IsNullOrWhiteSpace(diagnostic.Message))
+    return errors
+}
+
+/// Every script scenario restores the same actual selected project and retires its overlays.
+let internal restoreProject (fixture: EngineDiagnosticsFixture) paths = task {
+    for path in paths do
+        let! closed = fixture.DidClose(path)
+        Assert.Null(closed.Error)
+    let! response = fixture.SendFor("workspace/open", fixture.Project)
+    Assert.Null(response.Error)
+}
 
 type ScriptDiagnosticTests(fixture: EngineDiagnosticsFixture) =
     let script = NativePaths.Resolve(fixture.Dir, "Main.fsx")
@@ -30,16 +55,8 @@ type ScriptDiagnosticTests(fixture: EngineDiagnosticsFixture) =
     }
 
     member private _.Errors(path: string, code: string option) = task {
-        let! diagnostics = fixture.Diagnostics(path)
-        let errors = diagnostics |> Array.filter (fun item -> item.Severity = "Error")
-        match code with
-        | None -> Assert.Empty(errors)
-        | Some expected ->
-            let diagnostic = Assert.Single(errors)
-            Assert.Equal(expected, diagnostic.Code)
-            Assert.True(NativePaths.AreEqual(path, diagnostic.FilePath))
-            Assert.True(diagnostic.StartLine >= 0 && diagnostic.EndLine >= diagnostic.StartLine)
-            Assert.False(System.String.IsNullOrWhiteSpace(diagnostic.Message))
+        let! _ = assertErrors fixture path code
+        return ()
     }
 
     member private _.Sources(expected: string array, absent: string array) = task {
@@ -53,13 +70,7 @@ type ScriptDiagnosticTests(fixture: EngineDiagnosticsFixture) =
 
     interface IAsyncLifetime with
         member _.InitializeAsync() = Task.CompletedTask
-        member _.DisposeAsync() = task {
-            for path in [ script; child ] do
-                let! closed = fixture.DidClose(path)
-                Assert.Null(closed.Error)
-            let! response = fixture.SendFor("workspace/open", fixture.Project)
-            Assert.Null(response.Error)
-        }
+        member _.DisposeAsync() = restoreProject fixture [script; child]
 
     [<Fact>]
     member this.``script setup errors clear and return with the first compiler IPC snapshot``() = task {
@@ -102,15 +113,18 @@ type ScriptDiagnosticTests(fixture: EngineDiagnosticsFixture) =
 type ProjectDiagnosticTests(fixture: EngineDiagnosticsFixture) =
     interface IClassFixture<EngineDiagnosticsFixture>
 
-    member private _.Reference(enabled: bool) =
+    member private _.References(names: string array) =
         let document = XDocument.Load(fixture.Project)
         let root = Assert.IsType<XElement>(document.Root)
         let flags = document.Descendants(XName.Get "OtherFlags") |> Seq.toArray
         for flag in flags do flag.Remove()
-        if enabled then
-            let reference = "--reference:" + NativePaths.Resolve(fixture.Dir, "Missing.dll")
-            root.Add(XElement(XName.Get "PropertyGroup", XElement(XName.Get "OtherFlags", reference)))
+        if names.Length > 0 then
+            let references = names |> Array.map (fun name -> "--reference:" + NativePaths.Resolve(fixture.Dir, name))
+            root.Add(XElement(XName.Get "PropertyGroup", XElement(XName.Get "OtherFlags", String.Join(" ", references))))
         document.Save(fixture.Project)
+
+    member private this.Reference(enabled: bool) =
+        this.References(if enabled then [| "Missing.dll" |] else [||])
 
     member private this.Load(enabled: bool) = task {
         this.Reference(enabled)
@@ -118,16 +132,19 @@ type ProjectDiagnosticTests(fixture: EngineDiagnosticsFixture) =
         Assert.Null(response.Error)
     }
 
-    member private _.Report(broken: bool) = task {
+    member private _.ReferenceDiagnostic(diagnostic: DiagnosticResult) =
+        // FCS startup uses FS0084; the SDK command-line resolver uses FS0078.
+        Assert.Equal("FS0084", diagnostic.Code)
+        Assert.True(NativePaths.AreEqual(fixture.Project, diagnostic.FilePath))
+        Assert.Equal((0, 0, 0, 0), (diagnostic.StartLine, diagnostic.StartCharacter, diagnostic.EndLine, diagnostic.EndCharacter))
+
+    member private this.Report(broken: bool) = task {
         let! diagnostics = fixture.Diagnostics(fixture.Project, project = true)
         let errors = diagnostics |> Array.filter (fun diagnostic -> diagnostic.Severity = "Error")
         if not broken then Assert.Empty(errors)
         else
             let diagnostic = Assert.Single(errors)
-            // FCS startup uses FS0084; the SDK command-line resolver uses FS0078.
-            Assert.Equal("FS0084", diagnostic.Code)
-            Assert.True(NativePaths.AreEqual(fixture.Project, diagnostic.FilePath))
-            Assert.Equal((0, 0, 0, 0), (diagnostic.StartLine, diagnostic.StartCharacter, diagnostic.EndLine, diagnostic.EndCharacter))
+            this.ReferenceDiagnostic(diagnostic)
     }
 
     interface IAsyncLifetime with
@@ -142,6 +159,22 @@ type ProjectDiagnosticTests(fixture: EngineDiagnosticsFixture) =
         do! this.Report(false)
         do! this.Load(true)
         do! this.Report(true)
+    }
+
+    [<Fact>]
+    member this.``distinct missing references each report once and retire after repair``() = task {
+        let names = [| "MissingOne.dll"; "MissingTwo.dll" |]
+        this.References(names)
+        let! loaded = fixture.SendFor("workspace/open", fixture.Project)
+        Assert.Null(loaded.Error)
+        let! diagnostics = fixture.Diagnostics(fixture.Project, project = true)
+        let errors = diagnostics |> Array.filter (fun diagnostic -> diagnostic.Severity = "Error")
+        Assert.Equal(2, errors.Length)
+        for diagnostic in errors do this.ReferenceDiagnostic(diagnostic)
+        for name in names do
+            Assert.Single(errors, fun diagnostic -> diagnostic.Message.Contains(name, StringComparison.Ordinal)) |> ignore
+        do! this.Load(false)
+        do! this.Report(false)
     }
 
     [<Fact>]

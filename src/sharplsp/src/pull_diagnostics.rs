@@ -21,9 +21,9 @@ pub(crate) mod state;
 
 /// Source metadata; enumeration never eagerly compiles the solution.
 #[derive(Deserialize)]
-struct DiagnosticDocument {
+pub(crate) struct DiagnosticDocument {
     /// Native source path owned by the engine.
-    file_path: String,
+    pub(crate) file_path: String,
     /// Owning project name used by the scope filter.
     project_name: String,
     /// Owning native project path used by the scope filter.
@@ -115,7 +115,9 @@ fn document_report(
     if previous == Some(result_id.as_str()) {
         return Ok(json!({ "kind": "unchanged", "resultId": result_id }));
     }
-    let report = snapshot.store.diagnostics(uri, version)?;
+    let report = snapshot
+        .store
+        .diagnostics_cancellable(uri, version, snapshot.cancellation())?;
     if crate::diagnostics::has_restore_pending(report.items.as_ref()) {
         state::invalidate()?;
     }

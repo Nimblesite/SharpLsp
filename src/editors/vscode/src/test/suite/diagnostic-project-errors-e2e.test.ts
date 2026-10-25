@@ -10,6 +10,7 @@ import {
   activateAccuracyFixture,
   assertClosedProblem,
   assertCompilerProblem,
+  assertProjectBuild,
   firstDiagnosticReport,
   teardownAccuracyFixture,
   type AccuracyCase,
@@ -109,22 +110,6 @@ async function assertProjectPull(
   for (const item of found) {
     assertProjectDiagnostic(fixture, project, item);
   }
-}
-
-/** Independently verify project validity with the SDK compiler. */
-async function assertProjectBuild(
-  fixture: AccuracyFixture,
-  scenario: ProjectCase,
-  broken: boolean,
-): Promise<void> {
-  const build = dotnet(['build', fixture.solution, '--no-restore', '--nologo'], fixture.root);
-  if (broken)
-    await assert.rejects(
-      build,
-      new RegExp(scenario.buildCode),
-      'the real compiler rejects this project',
-    );
-  else await build;
 }
 
 /** Change a real project input and compare compiler output, Problems and the workspace pull. */

@@ -19,7 +19,7 @@ type Context =
 [<NoComparison; NoEquality>]
 type private Snapshot =
     { Diagnostics: FSharpDiagnostic array
-      CheckedFile: (FSharpCheckFileResults * string) option
+      CheckedFile: (FSharpParseFileResults * FSharpCheckFileResults * string) option
       ScopeChanged: bool }
 
 /// A script closure ends with its root; ordinary projects keep their existing owner.
@@ -41,7 +41,8 @@ let private scopeChanged previous (current: FSharpProjectOptions) =
 /// [HOVER-FSHARP-OVERLAY]
 let private scriptOptions (state: FSharpWorkspace.FSharpWorkspaceState) (root, persist, previous) ct =
     task {
-        let source = FSharpWorkspace.readSource state root
+        let! input = FSharpWorkspaceRuntime.tryReadSourceAsync state.Overlays root ct
+        let source = input |> Option.defaultValue System.String.Empty
         let! options, diagnostics = FSharpProjectLoading.scriptOptions state.Checker root source ct
         Serilog.Log.Debug("Script compiler inputs resolved: {SourceLength}, {DiagnosticCount}, {SourceFileCount}",
             source.Length, diagnostics.Length, options.SourceFiles.Length)
@@ -76,7 +77,7 @@ let private ownedFindings filePath root options (raw: FSharpDiagnostic array) =
 
 /// Preserve distinct findings from the compiler's option, parse and check streams.
 let private scriptFindings filePath root options setup (parsed: FSharpParseFileResults) checkedFile =
-    let checkedDiagnostics = checkedFile |> Option.map (fun (check: FSharpCheckFileResults, _) -> check.Diagnostics) |> Option.defaultValue [||]
+    let checkedDiagnostics = checkedFile |> Option.map (fun (_, check: FSharpCheckFileResults, _) -> check.Diagnostics) |> Option.defaultValue [||]
     Array.concat [ Array.ofList setup; parsed.Diagnostics; checkedDiagnostics ]
     |> ownedFindings filePath root options
 
@@ -85,10 +86,10 @@ let private isError (diagnostic: FSharpDiagnostic) =
     diagnostic.Severity = FSharpDiagnosticSeverity.Error
 
 /// Use the same raw compiler check as existing semantic queries.
-let private checkedSnapshot state filePath root (options, setup, changed) =
+let private checkedSnapshot state filePath root (options, setup, changed) ct =
     task {
-        let! parsed, answer, source = FSharpWorkspace.parseAndCheckOnce state filePath options
-        let checkedFile = match answer with FSharpCheckFileAnswer.Succeeded check -> Some(check, source) | FSharpCheckFileAnswer.Aborted -> None
+        let! parsed, answer, source = FSharpWorkspace.parseAndCheckOnceWithCancellation state filePath options ct
+        let checkedFile = match answer with FSharpCheckFileAnswer.Succeeded check -> Some(parsed, check, source) | FSharpCheckFileAnswer.Aborted -> None
         let diagnostics = scriptFindings filePath root options setup parsed checkedFile
         let failed = diagnostics |> Array.exists isError
         return if checkedFile.IsNone && not failed then Error "The script compiler check did not complete."
@@ -102,17 +103,21 @@ let private scriptSnapshot state filePath ((root, _, _) as input) ct =
         if setup |> List.exists isError then
             return Ok { Diagnostics = ownedFindings filePath root options (Array.ofList setup)
                         CheckedFile = None; ScopeChanged = changed }
-        else return! checkedSnapshot state filePath root resolved
+        else return! checkedSnapshot state filePath root resolved ct
     }
 
 /// [DIAG-TRUTH-GUARANTEES]: an unavailable check never becomes a clean snapshot.
-let private projectSnapshot state filePath =
+let private projectSnapshot state filePath ct =
     task {
-        match! FSharpWorkspace.checkFile state filePath with
-        | None -> return Error "The F# compiler check did not complete."
-        | Some(check, source) ->
-            return Ok { Diagnostics = check.Diagnostics |> Array.filter (fun diagnostic -> NativePaths.AreEqual(diagnostic.FileName, filePath))
-                        CheckedFile = Some(check, source); ScopeChanged = false }
+        let failure = FSharpWorkspace.optionsFor state filePath |> Option.bind (FSharpDiagnosticInputs.failure state)
+        match failure with
+        | Some reason -> return Error reason
+        | None ->
+            match! FSharpWorkspace.checkFileWithParseWithCancellation state filePath ct with
+            | None -> return Error "The F# compiler check did not complete."
+            | Some(parsed, check, source) ->
+                return Ok { Diagnostics = check.Diagnostics |> Array.filter (fun diagnostic -> NativePaths.AreEqual(diagnostic.FileName, filePath))
+                            CheckedFile = Some(parsed, check, source); ScopeChanged = false }
     }
 
 /// Select compiler inputs without duplicating the actual per-file FCS check.
@@ -124,37 +129,41 @@ let private snapshot state filePath ct =
             return! scriptSnapshot state filePath input ct
         | None ->
             Serilog.Log.Debug("File diagnostic compiler input: {Script}", false)
-            return! projectSnapshot state filePath
+            return! projectSnapshot state filePath ct
     }
 
 /// File-local analyzers retain their existing opt-out and checked source.
 /// [ANALYZERS-FSAC-UNUSED-OPEN] [ANALYZERS-FSAC-SIMPLIFY-NAME]
 let private fileAnalyzers context checkedFile =
     match context.AnalyzersEnabled, checkedFile with
-    | true, Some(check, source) -> FSharpAnalyzers.fileAnalyzerDiagnostics check source
+    | true, Some(_, check, source) -> FSharpAnalyzers.fileAnalyzerDiagnostics check source
     | _ -> async { return [] }
 
 /// The same project scope and monorepo policy govern dead-code findings.
 /// [ANALYZERS-DEADCODE-SEVERITY]
-let private projectAnalyzers context filePath =
+let private projectAnalyzers context filePath ct =
     task {
         if not context.Workspace.IsLoaded || not context.AnalyzersEnabled || not context.Analyzers.DeadCodeEnabled then
             return []
         else
             let scope = FSharpWorkspace.queryScope context.Workspace filePath
-            let! projects = FSharpWorkspace.checkAll context.Workspace (if context.Analyzers.Monorepo then scope else List.truncate 1 scope)
+            let! projects = FSharpWorkspace.checkAllWithCancellation context.Workspace (if context.Analyzers.Monorepo then scope else List.truncate 1 scope) ct
             let uses = projects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
             return FSharpAnalyzers.deadCodeDiagnosticsForFile context.Analyzers uses filePath
     }
 
 /// One mapper supplies both real source locations and root-owned setup failures.
-let private findings context filePath data =
+let private findings context filePath data ct =
     task {
         let compiler = data.Diagnostics |> Array.map (fun diagnostic ->
             FSharpProjectDiagnostics.compilerDiagnostic filePath (not (NativePaths.AreEqual(diagnostic.FileName, filePath))) diagnostic)
-        let! local = fileAnalyzers context data.CheckedFile
-        let! project = if data.CheckedFile.IsSome then projectAnalyzers context filePath else Task.FromResult([])
-        return Array.concat [ compiler; Array.ofList local; Array.ofList project ]
+        let! local = Async.StartAsTask(fileAnalyzers context data.CheckedFile, cancellationToken = ct)
+        let! project = if data.CheckedFile.IsSome then projectAnalyzers context filePath ct else Task.FromResult([])
+        let! lint =
+            match context.AnalyzersEnabled, data.CheckedFile with
+            | true, Some checkedFile -> FSharpLintDiagnostics.get filePath checkedFile ct
+            | _ -> Task.FromResult []
+        return Array.concat [ compiler; Array.ofList local; Array.ofList project; Array.ofList lint ]
     }
 
 /// Decode/error handling remains in the canonical IPC helper; computation has no cache.
@@ -170,7 +179,7 @@ let get (context: Context) requestPath ct =
                 let! notified = context.NotifyScopeChanged data.ScopeChanged ct
                 if not notified then return Error "F# diagnostic invalidation delivery failed."
                 else
-                    let! diagnostics = findings context filePath data
+                    let! diagnostics = findings context filePath data ct
                     return Ok diagnostics
         with ex -> return Error ex.Message
     }

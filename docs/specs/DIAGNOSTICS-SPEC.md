@@ -56,9 +56,15 @@ Solution-wide analysis is the default. The VS Code extension explicitly drives t
 
 Native input subscriptions follow actual compiler source and project metadata, including adopted projects and linked sources outside the selected solution directory. Directory identity and containment use the host's canonical path module. One subscription covers its descendants; unchanged subscriptions survive scope updates, and obsolete subscriptions are removed when the compiler scope changes.
 
+The shared project XML reader permits concurrent editor writes and atomic file replacement on Windows. Each completed save supplies current sources, flags, framework declarations, references and assembly identity. I/O and XML parse failures remain explicit results for the owning workspace's existing recovery boundary; a metadata read must not prevent an editor save ([DIAG-LSP-REFRESH], [#489](https://github.com/Nimblesite/SharpLsp/issues/489)).
+
 Native watchers may combine source creation and modification into one event. The host compares touched SDK source identities with current compiler metadata once per event batch; an unknown source requires a project graph reload before diagnostics are returned. This must discover new implicit SDK sources and retire deleted sources without an editor file notification, while preserving unsaved overlays.
 
+Source events under SDK `bin` or `obj` output directories MUST NOT adopt generated files as independent compiler inputs or abort later genuine source updates in the same batch. Native watchers and editor watched-file notifications share this path rule, including script sources. Compiler-owned generated diagnostics remain the engine's responsibility; project and restore-assets metadata invalidation remains enabled.
+
 Compiler notifications refresh this input scope independently of the configured Problems visibility. A workspace pull establishes subscriptions before publishing its successful report. Subscription updates carry the captured input revision so an obsolete query cannot reattach an earlier workspace's roots. Compiler metadata requests run without holding the session lock; watch ownership retains input paths and tasks, while diagnostic result reuse remains exclusively in Salsa.
+
+Native watcher rescan flags and observation errors invalidate the complete owned input scope; their path subset cannot describe the lost events. The observer must supersede pending diagnostic work before forwarding a full compiler-workspace reload, preserve unsaved overlays, and trigger the standard refresh. Repaired closed-file errors must disappear and subsequent compiler errors must appear without restarting the host or either compiler. Observation loss is logged with structured counts, never file contents ([DIAG-LSP-REFRESH], [#490](https://github.com/Nimblesite/SharpLsp/issues/490)).
 
 ## [DIAG-CONFIG] Configuration
 
@@ -130,6 +136,8 @@ Static analyzer configuration and its monorepo-only gate are specified by [ANALY
 
 Compiler errors without a user-source location belong to the owning project and appear once at its project URI with a zero-length range at line zero. Source diagnostics keep their actual source owner. Generated-source edit hints such as unused imports do not become project-level Problems entries; compiler errors and warnings remain eligible.
 
+Restored F# projects obtain their compile items, defines and reference assemblies from the SDK design-time command line, including single-target projects. The sidecar runtime's available APIs cannot determine whether a project's source is valid for its target framework. A separately built `netstandard2.1` source that uses `System.Threading.Lock` must report FS0039; switching back to `net10.0` retires only that error while preserving unrelated compiler findings ([#487](https://github.com/Nimblesite/SharpLsp/issues/487)).
+
 ### [DIAG-CATEGORIES-ANALYZER] Analyzer Diagnostics
 
 | Source | API | Examples |
@@ -137,10 +145,19 @@ Compiler errors without a user-source location belong to the owning project and 
 | Built-in Roslyn analyzers | `DiagnosticAnalyzer` framework | IDE0001–IDE0090, CA1000–CA2000 |
 | .editorconfig rules | `.editorconfig` → analyzer severity | Code style enforcement |
 | Third-party NuGet analyzers | NuGet `<Analyzer>` references | StyleCop, SonarAnalyzer, etc. |
+| FSharpLint | Current per-file FCS parse/type-check result | FL0065 hints, FL0071 complexity |
 | FSharp.Analyzers.SDK | Plugin-based analyzers | Community F# analyzers |
 | SharpLsp static analyzers | Solution-wide symbol/reference index | Monorepo-only unused public C#/F# code elements |
 
 Monorepo-only unused-public-code behavior is specified by [ANALYZERS-UNUSED-PUBLIC](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-unused-public-unused-public-code-elements).
+
+FSharpLint uses the same current parse tree, checked file and source text as compiler diagnostics, including unsaved editor text. It preserves upstream rule identifiers, source ranges and inline suppressions. The nearest ancestor `fsharplint.json` applies independently of the process working directory; creating, changing or deleting it triggers diagnostic refresh for closed files. `analyzers_enabled = false` retires lint findings while preserving compiler diagnostics.
+
+An invalid lint configuration or failed rule must not hide fresh compiler findings or masquerade as successful clean analysis. The source receives a warning `SLSPF0104` at zero-length range 0:0 while its current compiler diagnostics remain available. Repairing the configuration retires this warning and restores the actual lint findings. Cancellation remains cancellation. Stateful upstream rules are isolated between runs, including changed thresholds and interrupted analysis; a prior file or configuration must not create a false warning in the next run.
+
+The compiler-compatible FSharpLint dependency is a normal source project reference, built from a revision-pinned upstream archive verified by SHA256. Compatibility corrections use the real F# AST and reject unexpected source shapes. Unchanged builds retain prepared source and assembly timestamps; packaging includes upstream license and provenance. A developer-specific binary path must never be required.
+
+Real source-builder CLI tests run against the compiled builder and pinned archive on both operating systems. They reject incorrect arguments, paths and archive bytes before extraction; verify both AST compatibility patterns and the rule-state correction; and preserve source, license, provenance and fingerprint timestamps on a verified no-op. Corrupt source or any fingerprint identity/hash field requires fresh extraction and verification. A matching output fingerprint never bypasses hashing the current archive. CI passes these inputs across [DIST-CI-ARTIFACT-TESTS] rather than recompiling the builder in the tooling consumer.
 
 ### [DIAG-CATEGORIES-LIVE] Live Squiggles
 
@@ -230,8 +247,10 @@ Refresh triggers (sidecar → host IPC notification `diagnostics/refresh` carryi
 - `WorkspaceChangeKind.ProjectAdded`, `ProjectReloaded`, `ProjectRemoved`, `SolutionAdded`, `SolutionChanged`, `SolutionReloaded`
 - NuGet restore completion
 - Source generator output updated (`Compilation.WithReferences` / generator-driver state change)
-- `.editorconfig` file change inside the solution
+- `.editorconfig` and `fsharplint.json` changes, including inherited configuration above the selected solution
 - Analyzer reference added/removed
+
+Native subscriptions follow the selected solution and compiler-owned source/project directories. Ancestor directories are watched without recursion for inherited analyzer/build configuration only. Creating, modifying or deleting inherited configuration refreshes closed-file findings; unrelated ancestor sources and sibling projects do not enter this input scope. A directory changing from an ancestor subscription to a compiler root must receive a recursive subscription.
 
 ### [DIAG-LSP-PUSH] Push Model (`textDocument/publishDiagnostics`)
 
@@ -290,7 +309,7 @@ The Rust host calls `workspace/diagnostics/documents` to enumerate user-source i
 
 For each salsa miss, `workspace/diagnostics` computes a source document and `workspace/diagnostics/project` computes the requested project-level compiler findings. Both accept the native path and return `DiagnosticResult[]`. The host owns LSP workspace partials and result identities; stable salsa hits skip compiler IPC. A clean project needs no initial editor entry, while a previous project report receives an explicit empty result after repair.
 
-The legacy `workspace/diagnostics/all` bulk RPC MUST NOT be restored; workspace-wide analysis happens lazily through per-document pulls as specified by [DIAG-ARCHITECTURE-EAGER-SCAN].
+The legacy `workspace/diagnostics/all` bulk RPC MUST NOT be restored; workspace-wide analysis happens lazily through per-document pulls as specified by [DIAG-ARCHITECTURE-EAGER-SCAN]. Both sidecars reject that method before payload deserialization. The protocol regression must use a valid bulk payload, then prove ordinary metadata/document requests and process liveness remain available. Tests that collect solution results enumerate actual source metadata and issue the same lazy document requests; they do not retain a separate production bulk scanner ([#484](https://github.com/Nimblesite/SharpLsp/issues/484)).
 
 ### [DIAG-IPC-REFRESH] Notification: `diagnostics/refresh`
 
@@ -323,6 +342,16 @@ Explicit workspace opens honor `diagnostics.auto_restore_on_open`, enabled by de
 4. Restore completion bumps `global_state_version` and triggers an initial `diagnostics/refresh`.
 
 The gate is mandatory because unresolved `<PackageReference>` items can produce CS0246/CS0234 diagnostics on the first pull.
+
+Imported restore inputs participate even when the project file is unchanged. Static freshness inspection follows literal `.props`/`.targets` imports recursively, inherited `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`, NuGet configuration and `global.json`, and the referenced project graph. Changed or missing inputs require SDK restore before compiler workspace creation. Conditions, property/item expressions, globs, tasks and unrecognized SDKs require the SDK to evaluate the restore graph; SharpLsp must not interpret them with a second MSBuild evaluator. Repeated project references share inspection, and cyclic references defer to the SDK's failure instead of recursing indefinitely. This inspection retains no diagnostic result cache.
+
+An imported package version change must reveal its actual compiler error in unopened files, and an imported repair must retire only that error automatically. Existing unrelated compiler errors remain visible throughout. The project bytes and timestamp must remain untouched; a separately restored SDK build determines the expected package signature. Implements the release regression tracked in [#482](https://github.com/Nimblesite/SharpLsp/issues/482).
+
+Preserving a project's modification time must not hide a changed or removed package reference. The static fast path compares literal declarations with every actual SDK framework dependency snapshot, including package identity and version. Unknown declarations, implicit or centrally supplied dependencies, and metadata that cannot be proven unchanged defer to SDK restore. Removing metadata such as `PrivateAssets` or `IncludeAssets` must also invalidate an older snapshot containing it. Equivalent nested `Version` declarations may retain the fast path; NuGet version normalization remains the SDK's responsibility. Real compiler/Problems regressions must exercise package signature changes and removals in both languages, then live repair, while the erroneous file stays closed and unrelated errors remain ([#485](https://github.com/Nimblesite/SharpLsp/issues/485)).
+
+The declared `TargetFramework`/`TargetFrameworks` set must also match the SDK's `originalTargetFrameworks` snapshot even when the project timestamp is preserved. Switching, adding or removing a target requires restore; reordering the same literal set may reuse the actual SDK output. Multiple or unevaluated declarations defer to SDK evaluation rather than a second framework evaluator ([#486](https://github.com/Nimblesite/SharpLsp/issues/486)).
+
+Restore exit code zero alone is insufficient proof that a project can load: SDK restore can permit unresolved imports. After a successful restore, normal SDK evaluation of the same project and global properties must succeed before SharpLsp reports restoration complete. Querying `TargetFramework` through `dotnet msbuild -getProperty` performs this evaluation without executing a build. Missing or malformed imported files return a failure, and repairing them permits recovery without rewriting the project ([#483](https://github.com/Nimblesite/SharpLsp/issues/483)).
 
 **F# owning projects.** Before an owning-file load ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]), the F# sidecar restores the owner again (`dotnet msbuild -t:Restore`) when its `obj/project.assets.json` names a package that none of the assets file's package folders holds. Clearing the NuGet cache leaves a built project in exactly that state: MSBuild trusts the build's assets cache, so its design-time command line references none of the packages. The netstandard reference pack is one of them, and without its core library FCS aborts every check, so hover, completion and navigation answer nothing. A project that has never been restored is not restored by this owning-file gate. The log names the project, how many packages are gone and the first of them, then whether the restore succeeded.
 
@@ -372,6 +401,8 @@ There is no background scan thread. Roslyn analysis happens only when the editor
 ### [DIAG-ANALYSIS-CANCELLATION] Cancellation
 
 - The Rust host cancels in-flight per-document IPC requests when the editor sends a fresh pull for the same document with a higher `previousResultId`-implied version (or a different `previousResultId`).
+- An editor open, change or close supersedes older diagnostics and CodeLens work for that document, plus older workspace scans, before foreground compiler IPC. This also applies when the next pull repeats the same `previousResultId`; a cached result identity does not identify the newest editor input. Unrelated document requests remain active.
+- An explicit solution selection supersedes all older diagnostics and CodeLens work before foreground workspace loading. Acknowledging the selection cannot leave old compiler I/O blocking the new solution. New workspace pulls retire excluded reports explicitly, and switching back restores current compiler truth without restarting the host or compiler.
 - The sidecar passes the IPC `CancellationToken` straight into `GetSemanticModelAsync` / `GetAnalyzerSemanticDiagnosticsAsync`.
 - A `WorkspaceChanged` event mid-pull does not cancel the pull. The pull completes against its snapshot, returns its `resultId`, and the bumped `global_state_version` causes the next refresh to invalidate it. This matches `AbstractPullDiagnosticHandler`'s snapshot-isolation behavior in `dotnet/roslyn`.
 
@@ -390,12 +421,15 @@ When a file changes:
 - If `dotnet build` succeeds with zero errors against the same source, the next pull (after refresh debounce + restore completion) returns zero Error-severity diagnostics.
 - A diagnostic in the Problems panel corresponds to a real Roslyn compiler or analyzer diagnostic from the current `Solution` snapshot.
 - A workspace mutation that changes a file's diagnostics produces an LSP `workspace/diagnostic/refresh` within 2000ms (the debounce window). Editors converge to truth one pull cycle after that.
+- A failed SDK design-time evaluation cannot authorize diagnostics from fallback compiler inputs. Document and workspace pulls return an internal error (`-32603`) retaining the actual SDK cause; genuine supersession remains retryable (`-32802`, `retriggerRequest: true`). Successful SDK repair produces a fresh result identity. The failure applies to the selected compiler context and its in-memory dependencies, leaving independent valid owners available (#488).
 
 ### [DIAG-TRUTH-RECOVERY] Compiler Recovery
 
 A restarted compiler receives the selected workspace and current analyzer policy before it can answer semantic or diagnostic requests. Open documents are replayed from the authoritative host VFS, preserving unsaved text. The host retains bounded workspace/configuration inputs and weak access to the VFS; it retains no second buffer store or diagnostic result cache.
 
 Workspace restoration and document replay run under the same FIFO transport lock as the requesting operation. If restoration fails, the host discards that compiler connection and returns a retriable request error. The first successful pull after recovery must include both closed-file compiler errors and current unsaved-buffer errors from the selected workspace.
+
+Ordinary workspace replacement has the same atomic replay requirement even when the compiler process has not restarted. A solution-selection scheduling acknowledgement may precede the compiler load; editor text delivered before or during that load remains authoritative afterward. Before releasing the transport, the host enumerates the new graph's source metadata and replays its current open buffers. Open documents excluded by explicit selection must not re-adopt their former owners. Crash recovery continues replaying all open owners. The unchanged native cancellation regressions verify current errors, retired scope, a still-held obsolete source read and the original compiler process ([#491](https://github.com/Nimblesite/SharpLsp/issues/491)).
 
 ### [DIAG-TRUTH-LIMITS] Limits
 

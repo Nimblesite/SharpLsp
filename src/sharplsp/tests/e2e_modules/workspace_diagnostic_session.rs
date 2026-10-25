@@ -213,7 +213,7 @@ pub(super) fn warm_clean_documents(
 }
 
 /// Both compiler-confirmed errors must appear once without unrelated errors.
-fn assert_closed_reports(items: &[Value], uris: &[String; 2]) {
+pub(super) fn assert_closed_reports(items: &[Value], uris: &[String; 2]) {
     for ((uri, code), source) in uris
         .iter()
         .zip(["FS0001", "CS0029"])
@@ -262,20 +262,42 @@ fn assert_unchanged(response: &Value, original: &[Value]) {
 }
 
 /// Wait for watched disk repairs to replace both stale diagnostic sets.
-fn poll_repaired(
+pub(super) fn poll_repaired(
     client: &mut LspClient,
     previous: &[Value],
     uris: &[String; 2],
     traffic: &mut Vec<Value>,
     refresh_since: usize,
 ) -> Value {
+    poll_current_reports(client, previous, traffic, refresh_since, |items| {
+        uris.iter().all(|uri| {
+            let item = report_for(items, uri);
+            item["kind"] == "full"
+                && item["items"].as_array().is_some_and(|diagnostics| {
+                    diagnostics
+                        .iter()
+                        .all(|diagnostic| diagnostic["severity"] != 1)
+                })
+        })
+    })
+}
+
+/// Both repair and regression wait for an actual refresh and complete current reports.
+pub(super) fn poll_current_reports(
+    client: &mut LspClient,
+    previous: &[Value],
+    traffic: &mut Vec<Value>,
+    refresh_since: usize,
+    accepts: impl Fn(&[Value]) -> bool,
+) -> Value {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
-        let report = observed_request(
+        let report = completed_pull_before(
             client,
             "workspace/diagnostic",
             json!({"previousResultIds":previous}),
             traffic,
+            deadline,
         );
         let items = report["result"]["items"]
             .as_array()
@@ -283,17 +305,7 @@ fn poll_repaired(
         let refreshed = traffic[refresh_since..]
             .iter()
             .any(|message| message["method"] == "workspace/diagnostic/refresh");
-        if refreshed
-            && uris.iter().all(|uri| {
-                let item = report_for(items, uri);
-                item["kind"] == "full"
-                    && item["items"].as_array().is_some_and(|diagnostics| {
-                        diagnostics
-                            .iter()
-                            .all(|diagnostic| diagnostic["severity"] != 1)
-                    })
-            })
-        {
+        if refreshed && accepts(items) {
             return report;
         }
         assert!(
@@ -305,7 +317,7 @@ fn poll_repaired(
 }
 
 /// Changed reports receive new opaque IDs and contain no stale compiler errors.
-fn assert_repaired(response: &Value, original: &[Value], uris: &[String; 2]) {
+pub(super) fn assert_repaired(response: &Value, original: &[Value], uris: &[String; 2]) {
     let items = response["result"]["items"]
         .as_array()
         .expect("repaired items");

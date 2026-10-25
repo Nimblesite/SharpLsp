@@ -303,6 +303,12 @@ Every new connection is bootstrapped in this order:
 
 Only then is the generation `Ready`; failure enters backoff. Eager, lazy/project-less, second-language, explicit-solution, and recovery paths MUST use this bootstrap. Generation and readiness are salsa inputs whose changes invalidate dependent queries and trigger feature refresh/retry, including [DIAG-PUSH-GATE]. Sidecars and lifecycle code MUST NOT keep semantic result caches.
 
+### Compiler-independent Operations `[SIDECAR-RECOVERY-METADATA]`
+
+`solution/read`, `ping`, `analyzers/configure`, and `diagnostics/configure` do not require a loaded compiler workspace. They remain available on a connected transport when the remembered solution has been deleted or compiler bootstrap is pending. Inspecting another solution MUST NOT select it or mark that compiler generation semantically ready.
+
+Deferred workspace and VFS replay survives these operations, including a heartbeat on the same connection. The next semantic or diagnostic operation MUST complete the pending bootstrap before answering. An explicit replacement `workspace/open` supersedes the old selector and completes overlay replay before clearing that obligation.
+
 ### Degraded Behavior `[SIDECAR-RECOVERY-DEGRADED]`
 
 During startup/backoff, Rust syntax-only features remain available. Semantic requests receive a typed `SidecarUnavailable` result containing language, failure category, and retry-after duration. A feature MAY serve a last-known-good salsa query result with explicit stale provenance; no editor-local, handler-local, lifecycle-local, or sidecar-local cache is permitted.

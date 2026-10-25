@@ -4,6 +4,7 @@ module SharpLsp.Sidecar.FSharp.FSharpCodeLens
 
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
+open System.Threading
 open Serilog
 
 /// A code lens in the sidecar's neutral domain shape (mirror of CodeLensResult).
@@ -58,22 +59,32 @@ let private lensesByAnchor (projects: FSharpCheckProjectResults list) (definitio
           Title = group |> Array.sumBy (fun su -> referenceCount projects su.Symbol) |> formatTitle })
     |> Array.toList
 
-/// Get reference-count lenses for every top-level definition in a file.
-let getCodeLenses (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) =
+/// Compiler checks retain the editor request's lifetime across the entire query scope.
+let private checkLenses state filePath ct =
+    task {
+        let! fileCheck = FSharpWorkspace.checkFileWithCancellation state filePath ct
+        match fileCheck with
+        | None -> return []
+        | Some(checkResults, _source) ->
+            let! projects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state filePath) ct
+            ct.ThrowIfCancellationRequested()
+            return
+                checkResults.GetAllUsesOfAllSymbolsInFile()
+                |> Seq.filter isLensable
+                |> Seq.toArray
+                |> lensesByAnchor projects
+    }
+
+/// Cancellation remains a failed request, never a successful empty lens list.
+let getCodeLensesWithCancellation state filePath (ct: CancellationToken) =
     task {
         try
-            let! fileCheck = FSharpWorkspace.checkFile state filePath
-            match fileCheck with
-            | None -> return []
-            | Some(checkResults, _source) ->
-                let! projects = FSharpWorkspace.checkAll state (FSharpWorkspace.queryScope state filePath)
-
-                return
-                    checkResults.GetAllUsesOfAllSymbolsInFile()
-                    |> Seq.filter isLensable
-                    |> Seq.toArray
-                    |> lensesByAnchor projects
-        with ex ->
+            return! checkLenses state filePath ct
+        with ex when not ct.IsCancellationRequested ->
             Log.Debug(ex, "[F# CodeLens] failed")
             return []
     }
+
+/// Get reference-count lenses for every top-level definition in a file.
+let getCodeLenses state filePath =
+    getCodeLensesWithCancellation state filePath CancellationToken.None

@@ -22,6 +22,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="SharpLsp.Sidecar.Common.Tests" />
+        <ProjectReference Include="../../../lspkit/dotnet/LspKit.Sidecar/LspKit.Sidecar.csproj" />
     </ItemGroup>
 
     <ItemGroup>

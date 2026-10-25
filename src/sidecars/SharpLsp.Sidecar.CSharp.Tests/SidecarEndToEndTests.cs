@@ -659,10 +659,21 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task AllDiagnostics_returns_results()
     {
-        await fixture.SendAndAssertOkAsync(
-            "workspace/diagnostics/all",
-            new SolutionDiagnosticsRequest { ProjectFilter = [] }
+        var documents = await fixture.SendAndDeserializeAsync<DiagnosticDocument[]>(
+            "workspace/diagnostics/documents",
+            []
         );
+        Assert.Contains(
+            documents,
+            document => NativePaths.AreEqual(document.FilePath, fixture.SourceFile)
+        );
+        foreach (var document in documents)
+        {
+            await fixture.SendAndAssertOkAsync(
+                "workspace/diagnostics",
+                MessagePackSerializer.Serialize(document.FilePath)
+            );
+        }
     }
 
     [Fact]

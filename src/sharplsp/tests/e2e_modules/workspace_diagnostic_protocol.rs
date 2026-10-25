@@ -10,11 +10,13 @@ mod idle_restore;
 mod initialization;
 mod input_reload;
 mod invalid_selection;
+#[cfg(target_os = "linux")]
+mod overflow;
 mod owned_projects;
 mod project_filter;
-mod recovery;
+pub(super) mod recovery;
 mod refresh_debounce;
-mod selection;
+pub(crate) mod selection;
 
 /// Retry explicitly superseded work; inspect the first successful real compiler report.
 fn complete_workspace_pull(client: &mut LspClient, traffic: &mut Vec<Value>) -> Value {

@@ -60,7 +60,7 @@ pub fn initialize(
         inbound: None,
         engines: sidecars.into_iter().flatten().map(Arc::clone).collect(),
         workspace: None,
-        store: PullStore::new(analyzer),
+        store: PullStore::new_cancellable(analyzer),
         pull: supports_pull(capabilities),
         refresh: supports_refresh(capabilities),
         config: config.clone(),
@@ -106,8 +106,12 @@ pub fn select_workspace(target: &str) -> Result<()> {
 }
 
 /// Connect native filesystem inputs once the foreground dispatch queue exists.
-pub fn connect_inputs(inbound: crossbeam_channel::Sender<Message>) -> Result<()> {
+pub fn connect_inputs(
+    inbound: crossbeam_channel::Sender<Message>,
+    cancellation: lspkit_server::CancellationHandle,
+) -> Result<()> {
     with_session(|session| {
+        session.inputs.connect(cancellation);
         if let Some(target) = &session.workspace {
             session.inputs.replace(target, &session.runtime, &inbound)?;
         }
@@ -261,9 +265,9 @@ fn schedule_refresh(session: &Session) {
 fn analyzer(
     runtime: tokio::runtime::Handle,
     sidecars: [Option<&Arc<SidecarManager>>; 2],
-) -> lspkit_server::pull::Analyzer {
+) -> lspkit_server::pull::CancellableAnalyzer {
     let [csharp, fsharp] = sidecars.map(|sidecar| sidecar.map(Arc::clone));
-    Arc::new(move |raw| {
+    Arc::new(move |raw, cancel| {
         let uri = raw
             .parse::<lsp_types::Uri>()
             .map_err(|error| AnalysisError(error.to_string()))?;
@@ -277,7 +281,11 @@ fn analyzer(
         let sidecar = sidecar
             .ok_or_else(|| AnalysisError("requested compiler engine unavailable".to_owned()))?;
         runtime
-            .block_on(crate::diagnostics::fetch_from_sidecar(sidecar, &path))
+            .block_on(crate::diagnostics::fetch_from_sidecar(
+                sidecar,
+                &path,
+                Some(cancel),
+            ))
             .map(Arc::new)
             .map_err(|error| AnalysisError(format!("{error:#}")))
     })

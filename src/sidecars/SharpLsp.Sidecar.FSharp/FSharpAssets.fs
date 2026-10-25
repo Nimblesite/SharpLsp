@@ -31,12 +31,12 @@ let private tryProp (el: JsonElement) (name: string) : JsonElement option =
     | true, value -> Some value
     | false, _ -> None
 
-/// First property name of an object element, if any.
-let private firstName (el: JsonElement) : string option =
+/// SDK package roots retain their declared precedence, including fallback caches.
+let private folderNames (el: JsonElement) : string list =
     if el.ValueKind = JsonValueKind.Object then
-        el.EnumerateObject() |> Seq.map (fun p -> p.Name) |> Seq.tryHead
+        el.EnumerateObject() |> Seq.map (fun p -> p.Name) |> Seq.toList
     else
-        None
+        []
 
 /// First property value of an object element, if any.
 let private firstValue (el: JsonElement) : JsonElement option =
@@ -58,31 +58,42 @@ let private libraryPath (libraries: JsonElement option) (key: string) : string =
     // NuGet lays a package out under its lower-cased id/version: a layout rule, not path identity.
     | _ -> key.ToLowerInvariant()
 
+/// Resolve each compile input against every SDK root before filtering missing files.
+let private assemblyPath roots library file =
+    let candidates = roots |> List.map (fun root -> NativePaths.Resolve(root, library, file))
+    candidates |> List.tryFind File.Exists |> Option.orElse (List.tryHead candidates)
+
+/// A placeholder never reaches FCS; physical fallback assemblies preserve their identity.
+let private compileAssembly roots library (file: JsonProperty) =
+    // NuGet placeholders can exist physically inside a path-qualified compile item (#160).
+    if NativePaths.SameName(file.Name, "_._") then None
+    else
+        assemblyPath roots library file.Name
+        |> Option.map (fun path -> { Simple = NativePaths.StemOf file.Name; Path = path })
+
 /// Compile assemblies declared by one target-framework package entry.
-let private packageAssemblies
-    (root: string)
-    (libraries: JsonElement option)
-    (key: string)
-    (entry: JsonElement)
-    : PackageAssembly seq =
+let private packageAssemblies roots libraries key (entry: JsonElement) : PackageAssembly seq =
     match tryProp entry "compile" with
     | Some compile when compile.ValueKind = JsonValueKind.Object ->
         let libPath = libraryPath libraries key
 
-        compile.EnumerateObject()
-        |> Seq.choose (fun file ->
-            // Real restores emit placeholders PATH-QUALIFIED (e.g.
-            // `lib/netstandard1.0/_._`), and the file physically exists in the
-            // package — so match on the filename component, not the whole key.
-            // Handing `_._` to FCS as `-r:` poisons every checked file with
-            // FS0229/FS3160 startup errors that no edit clears. [GitHub #160]
-            if NativePaths.NameOf file.Name = "_._" then
-                None
-            else
-                Some { Simple = NativePaths.StemOf file.Name; Path = NativePaths.Resolve(root, libPath, file.Name) })
+        compile.EnumerateObject() |> Seq.choose (compileAssembly roots libPath)
     | _ -> Seq.empty
 
-/// Parse compile assemblies + packages root from a project's restored assets.
+/// Decode one SDK snapshot without separating roots from their compile entries.
+let private documentAssets (document: JsonElement) =
+    let roots = tryProp document "packageFolders" |> Option.map folderNames |> Option.defaultValue []
+    let libraries = tryProp document "libraries"
+    match tryProp document "targets" |> Option.bind firstValue with
+    | Some target when target.ValueKind = JsonValueKind.Object ->
+        let assemblies =
+            target.EnumerateObject()
+            |> Seq.collect (fun pkg -> packageAssemblies roots libraries pkg.Name pkg.Value)
+            |> Seq.toList
+        Some(roots |> List.tryHead |> Option.defaultValue "", assemblies)
+    | _ -> None
+
+/// Parse physical compile assemblies and preserve the SDK's primary root metadata.
 let parseAssets (fsprojPath: string) : (string * PackageAssembly list) option =
     let path = assetsPath fsprojPath
 
@@ -91,25 +102,7 @@ let parseAssets (fsprojPath: string) : (string * PackageAssembly list) option =
     else
         try
             use doc = JsonDocument.Parse(File.ReadAllText path)
-            let rootEl = doc.RootElement
-
-            let root =
-                tryProp rootEl "packageFolders"
-                |> Option.bind firstName
-                |> Option.defaultValue ""
-
-            let libraries = tryProp rootEl "libraries"
-            let target = tryProp rootEl "targets" |> Option.bind firstValue
-
-            match target with
-            | Some targetEl when targetEl.ValueKind = JsonValueKind.Object ->
-                let assemblies =
-                    targetEl.EnumerateObject()
-                    |> Seq.collect (fun pkg -> packageAssemblies root libraries pkg.Name pkg.Value)
-                    |> Seq.toList
-
-                Some(root, assemblies)
-            | _ -> None
+            documentAssets doc.RootElement
         with ex ->
             Log.Debug(ex, "[F# Assets] assets parse failed")
             None

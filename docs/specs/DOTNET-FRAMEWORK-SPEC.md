@@ -48,12 +48,16 @@ MSBuild's. Relative arguments resolve against the project directory. Flags the b
 its own console log and an editor must not, `--flaterrors` first (it folds each message onto one
 line with U+001D, and every published message and every quick fix that reads one loses its line
 breaks), are dropped. If the design-time compile
-fails, the project degrades to its `<Compile>` items against the sidecar runtime and the log says
-why. Every `.fsproj` of the solution loads and a file answers from the project that compiles it;
-the first is the workspace's for project-wide queries. MSBuild is asked only when the project
-file declares `<TargetFrameworks>` and evaluates to two or more: the first framework's options
-are built at load, each other's on its first switch, then kept. A single-target project keeps
-its `<Compile>` items. Each project reference MSBuild resolved names the framework of the
+fails, fallback options retain project ownership but cannot authorize diagnostic findings;
+diagnostic requests preserve the SDK failure ([DIAG-TRUTH-GUARANTEES], #488). Every `.fsproj` of the solution loads and a file answers from the project that compiles it;
+the first is the workspace's for project-wide queries. Restored projects use MSBuild's evaluated
+compile context even with one target; their framework APIs and globbed sources must not come
+from the sidecar runtime ([DIAG-CATEGORIES-COMPILER], #487). A single-target project still exposes
+no framework chooser. For several targets, the first framework's options are built at load,
+each other's on its first switch, then kept. An unrestored owner retains its established
+fallback contract until SDK context is available. Switching successfully to an evaluated framework
+clears the unavailable-context state; a failed switch preserves the last valid active context.
+Each project reference MSBuild resolved names the framework of the
 referenced project it picked, and an F# one is read in memory from that framework's options,
 built at load or at the switch that needs them
 ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]).

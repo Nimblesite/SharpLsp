@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SharpLsp.Sidecar.Common\SharpLsp.Sidecar.Common.csproj" />
+    <ProjectReference Include="../../../third_party/FSharpLint.Core/FSharpLint.Core.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,7 +47,6 @@
          [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] -->
     <PackageReference Update="Microsoft.CodeAnalysis.CSharp" PrivateAssets="none" />
     <PackageReference Include="Fantomas.Core" Version="8.0.10" />
-    <PackageReference Include="FSharpLint.Core" Version="0.27.0" />
     <PackageReference Include="MessagePack" Version="3.1.12" />
     <!-- Override transitive 9.0.0 from FSharpLint.Core/Microsoft.Build chain (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, fixed in 9.0.15; GHSA-r955-8q5j-3h83, GHSA-7hqp-7c5m-4vq6, GHSA-c399-9853-6jmj, fixed in 10.0.13). -->
     <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.13" />
@@ -57,12 +57,14 @@
     <Compile Include="FSharpAssets.fs" />
     <Compile Include="FSharpMetadataNavigator.fs" />
     <Compile Include="FSharpWorkspaceRuntime.fs" />
+    <Compile Include="FSharpScriptSource.fs" />
     <Compile Include="FSharpProjectLoading.fs" />
     <Compile Include="FSharpDesignTime.fs" />
     <Compile Include="FSharpCSharpReferences.fs" />
     <Compile Include="FSharpProjectGraph.fs" />
     <Compile Include="FSharpSemanticNavigation.fs" />
     <Compile Include="FSharpWorkspace.fs" />
+    <Compile Include="FSharpDiagnosticInputs.fs" />
     <Compile Include="FSharpDocuments.fs" />
     <Compile Include="FSharpOwningProject.fs" />
     <Compile Include="FSharpTargetFrameworks.fs" />
@@ -86,6 +88,7 @@
     <Compile Include="FSharpWire.fs" />
     <Compile Include="FSharpProjectDiagnostics.fs" />
     <Compile Include="FSharpAnalyzers.fs" />
+    <Compile Include="FSharpLintDiagnostics.fs" />
     <Compile Include="FSharpDiagnosticQueries.fs" />
     <Compile Include="FSharpSidecar.fs" />
     <Compile Include="Program.fs" />

@@ -270,18 +270,39 @@ impl SidecarManager {
         payload: Vec<u8>,
         budget: Duration,
     ) -> Result<Vec<u8>> {
+        self.request_budgeted(method, payload, budget, None).await
+    }
+
+    /// Propagate the real diagnostic request lifetime through serialized compiler IPC.
+    pub async fn request_cancellable(
+        &self,
+        method: &str,
+        payload: Vec<u8>,
+        cancel: Option<&lspkit_server::CancellationToken>,
+    ) -> Result<Vec<u8>> {
+        self.request_budgeted(method, payload, request_budget(method), cancel)
+            .await
+    }
+
+    /// Acquire the serialized compiler session with a cancellable wait and bounded exchange.
+    /// One FIFO acquisition covers connecting, numbering and exchange, preventing overtaking.
+    /// Implements [SIDECAR-IPC-DRIVER].
+    async fn request_budgeted(
+        &self,
+        method: &str,
+        payload: Vec<u8>,
+        budget: Duration,
+        cancel: Option<&lspkit_server::CancellationToken>,
+    ) -> Result<Vec<u8>> {
         if self.is_shutting_down() {
             bail!("{} sidecar is shutting down", self.name);
         }
-        // ONE acquisition covers connecting, numbering and the exchange. The
-        // lock is FIFO, so requests are written in the order they arrived;
-        // releasing it between connecting and writing let a later request
-        // overtake an earlier one. `[SIDECAR-IPC-DRIVER]`
-        let mut transport_guard = self.transport.lock().await;
+        let mut transport_guard =
+            lspkit_sidecar::cancellation::until_cancelled(self.transport.lock(), cancel).await?;
         self.session.remember(method, &payload)?;
         let fresh = transport_guard.is_none();
         self.connect_if_needed(&mut transport_guard).await?;
-        self.request_connected(&mut transport_guard, method, payload, budget, fresh)
+        self.request_connected(&mut transport_guard, method, payload, budget, fresh, cancel)
             .await
     }
 
@@ -289,26 +310,24 @@ impl SidecarManager {
     /// would otherwise be handed to the next caller and desync the framed
     /// protocol, so the transport is dropped and the process killed — the
     /// next request respawns a clean sidecar. `[SIDECAR-IPC-TIMEOUT]`
-    async fn fail_timed_out_request(
+    async fn fail_timed_out_request<T>(
         &self,
         transport: &mut Option<FramedTransport>,
         method: &str,
         id: u32,
         budget: Duration,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<T> {
         self.disconnect(transport).await;
+        let seconds = budget.as_secs();
         error!(
             sidecar = %self.name,
             method = %method,
             id = id,
-            timeout_secs = budget.as_secs(),
+            timeout_secs = seconds,
             "Sidecar request timed out; dropping connection for respawn"
         );
-        bail!(
-            "{} sidecar request {method} timed out after {}s",
-            self.name,
-            budget.as_secs()
-        )
+        let name = &self.name;
+        bail!("{name} sidecar request {method} timed out after {seconds}s")
     }
 
     /// Spawn the sidecar process and connect via Unix socket.

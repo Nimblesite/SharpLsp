@@ -58,6 +58,7 @@ impl Drop for BuildMonitor {
 /// Only compiler outputs invalidate discovery; source edits and discovery reads do not.
 fn is_output(change: &ChangeEvent) -> bool {
     match change {
+        ChangeEvent::Rescan => true,
         ChangeEvent::Touched(paths) | ChangeEvent::Removed(paths) => {
             paths.iter().any(|path| paths::is_build_output(path))
         }

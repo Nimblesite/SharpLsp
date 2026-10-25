@@ -24,7 +24,7 @@ import { isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import { activateWithScratch, teardownFixtureSolution } from './test-explorer-kit';
 import { closeAllEditors, pollUntilResult, removeDirRecursive } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 /** Retry only an explicitly incomplete snapshot; inspect the first successful report as-is. */
 export async function firstDiagnosticReport<
@@ -119,13 +119,35 @@ export interface AccuracyFixture {
   readonly scenario: AccuracyCase;
 }
 
+/** Every first successful pull carries a complete report and a nonempty opaque identity. */
+export function assertFullDiagnosticReport(
+  report: DocumentDiagnosticReport,
+): asserts report is Extract<DocumentDiagnosticReport, { kind: 'full' }> & { resultId: string } {
+  assert.equal(report.kind, 'full');
+  if (report.kind !== 'full') assert.fail('a fresh pull must contain the complete report');
+  assert.equal(typeof report.resultId, 'string');
+  assert.ok(report.resultId);
+}
+
+/** Read the first successful closed-file report without changing its assertions or retry policy. */
+export async function readClosedDiagnosticReport(
+  fixture: AccuracyFixture,
+): Promise<Extract<DocumentDiagnosticReport, { kind: 'full' }> & { resultId: string }> {
+  const client = fixture.api.getLspClient();
+  assert.ok(client);
+  const method = 'textDocument/diagnostic';
+  const params = { textDocument: { uri: fixture.closedUri.toString() } };
+  const report = await firstDiagnosticReport<DocumentDiagnosticReport>(client, method, params);
+  assertFullDiagnosticReport(report);
+  return report;
+}
+
 /** Every successful first pull must carry the independently SDK-proven error. */
 export function assertCompilerReport(
   fixture: AccuracyFixture,
   report: DocumentDiagnosticReport,
 ): void {
-  assert.equal(report.kind, 'full');
-  if (report.kind !== 'full') assert.fail('the first successful report must carry current truth');
+  assertFullDiagnosticReport(report);
   const errors = report.items.filter((item) => item.code === fixture.scenario.code);
   assert.equal(errors.length, 1, 'the real build failure is present exactly once');
   assert.equal(errors[0]?.severity, 1);
@@ -207,9 +229,14 @@ export async function activateAccuracyFixture(
 ): Promise<AccuracyFixture> {
   const { api, root } = await activateWithScratch(prefix);
   const fixture = await writeAccuracyFixture(api, root, scenario, options, editorConfig);
-  await loadSolutionInServer(fixture.solution);
-  await api.explorerProvider.loadSolution(fixture.solution);
+  await loadAccuracyFixture(fixture);
   return fixture;
+}
+
+/** Select the same real solution in the language server and reactive project tree. */
+export async function loadAccuracyFixture(fixture: AccuracyFixture): Promise<void> {
+  await loadSolutionInServer(fixture.solution);
+  await fixture.api.explorerProvider.loadSolution(fixture.solution);
 }
 
 /** Put the default fixture solution back FIRST, then clear the tree and delete the scratch. */
@@ -217,6 +244,15 @@ export async function teardownAccuracyFixture(fixture: AccuracyFixture): Promise
   await closeAllEditors();
   await loadSolutionInServer(fixtureSolutionPath());
   await teardownFixtureSolution(fixture.api, fixture.root, removeDirRecursive);
+}
+
+/** Register restoration before the scratch suite removes its root. */
+export function useAccuracyTeardown(fixture: () => AccuracyFixture | undefined): void {
+  suiteTeardown(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    const current = fixture();
+    if (current) await teardownAccuracyFixture(current);
+  });
 }
 
 /** Compiler-owned diagnostics must appear once, at their actual source and severity. */
@@ -289,4 +325,20 @@ export function assertNoCompilerErrors(uri: vscode.Uri): void {
       .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error),
     [],
   );
+}
+
+/** Independently verify project validity with the SDK compiler. */
+export async function assertProjectBuild(
+  fixture: AccuracyFixture,
+  scenario: { readonly buildCode: string },
+  broken: boolean,
+): Promise<void> {
+  const build = dotnet(['build', fixture.solution, '--no-restore', '--nologo'], fixture.root);
+  if (broken)
+    await assert.rejects(
+      build,
+      new RegExp(scenario.buildCode),
+      'the real compiler rejects this project',
+    );
+  else await build;
 }

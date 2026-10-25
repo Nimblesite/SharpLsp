@@ -21,6 +21,7 @@ open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.Common
+open SharpLsp.Sidecar.Common.Solutions
 
 let private node (name: string) (content: obj array) = XElement(XName.Get name, content)
 
@@ -203,3 +204,39 @@ let ``hand-built options name each source once, so FCS never sees a file twice``
         Assert.Empty(checkedProject.Diagnostics)
     finally
         cleanup dir
+
+/// Completed editor saves must be visible without denying the editor's write handle.
+/// Implements [DIAG-LSP-REFRESH] and [DIAG-TRUTH-GUARANTEES].
+let private saveAssemblyName (document: XDocument) (editor: FileStream) name =
+    let assembly = document.Descendants(XName.Get "AssemblyName") |> Seq.exactlyOne
+    assembly.Value <- name
+    editor.Position <- 0L
+    editor.SetLength 0L
+    document.Save editor
+    editor.Flush true
+
+/// Compiler inputs retain exact sources, flags, framework shape and cross-language identity.
+let private assertEditableInputs root project name =
+    let source = NativePaths.Resolve(root, "Library.fs")
+    let reference = NativePaths.Resolve(root, "Neighbour", "Neighbour.csproj")
+    Assert.Equal<string array>([| source |], FSharpWorkspace.parseFsprojSourceFiles project)
+    Assert.Equal<string array>([| "--nowarn:52"; "--warnon:1182" |], FSharpWorkspace.parseFsprojOtherFlags project)
+    Assert.Equal(name, FSharpWorkspace.parseFsprojAssemblyName project)
+    Assert.False(FSharpDesignTime.declaresTargetFrameworks project)
+    Assert.Equal<string array>([| reference |], ProjectReferences.ReadReferencedProjects(project) |> Seq.toArray)
+    Assert.Equal(name, ProjectReferences.AssemblyNameOf project)
+
+[<Fact>]
+let ``project metadata remains accurate across editor saves with a write handle open`` () =
+    let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
+    try
+        writeBuiltCsharpReference root |> ignore
+        let items: obj array = [| node "ProjectReference" [| attr "Include" "Neighbour/Neighbour.csproj" |] |]
+        let project = writeProject root "Editable" FLAGS_WITHOUT_OUTPUT items
+        let document = XDocument.Load project
+        use editor = File.Open(project, FileMode.Open, FileAccess.Write, FileShare.ReadWrite ||| FileShare.Delete)
+        for name in [| "SavedFirst"; "SavedSecond"; "SavedThird" |] do
+            saveAssemblyName document editor name
+            assertEditableInputs root project name
+    finally
+        cleanup root

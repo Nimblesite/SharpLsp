@@ -17,10 +17,15 @@ pub fn watched(
     vfs: &Arc<Vfs>,
     sender: &crossbeam_channel::Sender<lsp_server::Message>,
 ) -> Result<()> {
+    let rescan = needs_rescan(&params);
     let params: DidChangeWatchedFilesParams = serde_json::from_value(params)?;
     super::state::invalidate()?;
-    tracing::info!(count = params.changes.len(), "Diagnostic inputs changed");
-    if requires_reload(&params, runtime, sidecars)? {
+    tracing::info!(
+        count = params.changes.len(),
+        rescan,
+        "Diagnostic inputs changed"
+    );
+    if rescan || requires_reload(&params, runtime, sidecars)? {
         reload(runtime, sidecars, vfs)?;
     }
     for change in params.changes {
@@ -31,7 +36,7 @@ pub fn watched(
         if vfs.get_content_for_path_canonical(&path).is_some() {
             continue;
         }
-        if paths::has_extension(&path, &["cs", "csx", "fs", "fsi", "fsx", "razor", "cshtml"]) {
+        if paths::is_diagnostic_source(&path) {
             update_source(&change.uri, &path, runtime, sidecars)?;
         }
     }
@@ -50,6 +55,14 @@ pub fn watched(
         }
     }
     super::state::invalidate()
+}
+
+/// Native input loss has no complete URI list; this internal marker requests full reload.
+pub fn needs_rescan(params: &serde_json::Value) -> bool {
+    params
+        .get("sharplspRescan")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
 }
 
 /// Source additions/deletions and metadata edits alter the loaded compiler snapshot.

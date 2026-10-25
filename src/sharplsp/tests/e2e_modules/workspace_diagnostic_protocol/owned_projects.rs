@@ -134,9 +134,7 @@ fn assert_owner_state(
     broken: bool,
 ) -> Vec<Value> {
     let response = complete_workspace_pull(client, traffic);
-    let items = response["result"]["items"]
-        .as_array()
-        .expect("current owned compiler scope");
+    let items = workspace_reports(&response);
     assert_primary(primary, items);
     owned_errors(external)
         .into_iter()

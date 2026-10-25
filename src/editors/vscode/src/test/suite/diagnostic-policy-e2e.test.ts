@@ -11,6 +11,7 @@ import {
   ACCURACY_CASES,
   activateAccuracyFixture,
   assertFileStillClosed,
+  assertFullDiagnosticReport,
   teardownAccuracyFixture,
   type AccuracyFixture,
 } from './diagnostic-accuracy-fixtures';
@@ -81,9 +82,7 @@ async function assertPolicyTruth(
   const direct = await client.sendRequest<DocumentDiagnosticReport>('textDocument/diagnostic', {
     textDocument: { uri: fixture.closedUri.toString() },
   });
-  assert.equal(direct.kind, 'full');
-  if (direct.kind !== 'full') assert.fail('a fresh pull must contain the complete report');
-  assert.ok(direct.resultId);
+  assertFullDiagnosticReport(direct);
   assertPolicyDiagnostics(fixture, direct.items, errors, warnings);
   await assertWorkspacePolicy(fixture, client, errors, warnings);
   await assertProblemsPolicy(fixture, errors, warnings);

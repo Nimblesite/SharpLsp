@@ -346,7 +346,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task DiagnosticsForCleanFileAreNonError()
     {
         var single = await Manager.GetDiagnosticsAsync(SourcePath);
-        var all = await Manager.GetAllDiagnosticsAsync([]);
+        var all = await Manager.PullDiagnosticsAsync();
 
         Assert.False(single.IsError, single.Match(_ => "ok", err => err));
         Assert.False(all.IsError, all.Match(_ => "ok", err => err));

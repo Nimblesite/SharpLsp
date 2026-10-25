@@ -11,22 +11,23 @@ public static class PackageAssets
     {
         try
         {
-            var assets = NativePaths.Resolve(
-                NativePaths.DirectoryOf(project),
-                "obj",
-                "project.assets.json"
-            );
+            var assets = NativePaths.ProjectAssetsFile(project);
             if (!File.Exists(assets))
             {
                 return new MissingPackagesResult.Ok<string[], string>([]);
             }
-            using var document = JsonDocument.Parse(File.ReadAllText(assets));
+            using var document = ReadDocument(project);
             return new MissingPackagesResult.Ok<string[], string>(AbsentFrom(document.RootElement));
         }
         catch (Exception)
         {
             return MissingPackagesResult.Failure("Could not read project package assets.");
         }
+    }
+
+    internal static JsonDocument ReadDocument(string project)
+    {
+        return JsonDocument.Parse(File.ReadAllText(NativePaths.ProjectAssetsFile(project)));
     }
 
     private static string[] AbsentFrom(JsonElement document)

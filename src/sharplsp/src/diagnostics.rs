@@ -337,12 +337,14 @@ pub fn clear(sender: &crossbeam_channel::Sender<Message>, uri: Uri) -> Result<()
     publish(sender, uri, vec![])
 }
 
-/// Fetch diagnostics from the sidecar for a single file (public for pull diagnostics).
+/// Fetch actual compiler truth with the caller's cancellation lifetime.
 pub async fn fetch_from_sidecar(
     sidecar: &SidecarManager,
     file_path: &str,
+    cancel: Option<&lspkit_server::CancellationToken>,
 ) -> Result<Vec<Diagnostic>> {
-    let diagnostics = fetch(sidecar, file_path, source_tag_for_path(file_path)).await?;
+    let diagnostics =
+        fetch_cancellable(sidecar, file_path, source_tag_for_path(file_path), cancel).await?;
     policy::configured(diagnostics)
 }
 
@@ -352,6 +354,16 @@ async fn fetch(
     file_path: &str,
     source_tag: &str,
 ) -> Result<Vec<Diagnostic>> {
+    fetch_cancellable(sidecar, file_path, source_tag, None).await
+}
+
+/// Request fresh compiler findings under the caller's execution lifetime.
+async fn fetch_cancellable(
+    sidecar: &SidecarManager,
+    file_path: &str,
+    source_tag: &str,
+    cancel: Option<&lspkit_server::CancellationToken>,
+) -> Result<Vec<Diagnostic>> {
     let payload = rmp_serde::to_vec(file_path).context("serialize file path")?;
     let method = if crate::paths::has_extension(file_path, &["csproj", "fsproj"]) {
         "workspace/diagnostics/project"
@@ -359,7 +371,7 @@ async fn fetch(
         "workspace/diagnostics"
     };
     let response_bytes = sidecar
-        .request(method, payload)
+        .request_cancellable(method, payload, cancel)
         .await
         .context("sidecar diagnostics request")?;
     let results: Vec<SidecarDiagnostic> =

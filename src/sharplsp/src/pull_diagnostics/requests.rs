@@ -5,14 +5,18 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::Result;
-use lsp_server::{Message, Request, Response};
-use lspkit_server::pull::PullStore;
-use lspkit_server::{CancellationToken, Dispatcher, HandlerResult, JsonRpcError, ReplyGate};
+use lsp_server::{Message, Notification, Request, Response};
+use lspkit_server::pull::{AnalysisError, PullError, PullStore};
+use lspkit_server::{
+    CancellationHandle, CancellationToken, Dispatcher, HandlerResult, JsonRpcError, ReplyGate,
+};
 use serde_json::{json, Value};
 use tracing::warn;
 
 use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
+
+mod interest;
 
 /// Backend wiring, retained independently of a single request's lifetime.
 #[derive(Clone)]
@@ -42,12 +46,23 @@ pub(super) struct Snapshot {
 }
 
 impl Snapshot {
+    /// Actual execution lifetime forwarded to the shared query and compiler transport.
+    pub fn cancellation(&self) -> &CancellationToken {
+        &self.cancel
+    }
+
     /// Check before semantic work and before emitting any part of its result.
     pub fn check(&self) -> Result<()> {
         if self.cancel.is_cancelled() {
             return Err(Interrupted::Cancelled.into());
         }
-        if self.store.revision() != self.revision {
+        let current = self.store.revision();
+        if current != self.revision {
+            tracing::debug!(
+                revision = self.revision,
+                current,
+                "Diagnostic snapshot superseded"
+            );
             return Err(Interrupted::Superseded.into());
         }
         Ok(())
@@ -78,6 +93,30 @@ pub struct Requests {
 }
 
 impl Requests {
+    /// Retain interest before FIFO forwarding, including pulls queued behind source updates.
+    /// [DIAG-ANALYSIS-CANCELLATION] uses the dispatcher's sole cancellation registry.
+    pub fn observe(cancellation: &CancellationHandle, request: &Request) -> Result<()> {
+        if request.method == "sharplsp/loadSolution"
+            && request
+                .params
+                .get("solutionPath")
+                .is_some_and(Value::is_string)
+        {
+            cancellation.supersede_all();
+        }
+        if handles(request) {
+            let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
+            cancellation.register(id, interest::request(request))?;
+        }
+        Ok(())
+    }
+
+    /// Release obsolete compiler work before a real input notification can wait on its IPC.
+    /// [DIAG-ANALYSIS-CANCELLATION] changes interest, never the authoritative VFS here.
+    pub fn changed(cancellation: &CancellationHandle, notification: &Notification) {
+        interest::changed(cancellation, notification);
+    }
+
     /// Connect compiler engines without performing any analysis.
     pub fn new(
         runtime: &tokio::runtime::Runtime,
@@ -98,10 +137,7 @@ impl Requests {
 
     /// Register before scheduling, so an immediate cancellation cannot get lost.
     pub fn dispatch(&self, request: &Request, runtime: &tokio::runtime::Runtime) -> Result<bool> {
-        if !matches!(
-            request.method.as_str(),
-            "textDocument/diagnostic" | "workspace/diagnostic"
-        ) {
+        if !handles(request) {
             return Ok(false);
         }
         let reply = ReplyGate::default();
@@ -154,18 +190,26 @@ impl Requests {
 
     /// Unknown and already completed cancellation IDs are harmless.
     pub fn cancel(&self, params: &Value) {
-        if let Some(id) = params
-            .get("id")
-            .and_then(|id| serde_json::from_value(id.clone()).ok())
-        {
-            self.dispatcher.cancel(&id);
-        }
+        self.cancellation_handle().cancel_request(params);
+    }
+
+    /// Share only weak protocol control with the ingress reader, never compiler state.
+    pub fn cancellation_handle(&self) -> CancellationHandle {
+        self.dispatcher.cancellation_handle()
     }
 
     /// End outstanding requests before the compiler engines are stopped.
     pub fn cancel_all(&self) {
         self.dispatcher.cancel_all();
     }
+}
+
+/// The foreground and protocol reader agree on the requests owned by this dispatcher.
+fn handles(request: &Request) -> bool {
+    matches!(
+        request.method.as_str(),
+        "textDocument/diagnostic" | "workspace/diagnostic" | "textDocument/codeLens"
+    )
 }
 
 impl Drop for Requests {
@@ -191,6 +235,7 @@ async fn compute(request: Request, context: Context, snapshot: Snapshot) -> Hand
 
 /// Execute compiler pulls outside the foreground protocol loop.
 fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
+    tracing::debug!(method = request.method, "Diagnostic request started");
     snapshot.check()?;
     let result = if request.method == "workspace/diagnostic" {
         super::handle_workspace_diagnostic(
@@ -201,22 +246,49 @@ fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<V
             snapshot,
         )
     } else {
-        super::handle_document_diagnostic(request, &context.vfs, snapshot)
+        document_request(request, context, snapshot)
     }?;
     snapshot.check()?;
     Ok(result)
 }
 
+/// Compiler-backed editor work shares the same lifetime and stays off the input loop.
+fn document_request(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
+    if request.method == "textDocument/codeLens" {
+        let [fsharp, csharp] = context.engines.each_ref().map(Option::as_ref);
+        let sidecar = crate::pick_sidecar(&request, csharp, fsharp);
+        crate::code_lens::handle_code_lens(
+            request,
+            &context.runtime,
+            sidecar,
+            snapshot.cancellation(),
+        )
+    } else {
+        super::handle_document_diagnostic(request, &context.vfs, snapshot)
+    }
+}
+
 /// Preserve protocol cancellation and request-error semantics at the adapter boundary.
 fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
-    match error.downcast_ref::<Interrupted>() {
+    let interrupted = error.downcast_ref::<Interrupted>();
+    tracing::debug!(?interrupted, "Diagnostic request rejected");
+    match interrupted {
         Some(Interrupted::Cancelled) => JsonRpcError::new(-32800, "Diagnostic request cancelled"),
+        // Stable compiler-input failures retain their actionable cause. [DIAG-TRUTH-GUARANTEES]
+        _ if compiler_inputs_unavailable(error) => JsonRpcError::new(-32603, error.to_string()),
         _ if error.downcast_ref::<serde_json::Error>().is_some() => {
             JsonRpcError::new(-32602, "Invalid diagnostic parameters")
         }
         _ => JsonRpcError::new(-32802, "Diagnostic snapshot unavailable or superseded")
             .with_data(json!({"retriggerRequest": true})),
     }
+}
+
+/// The existing IPC error field is textual; recognize only its controlled SDK-input prefix.
+/// Other analysis failures can precede asynchronous owner adoption. [DIAG-TRUTH-GUARANTEES]
+fn compiler_inputs_unavailable(error: &anyhow::Error) -> bool {
+    matches!(error.downcast_ref::<PullError>(), Some(PullError::Analysis(AnalysisError(message)))
+        if message.starts_with("sidecar diagnostics request: sidecar error: SDK compiler inputs unavailable: "))
 }
 
 /// Convert shared dispatcher outcomes into the existing lsp-server wire shape.

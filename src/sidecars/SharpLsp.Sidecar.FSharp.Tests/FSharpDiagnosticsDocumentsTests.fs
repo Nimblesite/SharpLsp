@@ -114,16 +114,43 @@ type EngineDiagnosticsFixture() =
                 return! this.AwaitNotification(method, after, ct)
     }
 
-    member this.Send(meth: string, payload: byte array) : Task<Envelope> =
-        task {
-            match transport with
-            | None -> return failwith "sidecar transport is not connected"
-            | Some t ->
-                let id = Interlocked.Increment(&nextId)
-                let request = Envelope(Id = Nullable(uint32 id), Method = meth, Payload = payload)
-                do! t.WriteFrameAsync(MessagePackSerializer.Serialize(request))
-                return! this.ReadResponse(t, uint32 id)
+    member private _.Request(meth, payload) =
+        Envelope(Id = Nullable(uint32 (Interlocked.Increment(&nextId))), Method = meth, Payload = payload)
+
+    member private _.WriteEnvelope(envelope: Envelope) : Task = task {
+        match transport with
+        | None -> return failwith "sidecar transport is not connected"
+        | Some connected -> do! connected.WriteFrameAsync(MessagePackSerializer.Serialize(envelope))
+    }
+
+    /// Only one response reader runs, even when several real compiler requests are queued.
+    member this.Receive(id: uint32) : Task<Envelope> =
+        match transport with
+        | None -> Task.FromException<Envelope>(InvalidOperationException("sidecar transport is not connected"))
+        | Some connected -> this.ReadResponse(connected, id)
+
+    /// Preserve the real socket request identity while its compiler work is in flight.
+    member this.Begin(meth: string, payload: byte array) : uint32 * Task<Envelope> =
+        let request = this.Request(meth, payload)
+        let response = task {
+            do! this.WriteEnvelope(request)
+            return! this.Receive(request.Id.Value)
         }
+        request.Id.Value, response
+
+    /// Queue actual IPC without racing another reader on the native stream.
+    member this.Enqueue(meth: string, payload: byte array) : Task<uint32> = task {
+        let request = this.Request(meth, payload)
+        do! this.WriteEnvelope(request)
+        return request.Id.Value
+    }
+
+    member this.Send(meth: string, payload: byte array) : Task<Envelope> =
+        this.Begin(meth, payload) |> snd
+
+    /// Standard cancellation traverses SidecarHost's actual socket reader and request pump.
+    member this.Cancel(id: uint32) : Task =
+        this.WriteEnvelope(Envelope(Method = "$/cancelRequest", Payload = MessagePackSerializer.Serialize(id)))
 
     member this.SendFor(meth: string, path: string) : Task<Envelope> =
         this.Send(meth, MessagePackSerializer.Serialize(path))
@@ -187,6 +214,20 @@ type EngineDiagnosticsFixture() =
 /// A sidecar that never opened a workspace.
 type EngineDiagnosticsTests(fixture: EngineDiagnosticsFixture) =
     interface IClassFixture<EngineDiagnosticsFixture>
+
+    // Implements [DIAG-IPC-WORKSPACE-PULL]: F# exposes only lazy compiler pulls.
+    [<Fact>]
+    member _.``bulk diagnostics is unavailable and lazy pulls remain available``() =
+        task {
+            let payload = MessagePackSerializer.Serialize([| Array.empty<string> |])
+            let! bulk = fixture.Send("workspace/diagnostics/all", payload)
+            Assert.NotNull(bulk.Error)
+            Assert.Contains("Unknown method", bulk.Error, StringComparison.Ordinal)
+            let! documents = fixture.Documents()
+            Assert.Contains(documents, fun document -> NativePaths.AreEqual(document.FilePath, fixture.Valid))
+            let! diagnostics = fixture.Diagnostics(fixture.Valid)
+            Assert.DoesNotContain(diagnostics, fun diagnostic -> diagnostic.Severity = "Error")
+        }
 
     [<Fact>]
     member _.``workspace diagnostics documents lists every project source file once``() =

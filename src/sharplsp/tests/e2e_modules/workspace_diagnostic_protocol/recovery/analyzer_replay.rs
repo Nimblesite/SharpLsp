@@ -33,7 +33,7 @@ fn assert_respawned(client: &LspClient, original: sysinfo::Pid) {
 }
 
 /// The original editor-facing native server remains alive throughout recovery.
-fn assert_host_alive(client: &mut LspClient) {
+pub(super) fn assert_host_alive(client: &mut LspClient) {
     assert!(client
         .child
         .try_wait()
@@ -42,7 +42,7 @@ fn assert_host_alive(client: &mut LspClient) {
 }
 
 /// The same verified process ownership contract protects both compiler crash cases.
-fn owned_csharp(client: &LspClient) -> sysinfo::Pid {
+pub(super) fn owned_csharp(client: &LspClient) -> sysinfo::Pid {
     let uri = published_apphost_uri(
         "SHARPLSP_CSHARP_SIDECAR_PATH",
         "actual published C# apphost path",
@@ -51,14 +51,14 @@ fn owned_csharp(client: &LspClient) -> sysinfo::Pid {
 }
 
 /// Terminate only this session's actual Roslyn process after initial truth is proven.
-fn crash_csharp(client: &LspClient) -> sysinfo::Pid {
+pub(super) fn crash_csharp(client: &LspClient) -> sysinfo::Pid {
     let pid = owned_csharp(client);
     crash_owned_pid(client, pid);
     pid
 }
 
 /// A real other-language save invalidates Salsa without repairing the crashed engine.
-fn save_fsharp(workspace: &fixtures_medium::MediumWorkspace, client: &mut LspClient) {
+pub(super) fn save_fsharp(workspace: &fixtures_medium::MediumWorkspace, client: &mut LspClient) {
     let path = workspace.domain_path();
     let source = std::fs::read(&path).expect("read independent F# source");
     std::fs::write(&path, source).expect("save independent F# document");

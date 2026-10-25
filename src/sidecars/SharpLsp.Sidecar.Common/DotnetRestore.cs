@@ -24,12 +24,43 @@ public static class DotnetRestore
         CancellationToken ct
     )
     {
-        using var process = Process.Start(StartInfo(projectPath, workingDirectory, properties));
-        if (process is null)
-        {
-            return RestoreResult.Failure("Could not start `dotnet restore`.");
-        }
+        var restored = await RunStageAsync(projectPath, workingDirectory, properties, false, ct)
+            .ConfigureAwait(false);
+        return restored.IsError
+            ? restored
+            : await RunStageAsync(projectPath, workingDirectory, properties, true, ct)
+                .ConfigureAwait(false);
+    }
 
+    private static Task<RestoreResult> RunStageAsync(
+        string project,
+        string directory,
+        IReadOnlyDictionary<string, string> properties,
+        bool evaluate,
+        CancellationToken ct
+    )
+    {
+        var arguments = CommandArguments(project, evaluate)
+            .Concat(properties.Select(property => $"-p:{property.Key}={property.Value}"));
+        return RunProcessAsync(StartInfo(directory, arguments), ct);
+    }
+
+    private static async Task<RestoreResult> RunProcessAsync(
+        ProcessStartInfo info,
+        CancellationToken ct
+    )
+    {
+        using var process = Process.Start(info);
+        return process is null
+            ? RestoreResult.Failure("Could not start `dotnet restore`.")
+            : await CompleteProcessAsync(process, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<RestoreResult> CompleteProcessAsync(
+        Process process,
+        CancellationToken ct
+    )
+    {
         var standardOutput = process.StandardOutput.ReadToEndAsync(ct);
         var standardError = process.StandardError.ReadToEndAsync(ct);
         await WaitForExitAsync(process, ct).ConfigureAwait(false);
@@ -39,29 +70,29 @@ public static class DotnetRestore
             : RestoreResult.Failure(detail);
     }
 
-    private static ProcessStartInfo StartInfo(
-        string projectPath,
-        string workingDirectory,
-        IReadOnlyDictionary<string, string> properties
-    )
+    private static ProcessStartInfo StartInfo(string directory, IEnumerable<string> arguments)
     {
         var startInfo = new ProcessStartInfo("dotnet")
         {
-            WorkingDirectory = workingDirectory,
+            WorkingDirectory = directory,
             CreateNoWindow = true,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectPath);
-        startInfo.ArgumentList.Add("--verbosity");
-        startInfo.ArgumentList.Add("quiet");
-        foreach (var (name, value) in properties)
+        foreach (var argument in arguments)
         {
-            startInfo.ArgumentList.Add($"-p:{name}={value}");
+            startInfo.ArgumentList.Add(argument);
         }
         return startInfo;
+    }
+
+    private static string[] CommandArguments(string project, bool evaluate)
+    {
+        // Restore permits unresolved imports; normal SDK evaluation must succeed too. [DIAG-RESTORE]
+        return evaluate
+            ? ["msbuild", project, "-getProperty:TargetFramework", "-verbosity:quiet"]
+            : ["restore", "--disable-build-servers", project, "--verbosity", "quiet"];
     }
 
     private static async Task WaitForExitAsync(Process process, CancellationToken ct)

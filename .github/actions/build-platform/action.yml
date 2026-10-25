@@ -98,6 +98,18 @@ runs:
       if: ${{ inputs.archive == 'true' }}
       shell: bash
       run: make _build-coverage-tools
+    - name: Stage the precompiled source-builder tests
+      if: ${{ inputs.archive == 'true' }}
+      shell: bash
+      run: make _build-lint-source-tests DOTNET_TESTS_PREBUILT=1
+    - name: Cache the source builder and verified upstream archive
+      if: ${{ inputs.archive == 'true' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: lint-source-builder
+        retention-days: 1
+        if-no-files-found: error
+        path: target/lint-source-builder
     - name: Cache coverage report tools
       if: ${{ inputs.archive == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

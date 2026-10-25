@@ -262,7 +262,7 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
             AssertOk(await manager.GetTargetFrameworksAsync(broken, default)).Active
         );
         AssertBroken(AssertOk(await manager.GetDiagnosticsAsync(broken, default)));
-        var all = AssertOk(await manager.GetAllDiagnosticsAsync([], default));
+        var all = AssertOk(await manager.PullDiagnosticsAsync(default));
         AssertBroken(all[broken]);
 
         _ = AssertOk(await manager.SetTargetFrameworkAsync(broken, "net10.0", default));

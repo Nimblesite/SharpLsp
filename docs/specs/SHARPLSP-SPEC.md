@@ -529,6 +529,8 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 
 ### [SHARPLSP-FEATURES-CODE-LENS] Code Lens
 
+Compiler-backed lens requests run outside the foreground protocol loop and share its request cancellation registry. Cancellation reaches the compiler checks across the complete reference-query scope, returns the standard cancellation error, and leaves later diagnostics and reference counts available in the same compiler process. Obsolete requests must not become successful empty lens lists.
+
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
 | Reference count | `textDocument/codeLens` | SymbolFinder.FindReferences() | GetUsesOfSymbol() | P1 |

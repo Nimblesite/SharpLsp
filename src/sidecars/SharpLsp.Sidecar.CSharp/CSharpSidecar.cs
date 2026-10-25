@@ -22,7 +22,6 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("workspace/status", HandleWorkspaceStatusAsync);
         Register("solution/read", HandleSolutionReadAsync);
         Register("workspace/diagnostics", HandleDiagnosticsAsync);
-        Register("workspace/diagnostics/all", HandleAllDiagnosticsAsync);
         // Enumeration only: the host pulls per document afterwards. The payload is
         // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
         Register(
@@ -233,16 +232,6 @@ internal sealed partial class CSharpSidecar : SidecarHost
         {
             return ByteResult.Failure(ex.Message);
         }
-    }
-
-    private Task<ByteResult> HandleAllDiagnosticsAsync(byte[] payload, CancellationToken ct)
-    {
-        return HandleRequestAsync(
-            payload,
-            (SolutionDiagnosticsRequest request) =>
-                _workspace.GetAllDiagnosticsAsync(request.ProjectFilter, ct),
-            ct
-        );
     }
 
     private Task<ByteResult> HandleCompletionAsync(byte[] payload, CancellationToken ct)

@@ -143,7 +143,11 @@ export function mtpProjectXml(
   packages: readonly PackageRef[],
   ...compileIncludes: readonly string[]
 ): string {
-  return buildProjectXml({ packages, compileIncludes, properties: MTP_PROPERTIES });
+  return buildProjectXml({
+    packages,
+    compileIncludes,
+    properties: MTP_PROPERTIES,
+  });
 }
 
 /** Every framework the Test Explorer claims to support, for table-driven suites. */
@@ -176,6 +180,10 @@ export interface ProjectOptions {
   readonly compileIncludes?: readonly string[];
   /** `<ProjectReference Include>` entries, relative to the project directory. */
   readonly projectReferences?: readonly string[];
+  /** Real project analyzers, including the cooperative cancellation fixture. */
+  readonly analyzerIncludes?: readonly string[];
+  /** Explicit SDK imports, evaluated by MSBuild before package references. */
+  readonly imports?: readonly string[];
   /**
    * Extra `<PropertyGroup>` entries, merged over the pinned defaults.
    *
@@ -206,7 +214,10 @@ const DEFAULT_PROPERTIES: Readonly<Record<string, string>> = {
 function mergeProperties(
   properties: Readonly<Record<string, string>> | undefined,
 ): Record<string, string> {
-  const merged: Record<string, string> = { ...DEFAULT_PROPERTIES, ...(properties ?? {}) };
+  const merged: Record<string, string> = {
+    ...DEFAULT_PROPERTIES,
+    ...(properties ?? {}),
+  };
   if (properties?.TargetFrameworks !== undefined) delete merged.TargetFramework;
   return merged;
 }
@@ -221,31 +232,44 @@ function mergeProperties(
  * would be asserting a different code path on different machines.
  */
 export function buildProjectXml(options: ProjectOptions): string {
-  const itemGroups: object[] = [];
-  const compile = options.compileIncludes ?? [];
-  const references = options.projectReferences ?? [];
-  const packages = options.packages ?? [];
-  if (compile.length > 0) {
-    itemGroups.push({ Compile: compile.map((include) => ({ '@_Include': include })) });
-  }
-  if (references.length > 0) {
-    itemGroups.push({
-      ProjectReference: references.map((include) => ({ '@_Include': include })),
-    });
-  }
-  if (packages.length > 0) {
-    itemGroups.push({
-      PackageReference: packages.map((pkg) => ({ '@_Include': pkg.id, '@_Version': pkg.version })),
-    });
-  }
   const xml: string = projectBuilder.build({
     Project: {
       '@_Sdk': 'Microsoft.NET.Sdk',
+      Import: (options.imports ?? []).map((project) => ({ '@_Project': project })),
       PropertyGroup: mergeProperties(options.properties),
-      ItemGroup: itemGroups,
+      ItemGroup: projectItemGroups(options),
     },
   });
   return xml.trimStart();
+}
+
+/** Include-bearing compiler inputs use one XML shape; packages retain their version metadata. */
+function projectItemGroups(options: ProjectOptions): object[] {
+  const inputs = {
+    Compile: options.compileIncludes ?? [],
+    ProjectReference: options.projectReferences ?? [],
+    Analyzer: options.analyzerIncludes ?? [],
+  };
+  const groups: object[] = Object.entries(inputs)
+    .filter(([, includes]) => includes.length > 0)
+    .map(([name, includes]) => ({
+      [name]: includes.map((include) => ({ '@_Include': include })),
+    }));
+  return [...groups, ...packageItemGroups(options.packages ?? [])];
+}
+
+/** Package references carry version metadata, unlike the compiler input groups. */
+function packageItemGroups(packages: readonly PackageRef[]): object[] {
+  return packages.length === 0
+    ? []
+    : [
+        {
+          PackageReference: packages.map((pkg) => ({
+            '@_Include': pkg.id,
+            '@_Version': pkg.version,
+          })),
+        },
+      ];
 }
 
 /** Project XML for a test project: packages plus any explicit compile order. */

@@ -12,6 +12,23 @@ namespace SharpLsp.Sidecar.Common.Tests;
 /// </summary>
 public sealed class NativePathsTests
 {
+    // Implements [DIAG-CATEGORIES-COMPILER]: diagnostic text identifies a supplied argument, not a guessed file.
+    [Theory]
+    [InlineData("Reference '/tmp/Missing.dll' is invalid", "/tmp/Missing.dll", true)]
+    [InlineData("Reference '/tmp/Missing.dll.more' is invalid", "/tmp/Missing.dll", false)]
+    [InlineData("Reference '/tmp/Missing.dll' is invalid", "/tmp/Missing.dll.more", false)]
+    [InlineData("Reference '/tmp/A'quoted.dll' is invalid", "/tmp/A'quoted.dll", true)]
+    [InlineData("Reference '/tmp/Missing.dll' is invalid", "/tmp/Other.dll", false)]
+    [InlineData("Reference '' is invalid", "", false)]
+    public void Compiler_reference_matching_requires_the_complete_quoted_argument(
+        string message,
+        string path,
+        bool expected
+    )
+    {
+        Assert.Equal(expected, NativePaths.DiagnosticQuotesPath(message, path));
+    }
+
     [Fact]
     public void EqualForIdenticalAbsolutePaths()
     {

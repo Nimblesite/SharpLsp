@@ -247,61 +247,6 @@ internal sealed partial class WorkspaceManager
             );
     }
 
-    private static async Task CollectProjectDiagnosticsAsync(
-        Project project,
-        Dictionary<string, List<DiagnosticResult>> results,
-        CancellationToken ct
-    )
-    {
-        var compilation = await project.GetCompilationAsync(ct).ConfigureAwait(false);
-        if (compilation is null)
-        {
-            return;
-        }
-
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            ct.ThrowIfCancellationRequested();
-            var filePath = await AnswerPathAsync(tree, ct).ConfigureAwait(false);
-            if (filePath is null)
-            {
-                continue;
-            }
-
-            var model = compilation.GetSemanticModel(tree);
-            var diagnostics = MapDiagnostics(filePath, model, ct);
-            if (diagnostics.Count > 0)
-            {
-                results[filePath] = diagnostics;
-            }
-        }
-    }
-
-    /// <summary>
-    /// The file a tree's diagnostics belong to: the Razor file a projection names, else the
-    /// tree's own file; null for build output, whose diagnostics are never the user's.
-    /// [RAZOR-FEATURES-DIAGNOSTICS]
-    /// </summary>
-    private static async Task<string?> AnswerPathAsync(SyntaxTree tree, CancellationToken ct)
-    {
-        var root = await tree.GetRootAsync(ct).ConfigureAwait(false);
-        var razor = RazorProjection.ChecksumPath(root);
-        return NativePaths.IsRazor(razor) ? razor
-            : string.IsNullOrEmpty(tree.FilePath) || IsGeneratedBuildOutput(tree.FilePath) ? null
-            : tree.FilePath;
-    }
-
-    /// <summary>
-    /// MSBuild-generated files under <c>obj/</c> (AssemblyInfo, GlobalUsings,
-    /// AssemblyAttributes) belong to the build system, not the user. Diagnostics
-    /// against them are never actionable and produce noisy false positives when
-    /// transient assembly references aren't fully resolved during a scan.
-    /// </summary>
-    private static bool IsGeneratedBuildOutput(string filePath)
-    {
-        return NativePaths.HasDirectory(filePath, "obj");
-    }
-
     /// <summary>
     /// Find a document by file path, searching regular documents first,
     /// then falling back to source-generated documents.

@@ -60,15 +60,14 @@ use lsp_types::{
     },
     request::{
         CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
-        CodeActionRequest, CodeActionResolveRequest, CodeLensRequest, Completion,
-        DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
-        FoldingRangeRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
-        GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange,
-        PrepareRenameRequest, References, Rename, Request as _, ResolveCompletionItem,
-        SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
-        SemanticTokensRangeRequest, Shutdown, SignatureHelpRequest, TypeHierarchyPrepare,
-        TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
-        WorkspaceSymbolRequest,
+        CodeActionRequest, CodeActionResolveRequest, Completion, DocumentDiagnosticRequest,
+        DocumentHighlightRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDeclaration,
+        GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, InlayHintRequest,
+        LinkedEditingRange, PrepareRenameRequest, References, Rename, Request as _,
+        ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
+        SemanticTokensFullRequest, SemanticTokensRangeRequest, Shutdown, SignatureHelpRequest,
+        TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
+        WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -717,9 +716,9 @@ fn main_loop(
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
-    let inbound = inbound_with_inputs(connection)?;
     let diagnostic_requests =
         diagnostic_requests(runtime, [fsharp_sidecar, csharp_sidecar], vfs, connection);
+    let inbound = inbound_with_inputs(connection, diagnostic_requests.cancellation_handle())?;
 
     for msg in &inbound {
         match msg {
@@ -845,15 +844,19 @@ fn diagnostic_requests(
 /// reads the client stream ahead of the loop, answers `shutdown` itself, and
 /// hands the loop [`SHUTDOWN_ANSWERED`] in its place so the loop still refuses
 /// everything that follows.
-fn inbound_with_inputs(connection: &Connection) -> Result<crossbeam_channel::Receiver<Message>> {
-    let (inbound, inputs) = spawn_shutdown_fast_path(connection);
-    pull_diagnostics::state::connect_inputs(inputs)?;
+fn inbound_with_inputs(
+    connection: &Connection,
+    cancellation: lspkit_server::CancellationHandle,
+) -> Result<crossbeam_channel::Receiver<Message>> {
+    let (inbound, inputs) = spawn_shutdown_fast_path(connection, cancellation.clone());
+    pull_diagnostics::state::connect_inputs(inputs, cancellation)?;
     Ok(inbound)
 }
 
 /// Read client messages while the foreground handler is occupied.
 fn spawn_shutdown_fast_path(
     connection: &Connection,
+    cancellation: lspkit_server::CancellationHandle,
 ) -> (
     crossbeam_channel::Receiver<Message>,
     crossbeam_channel::Sender<Message>,
@@ -865,6 +868,20 @@ fn spawn_shutdown_fast_path(
     // The thread ends with the client stream; nothing waits on it.
     drop(std::thread::spawn(move || {
         for msg in &inbound {
+            // [DIAG-ANALYSIS-CANCELLATION] A queued edit may wait for this request's IPC.
+            if let Message::Request(request) = &msg {
+                if let Err(error) =
+                    pull_diagnostics::requests::Requests::observe(&cancellation, request)
+                {
+                    warn!(%error, "Diagnostic request interest unavailable");
+                }
+            }
+            if let Message::Notification(notification) = &msg {
+                pull_diagnostics::requests::Requests::changed(&cancellation, notification);
+                if notification.method == "$/cancelRequest" {
+                    cancellation.cancel_request(&notification.params);
+                }
+            }
             let forwarded = match msg {
                 Message::Request(req) if req.method == Shutdown::METHOD => {
                     info!("Shutdown request received");
@@ -1013,11 +1030,6 @@ fn handle_request(
         SignatureHelpRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             signature_help::handle(req, runtime, sidecar)
-        }
-        // Code lens
-        CodeLensRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            code_lens::handle_code_lens(req, runtime, sidecar)
         }
         // Rename — [RENAME-PREPARE], [RENAME-APPLY], [RENAME-CROSSLANGUAGE].
         PrepareRenameRequest::METHOD => {

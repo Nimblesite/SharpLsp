@@ -73,14 +73,16 @@ let internal dotnet (dir: string) (args: string) =
         Assert.True((proc.ExitCode = 0), $"dotnet {args} failed: {output}")
 
 /// A restored `net48;net10.0` project holding `source`; its directory, project file and probe.
-let private restoredProbeOf (source: string) =
+let private restoredProbeFor properties (source: string) =
     let dir = NativePaths.Temp($"sharplsp-fx-dt-{Guid.NewGuid():N}")
-    let fsproj = writeFsproj dir "Probe" [ frameworks "net48;net10.0" ]
+    let fsproj = writeFsproj dir "Probe" properties
     let probe = NativePaths.Resolve(dir, "Src", "Probe.fs")
     // CRLF, as a Windows checkout writes it: a `#if` line's `\r` must not hide the dead branch.
     File.WriteAllText(probe, source.Replace("\n", "\r\n"))
     dotnet dir $"restore \"{fsproj}\" --nologo -v q"
     dir, fsproj, probe
+
+let private restoredProbeOf source = restoredProbeFor [ frameworks "net48;net10.0" ] source
 
 let private restoredProbe () = restoredProbeOf probeSource
 
@@ -94,6 +96,32 @@ let private ok (result: Result<'T, string>) =
     match result with
     | Ok value -> value
     | Error reason -> failwith reason
+
+/// SDK compile items and references must retain true errors and reject unavailable APIs. [DIAG-CATEGORIES-COMPILER]
+let private assertSingleTargetErrors (state: FSharpWorkspace.FSharpWorkspaceState) (options: FSharp.Compiler.CodeAnalysis.FSharpProjectOptions) missing = task {
+    let! results = state.Checker.ParseAndCheckProject(options) |> Async.StartAsTask
+    let errors = results.Diagnostics |> Array.filter (fun error -> error.Severity = FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error)
+    Assert.Equal((if missing then 2 else 1), errors.Length)
+    Assert.Contains(errors, fun error -> error.ErrorNumber = 1)
+    Assert.Equal(missing, errors |> Array.exists (fun error -> error.ErrorNumber = 39))
+}
+
+[<Theory>]
+[<InlineData("net10.0", "--define:NET10_0", false)>]
+[<InlineData("netstandard2.1", "--define:NETSTANDARD2_1", true)>]
+let ``single-target projects use the SDK compile items and framework references`` framework define missing = task {
+    let source = "module Fx.Probe\nlet unrelated: int = \"broken\"\nlet gate = new System.Threading.Lock()\n"
+    let dir, fsproj, probe = restoredProbeFor [ element "TargetFramework" [ framework ] ] source
+    try
+        let state = FSharpWorkspace.create ()
+        let! entry = FSharpDesignTime.loadEntry state.Checker (FSharpWorkspace.buildProjectOptions state) fsproj CancellationToken.None
+        Assert.Contains(probe, entry.Options.SourceFiles)
+        Assert.Contains(define, entry.Options.OtherOptions)
+        Assert.Equal(Some framework, FSharpDesignTime.builtFramework entry)
+        do! assertSingleTargetErrors state entry.Options missing
+    finally
+        cleanup dir
+}
 
 [<Fact>]
 let ``only a project file that declares TargetFrameworks is evaluated`` () =
@@ -289,6 +317,89 @@ let ``a failed design-time compile is reported by its error, on one line`` () = 
             Assert.Contains("SharpLsp fixture: the compile fails on purpose", reason)
             Assert.DoesNotContain("a warning printed first", reason)
             Assert.DoesNotContain("\n", reason)
+    finally
+        cleanup dir
+}
+
+/// A real SDK failure is limited to one framework; restore remains available. [DIAG-TRUTH-GUARANTEES]
+let private failDiagnosticContext dir =
+    let attribute name (value: string) = XAttribute(XName.Get name, value) :> obj
+    let failure = element "Error" [ attribute "Code" "SLSPTEST1001"; attribute "Text" "SDK context unavailable" ]
+    let target = element "Target" [ attribute "Name" "FailDiagnosticContext"
+                                    attribute "BeforeTargets" "CoreCompile"
+                                    attribute "Condition" "'$(DesignTimeBuild)' == 'true' and '$(TargetFramework)' == 'net48'"
+                                    failure ]
+    XDocument(element "Project" [ target ]).Save(NativePaths.Resolve(dir, "Directory.Build.targets"))
+
+/// Real peers share imported targets but retain independent SDK compiler identities.
+let private diagnosticPeers () =
+    let source = "module Contexts\nlet value: int = \"broken\"\n"
+    let dir, project, probe = restoredProbeFor [ frameworks "net48;net10.0" ] source
+    let declared = XDocument.Load project
+    (declared.Descendants(XName.Get "Compile") |> Seq.exactlyOne).SetAttributeValue(XName.Get "Include", "Src/Probe.fs")
+    declared.Save project
+    let peer = writeFsproj (NativePaths.Resolve(dir, "Independent")) "Independent" [ element "TargetFramework" [ "net10.0" ] ]
+    let peerSource = NativePaths.Resolve(NativePaths.DirectoryOf peer, "Src", "Probe.fs")
+    File.WriteAllText(peerSource, source)
+    dotnet dir $"restore \"{peer}\" --nologo -v q"
+    dotnet dir "new sln --format slnx --name Contexts"
+    dotnet dir $"sln Contexts.slnx add \"{project}\" \"{peer}\""
+    failDiagnosticContext dir
+    dir, project, probe, peer, peerSource
+
+let private assertUnavailableContext result =
+    match result with
+    | Error reason -> Assert.Contains("SLSPTEST1001", reason)
+    | Ok _ -> Assert.Fail("An unavailable SDK context cannot authorize compiler findings.")
+
+/// Exercise the actual diagnostic boundary with compiler findings and no analyzer substitutions.
+let private contextFindings state path =
+    FSharpDiagnosticQueries.get
+        { Workspace = state; AnalyzersEnabled = false; Analyzers = FSharpAnalyzers.AnalyzerConfig.Default
+          NotifyScopeChanged = fun _ _ -> System.Threading.Tasks.Task.FromResult true }
+        path CancellationToken.None
+
+let private assertContextCompilerError state path = task {
+    let! findings = contextFindings state path
+    let errors = ok findings |> Array.filter (fun finding -> finding.Severity = "Error")
+    let finding = Assert.Single errors
+    Assert.Equal("FS0001", finding.Code)
+    Assert.True(NativePaths.AreEqual(path, finding.FilePath))
+    Assert.True(finding.StartLine >= 0 && finding.EndLine >= finding.StartLine)
+}
+
+let private assertUnavailableOwner state project probe = task {
+    let! findings = contextFindings state probe
+    assertUnavailableContext findings
+    let! projectFindings = FSharpProjectDiagnostics.getDiagnostics state project CancellationToken.None
+    assertUnavailableContext projectFindings
+    Assert.True(FSharpDiagnosticInputs.project state project |> Result.isError)
+}
+
+/// Failure and repair must not suppress unrelated owners or overwrite a good active context.
+let private diagnosticContextCycle state project probe peerSource = task {
+    do! assertUnavailableOwner state project probe
+    do! assertContextCompilerError state peerSource
+    let! switched = FSharpTargetFrameworks.switch state probe "net10.0" CancellationToken.None
+    Assert.Equal("net10.0", string (ok switched).Active)
+    do! assertContextCompilerError state probe
+    do! assertContextCompilerError state peerSource
+    let! rejected = FSharpTargetFrameworks.switch state probe "net48" CancellationToken.None
+    assertUnavailableContext rejected
+    Assert.Equal("net10.0", string (ok (FSharpTargetFrameworks.current state probe)).Active)
+    do! assertContextCompilerError state probe
+}
+
+[<Fact>]
+let ``SDK failures remain scoped and framework switching restores trustworthy diagnostics`` () = task {
+    let dir, project, probe, peer, peerSource = diagnosticPeers ()
+    try
+        let state = FSharpWorkspace.create ()
+        let! loaded = FSharpWorkspace.loadProject state (NativePaths.Resolve(dir, "Contexts.slnx"))
+        ok loaded
+        Assert.Equal(2, state.Projects.Count)
+        Assert.True(FSharpDiagnosticInputs.project state peer |> Result.isOk)
+        do! diagnosticContextCycle state project probe peerSource
     finally
         cleanup dir
 }

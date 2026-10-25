@@ -273,8 +273,8 @@ type FSharpSidecar() as this =
             Task.FromResult<ByteResult>(Helpers.serializeOk result ct)))
 
         // Code lens [SHARPLSP-FEATURES-CODE-LENS]
-        base.Register("textDocument/codeLens", Helpers.handle (fun (request: FileRequest) ->
-            FSharpCodeLens.getCodeLenses workspace request.FilePath) (Helpers.listOf (fun (lens: FSharpCodeLens.CodeLensEntry) ->
+        base.Register("textDocument/codeLens", Helpers.handleWithCancellation (fun (request: FileRequest) ct ->
+            FSharpCodeLens.getCodeLensesWithCancellation workspace request.FilePath ct) (Helpers.listOf (fun (lens: FSharpCodeLens.CodeLensEntry) ->
             { CodeLensItemResult.Line = lens.Line
               Character = lens.Character
               Title = lens.Title })))

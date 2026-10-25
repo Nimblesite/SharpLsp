@@ -6,13 +6,8 @@ import { type LanguageClient, type WorkspaceDiagnosticReport } from 'vscode-lang
 import { filePathFromUri, fileUri, joinPath, samePath } from '../../paths';
 import type { SharpLspExtensionApi } from '../../extension';
 import { firstDiagnosticReport } from './diagnostic-accuracy-fixtures';
-import {
-  buildProjectXml,
-  createSolution,
-  dotnet,
-  projectBuilder,
-  writeProject,
-} from './dotnet-project-kit';
+import { buildProjectXml, createSolution, dotnet, writeProject } from './dotnet-project-kit';
+import { writeRestoreMarker } from './diagnostic-restore-kit';
 import { hoverText, positionOf } from './fsharp-helpers';
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import { isolateFromRepoMsbuild } from './run-debug-fixtures';
@@ -49,27 +44,6 @@ interface RestoreFixture {
   readonly source: vscode.Uri;
   readonly assets: string;
   readonly marker: string;
-}
-
-const RESTORE_TARGET = {
-  Project: {
-    Target: {
-      '@_Name': 'ObserveWorkspaceRestore',
-      '@_BeforeTargets': 'Restore',
-      WriteLinesToFile: {
-        '@_File': '$(MSBuildThisFileDirectory)restore-ran.txt',
-        '@_Lines': '$(MSBuildProjectFullPath)',
-        '@_Overwrite': 'True',
-      },
-    },
-  },
-};
-
-/** Observe the real Restore target without any product instrumentation. */
-function writeRestoreMarker(root: string): string {
-  const marker = joinPath(root, 'restore-ran.txt');
-  fs.writeFileSync(joinPath(root, 'Directory.Build.targets'), projectBuilder.build(RESTORE_TARGET));
-  return marker;
 }
 
 /** Both compilers consume a genuine project from the canonical XML writer. */

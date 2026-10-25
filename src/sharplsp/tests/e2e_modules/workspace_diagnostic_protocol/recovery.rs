@@ -3,6 +3,8 @@
 use super::*;
 
 mod analyzer_replay;
+mod generated_input_batches;
+mod metadata_independence;
 
 const OVERLAY: &str = "module Medium.FsDomain.Calculations\n\nlet value (_product: Medium.FsDomain.Domain.Product): int = onlyUnsavedDuringRecovery\n";
 
@@ -106,7 +108,11 @@ fn owned_fsharp(client: &LspClient) -> sysinfo::Pid {
 }
 
 /// Require both executable and parent identity for either real compiler engine.
-fn owned_apphost(client: &LspClient, executable_uri: &str, description: &str) -> sysinfo::Pid {
+pub(in crate::e2e_modules) fn owned_apphost(
+    client: &LspClient,
+    executable_uri: &str,
+    description: &str,
+) -> sysinfo::Pid {
     let system = sysinfo::System::new_all();
     let parent = sysinfo::Pid::from_u32(client.child.id());
     let owned: Vec<_> = system
@@ -128,7 +134,7 @@ fn published_fsharp_uri() -> String {
 }
 
 /// Published apphosts use the same canonical fixture path conversion.
-fn published_apphost_uri(key: &str, description: &str) -> String {
+pub(in crate::e2e_modules) fn published_apphost_uri(key: &str, description: &str) -> String {
     let executable = std::env::var_os(key).expect(description);
     canonical_file_uri(std::path::Path::new(&executable))
         .expect("resolve actual published compiler apphost")

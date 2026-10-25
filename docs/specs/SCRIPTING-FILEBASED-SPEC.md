@@ -164,6 +164,8 @@ Implementation: [FSharpWorkspace.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/
 
 `FSharpChecker.GetProjectOptionsFromScript` is the single entry point. It resolves `#r`, `#r "nuget:"`, `#I`, and `#load` closures, selects the framework references, and returns `FSharpProjectOptions` directly consumable by the existing `parseAndCheckOnce` pipeline.
 
+Every implicit root-source read made during option resolution uses that request's supplied source snapshot, including source-range construction. A cancelled saved-file read cannot delay a later unsaved edit. The public FCS filesystem hook carries only a task-local reference to the current root input; it retains no result cache and restores the caller's scope when resolution ends.
+
 Invocation parameters:
 - `assumeDotNetFramework = false`
 - `useSdkRefs = true`

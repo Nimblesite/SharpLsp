@@ -34,6 +34,8 @@ type FSharpProjectEntry =
         Frameworks: string list
         mutable Active: string option
         mutable Options: FSharpProjectOptions
+        /// A failed SDK evaluation cannot authorize diagnostics from fallback inputs. [DIAG-TRUTH-GUARANTEES]
+        mutable SdkError: string option
         /// Options already built, per framework.
         ByFramework: ConcurrentDictionary<string, FSharpProjectOptions>
         /// The project references MSBuild resolved for each framework built.
@@ -152,7 +154,9 @@ let private propertyOf (document: JsonDocument) (name: string) =
 /// Whether the project file itself declares `<TargetFrameworks>`: the cheap test that
 /// decides whether MSBuild is asked at all.
 let declaresTargetFrameworks (fsprojPath: string) =
-    XDocument.Load(fsprojPath).Descendants(XName.Get "TargetFrameworks") |> Seq.isEmpty |> not
+    ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get "TargetFrameworks")
+    |> Seq.isEmpty
+    |> not
 
 /// The evaluated `<TargetFrameworks>`, in declared order; the lone `<TargetFramework>`
 /// of a project that declares no plural.
@@ -283,6 +287,7 @@ let private singleTarget (options: FSharpProjectOptions) (path: string) =
       Frameworks = []
       Active = None
       Options = options
+      SdkError = None
       ByFramework = ConcurrentDictionary()
       Resolved = ConcurrentDictionary() }
 
@@ -296,14 +301,16 @@ let builtFramework (entry: FSharpProjectEntry) = frameworkOf entry entry.Options
 
 /// A project answering from MSBuild's options for `built`, with `frameworks` to switch
 /// between — none for a single-target project; when MSBuild cannot report that
-/// framework's arguments, it keeps the hand-built options and says why.
+/// framework's arguments, fallback options retain ownership but cannot authorize diagnostics.
 let private builtEntry checker fallback path (frameworks: string list) (built: string) ct =
     task {
         let entry = { singleTarget fallback path with Frameworks = frameworks; Active = List.tryHead frameworks }
 
         match! optionsForFramework checker entry built ct with
         | Ok options -> entry.Options <- options
-        | Error reason -> Log.Warning("F# project {Path} keeps its <Compile> items: {Reason}", path, reason)
+        | Error reason ->
+            entry.SdkError <- Some reason
+            Log.Warning("F# project {Path} compiler inputs unavailable: {Reason}", path, reason)
 
         return entry
     }
@@ -328,24 +335,28 @@ let private restoreWhenStale (path: string) ct =
             | Error reason -> Log.Warning("F# project {Path} could not restore: {Reason}", path, reason)
     }
 
-/// Load one project, restored again first when its packages are gone: from MSBuild when
-/// it targets several frameworks or reads a C# project, else by hand.
+let private loadSdkEntry checker options path useSdk ct =
+    task {
+        match! evaluateTargetFrameworks path ct with
+        | Ok frameworks when frameworks.Length > 1 -> return! builtEntry checker options path frameworks frameworks.Head ct
+        | Ok [ framework ] when useSdk -> return! builtEntry checker options path [] framework ct
+        | Ok _ -> return singleTarget options path
+        | Error reason ->
+            Log.Warning("F# project {Path}: target frameworks unknown: {Reason}", path, reason)
+            return { singleTarget options path with SdkError = Some reason }
+    }
+
+/// Restored projects use the SDK's compile items and reference assemblies, including
+/// single-target projects. [DIAG-CATEGORIES-COMPILER] [DIAG-RESTORE]
 let loadEntryWithRestore (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions) (path: string) autoRestore ct =
     task {
         if autoRestore then do! restoreWhenStale path ct
         let options = fallback path
-        let readsCSharp = readsCSharp path
-
-        if not (declaresTargetFrameworks path || readsCSharp) then
-            return singleTarget options path
+        let useSdk = readsCSharp path || File.Exists(NativePaths.ProjectAssetsFile path)
+        if useSdk || declaresTargetFrameworks path then
+            return! loadSdkEntry checker options path useSdk ct
         else
-            match! evaluateTargetFrameworks path ct with
-            | Ok frameworks when frameworks.Length > 1 -> return! builtEntry checker options path frameworks frameworks.Head ct
-            | Ok [ framework ] when readsCSharp -> return! builtEntry checker options path [] framework ct
-            | Ok _ -> return singleTarget options path
-            | Error reason ->
-                Log.Warning("F# project {Path}: target frameworks unknown: {Reason}", path, reason)
-                return singleTarget options path
+            return singleTarget options path
     }
 
 /// Owning-file loads keep their established missing-package recovery contract. [DIAG-RESTORE]

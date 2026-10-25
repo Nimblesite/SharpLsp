@@ -11,6 +11,9 @@ use anyhow::{Context, Result};
 use lsp_types::Uri;
 use url::Url;
 
+mod inherited;
+pub use inherited::{diagnostic_input_in_scope, diagnostic_watch_scopes};
+
 /// Convert a `file://` URI string to a native filesystem path string.
 ///
 /// Parses the URI (RFC 8089) rather than trimming the scheme, so Windows drive
@@ -78,9 +81,19 @@ fn decoded_posix_path(parsed: &Url) -> Result<String> {
 /// absolute path, which sidecar file paths always are. Implements the correct
 /// conversion for [GitHub #110] and [SHARPLSP-ARCHITECTURE-PATHS].
 pub fn path_to_uri(path: &str) -> Result<String> {
+    native_path_to_uri(Path::new(path))
+}
+
+/// Convert a native watcher path without string conversion outside this module.
+pub fn native_path_to_uri(path: &Path) -> Result<String> {
     Url::from_file_path(path)
         .map(|url| url.to_string())
-        .map_err(|()| anyhow::anyhow!("cannot form a file URI from a non-absolute path: {path}"))
+        .map_err(|()| {
+            anyhow::anyhow!(
+                "cannot form a file URI from a non-absolute path: {}",
+                path.display()
+            )
+        })
 }
 
 /// Convert a native filesystem path to an LSP [`Uri`], via [`path_to_uri`].
@@ -178,27 +191,38 @@ pub fn diagnostic_requires_reload(path: &str) -> bool {
     has_extension(
         path,
         &["csproj", "fsproj", "sln", "slnx", "props", "targets"],
-    ) || [".editorconfig", "project.assets.json", "global.json"]
-        .into_iter()
-        .any(|name| has_file_name(path, name))
+    ) || [
+        ".editorconfig",
+        "fsharplint.json",
+        "project.assets.json",
+        "global.json",
+    ]
+    .into_iter()
+    .any(|name| has_file_name(path, name))
 }
 
 /// Native inputs relevant to compiler errors or analyzer policy.
 pub fn is_diagnostic_input(path: &Path) -> bool {
-    has_extension(path, &["cs", "csx", "fs", "fsi", "fsx", "razor", "cshtml"])
+    is_diagnostic_source(path)
         || diagnostic_requires_reload(&path.to_string_lossy())
         || has_file_name(path, "sharplsp.toml")
 }
 
-/// SDK-generated sources are absent from user diagnostic metadata. [DIAG-ARCHITECTURE-SCOPE]
-pub fn is_user_diagnostic_source(path: impl AsRef<Path>) -> bool {
+/// Generated outputs never become standalone compiler inputs. [DIAG-ARCHITECTURE-SCOPE]
+pub fn is_diagnostic_source(path: impl AsRef<Path>) -> bool {
     let path = path.as_ref();
-    has_extension(path, &["cs", "fs", "fsi", "razor", "cshtml"])
+    has_extension(path, &["cs", "csx", "fs", "fsi", "fsx", "razor", "cshtml"])
         && !path.ancestors().skip(1).any(|directory| {
             ["obj", "bin"]
                 .into_iter()
                 .any(|name| has_file_name(directory, name))
         })
+}
+
+/// SDK-owned sources need metadata adoption; scripts retain their independent compiler contexts.
+pub fn is_user_diagnostic_source(path: impl AsRef<Path>) -> bool {
+    let path = path.as_ref();
+    has_extension(path, &["cs", "fs", "fsi", "razor", "cshtml"]) && is_diagnostic_source(path)
 }
 
 /// `text` folded the one way the host folds a path: [`ntfs_upcase`] per character.

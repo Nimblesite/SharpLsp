@@ -23,6 +23,13 @@ public static partial class NativePaths
     /// </summary>
     public const StringComparison Comparison = StringComparison.OrdinalIgnoreCase;
 
+    /// <summary>Match a complete quoted compiler argument, preserving unrelated/prefix paths. [DIAG-CATEGORIES-COMPILER]</summary>
+    public static bool DiagnosticQuotesPath(string message, string path)
+    {
+        return !string.IsNullOrEmpty(path)
+            && message.Contains($"'{path}'", StringComparison.Ordinal);
+    }
+
     /// <summary>The directory holding <paramref name="path"/>; empty for a bare name or a root.</summary>
     public static string DirectoryOf(string path)
     {

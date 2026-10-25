@@ -58,6 +58,18 @@ let internal diagnosticIdentity (diagnostic: FSharpDiagnostic) =
     let range = diagnostic.Range
     diagnostic.ErrorNumber, diagnostic.Severity, range, diagnostic.Message
 
+/// FCS supplies no structured identity for FS0078/FS0084; correlate only actual reference arguments.
+let private canonicalReferences (options: FSharp.Compiler.CodeAnalysis.FSharpProjectOptions) (diagnostics: FSharpDiagnostic array) =
+    let references = options.OtherOptions
+                     |> Array.choose (FSharpProjectLoading.flagValue [ "-r:"; "--reference:" ])
+                     |> Array.map snd
+    let resolved = references |> Array.filter (fun reference ->
+        diagnostics |> Array.exists (fun diagnostic ->
+            diagnostic.ErrorNumber = 84 && NativePaths.DiagnosticQuotesPath(diagnostic.Message, reference)))
+    diagnostics |> Array.filter (fun diagnostic ->
+        diagnostic.ErrorNumber <> 78 || not (resolved |> Array.exists (fun reference ->
+            NativePaths.DiagnosticQuotesPath(diagnostic.Message, reference))))
+
 /// All diagnostic APIs use the same wired project snapshot and honor cancellation.
 let private checkProject (state: FSharpWorkspace.FSharpWorkspaceState) options ct =
     task {
@@ -80,16 +92,14 @@ let private logResults (options: FSharp.Compiler.CodeAnalysis.FSharpProjectOptio
 /// Compile only the requested current project; unresolved owners remain errors.
 let getDiagnostics (state: FSharpWorkspace.FSharpWorkspaceState) projectPath (ct: CancellationToken) =
     task {
-        let owner = FSharpWorkspace.projectOptions state
-                    |> List.tryFind (fun options -> NativePaths.AreEqual(options.ProjectFileName, projectPath))
-        match owner with
-        | None -> return Error "The requested compiler project is not loaded."
-        | Some options ->
-            let options = FSharpWorkspace.wired state options
+        match FSharpDiagnosticInputs.project state projectPath with
+        | Error reason -> return Error reason
+        | Ok options ->
             let! diagnostics = checkProject state options ct
             logResults options diagnostics
             return diagnostics
                    |> Array.filter (belongsToProject options)
+                   |> canonicalReferences options
                    |> Array.map (compilerDiagnostic options.ProjectFileName true)
                    |> Ok
     }
