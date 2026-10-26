@@ -34,6 +34,18 @@ import { LSP_RESPONSE_MS } from './test-timeouts';
 /** What the sidecar logs when a project answers from fallback options. */
 const INPUTS_UNAVAILABLE = 'compiler inputs unavailable';
 
+/**
+ * The sidecar always logs at Debug, and its IPC trace quotes each refused request's
+ * reason — the SDK failure every diagnostic request must preserve. A trace states no
+ * severity; every line logged at a stated level must be a warning.
+ */
+const TRACE_LEVEL = '[DBG]';
+
+/** A line in which the sidecar itself states that the project's inputs are unavailable. */
+function statesUnavailable(line: string): boolean {
+  return line.includes(INPUTS_UNAVAILABLE) && !line.includes(TRACE_LEVEL);
+}
+
 suite(
   '.NET Framework F# — a failing design-time compile keeps ownership on fallback options, and says why',
   () => {
@@ -92,12 +104,13 @@ suite(
       const { projectFile } = fixture();
       const lines = await pollUntilResult(
         async () => fsharpSidecarLinesAbout(projectFile),
-        (found) => found.some((line) => line.includes(INPUTS_UNAVAILABLE)),
+        (found) => found.some(statesUnavailable),
         LSP_RESPONSE_MS,
         500,
         `the F# sidecar log to say ${projectFile} ${INPUTS_UNAVAILABLE}`,
       );
-      const line = lines.find((each) => each.includes(INPUTS_UNAVAILABLE)) ?? '';
+      const stated = lines.filter(statesUnavailable);
+      const line = stated[0] ?? '';
       assert.ok(line.includes('[WRN]'), `logged as a warning: ${line}`);
       const named = line.indexOf('F# project ');
       assert.ok(
@@ -105,9 +118,8 @@ suite(
         `names the project first: ${line}`,
       );
       assert.ok(line.includes(DESIGN_TIME_FAILURE), `and says why, in MSBuild's words: ${line}`);
-      const degraded = lines.filter((each) => each.includes(INPUTS_UNAVAILABLE));
       assert.ok(
-        degraded.every((each) => each.includes('[WRN]')),
+        stated.every((each) => each.includes('[WRN]')),
         'every such line is a warning, none an error',
       );
     });
