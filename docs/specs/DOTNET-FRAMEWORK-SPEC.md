@@ -163,7 +163,7 @@ Each loads through the real extension; LSP answers inside `#if NETFRAMEWORK` cod
 | `netfx-language.test.ts` | C#: default context, framework-only APIs, `#if` regions and diagnostics flip on switch; `netstandard2.0` reference from both families ([NETFX-PROJECTS-CSHARP], [NETFX-CONTEXT]) |
 | `netfx-language-fsharp.test.ts` | the same for F#, against MSBuild's per-framework options ([NETFX-PROJECTS-FSHARP]) |
 | `netfx-msbuild-fsharp.test.ts` | F# options are MSBuild's: linked, conditioned and globbed sources, `Directory.Build.*` defines, project-relative paths ([NETFX-PROJECTS-FSHARP]) |
-| `netfx-degrade-fsharp.test.ts` | a failed design-time compile degrades to `<Compile>` items, a switch fails with MSBuild's reason, and the log says why ([NETFX-PROJECTS-FSHARP]) |
+| `netfx-degrade-fsharp.test.ts` | a failed design-time compile keeps ownership on fallback options, a switch fails with MSBuild's reason, and the log says the compiler inputs are unavailable and why ([NETFX-PROJECTS-FSHARP]) |
 | `netfx-run-fsharp.test.ts` | Run on the active framework, F5 on a .NET framework, refusal when there is none ([NETFX-DEBUG]) |
 | `test-explorer-netfx.test.ts` | C# and F# across `net462;net472;net48` + installed .NET: tags, per-framework messages, `Run on <tfm>`, framework-exclusive tests, debug refusal ([NETFX-TEST], [NETFX-DEBUG]) |
 | `test-explorer-mtp-netfx.test.ts` | MTP modules on `net48` + .NET, C# MSTest and F# `xunit.v3` ([NETFX-TEST-MTP]) |
