@@ -348,11 +348,16 @@ let internal frameworkReferenceArgs () =
     FSharpProjectLoading.frameworkReferenceArgs ()
 
 /// Forget `entry` once it fails or is cancelled, so a later request retries; the
-/// value-matched removal never discards an evaluation a reload stored since.
+/// value-matched removal never discards an evaluation a reload stored since. It runs
+/// as the evaluation completes, before its creator resumes, so a caller that saw the
+/// failure retries rather than meeting it again.
 let private forgetFailure (state: FSharpWorkspaceState) key (entry: Lazy<Task<Result<string array, string>>>) =
-    entry.Value.ContinueWith(fun (evaluated: Task<Result<string array, string>>) ->
-        if not (evaluated.Status = TaskStatus.RanToCompletion && Result.isOk evaluated.Result) then
-            state.CompileSources.TryRemove(Collections.Generic.KeyValuePair(key, entry)) |> ignore)
+    entry.Value.ContinueWith(
+        (fun (evaluated: Task<Result<string array, string>>) ->
+            if not (evaluated.Status = TaskStatus.RanToCompletion && Result.isOk evaluated.Result) then
+                state.CompileSources.TryRemove(Collections.Generic.KeyValuePair(key, entry)) |> ignore),
+        TaskContinuationOptions.ExecuteSynchronously
+    )
     |> ignore
 
 /// The Compile items MSBuild evaluated for the project, in project order, cached until a

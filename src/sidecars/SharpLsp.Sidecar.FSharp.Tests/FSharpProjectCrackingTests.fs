@@ -228,13 +228,22 @@ let private saveAssemblyName (document: XDocument) (editor: FileStream) name =
     document.Save editor
     editor.Flush true
 
+/// MSBuild opens a project with read-only sharing, so while an editor holds a write
+/// handle the SDK evaluation is either exact or refused in MSBuild's own words
+/// (Windows: MSB4025) — never stale or partial items. [DIAG-TRUTH-GUARANTEES]
+let private assertExactOrRefused project source (evaluated: Result<string array, string>) =
+    match evaluated with
+    | Ok items -> Assert.Equal<string array>([| source |], items)
+    | Error reason ->
+        Assert.Contains("MSB4025", reason)
+        Assert.Contains(NativePaths.NameOf project, reason)
+
 /// Compiler inputs retain exact sources, flags, framework shape and cross-language identity.
-let private assertEditableInputs root project name = task {
+let private assertEditableInputs state root project name = task {
     let source = NativePaths.Resolve(root, "Library.fs")
     let reference = NativePaths.Resolve(root, "Neighbour", "Neighbour.csproj")
-    let state = FSharpWorkspace.create ()
     let! evaluated = FSharpWorkspace.compileSources state project CancellationToken.None
-    Assert.Equal<string array>([| source |], ok evaluated)
+    assertExactOrRefused project source evaluated
     Assert.Equal<string array>([| "--nowarn:52"; "--warnon:1182" |], FSharpWorkspace.parseFsprojOtherFlags project)
     Assert.Equal(name, FSharpWorkspace.parseFsprojAssemblyName project)
     Assert.False(FSharpDesignTime.declaresTargetFrameworks project)
@@ -250,10 +259,17 @@ let ``project metadata remains accurate across editor saves with a write handle 
         let items: obj array = [| node "ProjectReference" [| attr "Include" "Neighbour/Neighbour.csproj" |] |]
         let project = writeProject root "Editable" FLAGS_WITHOUT_OUTPUT items
         let document = XDocument.Load project
-        use editor = File.Open(project, FileMode.Open, FileAccess.Write, FileShare.ReadWrite ||| FileShare.Delete)
-        for name in [| "SavedFirst"; "SavedSecond"; "SavedThird" |] do
-            saveAssemblyName document editor name
-            do! assertEditableInputs root project name
+        let state = FSharpWorkspace.create ()
+        do! task {
+            use editor = File.Open(project, FileMode.Open, FileAccess.Write, FileShare.ReadWrite ||| FileShare.Delete)
+            for name in [| "SavedFirst"; "SavedSecond"; "SavedThird" |] do
+                saveAssemblyName document editor name
+                do! assertEditableInputs state root project name
+        }
+        // Released, the same workspace evaluates the saved project exactly: a refusal
+        // under the editor's handle was never cached.
+        let! released = FSharpWorkspace.compileSources state project CancellationToken.None
+        Assert.Equal<string array>([| NativePaths.Resolve(root, "Library.fs") |], ok released)
     finally
         cleanup root
 }
