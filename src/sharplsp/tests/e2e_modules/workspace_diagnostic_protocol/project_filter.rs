@@ -82,7 +82,7 @@ fn assert_scope(
         assert_scope_source(reports, (&uri, code, source), expected);
     }
     if !included.into_iter().any(|value| value) {
-        assert!(reports.is_empty());
+        assert_eq!(reports, &Vec::<serde_json::Value>::new());
     }
 }
 

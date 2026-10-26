@@ -134,7 +134,7 @@ fn assert_hidden_notices(traffic: &[Value], uri: &str) {
                 && message["params"]["uri"] == uri
         })
         .collect();
-    assert!(!publications.is_empty());
+    assert_ne!(publications, Vec::<&serde_json::Value>::new());
     for publication in publications {
         let diagnostics = publication["params"]["diagnostics"]
             .as_array()

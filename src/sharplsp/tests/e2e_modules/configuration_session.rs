@@ -63,10 +63,12 @@ fn assert_rejected_updates(client: &mut LspClient) {
             rejected["error"]["code"], -32602,
             "invalid configuration is InvalidParams: {rejected}"
         );
-        assert!(!rejected["error"]["message"]
-            .as_str()
-            .expect("error message")
-            .is_empty());
+        assert_ne!(
+            rejected["error"]["message"]
+                .as_str()
+                .expect("error message"),
+            ""
+        );
         client.notify(
             "workspace/didChangeConfiguration",
             json!({"settings":{"sharplsp":overrides}}),

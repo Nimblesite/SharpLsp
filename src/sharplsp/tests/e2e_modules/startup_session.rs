@@ -27,10 +27,10 @@ fn assert_degraded_session(client: &mut LspClient, uri: &str, line: u32, column:
         assert!(configuration["result"]["testing"]["configuration"].is_string());
         let folds = document_request(client, "textDocument/foldingRange", uri);
         assert_rpc_ok(&folds, "syntax folding survives failed child startup");
-        assert!(!folds["result"]
-            .as_array()
-            .expect("folding result")
-            .is_empty());
+        assert_ne!(
+            folds["result"].as_array().expect("folding result"),
+            &Vec::<serde_json::Value>::new()
+        );
     }
     assert_unavailable_tokens(client, uri);
 }

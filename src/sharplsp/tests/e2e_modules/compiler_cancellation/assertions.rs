@@ -23,7 +23,7 @@ pub fn payload(
     let id = report["resultId"]
         .as_str()
         .expect("current result identity");
-    assert!(!id.is_empty());
+    assert_ne!(id, "");
     if let Some(previous) = previous {
         assert_ne!(id, previous);
     }
