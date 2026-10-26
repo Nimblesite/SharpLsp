@@ -29,6 +29,13 @@ type FSharpWorkspaceState =
         mutable IsLoaded: bool
         /// A valid selected workspace may have no F# projects; old projects must be retired.
         mutable LastLoadWasEmpty: bool
+        /// The workspace generation, advanced at the start of every replacement so a
+        /// background owner adoption begun earlier can tell its workspace is gone.
+        /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+        mutable Epoch: int
+        /// Serializes an epoch advance against an adoption's commit, so they never
+        /// interleave. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+        LifecycleLock: obj
         /// Live editor buffers keyed by canonical absolute file path.
         Overlays: ConcurrentDictionary<string, string>
         /// Every loaded project, keyed by its project file. [NETFX-PROJECTS-FSHARP]
@@ -62,11 +69,46 @@ let create () : FSharpWorkspaceState =
       ProjectOptions = None
       IsLoaded = false
       LastLoadWasEmpty = false
+      Epoch = 0
+      LifecycleLock = obj ()
       Overlays = overlays
       Projects = ConcurrentDictionary(NativePaths.Comparer)
       References = ConcurrentDictionary(NativePaths.Comparer)
       CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer)
       CompileSources = ConcurrentDictionary(NativePaths.Comparer) }
+
+/// Begin replacing the workspace's project graph: advance its generation before any
+/// await so an adoption already in flight against the old graph is retired.
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+let internal beginReplacement (state: FSharpWorkspaceState) =
+    lock state.LifecycleLock (fun () -> state.Epoch <- state.Epoch + 1)
+
+/// The current workspace generation, read under the lifecycle lock so an adoption
+/// captures a value that can only advance afterwards. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+let internal currentEpoch (state: FSharpWorkspaceState) =
+    lock state.LifecycleLock (fun () -> state.Epoch)
+
+/// Apply an owner adoption's final mutation only when the workspace generation that
+/// requested it is still current; checked and applied atomically. False means a
+/// replacement superseded it. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+let internal commitAdoption
+    (state: FSharpWorkspaceState)
+    (epoch: int)
+    (owner: string)
+    (entry: FSharpDesignTime.FSharpProjectEntry)
+    : bool =
+    lock state.LifecycleLock (fun () ->
+        if state.Epoch <> epoch then
+            false
+        else
+            let key = NativePaths.NormalizeFullPath owner
+            state.References[key] <- FSharpProjectGraph.fsharpReferences owner
+            state.Projects[key] <- entry
+            if state.LastLoadWasEmpty then
+                state.ProjectOptions <- Some entry.Options
+                state.LastLoadWasEmpty <- false
+                state.IsLoaded <- true
+            true)
 
 /// The project that compiles `filePath`, if any loaded project does.
 let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =
@@ -478,6 +520,7 @@ let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Res
 let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct: CancellationToken) =
     task {
         try
+            beginReplacement state
             state.LastLoadWasEmpty <- false
             if File.Exists(path) && FSharpProjectLoading.isScriptPath path then
                 return! loadScript state (NativePaths.NormalizeFullPath path) ct
@@ -503,6 +546,7 @@ let private restoreWorkspaceInputs projects autoRestore ct =
 /// Explicit workspace opens restore stale SDK inputs before compiler creation. [DIAG-RESTORE]
 let loadWorkspaceWithCancellation (state: FSharpWorkspaceState) path autoRestore ct =
     task {
+        beginReplacement state
         state.LastLoadWasEmpty <- false
         if FSharpProjectLoading.isScriptPath path then
             return! loadProjectWithCancellation state path ct
