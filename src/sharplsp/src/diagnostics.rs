@@ -130,18 +130,21 @@ pub fn publish_now(
 /// A target's first fetch and publish; the target back when its push must go on.
 async fn first_push(
     target: PushTarget,
-    generation: u64,
+    mut generation: u64,
     sender: crossbeam_channel::Sender<Message>,
 ) -> Option<PushTarget> {
-    let (sidecar, uri, file_path) = &target;
-    let source_tag = source_tag_for_uri(uri);
-    let again = publish_once(sidecar, &sender, uri, file_path, &source_tag, generation)
-        .await
-        .unwrap_or_else(|err| {
-            warn!(uri = %uri.as_str(), "Sidecar diagnostics unavailable: {err:#}");
-            true
-        });
-    again.then_some(target)
+    loop {
+        let (sidecar, uri, file_path) = &target;
+        let source_tag = source_tag_for_uri(uri);
+        match publish_once(sidecar, &sender, uri, file_path, &source_tag, generation).await {
+            Ok(again) if is_current(uri, generation) => return again.then_some(target),
+            Ok(_) => generation = next_generation(uri),
+            Err(err) => {
+                warn!(uri = %uri.as_str(), "Sidecar diagnostics unavailable: {err:#}");
+                return Some(target);
+            }
+        }
+    }
 }
 
 /// Every first push finished: the targets whose push must go on.
@@ -184,6 +187,12 @@ fn publish_if_current(
         return Ok(false);
     };
     if *current != generation {
+        debug!(
+            uri = uri.as_str(),
+            generation,
+            current = *current,
+            "Diagnostic publication superseded"
+        );
         return Ok(false);
     }
     publish(sender, uri.clone(), diagnostics)?;
@@ -596,7 +605,9 @@ mod tests {
         // ([DIAG-CATEGORIES-ANALYZER]).
         assert_eq!(
             diag.code_description.as_ref().map(|it| it.href.as_str()),
-            Some("https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1822")
+            Some(
+                "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1822"
+            )
         );
         assert_eq!(diag.source, Some("sharplsp-csharp".to_string()));
         assert_eq!(diag.message, "Unused variable");
@@ -853,6 +864,27 @@ mod tests {
                 .recv_timeout(std::time::Duration::from_millis(200))
                 .is_err(),
             "convergence after a settled publication must be a no-op"
+        );
+    }
+
+    /// A competing push cannot make a framework switch's synchronous fetch
+    /// disappear before its required publication. [NETFX-CONTEXT] [DIAG-PUSH-GATE]
+    #[test]
+    fn superseded_first_push_retries_until_it_publishes() {
+        let host = scripted_host(None);
+        let uri: Uri = "file:///framework.cs".parse().unwrap();
+        let generation = next_generation(&uri);
+        let _competing = next_generation(&uri);
+        let target = (host.manager, uri, "Framework.cs".to_string());
+
+        let unfinished = host
+            .runtime
+            .block_on(first_push(target, generation, host.sender));
+
+        assert!(unfinished.is_none());
+        assert_eq!(
+            recv_publication(&host.receiver, Duration::from_secs(5)).diagnostics,
+            []
         );
     }
 

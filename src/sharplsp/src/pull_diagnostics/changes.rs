@@ -19,6 +19,8 @@ struct ReloadBatch {
     rescan: bool,
     /// Touched paths owed a reload check and closed-file disk sync.
     changes: Vec<FileEvent>,
+    /// Non-restore inputs still require the normal stale-assets gate.
+    restore: bool,
 }
 
 /// Background owner of watched-file reloads. The foreground loop only enqueues;
@@ -53,6 +55,7 @@ pub fn watched(
     reload_worker(runtime, sidecars, vfs, sender)
         .enqueue
         .send(ReloadBatch {
+            restore: restore_required(rescan, &params.changes)?,
             rescan,
             changes: params.changes,
         })
@@ -91,6 +94,7 @@ async fn reload_loop(
             // Collapse every batch queued so far into one reload pass.
             while let Ok(next) = batches.try_recv() {
                 current.rescan |= next.rescan;
+                current.restore |= next.restore;
                 current.changes.extend(next.changes);
             }
             let sidecar_refs = sidecars.each_ref().map(|sidecar| sidecar.as_ref());
@@ -120,7 +124,7 @@ async fn apply_batch(
         "Diagnostic inputs changed"
     );
     if batch.rescan || requires_reload(&batch.changes, sidecars).await? {
-        reload(sidecars, vfs).await?;
+        reload(sidecars, vfs, batch.restore).await?;
     }
     for change in &batch.changes {
         if change.typ == FileChangeType::DELETED {
@@ -148,6 +152,15 @@ async fn apply_batch(
         }
     }
     super::state::refresh()
+}
+
+/// Restore outputs are consumed by this reload; only other inputs can request another restore.
+/// [DIAG-RESTORE] [DIAG-LSP-REFRESH]
+fn restore_required(rescan: bool, changes: &[FileEvent]) -> Result<bool> {
+    changes.iter().try_fold(rescan, |required, change| {
+        let path = paths::uri_to_path(change.uri.as_str())?;
+        Ok(required || !paths::diagnostic_restore_output(path))
+    })
 }
 
 /// Native input loss has no complete URI list; this internal marker requests full reload.
@@ -196,9 +209,13 @@ async fn unknown_sources(
 }
 
 /// Reload compiler inputs, then replay live overlays before any diagnostic pull runs.
-async fn reload(sidecars: [Option<&Arc<SidecarManager>>; 2], vfs: &Vfs) -> Result<()> {
+async fn reload(
+    sidecars: [Option<&Arc<SidecarManager>>; 2],
+    vfs: &Vfs,
+    restore: bool,
+) -> Result<()> {
     for sidecar in sidecars.into_iter().flatten() {
-        crate::workspace_open::open_selected_workspace(sidecar).await?;
+        crate::workspace_open::open_selected_workspace(sidecar, restore).await?;
     }
     let [csharp, fsharp] = sidecars;
     for document in vfs.iter() {
