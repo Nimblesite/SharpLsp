@@ -1,0 +1,13 @@
+# Stops the repository's .editorconfig, which raises every analyzer diagnostic to an
+# error, from reaching the host's e2e fixtures. IDE code-style rules run in the editor
+# ([DIAG-CATEGORIES-ANALYZER]), so the fixtures are analysed as a user's projects would
+# be. The whitespace settings they were written against stay.
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
