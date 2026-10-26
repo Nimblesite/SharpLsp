@@ -152,7 +152,7 @@ export function assertNoPhantomMemoryPaint(snapshot: MemoryDashboardSnapshot): v
     for (const decoration of memoryTrackOn(file)) {
       assert.ok(
         MEMORY_PALETTE.includes(decoration.color) || LEAK_PALETTE.includes(decoration.color),
-        `${file}:${decoration.line} wears a memory (purple) or leak (red) colour: ${decoration.color}`,
+        `${file}:${decoration.line} wears a memory or leak colour: ${decoration.color}`,
       );
       if (leakBadge(file, decoration.line) === decoration) continue;
       assert.ok(
@@ -280,7 +280,7 @@ export function assertPaletteDiscipline(): void {
       assert.ok(decoration.line >= 1, `${file}:${decoration.line} is a 1-based line`);
       assert.ok(fs.existsSync(decoration.file), `a decorated file exists: ${decoration.file}`);
       if (BADGE.test(decoration.contentText)) {
-        assert.ok(LEAK_PALETTE.includes(decoration.color), 'a leak badge is red');
+        assert.ok(LEAK_PALETTE.includes(decoration.color), 'a leak badge wears a leak colour');
         assert.ok(
           BAND_LABELS.some((band) => decoration.contentText.includes(band)),
           `the badge spells a band: ${decoration.contentText}`,

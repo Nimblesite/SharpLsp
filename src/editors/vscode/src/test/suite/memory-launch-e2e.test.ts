@@ -24,6 +24,7 @@ import {
 import type { MemoryStep, SuspectedLeak } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import { completed, execute, profilerStore } from './profiler-kit';
 import { comparablePath } from './test-helpers';
+import { MEMORY_PALETTE } from './profiler-fsharp-kit';
 import { pollUntilResult } from './profiler-ui-helpers';
 import {
   LEAK_LINES,
@@ -35,8 +36,6 @@ import {
 } from './profiler-ui-debuggee';
 
 const WIDGET_TYPE = 'LoopLeak.Widget';
-/** The purple memory-allocation palette. */
-const MEMORY_PALETTE = ['#c084fc', '#a78bfa', '#8b5cf6', '#7c3aed'];
 const STEP_MS = 60_000;
 /** Time for the program to leak more between passes. */
 const GROWTH_MS = 2_000;
@@ -69,7 +68,7 @@ suite('Memory profiling — real end-to-end', () => {
     clearMemoryDecorations();
   });
 
-  test('round-trip on a debug-launched program: snapshot real allocations, diff growth into leaks, paint the purple track', async function () {
+  test('round-trip on a debug-launched program: snapshot real allocations, diff growth into leaks, paint the memory track', async function () {
     this.timeout(STEP_MS * 4);
     const target = built();
     await showProgram(target);
@@ -97,7 +96,7 @@ suite('Memory profiling — real end-to-end', () => {
       painted.some(
         (entry) => LEAK_LINES.includes(entry.line) && MEMORY_PALETTE.includes(entry.color),
       ),
-      `the purple track must paint the leaked Widget: ${JSON.stringify(painted)}`,
+      `the memory track must paint the leaked Widget: ${JSON.stringify(painted)}`,
     );
     const leaks = await diffLeaks(memorySessionId);
     assert.ok(

@@ -1,5 +1,12 @@
 {
   "en": {
+    "community": {
+      "follow": "Follow SharpLsp",
+      "join": "Join Discord",
+      "eyebrow": "Built in the open. Better together.",
+      "title": "Help shape the future of .NET tooling.",
+      "copy": "Get help with F# and C#, share your setup, and meet the people building SharpLsp. Join our Discord and bring your ideas."
+    },
     "blog": {
       "back": "Back to Blog",
       "title": "Blog",
@@ -216,6 +223,13 @@
     }
   },
   "zh": {
+    "community": {
+      "follow": "关注 SharpLsp",
+      "join": "加入 Discord",
+      "eyebrow": "开放共建，携手前行。",
+      "title": "一起塑造 .NET 工具的未来。",
+      "copy": "获取 F# 和 C# 使用帮助，分享你的开发环境，结识 SharpLsp 的开发者。加入 Discord，带上你的想法。"
+    },
     "blog": {
       "back": "返回博客",
       "title": "博客",
@@ -420,6 +434,13 @@
     }
   },
   "ja": {
+    "community": {
+      "follow": "SharpLsp をフォロー",
+      "join": "Discord に参加",
+      "eyebrow": "オープンに開発。ともに、より良く。",
+      "title": ".NET ツールの未来を、一緒に。",
+      "copy": "F# や C# の相談、開発環境の共有、SharpLsp の開発者との交流に。Discord に参加して、あなたのアイデアを聞かせてください。"
+    },
     "blog": {
       "back": "ブログへ戻る",
       "title": "ブログ",

@@ -4,7 +4,7 @@
 // The whole point is that the TEST never calls snapshot/diff itself. A real
 // SharpLsp debug session runs a real leaking .NET program, the autopilot
 // captures by itself, and the assertions read what the user sees: leak
-// confidence escalating to HIGH, the purple and leak decorations painted, and
+// confidence escalating to HIGH, the memory and leak decorations painted, and
 // exactly one leak-action offer. Basilisk escalated at a loop breakpoint on
 // Continue; a .NET heap cannot be read while the debugger holds the program
 // paused, so .NET escalates on the interval and a pause is never captured
@@ -24,6 +24,7 @@ import {
   clearMemoryDecorations,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
 import { comparablePath } from './test-helpers';
+import { LEAK_PALETTE, MEMORY_PALETTE } from './profiler-fsharp-kit';
 import { setProfilerSetting } from './profiler-kit';
 import { launchConfigOf, pollUntilResult } from './profiler-ui-helpers';
 import {
@@ -40,9 +41,6 @@ import {
   type Debuggee,
 } from './profiler-ui-debuggee';
 
-/** The purple memory-allocation palette and the leak-confidence palette. */
-const MEMORY_PALETTE = ['#c084fc', '#a78bfa', '#8b5cf6', '#7c3aed'];
-const LEAK_PALETTE = ['#ef4444', '#f87171', '#fb923c', '#a78bfa'];
 /** How long to let a (wrongly) enabled auto-capture fire before asserting none did. */
 const QUIET_SETTLE_MS = 1500;
 /** Budget for the autopilot to accumulate captures. */
@@ -131,7 +129,7 @@ suite('Memory autopilot — real end-to-end', () => {
       applied.some(
         (entry) => LEAK_LINES.includes(entry.line) && MEMORY_PALETTE.includes(entry.color),
       ),
-      `the leak site must wear an auto-painted purple track, got: ${JSON.stringify(applied)}`,
+      `the leak site must wear an auto-painted memory track, got: ${JSON.stringify(applied)}`,
     );
     assert.ok(
       applied.some(

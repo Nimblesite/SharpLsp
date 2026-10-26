@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1440" viewBox="0 0 2560 1440">
+  <title>SharpLsp YouTube channel banner</title>
+  <desc>The original SharpLsp logo and wordmark on a flat charcoal background, centered within the YouTube mobile safe area.</desc>
+  <rect width="2560" height="1440" fill="#0d110f"/>
+  <g transform="translate(140 0)">
+  <svg x="710" y="600" width="240" height="240" viewBox="0 0 128 128" fill="none">
+    <rect width="128" height="128" rx="16" fill="#00E676"/>
+    <path d="M64 20L106 64L64 108L22 64L64 20Z" fill="#003918"/>
+    <path d="M63 34H86L70 61H90L51 98L63 72H43L63 34Z" fill="#00E676"/>
+  </svg>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+    <text x="1006" y="738" fill="#f1f4f2" font-size="136" font-weight="750" letter-spacing="-5">SharpLsp</text>
+    <text x="1012" y="802" fill="#aab4af" font-size="33" font-weight="400">F# and C# development. Every editor.</text>
+  </g>
+  </g>
+</svg>

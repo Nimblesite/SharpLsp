@@ -10,10 +10,24 @@ import {
   registerProfilerUi,
   type LaunchMetric,
   type ProfilerHost,
+  type ProfilerPalette,
   type ProfilerUi,
 } from '@nimblesite/lsp-profiler-ui';
 import { DEBUG_TYPE } from './constants';
 import * as log from './log.js';
+
+/** SharpLsp's profiler colours: greens for CPU and memory, red for leaks ([PROF-UI-PALETTE]). */
+export const SHARPLSP_PALETTE: ProfilerPalette = {
+  critical: '#3eaa67',
+  hot: '#61c481',
+  warm: '#a1d9a4',
+  memory: '#42b89d',
+  memoryHot: '#82cfb7',
+  memoryWarm: '#6bb69e',
+  memoryCool: '#479880',
+  leak: '#f87171',
+  success: '#34d399',
+};
 
 /** What `activate` keeps: the registered UI and the client seam to fill once the server starts. */
 export interface SharpLspProfiler {
@@ -28,6 +42,7 @@ export function registerProfiler(context: vscode.ExtensionContext): SharpLspProf
   const host: ProfilerHost = {
     idPrefix: 'sharplsp',
     brand: 'SharpLsp',
+    palette: SHARPLSP_PALETTE,
     configSection: 'sharplsp',
     debugType: DEBUG_TYPE,
     languageIds: ['csharp', 'fsharp'],

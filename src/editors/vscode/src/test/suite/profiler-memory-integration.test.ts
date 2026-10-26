@@ -25,6 +25,7 @@ import {
 import { memoryDashboardState } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import { refGraphState } from '@nimblesite/lsp-profiler-ui/out/src/memory-ref-graph';
 import { executeError } from './profiler-kit';
+import { SHARPLSP_PALETTE } from '../../profiler-host';
 import {
   EXTENSION_ID,
   DECORATED_SOURCE,
@@ -372,7 +373,7 @@ suite('Memory Profiler — Types and Decorations', () => {
     const file = await decoratedFile(tmpDir(), 'Data.cs');
     applyLeakDecorations(memoryDiff([suspectedLeak(file, 10, { confidence: 'DEFINITE' })]));
     const [painted] = appliedMemoryDecorations();
-    assert.equal(painted?.color, '#ef4444', 'a definite leak is red');
+    assert.equal(painted?.color, SHARPLSP_PALETTE.leak, 'a definite leak wears the leak colour');
     assert.ok(painted.contentText.includes('DEFINITE'), painted.contentText);
   });
 
@@ -390,8 +391,8 @@ suite('Memory Profiler — Types and Decorations', () => {
     assert.deepEqual(
       appliedMemoryDecorations().map((entry) => [entry.line, entry.color]),
       [
-        [1, '#a78bfa'],
-        [3, '#8b5cf6'],
+        [1, SHARPLSP_PALETTE.memoryHot],
+        [3, SHARPLSP_PALETTE.memoryWarm],
       ],
       'only the open file is painted, coloured by size',
     );
