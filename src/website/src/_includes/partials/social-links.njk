@@ -1,0 +1,14 @@
+{# Implements [WEB-DESIGN-COMPONENTS]: shared, labelled social links with local SVG icons. #}
+{% set socialLinks = [
+  { name: "YouTube", icon: "youtube", url: site.youtubeUrl },
+  { name: "Discord", icon: "discord", url: site.discordUrl },
+  { name: "GitHub", icon: "github", url: site.githubUrl }
+] %}
+<nav class="social-links" aria-label="{{ i18n[lang or defaultLanguage].community.follow }}">
+  <span>{{ i18n[lang or defaultLanguage].community.follow }}</span>
+  {% for social in socialLinks %}
+  <a href="{{ social.url }}" aria-label="{{ social.name }}" title="{{ social.name }}">
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/assets/images/social-icons.svg#{{ social.icon }}"/></svg>
+  </a>
+  {% endfor %}
+</nav>

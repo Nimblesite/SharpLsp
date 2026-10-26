@@ -1,6 +1,7 @@
 {
   "en": {
     "community": {
+      "follow": "Follow SharpLsp",
       "join": "Join Discord",
       "eyebrow": "Built in the open. Better together.",
       "title": "Help shape the future of .NET tooling.",
@@ -223,6 +224,7 @@
   },
   "zh": {
     "community": {
+      "follow": "关注 SharpLsp",
       "join": "加入 Discord",
       "eyebrow": "开放共建，携手前行。",
       "title": "一起塑造 .NET 工具的未来。",
@@ -433,6 +435,7 @@
   },
   "ja": {
     "community": {
+      "follow": "SharpLsp をフォロー",
       "join": "Discord に参加",
       "eyebrow": "オープンに開発。ともに、より良く。",
       "title": ".NET ツールの未来を、一緒に。",

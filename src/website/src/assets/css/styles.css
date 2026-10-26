@@ -256,6 +256,14 @@ img { display: block; height: auto; max-width: 100%; }
 .footer-bottom { border: 0; margin: 0; padding: 0; text-align: left; }
 .footer-bottom p { font-size: 0.8rem; margin: 0; }
 
+/* Implements [WEB-DESIGN-COMPONENTS]: keyboard and touch accessible social icons. */
+.social-links { align-items: center; display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 1.25rem 0; }
+.social-links > span { color: var(--color-muted); font-size: 0.8rem; font-weight: 650; margin-right: 0.25rem; }
+.social-links a { align-items: center; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-primary); display: inline-flex; height: 2.75rem; justify-content: center; width: 2.75rem; }
+.social-links a:hover { background: var(--color-surface-subtle); border-color: var(--color-primary); }
+.social-links a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.social-links svg { display: block; }
+
 @media (max-width: 768px) {
   .nav { padding: 0 1rem; position: relative; }
   .mobile-menu-toggle { display: flex; }
