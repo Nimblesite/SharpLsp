@@ -32,6 +32,10 @@ const CPU_LAUNCH_COMMAND = 'sharplsp.profiler.profileCurrentFileCpu';
 const MEMORY_LAUNCH_COMMAND = 'sharplsp.profiler.trackMemoryCurrentFile';
 /** The ambiguous, metric-less command issue #82 retires. */
 const AMBIGUOUS_LAUNCH_COMMAND = 'sharplsp.profiler.profileCurrentFile';
+const DEBUG_VARIABLE_COMMANDS = [
+  'sharplsp.profiler.inspectVariableType',
+  'sharplsp.profiler.watchVariable',
+] as const;
 
 /** The view/title entries scoped to the Processes panel. */
 function pythonProcessesTitleCommands(): string[] {
@@ -125,6 +129,15 @@ suite('Processes — title-bar entry points state their metric (#82)', () => {
           `found when: ${entry?.when}`,
       );
     }
+  });
+
+  test('debugger variable commands are contributed to the command palette', () => {
+    const commands = new Set(manifestCommands().map((entry) => entry.command));
+    assert.deepStrictEqual(
+      DEBUG_VARIABLE_COMMANDS.filter((command) => !commands.has(command)),
+      [],
+      'registered profiler debugger commands must be discoverable from the command palette',
+    );
   });
 
   // Whole-manifest sweep for the same regression class: any surface (palette,

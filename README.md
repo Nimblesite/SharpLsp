@@ -1,6 +1,12 @@
 # SharpLsp
 
 <p align="center">
+  <a href="https://discord.gg/QR6jWJjgKv"><img src="https://img.shields.io/badge/Join%20our%20Discord-00A85A?style=for-the-badge&amp;logo=discord&amp;logoColor=white" alt="Join the SharpLsp Discord community"></a>
+</p>
+
+**Build a better .NET experience with us. [Join our Discord →](https://discord.gg/QR6jWJjgKv)** to get help with F# and C#, share your setup, and help shape SharpLsp.
+
+<p align="center">
   <img src="src/website/src/assets/images/marketplace/sharplsp-tour.gif" width="100%" alt="SharpLsp tour: the open-source alternative to Visual Studio and Rider — Solution Explorer, NuGet browser, C# and F#, debugging, profiling and testing in VS Code, Cursor and Windsurf">
 </p>
 
@@ -100,6 +106,8 @@ The repository includes a complete [`sharplsp.toml` configuration template](src/
 For the full argument behind the project, read [Why .NET Needs Editor-Agnostic Tooling](https://sharplsp.dev/blog/editor-agnostic-dotnet-lsp/).
 
 ## Contributing
+
+**[Join the SharpLsp Discord →](https://discord.gg/QR6jWJjgKv)** to meet other users and contributors, discuss ideas, and share what you're building.
 
 Want to build from source or contribute? See the [Contributing guide](https://sharplsp.dev/docs/contributing/).
 

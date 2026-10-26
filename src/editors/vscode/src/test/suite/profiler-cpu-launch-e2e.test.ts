@@ -238,7 +238,7 @@ suite('CPU profiling — debug-launched end-to-end', () => {
       html.includes('LoopLeak.Program.Spin'),
       'the profile data (hot functions) must be embedded',
     );
-    assert.ok(html.toLowerCase().includes('#e8500a'), 'the heat palette must be used');
+    assert.ok(html.toLowerCase().includes('#3eaa67'), 'the heat palette must be used');
     assert.ok(html.includes('navigateToSource'), 'rows must navigate to source');
     assert.ok(html.includes('fn-body'), 'the hot-functions table must render');
     assert.ok(

@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Join the SharpLsp Discord
+    url: https://discord.gg/QR6jWJjgKv
+    about: Get help with F# and C#, share your setup, and help shape SharpLsp with the community.
   - name: Security vulnerability
     url: https://github.com/Nimblesite/SharpLsp/security/advisories/new
     about: Please report security issues privately, never as a public issue. See SECURITY.md.

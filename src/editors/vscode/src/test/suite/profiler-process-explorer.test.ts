@@ -81,6 +81,18 @@ interface RecordedRequest {
  * every executeCommand request so tests can assert what was sent (e.g. that an
  * inline action really issued `basilisk.profiler.start` with the row's PID).
  */
+/** The CPU and memory capabilities a CPython runtime advertises ([PROF-UI-CAPABILITIES]). */
+const CPYTHON_PROFILERS = {
+  cpu: { live_progress: true, line_level: true, native_frames: false, cooperative: true },
+  memory: {
+    mode: { kind: 'Courier' },
+    allocation_sites: true,
+    references: false,
+    objects_by_type: false,
+    gc_collect: true,
+  },
+} as const;
+
 function storeWith(processes: readonly ProcessInfo[], requests?: RecordedRequest[]): Store {
   const store = createProfilerStore(fakeHost());
   // A stand-in for the three members the provider actually calls. No runtime
@@ -95,7 +107,11 @@ function storeWith(processes: readonly ProcessInfo[], requests?: RecordedRequest
       capabilities: {
         experimental: {
           lspProfiler: {
-            runtimes: [{ id: 'python', display_name: 'CPython', source_entries: true }],
+            // Both profilers, as tracemalloc-backed CPython advertises: an absent
+            // `memory` block means the runtime has no memory profiler at all.
+            runtimes: [
+              { id: 'python', display_name: 'CPython', source_entries: true, ...CPYTHON_PROFILERS },
+            ],
           },
         },
       },

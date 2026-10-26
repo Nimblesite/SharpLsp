@@ -14,9 +14,6 @@ import type { LanguageClient } from 'vscode-languageclient/node';
 import type { LaunchMetric, ProfilerHost, ProfilerStore } from '@nimblesite/lsp-profiler-ui';
 import type { ProcessInfo } from '@nimblesite/lsp-profiler-ui/out/src/process-explorer-rows';
 import type { ProcessInfo as WireProcess } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
-import { delay } from '@nimblesite/lsp-profiler-ui/out/src/timeouts';
-import type { ProfileResult } from '@nimblesite/lsp-profiler-ui/out/src/profiler-decorations';
-import type { MemoryDashboardSnapshot } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import type {
   MemoryDiffResult,
   MemorySnapshotResult,
@@ -26,16 +23,10 @@ import { numberField, rawField } from '@nimblesite/lsp-profiler-ui/out/src/unkno
 import * as assert from 'node:assert/strict';
 import { errorMessage } from './profiler-ui-caught-error';
 import { lspClient, profilerStore } from './profiler-kit';
-import {
-  closeAllEditors as closeEditors,
-  removeDirRecursive,
-  setupLspTestSuite as setupSharpLspSuite,
-} from './test-helpers';
+import { setupLspTestSuite as setupSharpLspSuite } from './test-helpers';
 
 export { EXTENSION_ID } from './test-helpers';
 export { POLL_INTERVAL_MS, WAIT_MS } from '@nimblesite/lsp-profiler-ui/out/src/timeouts';
-
-const DEFAULT_POLL_INTERVAL_MS = 100;
 
 /** Write to a signal a consumer only reads (test seams). */
 export function seedSignal<T>(target: ReadonlySignal<T>, value: T): void {
@@ -110,46 +101,6 @@ export function fakeHost(overrides: Partial<ProfilerHost> = {}): ProfilerHost {
   };
 }
 
-export interface PollOptions<T> {
-  readonly fn: () => Promise<T> | T;
-  readonly until: (value: T) => boolean;
-  readonly timeoutMs: number;
-  readonly intervalMs?: number;
-  readonly description?: string;
-}
-
-/** Poll until `until` accepts the value; the two-argument form uses a 10s budget. */
-export async function pollUntilResult<T>(options: PollOptions<T>): Promise<T>;
-export async function pollUntilResult<T>(
-  fn: () => Promise<T> | T,
-  until: (value: T) => boolean,
-): Promise<T>;
-export async function pollUntilResult<T>(
-  first: PollOptions<T> | (() => Promise<T> | T),
-  until?: (value: T) => boolean,
-): Promise<T> {
-  const options: PollOptions<T> =
-    typeof first === 'function'
-      ? { fn: first, until: until ?? (() => true), timeoutMs: 10_000 }
-      : first;
-  const deadline = Date.now() + options.timeoutMs;
-  let last: T = await options.fn();
-  while (!options.until(last)) {
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `${options.description ?? 'condition'} not met within ${options.timeoutMs}ms (last: ${JSON.stringify(last)})`,
-      );
-    }
-    await delay(options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS);
-    last = await options.fn();
-  }
-  return last;
-}
-
-export async function closeAllEditors(): Promise<void> {
-  await closeEditors();
-}
-
 /** A temp dir plus a C# source file, once the real server is running. */
 export async function setupLspTestSuite(
   tmpDirPrefix: string,
@@ -162,13 +113,6 @@ export async function setupLspTestSuite(
   );
   await closeAllEditors();
   return { tmpDir, hotFile };
-}
-
-export function removeTestDir(dir: string): void {
-  if (dir === '' || !fs.existsSync(dir)) {
-    return;
-  }
-  removeDirRecursive(dir);
 }
 
 export function teardownLspTestSuite(tmpDir: string): void {
@@ -301,19 +245,6 @@ export const DECORATED_SOURCE = Array.from(
   (_, index) => `// line ${index + 1}`,
 ).join('\n');
 
-/** A CPU result, overriding the fields a test cares about. */
-export function profileResult(overrides: Partial<ProfileResult> = {}): ProfileResult {
-  return {
-    sessionId: 's-1',
-    duration: 2.5,
-    totalSamples: 250,
-    outputFile: '/tmp/profile.speedscope.json',
-    hotFunctions: [],
-    hotLines: [],
-    ...overrides,
-  };
-}
-
 /** A memory snapshot result, overriding the fields a test cares about. */
 export function memorySnapshot(
   overrides: Partial<MemorySnapshotResult> = {},
@@ -358,23 +289,6 @@ export function memoryDiff(
     suspectedLeaks: leaks,
     ...overrides,
   };
-}
-
-/** Assert `html` contains every key (or, with `present` false, none), failing with its reason. */
-export function assertHtml(html: string, checks: Record<string, string>, present = true): void {
-  for (const [needle, why] of Object.entries(checks)) {
-    assert.equal(html.includes(needle), present, why);
-  }
-}
-
-/** Assert a webview declares a CSP, nonce-gates its script, and kept hostile data inert. */
-export function assertHardened(html: string, what: string): void {
-  assert.ok(html.includes('Content-Security-Policy'), `${what} must declare a CSP`);
-  assert.ok(
-    /script-src 'nonce-[^']+'/.test(html),
-    `${what}: the inline script must be nonce-gated`,
-  );
-  assert.ok(!html.includes('</script><img'), `${what}: untrusted data must not close the <script>`);
 }
 
 // ── Process-row fixtures ([PROF-UI-PROCESSES]) ─────────────────────
@@ -453,22 +367,17 @@ export function assertPainted(
   }
 }
 
-// ── Dashboard snapshots ────────────────────────────────────────────
-
-/** A minimal dashboard snapshot (fresh session: one capture, no diff yet). */
-export function dashboardSnapshot(
-  overrides: Partial<MemoryDashboardSnapshot> = {},
-): MemoryDashboardSnapshot {
-  return {
-    memorySessionId: 'mem-1',
-    snapshotId: 'snap-1',
-    currentMemory: 1_048_576,
-    peakMemory: 2_097_152,
-    gcObjects: 1200,
-    gcCounts: [700, 12, 3],
-    topAllocations: [{ file: '/app/Program.cs', line: 10, size: 4096, count: 8 }],
-    timeline: [],
-    heapProfilePath: '',
-    ...overrides,
-  };
-}
+export {
+  profileResult,
+  dashboardSnapshot,
+  assertHtml,
+  assertHardened,
+  pollUntilResult,
+  PollOptions,
+  removeTestDir,
+  closeAllEditors,
+} from '@nimblesite/lsp-profiler-ui/out/src/testing/webview-contract-helpers';
+import {
+  closeAllEditors,
+  removeTestDir,
+} from '@nimblesite/lsp-profiler-ui/out/src/testing/webview-contract-helpers';

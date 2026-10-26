@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <title>Getting started with SharpLsp in VS Code</title>
+  <desc>SharpLsp's original green logo, white and green Getting Started typography, and F# + C# in VS Code on a flat charcoal background.</desc>
+  <rect width="1280" height="720" fill="#0d110f"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+    <text x="80" y="133" fill="#f1f4f2" font-size="46" font-weight="750" letter-spacing="-2">SharpLsp</text>
+    <text x="74" y="337" fill="#f1f4f2" font-size="112" font-weight="800" letter-spacing="-5">GETTING</text>
+    <text x="74" y="455" fill="#00E676" font-size="112" font-weight="800" letter-spacing="-5">STARTED</text>
+    <text x="80" y="587" fill="#f1f4f2" font-size="34" font-weight="600">F# + C# IN VS CODE</text>
+  </g>
+  <svg x="904" y="244" width="256" height="256" viewBox="0 0 128 128" fill="none">
+    <rect width="128" height="128" rx="16" fill="#00E676"/>
+    <path d="M64 20L106 64L64 108L22 64L64 20Z" fill="#003918"/>
+    <path d="M63 34H86L70 61H90L51 98L63 72H43L63 34Z" fill="#00E676"/>
+  </svg>
+</svg>

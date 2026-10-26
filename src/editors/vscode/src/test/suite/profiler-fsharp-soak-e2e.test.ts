@@ -253,7 +253,7 @@ suite('F# soak — FsOrderLedger: the leak-confidence ladder over one long sessi
     for (const badge of badges) {
       assert.ok(
         LEAK_PALETTE.includes(badge.color),
-        `leak badges are red, never purple: ${badge.color}`,
+        `leak badges wear a leak colour, never the memory ramp: ${badge.color}`,
       );
       assert.ok(
         ['LOW', 'MEDIUM', 'HIGH', 'DEFINITE'].some((band) => badge.contentText.includes(band)),

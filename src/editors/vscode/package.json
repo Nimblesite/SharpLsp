@@ -349,6 +349,15 @@
           "default": "default",
           "description": "Profiling preset that configures sample rate and duration."
         },
+        "sharplsp.profiler.palette": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "description": "Override profiler colors: critical, hot, warm, memory, memoryHot, memoryWarm, memoryCool, leak, success."
+        },
         "sharplsp.profiler.autoSnapshotOnPause": {
           "type": "boolean",
           "default": true,
@@ -1043,6 +1052,24 @@
         "icon": "$(trash)"
       },
       {
+        "command": "sharplsp.profiler.inspectVariable",
+        "title": "Inspect Variable in Profiler",
+        "category": "SharpLsp",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "sharplsp.profiler.inspectVariableType",
+        "title": "Inspect Variable Type",
+        "category": "SharpLsp",
+        "icon": "$(symbol-parameter)"
+      },
+      {
+        "command": "sharplsp.profiler.watchVariable",
+        "title": "Add Variable to Watch",
+        "category": "SharpLsp",
+        "icon": "$(eye)"
+      },
+      {
         "command": "sharplsp.profiler.memoryReferences",
         "title": "Show Reference Graph",
         "category": "SharpLsp",
@@ -1437,6 +1464,20 @@
           "when": "debugType == sharplsp-coreclr && sharplsp.profiler.memoryTracking",
           "group": "navigation@3"
         }
+      ],
+      "debug/variables/context": [
+        {
+          "command": "sharplsp.profiler.inspectVariable",
+          "when": "debugType == sharplsp-coreclr",
+          "group": "inline@10"
+        }
+      ],
+      "debug/watch/context": [
+        {
+          "command": "sharplsp.profiler.inspectVariable",
+          "when": "debugType == sharplsp-coreclr",
+          "group": "inline@10"
+        }
       ]
     },
     "semanticTokenTypes": [
@@ -1783,10 +1824,8 @@
     "LICENSE"
   ],
   "overrides": {
-    "serialize-javascript": "7.1.3",
-    "@azure/identity": {
-      "@azure/msal-node": "7.1.0"
-    },
+    "@azure/msal-node": "7.1.1",
+    "serialize-javascript": "7.1.4",
     "brace-expansion@^2.0.0": "2.1.4",
     "brace-expansion@^5.0.0": "5.0.12",
     "@vscode/test-cli": {
