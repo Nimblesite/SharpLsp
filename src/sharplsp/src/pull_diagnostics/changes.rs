@@ -197,11 +197,8 @@ async fn unknown_sources(
 
 /// Reload compiler inputs, then replay live overlays before any diagnostic pull runs.
 async fn reload(sidecars: [Option<&Arc<SidecarManager>>; 2], vfs: &Vfs) -> Result<()> {
-    let Some(workspace) = super::state::workspace()? else {
-        return Ok(());
-    };
     for sidecar in sidecars.into_iter().flatten() {
-        crate::workspace_open::open_workspace(sidecar, &workspace).await?;
+        crate::workspace_open::open_selected_workspace(sidecar).await?;
     }
     let [csharp, fsharp] = sidecars;
     for document in vfs.iter() {

@@ -55,6 +55,10 @@ pub struct SidecarManager {
     child: Mutex<Option<Child>>,
     /// The IPC transport.
     transport: Mutex<Option<FramedTransport>>,
+    /// Serializes `workspace/open` per sidecar so a watched-file reload and a
+    /// solution switch cannot interleave their opens, and a reload can re-read
+    /// the selection under it before opening ([DIAG-LSP-REFRESH], #494).
+    workspace_open: Mutex<()>,
     /// Monotonic request ID.
     // TODO [SIDECAR-IPC-CORRELATION]: validate every response ID before accepting it.
     next_id: AtomicU32,
@@ -107,6 +111,7 @@ impl SidecarManager {
             socket_path: socket_path.to_string(),
             child: Mutex::new(None),
             transport: Mutex::new(None),
+            workspace_open: Mutex::new(()),
             next_id: AtomicU32::new(1),
             backoff: Mutex::new(INITIAL_BACKOFF),
             spawn_retry_after: Mutex::new(None),
@@ -146,6 +151,13 @@ impl SidecarManager {
     /// Whether graceful shutdown has begun for this manager.
     pub fn is_shutting_down(&self) -> bool {
         self.shutting_down.load(Ordering::Acquire)
+    }
+
+    /// Serialize this sidecar's workspace opens. Held across the whole
+    /// `workspace/open` so a reload and a switch can never interleave; the
+    /// reload re-reads the selection under it ([DIAG-LSP-REFRESH], #494).
+    pub(crate) async fn lock_workspace_open(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.workspace_open.lock().await
     }
 
     /// Create a manager for the C# sidecar.

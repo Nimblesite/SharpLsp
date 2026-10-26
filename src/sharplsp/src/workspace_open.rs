@@ -124,8 +124,28 @@ async fn open_and_follow_up(
     true
 }
 
-/// Open the workspace in a sidecar.
+/// Open the workspace in a sidecar, serialized against every other open of
+/// this sidecar so the last selection always wins ([DIAG-LSP-REFRESH], #494).
 pub(crate) async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
+    let _guard = sidecar.lock_workspace_open().await;
+    open_workspace_locked(sidecar, root).await
+}
+
+/// Open the currently selected workspace in a sidecar, re-reading the selection
+/// under the same lock every open is serialized by. A watched-file reload that
+/// began before a solution switch therefore re-opens the NEW selection once the
+/// switch's open has landed, instead of the superseded one ([DIAG-LSP-REFRESH], #494).
+pub(crate) async fn open_selected_workspace(sidecar: &SidecarManager) -> Result<()> {
+    let _guard = sidecar.lock_workspace_open().await;
+    let Some(workspace) = crate::pull_diagnostics::state::workspace()? else {
+        return Ok(());
+    };
+    open_workspace_locked(sidecar, &workspace).await
+}
+
+/// [`open_workspace`] and [`open_selected_workspace`] both hold the sidecar's
+/// workspace-open lock while they run this body.
+async fn open_workspace_locked(sidecar: &SidecarManager, root: &str) -> Result<()> {
     let config = crate::pull_diagnostics::state::configuration()?;
     configure_diagnostics(
         sidecar,

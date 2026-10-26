@@ -105,6 +105,7 @@ pub mod type_hierarchy_tests;
 pub mod user_session_csharp;
 pub mod user_session_fsharp;
 pub mod version;
+pub mod watched_reload_selection;
 pub mod workspace_diagnostic_interruption;
 pub mod workspace_diagnostic_protocol;
 pub mod workspace_diagnostic_session;
