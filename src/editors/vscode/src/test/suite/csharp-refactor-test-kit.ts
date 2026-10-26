@@ -1,6 +1,9 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import type { Diagnostic, DocumentDiagnosticReport } from 'vscode-languageclient/node';
+import { firstDiagnosticReport } from './diagnostic-accuracy-fixtures';
 import {
+  activateRealSharpLsp,
   applyWorkspaceEdit,
   replaceDocumentText,
   runEditorHistory,
@@ -30,11 +33,6 @@ interface RawDiagnostic {
   readonly severity?: number;
   readonly code?: string | number | { readonly value?: string | number };
   readonly message: string;
-}
-
-interface RawDiagnosticReport {
-  readonly kind: string;
-  readonly items: readonly RawDiagnostic[];
 }
 
 export interface OccurrenceExpectation {
@@ -110,14 +108,29 @@ async function rawCodeActionsBetween(
   return result;
 }
 
+/**
+ * A raw pull shares the document with the editor's own pull, so it can be superseded:
+ * only that explicit ServerCancelled + retriggerRequest answer is retried, as LSP requires
+ * ([LSP-PULL-CANCELLATION]); every other error still fails the test.
+ */
 async function pullDiagnostics(uri: vscode.Uri): Promise<readonly RawDiagnostic[]> {
-  const report = await sendRealLspRequest<RawDiagnosticReport>('textDocument/diagnostic', {
-    textDocument: { uri: uri.toString() },
-  });
+  const report = await firstDiagnosticReport<DocumentDiagnosticReport>(
+    await activateRealSharpLsp(),
+    'textDocument/diagnostic',
+    { textDocument: { uri: uri.toString() } },
+  );
   assert.strictEqual(report.kind, 'full');
   assert.ok(Array.isArray(report.items), 'the real LSP must return diagnostic items');
-  for (const diagnostic of report.items) assertDiagnosticShape(diagnostic);
-  return report.items;
+  const items = report.items.map(plainDiagnostic);
+  for (const diagnostic of items) assertDiagnosticShape(diagnostic);
+  return items;
+}
+
+/** SharpLsp publishes plain-text messages; a MarkupContent message fails the test. */
+function plainDiagnostic(diagnostic: Diagnostic): RawDiagnostic {
+  const { message } = diagnostic;
+  assert.ok(typeof message === 'string', 'every diagnostic message must be plain text');
+  return { ...diagnostic, message };
 }
 
 function assertDiagnosticShape(diagnostic: RawDiagnostic): void {
