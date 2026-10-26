@@ -153,6 +153,7 @@
         "testing-lens-e2e.test.js",
         "testing-lens-status.test.js",
         "test-explorer-coverage.test.js",
+        "test-coverage-parser.test.js",
         "test-explorer-mtp-parsers.test.js",
         "test-explorer-mtp-merges.test.js"
       ]
