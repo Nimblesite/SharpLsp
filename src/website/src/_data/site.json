@@ -3,6 +3,7 @@
   "name": "SharpLsp",
   "description": "A complete open-source C# and F# development experience for VS Code, Zed, and every LSP editor — an alternative to Visual Studio, Rider, and C# Dev Kit.",
   "url": "https://sharplsp.dev",
+  "discordUrl": "https://discord.gg/QR6jWJjgKv",
   "author": "SharpLsp Team",
   "stylesheet": "/assets/css/styles.css",
   "favicon": "/assets/images/sharplsp-logo.svg",

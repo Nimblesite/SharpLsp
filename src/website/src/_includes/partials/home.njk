@@ -12,6 +12,7 @@
     <div class="button-row">
       <a class="button primary" href="{{ vscodeInstallUrl }}">{{ homeText.install }}</a>
       <a class="button secondary" href="{{ docsUrl }}">{{ homeText.installGuide }}</a>
+      <a class="button secondary" href="{{ site.discordUrl }}">{{ i18n[lang or defaultLanguage].community.join }}</a>
     </div>
     <ul class="trust-list" aria-label="{{ homeText.trustLabel }}">
       {% for item in homeText.trust %}<li>{{ item }}</li>{% endfor %}
@@ -85,6 +86,17 @@
 </section>
 
 {% include "partials/releases-section.njk" %}
+
+<section class="final-cta" aria-labelledby="community-title">
+  <div>
+    <p class="eyebrow">{{ i18n[lang or defaultLanguage].community.eyebrow }}</p>
+    <h2 id="community-title">{{ i18n[lang or defaultLanguage].community.title }}</h2>
+    <p>{{ i18n[lang or defaultLanguage].community.copy }}</p>
+  </div>
+  <div class="button-row">
+    <a class="button primary" href="{{ site.discordUrl }}">{{ i18n[lang or defaultLanguage].community.join }} →</a>
+  </div>
+</section>
 
 <section class="final-cta">
   <div>

@@ -201,6 +201,7 @@
         <a href="{{ footerPrefix }}/blog/">{{ "nav.blog" | t(currentLang) | default("Blog") }}</a>
         <a href="{{ footerPrefix }}/releases/">{{ "nav.releases" | t(currentLang) | default("Releases") }}</a>
         <a href="https://github.com/Nimblesite/SharpLsp">GitHub</a>
+        <a href="{{ site.discordUrl }}">{{ i18n[currentLang].community.join }}</a>
       </nav>
       <div class="footer-bottom">
         <p>&copy; {% year %} {{ site.name | default(site.title) }}</p>
