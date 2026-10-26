@@ -37,21 +37,12 @@
       ]
     },
     "fsharp": {
-      "description": "F# is a first-class citizen, so its WHOLE LSP surface is gated in one job: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol; the code-fix catalogue (basics, type conversions, generation); and rename, including the cross-language case where an F# origin renames C# references and back — the slowest suite in the matrix, because each of its tests rebuilds both languages. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement.",
+      "description": "F# is a first-class citizen, so its WHOLE LSP surface is gated in one job: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol (its SDK diagnostic-truth suites run in diagnostics-sdk); the code-fix catalogue (basics, type conversions, generation); and rename, including the cross-language case where an F# origin renames C# references and back — the slowest suite in the matrix, because each of its tests rebuilds both languages. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement.",
       "files": [
         "fsharp-lsp-navigation.test.js",
         "fsharp-lsp-intelligence.test.js",
         "fsharp-lsp-syntax.test.js",
         "fsharp-lsp-diagnostics.test.js",
-        "diagnostic-lint-e2e.test.js",
-        "diagnostic-lint-failures-e2e.test.js",
-        "diagnostic-lint-ancestor-e2e.test.js",
-        "diagnostic-fallback-e2e.test.js",
-        "diagnostic-imported-restore-e2e.test.js",
-        "diagnostic-package-snapshot-e2e.test.js",
-        "diagnostic-sdk-context-e2e.test.js",
-        "diagnostic-script-errors-e2e.test.js",
-        "diagnostic-ownership-e2e.test.js",
         "fsharp-lsp-hierarchy.test.js",
         "fsharp-lsp-workspace-symbol.test.js",
         "fsharp-lsp-codefixes.test.js",
@@ -62,6 +53,20 @@
         "fsharp-lsp-rename-edge.test.js",
         "fsharp-lsp-cross-language-rename.test.js",
         "tutorial.test.js"
+      ]
+    },
+    "diagnostics-sdk": {
+      "description": "Diagnostic truth against the real SDK, split from fsharp when that job outgrew its suite budget on Windows ([DIST-CI-WIN-VSIX]): F# lint discovery, failures and inherited configuration; the restore gate over imported inputs and timestamp-preserving project edits; package fallback, unavailable SDK contexts, F# script references and compiler ownership. Every suite restores and builds real projects, which is what makes them slow.",
+      "files": [
+        "diagnostic-lint-e2e.test.js",
+        "diagnostic-lint-failures-e2e.test.js",
+        "diagnostic-lint-ancestor-e2e.test.js",
+        "diagnostic-fallback-e2e.test.js",
+        "diagnostic-imported-restore-e2e.test.js",
+        "diagnostic-package-snapshot-e2e.test.js",
+        "diagnostic-sdk-context-e2e.test.js",
+        "diagnostic-script-errors-e2e.test.js",
+        "diagnostic-ownership-e2e.test.js"
       ]
     },
     "razor": {
