@@ -44,7 +44,11 @@ dotnet msbuild <fsproj> -p:TargetFramework=<tfm> -p:DesignTimeBuild=true
 
 `net48` therefore compiles with `--targetprofile:mscorlib`, the 4.8 reference assemblies and
 `NETFRAMEWORK;NET48;…_OR_GREATER` (about 1 s per framework on SDK 10.0.303); source order, globs, conditions and `Directory.Build.*` are
-MSBuild's. Relative arguments resolve against the project directory. Flags the build passes for
+MSBuild's. A project's `Compile` items — globbed, Excluded, Removed, Conditioned and
+imported alike — come from `dotnet msbuild -getItem:Compile` (a static evaluation, in
+project order), never from reading the `<Compile Include>` attributes literally ([#455](https://github.com/Nimblesite/SharpLsp/issues/455));
+ownership and file-order reads share that evaluated list, cached per project until a
+project change reloads the workspace. Relative arguments resolve against the project directory. Flags the build passes for
 its own console log and an editor must not, `--flaterrors` first (it folds each message onto one
 line with U+001D, and every published message and every quick fix that reads one loses its line
 breaks), are dropped. If the design-time compile

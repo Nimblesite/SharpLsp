@@ -39,6 +39,11 @@ type FSharpWorkspaceState =
         /// The C# projects loaded projects reference, compiled in memory.
         /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]
         CSharpBuilds: FSharpCSharpReferences.CSharpBuilds
+        /// The Compile items MSBuild evaluated per project, cached until a reload: the
+        /// project-change watcher reloads the workspace, which clears this, so a changed
+        /// .fsproj is re-evaluated once, and ownership lookups never spawn MSBuild per
+        /// request. Lazy, so concurrent first lookups share ONE evaluation. [NETFX-PROJECTS-FSHARP]
+        CompileSources: ConcurrentDictionary<string, Lazy<Task<Result<string array, string>>>>
     }
 
 /// Create a new workspace with an overlay-aware FSharpChecker.
@@ -60,7 +65,8 @@ let create () : FSharpWorkspaceState =
       Overlays = overlays
       Projects = ConcurrentDictionary(NativePaths.Comparer)
       References = ConcurrentDictionary(NativePaths.Comparer)
-      CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer) }
+      CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer)
+      CompileSources = ConcurrentDictionary(NativePaths.Comparer) }
 
 /// The project that compiles `filePath`, if any loaded project does.
 let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =
@@ -332,9 +338,6 @@ let internal checkFileWithCancellation (state: FSharpWorkspaceState) (filePath: 
 let internal checkFile state filePath =
     checkFileWithCancellation state filePath CancellationToken.None
 
-let internal parseFsprojSourceFiles path =
-    FSharpProjectLoading.parseFsprojSourceFiles path
-
 let internal parseFsprojOtherFlags path =
     FSharpProjectLoading.parseFsprojOtherFlags path
 
@@ -344,8 +347,44 @@ let internal parseFsprojAssemblyName path =
 let internal frameworkReferenceArgs () =
     FSharpProjectLoading.frameworkReferenceArgs ()
 
-let internal buildProjectOptions (state: FSharpWorkspaceState) fsprojPath =
-    FSharpProjectLoading.buildProjectOptions state.Checker fsprojPath
+/// Forget `entry` once it fails or is cancelled, so a later request retries; the
+/// value-matched removal never discards an evaluation a reload stored since.
+let private forgetFailure (state: FSharpWorkspaceState) key (entry: Lazy<Task<Result<string array, string>>>) =
+    entry.Value.ContinueWith(fun (evaluated: Task<Result<string array, string>>) ->
+        if not (evaluated.Status = TaskStatus.RanToCompletion && Result.isOk evaluated.Result) then
+            state.CompileSources.TryRemove(Collections.Generic.KeyValuePair(key, entry)) |> ignore)
+    |> ignore
+
+/// The Compile items MSBuild evaluated for the project, in project order, cached until a
+/// reload. Failures are forgotten so a later request retries; a reload always re-evaluates.
+/// [NETFX-PROJECTS-FSHARP]
+let internal compileSources (state: FSharpWorkspaceState) (fsprojPath: string) (ct: CancellationToken) =
+    let key = NativePaths.NormalizeFullPath fsprojPath
+    let created = lazy (FSharpDesignTime.compileSources fsprojPath ct)
+    let entry = state.CompileSources.GetOrAdd(key, created)
+
+    if obj.ReferenceEquals(entry, created) then
+        forgetFailure state key entry
+
+    entry.Value
+
+/// Fallback FCS options built from MSBuild's evaluated Compile items and the sidecar's
+/// framework references; the design-time build replaces these when it can answer. An
+/// evaluation failure is logged with MSBuild's reason, never silently empty.
+/// [NETFX-PROJECTS-FSHARP]
+let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: string) (ct: CancellationToken) =
+    task {
+        let! sources = compileSources state fsprojPath ct
+
+        let resolved =
+            match sources with
+            | Ok items -> items
+            | Error reason ->
+                Log.Warning("F# project {Path} Compile items unavailable: {Reason}", fsprojPath, reason)
+                [||]
+
+        return FSharpProjectLoading.buildProjectOptions state.Checker fsprojPath resolved
+    }
 
 let private activateWorkspace
     (state: FSharpWorkspaceState)
@@ -366,6 +405,7 @@ let private clearWorkspace (state: FSharpWorkspaceState) =
     state.Projects.Clear()
     state.References.Clear()
     state.CSharpBuilds.Clear()
+    state.CompileSources.Clear()
     state.Checker.InvalidateAll()
 
 /// Load EVERY project; the first one is the workspace's for project-wide queries.
@@ -376,7 +416,8 @@ let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string arra
             return Error "No .fsproj found"
         else
             try
-                let fallback = buildProjectOptions state
+                state.CompileSources.Clear()
+                let fallback path ct = buildProjectOptions state path ct
                 let! entries = fsprojFiles |> Array.map (fun path -> FSharpDesignTime.loadEntryWithRestore state.Checker fallback path autoRestore ct) |> Task.WhenAll
                 state.Projects.Clear()
                 state.References.Clear()

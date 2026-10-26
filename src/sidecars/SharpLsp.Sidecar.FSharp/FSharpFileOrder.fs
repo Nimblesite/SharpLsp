@@ -4,6 +4,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpFileOrder
 
 open System.IO
+open System.Threading.Tasks
 open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
 open Serilog
@@ -21,13 +22,15 @@ type FileOrderIssue =
       /// Human-readable description.
       Message: string }
 
-/// Parse .fsproj Compile entries and return full paths in order.
-let getCompileOrder (fsprojPath: string) : string array =
-    try
-        FSharpProjectLoading.parseFsprojSourceFiles fsprojPath
-    with ex ->
-        Log.Debug(ex, "[F# FileOrder] failed to parse .fsproj")
-        [||]
+/// Evaluate .fsproj Compile entries with MSBuild and return full paths in order.
+let getCompileOrder (state: FSharpWorkspace.FSharpWorkspaceState) (fsprojPath: string) : Task<string array> =
+    task {
+        match! FSharpWorkspace.compileSources state fsprojPath System.Threading.CancellationToken.None with
+        | Ok files -> return files
+        | Error reason ->
+            Log.Debug("[F# FileOrder] failed to evaluate .fsproj: {Reason}", reason)
+            return [||]
+    }
 
 /// Build a map of symbol name → defining file path from check results.
 /// Sources come through the overlay so unsaved edits participate in the
@@ -99,7 +102,7 @@ let analyzeFileOrder
             if not state.IsLoaded then
                 return []
             else
-                let files = getCompileOrder fsprojPath
+                let! files = getCompileOrder state fsprojPath
                 if files.Length < 2 then return []
                 else
                     // The analyzed project's options, not the workspace's first project's:

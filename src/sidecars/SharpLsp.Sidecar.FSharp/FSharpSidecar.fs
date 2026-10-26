@@ -332,7 +332,7 @@ type FSharpSidecar() as this =
 
     member private this.AdoptOwnerAsync(filePath: string, ct: CancellationToken) =
         task {
-            match FSharpOwningProject.adoptOwner workspace filePath with
+            match! FSharpOwningProject.adoptOwner workspace filePath with
             | None -> ()
             | Some adoption ->
                 do! adoption

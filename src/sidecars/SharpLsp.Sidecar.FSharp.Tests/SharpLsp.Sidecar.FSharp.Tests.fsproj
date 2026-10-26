@@ -45,6 +45,7 @@
     <Compile Include="FSharpScriptCancellationEndToEndTests.fs" />
     <Compile Include="FSharpForeignSymbolsTests.fs" />
     <Compile Include="FSharpForeignSymbolsWireTests.fs" />
+    <Compile Include="FSharpWildcardCompileTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

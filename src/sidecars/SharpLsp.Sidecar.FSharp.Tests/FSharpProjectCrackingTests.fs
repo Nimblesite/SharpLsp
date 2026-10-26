@@ -16,12 +16,18 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpProjectCrackingTests
 
 open System
 open System.IO
+open System.Threading
 open System.Xml.Linq
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Solutions
+
+let private ok (result: Result<'T, string>) =
+    match result with
+    | Ok value -> value
+    | Error reason -> failwith reason
 
 let private node (name: string) (content: obj array) = XElement(XName.Get name, content)
 
@@ -94,12 +100,14 @@ let ``an AssemblyName MSBuild never expanded falls back to the project file stem
         cleanup dir
 
 [<Fact>]
-let ``compile items become the FCS source list in declaration order`` () =
+let ``compile items become the FCS source list in declaration order`` () = task {
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
-        let sources = FSharpWorkspace.parseFsprojSourceFiles fsproj
+        let state = FSharpWorkspace.create ()
+        let! evaluated = FSharpWorkspace.compileSources state fsproj CancellationToken.None
+        let sources = ok evaluated
 
         Assert.Equal(1, sources.Length)
         Assert.Equal(NativePaths.Resolve(dir, "Library.fs"), sources[0])
@@ -107,6 +115,7 @@ let ``compile items become the FCS source list in declaration order`` () =
         Assert.True(NativePaths.IsRooted(sources[0]))
     finally
         cleanup dir
+}
 
 [<Fact>]
 let ``framework reference args pin the runtime instead of the desktop profile`` () =
@@ -118,7 +127,7 @@ let ``framework reference args pin the runtime instead of the desktop profile`` 
     Assert.Contains(args, fun arg -> NativePaths.NameOf arg = "FSharp.Core.dll")
 
 [<Fact>]
-let ``a referenced C# project arrives on the compiler line as its built assembly`` () =
+let ``a referenced C# project arrives on the compiler line as its built assembly`` () = task {
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
@@ -133,7 +142,7 @@ let ``a referenced C# project arrives on the compiler line as its built assembly
                 [| node "ProjectReference" [| attr "Include" "Neighbour/Neighbour.csproj" |] |]
 
         let state = FSharpWorkspace.create ()
-        let options = FSharpWorkspace.buildProjectOptions state fsproj
+        let! options = FSharpWorkspace.buildProjectOptions state fsproj CancellationToken.None
 
         // [DEFINITION-CROSSLANG]: the C# project is invisible to FCS except as
         // this metadata reference.
@@ -145,15 +154,16 @@ let ``a referenced C# project arrives on the compiler line as its built assembly
         Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs") |], options.SourceFiles)
     finally
         cleanup dir
+}
 
 [<Fact>]
-let ``a project that declares its own output flag is not given a second one`` () =
+let ``a project that declares its own output flag is not given a second one`` () = task {
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedB" "--nowarn:52 --out:Custom.dll" [||]
         let state = FSharpWorkspace.create ()
-        let options = FSharpWorkspace.buildProjectOptions state fsproj
+        let! options = FSharpWorkspace.buildProjectOptions state fsproj CancellationToken.None
 
         Assert.Contains("--out:Custom.dll", options.OtherOptions)
         // Two `--out:` flags make the last one win, silently renaming the
@@ -166,29 +176,31 @@ let ``a project that declares its own output flag is not given a second one`` ()
         Assert.DoesNotContain("--out:CrackedB.dll", options.OtherOptions)
     finally
         cleanup dir
+}
 
 [<Fact>]
-let ``a lowercase short output flag also suppresses the generated identity`` () =
+let ``a lowercase short output flag also suppresses the generated identity`` () = task {
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedC" "-o:Short.dll" [||]
         let state = FSharpWorkspace.create ()
-        let options = FSharpWorkspace.buildProjectOptions state fsproj
+        let! options = FSharpWorkspace.buildProjectOptions state fsproj CancellationToken.None
 
         Assert.Contains("-o:Short.dll", options.OtherOptions)
         Assert.DoesNotContain("--out:CrackedC.dll", options.OtherOptions)
     finally
         cleanup dir
+}
 
 [<Fact>]
-let ``hand-built options name each source once, so FCS never sees a file twice`` () =
+let ``hand-built options name each source once, so FCS never sees a file twice`` () = task {
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
         let fsproj = writeProject dir "CrackedD" "--nowarn:52" [||]
         let state = FSharpWorkspace.create ()
-        let options = FSharpWorkspace.buildProjectOptions state fsproj
+        let! options = FSharpWorkspace.buildProjectOptions state fsproj CancellationToken.None
         let library = NativePaths.Resolve(dir, "Library.fs")
 
         // Sources belong in SourceFiles alone: FCS compiles every bare argument it
@@ -204,6 +216,7 @@ let ``hand-built options name each source once, so FCS never sees a file twice``
         Assert.Empty(checkedProject.Diagnostics)
     finally
         cleanup dir
+}
 
 /// Completed editor saves must be visible without denying the editor's write handle.
 /// Implements [DIAG-LSP-REFRESH] and [DIAG-TRUTH-GUARANTEES].
@@ -216,18 +229,21 @@ let private saveAssemblyName (document: XDocument) (editor: FileStream) name =
     editor.Flush true
 
 /// Compiler inputs retain exact sources, flags, framework shape and cross-language identity.
-let private assertEditableInputs root project name =
+let private assertEditableInputs root project name = task {
     let source = NativePaths.Resolve(root, "Library.fs")
     let reference = NativePaths.Resolve(root, "Neighbour", "Neighbour.csproj")
-    Assert.Equal<string array>([| source |], FSharpWorkspace.parseFsprojSourceFiles project)
+    let state = FSharpWorkspace.create ()
+    let! evaluated = FSharpWorkspace.compileSources state project CancellationToken.None
+    Assert.Equal<string array>([| source |], ok evaluated)
     Assert.Equal<string array>([| "--nowarn:52"; "--warnon:1182" |], FSharpWorkspace.parseFsprojOtherFlags project)
     Assert.Equal(name, FSharpWorkspace.parseFsprojAssemblyName project)
     Assert.False(FSharpDesignTime.declaresTargetFrameworks project)
     Assert.Equal<string array>([| reference |], ProjectReferences.ReadReferencedProjects(project) |> Seq.toArray)
     Assert.Equal(name, ProjectReferences.AssemblyNameOf project)
+}
 
 [<Fact>]
-let ``project metadata remains accurate across editor saves with a write handle open`` () =
+let ``project metadata remains accurate across editor saves with a write handle open`` () = task {
     let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
     try
         writeBuiltCsharpReference root |> ignore
@@ -237,6 +253,7 @@ let ``project metadata remains accurate across editor saves with a write handle 
         use editor = File.Open(project, FileMode.Open, FileAccess.Write, FileShare.ReadWrite ||| FileShare.Delete)
         for name in [| "SavedFirst"; "SavedSecond"; "SavedThird" |] do
             saveAssemblyName document editor name
-            assertEditableInputs root project name
+            do! assertEditableInputs root project name
     finally
         cleanup root
+}

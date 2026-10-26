@@ -126,11 +126,15 @@ let private awaitMsbuild (proc: Process) (ct: CancellationToken) =
 /// Run `dotnet msbuild` on the project; its standard output, or why it failed.
 let private runMsbuild (fsprojPath: string) (arguments: string list) (ct: CancellationToken) =
     task {
-        match Process.Start(startInfo fsprojPath arguments) with
-        | null -> return Error "Could not start dotnet msbuild"
-        | started ->
-            use proc = started
-            return! awaitMsbuild proc ct
+        try
+            match Process.Start(startInfo fsprojPath arguments) with
+            | null -> return Error "Could not start dotnet msbuild"
+            | started ->
+                use proc = started
+                return! awaitMsbuild proc ct
+        with ex ->
+            Log.Debug(ex, "Could not start dotnet msbuild for {Project}", fsprojPath)
+            return Error $"Could not start dotnet msbuild: {ex.Message}"
     }
 
 /// The JSON document MSBuild prints for `-getProperty` / `-getItem`.
@@ -196,6 +200,29 @@ let private metadataOf (item: JsonElement) (name: string) =
 
 let private itemIdentities (item: string) (document: JsonDocument) =
     itemsNamed item document |> List.choose (fun arg -> metadataOf arg "Identity") |> Array.ofList
+
+/// The `Compile` items MSBuild evaluated for the project, in project order, as absolute
+/// paths: globs expanded and Exclude/Remove/Condition/imports applied. The design-time
+/// compile reports the same files in its command line, so both agree; unlike the design-time
+/// build this is a static evaluation, so it carries no generated `obj` sources.
+/// Implements [NETFX-PROJECTS-FSHARP].
+let compileSources (fsprojPath: string) (ct: CancellationToken) : Task<Result<string array, string>> =
+    task {
+        let! run = runMsbuild fsprojPath [ "-getItem:Compile" ] ct
+        let directory = NativePaths.DirectoryOf fsprojPath
+
+        return
+            run
+            |> Result.bind (fun text ->
+                let missing = Error $"MSBuild reported no Compile items for {NativePaths.NameOf fsprojPath}"
+
+                match parseJson text with
+                | Some document ->
+                    let items = itemIdentities "Compile" document
+                    if items.Length > 0 then Ok items else missing
+                | None -> missing)
+            |> Result.map (fun items -> items |> Array.map (fun source -> NativePaths.Resolve(directory, source)))
+    }
 
 /// The compiler's references that MSBuild resolved from project references, read from the
 /// very items its `-r:` arguments are made of.
@@ -348,10 +375,16 @@ let private loadSdkEntry checker options path useSdk ct =
 
 /// Restored projects use the SDK's compile items and reference assemblies, including
 /// single-target projects. [DIAG-CATEGORIES-COMPILER] [DIAG-RESTORE]
-let loadEntryWithRestore (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions) (path: string) autoRestore ct =
+let loadEntryWithRestore
+    (checker: FSharpChecker)
+    (fallback: string -> CancellationToken -> Task<FSharpProjectOptions>)
+    (path: string)
+    autoRestore
+    ct
+    =
     task {
         if autoRestore then do! restoreWhenStale path ct
-        let options = fallback path
+        let! options = fallback path ct
         let useSdk = readsCSharp path || File.Exists(NativePaths.ProjectAssetsFile path)
         if useSdk || declaresTargetFrameworks path then
             return! loadSdkEntry checker options path useSdk ct

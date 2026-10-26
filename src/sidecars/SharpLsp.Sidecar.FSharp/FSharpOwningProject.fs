@@ -20,23 +20,39 @@ let private projectsIn (directory: string) =
     with _ ->
         [||]
 
-/// True when `project` lists `filePath` among its Compile items.
-let private compiles (filePath: string) (project: string) =
-    try
-        FSharpProjectLoading.parseFsprojSourceFiles project
-        |> Array.exists (fun source -> NativePaths.AreEqual(source, filePath))
-    with ex ->
-        Log.Debug(ex, "F# project {Project} could not be read", project)
-        false
+/// True when `project` lists `filePath` among its MSBuild-evaluated Compile items.
+let private compiles (state: FSharpWorkspaceState) (filePath: string) (project: string) =
+    task {
+        match! FSharpWorkspace.compileSources state project CancellationToken.None with
+        | Ok sources -> return sources |> Array.exists (fun source -> NativePaths.AreEqual(source, filePath))
+        | Error reason ->
+            Log.Debug("F# project {Project} compile items unavailable: {Reason}", project, reason)
+            return false
+    }
 
 /// The nearest `.fsproj` at or above `filePath`'s directory that compiles it.
-let tryOwningProject (filePath: string) =
+let tryOwningProject (state: FSharpWorkspaceState) (filePath: string) =
+    let rec firstOwner (projects: string array) (index: int) =
+        task {
+            if index >= projects.Length then
+                return None
+            else
+                let! owns = compiles state filePath projects[index]
+                if owns then return Some projects[index]
+                else return! firstOwner projects (index + 1)
+        }
+
     let rec search (directory: string) =
-        match projectsIn directory |> Array.tryFind (compiles filePath) with
-        | Some owner -> Some owner
-        | None ->
-            let parent = NativePaths.DirectoryOf directory
-            if String.IsNullOrEmpty parent || NativePaths.AreEqual(parent, directory) then None else search parent
+        task {
+            match! firstOwner (projectsIn directory) 0 with
+            | Some owner -> return Some owner
+            | None ->
+                let parent = NativePaths.DirectoryOf directory
+                if String.IsNullOrEmpty parent || NativePaths.AreEqual(parent, directory) then
+                    return None
+                else
+                    return! search parent
+        }
 
     search (NativePaths.DirectoryOf filePath)
 
@@ -78,11 +94,16 @@ let private adoptNow state (inFlight: ConcurrentDictionary<string, Task>) (owner
     }
 
 /// Load the project owning `filePath` in the background, when no loaded project compiles it.
-let adoptOwner (state: FSharpWorkspaceState) (filePath: string) =
-    let path = NativePaths.NormalizeFullPath filePath
+let adoptOwner (state: FSharpWorkspaceState) (filePath: string) : Task<Task option> =
+    task {
+        let path = NativePaths.NormalizeFullPath filePath
 
-    match if needsOwner state path then tryOwningProject path else None with
-    | None -> None
-    | Some owner ->
-        let inFlight = pending.GetValue(state, fun _ -> ConcurrentDictionary(NativePaths.Comparer))
-        Some(inFlight.GetOrAdd(owner, fun _ -> Task.Run(fun () -> adoptNow state inFlight owner path)))
+        if needsOwner state path then
+            match! tryOwningProject state path with
+            | None -> return None
+            | Some owner ->
+                let inFlight = pending.GetValue(state, fun _ -> ConcurrentDictionary(NativePaths.Comparer))
+                return Some(inFlight.GetOrAdd(owner, fun _ -> Task.Run(fun () -> adoptNow state inFlight owner path)))
+        else
+            return None
+    }
