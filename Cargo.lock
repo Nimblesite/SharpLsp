@@ -809,6 +809,7 @@ dependencies = [
  "async-trait",
  "humantime",
  "inferno",
+ "num-traits",
  "serde",
  "serde_json",
  "sysinfo",
