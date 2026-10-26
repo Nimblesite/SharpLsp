@@ -151,6 +151,10 @@ Restored F# projects obtain their compile items, defines and reference assemblie
 
 Monorepo-only unused-public-code behavior is specified by [ANALYZERS-UNUSED-PUBLIC](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-unused-public-unused-public-code-elements).
 
+IDE code-style analyzers run in the editor under the effective `.editorconfig` whether or not the project sets `EnforceCodeStyleInBuild`, which governs the build alone. An IDE rule is reported once promoted to a warning or error; its hidden or suggestion default is not, so defaults never flood the report. `NoWarn`, an `.editorconfig` severity of `none`, pragma suppressions and `AnalysisMode` still win (#343).
+
+A finding whose rule has a documentation page carries it as LSP `codeDescription.href`: the C# descriptor's `HelpLinkUri` (compiler, IDE, CA and NuGet analyzers such as StyleCop alike) and FSharpLint's per-rule page. F# compiler codes carry none — their pages are not reliably published, and a dead link is worse than none. A link that is not a valid URI is dropped, never fatal.
+
 FSharpLint uses the same current parse tree, checked file and source text as compiler diagnostics, including unsaved editor text. It preserves upstream rule identifiers, source ranges and inline suppressions. The nearest ancestor `fsharplint.json` applies independently of the process working directory; creating, changing or deleting it triggers diagnostic refresh for closed files. `analyzers_enabled = false` retires lint findings while preserving compiler diagnostics.
 
 An invalid lint configuration or failed rule must not hide fresh compiler findings or masquerade as successful clean analysis. The source receives a warning `SLSPF0104` at zero-length range 0:0 while its current compiler diagnostics remain available. Repairing the configuration retires this warning and restores the actual lint findings. Cancellation remains cancellation. Stateful upstream rules are isolated between runs, including changed thresholds and interrupted analysis; a prior file or configuration must not create a false warning in the next run.

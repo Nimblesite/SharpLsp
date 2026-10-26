@@ -200,6 +200,10 @@ internal sealed class DiagnosticResult
 
     [Key(7)]
     public string Code { get; set; } = "";
+
+    /// <summary>The rule's documentation link (descriptor <c>HelpLinkUri</c>), if any.</summary>
+    [Key(8)]
+    public string HelpLink { get; set; } = "";
 }
 
 /// <summary>

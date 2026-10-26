@@ -74,13 +74,14 @@ Full branch CI is not green. The normal release host, sidecars, packaged extensi
 - [x] Prove and fix wildcard `.fsproj` analysis ([#455](https://github.com/Nimblesite/SharpLsp/issues/455)). A project declaring `<Compile Include="*.fs" Exclude="..." />` loaded with the XML reader's literal `*.fs` path, so glob-only files were neither owned nor checked and no FS0001 surfaced. Compile items now come from `dotnet msbuild -getItem:Compile` in project order, cached per project and cleared on reload; Exclude, Remove, Condition and `Directory.Build.props` imports are all MSBuild's. The two new wildcard tests failed with the literal `*.fs` list before the fix and pass with the exact ordered list and a real FS0001/hover after it; all 483 F# sidecar tests pass.
 - [x] Complete all seventeen native compiler-cancellation contracts on Windows. Tracing proves duplicate automatic/manual initial loads supersede the fixture's workspace query before compiler entry. Removing only the redundant initial load preserves every barrier and assertion. The final host and current compiler pair pass all seventeen cases with explicit binary hashes. The earlier twenty-one workspace protocol cases pass separately; final complete branch CI remains required.
 - [x] F# first: include every loaded project's compiled source and preserve compiler parse/type errors.
-- [x] Share the C# analyzer pipeline with the existing resolver; honor the evaluated SDK/NuGet analyzer references and effective editorconfig options without injecting analyzers the project disables.
+- [x] Share the C# analyzer pipeline with the existing resolver; honor the evaluated SDK/NuGet analyzer references and effective editorconfig options without injecting analyzers the project disables. IDE code-style analyzers run in the editor whatever `EnforceCodeStyleInBuild` says, reporting only rules promoted to a warning or error ([#343](https://github.com/Nimblesite/SharpLsp/issues/343)).
 - [x] Prove unopened default Razor SDK components participate in workspace pulls, map CS0029 to the component source and clear after a compiler-verified disk repair.
 - [x] Respect NoWarn, source suppressions, analyzer opt-out and effective severity without suppressing compiler errors.
 - [x] Prove actual generated-source and global/project diagnostic errors remain visible at their owning project with a zero-length 0:0 range: real FS0084, CS5001 and generated CS0029 editor cases pass in the verified 61-case combined suite, with exact counts and SDK build oracles (8b325497, 57e4a445).
 - [ ] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly.
 - [ ] Preserve F# FSharpLint/FSharp.Analyzers.SDK and SharpLsp static analyzer behavior.
-- [ ] Supply codeDescription URLs and unnecessary tags where specified.
+- [x] Supply codeDescription URLs ([#343](https://github.com/Nimblesite/SharpLsp/issues/343)): each C# finding's descriptor `HelpLinkUri` and FSharpLint's per-rule page; F# compiler codes carry none.
+- [ ] Supply unnecessary tags where specified.
 
 ## [DIAG-PLAN-CONFIG] Configuration
 

@@ -5,9 +5,9 @@ using System.Diagnostics;
 namespace SharpLsp.Sidecar.CSharp.Tests;
 
 /// <summary>
-/// Builds a fixture project with the dotnet CLI, in Debug: MSBuildWorkspace opens projects
-/// under MSBuild's default configuration, so Debug is where it looks for a cross-language
-/// reference's DLL.
+/// Runs the dotnet CLI for fixture projects: <c>build</c> in Debug — MSBuildWorkspace opens
+/// projects under MSBuild's default configuration, so Debug is where it looks for a
+/// cross-language reference's DLL — and <c>restore</c> for real NuGet package resolution.
 /// </summary>
 internal static class DotnetBuild
 {
@@ -20,17 +20,27 @@ internal static class DotnetBuild
     /// </summary>
     public static (int ExitCode, string Output) Run(string project, params string[] arguments)
     {
+        return RunDotnet([
+            "build",
+            project,
+            "--configuration",
+            "Debug",
+            "--nologo",
+            "--disable-build-servers",
+            .. arguments,
+        ]);
+    }
+
+    /// <summary>Restore <paramref name="project"/>'s NuGet packages — real resolution, real cache.</summary>
+    public static (int ExitCode, string Output) Restore(string project)
+    {
+        return RunDotnet(["restore", project, "--verbosity", "quiet"]);
+    }
+
+    private static (int ExitCode, string Output) RunDotnet(IReadOnlyList<string> arguments)
+    {
         var startInfo = new ProcessStartInfo("dotnet")
         {
-            ArgumentList =
-            {
-                "build",
-                project,
-                "--configuration",
-                "Debug",
-                "--nologo",
-                "--disable-build-servers",
-            },
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };

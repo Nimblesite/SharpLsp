@@ -37,7 +37,11 @@ type LintFailureDiagnosticsTests(fixture: EngineDiagnosticsFixture) =
 
     member private _.Compiler(code) = task {
         let! errors = assertErrors fixture fixture.Valid code
-        for error in errors do Assert.Equal(1, error.StartLine)
+        for error in errors do
+            Assert.Equal(1, error.StartLine)
+            // F# compiler messages have no guaranteed stable page; a dead link is
+            // worse than none ([DIAG-CATEGORIES-ANALYZER]).
+            Assert.Equal("", error.HelpLink)
     }
 
     [<Theory>]
@@ -53,6 +57,7 @@ type LintFailureDiagnosticsTests(fixture: EngineDiagnosticsFixture) =
         let hint = Assert.Single(recovered |> Array.filter (fun item -> item.Code = "FL0065"))
         Assert.Equal("Warning", hint.Severity)
         Assert.Equal(2, hint.StartLine)
+        Assert.Equal("https://fsprojects.github.io/FSharpLint/how-tos/rules/FL0065.html", hint.HelpLink)
         do! this.Compiler(Some "FS0001")
         do! this.Change(clean)
         do! this.Compiler(None)

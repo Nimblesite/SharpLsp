@@ -142,7 +142,10 @@ type DiagnosticResult =
       [<Key(4)>] EndCharacter: int
       [<Key(5)>] Message: string
       [<Key(6)>] Severity: string
-      [<Key(7)>] Code: string }
+      [<Key(7)>] Code: string
+      /// The rule's documentation page (FSharpLint rules only), if any;
+      /// empty for compiler and built-in analyzer diagnostics ([DIAG-CATEGORIES-ANALYZER]).
+      [<Key(8)>] HelpLink: string }
 
 /// `analyzers/configure` request: analyzer flags the host reads from
 /// `sharplsp.toml` `[analyzers]` and pushes to the sidecar after `workspace/open`.

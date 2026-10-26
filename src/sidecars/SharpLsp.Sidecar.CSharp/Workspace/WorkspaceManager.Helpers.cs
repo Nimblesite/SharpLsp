@@ -73,7 +73,8 @@ internal sealed partial class WorkspaceManager
             new FileLinePositionSpan(filePath, span.Span),
             diag.Id,
             diag.Severity.ToString(),
-            diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+            diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+            diag.Descriptor.HelpLinkUri
         );
     }
 

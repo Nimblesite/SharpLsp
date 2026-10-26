@@ -41,7 +41,12 @@ let private failure file (reason: string) =
     Serilog.Log.Warning("F# lint analysis failed: {FailureKind}", reason)
     { FilePath = file; StartLine = 0; StartCharacter = 0; EndLine = 0; EndCharacter = 0
       Message = "F# lint analysis did not complete. Check the lint configuration and SharpLsp output."
-      Severity = "Warning"; Code = "SLSPF0104" }
+      Severity = "Warning"; Code = "SLSPF0104"; HelpLink = "" }
+
+/// The stable FSharpLint rule page: every FLxxxx rule is documented at this
+/// address ([DIAG-CATEGORIES-ANALYZER]).
+let private ruleHelpLink (ruleIdentifier: string) =
+    $"https://fsprojects.github.io/FSharpLint/how-tos/rules/{ruleIdentifier}.html"
 
 /// Rule identity and source range come directly from FSharpLint, without guessing from text.
 let private findings file (parsed: FSharpParseFileResults, checkedFile, source) (ct: CancellationToken) =
@@ -52,7 +57,9 @@ let private findings file (parsed: FSharpParseFileResults, checkedFile, source) 
         match execute file information (configuration (NativePaths.DirectoryOf file)) ct with
         | Error reason -> [failure file reason]
         | Ok warnings -> warnings |> List.map (fun warning ->
-            FSharpAnalyzers.buildDiagnostic warning.RuleIdentifier "Warning" warning.Details.Message warning.Details.Range)
+            let diagnostic =
+                FSharpAnalyzers.buildDiagnostic warning.RuleIdentifier "Warning" warning.Details.Message warning.Details.Range
+            { diagnostic with HelpLink = ruleHelpLink warning.RuleIdentifier })
     with error when not ct.IsCancellationRequested -> [failure file (error.GetType().Name)]
 
 /// Cancellation and failed rules must not leak their state into the next source.

@@ -83,10 +83,15 @@ internal static class AnalyzerDiagnosticResolver
     }
 
     /// <summary>
-    /// The analyzers selected by the evaluated project, including SDK code-style
-    /// analyzers when enabled and NuGet analyzers. Adding every feature-host
-    /// analyzer would bypass AnalysisMode/EnforceCodeStyleInBuild and manufacture
-    /// diagnostics that the project's real build deliberately disabled.
+    /// The analyzers selected by the evaluated project — SDK/NuGet analyzer
+    /// references — plus the IDE code-style analyzers, which the editor runs
+    /// under the effective .editorconfig whether or not the project enforces
+    /// them at build ([DIAG-CATEGORIES-ANALYZER]): <c>EnforceCodeStyleInBuild</c>
+    /// governs the build, not the editor. Rules nobody promoted stay at their
+    /// default hidden severity and are filtered by <see cref="Reportable"/>, so
+    /// defaults never flood the report; NoWarn, editorconfig <c>none</c>, pragma
+    /// suppressions and AnalysisMode (which governs the project's CA analyzer
+    /// references) still win.
     /// </summary>
     public static ImmutableArray<DiagnosticAnalyzer> DiscoverDocumentAnalyzers(Project project)
     {
@@ -96,14 +101,48 @@ internal static class AnalyzerDiagnosticResolver
                 .AnalyzerReferences.SelectMany(reference =>
                     reference.GetAnalyzers(LanguageNames.CSharp)
                 )
+                .Concat(IdeStyleAnalyzers.Value)
                 .DistinctBy(analyzer => analyzer.GetType()),
         ];
     }
 
     /// <summary>
+    /// The feature-host IDE code-style analyzers, discovered once per process —
+    /// the same set the code-action host runs, so diagnostics and quick fixes
+    /// always agree. Scoped to analyzers whose rule ids start with <c>IDE</c>:
+    /// the feature assemblies also host build/config analyzers (e.g. the
+    /// file-based-programs analyzer) whose own defaults must never leak into the
+    /// editor report ([DIAG-CATEGORIES-ANALYZER]).
+    /// </summary>
+    private static readonly Lazy<ImmutableArray<DiagnosticAnalyzer>> IdeStyleAnalyzers = new(() =>
+        [.. DiscoverProviders<DiagnosticAnalyzer>().Where(SupportsIdeRule)]
+    );
+
+    /// <summary>Whether an analyzer reports at least one IDE code-style rule.</summary>
+    private static bool SupportsIdeRule(DiagnosticAnalyzer analyzer)
+    {
+        try
+        {
+            return analyzer.SupportedDiagnostics.Any(descriptor => IsIdeRule(descriptor.Id));
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(
+                ex,
+                "[CodeAction] Could not inspect analyzer {Analyzer}",
+                analyzer.GetType().Name
+            );
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Whether the compilation's own options still report the diagnostic: a
     /// <c>NoWarn</c> id (or one hidden by <c>warnaserror</c>/specific options)
-    /// is a compiler-level decision that stands for analyzers too.
+    /// is a compiler-level decision that stands for analyzers too. IDE code-style
+    /// rules only reach the editor when promoted to a warning or error — their
+    /// defaults are hidden or a bare suggestion (IDE0130), and a default must
+    /// never flood the report ([DIAG-CATEGORIES-ANALYZER]).
     /// </summary>
     private static bool Reportable(Compilation compilation, Diagnostic diagnostic)
     {
@@ -112,7 +151,16 @@ internal static class AnalyzerDiagnosticResolver
         var silencedById =
             compilation.Options.SpecificDiagnosticOptions.TryGetValue(diagnostic.Id, out var report)
             && report is ReportDiagnostic.Suppress or ReportDiagnostic.Hidden;
-        return !suppressed && !silencedById;
+        var ideAtDefault =
+            IsIdeRule(diagnostic.Id)
+            && diagnostic.Severity is DiagnosticSeverity.Hidden or DiagnosticSeverity.Info;
+        return !suppressed && !silencedById && !ideAtDefault;
+    }
+
+    /// <summary>Whether a diagnostic id names an IDE code-style rule.</summary>
+    private static bool IsIdeRule(string diagnosticId)
+    {
+        return diagnosticId.StartsWith("IDE", StringComparison.Ordinal);
     }
 
     public static ImmutableArray<DiagnosticAnalyzer> DiscoverFixableAnalyzers(

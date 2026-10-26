@@ -32,7 +32,10 @@ let compilerDiagnostic filePath projectScope (diagnostic: FSharpDiagnostic) : Di
       EndCharacter = endCharacter
       Message = diagnostic.Message
       Severity = severity diagnostic
-      Code = $"FS{diagnostic.ErrorNumber:D4}" }
+      Code = $"FS{diagnostic.ErrorNumber:D4}"
+      // F# compiler messages have no guaranteed stable page: many FS codes 404 on
+      // learn.microsoft.com, so no link is safer than a dead one ([DIAG-CATEGORIES-ANALYZER]).
+      HelpLink = "" }
 
 /// Source-file failures are answered by their existing document query, once.
 let internal belongsToProject (options: FSharp.Compiler.CodeAnalysis.FSharpProjectOptions) (diagnostic: FSharpDiagnostic) =

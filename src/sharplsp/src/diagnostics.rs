@@ -11,9 +11,10 @@ use anyhow::{Context, Result};
 use dashmap::DashMap;
 use lsp_server::{Message, Notification};
 use lsp_types::{
-    Diagnostic, DiagnosticSeverity, NumberOrString, Position, PublishDiagnosticsParams, Range, Uri,
+    CodeDescription, Diagnostic, DiagnosticSeverity, NumberOrString, Position,
+    PublishDiagnosticsParams, Range, Uri,
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
@@ -77,6 +78,10 @@ struct SidecarDiagnostic {
     severity: String,
     /// Compiler or analyzer diagnostic code (e.g. `CS0219`).
     code: String,
+    /// The rule's documentation link (`DiagnosticDescriptor.HelpLinkUri`);
+    /// empty when the source sidecar sends none ([DIAG-CATEGORIES-ANALYZER]).
+    #[serde(default)]
+    help_link: String,
 }
 
 /// A document to push diagnostics for: its owning sidecar, URI and native path.
@@ -475,9 +480,27 @@ fn to_lsp_diagnostic(result: SidecarDiagnostic, source_tag: &str) -> Diagnostic 
         ),
         severity: Some(map_severity(&result.severity)),
         code: Some(NumberOrString::String(result.code)),
+        code_description: code_description(&result.help_link),
         source: Some(source_tag.to_string()),
         message: result.message,
         ..Diagnostic::default()
+    }
+}
+
+/// The rule's documentation page as LSP `codeDescription.href`, so the
+/// editor links each finding to its rule exactly as the official C# extension
+/// does ([DIAG-CATEGORIES-ANALYZER]). Absent when the sidecar sent no link; a
+/// link that is not a valid URI is dropped with a trace, never a panic.
+fn code_description(help_link: &str) -> Option<CodeDescription> {
+    if help_link.is_empty() {
+        return None;
+    }
+    match help_link.parse::<Uri>() {
+        Ok(href) => Some(CodeDescription { href }),
+        Err(error) => {
+            debug!(help_link, %error, "Dropping malformed diagnostic help link");
+            None
+        }
     }
 }
 
@@ -555,6 +578,9 @@ mod tests {
             message: "Unused variable".to_string(),
             severity: "Warning".to_string(),
             code: "CS0219".to_string(),
+            help_link:
+                "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1822"
+                    .to_string(),
         };
 
         let diag = to_lsp_diagnostic(input, "sharplsp-csharp");
@@ -566,8 +592,61 @@ mod tests {
             diag.code,
             Some(NumberOrString::String("CS0219".to_string()))
         );
+        // The rule's documentation link reaches the editor as codeDescription.href
+        // ([DIAG-CATEGORIES-ANALYZER]).
+        assert_eq!(
+            diag.code_description.as_ref().map(|it| it.href.as_str()),
+            Some("https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1822")
+        );
         assert_eq!(diag.source, Some("sharplsp-csharp".to_string()));
         assert_eq!(diag.message, "Unused variable");
+    }
+
+    /// A sidecar answer without a help link — F# compiler and built-in analyzer
+    /// diagnostics, and any older sidecar — must decode and publish without a
+    /// codeDescription.
+    #[test]
+    fn to_lsp_diagnostic_without_help_link_has_no_code_description() {
+        let input = SidecarDiagnostic {
+            _file_path: "/src/main.fs".to_string(),
+            start_line: 1,
+            start_character: 0,
+            end_line: 1,
+            end_character: 4,
+            message: "Unnecessary open".to_string(),
+            severity: "Info".to_string(),
+            code: "IDE0005".to_string(),
+            help_link: String::new(),
+        };
+
+        let diag = to_lsp_diagnostic(input, "sharplsp-fsharp");
+
+        assert_eq!(diag.code_description, None);
+    }
+
+    /// An F# `FSharpLint` finding carries its rule's stable documentation page
+    /// through the same host mapping ([DIAG-CATEGORIES-ANALYZER]).
+    #[test]
+    fn to_lsp_diagnostic_maps_fsharp_lint_help_link() {
+        let input = SidecarDiagnostic {
+            _file_path: "/src/main.fs".to_string(),
+            start_line: 2,
+            start_character: 0,
+            end_line: 2,
+            end_character: 4,
+            message: "Consider using <> instead of =.".to_string(),
+            severity: "Warning".to_string(),
+            code: "FL0065".to_string(),
+            help_link: "https://fsprojects.github.io/FSharpLint/how-tos/rules/FL0065.html"
+                .to_string(),
+        };
+
+        let diag = to_lsp_diagnostic(input, "sharplsp-fsharp");
+
+        assert_eq!(
+            diag.code_description.as_ref().map(|it| it.href.as_str()),
+            Some("https://fsprojects.github.io/FSharpLint/how-tos/rules/FL0065.html")
+        );
     }
 
     #[test]
