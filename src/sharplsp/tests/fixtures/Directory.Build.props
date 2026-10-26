@@ -1,0 +1,7 @@
+<Project>
+    <!-- Intentionally empty: this file shadows the repository-wide Directory.Build.props so
+         SharpLsp's analyzers, package references and warnings-as-errors settings do not reach
+         the host's e2e fixtures, the MSBuild twin of this folder's .editorconfig. Each fixture
+         project sets every property it needs and builds as a user's project would.
+         [DIAG-CATEGORIES-ANALYZER] -->
+</Project>
