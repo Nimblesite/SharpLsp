@@ -44,7 +44,7 @@ fn refresh(
                 serde_json::Value::Null,
             );
             sender.send(Message::Notification(notification))?;
-            super::state::engine_changed();
+            super::state::engine_loaded();
             Ok(())
         }
         _ => Ok(()),

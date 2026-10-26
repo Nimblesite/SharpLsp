@@ -1432,7 +1432,7 @@ fn handle_load_solution(
                         warn!(%error, "C# diagnostic configuration failed");
                     }
                     if pull_diagnostics::state::is_pull() {
-                        pull_diagnostics::state::engine_changed();
+                        pull_diagnostics::state::engine_loaded();
                         return;
                     }
                     diagnostics::request_solution_in_background(
@@ -1465,7 +1465,7 @@ fn handle_load_solution(
                     {
                         warn!(%error, "F# diagnostic configuration failed");
                     }
-                    pull_diagnostics::state::engine_changed();
+                    pull_diagnostics::state::engine_loaded();
                     if !pull_diagnostics::state::is_pull() {
                         diagnostics::request_solution_in_background(fs, sender, vec![], vfs);
                     }

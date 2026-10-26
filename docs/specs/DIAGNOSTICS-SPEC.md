@@ -409,6 +409,7 @@ There is no background scan thread. Roslyn analysis happens only when the editor
 - An explicit solution selection supersedes all older diagnostics and CodeLens work before foreground workspace loading. Acknowledging the selection cannot leave old compiler I/O blocking the new solution. New workspace pulls retire excluded reports explicitly, and switching back restores current compiler truth without restarting the host or compiler.
 - The sidecar passes the IPC `CancellationToken` straight into `GetSemanticModelAsync` / `GetAnalyzerSemanticDiagnosticsAsync`.
 - A `WorkspaceChanged` event mid-pull does not cancel the pull. The pull completes against its snapshot, returns its `resultId`, and the bumped `global_state_version` causes the next refresh to invalidate it. This matches `AbstractPullDiagnosticHandler`'s snapshot-isolation behavior in `dotnet/roslyn`.
+- A compiler finishing the load of the selected workspace (`workspace/initializationComplete`, or the selected solution's open completing) is not a `WorkspaceChanged`: in-flight pulls enumerated that compiler's inputs while it loaded, so they never held the selection's projects. They are superseded and retried, and the first successful pull after a selection carries every loaded compiler's reports.
 
 ### [DIAG-ANALYSIS-INCREMENTAL] Incremental Updates
 

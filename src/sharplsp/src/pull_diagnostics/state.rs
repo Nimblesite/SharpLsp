@@ -146,10 +146,23 @@ pub fn configure(config: &DiagnosticsConfig) -> Result<()> {
     invalidate()
 }
 
-/// Compiler callbacks never block Tokio's reader workers behind a synchronous Salsa query.
+/// A compiler `WorkspaceChanged` refreshes future snapshots without superseding
+/// in-flight pulls, which complete against their own. [DIAG-ANALYSIS-CANCELLATION]
 pub fn engine_changed() {
-    drop(tokio::task::spawn_blocking(|| {
-        if let Err(error) = invalidate().and_then(|()| refresh_inputs()) {
+    refresh_after(PullStore::engine_changed);
+}
+
+/// A compiler that finished loading the selected workspace replaces the snapshot a
+/// pull enumerated while it loaded, so in-flight pulls are superseded and retried.
+/// [DIAG-IPC-INITIALIZED] [DIAG-ANALYSIS-CANCELLATION]
+pub fn engine_loaded() {
+    refresh_after(PullStore::invalidate);
+}
+
+/// Compiler callbacks never block Tokio's reader workers behind a synchronous Salsa query.
+fn refresh_after(operation: fn(&PullStore)) {
+    drop(tokio::task::spawn_blocking(move || {
+        if let Err(error) = change_store(operation).and_then(|()| refresh_inputs()) {
             warn!(%error, "Compiler diagnostic inputs could not refresh");
         }
     }));
@@ -192,13 +205,18 @@ pub fn begin_change() {
     }
 }
 
-/// Invalidate dependencies after a completed compiler-workspace mutation.
-pub fn invalidate() -> Result<()> {
+/// Apply one store change and retain the standard debounced refresh.
+fn change_store(operation: impl FnOnce(&PullStore)) -> Result<()> {
     with_session(|session| {
-        session.store.invalidate();
+        operation(&session.store);
         schedule_refresh(session);
         Ok(())
     })
+}
+
+/// Invalidate dependencies after a completed compiler-workspace mutation.
+pub fn invalidate() -> Result<()> {
+    change_store(PullStore::invalidate)
 }
 
 /// Schedule the standard debounced refresh after a completed background reload.
