@@ -133,7 +133,13 @@ pub fn find_symbol<'a>(symbols: &'a Value, name: &str) -> Option<&'a Value> {
 
 /// Pull diagnostics for `uri` and return every item.
 pub fn pull_diagnostics(client: &mut LspClient, uri: &str, label: &str) -> Vec<Value> {
-    let resp = document_request(client, "textDocument/diagnostic", uri);
+    // [DIAG-TRUTH-GUARANTEES] supersession is retriable (-32802); a reload storm
+    // that runs off the foreground loop may supersede the first pull, so retry
+    // until the compiler settles — never accept a superseded report as clean.
+    let deadline = Instant::now() + Duration::from_mins(1);
+    let resp = workspace_diagnostic_support::settled(deadline, || {
+        document_request(client, "textDocument/diagnostic", uri)
+    });
     assert_rpc_ok(&resp, label);
     resp["result"]["items"]
         .as_array()

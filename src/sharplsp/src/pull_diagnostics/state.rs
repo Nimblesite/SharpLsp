@@ -201,6 +201,18 @@ pub fn invalidate() -> Result<()> {
     })
 }
 
+/// Schedule the standard debounced refresh after a completed background reload.
+/// Unlike [`invalidate`], this does not bump the snapshot revision: the
+/// foreground invalidation already superseded pending work before the reload was
+/// forwarded, and a second bump would spuriously supersede requests the sidecar
+/// transport already serialized behind the reload ([DIAG-LSP-REFRESH]).
+pub fn refresh() -> Result<()> {
+    with_session(|session| {
+        schedule_refresh(session);
+        Ok(())
+    })
+}
+
 /// Clone query ownership without holding the session lock during compiler work.
 pub fn store() -> Result<PullStore> {
     with_session(|session| Ok(session.store.clone()))

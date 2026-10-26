@@ -1,7 +1,9 @@
 //! Unopened real Razor SDK components participate in workspace pulls and disk repairs.
 //! [RAZOR-FEATURES-DIAGNOSTICS] [DIAG-LSP-PULL] [DIAG-TRUTH-GUARANTEES]
 use super::*;
-use workspace_diagnostic_support::{assert_error, assert_no_push, observed_request, report_for};
+use workspace_diagnostic_support::{
+    assert_error, assert_no_push, completed_pull, observed_request, report_for,
+};
 
 /// A component discovered by the SDK's default glob, without explicit `AdditionalFiles`.
 const CLOSED: &[&str] = &["BlazorApp", "Components", "Pages", "ClosedError.razor"];
@@ -64,7 +66,7 @@ fn initialized(workspace: &RazorWorkspace) -> LspClient {
 
 /// Exercise the standard modern workspace request using the canonical request pump.
 fn workspace_pull(client: &mut LspClient, previous: &[Value], traffic: &mut Vec<Value>) -> Value {
-    observed_request(
+    completed_pull(
         client,
         "workspace/diagnostic",
         json!({"previousResultIds":previous}),

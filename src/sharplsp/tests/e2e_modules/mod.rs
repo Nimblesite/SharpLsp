@@ -72,6 +72,7 @@ pub mod lifecycle;
 pub mod logging;
 pub mod lsp_features;
 pub mod multi_solution;
+pub mod native_reload_contention;
 pub mod navigation_session;
 pub mod nuget_project_contract;
 pub mod nuget_restore;

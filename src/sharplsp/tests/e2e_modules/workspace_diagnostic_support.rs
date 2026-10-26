@@ -152,15 +152,24 @@ pub fn completed_pull_before(
     traffic: &mut Vec<Value>,
     deadline: Instant,
 ) -> Value {
+    let response = settled(deadline, || {
+        observed_response(client, method, params.clone(), traffic)
+    });
+    assert_rpc_ok(&response, method);
+    response
+}
+
+/// Repeat `request` while it answers with the standard retriable supersession,
+/// until `deadline`; any other error fails the test, and a success is returned.
+pub fn settled(deadline: Instant, mut request: impl FnMut() -> Value) -> Value {
     loop {
-        let response = observed_response(client, method, params.clone(), traffic);
+        let response = request();
         if response.get("error").is_none() {
-            assert_rpc_ok(&response, method);
             return response;
         }
         assert_superseded(&response);
         assert!(
-            std::time::Instant::now() < deadline,
+            Instant::now() < deadline,
             "compiler analysis did not complete: {response}"
         );
         std::thread::sleep(Duration::from_millis(100));
