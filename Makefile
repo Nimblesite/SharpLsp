@@ -810,7 +810,7 @@ _test-tooling: $(if $(TOOLING_TESTS_PREBUILT),,_build-lint-source-tests)
 	node --test tools/vsix/chunk-once.test.mjs
 	@echo "==> Running repo tooling tests..."
 	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/vsix/debug-cleanup.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
-		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs tools/make/vsix-profiles.test.mjs tools/vsix/model-generators.test.mjs
+		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs tools/make/vsix-profiles.test.mjs
 	node --test tools/fsharp-lint-source/source-build.test.mjs tools/fsharp-lint-source/source-artifact.test.mjs
 
 _website-build:
@@ -853,10 +853,10 @@ _lint-zed:
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
 _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
-	# The profiler contributions are generated from the shared UI library ([PROFILER-SHARED-LIBRARY-VSCODE]).
-	node tools/vsix/sync-profiler-contributions.mjs --check
-	# The tutorial's types are generated from its typeDiagram model ([TUTORIAL-MODEL]).
-	node tools/vsix/tutorial-model.mjs --check
+	# The profiler contributions ([PROFILER-SHARED-LIBRARY-VSCODE]) and the tutorial's types
+	# ([TUTORIAL-MODEL]) are generated; the test checks both committed models on this
+	# platform, here where the extension's dependencies are installed.
+	node --test tools/vsix/model-generators.test.mjs
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs tools/ci/vsix-coverage.test.mjs \
 		tools/ci/spec-citations.test.mjs tools/vsix/signals-bundle.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
