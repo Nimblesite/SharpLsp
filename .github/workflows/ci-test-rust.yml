@@ -86,6 +86,17 @@ jobs:
         run: tar -xzf target/rust-fixtures.tar.gz
       - name: Test Rust shard with coverage
         run: env VSIX_PREBUILT=1 CARGO_TESTS_PREBUILT=1 make _test-rust-shard SHARD=${{ matrix.shard }} SHARD_COUNT=2
+      - name: Upload sidecar logs
+        # The e2e sidecars log beneath the temp folder. A failing shard keeps them,
+        # so a compiler failure only this runner shows is read, not guessed.
+        # [DIST-CI-RUST-SHARDS]
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-sidecar-logs-shard-${{ matrix.shard }}
+          retention-days: 3
+          if-no-files-found: ignore
+          path: /tmp/sharplsp-logs
       - name: Upload shard coverage
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
