@@ -4,19 +4,19 @@ using SharpLsp.Sidecar.CSharp.Workspace;
 
 namespace SharpLsp.Sidecar.CSharp.Tests;
 
+#pragma warning disable CA1515 // Public xUnit fixture type
+
 /// <summary>
-/// <c>workspace/diagnostics/documents</c> enumeration for the C# sidecar
-/// ([DIAG-ARCHITECTURE-PULL-REFRESH]): every user source and Razor document of
-/// the loaded solution with its owning project's metadata — no eager
-/// compilation, no diagnostic caches, and no generated build output.
+/// The one real project shared by every <see cref="SolutionDocumentsTests"/> case,
+/// restored once by the first workspace open and reused by the rest. Sharing it
+/// removes a fresh restore per test method while every assertion still opens its own
+/// <see cref="WorkspaceManager"/>.
 /// </summary>
-public sealed class SolutionDocumentsTests : IDisposable
+public sealed class SolutionDocumentsFixture : IDisposable
 {
     private readonly ProjectlessWorkspaceFixture _files = new("docs");
 
-    private readonly string _csprojPath;
-
-    public SolutionDocumentsTests()
+    public SolutionDocumentsFixture()
     {
         const string csproj = """
             <Project Sdk="Microsoft.NET.Sdk">
@@ -31,7 +31,7 @@ public sealed class SolutionDocumentsTests : IDisposable
             </Project>
             """;
 
-        _csprojPath = _files.Write(NativePaths.Join("Proj", "Proj.csproj"), csproj);
+        CsprojPath = _files.Write(NativePaths.Join("Proj", "Proj.csproj"), csproj);
         _ = _files.Write(
             NativePaths.Join("Proj", "Alpha.cs"),
             "namespace Proj;\n\npublic class Alpha { }\n"
@@ -53,9 +53,28 @@ public sealed class SolutionDocumentsTests : IDisposable
         );
     }
 
+    /// <summary>The shared project's path, restored by the first test that opens it.</summary>
+    public string CsprojPath { get; }
+
     public void Dispose()
     {
         _files.Dispose();
+    }
+}
+
+/// <summary>
+/// <c>workspace/diagnostics/documents</c> enumeration for the C# sidecar
+/// ([DIAG-ARCHITECTURE-PULL-REFRESH]): every user source and Razor document of
+/// the loaded solution with its owning project's metadata — no eager
+/// compilation, no diagnostic caches, and no generated build output.
+/// </summary>
+public sealed class SolutionDocumentsTests : IClassFixture<SolutionDocumentsFixture>
+{
+    private readonly SolutionDocumentsFixture _files;
+
+    public SolutionDocumentsTests(SolutionDocumentsFixture files)
+    {
+        _files = files;
     }
 
     [Fact]
@@ -66,7 +85,7 @@ public sealed class SolutionDocumentsTests : IDisposable
         var alpha = Single(await DocumentsAsync(manager), "Alpha.cs");
 
         Assert.Equal("Proj", alpha.ProjectName);
-        Assert.Equal(_csprojPath, alpha.ProjectPath);
+        Assert.Equal(_files.CsprojPath, alpha.ProjectPath);
         _ = Single(await DocumentsAsync(manager), "Beta.cs");
     }
 
@@ -78,7 +97,7 @@ public sealed class SolutionDocumentsTests : IDisposable
         var linked = Single(await DocumentsAsync(manager), "Linked.cs");
 
         Assert.Equal("Proj", linked.ProjectName);
-        Assert.Equal(_csprojPath, linked.ProjectPath);
+        Assert.Equal(_files.CsprojPath, linked.ProjectPath);
     }
 
     [Fact]
@@ -89,7 +108,7 @@ public sealed class SolutionDocumentsTests : IDisposable
         var razor = Single(await DocumentsAsync(manager), "Page.razor");
 
         Assert.Equal("Proj", razor.ProjectName);
-        Assert.Equal(_csprojPath, razor.ProjectPath);
+        Assert.Equal(_files.CsprojPath, razor.ProjectPath);
     }
 
     [Fact]
@@ -124,7 +143,7 @@ public sealed class SolutionDocumentsTests : IDisposable
     {
         var manager = new WorkspaceManager();
         var opened = await ProjectlessWorkspaceFixture
-            .OpenAsync(manager, _csprojPath)
+            .OpenAsync(manager, _files.CsprojPath)
             .ConfigureAwait(false);
         Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
         Assert.True(manager.IsLoaded, "workspace must be loaded for enumeration");

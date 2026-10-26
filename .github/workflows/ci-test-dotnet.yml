@@ -25,7 +25,13 @@ jobs:
   test-dotnet:
     name: Sidecars
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 12
+    # The whole sidecar solution runs here (Common + C# + F# in parallel) under
+    # code coverage. The C# assembly alone is 833 real-SDK cases: ~4m15s on a
+    # 10-core host without coverage, so the 4-core runner with coverlet, a cold
+    # NuGet cache for the Razor/ASP.NET fixtures and the concurrent restore
+    # suites needs headroom above the old 12-minute cap (PR #494 hit it while
+    # main's smaller suite finished in 6m47s).
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
