@@ -49,8 +49,10 @@ suite('CPU profiling — real end-to-end', () => {
   const live = profilingSuite('profiler-cpu-', 'ProfileTarget');
   registerCpuCaptureContract(async () => {
     const started = await execute<{ session_id: string }>('cpu.start', { pid: live.target.pid });
-    await new Promise(resolve => setTimeout(resolve, SAMPLE_WINDOW_MS));
-    return toProfileResult(await execute<ProfileReport>('cpu.stop', { session_id: started.session_id }));
+    await new Promise((resolve) => setTimeout(resolve, SAMPLE_WINDOW_MS));
+    return toProfileResult(
+      await execute<ProfileReport>('cpu.stop', { session_id: started.session_id }),
+    );
   });
 
   test('raw pipeline: hot functions attributed to the target, speedscope + .cpuprofile artifacts written and parseable', async function () {

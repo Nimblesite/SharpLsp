@@ -23,13 +23,10 @@ import { numberField, rawField } from '@nimblesite/lsp-profiler-ui/out/src/unkno
 import * as assert from 'node:assert/strict';
 import { errorMessage } from './profiler-ui-caught-error';
 import { lspClient, profilerStore } from './profiler-kit';
-import {
-  setupLspTestSuite as setupSharpLspSuite,
-} from './test-helpers';
+import { setupLspTestSuite as setupSharpLspSuite } from './test-helpers';
 
 export { EXTENSION_ID } from './test-helpers';
 export { POLL_INTERVAL_MS, WAIT_MS } from '@nimblesite/lsp-profiler-ui/out/src/timeouts';
-
 
 /** Write to a signal a consumer only reads (test seams). */
 export function seedSignal<T>(target: ReadonlySignal<T>, value: T): void {
@@ -370,5 +367,17 @@ export function assertPainted(
   }
 }
 
-export { profileResult, dashboardSnapshot, assertHtml, assertHardened, pollUntilResult, PollOptions, removeTestDir, closeAllEditors } from '@nimblesite/lsp-profiler-ui/out/src/testing/webview-contract-helpers';
-import { closeAllEditors, removeTestDir } from '@nimblesite/lsp-profiler-ui/out/src/testing/webview-contract-helpers';
+export {
+  profileResult,
+  dashboardSnapshot,
+  assertHtml,
+  assertHardened,
+  pollUntilResult,
+  PollOptions,
+  removeTestDir,
+  closeAllEditors,
+} from '@nimblesite/lsp-profiler-ui/out/src/testing/webview-contract-helpers';
+import {
+  closeAllEditors,
+  removeTestDir,
+} from '@nimblesite/lsp-profiler-ui/out/src/testing/webview-contract-helpers';

@@ -1812,7 +1812,8 @@
     "LICENSE"
   ],
   "overrides": {
-    "serialize-javascript": "7.0.5",
+    "@azure/msal-node": "7.1.1",
+    "serialize-javascript": "7.1.4",
     "brace-expansion@^2.0.0": "2.1.4",
     "brace-expansion@^5.0.0": "5.0.12",
     "@vscode/test-cli": {

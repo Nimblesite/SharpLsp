@@ -84,7 +84,13 @@ interface RecordedRequest {
 /** The CPU and memory capabilities a CPython runtime advertises ([PROF-UI-CAPABILITIES]). */
 const CPYTHON_PROFILERS = {
   cpu: { live_progress: true, line_level: true, native_frames: false, cooperative: true },
-  memory: { mode: { kind: 'Courier' }, allocation_sites: true, references: false, objects_by_type: false, gc_collect: true },
+  memory: {
+    mode: { kind: 'Courier' },
+    allocation_sites: true,
+    references: false,
+    objects_by_type: false,
+    gc_collect: true,
+  },
 } as const;
 
 function storeWith(processes: readonly ProcessInfo[], requests?: RecordedRequest[]): Store {
@@ -103,7 +109,9 @@ function storeWith(processes: readonly ProcessInfo[], requests?: RecordedRequest
           lspProfiler: {
             // Both profilers, as tracemalloc-backed CPython advertises: an absent
             // `memory` block means the runtime has no memory profiler at all.
-            runtimes: [{ id: 'python', display_name: 'CPython', source_entries: true, ...CPYTHON_PROFILERS }],
+            runtimes: [
+              { id: 'python', display_name: 'CPython', source_entries: true, ...CPYTHON_PROFILERS },
+            ],
           },
         },
       },

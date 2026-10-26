@@ -5,6 +5,7 @@
   "url": "https://sharplsp.dev",
   "discordUrl": "https://discord.gg/QR6jWJjgKv",
   "youtubeUrl": "https://www.youtube.com/@SharpLspDev",
+  "xUrl": "https://x.com/SharpLspDev",
   "githubUrl": "https://github.com/Nimblesite/SharpLsp",
   "author": "SharpLsp Team",
   "stylesheet": "/assets/css/styles.css",
@@ -21,7 +22,8 @@
     "logo": "/assets/images/sharplsp-logo.svg",
     "sameAs": [
       "https://github.com/Nimblesite/SharpLsp",
-      "https://www.youtube.com/@SharpLspDev"
+      "https://www.youtube.com/@SharpLspDev",
+      "https://x.com/SharpLspDev"
     ]
   }
 }

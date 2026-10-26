@@ -55,7 +55,12 @@ const P = SHARPLSP_PALETTE;
 /** SharpLsp's CPU heat colours, critical to cool ([PROF-UI-PALETTE]). */
 export const CPU_PALETTE = [P.critical, P.hot, P.warm, '#4a5468'];
 /** SharpLsp's memory-allocation ramp, largest to smallest ([PROF-UI-PALETTE]). */
-export const MEMORY_PALETTE = [P.memory, P.memoryHot, P.memoryWarm ?? P.memoryHot, P.memoryCool ?? P.memoryHot];
+export const MEMORY_PALETTE = [
+  P.memory,
+  P.memoryHot,
+  P.memoryWarm ?? P.memoryHot,
+  P.memoryCool ?? P.memoryHot,
+];
 /** A leak's colour by confidence: leak for definite and high, warm for medium, memory for low ([PROF-UI-PALETTE]). */
 export const LEAK_PALETTE = [P.leak, P.warm, P.memoryHot];
 /** How long one profiler step may take: an attach, a stop with symbolization, a heap capture. */
