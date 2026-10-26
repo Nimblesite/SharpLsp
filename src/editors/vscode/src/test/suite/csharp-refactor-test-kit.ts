@@ -111,7 +111,7 @@ async function rawCodeActionsBetween(
 /**
  * A raw pull shares the document with the editor's own pull, so it can be superseded:
  * only that explicit ServerCancelled + retriggerRequest answer is retried, as LSP requires
- * ([LSP-PULL-CANCELLATION]); every other error still fails the test.
+ * ([DIAG-LSP-PULL]); every other error still fails the test.
  */
 async function pullDiagnostics(uri: vscode.Uri): Promise<readonly RawDiagnostic[]> {
   const report = await firstDiagnosticReport<DocumentDiagnosticReport>(
