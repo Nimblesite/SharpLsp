@@ -1058,6 +1058,18 @@
         "icon": "$(graph)"
       },
       {
+        "command": "sharplsp.profiler.inspectVariableType",
+        "title": "Inspect Variable Type",
+        "category": "SharpLsp",
+        "icon": "$(symbol-parameter)"
+      },
+      {
+        "command": "sharplsp.profiler.watchVariable",
+        "title": "Add Variable to Watch",
+        "category": "SharpLsp",
+        "icon": "$(eye)"
+      },
+      {
         "command": "sharplsp.profiler.memoryReferences",
         "title": "Show Reference Graph",
         "category": "SharpLsp",
