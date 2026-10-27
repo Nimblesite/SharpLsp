@@ -21,6 +21,7 @@ mod contract {
     use crate::pull_diagnostics::state;
     use crate::sidecar::protocol::Envelope;
     use crate::sidecar::transport::FramedTransport;
+    use crate::tree_sitter_parse::LangId;
     use crate::workspace_open::{open_workspace, SolutionChoice};
 
     /// Every request a fake compiler received, in order: method and payload.
@@ -36,13 +37,19 @@ mod contract {
 
     impl Fake {
         fn connect(runtime: &tokio::runtime::Runtime, answers: Answers) -> Self {
+            Self::connect_as(runtime, LangId::CSharp, answers)
+        }
+
+        fn connect_as(
+            runtime: &tokio::runtime::Runtime,
+            language: LangId,
+            answers: Answers,
+        ) -> Self {
             let (host, compiler) = tokio::io::duplex(1 << 20);
             let received = Received::default();
             drop(runtime.spawn(answer(compiler, answers, Arc::clone(&received))));
-            let manager = runtime.block_on(SidecarManager::compiler_on_stream_for_tests(
-                host,
-                crate::tree_sitter_parse::LangId::CSharp,
-            ));
+            let manager =
+                runtime.block_on(SidecarManager::compiler_on_stream_for_tests(host, language));
             Self {
                 manager: Arc::new(manager),
                 received,
@@ -120,11 +127,26 @@ mod contract {
 
     /// A compiler graph holding `paths`, as `workspace/diagnostics/documents` reports it.
     fn documents(paths: &[&str]) -> Vec<u8> {
-        let documents: Vec<_> = paths
+        let entries: Vec<_> = paths.iter().map(|path| (*path, "Project.csproj")).collect();
+        graph(&entries)
+    }
+
+    /// A compiler graph of `(source, project file)` pairs.
+    fn graph(entries: &[(&str, &str)]) -> Vec<u8> {
+        let documents: Vec<_> = entries
             .iter()
-            .map(|path| (*path, "Project", "Project.csproj"))
+            .map(|(source, project)| (*source, "Project", *project))
             .collect();
         rmp_serde::to_vec(&documents).unwrap_or_default()
+    }
+
+    /// A compiler answering `workspace/diagnostics/documents` with `graph` and
+    /// every other request with nothing.
+    fn answering(graph: Vec<u8>) -> Answers {
+        Arc::new(move |method, _| match method {
+            "workspace/diagnostics/documents" => graph.clone(),
+            _ => empty(),
+        })
     }
 
     /// How many workspaces the compiler has been asked to open.
@@ -137,6 +159,14 @@ mod contract {
 
     /// A pull-mode connection's diagnostics session over `compiler`.
     fn pull_session(runtime: &tokio::runtime::Runtime, compiler: &Fake) -> Result<()> {
+        pull_session_over(runtime, [Some(&compiler.manager), None])
+    }
+
+    /// A pull-mode connection's diagnostics session over both compilers.
+    fn pull_session_over(
+        runtime: &tokio::runtime::Runtime,
+        compilers: [Option<&Arc<SidecarManager>>; 2],
+    ) -> Result<()> {
         let capabilities: lsp_types::ClientCapabilities =
             serde_json::from_value(json!({"textDocument":{"diagnostic":{}}}))?;
         let (sender, _receiver) = crossbeam_channel::unbounded();
@@ -144,7 +174,7 @@ mod contract {
             &capabilities,
             &DiagnosticsConfig::default(),
             runtime,
-            [Some(&compiler.manager), None],
+            compilers,
             sender,
         )
     }
@@ -175,13 +205,18 @@ mod contract {
         vfs: &Arc<Vfs>,
         batch: &ReloadBatch,
     ) -> Result<()> {
+        apply_over(runtime, [Some(&compiler.manager), None], vfs, batch)
+    }
+
+    /// Run one reload pass of the background worker over both compilers.
+    fn apply_over(
+        runtime: &tokio::runtime::Runtime,
+        compilers: [Option<&Arc<SidecarManager>>; 2],
+        vfs: &Arc<Vfs>,
+        batch: &ReloadBatch,
+    ) -> Result<()> {
         let (sender, _receiver) = crossbeam_channel::unbounded();
-        runtime.block_on(apply_batch(
-            batch,
-            [Some(&compiler.manager), None],
-            vfs,
-            &sender,
-        ))
+        runtime.block_on(apply_batch(batch, compilers, vfs, &sender))
     }
 
     fn rescan() -> ReloadBatch {
@@ -203,13 +238,7 @@ mod contract {
         std::fs::write(&source, "class Closed { int Value => 42; }")?;
         let path = source.to_string_lossy().into_owned();
         let known = documents(&[&path]);
-        let compiler = Fake::connect(
-            &runtime,
-            Arc::new(move |method, _| match method {
-                "workspace/diagnostics/documents" => known.clone(),
-                _ => empty(),
-            }),
-        );
+        let compiler = Fake::connect(&runtime, answering(known));
         pull_session(&runtime, &compiler)?;
         // The watched event supersedes pending work before its batch runs.
         state::invalidate()?;
@@ -359,21 +388,19 @@ mod contract {
             .join("project.assets.json");
         std::fs::write(&assets, "{}")?;
         let assets = assets.to_string_lossy().into_owned();
-        let compiler = Fake::connect(&runtime, Arc::new(|_, _| empty()));
+        let app = dir.path().join("App");
+        let loaded = graph(&[(
+            &app.join("Program.cs").to_string_lossy(),
+            &app.join("App.csproj").to_string_lossy(),
+        )]);
+        let compiler = Fake::connect(&runtime, answering(loaded));
         pull_session(&runtime, &compiler)?;
         let workspace = dir.path().join("W.sln").to_string_lossy().into_owned();
         select_and_open(&runtime, &compiler, &workspace)?;
         let mark = compiler.mark()?;
         let touched = [event(&assets, FileChangeType::CHANGED)?];
-        let batch = |changes: &[FileEvent]| -> Result<ReloadBatch> {
-            Ok(ReloadBatch {
-                rescan: false,
-                changes: changes.to_vec(),
-                restore: restore_required(false, changes)?,
-            })
-        };
         let vfs = Arc::new(Vfs::new());
-        apply(&runtime, &compiler, &vfs, &batch(&touched)?)?;
+        apply(&runtime, &compiler, &vfs, &batch_of(&touched)?)?;
         assert!(
             compiler.opened(mark)?.is_empty(),
             "the open's own restore outputs need no second load"
@@ -384,7 +411,7 @@ mod contract {
             .write(true)
             .open(&assets)?
             .set_modified(SystemTime::now() + Duration::from_secs(2))?;
-        apply(&runtime, &compiler, &vfs, &batch(&touched)?)?;
+        apply(&runtime, &compiler, &vfs, &batch_of(&touched)?)?;
         assert_eq!(
             compiler.opened(mark)?,
             [workspace],
@@ -404,12 +431,100 @@ mod contract {
         // a restore here would rewrite them and feed the next batch.
         std::fs::remove_file(&assets)?;
         let removed = [event(&assets, FileChangeType::DELETED)?];
-        apply(&runtime, &compiler, &vfs, &batch(&removed)?)?;
+        apply(&runtime, &compiler, &vfs, &batch_of(&removed)?)?;
         assert_eq!(compiler.opened(mark)?.len(), 2, "removed outputs reload");
         assert!(
             !restore_required(false, &removed)?,
             "removed outputs never restore"
         );
         Ok(())
+    }
+
+    /// A project appearing beside the loaded solution (its inherited
+    /// configuration, project file, source and restore) reloads no compiler
+    /// whose graph does not include it. A compiler opened on a folder reloads
+    /// for a new project file of its language beneath it, and an edit to a
+    /// loaded project file reloads the compiler that loaded it.
+    /// [DIAG-LSP-REFRESH] [DIAG-ARCHITECTURE-SCOPE]
+    #[test]
+    fn changes_reload_only_the_compilers_whose_graph_they_concern() -> Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let dir = tempfile::tempdir()?;
+        let path = |relative: &str| dir.path().join(relative).to_string_lossy().into_owned();
+        for directory in ["App", "Scratch/obj"] {
+            std::fs::create_dir_all(dir.path().join(directory))?;
+        }
+        let project = path("App/App.csproj");
+        let loaded = graph(&[(&path("App/Program.cs"), &project)]);
+        let csharp = Fake::connect_as(&runtime, LangId::CSharp, answering(loaded));
+        let fsharp = Fake::connect_as(&runtime, LangId::FSharp, Arc::new(|_, _| empty()));
+        let compilers = [Some(&csharp.manager), Some(&fsharp.manager)];
+        pull_session_over(&runtime, compilers)?;
+        select_and_open(&runtime, &csharp, &path("W.sln"))?;
+        runtime.block_on(open_workspace(
+            &fsharp.manager,
+            &dir.path().to_string_lossy(),
+        ))?;
+        let marks = [csharp.mark()?, fsharp.mark()?];
+        let vfs = Arc::new(Vfs::new());
+        let mut changes = Vec::new();
+        for (relative, typ) in [
+            ("Scratch/Directory.Build.props", FileChangeType::CREATED),
+            ("Scratch/Scratch.csproj", FileChangeType::CREATED),
+            ("Scratch/Program.cs", FileChangeType::CREATED),
+            ("Scratch/obj/project.assets.json", FileChangeType::CHANGED),
+        ] {
+            std::fs::write(path(relative), "{}")?;
+            changes.push(event(&path(relative), typ)?);
+        }
+        let scratch = ReloadBatch {
+            rescan: false,
+            restore: restore_required(false, &changes)?,
+            changes,
+        };
+        apply_over(&runtime, compilers, &vfs, &scratch)?;
+        assert!(
+            csharp.opened(marks[0])?.is_empty(),
+            "a project outside the loaded solution reloads no C# compiler"
+        );
+        assert!(
+            fsharp.opened(marks[1])?.is_empty(),
+            "nor the folder's F# compiler, for a C# project"
+        );
+
+        std::fs::write(path("Scratch/Scratch.fsproj"), "<Project/>")?;
+        let fsproj = [event(
+            &path("Scratch/Scratch.fsproj"),
+            FileChangeType::CREATED,
+        )?];
+        apply_over(&runtime, compilers, &vfs, &batch_of(&fsproj)?)?;
+        assert!(
+            csharp.opened(marks[0])?.is_empty(),
+            "an F# project is not C#'s"
+        );
+        assert_eq!(
+            fsharp.opened(marks[1])?.len(),
+            1,
+            "the folder compiler finds it"
+        );
+
+        let edited = [event(&project, FileChangeType::CHANGED)?];
+        apply_over(&runtime, compilers, &vfs, &batch_of(&edited)?)?;
+        assert_eq!(
+            csharp.opened(marks[0])?.len(),
+            1,
+            "its own project reloads C#"
+        );
+        assert_eq!(fsharp.opened(marks[1])?.len(), 1, "and not the F# compiler");
+        Ok(())
+    }
+
+    /// A batch of `changes`, with the restore requirement the watcher computes.
+    fn batch_of(changes: &[FileEvent]) -> Result<ReloadBatch> {
+        Ok(ReloadBatch {
+            rescan: false,
+            changes: changes.to_vec(),
+            restore: restore_required(false, changes)?,
+        })
     }
 }

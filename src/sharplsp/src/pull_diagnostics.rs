@@ -16,6 +16,7 @@ use crate::vfs::Vfs;
 pub(crate) mod changes;
 pub(crate) mod events;
 pub(crate) mod monitor;
+mod relevance;
 pub(crate) mod requests;
 pub(crate) mod state;
 

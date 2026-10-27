@@ -2,7 +2,6 @@
 
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
-use std::time::SystemTime;
 
 use anyhow::Result;
 use lsp_server::Message;
@@ -116,7 +115,8 @@ async fn reload_loop(
     }
 }
 
-/// One reload pass: reload the graph when owed and sync closed-file disk text,
+/// One reload pass: reload the compilers whose graph the batch concerns and sync
+/// closed-file disk text,
 /// then retire the identities pulls minted while the compiler held the old
 /// inputs. A pull can reach the compiler between the watched event and this
 /// mutation and memoize pre-change text. [DIAG-LSP-REFRESH] [DIAG-TRUTH-GUARANTEES]
@@ -131,9 +131,10 @@ async fn apply_batch(
         rescan = batch.rescan,
         "Diagnostic inputs changed"
     );
-    let reloaded = batch.rescan || requires_reload(&batch.changes, sidecars).await?;
+    let concerned = super::relevance::concerned(batch.rescan, &batch.changes, sidecars).await?;
+    let reloaded = concerned.contains(&true);
     if reloaded {
-        reload(sidecars, vfs, batch.restore).await?;
+        reload(sidecars, concerned, vfs, batch.restore).await?;
     }
     let synced = sync_closed_sources(&batch.changes, sidecars, vfs).await?;
     republish_solution(sidecars, vfs, sender)?;
@@ -204,105 +205,17 @@ pub fn needs_rescan(params: &serde_json::Value) -> bool {
         == Some(true)
 }
 
-/// What a batch's touched paths owe the loaded compiler graph.
-#[derive(Default)]
-struct Owed {
-    /// Metadata changed, or a source was added or removed: the graph reloads.
-    reload: bool,
-    /// Sources edited in place reload only when the compiler does not know them.
-    sources: Vec<String>,
-    /// Restore outputs reload only when written, or removed, after the latest open.
-    outputs: Vec<String>,
-}
-
-/// Sort a batch's touched paths by what each owes the compiler.
-fn owed(changes: &[FileEvent]) -> Result<Owed> {
-    changes
-        .iter()
-        .try_fold(Owed::default(), |mut owed, change| {
-            let path = paths::uri_to_path(change.uri.as_str())?;
-            let source = paths::is_user_diagnostic_source(&path);
-            if paths::diagnostic_restore_output(&path) {
-                owed.outputs.push(path);
-            } else if paths::diagnostic_requires_reload(&path)
-                || (source && change.typ != FileChangeType::CHANGED)
-            {
-                owed.reload = true;
-            } else if source {
-                owed.sources.push(path);
-            }
-            Ok(owed)
-        })
-}
-
-/// Source additions/deletions, metadata edits and later restores alter the
-/// loaded compiler snapshot.
-async fn requires_reload(
-    changes: &[FileEvent],
-    sidecars: [Option<&Arc<SidecarManager>>; 2],
-) -> Result<bool> {
-    let owed = owed(changes)?;
-    Ok(owed.reload
-        || restored_since_open(&owed.outputs, sidecars).await
-        || unknown_sources(&owed.sources, sidecars).await?)
-}
-
-/// Restore outputs a compiler's own open wrote were consumed by that open; only
-/// those written after the latest open, by an external restore, change its
-/// inputs. [DIAG-RESTORE] [DIAG-LSP-REFRESH]
-async fn restored_since_open(
-    outputs: &[String],
-    sidecars: [Option<&Arc<SidecarManager>>; 2],
-) -> bool {
-    if outputs.is_empty() {
-        return false;
-    }
-    let settled = last_settled(sidecars).await;
-    outputs.iter().any(|output| written_after(output, settled))
-}
-
-/// When the latest compiler open completed, waiting out one still running.
-async fn last_settled(sidecars: [Option<&Arc<SidecarManager>>; 2]) -> Option<SystemTime> {
-    let mut latest = None;
-    for sidecar in sidecars.into_iter().flatten() {
-        latest = latest.max(sidecar.lock_workspace().await.settled);
-    }
-    latest
-}
-
-/// Whether `path` changed after `settled`; an unreadable time counts as changed.
-fn written_after(path: &str, settled: Option<SystemTime>) -> bool {
-    let modified = std::fs::metadata(path).and_then(|metadata| metadata.modified());
-    match (modified, settled) {
-        (Ok(modified), Some(settled)) => modified > settled,
-        _ => true,
-    }
-}
-
-/// Coarse native events also include creations; compare current compiler inputs once per batch.
-async fn unknown_sources(
-    sources: &[String],
-    sidecars: [Option<&Arc<SidecarManager>>; 2],
-) -> Result<bool> {
-    if sources.is_empty() {
-        return Ok(false);
-    }
-    let documents = super::documents(sidecars).await?;
-    Ok(sources.iter().any(|source| {
-        !documents
-            .iter()
-            .any(|document| paths::native_paths_equal(&document.file_path, source))
-    }))
-}
-
-/// Reload compiler inputs: each compiler reopens the workspace it last opened.
+/// Reload the compilers a batch concerns: each reopens the workspace it last opened.
 async fn reload(
     sidecars: [Option<&Arc<SidecarManager>>; 2],
+    concerned: [bool; 2],
     vfs: &Vfs,
     restore: bool,
 ) -> Result<()> {
-    for sidecar in sidecars.into_iter().flatten() {
-        reopen(sidecar, vfs, restore).await?;
+    for (sidecar, concerned) in sidecars.into_iter().zip(concerned) {
+        if let Some(sidecar) = sidecar.filter(|_| concerned) {
+            reopen(sidecar, vfs, restore).await?;
+        }
     }
     Ok(())
 }

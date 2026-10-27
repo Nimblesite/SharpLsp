@@ -59,9 +59,62 @@ pub fn is_user_diagnostic_source(path: impl AsRef<Path>) -> bool {
     has_extension(path, &["cs", "fs", "fsi", "razor", "cshtml"]) && is_diagnostic_source(path)
 }
 
+/// Project and solution files: they define which projects a compiler loads.
+pub fn is_project_graph_file(path: impl AsRef<Path>) -> bool {
+    has_extension(path, &["csproj", "fsproj", "sln", "slnx"])
+}
+
+/// Whether `path` is `directory` or lies beneath it, compared as the host
+/// compares every path. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn path_within(directory: &str, path: &str) -> bool {
+    super::watch_key_contains(
+        &super::comparison_key(directory),
+        &super::comparison_key(path),
+    )
+}
+
+/// Whether `path` names an existing directory, such as a folder workspace.
+pub fn is_directory(path: &str) -> bool {
+    Path::new(path).is_dir()
+}
+
+/// The project directory whose SDK `bin` or `obj` output `path` is.
+pub fn output_owner(path: &str) -> Option<String> {
+    Path::new(path)
+        .ancestors()
+        .skip(1)
+        .find(|directory| has_file_name(directory, "obj") || has_file_name(directory, "bin"))
+        .and_then(Path::parent)
+        .map(|owner| owner.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Containment compares whole path components, case-folded as every host
+    /// path comparison is; a restore output belongs to the directory above its
+    /// `obj` or `bin`.
+    #[test]
+    fn containment_and_output_ownership_follow_whole_components() {
+        assert!(path_within("/repo/App", "/repo/App/Program.cs"));
+        assert!(path_within("/repo/App/", "/repo/App"));
+        assert!(!path_within("/repo/App", "/repo/AppTests/Program.cs"));
+        assert!(!path_within("/repo/App/Program.cs", "/repo/App"));
+        for (path, owner) in [
+            (
+                "/repo/App/obj/Debug/net10.0/App.nuget.g.props",
+                Some("/repo/App"),
+            ),
+            ("/repo/App/obj/project.assets.json", Some("/repo/App")),
+            ("/repo/App/App.csproj", None),
+        ] {
+            assert_eq!(output_owner(path).as_deref(), owner, "{path}");
+        }
+        assert!(is_project_graph_file("/repo/App/App.csproj"));
+        assert!(is_project_graph_file("/repo/All.slnx"));
+        assert!(!is_project_graph_file("/repo/Directory.Build.props"));
+    }
 
     /// An inherited `nuget.config` is a restore input ([DIAG-RESTORE]): editing it
     /// reloads the compiler from any watch depth, and restores.

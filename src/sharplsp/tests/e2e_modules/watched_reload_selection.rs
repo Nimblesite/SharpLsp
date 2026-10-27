@@ -56,13 +56,11 @@ fn test_reload_cannot_reopen_a_superseded_solution() {
     // Arm the native watcher and let both sidecars begin loading A.
     std::thread::sleep(Duration::from_millis(500));
 
-    // The storm: a project-graph change under A owes an immediate reload while
-    // A's initial load is still running. A `.csproj` is a project-graph path
-    // (`diagnostic_requires_reload`), so the reload worker reads the selected
-    // workspace at once instead of first enumerating compiler documents behind
-    // the still-busy C# transport — the read-before-block order the race needs.
-    std::fs::create_dir_all(root.join("a/Storm")).unwrap();
-    std::fs::write(root.join("a/Storm/Storm.csproj"), library_csproj("net9.0")).unwrap();
+    // The storm: a project-graph change owes a reload while A's initial load is
+    // still running. A new `.fsproj` beneath the folder the F# compiler opened is
+    // one it must reload for, so the reload races the switch below. (A C#
+    // project outside the loaded solution concerns neither compiler.)
+    write_fsharp_project(&root.join("a"), "Storm", "Storm.fs", "Storm");
 
     // Let the watcher coalesce, the reload worker read the OLD workspace, and its
     // C# open queue behind A's slow initial load.
