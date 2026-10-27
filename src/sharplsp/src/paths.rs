@@ -15,7 +15,7 @@ mod inherited;
 mod inputs;
 pub use inherited::{diagnostic_input_in_scope, diagnostic_watch_scopes};
 pub use inputs::{
-    diagnostic_requires_reload, diagnostic_restore_output, is_diagnostic_input,
+    diagnostic_requires_reload, diagnostic_restore_output, exists, is_diagnostic_input,
     is_diagnostic_source, is_directory, is_fsharp_diagnostic_input, is_project_graph_file,
     is_user_diagnostic_source, output_owner, path_within,
 };

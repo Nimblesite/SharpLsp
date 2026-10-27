@@ -78,6 +78,11 @@ pub fn is_directory(path: &str) -> bool {
     Path::new(path).is_dir()
 }
 
+/// Whether `path` names an existing file or directory.
+pub fn exists(path: &str) -> bool {
+    Path::new(path).exists()
+}
+
 /// The project directory whose SDK `bin` or `obj` output `path` is.
 pub fn output_owner(path: &str) -> Option<String> {
     Path::new(path)

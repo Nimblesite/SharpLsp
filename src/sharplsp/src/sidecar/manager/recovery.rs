@@ -149,10 +149,11 @@ impl SidecarManager {
         pending: &str,
     ) -> Result<()> {
         let inputs = self.session.snapshot()?;
+        let workspace = inputs.workspace.filter(|payload| self.still_opens(payload));
         for (method, payload) in [
             ("analyzers/configure", inputs.analyzers),
             ("diagnostics/configure", inputs.diagnostics),
-            ("workspace/open", inputs.workspace),
+            ("workspace/open", workspace),
         ] {
             if let Some(payload) =
                 payload.filter(|_| method != "workspace/open" || pending != method)
@@ -166,6 +167,20 @@ impl SidecarManager {
             self.replay_overlays(connection, false).await?;
         }
         Ok(())
+    }
+
+    /// Whether the remembered workspace `payload` can still open. One deleted
+    /// since, such as a scratch solution a scaffold removed, never can, and each
+    /// failed restore respawned the compiler again; it is skipped while it is
+    /// missing and restored again once it is back. [DIAG-TRUTH-RECOVERY]
+    fn still_opens(&self, payload: &[u8]) -> bool {
+        match rmp_serde::from_slice::<String>(payload) {
+            Ok(target) if !paths::exists(&target) => {
+                warn!(sidecar = %self.name, "Remembered workspace no longer exists; restoring without it");
+                false
+            }
+            _ => true,
+        }
     }
 
     /// Replay ephemeral snapshots without holding VFS entries across awaits.
@@ -255,3 +270,7 @@ impl SidecarManager {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "recovery_tests.rs"]
+mod tests;
