@@ -4,7 +4,7 @@
   "default_threshold": 95,
   "projects": {
     "sharplsp": {
-      "threshold": 95.8,
+      "threshold": 96.25,
       "language": "rust"
     },
     "sharplsp-sidecar-common": {
@@ -20,7 +20,7 @@
       "language": "dotnet"
     },
     "vscode-extension": {
-      "threshold": 96.96,
+      "threshold": 97.4,
       "language": "typescript"
     },
     "sharplsp-zed": {
