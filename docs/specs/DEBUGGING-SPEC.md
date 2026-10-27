@@ -28,6 +28,7 @@ Phase Four uses the MIT-licensed netcoredbg adapter over DAP `1.71.0` on stdin/s
 | No parallel stacks data | Multi-threaded debugging crippled — can't visualize all thread stacks at once | Not documented |
 | C# 12 primary constructor params not inspectable | Compiler-generated fields not mapped back to source syntax | Issue #203 |
 | `Nullable<T>` expansion broken | `Nullable<Guid>` and similar value types cannot be expanded in debugger | Issue #213 |
+| A `threads` request in flight when the debuggee resumes is refused ("The operation was canceled") | The Call Stack panel logs an error for a list one round trip away; the router asks again in its own name and answers the client's request with that reply | SharpLsp #508 |
 
 SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream. SharpLsp MUST NOT patch or compile netcoredbg in its own tree: a fix lands as a reviewed commit on the `Nimblesite/netcoredbg` fork, is built and released by that repository's own workflow, is offered upstream, and the gap stays documented until a pinned release closes it.
 
