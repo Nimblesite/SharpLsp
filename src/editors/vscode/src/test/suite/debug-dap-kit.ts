@@ -320,6 +320,25 @@ export class DapRecorder implements vscode.Disposable {
     return seen;
   }
 
+  /**
+   * Wait until every command the workbench sent has an answer. VS Code sends
+   * `disconnect` in reply to `terminated`, so its answer can trail the event a
+   * test just waited for: checking at once raced it. A request never answered
+   * still fails, named.
+   */
+  public async waitForAnswers(timeoutMs = DEBUG_SESSION_MS): Promise<void> {
+    await pollUntilResult(
+      async () =>
+        [...new Set(this.requestedCommands())].filter(
+          (command) => this.responses(command).length === 0,
+        ),
+      (unanswered) => unanswered.length === 0,
+      timeoutMs,
+      50,
+      'an answer to every request the workbench sent',
+    );
+  }
+
   /** Wait until at least `count` `name` events have arrived; returns them all. */
   public async waitForEvents(
     name: string,

@@ -485,7 +485,9 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
 
       // Interaction 2 — every request the workbench sent must have an answer.
       // An unanswered request is a spinner that never stops, and DAP has no
-      // timeout of its own.
+      // timeout of its own. The `disconnect` sent in reply to `terminated` is
+      // answered after it, so the answers are awaited before they are judged.
+      await recorder.waitForAnswers();
       const commands = [...new Set(recorder.requestedCommands())];
       assert.ok(commands.length >= 5, 'a real session exchanges more than a handful of commands');
       for (const command of commands) {
