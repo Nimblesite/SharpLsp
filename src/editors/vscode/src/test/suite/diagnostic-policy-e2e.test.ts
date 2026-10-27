@@ -112,7 +112,10 @@ async function assertWorkspacePolicy(
   const found = describeWorkspaceReport(report);
   const everywhere = report.items.flatMap((item) => (item.kind === 'full' ? item.items : []));
   if (warnings === 0) {
-    assert.ok(everywhere.every((item) => item.severity === 1), `only errors remain: ${found}`);
+    assert.ok(
+      everywhere.every((item) => item.severity === 1),
+      `only errors remain: ${found}`,
+    );
   }
   const owned = report.items.filter((item) => isWithin(filePathFromUri(item.uri), fixture.root));
   const diagnostics = owned.flatMap((item) => (item.kind === 'full' ? item.items : []));
