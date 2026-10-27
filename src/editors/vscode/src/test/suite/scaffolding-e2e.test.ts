@@ -27,6 +27,7 @@ import {
   EXTENSION_ID,
   removeDirRecursive,
   assertContainsAll,
+  pollUntilResult,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { compileIncludes } from './project-xml-kit';
@@ -287,7 +288,15 @@ suite('Scaffolding E2E (drive real commands)', () => {
     stubs.queuePick('Class').queueInput(name);
     await vscode.commands.executeCommand(CMD_NEW_FILE);
 
-    // The trap project (explicit Compile items) took the file...
+    // The trap project (explicit Compile items) took the file. The project edit
+    // completes after the new file opens, so wait for it to land.
+    await pollUntilResult(
+      async () => compileIncludes(trapPath),
+      (includes) => includes.includes(`${name}.cs`),
+      COMMAND_MS,
+      100,
+      'the new file in the trap project',
+    );
     const xml = fs.readFileSync(trapPath, 'utf-8');
     assert.ok(xml.includes(`<Compile Include="${name}.cs" />`), `item inserted: ${xml}`);
     // ...before the last item (the default position keeps the entry-point-ish

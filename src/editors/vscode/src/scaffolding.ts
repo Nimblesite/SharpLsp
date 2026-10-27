@@ -258,12 +258,14 @@ async function newFile(): Promise<void> {
   edit.insert(uri, new vscode.Position(0, 0), content);
   await vscode.workspace.applyEdit(edit);
 
-  // Auto-add file to the nearest .csproj if it uses explicit <Compile> includes.
-  // The MSBuild-DOM edit decides that — no text probing of the project file
-  // ([SE-ADD-FILE-CSHARP]).
-  await addFileToNearestProject(filePath, '*.csproj');
-
   await vscode.window.showTextDocument(uri);
+
+  // Add the file to the nearest .csproj if it uses explicit <Compile> includes.
+  // The MSBuild-DOM edit decides that — no text probing of the project file
+  // ([SE-ADD-FILE-CSHARP]). It runs after the file opens and is not awaited: an
+  // SDK project compiles every .cs by glob, and the new file must never wait
+  // behind a workspace reload in the compiler. Failures are logged by the helper.
+  void addFileToNearestProject(filePath, '*.csproj');
 }
 
 /** Add an existing project to the solution. */
