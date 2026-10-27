@@ -4,10 +4,8 @@
 // the built-in HTML service's completion and hover over the server's HTML projection
 // (`sharplsp/razor/htmlProjection`, [RAZOR-ARCHITECTURE-HTML]).
 import * as assert from 'node:assert/strict';
-import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { DOCUMENT_SELECTOR } from '../../client.js';
-import { logFilePath } from '../../log.js';
 import { projectionUri, serverProjection } from '../../razor-html.js';
 import { completionList, hoverText } from './filebased-package-kit';
 import { lspClient } from './profiler-kit';
@@ -20,12 +18,12 @@ import {
   useRazorFixture,
   writeStrayRazor,
 } from './razor-kit';
+import { loggedLine } from './log-kit';
 import { packageJson } from './run-debug-kit';
 import {
   closeAllEditors,
   comparablePath,
   pollProvider,
-  pollUntilResult,
   removeDirRecursive,
   waitForHoverResult,
 } from './test-helpers';
@@ -39,20 +37,6 @@ const COUNT: readonly [string, string] = ['Current count: @currentCount', 'curre
  * word, so VS Code's word-based suggestions can never supply them.
  */
 const HTML_ONLY: readonly string[] = ['blockquote', 'figcaption', 'fieldset'];
-
-/** The line the log holds for `uri`, once it holds one. */
-function loggedLine(uri: string): Promise<string | undefined> {
-  return pollUntilResult(
-    async () =>
-      (await fs.promises.readFile(logFilePath(), 'utf8'))
-        .split('\n')
-        .find((line) => line.includes(uri)),
-    (line) => line !== undefined,
-    LSP_RESPONSE_MS,
-    undefined,
-    `a log line naming ${uri}`,
-  );
-}
 
 /** Hover text at `position`, once it satisfies `until`. */
 async function hoverWhen(
@@ -252,7 +236,7 @@ suite('Razor in VS Code', () => {
       const unreadable = `untitled:Stray-${Date.now()}.razor`;
       assert.equal(await serverProjection(lspClient)(unreadable), undefined, 'a refusal');
       assert.match(
-        (await loggedLine(unreadable)) ?? '',
+        await loggedLine((line) => line.includes(unreadable), `a log line naming ${unreadable}`),
         /\[WARN\] \{"event":"razor_html_projection_failed","uri":"untitled:/,
         'is logged as a warning, by event and URI',
       );

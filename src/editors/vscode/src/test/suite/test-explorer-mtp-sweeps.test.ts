@@ -47,11 +47,14 @@ import {
 } from './dotnet-project-kit';
 import {
   collectLeafIds,
+  discoverIntoEmptyTree,
   discoverSolution,
   drainDiscovery,
   errorTextOf,
   findItem,
+  loadIntoEmptyTree,
   rootsOf,
+  sweepOnce,
 } from './test-explorer-kit';
 import { assertPassed, cachedFor, runIds } from './test-explorer-outcome-assertions';
 import { assertContainsAll } from './test-helpers';
@@ -218,10 +221,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     //    exactly ONE sweep is counted.
     await api.explorerProvider.loadSolution(libSln);
     await drainDiscovery(() => undefined, api.testController);
-    const viewBuilds = await buildsDuring(libLog, async () => {
-      await api.testController.activateAndDiscover();
-      await api.testController.whenIdle();
-    });
+    const viewBuilds = await buildsDuring(libLog, async () => sweepOnce(api));
     assert.deepStrictEqual(viewBuilds, libBaseline, 'a Testing-view sweep costs what VSTest costs');
     assert.equal(api.testController.items.size, 0, 'and shows no row for a solution with no test');
 
@@ -258,14 +258,8 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
 
     // 4. The same broken solution in the Testing view: ONE failing build, then
     //    ONE error row carrying the compiler's words ([TEST-MTP-MODULES]).
-    await api.explorerProvider.loadSolution(brokenSln);
-    await drainDiscovery(() => {
-      api.testController.items.replace([]);
-    }, api.testController);
-    const viewBroken = await buildsDuring(brokenLog, async () => {
-      await api.testController.activateAndDiscover();
-      await api.testController.whenIdle();
-    });
+    await loadIntoEmptyTree(api, brokenSln);
+    const viewBroken = await buildsDuring(brokenLog, async () => sweepOnce(api));
     assert.deepStrictEqual(
       viewBroken,
       brokenBaseline,
@@ -367,8 +361,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
       [],
       'the failed plan owns no id',
     );
-    await api.testController.activateAndDiscover();
-    await api.testController.whenIdle();
+    await sweepOnce(api);
     assert.ok(findItem(api.testController.items, id), 'the failed sweep keeps the tree');
     assert.deepStrictEqual(collectLeafIds(api.testController.items), [id], 'the whole tree');
 
@@ -419,12 +412,7 @@ suite('Test Explorer e2e — what an MTP probe sweep costs, reaches and keeps', 
     assert.ok(leftOnDisk(dir, 'SweepOldMtpCs'), 'the module was built before it was asked');
 
     // 2. The Testing view, over an empty tree, shows ONE error row saying so.
-    await api.explorerProvider.loadSolution(sln);
-    await drainDiscovery(() => {
-      api.testController.items.replace([]);
-    }, api.testController);
-    await api.testController.activateAndDiscover();
-    await api.testController.whenIdle();
+    await discoverIntoEmptyTree(api, sln);
     const errors = rootsOf(api.testController.items).filter((item) => item.error !== undefined);
     assert.equal(errors.length, 1, 'one error row for the solution');
     const [row] = errors;

@@ -25,7 +25,6 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SharpLspExtensionApi } from '../../extension.js';
-import { logFilePath } from '../../log.js';
 import { listTests } from '../../test-discovery.js';
 import { parseListingDiagnostics } from '../../test-listing.js';
 import {
@@ -38,13 +37,13 @@ import {
 } from './dotnet-project-kit';
 import {
   collectLeafIds,
+  discoverIntoEmptyTree,
   discoverSolution,
-  drainDiscovery,
   errorTextOf,
   rootsOf,
 } from './test-explorer-kit';
-import { pollUntilResult } from './test-helpers';
-import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { loggedLine } from './log-kit';
+import { FIXTURE_BUILD_MS } from './test-timeouts';
 import { useScratchParent } from './test-explorer-harness';
 
 /** One real xUnit test — the test the refusal loses. */
@@ -60,6 +59,17 @@ const TEST_SOURCE = [
   '}',
   '',
 ].join('\n');
+
+/** A real xUnit test project `name` under `root`, its one source file holding `source`. */
+function xunitProject(root: string, name: string, source: string): string {
+  return writeProject(
+    path.join(root, name),
+    `${name}.csproj`,
+    projectXml(XUNIT_PACKAGES),
+    'CalculatorTests.cs',
+    source,
+  );
+}
 
 /** The id the tree must carry once the solution is one `dotnet` accepts. */
 const EXPECTED_ID = 'Cs.Refused.Fixtures.CalculatorTests.Adds_TwoNumbers';
@@ -108,13 +118,7 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
     this.timeout(FIXTURE_BUILD_MS * 2);
 
     const root = path.join(parent, 'refused');
-    const project = writeProject(
-      path.join(root, 'RefusedTests'),
-      'RefusedTests.csproj',
-      projectXml(XUNIT_PACKAGES),
-      'CalculatorTests.cs',
-      TEST_SOURCE,
-    );
+    const project = xunitProject(root, 'RefusedTests', TEST_SOURCE);
     const unconfigured = writeUnconfiguredSolution(
       root,
       'Refused',
@@ -136,12 +140,7 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
 
     // 2. The same solution through the Testing view: one error row carrying the
     //    diagnostic AND the remedy, never a blank tree ([TEST-MTP-MODULES]).
-    await api.explorerProvider.loadSolution(unconfigured);
-    await drainDiscovery(() => {
-      api.testController.items.replace([]);
-    }, api.testController);
-    await api.testController.activateAndDiscover();
-    await api.testController.whenIdle();
+    await discoverIntoEmptyTree(api, unconfigured);
     const rows = rootsOf(api.testController.items);
     assert.equal(
       rows.length,
@@ -247,12 +246,7 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
     assert.deepStrictEqual([...listing.warnings], [], 'and an advisory is not a discovery failure');
 
     // And in the view: no row at all, not an error row.
-    await api.explorerProvider.loadSolution(solution);
-    await drainDiscovery(() => {
-      api.testController.items.replace([]);
-    }, api.testController);
-    await api.testController.activateAndDiscover();
-    await api.testController.whenIdle();
+    await discoverIntoEmptyTree(api, solution);
     const rows = rootsOf(api.testController.items);
     assert.deepStrictEqual(
       rows.map((row) => `${row.label}: ${errorTextOf(row)}`),
@@ -269,20 +263,8 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
     // ([TEST-DISCOVERY-FQN]). On Windows a counted build collided on its log
     // and failed exactly like this, and its tests vanished without a word (#507).
     const root = path.join(parent, 'partial');
-    const listed = writeProject(
-      path.join(root, 'ListedTests'),
-      'ListedTests.csproj',
-      projectXml(XUNIT_PACKAGES),
-      'CalculatorTests.cs',
-      TEST_SOURCE,
-    );
-    const broken = writeProject(
-      path.join(root, 'BrokenTests'),
-      'BrokenTests.csproj',
-      projectXml(XUNIT_PACKAGES),
-      'Broken.cs',
-      'this is deliberately not compilable C#',
-    );
+    const listed = xunitProject(root, 'ListedTests', TEST_SOURCE);
+    const broken = xunitProject(root, 'BrokenTests', 'this is deliberately not compilable C#');
     const solution = await createSolution(root, 'Partial', [listed, broken]);
 
     // 1. The listing keeps what enumerated, and carries the compiler's reason.
@@ -296,25 +278,14 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
 
     // 2. The Testing view shows the test that listed, and the log says why the
     //    sibling's tests are not beside it.
-    await api.explorerProvider.loadSolution(solution);
-    await drainDiscovery(() => {
-      api.testController.items.replace([]);
-    }, api.testController);
-    await api.testController.activateAndDiscover();
-    await api.testController.whenIdle();
+    await discoverIntoEmptyTree(api, solution);
     assert.deepStrictEqual(
       collectLeafIds(api.testController.items),
       [EXPECTED_ID],
       'the view shows the test that listed',
     );
-    await pollUntilResult(
-      async () => (await fs.promises.readFile(logFilePath(), 'utf8')).split('\n'),
-      (lines) =>
-        lines.some(
-          (line) => line.includes('Test discovery (') && line.includes('BrokenTests.csproj'),
-        ),
-      LSP_RESPONSE_MS,
-      undefined,
+    await loggedLine(
+      (line) => line.includes('Test discovery (') && line.includes('BrokenTests.csproj'),
       'a discovery log line naming the project that failed to build',
     );
   });
