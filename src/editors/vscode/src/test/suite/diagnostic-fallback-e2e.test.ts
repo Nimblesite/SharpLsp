@@ -57,7 +57,7 @@ suite('F# diagnostics from an isolated NuGet fallback folder', () => {
     this.timeout(FIXTURE_BUILD_MS + 6 * LSP_RESPONSE_MS);
     assertFallbackAssets(fixture);
     await assertClosedProblem(fixture.primary, 1);
-    assertNoCompilerErrors(fixture.external.closedUri);
+    await assertNoCompilerErrors(fixture.external.closedUri);
     await vscode.commands.executeCommand('vscode.open', fixture.external.entryUri);
     await assertFallbackTruth(fixture.external, 1);
     await assertFallbackEdit(fixture, false);

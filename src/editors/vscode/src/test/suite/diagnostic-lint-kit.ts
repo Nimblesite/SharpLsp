@@ -165,7 +165,7 @@ export async function assertLintProblems(
   );
   assert.equal(found.length, count);
   for (const item of found) assertLintEditorItem(item, range);
-  assertNoCompilerErrors(fixture.closedUri);
+  await assertNoCompilerErrors(fixture.closedUri);
 }
 
 /** The actual editor preserves the same warning source, severity, range and message. */

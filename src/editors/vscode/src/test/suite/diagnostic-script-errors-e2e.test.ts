@@ -113,7 +113,7 @@ suite('Diagnostic accuracy — F# script reference ownership', () => {
     );
     assertIntegerBinding(hover);
     const report = await firstScriptReport(false);
-    assertNoCompilerErrors(report);
+    await assertNoCompilerErrors(report);
   }
 
   function scriptHoverMatches(items: vscode.Hover[]): boolean {
@@ -131,7 +131,7 @@ suite('Diagnostic accuracy — F# script reference ownership', () => {
     );
   }
 
-  function assertNoCompilerErrors(report: DocumentDiagnosticReport): void {
+  async function assertNoCompilerErrors(report: DocumentDiagnosticReport): Promise<void> {
     assert.equal(report.kind, 'full');
     assert.ok(report.resultId);
     if (report.kind !== 'full') assert.fail('valid script returns full compiler truth');
@@ -139,7 +139,7 @@ suite('Diagnostic accuracy — F# script reference ownership', () => {
       report.items.filter((item) => item.severity === 1),
       [],
     );
-    assertSourceHasNoErrors(script);
+    await assertSourceHasNoErrors(script);
   }
 
   async function assertStep(broken: boolean, reload = false): Promise<void> {

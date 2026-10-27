@@ -113,7 +113,7 @@ async function teardownOwnership(fixture: OwnershipFixture): Promise<void> {
 /** An unselected project contributes no errors until opening its source adopts it. */
 async function assertInitiallyUnselected(fixture: OwnershipFixture): Promise<void> {
   await assertClosedProblem(fixture.primary, 1);
-  assertNoCompilerErrors(fixture.external.closedUri);
+  await assertNoCompilerErrors(fixture.external.closedUri);
   assertFileStillClosed(fixture.primary);
   assertFileStillClosed(fixture.external);
 }
@@ -149,7 +149,7 @@ async function assertOwnershipTruth(fixture: OwnershipFixture, count: number): P
   await assertClosedProblem(fixture.primary, 1);
   assertFileStillClosed(fixture.external);
   assertFileStillClosed(fixture.primary);
-  assertNoCompilerErrors(fixture.external.entryUri);
+  await assertNoCompilerErrors(fixture.external.entryUri);
 }
 
 /** The actual SDK independently validates every on-disk repair and regression. */
