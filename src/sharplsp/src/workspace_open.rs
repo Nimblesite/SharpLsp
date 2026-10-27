@@ -3,6 +3,7 @@
 //! [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
@@ -124,35 +125,35 @@ async fn open_and_follow_up(
     true
 }
 
+/// The workspace a sidecar last opened. Each sidecar keeps its own: the C#
+/// sidecar opens the configured solution while the F# sidecar opens the root,
+/// so a reload reopens what each one opened, never another's selection.
+/// [DIAG-LSP-REFRESH] [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]
+#[derive(Default)]
+pub(crate) struct OpenedWorkspace {
+    /// The solution, project, folder or file the last open sent.
+    pub(crate) target: Option<String>,
+    /// When the last open completed: restore outputs written before it were
+    /// consumed by that open's own restore. [DIAG-RESTORE]
+    pub(crate) settled: Option<SystemTime>,
+}
+
 /// Open the workspace in a sidecar, serialized against every other open of
-/// this sidecar so the last selection always wins ([DIAG-LSP-REFRESH], #494).
+/// this sidecar so the last one always wins ([DIAG-LSP-REFRESH], #494).
 pub(crate) async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
-    let _guard = sidecar.lock_workspace_open().await;
-    open_workspace_locked(sidecar, root, true).await
+    let mut opened = sidecar.lock_workspace().await;
+    open_workspace_locked(sidecar, &mut opened, root, true).await
 }
 
-/// Open the currently selected workspace in a sidecar, re-reading the selection
-/// under the same lock every open is serialized by. A watched-file reload that
-/// began before a solution switch therefore re-opens the NEW selection once the
-/// switch's open has landed, instead of the superseded one ([DIAG-LSP-REFRESH], #494).
-pub(crate) async fn open_selected_workspace(
+/// Open `target` while the caller holds the sidecar's workspace, recording it
+/// as the workspace this sidecar opened and, once loaded, when.
+pub(crate) async fn open_workspace_locked(
     sidecar: &SidecarManager,
+    opened: &mut OpenedWorkspace,
+    target: &str,
     restore_stale_inputs: bool,
 ) -> Result<()> {
-    let _guard = sidecar.lock_workspace_open().await;
-    let Some(workspace) = crate::pull_diagnostics::state::workspace()? else {
-        return Ok(());
-    };
-    open_workspace_locked(sidecar, &workspace, restore_stale_inputs).await
-}
-
-/// [`open_workspace`] and [`open_selected_workspace`] both hold the sidecar's
-/// workspace-open lock while they run this body.
-async fn open_workspace_locked(
-    sidecar: &SidecarManager,
-    root: &str,
-    restore_stale_inputs: bool,
-) -> Result<()> {
+    opened.target = Some(target.to_owned());
     let config = crate::pull_diagnostics::state::configuration()?;
     configure_diagnostics(
         sidecar,
@@ -160,8 +161,9 @@ async fn open_workspace_locked(
         restore_stale_inputs && config.auto_restore_on_open,
     )
     .await?;
-    let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
+    let payload = rmp_serde::to_vec(target).context("serialize workspace path")?;
     let _ = sidecar.request("workspace/open", payload).await?;
+    opened.settled = Some(SystemTime::now());
     info!("Workspace opened in {} sidecar", sidecar.name());
     Ok(())
 }
@@ -283,6 +285,13 @@ impl SolutionChoice {
         let Some((target, config)) = self.moved(configuration) else {
             return;
         };
+        // The same transition `sharplsp/loadSolution` makes: watchers, relative
+        // project filters and pulls follow the chosen solution. [DIAG-LSP-REFRESH]
+        if let Err(error) =
+            crate::pull_diagnostics::state::select_workspace(&target.to_string_lossy())
+        {
+            warn!(%error, "Chosen solution not recorded for diagnostics");
+        }
         let follow_up = OpenFollowUp::new(&config, vfs, Some(&self.client), self.report());
         start_sidecar(Some(sidecar), Some(&target), follow_up, runtime);
     }

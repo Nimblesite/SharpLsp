@@ -221,7 +221,7 @@ impl SidecarManager {
     }
 
     /// Clone only open inputs owned by this language engine for this replay.
-    fn overlay_snapshot(
+    pub(crate) fn overlay_snapshot(
         &self,
         vfs: &Vfs,
         scope: Option<&HashSet<String>>,

@@ -1,6 +1,8 @@
 //! Sync closed-source disk edits before refreshing compiler truth. [DIAG-LSP-REFRESH]
 
+use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
+use std::time::SystemTime;
 
 use anyhow::Result;
 use lsp_server::Message;
@@ -45,6 +47,9 @@ pub fn watched(
 ) -> Result<()> {
     let rescan = needs_rescan(&params);
     let params: DidChangeWatchedFilesParams = serde_json::from_value(params)?;
+    for change in &params.changes {
+        tracing::debug!(uri = change.uri.as_str(), typ = ?change.typ, "Watched diagnostic input");
+    }
     // Supersede pending diagnostic work before the reload is forwarded
     // ([DIAG-LSP-REFRESH]), then hand the reload itself to the background
     // worker so request handling is never blocked by a compiler-workspace load.
@@ -111,7 +116,10 @@ async fn reload_loop(
     }
 }
 
-/// One reload pass: reload the graph when owed, then sync closed-file disk text.
+/// One reload pass: reload the graph when owed and sync closed-file disk text,
+/// then retire the identities pulls minted while the compiler held the old
+/// inputs. A pull can reach the compiler between the watched event and this
+/// mutation and memoize pre-change text. [DIAG-LSP-REFRESH] [DIAG-TRUTH-GUARANTEES]
 async fn apply_batch(
     batch: &ReloadBatch,
     sidecars: [Option<&Arc<SidecarManager>>; 2],
@@ -123,39 +131,64 @@ async fn apply_batch(
         rescan = batch.rescan,
         "Diagnostic inputs changed"
     );
-    if batch.rescan || requires_reload(&batch.changes, sidecars).await? {
+    let reloaded = batch.rescan || requires_reload(&batch.changes, sidecars).await?;
+    if reloaded {
         reload(sidecars, vfs, batch.restore).await?;
     }
-    for change in &batch.changes {
-        if change.typ == FileChangeType::DELETED {
-            continue;
-        }
-        let path = paths::uri_to_path(change.uri.as_str())?;
-        if vfs.get_content_for_path_canonical(&path).is_some() {
-            continue;
-        }
-        if paths::is_diagnostic_source(&path) {
-            update_source(&change.uri, &path, sidecars).await?;
-        }
+    let synced = sync_closed_sources(&batch.changes, sidecars, vfs).await?;
+    republish_solution(sidecars, vfs, sender)?;
+    if reloaded || synced {
+        super::state::invalidate()?;
     }
-    if !super::state::is_pull() {
-        let config = super::state::configuration()?;
-        if config.solution_wide_analysis {
-            for sidecar in sidecars.into_iter().flatten() {
-                crate::diagnostics::request_solution_in_background(
-                    Arc::clone(sidecar),
-                    sender.clone(),
-                    config.project_filter.clone(),
-                    Arc::clone(vfs),
-                );
-            }
-        }
-    }
-    super::state::refresh()
+    Ok(())
 }
 
-/// Restore outputs are consumed by this reload; only other inputs can request another restore.
-/// [DIAG-RESTORE] [DIAG-LSP-REFRESH]
+/// Hand the compiler the disk text of every touched source no editor holds
+/// open; whether any was handed over.
+async fn sync_closed_sources(
+    changes: &[FileEvent],
+    sidecars: [Option<&Arc<SidecarManager>>; 2],
+    vfs: &Vfs,
+) -> Result<bool> {
+    let mut synced = false;
+    for change in changes
+        .iter()
+        .filter(|change| change.typ != FileChangeType::DELETED)
+    {
+        let path = paths::uri_to_path(change.uri.as_str())?;
+        if vfs.get_content_for_path_canonical(&path).is_none() && paths::is_diagnostic_source(&path)
+        {
+            update_source(&change.uri, &path, sidecars).await?;
+            synced = true;
+        }
+    }
+    Ok(synced)
+}
+
+/// Push clients receive the solution-wide republish a pull refresh stands in for.
+fn republish_solution(
+    sidecars: [Option<&Arc<SidecarManager>>; 2],
+    vfs: &Arc<Vfs>,
+    sender: &crossbeam_channel::Sender<Message>,
+) -> Result<()> {
+    let config = super::state::configuration()?;
+    if super::state::is_pull() || !config.solution_wide_analysis {
+        return Ok(());
+    }
+    for sidecar in sidecars.into_iter().flatten() {
+        crate::diagnostics::request_solution_in_background(
+            Arc::clone(sidecar),
+            sender.clone(),
+            config.project_filter.clone(),
+            Arc::clone(vfs),
+        );
+    }
+    Ok(())
+}
+
+/// Restore outputs are consumed by this reload; only other inputs can request
+/// another restore. A restore after outputs were rewritten or removed rewrites
+/// them again and feeds the next batch. [DIAG-RESTORE] [DIAG-LSP-REFRESH]
 fn restore_required(rescan: bool, changes: &[FileEvent]) -> Result<bool> {
     changes.iter().try_fold(rescan, |required, change| {
         let path = paths::uri_to_path(change.uri.as_str())?;
@@ -171,25 +204,79 @@ pub fn needs_rescan(params: &serde_json::Value) -> bool {
         == Some(true)
 }
 
-/// Source additions/deletions and metadata edits alter the loaded compiler snapshot.
+/// What a batch's touched paths owe the loaded compiler graph.
+#[derive(Default)]
+struct Owed {
+    /// Metadata changed, or a source was added or removed: the graph reloads.
+    reload: bool,
+    /// Sources edited in place reload only when the compiler does not know them.
+    sources: Vec<String>,
+    /// Restore outputs reload only when written, or removed, after the latest open.
+    outputs: Vec<String>,
+}
+
+/// Sort a batch's touched paths by what each owes the compiler.
+fn owed(changes: &[FileEvent]) -> Result<Owed> {
+    changes
+        .iter()
+        .try_fold(Owed::default(), |mut owed, change| {
+            let path = paths::uri_to_path(change.uri.as_str())?;
+            let source = paths::is_user_diagnostic_source(&path);
+            if paths::diagnostic_restore_output(&path) {
+                owed.outputs.push(path);
+            } else if paths::diagnostic_requires_reload(&path)
+                || (source && change.typ != FileChangeType::CHANGED)
+            {
+                owed.reload = true;
+            } else if source {
+                owed.sources.push(path);
+            }
+            Ok(owed)
+        })
+}
+
+/// Source additions/deletions, metadata edits and later restores alter the
+/// loaded compiler snapshot.
 async fn requires_reload(
     changes: &[FileEvent],
     sidecars: [Option<&Arc<SidecarManager>>; 2],
 ) -> Result<bool> {
-    let mut sources = Vec::new();
-    for change in changes {
-        let path = paths::uri_to_path(change.uri.as_str())?;
-        let source = paths::is_user_diagnostic_source(&path);
-        if paths::diagnostic_requires_reload(&path)
-            || (change.typ != FileChangeType::CHANGED && source)
-        {
-            return Ok(true);
-        }
-        if source {
-            sources.push(path);
-        }
+    let owed = owed(changes)?;
+    Ok(owed.reload
+        || restored_since_open(&owed.outputs, sidecars).await
+        || unknown_sources(&owed.sources, sidecars).await?)
+}
+
+/// Restore outputs a compiler's own open wrote were consumed by that open; only
+/// those written after the latest open, by an external restore, change its
+/// inputs. [DIAG-RESTORE] [DIAG-LSP-REFRESH]
+async fn restored_since_open(
+    outputs: &[String],
+    sidecars: [Option<&Arc<SidecarManager>>; 2],
+) -> bool {
+    if outputs.is_empty() {
+        return false;
     }
-    unknown_sources(&sources, sidecars).await
+    let settled = last_settled(sidecars).await;
+    outputs.iter().any(|output| written_after(output, settled))
+}
+
+/// When the latest compiler open completed, waiting out one still running.
+async fn last_settled(sidecars: [Option<&Arc<SidecarManager>>; 2]) -> Option<SystemTime> {
+    let mut latest = None;
+    for sidecar in sidecars.into_iter().flatten() {
+        latest = latest.max(sidecar.lock_workspace().await.settled);
+    }
+    latest
+}
+
+/// Whether `path` changed after `settled`; an unreadable time counts as changed.
+fn written_after(path: &str, settled: Option<SystemTime>) -> bool {
+    let modified = std::fs::metadata(path).and_then(|metadata| metadata.modified());
+    match (modified, settled) {
+        (Ok(modified), Some(settled)) => modified > settled,
+        _ => true,
+    }
 }
 
 /// Coarse native events also include creations; compare current compiler inputs once per batch.
@@ -208,25 +295,45 @@ async fn unknown_sources(
     }))
 }
 
-/// Reload compiler inputs, then replay live overlays before any diagnostic pull runs.
+/// Reload compiler inputs: each compiler reopens the workspace it last opened.
 async fn reload(
     sidecars: [Option<&Arc<SidecarManager>>; 2],
     vfs: &Vfs,
     restore: bool,
 ) -> Result<()> {
     for sidecar in sidecars.into_iter().flatten() {
-        crate::workspace_open::open_selected_workspace(sidecar, restore).await?;
-    }
-    let [csharp, fsharp] = sidecars;
-    for document in vfs.iter() {
-        let path = paths::uri_to_path(document.key().as_str())?;
-        let sidecar = match crate::tree_sitter_parse::LangId::from_uri(document.key()) {
-            Some(crate::tree_sitter_parse::LangId::FSharp) => fsharp,
-            _ => csharp,
-        };
-        crate::semantic::notify_did_change_async(&path, &document.content, sidecar).await;
+        reopen(sidecar, vfs, restore).await?;
     }
     Ok(())
+}
+
+/// Reopen a compiler's workspace under the lock every open holds, so no
+/// solution switch slips between the graph captured here and the reopen. The
+/// open replays the new graph's buffers; the buffers the previous graph owned
+/// replay after it, so an owner adopted for an open file survives the reload
+/// and a document an explicit selection excluded is never handed back to owner
+/// adoption. [DIAG-TRUTH-RECOVERY] [DIAG-LSP-REFRESH]
+async fn reopen(sidecar: &SidecarManager, vfs: &Vfs, restore: bool) -> Result<()> {
+    let mut opened = sidecar.lock_workspace().await;
+    let Some(target) = opened.target.clone() else {
+        return Ok(());
+    };
+    let owned = graph(sidecar).await?;
+    crate::workspace_open::open_workspace_locked(sidecar, &mut opened, &target, restore).await?;
+    for overlay in sidecar.overlay_snapshot(vfs, Some(&owned)) {
+        let payload = rmp_serde::to_vec(&overlay)?;
+        let _response = sidecar.request("textDocument/didChange", payload).await?;
+    }
+    Ok(())
+}
+
+/// The comparison keys of every input the compiler's loaded graph holds.
+async fn graph(sidecar: &SidecarManager) -> Result<HashSet<String>> {
+    Ok(super::engine_documents(sidecar)
+        .await?
+        .iter()
+        .map(|document| paths::comparison_key(&document.file_path))
+        .collect())
 }
 
 /// Complete the actual compiler mutation before dependent pulls are invalidated.
@@ -262,3 +369,7 @@ async fn update_source(
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "changes_tests.rs"]
+mod tests;

@@ -55,10 +55,10 @@ pub struct SidecarManager {
     child: Mutex<Option<Child>>,
     /// The IPC transport.
     transport: Mutex<Option<FramedTransport>>,
-    /// Serializes `workspace/open` per sidecar so a watched-file reload and a
-    /// solution switch cannot interleave their opens, and a reload can re-read
-    /// the selection under it before opening ([DIAG-LSP-REFRESH], #494).
-    workspace_open: Mutex<()>,
+    /// The workspace this sidecar last opened. Every `workspace/open` holds it,
+    /// so a watched-file reload and a solution switch cannot interleave their
+    /// opens and a reload reopens the last one ([DIAG-LSP-REFRESH], #494).
+    workspace: Mutex<crate::workspace_open::OpenedWorkspace>,
     /// Monotonic request ID.
     // TODO [SIDECAR-IPC-CORRELATION]: validate every response ID before accepting it.
     next_id: AtomicU32,
@@ -111,7 +111,7 @@ impl SidecarManager {
             socket_path: socket_path.to_string(),
             child: Mutex::new(None),
             transport: Mutex::new(None),
-            workspace_open: Mutex::new(()),
+            workspace: Mutex::default(),
             next_id: AtomicU32::new(1),
             backoff: Mutex::new(INITIAL_BACKOFF),
             spawn_retry_after: Mutex::new(None),
@@ -153,11 +153,13 @@ impl SidecarManager {
         self.shutting_down.load(Ordering::Acquire)
     }
 
-    /// Serialize this sidecar's workspace opens. Held across the whole
-    /// `workspace/open` so a reload and a switch can never interleave; the
-    /// reload re-reads the selection under it ([DIAG-LSP-REFRESH], #494).
-    pub(crate) async fn lock_workspace_open(&self) -> tokio::sync::MutexGuard<'_, ()> {
-        self.workspace_open.lock().await
+    /// The workspace this sidecar last opened, held across a whole
+    /// `workspace/open` so a reload and a switch can never interleave
+    /// ([DIAG-LSP-REFRESH], #494).
+    pub(crate) async fn lock_workspace(
+        &self,
+    ) -> tokio::sync::MutexGuard<'_, crate::workspace_open::OpenedWorkspace> {
+        self.workspace.lock().await
     }
 
     /// Create a manager for the C# sidecar.
@@ -494,6 +496,17 @@ impl SidecarManager {
     pub(crate) async fn connected_to_stream_for_tests(stream: tokio::io::DuplexStream) -> Self {
         let manager = Self::new("test", "unused-command", vec![], "unused-endpoint");
         *manager.transport.lock().await = Some(FramedTransport::from_stream(stream));
+        manager
+    }
+
+    /// Test-only: [`Self::connected_to_stream_for_tests`] as one language's
+    /// compiler, so open buffers route to it the way they route to a real one.
+    pub(crate) async fn compiler_on_stream_for_tests(
+        stream: tokio::io::DuplexStream,
+        language: crate::tree_sitter_parse::LangId,
+    ) -> Self {
+        let mut manager = Self::connected_to_stream_for_tests(stream).await;
+        manager.language = Some(language);
         manager
     }
 }
