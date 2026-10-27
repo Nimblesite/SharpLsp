@@ -112,7 +112,7 @@ Each item is sized to one focused change with e2e + sidecar tests.
    `[ANALYZERS-FSAC-SIMPLIFY-NAME]` (`SLSPF0103`) + fix `[ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]`.
 6. ~~**Interface-implementation stub** code action~~ — ✅ **done** `[ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]`: FCS
    `InterfaceStubGenerator` ("Implement interface"), completing the union/record/interface stub trio
-   ([FSharpCodeActions.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`).
+   ([FSharpInterfaceStubs.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpInterfaceStubs.fs) `tryGenerateInterfaceStub`).
 7. **Fantomas formatting** — un-sequester: route `textDocument/formatting` + `rangeFormatting` to the F# sidecar.
 8. ~~**Compiler-error typo fix** ("did you mean") + **add `new` for IDisposable**~~ — ✅ **done**
    `[ANALYZERS-FSAC-CODEFIX-TYPO]` / `[ANALYZERS-FSAC-CODEFIX-ADD-NEW]`

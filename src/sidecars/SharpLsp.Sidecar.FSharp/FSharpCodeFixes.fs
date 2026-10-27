@@ -185,7 +185,7 @@ let private interfaceActions
     line character =
     async {
         let! generated =
-            FSharpCodeActions.tryGenerateInterfaceStub
+            FSharpInterfaceStubs.tryGenerateInterfaceStub
                 checkResults parseResults source filePath line character
         return generated |> Option.map (wrapGeneratedAction state >> List.singleton) |> Option.defaultValue []
     }
