@@ -40,7 +40,7 @@ import {
   findProjectFile,
   generateFileContent,
 } from '../../scaffolding.js';
-import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 const CMD_NEW_FILE = 'sharplsp.newFile';
 const CMD_NEW_PROJECT = 'sharplsp.newProject';
@@ -293,7 +293,9 @@ suite('Scaffolding E2E (drive real commands)', () => {
     await pollUntilResult(
       async () => compileIncludes(trapPath),
       (includes) => includes.includes(`${name}.cs`),
-      COMMAND_MS,
+      // The edit queues in the C# compiler behind its reload of the folder the
+      // new file landed in: a project load, not a workbench command.
+      SIDECAR_COLD_MS,
       100,
       'the new file in the trap project',
     );

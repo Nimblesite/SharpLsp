@@ -10,7 +10,14 @@
 import * as vscode from 'vscode';
 import { CMD_REFRESH_EXPLORER } from './constants.js';
 import { info } from './log.js';
-import { directoryOf, fileNameOf, hasExtension, isWithin, joinPath, relativePath } from './paths';
+import {
+  directoryOf,
+  fileNameOf,
+  hasExtension,
+  isWithin,
+  joinPath,
+  portableRelativePath,
+} from './paths';
 import * as state from './state.js';
 import { getErrorMessage } from './utils.js';
 
@@ -58,7 +65,7 @@ export async function insertCompileItem(
 
 /** The project-relative Compile include for a source file. */
 export function compileIncludeOf(projectPath: string, filePath: string): string {
-  return relativePath(directoryOf(projectPath), filePath);
+  return portableRelativePath(directoryOf(projectPath), filePath);
 }
 
 /**

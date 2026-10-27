@@ -590,6 +590,8 @@ the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
 - Inserts `<Compile Include="…" />` before the anchor (`before`), after it
   (`after`), or — `default` — **before the project's LAST Compile item**, so an
   F# entry point stays last.
+- The extension spells `include` relative to the project directory with `/`
+  separators on every OS, so a project shared across platforms reads the same.
 - A no-op when the include already exists (separator-spelling-insensitive
   match) — the file is left byte-identical.
 - A no-op when the project declares no explicit Compile items (glob-managed):
