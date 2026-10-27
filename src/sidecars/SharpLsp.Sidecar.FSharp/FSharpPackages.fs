@@ -60,7 +60,7 @@ let getReferenceUsage
             | None -> return emptyUsage
             | Some(root, assemblies) when List.isEmpty assemblies -> return { emptyUsage with Root = root }
             | Some(root, assemblies) ->
-                let options = FSharpWorkspace.buildProjectOptions state fsprojPath
+                let! options = FSharpWorkspace.buildProjectOptions state fsprojPath System.Threading.CancellationToken.None
                 let! results = state.Checker.ParseAndCheckProject(options)
                 let allUses = results.GetAllUsesOfAllSymbols()
 

@@ -14,7 +14,8 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 # Workflow
 
 - **Sub agents are illegal.** Delegate by spawning `pi` sessions — you are responsible for their output
-- **Plans (`docs/plans/`) are the backlog.** Work toward checking off their items; delete a plan once it is complete
+- **Plans (`docs/plans/`) are the backlog and GitHub issues is for problem tracking.** Work toward checking off their items; delete a plan once it is complete
+- **Closing a GitHub issue requires testing a released, published version** No closing issues as you fix the bug
 - ⛔️ **Never attribute a commit to yourself**: no `Co-Authored-By`, no agent name. *Never overridable*
 - **Coordinate with other agents** through Too Many Cooks or built-in messaging: lock the files you edit, and never edit a file another agent has locked
 - **Never kill VS Code processes** — desktop or browser. They belong to the user
@@ -28,6 +29,7 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 - **No SharpLsp code is "legacy".** Code that doesn't match the specs is deleted, never copied — move files, don't duplicate them
 - **All screens must be 100% reactive** to data changes. Manage state with Signals in the VSIX and other extensions
 - **Zero code duplication.** Run Deslop (see *Duplication*) before adding code and after editing
+- **Minimize GitHub spend** Check that action usage isn't unnecessarily spending money
 - **Paths are handled in *one* place per tier** — [SHARPLSP-ARCHITECTURE-PATHS]. Every path-string operation
   (normalise, compare, key, case rule, resolve, split, extension test, URI conversion) lives only in that
   tier's path module: `SharpLsp.Sidecar.Common.NativePaths` (sidecars), `src/sharplsp/src/paths.rs` (host),
@@ -64,9 +66,8 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 
 - Run clippy and fmt routinely; fix violations immediately
 - All lints at highest strictness (Cargo.toml `[lints]`)
-- **`unsafe` is forbidden** (`unsafe_code = "deny"`)
-- **`unwrap()` is always a violation** — use `?` with proper error types
-- **No `panic!`, `todo!`, `unimplemented!`** — return `Result<T,E>`
+- **`unsafe`, `unwrap()` is forbidden** (`unsafe_code = "deny"`)
+- **No `panic!`, `todo!`, `unimplemented!`** — return `Result<T,E>` and use `?`
 
 ## .NET Sidecar Quality Standards
 
@@ -106,7 +107,7 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 
 # Git
 
-> ⛔️ **Don't make git changes like creating new branches** unless the user asks or a skill demands it.
+> ⛔️ **Don't make git changes like creating new branches or worktrees** unless the user asks or a skill demands it.
 - Commit and push to submodules before commiting and pushing the feature branch
 - Commit and push after each major change
 - **One feature branch**, never `git worktree`. Work the open one; several open → merge them immediately

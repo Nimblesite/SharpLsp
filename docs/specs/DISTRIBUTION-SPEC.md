@@ -850,6 +850,11 @@ build workflow and download immutable artifacts from that same run/commit.
   restore NuGet metadata to rebase machine-local package paths, but not compile.
   A feature test which deliberately builds/edits a user's fixture project still
   exercises that operation; this is not permission to rebuild the LSP or harness.
+- The tooling consumer downloads the source builder compiled by the normal
+  FSharpLint project reference and its genuine pinned upstream archive. It runs
+  that CLI without building or publishing it. Public CLI assertions verify hash
+  rejection before extraction, AST-rewrite results, provenance, fingerprint
+  tamper recovery and byte/timestamp preservation on a verified no-op.
 - Each suite has exactly one shard owner per platform. Platform coverage remains
   intentional (Linux and Windows are distinct environments); shared executable
   suites, automatic retries and full-suite reruns after sharding are forbidden.
@@ -913,7 +918,7 @@ repository default never reaches a job that does not need it.
 
 ### [DIST-CI-AUDIT] Dependency Vulnerability Gate
 
-`make audit` MUST scan both Cargo lockfiles (host and Zed), the sidecar NuGet solution including transitive packages, and both npm lockfiles (VS Code and website) against current advisory databases. Rust vulnerability findings fail the gate; NuGet and npm fail at moderate or higher by default, including every high/critical finding. Lower-severity findings remain visible. Scanner or restore failures MUST fail, not count as a clean result.
+`make audit` MUST scan the host, Zed and shared lspkit Cargo lockfiles, the sidecar NuGet solution and profiler engine including transitive packages, and all shipping/development npm lockfiles (VS Code, website, video tooling, lspkit debug and profiler UI) against current advisory databases. Rust vulnerability findings fail the gate; NuGet and npm fail at moderate or higher by default, including every high/critical finding. Lower-severity findings remain visible. Scanner or restore failures MUST fail, not count as a clean result.
 
 CI and tagged releases MUST call the same reusable `ci-audit.yml` workflow. The final CI job MUST include `audit` in its dependencies and fail on its failure/cancellation. GitHub Release creation MUST depend on a successful audit of the tagged revision, and Marketplace/Open VSX publishing MUST depend on that release. No `continue-on-error` or publish bypass is permitted. New advisories require a fresh release-time scan even when the PR previously passed.
 
@@ -1067,6 +1072,7 @@ Invariants:
 - **Same tests, same serialization.** A shard changes only *which* slice of the suite runs, never how: `--no-fail-fast` and the `--test-threads` serialization apply to every shard. Sharding MUST NOT skip, filter, or reorder tests beyond the partition itself.
 - **One gate, over the union.** Each shard exports lcov (`target/coverage-rust-shard<n>.lcov`). No shard can meet the line threshold alone, so no shard runs the coverage gate; the `Rust` job of `ci-coverage.yml` union-merges the tracefiles (`make _gate-rust-coverage`, `tools/coverage/merge-lcov.mjs`) and enforces the identical `tools/coverage/check-coverage.mjs` ratchet a single-job run enforces. Every shard tracefile carries the full instrumented line set (unexecuted lines as `DA:<line>,0`), so the union reproduces exactly the line percentage of an unsharded run.
 - **Local runs stay unsharded.** `make test` / `make _test-rust` remain the single-invocation JSON + inline-gate path; sharding is a CI wall-clock concern only.
+- **A failing shard keeps its sidecar logs.** The e2e sidecars log beneath the temp folder (`/tmp/sharplsp-logs` on the Ubuntu runner); a failed shard uploads them (`rust-sidecar-logs-shard-<n>`, three-day retention), so a compiler failure only CI shows is diagnosed from its logs.
 - **Version contract is its own job.** The `--version` contract checks ([DIST-VERSION-OUTPUT]) run in the `version-contract` job against the PHASE 2 release binary: the release profile shares nothing with the instrumented test build, so bundling it into a test job serializes it onto the critical path for zero reuse.
 
 ## [DIST-CI-WIN-TRANSPORT] Windows Sidecar Transport
@@ -1081,9 +1087,11 @@ The .NET sidecars are platform-neutral assemblies shipped identically in every V
 
 Both listener flavors MUST restrict the endpoint to the current user: `0600` on the Unix domain socket, `PipeOptions.CurrentUserOnly` on the named pipe server. Endpoint names MUST also be unpredictable and unique per spawn per [SIDECAR-STARTUP-ENDPOINT](SIDECAR-LIFECYCLE-SPEC.md), preventing concurrent hosts or an orphaned prior generation from intentionally sharing a name. Current-user restriction remains mandatory defense in depth. CI MUST run the sidecar transport tests on a Windows runner (`ci-test-dotnet.yml`, `make _test-dotnet-win-transport`) — an Ubuntu-only matrix never executes the named-pipe arm, which is how GitHub #110 shipped.
 
+The same Windows target MUST run `FSharpScriptCancellationEndToEndTests` against actual named-pipe IPC and a native NTFS oplock. Cancelling active and queued script diagnostics must preserve current errors and repairs before obsolete disk I/O is released. These platform-dependent cases exercise Windows source-open behavior that the Unix FIFO cases cannot cover.
+
 ## [DIST-CI-WIN-VSIX] Windows VS Code End-to-End Tests
 
-CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-test-vsix-windows.yml` and `_test-vsix-shard` (the same target the Ubuntu leg runs): the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
+CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-test-vsix-windows.yml` and `_test-vsix-shard` (the same target the Ubuntu leg runs): the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers transport, NTFS compiler cancellation and project-save sharing, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
 
 The suite is sliced into **feature chunks**, one CI job each on BOTH platform legs, run with `fail-fast: false` so one failing feature area never hides the state of the others. A chunk is a GROUP of related feature areas, not a single one. `src/editors/vscode/test-chunks.json` is the single declaration of the chunks and of what each covers; a chunk marked `linuxOnly` is absent from the Windows matrix, and one marked `windowsOnly` from the Ubuntu matrix.
 
@@ -1104,7 +1112,7 @@ The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `
 
 ## [DIST-CI-VSIX-SHARDS] VS Code Suite Shards
 
-One runner, `make _test-vsix-shard CHUNK=<name>`, drives every slice of the VS Code end-to-end suite on every platform, always instrumented for coverage. The chunks are declared once, in `src/editors/vscode/test-chunks.json`, and the Ubuntu and Windows matrices both expand from it. Every shard uploads its extension-host logs (`vsix-logs-<platform>-<chunk>`) on every outcome, with the DAP trace enabled, so a green shard carries the evidence of WHICH path passed it — a fallback that fired leaves its line in those logs and nowhere else.
+One runner, `make _test-vsix-shard CHUNK=<name>`, drives every slice of the VS Code end-to-end suite on every platform, always instrumented for coverage. The chunks are declared once, in `src/editors/vscode/test-chunks.json`, and the Ubuntu and Windows matrices both expand from it. Every shard uploads its extension-host logs (`vsix-logs-<platform>-<chunk>`) on every outcome, with the DAP trace enabled, so a green shard carries the evidence of WHICH path passed it — a fallback that fired leaves its line in those logs and nowhere else. The same artifact carries the server's and both sidecars' own logs (`sharplsp-logs`, copied from the system temp folder), so a compiler request that stops answering is diagnosed from the compiler's side too.
 
 The Ubuntu leg MUST fan out over the same feature chunks the Windows leg uses
 ([DIST-CI-WIN-VSIX]), one chunk per job, and MUST NOT run the suite as a single

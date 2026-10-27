@@ -208,6 +208,23 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
         }
 
         public class Bare { }
+
+        public static class NullableFlow
+        {
+            public static async System.Threading.Tasks.Task Use(bool missing)
+            {
+                string? name = missing ? null : "value";
+                _ = name;
+                name = "value";
+                _ = name;
+                var nested = new System.Collections.Generic.List<string?>();
+                _ = nested;
+                var tasks = System.Linq.Enumerable.Select(System.Array.Empty<int>(), _ => System.Threading.Tasks.Task.FromResult<(System.Collections.Generic.List<Person>?, System.Exception?)>((null, null)));
+                var results = await System.Threading.Tasks.Task.WhenAll(tasks);
+                _ = results;
+                _ = tasks;
+            }
+        }
         """;
 
     private static readonly Lock MsBuildRegistrationLock = new();
@@ -642,10 +659,21 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task AllDiagnostics_returns_results()
     {
-        await fixture.SendAndAssertOkAsync(
-            "workspace/diagnostics/all",
-            new SolutionDiagnosticsRequest { ProjectFilter = [] }
+        var documents = await fixture.SendAndDeserializeAsync<DiagnosticDocument[]>(
+            "workspace/diagnostics/documents",
+            []
         );
+        Assert.Contains(
+            documents,
+            document => NativePaths.AreEqual(document.FilePath, fixture.SourceFile)
+        );
+        foreach (var document in documents)
+        {
+            await fixture.SendAndAssertOkAsync(
+                "workspace/diagnostics",
+                MessagePackSerializer.Serialize(document.FilePath)
+            );
+        }
     }
 
     [Fact]

@@ -25,6 +25,10 @@ internal sealed record RazorProjection(
     /// <summary>The Razor file's path, which its projection's checksum names, so never null.</summary>
     public string RazorPath => Razor.FilePath!;
 
+    /// <summary>The component or view class the compiler generated for this file.</summary>
+    public ClassDeclarationSyntax? FileClass =>
+        GeneratedRoot.DescendantNodes().OfType<ClassDeclarationSyntax>().FirstOrDefault();
+
     /// <summary>The projection of <paramref name="razor"/>, or null when its project generates none.</summary>
     public static async Task<RazorProjection?> ForRazorAsync(
         TextDocument razor,

@@ -111,7 +111,7 @@ let private openSolution () =
         let app = writeProject root "App" "fsproj" both "App.fs" appSource [ NativePaths.Join("..", "Core", "Core.csproj") ] []
         restore (NativePaths.Resolve(root, "App", "App.fsproj"))
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state root
+        let! loaded = FSharpWorkspaceLoading.loadProject state root
         Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
         return state, root, named, greeter, app
     }
@@ -261,7 +261,7 @@ let ``a C# project MSBuild cannot compile leaves the reference on its DLL, and t
             let app = writeProject root "App" "fsproj" "net10.0" "App.fs" "module App.Main\n\nlet value = Bad.Thing.Value\n" [ NativePaths.Join("..", "Bad", "Bad.csproj") ] []
             restore (NativePaths.Resolve(root, "App", "App.fsproj"))
             let state = FSharpWorkspace.create ()
-            let! loaded = FSharpWorkspace.loadProject state root
+            let! loaded = FSharpWorkspaceLoading.loadProject state root
             Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
 
             // A single-target project that reads C# is still MSBuild's to evaluate.
@@ -342,7 +342,7 @@ let ``a project reading C# in memory still offers the FS0001 conversion`` () =
             let app = writeProject root "App" "fsproj" "net10.0" "App.fs" source [ NativePaths.Join("..", "Lib", "Lib.csproj") ] []
             restore (NativePaths.Resolve(root, "App", "App.fsproj"))
             let state = FSharpWorkspace.create ()
-            let! loaded = FSharpWorkspace.loadProject state root
+            let! loaded = FSharpWorkspaceLoading.loadProject state root
             Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
             Assert.Equal(1, state.CSharpBuilds.Count)
 
@@ -405,7 +405,7 @@ let ``a C# project its source generator completes for .NET Framework is read in 
             let shop = writeProject root "Shop" "fsproj" "net48" "Shop.fs" shopSource [ NativePaths.Join("..", "Core", "Core.csproj") ] []
             restore (NativePaths.Resolve(root, "Shop", "Shop.fsproj"))
             let state = FSharpWorkspace.create ()
-            let! loaded = FSharpWorkspace.loadProject state root
+            let! loaded = FSharpWorkspaceLoading.loadProject state root
             Assert.True(Result.isOk loaded, $"the project loads: {loaded}")
 
             let! errors = errorsIn state shop

@@ -23,7 +23,7 @@ let private loaded =
     lazy
         (let dir = createTestProject ()
          let ws = FSharpWorkspace.create ()
-         (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
+         (FSharpWorkspaceLoading.loadProject ws dir).GetAwaiter().GetResult() |> ignore
          (ws, NativePaths.Resolve(dir, "Library.fs")))
 
 let private missing = "/sharplsp/definitely/not/a/real/file.fs"
@@ -343,7 +343,7 @@ let ``getHover reads the didChange overlay instead of on-disk source`` () =
         let dir = createTestProject ()
         try
             let ws = FSharpWorkspace.create ()
-            let! _ = FSharpWorkspace.loadProject ws dir
+            let! _ = FSharpWorkspaceLoading.loadProject ws dir
             let src = NativePaths.Resolve(dir, "Library.fs")
             // Edited buffer: append a binding present only in memory, never on disk.
             let edited =
@@ -424,7 +424,7 @@ let ``analyzeFileOrder flags a forward dependency in a misordered project`` () =
         File.WriteAllText(NativePaths.Resolve(dir, "A.fs"), "module P.A\n\nlet useB = B.value\n")
         File.WriteAllText(NativePaths.Resolve(dir, "B.fs"), "module P.B\n\nlet value = 42\n")
         let ws = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspace.loadProject ws dir
+        let! _ = FSharpWorkspaceLoading.loadProject ws dir
         let! issues = FSharpFileOrder.analyzeFileOrder ws (NativePaths.Resolve(dir, "Order.fsproj"))
         Assert.NotEmpty(issues)
         Assert.All(issues, fun i -> Assert.False(System.String.IsNullOrEmpty i.Message))

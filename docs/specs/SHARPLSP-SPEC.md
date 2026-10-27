@@ -25,6 +25,7 @@ Primary implementations: [main.rs](../../src/sharplsp/src/main.rs), [handlers.rs
 **Tier 1 — Rust LSP Host**
 
 - Owns the LSP connection ([JSON-RPC](https://www.jsonrpc.org/specification) over stdio); answers `shutdown` the moment it arrives, ahead of any request in flight, so an editor's stop timeout never strands a restart
+- Terminates cleanly when client stdin reaches EOF, with or without a preceding `shutdown`; internal input observers cannot keep the session alive
 - Maintains the authoritative Virtual File System (VFS) with document state
 - Runs [tree-sitter](https://tree-sitter.github.io/tree-sitter/) incremental parsing for both C# and F# (sub-millisecond re-parses)
 - Hosts the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database for caching and dependency tracking
@@ -216,9 +217,13 @@ Definition finds the declaration in Roslyn's compilation by the documentation id
 
 When MSBuild cannot report the command line, or Roslyn cannot emit an image at all, the reference stands on its DLL and a warning names the project and the reason. A DLL that does not exist is left for the compiler to report.
 
+A design-time build whose project file is removed while it runs is abandoned at once: its process tree is stopped and the build reports the removal. MSBuild can otherwise wait forever on a project removed under it, and the F# sidecar answers one request at a time, so a test fixture deleted at the end of its suite held every F# request for the full three-minute design-time bound.
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING] F# Files Outside the Loaded Solution
 
 A file no loaded F# project compiles still answers, from the project that owns it (#414). When the editor opens or edits such a `.fs` or `.fsi` file, the F# sidecar looks for its owner: the nearest `.fsproj`, in the file's directory or a parent, whose `<Compile>` items list the file. It loads that project in the background beside the workspace's own, exactly as a solution project loads, with its references prepared. The workspace's projects stay loaded and keep answering.
+
+A valid selected solution without F# projects is an empty language slice, not a reason to disable owning-project discovery. Its first adopted F# owner activates the compiler slice after its references are ready. Publishing the completed owner emits the normal diagnostic refresh, including its unopened sources; the other language's selected projects remain loaded.
 
 The load runs once per owner, however many edits arrive while it runs. It never blocks the edit that started it, because the host forwards edits synchronously. A file with no owner answers as before, from the workspace's first project. The log names the project loaded and the file that needed it, or why it could not load.
 
@@ -233,6 +238,7 @@ The owner loads in the background into the same Roslyn solution:
 Opening a file never restores or builds a project the workspace did not load:
 - An owner with no `obj/project.assets.json` is not loaded. The edit fails with a message naming the owner and `dotnet restore`.
 - A restored owner loads with `$(OutDir)` in the sidecar's scratch folder. A design-time build creates its output folder, and the user's own output folders must stay exactly as they built them ([DEBUG-FEATURES-LAUNCH-BUILD]).
+- A restored owner loads under the path its restore recorded (`project.restore.projectPath` in `obj/project.assets.json`) when that names the same file. One project has several spellings: a link, or a Windows drive letter that editors lowercase (`d:`) while builds and the file system say `D:`. A design-time build under another spelling rewrites `obj` inputs that spell the path, such as `build_property.ProjectDir` in the generated `.editorconfig`, a `CoreCompile` input, so the user's next build recompiled the project.
 
 The edit that started the load is held and applied once the project lands, so hover, completion and navigation answer from the owner. The load runs once per owner and never blocks the edit. A project that is already loaded is never reloaded. The log names the project and the file, or why it could not load.
 
@@ -431,7 +437,7 @@ Tests: `SignatureHelpEndToEndTests` drives the real `WorkspaceManager` over a re
 | Find all references | `textDocument/references` | [SymbolFinder.FindReferencesAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.findusages.symbolfinder.findreferencesasync) | GetUsesOfSymbolInFile/Project() | P0 |
 | Document highlights | `textDocument/documentHighlight` | SymbolFinder (scoped to doc) | GetUsesOfSymbolInFile() | P0 |
 | Workspace symbol search | `workspace/symbol` | tree-sitter over open docs (host) | FCS document symbols via sidecar | P0 |
-| Document symbols | `textDocument/documentSymbol` | tree-sitter structural extraction | tree-sitter structural extraction | P0 |
+| Document symbols | `textDocument/documentSymbol` | tree-sitter structural extraction | FCS parse-tree structural extraction | P0 |
 | Call hierarchy prepare | `textDocument/prepareCallHierarchy` | Symbol resolution | FCS symbol resolution | P1 |
 | Incoming calls | `callHierarchy/incomingCalls` | SymbolFinder.FindCallersAsync() | Project-wide FCS symbol uses | P1 |
 | Outgoing calls | `callHierarchy/outgoingCalls` | Semantic model invocation walk | FCS parse/check traversal | P1 |
@@ -525,6 +531,8 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 **Keyword classes.** A flow-control keyword (`if`, `for`, `while`, `return`, `throw`, …) is a different token from every other keyword (`public`, `class`, `int`), as Visual Studio's "Keyword - Control" classification is. The legend carries a `controlKeyword` type after the standard ones, and the C# sidecar reports Roslyn's `ControlKeyword` classification as it; Roslyn's plain `Keyword` stays `keyword`. The VS Code extension declares `controlKeyword` with super type `keyword` and maps it to the TextMate scope `keyword.control`, so a theme paints it as its own grammar does (and as `keyword` where a theme has no `keyword.control` rule). Plain C# `keyword` tokens map to `keyword.other.cs` through language-scoped semantic mappings for C#, Razor, and aspnetcorerazor: VS Code's generic `keyword` fallback is `keyword.control`, which would otherwise paint declarations and predefined types as control flow. Colors come from the active theme; the extension never assigns RGB values or changes user color settings. FCS classifies symbols, not keywords, so an F# keyword carries no semantic token and the F# grammar's own keyword classes show through. F# module/local values use the standard `variable` category, module functions use `function`, member methods use `method`, property accessors use `property`, constructors use `class`, and operator tokens use `operator`. Symbol spans are recovered through the FCS lexer so a qualified member never recolors its receiver or punctuation.
 
 ### [SHARPLSP-FEATURES-CODE-LENS] Code Lens
+
+Compiler-backed lens requests run outside the foreground protocol loop and share its request cancellation registry. Cancellation reaches the compiler checks across the complete reference-query scope, returns the standard cancellation error, and leaves later diagnostics and reference counts available in the same compiler process. Obsolete requests must not become successful empty lens lists.
 
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|

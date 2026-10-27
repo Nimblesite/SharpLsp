@@ -588,10 +588,9 @@ public class Widget
     client.wait_with_timeout();
 }
 
-// Full-stack: verification pass must read from disk and clear false positives.
+// Full-stack: native input refresh must read disk and clear stale diagnostics.
 // After solution-wide scan detects errors, fix the file ON DISK (no didChange),
-// and the verification pass must re-read disk content, update the sidecar's
-// compilation, and clear the stale errors.
+// then require the next source publication to reflect the actual repair.
 
 #[test]
 fn test_full_stack_verification_clears_stale_errors_from_disk() {
@@ -644,6 +643,9 @@ EndGlobal"#,
     let stale_path = real_root.join("StaleTest").join("Stale.cs");
     let _stale_uri = path_to_file_uri(&stale_path);
 
+    // Prove compiler truth and prepare generated SDK inputs before native watching starts.
+    workspace_diagnostic_support::assert_build(&proj_dir.join("StaleTest.csproj"), Some("CS0246"));
+
     // ── Initialize — sidecar loads the broken compilation ───────
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
@@ -691,14 +693,12 @@ public class Stale
     std::fs::write(&stale_path, fixed_source).unwrap();
     eprintln!("Wrote fixed source to disk (GhostType -> int)");
 
-    // ── Wait for verification pass to publish cleared diagnostics ──
-    // The verification pass runs ~1s after the scan completes and publishes
-    // exactly one more `publishDiagnostics` for Stale.cs. That notification
-    // is the NEXT Stale.cs message after the initial scan error we already
-    // consumed. Read messages until we see it (bounded to avoid blocking).
+    // ── Wait for the native input refresh to publish cleared diagnostics ──
+    // Require the NEXT Stale.cs publication after the initial error, preserving
+    // the strict current-state assertion and its existing bounded message budget.
     let mut verification_result: Option<Vec<serde_json::Value>> = None;
 
-    // Read up to 10 messages — verification fires within ~2s of scan.
+    // Read up to 10 messages without an editor or semantic request to rescue the repair.
     for _ in 0..10 {
         let msg = client.recv();
         if msg["method"].as_str() != Some("textDocument/publishDiagnostics") {
@@ -708,7 +708,7 @@ public class Stale
         if !msg_uri.contains("Stale.cs") {
             continue;
         }
-        // This is the verification pass result for Stale.cs.
+        // This is the native input refresh result for Stale.cs.
         let diags = msg["params"]["diagnostics"].as_array().unwrap().clone();
         eprintln!(
             "Verification notification for Stale.cs: {} diagnostics",
@@ -720,7 +720,7 @@ public class Stale
 
     let diags = verification_result.expect(
         "Must receive a second publishDiagnostics for Stale.cs from \
-         the verification pass (got 10 messages, none for Stale.cs)",
+         the native input refresh (got 10 messages, none for Stale.cs)",
     );
     let still_has_ghost = diags.iter().any(|d| {
         d["message"]
@@ -729,10 +729,10 @@ public class Stale
     });
     assert!(
         !still_has_ghost,
-        "Verification pass must clear stale GhostType error after file \
+        "Native input refresh must clear stale GhostType error after file \
          was fixed on disk, but the error persists ({} diagnostics). \
-         The verification pass must read from disk, send didChange to \
-         update the sidecar compilation, and re-fetch diagnostics. \
+         The native input refresh must read disk, update the sidecar \
+         compilation, and re-fetch diagnostics. \
          SharpLsp does not lie about compilation state. Diagnostics: {diags:?}",
         diags.len(),
     );

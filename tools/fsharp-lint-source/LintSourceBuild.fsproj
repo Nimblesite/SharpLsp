@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>LintSourceBuild</RootNamespace>
+    <AssemblyName>lint-source-build</AssemblyName>
+    <Nullable>enable</Nullable>
+    <WarningLevel>5</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
+    <!-- Normal pinned packages keep the source builder portable across hosts. -->
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SourcePaths.fs" />
+    <Compile Include="Archive.fs" />
+    <Compile Include="Incremental.fs" />
+    <Compile Include="AstRewrite.fs" />
+    <Compile Include="Json.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="10.1.402" />
+    <PackageReference Include="Fantomas.Core" Version="8.0.10" />
+  </ItemGroup>
+
+</Project>

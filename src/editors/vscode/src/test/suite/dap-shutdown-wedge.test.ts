@@ -52,6 +52,11 @@ const BEHAVIOUR = {
   wedge: 'wedge',
   /** Answers, then sends `terminated` as a healthy adapter does. */
   honest: 'honest',
+  /**
+   * Honest about `terminate`, then exits on the client's `disconnect` without
+   * answering it: netcoredbg on Windows once its debuggee has ended.
+   */
+  vanish: 'vanish',
 } as const;
 
 const STUB_NAME = 'WedgedAdapter';
@@ -118,8 +123,10 @@ let main _argv =
         let root = request.RootElement
         if root.GetProperty("type").GetString() = "request" then
             let command = root.GetProperty("command").GetString()
+            // vanish: gone before the disconnect is answered
+            if behaviour = "${BEHAVIOUR.vanish}" && command = "disconnect" then exit 0
             send {| \`\`type\`\` = "response"; seq = 0; request_seq = root.GetProperty("seq").GetInt32(); command = command; success = true; body = {| |} |}
-            if behaviour = "${BEHAVIOUR.honest}" && (command = "terminate" || command = "disconnect") then
+            if behaviour <> "${BEHAVIOUR.wedge}" && (command = "terminate" || command = "disconnect") then
                 send {| \`\`type\`\` = "event"; seq = 0; event = "terminated"; body = {| |} |}
             // wedge: and then nothing — no exited, no terminated, and the process stays up
     0
@@ -273,6 +280,27 @@ suite('An adapter that stops answering the request to stop', () => {
       await new Promise((resolve) => setTimeout(resolve, TEST_DEADLINE_MS * 4));
       eq(driver.events('terminated').length, 1, 'and the deadline, disarmed, added no second one');
       eq(driver.console(), '', 'nothing was said to the user: nothing went wrong');
+    } finally {
+      driver.dispose();
+    }
+  });
+
+  // VS Code replies to `terminated` with `disconnect` and holds the session
+  // until that is answered: a launch made meanwhile found the dead session
+  // still active, and a breakpoint edit reached an adapter that refused it.
+  test('a disconnect the adapter exits on is answered for it', async () => {
+    behave(BEHAVIOUR.vanish);
+    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    try {
+      eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
+      eq((await driver.request('terminate')).success, true, 'terminate is answered');
+      eq((await driver.awaitTerminated()).length, 1, "the adapter's own terminated arrived");
+
+      const reply = await driver.request('disconnect');
+      eq(reply.success, true, 'a gone adapter IS the disconnected state: the router answers');
+      eq(reply.command, 'disconnect', 'the answer is to the disconnect itself');
+      eq(driver.events('terminated').length, 1, 'the end was announced once, not again');
+      eq(driver.console(), '', 'a session that ended cleanly reports no failure');
     } finally {
       driver.dispose();
     }

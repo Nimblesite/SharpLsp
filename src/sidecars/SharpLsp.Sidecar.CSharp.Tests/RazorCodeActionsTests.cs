@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
 using static SharpLsp.Sidecar.CSharp.Tests.TextEditing;
@@ -198,6 +200,63 @@ public sealed class RazorCodeActionsTests : IClassFixture<RazorFixture>
             await ActionsAsync(manager, badge, (0, 0)),
             a => a.Title == "Extract block to code behind"
         );
+    }
+
+    // [RAZOR-CODE-ACTIONS-CODE-BEHIND]: a generic component's partial declarations
+    // must have the same type parameters and constraints, or extraction splits the type.
+    [Fact]
+    public async Task Generic_code_behind_keeps_type_parameters_and_constraints()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+        var text = "@typeparam TItem where TItem : class\n" + await File.ReadAllTextAsync(Counter);
+        _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Counter, text));
+        Assert.Empty(await ErrorsAsync(manager, Counter));
+        var action = Assert.Single(
+            await ActionsAsync(manager, Counter, Find(text, "@code")),
+            a => a.Title == "Extract block to code behind"
+        );
+        var edit = await ResolveAsync(manager, action);
+        var created = edit.DocumentChanges[0];
+        Assert.True(created.Create);
+        var root = await CSharpSyntaxTree
+            .ParseText(Assert.Single(created.Edits).NewText)
+            .GetRootAsync();
+        var declared = Assert.Single(root.DescendantNodes().OfType<ClassDeclarationSyntax>());
+        Assert.NotNull(declared.TypeParameterList);
+        Assert.Equal(
+            "TItem",
+            Assert.Single(declared.TypeParameterList.Parameters).Identifier.ValueText
+        );
+        var constraint = Assert.Single(declared.ConstraintClauses);
+        Assert.Equal("TItem", constraint.Name.Identifier.ValueText);
+        Assert.Equal(SyntaxKind.ClassConstraint, Assert.Single(constraint.Constraints).Kind());
+        _ = Assert.Single(declared.Members.OfType<MethodDeclarationSyntax>());
+        Assert.DoesNotContain(
+            "@code",
+            ApplyEdits(text, edit.DocumentChanges[1].Edits),
+            StringComparison.Ordinal
+        );
+    }
+
+    // [RAZOR-CODE-ACTIONS]: every new request replaces the previous offers, even
+    // when the requested file has no projection and therefore offers nothing.
+    [Fact]
+    public async Task A_new_request_without_a_projection_invalidates_previous_razor_actions()
+    {
+        using var manager = await _fixture.OpenManagerAsync();
+        var text = await File.ReadAllTextAsync(Counter);
+        var at = Find(text, "@code");
+        var action = Assert.Single(await ActionsAsync(manager, Counter, at));
+        Assert.True(action.Id < 0);
+        Assert.Equal(2, (await ResolveAsync(manager, action)).DocumentChanges.Count);
+        var missing = _fixture.Path("BlazorApp", "Components", "Pages", "Ghost.razor");
+        Assert.Empty(await ActionsAsync(manager, missing, (0, 0)));
+        var expired = await manager.ResolveCodeActionAsync(action.Id);
+        Assert.True(expired.IsError, "the previous request's edit must no longer be resolvable");
+        var next = Assert.Single(await ActionsAsync(manager, Counter, at));
+        Assert.True(next.Id < action.Id);
+        Assert.Equal(action.Title, next.Title);
+        Assert.Equal(2, (await ResolveAsync(manager, next)).DocumentChanges.Count);
     }
 
     [Fact]

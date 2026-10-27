@@ -151,7 +151,7 @@ KOVER_PERCENT = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tools/
         _package-vsix-win32-x64 _package-vsix-win32-arm64 \
         _print-publish-commands \
         _stamp-version \
-        _build-rust _build-dotnet _build-dotnet-tests _build-coverage-tools _build-vsix _build-zed _build-rider \
+        _build-rust _build-dotnet _build-dotnet-tests _build-lint-source-tests _build-coverage-tools _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-vsix-binary-only _stage-sidecars \
         _test-rust _prepare-rust-tests _test-rust-shard \
         _test-zed _test-rider \
@@ -282,6 +282,12 @@ _build-profiler-ui:
 _build-dotnet-tests: _lint-dotnet
 	mkdir -p target
 	tar -czf target/dotnet-tests.tar.gz src/sidecars/*/bin src/sidecars/*/obj
+
+# [DIST-CI-ARTIFACT-TESTS] Stage the source builder already compiled by the
+# normal FSharpLint project reference, plus the verified upstream input.
+_build-lint-source-tests: $(if $(DOTNET_TESTS_PREBUILT),,_build-dotnet-tests)
+	$(DOTNET) publish tools/fsharp-lint-source/LintSourceBuild.fsproj --configuration $(DOTNET_CFG) --no-build --no-restore --no-self-contained -o target/lint-source-builder
+	cp third_party/FSharpLint.Core/obj/pinned-source/upstream.tar.gz target/lint-source-builder/upstream.tar.gz
 
 _build-coverage-tools:
 	$(DOTNET) publish tools/coverage/merge-cobertura.cs -c Release --no-self-contained -p:PublishAot=false -p:PublishTrimmed=false -o target/coverage-tools/merge-cobertura
@@ -459,9 +465,10 @@ ci: lint test build audit
 # touches node_modules.
 
 AUDIT_LEVEL       ?= moderate
-AUDIT_CARGO_LOCKS  = Cargo.lock $(ZED_DIR)/Cargo.lock
-AUDIT_NPM_DIRS     = $(VSCODE_DIR) src/website
+AUDIT_CARGO_LOCKS  = Cargo.lock $(ZED_DIR)/Cargo.lock lspkit/Cargo.lock
+AUDIT_NPM_DIRS     = $(VSCODE_DIR) src/website src/website/tools/video lspkit/packages/lspkit-debug lspkit/packages/lsp-profiler-ui
 AUDIT_DOTNET_JSON  = target/audit-dotnet.json
+AUDIT_DOTNET_TARGETS = $(SIDECAR_SLN) lspkit/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj
 
 .PHONY: audit _audit-rust _audit-dotnet _audit-npm
 
@@ -489,11 +496,13 @@ _audit-rust:
 	done; exit $$status
 
 _audit-dotnet:
-	@echo "==> dotnet list package --vulnerable $(SIDECAR_SLN)"
 	@mkdir -p $(dir $(AUDIT_DOTNET_JSON))
-	$(DOTNET) restore $(SIDECAR_SLN) --verbosity quiet
-	$(DOTNET) list $(SIDECAR_SLN) package --vulnerable --include-transitive --format json > $(AUDIT_DOTNET_JSON)
-	@node tools/audit/dotnet-vulnerable.mjs $(AUDIT_DOTNET_JSON) $(AUDIT_LEVEL)
+	@status=0; for project in $(AUDIT_DOTNET_TARGETS); do \
+		echo "==> dotnet list package --vulnerable $$project"; \
+		$(DOTNET) restore "$$project" --verbosity quiet && \
+		$(DOTNET) list "$$project" package --vulnerable --include-transitive --format json > $(AUDIT_DOTNET_JSON) && \
+		node tools/audit/dotnet-vulnerable.mjs $(AUDIT_DOTNET_JSON) $(AUDIT_LEVEL) || status=1; \
+	done; exit $$status
 
 _audit-npm:
 	@status=0; for dir in $(AUDIT_NPM_DIRS); do \
@@ -768,15 +777,17 @@ _test-dotnet: $(if $(VSIX_PREBUILT),,_build-dotnet)
 	 _check_cov SharpLsp.Sidecar.Common sharplsp-sidecar-common
 
 # [DIST-CI-WIN-TRANSPORT] The win32 arm of the sidecar IPC transport. ONLY
-# the classes whose behaviour is platform-dependent run here - named-pipe
+# the tests whose behaviour is platform-dependent run here - named-pipe
 # connection setup, the real sidecar handshake over those pipes, Windows
 # symlink resolution, and process supervision (Job Object containment, parent
-# watch: [SIDECAR-PROCESS-TREE], [SIDECAR-PROCESS-PARENT]). Every other class in
+# watch: [SIDECAR-PROCESS-TREE], [SIDECAR-PROCESS-PARENT]), NTFS compiler reads,
+# and project metadata sharing with editor saves. Every other class in
 # SharpLsp.Sidecar.Common.Tests is platform-agnostic and already ran ONCE in
 # _test-dotnet on Ubuntu; running the whole project again on Windows executed
 # ~12 files' worth of identical assertions a second time, which the pipeline's
 # run-every-test-exactly-once rule forbids ([DIST-CI-LAYOUT]).
 DOTNET_WIN_TRANSPORT_FILTER = FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.IpcConnectionTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.SidecarHostEndToEndTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.NativePathsSymlinkTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.ProcessContainmentTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.ParentProcessWatchdogTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.SidecarHostSupervisionTests
+DOTNET_WIN_FSHARP_FILTER = FullyQualifiedName~SharpLsp.Sidecar.FSharp.Tests.FSharpScriptCancellationEndToEndTests|FullyQualifiedName~FSharpProjectCrackingTests.project metadata remains accurate across editor saves
 
 _test-dotnet-win-transport:
 	@echo "==> Running win32 named-pipe transport tests..."
@@ -784,18 +795,23 @@ _test-dotnet-win-transport:
 		$(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) \
 		--filter "$(DOTNET_WIN_TRANSPORT_FILTER)" \
 		--blame-hang-timeout 2min --blame-hang-dump-type none
+	$(DOTNET) test $(SIDECAR_FS).Tests/SharpLsp.Sidecar.FSharp.Tests.fsproj --configuration $(DOTNET_CFG) \
+		$(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) \
+		--filter "$(DOTNET_WIN_FSHARP_FILTER)" \
+		--blame-hang-timeout 2min --blame-hang-dump-type none
 
 # Tests for the repo's own build tooling, as opposed to the product. Today that
 # is how the netcoredbg debug adapter is obtained ([DIST-DEBUGGER-BUNDLE]) - the
 # supply-chain path that every VSIX and every release depends on - and the local
 # install loop ([DIST-VSIX-DEV-INSTALL]), whose whole contract is an ordering
-# that nothing else in the suite exercises. Node's built-in runner, so this
-# needs no dependency of its own.
-_test-tooling:
+# that nothing else in the suite exercises. Source preparation executes the
+# compiled F# builder; CI supplies that artifact without compiling in this leg.
+_test-tooling: $(if $(TOOLING_TESTS_PREBUILT),,_build-lint-source-tests)
 	node --test tools/vsix/chunk-once.test.mjs
 	@echo "==> Running repo tooling tests..."
 	node --test tools/netcoredbg/custody.test.mjs tools/make/reinstall-loop.test.mjs tools/make/vsix-rebuild.test.mjs tools/vsix/rebuild-contract.test.mjs tools/vsix/debug-cleanup.test.mjs tools/audit/dotnet-vulnerable.test.mjs \
 		tools/rider/gradle.test.mjs tools/vsix/resolve-symlink-stubs.test.mjs tools/make/vsix-profiles.test.mjs
+	node --test tools/fsharp-lint-source/source-build.test.mjs tools/fsharp-lint-source/source-artifact.test.mjs
 
 _website-build:
 	@echo "==> Building website..."
@@ -837,10 +853,10 @@ _lint-zed:
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
 _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
-	# The profiler contributions are generated from the shared UI library ([PROFILER-SHARED-LIBRARY-VSCODE]).
-	node tools/vsix/sync-profiler-contributions.mjs --check
-	# The tutorial's types are generated from its typeDiagram model ([TUTORIAL-MODEL]).
-	node tools/vsix/tutorial-model.mjs --check
+	# The profiler contributions ([PROFILER-SHARED-LIBRARY-VSCODE]) and the tutorial's types
+	# ([TUTORIAL-MODEL]) are generated; the test checks both committed models on this
+	# platform, here where the extension's dependencies are installed.
+	node --test tools/vsix/model-generators.test.mjs
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs tools/ci/vsix-coverage.test.mjs \
 		tools/ci/spec-citations.test.mjs tools/vsix/signals-bundle.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)

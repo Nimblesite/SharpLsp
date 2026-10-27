@@ -28,6 +28,7 @@ import { createAnsiStrippingChannel } from './output-filter.js';
 import { serverStdioOptions } from './server-stderr.js';
 import { detectRuntimePlatform } from './platform.js';
 import * as state from './state.js';
+import { wireBuildDiscovery } from './test-builds.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 import { dotnetHostEnvironment } from './dotnetRuntime.js';
 import { observeResponses } from './tutorial/detect.js';
@@ -113,6 +114,7 @@ export async function start(
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: DOCUMENT_SELECTOR,
+    diagnosticPullOptions: { onChange: true, onSave: true, onFocus: true },
     // The Solution Explorer's picker settles a root holding several solutions,
     // so the server shows no error for one
     // ([SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]).
@@ -149,16 +151,18 @@ export async function start(
   const client = new SharpLspClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
 
   wireClientState(client, statusBar, openSync, context);
+  const buildDiscovery = wireBuildDiscovery(client);
 
   statusBar.setState(ServerState.Starting);
   try {
     await client.start();
   } catch (error: unknown) {
+    buildDiscovery.dispose();
     // A server that never started serves no projections. [RAZOR-FEATURES-HTML]
     razorHtml.provider.dispose();
     throw error;
   }
-  context.subscriptions.push(razorHtml.provider);
+  context.subscriptions.push(buildDiscovery, razorHtml.provider);
   return client;
 }
 

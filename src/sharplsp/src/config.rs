@@ -13,6 +13,8 @@ use tracing::{info, warn};
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SharpLspConfig {
+    /// Editor-independent test build settings. Implements [TEST-BUILD-CONFIGURATION].
+    pub testing: TestingConfig,
     /// Editor-independent debugger policy.
     pub debug: crate::config_debug::DebugConfig,
     /// General server settings.
@@ -27,6 +29,22 @@ pub struct SharpLspConfig {
     pub analyzers: AnalyzersConfig,
     /// Profiler settings.
     pub profiler: ProfilerConfig,
+}
+
+/// Configuration shared by test discovery, execution and debugging.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TestingConfig {
+    /// `MSBuild` configuration, explicitly Debug unless the user overrides it.
+    pub configuration: String,
+}
+
+impl Default for TestingConfig {
+    fn default() -> Self {
+        Self {
+            configuration: "Debug".to_owned(),
+        }
+    }
 }
 
 /// Server-level settings.
@@ -67,6 +85,41 @@ pub struct DiagnosticsConfig {
     pub solution_wide_analysis: bool,
     /// Project name patterns to include (empty = all projects).
     pub project_filter: Vec<String>,
+    /// Drop diagnostics below this severity. Implements [DIAG-CONFIG].
+    pub min_severity: MinimumDiagnosticSeverity,
+    /// Maximum diagnostics per file after filtering; zero is unlimited. [DIAG-CONFIG]
+    pub max_per_file: usize,
+    /// Coalesce diagnostic refreshes for this many milliseconds. [DIAG-LSP-REFRESH]
+    pub refresh_debounce_ms: u64,
+    /// Restore stale project assets before explicitly opening a workspace. [DIAG-RESTORE]
+    pub auto_restore_on_open: bool,
+}
+
+/// Validated diagnostic severity threshold. Implements [DIAG-CONFIG].
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MinimumDiagnosticSeverity {
+    /// Compiler or analyzer errors only.
+    Error,
+    /// Errors and warnings.
+    Warning,
+    /// Errors, warnings and informational diagnostics.
+    Info,
+    /// Include hints as well.
+    #[default]
+    Hint,
+}
+
+impl MinimumDiagnosticSeverity {
+    /// The threshold uses the protocol's existing severity ordering.
+    pub fn lsp(self) -> lsp_types::DiagnosticSeverity {
+        match self {
+            Self::Error => lsp_types::DiagnosticSeverity::ERROR,
+            Self::Warning => lsp_types::DiagnosticSeverity::WARNING,
+            Self::Info => lsp_types::DiagnosticSeverity::INFORMATION,
+            Self::Hint => lsp_types::DiagnosticSeverity::HINT,
+        }
+    }
 }
 
 impl Default for ServerConfig {
@@ -138,6 +191,10 @@ impl Default for DiagnosticsConfig {
             analyzers_enabled: true,
             solution_wide_analysis: true,
             project_filter: Vec::new(),
+            min_severity: MinimumDiagnosticSeverity::default(),
+            max_per_file: 0,
+            refresh_debounce_ms: 2_000,
+            auto_restore_on_open: true,
         }
     }
 }
@@ -316,94 +373,54 @@ project_filter = ["MyApp.Core", "MyApp.Api"]
         assert_eq!(config.open_target(root), sln);
     }
 
+    /// An empty `solution_path` is unset; a stale or misspelled one must not
+    /// wedge the sidecar on a path that does not exist; a directory is not a
+    /// solution. Each falls back to the workspace root and its auto-discovery.
     #[test]
-    fn test_empty_solution_path_falls_back_to_workspace_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-
-        assert_eq!(CSharpConfig::default().open_target(root), root);
-    }
-
-    /// A stale or misspelled `solution_path` must not wedge the sidecar on a
-    /// path that does not exist — auto-discovery is the safer fallback.
-    #[test]
-    fn test_missing_solution_path_falls_back_to_workspace_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-
-        let config = CSharpConfig {
-            enabled: true,
-            solution_path: "does/not/exist.sln".to_string(),
-        };
-
-        assert_eq!(config.open_target(root), root);
-    }
-
-    /// A directory is not a solution; treat it as unset rather than opening it
-    /// as though it were a file the user chose.
-    #[test]
-    fn test_directory_solution_path_falls_back_to_workspace_root() {
+    fn test_unusable_solution_path_falls_back_to_workspace_root() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("app")).unwrap();
 
-        let config = CSharpConfig {
-            enabled: true,
-            solution_path: "app".to_string(),
-        };
-
-        assert_eq!(config.open_target(root), root);
+        for solution_path in ["", "does/not/exist.sln", "app"] {
+            let config = CSharpConfig {
+                enabled: true,
+                solution_path: solution_path.to_string(),
+            };
+            assert_eq!(config.open_target(root), root, "{solution_path:?}");
+        }
+        assert_eq!(CSharpConfig::default().open_target(root), root);
     }
 
+    /// An unknown key is rejected in every section, never silently ignored.
     #[test]
     fn test_unknown_fields_rejected() {
-        let toml_str = r"
-[server]
-nonexistent_field = true
-";
-        let result: std::result::Result<SharpLspConfig, _> = toml::from_str(toml_str);
-        assert!(result.is_err());
+        for toml_str in [
+            "[server]\nnonexistent_field = true\n",
+            "[analyzers]\nbogus = true\n",
+        ] {
+            let result: std::result::Result<SharpLspConfig, _> = toml::from_str(toml_str);
+            assert!(result.is_err(), "{toml_str}");
+        }
     }
 
+    /// `[analyzers]` with both flags, with only `monorepo` (`dead_code` keeps
+    /// its default of true), and absent altogether.
     #[test]
     fn test_parse_analyzers_section() {
-        let toml_str = r"
-[analyzers]
-dead_code = true
-monorepo = true
-";
-        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
-        assert!(config.analyzers.dead_code);
-        assert!(config.analyzers.monorepo);
-    }
-
-    #[test]
-    fn test_analyzers_partial_override_keeps_defaults() {
-        // Only `monorepo` set: `dead_code` must fall back to its default of true.
-        let toml_str = r"
-[analyzers]
-monorepo = true
-";
-        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
-        assert!(config.analyzers.dead_code);
-        assert!(config.analyzers.monorepo);
-    }
-
-    #[test]
-    fn test_analyzers_defaults_when_section_absent() {
-        let config: SharpLspConfig = toml::from_str("").unwrap();
-        assert!(config.analyzers.dead_code);
-        assert!(!config.analyzers.monorepo);
-    }
-
-    #[test]
-    fn test_analyzers_unknown_field_rejected() {
-        let toml_str = r"
-[analyzers]
-bogus = true
-";
-        let result: std::result::Result<SharpLspConfig, _> = toml::from_str(toml_str);
-        assert!(result.is_err());
+        for (toml_str, dead_code, monorepo) in [
+            (
+                "[analyzers]\ndead_code = true\nmonorepo = true\n",
+                true,
+                true,
+            ),
+            ("[analyzers]\nmonorepo = true\n", true, true),
+            ("", true, false),
+        ] {
+            let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
+            assert_eq!(config.analyzers.dead_code, dead_code, "{toml_str}");
+            assert_eq!(config.analyzers.monorepo, monorepo, "{toml_str}");
+        }
     }
 
     #[test]

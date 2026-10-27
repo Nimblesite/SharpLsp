@@ -15,34 +15,49 @@ SharpLsp 会报告 C# 和 F# 的编译器诊断。Roslyn 处理 C# 文件，F# C
 
 ## 传递模型
 
-SharpLsp 同时支持两种 LSP 诊断模型：
+包括 VS Code 在内的现代客户端使用 LSP 3.17 拉取诊断：
 
-- **推送：** 打开、更改或保存文档时启动后台分析，并发送 `textDocument/publishDiagnostics`。
 - **文档拉取：** `textDocument/diagnostic` 获取当前文件的诊断。
-- **C# 解决方案扫描：** 启用 `diagnostics.solution_wide_analysis` 后，C# sidecar 会在启动时扫描已加载的解决方案，并逐个文件发布结果。
+- **工作区拉取：** `workspace/diagnostic` 包含已加载的 F# 和 C# 源文件，包括尚未打开的文件。解决方案范围分析默认启用；VS Code 扩展请求这些结果并显示在问题面板中。
+- **推送回退：** 不支持拉取的客户端接收 `textDocument/publishDiagnostics`。每个客户端只使用一种传递模型，因此同一错误不会重复显示。
 
-SharpLsp 会声明标准 `workspace/diagnostic` 请求，但该请求目前返回空报告。工作区范围的结果改由 C# 启动扫描传递；F# 解决方案范围的拉取尚未实现。
+未保存的编辑、关闭文件在磁盘上的更改以及项目输入的变化都会刷新诊断。启用解决方案范围分析时，关闭文件仍会保留真实错误。禁用后会清除已关闭文件的结果，同时保留打开文件的诊断。
 
-版本代次门控可防止较早的后台请求覆盖较新的结果。关闭文档时会发布一个空集合，以清除该文档的诊断。
+对使用推送回退的客户端，版本代次门控可防止较早的请求覆盖较新的结果。
 
 ## 诊断来源
 
 | 语言 | 当前可用的来源 |
 |---|---|
-| C# | Roslyn 编译器诊断和 SharpLsp 死代码诊断（`SLSPC0101`） |
 | F# | FCS 编译器诊断，以及 `SLSPF0101` 死代码、`SLSPF0102` 未使用的 `open` 和 `SLSPF0103` 冗余限定符 |
+| C# | Roslyn 编译器诊断、项目的 SDK/NuGet Roslyn 分析器，以及 SharpLsp 死代码诊断（`SLSPC0101`） |
 
-第三方 Roslyn 分析器和 FSharpLint 目前尚未接入这条管线。因此，虽然 `diagnostics.analyzers_enabled` 字段可以被接受，但它还不是有效的开关。
+Roslyn 分析器遵循项目求值后的分析器引用、`.editorconfig`、`NoWarn` 和源代码抑制规则。仅添加 `.editorconfig` 规则不会加载项目未引用的分析器程序集。`diagnostics.analyzers_enabled` 控制分析器诊断，编译器错误仍会显示。目前尚不提供 FSharpLint 和 FSharp.Analyzers.SDK 集成。
 
 ## 配置
 
 ```toml
 [diagnostics]
-# 启动时扫描已加载的 C# 解决方案
+# 解决方案诊断包含尚未打开的 F# 和 C# 源文件
 solution_wide_analysis = true
 
-# 将 C# 扫描限制到名称匹配的项目；空列表表示所有项目
+# 项目名称或相对于所选解决方案的路径；空列表表示所有项目
 project_filter = []
+
+# 启用分析器诊断，同时保留编译器错误
+analyzers_enabled = true
+
+# 最低严重级别：error、warning、info 或 hint
+min_severity = "hint"
+
+# 按严重级别筛选后限制每个文件的数量；0 表示不限制
+max_per_file = 0
+
+# 合并源文件或项目更改后的刷新请求（毫秒）
+refresh_debounce_ms = 2000
+
+# 打开工作区前还原缺失或过期的 SDK 资产和包文件
+auto_restore_on_open = true
 
 [analyzers]
 # SharpLsp 的 C# 和 F# 死代码分析器
@@ -51,6 +66,8 @@ dead_code = true
 # 将仓库视为完整的使用边界
 monorepo = false
 ```
+
+项目筛选器适用于两种语言的工作区结果。直接发送的 `textDocument/diagnostic` 请求不受筛选。筛选器也接受完整的本机项目路径，glob 模式使用正斜杠。
 
 在普通模式下，无法访问的私有/内部死代码以警告报告，公共符号则被视为可能供外部调用的 API。在 monorepo 模式下，未使用的公共符号也会被报告，并使用错误级别。
 

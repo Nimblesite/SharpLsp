@@ -1,5 +1,4 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Razor;
@@ -112,7 +111,7 @@ internal sealed partial class WorkspaceManager
     private async Task<QueryTarget?> ComponentTargetAsync(string razorPath, CancellationToken ct)
     {
         var projection = await FindRazorProjectionAsync(razorPath, ct).ConfigureAwait(false);
-        var declared = projection is null ? null : FileClass(projection);
+        var declared = projection?.FileClass;
         if (projection is null || declared is null)
         {
             return null;
@@ -120,15 +119,6 @@ internal sealed partial class WorkspaceManager
 
         var at = projection.GeneratedText.Lines.GetLinePosition(declared.Identifier.SpanStart);
         return new QueryTarget(projection.Generated, at.Line, at.Character, projection);
-    }
-
-    /// <summary>The class a projection generates for its Razor file: the file's own type.</summary>
-    private static ClassDeclarationSyntax? FileClass(RazorProjection projection)
-    {
-        return projection
-            .GeneratedRoot.DescendantNodes()
-            .OfType<ClassDeclarationSyntax>()
-            .FirstOrDefault();
     }
 
     /// <summary>
@@ -194,7 +184,7 @@ internal sealed partial class WorkspaceManager
     {
         var at = new LinePosition(declaration.Line, declaration.Character);
         return DocumentText.TryOffset(projection.GeneratedText, at) is { } offset
-            && FileClass(projection) is { } own
+            && projection.FileClass is { } own
             && projection.GeneratedRoot.FindToken(offset).Parent?.AncestorsAndSelf().Contains(own)
                 == true;
     }

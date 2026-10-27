@@ -17,7 +17,8 @@ import { joinPath } from './paths';
 import * as vscode from 'vscode';
 import { DOTNET_TIMEOUT_MS, cancellationSignal, runDotnet } from './dotnet-process.js';
 import { info } from './log.js';
-import { batchAssemblies } from './test-discovery.js';
+import { err, ok, type Result } from './result';
+import { batchAssemblies, listTests } from './test-discovery.js';
 import {
   cancelled,
   mergeRuns,
@@ -27,7 +28,7 @@ import {
   type TestRunOutcome,
 } from './test-execution.js';
 import { filterBatches, filterExpression } from './test-filter.js';
-import { compareFrameworks, TFM_TAG_PREFIX, type FrameworkIndex } from './test-frameworks.js';
+import { compareFrameworks, TFM_TAG_PREFIX, FrameworkIndex } from './test-frameworks.js';
 import { buildTarget, dirOf } from './test-mtp-modules.js';
 import { mergeKeepingFailures } from './test-mtp-run.js';
 import { reportAll, type CacheWriter } from './test-reporting.js';
@@ -117,26 +118,42 @@ async function runBatches(
   return merged ?? failedBefore('Run cancelled before any batch started');
 }
 
-/**
- * Build the target once, then run `ids` (all when empty) in `assemblies` only.
- * A failed build fails the run: the assemblies an earlier build left behind
- * are never run in its place.
- */
+/** Incrementally build selected graphs and resolve current configured outputs. */
+async function builtAssemblies(
+  frameworks: readonly string[],
+  targets: readonly string[],
+  options: TestRunOptions,
+): Promise<Result<string[]>> {
+  const timeoutMs = options.timeoutMs ?? DOTNET_TIMEOUT_MS;
+  const assemblies: string[] = [];
+  for (const project of targets) {
+    if (options.signal?.aborted === true) return err('Run cancelled before building');
+    const built = await buildTarget(project, dirOf(project), timeoutMs, options.signal);
+    if (built.length > 0) return err(built.join('\n'));
+    const listing = await listTests(project, timeoutMs, true);
+    if (!listing.ok) return err(listing.warnings.join('\n'));
+    assemblies.push(...assembliesOf(new FrameworkIndex(listing.byAssembly), frameworks));
+  }
+  return assemblies.length === 0
+    ? err('No built test assembly for this framework')
+    : ok(assemblies);
+}
+
+/** Build failure prevents stale execution; framework runs use current outputs. */
 export async function runAssemblies(
-  assemblies: readonly string[],
+  frameworks: readonly string[],
   ids: readonly string[],
   cwd: string,
   options: TestRunOptions,
+  projects: readonly string[] = [],
 ): Promise<TestRunOutcome> {
-  if (assemblies.length === 0) return failedBefore('No built test assembly for this framework');
-  const target = options.target ?? cwd;
-  const timeoutMs = options.timeoutMs ?? DOTNET_TIMEOUT_MS;
-  const built = await buildTarget(target, dirOf(target), timeoutMs, options.signal);
-  if (built.length > 0) return failedBefore(built.join('\n'));
+  const targets = projects.length === 0 ? [options.target ?? cwd] : projects;
+  const built = await builtAssemblies(frameworks, targets, options);
+  if (!built.ok) return failedBefore(built.error);
   const owned = options.resultsDirectory === undefined;
   const dir = options.resultsDirectory ?? fs.mkdtempSync(joinPath(os.tmpdir(), 'sharplsp-tfm-'));
   try {
-    return await runBatches(assemblies, ids, cwd, dir, options);
+    return await runBatches(built.value, ids, cwd, dir, options);
   } finally {
     if (owned) removeDirRecursive(dir);
   }
@@ -145,6 +162,14 @@ export async function runAssemblies(
 /** Every built assembly of `frameworks`, in framework order. */
 export function assembliesOf(index: FrameworkIndex, frameworks: readonly string[]): string[] {
   return [...frameworks].sort(compareFrameworks).flatMap((each) => index.assembliesFor(each));
+}
+
+/** Known owning projects, or none when any selection needs the original safe target. */
+export function projectsOfTests(index: FrameworkIndex, ids: readonly string[]): string[] {
+  const projects = ids.map((id) => index.projectFileOf(id));
+  return projects.some((project) => project === undefined)
+    ? []
+    : [...new Set(projects.flatMap((project) => project ?? []))];
 }
 
 /** What every profile's request reads from the controller. */
@@ -213,9 +238,12 @@ async function executeFramework(
   const ids = filterIdsFor(request, tests);
   info(`Test run on ${framework}: ${String(tests.length)} test(s)`);
   try {
-    const assemblies = host.frameworks().assembliesFor(framework);
+    const projects = projectsOfTests(
+      host.frameworks(),
+      tests.map((test) => test.id),
+    );
     const outcome = await host.enqueue(
-      async () => await runAssemblies(assemblies, ids, cwd, options),
+      async () => await runAssemblies([framework], ids, cwd, options, projects),
     );
     if (!cancelled(token)) host.report(run, tests, outcome);
   } finally {

@@ -15,7 +15,7 @@ import { info } from './log';
 import { debugSelectedTests, type TestDebugHost } from './test-debug';
 import { cancelled, type TestRunOptions, type TestRunOutcome } from './test-execution';
 import { debugPlan, netFrameworkDebugRefusal, type FrameworkIndex } from './test-frameworks';
-import { assembliesOf, runAssemblies, type ControllerAccess } from './test-framework-runs';
+import { projectsOfTests, runAssemblies, type ControllerAccess } from './test-framework-runs';
 import type { MtpRunPlan } from './test-listing-model';
 import { reportAll, reportDebugOutcome } from './test-reporting';
 import { filterIdsFor, runCwd } from './test-targets';
@@ -51,7 +51,18 @@ export async function debugRequest(
   }
   for (const test of tests) run.started(test);
   const ids = plan.refused.length > 0 ? tests.map((test) => test.id) : filterIdsFor(request, tests);
-  await debugSelectedTests(debugHost(host, plan.frameworks), run, tests, token, cwd, ids);
+  await debugSelectedTests(
+    debugHost(
+      host,
+      plan.frameworks,
+      tests.map((test) => test.id),
+    ),
+    run,
+    tests,
+    token,
+    cwd,
+    ids,
+  );
 }
 
 /**
@@ -82,14 +93,15 @@ function refuseNetFrameworkOnly(
 function debugHost(
   host: DebugRequestHost,
   frameworks: readonly string[] | undefined,
+  selected: readonly string[],
 ): TestDebugHost {
-  const assemblies = frameworks === undefined ? [] : assembliesOf(host.frameworks, frameworks);
+  const projects = projectsOfTests(host.frameworks, selected);
   return {
     enqueue: async (work) => await host.enqueue(work),
     runSelection: async (ids, cwd, options) =>
       frameworks === undefined
         ? await host.dispatch(ids, cwd, options)
-        : await runAssemblies(assemblies, ids, cwd, { ...options, debug: true }),
+        : await runAssemblies(frameworks, ids, cwd, { ...options, debug: true }, projects),
     // Run-only reporting: a debug run neither caches results nor announces a
     // results change — the last real run's outcome stands.
     finish: (run, tests, outcome) => {

@@ -32,6 +32,7 @@
 #[path = "../support/built_binary.rs"]
 mod built_binary;
 pub use built_binary::built_sharplsp;
+mod client_spawn;
 pub mod fixtures;
 pub mod fixtures_cross_language;
 pub mod fixtures_medium;
@@ -40,8 +41,12 @@ pub mod nav_helpers;
 pub mod session_helpers;
 
 // ── Test sub-modules ──────────────────────────────────────────────
+pub mod build_monitor;
 pub mod call_hierarchy_tests;
 pub mod code_actions_tests;
+pub mod compiler_cancellation;
+pub mod completion_acceptance;
+pub mod configuration_session;
 pub mod coverage_boost;
 pub mod coverage_boost2;
 pub mod coverage_boost3;
@@ -52,18 +57,25 @@ pub mod definition_no_sidecar;
 pub mod diagnostics;
 pub mod diagnostics_full_stack;
 pub mod document_sync;
+pub mod filebased_diagnostics;
 pub mod folding;
+pub mod formatting_contract;
 pub mod fsharp;
 pub mod full_stack;
 pub mod full_stack_features;
 pub mod full_stack_hierarchy;
 pub mod full_stack_semantic;
+pub mod hot_reload;
 pub mod hover;
 pub mod inlay_hints_tests;
 pub mod lifecycle;
 pub mod logging;
 pub mod lsp_features;
 pub mod multi_solution;
+pub mod native_reload_contention;
+pub mod navigation_session;
+pub mod nuget_project_contract;
+pub mod nuget_restore;
 pub mod nuget_unused_full_stack;
 pub mod profiler_shared;
 pub mod pull_diagnostics;
@@ -73,7 +85,9 @@ pub mod razor_fsharp;
 pub mod razor_hierarchy;
 pub mod razor_mvc;
 pub mod razor_selection;
+pub mod razor_workspace_pull_session;
 pub mod references;
+pub mod region_session;
 pub mod selection;
 pub mod semantic_coverage;
 pub mod semantic_tokens_tests;
@@ -82,13 +96,21 @@ pub mod sidecar_shutdown;
 pub mod sort_members;
 pub mod sort_members_extra;
 pub mod standalone_csproj;
+pub mod startup_session;
 pub mod statement_stop;
 pub mod symbols;
 pub mod target_framework;
+pub mod tokens_session;
 pub mod type_hierarchy_tests;
 pub mod user_session_csharp;
 pub mod user_session_fsharp;
 pub mod version;
+pub mod watched_reload_selection;
+pub mod workspace_diagnostic_interruption;
+pub mod workspace_diagnostic_protocol;
+pub mod workspace_diagnostic_session;
+mod workspace_diagnostic_support;
+pub mod workspace_symbol_search;
 pub mod workspace_symbols;
 pub mod workspace_symbols_selection;
 
@@ -173,31 +195,7 @@ impl LspClient {
     }
 
     pub fn spawn_in(stderr: Stdio, cwd: Option<&std::path::Path>) -> Self {
-        let binary = sharplsp_binary_path();
-        let debug = launcher_debug(&binary);
-        let failure = format!("failed to spawn sharplsp\n{debug}");
-        eprintln!("{debug}");
-        let mut command = Command::new(&binary);
-        if let Some(dir) = cwd {
-            let _ = command.current_dir(dir);
-        }
-        let mut child = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(stderr)
-            .spawn()
-            .expect(&failure);
-        let stdin = child.stdin.take().expect("no stdin");
-        let stdout = child.stdout.take().expect("no stdout");
-        let stderr = child.stderr.take();
-        let reader = BufReader::new(stdout);
-        Self {
-            child,
-            stdin: Some(stdin),
-            reader,
-            stderr,
-            config_dir: None,
-        }
+        Self::spawn_in_with_env(stderr, cwd, &[])
     }
 
     /// Drain the captured stderr pipe to a string. Only meaningful when the
@@ -317,7 +315,13 @@ impl LspClient {
     pub fn shutdown_and_exit(&mut self) {
         let resp = self.request("shutdown", json!(null));
         assert!(resp.get("error").is_none(), "shutdown failed: {resp}");
+        assert_eq!(
+            resp["result"],
+            Value::Null,
+            "shutdown acknowledges with null"
+        );
         self.notify("exit", json!(null));
+        self.wait_with_timeout();
     }
 
     /// Open a C# document.
@@ -421,6 +425,10 @@ impl LspClient {
             .wait_timeout(Duration::from_secs(30))
             .expect("wait failed");
         assert!(result.is_some(), "server did not exit within 30 seconds");
+        assert!(
+            result.is_some_and(|status| status.success()),
+            "the real server must exit successfully after shutdown: {result:?}"
+        );
     }
 }
 

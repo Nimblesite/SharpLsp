@@ -155,17 +155,27 @@ function exitOf(run: DotnetRun): Result<void> {
  * session started, not which one it was; the name is the one this launch wrote
  * into the configuration, so the pair is unambiguous.
  */
-async function startBrowserSession(
+export async function startBrowserSession(
   folder: vscode.WorkspaceFolder | undefined,
   configuration: vscode.DebugConfiguration,
 ): Promise<BrowserSession | undefined> {
-  const started = await vscode.debug.startDebugging(folder, configuration);
-  if (!started) return undefined;
-  return { ended: sessionLifetime(configuration.name) };
+  const watching = new AbortController();
+  // VS Code emits the start while startDebugging is still resolving.
+  const ended = sessionLifetime(configuration.name, watching.signal);
+  let started = false;
+  try {
+    started = await vscode.debug.startDebugging(folder, configuration);
+    return started ? { ended } : undefined;
+  } catch (cause) {
+    warn(JSON.stringify({ event: 'blazor_browser_start_failed', errorKind: typeof cause }));
+    return undefined;
+  } finally {
+    if (!started) watching.abort();
+  }
 }
 
 /** Resolves when the session named `name` terminates. */
-async function sessionLifetime(name: string): Promise<void> {
+async function sessionLifetime(name: string, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve) => {
     const starting = vscode.debug.onDidStartDebugSession((session) => {
       if (session.name !== name) return;
@@ -176,6 +186,14 @@ async function sessionLifetime(name: string): Promise<void> {
         resolve();
       });
     });
+    signal.addEventListener(
+      'abort',
+      () => {
+        starting.dispose();
+        resolve();
+      },
+      { once: true },
+    );
   });
 }
 
@@ -419,6 +437,7 @@ export async function launchBlazorWasm(
       `Stopping the Blazor WebAssembly launch already running for ${fileNameOf(request.value.projectFile)}`,
     );
     previous.stop();
+    await previous.ended;
   }
   return await startSession(folder, request.value);
 }

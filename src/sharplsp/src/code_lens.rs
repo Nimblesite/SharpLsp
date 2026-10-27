@@ -1,6 +1,7 @@
 //! Code lens handlers (`textDocument/codeLens`).
 //!
 //! Returns reference counts and implementation counts above types and members.
+//! Implements [SHARPLSP-FEATURES-CODE-LENS] and [DIAG-ANALYSIS-CANCELLATION].
 
 use std::sync::Arc;
 
@@ -10,25 +11,38 @@ use lsp_types::{CodeLens, CodeLensParams, Command, Position, Range};
 use tracing::debug;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{request_sidecar, with_sidecar, SidecarFileReq};
+use crate::utils::{with_sidecar, SidecarFileReq};
 
 /// Handle `textDocument/codeLens` — returns reference/implementation count lenses.
 pub fn handle_code_lens(
     req: Request,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     sidecar: Option<&Arc<SidecarManager>>,
+    cancel: &lspkit_server::CancellationToken,
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: CodeLensParams| {
-        let request = SidecarFileReq {
-            file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
-        };
-        let items: Vec<SidecarCodeLens> =
-            request_sidecar(runtime, sidecar, "textDocument/codeLens", &request)?
-                .unwrap_or_default();
+        let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
+        let items = request_lenses(runtime, sidecar, file_path, cancel)?;
         debug!(count = items.len(), "code lenses from sidecar");
         let lenses: Vec<CodeLens> = items.iter().map(map_code_lens).collect();
         Ok(serde_json::to_value(lenses)?)
     })
+}
+
+/// Decode current compiler lenses without converting cancellation into empty success.
+fn request_lenses(
+    runtime: &tokio::runtime::Handle,
+    sidecar: &SidecarManager,
+    file_path: String,
+    cancel: &lspkit_server::CancellationToken,
+) -> Result<Vec<SidecarCodeLens>> {
+    let payload = rmp_serde::to_vec(&SidecarFileReq { file_path })?;
+    let bytes = runtime.block_on(sidecar.request_cancellable(
+        "textDocument/codeLens",
+        payload,
+        Some(cancel),
+    ))?;
+    Ok(rmp_serde::from_slice(&bytes)?)
 }
 
 /// Convert a sidecar code lens into an LSP `CodeLens`.

@@ -35,7 +35,11 @@ public static class Probe
 
 /// Send `method` and read until ITS response, answering every server request on the
 /// way as a client must; returns the response and everything else that arrived.
-fn request_answering(client: &mut LspClient, method: &str, params: Value) -> (Value, Vec<Value>) {
+pub(super) fn request_answering(
+    client: &mut LspClient,
+    method: &str,
+    params: Value,
+) -> (Value, Vec<Value>) {
     let id = next_id();
     client.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
     let mut arrived = Vec::new();

@@ -156,14 +156,14 @@ function startDesignTimeWriter(directory, ms) {
     const script = [
         'const { mkdirSync, writeFileSync } = require("node:fs");',
         "const [directory, ms] = process.argv.slice(1);",
-        "const end = Date.now() + Number(ms);",
+        "let end;",
         "let written = 0;",
-        'process.stdout.write("ready\\n");',
-        "while (Date.now() < end) {",
+        "while (end === undefined || Date.now() < end) {",
         "  try {",
         "    mkdirSync(directory, { recursive: true });",
         '    writeFileSync(`${directory}/design-time-${written}.dll`, "");',
         "    written++;",
+        '    if (written === 1) { process.stdout.write("ready\\n"); end = Date.now() + Number(ms); }',
         "  } catch { /* the clean removed the directory mid-write */ }",
         "}",
         "process.stdout.write(String(written));",
@@ -178,7 +178,8 @@ function startDesignTimeWriter(directory, ms) {
     child.stdout.on("data", (chunk) => chunks.push(chunk));
     return {
         ready: once(child.stdout, "data"),
-        written: once(child, "exit").then(() =>
+        // `exit` can precede the last stdout data on Windows; `close` has drained it.
+        written: once(child, "close").then(() =>
             Number(Buffer.concat(chunks).toString().split("\n").at(-1)),
         ),
     };

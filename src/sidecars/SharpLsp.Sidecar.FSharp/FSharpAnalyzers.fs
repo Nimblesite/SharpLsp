@@ -75,7 +75,8 @@ let buildDiagnostic
       EndCharacter = r.EndColumn
       Message = message
       Severity = severity
-      Code = code }
+      Code = code
+      HelpLink = "" }
 
 /// Classify a dead declaration into a diagnostic, honoring the monorepo gate.
 let private classifyDead

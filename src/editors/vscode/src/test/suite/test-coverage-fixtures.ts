@@ -40,6 +40,12 @@ export const COVERAGE_DIR_NAME = '.sharplsp-coverage';
 /** The collector `--collect:"XPlat Code Coverage"` needs referenced. */
 export const COVERLET_PACKAGE: PackageRef = { id: 'coverlet.collector', version: '6.0.2' };
 
+/** The collector MTP's `--coverage` needs, on the platform the fixtures pin. */
+export const MTP_CODE_COVERAGE: PackageRef = {
+  id: 'Microsoft.Testing.Extensions.CodeCoverage',
+  version: '18.11.0',
+};
+
 /** The single source file both test projects cover, and its four functions. */
 export const LIBRARY_FILE = 'Calculator.cs';
 

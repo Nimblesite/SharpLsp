@@ -20,6 +20,11 @@ pub fn path_to_file_uri(path: &Path) -> String {
         .to_string()
 }
 
+/// Resolve filesystem aliases before comparing real executable identities. [SIDECAR-PROCESS-TREE]
+pub fn canonical_file_uri(path: &Path) -> std::io::Result<String> {
+    std::fs::canonicalize(path).map(|canonical| path_to_file_uri(&canonical))
+}
+
 /// Build the URI for `path` exactly as VS Code sends it over LSP.
 ///
 /// VS Code percent-encodes document URIs (space → `%20`) and, on Windows,

@@ -240,6 +240,9 @@ export function fsharpSidecarLinesAbout(projectFile: string): string[] {
 export const EXIT_ON_NETFX = 48;
 export const EXIT_ON_NET = 10;
 
+/** What a console program writes its exit code to, beside its own binary. */
+const RESULT_FILE = 'exit-code.txt';
+
 /** One runnable fixture project. */
 export interface RunnableProject {
   readonly name: string;
@@ -261,20 +264,25 @@ export interface RunFixture extends LoadedFixture {
 
 /**
  * A console program named `name` returning 48 on .NET Framework and 10 on
- * .NET, PLUS the number of arguments it received — so an exit code proves both
- * the framework that ran and the arguments that reached it.
+ * .NET, PLUS the number of arguments it received — so its exit code proves both
+ * the framework that ran and the arguments that reached it. It also writes that
+ * code to {@link RESULT_FILE} beside its binary, which no pty can lose.
  */
 function writeConsole(root: string, name: string, frameworks: ProjectFrameworks): string {
   const program = `${name}/Program.fs`;
-  const exits = [
+  const code = [
+    '    let code =',
     '#if NETFRAMEWORK',
-    `    ${String(EXIT_ON_NETFX)} + argv.Length`,
+    `        ${String(EXIT_ON_NETFX)} + argv.Length`,
     '#else',
-    `    ${String(EXIT_ON_NET)} + argv.Length`,
+    `        ${String(EXIT_ON_NET)} + argv.Length`,
     '#endif',
+    `    let result = System.IO.Path.Combine(System.AppContext.BaseDirectory, "${RESULT_FILE}")`,
+    '    System.IO.File.WriteAllText(result, string code)',
+    '    code',
   ];
   writeFiles(root, {
-    [program]: [`module Fx.${name}`, '', '[<EntryPoint>]', 'let main argv =', ...exits, ''].join(
+    [program]: [`module Fx.${name}`, '', '[<EntryPoint>]', 'let main argv =', ...code, ''].join(
       '\n',
     ),
   });
@@ -320,6 +328,26 @@ export async function writeRunFixture(root: string): Promise<RunFixture> {
     anchor: ['let main argv =', 'main'],
   };
   return { root, solution, probe, netfxOnly, ready };
+}
+
+/** Where `project`'s `tfm` build writes the code it returned. */
+export function resultFileOf(root: string, project: RunnableProject, tfm: string): string {
+  return path.join(root, project.name, 'bin', 'Debug', tfm, RESULT_FILE);
+}
+
+/**
+ * `project`'s `tfm` build really returned `code`: the code it wrote, and the
+ * ONE task exit VS Code reported must both match the expected code.
+ */
+export function assertRanWith(
+  result: string,
+  exits: readonly number[],
+  code: number,
+  tfm: string,
+): void {
+  const why = `it really ran on ${tfm}: it returned ${String(code)}`;
+  assert.strictEqual(fs.readFileSync(result, 'utf8'), String(code), why);
+  assert.deepStrictEqual(exits, [code], why);
 }
 
 /** A started task's definition, and whether it runs a process with no shell. */

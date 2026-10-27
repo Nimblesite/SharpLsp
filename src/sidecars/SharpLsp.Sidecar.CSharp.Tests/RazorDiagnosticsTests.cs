@@ -43,7 +43,7 @@ public sealed class RazorDiagnosticsTests : IClassFixture<RazorFixture>
 
         // Every one the compiler reports reaches the file, with its range and LSP severity.
         var reported = RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board));
-        var all = RazorFixture.Ok(await manager.GetAllDiagnosticsAsync([]));
+        var all = RazorFixture.Ok(await manager.PullDiagnosticsAsync());
         var scanned = Assert.Single(all, entry => NativePaths.AreEqual(entry.Key, Board)).Value;
         foreach (var expected in markup.Diagnostics.Select(d => Expected(markup, d)))
         {

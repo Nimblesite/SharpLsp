@@ -27,7 +27,7 @@ let ``standalone fsx loads without an fsproj`` () =
         let script = write dir "Script.fsx" "let square x = x * x\nprintfn \"%d\" (square 12)\n"
         let ws = FSharpWorkspace.create ()
 
-        let! result = FSharpWorkspace.loadProject ws script
+        let! result = FSharpWorkspaceLoading.loadProject ws script
 
         Assert.True(
             (match result with
@@ -50,7 +50,7 @@ let ``fsx load closure includes the loaded script`` () =
         let script = write dir "Main.fsx" "#load \"Lib.fsx\"\nprintfn \"%d\" (Lib.double 21)\n"
         let ws = FSharpWorkspace.create ()
 
-        let! _ = FSharpWorkspace.loadProject ws script
+        let! _ = FSharpWorkspaceLoading.loadProject ws script
 
         let sourceFiles =
             ws.ProjectOptions
@@ -75,7 +75,7 @@ let ``fsx defines INTERACTIVE and EDITING but not COMPILED`` () =
         let script = write dir "Defines.fsx" "let x = 1\n"
         let ws = FSharpWorkspace.create ()
 
-        let! _ = FSharpWorkspace.loadProject ws script
+        let! _ = FSharpWorkspaceLoading.loadProject ws script
 
         let otherOptions =
             ws.ProjectOptions

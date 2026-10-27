@@ -6,3 +6,6 @@
 pub mod manager;
 pub mod protocol;
 pub mod transport;
+
+#[cfg(test)]
+pub(crate) mod fake_compiler;

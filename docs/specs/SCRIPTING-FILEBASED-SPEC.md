@@ -164,11 +164,21 @@ Implementation: [FSharpWorkspace.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/
 
 `FSharpChecker.GetProjectOptionsFromScript` is the single entry point. It resolves `#r`, `#r "nuget:"`, `#I`, and `#load` closures, selects the framework references, and returns `FSharpProjectOptions` directly consumable by the existing `parseAndCheckOnce` pipeline.
 
+Every implicit root-source read made during option resolution uses that request's supplied source snapshot, including source-range construction. A cancelled saved-file read cannot delay a later unsaved edit. The public FCS filesystem hook carries only a task-local reference to the current root input; it retains no result cache and restores the caller's scope when resolution ends.
+
 Invocation parameters:
 - `assumeDotNetFramework = false`
 - `useSdkRefs = true`
 - `useFsiAuxLib = true` — makes the `fsi` object bind, so `fsi.CommandLineArgs` resolves.
 - `previewEnabled` follows the resolved language version.
+
+### Current compiler inputs and diagnostics `[SCRIPT-FSX-DIAGNOSTICS]`
+
+The published sidecar includes the SDK's `FSharp.Compiler.Interactive.Settings.dll` required by `useFsiAuxLib`. Script resolution enables FCS simple resolution so a missing assembly reference produces the compiler's real diagnostic rather than an empty successful report.
+
+Every script edit refreshes its compiler input options before the sidecar acknowledges the change, so the next semantic query observes the current `#r` and `#load` directives. Changed source membership triggers diagnostic invalidation. Compiler input options may persist; computed diagnostic arrays remain request-local, with result reuse owned by [DIAG-ARCHITECTURE-SALSA](DIAGNOSTICS-SPEC.md).
+
+Compiler option-resolution errors appear once on their actual owning script range; a global setup failure belongs to the root script at 0:0. Invalid compiler inputs report their real setup failures before semantic or analyzer work can invent downstream errors. Repairing and reintroducing a missing reference must clear and restore the error without restarting the editor, including after explicit workspace reloads. Valid `fsi` bindings and relative references to real SDK-built assemblies remain error-free and resolve their actual types without a preceding diagnostic request.
 
 ### Preprocessor symbols `[SCRIPT-FSX-SYMBOLS]`
 

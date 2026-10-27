@@ -37,6 +37,7 @@ public sealed class MessageRouter
     {
         try
         {
+            ct.ThrowIfCancellationRequested();
             if (envelope.Method is not null && envelope.Id is not null)
             {
                 return await HandleRequestAsync(envelope, ct).ConfigureAwait(false);

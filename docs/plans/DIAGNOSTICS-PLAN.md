@@ -1,286 +1,134 @@
-# DIAGNOSTICS-PLAN
+# [DIAG-PLAN] Diagnostic Truth and Refresh Plan
 
-Implementation plan for [DIAGNOSTICS-SPEC](../specs/DIAGNOSTICS-SPEC.md).
+Release regression: [#441](https://github.com/Nimblesite/SharpLsp/issues/441). Analyzer false negatives: [#343](https://github.com/Nimblesite/SharpLsp/issues/343).
 
-> **Architecture pivot (current).** The previous push-based, eager-solution-scan plan produced phantom CS0246/CS0234 errors during workspace load and could not be repaired by the verification pass. The plan now mirrors `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit): NuGet restore gate → workspace open → pull-driven diagnostics with `global_state_version`-keyed `resultId` → debounced `workspace/diagnostic/refresh`. See [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md). Phases 1–2 below are partially completed; the parts that still apply are kept, the parts that contradict the new architecture are marked obsolete with rationale.
+F# lint failures and missing findings: [#469](https://github.com/Nimblesite/SharpLsp/issues/469). The compiler-compatible dependency is built from a hash-pinned upstream archive through a regular project reference; the build prepares guarded AST corrections for optional type names and stale rule state.
 
-## Phase 1: Per-Document Diagnostics IPC (P0) — DONE
+Behavior is defined by [DIAGNOSTICS-SPEC.md](../specs/DIAGNOSTICS-SPEC.md). The published pull-diagnostics article remains a promise to implement. Compiler build oracles and real editor observations determine success.
 
-The sidecar's per-document diagnostics path is correct and survives the pivot. The Rust host's push wiring stays as the LSP-3.16 fallback for editors that don't negotiate pull.
+## [DIAG-PLAN-PROOF] Regression Evidence
 
-### Rust LSP Host
+Current qualification (2026-10-26): the unchanged complete diagnostic editor group passes all 60 cases on Windows against the normal published binaries in the extension's actual bundle layout, with private NTFS fixtures and profile. The current Linux editor group also passes all 60 cases. The native cancellation/workspace groups pass 17/21 cases on Windows and 17/22 on Linux; the additional Linux case fills the real inotify queue. The complete eleven-file cancellation suite remains byte-for-byte identical to both failing runs that exposed lost unsaved buffers during workspace replacement (#491). Assertions and response budgets were retained. The source fix is pushed as `09acd28b`; the shared toolkit was pushed first as `78ba3821`.
 
-- [x] Create `diagnostics` module in Rust host (`src/sharplsp/src/diagnostics.rs`)
-- [x] Map sidecar `DiagnosticResult` → LSP `Diagnostic` struct
-  - Map severity: `"Error"` → 1, `"Warning"` → 2, `"Info"` → 3, `"Hidden"` → 4
-  - Map code, message, range
-  - Set `source: "sharplsp-csharp"`
-- [x] On `textDocument/didOpen` / `textDocument/didChange` / `textDocument/didSave`: request diagnostics from sidecar (background task) — kept as the push fallback path
-- [x] Send `textDocument/publishDiagnostics` notification with mapped results — push fallback only; pull is primary (Phase 5)
-- [x] Clear diagnostics on `textDocument/didClose`
-- [x] Version-gate the push pipeline ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md)): per-URI push generations, stale results never published, failed fetch for the newest generation retried until published or superseded. Hardening found while investigating GitHub #160 — that issue's actual root cause was path-qualified `_._` placeholder references poisoning FCS ([PKG-ASSETS-FS](../specs/PACKAGE-MAINTENANCE-SPEC.md)), fixed in `FSharpAssets.packageAssemblies` with regression test `path-qualified placeholder compile entries are never handed to FCS as references`. Rust test: `failed_fetch_after_revert_must_not_strand_stale_published_diagnostics`; F# sidecar guard: `diagnostics clear after an error edit is reverted`
-- [x] Republish a *provisional* set until it settles ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md)): a file-based app's first set is a tier-2 placeholder carrying `SLSPC0002` plus phantom `CS0246`s, and the background restore that replaces it fires no client event, so the push loop keeps fetching until the code clears. Rust test: `provisional_filebased_set_must_be_republished_once_restore_settles`
-- [x] Advertise pull diagnostics only to clients without push support ([DIAG-LSP-CAPABILITIES-EXCLUSIVE](../specs/DIAGNOSTICS-SPEC.md)) — a client offered both keeps one `DiagnosticCollection` per model and reports every diagnostic twice. Rust e2e test: `test_push_capable_client_is_not_offered_pull_diagnostics`
-- [ ] Add debounce (150ms window) before sidecar push request — superseded by Phase 5's 2000ms refresh debounce; only relevant if push fallback is in use
-- [x] Rust e2e tests: `test_diagnostics_cleared_on_close`, `test_request_works_after_diagnostic_notification`
-- [x] VSCode extension tests: `diagnostics.test.ts` (6 tests — error detection, missing type, clean file, edit cycle, range check, close clears)
-- [ ] Full-stack test: open a file with real errors → errors appear in Problems panel (requires sidecar)
+Full branch CI is not green. The normal release host, sidecars, packaged extension and Zed artifact built before WSL restarted during the Rider build. A persistent-storage recovery attempt exhausted the system drive; after cache preservation and cleanup, the Linux Node and .NET binaries still report filesystem I/O errors. All source, qualified binaries and test evidence are retained. Complete CI, PR monitoring and the requested release remain pending a working build environment. Fresh Rust, transitive NuGet and five npm audits report no findings; the feature branch's Sharp 0.35.5 update covers the three high default-branch alerts, and GitHub withdrew the remaining `sprintf-js` advisory on 2026-10-22.
 
-### C# Sidecar
+- [x] Prove real native queue loss cannot freeze closed compiler reports ([#490](https://github.com/Nimblesite/SharpLsp/issues/490)). The frozen mixed-language process test fills the actual Linux inotify queue while only its owned Rust host is stopped, then repairs both closed sources and independently builds both SDK projects successfully. The old host keeps returning unchanged error identities and fails; the fixed host retires those errors, detects a second lost-event regression with exact FS0001/CS0029 ownership and ranges, and retains the same host and compiler PIDs. The test source remains byte-for-byte unchanged. Full current-host editor/native qualification and complete branch CI remain required.
 
-- [x] `workspace/diagnostics` handler exists (`CSharpSidecar.HandleDiagnosticsAsync`) — extended in Phase 5 to accept `previousResultId` and emit `Changed` flag
-- [x] `WorkspaceManager.GetDiagnosticsAsync` extracts from `SemanticModel.GetDiagnostics()`
-- [x] `DiagnosticResult` MessagePack type defined
+- [x] Prove malformed lint JSON and invalid hints cannot hide fresh unsaved FS0001 errors. Two actual VSIX cases fail before the fix and pass with a visible SLSPF0104 warning, preserved compiler errors, automatic lint recovery and retirement of the failure warning after configuration repair. Two more unchanged regressions prove live complexity thresholds 2 → 10 → 2 and 10 → 2 → 10 in one compiler process against independent upstream findings and exact ranges. All ten lint regressions pass on Windows and Ubuntu. The combined diagnostic accuracy, analyzer, lint and policy selection passes 31 Windows cases with normal editor exit; the preceding Ubuntu controls pass 29 cases. The complete 1,434 managed cases and unchanged coverage gates pass on Ubuntu. Source preparation preserves all 21 checked build outputs on an unchanged incremental build. Both new VSIX suites are selected by the shared Ubuntu/Windows chunk manifest. Full branch CI remains required.
 
-## Phase 2: Solution-Wide Eager Scan (P0) — REMOVED
+- [x] Real VSIX fixtures independently fail the F# and C# compiler with FS0001 and CS0029 while an unrelated clean file resolves through its real sidecar.
+- [x] Confirm 12 genuine VSIX failures for capability negotiation, closed-file workspace reports, automatic Problems publication, disk fix/regression cycles, unsaved dependency edits and live solution scope.
+- [x] Confirm three native LSP process failures for modern capability negotiation, closed-file pull reports and missing F# closed-file legacy publications.
+- [x] Prove F# script reference failures appear exactly once at the source, clear after repair and return on regression, with and without explicit workspace reload. Three real VSIX cases pass after genuine missing-error, cascading-error and stale-reference failures (#454); the published interactive settings asset, valid `fsi` binding and real SDK-built relative DLL are verified, with hover before the first diagnostic pull. All 463 existing F# engine cases pass against the integrated script and restore-policy source; the combined editor suite remains required.
+- [x] Confirm three real VSIX analyzer failures after a genuine CA1822 compiler build oracle: live fixes, analyzer configuration and suppression changes.
+- [x] Run the integrated diagnostic regression assertions against reviewed matching binaries. All 65 real VSIX cases pass together with the native source-watching fix and matching compiler/Common payloads; all 1,432 .NET cases (130 Common, 832 C#, 470 F#) pass the complete .NET CI target and unchanged coverage gates. The four ownership fixtures prove actual editor-model closure and root removal (#467); all original diagnostic assertions and response budgets remain intact. Complete final-branch CI is tracked separately below.
+- [x] Preserve the observable legacy restore-pending notice without speculative package errors, then clear it before the first resolved package hover. The unchanged native regression, all 832 C# cases and all 45 diagnostic VSIX cases pass after the reactive IPC fix.
+- [x] Prove solution replacement removes previous workspace errors without a window restart; two real solutions switch and switch back in one native session, retiring old reports explicitly.
+- [x] Prove sidecar failures/restarts cannot memoize an empty false-clean result. The unchanged native #453 regression fails against the prior compiler session and passes after input restoration: the first successful post-crash pull retains an unsaved FS0039 and closed-file CS0029, the real compiler PID changes, and the host survives. All 36 existing manager regressions pass.
+- [x] Re-run the real FluentValidation and Serilog diagnostic edit/clear cases that failed the full Windows baseline. Both unchanged real-repository cases pass together against the reviewed native host and matching compiler/Common payloads: the FluentValidation constraint error and Serilog type error appear and clear after repair (2/2, 44.654s). No assertions, response budgets or semantic rescue calls were changed. The entire unchanged GitReader F# .NET Framework suite also passes all 11 cases and teardown (583.307s, normal editor exit). A subsequent combined run passes all 65 diagnostic cases followed by all 11 GitReader cases in one editor session (76/76, 961.264s), including the hook that failed the older full run and normal editor exit; final integrated CI remains required.
 
-> ⚠️ **Removed by architecture pivot.** This phase implemented the eager `workspace/diagnostics/all` bulk RPC and the post-load solution scan. The eager scan iterates `Solution.Projects` and calls `GetCompilationAsync()` on each, which produces phantom CS0246/CS0234 because consumer projects are compiled before their dependencies are cached as `CompilationReference`s. The replacement is Phase 5 (pull-driven workspace diagnostics) plus Phase 5.6 (NuGet restore gate). See [DIAG-ARCHITECTURE-EAGER-SCAN](../specs/DIAGNOSTICS-SPEC.md).
+## [DIAG-PLAN-PULL] Protocol and Query Ownership
 
-### Rust LSP Host
+- [x] Prefer textDocument.diagnostic when the client also supports publishDiagnostics; advertise stable sharplsp identifier and inter-file/workspace support.
+- [x] Suppress publications to negotiated pull clients, preserving one diagnostic identity and exact counts.
+- [x] Enumerate actual Roslyn/FCS source metadata without eager compilation; route every source to its language engine.
+- [x] Keep all computed diagnostic memoization in shared lspkit Salsa infrastructure. Extension/sidecar state retains no parallel diagnostic result cache.
+- [x] Return full/unchanged reports with opaque snapshot IDs; stable pulls skip IPC and semantic recomputation.
+- [x] Stream workspace partial results and explicit empty reports for excluded documents; live solution opt-out proves retirement of closed-file results.
+- [x] Keep compiler/IPC failures as retriable request errors and invalidate failed query results for retry, including unavailable language engines.
+- [x] Prove cancellation (-32800), supersession (-32802/retrigger), malformed parameters (-32602), foreground hover responsiveness and no post-terminal/stale-version partial reports through a real 128-source mixed solution.
+- [x] Propagate per-request cancellation through IPC into Roslyn/FCS compiler work. Real blocked compiler requests fail before the fix and pass unchanged afterward: cancellation returns -32800 while the original read remains held, fresh F# and C# diagnostics stay current, and compiler PIDs remain stable. Final source also passes all three Linux cancellation sessions, both Windows F# script sessions and the actual editor analyzer cancellation/edit/close case (1/1, 15s). The complete matching managed run passes 1,434 cases and all unchanged coverage gates; complete final-branch CI remains required.
+- [x] Implement [DIAG-ANALYSIS-CANCELLATION]: supersede older pulls on changed previousResultId and actual editor input, including repeated previousResultId. Genuine native failures prove blocked document, workspace and CodeLens work delays fresh errors; real Roslyn change/close cases prove the analyzer token remains uncancelled before the fix. The unchanged regressions pass afterward, including an unrelated-input control and both cancellation orders. The promoted source passes 21 native cases on Windows and Ubuntu, 20 shared CLI cases, strict lint and the actual editor edit/clear/close regression (1/1, 15s, natural editor exit). Shared cancellation keeps one request registry and no parallel version/result store; final full-branch CI remains required.
+- [x] Prove solution selection supersedes blocked document diagnostics, workspace scans and CodeLens before loading the selected compiler context. Three unchanged native regressions fail against the prior host on both Windows and Ubuntu, then pass after shared-registry supersession: actual A/B/A solution switches preserve compiler PIDs, return exact SDK-confirmed errors and explicitly retire excluded reports while the original read remains held. Final source passes all 17 cancellation/input/selection cases on both platforms, all 15 real VSIX accuracy/cancellation cases, 20 shared CLI cases and strict Rust lint; complete final-branch CI remains required.
+- [x] Remove the bulk workspace/diagnostics/all RPC and its eager compilation/verification implementation ([#484](https://github.com/Nimblesite/SharpLsp/issues/484)). The frozen real C# IPC test fails while the route succeeds, then passes unchanged after the route, DTO and 168 lines of eager implementation are deleted. F#'s matching six-case protocol controls and the C# regression pass on both platforms. All 833 C# managed cases pass on Windows, and the complete Linux suite passes all 1,445 cases with unchanged coverage gates. Existing Razor, framework, empty-workspace, cancellation and serialization assertions use the actual lazy document APIs. Final editor integration and complete branch CI remain required.
 
-- [x] Read `diagnostics.solution_wide_analysis` from config (default: `true`) — kept; now controls whether the server answers `workspace/diagnostic` pulls
-- [x] Read `diagnostics.project_filter` from config (default: empty = all projects) — kept; now restricts `workspace/diagnostic` results
-- [x] On solution load: request solution-wide diagnostics — ⚠️ **OBSOLETE.** Removed. The host no longer triggers a scan on load; the editor pulls when it wants data. `request_solution_in_background` in `src/sharplsp/src/diagnostics.rs` will be deleted in Phase 5.
-- [x] Stream diagnostics incrementally (batch by file) to avoid blocking — ⚠️ **OBSOLETE.** Replaced by `workspace/diagnostic` partial-result streaming in Phase 5.
-- [ ] On file change: re-request diagnostics for changed file + dependents — ⚠️ **OBSOLETE.** Replaced by `diagnostics/refresh` IPC + debounced `workspace/diagnostic/refresh` in Phase 5.
-- [x] Advertise `workspaceDiagnostics: true` in server capabilities — kept; required for pull workspace diagnostics
+## [DIAG-PLAN-INPUTS] Changes and Lifetime
 
-### C# Sidecar
+- [x] Invalidate dependent reports before and after source mutations, including unsaved overlays and closed-file disk changes; input revisions cannot block behind compiler queries.
+- [x] Follow selected solutions outside editor workspace folders using reactive input watchers, without retaining diagnostic data in the extension.
+- [x] Follow compiler-owned source and project directories outside the selected solution root. Three unchanged real VSIX regressions fail before the fix and pass after it: an external F# owner activates an empty F# slice beside a C# solution, and both languages clear and restore unopened external errors after SDK-verified disk edits. Two unchanged native protocol/SDK cases also pass after genuine failures, with standard refreshes, changed Salsa result identities, no editor file-change notifications and no semantic rescue after edits (#462, #463). Existing selected-project errors remain visible.
+- [x] Reload changed project/analyzer/editorconfig inputs; real CA1822/NoWarn transitions prove policy changes.
+- [x] Refresh inherited lint configuration above the selected solution without recursively watching parent trees. The unchanged real Windows regression first retains FL0065 after an independent linter proves zero findings, then passes creation/change/deletion after shallow ancestor watches are added. It also passes in Linux VS Code. The combined cohorts pass 33 Windows and 40 Linux editor cases; final source passes all 237 host unit cases, all 28 shared live-watcher cases, and strict host/toolkit clippy. Scope assertions cover ancestor-to-recursive replacement and unrelated input exclusion. Full branch CI remains required.
+- [x] Preserve generated compiler errors through analyzer opt-out and reference changes: a real SDK-built IIncrementalGenerator emits CS0029, reported once at the owning project URI with a zero-length 0:0 range. Adding, removing and restoring its Analyzer ProjectReference produces error/clean/error in Problems and workspace pulls while ordinary sources stay clean; all three F#/C#/generated project editor cases pass together.
+- [x] Prove unsaved F# overlay replay through actual SDK source creation and metadata reload, retire a deleted C# source explicitly, and restore saved F# errors when its overlay closes. Real SDK build oracles and native reports pass (9321d87d). Native creation and deletion also pass without editor file notifications: a new implicit SDK source reports its real CS0103, removal retires its previous result and removes its metadata entry, and the unsaved F# overlay stays current (#466). All 18 native diagnostic protocol cases pass, including exact workspace-completion counts after generated SDK sources are excluded from membership reloads.
+- [x] Deliver typed background compiler notifications while IPC is idle; shared transport belongs to lspkit and refresh is explicitly negotiated for older callers.
+- [x] Emit actual compiler workspace completion after successful loading in both engines, gated by negotiated IPC notifications. The unchanged native mixed-solution regression fails with zero notifications before the fix and passes through initial load, another solution and switching back with two completion notifications per selection. All 832 C#, 463 F# and 130 Common engine tests pass without skips (#460).
+- [x] Preserve a visible terminal error for truncated native IPC prefixes/payloads, including after valid responses; zero-byte EOF remains clean (lspkit #21, native RED/GREEN regression).
+- [x] Prove C# background SDK restore completion emits a standard refresh through idle typed IPC, independently of filesystem or semantic-request rescue (81da7b24).
+- [x] Prove completed owning-project adoption refreshes closed-file diagnostics, including the first F# owner of a C#-only solution (#462, #463).
+- [x] Verify the F# owning-file restore path recreates a fixture-owned missing package cache and updates closed-file Problems automatically. A real Newtonsoft API builds successfully before cache removal; an SDK build without restore then fails for that package. Opening the unselected external F# owner restores its cache and reveals the real closed FS0001, followed by SDK-verified repair and regression. All four ownership VSIX cases pass together without a manual pull or hover; direct idle-IPC notification proof remains separate.
+- [x] Prove F# restore completion refreshes diagnostics independently of filesystem or semantic-request rescue (e40d30a6): the actual compiler IPC has no queued notification at the didChange acknowledgment, then emits a typed diagnostics refresh while idle before any further request. The real package cache is restored and the closed FS0001 retains its exact source and range; all 470 F# tests pass with the CI runsettings.
+- [ ] Coalesce refreshes and preserve generation ordering across edits, workspace replacement and process recovery.
+- [ ] Invalidate only the required dependency graph when a compiler input changes; verify unrelated result identities remain stable where safe.
 
-- [x] Add `workspace/diagnostics/all` IPC handler — ⚠️ **TO BE DELETED in Phase 5.** Caused phantom CS0246s on workspace load.
-- [x] Add `GetAllDiagnosticsAsync(string[]? projectFilter, CancellationToken)` to `WorkspaceManager` — ⚠️ **TO BE DELETED in Phase 5.** Same reason.
-  - The topological-order patch landed on `OrderProjectsByDependencies` (`WorkspaceManager.cs`) was a partial mitigation. It does not survive: source generators and NuGet still race even with topological iteration. The function is removed entirely.
-- [ ] Stream results — send partial diagnostics as each project completes — **moved to Phase 5** as part of `workspace/diagnostic` partial-result streaming.
+## [DIAG-PLAN-ENGINES] Compiler and Analyzer Truth
 
-### Configuration
+- [x] Prove and fix F# compile-assembly resolution across every SDK `packageFolders` root ([#481](https://github.com/Nimblesite/SharpLsp/issues/481)). A real SDK-built local package lives only in a fixture-owned fallback cache: the unchanged final VSIX regression misses closed-file FS0193 before the fix and passes on Windows and Ubuntu after it, including compiler-verified repair and regression without query rescue. The original independent-package Windows failure also passes; all seven ownership cases pass with cache preconditions independently verified. A supplemental real-SDK managed regression verifies primary-root metadata, used-assembly identity and fallback → primary → fallback precedence without another restore. Final managed coverage and complete branch CI remain required; preserve the earlier disk-exhaustion run as invalid infrastructure evidence.
+- [x] Complete integrated verification of imported restore inputs ([#482](https://github.com/Nimblesite/SharpLsp/issues/482)). The frozen Windows VSIX tests first omit a real FS0193 and a second CS0029 after only imported package versions change. The final unchanged editor cases and eight fallback/project/generated/restore-policy controls pass together on Windows and Ubuntu, including automatic live repair while unrelated errors remain. Three real-SDK direct/nested/inherited import cases fail before the fix and pass afterward. A supplemental cyclic-reference test captures a stack overflow in the first guard and passes after bounded project-graph inspection. Source53 passes all 1,443 managed cases and unchanged coverage gates on both platforms; broader restore and complete branch CI requirements remain open.
+- [x] Complete integrated verification that restore cannot hide invalid imports ([#483](https://github.com/Nimblesite/SharpLsp/issues/483)). Missing and malformed imports each produce a genuine false-success failure in the new SDK tests. An independent SDK oracle proves restore exits zero while normal build/evaluation returns MSB4019. All six focused import/cycle/failure/recovery contracts pass after normal SDK evaluation is required. The final source53 candidate passes all 1,443 managed cases, unchanged coverage gates and ten editor controls per platform. Preserve the preceding Windows copy/out-of-memory failures and Linux coverage failure; they do not qualify as passing runs. Subsequent bulk-route changes require their own verification.
+- [x] Complete integrated verification of timestamp-preserving package changes ([#485](https://github.com/Nimblesite/SharpLsp/issues/485)). Four frozen real Windows editor cases first omit package-signature/removal errors, then pass after comparing declared references with actual SDK dependency snapshots, including live repair and preserved unrelated errors. Five real SDK controls preserve exact project timestamps through removal, exact ranges, equivalent nested versions and metadata changes. The metadata and include-assets repairs fail before cached metadata is rejected, then all five pass unchanged. All 1,450 managed cases and unchanged coverage gates pass on both platforms. The fourteen-case editor selection passes on both; after required helper reuse, the final four cases still fail against the old runtime and all seven affected cases pass on both platforms with frozen assertions and normal editor exit. Broader restore inputs and complete branch CI remain open.
+- [ ] Complete integrated verification of target-framework snapshot freshness ([#486](https://github.com/Nimblesite/SharpLsp/issues/486)). Three real SDK failures prove timestamp-preserving target switches/additions/removals are incorrectly current; the unchanged-framework-set reorder control passes. All fifteen package/import/framework contracts pass after comparing the SDK's actual framework snapshot. The real C# editor test observes old `net10.0` assets after the target becomes `netstandard2.1`; both focused editor cases now pass with the matching fixes, while final broad editor/managed/coverage verification remains required.
+- [ ] Complete integrated verification of restored single-target F# SDK contexts ([#487](https://github.com/Nimblesite/SharpLsp/issues/487)). The Windows editor misses an independently SDK-proven FS0039, and two real managed cases omit globbed sources before the fix. All nine design-time cases pass after reusing the existing SDK pipeline, including exact compiler errors, target defines and compile ownership. The two frozen framework editor cases pass on Windows; broader package/analyzer/ownership/framework controls and full matching managed/coverage runs remain required.
+- [ ] Complete integrated verification that unavailable SDK contexts never present fallback-only analysis as compiler truth ([#488](https://github.com/Nimblesite/SharpLsp/issues/488)). A real SDK oracle and fresh sidecar marker precede the frozen VSIX failure: diagnostic requests unexpectedly succeed. Rejecting unavailable F# inputs exposes a second failure: the host discards the SDK cause and endlessly requests retries. Preserving the typed backend failure makes the unchanged Linux failure/recovery test pass, including exact SDK cause, true compiler errors and fresh result identity. Independent-owner/framework-switch controls and final current Windows/Linux managed/editor/protocol qualification remain required; preserve supported unrestored-owner behavior.
+- [x] Prove and fix the Windows project-file sharing contract behind repeated F# edit failures ([#489](https://github.com/Nimblesite/SharpLsp/issues/489)). A held real editor-write handle causes the unchanged regression to fail inside XDocument.Load. One shared Result-returning XML reader permits writes and atomic replacement; three actual saves retain all eighteen metadata assertions. The affected editor case and all sixty Windows diagnostic cases pass with the normal published payload. The original intermittent owner's PID was not captured; retain the deterministic sharing proof and the original EBUSY failures.
+- [x] Prove and fix wildcard `.fsproj` analysis ([#455](https://github.com/Nimblesite/SharpLsp/issues/455)). A project declaring `<Compile Include="*.fs" Exclude="..." />` loaded with the XML reader's literal `*.fs` path, so glob-only files were neither owned nor checked and no FS0001 surfaced. Compile items now come from `dotnet msbuild -getItem:Compile` in project order, cached per project and cleared on reload; Exclude, Remove, Condition and `Directory.Build.props` imports are all MSBuild's. The two new wildcard tests failed with the literal `*.fs` list before the fix and pass with the exact ordered list and a real FS0001/hover after it; all 483 F# sidecar tests pass.
+- [x] Complete all seventeen native compiler-cancellation contracts on Windows. Tracing proves duplicate automatic/manual initial loads supersede the fixture's workspace query before compiler entry. Removing only the redundant initial load preserves every barrier and assertion. The final host and current compiler pair pass all seventeen cases with explicit binary hashes. The earlier twenty-one workspace protocol cases pass separately; final complete branch CI remains required.
+- [x] F# first: include every loaded project's compiled source and preserve compiler parse/type errors.
+- [x] Share the C# analyzer pipeline with the existing resolver; honor the evaluated SDK/NuGet analyzer references and effective editorconfig options without injecting analyzers the project disables. IDE code-style analyzers run in the editor whatever `EnforceCodeStyleInBuild` says, reporting only rules promoted to a warning or error ([#343](https://github.com/Nimblesite/SharpLsp/issues/343)).
+- [x] Prove unopened default Razor SDK components participate in workspace pulls, map CS0029 to the component source and clear after a compiler-verified disk repair.
+- [x] Respect NoWarn, source suppressions, analyzer opt-out and effective severity without suppressing compiler errors.
+- [x] Prove actual generated-source and global/project diagnostic errors remain visible at their owning project with a zero-length 0:0 range: real FS0084, CS5001 and generated CS0029 editor cases pass in the verified 61-case combined suite, with exact counts and SDK build oracles (8b325497, 57e4a445).
+- [ ] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly.
+- [ ] Preserve F# FSharpLint/FSharp.Analyzers.SDK and SharpLsp static analyzer behavior.
+- [x] Supply codeDescription URLs ([#343](https://github.com/Nimblesite/SharpLsp/issues/343)): each C# finding's descriptor `HelpLinkUri` and FSharpLint's per-rule page; F# compiler codes carry none.
+- [ ] Supply unnecessary tags where specified.
 
-- [x] `DiagnosticsConfig.solution_wide_analysis` field exists (default: `true`)
-- [x] `DiagnosticsConfig.analyzers_enabled` field exists (default: `true`)
-- [x] Add `project_filter: Vec<String>` to `DiagnosticsConfig`
-- [ ] Add `min_severity: String` to `DiagnosticsConfig` (default: `"hint"`)
-- [ ] Add `max_per_file: u32` to `DiagnosticsConfig` (default: `0` = unlimited)
-- [ ] Hot-reload config via `workspace/didChangeConfiguration`
+## [DIAG-PLAN-CONFIG] Configuration
 
-## Phase 3: F# Diagnostics (P0 — parallel with C#)
+- [x] Default solution_wide_analysis to true; live opt-out clears closed-file results while preserving open-file errors.
+- [x] Match project names, native paths and selected-solution-relative globs for F# and C# workspace pulls; exclusions retire prior reports and direct document requests remain unfiltered. Four live filter transitions per engine and all 14 accuracy cases pass (21253bc3, #451).
+- [x] Prove initial analyzer opt-out and live false/true/false transitions through real compiler sessions, preserving compiler errors (83836651).
+- [x] Replay analyzer configuration after process recovery (#453): real F# crash restores unsaved FS0039 and closed C# CS0029; real Roslyn crash preserves SDK-confirmed CA1822 opt-out before the first successful pull, then live opt-in restores the analyzer error and opt-out clears it. Both native sessions pass with the same host and new owned compiler PIDs (0c8953e1).
+- [x] Validate all four min_severity values and apply max_per_file after filtering, with zero unlimited. Four real F#/C# editor cases fail before the fix and pass afterward; all 21 accuracy/analyzer/policy editor cases and all 236 existing Rust unit cases pass (f4c5ef77, #452).
+- [x] Preserve raw restore-pending state before publication filtering. With min_severity=error, a real legacy client receives the final CS0029 automatically after SDK restore, without a hover/pull rescue or visible informational notice (ee42c874).
+- [x] Implement and validate refresh_debounce_ms: actual F# source bursts coalesce into one standard refresh at live 100 → 1000 → 100 millisecond settings; the 2000 millisecond default is exposed, and negative/fractional/string/unknown controls reject without replacing the default or last valid policy. Two native sessions pass after genuine pre-fix rejection (bb2a3d92, #457).
+- [x] Implement and validate auto_restore_on_open in both engines: four real F#/C# editor cases compare default restoration, explicit opt-out/live opt-in, and missing fixture-owned package caches against actual SDK effects. All four pass together after genuine pre-fix failures; 130 Common and 236 Rust cases also pass (33cfa885, #459). The broader restore gate and props-trigger guarantees remain tracked separately.
 
-- [ ] `FSharpCheckFileResults.Diagnostics` integration in F# sidecar
-- [ ] Map F# diagnostic severity to LSP
-- [ ] Solution-wide F# analysis via `FSharpChecker`
-- [ ] FSharpLint integration for code style
-- [ ] FSharp.Analyzers.SDK plugin loading
+## [DIAG-PLAN-VERIFY] Integration and Delivery
 
-## Phase 4: Analyzer Diagnostics (P0)
+Current workspace-replay candidate (2026-10-25): all seventeen cancellation cases, all twenty-two workspace protocol cases and all sixty actual VS Code diagnostic cases pass against the same normally built immutable Linux host and compiler pair; strict all-target development Clippy and formatting pass. The editor exits naturally, and runtime hashes match before and after qualification. The formerly failing switchback test, shared session and selection helper are byte-identical to both failed full cohorts. Its twenty-second obsolete-I/O guard remains unchanged. The captured race delivered unsaved text just before workspace replacement discarded it; the canonical FIFO now replays selected-graph overlays before releasing the transport, without adopting excluded owners ([#491](https://github.com/Nimblesite/SharpLsp/issues/491)). The preceding native-rescan host also passed all sixty editor and twenty-two workspace cases; the overflow test remains causally RED/GREEN, including its protocol-correct bounded retry. The current source mirror measures 5.9373% duplication against the lowered 5.95% ceiling. Shared toolkit CI exposed and fixed an independent target-attachment race with unchanged actual-syscall and F# process-churn regressions ([lspkit #28](https://github.com/Nimblesite/lspkit/issues/28)). Preserve all earlier failures. Complete branch CI and final Windows host qualification remain required.
 
-- [ ] Enable Roslyn `DiagnosticAnalyzer` framework in sidecar
-  - `CompilationWithAnalyzers.GetAnalyzerDiagnosticsAsync()`
-- [ ] Load analyzers from project NuGet references
-- [ ] Load .editorconfig severity overrides
-- [ ] IDE0005 (unused usings) detection
-- [ ] Map analyzer diagnostic codes to LSP `Diagnostic.code` + `codeDescription` URL
+Current source-builder proof (2026-10-25): four real public CLI cases pass on Windows and Linux against the same normally compiled portable builder and genuine pinned archive. They exercise argument/path/hash rejection before extraction, both verified AST patterns and rule-state correction, corruption of each prepared source and every fingerprint field, invalid fingerprint JSON, hash revalidation despite matching output metadata, and unchanged bytes/timestamps on a verified no-op. Two new precompiled-handoff assertions fail before wiring and pass afterward without changes. The full tooling target passes on CI's Node 20.20.2, including all six new cases; the machine's Node 26 warning failure remains preserved. Phase 2 stages the normal project-reference builder and archive; phase 4 downloads and executes them without compilation. Full remote artifact integration and final branch CI remain required.
 
-SharpLsp-owned static analyzers are tracked in
-[DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md](DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md).
-The first rules are monorepo-gated, solution-wide unused-public-code analyzers
-for both C# and F#.
+Current project-save candidate (2026-10-25): all 1,465 managed cases pass without skips on both platforms (151 Common, 833 C#, 481 F# each). Unchanged coverage gates pass: Windows 96.3675%/96.3850%/94.3274%; Linux 95.9402%/96.3850%/94.2464%. Fifty-one reviewed build inputs match both replicas, and all twelve built/tested/published assembly triples match exactly. The shared XML reader has 100% line coverage. All sixty Windows diagnostic editor cases pass with the normal published payload; all seventeen current native cancellation cases and the exact 38-case prebuilt Windows CI selection also pass. The frozen sharing regression retains all eighteen assertions and its causal Windows failure. A private mount namespace gives the normal Linux test user writable temporary sockets without changing the global mount; the complete managed suite then passes. Preserve the preceding read-only socket failures, collector warnings, rejected compiler-pair selection and failed copy into the old read-only editor tree. Final Linux host/editor/native qualification and complete branch CI remain open.
 
-## Phase 5: Pull Diagnostics + Refresh Cycle (P0 — primary path)
+Current transport contracts (2026-10-25): four added native cases use the actual compiled reference backend and real files, covering repair/regression, cancelled-terminal drainage, honest EOF/cancellation-write failure, and repeated natural watcher exit/respawn on Windows. All 37 transport tests pass in a fresh instrumented cohort, with 99.0826% production coverage against the unchanged 99% floor and 100% coverage of the cancellation module. Strict all-target Clippy passes. The preceding 97.7064% cohort and all 44 original profiles are preserved; added portable lifecycle assertions close that Windows gap. Deslop finds no clusters in the final test file after canonical fixture reuse. This is scoped transport proof, not a complete workspace CI pass. Linux host compilation is being recovered from a fresh RAM cache after 682 cached libraries and several compiler files report physical I/O errors; preserve those failures and keep the remaining delivery items open.
 
-This is the target diagnostic pipeline. Until the `resultId` / refresh work below lands, push (Phase 1 wiring) is what actually converges, so the two models are advertised **exclusively**: `diagnosticProvider` is offered only to clients that declare no `textDocument.publishDiagnostics` support. A client given both builds a `DiagnosticCollection` per model and reports every diagnostic twice ([DIAG-LSP-CAPABILITIES-EXCLUSIVE](../specs/DIAGNOSTICS-SPEC.md)). Implements [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md), [DIAG-LSP-PULL](../specs/DIAGNOSTICS-SPEC.md), and [DIAG-LSP-REFRESH](../specs/DIAGNOSTICS-SPEC.md).
+Current SDK-context candidate (2026-10-25): all 480 F# managed cases and unchanged coverage gates pass on both platforms (94.2432% Linux, 94.3243% Windows). Forty-seven managed/build inputs match both replicas; twelve built/tested/published assembly triples match exactly. All eight focused SDK/ownership editor cases pass per platform. The final lint-clean SDK regression still fails against the preserved old payload and passes against the fixed payload with every assertion retained. Windows passes all 21 native workspace protocol cases and strict native formatting/all-target development Clippy. Its full editor run passes 58 cases and reports three failures: disk exhaustion in analyzer setup and cleanup, plus a project-write sharing error. The unchanged affected selection then passes three cases but reproduces the F# sharing failure. Fifteen of seventeen native cancellation cases pass; both remaining barrier failures remain open. Earlier overbroad error classification, cache, disk-capacity and UNC failures remain preserved. The Linux build filesystem is emergency read-only with I/O errors; exact release CI and final Linux editor/native qualification remain required. Complete branch CI is still red.
 
-### Rust LSP Host
+Earlier framework/reference candidate (2026-10-25): all 1,463 managed cases pass without skips on Windows and Ubuntu (151 Common, 833 C#, 479 F# per platform), with all unchanged coverage gates passing. Eight frozen framework/reference test files remain unchanged; forty-six reviewed managed/build files match both replicas. The three real IPC reference controls preserve one authoritative error per missing reference and clear after repair. The final normal-publish Linux editor run passes all 59 cases and all 21 native protocol cases pass. The complete Windows editor run passes 56 cases but fails three fixture-owned package-cache preconditions because its wrapper adds a user-wide fallback cache; SDK A/B restoration proves that cause. Current SDK-context integration supersedes that earlier payload. Fresh audits pass for all three Rust lockfiles, both .NET targets with transitive packages and all five npm graphs. Two npm advisories first fail the existing gate, then disappear after the scoped MSAL Node 7.1.0 override and serializer 7.1.3 update; the real VSIX packaging CLI and full extension lint/type checks pass with the patched dependencies. Complete branch CI remains red as detailed below.
 
-- [x] Implement `textDocument/diagnostic` request handler (LSP 3.17 pull model) — `pull_diagnostics.rs`
-- [x] Implement `workspace/diagnostic` request handler — `pull_diagnostics.rs`
-- [ ] Forward `previousResultId` to sidecar in IPC payload
-- [ ] Return `RelatedFullDocumentDiagnosticReport` when changed, `RelatedUnchangedDocumentDiagnosticReport` (`{ kind: "unchanged" }`) when sidecar reports `Changed = false`
-- [ ] Construct `resultId = "p:{project_version}|d:{doc_version}|g:{global_state_version}"` from sidecar response fields
-- [ ] `workspace/diagnostic` partial-result streaming via `WorkDoneProgress` partialResultToken — emit one `WorkspaceDocumentDiagnosticReport` per project as it completes
-- [ ] Subscribe to the [DIAG-IPC-REFRESH](../specs/DIAGNOSTICS-SPEC.md) sidecar notification
-- [ ] Implement debounced refresh queue: `tokio::sync::Notify` + 2000ms `tokio::time::sleep` collapse, matches `Microsoft.CodeAnalysis.LanguageServer`'s `AsyncBatchingWorkQueue`
-- [ ] Send LSP `workspace/diagnostic/refresh` notification when the debounce drains
-- [ ] **Delete** `request_solution_in_background` from `src/sharplsp/src/diagnostics.rs` (the eager-scan trigger)
-- [ ] **Delete** `verify_error_files`, `sync_text_to_sidecar` from `src/sharplsp/src/diagnostics.rs` (verification pass — see Phase 5.5)
-- [ ] Cancel in-flight per-document IPC pulls when editor sends a fresh pull for the same document
-- [ ] Server capability: add `diagnosticProvider.identifier = "sharplsp"` so editors distinguish SharpLsp's diagnostics
+Latest package-snapshot candidate (2026-10-25): all 1,450 managed cases pass without skips on Windows and Ubuntu (141 Common, 833 C#, 476 F#), and all unchanged coverage gates pass. Both build replicas match the forty reviewed managed/build source files. Fourteen real editor cases pass per platform; the final seven affected cases also pass after duplication cleanup. The final frozen Windows tests retain four causal failures against the preserved old runtime, while the same assertions pass with the repaired runtime. Deslop measures 5.9463% against the unchanged 6.15% ceiling, with no identical/nearly-identical clusters remaining in the changed helpers. Formatting, TypeScript, ESLint, manifest scheduling and whitespace checks pass. This qualifies package-reference freshness and subsequent bulk-route editor integration; framework/other restore inputs and complete branch CI remain required.
 
-### C# Sidecar
+Latest bulk-route candidate (2026-10-25): all 1,445 Linux managed cases and the unchanged coverage gates pass (136 Common, 833 C#, 476 F#). All 833 Windows C# cases and their unchanged coverage gate pass; the matching six-case F# controls also pass. The new protocol assertions are byte-for-byte unchanged from the frozen failing C# run. Required Deslop rescanning measures 5.9553% against the unchanged 6.15% ceiling; formatting, spec citations and whitespace checks pass. Editor integration and full branch CI remain required for this subsequent candidate.
 
-- [ ] Extend `workspace/diagnostics` IPC payload to `DiagnosticsRequest { FilePath, PreviousResultId? }`
-- [ ] Extend response to include `ResultId` and `Changed` flag; return empty items when `Changed = false`
-- [ ] Add `workspace/diagnostics/pull` IPC handler — streams per-document `WorkspaceDocumentDiagnosticReport`s via partial responses (replaces the deleted `workspace/diagnostics/all`)
-- [ ] Add `WorkspaceDiagnosticsCache` keyed by `(DocumentId, ProjectVersion, DocumentVersion, GlobalStateVersion)` — mirrors Roslyn's `VersionedPullCache`
-- [ ] Add `IDiagnosticsRefresher` equivalent: `GlobalStateVersion: ulong` field + `RefreshRequested` event
-- [ ] Subscribe to `_workspace.RegisterWorkspaceChangedHandler` — on `ProjectAdded`, `ProjectReloaded`, `ProjectRemoved`, `SolutionAdded`, `SolutionChanged`, `SolutionReloaded`, `DocumentChanged`, increment `GlobalStateVersion` and fire `RefreshRequested`
-- [ ] Add `diagnostics/refresh` outbound IPC notification (sidecar → host) carrying `{ GlobalStateVersion, AffectedProjectIds[] }`
-- [ ] Add `workspace/initializationComplete` outbound IPC notification fired once after restore + `OpenSolutionAsync` complete
-- [ ] **Delete** `GetAllDiagnosticsAsync` from `WorkspaceManager`
-- [ ] **Delete** `OrderProjectsByDependencies` (added as a partial mitigation; obsolete now that the eager scan is gone)
-- [ ] **Delete** `workspace/diagnostics/all` handler from `CSharpSidecar`
-- [ ] Skip auto-generated syntax trees (`syntaxTree.IsAutoGenerated`, `GeneratedKind.MarkedGenerated`) — matches OmniSharp's behavior; prevents diagnostics on `obj/Debug/.../*.AssemblyInfo.cs` etc.
+Latest restore candidate (2026-10-25): immutable source53 passes all 1,443 managed cases (136 Common, 832 C#, 475 F#), all unchanged coverage gates and the final ten real editor controls on both Windows and Ubuntu. The frozen final Windows editor regression still fails against the preceding restore gate after teardown reuse; it passes with the repaired gate and normal SDK evaluation. This qualifies the imported-input fixes, not subsequent source changes or complete branch CI.
 
-### Tests
+Latest fallback candidate (2026-10-25): all 1,437 managed cases and unchanged coverage gates pass on both Ubuntu and Windows (130 Common, 832 C#, 475 F# per platform). The fixed runtime passes 40 diagnostic VSIX cases together on Windows. After moving the existing SDK build assertion into a shared helper without weakening it, the final frozen fallback regression still fails against the old resolver, and all four focused fallback/project/generated-source cases pass on both platforms. The unchanged Windows NTFS cancellation assertions also pass after correcting CodeDom's UNC source-file handling in the shared native-lock fixture; a real helper startup failure was captured before that correction, and the five focused managed cases and final complete Windows run pass afterward. Earlier disk-exhaustion, alternate-layout, inherited-configuration and excessive-temp-path failures remain preserved. Complete branch CI is still required.
 
-- [ ] Full-stack: pull diagnostics during workspace load returns "loading" or partial results, never CS0246 for resolvable types
-- [ ] Full-stack: `previousResultId` round-trip — repeat pull returns `{ kind: "unchanged" }`
-- [ ] Full-stack: workspace mutation triggers `workspace/diagnostic/refresh` within 2.5s (debounce + slack)
-- [ ] Full-stack: editing a file invalidates only its project's `resultId`s; unrelated files' pulls return unchanged
-- [ ] Full-stack: 8-project diamond graph (the current `test_full_stack_cross_project_references_no_false_positives` fixture) — pull never returns phantom CS0246
+Previous combined candidate (2026-10-24): all 1,434 managed cases and their unchanged coverage gates pass on both Ubuntu and Windows. The three native cancellation, five recovery and two external-owner sessions pass on both platforms. The actual combined release host, current compiler pair and profiler engine pass all ten selected editor regressions together, with running binary hashes verified. Windows CI now selects the existing F# NTFS cancellation cases alongside transport tests; the exact prebuilt target passes 35 Common and two F# cases. Extension formatting, ESLint, TypeScript, specification/chunk checks and all 36 tooling assertions pass; Deslop measures 6.0267% against the unchanged 6.15% ceiling.
 
-## Phase 5.5: Diagnostic Verification (P0) — REMOVED
+The shared toolkit's exact Linux workflow now passes cleanly on its current 362-file source checkpoint: formatting, UI install/build/path checks, strict release Clippy and specification citations, all 458 Rust cases without skips, every unchanged coverage floor, coverage-gate regressions, typeDiagram checks, and the complete release build. Measured live/server/sidecar coverage is 94.48%/98.25%/99.54%. Platform-specific URI branches compile only on their applicable OS, preserving their existing conversions. The normally formatted syscall-isolation tests remain byte-for-byte unchanged across the profiler fix. Earlier generation 353 and subsequent cohort failures remain preserved, including the unrelated-process attachment race. The final combined branch still needs a complete clean root `make ci` pass and final Windows qualification; keep this plan open.
 
-> ⚠️ **Removed by architecture pivot.** The verification pass re-sent `textDocument/didChange` with the same disk text and re-fetched diagnostics, expecting Roslyn to clear false positives. It does not work — `Solution.WithDocumentText` does not re-resolve metadata references or re-run source generators, so the same phantom errors come back. The pull + refresh model in Phase 5 removes the pass's reason to exist: SharpLsp no longer asserts diagnostics until the editor pulls. See [DIAG-ARCHITECTURE-EAGER-SCAN](../specs/DIAGNOSTICS-SPEC.md).
+- [ ] Meet source size/function limits; reuse canonical helpers and pass the existing Deslop duplication ratchet.
+- [ ] Run strict Rust format/clippy, sidecar checks, VSIX type/lint/format checks and relevant existing suites.
+- [ ] Promote only reviewed, proven private changes with coordinated source locks; preserve the separate CI collector's artifacts until it exits naturally.
+- [x] Commit/push shared lspkit changes before the parent feature branch pointer.
+- [ ] Run the exact complete CI preparation workflow on the final branch, then coordinate PR/CI/release ownership.
+- [ ] Add automated real source-builder CLI proofs for hash/archive/AST guards, fingerprint tampering and unchanged incremental output; verify fixture/tool inputs survive the precompiled CI artifact boundary.
+- [x] Make the shared toolkit coverage gate fail closed for missing tools/inputs and invalid thresholds; twelve real CLI regressions pass on Windows and Ubuntu without lowering any coverage floor (lspkit #22).
 
-Original tasks (kept here for traceability — every item is undone in Phase 5):
+## [DIAG-PLAN-ADVANCED] Subsequent Analysis
 
-- [x] `didOpen` syncs document text to sidecar via `notify_did_change` — kept (it's a correct text-sync operation, just no longer part of a verification pipeline)
-- [x] After solution-wide scan, verification pass re-checks files with errors/warnings — ⚠️ **DELETED** (`verify_error_files` removed in Phase 5)
-- [x] Verification publishes corrected diagnostics per-file (clears false positives) — ⚠️ **DELETED** (no push during load)
-- [x] Verification yields between files to avoid starving other sidecar requests — ⚠️ **DELETED**
-- [x] Test: `test_full_stack_diagnostics_cleared_after_error_fixed` (deterministic) — kept; now exercises pull semantics (close → fixed file → pull returns clean)
-- [ ] Exponential backoff for persistent errors (1s, 2s, 4s, max 30s) — ⚠️ **NOT NEEDED.** Pulls run only when the editor asks; there is no retry loop to back off.
-- [ ] Periodic re-verification for long-running sessions — ⚠️ **NOT NEEDED.** Workspace events drive `diagnostics/refresh`; the editor re-pulls on its own schedule.
-
-## Phase 5.6: NuGet Restore Gate (P0)
-
-The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReference>` items at workspace open. Mirrors `Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.ProjectDependencyHelper`. Implements [DIAG-RESTORE](../specs/DIAGNOSTICS-SPEC.md).
-
-### C# Sidecar
-
-- [ ] Add `Workspace/ProjectRestorer.cs`: inspect each project's `obj/project.assets.json`, compare timestamp + `PackageReference` set against `.csproj`
-- [ ] Add `Workspace/DotnetCliHelper.cs`: shell `dotnet restore <path> --verbosity quiet`, capture stdout/stderr, surface failures as a structured error
-- [ ] In `WorkspaceManager.OpenCoreAsync`: call `ProjectRestorer.RestoreIfStaleAsync(target, ct)` BEFORE `MSBuildWorkspace.Create(...)`
-- [ ] Honor `diagnostics.auto_restore_on_open` config flag (default true) — when false, skip restore and surface a server-side warning notification
-- [ ] After restore completes successfully, increment `GlobalStateVersion` and fire `diagnostics/refresh`
-- [ ] After restore + `OpenSolutionAsync` complete, fire `workspace/initializationComplete` outbound IPC notification
-
-### Rust LSP Host
-
-- [ ] On workspace open: create LSP `$/progress` work-done token (`workspace/sharplsp-load`)
-- [ ] Forward sidecar restore progress (start, per-project status, end) via `$/progress` notifications
-- [ ] On `workspace/initializationComplete` from sidecar: send LSP `workspace/projectInitializationComplete` (custom notification, matches Roslyn LSP contract); end the work-done progress
-- [ ] Add `diagnostics.auto_restore_on_open` to `DiagnosticsConfig` (default true)
-
-### Tests
-
-- [ ] Full-stack: workspace with stale `assets.json` (delete it) → server triggers restore on open, no CS0246 for NuGet types after init complete
-- [ ] Full-stack: workspace with `diagnostics.auto_restore_on_open = false` → server publishes a warning, leaves diagnostics in incomplete state, does not lie about success
-- [ ] Full-stack: `workspace/projectInitializationComplete` notification fires exactly once per workspace open
-
-## Phase 6: Background Analysis Optimization (P1)
-
-- [ ] Cache `Project.GetCompilationAsync` results across pulls within the same `Solution` snapshot (Roslyn does this internally — verify our IPC layer doesn't defeat it)
-- [ ] Cancel stale per-document IPC pulls on new pulls for the same document
-- [ ] Memory budget: cap `WorkspaceDiagnosticsCache` size; LRU-evict by `GlobalStateVersion` age
-- [ ] Progress reporting via `$/progress` for `workspace/diagnostic` pulls (in addition to load progress from Phase 5.6)
-
----
-
-## TODO
-
-### Done
-- [x] **Rust host**: Create `diagnostics` module (`src/sharplsp/src/diagnostics.rs`)
-- [x] **Rust host**: Map sidecar `DiagnosticResult` → LSP `Diagnostic`
-- [x] **Rust host**: On `didOpen`/`didChange`/`didSave` → request diagnostics from sidecar (push fallback path)
-- [x] **Rust host**: Send `textDocument/publishDiagnostics` to editor (push fallback path)
-- [x] **Rust host**: Clear diagnostics on `textDocument/didClose`
-- [x] **Rust host**: Read `diagnostics.solution_wide_analysis` from config
-- [x] **Rust host**: Read `diagnostics.project_filter` from config
-- [x] **Rust host**: `didOpen` syncs text to sidecar via `notify_did_change` (text-sync, kept)
-- [x] **Rust host**: Advertise `workspaceDiagnostics: true` in capabilities
-- [x] **Rust host**: Implement `textDocument/diagnostic` pull handler (LSP 3.17) — `pull_diagnostics.rs`
-- [x] **Rust host**: Implement `workspace/diagnostic` pull handler — `pull_diagnostics.rs`
-- [x] **Config**: Add `project_filter: Vec<String>` to `DiagnosticsConfig`
-- [x] **Test**: Rust e2e — didClose sends empty publishDiagnostics
-- [x] **Test**: Rust e2e — request() skips diagnostic notifications
-- [x] **Test**: VSCode — file with type error shows diagnostics
-- [x] **Test**: VSCode — file with missing type shows diagnostics
-- [x] **Test**: VSCode — valid file has no error diagnostics
-- [x] **Test**: VSCode — fixing an error clears the diagnostic
-- [x] **Test**: VSCode — diagnostics have correct severity and range
-- [x] **Test**: VSCode — closing a document clears its diagnostics
-- [x] **Test**: Full-stack — close/reopen with fixed source clears stale diagnostics
-- [x] **Test**: Full-stack — `test_full_stack_cross_project_references_no_false_positives` (8-project diamond, regression guard)
-
-### Removed (obsolete after architecture pivot)
-- [x] ~~**Rust host**: On solution load, request solution-wide diagnostics~~ — `request_solution_in_background` to be deleted in Phase 5; eager scan caused phantom CS0246s
-- [x] ~~**Rust host**: Stream diagnostics incrementally by file~~ — push streaming replaced by `workspace/diagnostic` partial-result streaming
-- [x] ~~**Rust host**: Verification pass re-checks files with errors after solution-wide scan~~ — `verify_error_files` to be deleted in Phase 5; band-aid that didn't work
-- [x] ~~**C# sidecar**: Add `workspace/diagnostics/all` IPC handler~~ — to be deleted in Phase 5
-- [x] ~~**C# sidecar**: Add `GetAllDiagnosticsAsync` to `WorkspaceManager`~~ — to be deleted in Phase 5
-- [ ] ~~**Rust host**: Add debounce (150ms) before sidecar request~~ — superseded by Phase 5's 2000ms refresh debounce
-- [ ] ~~**Rust host**: Re-request diagnostics for changed file + dependents~~ — replaced by `diagnostics/refresh` in Phase 5
-- [ ] ~~**Rust host**: Priority queue: active > visible > recent > rest~~ — pull model makes the editor the prioritizer; not needed
-- [ ] ~~**Rust host**: Cancel stale analysis on new edits~~ — moved to Phase 5 (cancel stale per-document IPC pulls)
-
-### Phase 5 — Pull + refresh (P0, primary path)
-- [ ] **Rust host**: Forward `previousResultId` to sidecar in IPC payload
-- [ ] **Rust host**: Return `{ kind: "unchanged" }` when sidecar reports `Changed = false`
-- [ ] **Rust host**: Construct `resultId = "p:{pv}|d:{dv}|g:{gsv}"` from sidecar response
-- [ ] **Rust host**: `workspace/diagnostic` partial-result streaming via `partialResultToken`
-- [ ] **Rust host**: Subscribe to `diagnostics/refresh` IPC notification
-- [ ] **Rust host**: Debounced refresh queue (2000ms) → LSP `workspace/diagnostic/refresh`
-- [ ] **Rust host**: Delete `request_solution_in_background`, `verify_error_files`, `sync_text_to_sidecar`
-- [ ] **Rust host**: Cancel in-flight per-document IPC pulls when fresher pull arrives
-- [ ] **Rust host**: Server capability `diagnosticProvider.identifier = "sharplsp"`
-- [ ] **C# sidecar**: Extend `workspace/diagnostics` IPC payload with `PreviousResultId`; response with `ResultId` + `Changed`
-- [ ] **C# sidecar**: Add `workspace/diagnostics/pull` handler with partial-response streaming
-- [ ] **C# sidecar**: Add `WorkspaceDiagnosticsCache` keyed on `(DocumentId, ProjectVersion, DocumentVersion, GlobalStateVersion)`
-- [ ] **C# sidecar**: Add `IDiagnosticsRefresher` equivalent (`GlobalStateVersion: ulong` + `RefreshRequested` event)
-- [ ] **C# sidecar**: Subscribe to `_workspace.RegisterWorkspaceChangedHandler`; bump version on relevant `WorkspaceChangeKind`s
-- [ ] **C# sidecar**: Emit `diagnostics/refresh` outbound notification with `{ GlobalStateVersion, AffectedProjectIds[] }`
-- [ ] **C# sidecar**: Emit `workspace/initializationComplete` outbound notification once after init
-- [ ] **C# sidecar**: Delete `GetAllDiagnosticsAsync`, `OrderProjectsByDependencies`, `workspace/diagnostics/all` handler
-- [ ] **C# sidecar**: Skip auto-generated syntax trees (`syntaxTree.IsAutoGenerated`)
-- [ ] **Test**: Pull during workspace load returns "loading" or partial — never CS0246 for resolvable types
-- [ ] **Test**: `previousResultId` round-trip → `{ kind: "unchanged" }`
-- [ ] **Test**: Workspace mutation triggers `workspace/diagnostic/refresh` within 2.5s
-- [ ] **Test**: Editing a file invalidates only its project's `resultId`s
-
-### Phase 5.6 — NuGet restore gate (P0)
-- [ ] **C# sidecar**: `Workspace/ProjectRestorer.cs` (assets.json staleness check)
-- [ ] **C# sidecar**: `Workspace/DotnetCliHelper.cs` (shell `dotnet restore`)
-- [ ] **C# sidecar**: Call `RestoreIfStaleAsync` in `OpenCoreAsync` before `MSBuildWorkspace.Create`
-- [ ] **C# sidecar**: Honor `auto_restore_on_open` config flag
-- [ ] **C# sidecar**: Bump `GlobalStateVersion` + `diagnostics/refresh` after restore
-- [ ] **Rust host**: `$/progress` work-done token for workspace load
-- [ ] **Rust host**: Forward sidecar restore progress as `$/progress` events
-- [ ] **Rust host**: Send LSP `workspace/projectInitializationComplete` on init complete
-- [ ] **Config**: Add `auto_restore_on_open: bool` to `DiagnosticsConfig` (default true)
-- [ ] **Config**: Add `refresh_debounce_ms: u32` to `DiagnosticsConfig` (default 2000)
-- [ ] **Test**: Stale `assets.json` → restore on open → no CS0246 for NuGet types
-- [ ] **Test**: `auto_restore_on_open = false` → server warns, does not lie about success
-- [ ] **Test**: `workspace/projectInitializationComplete` fires exactly once per open
-
-### Analyzer pipeline (Phase 4 unchanged, depends on Phase 5)
-- [ ] **C# sidecar**: Enable `CompilationWithAnalyzers.GetAnalyzerSemanticDiagnosticsAsync()` in per-document pull path
-- [ ] **C# sidecar**: Load NuGet analyzer references
-- [ ] **C# sidecar**: Load .editorconfig severity overrides
-- [ ] **C# sidecar**: IDE0005 (unused usings) detection
-- [ ] **C# sidecar**: Map analyzer codes to `codeDescription` URLs
-- [ ] **Static analyzers**: Implement
-  [DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md](DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md)
-  for monorepo-only unused public C#/F# code elements
-
-### F# sidecar (Phase 3 unchanged)
-- [ ] **F# sidecar**: `FSharpCheckFileResults.Diagnostics` integration
-- [ ] **F# sidecar**: Map F# diagnostic severity to LSP
-- [ ] **F# sidecar**: Solution-wide F# analysis via `FSharpChecker` (per-document, pull-driven)
-- [ ] **F# sidecar**: Equivalent `IDiagnosticsRefresher` + workspace event subscription
-- [ ] **F# sidecar**: FSharpLint integration
-- [ ] **F# sidecar**: FSharp.Analyzers.SDK plugin loading
-
-### Config remaining
-- [ ] **Config**: Add `min_severity: String` to `DiagnosticsConfig`
-- [ ] **Config**: Add `max_per_file: u32` to `DiagnosticsConfig`
-- [ ] **Config**: Hot-reload via `workspace/didChangeConfiguration` (bump `global_state_version`, fire refresh)
-
-### Tests remaining
-- [ ] **Test**: Full-stack — open file with errors → errors in Problems panel via pull
-- [ ] **Test**: Solution-wide pull surfaces errors in unopened files
-- [ ] **Test**: Project filter excludes specified projects from `workspace/diagnostic`
-- [ ] **Test**: Sidecar crash recovery preserves last-known `resultId` cache (or invalidates atomically)
-
-## Phase 7: Advanced Analysis
-
-- [ ] Code metrics (cyclomatic complexity)
-- [ ] Value tracking / data flow analysis
+- [ ] Code metrics (cyclomatic complexity).
+- [ ] Value tracking/data-flow analysis.

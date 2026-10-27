@@ -45,10 +45,12 @@ export async function openFileBasedApp(
 export async function waitForErrorCode(
   uri: vscode.Uri,
   code: string,
+  matches: (diagnostic: vscode.Diagnostic) => boolean = () => true,
 ): Promise<vscode.Diagnostic[]> {
   const diagnostics = await pollUntilResult(
     async () => errorsFor(uri),
-    (items) => items.some((diagnostic) => diagnosticCode(diagnostic) === code),
+    (items) =>
+      items.some((diagnostic) => diagnosticCode(diagnostic) === code && matches(diagnostic)),
     LSP_RESPONSE_MS * 4,
   );
   assert.ok(
@@ -124,8 +126,12 @@ async function hoverAt(uri: vscode.Uri, position: vscode.Position): Promise<vsco
   );
 }
 
-export function assertNoPackageBindingErrors(uri: vscode.Uri): void {
-  const errors = errorsFor(uri);
+export async function assertNoPackageBindingErrors(uri: vscode.Uri): Promise<void> {
+  const errors = await pollUntilResult(
+    async () => errorsFor(uri),
+    (items) => items.length === 0,
+    LSP_RESPONSE_MS,
+  );
   const codes = errors.map(diagnosticCode);
   assertContainsNone(codes, ['CS0234', 'CS0246', 'CS0103'], 'codes');
   assert.deepStrictEqual(errors, [], 'a restored package-backed file-based app has zero errors');

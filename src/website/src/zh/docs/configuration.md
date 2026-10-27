@@ -30,6 +30,15 @@ SharpLsp 有两类配置入口：
 ## 完整 TOML 模式
 
 ```toml
+[testing]
+configuration = "Debug"
+
+[debug.exceptions]
+break_on = "editor"
+just_my_code = true
+external_code = "throw-site"
+ignore = []
+
 [server]
 log_level = "info"
 debounce_ms = 150
@@ -45,6 +54,10 @@ enabled = true
 analyzers_enabled = true
 solution_wide_analysis = true
 project_filter = []
+min_severity = "hint"
+max_per_file = 0
+refresh_debounce_ms = 2000
+auto_restore_on_open = true
 
 [analyzers]
 dead_code = true
@@ -57,6 +70,14 @@ output_directory = ".sharplsp/profiles"
 
 每个字段都是可选的。省略字段时会使用上面显示的值。
 
+## 测试和调试
+
+`testing.configuration` 选择测试发现、执行、覆盖率和调试所用的 MSBuild 配置。即使项目默认为 Release，此设置也默认为 `Debug`。需要时可改为 `Release` 或自定义配置名，更改会在下一次操作时生效。运行选定测试时，仅增量构建所属项目及其依赖项，不构建无关的测试项目。构建失败时不会运行旧程序集。
+
+将 `debug.exceptions.break_on` 设为 `all` 可在已处理的异常处暂停；`unhandled` 仅在未处理的终止异常处暂停，`editor` 则遵循调试器的异常复选框。Just My Code 会跳过外部代码内部处理的异常。设置 `just_my_code = false` 后，外部异常也会触发暂停：`external_code = "throw-site"` 显示原始源码，`"user-boundary"` 显示用户代码中的调用位置，并保留异常详情。显式指定的启动 `cwd` 定义用户源码根目录；未指定时使用工作区文件夹。
+
+测试平台自己的 DLL 可能预先以 Release 模式构建。相关警告不表示用户的测试程序集也使用了 Release 模式。
+
 ## 会影响运行时行为的设置
 
 | 字段 | 行为 |
@@ -64,8 +85,13 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | 启动或跳过 C# sidecar |
 | `csharp.solution_path` | 选择一个 `.sln` 或 `.slnx`；可使用绝对路径或相对于工作区的路径 |
 | `fsharp.enabled` | 启动或跳过 F# sidecar |
-| `diagnostics.solution_wide_analysis` | 启用 C# 启动时的解决方案扫描 |
-| `diagnostics.project_filter` | 将该 C# 扫描限制为名称匹配的项目 |
+| `diagnostics.analyzers_enabled` | 启用 F# 和 C# 分析器诊断；不会隐藏编译器错误 |
+| `diagnostics.solution_wide_analysis` | 解决方案诊断包含未打开的 F# 和 C# 文件；默认启用 |
+| `diagnostics.project_filter` | 按项目名称或相对于所选解决方案的项目路径筛选 F# 和 C# 工作区结果；直接文档拉取不受影响 |
+| `diagnostics.min_severity` | 设置最低严重级别：`error`、`warning`、`info` 或 `hint`；默认为 `hint` |
+| `diagnostics.max_per_file` | 先按严重级别筛选，再限制每个文件的数量；`0` 表示不限制 |
+| `diagnostics.refresh_debounce_ms` | 在指定的毫秒窗口内合并诊断刷新请求；默认为 `2000`，支持实时更改 |
+| `diagnostics.auto_restore_on_open` | 打开工作区前还原缺失或过期的 SDK 资产和包文件，默认为 `true`；更改在下次打开工作区时生效 |
 | `analyzers.dead_code` | 启用 SharpLsp 的 C# 和 F# 死代码分析器 |
 | `analyzers.monorepo` | 将未使用的公共符号视为死代码，并将其报告为错误 |
 | `profiler.max_concurrent_sessions` | 限制同时运行的性能分析器会话数 |
@@ -80,7 +106,6 @@ output_directory = ".sharplsp/profiles"
 
 - `server.log_level`；
 - `server.debounce_ms`；
-- `diagnostics.analyzers_enabled`；
 - 除 `max_concurrent_sessions` 以外的所有 `profiler.*` 默认值。
 
 如需配置 VS Code 日志，请使用 `sharplsp.logging.level`；它会作为 `RUST_LOG` 转发给宿主。性能分析器命令目前使用请求自身的默认值，并将文件写入 `.sharplsp/profiles`。

@@ -7,20 +7,24 @@
 // message, as a warning, starting nothing.
 //
 // Each console program returns 48 on .NET Framework and 10 on .NET, PLUS its
-// argument count, so a task's exit code proves the framework that really ran
-// and the profile arguments that really reached it. RunProbe declares two .NET
+// argument count, and writes that code beside its binary. Both the task exit
+// and the fresh file prove the framework that really ran and the profile
+// arguments that really reached it. RunProbe declares two .NET
 // versions, so F5's "active .NET" and "first .NET" cases are told apart.
 //
 // Covers [NETFX-DEBUG] and [NETFX-CONTEXT].
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { assertContext, frameworkContextOf, underFramework } from './netfx-context-kit';
 import { useLoadedFixture } from './netfx-language-kit';
 import {
+  assertRanWith,
   EXIT_ON_NET,
   EXIT_ON_NETFX,
   recordStartedTasks,
+  resultFileOf,
   type RunnableProject,
   type StartedTask,
   writeRunFixture,
@@ -100,13 +104,14 @@ suite('.NET Framework F# — Run on the active framework, Debug on .NET only', (
     const tasks = new TaskRecorder();
     const started = recordStartedTasks();
     const mark = logMark(api);
+    const result = resultFileOf(fixture().root, project, tfm);
+    fs.rmSync(result, { force: true });
     try {
       await focusDocument(path.join(fixture().root, project.program));
       const run = await invokeCommand(CMD_RUN_PROGRAM);
       assert.ok(!run.rejected, `${CMD_RUN_PROGRAM} runs: ${run.message}`);
       await assertRunTask(tasks, started.started, project, tfm);
-      const exits = await tasks.waitForExits(1, FIXTURE_BUILD_MS);
-      assert.deepStrictEqual(exits, [exit], `it really ran on ${tfm}: it returned ${String(exit)}`);
+      assertRanWith(result, await tasks.waitForExits(1, FIXTURE_BUILD_MS), exit, tfm);
       await awaitLogged(api, mark, `Run: ${project.name} under ${tfm}`);
     } finally {
       tasks.dispose();

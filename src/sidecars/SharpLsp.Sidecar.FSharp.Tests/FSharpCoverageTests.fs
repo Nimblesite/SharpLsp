@@ -49,7 +49,7 @@ let internal loadWorkspace (files: (string * string) list) =
     task {
         let (dir, fsprojPath, paths) = makeProject files
         let state = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject state dir
+        let! result = FSharpWorkspaceLoading.loadProject state dir
         match result with
         | Ok () -> return (state, dir, fsprojPath, paths)
         | Error msg ->
@@ -114,25 +114,29 @@ let ``project usages resolve through a request path with different drive casing`
 // ── FSharpFileOrder tests ────────────────────────────────────────
 
 [<Fact>]
-let ``getCompileOrder returns empty for missing fsproj`` () =
-    let result = FSharpFileOrder.getCompileOrder "/definitely/not/a/real/path.fsproj"
+let ``getCompileOrder returns empty for missing fsproj`` () = task {
+    let state = FSharpWorkspace.create ()
+    let! result = FSharpFileOrder.getCompileOrder state "/definitely/not/a/real/path.fsproj"
     Assert.Empty(result)
+}
 
 [<Fact>]
-let ``getCompileOrder returns files in declared order`` () =
+let ``getCompileOrder returns files in declared order`` () = task {
     let (dir, fsproj, _) =
         makeProject
             [ "A.fs", "module A\nlet a = 1\n"
               "B.fs", "module B\nlet b = 2\n"
               "C.fs", "module C\nlet c = 3\n" ]
     try
-        let order = FSharpFileOrder.getCompileOrder fsproj
+        let state = FSharpWorkspace.create ()
+        let! order = FSharpFileOrder.getCompileOrder state fsproj
         Assert.Equal(3, order.Length)
         Assert.EndsWith("A.fs", order[0])
         Assert.EndsWith("B.fs", order[1])
         Assert.EndsWith("C.fs", order[2])
     finally
         cleanup dir
+}
 
 [<Fact>]
 let ``analyzeFileOrder returns empty when not loaded`` () = task {
@@ -1728,7 +1732,7 @@ let ``FEAT formatPreview returns original and formatted text`` () = task {
 // ── FEAT FSharpFileOrder: getCompileOrder edge cases ─────────────
 
 [<Fact>]
-let ``FEAT getCompileOrder resolves nested and relative include paths`` () =
+let ``FEAT getCompileOrder resolves nested and relative include paths`` () = task {
     // A Compile Include with a subdirectory must resolve to an absolute,
     // fully-qualified path under the project directory.
     let dir = NativePaths.Temp($"sharplsp-order-feat-{Guid.NewGuid():N}")
@@ -1744,7 +1748,8 @@ let ``FEAT getCompileOrder resolves nested and relative include paths`` () =
     let fsprojPath = NativePaths.Resolve(dir, "Nested.fsproj")
     File.WriteAllText(fsprojPath, fsproj)
     try
-        let order = FSharpFileOrder.getCompileOrder fsprojPath
+        let state = FSharpWorkspace.create ()
+        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
         Assert.Equal(2, order.Length)
         // Paths are absolute (rooted) and point inside the project dir.
         Assert.True(NativePaths.IsRooted(order[0]))
@@ -1753,9 +1758,10 @@ let ``FEAT getCompileOrder resolves nested and relative include paths`` () =
         Assert.Contains("src", order[0])
     finally
         cleanup dir
+}
 
 [<Fact>]
-let ``FEAT getCompileOrder skips Compile items without Include`` () =
+let ``FEAT getCompileOrder skips Compile items without Include`` () = task {
     // A <Compile> element lacking an Include attribute is ignored by the
     // Option.ofObj choose path.
     let dir = NativePaths.Temp($"sharplsp-order-noinc-{Guid.NewGuid():N}")
@@ -1770,24 +1776,28 @@ let ``FEAT getCompileOrder skips Compile items without Include`` () =
     let fsprojPath = NativePaths.Resolve(dir, "NoInclude.fsproj")
     File.WriteAllText(fsprojPath, fsproj)
     try
-        let order = FSharpFileOrder.getCompileOrder fsprojPath
+        let state = FSharpWorkspace.create ()
+        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
         Assert.Single(order) |> ignore
         Assert.EndsWith("Real.fs", order[0])
     finally
         cleanup dir
+}
 
 [<Fact>]
-let ``FEAT getCompileOrder returns empty for malformed xml`` () =
+let ``FEAT getCompileOrder returns empty for malformed xml`` () = task {
     // XDocument.Load throws on invalid XML; the handler swallows and returns [||].
     let dir = NativePaths.Temp($"sharplsp-order-bad-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     let fsprojPath = NativePaths.Resolve(dir, "Broken.fsproj")
     File.WriteAllText(fsprojPath, "<Project><ItemGroup><Compile Include=\"X.fs\"></Project>")
     try
-        let order = FSharpFileOrder.getCompileOrder fsprojPath
+        let state = FSharpWorkspace.create ()
+        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
         Assert.Empty(order)
     finally
         cleanup dir
+}
 
 // ── FEAT FSharpFileOrder: generateReorderEdit branches ───────────
 
@@ -2330,7 +2340,7 @@ let ``WS2 loadProject reports an error for a directory with no fsproj`` () = tas
     Directory.CreateDirectory(dir) |> ignore
     let state = FSharpWorkspace.create ()
     try
-        let! result = FSharpWorkspace.loadProject state dir
+        let! result = FSharpWorkspaceLoading.loadProject state dir
         match result with
         | Error msg -> Assert.Contains("No .fsproj", msg)
         | Ok () -> Assert.Fail("expected an error for a project-less directory")
@@ -2342,7 +2352,7 @@ let ``WS2 loadProject reports an error for a directory with no fsproj`` () = tas
 let ``WS2 loadProject reports an error for a non-existent path`` () = task {
     // discoverFsprojFiles hits its final else branch: the path does not exist.
     let state = FSharpWorkspace.create ()
-    let! result = FSharpWorkspace.loadProject state "/no/such/place/at/all"
+    let! result = FSharpWorkspaceLoading.loadProject state "/no/such/place/at/all"
     match result with
     | Error msg -> Assert.Contains("does not exist", msg)
     | Ok () -> Assert.Fail("expected an error for a non-existent path")
@@ -2556,7 +2566,7 @@ let ``loadProject reports an error for a malformed fsproj`` () = task {
     File.WriteAllText(NativePaths.Resolve(dir, "Bad.fsproj"), "this is not xml <<<")
     try
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws dir
+        let! result = FSharpWorkspaceLoading.loadProject ws dir
         Assert.True(match result with | Error _ -> true | Ok _ -> false)
     finally
         cleanup dir
@@ -2570,7 +2580,7 @@ let ``loadProject reports an error for a corrupt slnx`` () = task {
     File.WriteAllText(slnx, "<Solution><<<not xml")
     try
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws slnx
+        let! result = FSharpWorkspaceLoading.loadProject ws slnx
         Assert.True(match result with | Error _ -> true | Ok _ -> false)
     finally
         cleanup dir
@@ -2592,7 +2602,7 @@ let ``loadProject discovers and loads the first of several projects`` () = task 
     File.WriteAllText(NativePaths.Resolve(dir, "ProjB", "B.fs"), "module B\nlet b = 2\n")
     try
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws dir
+        let! result = FSharpWorkspaceLoading.loadProject ws dir
         Assert.True(match result with | Ok _ -> true | Error _ -> false)
         Assert.True(ws.IsLoaded)
     finally
@@ -2604,7 +2614,8 @@ let ``loadProject accepts a direct fsproj path and ignores attribute-less Compil
     let dir = NativePaths.Temp($"slsp-direct-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     let fsproj = NativePaths.Resolve(dir, "Direct.fsproj")
-    // The first <Compile> has no Include attribute → parseFsprojSourceFiles None arm.
+    // The first <Compile> has no Include attribute; MSBuild ignores it, so the
+    // evaluated Compile items hold only A.fs.
     File.WriteAllText(
         fsproj,
         "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
@@ -2615,7 +2626,7 @@ let ``loadProject accepts a direct fsproj path and ignores attribute-less Compil
     try
         let ws = FSharpWorkspace.create ()
         // Pass the .fsproj path directly (isFsprojPath true → Ok [| fullPath |]).
-        let! result = FSharpWorkspace.loadProject ws fsproj
+        let! result = FSharpWorkspaceLoading.loadProject ws fsproj
         Assert.True(match result with | Ok _ -> true | Error _ -> false)
         Assert.True(ws.IsLoaded)
     finally
@@ -2627,7 +2638,7 @@ let ``loadProjectWithCancellation reports an error for an invalid path`` () = ta
     let ws = FSharpWorkspace.create ()
     // An embedded NUL makes NativePaths.NormalizeFullPath throw before any guarded branch.
     let! result =
-        FSharpWorkspace.loadProjectWithCancellation ws "bad path" System.Threading.CancellationToken.None
+        FSharpWorkspaceLoading.loadProjectWithCancellation ws "bad path" System.Threading.CancellationToken.None
     Assert.True(match result with | Error _ -> true | Ok _ -> false)
 }
 
@@ -2648,7 +2659,7 @@ let ``analyzeFileOrder skips a compile entry whose file is absent`` () = task {
     // Ghost.fs is intentionally NOT created → collectUndefinedErrors returns [].
     try
         let ws = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspace.loadProject ws dir
+        let! _ = FSharpWorkspaceLoading.loadProject ws dir
         let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
         Assert.NotNull(issues :> obj)
     finally

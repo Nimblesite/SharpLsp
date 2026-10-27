@@ -2,6 +2,7 @@
 //!
 //! Implements LSP 3.17 lifecycle over stdio using `lsp-server`.
 
+mod build_monitor;
 mod call_hierarchy;
 mod code_actions;
 mod code_lens;
@@ -9,6 +10,7 @@ mod config;
 mod config_debug;
 mod configuration;
 mod cross_language;
+mod diagnostic_publish;
 mod diagnostics;
 mod document_symbols;
 mod folding;
@@ -19,6 +21,7 @@ mod formatting;
 mod handlers;
 mod hierarchy;
 mod hot_reload;
+mod inbound;
 mod inlay_hints;
 mod nav_cache;
 mod nuget;
@@ -59,15 +62,14 @@ use lsp_types::{
     },
     request::{
         CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
-        CodeActionRequest, CodeActionResolveRequest, CodeLensRequest, Completion,
-        DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
-        FoldingRangeRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
-        GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange,
-        PrepareRenameRequest, References, Rename, Request as _, ResolveCompletionItem,
-        SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
-        SemanticTokensRangeRequest, Shutdown, SignatureHelpRequest, TypeHierarchyPrepare,
-        TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
-        WorkspaceSymbolRequest,
+        CodeActionRequest, CodeActionResolveRequest, Completion, DocumentDiagnosticRequest,
+        DocumentHighlightRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDeclaration,
+        GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, InlayHintRequest,
+        LinkedEditingRange, PrepareRenameRequest, References, Rename, Request as _,
+        ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
+        SemanticTokensFullRequest, SemanticTokensRangeRequest, SignatureHelpRequest,
+        TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
+        WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -78,6 +80,12 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tree_sitter::Tree;
 
+use crate::build_monitor::handle_build_watch;
+use crate::diagnostic_publish::{
+    converge_provisional_publication, republish_open_diagnostics, sidecar_for_uri,
+    trigger_diagnostics,
+};
+use crate::inbound::{diagnostic_requests, inbound_with_inputs, SHUTDOWN_ANSWERED};
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
@@ -169,8 +177,8 @@ fn run_server() -> Result<()> {
     // Capabilities depend on what the client itself supports, so the initialize
     // request is answered by hand instead of through `Connection::initialize`.
     let (initialize_id, init_params) = connection.initialize_start()?;
-    let init_params: InitializeParams =
-        serde_json::from_value(init_params).context("deserialize InitializeParams")?;
+    let init_params: InitializeParams = lspkit_server::capabilities::decode_initialize(init_params)
+        .context("deserialize InitializeParams")?;
     let server_capabilities = build_capabilities(&init_params.capabilities);
     target_framework::remember_client(&init_params.capabilities);
     let capabilities_json = serde_json::json!({
@@ -250,6 +258,19 @@ fn run_server() -> Result<()> {
         None
     };
 
+    pull_diagnostics::state::initialize(
+        &init_params.capabilities,
+        &sharplsp_config.diagnostics,
+        &runtime,
+        [csharp_sidecar.as_ref(), fsharp_sidecar.as_ref()],
+        connection.sender.clone(),
+    )?;
+    pull_diagnostics::events::start(
+        [fsharp_sidecar.as_ref(), csharp_sidecar.as_ref()],
+        &runtime,
+        &connection.sender,
+    );
+
     let csharp_event_pump =
         start_csharp_event_pump(csharp_sidecar.as_ref(), &runtime, connection.sender.clone());
 
@@ -271,6 +292,9 @@ fn run_server() -> Result<()> {
     );
 
     if workspace_root.is_some() {
+        if let Some(target) = solution.target() {
+            pull_diagnostics::state::select_workspace(&target.to_string_lossy())?;
+        }
         workspace_open::start_sidecar(
             csharp_sidecar.as_ref(),
             solution.target(),
@@ -285,7 +309,7 @@ fn run_server() -> Result<()> {
         workspace_open::start_sidecar(
             fsharp_sidecar.as_ref(),
             workspace_root.as_ref(),
-            OpenFollowUp::new(&sharplsp_config, &vfs, None, None),
+            OpenFollowUp::new(&sharplsp_config, &vfs, Some(&connection.sender), None),
             &runtime,
         );
     }
@@ -299,6 +323,15 @@ fn run_server() -> Result<()> {
         &connection,
         &runtime,
     );
+    if let Some(folders) = &init_params.workspace_folders {
+        let targets: Vec<_> = folders
+            .iter()
+            .filter_map(|folder| paths::uri_to_path(folder.uri.as_str()).ok())
+            .collect();
+        services
+            .builds
+            .replace(&targets, &runtime, &connection.sender);
+    }
     main_loop(
         &connection,
         &runtime,
@@ -316,6 +349,8 @@ fn run_server() -> Result<()> {
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
     );
+    pull_diagnostics::state::shutdown()?;
+    drop(runtime);
 
     // Drop the connection so the writer thread's channel closes,
     // allowing io_threads.join() to complete.
@@ -474,11 +509,12 @@ fn pull_diagnostics_capability(
         .text_document
         .as_ref()
         .is_some_and(|text_document| text_document.publish_diagnostics.is_some());
-    if supports_push {
+    if supports_push && !pull_diagnostics::state::supports_pull(client) {
         return None;
     }
     Some(lsp_types::DiagnosticServerCapabilities::Options(
         lsp_types::DiagnosticOptions {
+            identifier: Some("sharplsp".to_owned()),
             inter_file_dependencies: true,
             workspace_diagnostics: true,
             ..lsp_types::DiagnosticOptions::default()
@@ -584,6 +620,8 @@ async fn handle_csharp_event(
 /// The per-connection services the main loop routes to: live configuration
 /// and the mounted profiler ([PROFILER-SHARED-LIBRARY-HOST]).
 struct HostServices {
+    /// Native build-output observations for reactive test discovery.
+    builds: build_monitor::BuildMonitor,
     /// Configuration requests and change notifications.
     configuration: configuration::Configuration,
     /// Profiler commands, notifications and cancellation.
@@ -603,12 +641,21 @@ fn settings_changed(
 ) {
     let settings = params.get("settings").unwrap_or(&serde_json::Value::Null);
     match services.configuration.update(settings) {
-        Ok(()) => services.solution.settings_changed(
-            &services.configuration,
-            csharp_sidecar,
-            vfs,
-            runtime,
-        ),
+        Ok(()) => {
+            services.solution.settings_changed(
+                &services.configuration,
+                csharp_sidecar,
+                vfs,
+                runtime,
+            );
+            if let Err(error) = services
+                .configuration
+                .config()
+                .and_then(|config| pull_diagnostics::state::configure(&config.diagnostics))
+            {
+                warn!(%error, "Diagnostic configuration could not be applied");
+            }
+        }
         Err(error) => warn!("Configuration change rejected: {error:#}"),
     }
 }
@@ -628,7 +675,14 @@ fn host_services(
         connection.sender.clone(),
         runtime,
     );
+    let mut builds = build_monitor::BuildMonitor::default();
+    builds.replace(
+        &[profiler_root.to_string_lossy().into_owned()],
+        runtime,
+        &connection.sender,
+    );
     HostServices {
+        builds,
         configuration,
         profiler,
         solution,
@@ -653,7 +707,9 @@ fn main_loop(
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
-    let inbound = spawn_shutdown_fast_path(connection);
+    let diagnostic_requests =
+        diagnostic_requests(runtime, [fsharp_sidecar, csharp_sidecar], vfs, connection);
+    let inbound = inbound_with_inputs(connection, diagnostic_requests.cancellation_handle())?;
 
     for msg in &inbound {
         match msg {
@@ -678,6 +734,9 @@ fn main_loop(
                 {
                     continue;
                 }
+                if diagnostic_requests.dispatch(&req, runtime)? {
+                    continue;
+                }
                 handle_request(
                     req,
                     vfs,
@@ -691,7 +750,11 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
+                if handle_build_watch(&notif, services, runtime, &connection.sender) {
+                    continue;
+                }
                 if notif.method == "$/cancelRequest" {
+                    diagnostic_requests.cancel(&notif.params);
                     services.profiler.cancel(&notif.params);
                     continue;
                 }
@@ -699,7 +762,20 @@ fn main_loop(
                     settings_changed(services, &notif.params, csharp_sidecar, vfs, runtime);
                     continue;
                 }
+                if notif.method == "workspace/didChangeWatchedFiles" {
+                    if let Err(error) = pull_diagnostics::changes::watched(
+                        notif.params,
+                        runtime,
+                        [csharp_sidecar, fsharp_sidecar],
+                        vfs,
+                        &connection.sender,
+                    ) {
+                        warn!(%error, "Diagnostic input update failed");
+                    }
+                    continue;
+                }
                 if notif.method == SHUTDOWN_ANSWERED {
+                    diagnostic_requests.cancel_all();
                     shutdown_requested = true;
                     continue;
                 }
@@ -730,52 +806,6 @@ fn main_loop(
     }
 
     Ok(())
-}
-
-/// The loop-internal marker that stands in for a `shutdown` the fast path
-/// has already answered.
-const SHUTDOWN_ANSWERED: &str = "sharplsp/shutdownAnswered";
-
-/// Answer `shutdown` the moment it arrives, ahead of whatever the loop is
-/// busy with. Implements [SHARPLSP-ARCHITECTURE-TIERS].
-///
-/// The loop dispatches one message at a time and a semantic request holds it
-/// for the sidecar's whole round trip, so a `shutdown` queued behind one waited
-/// that long. vscode-languageclient gives a server two seconds to answer before
-/// it declares the stop failed and abandons the restart the user asked for —
-/// on a Windows agent an F# check ran past that and left the client dead.
-/// LSP 3.17 asks the server to answer `shutdown` and accept no further work;
-/// the answer does not have to wait for work already in flight. This thread
-/// reads the client stream ahead of the loop, answers `shutdown` itself, and
-/// hands the loop [`SHUTDOWN_ANSWERED`] in its place so the loop still refuses
-/// everything that follows.
-fn spawn_shutdown_fast_path(connection: &Connection) -> crossbeam_channel::Receiver<Message> {
-    let (to_loop, from_client) = crossbeam_channel::unbounded();
-    let inbound = connection.receiver.clone();
-    let outbound = connection.sender.clone();
-    // The thread ends with the client stream; nothing waits on it.
-    drop(std::thread::spawn(move || {
-        for msg in &inbound {
-            let forwarded = match msg {
-                Message::Request(req) if req.method == Shutdown::METHOD => {
-                    info!("Shutdown request received");
-                    let resp = Response::new_ok(req.id, serde_json::Value::Null);
-                    if outbound.send(Message::Response(resp)).is_err() {
-                        break;
-                    }
-                    Message::Notification(Notification::new(
-                        SHUTDOWN_ANSWERED.to_string(),
-                        serde_json::Value::Null,
-                    ))
-                }
-                other => other,
-            };
-            if to_loop.send(forwarded).is_err() {
-                break;
-            }
-        }
-    }));
-    from_client
 }
 
 // ── Request Handling ──────────────────────────────────────────────
@@ -901,11 +931,6 @@ fn handle_request(
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             signature_help::handle(req, runtime, sidecar)
         }
-        // Code lens
-        CodeLensRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            code_lens::handle_code_lens(req, runtime, sidecar)
-        }
         // Rename — [RENAME-PREPARE], [RENAME-APPLY], [RENAME-CROSSLANGUAGE].
         PrepareRenameRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -957,12 +982,6 @@ fn handle_request(
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             code_actions::handle_code_action_resolve(req, runtime, sidecar)
         }
-        // Pull diagnostics (LSP 3.17)
-        DocumentDiagnosticRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
-        }
-        WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
         // Standard workspace/symbol
         WorkspaceSymbolRequest::METHOD => {
             handle_standard_workspace_symbol(req, parsers, vfs, runtime, fsharp_sidecar)
@@ -1071,37 +1090,6 @@ fn reveals_semantic_state(method: &str) -> bool {
     ) && !method.starts_with("sharplsp/")
 }
 
-/// Re-fetch and republish a document's diagnostics before a semantic response
-/// is sent, while the latest publication is still a provisional tier-2
-/// placeholder. On the serialized sidecar transport this fetch runs strictly
-/// after the request that produced the semantic answer, so the corrected
-/// diagnostic set always precedes a tier-1-revealing answer on the client
-/// stream. [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
-fn converge_provisional_publication(
-    uri: Option<&Uri>,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
-) {
-    let Some(uri) = uri else { return };
-    if !diagnostics::published_set_is_provisional(uri) {
-        return;
-    }
-    let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
-        return;
-    };
-    let Ok(file_path) = paths::uri_to_path(uri.as_str()) else {
-        return;
-    };
-    runtime.block_on(diagnostics::converge_provisional(
-        sidecar,
-        &connection.sender,
-        uri,
-        &file_path,
-    ));
-}
-
 // ── Navigation Request Dispatch ───────────────────────────────────
 
 /// Route navigation requests (definition, typeDefinition, declaration,
@@ -1208,19 +1196,6 @@ fn pick_sidecar<'a>(
     extract_document_uri(req).map_or(csharp, |uri| sidecar_for_uri(&uri, csharp, fsharp))
 }
 
-/// Select the sidecar that owns a document, by file language. F# documents go to
-/// the F# sidecar; everything else (including unknown extensions) to C#.
-fn sidecar_for_uri<'a>(
-    uri: &Uri,
-    csharp: Option<&'a Arc<SidecarManager>>,
-    fsharp: Option<&'a Arc<SidecarManager>>,
-) -> Option<&'a Arc<SidecarManager>> {
-    match LangId::from_uri(uri) {
-        Some(LangId::FSharp) => fsharp,
-        _ => csharp,
-    }
-}
-
 /// Pick primary + fallback sidecar for cross-language navigation.
 ///
 /// Primary is chosen by document language. Fallback is the other sidecar,
@@ -1289,8 +1264,10 @@ fn handle_load_solution(
         .context("sharplsp/loadSolution requires { solutionPath: string }")?;
 
     info!("Loading solution: {sln_path}");
+    pull_diagnostics::state::select_workspace(sln_path)?;
 
-    let payload = rmp_serde::to_vec(sln_path).context("serialize solution path")?;
+    let payload = sln_path.to_owned();
+    let diagnostic_config = pull_diagnostics::state::configuration()?;
 
     if let Some(cs) = csharp_sidecar {
         let cs = Arc::clone(cs);
@@ -1298,9 +1275,22 @@ fn handle_load_solution(
         let sender = connection.sender.clone();
         let vfs_for_diagnostics = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match cs.request("workspace/open", p).await {
-                Ok(_) => {
+            match workspace_open::open_workspace(&cs, &p).await {
+                Ok(()) => {
                     info!("Solution loaded in C# (Roslyn) sidecar");
+                    if let Err(error) = workspace_open::configure_diagnostics(
+                        &cs,
+                        diagnostic_config.analyzers_enabled,
+                        diagnostic_config.auto_restore_on_open,
+                    )
+                    .await
+                    {
+                        warn!(%error, "C# diagnostic configuration failed");
+                    }
+                    if pull_diagnostics::state::is_pull() {
+                        pull_diagnostics::state::engine_loaded();
+                        return;
+                    }
                     diagnostics::request_solution_in_background(
                         cs,
                         sender,
@@ -1316,9 +1306,26 @@ fn handle_load_solution(
     if let Some(fs) = fsharp_sidecar {
         let fs = Arc::clone(fs);
         let p = payload;
+        let sender = connection.sender.clone();
+        let vfs = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match fs.request("workspace/open", p).await {
-                Ok(_) => info!("Solution loaded in F# (FCS) sidecar"),
+            match workspace_open::open_workspace(&fs, &p).await {
+                Ok(()) => {
+                    info!("Solution loaded in F# (FCS) sidecar");
+                    if let Err(error) = workspace_open::configure_diagnostics(
+                        &fs,
+                        diagnostic_config.analyzers_enabled,
+                        diagnostic_config.auto_restore_on_open,
+                    )
+                    .await
+                    {
+                        warn!(%error, "F# diagnostic configuration failed");
+                    }
+                    pull_diagnostics::state::engine_loaded();
+                    if !pull_diagnostics::state::is_pull() {
+                        diagnostics::request_solution_in_background(fs, sender, vec![], vfs);
+                    }
+                }
                 Err(err) => error!("F# sidecar workspace/open failed: {err:#}"),
             }
         }));
@@ -1558,6 +1565,7 @@ fn handle_notification(
             {
                 let doc = &params.text_document;
                 info!("Opened: {}", doc.uri.as_str());
+                pull_diagnostics::state::begin_change();
                 vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
                 reparse(parsers, trees, &doc.uri, &doc.text);
                 // Sync text to the document's own sidecar so the semantic engine
@@ -1589,6 +1597,7 @@ fn handle_notification(
                 );
                 // Full sync — last content change is the full text.
                 if let Some(change) = params.content_changes.into_iter().next_back() {
+                    pull_diagnostics::state::begin_change();
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
                     nav_cache.invalidate(uri);
@@ -1621,10 +1630,28 @@ fn handle_notification(
                 serde_json::from_value::<lsp_types::DidCloseTextDocumentParams>(notif.params)
             {
                 info!("Closed: {}", params.text_document.uri.as_str());
+                pull_diagnostics::state::begin_change();
                 vfs.close(&params.text_document.uri);
                 let _ = trees.remove(&params.text_document.uri);
                 nav_cache.invalidate(&params.text_document.uri);
-                if let Err(err) = diagnostics::clear(&connection.sender, params.text_document.uri) {
+                if pull_diagnostics::state::is_pull() {
+                    if let Err(error) = pull_diagnostics::changes::closed(
+                        &params.text_document.uri,
+                        runtime,
+                        [csharp_sidecar, fsharp_sidecar],
+                    ) {
+                        warn!(%error, "Closed document could not reload disk text");
+                    }
+                    trigger_diagnostics(
+                        &params.text_document.uri,
+                        runtime,
+                        csharp_sidecar,
+                        fsharp_sidecar,
+                        connection,
+                    );
+                } else if let Err(err) =
+                    diagnostics::clear(&connection.sender, params.text_document.uri)
+                {
                     warn!("Failed to clear diagnostics: {err:#}");
                 }
             }
@@ -1633,51 +1660,6 @@ fn handle_notification(
             // Ignore unknown notifications per LSP spec.
         }
     }
-}
-
-/// Re-publish every open document's diagnostics, returning once each is out: a
-/// framework switch changes which `#if` branches compile, and the editor hears
-/// of the switch only after them. [NETFX-CONTEXT]
-fn republish_open_diagnostics(
-    vfs: &Vfs,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
-) {
-    let open = vfs
-        .iter()
-        .filter_map(|entry| push_target(entry.key(), csharp_sidecar, fsharp_sidecar))
-        .collect();
-    diagnostics::publish_now(runtime, open, &connection.sender);
-}
-
-/// Where a document's diagnostics come from: the sidecar its language routes
-/// to, and its native path.
-fn push_target(
-    uri: &Uri,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) -> Option<diagnostics::PushTarget> {
-    let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar)?;
-    let file_path = paths::uri_to_path(uri.as_str()).ok()?;
-    Some((Arc::clone(sidecar), uri.clone(), file_path))
-}
-
-/// Spawn a background diagnostic request for the given URI.
-///
-/// Routes to the correct sidecar based on the document's language.
-fn trigger_diagnostics(
-    uri: &Uri,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
-) {
-    let Some((sidecar, uri, file_path)) = push_target(uri, csharp_sidecar, fsharp_sidecar) else {
-        return;
-    };
-    diagnostics::request_in_background(runtime, sidecar, connection.sender.clone(), uri, file_path);
 }
 
 /// Re-parse a document with tree-sitter and cache the result.

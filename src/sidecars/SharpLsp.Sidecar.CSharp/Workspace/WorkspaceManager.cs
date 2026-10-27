@@ -7,13 +7,6 @@ using Serilog;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.Common.Solutions;
-using AllDiagnosticsResult = Outcome.Result<
-    System.Collections.Generic.Dictionary<
-        string,
-        System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.DiagnosticResult>
-    >,
-    string
->;
 using CodeActionsResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.CodeActionItem>,
     string
@@ -33,6 +26,14 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal sealed partial class WorkspaceManager : IDisposable
 {
+    private readonly Func<CancellationToken, Task<VoidResult>>? _diagnosticsChanged;
+
+    /// <summary>The host invalidates its diagnostic query after a background compiler mutation.</summary>
+    public WorkspaceManager(Func<CancellationToken, Task<VoidResult>>? diagnosticsChanged = null)
+    {
+        _diagnosticsChanged = diagnosticsChanged;
+    }
+
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
     private bool _isProjectlessDirectory;
@@ -101,7 +102,6 @@ internal sealed partial class WorkspaceManager : IDisposable
         : "not_loaded";
 
     /// <summary>Open a solution or project file via MSBuildWorkspace.</summary>
-    [Obsolete("Placeholder until workspace loading is redesigned")]
     public async Task<VoidResult> OpenAsync(string path, CancellationToken ct = default)
     {
         try
@@ -201,76 +201,6 @@ internal sealed partial class WorkspaceManager : IDisposable
         catch (Exception ex)
         {
             return VoidResult.Failure(ex.Message);
-        }
-    }
-
-    /// <summary>Get compiler diagnostics for all files in the solution.</summary>
-    /// <remarks>
-    /// Iterates projects in topological (dependency) order so each project's
-    /// compilation is built AFTER its referenced projects. Without this,
-    /// Roslyn's lazy compilation produces phantom CS0246/CS0234 errors when
-    /// a consumer project is compiled before its dependencies are cached
-    /// as CompilationReferences. SharpLsp does not lie about compilation state.
-    /// </remarks>
-    public async Task<AllDiagnosticsResult> GetAllDiagnosticsAsync(
-        string[] projectFilter,
-        CancellationToken ct = default
-    )
-    {
-        try
-        {
-            if (_solution is null)
-            {
-                return new AllDiagnosticsResult.Ok<
-                    Dictionary<string, List<DiagnosticResult>>,
-                    string
-                >(new Dictionary<string, List<DiagnosticResult>>());
-            }
-
-            var results = new Dictionary<string, List<DiagnosticResult>>();
-            var filteredProjects = FilterProjects(projectFilter).ToHashSet();
-            var orderedProjects = OrderProjectsByDependencies(_solution, filteredProjects, ct);
-
-            foreach (var project in orderedProjects)
-            {
-                ct.ThrowIfCancellationRequested();
-                await CollectProjectDiagnosticsAsync(project, results, ct).ConfigureAwait(false);
-                await CollectRazorDiagnosticsAsync(project, results, ct).ConfigureAwait(false);
-            }
-
-            return new AllDiagnosticsResult.Ok<Dictionary<string, List<DiagnosticResult>>, string>(
-                results
-            );
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return AllDiagnosticsResult.Failure(ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// Return the given projects ordered topologically (dependencies first,
-    /// consumers last) so `GetCompilationAsync` on consumers sees already-built
-    /// dependency compilations as CompilationReferences.
-    /// </summary>
-    private static IEnumerable<Project> OrderProjectsByDependencies(
-        Solution solution,
-        HashSet<Project> filtered,
-        CancellationToken ct
-    )
-    {
-        var graph = solution.GetProjectDependencyGraph();
-        foreach (var projectId in graph.GetTopologicallySortedProjects(ct))
-        {
-            var project = solution.GetProject(projectId);
-            if (project is not null && filtered.Contains(project))
-            {
-                yield return project;
-            }
         }
     }
 
@@ -421,6 +351,17 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
 
         await ResetProjectlessStateAsync(ct).ConfigureAwait(false);
+
+        if (AutoRestoreOnOpen)
+        {
+            var restored = await WorkspaceRestore
+                .EnsureTargetAsync(target, ct)
+                .ConfigureAwait(false);
+            if (restored.IsError)
+            {
+                return restored;
+            }
+        }
 
         var properties = new Dictionary<string, string>
         {

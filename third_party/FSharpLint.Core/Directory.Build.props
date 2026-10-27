@@ -1,0 +1,5 @@
+<Project>
+  <!-- This project compiles pinned third-party sources using their upstream
+       settings. SharpLsp source and the source-preparation tool retain the
+       repository's own analyzer and nullable settings. -->
+</Project>

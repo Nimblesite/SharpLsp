@@ -11,21 +11,10 @@ open FSharp.Compiler.Text
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Solutions
 
-let parseFsprojSourceFiles (fsprojPath: string) : string array =
-    let document = XDocument.Load(fsprojPath)
-    let projectDirectory = NativePaths.DirectoryOf fsprojPath
-
-    document.Descendants(XName.Get("Compile"))
-    |> Seq.choose (fun element ->
-        element.Attribute(XName.Get("Include"))
-        |> Option.ofObj
-        |> Option.map (fun attribute -> NativePaths.Resolve(projectDirectory, attribute.Value)))
-    |> Seq.toArray
-
 let parseFsprojOtherFlags (fsprojPath: string) : string array =
     let separators = [| ' '; '\t'; '\r'; '\n' |]
 
-    XDocument.Load(fsprojPath).Descendants(XName.Get("OtherFlags"))
+    ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get("OtherFlags"))
     |> Seq.collect (fun element -> element.Value.Split(separators, StringSplitOptions.RemoveEmptyEntries))
     |> Seq.filter (fun value -> not (value.StartsWith("$(", StringComparison.Ordinal)))
     |> Seq.toArray
@@ -43,7 +32,7 @@ let private validAssemblyName (value: string) =
 
 let parseFsprojAssemblyName (fsprojPath: string) =
     let explicitName =
-        XDocument.Load(fsprojPath).Descendants(XName.Get("AssemblyName"))
+        ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get("AssemblyName"))
         |> Seq.choose (_.Value >> validAssemblyName)
         |> Seq.tryLast
 
@@ -176,23 +165,20 @@ let private compilerArgs fsprojPath projectFlags =
 
 /// Build persistent FCS options with explicit source files and all references. The
 /// sources go in SourceFiles alone: FCS also compiles every bare argument of the command
-/// line, so a source on both would be compiled twice (FS3551).
-let buildProjectOptions (checker: FSharpChecker) (fsprojPath: string) : FSharpProjectOptions =
+/// line, so a source on both would be compiled twice (FS3551). Sources arrive already
+/// evaluated by MSBuild ([NETFX-PROJECTS-FSHARP]); this function only assembles the line.
+let buildProjectOptions (checker: FSharpChecker) (fsprojPath: string) (sources: string array) : FSharpProjectOptions =
     let options =
         checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, compilerArgs fsprojPath (parseFsprojOtherFlags fsprojPath))
 
-    { options with
-        SourceFiles = parseFsprojSourceFiles fsprojPath }
+    { options with SourceFiles = sources }
 
 let scriptOptions (checker: FSharpChecker) (scriptPath: string) (source: string) (ct: CancellationToken) =
-    let flags = [| "--define:INTERACTIVE"; "--define:EDITING" |]
-
-    checker.GetProjectOptionsFromScript(
-        scriptPath,
-        SourceText.ofString source,
-        otherFlags = flags,
-        useFsiAuxLib = true,
-        useSdkRefs = true,
-        assumeDotNetFramework = false
-    )
-    |> fun computation -> Async.StartAsTask(computation, cancellationToken = ct)
+    task {
+        use sourceScope = FSharpScriptSource.enter scriptPath source
+        let flags = [| "--define:INTERACTIVE"; "--define:EDITING"; "--simpleresolution" |]
+        let computation = checker.GetProjectOptionsFromScript(
+            scriptPath, SourceText.ofString source, otherFlags = flags,
+            useFsiAuxLib = true, useSdkRefs = true, assumeDotNetFramework = false)
+        return! Async.StartAsTask(computation, cancellationToken = ct)
+    }

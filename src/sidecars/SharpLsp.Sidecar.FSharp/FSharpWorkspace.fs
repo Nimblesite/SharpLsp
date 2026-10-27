@@ -27,6 +27,15 @@ type FSharpWorkspaceState =
         Checker: FSharpChecker
         mutable ProjectOptions: FSharpProjectOptions option
         mutable IsLoaded: bool
+        /// A valid selected workspace may have no F# projects; old projects must be retired.
+        mutable LastLoadWasEmpty: bool
+        /// The workspace generation, advanced at the start of every replacement so a
+        /// background owner adoption begun earlier can tell its workspace is gone.
+        /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+        mutable Epoch: int
+        /// Serializes an epoch advance against an adoption's commit, so they never
+        /// interleave. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+        LifecycleLock: obj
         /// Live editor buffers keyed by canonical absolute file path.
         Overlays: ConcurrentDictionary<string, string>
         /// Every loaded project, keyed by its project file. [NETFX-PROJECTS-FSHARP]
@@ -37,6 +46,11 @@ type FSharpWorkspaceState =
         /// The C# projects loaded projects reference, compiled in memory.
         /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]
         CSharpBuilds: FSharpCSharpReferences.CSharpBuilds
+        /// The Compile items MSBuild evaluated per project, cached until a reload: the
+        /// project-change watcher reloads the workspace, which clears this, so a changed
+        /// .fsproj is re-evaluated once, and ownership lookups never spawn MSBuild per
+        /// request. Lazy, so concurrent first lookups share ONE evaluation. [NETFX-PROJECTS-FSHARP]
+        CompileSources: ConcurrentDictionary<string, Lazy<Task<Result<string array, string>>>>
     }
 
 /// Create a new workspace with an overlay-aware FSharpChecker.
@@ -46,18 +60,22 @@ let create () : FSharpWorkspaceState =
 
     let readDocument filePath =
         async {
-            return
-                FSharpWorkspaceRuntime.tryReadSource overlays filePath
-                |> Option.map SourceText.ofString
+            let! ct = Async.CancellationToken
+            let! source = FSharpWorkspaceRuntime.tryReadSourceAsync overlays filePath ct |> Async.AwaitTask
+            return source |> Option.map SourceText.ofString
         }
 
     { Checker = FSharpWorkspaceRuntime.createOverlayAwareChecker readDocument
       ProjectOptions = None
       IsLoaded = false
+      LastLoadWasEmpty = false
+      Epoch = 0
+      LifecycleLock = obj ()
       Overlays = overlays
       Projects = ConcurrentDictionary(NativePaths.Comparer)
       References = ConcurrentDictionary(NativePaths.Comparer)
-      CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer) }
+      CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer)
+      CompileSources = ConcurrentDictionary(NativePaths.Comparer) }
 
 /// The project that compiles `filePath`, if any loaded project does.
 let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =
@@ -161,13 +179,16 @@ let private distinctFiles (files: string seq) =
     Linq.Enumerable.DistinctBy(files, (fun file -> NativePaths.NormalizeFullPath file), NativePaths.Comparer)
     |> Array.ofSeq
 
+/// Every loaded project's options, the workspace's first — the ordered owners of
+/// every source document. A script or lone project has just the workspace's.
+let internal projectOptions (state: FSharpWorkspaceState) : FSharpProjectOptions list =
+    Option.toList state.ProjectOptions @ otherProjectOptions state
+
 /// Every source file of every loaded project, the workspace's first, each once. Only a
 /// rename by identity — from the other language, with no F# file to anchor on — walks
 /// them all.
 let internal allSourceFiles (state: FSharpWorkspaceState) : string array =
-    Option.toList state.ProjectOptions @ otherProjectOptions state
-    |> Seq.collect _.SourceFiles
-    |> distinctFiles
+    projectOptions state |> Seq.collect _.SourceFiles |> distinctFiles
 
 /// True when `options` read `project` in memory, directly or through another project.
 let rec private readsInMemory (project: string) (options: FSharpProjectOptions) =
@@ -230,6 +251,18 @@ let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: st
         | Some projectPath -> FSharpWorkspaceRuntime.notifyFileChanged state.Checker projectPath options
         | None -> ()
 
+/// Drop the editor buffer for `filePath` (the file's didClose) and invalidate the
+/// builds that compile it, so the next check reads the file from disk again — the
+/// overlay must not outlive its document ([HOVER-FSHARP-OVERLAY]).
+let removeOverlay (state: FSharpWorkspaceState) (filePath: string) =
+    let normalizedPath = NativePaths.NormalizeFullPath filePath
+    state.Overlays.TryRemove(normalizedPath) |> ignore
+
+    for options in buildsCompiling state normalizedPath do
+        match FSharpWorkspaceRuntime.tryProjectSourcePath options normalizedPath with
+        | Some projectPath -> FSharpWorkspaceRuntime.notifyFileChanged state.Checker projectPath options
+        | None -> ()
+
 /// Read the live overlay when present, otherwise the source on disk.
 let internal readSource (state: FSharpWorkspaceState) (filePath: string) : string =
     match FSharpWorkspaceRuntime.tryReadSource state.Overlays filePath with
@@ -245,15 +278,20 @@ let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : 
     | None -> NativePaths.NormalizeFullPath filePath
 
 /// The one raw per-file FCS check; version deliberately remains the literal 0.
-let internal parseAndCheckOnce (state: FSharpWorkspaceState) filePath options =
+let internal parseAndCheckOnceWithCancellation (state: FSharpWorkspaceState) filePath options (ct: CancellationToken) =
     task {
-        let source = readSource state filePath
+        let! input = FSharpWorkspaceRuntime.tryReadSourceAsync state.Overlays filePath ct
+        let source = input |> Option.defaultValue String.Empty
+        ct.ThrowIfCancellationRequested()
 
         let! parseResults, checkAnswer =
-            state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options)
+            Async.StartAsTask(state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options), cancellationToken = ct)
 
         return parseResults, checkAnswer, source
     }
+
+let internal parseAndCheckOnce state filePath options =
+    parseAndCheckOnceWithCancellation state filePath options CancellationToken.None
 
 let private interpretAnswer
     (parseResults: FSharpParseFileResults)
@@ -266,7 +304,7 @@ let private interpretAnswer
         Log.Debug("[F# Check] aborted; parse diagnostics: {@Diagnostics}", parseResults.Diagnostics)
         None
 
-let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string) =
+let internal checkFileWithParseWithCancellation (state: FSharpWorkspaceState) (filePath: string) ct =
     task {
         if not state.IsLoaded then
             return None
@@ -274,10 +312,13 @@ let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string)
             let projectPath = projectFilePath state filePath
 
             let options = (optionsFor state projectPath).Value
-            let! parseResults, checkAnswer, source = parseAndCheckOnce state projectPath options
+            let! parseResults, checkAnswer, source = parseAndCheckOnceWithCancellation state projectPath options ct
 
             return interpretAnswer parseResults checkAnswer source
     }
+
+let internal checkFileWithParse state filePath =
+    checkFileWithParseWithCancellation state filePath CancellationToken.None
 
 let internal checkFileWithSource state filePath source =
     task {
@@ -297,14 +338,14 @@ let internal checkFileWithSource state filePath source =
             return interpretAnswer parseResults checkAnswer source
     }
 
-let internal checkFile (state: FSharpWorkspaceState) (filePath: string) =
+let internal checkFileWithCancellation (state: FSharpWorkspaceState) (filePath: string) ct =
     task {
-        let! result = checkFileWithParse state filePath
+        let! result = checkFileWithParseWithCancellation state filePath ct
         return result |> Option.map (fun (_, check, source) -> check, source)
     }
 
-let internal parseFsprojSourceFiles path =
-    FSharpProjectLoading.parseFsprojSourceFiles path
+let internal checkFile state filePath =
+    checkFileWithCancellation state filePath CancellationToken.None
 
 let internal parseFsprojOtherFlags path =
     FSharpProjectLoading.parseFsprojOtherFlags path
@@ -315,93 +356,49 @@ let internal parseFsprojAssemblyName path =
 let internal frameworkReferenceArgs () =
     FSharpProjectLoading.frameworkReferenceArgs ()
 
-let internal buildProjectOptions (state: FSharpWorkspaceState) fsprojPath =
-    FSharpProjectLoading.buildProjectOptions state.Checker fsprojPath
+/// Forget `entry` once it fails or is cancelled, so a later request retries; the
+/// value-matched removal never discards an evaluation a reload stored since. It runs
+/// as the evaluation completes, before its creator resumes, so a caller that saw the
+/// failure retries rather than meeting it again.
+let private forgetFailure (state: FSharpWorkspaceState) key (entry: Lazy<Task<Result<string array, string>>>) =
+    entry.Value.ContinueWith(
+        (fun (evaluated: Task<Result<string array, string>>) ->
+            if not (evaluated.Status = TaskStatus.RanToCompletion && Result.isOk evaluated.Result) then
+                state.CompileSources.TryRemove(Collections.Generic.KeyValuePair(key, entry)) |> ignore),
+        TaskContinuationOptions.ExecuteSynchronously
+    )
+    |> ignore
 
-let private activateWorkspace
-    (state: FSharpWorkspaceState)
-    (options: FSharpProjectOptions)
-    (path: string)
-    (kind: string)
-    =
-    state.ProjectOptions <- Some options
-    state.IsLoaded <- true
-    let files = String.Join(", ", options.SourceFiles |> Array.map NativePaths.NameOf)
-    Log.Debug("F# {Kind} loaded from {Path} with files: [{Files}]", kind, path, files)
+/// The Compile items MSBuild evaluated for the project, in project order, cached until a
+/// reload. Failures are forgotten so a later request retries; a reload always re-evaluates.
+/// [NETFX-PROJECTS-FSHARP]
+let internal compileSources (state: FSharpWorkspaceState) (fsprojPath: string) (ct: CancellationToken) =
+    let key = NativePaths.NormalizeFullPath fsprojPath
+    let created = lazy (FSharpDesignTime.compileSources fsprojPath ct)
+    let entry = state.CompileSources.GetOrAdd(key, created)
 
-/// Load EVERY project; the first one is the workspace's for project-wide queries.
-let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string array) ct =
+    if obj.ReferenceEquals(entry, created) then
+        forgetFailure state key entry
+
+    entry.Value
+
+/// Fallback FCS options built from MSBuild's evaluated Compile items and the sidecar's
+/// framework references; the design-time build replaces these when it can answer. An
+/// evaluation failure is logged with MSBuild's reason, never silently empty.
+/// [NETFX-PROJECTS-FSHARP]
+let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: string) (ct: CancellationToken) =
     task {
-        if fsprojFiles.Length = 0 then
-            return Error "No .fsproj found"
-        else
-            try
-                let fallback = buildProjectOptions state
-                let! entries = fsprojFiles |> Array.map (fun path -> FSharpDesignTime.loadEntry state.Checker fallback path ct) |> Task.WhenAll
-                state.Projects.Clear()
-                state.References.Clear()
+        let! sources = compileSources state fsprojPath ct
 
-                for entry in entries do
-                    let key = NativePaths.NormalizeFullPath entry.Path
-                    state.Projects[key] <- entry
-                    state.References[key] <- FSharpProjectGraph.fsharpReferences entry.Path
+        let resolved =
+            match sources with
+            | Ok items -> items
+            | Error reason ->
+                Log.Warning("F# project {Path} Compile items unavailable: {Reason}", fsprojPath, reason)
+                [||]
 
-                for entry in entries do
-                    match FSharpDesignTime.builtFramework entry with
-                    | Some framework -> do! prepareReferencedBuilds state entry framework ct
-                    | None -> ()
-
-                Log.Debug("F# workspace loaded {Count} project(s); {Path} is primary", entries.Length, fsprojFiles[0])
-                activateWorkspace state entries[0].Options fsprojFiles[0] "workspace"
-                return Ok()
-            with ex ->
-                return Error ex.Message
+        return FSharpProjectLoading.buildProjectOptions state.Checker fsprojPath resolved
     }
-
-let private logScriptDiagnostics (scriptPath: string) (diagnostics: FSharp.Compiler.Diagnostics.FSharpDiagnostic seq) =
-    diagnostics
-    |> Seq.iter (fun diagnostic ->
-        Log.Debug("F# script option diagnostic for {Path}: {Message}", scriptPath, diagnostic.Message))
-
-let private loadScript (state: FSharpWorkspaceState) scriptPath ct =
-    task {
-        let source = readSource state scriptPath
-        let! options, diagnostics = FSharpProjectLoading.scriptOptions state.Checker scriptPath source ct
-        logScriptDiagnostics scriptPath diagnostics
-        activateWorkspace state options scriptPath "script"
-        return Ok()
-    }
-
-let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Result<string array, string>) ct =
-    task {
-        match discovered with
-        | Error message ->
-            Log.Debug("F# workspace diagnostic: {Message}", message)
-            return Error message
-        | Ok projectFiles ->
-            match! loadProjects state projectFiles ct with
-            | Ok() -> return Ok()
-            | Error message ->
-                Log.Debug("F# workspace load failed: {Message}", message)
-                return Error message
-    }
-
-/// Load a project, solution, workspace directory, or self-describing script.
-let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct: CancellationToken) =
-    task {
-        try
-            if File.Exists(path) && FSharpProjectLoading.isScriptPath path then
-                return! loadScript state (NativePaths.NormalizeFullPath path) ct
-            else
-                let! discovered = FSharpProjectLoading.discoverFsprojFiles path ct
-                return! loadDiscoveredProject state discovered ct
-        with ex ->
-            Log.Debug(ex, "F# workspace load failed")
-            return Error ex.Message
-    }
-
-let loadProject (state: FSharpWorkspaceState) (path: string) =
-    loadProjectWithCancellation state path CancellationToken.None
 
 let getHover state filePath line character =
     FSharpSemanticNavigation.getHover (checkFileWithParse state) filePath line character
@@ -419,17 +416,20 @@ let internal checkProject (state: FSharpWorkspaceState) =
 /// Whole-project results for `projects` — a query's scope, or its head alone — one after
 /// another: checking them concurrently starved the thread pool and took five times as
 /// long once the builders were warm. Empty until a workspace loads.
-let internal checkAll (state: FSharpWorkspaceState) (projects: FSharpProjectOptions list) =
+let internal checkAllWithCancellation (state: FSharpWorkspaceState) (projects: FSharpProjectOptions list) ct =
     task {
         let results = ResizeArray<FSharpCheckProjectResults>()
 
         if state.IsLoaded then
             for (options: FSharpProjectOptions) in projects do
-                let! checkedProject = state.Checker.ParseAndCheckProject options
+                let! checkedProject = Async.StartAsTask(state.Checker.ParseAndCheckProject options, cancellationToken = ct)
                 results.Add checkedProject
 
         return List.ofSeq results
     }
+
+let internal checkAll state projects =
+    checkAllWithCancellation state projects CancellationToken.None
 
 let internal isSymbolInProject (state: FSharpWorkspaceState) (symbol: FSharpSymbol) =
     FSharpSemanticNavigation.isSymbolInProject state.ProjectOptions symbol

@@ -7,14 +7,13 @@ use super::*;
 /// VS Code's web client (`code serve-web`).
 #[test]
 fn test_pull_diagnostics_document_request_is_handled() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    // A full report requires actual compiler ownership. [DIAG-TRUTH-GUARANTEES]
+    let (_workspace, file_uri, mut client) = fsharp::ready_fsharp_client();
 
     let resp = client.request(
         "textDocument/diagnostic",
         json!({
-            "textDocument": { "uri": TEST_URI }
+            "textDocument": { "uri": file_uri }
         }),
     );
 

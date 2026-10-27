@@ -142,7 +142,10 @@ type DiagnosticResult =
       [<Key(4)>] EndCharacter: int
       [<Key(5)>] Message: string
       [<Key(6)>] Severity: string
-      [<Key(7)>] Code: string }
+      [<Key(7)>] Code: string
+      /// The rule's documentation page (FSharpLint rules only), if any;
+      /// empty for compiler and built-in analyzer diagnostics ([DIAG-CATEGORIES-ANALYZER]).
+      [<Key(8)>] HelpLink: string }
 
 /// `analyzers/configure` request: analyzer flags the host reads from
 /// `sharplsp.toml` `[analyzers]` and pushes to the sidecar after `workspace/open`.
@@ -349,19 +352,23 @@ module internal Helpers =
     /// query that throws, becomes a failure carrying the message — never an
     /// exception into the dispatcher, because a sidecar crash must never take
     /// down the host.
-    let handle
-        (query: 'Request -> Task<'Result>)
+    let handleWithCancellation
+        (query: 'Request -> CancellationToken -> Task<'Result>)
         (respond: 'Result -> CancellationToken -> ByteResult)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
         Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<'Request>(payload, cancellationToken = ct)
-                    let! result = query request
+                    let! result = query request ct
                     return respond result ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             })
+
+    /// Existing queries share the cancellation-aware decoding/error boundary.
+    let handle (query: 'Request -> Task<'Result>) respond =
+        handleWithCancellation (fun request _ct -> query request) respond
 
     /// `handle` for a query at one position of one file.
     let atPosition (query: string -> int -> int -> Task<'Result>) (respond: 'Result -> CancellationToken -> ByteResult) =

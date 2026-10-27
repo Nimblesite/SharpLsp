@@ -25,8 +25,11 @@ internal sealed partial class WorkspaceManager
     /// <summary>How long Dispose waits for cancelled restores to exit.</summary>
     private static readonly TimeSpan ResolutionDrainTimeout = TimeSpan.FromSeconds(15);
 
-    /// <summary>Background resolutions still running; the value is unused.</summary>
-    private readonly ConcurrentDictionary<Task, byte> _packageResolutions = new();
+    /// <summary>Active restore tasks and the root generation each one updates.</summary>
+    private readonly ConcurrentDictionary<
+        Task,
+        (string Root, long Generation)
+    > _packageResolutions = new();
 
     private async Task PrepareProjectlessRootAsync(string rootPath, CancellationToken ct)
     {
@@ -111,6 +114,40 @@ internal sealed partial class WorkspaceManager
             : null;
     }
 
+    /// <summary>Never return a guessed semantic answer from unresolved references. [DIAG-RESTORE]</summary>
+    private async Task<DiagnosticsState> CaptureSettledDiagnosticsStateAsync(
+        string filePath,
+        CancellationToken ct
+    )
+    {
+        while (true)
+        {
+            var state = await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false);
+            if (state.Degradation is not { IsPending: true } || state.Document is null)
+            {
+                return state;
+            }
+
+            if (ResolutionFor(state.Document, filePath) is { } resolution)
+            {
+                await resolution.WaitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private Task? ResolutionFor(Document document, string filePath)
+    {
+        var root = ProjectRootPath(document.Project, filePath);
+        return _packageResolutionGenerations.TryGetValue(root, out var generation)
+            ? _packageResolutions
+                .FirstOrDefault(entry =>
+                    entry.Value.Generation == generation
+                    && NativePaths.Comparer.Equals(entry.Value.Root, root)
+                )
+                .Key
+            : null;
+    }
+
     private bool ProjectModelChanged(string rootPath, Closure closure)
     {
         return !_documentPackages.TryGetValue(rootPath, out var packages)
@@ -148,12 +185,16 @@ internal sealed partial class WorkspaceManager
             generation,
             closure.Packages.Count
         );
-        TrackPackageResolution(ResolveAndUpgradeAsync(rootPath, projectId, closure, generation));
+        TrackPackageResolution(
+            rootPath,
+            generation,
+            ResolveAndUpgradeAsync(rootPath, projectId, closure, generation)
+        );
     }
 
-    private void TrackPackageResolution(Task resolution)
+    private void TrackPackageResolution(string rootPath, long generation, Task resolution)
     {
-        _packageResolutions[resolution] = 0;
+        _packageResolutions[resolution] = (rootPath, generation);
         _ = resolution.ContinueWith(
             finished => _packageResolutions.TryRemove(finished, out _),
             CancellationToken.None,
@@ -263,6 +304,8 @@ internal sealed partial class WorkspaceManager
         {
             _ = _solutionMutationLock.Release();
         }
+
+        await NotifyDiagnosticsChangedAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -297,6 +340,23 @@ internal sealed partial class WorkspaceManager
         finally
         {
             _ = _solutionMutationLock.Release();
+        }
+
+        await NotifyDiagnosticsChangedAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Invalidate the host's Salsa inputs after restore commits. [DIAG-IPC-REFRESH]</summary>
+    private async Task NotifyDiagnosticsChangedAsync(CancellationToken ct)
+    {
+        if (_diagnosticsChanged is not { } changed)
+        {
+            return;
+        }
+
+        var result = await changed(ct).ConfigureAwait(false);
+        if (result.IsError)
+        {
+            Log.Warning("Diagnostic invalidation delivery failed");
         }
     }
 

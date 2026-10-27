@@ -38,6 +38,7 @@ let private activate (state: FSharpWorkspaceState) (entry: FSharpProjectEntry) f
 
     entry.Active <- Some framework
     entry.Options <- options
+    entry.SdkError <- None
     resultOf entry
 
 /// Switch the project that compiles `filePath` to `framework`.

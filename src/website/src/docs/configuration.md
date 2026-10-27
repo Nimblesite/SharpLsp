@@ -29,6 +29,15 @@ The schema uses `deny_unknown_fields`. A misspelled or unsupported key is a star
 ## Complete TOML Schema
 
 ```toml
+[testing]
+configuration = "Debug"
+
+[debug.exceptions]
+break_on = "editor"
+just_my_code = true
+external_code = "throw-site"
+ignore = []
+
 [server]
 log_level = "info"
 debounce_ms = 150
@@ -44,6 +53,10 @@ enabled = true
 analyzers_enabled = true
 solution_wide_analysis = true
 project_filter = []
+min_severity = "hint"
+max_per_file = 0
+refresh_debounce_ms = 2000
+auto_restore_on_open = true
 
 [analyzers]
 dead_code = true
@@ -56,6 +69,14 @@ output_directory = ".sharplsp/profiles"
 
 Every field is optional. Omitted fields use the values shown above.
 
+## Testing and Debugging
+
+`testing.configuration` selects the MSBuild configuration for test discovery, execution, coverage and debugging. It defaults to `Debug`, even when the project defaults to Release. Set it to `Release` or a custom configuration when needed; changes apply to the next operation. Selected tests build their owning projects and dependencies incrementally. Unrelated test projects are excluded, and a failed build never runs stale assemblies.
+
+For exception debugging, set `debug.exceptions.break_on` to `all` to stop on handled throws, or `unhandled` to stop only on terminal exceptions. `editor` follows the debugger's exception checkboxes. Just My Code skips handled exceptions in external code. With `just_my_code = false`, external throws also stop: `external_code = "throw-site"` shows their original source, while `"user-boundary"` shows the caller in your code and preserves the exception details. An explicit launch `cwd` defines the user-source root; otherwise workspace folders are used.
+
+The test platform's own DLLs can be prebuilt in Release. Their debugger warnings do not mean your test assembly was compiled in Release.
+
 ## Settings That Affect Runtime Behavior
 
 | Field | Behavior |
@@ -63,8 +84,13 @@ Every field is optional. Omitted fields use the values shown above.
 | `csharp.enabled` | Starts or skips the C# sidecar |
 | `csharp.solution_path` | Selects a `.sln` or `.slnx`, absolute or relative to the workspace |
 | `fsharp.enabled` | Starts or skips the F# sidecar |
-| `diagnostics.solution_wide_analysis` | Enables the C# startup solution scan |
-| `diagnostics.project_filter` | Limits that C# scan to matching project names |
+| `diagnostics.analyzers_enabled` | Enables F# and C# analyzer diagnostics; compiler errors remain visible |
+| `diagnostics.solution_wide_analysis` | Includes closed F# and C# files in solution diagnostics; enabled by default |
+| `diagnostics.project_filter` | Filters F# and C# workspace results by project name or project path relative to the selected solution; direct document pulls remain unfiltered |
+| `diagnostics.min_severity` | Includes diagnostics at or above `error`, `warning`, `info` or `hint`; defaults to `hint` |
+| `diagnostics.max_per_file` | Limits each file after severity filtering; `0` means unlimited |
+| `diagnostics.refresh_debounce_ms` | Coalesces diagnostic refresh requests over this many milliseconds; defaults to `2000` and updates live |
+| `diagnostics.auto_restore_on_open` | Restores missing or stale SDK assets and package files before opening a workspace; defaults to `true`. Changes apply on the next workspace open |
 | `analyzers.dead_code` | Enables SharpLsp's C# and F# dead-code analyzers |
 | `analyzers.monorepo` | Treats unused public symbols as dead and reports them as errors |
 | `profiler.max_concurrent_sessions` | Caps simultaneous profiler sessions |
@@ -79,7 +105,6 @@ The following fields are parsed and retained for compatibility, but changing the
 
 - `server.log_level`;
 - `server.debounce_ms`;
-- `diagnostics.analyzers_enabled`;
 - all `profiler.*` defaults except `max_concurrent_sessions`.
 
 For VS Code logging, use `sharplsp.logging.level`, which is forwarded to the host as `RUST_LOG`. Profiler commands currently use their request defaults and write under `.sharplsp/profiles`.

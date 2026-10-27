@@ -4,6 +4,28 @@
 
 use super::*;
 
+/// The single item `method` prepares at a position, shared by native and Razor graphs.
+pub fn prepared(
+    client: &mut LspClient,
+    method: &str,
+    uri: &str,
+    line: u64,
+    character: u64,
+) -> Value {
+    let response = client.request(
+        method,
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character },
+        }),
+    );
+    assert_rpc_ok(&response, method);
+    let none = Vec::new();
+    let items = response["result"].as_array().unwrap_or(&none);
+    assert_eq!(items.len(), 1, "{method} prepares one item: {response}");
+    items[0].clone()
+}
+
 /// Send `method` with position params built from a real `uri`.
 pub fn position_request(client: &mut LspClient, method: &str, uri: &str, pos: (u32, u32)) -> Value {
     client.request(
@@ -111,7 +133,13 @@ pub fn find_symbol<'a>(symbols: &'a Value, name: &str) -> Option<&'a Value> {
 
 /// Pull diagnostics for `uri` and return every item.
 pub fn pull_diagnostics(client: &mut LspClient, uri: &str, label: &str) -> Vec<Value> {
-    let resp = document_request(client, "textDocument/diagnostic", uri);
+    // [DIAG-TRUTH-GUARANTEES] supersession is retriable (-32802); a reload storm
+    // that runs off the foreground loop may supersede the first pull, so retry
+    // until the compiler settles — never accept a superseded report as clean.
+    let deadline = Instant::now() + Duration::from_mins(1);
+    let resp = workspace_diagnostic_support::settled(deadline, || {
+        document_request(client, "textDocument/diagnostic", uri)
+    });
     assert_rpc_ok(&resp, label);
     resp["result"]["items"]
         .as_array()

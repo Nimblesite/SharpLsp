@@ -118,11 +118,8 @@ fn test_linked_editing_range_on_class_name_matches_constructor() {
 
 #[test]
 fn test_pull_diagnostics_document_on_fsharp_file() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    let fs_uri = "file:///test/DiagTest.fs";
-    client.open_document(fs_uri, "module DiagTest\nlet x = 42\n");
+    // A full report requires actual compiler ownership. [DIAG-TRUTH-GUARANTEES]
+    let (_workspace, fs_uri, mut client) = fsharp::ready_fsharp_client();
 
     let resp = client.request(
         "textDocument/diagnostic",

@@ -44,16 +44,24 @@ dotnet msbuild <fsproj> -p:TargetFramework=<tfm> -p:DesignTimeBuild=true
 
 `net48` therefore compiles with `--targetprofile:mscorlib`, the 4.8 reference assemblies and
 `NETFRAMEWORK;NET48;…_OR_GREATER` (about 1 s per framework on SDK 10.0.303); source order, globs, conditions and `Directory.Build.*` are
-MSBuild's. Relative arguments resolve against the project directory. Flags the build passes for
+MSBuild's. A project's `Compile` items — globbed, Excluded, Removed, Conditioned and
+imported alike — come from `dotnet msbuild -getItem:Compile` (a static evaluation, in
+project order), never from reading the `<Compile Include>` attributes literally ([#455](https://github.com/Nimblesite/SharpLsp/issues/455));
+ownership and file-order reads share that evaluated list, cached per project until a
+project change reloads the workspace. Relative arguments resolve against the project directory. Flags the build passes for
 its own console log and an editor must not, `--flaterrors` first (it folds each message onto one
 line with U+001D, and every published message and every quick fix that reads one loses its line
 breaks), are dropped. If the design-time compile
-fails, the project degrades to its `<Compile>` items against the sidecar runtime and the log says
-why. Every `.fsproj` of the solution loads and a file answers from the project that compiles it;
-the first is the workspace's for project-wide queries. MSBuild is asked only when the project
-file declares `<TargetFrameworks>` and evaluates to two or more: the first framework's options
-are built at load, each other's on its first switch, then kept. A single-target project keeps
-its `<Compile>` items. Each project reference MSBuild resolved names the framework of the
+fails, fallback options retain project ownership but cannot authorize diagnostic findings;
+diagnostic requests preserve the SDK failure ([DIAG-TRUTH-GUARANTEES], #488). Every `.fsproj` of the solution loads and a file answers from the project that compiles it;
+the first is the workspace's for project-wide queries. Restored projects use MSBuild's evaluated
+compile context even with one target; their framework APIs and globbed sources must not come
+from the sidecar runtime ([DIAG-CATEGORIES-COMPILER], #487). A single-target project still exposes
+no framework chooser. For several targets, the first framework's options are built at load,
+each other's on its first switch, then kept. An unrestored owner retains its established
+fallback contract until SDK context is available. Switching successfully to an evaluated framework
+clears the unavailable-context state; a failed switch preserves the last valid active context.
+Each project reference MSBuild resolved names the framework of the
 referenced project it picked, and an F# one is read in memory from that framework's options,
 built at load or at the switch that needs them
 ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]).
@@ -159,7 +167,7 @@ Each loads through the real extension; LSP answers inside `#if NETFRAMEWORK` cod
 | `netfx-language.test.ts` | C#: default context, framework-only APIs, `#if` regions and diagnostics flip on switch; `netstandard2.0` reference from both families ([NETFX-PROJECTS-CSHARP], [NETFX-CONTEXT]) |
 | `netfx-language-fsharp.test.ts` | the same for F#, against MSBuild's per-framework options ([NETFX-PROJECTS-FSHARP]) |
 | `netfx-msbuild-fsharp.test.ts` | F# options are MSBuild's: linked, conditioned and globbed sources, `Directory.Build.*` defines, project-relative paths ([NETFX-PROJECTS-FSHARP]) |
-| `netfx-degrade-fsharp.test.ts` | a failed design-time compile degrades to `<Compile>` items, a switch fails with MSBuild's reason, and the log says why ([NETFX-PROJECTS-FSHARP]) |
+| `netfx-degrade-fsharp.test.ts` | a failed design-time compile keeps ownership on fallback options, a switch fails with MSBuild's reason, and the log says the compiler inputs are unavailable and why ([NETFX-PROJECTS-FSHARP]) |
 | `netfx-run-fsharp.test.ts` | Run on the active framework, F5 on a .NET framework, refusal when there is none ([NETFX-DEBUG]) |
 | `test-explorer-netfx.test.ts` | C# and F# across `net462;net472;net48` + installed .NET: tags, per-framework messages, `Run on <tfm>`, framework-exclusive tests, debug refusal ([NETFX-TEST], [NETFX-DEBUG]) |
 | `test-explorer-mtp-netfx.test.ts` | MTP modules on `net48` + .NET, C# MSTest and F# `xunit.v3` ([NETFX-TEST-MTP]) |

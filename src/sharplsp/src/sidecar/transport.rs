@@ -3,7 +3,7 @@
 //! `[SIDECAR-IPC-FRAMING]`: 4-byte little-endian length + `MessagePack` payload.
 
 use anyhow::{Context, Result};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::trace;
 
 use super::protocol::Envelope;
@@ -16,12 +16,16 @@ use super::protocol::Envelope;
 /// triggering a giant `vec![0u8; len]` allocation and an indefinite blocking
 /// read. 64 MiB comfortably exceeds any legitimate LSP payload — even large
 /// semantic-token or workspace-symbol responses are far smaller.
-const MAX_FRAME_LEN: u32 = 64 * 1024 * 1024;
+const MAX_FRAME_LEN: usize = 64 * 1024 * 1024;
 
 /// Async framed transport over a platform IPC stream.
 pub struct FramedTransport {
-    /// Read half of the IPC stream.
-    reader: Box<dyn AsyncRead + Send + Unpin>,
+    /// Responses separated from unsolicited compiler-workspace changes.
+    responses: tokio::sync::mpsc::UnboundedReceiver<std::result::Result<Envelope, String>>,
+    /// Notification receiver handed to the manager once per connection.
+    notifications: Option<tokio::sync::mpsc::UnboundedReceiver<Envelope>>,
+    /// Reader ownership ends with this transport.
+    reader_task: tokio::task::JoinHandle<()>,
     /// Write half of the IPC stream.
     writer: Box<dyn AsyncWrite + Send + Unpin>,
 }
@@ -31,20 +35,14 @@ impl FramedTransport {
     #[cfg(unix)]
     pub fn new(stream: tokio::net::UnixStream) -> Self {
         let (reader, writer) = tokio::io::split(stream);
-        Self {
-            reader: Box::new(reader),
-            writer: Box::new(writer),
-        }
+        Self::from_halves(reader, writer)
     }
 
     /// Wrap a platform stream into split read/write halves.
     #[cfg(windows)]
     pub fn new(pipe: tokio::net::windows::named_pipe::NamedPipeClient) -> Self {
         let (reader, writer) = tokio::io::split(pipe);
-        Self {
-            reader: Box::new(reader),
-            writer: Box::new(writer),
-        }
+        Self::from_halves(reader, writer)
     }
 
     /// Wrap an arbitrary in-memory stream — test harnesses simulate a
@@ -55,44 +53,48 @@ impl FramedTransport {
         S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     {
         let (reader, writer) = tokio::io::split(stream);
+        Self::from_halves(reader, writer)
+    }
+
+    /// Use the shared codec-independent notification reader.
+    fn from_halves<R, W>(reader: R, writer: W) -> Self
+    where
+        R: AsyncRead + Send + Unpin + 'static,
+        W: AsyncWrite + Send + Unpin + 'static,
+    {
+        let inbound = lspkit_sidecar::inbound::spawn(
+            reader,
+            MAX_FRAME_LEN,
+            |frame| rmp_serde::from_slice::<Envelope>(&frame).map_err(|error| error.to_string()),
+            |envelope| envelope.id.is_none() && envelope.method.is_some(),
+        );
         Self {
-            reader: Box::new(reader),
+            responses: inbound.responses,
+            notifications: Some(inbound.notifications),
+            reader_task: inbound.task,
             writer: Box::new(writer),
         }
     }
 
+    /// Hand idle and in-flight notifications to the manager exactly once.
+    pub fn take_notifications(&mut self) -> Option<tokio::sync::mpsc::UnboundedReceiver<Envelope>> {
+        self.notifications.take()
+    }
+
     /// Read one framed envelope. Returns `None` at EOF.
     pub async fn read_envelope(&mut self) -> Result<Option<Envelope>> {
-        let mut len_buf = [0u8; 4];
-        // TODO [SIDECAR-IPC-FRAMING]: distinguish clean EOF from a truncated length prefix.
-        match self.reader.read_exact(&mut len_buf).await {
-            Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-            Err(err) => return Err(err).context("read frame length"),
-        }
-
-        let len = u32::from_le_bytes(len_buf);
-        if len > MAX_FRAME_LEN {
-            anyhow::bail!("frame length {len} exceeds maximum {MAX_FRAME_LEN} bytes");
-        }
-        let mut payload = vec![0u8; usize::try_from(len)?];
-        let _ = self
-            .reader
-            .read_exact(&mut payload)
+        self.responses
+            .recv()
             .await
-            .context("read frame payload")?;
-
-        trace!(bytes = len, "received frame");
-
-        let envelope: Envelope = rmp_serde::from_slice(&payload).context("deserialize envelope")?;
-        Ok(Some(envelope))
+            .transpose()
+            .map_err(anyhow::Error::msg)
     }
 
     /// Write one framed envelope.
     pub async fn write_envelope(&mut self, envelope: &Envelope) -> Result<()> {
         let payload = rmp_serde::to_vec_named(envelope).context("serialize envelope")?;
         let len = u32::try_from(payload.len()).context("frame too large")?;
-        if len > MAX_FRAME_LEN {
+        if payload.len() > MAX_FRAME_LEN {
             anyhow::bail!("outgoing frame length {len} exceeds maximum {MAX_FRAME_LEN} bytes");
         }
 
@@ -108,6 +110,12 @@ impl FramedTransport {
 
         trace!(bytes = len, "sent frame");
         Ok(())
+    }
+}
+
+impl Drop for FramedTransport {
+    fn drop(&mut self) {
+        self.reader_task.abort();
     }
 }
 

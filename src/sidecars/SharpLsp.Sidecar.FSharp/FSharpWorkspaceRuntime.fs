@@ -5,6 +5,8 @@ open System
 open System.Collections.Concurrent
 open System.IO
 open System.Reflection
+open System.Threading
+open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Text
 open SharpLsp.Sidecar.Common
@@ -18,6 +20,10 @@ let tryReadSource (overlays: ConcurrentDictionary<string, string>) (filePath: st
     | true, text -> Some text
     | _ when File.Exists normalizedPath -> Some(File.ReadAllText normalizedPath)
     | _ -> None
+
+/// [DIAG-ANALYSIS-CANCELLATION]: abandon obsolete I/O before starting compiler work.
+let tryReadSourceAsync overlays filePath (ct: CancellationToken) =
+    Task.Run<string option>((fun () -> tryReadSource overlays filePath), ct).WaitAsync(ct)
 
 /// The spelling `options` compile `filePath` under, when they compile it.
 let tryProjectSourcePath (options: FSharpProjectOptions) (filePath: string) : string option =

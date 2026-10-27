@@ -4,9 +4,9 @@
 
 The Test Explorer is the VS Code Testing-API surface for .NET test projects. It discovers
 every test in the loaded solution (or, absent one, in each workspace folder), runs and
-debugs them, and collects coverage. It is editor-side only: discovery and execution shell
-out to the `dotnet` CLI, so no Roslyn or FCS sidecar is involved and no proprietary test
-host is required.
+debugs them, and collects coverage. Discovery and execution shell out to the `dotnet`
+CLI; workspace symbols supply source locations and owning-project metadata for selected
+builds. No proprietary test host is required.
 
 It supports xUnit, NUnit, MSTest, Expecto and FsCheck, in **both C# and F#**. F# is not a
 second-class case here: idiomatic F# backtick bindings produce fully-qualified names that
@@ -32,6 +32,40 @@ flowchart LR
     RUN --> TRX["TRX report<br/>→ per-test outcome<br/>test-trx.ts"]
     MTPRUN --> TRX
 ```
+
+## Test build configuration `[TEST-BUILD-CONFIGURATION]`
+
+Test discovery, Run, Coverage, per-framework Run and Debug explicitly select the
+shared `[testing].configuration` setting ([CONFIG-TESTING]), defaulting to `Debug`.
+This overrides a project's own Release default. Resolve settings for each new
+operation; changing the setting must change both the build and output evaluation.
+VSTest and MTP must execute assemblies from that same configuration. Never guess
+output paths or reuse the previous configuration's assembly after a setting change.
+Real C# and F# tests must prove which assembly executed through conditional code,
+and debugger tests must prove user breakpoints bind and locals are inspectable.
+
+## Incremental test builds `[TEST-BUILD-GRAPH]`
+
+Every run, coverage or debug gesture ensures the selected tests' owning projects
+and transitive project references are up to date before execution. Use ordinary
+incremental MSBuild targets; never clean or force Rebuild for a run. Preserve project
+ownership from real workspace/discovery metadata rather than deriving project paths
+from assembly filenames. A selection must not build unrelated test projects. When
+ownership is unavailable, retain the original safe discovery target instead of
+guessing or silently omitting a dependency.
+
+Unchanged assemblies retain their build timestamps. Editing a referenced library
+must change the selected test's behavior on the next run. A compilation failure
+must report a build error and execute no stale output for that project; repairing
+the project must allow the next run. Framework-specific runs and MTP modules
+resolve their current configured outputs after building, preserving test filters
+and reporting only the selected results. Cancellation must prevent subsequent
+projects from starting.
+
+The Testing view must preserve compiler/MSBuild diagnostics for a failed build,
+including the source file, diagnostic code and message when available, rather
+than reporting only the process exit code. Coverage gestures clear previous
+reports before building; a failed build must not publish stale coverage.
 
 ## Discovery by Fully-Qualified Name `[TEST-DISCOVERY-FQN]`
 
@@ -166,9 +200,11 @@ on the adapter's own say-so — never on a filter that legitimately matched noth
 
 ## Execution and Outcome Attribution `[TEST-RUN-TRX]`
 
-A run is ONE `dotnet test` invocation for the whole selection, never one per test: a class of
-twenty tests otherwise pays twenty restores and builds, which exceeds any sane timeout on a
-Windows agent. Per-test outcomes come from the TRX report VSTest writes for that run:
+A run starts ONE `dotnet test` invocation per selected owning project, never one per test:
+a class of twenty tests otherwise pays twenty restores and builds, which exceeds any sane
+timeout on a Windows agent. Each invocation includes every selected test owned by that project
+and builds only its dependency graph ([TEST-BUILD-GRAPH]). When ownership is unavailable, use
+the original safe discovery target. Per-test outcomes come from the TRX reports VSTest writes:
 
 * `--logger trx` is used WITHOUT `LogFileName`. A solution runs one VSTest session per
   project, and a fixed file name makes each session overwrite the previous one, losing every
@@ -315,7 +351,7 @@ Each module's target is BUILT first, then each module is invoked once for the wh
 never once per test:
 
 ```
-dotnet build <target> --nologo
+dotnet build <project> --nologo -p:Configuration=<configuration>
 dotnet exec <module.dll> --filter-uid <uid> <uid> … \
     --report-trx --report-trx-filename <module>.<n>.trx \
     --results-directory <dir> --no-banner --no-ansi
@@ -324,10 +360,11 @@ dotnet exec <module.dll> --filter-uid <uid> <uid> … \
 * The build is the one `dotnet test` performs on the VSTest path. `dotnet exec` builds
   nothing, so without it a test edited since the last discovery would run from its STALE
   module — reporting the old outcome, caching it and painting it on the status lens. What is
-  built is the module's own DISCOVERY target — the solution, or the workspace folder it was
-  found in — each target once per run, never the run's working directory: in a multi-root
-  workspace that is the FIRST folder, and building it would run another folder's module as it
-  was before the edit. A FAILED build fails that target's modules with the build's output; the
+  built is the module's owning PROJECT and its transitive references, each project once per
+  run ([TEST-BUILD-GRAPH]), using the current test configuration ([TEST-BUILD-CONFIGURATION]).
+  Discovery records that project through MSBuild. If ownership is unavailable, retain the
+  original safe discovery target; never guess a project or substitute the run's working
+  directory. A FAILED build fails that target's modules with the build's output; the
   modules an earlier build left behind MUST NOT be run instead, and another target's modules
   are unaffected. A selection that starts no module builds nothing, and ⏹ kills the build
   like any other invocation.
@@ -514,6 +551,27 @@ had already moved on sent that run to the runners of the sweep BEFORE it: a proj
 onto MTP went to `dotnet test --filter … --logger trx`, which MTP refuses with exit code 5, and
 a Debug press left the module waiting for a debugger that never came.
 
+### Build completion `[TEST-REACTIVITY-BUILD]`
+
+A successful extension Build or Rebuild invalidates discovery immediately, even before the
+Testing view is opened. The LSP also monitors compiler outputs and MSBuild file lists under
+the discovery targets with the shared lspkit native watcher. It coalesces output writes until
+they have been quiet for 500 ms and sends `sharplsp/buildCompleted`. The client updates its
+shared build-completion signal; discovery publishes one atomic signal snapshot containing
+the tree and its matching runner plans. Neither path requires a click or manual refresh.
+
+Build-triggered discovery lists existing outputs without building or restoring, for VSTest
+and MTP alike, so monitoring cannot cause a build/discovery feedback loop. Source writes and
+output reads do not trigger discovery. Changing solutions replaces the watched roots;
+restarting the LSP reattaches them, and shutdown releases the watchers. Failed extension
+tasks do not announce a successful build. Existing generation, queue and failed-sweep rules
+continue to preserve the current tree when output listing fails.
+
+A build completion during a building discovery sweep waits for that entire sweep,
+including every workspace folder, before listing outputs. Pending completions coalesce
+to the latest revision; they never supersede discovery before an unbuilt target is built.
+Disposing the controller cancels deferred refreshes.
+
 ## Environment `[TEST-ENV-LOCALE]`
 
 Every outcome the extension parses is decided by matching ENGLISH text the .NET CLI and
@@ -537,13 +595,19 @@ Testing API's three states: `$(pass) Passed (<duration>)`, `$(debug-step-over) S
 The Run-with-Coverage profile adds `--collect:XPlat Code Coverage` and points
 `--results-directory` at a freshly emptied `<solution folder>/.sharplsp-coverage` — reusing the
 directory would show the previous run's report. The collector writes one Cobertura report per
-test project, each in its own run-id folder one level down, and **every** one of them is parsed
+INVOKED test project, each in its own run-id folder one level down, and **every** one of them is parsed
 into `vscode.FileCoverage` entries and attached to the run; taking only the first drops every
 other project's coverage, and which one is "first" is directory order. An MTP run collects
 with `--coverage --coverage-output-format cobertura` instead, and that extension writes
 `<guid>.cobertura.xml` DIRECTLY into the results directory. Both depths are read, so one
 rule covers both runners ([TEST-MTP-RUN]). Per-file detail is
 resolved lazily through `loadDetailedCoverage`.
+
+An assembly-root selection invokes only that root's owning project and builds its transitive
+references ([TEST-BUILD-GRAPH]). It writes one real TRX and one coverage report for that owner;
+unselected test projects are neither built nor executed, their assemblies and cached results
+remain unchanged, and no empty sibling report is fabricated. Selecting both owning projects
+produces both reports, and their executed lines are merged without dropping either project.
 
 `coverlet.collector` leaves the TEST assembly out of its report by default
 (`IncludeTestAssembly` is false) and only reports assemblies the run actually loaded, so a

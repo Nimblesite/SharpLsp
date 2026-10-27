@@ -5,7 +5,7 @@
 //   node tools/vsix/sync-profiler-contributions.mjs [--check]
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -13,7 +13,7 @@ const extensionDir = path.resolve(here, "../../src/editors/vscode");
 const manifestPath = path.join(extensionDir, "package.json");
 const require = createRequire(path.join(extensionDir, "package.json"));
 const generator = require.resolve("@nimblesite/lsp-profiler-ui/scripts/contributions.mjs");
-const { profilerContributions } = await import(generator);
+const { profilerContributions } = await import(pathToFileURL(generator).href);
 
 const host = {
   prefix: "sharplsp",

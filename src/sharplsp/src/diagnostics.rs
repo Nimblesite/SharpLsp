@@ -4,7 +4,6 @@
 //! analysis (on solution load). Solution-wide results are streamed
 //! incrementally — one `publishDiagnostics` notification per file.
 
-use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
@@ -12,12 +11,15 @@ use anyhow::{Context, Result};
 use dashmap::DashMap;
 use lsp_server::{Message, Notification};
 use lsp_types::{
-    Diagnostic, DiagnosticSeverity, NumberOrString, Position, PublishDiagnosticsParams, Range, Uri,
+    CodeDescription, Diagnostic, DiagnosticSeverity, NumberOrString, Position,
+    PublishDiagnosticsParams, Range, Uri,
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
+
+mod policy;
 
 /// Delay between retries of a failed push fetch. [DIAG-PUSH-GATE]
 const PUSH_RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -76,13 +78,10 @@ struct SidecarDiagnostic {
     severity: String,
     /// Compiler or analyzer diagnostic code (e.g. `CS0219`).
     code: String,
-}
-
-/// Wire type matching C# `SolutionDiagnosticsRequest` `[Key(N)]` ordering.
-#[derive(serde::Serialize)]
-struct SolutionDiagnosticsRequest {
-    /// Optional list of project paths to restrict analysis to.
-    project_filter: Vec<String>,
+    /// The rule's documentation link (`DiagnosticDescriptor.HelpLinkUri`);
+    /// empty when the source sidecar sends none ([DIAG-CATEGORIES-ANALYZER]).
+    #[serde(default)]
+    help_link: String,
 }
 
 /// A document to push diagnostics for: its owning sidecar, URI and native path.
@@ -131,18 +130,21 @@ pub fn publish_now(
 /// A target's first fetch and publish; the target back when its push must go on.
 async fn first_push(
     target: PushTarget,
-    generation: u64,
+    mut generation: u64,
     sender: crossbeam_channel::Sender<Message>,
 ) -> Option<PushTarget> {
-    let (sidecar, uri, file_path) = &target;
-    let source_tag = source_tag_for_uri(uri);
-    let again = publish_once(sidecar, &sender, uri, file_path, &source_tag, generation)
-        .await
-        .unwrap_or_else(|err| {
-            warn!(uri = %uri.as_str(), "Sidecar diagnostics unavailable: {err:#}");
-            true
-        });
-    again.then_some(target)
+    loop {
+        let (sidecar, uri, file_path) = &target;
+        let source_tag = source_tag_for_uri(uri);
+        match publish_once(sidecar, &sender, uri, file_path, &source_tag, generation).await {
+            Ok(again) if is_current(uri, generation) => return again.then_some(target),
+            Ok(_) => generation = next_generation(uri),
+            Err(err) => {
+                warn!(uri = %uri.as_str(), "Sidecar diagnostics unavailable: {err:#}");
+                return Some(target);
+            }
+        }
+    }
 }
 
 /// Every first push finished: the targets whose push must go on.
@@ -185,6 +187,12 @@ fn publish_if_current(
         return Ok(false);
     };
     if *current != generation {
+        debug!(
+            uri = uri.as_str(),
+            generation,
+            current = *current,
+            "Diagnostic publication superseded"
+        );
         return Ok(false);
     }
     publish(sender, uri.clone(), diagnostics)?;
@@ -215,13 +223,14 @@ fn publish_provisional(
 }
 
 /// Whether a fetched set still reports an unfinished file-based restore.
-fn has_restore_pending(diagnostics: &[Diagnostic]) -> bool {
-    diagnostics.iter().any(|diagnostic| {
-        matches!(
-            diagnostic.code,
-            Some(NumberOrString::String(ref code)) if code == RESTORE_PENDING_CODE
-        )
-    })
+pub(crate) fn has_restore_pending(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics.iter().any(pending_notice)
+}
+
+/// The explicit loading notice, independently of message wording. [DIAG-RESTORE]
+fn pending_notice(diagnostic: &Diagnostic) -> bool {
+    matches!(&diagnostic.code,
+        Some(NumberOrString::String(code)) if code == RESTORE_PENDING_CODE)
 }
 
 /// Fetch diagnostics and publish them under the generation gate, retrying
@@ -275,11 +284,8 @@ async fn publish_once(
 
 /// Determine the diagnostic source tag based on the document language.
 fn source_tag_for_uri(uri: &Uri) -> String {
-    match crate::tree_sitter_parse::LangId::from_uri(uri) {
-        Some(crate::tree_sitter_parse::LangId::FSharp) => "sharplsp-fsharp".to_string(),
-        Some(crate::tree_sitter_parse::LangId::Razor) => RAZOR_SOURCE.to_string(),
-        _ => "sharplsp-csharp".to_string(),
-    }
+    let path = crate::paths::uri_to_path(uri.as_str()).unwrap_or_else(|_| uri.as_str().to_owned());
+    source_tag_for_path(&path).to_owned()
 }
 
 /// The diagnostic source of every Razor diagnostic, C# and `RZ` alike.
@@ -288,7 +294,7 @@ const RAZOR_SOURCE: &str = "sharplsp-razor";
 
 /// Determine the diagnostic source tag from a native document path.
 fn source_tag_for_path(file_path: &str) -> &'static str {
-    if crate::paths::has_extension(file_path, &["fs", "fsx", "fsi", "fsscript"]) {
+    if crate::paths::is_fsharp_diagnostic_input(file_path) {
         "sharplsp-fsharp"
     } else if crate::paths::has_extension(file_path, &["razor", "cshtml"]) {
         RAZOR_SOURCE
@@ -306,144 +312,34 @@ pub fn request_solution_in_background(
     sidecar: Arc<SidecarManager>,
     sender: crossbeam_channel::Sender<Message>,
     project_filter: Vec<String>,
-    vfs: Arc<Vfs>,
+    _vfs: Arc<Vfs>,
 ) {
-    let _handle = tokio::spawn(async move {
-        match fetch_all(&sidecar, &project_filter).await {
-            Ok(file_diagnostics) => {
-                let file_count = file_diagnostics.len();
-                // Collect files with errors/warnings for verification pass.
-                let mut error_files: Vec<String> = Vec::new();
-                for (file_path, diagnostics) in &file_diagnostics {
-                    let has_issues = diagnostics.iter().any(|d| {
-                        d.severity == Some(DiagnosticSeverity::ERROR)
-                            || d.severity == Some(DiagnosticSeverity::WARNING)
-                    });
-                    if has_issues {
-                        error_files.push(file_path.clone());
-                    }
-                }
-                for (file_path, diagnostics) in file_diagnostics {
-                    let uri = match crate::paths::path_to_lsp_uri(&file_path) {
-                        Ok(uri) => uri,
-                        Err(err) => {
-                            warn!("Skip diagnostics for {file_path}: {err:#}");
-                            continue;
-                        }
-                    };
-                    if let Err(err) = publish(&sender, uri, diagnostics) {
-                        warn!("Failed to publish diagnostics for {file_path}: {err:#}");
-                    }
-                }
-                info!("Solution-wide diagnostics published for {file_count} file(s)");
-
-                // Verification pass: re-check files with errors/warnings.
-                if !error_files.is_empty() {
-                    info!(
-                        "Starting verification pass for {} file(s) with errors/warnings",
-                        error_files.len()
-                    );
-                    verify_error_files(&sidecar, &sender, &error_files, &vfs).await;
-                }
-            }
-            Err(err) => {
-                warn!("Solution-wide diagnostics unavailable: {err:#}");
-            }
+    drop(tokio::spawn(async move {
+        if let Err(error) = publish_solution(&sidecar, &sender, &project_filter).await {
+            warn!(%error, "Solution-wide diagnostics unavailable");
         }
-    });
+    }));
 }
 
-/// Low-priority verification pass: re-check files that had errors or
-/// warnings during the initial solution-wide scan.
-///
-/// The initial `GetCompilationAsync` may return incomplete results
-/// (unresolved references, pending source generators). This pass
-/// re-reads each file from disk, sends `textDocument/didChange` to
-/// update the sidecar's in-memory compilation, then re-fetches
-/// diagnostics. Files that still have errors are real — files where
-/// errors disappeared were false positives that get cleared.
-async fn verify_error_files(
+/// Legacy editors use the same per-document truth with generation-gated pushes.
+async fn publish_solution(
     sidecar: &SidecarManager,
     sender: &crossbeam_channel::Sender<Message>,
-    error_files: &[String],
-    vfs: &Vfs,
-) {
-    // Small delay to let the workspace settle after initial load.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    for file_path in error_files {
-        let source_tag = source_tag_for_path(file_path);
-
-        // Skip the disk-resync step for documents the editor has open. The
-        // VFS holds the live, possibly-unsaved text — overwriting the sidecar
-        // with on-disk bytes would silently destroy the editor's edits and
-        // leave Roslyn analyzing yesterday's source. Matching must be by
-        // native path, not a rebuilt URI: editors percent-encode URIs (VS Code
-        // sends `file:///c%3A/…` on Windows), so a rebuilt canonical URI never
-        // string-matches the stored key and the guard silently fails open.
-        // The canonical retry also unifies 8.3 short names and mapped drives
-        // with the editor's long-form spelling. [GitHub #110]
-        let in_vfs = vfs.get_content_for_path_canonical(file_path).is_some();
-
-        if !in_vfs {
-            // Re-read from disk so the sidecar gets fresh text.
-            let disk_text = match tokio::fs::read_to_string(file_path).await {
-                Ok(text) => text,
-                Err(err) => {
-                    info!("Cannot read {file_path} from disk: {err:#}");
-                    continue;
-                }
-            };
-
-            // Update the sidecar's in-memory compilation with disk content.
-            if let Err(err) = sync_text_to_sidecar(sidecar, file_path, &disk_text).await {
-                warn!("Failed to sync {file_path} to sidecar: {err:#}");
-            }
-        }
-
-        match fetch(sidecar, file_path, source_tag).await {
-            Ok(diagnostics) => {
-                let uri = match crate::paths::path_to_lsp_uri(file_path) {
-                    Ok(uri) => uri,
-                    Err(err) => {
-                        warn!("Skip verification for {file_path}: {err:#}");
-                        continue;
-                    }
-                };
-                if let Err(err) = publish(sender, uri, diagnostics) {
-                    warn!("Failed to publish verified diagnostics for {file_path}: {err:#}");
-                }
-            }
-            Err(err) => {
-                info!("Verification fetch failed for {file_path}: {err:#}");
-            }
-        }
-
-        // Yield between files to avoid starving other sidecar requests.
-        tokio::task::yield_now().await;
-    }
-
-    info!(
-        "Verification pass complete for {} file(s)",
-        error_files.len()
-    );
-}
-
-/// Send `textDocument/didChange` to the sidecar with fresh text.
-async fn sync_text_to_sidecar(
-    sidecar: &SidecarManager,
-    file_path: &str,
-    new_text: &str,
+    filter: &[String],
 ) -> Result<()> {
-    let request = crate::semantic::SidecarDidChangeReq {
-        file_path: file_path.to_string(),
-        new_text: new_text.to_string(),
-    };
-    let payload = rmp_serde::to_vec(&request).context("serialize didChange")?;
-    let _response = sidecar
-        .request("textDocument/didChange", payload)
-        .await
-        .context("sidecar didChange for verification")?;
+    for path in crate::pull_diagnostics::paths_for_sidecar(sidecar, filter).await? {
+        let uri = crate::paths::path_to_lsp_uri(&path)?;
+        let generation = next_generation(&uri);
+        fetch_and_publish_gated(
+            sidecar,
+            sender,
+            &uri,
+            &path,
+            source_tag_for_path(&path),
+            generation,
+        )
+        .await;
+    }
     Ok(())
 }
 
@@ -455,12 +351,15 @@ pub fn clear(sender: &crossbeam_channel::Sender<Message>, uri: Uri) -> Result<()
     publish(sender, uri, vec![])
 }
 
-/// Fetch diagnostics from the sidecar for a single file (public for pull diagnostics).
+/// Fetch actual compiler truth with the caller's cancellation lifetime.
 pub async fn fetch_from_sidecar(
     sidecar: &SidecarManager,
     file_path: &str,
+    cancel: Option<&lspkit_server::CancellationToken>,
 ) -> Result<Vec<Diagnostic>> {
-    fetch(sidecar, file_path, source_tag_for_path(file_path)).await
+    let diagnostics =
+        fetch_cancellable(sidecar, file_path, source_tag_for_path(file_path), cancel).await?;
+    policy::configured(diagnostics)
 }
 
 /// Fetch diagnostics from the sidecar for a single file.
@@ -469,9 +368,24 @@ async fn fetch(
     file_path: &str,
     source_tag: &str,
 ) -> Result<Vec<Diagnostic>> {
+    fetch_cancellable(sidecar, file_path, source_tag, None).await
+}
+
+/// Request fresh compiler findings under the caller's execution lifetime.
+async fn fetch_cancellable(
+    sidecar: &SidecarManager,
+    file_path: &str,
+    source_tag: &str,
+    cancel: Option<&lspkit_server::CancellationToken>,
+) -> Result<Vec<Diagnostic>> {
     let payload = rmp_serde::to_vec(file_path).context("serialize file path")?;
+    let method = if crate::paths::has_extension(file_path, &["csproj", "fsproj"]) {
+        "workspace/diagnostics/project"
+    } else {
+        "workspace/diagnostics"
+    };
     let response_bytes = sidecar
-        .request("workspace/diagnostics", payload)
+        .request_cancellable(method, payload, cancel)
         .await
         .context("sidecar diagnostics request")?;
     let results: Vec<SidecarDiagnostic> =
@@ -480,36 +394,6 @@ async fn fetch(
         .into_iter()
         .map(|r| to_lsp_diagnostic(r, source_tag))
         .collect())
-}
-
-/// Fetch diagnostics for all files in the solution, batched by file.
-async fn fetch_all(
-    sidecar: &SidecarManager,
-    project_filter: &[String],
-) -> Result<HashMap<String, Vec<Diagnostic>>> {
-    let request = SolutionDiagnosticsRequest {
-        project_filter: project_filter.to_vec(),
-    };
-    let payload = rmp_serde::to_vec(&request).context("serialize solution diagnostics request")?;
-    let response_bytes = sidecar
-        .request("workspace/diagnostics/all", payload)
-        .await
-        .context("sidecar solution diagnostics request")?;
-    let results: HashMap<String, Vec<SidecarDiagnostic>> =
-        rmp_serde::from_slice(&response_bytes).context("deserialize solution diagnostics")?;
-    let mapped = results
-        .into_iter()
-        .map(|(path, diags)| {
-            (
-                path,
-                diags
-                    .into_iter()
-                    .map(|d| to_lsp_diagnostic(d, "sharplsp-csharp"))
-                    .collect(),
-            )
-        })
-        .collect();
-    Ok(mapped)
 }
 
 /// Whether the latest publication for `uri` is a tier-2 placeholder that a
@@ -570,6 +454,7 @@ fn publish(
     diagnostics: Vec<Diagnostic>,
 ) -> Result<()> {
     let _ = PROVISIONAL_PUBLISHED.insert(uri.to_string(), has_restore_pending(&diagnostics));
+    let diagnostics = policy::configured(diagnostics)?;
     let params = PublishDiagnosticsParams {
         uri,
         diagnostics,
@@ -604,9 +489,27 @@ fn to_lsp_diagnostic(result: SidecarDiagnostic, source_tag: &str) -> Diagnostic 
         ),
         severity: Some(map_severity(&result.severity)),
         code: Some(NumberOrString::String(result.code)),
+        code_description: code_description(&result.help_link),
         source: Some(source_tag.to_string()),
         message: result.message,
         ..Diagnostic::default()
+    }
+}
+
+/// The rule's documentation page as LSP `codeDescription.href`, so the
+/// editor links each finding to its rule exactly as the official C# extension
+/// does ([DIAG-CATEGORIES-ANALYZER]). Absent when the sidecar sent no link; a
+/// link that is not a valid URI is dropped with a trace, never a panic.
+fn code_description(help_link: &str) -> Option<CodeDescription> {
+    if help_link.is_empty() {
+        return None;
+    }
+    match help_link.parse::<Uri>() {
+        Ok(href) => Some(CodeDescription { href }),
+        Err(error) => {
+            debug!(help_link, %error, "Dropping malformed diagnostic help link");
+            None
+        }
     }
 }
 
@@ -684,6 +587,9 @@ mod tests {
             message: "Unused variable".to_string(),
             severity: "Warning".to_string(),
             code: "CS0219".to_string(),
+            help_link:
+                "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1822"
+                    .to_string(),
         };
 
         let diag = to_lsp_diagnostic(input, "sharplsp-csharp");
@@ -695,8 +601,63 @@ mod tests {
             diag.code,
             Some(NumberOrString::String("CS0219".to_string()))
         );
+        // The rule's documentation link reaches the editor as codeDescription.href
+        // ([DIAG-CATEGORIES-ANALYZER]).
+        assert_eq!(
+            diag.code_description.as_ref().map(|it| it.href.as_str()),
+            Some(
+                "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1822"
+            )
+        );
         assert_eq!(diag.source, Some("sharplsp-csharp".to_string()));
         assert_eq!(diag.message, "Unused variable");
+    }
+
+    /// A sidecar answer without a help link — F# compiler and built-in analyzer
+    /// diagnostics, and any older sidecar — must decode and publish without a
+    /// codeDescription.
+    #[test]
+    fn to_lsp_diagnostic_without_help_link_has_no_code_description() {
+        let input = SidecarDiagnostic {
+            _file_path: "/src/main.fs".to_string(),
+            start_line: 1,
+            start_character: 0,
+            end_line: 1,
+            end_character: 4,
+            message: "Unnecessary open".to_string(),
+            severity: "Info".to_string(),
+            code: "IDE0005".to_string(),
+            help_link: String::new(),
+        };
+
+        let diag = to_lsp_diagnostic(input, "sharplsp-fsharp");
+
+        assert_eq!(diag.code_description, None);
+    }
+
+    /// An F# `FSharpLint` finding carries its rule's stable documentation page
+    /// through the same host mapping ([DIAG-CATEGORIES-ANALYZER]).
+    #[test]
+    fn to_lsp_diagnostic_maps_fsharp_lint_help_link() {
+        let input = SidecarDiagnostic {
+            _file_path: "/src/main.fs".to_string(),
+            start_line: 2,
+            start_character: 0,
+            end_line: 2,
+            end_character: 4,
+            message: "Consider using <> instead of =.".to_string(),
+            severity: "Warning".to_string(),
+            code: "FL0065".to_string(),
+            help_link: "https://fsprojects.github.io/FSharpLint/how-tos/rules/FL0065.html"
+                .to_string(),
+        };
+
+        let diag = to_lsp_diagnostic(input, "sharplsp-fsharp");
+
+        assert_eq!(
+            diag.code_description.as_ref().map(|it| it.href.as_str()),
+            Some("https://fsprojects.github.io/FSharpLint/how-tos/rules/FL0065.html")
+        );
     }
 
     #[test]
@@ -903,6 +864,27 @@ mod tests {
                 .recv_timeout(std::time::Duration::from_millis(200))
                 .is_err(),
             "convergence after a settled publication must be a no-op"
+        );
+    }
+
+    /// A competing push cannot make a framework switch's synchronous fetch
+    /// disappear before its required publication. [NETFX-CONTEXT] [DIAG-PUSH-GATE]
+    #[test]
+    fn superseded_first_push_retries_until_it_publishes() {
+        let host = scripted_host(None);
+        let uri: Uri = "file:///framework.cs".parse().unwrap();
+        let generation = next_generation(&uri);
+        let _competing = next_generation(&uri);
+        let target = (host.manager, uri, "Framework.cs".to_string());
+
+        let unfinished = host
+            .runtime
+            .block_on(first_push(target, generation, host.sender));
+
+        assert!(unfinished.is_none());
+        assert_eq!(
+            recv_publication(&host.receiver, Duration::from_secs(5)).diagnostics,
+            []
         );
     }
 

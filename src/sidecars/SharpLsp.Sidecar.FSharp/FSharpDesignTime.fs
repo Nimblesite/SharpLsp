@@ -34,6 +34,8 @@ type FSharpProjectEntry =
         Frameworks: string list
         mutable Active: string option
         mutable Options: FSharpProjectOptions
+        /// A failed SDK evaluation cannot authorize diagnostics from fallback inputs. [DIAG-TRUTH-GUARANTEES]
+        mutable SdkError: string option
         /// Options already built, per framework.
         ByFramework: ConcurrentDictionary<string, FSharpProjectOptions>
         /// The project references MSBuild resolved for each framework built.
@@ -68,12 +70,7 @@ let private msbuildTimeout = TimeSpan.FromMinutes 3.0
 let private pathFlags = [ "-o:"; "--out:"; "-r:"; "--reference:"; "--doc:"; "--pdb:"; "--keyfile:" ]
 
 let private startInfo (fsprojPath: string) (arguments: string list) =
-    let info = ProcessStartInfo("dotnet")
-    info.WorkingDirectory <- NativePaths.DirectoryOf fsprojPath
-    info.RedirectStandardOutput <- true
-    info.RedirectStandardError <- true
-    info.UseShellExecute <- false
-    info.CreateNoWindow <- true
+    let info = DotnetProcess.StartInfo(NativePaths.DirectoryOf fsprojPath)
 
     for argument in [ "msbuild"; fsprojPath; "-nologo"; "-m:1"; "-nodeReuse:false" ] @ arguments do
         info.ArgumentList.Add argument
@@ -103,32 +100,67 @@ let private failureReason (exitCode: int) (detail: string) (text: string) =
     let shown = if errors.Length > 0 then errors else lines
     $"exit {exitCode}: {String.Join(' ', shown)}"
 
-/// Wait for MSBuild, stopping it when it overruns or the caller gives up.
-let private awaitMsbuild (proc: Process) (ct: CancellationToken) =
+/// Cancel `build` once `fsprojPath` is gone, until `watch` ends: MSBuild can wait forever
+/// on a project removed while it builds, as a test fixture is when its suite ends.
+/// [DIAG-LSP-REFRESH]
+let private cancelWhenRemoved (fsprojPath: string) (build: CancellationTokenSource) (watch: CancellationToken) =
     task {
-        use timeout = CancellationTokenSource.CreateLinkedTokenSource ct
-        timeout.CancelAfter msbuildTimeout
-        let output = proc.StandardOutput.ReadToEndAsync timeout.Token
-        let error = proc.StandardError.ReadToEndAsync timeout.Token
+        try
+            while File.Exists fsprojPath do
+                do! Task.Delay(100, watch)
+
+            build.Cancel()
+        with :? OperationCanceledException ->
+            ()
+    }
+
+/// MSBuild's output once it exits within `deadline`, else stopped and `stopped ()` as why.
+let private finishMsbuild (proc: Process) (deadline: CancellationToken) (stopped: unit -> string) =
+    task {
+        let output = proc.StandardOutput.ReadToEndAsync deadline
+        let error = proc.StandardError.ReadToEndAsync deadline
 
         try
-            do! proc.WaitForExitAsync timeout.Token
+            do! proc.WaitForExitAsync deadline
             let! text = output
             let! detail = error
             return if proc.ExitCode = 0 then Ok text else Error(failureReason proc.ExitCode detail text)
         with :? OperationCanceledException ->
             stopProcess proc
-            return Error "MSBuild did not finish in time"
+            return Error(stopped ())
+    }
+
+/// Wait for MSBuild, stopping it when it overruns, its project is removed, or the caller
+/// gives up. The removal watch ends before its token sources are disposed.
+let private awaitMsbuild (proc: Process) (fsprojPath: string) (ct: CancellationToken) =
+    task {
+        use timeout = CancellationTokenSource.CreateLinkedTokenSource ct
+        timeout.CancelAfter msbuildTimeout
+        use watch = new CancellationTokenSource()
+        let removal = cancelWhenRemoved fsprojPath timeout watch.Token
+
+        let stopped () =
+            if File.Exists fsprojPath then "MSBuild did not finish in time"
+            else "MSBuild project was removed during the design-time build"
+
+        let! outcome = finishMsbuild proc timeout.Token stopped
+        watch.Cancel()
+        do! removal
+        return outcome
     }
 
 /// Run `dotnet msbuild` on the project; its standard output, or why it failed.
 let private runMsbuild (fsprojPath: string) (arguments: string list) (ct: CancellationToken) =
     task {
-        match Process.Start(startInfo fsprojPath arguments) with
-        | null -> return Error "Could not start dotnet msbuild"
-        | started ->
-            use proc = started
-            return! awaitMsbuild proc ct
+        try
+            match Process.Start(startInfo fsprojPath arguments) with
+            | null -> return Error "Could not start dotnet msbuild"
+            | started ->
+                use proc = started
+                return! awaitMsbuild proc fsprojPath ct
+        with ex ->
+            Log.Debug(ex, "Could not start dotnet msbuild for {Project}", fsprojPath)
+            return Error $"Could not start dotnet msbuild: {ex.Message}"
     }
 
 /// The JSON document MSBuild prints for `-getProperty` / `-getItem`.
@@ -152,7 +184,9 @@ let private propertyOf (document: JsonDocument) (name: string) =
 /// Whether the project file itself declares `<TargetFrameworks>`: the cheap test that
 /// decides whether MSBuild is asked at all.
 let declaresTargetFrameworks (fsprojPath: string) =
-    XDocument.Load(fsprojPath).Descendants(XName.Get "TargetFrameworks") |> Seq.isEmpty |> not
+    ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get "TargetFrameworks")
+    |> Seq.isEmpty
+    |> not
 
 /// The evaluated `<TargetFrameworks>`, in declared order; the lone `<TargetFramework>`
 /// of a project that declares no plural.
@@ -192,6 +226,29 @@ let private metadataOf (item: JsonElement) (name: string) =
 
 let private itemIdentities (item: string) (document: JsonDocument) =
     itemsNamed item document |> List.choose (fun arg -> metadataOf arg "Identity") |> Array.ofList
+
+/// The `Compile` items MSBuild evaluated for the project, in project order, as absolute
+/// paths: globs expanded and Exclude/Remove/Condition/imports applied. The design-time
+/// compile reports the same files in its command line, so both agree; unlike the design-time
+/// build this is a static evaluation, so it carries no generated `obj` sources.
+/// Implements [NETFX-PROJECTS-FSHARP].
+let compileSources (fsprojPath: string) (ct: CancellationToken) : Task<Result<string array, string>> =
+    task {
+        let! run = runMsbuild fsprojPath [ "-getItem:Compile" ] ct
+        let directory = NativePaths.DirectoryOf fsprojPath
+
+        return
+            run
+            |> Result.bind (fun text ->
+                let missing = Error $"MSBuild reported no Compile items for {NativePaths.NameOf fsprojPath}"
+
+                match parseJson text with
+                | Some document ->
+                    let items = itemIdentities "Compile" document
+                    if items.Length > 0 then Ok items else missing
+                | None -> missing)
+            |> Result.map (fun items -> items |> Array.map (fun source -> NativePaths.Resolve(directory, source)))
+    }
 
 /// The compiler's references that MSBuild resolved from project references, read from the
 /// very items its `-r:` arguments are made of.
@@ -283,6 +340,7 @@ let private singleTarget (options: FSharpProjectOptions) (path: string) =
       Frameworks = []
       Active = None
       Options = options
+      SdkError = None
       ByFramework = ConcurrentDictionary()
       Resolved = ConcurrentDictionary() }
 
@@ -296,14 +354,16 @@ let builtFramework (entry: FSharpProjectEntry) = frameworkOf entry entry.Options
 
 /// A project answering from MSBuild's options for `built`, with `frameworks` to switch
 /// between — none for a single-target project; when MSBuild cannot report that
-/// framework's arguments, it keeps the hand-built options and says why.
+/// framework's arguments, fallback options retain ownership but cannot authorize diagnostics.
 let private builtEntry checker fallback path (frameworks: string list) (built: string) ct =
     task {
         let entry = { singleTarget fallback path with Frameworks = frameworks; Active = List.tryHead frameworks }
 
         match! optionsForFramework checker entry built ct with
         | Ok options -> entry.Options <- options
-        | Error reason -> Log.Warning("F# project {Path} keeps its <Compile> items: {Reason}", path, reason)
+        | Error reason ->
+            entry.SdkError <- Some reason
+            Log.Warning("F# project {Path} compiler inputs unavailable: {Reason}", path, reason)
 
         return entry
     }
@@ -328,22 +388,36 @@ let private restoreWhenStale (path: string) ct =
             | Error reason -> Log.Warning("F# project {Path} could not restore: {Reason}", path, reason)
     }
 
-/// Load one project, restored again first when its packages are gone: from MSBuild when
-/// it targets several frameworks or reads a C# project, else by hand.
-let loadEntry (checker: FSharpChecker) (fallback: string -> FSharpProjectOptions) (path: string) ct =
+let private loadSdkEntry checker options path useSdk ct =
     task {
-        do! restoreWhenStale path ct
-        let options = fallback path
-        let readsCSharp = readsCSharp path
-
-        if not (declaresTargetFrameworks path || readsCSharp) then
-            return singleTarget options path
-        else
-            match! evaluateTargetFrameworks path ct with
-            | Ok frameworks when frameworks.Length > 1 -> return! builtEntry checker options path frameworks frameworks.Head ct
-            | Ok [ framework ] when readsCSharp -> return! builtEntry checker options path [] framework ct
-            | Ok _ -> return singleTarget options path
-            | Error reason ->
-                Log.Warning("F# project {Path}: target frameworks unknown: {Reason}", path, reason)
-                return singleTarget options path
+        match! evaluateTargetFrameworks path ct with
+        | Ok frameworks when frameworks.Length > 1 -> return! builtEntry checker options path frameworks frameworks.Head ct
+        | Ok [ framework ] when useSdk -> return! builtEntry checker options path [] framework ct
+        | Ok _ -> return singleTarget options path
+        | Error reason ->
+            Log.Warning("F# project {Path}: target frameworks unknown: {Reason}", path, reason)
+            return { singleTarget options path with SdkError = Some reason }
     }
+
+/// Restored projects use the SDK's compile items and reference assemblies, including
+/// single-target projects. [DIAG-CATEGORIES-COMPILER] [DIAG-RESTORE]
+let loadEntryWithRestore
+    (checker: FSharpChecker)
+    (fallback: string -> CancellationToken -> Task<FSharpProjectOptions>)
+    (path: string)
+    autoRestore
+    ct
+    =
+    task {
+        if autoRestore then do! restoreWhenStale path ct
+        let! options = fallback path ct
+        let useSdk = readsCSharp path || File.Exists(NativePaths.ProjectAssetsFile path)
+        if useSdk || declaresTargetFrameworks path then
+            return! loadSdkEntry checker options path useSdk ct
+        else
+            return singleTarget options path
+    }
+
+/// Owning-file loads keep their established missing-package recovery contract. [DIAG-RESTORE]
+let loadEntry checker fallback path ct =
+    loadEntryWithRestore checker fallback path true ct

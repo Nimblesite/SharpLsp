@@ -150,3 +150,60 @@ let ``a file whose project lost its restored packages answers hover once they ar
             lifetime.DisposeAsync().GetAwaiter().GetResult()
             try Directory.Delete(NativePaths.DirectoryOf loneDir, true) with _ -> ()
     }
+
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]: an owner adoption begun for one
+/// workspace generation must never commit into a replacement workspace (GitHub #414).
+[<Fact>]
+let ``a superseded owner adoption never repopulates an empty replacement`` () =
+    task {
+        let state = FSharpWorkspace.create ()
+        let emptyDir = NativePaths.Temp($"sharplsp-owning-empty-{Guid.NewGuid():N}")
+        Directory.CreateDirectory emptyDir |> ignore
+        let loneDir, shapes = writeLoneProject ()
+
+        try
+            // An empty selection still triggers ownership: its LastLoadWasEmpty is the
+            // loaded state an out-of-solution file adopts against.
+            let! _ = FSharpWorkspaceLoading.loadProject state emptyDir
+            let adoption = FSharpOwningProject.adoptOwner state shapes
+            let! _ = FSharpWorkspaceLoading.loadProject state emptyDir
+            let! inner = adoption
+            Assert.True(inner.IsSome, "an out-of-solution file in an empty selection starts an adoption")
+            do! inner.Value
+
+            Assert.DoesNotContain(state.Projects.Keys, fun key -> NativePaths.NameOf key = "Lone.fsproj")
+            Assert.DoesNotContain(state.References.Keys, fun key -> NativePaths.NameOf key = "Lone.fsproj")
+            Assert.True(state.ProjectOptions.IsNone, "an empty selection keeps no project options")
+            Assert.False(state.IsLoaded, "an empty selection stays unloaded")
+            Assert.True(state.LastLoadWasEmpty, "an empty selection stays empty")
+        finally
+            try Directory.Delete(loneDir, true) with _ -> ()
+            try Directory.Delete(emptyDir, true) with _ -> ()
+    }
+
+[<Fact>]
+let ``a superseded owner adoption never joins a real replacement workspace`` () =
+    task {
+        let state = FSharpWorkspace.create ()
+        let emptyDir = NativePaths.Temp($"sharplsp-owning-empty-{Guid.NewGuid():N}")
+        Directory.CreateDirectory emptyDir |> ignore
+        let replacement = createTestProject ()
+        let loneDir, shapes = writeLoneProject ()
+
+        try
+            let! _ = FSharpWorkspaceLoading.loadProject state emptyDir
+            let adoption = FSharpOwningProject.adoptOwner state shapes
+            let! _ = FSharpWorkspaceLoading.loadProject state replacement
+            let! inner = adoption
+            Assert.True(inner.IsSome, "an out-of-solution file in an empty selection starts an adoption")
+            do! inner.Value
+
+            Assert.DoesNotContain(state.Projects.Keys, fun key -> NativePaths.NameOf key = "Lone.fsproj")
+            Assert.DoesNotContain(state.References.Keys, fun key -> NativePaths.NameOf key = "Lone.fsproj")
+            Assert.Equal(1, state.Projects.Count)
+            Assert.Contains(state.Projects.Keys, fun key -> NativePaths.NameOf key = "TestProject.fsproj")
+        finally
+            try Directory.Delete(loneDir, true) with _ -> ()
+            try Directory.Delete(emptyDir, true) with _ -> ()
+            try Directory.Delete(replacement, true) with _ -> ()
+    }

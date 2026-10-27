@@ -19,6 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
+import { testConfigurationArgs } from './test-configuration';
 import { joinPath } from './paths';
 import type * as vscode from 'vscode';
 import {
@@ -223,7 +224,10 @@ async function invoke(
 ): Promise<TestRunOutcome> {
   fs.mkdirSync(resultsDirectory, { recursive: true });
   const before = new Set(trxFiles(resultsDirectory));
-  const args = runArgs(testIds, resultsDirectory, options);
+  const args = [
+    ...runArgs(testIds, resultsDirectory, options),
+    ...(await testConfigurationArgs(options.target ?? cwd)),
+  ];
   const started = Date.now();
   const run = await runDotnet(
     args,
@@ -314,5 +318,12 @@ function runFailure(
 ): string | undefined {
   if (killed) return `dotnet test was killed (timeout or signal): ${errorMessage ?? 'no detail'}`;
   if (!failed || resultCount > 0) return undefined;
-  return parseFailureMessage(output) ?? errorMessage ?? 'dotnet test failed';
+  // A failed build has no TRX error block. Keep its diagnostics. [TEST-BUILD-GRAPH]
+  const detail = output.trim().slice(-2_000);
+  return (
+    parseFailureMessage(output) ??
+    (detail.length === 0
+      ? (errorMessage ?? 'dotnet test failed')
+      : `${errorMessage ?? 'dotnet test failed'}\n${detail}`)
+  );
 }

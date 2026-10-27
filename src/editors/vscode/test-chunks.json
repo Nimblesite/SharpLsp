@@ -11,6 +11,12 @@
         "completions-visible.test.js",
         "hover.test.js",
         "diagnostics.test.js",
+        "diagnostic-accuracy-e2e.test.js",
+        "diagnostic-analyzers-e2e.test.js",
+        "diagnostic-cancellation-e2e.test.js",
+        "diagnostic-policy-e2e.test.js",
+        "diagnostic-restore-e2e.test.js",
+        "diagnostic-project-errors-e2e.test.js",
         "lsp-integration.test.js",
         "lsp-integration-semantic.test.js",
         "semantic-highlighting.test.js",
@@ -31,7 +37,7 @@
       ]
     },
     "fsharp": {
-      "description": "F# is a first-class citizen, so its WHOLE LSP surface is gated in one job: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol; the code-fix catalogue (basics, type conversions, generation); and rename, including the cross-language case where an F# origin renames C# references and back — the slowest suite in the matrix, because each of its tests rebuilds both languages. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement.",
+      "description": "F# is a first-class citizen, so its WHOLE LSP surface is gated in one job: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol (its SDK diagnostic-truth suites run in diagnostics-sdk); the code-fix catalogue (basics, type conversions, generation); and rename, including the cross-language case where an F# origin renames C# references and back — the slowest suite in the matrix, because each of its tests rebuilds both languages. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement.",
       "files": [
         "fsharp-lsp-navigation.test.js",
         "fsharp-lsp-intelligence.test.js",
@@ -49,11 +55,23 @@
         "tutorial.test.js"
       ]
     },
+    "diagnostics-sdk": {
+      "description": "Diagnostic truth against the real SDK, split from fsharp when that job outgrew its suite budget on Windows ([DIST-CI-WIN-VSIX]): F# lint discovery, failures and inherited configuration; the restore gate over imported inputs and timestamp-preserving project edits; package fallback, unavailable SDK contexts, F# script references and compiler ownership. Every suite restores and builds real projects, which is what makes them slow.",
+      "files": [
+        "diagnostic-lint-e2e.test.js",
+        "diagnostic-lint-failures-e2e.test.js",
+        "diagnostic-lint-ancestor-e2e.test.js",
+        "diagnostic-fallback-e2e.test.js",
+        "diagnostic-imported-restore-e2e.test.js",
+        "diagnostic-package-snapshot-e2e.test.js",
+        "diagnostic-sdk-context-e2e.test.js",
+        "diagnostic-script-errors-e2e.test.js",
+        "diagnostic-ownership-e2e.test.js"
+      ]
+    },
     "razor": {
       "description": "Razor and Blazor over the real Razor fixture solution, built once per job ([RAZOR-EDITORS], [RAZOR-TESTING]): Razor documents activate the extension and sync, unsaved edits included; the C# sidecar answers the C# inside them at Razor positions, references landing in the Razor file and never in generated code; and markup gets the built-in HTML service's completion and hover over the server's HTML projection ([RAZOR-FEATURES-HTML]).",
-      "files": [
-        "razor-lsp.test.js"
-      ]
+      "files": ["razor-lsp.test.js"]
     },
     "debug": {
       "description": "Getting a program to START, and nothing about what happens once it has: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions, the [SCRIPT-CONE] launch-target walk with MSBuild output resolution, and the F5 / Ctrl+F5 / sharplsp.runProgram gestures over real projects, C# file-based apps and .fsx scripts. Also the Blazor WebAssembly launch ([DEBUG-FEATURES-LAUNCH-BLAZOR-WASM]), which starts `dotnet run`, hands the DevServer's debug proxy to js-debug and dies with that browser session.",
@@ -63,6 +81,7 @@
         "debug-adapter-startup.test.js",
         "blazor-wasm-debug.test.js",
         "blazor-wasm-debug-resolution.test.js",
+        "blazor-wasm-session.test.js",
         "run-debug-profiles.test.js",
         "run-debug-contributions.test.js",
         "run-debug-target.test.js",
@@ -85,7 +104,8 @@
         "dap-exception-policy.test.js",
         "debug-just-my-code-e2e.test.js",
         "debug-policy-e2e.test.js",
-        "debug-terminal-exception-e2e.test.js"
+        "debug-terminal-exception-e2e.test.js",
+        "debug-exception-permutations-e2e.test.js"
       ]
     },
     "debug-inspection": {
@@ -117,8 +137,16 @@
         "debug-multisession-e2e.test.js"
       ]
     },
+    "testexplorer-build": {
+      "description": "Completed-build refresh, explicit build configuration and fresh owning-project graphs through Run, Coverage and Debug for F# and C#, VSTest and MTP. Implements [TEST-REACTIVITY-BUILD], [TEST-BUILD-CONFIGURATION] and [TEST-BUILD-GRAPH]; this group keeps real compiler builds within the shard ceiling required by [DIST-CI-WIN-VSIX].",
+      "files": [
+        "01-test-explorer-build-refresh.test.js",
+        "test-build-configuration.test.js",
+        "test-build-graph.test.js"
+      ]
+    },
     "testexplorer": {
-      "description": "The Test Explorer a user READS: discovery, the reactive tree, the target `dotnet` refuses while still exiting zero, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library — one Cobertura report per test project, every one parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS] and [TEST-COVERAGE].",
+      "description": "The Test Explorer a user READS: discovery, the reactive tree, the target `dotnet` refuses while still exiting zero, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library — one Cobertura report per invoked test project, selections scoped to their owning project, every invoked report parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS], [TEST-COVERAGE] and [TEST-BUILD-GRAPH].",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-refusals.test.js",
@@ -130,6 +158,7 @@
         "testing-lens-e2e.test.js",
         "testing-lens-status.test.js",
         "test-explorer-coverage.test.js",
+        "test-coverage-parser.test.js",
         "test-explorer-mtp-parsers.test.js",
         "test-explorer-mtp-merges.test.js"
       ]
@@ -206,10 +235,7 @@
     },
     "profiler": {
       "description": "The shared lsp-profiler mounted in SharpLsp ([PROFILER-SHARED-LIBRARY-VSCODE]), end to end over the real LSP and the bundled .NET engine against live ProfileTarget / ProfileLeakTarget processes and lspkit's F# HotLeakAppFs (heat map, memory track, union-case names and module-value roots on F# code): command registration and advertisement, generated manifest contributions, settings, wire error codes, the processes panel (rows, sort, group, filter, kill, copy, reveal), CPU sessions (one-click attach, live status, stop, snapshot, presets, results panel, heat map, artifacts, concurrency, a target that dies mid-session), memory sessions (snapshot, diff and leak scoring, retention graph, objects, induced GC, dashboard, decorations, autopilot, every refusal path), and Basilisk's profiler suites ported onto SharpLsp: the processes panel, decorations, webviews, entry points, reactive chrome, the profile server, and the debug-launched flows (Run & Profile CPU, Run & Track Memory, the autopilot, introspection of a paused debuggee) against a .NET debuggee built in the workspace. Its own job because every suite attaches the engine to real processes.",
-      "files": [
-        "profiler*.test.js",
-        "memory-*.test.js"
-      ]
+      "files": ["profiler*.test.js", "memory-*.test.js"]
     },
     "realrepo": {
       "linuxOnly": true,
@@ -223,10 +249,7 @@
     "netfx-testexplorer": {
       "windowsOnly": true,
       "description": ".NET Framework in the Test Explorer, Windows only ([NETFX-SCOPE]): C# and F# test projects multi-targeting net462/net472/net48 beside the installed .NET runtimes, through VSTest and Microsoft.Testing.Platform. Framework tags and root descriptions, per-framework failure messages, `Run on <tfm>` profiles, framework-exclusive tests, .NET Framework MTP modules executed directly, and the debug refusal ([NETFX-TEST], [NETFX-DEBUG]).",
-      "files": [
-        "test-explorer-netfx.test.js",
-        "test-explorer-mtp-netfx.test.js"
-      ]
+      "files": ["test-explorer-netfx.test.js", "test-explorer-mtp-netfx.test.js"]
     },
     "netfx-language": {
       "windowsOnly": true,
@@ -242,17 +265,12 @@
     "realrepo-netfx": {
       "windowsOnly": true,
       "description": "Real C# .NET Framework repositories at pinned commits, Windows only ([NETFX-CORPUS]): CsvHelper and NLog, each targeting several .NET Framework and .NET Standard versions: load, LSP inside .NET Framework code, the active framework, and Test Explorer discovery and runs across every framework they target.",
-      "files": [
-        "real-repo-netfx-csharp.test.js",
-        "real-repo-netfx-nlog.test.js"
-      ]
+      "files": ["real-repo-netfx-csharp.test.js", "real-repo-netfx-nlog.test.js"]
     },
     "realrepo-netfx-fsharp": {
       "windowsOnly": true,
       "description": "GitReader at a pinned commit, Windows only ([NETFX-CORPUS]): its F# library and its F# and C# tests across .NET Framework, .NET Standard and .NET. Its own job: sharing one with CsvHelper and NLog ran the three repositories into the whole-run ceiling.",
-      "files": [
-        "real-repo-netfx-fsharp.test.js"
-      ]
+      "files": ["real-repo-netfx-fsharp.test.js"]
     }
   },
   "excluded": {

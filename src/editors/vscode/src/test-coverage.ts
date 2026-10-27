@@ -7,7 +7,7 @@
  */
 
 import * as fs from 'node:fs';
-import { joinPath } from './paths';
+import { isAbsolutePath, joinPath } from './paths';
 import * as vscode from 'vscode';
 import { XMLParser } from 'fast-xml-parser';
 import { info } from './log.js';
@@ -36,6 +36,8 @@ interface CoberturaPackage {
 
 interface CoberturaReport {
   readonly coverage?: {
+    /** Base directories a RELATIVE `<class filename>` is resolved against. */
+    readonly sources?: { source?: string | string[] };
     readonly packages?: { package?: CoberturaPackage | CoberturaPackage[] };
   };
 }
@@ -43,7 +45,8 @@ interface CoberturaReport {
 const coberturaParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
-  isArray: (tagName) => tagName === 'package' || tagName === 'class' || tagName === 'line',
+  isArray: (tagName) =>
+    tagName === 'package' || tagName === 'class' || tagName === 'line' || tagName === 'source',
 });
 
 /** Cobertura reports end with this, whichever collector wrote them. */
@@ -94,6 +97,7 @@ export function findCoberturaFile(resultsDir: string): string | undefined {
 export function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
   const doc = readReport(filePath);
   if (doc === undefined) return [];
+  const sources = sourceRoots(doc);
   const packages = doc.coverage?.packages?.package;
   if (packages === undefined) return [];
 
@@ -106,12 +110,41 @@ export function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
     const classList = Array.isArray(classes) ? classes : [classes];
 
     for (const cls of classList) {
-      const fc = fileCoverageForClass(cls);
+      const fc = fileCoverageForClass(cls, sources);
       if (fc !== undefined) result.push(fc);
     }
   }
 
   return result;
+}
+
+/** The base directories a report's `<sources>` element lists, if any. */
+function sourceRoots(doc: CoberturaReport): string[] {
+  const source = doc.coverage?.sources?.source;
+  if (source === undefined) return [];
+  const list = Array.isArray(source) ? source : [source];
+  return list.filter((each): each is string => typeof each === 'string' && each.length > 0);
+}
+
+/**
+ * The absolute source path a Cobertura `<class filename>` names.
+ *
+ * `coverlet.collector` — the VSTest path — writes the file name RELATIVE to a
+ * `<sources><source>` base ([TEST-COVERAGE]): `/` + `tmp/…/Value.cs` on POSIX,
+ * and `C:\` + `Users\…\Value.cs` on Windows. Read without its base, that
+ * Windows name has no drive letter and resolves against whichever drive the
+ * extension host is on — not the drive the source lives on. The
+ * Microsoft.Testing.Platform collector writes an ABSOLUTE name and no
+ * `<sources>`, so an absolute name is used unchanged.
+ */
+function resolveDocumentPath(filename: string, sources: readonly string[]): string {
+  if (isAbsolutePath(filename)) return filename;
+  for (const source of sources) {
+    const candidate = joinPath(source, filename);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  const first = sources[0];
+  return first === undefined ? filename : joinPath(first, filename);
 }
 
 /**
@@ -132,7 +165,10 @@ function readReport(filePath: string): CoberturaReport | undefined {
 }
 
 /** Build a FileCoverage (and stash its per-line details) for one cobertura class. */
-function fileCoverageForClass(cls: CoberturaClass): vscode.FileCoverage | undefined {
+function fileCoverageForClass(
+  cls: CoberturaClass,
+  sources: readonly string[],
+): vscode.FileCoverage | undefined {
   const filename = cls['@_filename'];
   if (filename === undefined || filename === '') return undefined;
   // A class with an EMPTY `<lines>` element is still a file the run loaded —
@@ -152,7 +188,7 @@ function fileCoverageForClass(cls: CoberturaClass): vscode.FileCoverage | undefi
     details.push(new vscode.StatementCoverage(hits, new vscode.Position(lineNo, 0)));
   }
 
-  const uri = vscode.Uri.file(filename);
+  const uri = vscode.Uri.file(resolveDocumentPath(filename, sources));
   const fc = new vscode.FileCoverage(uri, new vscode.TestCoverageCount(covered, lineList.length));
   coverageDetails.set(uri.toString(), details);
   return fc;

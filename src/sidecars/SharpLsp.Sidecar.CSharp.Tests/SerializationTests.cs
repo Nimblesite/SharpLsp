@@ -167,13 +167,19 @@ public sealed class SerializationTests
     }
 
     [Fact]
-    public void SolutionDiagnosticsRequest_roundtrip()
+    public void Rejected_bulk_payload_roundtrip()
     {
-        var original = new SolutionDiagnosticsRequest { ProjectFilter = ["MyApp", "MyLib"] };
+        // This wire shape is valid test input for the forbidden-route contract only.
+        string[][] original =
+        [
+            ["MyApp", "MyLib"],
+        ];
         var bytes = MessagePackSerializer.Serialize(original);
-        var result = MessagePackSerializer.Deserialize<SolutionDiagnosticsRequest>(bytes);
+        var result = MessagePackSerializer.Deserialize<string[][]>(bytes);
 
-        Assert.Equal(2, result.ProjectFilter.Length);
-        Assert.Equal("MyApp", result.ProjectFilter[0]);
+        var filter = Assert.Single(result);
+        Assert.Equal(2, filter.Length);
+        Assert.Equal("MyApp", filter[0]);
+        Assert.Equal("MyLib", filter[1]);
     }
 }

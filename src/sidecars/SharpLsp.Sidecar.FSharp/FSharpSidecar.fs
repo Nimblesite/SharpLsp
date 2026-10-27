@@ -6,15 +6,27 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open SharpLsp.Sidecar.Common
+open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.Common.Solutions
 open MessagePack
 
-type FSharpSidecar() =
+type FSharpSidecar() as this =
     inherit SidecarHost("fsharp")
 
     let workspace = FSharpWorkspace.create ()
     let codeFixState = FSharpCodeFixes.createState ()
     let mutable analyzerConfig = FSharpAnalyzers.AnalyzerConfig.Default
+    // The analyzer gate from `diagnostics/configure` ([DIAG-CATEGORIES-ANALYZER]):
+    // when false the F# file analyzers and the dead-code analyzer fall silent, but
+    // the FCS compiler diagnostics always stand. Default on.
+    let mutable analyzersEnabled = true
+    let mutable refreshSupported = false
+    let mutable autoRestoreOnOpen = true
+
+    let diagnosticMetadata enumerate =
+        Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
+            try Task.FromResult(Helpers.serializeOk (enumerate workspace) ct)
+            with ex -> Task.FromResult(ByteResult.Failure(ex.Message)))
 
     do
         // Analyzer configuration push from the host ([analyzers] in sharplsp.toml).
@@ -25,7 +37,7 @@ type FSharpSidecar() =
                 Task.FromResult<ByteResult>(Helpers.serializeOk "ok" ct)
             with ex ->
                 Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
-        base.Register("workspace/open", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+        base.RegisterWorkspaceOpen(Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
                     let path = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
@@ -33,15 +45,18 @@ type FSharpSidecar() =
                     // callers break MSBuild-style project resolution —
                     // normalize at the boundary. [GitHub #110]
                     let path = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath path
-                    let! result = FSharpWorkspace.loadProjectWithCancellation workspace path ct
+                    let! result = FSharpWorkspaceLoading.loadWorkspaceWithCancellation workspace path autoRestoreOnOpen ct
                     match result with
                     | Ok () ->
+                        return Helpers.serializeOk "ok" ct
+                    | Error _ when workspace.LastLoadWasEmpty ->
+                        // An empty language slice is a successful server-workspace selection.
                         return Helpers.serializeOk "ok" ct
                     | Error msg ->
                         return ByteResult.Failure(msg)
                 with ex ->
                     return ByteResult.Failure(ex.Message)
-            }))
+            }), Func<bool>(fun () -> refreshSupported))
 
         base.Register("solution/read", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
@@ -85,13 +100,47 @@ type FSharpSidecar() =
                 try
                     let request = MessagePackSerializer.Deserialize<DidChangeRequest>(payload, cancellationToken = ct)
                     FSharpWorkspace.applyDidChange workspace request.FilePath request.NewText
+                    let! changed = FSharpDiagnosticQueries.refreshInputs workspace request.FilePath ct
+                    let! notified = this.NotifyScopeChangeAsync(changed, ct)
                     // A file no loaded project compiles loads its own project, in the
                     // background: the host waits on this reply. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
-                    FSharpOwningProject.adoptOwner workspace request.FilePath |> ignore
+                    this.AdoptOwnerAsync(request.FilePath, ct) |> ignore
+                    return if notified then Helpers.serializeOk "ok" ct
+                           else ByteResult.Failure("F# script input invalidation delivery failed.")
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // didClose hands the file back to disk: the overlay must not outlive its
+        // document, or a closed file checks against a buffer nobody edits anymore.
+        // [HOVER-FSHARP-OVERLAY]
+        base.Register("textDocument/didClose", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<DidChangeRequest>(payload, cancellationToken = ct)
+                    FSharpWorkspace.removeOverlay workspace request.FilePath
                     return Helpers.serializeOk "ok" ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))
+
+        // The analyzer gate from the host's `[diagnostics] analyzers_enabled`.
+        base.Register("diagnostics/configure", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            try
+                let request = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(payload, cancellationToken = ct)
+                analyzersEnabled <- request.AnalyzersEnabled
+                refreshSupported <- request.RefreshSupported
+                autoRestoreOnOpen <- request.AutoRestoreOnOpen.GetValueOrDefault(true)
+                Task.FromResult<ByteResult>(Helpers.serializeOk "ok" ct)
+            with ex ->
+                Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
+
+        // Enumeration only: the host pulls per document afterwards. The payload is
+        // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
+        base.Register("workspace/diagnostics/documents", diagnosticMetadata FSharpDocuments.sourceDocuments)
+        base.Register("workspace/diagnostics/projects", diagnosticMetadata FSharpDocuments.projectDocuments)
+        base.Register("workspace/diagnostics/project", Helpers.handleWithCancellation
+            (FSharpProjectDiagnostics.getDiagnostics workspace) Helpers.resultOf)
 
         // Unused-package detection [PKG-UNUSED-DETECT-FS].
         base.Register("project/unusedPackages", Helpers.handle (FSharpPackages.getReferenceUsage workspace) (fun usage ct ->
@@ -192,62 +241,14 @@ type FSharpSidecar() =
         base.Register("textDocument/inlayHint", Helpers.handle (fun (request: InlayHintRequest) ->
             FSharpFeatures.getInlayHints workspace request.FilePath request.StartLine request.EndLine) (Helpers.listOf id))
 
-        // Diagnostics (FCS compiler errors + FSharpLint warnings)
-        base.Register("workspace/diagnostics", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let requestPath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
-                    // Resolve onto the project's spelling of the file — FCS
-                    // filename comparisons are case-sensitive while hosts vary
-                    // the casing. [REFERENCES-FSHARP-FIND]
-                    let filePath = FSharpWorkspace.projectFilePath workspace requestPath
-                    let mutable results = ResizeArray<DiagnosticResult>()
-                    // FCS compiler diagnostics, computed from the live buffer
-                    // (didChange overlay), never stale disk text — so a reverted
-                    // buffer clears its errors on the next pull. [HOVER-FSHARP-OVERLAY]
-                    let! checkedFile = FSharpWorkspace.checkFile workspace filePath
-                    match checkedFile with
-                    | Some(check, source) ->
-                        for d in check.Diagnostics do
-                            let severity =
-                                match d.Severity with
-                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error -> "Error"
-                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning -> "Warning"
-                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Info -> "Info"
-                                | _ -> "Hint"
-                            let r = d.Range
-                            results.Add(
-                                { FilePath = filePath
-                                  StartLine = r.StartLine - 1
-                                  StartCharacter = r.StartColumn
-                                  EndLine = r.EndLine - 1
-                                  EndCharacter = r.EndColumn
-                                  Message = d.Message
-                                  Severity = severity
-                                  Code = $"FS{d.ErrorNumber:D4}" })
-                        // [ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]
-                        // FSAC-parity file-local analyzers (always-on hints).
-                        let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
-                        fileDiags |> List.iter results.Add
-                    | None -> ()
-                    // [ANALYZERS-DEADCODE-SEVERITY] Merge project-wide dead-code diagnostics
-                    // for this file (monorepo mode promotes public deadness to errors).
-                    if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then
-                        // The file's own project decides: a symbol that is not public cannot
-                        // be used from another project, and a public one is reported only in
-                        // monorepo mode, where the projects reading this one in memory count.
-                        let scope = FSharpWorkspace.queryScope workspace filePath
-                        let! projects =
-                            FSharpWorkspace.checkAll
-                                workspace
-                                (if analyzerConfig.Monorepo then scope else List.truncate 1 scope)
-                        let allUses = projects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
-                        FSharpAnalyzers.deadCodeDiagnosticsForFile analyzerConfig allUses filePath
-                        |> List.iter results.Add
-                    return Helpers.serializeOk (results.ToArray()) ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        // Compiler truth and analyzers share one uncached query boundary.
+        base.Register("workspace/diagnostics", Helpers.handleWithCancellation (fun (requestPath: string) ct ->
+            FSharpDiagnosticQueries.get
+                { Workspace = workspace
+                  AnalyzersEnabled = analyzersEnabled
+                  Analyzers = analyzerConfig
+                  NotifyScopeChanged = fun changed token -> this.NotifyScopeChangeAsync(changed, token) }
+                requestPath ct) Helpers.resultOf)
 
         // Formatting preview (Fantomas diff)
         base.Register("textDocument/formattingPreview", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
@@ -272,8 +273,8 @@ type FSharpSidecar() =
             Task.FromResult<ByteResult>(Helpers.serializeOk result ct)))
 
         // Code lens [SHARPLSP-FEATURES-CODE-LENS]
-        base.Register("textDocument/codeLens", Helpers.handle (fun (request: FileRequest) ->
-            FSharpCodeLens.getCodeLenses workspace request.FilePath) (Helpers.listOf (fun (lens: FSharpCodeLens.CodeLensEntry) ->
+        base.Register("textDocument/codeLens", Helpers.handleWithCancellation (fun (request: FileRequest) ct ->
+            FSharpCodeLens.getCodeLensesWithCancellation workspace request.FilePath ct) (Helpers.listOf (fun (lens: FSharpCodeLens.CodeLensEntry) ->
             { CodeLensItemResult.Line = lens.Line
               Character = lens.Character
               Title = lens.Title })))
@@ -315,3 +316,28 @@ type FSharpSidecar() =
 
         // Subtypes [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("typeHierarchy/subtypes", Helpers.atPosition (FSharpHierarchy.subtypes workspace) (Helpers.listOf Helpers.toHierItem))
+
+    /// The owning project changes compiler inputs after didChange has returned.
+    /// Invalidate the host query even when the IPC request stream is idle. [DIAG-IPC-REFRESH]
+    member private this.NotifyDiagnosticChange(ct: CancellationToken) =
+        this.NotifyAsync("diagnostics/refresh", String.Empty, ct)
+
+    member private this.NotifyScopeChangeAsync(changed: bool, ct: CancellationToken) =
+        task {
+            if changed && refreshSupported then
+                let! result = this.NotifyDiagnosticChange(ct)
+                return not result.IsError
+            else return true
+        }
+
+    member private this.AdoptOwnerAsync(filePath: string, ct: CancellationToken) =
+        task {
+            match! FSharpOwningProject.adoptOwner workspace filePath with
+            | None -> ()
+            | Some adoption ->
+                do! adoption
+                if refreshSupported then
+                    let! result = this.NotifyDiagnosticChange(ct)
+                    if result.IsError then
+                        Serilog.Log.Warning("F# diagnostic invalidation delivery failed")
+        }

@@ -23,7 +23,7 @@ let private freshWorkspace () =
     task {
         let dir = createTestProject ()
         let ws = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspace.loadProject ws dir
+        let! _ = FSharpWorkspaceLoading.loadProject ws dir
         return ws, dir, NativePaths.Resolve(dir, "Library.fs")
     }
 
@@ -53,7 +53,7 @@ let ``rename identity uses the real project assembly name`` () =
         try
             let project, source = configureIdentityProject dir
             let workspace = FSharpWorkspace.create ()
-            let! loaded = FSharpWorkspace.loadProject workspace project
+            let! loaded = FSharpWorkspaceLoading.loadProject workspace project
             Assert.True(match loaded with | Ok _ -> true | Error _ -> false)
             let options = workspace.ProjectOptions |> Option.map _.OtherOptions |> Option.defaultValue [||]
             Assert.Contains("--out:FSharpFixtures.dll", options)
@@ -108,7 +108,7 @@ let private createForeignRenameScenario () =
         let project, sourcePath = configureIdentityProject dir
         File.WriteAllText(sourcePath, foreignRenameSource)
         let workspace = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject workspace project
+        let! loaded = FSharpWorkspaceLoading.loadProject workspace project
         match loaded with
         | Error message -> return failwith $"real project failed to load: {message}"
         | Ok _ ->

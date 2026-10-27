@@ -1,0 +1,19 @@
+# Stops the repository's .editorconfig, which raises every analyzer diagnostic to an
+# error, from reaching the editor-suite fixtures. IDE code-style rules run in the
+# editor ([DIAG-CATEGORIES-ANALYZER]), so the fixtures are analysed as a user's projects
+# would be. The whitespace settings and style preferences they were written against stay.
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped
+csharp_style_var_for_built_in_types = true
+csharp_style_var_when_type_is_apparent = true
+csharp_style_var_elsewhere = true

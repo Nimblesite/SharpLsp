@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
-import { effect } from './signals';
-import { info } from './log';
+import { effect, Signal } from './signals';
+import { error, info, warn } from './log';
 import * as state from './state';
+import { getErrorMessage } from './utils';
+import { failedListing } from './test-discovery';
 import type { TestListing } from './test-listing-model';
 import { listLocatedTests, onDiscoveryInputs } from './test-source-locations';
 import { runnersFor, runRouted, VSTEST_ONLY, type RunnerMap } from './test-run-routes';
@@ -46,11 +48,7 @@ interface Sweep {
   readonly listings: TestListing[];
 }
 
-/**
- * Debounce for reactive re-discovery. Loading a solution can churn the
- * `solutionPath` signal several times in quick succession; collapse the burst
- * into a single `dotnet test --list-tests` sweep.
- */
+/** Collapse solution changes into one discovery sweep. */
 const DISCOVERY_DEBOUNCE_MS = 1_000;
 
 /**
@@ -72,17 +70,19 @@ export class SharpLspTestController {
   private readonly solutionSubscription: () => void;
   /** Cancels the reactive `dotnet` executable subscription. */
   private readonly dotnetSubscription: () => void;
+  private readonly buildSubscription: () => void;
+  private readonly renderSubscription: () => void;
+  /** One atomic discovery result drives the visible tree and its run plans. */
+  private readonly tree = new Signal<
+    { readonly sweep: Sweep; readonly targetCount: number } | undefined
+  >(undefined);
   /** Pending debounced discovery timer, if any. */
   private debounceHandle: ReturnType<typeof setTimeout> | undefined;
   /** Monotonic id so a superseded discovery sweep never clobbers a newer one. */
   private discoverGeneration = 0;
-  /**
-   * True once the user has engaged the Test Explorer (revealed the view or hit
-   * refresh). Discovery runs `dotnet test` — a full build — so we do NOT do that
-   * as a side effect of merely loading a solution; only once tests are actually
-   * being shown does a solution change reactively re-discover.
-   */
+  /** Engaged by the Testing view; observing a build never enables implicit builds. */
   private active = false;
+  private disposed = false;
   /** One `dotnet` invocation at a time, discovery and runs alike. */
   private readonly dotnetQueue = new DotnetQueue();
   /**
@@ -156,15 +156,11 @@ export class SharpLspTestController {
         await runFrameworkProfile(this.frameworkHost(), framework, request, token);
       },
     );
-    // `dotnet` is not necessarily on `$PATH`: [DIST-RUNTIME-ACQUIRE] resolves an
-    // SDK that may live anywhere and publishes its path on a signal. Track it
-    // reactively so discovery and runs follow a late or re-acquired SDK instead
-    // of failing with ENOENT on a bare `dotnet`.
+    // Follow SDK acquisition and replacement. [DIST-RUNTIME-ACQUIRE]
     this.dotnetSubscription = effect(() => {
       configureDotnet(state.dotnetPath.value);
     });
-    // VS Code's refresh affordance and the initial view reveal drive the first
-    // discovery and mark the controller active.
+    // Revealing or refreshing the view engages discovery.
     this.controller.refreshHandler = async (): Promise<void> => {
       await this.activateAndDiscover();
     };
@@ -173,14 +169,22 @@ export class SharpLspTestController {
         await this.activateAndDiscover();
       }
     };
-    // Reactive: once tests are being shown, a change to the loaded solution (or the
-    // server that locates its tests coming up) must re-discover with no manual
-    // refresh. Debounced to collapse the burst a solution load emits. Gated on
-    // `active` so loading a solution never builds before the user looks at tests.
+    // Debounce solution/server changes once discovery is engaged.
     this.solutionSubscription = onDiscoveryInputs(() => {
       if (this.active) {
         this.scheduleDiscovery();
       }
+    });
+    this.renderSubscription = effect(() => {
+      const tree = this.tree.value;
+      if (tree !== undefined) this.renderTree(tree.sweep, tree.targetCount);
+    });
+    this.buildSubscription = state.buildCompleted.subscribe((revision) => {
+      if (this.debounceHandle !== undefined) clearTimeout(this.debounceHandle);
+      this.debounceHandle = undefined;
+      void this.refreshAfterBuild(revision).catch((cause: unknown) => {
+        error(`Reactive test discovery after build failed: ${getErrorMessage(cause)}`);
+      });
     });
   }
 
@@ -191,8 +195,11 @@ export class SharpLspTestController {
   }
 
   public dispose(): void {
+    this.disposed = true;
     this.solutionSubscription();
     this.dotnetSubscription();
+    this.buildSubscription();
+    this.renderSubscription();
     if (this.debounceHandle !== undefined) {
       clearTimeout(this.debounceHandle);
     }
@@ -204,6 +211,12 @@ export class SharpLspTestController {
     this.controller.dispose();
   }
 
+  /** Finish every building target before listing outputs. [TEST-REACTIVITY-BUILD] */
+  private async refreshAfterBuild(revision: number): Promise<void> {
+    await this.whenIdle();
+    if (!this.disposed && revision === state.buildCompleted.value) await this.discover(true);
+  }
+
   /** Debounced trigger for reactive re-discovery on solution change. */
   private scheduleDiscovery(): void {
     if (this.debounceHandle !== undefined) {
@@ -211,49 +224,53 @@ export class SharpLspTestController {
     }
     this.debounceHandle = setTimeout(() => {
       this.debounceHandle = undefined;
-      void this.discover();
+      void this.discover().catch((cause: unknown) => {
+        error(`Reactive test discovery failed: ${getErrorMessage(cause)}`);
+      });
     }, DISCOVERY_DEBOUNCE_MS);
   }
 
   /**
-   * Discover every test in the loaded solution (or, absent one, each workspace
-   * folder) and replace the tree. A superseded sweep never clobbers a newer one,
-   * and a sweep where NO target could be enumerated leaves the previous tree
-   * standing — with an error row appended saying why — rather than blanking the
-   * view on a transient `dotnet` failure.
-   *
-   * The sweep AND its result are ONE queued job, so a run queued behind it runs
-   * with the runners it found, and a superseded sweep resolves only once the
-   * newest one has applied ([TEST-REACTIVITY], [TEST-MTP-ROUTING]).
+   * Discover every target and publish its tree and runners in ONE queued job.
+   * Superseded sweeps await the newest result; failed sweeps keep the old tree.
+   * Build completions list existing outputs. [TEST-REACTIVITY] [TEST-MTP-ROUTING]
    */
-  public async discover(): Promise<void> {
+  public async discover(noBuild = false): Promise<void> {
     const generation = ++this.discoverGeneration;
     const targets = discoveryTargets();
     const job = this.enqueue(async () => {
-      const sweep = await this.sweep(targets, generation);
+      const sweep = await this.sweep(targets, generation, noBuild);
       if (sweep === undefined || generation !== this.discoverGeneration) return;
-      const anyOk = targets.length === 0 || sweep.listings.some((listing) => listing.ok);
-      if (this.applyDiscovery(sweep.items, sweep.errors, anyOk, targets.length)) {
-        this.runners = runnersFor(sweep.listings);
-        this.frameworks = new FrameworkIndex(sweep.listings.flatMap((each) => each.byAssembly));
-        this.frameworkRuns.update(this.frameworks.multiTargetFrameworks());
-      }
+      this.tree.value = { sweep, targetCount: targets.length };
     });
     await this.sweeps.settle(job);
   }
 
   /** Enumerate every target; `undefined` once a newer sweep supersedes this one. */
-  private async sweep(targets: readonly string[], generation: number): Promise<Sweep | undefined> {
+  private async sweep(
+    targets: readonly string[],
+    generation: number,
+    noBuild: boolean,
+  ): Promise<Sweep | undefined> {
     const sweep: Sweep = { items: [], errors: [], listings: [] };
     for (const target of targets) {
       // A newer sweep supersedes this one: stop before paying for another build
       // rather than enumerating targets whose results will be thrown away.
       if (generation !== this.discoverGeneration) return undefined;
-      const listing = await this.safeList(target);
+      const listing = await this.safeList(target, noBuild);
       sweep.listings.push(listing);
       this.rowsFor(target, listing, sweep.items, sweep.errors);
     }
     return sweep;
+  }
+
+  /** [TEST-REACTIVITY-BUILD]: signal state renders tests and their matching runners together. */
+  private renderTree(sweep: Sweep, targetCount: number): void {
+    const anyOk = targetCount === 0 || sweep.listings.some((listing) => listing.ok);
+    if (!this.applyDiscovery(sweep.items, sweep.errors, anyOk, targetCount)) return;
+    this.runners = runnersFor(sweep.listings);
+    this.frameworks = new FrameworkIndex(sweep.listings.flatMap((each) => each.byAssembly));
+    this.frameworkRuns.update(this.frameworks.multiTargetFrameworks());
   }
 
   /** Turn one target's listing into tree rows, or into the row that explains it. */
@@ -315,13 +332,25 @@ export class SharpLspTestController {
     return true;
   }
 
-  /** List one target (inside the sweep's queued job), logging its diagnostics. */
-  private async safeList(target: string): Promise<TestListing> {
-    const listing = await listLocatedTests(target);
-    for (const warning of listing.warnings) {
-      info(`Test discovery (${target}): ${warning}`);
+  /**
+   * List one target (inside the sweep's queued job), logging its diagnostics.
+   * Never rejects: a listing that threw — e.g. the per-operation configuration
+   * request ([TEST-BUILD-CONFIGURATION]) failing while the server stops — becomes
+   * the same failed {@link TestListing} the sweep already renders, so reactive
+   * discovery stays contained. [TEST-REACTIVITY]
+   */
+  private async safeList(target: string, noBuild: boolean): Promise<TestListing> {
+    try {
+      const listing = await listLocatedTests(target, noBuild);
+      for (const warning of listing.warnings) {
+        info(`Test discovery (${target}): ${warning}`);
+      }
+      return listing;
+    } catch (cause: unknown) {
+      const reason = `Test discovery (${target}) failed: ${getErrorMessage(cause)}`;
+      warn(reason);
+      return failedListing(reason);
     }
-    return listing;
   }
 
   /** The Run and Run-with-Coverage profiles share every step but collection. */

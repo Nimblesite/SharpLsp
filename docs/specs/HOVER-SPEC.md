@@ -78,6 +78,10 @@ The containing type is namespace-qualified because the bare type name cannot say
 | Accessibility | `public`, `internal`, `protected`, etc. | Yes |
 | Deprecation | `[Obsolete]` message | Yes (if present) |
 
+A local variable's signature includes its type and name. Its top-level nullability
+follows Roslyn's flow state at the hovered declaration or use; nullable generic
+arguments remain intact when the local itself is known non-null.
+
 #### [HOVER-CSHARP-RENDERING-XML] XML Documentation Rendering
 
 - `<summary>` — Rendered as the primary description paragraph.

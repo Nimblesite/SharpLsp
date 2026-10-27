@@ -1,6 +1,6 @@
 # [RAZOR-SPEC] Razor: Blazor Components, Razor Pages and MVC Views
 
-**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md) · **Plan:** [RAZOR-PLAN.md](../plans/RAZOR-PLAN.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## [RAZOR-OVERVIEW] Overview
 
@@ -286,7 +286,7 @@ The facts hold no C# fragment spans: C# positions come from the projection's map
 
 - **C#:** every diagnostic of the file's projection whose mapped path is the Razor file. Diagnostics in hidden scaffolding are dropped. A Razor file never calls a using unnecessary (`CS8019`, `IDE0005`), because Roslyn sees only the projection. Markup resolves component tags through usings that the generated C# never needs, since it names each component in full. An import file's (`_Imports.razor`, `_ViewImports.cshtml`) usings serve the files beside and below it.
 - **Razor:** the `RZ` diagnostics among the file's markup facts. Razor's error severity maps to LSP Error and its warning severity to LSP Warning.
-- **Solution-wide:** `workspace/diagnostics/all` reports Razor files as well.
+- **Solution-wide:** standard `workspace/diagnostic` pulls include unopened Razor components discovered by their actual SDK project, with compiler ranges mapped to the Razor source. An on-disk repair changes the report identity and explicitly clears the previous error.
 
 ### [RAZOR-FEATURES-HOVER] Hover
 

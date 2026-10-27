@@ -38,6 +38,9 @@ import {
   parseCoberturaXml,
 } from '../../test-coverage.js';
 import { filterClause } from '../../test-filter.js';
+import { joinPath } from '../../paths.js';
+import { parseTrx } from '../../test-trx.js';
+import { trxFiles } from '../../test-trx-collect.js';
 import { statusLensTitle } from '../../test-lens.js';
 import {
   ALL_COVERAGE_TESTS,
@@ -82,6 +85,7 @@ import {
 import { assertContainsAll, assertContainsNone } from './test-helpers.js';
 import { DOTNET_CLI_MS } from './test-timeouts';
 import { useWarmFixture } from './test-explorer-harness';
+import { buildsLogged, writeBuildCounter } from './dotnet-project-kit';
 
 /** The two test projects, so "one report per test project" has a number. */
 const TEST_PROJECTS = 2;
@@ -1325,6 +1329,13 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
   test('Run with Coverage on the ASSEMBLY ROOT of one project reports that project alone', async function () {
     this.timeout(DOTNET_CLI_MS);
+    // [TEST-BUILD-GRAPH]: this gesture owns the F# project and its library only.
+    const { root } = warm();
+    const counter = writeBuildCounter(root);
+    const unselectedAssembly = joinPath(root, 'CoverCs', 'bin', 'Debug', 'net10.0', 'CoverCs.dll');
+    const unselectedStamp = fs.statSync(unselectedAssembly).mtimeMs;
+    const cacheBefore = new Map(api.testController.cachedResults);
+    fs.writeFileSync(counter, '');
 
     // Interaction 1 — the Testing view shows one root per test project, and the
     // user presses the coverage action on the F# one.
@@ -1341,6 +1352,23 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // Interaction 2 — both F# tests report, and neither C# test does: a root run
     // is ONE invocation for THAT selection ([TEST-RUN-TRX]).
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Coverage, [fsRoot]);
+    assert.deepStrictEqual(
+      [...new Set(buildsLogged(counter))].sort(),
+      ['CalcLib', 'CoverFs'],
+      'only the selected F# project and its real library dependency are built',
+    );
+    assert.strictEqual(
+      fs.statSync(unselectedAssembly).mtimeMs,
+      unselectedStamp,
+      'the unselected C# assembly is untouched',
+    );
+    for (const id of [CS_COVERS, CS_FAILING, CS_SKIPPED, CS_THEORY]) {
+      assert.strictEqual(
+        api.testController.getResult(id),
+        cacheBefore.get(id),
+        `${id} keeps its previous cached result`,
+      );
+    }
     assertPassed(cachedFor(api, FS_COVERS), FS_COVERS);
     assertPassed(cachedFor(api, FS_ISOLATED), FS_ISOLATED);
     for (const id of [FS_COVERS, FS_ISOLATED]) {
@@ -1391,12 +1419,29 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       ALL_COVERAGE_TESTS.length,
       'and every test the fixture declares',
     );
-    // Interaction 4 - an assembly root is ONE project, but the run is ONE
-    // `dotnet test` over the solution with a filter ([TEST-RUN-TRX]), so every
-    // test project still writes a report: the other project's is EMPTY of
-    // executed lines, and an empty report cannot dilute a merge of hits.
+    // Interaction 4 - one invoked owner writes one real report. Running the
+    // whole solution to manufacture an empty sibling report violates [TEST-BUILD-GRAPH].
     const rootRunDirs = reportDirsOf(coverageDir);
-    assert.strictEqual(rootRunDirs.length, TEST_PROJECTS, 'every test project reported');
+    assert.strictEqual(rootRunDirs.length, 1, 'only the invoked F# owner writes a run-id folder');
+    assert.strictEqual(
+      findCoberturaFiles(coverageDir).length,
+      1,
+      'one owner writes exactly one coverage report',
+    );
+    const trx = trxFiles(coverageDir);
+    assert.strictEqual(trx.length, 1, 'the selected project writes exactly one TRX');
+    const reportFile = trx[0];
+    assert.ok(reportFile, 'the actual TRX exists');
+    const results = parseTrx(fs.readFileSync(reportFile, 'utf8'));
+    assert.deepStrictEqual(
+      sorted(results.map((result) => result.fullyQualifiedName)),
+      sorted([FS_COVERS, FS_ISOLATED]),
+      'the TRX contains exactly the selected F# tests',
+    );
+    assert.ok(
+      results.every((result) => result.outcome === 'passed'),
+      'both selected tests actually passed',
+    );
     assert.strictEqual(
       findCoberturaFiles(coverageDir).filter((report) => libraryLinesIn(report).length > 0).length,
       1,

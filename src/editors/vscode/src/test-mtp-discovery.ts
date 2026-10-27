@@ -17,7 +17,7 @@
  * Implements [TEST-MTP-DISCOVERY].
  */
 
-import { extensionOf, fileNameOf } from './paths';
+import { extensionOf, fileNameOf, samePath } from './paths';
 import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import { runModule } from './test-mtp-report.js';
 import {
@@ -38,6 +38,7 @@ import {
 import {
   probeMtpProjects,
   scanMtpProjects,
+  builtMtpProjects,
   type MtpProject,
   type MtpProjectScan,
 } from './test-mtp-modules.js';
@@ -181,6 +182,11 @@ export const listMtpTests = sweepOf(scanMtpProjects);
  */
 export const probeMtpTests = sweepOf(probeMtpProjects);
 
+/** [TEST-REACTIVITY-BUILD]: list completed outputs without starting another build. */
+export const listBuiltMtpTests = sweepOf(
+  async (target, _cwd, timeoutMs) => await builtMtpProjects(target, timeoutMs),
+);
+
 /** A sweep that lists every test of the MTP projects `scan` finds in its target. */
 function sweepOf(
   scan: (target: string, cwd: string, timeoutMs: number) => Promise<MtpProjectScan>,
@@ -232,7 +238,15 @@ async function listScanned(scan: MtpProjectScan, sweep: SweepContext): Promise<T
     ok: names.length > 0 || warnings.length === 0,
     warnings,
     byAssembly: mergeMultiTargeted(byAssembly.filter((assembly) => assembly.names.length > 0)),
-    mtp: { modules: runs },
+    mtp: {
+      modules: runs.map((run) => ({
+        ...run,
+        buildTarget:
+          scan.projects.find((project) =>
+            project.modules.some((module) => samePath(module, run.modulePath)),
+          )?.projectFile ?? run.buildTarget,
+      })),
+    },
     locations,
   };
 }

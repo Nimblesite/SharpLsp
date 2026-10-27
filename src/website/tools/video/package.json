@@ -5,5 +5,8 @@
   "description": "Local tools that shoot and narrate the website's profiler films. Narration runs on this machine; nothing is sent to a speech service.",
   "devDependencies": {
     "kokoro-js": "1.2.1"
+  },
+  "overrides": {
+    "sharp": "^0.35.5"
   }
 }

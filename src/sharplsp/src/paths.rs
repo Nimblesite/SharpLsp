@@ -11,6 +11,15 @@ use anyhow::{Context, Result};
 use lsp_types::Uri;
 use url::Url;
 
+mod inherited;
+mod inputs;
+pub use inherited::{diagnostic_input_in_scope, diagnostic_watch_scopes};
+pub use inputs::{
+    diagnostic_requires_reload, diagnostic_restore_output, exists, is_diagnostic_input,
+    is_diagnostic_source, is_directory, is_fsharp_diagnostic_input, is_project_graph_file,
+    is_user_diagnostic_source, output_owner, path_within,
+};
+
 /// Convert a `file://` URI string to a native filesystem path string.
 ///
 /// Parses the URI (RFC 8089) rather than trimming the scheme, so Windows drive
@@ -78,9 +87,19 @@ fn decoded_posix_path(parsed: &Url) -> Result<String> {
 /// absolute path, which sidecar file paths always are. Implements the correct
 /// conversion for [GitHub #110] and [SHARPLSP-ARCHITECTURE-PATHS].
 pub fn path_to_uri(path: &str) -> Result<String> {
+    native_path_to_uri(Path::new(path))
+}
+
+/// Convert a native watcher path without string conversion outside this module.
+pub fn native_path_to_uri(path: &Path) -> Result<String> {
     Url::from_file_path(path)
         .map(|url| url.to_string())
-        .map_err(|()| anyhow::anyhow!("cannot form a file URI from a non-absolute path: {path}"))
+        .map_err(|()| {
+            anyhow::anyhow!(
+                "cannot form a file URI from a non-absolute path: {}",
+                path.display()
+            )
+        })
 }
 
 /// Convert a native filesystem path to an LSP [`Uri`], via [`path_to_uri`].
@@ -122,6 +141,50 @@ pub fn native_paths_equal(left: &str, right: &str) -> bool {
     } else {
         strip_verbatim(left) == strip_verbatim(right)
     }
+}
+
+/// Compare file URIs through the tier's canonical native-path rules.
+/// Implements [SHARPLSP-ARCHITECTURE-PATHS].
+pub fn same_uri(left: &str, right: &str) -> bool {
+    match (uri_to_path(left), uri_to_path(right)) {
+        (Ok(left), Ok(right)) => native_paths_equal(&left, &right),
+        _ => left == right,
+    }
+}
+
+/// Match project names or native project paths against diagnostic scope globs.
+pub fn project_glob_filter(
+    patterns: &[String],
+) -> Result<Option<globset::GlobSet>, globset::Error> {
+    if patterns.is_empty() {
+        return Ok(None);
+    }
+    let mut builder = globset::GlobSetBuilder::new();
+    for pattern in patterns {
+        let _ = builder.add(
+            globset::GlobBuilder::new(pattern)
+                .case_insensitive(true)
+                .build()?,
+        );
+    }
+    Ok(Some(builder.build()?))
+}
+
+/// Match names and native/workspace-relative paths. Implements [DIAG-CONFIG-PROJECT-FILTER].
+pub fn project_matches_globs(
+    filter: &globset::GlobSet,
+    name: &str,
+    path: &str,
+    workspace: Option<&str>,
+) -> bool {
+    filter.is_match(name)
+        || filter.is_match(slashed(path))
+        || workspace.and_then(build_watch_root).is_some_and(|root| {
+            let root = normalized_rename_path(&root.to_string_lossy());
+            let path = normalized_rename_path(path);
+            relative_to(Path::new(&path), Path::new(&root))
+                .is_some_and(|relative| filter.is_match(slashed(&relative)))
+        })
 }
 
 /// `text` folded the one way the host folds a path: [`ntfs_upcase`] per character.
@@ -220,6 +283,80 @@ pub fn directory_of(path: impl AsRef<Path>) -> Option<PathBuf> {
         .parent()
         .filter(|directory| !directory.as_os_str().is_empty())
         .map(Path::to_path_buf)
+}
+
+/// The directory to monitor for a discovery target. [TEST-REACTIVITY-BUILD]
+fn build_watch_root(target: &str) -> Option<PathBuf> {
+    let target = Path::new(target);
+    let root = if has_extension(target, &["sln", "slnx", "slnf", "csproj", "fsproj"]) {
+        directory_of(target)?
+    } else {
+        target.to_path_buf()
+    };
+    root.is_dir().then_some(root)
+}
+
+/// Distinct native watch roots, using the tier's canonical comparison rules.
+pub fn build_watch_roots(targets: &[String]) -> Vec<PathBuf> {
+    targets
+        .iter()
+        // Invalid selectors cannot broaden watching to unrelated parents. [DIAG-ARCHITECTURE-SCOPE]
+        .filter(|target| Path::new(target).exists())
+        .filter_map(|target| build_watch_root(target))
+        .map(|root| (normalized_rename_path(&root.to_string_lossy()), root))
+        .collect::<std::collections::BTreeMap<_, _>>()
+        .into_values()
+        .collect()
+}
+
+/// Compiler source and project directories, including linked files outside the solution.
+/// [DIAG-LSP-REFRESH] [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn diagnostic_watch_roots<'a>(inputs: impl IntoIterator<Item = &'a str>) -> Vec<PathBuf> {
+    inputs
+        .into_iter()
+        .filter_map(directory_of)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+/// Keep one native subscription for a directory and all of its descendants.
+pub fn minimal_watch_roots(
+    roots: impl IntoIterator<Item = PathBuf>,
+) -> std::collections::BTreeMap<String, PathBuf> {
+    let roots = roots
+        .into_iter()
+        .filter(|root| root.is_dir())
+        .map(|root| (normalized_rename_path(&root.to_string_lossy()), root))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    roots.into_iter().fold(
+        std::collections::BTreeMap::<String, PathBuf>::new(),
+        |mut minimal, (key, root)| {
+            if !minimal
+                .keys()
+                .any(|parent| watch_key_contains(parent, &key))
+            {
+                let _previous = minimal.insert(key, root);
+            }
+            minimal
+        },
+    )
+}
+
+/// A directory prefix must end at a component boundary, including filesystem roots.
+fn watch_key_contains(parent: &str, child: &str) -> bool {
+    let parent = parent.trim_end_matches('/');
+    child == parent
+        || child
+            .strip_prefix(parent)
+            .is_some_and(|tail| tail.starts_with('/'))
+}
+
+/// Compiler outputs and `MSBuild`'s end-of-build file list, including custom output folders.
+/// Reading these files never invalidates discovery. [TEST-REACTIVITY-BUILD]
+pub fn is_build_output(path: &Path) -> bool {
+    has_extension(path, &["dll", "exe"])
+        || file_name_of(path).is_some_and(|name| fold(name).ends_with(".FILELISTABSOLUTE.TXT"))
 }
 
 /// `path` relative to `root`, when it lies beneath it. [SHARPLSP-ARCHITECTURE-PATHS]

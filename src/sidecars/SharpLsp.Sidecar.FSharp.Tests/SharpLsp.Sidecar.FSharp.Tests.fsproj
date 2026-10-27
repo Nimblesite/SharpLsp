@@ -31,12 +31,21 @@
     <Compile Include="FSharpMetadataDefinitionTests.fs" />
     <Compile Include="FSharpUnloadedWorkspaceTests.fs" />
     <Compile Include="FSharpDesignTimeTests.fs" />
+    <Compile Include="FSharpFallbackAssetsTests.fs" />
     <Compile Include="FSharpMultiProjectTests.fs" />
     <Compile Include="FSharpResolvedReferenceTests.fs" />
     <Compile Include="FSharpCSharpReferenceTests.fs" />
     <Compile Include="FSharpOwningProjectTests.fs" />
+    <Compile Include="FSharpDiagnosticsDocumentsTests.fs" />
+    <Compile Include="FSharpWorkspaceRestoreEndToEndTests.fs" />
+    <Compile Include="FSharpOwnerRestoreNotificationsTests.fs" />
+    <Compile Include="NativeHeldSource.fs" />
+    <Compile Include="FSharpScriptDiagnosticsTests.fs" />
+    <Compile Include="FSharpLintDiagnosticsTests.fs" />
+    <Compile Include="FSharpScriptCancellationEndToEndTests.fs" />
     <Compile Include="FSharpForeignSymbolsTests.fs" />
     <Compile Include="FSharpForeignSymbolsWireTests.fs" />
+    <Compile Include="FSharpWildcardCompileTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

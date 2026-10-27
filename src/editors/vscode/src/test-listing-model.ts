@@ -34,6 +34,8 @@ export interface TestListing {
    * reports none; MTP reports one for every framework except NUnit.
    */
   readonly locations?: ReadonlyMap<string, TestLocation>;
+  /** Owning project per id, so a selection builds only its dependency graph. [TEST-BUILD-GRAPH] */
+  readonly projects?: ReadonlyMap<string, string>;
 }
 
 /** Where a test is written, as the discovery pass reported it. */
@@ -53,10 +55,9 @@ export interface MtpModuleRun {
   /** Absolute path of the built test module. */
   readonly modulePath: string;
   /**
-   * The discovery target whose build produces this module: the solution, or
-   * the workspace folder. A run rebuilds THIS before it runs the module — in a
-   * multi-root workspace the run's working directory is the FIRST folder,
-   * which need not be the module's.
+   * The owning project whose incremental build produces this module and its
+   * dependencies. A run builds THIS before executing the module; it never
+   * rebuilds unrelated projects in its discovery solution. [TEST-BUILD-GRAPH]
    */
   readonly buildTarget: string;
   /** Test id to the `--filter-uid` values that run it. */
@@ -65,6 +66,8 @@ export interface MtpModuleRun {
 
 /** One built test assembly and the fully-qualified names it contributed. */
 export interface TestAssemblyListing {
+  /** Owning project resolved by the workspace, never guessed from bin paths. */
+  readonly projectFile?: string;
   /** Assembly file name without extension — the tree's root label. */
   readonly name: string;
   /** Absolute path of the built assembly — the stable, unique group id. */

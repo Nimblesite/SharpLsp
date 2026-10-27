@@ -122,7 +122,7 @@ mod fs_pos {
 /// Load the F# fixture, start the host+sidecar, and block until the F# sidecar
 /// has loaded the workspace. Returns `(tempdir, file_uri, ready_client)`; keep
 /// the `TempDir` alive for the duration of the test.
-fn ready_fsharp_client() -> (tempfile::TempDir, String, LspClient) {
+pub(super) fn ready_fsharp_client() -> (tempfile::TempDir, String, LspClient) {
     require_dotnet();
 
     let (tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();

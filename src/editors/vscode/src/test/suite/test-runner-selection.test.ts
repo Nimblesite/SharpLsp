@@ -9,8 +9,9 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { resolvePath } from '../../paths';
 import { removeDirRecursive } from '../../utils';
-import { resolveSuiteFiles } from './index';
+import { resolveSuiteFiles, type ChunkManifest } from './index';
 
 const NETFX_LANGUAGE = 'netfx-language.test.js';
 const NETFX_RUN = 'netfx-run-fsharp.test.js';
@@ -28,6 +29,25 @@ suite('Test runner — suite selection', () => {
   });
 
   suiteTeardown(() => removeDirRecursive(root));
+
+  test('the real manifest keeps Linux-only suites on Linux in a full local run', () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(resolvePath(__dirname, '../../..', 'test-chunks.json'), 'utf8'),
+    ) as ChunkManifest;
+    const linuxOnly = Object.values(manifest.chunks)
+      .filter((chunk) => chunk.linuxOnly === true)
+      .flatMap((chunk) => chunk.files);
+    assert.ok(linuxOnly.length > 0, 'the real manifest declares Linux-only coverage');
+    for (const platform of ['win32', 'linux', 'darwin'] as const) {
+      const selected = resolveSuiteFiles(__dirname, ['*.test.js'], platform);
+      assert.deepEqual(
+        linuxOnly.filter((file) => selected.includes(file)),
+        platform === 'linux' ? linuxOnly : [],
+      );
+      assert.ok(selected.includes('semantic-highlighting.test.js'));
+      assert.equal(selected.includes(NETFX_LANGUAGE), platform === 'win32');
+    }
+  });
 
   test('off Windows: a pattern naming only Windows-only suites fails with the platform reason → a broad pattern runs the rest', () => {
     assert.throws(

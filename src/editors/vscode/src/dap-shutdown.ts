@@ -29,7 +29,7 @@ export const SHUTDOWN_DEADLINE_MS = 15_000;
 const STOP_COMMANDS: readonly string[] = ['terminate', 'disconnect'];
 
 /** True for a client request that asks the adapter to stop. */
-function asksToStop(message: DapMessage): boolean {
+export function asksToStop(message: DapMessage): boolean {
   return (
     message.type === 'request' &&
     typeof message.command === 'string' &&
@@ -69,5 +69,36 @@ export class ShutdownDeadline {
   public cancel(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;
+  }
+}
+
+/**
+ * The stop requests the client sent that no response has answered yet.
+ *
+ * netcoredbg on Windows exits by itself once its debuggee has ended, so the
+ * `disconnect` VS Code sends in reply to `terminated` can reach a process that
+ * never answers it. VS Code holds the session until its own disconnect timeout
+ * gives up: a launch made meanwhile found the dead session still active, and a
+ * breakpoint edit reached an adapter that refused it. An adapter that is gone
+ * IS the stopped state, so whatever it still owed is answered for it.
+ */
+export class UnansweredStops {
+  private readonly owed = new Map<number, DapMessage>();
+
+  /** Owe an answer to `message` when it asks to stop. */
+  public expect(message: DapMessage): void {
+    if (asksToStop(message)) this.owed.set(Number(message.seq ?? -1), message);
+  }
+
+  /** A response reached the client; the request it answers is owed nothing. */
+  public observe(message: DapMessage): void {
+    if (message.type === 'response') this.owed.delete(Number(message.request_seq ?? -1));
+  }
+
+  /** Hand each stop request still owed to `answer`, once. */
+  public settle(answer: (message: DapMessage) => void): void {
+    const owed = [...this.owed.values()];
+    this.owed.clear();
+    owed.forEach(answer);
   }
 }

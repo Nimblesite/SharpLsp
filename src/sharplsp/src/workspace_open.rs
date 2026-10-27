@@ -3,6 +3,7 @@
 //! [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
@@ -22,6 +23,10 @@ use crate::vfs::Vfs;
 /// What follows a sidecar's `workspace/open`: its analyzers, the solution-wide
 /// diagnostics scan, and where a failure is shown.
 pub(crate) struct OpenFollowUp {
+    /// Standard and static analyzer opt-out applies before the first pull.
+    analyzers_enabled: bool,
+    /// Workspace restore opt-out must reach the compiler before loading projects.
+    auto_restore_on_open: bool,
     /// Pushed to the sidecar once the workspace opens.
     analyzers: AnalyzersConfig,
     /// Where solution-wide diagnostics publish, and the projects they cover;
@@ -46,6 +51,8 @@ impl OpenFollowUp {
             .filter(|_| config.diagnostics.solution_wide_analysis)
             .map(|sender| (sender.clone(), config.diagnostics.project_filter.clone()));
         Self {
+            analyzers_enabled: config.diagnostics.analyzers_enabled,
+            auto_restore_on_open: config.diagnostics.auto_restore_on_open,
             analyzers: config.analyzers.clone(),
             diagnostics,
             report: report.cloned(),
@@ -64,6 +71,9 @@ pub(crate) fn start_sidecar(
     follow_up: OpenFollowUp,
     runtime: &tokio::runtime::Runtime,
 ) {
+    if let Some(sidecar) = sidecar {
+        sidecar.set_document_source(&follow_up.vfs);
+    }
     if let (Some(sidecar), Some(target)) = (sidecar, target) {
         let sidecar = Arc::clone(sidecar);
         let target = target.to_string_lossy().to_string();
@@ -90,6 +100,19 @@ async fn open_and_follow_up(
         return false;
     }
     configure_analyzers(sidecar, &follow_up.analyzers).await;
+    if let Err(error) = configure_diagnostics(
+        sidecar,
+        follow_up.analyzers_enabled,
+        follow_up.auto_restore_on_open,
+    )
+    .await
+    {
+        warn!(%error, "Diagnostic analyzer configuration failed");
+    }
+    if crate::pull_diagnostics::state::is_pull() {
+        crate::pull_diagnostics::state::engine_changed();
+        return true;
+    }
     if let Some((sender, project_filter)) = follow_up.diagnostics {
         info!("Starting solution-wide diagnostics scan");
         diagnostics::request_solution_in_background(
@@ -102,11 +125,57 @@ async fn open_and_follow_up(
     true
 }
 
-/// Open the workspace in a sidecar.
+/// The workspace a sidecar last opened. Each sidecar keeps its own: the C#
+/// sidecar opens the configured solution while the F# sidecar opens the root,
+/// so a reload reopens what each one opened, never another's selection.
+/// [DIAG-LSP-REFRESH] [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]
+#[derive(Default)]
+pub(crate) struct OpenedWorkspace {
+    /// The solution, project, folder or file the last open sent.
+    pub(crate) target: Option<String>,
+    /// When the last open completed: restore outputs written before it were
+    /// consumed by that open's own restore. [DIAG-RESTORE]
+    pub(crate) settled: Option<SystemTime>,
+}
+
+/// Open the workspace in a sidecar, serialized against every other open of
+/// this sidecar so the last one always wins ([DIAG-LSP-REFRESH], #494).
 pub(crate) async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
-    let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
+    let mut opened = sidecar.lock_workspace().await;
+    open_workspace_locked(sidecar, &mut opened, root, true).await
+}
+
+/// Open `target` while the caller holds the sidecar's workspace, recording it
+/// as the workspace this sidecar opened and, once loaded, when.
+pub(crate) async fn open_workspace_locked(
+    sidecar: &SidecarManager,
+    opened: &mut OpenedWorkspace,
+    target: &str,
+    restore_stale_inputs: bool,
+) -> Result<()> {
+    opened.target = Some(target.to_owned());
+    let config = crate::pull_diagnostics::state::configuration()?;
+    configure_diagnostics(
+        sidecar,
+        config.analyzers_enabled,
+        restore_stale_inputs && config.auto_restore_on_open,
+    )
+    .await?;
+    let payload = rmp_serde::to_vec(target).context("serialize workspace path")?;
     let _ = sidecar.request("workspace/open", payload).await?;
+    opened.settled = Some(SystemTime::now());
     info!("Workspace opened in {} sidecar", sidecar.name());
+    Ok(())
+}
+
+/// Configure diagnostic analysis without changing compiler-error visibility.
+pub(crate) async fn configure_diagnostics(
+    sidecar: &SidecarManager,
+    analyzers_enabled: bool,
+    auto_restore_on_open: bool,
+) -> Result<()> {
+    let payload = rmp_serde::to_vec(&(analyzers_enabled, true, auto_restore_on_open))?;
+    let _response = sidecar.request("diagnostics/configure", payload).await?;
     Ok(())
 }
 
@@ -216,6 +285,13 @@ impl SolutionChoice {
         let Some((target, config)) = self.moved(configuration) else {
             return;
         };
+        // The same transition `sharplsp/loadSolution` makes: watchers, relative
+        // project filters and pulls follow the chosen solution. [DIAG-LSP-REFRESH]
+        if let Err(error) =
+            crate::pull_diagnostics::state::select_workspace(&target.to_string_lossy())
+        {
+            warn!(%error, "Chosen solution not recorded for diagnostics");
+        }
         let follow_up = OpenFollowUp::new(&config, vfs, Some(&self.client), self.report());
         start_sidecar(Some(sidecar), Some(&target), follow_up, runtime);
     }

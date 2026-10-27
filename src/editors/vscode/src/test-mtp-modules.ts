@@ -14,6 +14,7 @@
  */
 
 import * as fs from 'node:fs';
+import { testConfiguration, testConfigurationArgs } from './test-configuration';
 import { directoryOf, hasExtension, isProjectFile, joinPath, resolvePath } from './paths';
 import { DOTNET_TIMEOUT_MS, runDotnet } from './dotnet-process.js';
 import { evaluateProject, type ProjectProperties } from './msbuild.js';
@@ -120,7 +121,11 @@ async function modulesOf(projectFile: string, evaluated: ProjectProperties): Pro
   if (evaluated.targetPath.length > 0) return [evaluated.targetPath];
   const modules: string[] = [];
   for (const framework of evaluated.targetFrameworks) {
-    const pinned = await evaluateProject(projectFile, framework);
+    const pinned = await evaluateProject(
+      projectFile,
+      framework,
+      await testConfiguration(projectFile),
+    );
     if (pinned.ok && pinned.value.targetPath.length > 0) modules.push(pinned.value.targetPath);
   }
   return modules;
@@ -133,7 +138,11 @@ async function modulesOf(projectFile: string, evaluated: ProjectProperties): Pro
 async function evaluateCandidate(
   projectFile: string,
 ): Promise<{ candidate: MtpProject | undefined; warnings: string[] }> {
-  const evaluated = await evaluateProject(projectFile);
+  const evaluated = await evaluateProject(
+    projectFile,
+    undefined,
+    await testConfiguration(projectFile),
+  );
   if (!evaluated.ok) {
     return {
       candidate: undefined,
@@ -188,7 +197,12 @@ export async function buildTarget(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const positional = cwd === target ? [] : [target];
-  const run = await runDotnet(['build', ...positional, '--nologo'], cwd, timeoutMs, signal);
+  const run = await runDotnet(
+    ['build', ...positional, '--nologo', ...(await testConfigurationArgs(target))],
+    cwd,
+    timeoutMs,
+    signal,
+  );
   if (!run.failed) return [];
   const detail = `${run.stdout}\n${run.stderr}`.trim().slice(-2_000);
   return [`dotnet build reported a failure: ${run.errorMessage ?? 'unknown'}; output: ${detail}`];

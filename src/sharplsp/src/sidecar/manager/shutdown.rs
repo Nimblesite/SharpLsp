@@ -39,9 +39,12 @@ impl SidecarManager {
     }
 
     /// Ask the live connection to acknowledge `shutdown`, then close IPC
-    /// either way. A connection busy with a request is not waited for.
+    /// either way. Let an in-flight request release its FIFO transport slot
+    /// within the acknowledgement budget. [SIDECAR-SHUTDOWN-PROTOCOL]
     async fn request_shutdown_ack(&self) -> bool {
-        let Ok(mut connection) = self.transport.try_lock() else {
+        let Ok(mut connection) = tokio::time::timeout(ACK_BUDGET, self.transport.lock()).await
+        else {
+            warn!(sidecar = %self.name, "Sidecar request did not settle before shutdown");
             return false;
         };
         let id = self

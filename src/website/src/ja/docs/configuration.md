@@ -30,6 +30,15 @@ SharpLsp には 2 つの設定方法があります。
 ## 完全な TOML スキーマ
 
 ```toml
+[testing]
+configuration = "Debug"
+
+[debug.exceptions]
+break_on = "editor"
+just_my_code = true
+external_code = "throw-site"
+ignore = []
+
 [server]
 log_level = "info"
 debounce_ms = 150
@@ -45,6 +54,10 @@ enabled = true
 analyzers_enabled = true
 solution_wide_analysis = true
 project_filter = []
+min_severity = "hint"
+max_per_file = 0
+refresh_debounce_ms = 2000
+auto_restore_on_open = true
 
 [analyzers]
 dead_code = true
@@ -57,6 +70,14 @@ output_directory = ".sharplsp/profiles"
 
 すべてのフィールドは任意です。省略したフィールドには、上記の値が使われます。
 
+## テストとデバッグ
+
+`testing.configuration` は、テストの検出、実行、カバレッジ、デバッグに使う MSBuild 構成です。プロジェクトの既定値が Release でも、既定では `Debug` を使用します。必要に応じて `Release` や独自の構成名を指定できます。変更は次の操作から反映されます。選択したテストのプロジェクトと依存先だけを増分ビルドし、無関係なテストプロジェクトはビルドしません。ビルドに失敗した場合、古いアセンブリは実行しません。
+
+例外で停止するには `debug.exceptions.break_on` を `all` にします。`unhandled` は未処理の例外だけで停止し、`editor` はデバッガーのチェックボックスに従います。Just My Code は外部コード内で処理される例外をスキップします。`just_my_code = false` では外部の例外でも停止し、`external_code = "throw-site"` は元のソースを、`"user-boundary"` はユーザーコードの呼び出し元を表示します。例外の詳細は保持されます。起動設定の `cwd` が指定されていればユーザーソースのルートとなり、未指定ならワークスペースのフォルダーを使います。
+
+テストプラットフォーム自身の DLL は Release ビルドの場合があります。その警告は、ユーザーのテストアセンブリが Release でビルドされたことを意味しません。
+
 ## 実行時の動作に影響する設定
 
 | フィールド | 動作 |
@@ -64,8 +85,13 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | C# サイドカーを起動するかスキップします |
 | `csharp.solution_path` | ワークスペースからの絶対パスまたは相対パスで `.sln` または `.slnx` を選択します |
 | `fsharp.enabled` | F# サイドカーを起動するかスキップします |
-| `diagnostics.solution_wide_analysis` | C# の起動時ソリューションスキャンを有効にします |
-| `diagnostics.project_filter` | C# スキャンを一致するプロジェクト名に限定します |
+| `diagnostics.analyzers_enabled` | F# と C# のアナライザー診断を有効にします。コンパイラーエラーは無効になりません |
+| `diagnostics.solution_wide_analysis` | 開いていない F# と C# のファイルもソリューションの診断に含めます。既定で有効です |
+| `diagnostics.project_filter` | F# と C# のワークスペース結果をプロジェクト名または選択したソリューションからの相対パスで絞り込みます。直接の文書プルは除外されません |
+| `diagnostics.min_severity` | `error`、`warning`、`info`、`hint` で最低の重要度を指定します。既定は `hint` です |
+| `diagnostics.max_per_file` | 重要度で絞り込んだ後、ファイルごとの件数を制限します。`0` は無制限です |
+| `diagnostics.refresh_debounce_ms` | 指定したミリ秒の間に発生した診断更新要求をまとめます。既定は `2000` で、変更は即時反映されます |
+| `diagnostics.auto_restore_on_open` | ワークスペースを開く前に、不足または古い SDK アセットとパッケージファイルを復元します。既定は `true` で、変更は次回のワークスペース読み込み時に反映されます |
 | `analyzers.dead_code` | SharpLsp の C# および F# デッドコードアナライザーを有効にします |
 | `analyzers.monorepo` | 未使用の public シンボルをデッドコードとして扱い、エラーとして報告します |
 | `profiler.max_concurrent_sessions` | 同時に実行できるプロファイラーセッション数を制限します |
@@ -80,7 +106,6 @@ output_directory = ".sharplsp/profiles"
 
 - `server.log_level`
 - `server.debounce_ms`
-- `diagnostics.analyzers_enabled`
 - すべての `profiler.*` 既定値（`max_concurrent_sessions` を除く）
 
 VS Code のログには `sharplsp.logging.level` を使用します。この値は `RUST_LOG` としてホストへ転送されます。現在、プロファイラーコマンドは各リクエストの既定値を使用し、`.sharplsp/profiles` 以下へ書き込みます。

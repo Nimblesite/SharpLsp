@@ -15,23 +15,67 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import type { SharpLspExtensionApi } from '../../extension';
+import type { CachedTestResult } from '../../testing';
 import { AnchoredSource } from './debug-anchors';
 import type { DapRecorder } from './debug-dap-kit';
 import {
   MTP_XUNIT_PACKAGES,
+  MTP_PROPERTIES,
   XUNIT_DECORATING_PACKAGES,
   XUNIT_PACKAGES,
   createSolution,
   dotnet,
-  mtpProjectXml,
-  projectXml,
+  buildProjectXml,
   writeMtpGlobalJson,
   type PackageRef,
 } from './dotnet-project-kit';
 import { isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { DEBUG_TYPE_ID, type DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
 import { activateTestExplorer } from './test-explorer-kit';
-import { deepEq, eq, removeDirRecursive, requireAt, requireWorkspaceRoot } from './test-helpers';
+import {
+  deepEq,
+  eq,
+  removeDirRecursive,
+  requireAt,
+  requireWorkspaceRoot,
+  pollUntilResult,
+} from './test-helpers';
+import { COMMAND_MS } from './test-timeouts';
+
+/** Wait for the actual terminal object to close, not an unrelated queue. */
+export async function assertTerminalClosed(terminal: vscode.Terminal): Promise<void> {
+  const closed = await pollUntilResult(
+    async () => !vscode.window.terminals.includes(terminal),
+    (done) => done,
+    COMMAND_MS,
+    50,
+  );
+  assert.equal(closed, true, 'Stop must settle the owned runner and close its debug terminal');
+}
+
+/** Require exactly one named terminal and return the actual object owned by the run. */
+export function assertOneTerminal(
+  name: string,
+  countWhy: string,
+  existsWhy: string,
+): vscode.Terminal {
+  const terminals = vscode.window.terminals.filter((terminal) => terminal.name === name);
+  assert.equal(terminals.length, 1, countWhy);
+  const terminal = terminals[0];
+  assert.ok(terminal, existsWhy);
+  return terminal;
+}
+
+/** Debug gestures preserve the exact result object from the preceding real Run. */
+export function assertDebugCache(
+  api: SharpLspExtensionApi,
+  id: string,
+  before: CachedTestResult | undefined,
+  why: string,
+): void {
+  assert.equal(api.testController.getResult(id), before, why);
+}
 
 /** The C# project the C# debug suites build. */
 export const CS_PROJECT = 'DebugTestTarget';
@@ -214,10 +258,13 @@ export type FixtureRunner = 'vstest' | 'mtp' | 'vstest-decorating';
 
 /** The project file for one language on one runner. */
 function fixtureProjectXml(csharp: boolean, runner: FixtureRunner, sourceName: string): string {
-  const compile = csharp ? [] : [sourceName];
-  return runner === 'mtp'
-    ? mtpProjectXml(MTP_XUNIT_PACKAGES, ...compile)
-    : projectXml(vstestPackages(runner), ...compile);
+  // [TEST-BUILD-CONFIGURATION]: debug suites must override a Release default,
+  // bind actual breakpoints and inspect unoptimized locals.
+  return buildProjectXml({
+    packages: runner === 'mtp' ? MTP_XUNIT_PACKAGES : vstestPackages(runner),
+    compileIncludes: csharp ? [] : [sourceName],
+    properties: { ...(runner === 'mtp' ? MTP_PROPERTIES : {}), Configuration: 'Release' },
+  });
 }
 
 /**

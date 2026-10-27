@@ -1,6 +1,7 @@
 using MessagePack;
 using Outcome;
 using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.Common.Messages;
 using SharpLsp.Sidecar.Common.Solutions;
 using SharpLsp.Sidecar.CSharp.Workspace;
 using ByteResult = Outcome.Result<byte[], string>;
@@ -16,12 +17,36 @@ internal sealed partial class CSharpSidecar : SidecarHost
     public CSharpSidecar()
         : base("csharp")
     {
-        Register("workspace/open", HandleWorkspaceOpenAsync);
+        _workspace = new WorkspaceManager(NotifyDiagnosticsChangedAsync);
+        RegisterWorkspaceOpen(HandleWorkspaceOpenAsync, () => _refreshSupported);
         Register("workspace/status", HandleWorkspaceStatusAsync);
         Register("solution/read", HandleSolutionReadAsync);
         Register("workspace/diagnostics", HandleDiagnosticsAsync);
-        Register("workspace/diagnostics/all", HandleAllDiagnosticsAsync);
+        // Enumeration only: the host pulls per document afterwards. The payload is
+        // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
+        Register(
+            "workspace/diagnostics/documents",
+            (payload, ct) => HandleDiagnosticMetadataAsync(payload, projectsOnly: false, ct)
+        );
+        Register(
+            "workspace/diagnostics/projects",
+            (payload, ct) => HandleDiagnosticMetadataAsync(payload, projectsOnly: true, ct)
+        );
+        Register(
+            "workspace/diagnostics/project",
+            (payload, ct) =>
+                HandleRequestAsync(
+                    payload,
+                    (string projectPath) => _workspace.GetProjectDiagnosticsAsync(projectPath, ct),
+                    ct
+                )
+        );
+        Register("diagnostics/configure", HandleConfigureDiagnosticsAsync);
         Register("textDocument/didChange", HandleDidChangeAsync);
+        // The host re-sends the on-disk text on close, so a closed file's Roslyn text
+        // is exactly what the source watcher last wrote to disk — the same real disk
+        // update didChange carries, on the same DidChangeRequest shape.
+        Register("textDocument/didClose", HandleDidChangeAsync);
         Register("textDocument/completion", HandleCompletionAsync);
         Register("completionItem/resolve", HandleCompletionResolveAsync);
         Register("textDocument/hover", HandleHoverAsync);
@@ -84,7 +109,71 @@ internal sealed partial class CSharpSidecar : SidecarHost
         }
     }
 
-    private readonly WorkspaceManager _workspace = new();
+    private Task<ByteResult> HandleConfigureDiagnosticsAsync(byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(
+                payload,
+                cancellationToken: ct
+            );
+            _workspace.ConfigureDiagnostics(request.AnalyzersEnabled);
+            _workspace.AutoRestoreOnOpen = request.AutoRestoreOnOpen ?? true;
+            _refreshSupported = request.RefreshSupported;
+            var bytes = MessagePackSerializer.Serialize("ok", cancellationToken: ct);
+            return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(ByteResult.Failure(ex.Message));
+        }
+    }
+
+    /// <summary>The payload is reserved and ignored; the answer is the enumeration.</summary>
+    private async Task<ByteResult> HandleDiagnosticMetadataAsync(
+        byte[] payload,
+        bool projectsOnly,
+        CancellationToken ct
+    )
+    {
+        _ = payload;
+        try
+        {
+            var result = await (
+                projectsOnly ? _workspace.GetProjectsAsync(ct) : _workspace.GetDocumentsAsync(ct)
+            ).ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+    private readonly WorkspaceManager _workspace;
+    private bool _refreshSupported;
+
+    /// <summary>Compiler-originated invalidation, including while IPC is idle. [DIAG-IPC-REFRESH]</summary>
+    private async Task<Outcome.Result<Outcome.Unit, string>> NotifyDiagnosticsChangedAsync(
+        CancellationToken ct
+    )
+    {
+        if (!_refreshSupported)
+        {
+            return new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
+                Outcome.Unit.Value
+            );
+        }
+
+        var result = await NotifyAsync("diagnostics/refresh", string.Empty, ct)
+            .ConfigureAwait(false);
+        return result.Match(
+            _ => new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
+                Outcome.Unit.Value
+            ),
+            Outcome.Result<Outcome.Unit, string>.Failure
+        );
+    }
 
     /// <summary>
     /// The MSBuild workspace keeps its out-of-process BuildHost alive for as long as
@@ -145,16 +234,6 @@ internal sealed partial class CSharpSidecar : SidecarHost
         }
     }
 
-    private Task<ByteResult> HandleAllDiagnosticsAsync(byte[] payload, CancellationToken ct)
-    {
-        return HandleRequestAsync(
-            payload,
-            (SolutionDiagnosticsRequest request) =>
-                _workspace.GetAllDiagnosticsAsync(request.ProjectFilter, ct),
-            ct
-        );
-    }
-
     private Task<ByteResult> HandleCompletionAsync(byte[] payload, CancellationToken ct)
     {
         return HandlePositionRequestAsync(payload, _workspace.GetCompletionsAsync, ct);
@@ -197,7 +276,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         return HandleRequestAsync(
             payload,
-            (string filePath) => _workspace.GetDiagnosticsAsync(filePath, ct),
+            (string filePath) => _workspace.GetCurrentDiagnosticsAsync(filePath, ct),
             ct
         );
     }

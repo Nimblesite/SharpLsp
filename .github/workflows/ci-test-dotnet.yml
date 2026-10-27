@@ -3,8 +3,9 @@
 # PHASE 4 — TEST. The .NET sidecar leg.
 #
 # EVERY TEST RUNS EXACTLY ONCE. The Ubuntu job runs the whole sidecar solution.
-# The Windows job runs ONLY the classes whose behaviour is platform-dependent -
-# named-pipe connection setup and the real sidecar handshake over those pipes
+# The Windows job runs ONLY tests whose behaviour is platform-dependent -
+# named-pipe connection setup, the real sidecar handshake, NTFS-held compiler reads
+# and project metadata sharing with editor saves
 # ([DIST-CI-WIN-TRANSPORT]).
 #
 # It used to run the entire SharpLsp.Sidecar.Common.Tests project instead, which
@@ -24,7 +25,13 @@ jobs:
   test-dotnet:
     name: Sidecars
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 12
+    # The whole sidecar solution runs here (Common + C# + F# in parallel) under
+    # code coverage. The C# assembly alone is 833 real-SDK cases: ~4m15s on a
+    # 10-core host without coverage, so the 4-core runner with coverlet, a cold
+    # NuGet cache for the Razor/ASP.NET fixtures and the concurrent restore
+    # suites needs headroom above the old 12-minute cap (PR #494 hit it while
+    # main's smaller suite finished in 6m47s).
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,7 +98,7 @@ jobs:
       - uses: ./.github/actions/dotnet-tests
         with:
           artifact: win-lsp-binaries-tests
-      - name: Test win32 named pipes and linked paths
+      - name: Test win32 named pipes, linked paths, compiler cancellation and editor saves
         # Only the platform-dependent classes. The full-solution `dotnet restore`
         # that used to precede this existed to cache the FCS nuspec for the
         # dependency-consistency tests, which are platform-agnostic and now run

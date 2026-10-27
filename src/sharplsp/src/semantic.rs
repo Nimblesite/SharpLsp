@@ -61,7 +61,9 @@ pub fn handle_completion(
             Ok(response_bytes) => {
                 let items: Vec<SidecarCompletionItem> = rmp_serde::from_slice(&response_bytes)?;
                 let sidecar_items = items.into_iter().map(|item| {
+                    // Resolve must return to the same language. [SHARPLSP-FEATURES-INTELLIGENCE]
                     let data = serde_json::json!({
+                        "uri": uri.as_str(),
                         "file_path": &request.file_path,
                         "index": item.index,
                     });
@@ -731,6 +733,15 @@ pub fn notify_did_change(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) {
+    runtime.block_on(notify_did_change_async(file_path, new_text, sidecar));
+}
+
+/// Async core of [`notify_did_change`], reused by the background reload pass.
+pub async fn notify_did_change_async(
+    file_path: &str,
+    new_text: &str,
+    sidecar: Option<&Arc<SidecarManager>>,
+) {
     let Some(sidecar) = sidecar else { return };
     let request = SidecarDidChangeReq {
         file_path: file_path.to_string(),
@@ -741,7 +752,7 @@ pub fn notify_did_change(
         return;
     };
     let sidecar = Arc::clone(sidecar);
-    if let Err(err) = runtime.block_on(sidecar.request("textDocument/didChange", payload)) {
+    if let Err(err) = sidecar.request("textDocument/didChange", payload).await {
         debug!("Sidecar didChange failed: {err:#}");
     }
 }

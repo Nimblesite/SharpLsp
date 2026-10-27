@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import type { SharpLspTestController } from '../../testing.js';
+import { logFilePath } from '../../log.js';
 import {
   XUNIT_PACKAGES,
   createSolution,
@@ -34,9 +35,15 @@ import {
   assertLeavesAre,
   unloadSolution,
 } from './test-explorer-kit';
-import { comparablePath, removeDirRecursive, assertContainsAll } from './test-helpers.js';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import {
+  comparablePath,
+  removeDirRecursive,
+  assertContainsAll,
+  pollUntilResult,
+} from './test-helpers.js';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { CS, CS_MIXED_THEORY } from './test-explorer-xunit-pair';
+import { spyOnDiscover } from './test-discovery-spy';
 
 /** Exactly the FQNs the xUnit C# fixture exposes — theory rows collapse to one. */
 const EXPECTED = [CS.passing, CS.failing, CS.skipped, CS.parameterized, CS_MIXED_THEORY] as const;
@@ -70,29 +77,6 @@ function fromController(stack: string): boolean {
   return (
     !stack.includes(THIS_FILE) && (stack.includes('extension.js') || stack.includes('testing'))
   );
-}
-
-interface DiscoverSpy {
-  readonly stacks: string[];
-  restore: () => void;
-}
-
-/** Record every `discover()` call and WHERE from — reactivity is a claim about who called. */
-function spyOnDiscover(controller: SharpLspTestController): DiscoverSpy {
-  const stacks: string[] = [];
-  const original = controller.discover.bind(controller);
-  controller.discover = async (): Promise<void> => {
-    // Drop the `Error:` line and the spy's own frame: the caller is frame zero.
-    const trace = (new Error('discover').stack ?? '<no stack>').split('\n');
-    stacks.push(trace.slice(2).join('\n'));
-    await original();
-  };
-  return {
-    stacks,
-    restore: (): void => {
-      Reflect.deleteProperty(controller, 'discover');
-    },
-  };
 }
 
 function insertMethod(sourcePath: string, method: string): void {
@@ -840,5 +824,72 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       'the queue must drain cleanly',
     );
     assertTree(api.testController, EXPECTED, 'and the drained tree is still the settled one');
+  });
+
+  test('a configuration lookup failure during reactive discovery never rejects unhandled', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const good = await discoverSolution(api, slnPath, EXPECTED);
+    assert.strictEqual(good.length, EXPECTED.length, 'a populated tree is the precondition');
+    const lsp = api.getLspClient();
+    assert.ok(lsp, 'the real LSP client is available for recovery');
+    // The injected failure message is unique so the log assertion cannot match
+    // an unrelated discovery diagnostic. [TEST-REACTIVITY]
+    const injected = 'configuration unavailable (injected)';
+    const originalSendRequest = lsp.sendRequest.bind(lsp) as unknown as (
+      method: string,
+      ...rest: unknown[]
+    ) => Promise<unknown>;
+    const patched = lsp as unknown as {
+      sendRequest: (method: string, ...rest: unknown[]) => Promise<unknown>;
+    };
+    patched.sendRequest = async (method: string, ...rest: unknown[]) => {
+      if (method === 'sharplsp/configuration') throw new Error(injected);
+      return await originalSendRequest(method, ...rest);
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      // A discovery-input change (solution re-selection) drives the unguarded
+      // debounced sweep: `scheduleDiscovery` -> `discover()`. [TEST-REACTIVITY]
+      await drainDiscovery(() => {
+        api.explorerProvider.clear();
+        void api.explorerProvider.loadSolution(slnPath);
+      }, api.testController);
+      // The sweep must not escape as an unhandled rejection, and the standing
+      // tree must survive with the failure logged. [TEST-REACTIVITY]
+      assert.deepStrictEqual(unhandled, [], 'reactive discovery must not reject unhandled');
+      assertLeavesAre(api.testController, good, 'a failed sweep keeps exactly the previous tree');
+      assertTree(
+        api.testController,
+        EXPECTED,
+        'the standing tree survives a configuration failure',
+      );
+      await pollUntilResult(
+        async () => (await fs.promises.readFile(logFilePath(), 'utf8')).split('\n'),
+        (lines) => lines.some((line) => line.includes('WARN') && line.includes(injected)),
+        LSP_RESPONSE_MS,
+        undefined,
+        'a WARN line naming the configuration failure',
+      );
+      // Recovery: restore the real request and rediscover the real tests.
+      // [TEST-REACTIVITY-BUILD]
+      patched.sendRequest = originalSendRequest;
+      api.testController.items.replace([]);
+      assert.deepStrictEqual(collectLeafIds(api.testController.items), [], 'empty before recovery');
+      await api.testController.activateAndDiscover();
+      await pollUntilDiscovered(api.testController, EXPECTED);
+      assertLeavesAre(api.testController, EXPECTED, 'recovery rediscovers exactly the fixture');
+      assertTree(
+        api.testController,
+        EXPECTED,
+        'tree after recovering from a configuration failure',
+      );
+    } finally {
+      patched.sendRequest = originalSendRequest;
+      process.removeListener('unhandledRejection', onUnhandled);
+    }
   });
 });

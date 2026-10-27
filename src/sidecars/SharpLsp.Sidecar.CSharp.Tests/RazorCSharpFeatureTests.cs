@@ -239,7 +239,7 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
             RazorFixture.Ok(await manager.GetDiagnosticsAsync(viewImports)),
             Unnecessary
         );
-        var all = RazorFixture.Ok(await manager.GetAllDiagnosticsAsync([]));
+        var all = RazorFixture.Ok(await manager.PullDiagnosticsAsync());
         Assert.DoesNotContain(
             all,
             entry => IsImportFile(entry.Key) && entry.Value.Any(Unnecessary)
@@ -263,7 +263,7 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         var diagnostics = RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board));
         Assert.DoesNotContain(diagnostics, Unnecessary);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == "Error");
-        var all = RazorFixture.Ok(await manager.GetAllDiagnosticsAsync([]));
+        var all = RazorFixture.Ok(await manager.PullDiagnosticsAsync());
         Assert.DoesNotContain(
             all,
             entry => NativePaths.AreEqual(entry.Key, Board) && entry.Value.Any(Unnecessary)
@@ -325,7 +325,7 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         );
         Assert.Equal(error.StartCharacter + "Idd".Length, error.EndCharacter);
 
-        var all = RazorFixture.Ok(await manager.GetAllDiagnosticsAsync([]));
+        var all = RazorFixture.Ok(await manager.PullDiagnosticsAsync());
         var key = Assert.Single(all.Keys, path => NativePaths.AreEqual(path, Board));
         Assert.Contains(all[key], d => d.Code == "CS0103" && d.StartLine == error.StartLine);
         Assert.DoesNotContain(all.Keys, path => NativePaths.HasExtension(path, ".g.cs"));

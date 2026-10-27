@@ -3,6 +3,7 @@
  * Implements [TEST-MTP-RUN] and [NETFX-TEST-MTP].
  */
 import { fileNameOf, hasExtension } from './paths';
+import { info } from './log';
 import { DOTNET_TIMEOUT_MS, runDotnet, runProcess, type DotnetRun } from './dotnet-process.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
 import { netFrameworkDebugRefusal } from './test-frameworks.js';
@@ -65,11 +66,12 @@ export function startedModules(
 }
 
 /**
- * A refused module's outcome: nothing ran, and the refusal is its failure. The
- * debug run's closing `Test debug:` line logs it, so it is logged exactly once.
+ * A refused module's outcome: nothing ran, and the refusal is its failure.
+ * Log this constructed refusal once; settlement never logs arbitrary failure content.
  */
 export function refusedOutcome(module: MtpModuleRun): TestRunOutcome {
   const refusal = netFrameworkDebugRefusal(fileNameOf(module.modulePath));
+  info(`Test debug: ${refusal}`);
   return {
     results: new Map(),
     summary: undefined,

@@ -108,9 +108,12 @@ export function realSource(): string {
  * (Node refuses an existing directory as well as a file). An existing file may be
  * a hard link to a suite's stored copy, and writing it would rewrite every root
  * sharing it. Refusing is loud, where overwriting would be silent.
+ * Installation links are followed so the fixture owns real SDK bits rather than
+ * keeping an alias into the machine's protected installation. [DIST-RUNTIME-ACQUIRE]
  */
 const CLONE = {
   recursive: true,
+  dereference: true,
   mode: fs.constants.COPYFILE_FICLONE,
   force: false,
   errorOnExist: true,

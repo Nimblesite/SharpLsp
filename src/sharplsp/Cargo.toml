@@ -53,6 +53,10 @@ anyhow = "1"
 # (https://github.com/Nimblesite/lspkit) until its next release is published.
 lsp-profiler = { path = "../../lspkit/crates/lsp-profiler" }
 lsp-profiler-dotnet = { path = "../../lspkit/crates/lsp-profiler-dotnet" }
+lspkit-live = { path = "../../lspkit/crates/lspkit-live" }
+lspkit-server = { path = "../../lspkit/crates/lspkit-server", features = ["pull"] }
+lspkit-sidecar = { path = "../../lspkit/crates/lspkit-sidecar" }
+globset = "0.4"
 async-trait = "0.1"
 
 # HTTP client (NuGet API)
@@ -69,10 +73,8 @@ percent-encoding = "2"
 tempfile = "3"
 wait-timeout = "0.2"
 serde_json = "1"
+# Native recovery and descendant sessions validate their own child processes.
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 
 [lints]
 workspace = true
-
-# Only the Windows descendant e2e walks the process table.
-[target."cfg(windows)".dev-dependencies]
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }

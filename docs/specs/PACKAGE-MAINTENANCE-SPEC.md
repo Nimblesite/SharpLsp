@@ -28,6 +28,7 @@ Rules:
 
 - **Fail-safe**: a missing or malformed assets file yields no references; the caller falls back to framework-only options.
 - **Existence-gated**: compile paths that do not exist on disk are dropped because a missing-assembly reference would produce a false diagnostic.
+- **SDK cache precedence**: resolve each compile assembly against every declared `packageFolders` root in order, selecting the first physical file. A missing primary-cache assembly MUST NOT hide a valid fallback-cache assembly or its compiler diagnostics. Preserve the primary root as metadata; re-evaluate physical precedence when a cache changes without requiring another restore (GitHub #481).
 - **Placeholders are never references**: NuGet emits path-qualified `_._` compile placeholders (for example `lib/netstandard1.0/_._`) that can exist physically. The filter MUST compare the filename component, not the whole compile key; passing `_._` to FCS attaches FS0229/FS3160 startup errors to every checked file (GitHub #160).
 
 ### [PKG-UNUSED-MAP] Assembly → package mapping

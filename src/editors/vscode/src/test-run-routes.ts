@@ -18,6 +18,8 @@ import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execu
 
 /** What the last discovery sweep found, as far as running it goes. */
 export interface RunnerMap {
+  /** Owning projects from discovery. [TEST-BUILD-GRAPH] */
+  readonly projects?: ReadonlyMap<string, string>;
   /** How to run the MTP tests, when any target was MTP. */
   readonly mtp: MtpRunPlan | undefined;
   /** True when at least one target was enumerated by VSTest. */
@@ -36,7 +38,8 @@ export function runnersFor(listings: readonly TestListing[]): RunnerMap {
     listings.flatMap((listing) => (listing.mtp === undefined ? [] : [listing.mtp])),
   );
   const vstest = listings.some((listing) => listing.mtp === undefined && listing.names.length > 0);
-  return { mtp, vstest: vstest || mtp === undefined };
+  const projects = new Map(listings.flatMap((listing) => [...(listing.projects ?? [])]));
+  return { mtp, vstest: vstest || mtp === undefined, ...(projects.size === 0 ? {} : { projects }) };
 }
 
 /** One runner and the ids it gets; no ids means "everything it discovered". */
@@ -73,9 +76,29 @@ async function invokeRunner(
   call: RunnerCall,
   cwd: string,
   options: TestRunOptions,
+  projects: ReadonlyMap<string, string> = new Map(),
 ): Promise<TestRunOutcome> {
-  if (call.runner === 'vstest') return await runTests(call.ids, cwd, options);
+  if (call.runner === 'vstest') return await runProjectTests(call.ids, cwd, options, projects);
   return await runMtpTests(call.plan, call.ids, cwd, options);
+}
+
+/** Build each selected project's graph incrementally; unknown ownership keeps the safe target. */
+async function runProjectTests(
+  ids: readonly string[],
+  cwd: string,
+  options: TestRunOptions,
+  projects: ReadonlyMap<string, string>,
+): Promise<TestRunOutcome> {
+  if (ids.length === 0 || ids.some((id) => !projects.has(id)))
+    return await runTests(ids, cwd, options);
+  let merged: TestRunOutcome | undefined;
+  for (const target of new Set(ids.flatMap((id) => projects.get(id) ?? []))) {
+    if (options.signal?.aborted === true) break;
+    const selected = ids.filter((id) => projects.get(id) === target);
+    const one = await runTests(selected, cwd, { ...options, target });
+    merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
+  }
+  return merged ?? (await runTests(ids, cwd, options));
 }
 
 /**
@@ -92,9 +115,14 @@ export async function runRouted(
   const [first, ...rest] = splitByRunner(runners, ids);
   // A non-empty selection always has an owner, so `first` exists; VSTest is
   // where an id with none has always gone.
-  let merged = await invokeRunner(first ?? { runner: 'vstest', ids }, cwd, options);
+  let merged = await invokeRunner(
+    first ?? { runner: 'vstest', ids },
+    cwd,
+    options,
+    runners.projects,
+  );
   for (const call of rest) {
-    merged = mergeKeepingFailures(merged, await invokeRunner(call, cwd, options));
+    merged = mergeKeepingFailures(merged, await invokeRunner(call, cwd, options, runners.projects));
   }
   return merged;
 }

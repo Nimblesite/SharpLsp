@@ -175,13 +175,6 @@ internal sealed class DocumentHighlightListResult
 }
 
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class SolutionDiagnosticsRequest
-{
-    [Key(0)]
-    public string[] ProjectFilter { get; set; } = [];
-}
-
-[MessagePackObject(AllowPrivate = true)]
 internal sealed class DiagnosticResult
 {
     [Key(0)]
@@ -207,6 +200,10 @@ internal sealed class DiagnosticResult
 
     [Key(7)]
     public string Code { get; set; } = "";
+
+    /// <summary>The rule's documentation link (descriptor <c>HelpLinkUri</c>), if any.</summary>
+    [Key(8)]
+    public string HelpLink { get; set; } = "";
 }
 
 /// <summary>
