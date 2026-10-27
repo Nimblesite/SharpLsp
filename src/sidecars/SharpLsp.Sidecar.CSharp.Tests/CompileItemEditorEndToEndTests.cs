@@ -63,7 +63,9 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         string position = DefaultPosition
     )
     {
-        return MessagePackSerializer.Serialize(new object[] { filePath, include, anchor, position });
+        return MessagePackSerializer.Serialize(
+            new object[] { filePath, include, anchor, position }
+        );
     }
 
     private Task<PackageEditResult> AddAsync(
@@ -113,16 +115,14 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         Assert.Contains("NewModule.fs", result.Message);
         // [SE-ADD-FILE-ORDER]: the default position is immediately before the
         // LAST Compile item so an F# entry point stays last.
-        Assert.Equal(
-            ["Domain.fs", "Library.fs", "NewModule.fs", "Program.fs"],
-            CompileOrder(path)
-        );
+        Assert.Equal(["Domain.fs", "Library.fs", "NewModule.fs", "Program.fs"], CompileOrder(path));
         // Formatting preservation, pinned as exact output text.
         Assert.Equal(
-            OrderedFsproj().Replace(
-                "    <Compile Include=\"Program.fs\" />",
-                "    <Compile Include=\"NewModule.fs\" />\r\n    <Compile Include=\"Program.fs\" />"
-            ),
+            OrderedFsproj()
+                .Replace(
+                    "    <Compile Include=\"Program.fs\" />",
+                    "    <Compile Include=\"NewModule.fs\" />\r\n    <Compile Include=\"Program.fs\" />"
+                ),
             await File.ReadAllTextAsync(path)
         );
     }
@@ -153,10 +153,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         var result = await AddAsync(path, "Near.fs", anchor: "Library.fs", position: "before");
 
         Assert.True(result.Modified);
-        Assert.Equal(
-            ["Domain.fs", "Near.fs", "Library.fs", "Program.fs"],
-            CompileOrder(path)
-        );
+        Assert.Equal(["Domain.fs", "Near.fs", "Library.fs", "Program.fs"], CompileOrder(path));
     }
 
     [Fact]
@@ -167,10 +164,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         var result = await AddAsync(path, "Near.fs", anchor: "Domain.fs", position: "after");
 
         Assert.True(result.Modified);
-        Assert.Equal(
-            ["Domain.fs", "Near.fs", "Library.fs", "Program.fs"],
-            CompileOrder(path)
-        );
+        Assert.Equal(["Domain.fs", "Near.fs", "Library.fs", "Program.fs"], CompileOrder(path));
     }
 
     [Fact]
@@ -190,13 +184,15 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
 
         // The anchor is spelled with backslashes while the file spells it with
         // forward slashes; the match must be separator-insensitive.
-        var result = await AddAsync(path, @"Sub\Dir\New.fs", anchor: @"Sub\Dir\Mid.fs", position: "before");
+        var result = await AddAsync(
+            path,
+            @"Sub\Dir\New.fs",
+            anchor: @"Sub\Dir\Mid.fs",
+            position: "before"
+        );
 
         Assert.True(result.Modified);
-        Assert.Equal(
-            ["Sub\\Dir\\New.fs", "Sub/Dir/Mid.fs", "Program.fs"],
-            CompileOrder(path)
-        );
+        Assert.Equal(["Sub\\Dir\\New.fs", "Sub/Dir/Mid.fs", "Program.fs"], CompileOrder(path));
     }
 
     [Fact]
@@ -351,9 +347,6 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         var result = await AddAsync(path, "Generated.cs");
 
         Assert.True(result.Modified);
-        Assert.Equal(
-            ["Program.cs", "Generated.cs", "Service.cs"],
-            CompileOrder(path)
-        );
+        Assert.Equal(["Program.cs", "Generated.cs", "Service.cs"], CompileOrder(path));
     }
 }

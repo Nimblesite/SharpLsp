@@ -30,7 +30,9 @@ internal static class PackageEditor
         {
             if (!ApplyVersion(existing, request.Version, wantsVersion))
             {
-                return PackageEditResult.Unchanged($"{request.PackageId} already at {request.Version}");
+                return PackageEditResult.Unchanged(
+                    $"{request.PackageId} already at {request.Version}"
+                );
             }
             root.Save();
             return PackageEditResult.Changed($"Updated {request.PackageId}");
