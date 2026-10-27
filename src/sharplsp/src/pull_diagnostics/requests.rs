@@ -283,10 +283,11 @@ fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
         _ if error.downcast_ref::<serde_json::Error>().is_some() => {
             JsonRpcError::new(-32602, "Invalid diagnostic parameters")
         }
-        // The server cancelled a lens, and has already asked for it again: no
-        // diagnostic retrigger applies. [SHARPLSP-FEATURES-CODE-LENS]
+        // A preempted lens is retryable exactly like superseded work, and says
+        // why it was cancelled. [SHARPLSP-FEATURES-CODE-LENS]
         _ if error.is::<crate::code_lens::LensPreempted>() => {
             JsonRpcError::new(-32802, crate::code_lens::LensPreempted.to_string())
+                .with_data(json!({"retriggerRequest": true}))
         }
         _ => JsonRpcError::new(-32802, "Diagnostic snapshot unavailable or superseded")
             .with_data(json!({"retriggerRequest": true})),
