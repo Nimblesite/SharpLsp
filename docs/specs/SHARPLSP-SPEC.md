@@ -236,6 +236,7 @@ The owner loads in the background into the same Roslyn solution:
 Opening a file never restores or builds a project the workspace did not load:
 - An owner with no `obj/project.assets.json` is not loaded. The edit fails with a message naming the owner and `dotnet restore`.
 - A restored owner loads with `$(OutDir)` in the sidecar's scratch folder. A design-time build creates its output folder, and the user's own output folders must stay exactly as they built them ([DEBUG-FEATURES-LAUNCH-BUILD]).
+- A restored owner loads under the path its restore recorded (`project.restore.projectPath` in `obj/project.assets.json`) when that names the same file. One project has several spellings: a link, or a Windows drive letter that editors lowercase (`d:`) while builds and the file system say `D:`. A design-time build under another spelling rewrites `obj` inputs that spell the path, such as `build_property.ProjectDir` in the generated `.editorconfig`, a `CoreCompile` input, so the user's next build recompiled the project.
 
 The edit that started the load is held and applied once the project lands, so hover, completion and navigation answer from the owner. The load runs once per owner and never blocks the edit. A project that is already loaded is never reloaded. The log names the project and the file, or why it could not load.
 

@@ -153,6 +153,56 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
         Assert.Equal(["net8.0"], [.. Directory.GetDirectories(outputs).Select(NativePaths.NameOf)]);
     }
 
+    /// <summary>
+    /// Adopting an owner leaves its <c>obj</c> exactly as the user's build wrote it. The file
+    /// arrives spelled through a link to the folder the user built in: one file, two
+    /// spellings, as a Windows editor spells the drive <c>d:</c> where the build said <c>D:</c>.
+    /// A design-time build under the second spelling rewrote
+    /// <c>GeneratedMSBuildEditorConfig.editorconfig</c>, a <c>CoreCompile</c> input whose
+    /// <c>ProjectDir</c> follows the spelling, so the user's next build recompiled the project
+    /// ([DEBUG-FEATURES-LAUNCH-BUILD], [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING]).
+    /// </summary>
+    [Fact]
+    public async Task Adopting_an_owner_through_a_second_spelling_keeps_the_users_build_incremental()
+    {
+        Build(_lone);
+        var library = NativePaths.Join(
+            NativePaths.DirectoryOf(_lone),
+            "bin",
+            "Debug",
+            "net10.0",
+            "Lone.dll"
+        );
+        var built = File.GetLastWriteTimeUtc(library);
+        var link = NativePaths.Temp($"sharplsp-wm-owning-link-{Guid.NewGuid():N}");
+        _ = Directory.CreateSymbolicLink(link, _root);
+        try
+        {
+            var guard = NativePaths.Join(link, "Lone", "Guard.cs");
+            using var manager = await OpenHomeAsync();
+            var opened = await manager.UpdateDocumentTextAsync(
+                guard,
+                await File.ReadAllTextAsync(guard)
+            );
+            Assert.False(opened.IsError, opened.Match(_ => "ok", err => err));
+
+            var hover = await HoverWithinAsync(manager, guard, 5, 23);
+            Assert.True(hover is not null, "the owner answers through the second spelling");
+            Assert.Contains("AgainstNull", hover.Contents, StringComparison.Ordinal);
+
+            Build(_lone);
+            var rebuilt = File.GetLastWriteTimeUtc(library);
+            Assert.True(
+                built == rebuilt,
+                $"the user's next build stays incremental (built {built:O}, then {rebuilt:O})"
+            );
+        }
+        finally
+        {
+            Directory.Delete(link);
+        }
+    }
+
     /// <summary>A manager on the Home project, which never compiles Guard.cs.</summary>
     private async Task<WorkspaceManager> OpenHomeAsync()
     {
