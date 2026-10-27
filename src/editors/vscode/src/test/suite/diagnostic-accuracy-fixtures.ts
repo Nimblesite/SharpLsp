@@ -7,6 +7,7 @@ import {
   type DocumentDiagnosticParams,
   type DocumentDiagnosticReport,
   type LanguageClient,
+  type PreviousResultId,
   type WorkspaceDiagnosticParams,
   type WorkspaceDiagnosticReport,
 } from 'vscode-languageclient/node';
@@ -45,6 +46,16 @@ export async function firstDiagnosticReport<
   );
   assert.ok(report);
   return report;
+}
+
+/** One solution-wide pull, retried only when the server asks for it again. */
+export async function workspaceReport(
+  client: LanguageClient,
+  previousResultIds: PreviousResultId[] = [],
+): Promise<WorkspaceDiagnosticReport> {
+  return await firstDiagnosticReport<WorkspaceDiagnosticReport>(client, 'workspace/diagnostic', {
+    previousResultIds,
+  });
 }
 
 /** Cancellation, malformed requests and every other error remain immediate failures. */

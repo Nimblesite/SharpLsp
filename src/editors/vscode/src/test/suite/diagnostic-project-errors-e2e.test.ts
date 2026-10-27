@@ -11,8 +11,8 @@ import {
   assertClosedProblem,
   assertCompilerProblem,
   assertProjectBuild,
-  firstDiagnosticReport,
   teardownAccuracyFixture,
+  workspaceReport,
   type AccuracyCase,
   type AccuracyFixture,
 } from './diagnostic-accuracy-fixtures';
@@ -94,13 +94,7 @@ async function assertProjectPull(
 ): Promise<void> {
   const client = fixture.api.getLspClient();
   assert.ok(client);
-  const report = await firstDiagnosticReport<WorkspaceDiagnosticReport>(
-    client,
-    'workspace/diagnostic',
-    {
-      previousResultIds: [],
-    },
-  );
+  const report = await workspaceReport(client);
   const found = projectErrors(report, fixture.scenario.code);
   assert.equal(
     found.length,

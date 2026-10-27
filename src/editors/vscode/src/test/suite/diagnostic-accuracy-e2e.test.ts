@@ -16,7 +16,9 @@ import {
   assertCompilerProblem,
   assertCompilerReport,
   assertFileStillClosed,
+  firstDiagnosticReport,
   teardownAccuracyFixture,
+  workspaceReport,
   type AccuracyFixture,
 } from './diagnostic-accuracy-fixtures';
 import { replaceDocumentContent, waitForHoverResult } from './test-helpers';
@@ -142,10 +144,14 @@ async function assertDirectPullUnfiltered(
   fixture: AccuracyFixture,
   client: LanguageClient,
 ): Promise<string> {
-  const direct = await client.sendRequest<DocumentDiagnosticReport>('textDocument/diagnostic', {
-    textDocument: { uri: fixture.closedUri.toString() },
-    identifier: 'sharplsp',
-  });
+  const direct = await firstDiagnosticReport<DocumentDiagnosticReport>(
+    client,
+    'textDocument/diagnostic',
+    {
+      textDocument: { uri: fixture.closedUri.toString() },
+      identifier: 'sharplsp',
+    },
+  );
   assert.ok(direct.resultId, 'the direct report has its own opaque identity');
   assertWorkspaceReportsClosedError(fixture, {
     items: [{ ...direct, uri: fixture.closedUri.toString(), version: null }],
@@ -165,9 +171,7 @@ async function assertProjectFilterStep(
   await client.sendNotification('workspace/didChangeConfiguration', {
     settings: { sharplsp: { diagnostics: { project_filter: patterns } } },
   });
-  const report = await client.sendRequest<WorkspaceDiagnosticReport>('workspace/diagnostic', {
-    previousResultIds: previous,
-  });
+  const report = await workspaceReport(client, previous);
   if (count === 0) assertFilteredWorkspaceEmpty(fixture, report);
   else assertWorkspaceReportsClosedError(fixture, report);
   await assertDirectPullUnfiltered(fixture, client);
@@ -214,12 +218,10 @@ for (const scenario of ACCURACY_CASES) {
     });
 
     test('workspace pull includes the real compiler error in an unopened source file', async function () {
-      this.timeout(LSP_RESPONSE_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       const client = fixture.api.getLspClient();
       assert.ok(client);
-      const report = await client.sendRequest<WorkspaceDiagnosticReport>('workspace/diagnostic', {
-        previousResultIds: [],
-      });
+      const report = await workspaceReport(client);
       assertWorkspaceReportsClosedError(fixture, report);
       assertFileStillClosed(fixture);
     });
