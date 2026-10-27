@@ -24,8 +24,8 @@
     <ProjectReference Include="../../tools/fsharp-lint-source/LintSourceBuild.fsproj"
                       ReferenceOutputAssembly="false" Private="false" PrivateAssets="all"
                       OutputItemType="FSharpLintSourceBuilder" />
-    <PackageReference Include="FSharp.Core" Version="10.1.402" />
-    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.402" />
+    <PackageReference Include="FSharp.Core" Version="10.1.403" />
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.403" />
     <PackageReference Include="FParsec" Version="1.1.1" />
     <PackageReference Include="FSharpx.Collections" Version="3.1.0" />
     <PackageReference Include="Ionide.ProjInfo" Version="0.70.2" />
@@ -36,8 +36,8 @@
     <PackageReference Include="Microsoft.Build.Tasks.Core" Version="17.14.28" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.14.28" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.9.1" />
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.13" />
-    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.14" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>
   <Target Name="PreparePinnedFSharpLint" AfterTargets="ResolveProjectReferences"
           Inputs="$(FSharpLintSourceArchive);@(FSharpLintSourceBuilder);$(MSBuildProjectFullPath)"

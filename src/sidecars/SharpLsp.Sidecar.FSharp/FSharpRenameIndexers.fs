@@ -186,12 +186,7 @@ let private escapedLiteral newName =
     $"\"{escaped}\""
 
 let private literalEdit filePath newName (range: Range) : FSharpCodeActions.RawEdit =
-    { FilePath = filePath
-      StartLine = range.StartLine - 1
-      StartCharacter = range.StartColumn
-      EndLine = range.EndLine - 1
-      EndCharacter = range.EndColumn
-      NewText = escapedLiteral newName }
+    FSharpCodeActions.rangeEdit filePath range (escapedLiteral newName)
 
 let private insertionText column newName =
     let indentation = String(' ', column)

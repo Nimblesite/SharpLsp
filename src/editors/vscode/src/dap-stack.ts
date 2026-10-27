@@ -100,6 +100,21 @@ interface Arming {
 }
 
 /** One stop's reconstructed logical stack, reused across window requests. */
+/** No awaiting frames recovered. */
+const NO_CHAIN: AsyncChain = { frames: [], complete: false };
+
+/** A heap walk's chain, and whether a retry could change it. */
+interface Recovered {
+  readonly chain: AsyncChain;
+  readonly settled: boolean;
+}
+
+/** One thread's logical stack, and whether it may be cached for the stop. */
+interface Assembled {
+  readonly frames: RawFrame[];
+  readonly settled: boolean;
+}
+
 interface StackCache {
   readonly threadId: number;
   readonly frames: RawFrame[];
@@ -299,14 +314,19 @@ export class StackDelivery {
     }
   }
 
-  /** The full logical stack for a stopped thread, cached per stop. */
+  /**
+   * The full logical stack for a stopped thread, cached per stop once its
+   * reconstruction has settled. A walk that failed or found nothing is retried
+   * by the next `stackTrace`: one transient adapter failure must never pin the
+   * physical stack for the rest of the stop (GitHub #519).
+   */
   private async logicalStack(threadId: number): Promise<RawFrame[]> {
     const cached = this.cache.get(threadId);
     if (cached !== undefined) return cached.frames;
     const raw = await this.fetchFrames(threadId);
-    const assembled = await this.assemble(threadId, raw);
-    this.cache.set(threadId, { threadId, frames: assembled });
-    return assembled;
+    const { frames, settled } = await this.assemble(threadId, raw);
+    if (settled) this.cache.set(threadId, { threadId, frames });
+    return frames;
   }
 
   /** One thread's raw physical frames, fetched in full. */
@@ -321,7 +341,7 @@ export class StackDelivery {
   }
 
   /** Rename, reconstruct, splice and stitch one thread's logical stack. */
-  private async assemble(threadId: number, raw: RawFrame[]): Promise<RawFrame[]> {
+  private async assemble(threadId: number, raw: RawFrame[]): Promise<Assembled> {
     const enriched = enrichAsyncFrames(raw, this.justMyCode, this.isUserPath);
     const renamedKeys = new Set(
       raw
@@ -329,23 +349,28 @@ export class StackDelivery {
         .filter((name, index) => name !== raw[index]?.name)
         .map(nameKey),
     );
-    if (renamedKeys.size === 0 || raw.length === 0) return enriched;
-    const chain = await this.recoverChain(raw);
+    if (renamedKeys.size === 0 || raw.length === 0) return { frames: enriched, settled: true };
+    const { chain, settled } = await this.recoverChain(raw);
     const present = new Set(enriched.map((frame) => nameKey(frame.name)));
     const injected = await this.injectedFrames(chain, present, enriched);
     const tail = chain.complete ? [] : await this.stitchedTail(threadId, present, injected);
     const insertAfter = findLastRenamed(enriched, renamedKeys);
-    return [
+    const frames = [
       ...enriched.slice(0, insertAfter + 1),
       ...injected,
       ...enriched.slice(insertAfter + 1),
       ...tail,
     ];
+    return { frames, settled };
   }
 
-  /** Walk the heap for the awaiting callers of the paused async method. */
-  private async recoverChain(raw: RawFrame[]): Promise<AsyncChain> {
-    if (!this.asyncRegistryArmed) return { frames: [], complete: false };
+  /**
+   * Walk the heap for the awaiting callers of the paused async method. Settled
+   * unless the walk threw or the registry did not hold the paused activation:
+   * a retry can only change those answers.
+   */
+  private async recoverChain(raw: RawFrame[]): Promise<Recovered> {
+    if (!this.asyncRegistryArmed) return { chain: NO_CHAIN, settled: true };
     const pausedSmType = raw
       .map((frame) => frameStateMachineType(frame.name))
       .find((smType) => smType !== undefined);
@@ -361,12 +386,12 @@ export class StackDelivery {
           `async chain unavailable for ${String(pausedMethod)}: the paused activation is not in the task registry`,
         );
       }
-      return chain ?? { frames: [], complete: false };
+      return chain === undefined ? { chain: NO_CHAIN, settled: false } : { chain, settled: true };
     } catch (cause) {
       // Fail open — the physical stack still serves — but never silently: a
       // walk that threw and a walk that found nothing must read differently.
       error(`async chain walk failed for ${String(pausedMethod)}: ${String(cause)}`);
-      return { frames: [], complete: false };
+      return { chain: NO_CHAIN, settled: false };
     }
   }
 

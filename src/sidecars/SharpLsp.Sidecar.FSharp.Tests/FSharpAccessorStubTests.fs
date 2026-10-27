@@ -15,6 +15,7 @@ open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
+open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionSemanticTests
 
 // Line indices below are 0-based into this list, and the column points into the

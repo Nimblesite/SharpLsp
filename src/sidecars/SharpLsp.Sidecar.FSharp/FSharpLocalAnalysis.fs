@@ -6,6 +6,8 @@
 ///   * [FSharpAnalyzers] turns them into always-on diagnostic hints
 ///     ([ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]).
 /// Keeping one source of truth means hints and fixes can never disagree.
+/// It also holds the declarations-in-scope lookup that completion and the
+/// misspelled-name fix ([ANALYZERS-FSAC-CODEFIX-TYPO]) share.
 /// Implements [ANALYZERS-FSAC-PARITY].
 module SharpLsp.Sidecar.FSharp.FSharpLocalAnalysis
 
@@ -22,6 +24,30 @@ let lineGetter (source: string) : int -> string =
             lines.[lineNumber - 1]
         else
             ""
+
+/// The source text `r` covers, read through `line` (1-based): None when `r`
+/// spans lines or reaches past its line, as a stale range does.
+let textOf (line: int -> string) (r: range) : string option =
+    let text = line r.StartLine
+
+    if r.StartLine = r.EndLine && r.StartColumn <= r.EndColumn && r.EndColumn <= text.Length then
+        Some(text.Substring(r.StartColumn, r.EndColumn - r.StartColumn))
+    else
+        None
+
+/// The partial name before a 0-based caret and FCS's declarations in scope
+/// there: what completion lists, and what a misspelled name is matched against.
+let declarationsAt
+    (parseResults: FSharpParseFileResults)
+    (checkResults: FSharpCheckFileResults)
+    (lineText: string)
+    (line: int)
+    (character: int)
+    : PartialLongName * DeclarationListItem array =
+    // GetPartialLongNameEx wants the 0-based index of the last character before the caret.
+    let partialName = QuickParse.GetPartialLongNameEx(lineText, min (character - 1) (lineText.Length - 1))
+    let info = checkResults.GetDeclarationListInfo(Some parseResults, line + 1, lineText, partialName, (fun () -> []))
+    partialName, info.Items
 
 /// Raw file-local analyzer findings, before any diagnostic/edit conversion.
 [<NoComparison; NoEquality>]

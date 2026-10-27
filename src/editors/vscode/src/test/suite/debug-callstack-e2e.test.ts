@@ -18,6 +18,7 @@ import {
   CMD_STEP_INTO,
   CMD_STEP_OUT,
   assertFrameSource,
+  frameNamesUntil,
   localsOf,
   methodOf,
   stackFrames,
@@ -33,8 +34,7 @@ import {
   stopInFrame,
   debugTest,
 } from './debug-suite-kit';
-import { comparablePath, deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { assertAnswered, assertSessionEnded, assertAdapterAlive } from './debug-dap-kit';
 import { assertValues } from './debug-inspect-kit';
 
@@ -208,10 +208,11 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // ambiguity: it looks identical to the reconstruction being broken. The
       // poll's own message names the frames it actually saw, and its budget sits
       // below this test's ceiling ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-      const names = await pollUntilResult(
-        async () => (await stackFrames(session, stop.threadId)).map((c) => methodOf(c)),
+      const names = await frameNamesUntil(
+        session,
+        stop.threadId,
+        (c) => methodOf(c),
         (seen) => ASYNC_CHAIN.every((wanted) => seen.includes(wanted)),
-        LSP_RESPONSE_MS,
       );
       // Re-read once the chain is present, for the assertions below that need the
       // frames themselves rather than their names.

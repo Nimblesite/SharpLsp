@@ -26,6 +26,15 @@ type GeneratedAction =
       IsPreferred: bool
       Edits: RawEdit list }
 
+/// The 0-based edit replacing an FCS range (1-based lines) with `text`.
+let rangeEdit (filePath: string) (r: range) (text: string) : RawEdit =
+    { FilePath = filePath
+      StartLine = r.StartLine - 1
+      StartCharacter = r.StartColumn
+      EndLine = r.EndLine - 1
+      EndCharacter = r.EndColumn
+      NewText = text }
+
 // ── Union case stub generation ──────────────────────────────────
 
 /// Walk the parse tree to find match clauses covering a position.

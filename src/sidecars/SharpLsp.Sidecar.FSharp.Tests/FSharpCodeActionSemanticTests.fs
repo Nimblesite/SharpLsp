@@ -5,6 +5,7 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionSemanticTests
 
 open Xunit
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 
@@ -42,14 +43,6 @@ let private GENERATION_SOURCE =
           "    | Second -> 0"
           ""
           "let whole = { Alpha = 1; Beta = \"b\" }" ]
-
-let internal checkedFixture state path =
-    task {
-        let! checkedFile = FSharpWorkspace.checkFileWithParse state path
-        match checkedFile with
-        | None -> return failwith "FCS could not check the generation fixture"
-        | Some(parse, check, src) -> return (parse, check, src)
-    }
 
 let private generationProject () = loadWorkspace [ "Generation.fs", GENERATION_SOURCE ]
 
@@ -194,7 +187,8 @@ let private CONVERSION_SOURCE =
           "let toFloatFrom32 (v: float32) : float = v"
           "let toInt64FromInt (v: int) : int64 = v"
           "let toInt64FromFloat (v: float) : int64 = v"
-          "let toIntFromInt64 (v: int64) : int = v" ]
+          "let toIntFromInt64 (v: int64) : int = v"
+          "let toListFromInt (v: int) : string list = v" ]
 
 /// The two interface shapes whose insertion point differs from a plain
 /// `interface IService`: one that already carries `with`, and an object
@@ -280,6 +274,21 @@ let ``conversion quick fix proposes the function that bridges the two types``
                 titles |> List.exists (fun title -> title.Contains(expected)),
                 $"no conversion to '{expected}' among: {offered}"
             )
+        finally
+            cleanup dir
+    }
+
+/// No conversion function turns an `int` into a `string list`: the mismatch is
+/// real, but offering a wrapper that still fails to compile would be noise.
+[<Fact>]
+let ``a mismatch no conversion bridges offers none`` () =
+    task {
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Conversions.fs", CONVERSION_SOURCE ]
+        try
+            let! _, check, _ = checkedFixture state paths[0]
+            Assert.Contains(10, linesWith 1 check)
+            let! titles = conversionTitlesAt state paths[0] 10
+            Assert.Empty(titles)
         finally
             cleanup dir
     }

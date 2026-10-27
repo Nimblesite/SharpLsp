@@ -55,6 +55,14 @@ fn next_id() -> i32 {
     REQUEST_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+/// How [`LspClient::start_with`] starts the server.
+pub struct Start<'a> {
+    /// The server's working directory, where a `sharplsp.toml` is picked up.
+    pub cwd: Option<&'a Path>,
+    /// A directory searched before the inherited `PATH`.
+    pub path_first: Option<&'a Path>,
+}
+
 pub struct LspClient {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -71,9 +79,25 @@ impl LspClient {
     /// always constructed — a single file with no project starts one lazily — so
     /// config is the only way to get a server that genuinely has no sidecars.
     pub fn start_in(dir: Option<&Path>) -> Self {
+        Self::start_with(Start {
+            cwd: dir,
+            path_first: None,
+        })
+    }
+
+    /// Start the server as `start` says: in its working directory, and with its
+    /// directory searched first for executables, so a test can put a stand-in
+    /// `dotnet` in front of the real one.
+    pub fn start_with(start: Start<'_>) -> Self {
         let mut command = Command::new(built_binary::built_sharplsp());
-        if let Some(cwd) = dir {
+        if let Some(cwd) = start.cwd {
             command.current_dir(cwd);
+        }
+        if let Some(first) = start.path_first {
+            let inherited = std::env::var_os("PATH").unwrap_or_default();
+            let search =
+                std::iter::once(first.to_path_buf()).chain(std::env::split_paths(&inherited));
+            command.env("PATH", std::env::join_paths(search).expect("join PATH"));
         }
         let mut child = command
             .stdin(Stdio::piped())

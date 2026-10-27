@@ -20,7 +20,7 @@ import {
   CMD_STEP_INTO,
   evaluate,
   localsOf,
-  stackFrames,
+  frameNamesUntil,
   stepToFrame,
   topFrame,
   variableNamed,
@@ -200,8 +200,15 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       const { session, stop } = await runToFirstStop(debuggee(), 'leaf-return', {
         mode: MODE.async,
       });
-      const frames = await stackFrames(session, stop.threadId);
-      const rendered = frames.map((frame) => frame.name);
+      // Read until the awaiting frame is THERE, as the C# chain does: a
+      // stackTrace answered before the reconstruction can run carries only the
+      // physical frames (GitHub #519).
+      const rendered = await frameNamesUntil(
+        session,
+        stop.threadId,
+        (frame) => frame.name,
+        (names) => names.some((name) => name.includes('rootTask')),
+      );
 
       // Interaction 2 — the awaiting computation expression must appear.
       assert.ok(

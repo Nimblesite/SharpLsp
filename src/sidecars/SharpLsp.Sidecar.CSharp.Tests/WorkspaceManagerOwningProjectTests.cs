@@ -59,6 +59,21 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
         Assert.True(exitCode == 0, $"dotnet build {project} must succeed:\n{output}");
     }
 
+    /// <summary>
+    /// The lines of a detailed build log that say why MSBuild ran a target instead of
+    /// skipping it, so an unexpected recompile names the input that changed (GitHub #517).
+    /// </summary>
+    private static IEnumerable<string> OutOfDateReasons(string log)
+    {
+        return log.Split('\n')
+            .Where(line =>
+                line.Contains("newer than", StringComparison.Ordinal)
+                || line.Contains("out-of-date", StringComparison.Ordinal)
+                || line.Contains("does not exist", StringComparison.Ordinal)
+            )
+            .Take(40);
+    }
+
     public void Dispose()
     {
         try
@@ -190,11 +205,13 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
             Assert.True(hover is not null, "the owner answers through the second spelling");
             Assert.Contains("AgainstNull", hover.Contents, StringComparison.Ordinal);
 
-            Build(_lone);
+            var (exitCode, detail) = DotnetBuild.Run(_lone, "-verbosity:detailed");
+            Assert.True(exitCode == 0, $"dotnet build {_lone} must succeed:\n{detail}");
             var rebuilt = File.GetLastWriteTimeUtc(library);
             Assert.True(
                 built == rebuilt,
-                $"the user's next build stays incremental (built {built:O}, then {rebuilt:O})"
+                $"the user's next build stays incremental (built {built:O}, then {rebuilt:O}):\n"
+                    + string.Join('\n', OutOfDateReasons(detail))
             );
         }
         finally

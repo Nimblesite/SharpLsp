@@ -1,6 +1,7 @@
 // Real compiler policy. Implements [DIAG-CONFIG], [DIAG-CONFIG-RELOAD], [DIAG-TRUTH-GUARANTEES].
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { filePathFromUri, isWithin } from '../../paths';
 import type {
   Diagnostic,
   DocumentDiagnosticReport,
@@ -18,6 +19,7 @@ import {
 } from './diagnostic-accuracy-fixtures';
 import { diagnosticCode } from './document-anchors';
 import { dotnet } from './dotnet-project-kit';
+import { openFixtureDocument } from './refactor-test-helpers';
 import { pollUntilResult, waitForHoverResult } from './test-helpers';
 import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
@@ -91,7 +93,12 @@ async function assertPolicyTruth(
   assertFileStillClosed(fixture);
 }
 
-/** Every workspace diagnostic comes from the same real two-file compiler fixture. */
+/**
+ * Every fixture diagnostic comes from the same real two-file compiler fixture,
+ * and the severity policy holds across the WHOLE report: a document another
+ * suite left open brings its own owning project's diagnostics along, under the
+ * same policy (#518).
+ */
 async function assertWorkspacePolicy(
   fixture: AccuracyFixture,
   client: LanguageClient,
@@ -102,8 +109,17 @@ async function assertWorkspacePolicy(
     previousResultIds: [],
   });
   assert.ok(report.items.every((item) => item.kind === 'full'));
-  const diagnostics = report.items.flatMap((item) => (item.kind === 'full' ? item.items : []));
-  assertPolicyDiagnostics(fixture, diagnostics, errors, warnings, describeWorkspaceReport(report));
+  const found = describeWorkspaceReport(report);
+  const everywhere = report.items.flatMap((item) => (item.kind === 'full' ? item.items : []));
+  if (warnings === 0) {
+    assert.ok(
+      everywhere.every((item) => item.severity === 1),
+      `only errors remain: ${found}`,
+    );
+  }
+  const owned = report.items.filter((item) => isWithin(filePathFromUri(item.uri), fixture.root));
+  const diagnostics = owned.flatMap((item) => (item.kind === 'full' ? item.items : []));
+  assertPolicyDiagnostics(fixture, diagnostics, errors, warnings, found);
 }
 
 /** Wait for actual Problems convergence, without opening the source that owns the errors. */
@@ -133,6 +149,9 @@ for (const { scenario, warning } of POLICY_CASES) {
       this.timeout(FIXTURE_BUILD_MS);
       fixture = await activateAccuracyFixture('slsp-diagnostic-policy-', scenario);
       await assertPolicyBuildOracle(fixture, warning);
+      // A shared-workspace document with a real CS0219, as other suites leave
+      // open: its owner's diagnostics join every workspace report (#518).
+      await openFixtureDocument('Refactor.cs');
       await vscode.window.showTextDocument(
         await vscode.workspace.openTextDocument(fixture.entryUri),
       );
