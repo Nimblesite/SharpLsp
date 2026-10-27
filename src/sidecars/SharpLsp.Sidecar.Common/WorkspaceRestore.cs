@@ -113,11 +113,18 @@ public static class WorkspaceRestore
             project,
             result.IsOk
         );
-        return result.IsOk
-            ? RememberedRestore(project, result)
-            : RestoreResult.Failure(
-                $"Package restore failed for {project}; run dotnet restore manually."
-            );
+        if (result.IsOk)
+        {
+            return RememberedRestore(project, result);
+        }
+        Log.Warning(
+            "Package restore failed for {Project}: {Detail}",
+            project,
+            result.Match(_ => string.Empty, detail => detail)
+        );
+        return RestoreResult.Failure(
+            $"Package restore failed for {project}; run dotnet restore manually."
+        );
     }
 
     private static RestoreResult RememberedRestore(string project, RestoreResult result)

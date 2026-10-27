@@ -70,12 +70,7 @@ let private msbuildTimeout = TimeSpan.FromMinutes 3.0
 let private pathFlags = [ "-o:"; "--out:"; "-r:"; "--reference:"; "--doc:"; "--pdb:"; "--keyfile:" ]
 
 let private startInfo (fsprojPath: string) (arguments: string list) =
-    let info = ProcessStartInfo("dotnet")
-    info.WorkingDirectory <- NativePaths.DirectoryOf fsprojPath
-    info.RedirectStandardOutput <- true
-    info.RedirectStandardError <- true
-    info.UseShellExecute <- false
-    info.CreateNoWindow <- true
+    let info = DotnetProcess.StartInfo(NativePaths.DirectoryOf fsprojPath)
 
     for argument in [ "msbuild"; fsprojPath; "-nologo"; "-m:1"; "-nodeReuse:false" ] @ arguments do
         info.ArgumentList.Add argument
