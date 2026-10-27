@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import { effect, Signal } from './signals';
-import { info } from './log';
+import { error, info, warn } from './log';
 import * as state from './state';
+import { getErrorMessage } from './utils';
+import { failedListing } from './test-discovery';
 import type { TestListing } from './test-listing-model';
 import { listLocatedTests, onDiscoveryInputs } from './test-source-locations';
 import { runnersFor, runRouted, VSTEST_ONLY, type RunnerMap } from './test-run-routes';
@@ -180,7 +182,9 @@ export class SharpLspTestController {
     this.buildSubscription = state.buildCompleted.subscribe((revision) => {
       if (this.debounceHandle !== undefined) clearTimeout(this.debounceHandle);
       this.debounceHandle = undefined;
-      void this.refreshAfterBuild(revision);
+      void this.refreshAfterBuild(revision).catch((cause: unknown) => {
+        error(`Reactive test discovery after build failed: ${getErrorMessage(cause)}`);
+      });
     });
   }
 
@@ -220,7 +224,9 @@ export class SharpLspTestController {
     }
     this.debounceHandle = setTimeout(() => {
       this.debounceHandle = undefined;
-      void this.discover();
+      void this.discover().catch((cause: unknown) => {
+        error(`Reactive test discovery failed: ${getErrorMessage(cause)}`);
+      });
     }, DISCOVERY_DEBOUNCE_MS);
   }
 
@@ -326,13 +332,25 @@ export class SharpLspTestController {
     return true;
   }
 
-  /** List one target (inside the sweep's queued job), logging its diagnostics. */
+  /**
+   * List one target (inside the sweep's queued job), logging its diagnostics.
+   * Never rejects: a listing that threw — e.g. the per-operation configuration
+   * request ([TEST-BUILD-CONFIGURATION]) failing while the server stops — becomes
+   * the same failed {@link TestListing} the sweep already renders, so reactive
+   * discovery stays contained. [TEST-REACTIVITY]
+   */
   private async safeList(target: string, noBuild: boolean): Promise<TestListing> {
-    const listing = await listLocatedTests(target, noBuild);
-    for (const warning of listing.warnings) {
-      info(`Test discovery (${target}): ${warning}`);
+    try {
+      const listing = await listLocatedTests(target, noBuild);
+      for (const warning of listing.warnings) {
+        info(`Test discovery (${target}): ${warning}`);
+      }
+      return listing;
+    } catch (cause: unknown) {
+      const reason = `Test discovery (${target}) failed: ${getErrorMessage(cause)}`;
+      warn(reason);
+      return failedListing(reason);
     }
-    return listing;
   }
 
   /** The Run and Run-with-Coverage profiles share every step but collection. */

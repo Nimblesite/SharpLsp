@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import type { SharpLspTestController } from '../../testing.js';
+import { logFilePath } from '../../log.js';
 import {
   XUNIT_PACKAGES,
   createSolution,
@@ -34,8 +35,13 @@ import {
   assertLeavesAre,
   unloadSolution,
 } from './test-explorer-kit';
-import { comparablePath, removeDirRecursive, assertContainsAll } from './test-helpers.js';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import {
+  comparablePath,
+  removeDirRecursive,
+  assertContainsAll,
+  pollUntilResult,
+} from './test-helpers.js';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { CS, CS_MIXED_THEORY } from './test-explorer-xunit-pair';
 import { spyOnDiscover } from './test-discovery-spy';
 
@@ -818,5 +824,75 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       'the queue must drain cleanly',
     );
     assertTree(api.testController, EXPECTED, 'and the drained tree is still the settled one');
+  });
+
+  test('a configuration lookup failure during reactive discovery never rejects unhandled', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const good = await discoverSolution(api, slnPath, EXPECTED);
+    assert.strictEqual(good.length, EXPECTED.length, 'a populated tree is the precondition');
+    const lsp = api.getLspClient();
+    assert.ok(lsp, 'the real LSP client is available for recovery');
+    // The injected failure message is unique so the log assertion cannot match
+    // an unrelated discovery diagnostic. [TEST-REACTIVITY]
+    const injected = 'configuration unavailable (injected)';
+    const originalSendRequest = lsp.sendRequest.bind(lsp) as unknown as (
+      method: string,
+      ...rest: unknown[]
+    ) => Promise<unknown>;
+    const patched = lsp as unknown as {
+      sendRequest: (method: string, ...rest: unknown[]) => Promise<unknown>;
+    };
+    patched.sendRequest = async (method: string, ...rest: unknown[]) => {
+      if (method === 'sharplsp/configuration') throw new Error(injected);
+      return await originalSendRequest(method, ...rest);
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      // A discovery-input change (solution re-selection) drives the unguarded
+      // debounced sweep: `scheduleDiscovery` -> `discover()`. [TEST-REACTIVITY]
+      await drainDiscovery(() => {
+        api.explorerProvider.clear();
+        void api.explorerProvider.loadSolution(slnPath);
+      }, api.testController);
+      // The sweep must not escape as an unhandled rejection, and the standing
+      // tree must survive with the failure logged. [TEST-REACTIVITY]
+      assert.deepStrictEqual(unhandled, [], 'reactive discovery must not reject unhandled');
+      const kept = collectLeafIds(api.testController.items);
+      assert.strictEqual(kept.length, good.length, 'a failed sweep must not blank the view');
+      assert.deepStrictEqual(sorted(kept), sorted(good), 'the kept tree is the previous tree');
+      assertTree(
+        api.testController,
+        EXPECTED,
+        'the standing tree survives a configuration failure',
+      );
+      await pollUntilResult(
+        async () => (await fs.promises.readFile(logFilePath(), 'utf8')).split('\n'),
+        (lines) => lines.some((line) => line.includes('WARN') && line.includes(injected)),
+        LSP_RESPONSE_MS,
+        undefined,
+        'a WARN line naming the configuration failure',
+      );
+      // Recovery: restore the real request and rediscover the real tests.
+      // [TEST-REACTIVITY-BUILD]
+      patched.sendRequest = originalSendRequest;
+      api.testController.items.replace([]);
+      assert.deepStrictEqual(collectLeafIds(api.testController.items), [], 'empty before recovery');
+      await api.testController.activateAndDiscover();
+      const recovered = await pollUntilDiscovered(api.testController, EXPECTED);
+      assert.strictEqual(recovered.length, EXPECTED.length, 'recovery rediscovers the fixture');
+      assert.deepStrictEqual(sorted(recovered), sorted(EXPECTED), 'and nothing else');
+      assertTree(
+        api.testController,
+        EXPECTED,
+        'tree after recovering from a configuration failure',
+      );
+    } finally {
+      patched.sendRequest = originalSendRequest;
+      process.removeListener('unhandledRejection', onUnhandled);
+    }
   });
 });

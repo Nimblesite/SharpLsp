@@ -217,14 +217,14 @@ export async function listTests(
   return await withMtpProbe(vstest, target, cwd, timeoutMs, noBuild);
 }
 
+/** A listing that could not be produced: empty, with the reason as its warning. */
+export function failedListing(reason: string): TestListing {
+  return { names: [], ok: false, warnings: [reason], byAssembly: [] };
+}
+
 /** A target that is not on disk: nothing to enumerate, and the reason why. */
 function missingTarget(target: string): TestListing {
-  return {
-    names: [],
-    ok: false,
-    warnings: [`Discovery target does not exist: ${target}`],
-    byAssembly: [],
-  };
+  return failedListing(`Discovery target does not exist: ${target}`);
 }
 
 /**
@@ -269,7 +269,7 @@ async function listWithVsTest(
   const run = await runDotnet(args, cwd, timeoutMs);
   const output = usableStdout(run);
   if (output === undefined) {
-    return { names: [], ok: false, warnings: [listFailure(run)], byAssembly: [] };
+    return failedListing(listFailure(run));
   }
   return await namesFrom(output, cwd, timeoutMs);
 }
