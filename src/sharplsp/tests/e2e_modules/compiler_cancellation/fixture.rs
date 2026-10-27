@@ -33,6 +33,19 @@ const ANALYZER_FILES: [(&str, &str); 2] = [
 /// Complete source and the independently expected SDK compiler failure, or success.
 type OracleInput = (&'static str, Option<&'static str>);
 
+/// The SDK pin every fixture `dotnet` invocation honours.
+///
+/// The `CooperativeAnalyzer` the C# fixture compiles targets
+/// `$(MSBuildToolsPath)/Roslyn/bincore/Microsoft.CodeAnalysis.dll` — the SDK's
+/// Roslyn. The C# sidecar bundles Roslyn 5.6.0 (Directory.Build.props), and the
+/// repo `global.json` pins the SDK that ships exactly that Roslyn (10.0.303),
+/// guarded by `Repo_pinned_sdk_ships_exactly_the_bundled_roslyn`. A fixture temp
+/// dir lives OUTSIDE the repo, so `dotnet` would otherwise resolve the NEWEST
+/// installed SDK; on CI that is 10.0.401 (Roslyn 5.9.0), whose analyzer assembly
+/// `AnalyzerFileReference.GetAnalyzers` then silently refuses to load.
+/// [DIST-RUNTIME-ACQUIRE] [DIAG-ANALYSIS-CANCELLATION]
+const SDK_PIN: &str = include_str!("../../../../../global.json");
+
 pub struct Fixture {
     directory: tempfile::TempDir,
     pub source: PathBuf,
@@ -62,6 +75,9 @@ impl Fixture {
         require_dotnet();
         let directory = tempfile::tempdir().expect("real compiler fixture");
         let root = directory.path();
+        // Pin the fixture's SDK to the repo pin so the CooperativeAnalyzer builds
+        // against the Roslyn the C# sidecar bundles; see SDK_PIN above.
+        std::fs::write(root.join("global.json"), SDK_PIN).expect("pin the fixture SDK");
         Self {
             source: root.join(if fsharp {
                 "App/Library.fs"
