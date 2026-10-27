@@ -19,7 +19,7 @@ import { enrichResponse, withEventCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
 import { AdapterWire } from './dap-wire';
 import { LaunchedDebuggee } from './dap-debuggee';
-import { SHUTDOWN_DEADLINE_MS, ShutdownDeadline } from './dap-shutdown';
+import { SHUTDOWN_DEADLINE_MS, ShutdownDeadline, UnansweredStops } from './dap-shutdown';
 import { belongsToUserCode, carriesUserCode } from './dap-statement';
 import { VariableExpander } from './dap-variables';
 import { DapHotReload } from './dap-hot-reload';
@@ -146,6 +146,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private readonly debuggee = new LaunchedDebuggee();
   /** The end a stop request is owed; fires when the adapter wedges instead. */
   private readonly shutdown: ShutdownDeadline;
+  /** Stop requests the adapter has not answered; settled if it dies first. */
+  private readonly unansweredStops = new UnansweredStops();
   /** True once the session is being torn down; nothing may fire or write. */
   private disposed = false;
   /** The child's latest advertised capabilities, from `capabilities` events. */
@@ -243,6 +245,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.closed = true;
     this.shutdown.cancel();
     this.correlator.failAll(why ?? 'exited');
+    this.unansweredStops.settle((message) => {
+      this.respondTo(message, true, {});
+    });
     if (why === undefined || this.disposed) return;
     this.debuggee.endOrphan();
     error(`netcoredbg ${why}; ending the debug session.`);
@@ -308,6 +313,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // without arming would leave a stop it failed to finish owing nothing.
     this.shutdown.armFor(message);
     if (this.cancelPendingTerminal(message, command)) return;
+    this.unansweredStops.expect(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1' && command !== '') {
       traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`);
     }
@@ -516,6 +522,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
    */
   private emitOutbound(message: DapMessage): void {
     const outbound = withRefusalReason(message);
+    this.unansweredStops.observe(outbound);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
         `[dap=>] ${String(outbound.command ?? outbound.event ?? outbound.type)} seq=${String(outbound.seq)} rs=${String(outbound.request_seq)} ok=${String(outbound.success)} msg=${JSON.stringify(outbound.message ?? '')} ${JSON.stringify(outbound.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
