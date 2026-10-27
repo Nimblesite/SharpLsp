@@ -285,6 +285,12 @@ pub fn directory_of(path: impl AsRef<Path>) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// The [`comparison_key`] of the directory holding `path`, as two spellings of
+/// it compare; `None` for a root or a bare file name. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn directory_key(path: &str) -> Option<String> {
+    directory_of(path).map(|directory| comparison_key(&directory.to_string_lossy()))
+}
+
 /// The directory to monitor for a discovery target. [TEST-REACTIVITY-BUILD]
 fn build_watch_root(target: &str) -> Option<PathBuf> {
     let target = Path::new(target);

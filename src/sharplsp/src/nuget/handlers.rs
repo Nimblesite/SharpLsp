@@ -12,7 +12,7 @@ use tracing::{error, info};
 
 use crate::sidecar::manager::SidecarManager;
 
-use super::{cli, consolidate, edit, parse, search, targets, types, unused};
+use super::{cli, consolidate, edit, lanes, parse, search, targets, types, unused};
 
 /// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
@@ -77,7 +77,11 @@ pub fn handle_installed(
     info!("Handling sharplsp/nuget/installed");
     let params: types::InstalledParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path)?;
-    let packages = runtime.block_on(list_installed_for_target(&target))?;
+    let lane = lanes::lane(&target.path)?;
+    let packages = runtime.block_on(async {
+        let _listing = lane.lock().await;
+        list_installed_for_target(&target).await
+    })?;
     let response = types::InstalledResponse { packages };
     Ok(serde_json::to_value(response)?)
 }
@@ -419,6 +423,7 @@ fn spawn_restore(
 ) {
     let target_id = target.id.clone();
     let target_dir = crate::paths::directory_of(&target.path);
+    let lane = lanes::lane(&target.path);
 
     // Notify "started" synchronously so the UI sees it immediately.
     send_restore_progress(&sender, &target_id, types::RestorePhase::Started, None);
@@ -431,7 +436,7 @@ fn spawn_restore(
             Some(format!("Restoring {}", modified_files.join(", "))),
         );
 
-        let Some(dir) = target_dir else {
+        let (Some(dir), Ok(lane)) = (target_dir, lane) else {
             send_restore_progress(
                 &sender,
                 &target_id,
@@ -440,6 +445,7 @@ fn spawn_restore(
             );
             return;
         };
+        let _restoring = lane.lock().await;
 
         let mut command = tokio::process::Command::new("dotnet");
         let _ = command.arg("restore").current_dir(&dir);

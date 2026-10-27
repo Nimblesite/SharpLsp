@@ -8,6 +8,7 @@ pub mod cli;
 pub mod consolidate;
 pub mod edit;
 pub mod handlers;
+pub mod lanes;
 pub mod parse;
 pub mod search;
 pub mod targets;

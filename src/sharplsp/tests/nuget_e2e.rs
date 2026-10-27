@@ -318,6 +318,10 @@ fn nuget_install_and_uninstall_package() {
         "sharplsp/nuget/installed",
         json!({ "projectPath": project }),
     );
+    assert!(
+        installed_after["result"]["packages"].is_array(),
+        "installed packages after uninstall: {installed_after}"
+    );
     let packages_after = installed_after["result"]["packages"]
         .as_array()
         .expect("installed packages after");
@@ -584,6 +588,91 @@ fn nuget_uninstall_preserves_comments_in_item_group() {
     client.shutdown_and_exit();
 }
 
+// ── Background restores and listings (GitHub #516) ─────────────────
+
+/// A stand-in `dotnet` in a fresh directory. A bare `restore`, the host's
+/// background restore, holds a marker for its whole run and starts late; a
+/// package listing, which restores too, looks for the marker a second after it
+/// starts and fails while it is held, so two overlapping restores of the
+/// project's `obj/` are always caught. Everything else runs the real `dotnet`.
+#[cfg(unix)]
+fn overlap_detecting_dotnet() -> TempDir {
+    use std::os::unix::fs::PermissionsExt;
+
+    let located = std::process::Command::new("sh")
+        .args(["-c", "command -v dotnet"])
+        .output()
+        .expect("locate dotnet");
+    let real = String::from_utf8(located.stdout).expect("dotnet path");
+    let dir = tempfile::tempdir().expect("stand-in dir");
+    let marker = dir.path().join("restoring");
+    let script = format!(
+        "#!/bin/sh\n\
+         if [ \"$1\" = restore ] && [ $# -eq 1 ]; then\n\
+           touch '{marker}'; sleep 3; '{real}' \"$@\"; status=$?; rm -f '{marker}'; exit $status\n\
+         fi\n\
+         if [ \"$1\" = list ]; then\n\
+           sleep 1; if [ -e '{marker}' ]; then echo 'a restore of this project is still running' >&2; exit 1; fi\n\
+         fi\n\
+         exec '{real}' \"$@\"\n",
+        marker = marker.display(),
+        real = real.trim(),
+    );
+    let stand_in = dir.path().join("dotnet");
+    std::fs::write(&stand_in, script).expect("write stand-in dotnet");
+    std::fs::set_permissions(&stand_in, std::fs::Permissions::from_mode(0o755))
+        .expect("make stand-in dotnet executable");
+    dir
+}
+
+/// A listing that arrives while an uninstall's background restore is still
+/// running waits for it: `dotnet list package` restores too, and two restores
+/// of one project's `obj/` must never overlap. The answer reflects the
+/// uninstall. [NUGET-REQUESTS-INSTALLED]
+#[cfg(unix)]
+#[test]
+fn installed_waits_for_the_restore_an_uninstall_started() {
+    if !require_dotnet() {
+        return;
+    }
+    let (tmp, project) = isolated_nuget_project();
+    let stand_in = overlap_detecting_dotnet();
+    let mut client = LspClient::start_with(lsp_client::Start {
+        cwd: None,
+        path_first: Some(stand_in.path()),
+    });
+    client.initialize_with_root(tmp.path());
+
+    let uninstall = client.request(
+        "sharplsp/nuget/uninstall",
+        json!({ "projectPath": project, "packageId": "Newtonsoft.Json" }),
+    );
+    assert_eq!(
+        uninstall["result"]["success"].as_bool(),
+        Some(true),
+        "uninstall should succeed: {uninstall}"
+    );
+
+    let installed = client.request(
+        "sharplsp/nuget/installed",
+        json!({ "projectPath": project }),
+    );
+    assert!(
+        installed.get("error").is_none(),
+        "the listing must not overlap the restore: {installed}"
+    );
+    let packages = installed["result"]["packages"]
+        .as_array()
+        .expect("installed packages");
+    assert!(
+        !packages
+            .iter()
+            .any(|p| p["id"].as_str() == Some("Newtonsoft.Json")),
+        "the uninstalled package is gone: {installed}"
+    );
+
+    client.shutdown_and_exit();
+}
 // ── Error handling ──────────────────────────────────────────────
 
 #[test]

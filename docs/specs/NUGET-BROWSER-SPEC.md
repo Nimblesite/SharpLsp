@@ -177,6 +177,8 @@ interface NuGetVersionsResponse {
 
 List installed packages for a target.
 
+`dotnet list package` restores the project implicitly. A listing therefore never overlaps a restore that the host runs for the same project directory: the listing and every background restore started by an install or uninstall take that directory's lane in turn ([lanes.rs](../../src/sharplsp/src/nuget/lanes.rs)). Either order answers with the edited project, because the edit lands before both. Two overlapping restores of one `obj/` failed the listing (GitHub #516).
+
 **Request:**
 
 ```typescript
