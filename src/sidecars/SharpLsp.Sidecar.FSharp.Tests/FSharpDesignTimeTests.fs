@@ -171,7 +171,7 @@ let ``a project answers from its first framework until the whole project is swit
 
     try
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state dir
+        let! loaded = FSharpWorkspaceLoading.loadProject state dir
         Assert.Equal(Ok(), loaded)
 
         let context = ok (FSharpTargetFrameworks.current state probe)
@@ -206,7 +206,7 @@ let ``an undeclared framework fails by name, and a file no project compiles has 
 
     try
         let state = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspace.loadProject state dir
+        let! _ = FSharpWorkspaceLoading.loadProject state dir
         let! unknown = FSharpTargetFrameworks.switch state probe "net99.0" CancellationToken.None
 
         match unknown with
@@ -265,7 +265,7 @@ let ``completion on unchanged text follows the switch: File.WriteAllTextAsync on
 
     try
         let state = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspace.loadProject state dir
+        let! _ = FSharpWorkspaceLoading.loadProject state dir
         let labels () =
             task {
                 let! entries = FSharpCompletion.getCompletions state probe 2 30
@@ -395,7 +395,7 @@ let ``SDK failures remain scoped and framework switching restores trustworthy di
     let dir, project, probe, peer, peerSource = diagnosticPeers ()
     try
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state (NativePaths.Resolve(dir, "Contexts.slnx"))
+        let! loaded = FSharpWorkspaceLoading.loadProject state (NativePaths.Resolve(dir, "Contexts.slnx"))
         ok loaded
         Assert.Equal(2, state.Projects.Count)
         Assert.True(FSharpDiagnosticInputs.project state peer |> Result.isOk)

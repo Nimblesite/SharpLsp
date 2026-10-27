@@ -164,9 +164,9 @@ let ``a superseded owner adoption never repopulates an empty replacement`` () =
         try
             // An empty selection still triggers ownership: its LastLoadWasEmpty is the
             // loaded state an out-of-solution file adopts against.
-            let! _ = FSharpWorkspace.loadProject state emptyDir
+            let! _ = FSharpWorkspaceLoading.loadProject state emptyDir
             let adoption = FSharpOwningProject.adoptOwner state shapes
-            let! _ = FSharpWorkspace.loadProject state emptyDir
+            let! _ = FSharpWorkspaceLoading.loadProject state emptyDir
             let! inner = adoption
             Assert.True(inner.IsSome, "an out-of-solution file in an empty selection starts an adoption")
             do! inner.Value
@@ -191,9 +191,9 @@ let ``a superseded owner adoption never joins a real replacement workspace`` () 
         let loneDir, shapes = writeLoneProject ()
 
         try
-            let! _ = FSharpWorkspace.loadProject state emptyDir
+            let! _ = FSharpWorkspaceLoading.loadProject state emptyDir
             let adoption = FSharpOwningProject.adoptOwner state shapes
-            let! _ = FSharpWorkspace.loadProject state replacement
+            let! _ = FSharpWorkspaceLoading.loadProject state replacement
             let! inner = adoption
             Assert.True(inner.IsSome, "an out-of-solution file in an empty selection starts an adoption")
             do! inner.Value

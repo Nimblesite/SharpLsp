@@ -10,6 +10,7 @@ mod config;
 mod config_debug;
 mod configuration;
 mod cross_language;
+mod diagnostic_publish;
 mod diagnostics;
 mod document_symbols;
 mod folding;
@@ -20,6 +21,7 @@ mod formatting;
 mod handlers;
 mod hierarchy;
 mod hot_reload;
+mod inbound;
 mod inlay_hints;
 mod nav_cache;
 mod nuget;
@@ -65,7 +67,7 @@ use lsp_types::{
         GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, InlayHintRequest,
         LinkedEditingRange, PrepareRenameRequest, References, Rename, Request as _,
         ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
-        SemanticTokensFullRequest, SemanticTokensRangeRequest, Shutdown, SignatureHelpRequest,
+        SemanticTokensFullRequest, SemanticTokensRangeRequest, SignatureHelpRequest,
         TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
         WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
     },
@@ -78,6 +80,12 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tree_sitter::Tree;
 
+use crate::build_monitor::handle_build_watch;
+use crate::diagnostic_publish::{
+    converge_provisional_publication, republish_open_diagnostics, sidecar_for_uri,
+    trigger_diagnostics,
+};
+use crate::inbound::{diagnostic_requests, inbound_with_inputs, SHUTDOWN_ANSWERED};
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
@@ -622,23 +630,6 @@ struct HostServices {
     solution: workspace_open::SolutionChoice,
 }
 
-/// Route native build input subscriptions without occupying request dispatch.
-fn handle_build_watch(
-    notif: &Notification,
-    services: &mut HostServices,
-    runtime: &tokio::runtime::Runtime,
-    sender: &crossbeam_channel::Sender<Message>,
-) -> bool {
-    if notif.method != "sharplsp/watchBuilds" {
-        return false;
-    }
-    match serde_json::from_value::<build_monitor::WatchTargets>(notif.params.clone()) {
-        Ok(watch) => services.builds.replace(&watch.targets, runtime, sender),
-        Err(error) => warn!(%error, "Invalid build monitoring targets"),
-    }
-    true
-}
-
 /// Apply a `workspace/didChangeConfiguration`, reopening the C# workspace when
 /// the change chose another solution. A rejected change keeps the previous one.
 fn settings_changed(
@@ -815,97 +806,6 @@ fn main_loop(
     }
 
     Ok(())
-}
-
-/// The loop-internal marker that stands in for a `shutdown` the fast path
-/// has already answered.
-const SHUTDOWN_ANSWERED: &str = "sharplsp/shutdownAnswered";
-
-/// Mount diagnostic request work separately from the foreground LSP loop.
-fn diagnostic_requests(
-    runtime: &tokio::runtime::Runtime,
-    engines: [Option<&Arc<SidecarManager>>; 2],
-    vfs: &Arc<Vfs>,
-    connection: &Connection,
-) -> pull_diagnostics::requests::Requests {
-    pull_diagnostics::requests::Requests::new(runtime, engines, vfs, connection.sender.clone())
-}
-
-/// Answer `shutdown` the moment it arrives, ahead of whatever the loop is
-/// busy with. Implements [SHARPLSP-ARCHITECTURE-TIERS].
-///
-/// The loop dispatches one message at a time and a semantic request holds it
-/// for the sidecar's whole round trip, so a `shutdown` queued behind one waited
-/// that long. vscode-languageclient gives a server two seconds to answer before
-/// it declares the stop failed and abandons the restart the user asked for —
-/// on a Windows agent an F# check ran past that and left the client dead.
-/// LSP 3.17 asks the server to answer `shutdown` and accept no further work;
-/// the answer does not have to wait for work already in flight. This thread
-/// reads the client stream ahead of the loop, answers `shutdown` itself, and
-/// hands the loop [`SHUTDOWN_ANSWERED`] in its place so the loop still refuses
-/// everything that follows.
-fn inbound_with_inputs(
-    connection: &Connection,
-    cancellation: lspkit_server::CancellationHandle,
-) -> Result<crossbeam_channel::Receiver<Message>> {
-    let (inbound, inputs) = spawn_shutdown_fast_path(connection, cancellation.clone());
-    pull_diagnostics::state::connect_inputs(inputs, cancellation)?;
-    Ok(inbound)
-}
-
-/// Read client messages while the foreground handler is occupied.
-fn spawn_shutdown_fast_path(
-    connection: &Connection,
-    cancellation: lspkit_server::CancellationHandle,
-) -> (
-    crossbeam_channel::Receiver<Message>,
-    crossbeam_channel::Sender<Message>,
-) {
-    let (to_loop, from_client) = crossbeam_channel::unbounded();
-    let inbound = connection.receiver.clone();
-    let outbound = connection.sender.clone();
-    let inputs = to_loop.clone();
-    // The thread ends with the client stream; nothing waits on it.
-    drop(std::thread::spawn(move || {
-        for msg in &inbound {
-            // [DIAG-ANALYSIS-CANCELLATION] A queued edit may wait for this request's IPC.
-            if let Message::Request(request) = &msg {
-                if let Err(error) =
-                    pull_diagnostics::requests::Requests::observe(&cancellation, request)
-                {
-                    warn!(%error, "Diagnostic request interest unavailable");
-                }
-            }
-            if let Message::Notification(notification) = &msg {
-                pull_diagnostics::requests::Requests::changed(&cancellation, notification);
-                if notification.method == "$/cancelRequest" {
-                    cancellation.cancel_request(&notification.params);
-                }
-            }
-            let forwarded = match msg {
-                Message::Request(req) if req.method == Shutdown::METHOD => {
-                    info!("Shutdown request received");
-                    let resp = Response::new_ok(req.id, serde_json::Value::Null);
-                    if outbound.send(Message::Response(resp)).is_err() {
-                        break;
-                    }
-                    Message::Notification(Notification::new(
-                        SHUTDOWN_ANSWERED.to_string(),
-                        serde_json::Value::Null,
-                    ))
-                }
-                other => other,
-            };
-            if to_loop.send(forwarded).is_err() {
-                break;
-            }
-        }
-        // [SHARPLSP-ARCHITECTURE-TIERS] Input watchers retain the queue sender after EOF.
-        // End the protocol explicitly rather than waiting for their senders to drop.
-        let exit = Notification::new("exit".to_string(), serde_json::Value::Null);
-        let _closed = to_loop.send(Message::Notification(exit));
-    }));
-    (from_client, inputs)
 }
 
 // ── Request Handling ──────────────────────────────────────────────
@@ -1190,37 +1090,6 @@ fn reveals_semantic_state(method: &str) -> bool {
     ) && !method.starts_with("sharplsp/")
 }
 
-/// Re-fetch and republish a document's diagnostics before a semantic response
-/// is sent, while the latest publication is still a provisional tier-2
-/// placeholder. On the serialized sidecar transport this fetch runs strictly
-/// after the request that produced the semantic answer, so the corrected
-/// diagnostic set always precedes a tier-1-revealing answer on the client
-/// stream. [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
-fn converge_provisional_publication(
-    uri: Option<&Uri>,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
-) {
-    let Some(uri) = uri else { return };
-    if !diagnostics::published_set_is_provisional(uri) {
-        return;
-    }
-    let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
-        return;
-    };
-    let Ok(file_path) = paths::uri_to_path(uri.as_str()) else {
-        return;
-    };
-    runtime.block_on(diagnostics::converge_provisional(
-        sidecar,
-        &connection.sender,
-        uri,
-        &file_path,
-    ));
-}
-
 // ── Navigation Request Dispatch ───────────────────────────────────
 
 /// Route navigation requests (definition, typeDefinition, declaration,
@@ -1325,19 +1194,6 @@ fn pick_sidecar<'a>(
     fsharp: Option<&'a Arc<SidecarManager>>,
 ) -> Option<&'a Arc<SidecarManager>> {
     extract_document_uri(req).map_or(csharp, |uri| sidecar_for_uri(&uri, csharp, fsharp))
-}
-
-/// Select the sidecar that owns a document, by file language. F# documents go to
-/// the F# sidecar; everything else (including unknown extensions) to C#.
-fn sidecar_for_uri<'a>(
-    uri: &Uri,
-    csharp: Option<&'a Arc<SidecarManager>>,
-    fsharp: Option<&'a Arc<SidecarManager>>,
-) -> Option<&'a Arc<SidecarManager>> {
-    match LangId::from_uri(uri) {
-        Some(LangId::FSharp) => fsharp,
-        _ => csharp,
-    }
 }
 
 /// Pick primary + fallback sidecar for cross-language navigation.
@@ -1804,63 +1660,6 @@ fn handle_notification(
             // Ignore unknown notifications per LSP spec.
         }
     }
-}
-
-/// Re-publish every open document's diagnostics, returning once each is out: a
-/// framework switch changes which `#if` branches compile, and the editor hears
-/// of the switch only after them. [NETFX-CONTEXT]
-fn republish_open_diagnostics(
-    vfs: &Vfs,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
-) {
-    if pull_diagnostics::state::is_pull() {
-        if let Err(error) = pull_diagnostics::state::invalidate() {
-            warn!(%error, "Framework diagnostic refresh failed");
-        }
-        return;
-    }
-    let open = vfs
-        .iter()
-        .filter_map(|entry| push_target(entry.key(), csharp_sidecar, fsharp_sidecar))
-        .collect();
-    diagnostics::publish_now(runtime, open, &connection.sender);
-}
-
-/// Where a document's diagnostics come from: the sidecar its language routes
-/// to, and its native path.
-fn push_target(
-    uri: &Uri,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) -> Option<diagnostics::PushTarget> {
-    let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar)?;
-    let file_path = paths::uri_to_path(uri.as_str()).ok()?;
-    Some((Arc::clone(sidecar), uri.clone(), file_path))
-}
-
-/// Spawn a background diagnostic request for the given URI.
-///
-/// Routes to the correct sidecar based on the document's language.
-fn trigger_diagnostics(
-    uri: &Uri,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
-) {
-    if pull_diagnostics::state::is_pull() {
-        if let Err(error) = pull_diagnostics::state::invalidate() {
-            warn!(%error, "Diagnostic dependencies could not be invalidated");
-        }
-        return;
-    }
-    let Some((sidecar, uri, file_path)) = push_target(uri, csharp_sidecar, fsharp_sidecar) else {
-        return;
-    };
-    diagnostics::request_in_background(runtime, sidecar, connection.sender.clone(), uri, file_path);
 }
 
 /// Re-parse a document with tree-sitter and cache the result.

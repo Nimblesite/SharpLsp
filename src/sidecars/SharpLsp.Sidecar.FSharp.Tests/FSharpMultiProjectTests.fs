@@ -85,7 +85,7 @@ let private openSolution () =
         let core = writeProject root "Core" "Library.fs" coreSource []
         let app = writeProject root "App" "Program.fs" appSource [ NativePaths.Join("..", "Core", "Core.fsproj") ]
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state root
+        let! loaded = FSharpWorkspaceLoading.loadProject state root
         Assert.True(Result.isOk loaded, $"both projects load: {loaded}")
         return state, root, core, app
     }

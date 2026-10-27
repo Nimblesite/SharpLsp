@@ -64,6 +64,8 @@
     <Compile Include="FSharpProjectGraph.fs" />
     <Compile Include="FSharpSemanticNavigation.fs" />
     <Compile Include="FSharpWorkspace.fs" />
+    <Compile Include="FSharpOwningEpoch.fs" />
+    <Compile Include="FSharpWorkspaceLoading.fs" />
     <Compile Include="FSharpDiagnosticInputs.fs" />
     <Compile Include="FSharpDocuments.fs" />
     <Compile Include="FSharpOwningProject.fs" />

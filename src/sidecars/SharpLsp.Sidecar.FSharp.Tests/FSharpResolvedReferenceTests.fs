@@ -88,7 +88,7 @@ let private openSolution () =
         let app = writeMultiTargeted root "App" appSource [ NativePaths.Join("..", "Lib", "Lib.fsproj") ]
         restore (NativePaths.Resolve(root, "App", "App.fsproj"))
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state root
+        let! loaded = FSharpWorkspaceLoading.loadProject state root
         Assert.True(Result.isOk loaded, $"both projects load: {loaded}")
         return state, root, lib, app
     }
@@ -236,7 +236,7 @@ let private openFanOut () =
             restore (NativePaths.WithExtension(reader, ".fsproj") |> string)
 
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state root
+        let! loaded = FSharpWorkspaceLoading.loadProject state root
         Assert.True(Result.isOk loaded, $"every project loads: {loaded}")
         return state, root, lib, app, modern
     }

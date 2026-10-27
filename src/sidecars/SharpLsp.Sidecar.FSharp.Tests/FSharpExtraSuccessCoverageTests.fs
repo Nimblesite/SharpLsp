@@ -13,7 +13,7 @@ let private loaded =
     lazy
         (let dir = createTestProject ()
          let ws = FSharpWorkspace.create ()
-         (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
+         (FSharpWorkspaceLoading.loadProject ws dir).GetAwaiter().GetResult() |> ignore
          (ws, NativePaths.Resolve(dir, "Library.fs")))
 
 let private missing = "/sharplsp/definitely/not/a/real/file.fs"
@@ -133,7 +133,7 @@ let ``loadProject discovers the fsproj through an explicit slnx`` () =
         let slnx = NativePaths.Resolve(dir, "Solution.slnx")
         File.WriteAllText(slnx, "<Solution>\n  <Project Path=\"TestProject.fsproj\" />\n</Solution>\n")
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws slnx
+        let! result = FSharpWorkspaceLoading.loadProject ws slnx
         Assert.True(match result with | Ok _ -> true | Error _ -> false)
         Assert.True(ws.IsLoaded)
         try Directory.Delete(dir, true) with _ -> ()
@@ -147,7 +147,7 @@ let ``loadProject on a solution with no fsproj reports an error`` () =
         let slnx = NativePaths.Resolve(dir, "Empty.slnx")
         File.WriteAllText(slnx, "<Solution>\n</Solution>\n")
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws slnx
+        let! result = FSharpWorkspaceLoading.loadProject ws slnx
         Assert.True(match result with | Error _ -> true | Ok _ -> false)
         try Directory.Delete(dir, true) with _ -> ()
     }
@@ -172,7 +172,7 @@ let private loadWorkspaceWith (files: (string * string) list) =
     for (n, c) in files do
         File.WriteAllText(NativePaths.Resolve(dir, n), c)
     let ws = FSharpWorkspace.create ()
-    (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
+    (FSharpWorkspaceLoading.loadProject ws dir).GetAwaiter().GetResult() |> ignore
     ws, dir, files |> List.map (fun (n, _) -> NativePaths.Resolve(dir, n))
 
 [<Fact>]

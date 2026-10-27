@@ -87,7 +87,7 @@ let private load (state: FSharpWorkspaceState) (owner: string) (epoch: int) (ct:
         match FSharpDesignTime.builtFramework entry with
         | Some framework -> do! prepareReferencedBuilds state entry framework ct
         | None -> ()
-        return FSharpWorkspace.commitAdoption state epoch owner entry
+        return FSharpOwningEpoch.commitAdoption state epoch owner entry
     }
 
 let private needsOwner (state: FSharpWorkspaceState) (filePath: string) =
@@ -120,7 +120,7 @@ let private adoptNow
 let adoptOwner (state: FSharpWorkspaceState) (filePath: string) : Task<Task option> =
     task {
         let path = NativePaths.NormalizeFullPath filePath
-        let epoch = FSharpWorkspace.currentEpoch state
+        let epoch = FSharpOwningEpoch.currentEpoch state
 
         if needsOwner state path then
             match! tryOwningProject state path with

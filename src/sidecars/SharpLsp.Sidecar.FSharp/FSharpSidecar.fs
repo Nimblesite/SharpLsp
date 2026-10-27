@@ -45,7 +45,7 @@ type FSharpSidecar() as this =
                     // callers break MSBuild-style project resolution —
                     // normalize at the boundary. [GitHub #110]
                     let path = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath path
-                    let! result = FSharpWorkspace.loadWorkspaceWithCancellation workspace path autoRestoreOnOpen ct
+                    let! result = FSharpWorkspaceLoading.loadWorkspaceWithCancellation workspace path autoRestoreOnOpen ct
                     match result with
                     | Ok () ->
                         return Helpers.serializeOk "ok" ct

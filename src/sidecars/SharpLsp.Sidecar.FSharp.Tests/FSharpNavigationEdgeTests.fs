@@ -186,7 +186,7 @@ let ``renaming a binding inside a loaded script rewrites its uses`` () = task {
         let script = NativePaths.Resolve(dir, "Rename.fsx")
         File.WriteAllText(script, "let squared value = value * value\nlet answer = squared 7\n")
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state script
+        let! loaded = FSharpWorkspaceLoading.loadProject state script
 
         match loaded with
         | Error message -> failwith $"script failed to load: {message}"

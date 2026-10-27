@@ -14,7 +14,7 @@ let private loaded =
     lazy
         (let dir = createTestProject ()
          let ws = FSharpWorkspace.create ()
-         (FSharpWorkspace.loadProject ws dir).GetAwaiter().GetResult() |> ignore
+         (FSharpWorkspaceLoading.loadProject ws dir).GetAwaiter().GetResult() |> ignore
          (ws, NativePaths.Resolve(dir, "Library.fs")))
 
 let private missing = "/sharplsp/definitely/not/a/real/file.fs"

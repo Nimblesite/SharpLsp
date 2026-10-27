@@ -49,7 +49,7 @@ let internal loadWorkspace (files: (string * string) list) =
     task {
         let (dir, fsprojPath, paths) = makeProject files
         let state = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject state dir
+        let! result = FSharpWorkspaceLoading.loadProject state dir
         match result with
         | Ok () -> return (state, dir, fsprojPath, paths)
         | Error msg ->
@@ -2340,7 +2340,7 @@ let ``WS2 loadProject reports an error for a directory with no fsproj`` () = tas
     Directory.CreateDirectory(dir) |> ignore
     let state = FSharpWorkspace.create ()
     try
-        let! result = FSharpWorkspace.loadProject state dir
+        let! result = FSharpWorkspaceLoading.loadProject state dir
         match result with
         | Error msg -> Assert.Contains("No .fsproj", msg)
         | Ok () -> Assert.Fail("expected an error for a project-less directory")
@@ -2352,7 +2352,7 @@ let ``WS2 loadProject reports an error for a directory with no fsproj`` () = tas
 let ``WS2 loadProject reports an error for a non-existent path`` () = task {
     // discoverFsprojFiles hits its final else branch: the path does not exist.
     let state = FSharpWorkspace.create ()
-    let! result = FSharpWorkspace.loadProject state "/no/such/place/at/all"
+    let! result = FSharpWorkspaceLoading.loadProject state "/no/such/place/at/all"
     match result with
     | Error msg -> Assert.Contains("does not exist", msg)
     | Ok () -> Assert.Fail("expected an error for a non-existent path")
@@ -2566,7 +2566,7 @@ let ``loadProject reports an error for a malformed fsproj`` () = task {
     File.WriteAllText(NativePaths.Resolve(dir, "Bad.fsproj"), "this is not xml <<<")
     try
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws dir
+        let! result = FSharpWorkspaceLoading.loadProject ws dir
         Assert.True(match result with | Error _ -> true | Ok _ -> false)
     finally
         cleanup dir
@@ -2580,7 +2580,7 @@ let ``loadProject reports an error for a corrupt slnx`` () = task {
     File.WriteAllText(slnx, "<Solution><<<not xml")
     try
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws slnx
+        let! result = FSharpWorkspaceLoading.loadProject ws slnx
         Assert.True(match result with | Error _ -> true | Ok _ -> false)
     finally
         cleanup dir
@@ -2602,7 +2602,7 @@ let ``loadProject discovers and loads the first of several projects`` () = task 
     File.WriteAllText(NativePaths.Resolve(dir, "ProjB", "B.fs"), "module B\nlet b = 2\n")
     try
         let ws = FSharpWorkspace.create ()
-        let! result = FSharpWorkspace.loadProject ws dir
+        let! result = FSharpWorkspaceLoading.loadProject ws dir
         Assert.True(match result with | Ok _ -> true | Error _ -> false)
         Assert.True(ws.IsLoaded)
     finally
@@ -2626,7 +2626,7 @@ let ``loadProject accepts a direct fsproj path and ignores attribute-less Compil
     try
         let ws = FSharpWorkspace.create ()
         // Pass the .fsproj path directly (isFsprojPath true → Ok [| fullPath |]).
-        let! result = FSharpWorkspace.loadProject ws fsproj
+        let! result = FSharpWorkspaceLoading.loadProject ws fsproj
         Assert.True(match result with | Ok _ -> true | Error _ -> false)
         Assert.True(ws.IsLoaded)
     finally
@@ -2638,7 +2638,7 @@ let ``loadProjectWithCancellation reports an error for an invalid path`` () = ta
     let ws = FSharpWorkspace.create ()
     // An embedded NUL makes NativePaths.NormalizeFullPath throw before any guarded branch.
     let! result =
-        FSharpWorkspace.loadProjectWithCancellation ws "bad path" System.Threading.CancellationToken.None
+        FSharpWorkspaceLoading.loadProjectWithCancellation ws "bad path" System.Threading.CancellationToken.None
     Assert.True(match result with | Error _ -> true | Ok _ -> false)
 }
 
@@ -2659,7 +2659,7 @@ let ``analyzeFileOrder skips a compile entry whose file is absent`` () = task {
     // Ghost.fs is intentionally NOT created → collectUndefinedErrors returns [].
     try
         let ws = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspace.loadProject ws dir
+        let! _ = FSharpWorkspaceLoading.loadProject ws dir
         let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
         Assert.NotNull(issues :> obj)
     finally

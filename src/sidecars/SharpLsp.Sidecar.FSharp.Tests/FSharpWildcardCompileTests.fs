@@ -102,7 +102,7 @@ let ``a wildcard fsproj loads MSBuild's ordered Compile items and analyses the g
     try
         let fsproj, alpha = writeWildcardProject root true
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state root
+        let! loaded = FSharpWorkspaceLoading.loadProject state root
         Assert.Equal(Ok(), loaded)
 
         // Glob expansion, Exclude, Remove, Condition and the Directory.Build.props
@@ -124,7 +124,7 @@ let ``a false Condition omits its compile item from the evaluated order`` () = t
     try
         let _fsproj, _alpha = writeWildcardProject root false
         let state = FSharpWorkspace.create ()
-        let! loaded = FSharpWorkspace.loadProject state root
+        let! loaded = FSharpWorkspaceLoading.loadProject state root
         Assert.Equal(Ok(), loaded)
 
         Assert.Equal<string array>(

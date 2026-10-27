@@ -103,3 +103,20 @@ fn publish(root: &std::path::Path, sender: &Sender<Message>) -> bool {
         )))
         .is_ok()
 }
+
+/// Route native build input subscriptions without occupying request dispatch.
+pub(crate) fn handle_build_watch(
+    notif: &Notification,
+    services: &mut super::HostServices,
+    runtime: &Runtime,
+    sender: &Sender<Message>,
+) -> bool {
+    if notif.method != "sharplsp/watchBuilds" {
+        return false;
+    }
+    match serde_json::from_value::<WatchTargets>(notif.params.clone()) {
+        Ok(watch) => services.builds.replace(&watch.targets, runtime, sender),
+        Err(error) => warn!(%error, "Invalid build monitoring targets"),
+    }
+    true
+}

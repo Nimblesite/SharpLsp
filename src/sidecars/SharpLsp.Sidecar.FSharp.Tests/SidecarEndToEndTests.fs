@@ -1219,7 +1219,7 @@ let ``loadProject with missing fsproj returns error`` () = task {
     let empty = NativePaths.Temp($"sharplsp-empty-{Guid.NewGuid():N}")
     Directory.CreateDirectory(empty) |> ignore
     try
-        let! r = FSharpWorkspace.loadProject st empty
+        let! r = FSharpWorkspaceLoading.loadProject st empty
         match r with
         | Error msg -> Assert.Contains("No .fsproj", msg)
         | Ok () -> Assert.Fail("Should fail for missing .fsproj")
