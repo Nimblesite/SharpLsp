@@ -41,11 +41,9 @@ let private scopeChanged previous (current: FSharpProjectOptions) =
 /// [HOVER-FSHARP-OVERLAY]
 let private scriptOptions (state: FSharpWorkspace.FSharpWorkspaceState) (root, persist, previous) ct =
     task {
-        let! input = FSharpWorkspaceRuntime.tryReadSourceAsync state.Overlays root ct
-        let source = input |> Option.defaultValue System.String.Empty
-        let! options, diagnostics = FSharpProjectLoading.scriptOptions state.Checker root source ct
+        let! options, diagnostics, sourceLength = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays root ct
         Serilog.Log.Debug("Script compiler inputs resolved: {SourceLength}, {DiagnosticCount}, {SourceFileCount}",
-            source.Length, diagnostics.Length, options.SourceFiles.Length)
+            sourceLength, diagnostics.Length, options.SourceFiles.Length)
         let changed = persist && scopeChanged previous options
         if persist then state.ProjectOptions <- Some options
         return options, diagnostics, changed

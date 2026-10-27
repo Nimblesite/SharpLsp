@@ -1214,15 +1214,15 @@ let ``workspace returns None for all queries when not loaded`` () = task {
 }
 
 [<Fact>]
-let ``loadProject with missing fsproj returns error`` () = task {
+let ``loadProject on a directory with no fsproj opens an empty workspace`` () = task {
     let st = FSharpWorkspace.create ()
     let empty = NativePaths.Temp($"sharplsp-empty-{Guid.NewGuid():N}")
     Directory.CreateDirectory(empty) |> ignore
     try
         let! r = FSharpWorkspaceLoading.loadProject st empty
-        match r with
-        | Error msg -> Assert.Contains("No .fsproj", msg)
-        | Ok () -> Assert.Fail("Should fail for missing .fsproj")
+        Assert.True(Result.isOk r, $"a directory with no .fsproj is a valid workspace, got {r}")
+        Assert.False(st.IsLoaded, "no project is loaded")
+        Assert.True(st.ProjectOptions.IsNone, "and no project's options stand in for one")
     finally
         try Directory.Delete(empty, true) with _ -> ()
 }

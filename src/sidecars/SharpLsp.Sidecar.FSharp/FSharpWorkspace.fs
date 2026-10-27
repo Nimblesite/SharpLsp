@@ -304,9 +304,25 @@ let private interpretAnswer
         Log.Debug("[F# Check] aborted; parse diagnostics: {@Diagnostics}", parseResults.Diagnostics)
         None
 
+/// A script no loaded project or script compiles: it is never project-owned, so it
+/// checks in its own context, with or without a workspace. [SCRIPT-DETECT] (GitHub #497)
+let internal isLooseScript (state: FSharpWorkspaceState) (filePath: string) =
+    FSharpProjectLoading.isScriptPath filePath
+    && not (optionsFor state filePath |> Option.exists (fun options -> (FSharpWorkspaceRuntime.tryProjectSourcePath options filePath).IsSome))
+
+/// Check a loose script under the options its own directives resolve. [SCRIPT-FSX-OPTIONS]
+let private checkLooseScript (state: FSharpWorkspaceState) (filePath: string) ct =
+    task {
+        let! options, _, _ = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays filePath ct
+        let! parseResults, checkAnswer, source = parseAndCheckOnceWithCancellation state filePath options ct
+        return interpretAnswer parseResults checkAnswer source
+    }
+
 let internal checkFileWithParseWithCancellation (state: FSharpWorkspaceState) (filePath: string) ct =
     task {
-        if not state.IsLoaded then
+        if isLooseScript state filePath then
+            return! checkLooseScript state filePath ct
+        elif not state.IsLoaded then
             return None
         else
             let projectPath = projectFilePath state filePath
@@ -322,7 +338,11 @@ let internal checkFileWithParse state filePath =
 
 let internal checkFileWithSource state filePath source =
     task {
-        if not state.IsLoaded then
+        if isLooseScript state filePath then
+            let! options, _ = FSharpProjectLoading.scriptOptions state.Checker filePath source CancellationToken.None
+            let! parseResults, checkAnswer = state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options)
+            return interpretAnswer parseResults checkAnswer source
+        elif not state.IsLoaded then
             return None
         else
             let projectPath = projectFilePath state filePath
@@ -347,14 +367,8 @@ let internal checkFileWithCancellation (state: FSharpWorkspaceState) (filePath: 
 let internal checkFile state filePath =
     checkFileWithCancellation state filePath CancellationToken.None
 
-let internal parseFsprojOtherFlags path =
-    FSharpProjectLoading.parseFsprojOtherFlags path
-
 let internal parseFsprojAssemblyName path =
     FSharpProjectLoading.parseFsprojAssemblyName path
-
-let internal frameworkReferenceArgs () =
-    FSharpProjectLoading.frameworkReferenceArgs ()
 
 /// Forget `entry` once it fails or is cancelled, so a later request retries; the
 /// value-matched removal never discards an evaluation a reload stored since. It runs

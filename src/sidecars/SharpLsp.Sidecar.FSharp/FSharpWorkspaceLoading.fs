@@ -39,8 +39,11 @@ let private clearWorkspace (state: FSharpWorkspaceState) =
 let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string array) autoRestore ct =
     task {
         if fsprojFiles.Length = 0 then
+            // A folder with no F# project is a valid workspace: each script in it
+            // answers from its own context. [SCRIPT-DEGRADE] [SCRIPT-DETECT]
             clearWorkspace state
-            return Error "No .fsproj found"
+            Log.Debug("F# workspace has no F# projects")
+            return Ok()
         else
             try
                 state.CompileSources.Clear()

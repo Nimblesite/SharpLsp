@@ -4,6 +4,7 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpScriptTests
 
 open System
 open System.IO
+open System.Threading
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.Common
@@ -85,5 +86,58 @@ let ``fsx defines INTERACTIVE and EDITING but not COMPILED`` () =
         Assert.Contains("--define:INTERACTIVE", otherOptions)
         Assert.Contains("--define:EDITING", otherOptions)
         Assert.DoesNotContain("--define:COMPILED", otherOptions)
+        Directory.Delete(dir, true)
+    }
+
+/// The markdown a hover at `line`, `character` of `file` shows; empty when none.
+let private hoverText ws file line character =
+    task {
+        let! hover = FSharpWorkspace.getHover ws file line character
+        return hover |> Option.map (fun (markdown, _, _, _, _) -> markdown) |> Option.defaultValue ""
+    }
+
+/// A folder holding only a script is a valid workspace, and the script answers from
+/// its own context: an `.fsx` is never project-owned. Implements [SCRIPT-DEGRADE],
+/// [SCRIPT-DETECT] and [SCRIPT-FSX-OPTIONS] (GitHub #497).
+[<Fact>]
+let ``a script in a folder with no project answers hover and completion`` () =
+    task {
+        let dir = tempDir ()
+        let script = write dir "build.fsx" "let square x = x * x\nlet nine = square 3\n"
+        let ws = FSharpWorkspace.create ()
+
+        let! opened = FSharpWorkspaceLoading.loadWorkspaceWithCancellation ws dir false CancellationToken.None
+        Assert.True(Result.isOk opened, $"a folder with no project is a valid workspace, got {opened}")
+
+        let! hover = hoverText ws script 1 13
+        Assert.Contains("square", hover)
+        Assert.Contains("int -> int", hover)
+        let! completions = FSharpCompletion.getCompletions ws script 1 13
+        Assert.Contains("square", completions |> List.map _.Label)
+        Directory.Delete(dir, true)
+    }
+
+/// A project in the folder compiles only its own files: a script beside it that it
+/// does not list answers from the script's own context, never the project's
+/// (GitHub #497).
+[<Fact>]
+let ``a script beside a project that does not compile it answers from its own context`` () =
+    task {
+        let dir = tempDir ()
+        let project = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><Compile Include=\"Library.fs\" /></ItemGroup></Project>"
+        write dir "App.fsproj" project |> ignore
+        let library = write dir "Library.fs" "module Library\nlet answer = 42\n"
+        let script = write dir "publish.fsx" "let triple x = x * 3\nlet nine = triple 3\n"
+        let ws = FSharpWorkspace.create ()
+
+        let! opened = FSharpWorkspaceLoading.loadWorkspaceWithCancellation ws dir true CancellationToken.None
+        Assert.True(Result.isOk opened, $"the project loads, got {opened}")
+        Assert.True(ws.IsLoaded, "the project is the workspace")
+
+        let! scriptHover = hoverText ws script 1 13
+        Assert.Contains("triple", scriptHover)
+        Assert.Contains("int -> int", scriptHover)
+        let! libraryHover = hoverText ws library 1 5
+        Assert.Contains("answer", libraryHover)
         Directory.Delete(dir, true)
     }
