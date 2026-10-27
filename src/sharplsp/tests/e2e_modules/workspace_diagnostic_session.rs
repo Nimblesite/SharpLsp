@@ -159,11 +159,15 @@ fn poll_pushes(
 ) {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
-        let _ = observed_request(
+        // The pull only pumps the pushes; a completed watched-file mutation may
+        // correctly supersede it, and the standard retrigger is retried.
+        // [DIAG-LSP-REFRESH]
+        let _ = completed_pull_before(
             client,
             "workspace/diagnostic",
             json!({"previousResultIds":[]}),
             traffic,
+            deadline,
         );
         if uris.iter().all(|uri| {
             last_push(traffic, uri).is_some_and(|message| {
