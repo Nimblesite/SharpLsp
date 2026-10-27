@@ -15,6 +15,7 @@ use super::protocol::Envelope;
 use super::transport::FramedTransport;
 
 mod exchange;
+mod preemption;
 mod recovery;
 mod shutdown;
 
@@ -24,6 +25,9 @@ mod shutdown;
     reason = "test code — panics are the correct failure mode"
 )]
 mod arrival_order_tests;
+
+#[cfg(test)]
+mod preemption_tests;
 
 /// Maximum backoff delay for crash recovery. `[SIDECAR-RECOVERY-BACKOFF]`
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
@@ -77,6 +81,8 @@ pub struct SidecarManager {
     ever_connected: AtomicBool,
     /// Compiler-specific session metadata, with weak access to canonical VFS inputs.
     session: recovery::SessionInputs,
+    /// Code lenses an interactive request may preempt ([SHARPLSP-FEATURES-CODE-LENS], #504).
+    preemption: preemption::Preemption,
     /// Source ownership for replaying open documents to the correct compiler.
     language: Option<crate::tree_sitter_parse::LangId>,
     /// Out-of-band event lines the sidecar writes to its stdout after the
@@ -119,6 +125,7 @@ impl SidecarManager {
             monitored: AtomicBool::new(false),
             ever_connected: AtomicBool::new(false),
             session: recovery::SessionInputs::default(),
+            preemption: preemption::Preemption::default(),
             language: None,
             events_tx,
             events_rx: std::sync::Mutex::new(Some(events_rx)),
@@ -311,6 +318,11 @@ impl SidecarManager {
         if self.is_shutting_down() {
             bail!("{} sidecar is shutting down", self.name);
         }
+        // An interactive request cancels the code lenses ahead of it before it
+        // waits its turn; a lens waits as a preemptible one. [SHARPLSP-FEATURES-CODE-LENS]
+        self.preemption.preempt_for(method);
+        let background = self.preemption.begin(method, cancel);
+        let cancel = background.as_ref().map(|work| &work.token).or(cancel);
         let mut transport_guard =
             lspkit_sidecar::cancellation::until_cancelled(self.transport.lock(), cancel).await?;
         self.session.remember(method, &payload)?;

@@ -18,6 +18,9 @@ use crate::vfs::Vfs;
 
 mod interest;
 
+#[cfg(test)]
+mod rpc_error_tests;
+
 /// Backend wiring, retained independently of a single request's lifetime.
 #[derive(Clone)]
 struct Context {
@@ -262,6 +265,7 @@ fn document_request(request: Request, context: &Context, snapshot: &Snapshot) ->
             &context.runtime,
             sidecar,
             snapshot.cancellation(),
+            &context.sender,
         )
     } else {
         super::handle_document_diagnostic(request, &context.vfs, snapshot)
@@ -278,6 +282,11 @@ fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
         _ if compiler_inputs_unavailable(error) => JsonRpcError::new(-32603, error.to_string()),
         _ if error.downcast_ref::<serde_json::Error>().is_some() => {
             JsonRpcError::new(-32602, "Invalid diagnostic parameters")
+        }
+        // The server cancelled a lens, and has already asked for it again: no
+        // diagnostic retrigger applies. [SHARPLSP-FEATURES-CODE-LENS]
+        _ if error.is::<crate::code_lens::LensPreempted>() => {
+            JsonRpcError::new(-32802, crate::code_lens::LensPreempted.to_string())
         }
         _ => JsonRpcError::new(-32802, "Diagnostic snapshot unavailable or superseded")
             .with_data(json!({"retriggerRequest": true})),

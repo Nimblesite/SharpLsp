@@ -30,11 +30,14 @@ let private isLensable (su: FSharpSymbolUse) : bool =
         | _ -> false)
 
 /// References to one definition symbol in every project, excluding the definition
-/// itself: a use in one project of a symbol from another counts there.
-let private referenceCount (projects: FSharpCheckProjectResults list) (symbol: FSharpSymbol) : int =
+/// itself: a use in one project of a symbol from another counts there. The count is
+/// synchronous, so it observes cancellation before each symbol and inside each scan:
+/// a lens preempted mid-count stops there instead of finishing it (#504).
+let private referenceCount (projects: FSharpCheckProjectResults list) (ct: CancellationToken) (symbol: FSharpSymbol) : int =
+    ct.ThrowIfCancellationRequested()
     projects
     |> List.sumBy (fun project ->
-        project.GetUsesOfSymbol(symbol)
+        project.GetUsesOfSymbol(symbol, cancellationToken = ct)
         |> Array.filter (fun u -> not u.IsFromDefinition)
         |> Array.length)
 
@@ -45,7 +48,7 @@ let private referenceCount (projects: FSharpCheckProjectResults list) (symbol: F
 /// "0 references | 1 reference" above a single declaration. Summing them is
 /// what Roslyn's count for a class already is: uses of the name and
 /// constructions of it, together.
-let private lensesByAnchor (projects: FSharpCheckProjectResults list) (definitions: FSharpSymbolUse[]) =
+let internal lensesByAnchor (projects: FSharpCheckProjectResults list) (ct: CancellationToken) (definitions: FSharpSymbolUse[]) =
     definitions
     |> Array.filter (fun su ->
         let anchor = su.Range
@@ -56,7 +59,7 @@ let private lensesByAnchor (projects: FSharpCheckProjectResults list) (definitio
     |> Array.map (fun ((line, column), group) ->
         { Line = line - 1
           Character = column
-          Title = group |> Array.sumBy (fun su -> referenceCount projects su.Symbol) |> formatTitle })
+          Title = group |> Array.sumBy (fun su -> referenceCount projects ct su.Symbol) |> formatTitle })
     |> Array.toList
 
 /// Compiler checks retain the editor request's lifetime across the entire query scope.
@@ -69,10 +72,10 @@ let private checkLenses state filePath ct =
             let! projects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state filePath) ct
             ct.ThrowIfCancellationRequested()
             return
-                checkResults.GetAllUsesOfAllSymbolsInFile()
+                checkResults.GetAllUsesOfAllSymbolsInFile(ct)
                 |> Seq.filter isLensable
                 |> Seq.toArray
-                |> lensesByAnchor projects
+                |> lensesByAnchor projects ct
     }
 
 /// Cancellation remains a failed request, never a successful empty lens list.
