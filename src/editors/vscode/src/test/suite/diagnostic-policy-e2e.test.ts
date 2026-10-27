@@ -12,6 +12,7 @@ import {
   activateAccuracyFixture,
   assertFileStillClosed,
   assertFullDiagnosticReport,
+  describeWorkspaceReport,
   teardownAccuracyFixture,
   type AccuracyFixture,
 } from './diagnostic-accuracy-fixtures';
@@ -58,8 +59,9 @@ function assertPolicyDiagnostics(
   diagnostics: readonly Diagnostic[],
   errors: number,
   warnings: number,
+  found = '',
 ): void {
-  assert.equal(diagnostics.length, errors + warnings);
+  assert.equal(diagnostics.length, errors + warnings, found);
   assert.equal(diagnostics.filter((item) => item.severity === 1).length, errors);
   assert.equal(diagnostics.filter((item) => item.severity === 2).length, warnings);
   const warning = POLICY_CASES.find(
@@ -101,7 +103,7 @@ async function assertWorkspacePolicy(
   });
   assert.ok(report.items.every((item) => item.kind === 'full'));
   const diagnostics = report.items.flatMap((item) => (item.kind === 'full' ? item.items : []));
-  assertPolicyDiagnostics(fixture, diagnostics, errors, warnings);
+  assertPolicyDiagnostics(fixture, diagnostics, errors, warnings, describeWorkspaceReport(report));
 }
 
 /** Wait for actual Problems convergence, without opening the source that owns the errors. */

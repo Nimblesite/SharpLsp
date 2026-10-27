@@ -129,6 +129,22 @@ export function assertFullDiagnosticReport(
   assert.ok(report.resultId);
 }
 
+/** Every document's diagnostics by code, severity and line, so a count mismatch names them. */
+export function describeWorkspaceReport(report: WorkspaceDiagnosticReport): string {
+  return report.items
+    .map((item) => {
+      const found =
+        item.kind === 'full'
+          ? item.items.map(
+              (diagnostic) =>
+                `${String(diagnostic.code)}/${String(diagnostic.severity)}@${String(diagnostic.range.start.line)}`,
+            )
+          : ['unchanged'];
+      return `${item.uri}: ${found.join(', ')}`;
+    })
+    .join('; ');
+}
+
 /** Read the first successful closed-file report without changing its assertions or retry policy. */
 export async function readClosedDiagnosticReport(
   fixture: AccuracyFixture,
