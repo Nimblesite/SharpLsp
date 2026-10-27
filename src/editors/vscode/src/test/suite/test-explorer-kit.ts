@@ -304,6 +304,35 @@ export async function discoverSolution(
   return pollUntilDiscovered(api.testController, expected, timeoutMs);
 }
 
+/** Load a solution over an EMPTY tree, letting the reactive sweep it starts settle. */
+export async function loadIntoEmptyTree(
+  api: SharpLspExtensionApi,
+  solutionPath: string,
+): Promise<void> {
+  await api.explorerProvider.loadSolution(solutionPath);
+  await drainDiscovery(() => {
+    api.testController.items.replace([]);
+  }, api.testController);
+}
+
+/** Run ONE discovery sweep, as the Testing view's refresh does, to its end. */
+export async function sweepOnce(api: SharpLspExtensionApi): Promise<void> {
+  await api.testController.activateAndDiscover();
+  await api.testController.whenIdle();
+}
+
+/**
+ * {@link loadIntoEmptyTree}, then {@link sweepOnce}: what the Testing view shows
+ * for `solutionPath` alone, with nothing an earlier sweep left standing.
+ */
+export async function discoverIntoEmptyTree(
+  api: SharpLspExtensionApi,
+  solutionPath: string,
+): Promise<void> {
+  await loadIntoEmptyTree(api, solutionPath);
+  await sweepOnce(api);
+}
+
 /** The controller's profile of a given kind, asserted present. */
 export function profileOfKind(
   controller: SharpLspTestController,

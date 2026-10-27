@@ -7,6 +7,7 @@ import {
   type DocumentDiagnosticParams,
   type DocumentDiagnosticReport,
   type LanguageClient,
+  type PreviousResultId,
   type WorkspaceDiagnosticParams,
   type WorkspaceDiagnosticReport,
 } from 'vscode-languageclient/node';
@@ -45,6 +46,16 @@ export async function firstDiagnosticReport<
   );
   assert.ok(report);
   return report;
+}
+
+/** One solution-wide pull, retried only when the server asks for it again. */
+export async function workspaceReport(
+  client: LanguageClient,
+  previousResultIds: PreviousResultId[] = [],
+): Promise<WorkspaceDiagnosticReport> {
+  return await firstDiagnosticReport<WorkspaceDiagnosticReport>(client, 'workspace/diagnostic', {
+    previousResultIds,
+  });
 }
 
 /** Cancellation, malformed requests and every other error remain immediate failures. */
@@ -334,12 +345,17 @@ export function assertFileStillClosed(fixture: AccuracyFixture): void {
 }
 
 /** Assert clean compiler truth immediately after the caller's positive readiness barrier. */
-export function assertNoCompilerErrors(uri: vscode.Uri): void {
-  assert.deepEqual(
-    vscode.languages
-      .getDiagnostics(uri)
-      .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error),
-    [],
+export async function assertNoCompilerErrors(uri: vscode.Uri): Promise<void> {
+  // Problems follows the client's OWN pull, which can land after a test's direct one.
+  await pollUntilResult(
+    async () =>
+      vscode.languages
+        .getDiagnostics(uri)
+        .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error),
+    (errors) => errors.length === 0,
+    LSP_RESPONSE_MS,
+    undefined,
+    `Problems to show no compiler error for ${uri.fsPath}`,
   );
 }
 

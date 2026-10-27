@@ -28,6 +28,7 @@ mod nuget;
 mod paths;
 mod postfix_completion;
 mod profiler;
+mod project_edit;
 mod pull_diagnostics;
 mod razor;
 mod semantic;
@@ -1178,6 +1179,10 @@ fn handle_custom_request(
             connection.sender.clone(),
             csharp_sidecar,
         ),
+        // MSBuild compile-order editing (GitHub #493, [SE-ADD-FILE-REQUEST])
+        "sharplsp/project/addCompileItem" => {
+            project_edit::handle_add_compile_item(req, runtime, csharp_sidecar)
+        }
         _ => {
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))

@@ -85,7 +85,7 @@ import {
 import { assertContainsAll, assertContainsNone } from './test-helpers.js';
 import { DOTNET_CLI_MS } from './test-timeouts';
 import { useWarmFixture } from './test-explorer-harness';
-import { buildsLogged, writeBuildCounter } from './dotnet-project-kit';
+import { buildsLogged, resetBuildCounter, writeBuildCounter } from './dotnet-project-kit';
 
 /** The two test projects, so "one report per test project" has a number. */
 const TEST_PROJECTS = 2;
@@ -1335,7 +1335,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     const unselectedAssembly = joinPath(root, 'CoverCs', 'bin', 'Debug', 'net10.0', 'CoverCs.dll');
     const unselectedStamp = fs.statSync(unselectedAssembly).mtimeMs;
     const cacheBefore = new Map(api.testController.cachedResults);
-    fs.writeFileSync(counter, '');
+    resetBuildCounter(counter);
 
     // Interaction 1 — the Testing view shows one root per test project, and the
     // user presses the coverage action on the F# one.

@@ -23,6 +23,7 @@ import { SHUTDOWN_DEADLINE_MS, ShutdownDeadline, UnansweredStops } from './dap-s
 import { belongsToUserCode, carriesUserCode } from './dap-statement';
 import { VariableExpander } from './dap-variables';
 import { DapHotReload } from './dap-hot-reload';
+import { rescuedThreads } from './dap-threads';
 import { error, traceInfo } from './log';
 import { getErrorMessage } from './utils';
 import { err, ok, type Result } from './result';
@@ -596,7 +597,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       this.pendingStackArgs.delete(requestSeq);
       return;
     }
-    if (this.retriedOnStoppedThread(message)) return;
+    if (this.retriedOnStoppedThread(message) || rescuedThreads(this, message)) return;
     this.emit(this.handles.translateResponseBody(enrichResponse(message, this.latestChildCaps)));
   }
 

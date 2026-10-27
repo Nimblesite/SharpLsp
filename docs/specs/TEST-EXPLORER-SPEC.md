@@ -132,7 +132,9 @@ than blanking the Testing view on a transient `dotnet` failure.
 A KILLED `dotnet` process (timeout or signal) is always fatal to a sweep: its stdout is
 truncated at an arbitrary point, so a partial listing must never be treated as complete. A
 non-zero EXIT is tolerated when the output still carried a parseable listing — a sibling
-project failing to build must not hide the tests that did enumerate.
+project failing to build must not hide the tests that did enumerate. The failure itself still
+reaches the log as a warning carrying the run's error lines: the tests the run never reached
+must not vanish without a word.
 
 Assemblies are handed to `dotnet vstest` in batches whose joined argument text stays under
 the Windows 32 767-character command-line ceiling; a solution with dozens of test projects

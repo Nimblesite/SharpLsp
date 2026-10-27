@@ -27,8 +27,10 @@ import {
   EXTENSION_ID,
   removeDirRecursive,
   assertContainsAll,
+  pollUntilResult,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
+import { compileIncludes } from './project-xml-kit';
 import {
   newSolutionArgs,
   newProjectArgs,
@@ -38,7 +40,7 @@ import {
   findProjectFile,
   generateFileContent,
 } from '../../scaffolding.js';
-import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 const CMD_NEW_FILE = 'sharplsp.newFile';
 const CMD_NEW_PROJECT = 'sharplsp.newProject';
@@ -259,6 +261,59 @@ suite('Scaffolding E2E (drive real commands)', () => {
     // Empty-name path is reached: both prompts ran.
     assert.strictEqual(stubs.log.quickPickItems.length, 1);
     assert.strictEqual(stubs.log.inputBoxOptions.length, 1);
+  });
+
+  // [SE-ADD-FILE-CSHARP]: the C# auto-add rides the MSBuild-DOM edit. The old
+  // text splicer hunted lastIndexOf('</ItemGroup>'), so a comment that MENTIONS
+  // the tag sent the splice into the comment. The DOM cannot be confused.
+  test('newFile auto-adds to the explicit-compile csproj even past a comment trap', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const folder = workspaceFolder();
+    const name = `ScaffTmp_Trap_${uniqueToken()}`;
+    track(path.join(folder, `${name}.cs`));
+    const trapPath = track(path.join(folder, `${name}.csproj`));
+    fs.writeFileSync(
+      trapPath,
+      [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        '  <ItemGroup>',
+        '    <!-- generated: the real </ItemGroup> is after the items -->',
+        '    <Compile Include="Program.cs" />',
+        '  </ItemGroup>',
+        '</Project>',
+        '',
+      ].join('\n'),
+    );
+
+    stubs.queuePick('Class').queueInput(name);
+    await vscode.commands.executeCommand(CMD_NEW_FILE);
+
+    // The trap project (explicit Compile items) took the file. The project edit
+    // completes after the new file opens, so wait for it to land.
+    await pollUntilResult(
+      async () => compileIncludes(trapPath),
+      (includes) => includes.includes(`${name}.cs`),
+      // The edit queues in the C# compiler behind its reload of the folder the
+      // new file landed in: a project load, not a workbench command.
+      SIDECAR_COLD_MS,
+      100,
+      'the new file in the trap project',
+    );
+    const xml = fs.readFileSync(trapPath, 'utf-8');
+    assert.ok(xml.includes(`<Compile Include="${name}.cs" />`), `item inserted: ${xml}`);
+    // ...before the last item (the default position keeps the entry-point-ish
+    // file last), with the comment intact.
+    assert.deepStrictEqual(compileIncludes(trapPath), [`${name}.cs`, 'Program.cs']);
+    assert.ok(
+      xml.includes('<!-- generated: the real </ItemGroup> is after the items -->'),
+      'the comment survives verbatim',
+    );
+    // The glob-managed workspace fixture project was not mutated.
+    const fixtures = path.join(folder, 'TestFixtures.csproj');
+    assert.ok(
+      !fs.readFileSync(fixtures, 'utf-8').includes(`${name}.cs`),
+      'glob projects must stay untouched',
+    );
   });
 
   // ── newSolutionArgs / newProjectArgs pure vectors (asserted alongside flows) ──

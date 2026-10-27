@@ -23,7 +23,7 @@ import {
 } from './debug-test-kit';
 import { DebugSessionRecorder } from './run-debug-kit';
 import { addDebugGraph, updateDebugGraph, type DebugGraph } from './debug-test-graph-fixture';
-import { buildsLogged } from './dotnet-project-kit';
+import { buildsLogged, resetBuildCounter } from './dotnet-project-kit';
 import {
   activateTestExplorer,
   discoverSolution,
@@ -120,7 +120,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
         const stamps = graph.assemblies.map((file) => fs.statSync(file).mtimeMs);
         const unrelated = api.testController.getResult('Other.Unselected');
         fs.writeFileSync(graph.siblingFile, 'deliberately broken unrelated project');
-        fs.writeFileSync(graph.counter, '');
+        resetBuildCounter(graph.counter);
         await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
         const cached = api.testController.getResult(id);
         assert.equal(cached?.outcome, 'passed', 'the fixture passes without the debugger');

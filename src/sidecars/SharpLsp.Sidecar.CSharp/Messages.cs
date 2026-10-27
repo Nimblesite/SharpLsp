@@ -553,4 +553,41 @@ internal sealed class PackageEditResult
     /// <summary>Human-readable description of what happened.</summary>
     [Key(1)]
     public string Message { get; set; } = "";
+
+    /// <summary>A result that changed the file on disk.</summary>
+    internal static PackageEditResult Changed(string message)
+    {
+        return new PackageEditResult { Modified = true, Message = message };
+    }
+
+    /// <summary>A result describing why the file was left untouched.</summary>
+    internal static PackageEditResult Unchanged(string message)
+    {
+        return new PackageEditResult { Modified = false, Message = message };
+    }
+}
+
+// ── Compile Item Insertion (GitHub #493, [SE-ADD-FILE-REQUEST]) ─────
+
+// Insert a <Compile Include="..." /> item into an MSBuild project file at a
+// chosen position in compile order. Shares PackageEditResult as its wire
+// result: the same modified/message contract as the package edit.
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class CompileInsertRequest
+{
+    /// <summary>Absolute path to the .csproj / .fsproj file to edit.</summary>
+    [Key(0)]
+    public string FilePath { get; set; } = "";
+
+    /// <summary>Project-relative include of the new source file.</summary>
+    [Key(1)]
+    public string Include { get; set; } = "";
+
+    /// <summary>Existing Compile include to anchor to (empty for the default position).</summary>
+    [Key(2)]
+    public string AnchorInclude { get; set; } = "";
+
+    /// <summary><c>default</c> (before the last Compile item) | <c>before</c> | <c>after</c> the anchor.</summary>
+    [Key(3)]
+    public string Position { get; set; } = "";
 }

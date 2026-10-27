@@ -37,11 +37,12 @@ import {
 } from './dotnet-project-kit';
 import {
   collectLeafIds,
+  discoverIntoEmptyTree,
   discoverSolution,
-  drainDiscovery,
   errorTextOf,
   rootsOf,
 } from './test-explorer-kit';
+import { loggedLine } from './log-kit';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 import { useScratchParent } from './test-explorer-harness';
 
@@ -58,6 +59,17 @@ const TEST_SOURCE = [
   '}',
   '',
 ].join('\n');
+
+/** A real xUnit test project `name` under `root`, its one source file holding `source`. */
+function xunitProject(root: string, name: string, source: string): string {
+  return writeProject(
+    path.join(root, name),
+    `${name}.csproj`,
+    projectXml(XUNIT_PACKAGES),
+    'CalculatorTests.cs',
+    source,
+  );
+}
 
 /** The id the tree must carry once the solution is one `dotnet` accepts. */
 const EXPECTED_ID = 'Cs.Refused.Fixtures.CalculatorTests.Adds_TwoNumbers';
@@ -106,13 +118,7 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
     this.timeout(FIXTURE_BUILD_MS * 2);
 
     const root = path.join(parent, 'refused');
-    const project = writeProject(
-      path.join(root, 'RefusedTests'),
-      'RefusedTests.csproj',
-      projectXml(XUNIT_PACKAGES),
-      'CalculatorTests.cs',
-      TEST_SOURCE,
-    );
+    const project = xunitProject(root, 'RefusedTests', TEST_SOURCE);
     const unconfigured = writeUnconfiguredSolution(
       root,
       'Refused',
@@ -134,12 +140,7 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
 
     // 2. The same solution through the Testing view: one error row carrying the
     //    diagnostic AND the remedy, never a blank tree ([TEST-MTP-MODULES]).
-    await api.explorerProvider.loadSolution(unconfigured);
-    await drainDiscovery(() => {
-      api.testController.items.replace([]);
-    }, api.testController);
-    await api.testController.activateAndDiscover();
-    await api.testController.whenIdle();
+    await discoverIntoEmptyTree(api, unconfigured);
     const rows = rootsOf(api.testController.items);
     assert.equal(
       rows.length,
@@ -245,17 +246,47 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
     assert.deepStrictEqual([...listing.warnings], [], 'and an advisory is not a discovery failure');
 
     // And in the view: no row at all, not an error row.
-    await api.explorerProvider.loadSolution(solution);
-    await drainDiscovery(() => {
-      api.testController.items.replace([]);
-    }, api.testController);
-    await api.testController.activateAndDiscover();
-    await api.testController.whenIdle();
+    await discoverIntoEmptyTree(api, solution);
     const rows = rootsOf(api.testController.items);
     assert.deepStrictEqual(
       rows.map((row) => `${row.label}: ${errorTextOf(row)}`),
       [],
       'the Testing view shows no row for a healthy solution with no test',
+    );
+  });
+
+  test('a sibling that fails to build keeps the tests that listed and says why the rest are missing', async function () {
+    this.timeout(FIXTURE_BUILD_MS * 2);
+
+    // Two test projects, one of which does not compile. `dotnet` exits
+    // non-zero having listed the other one, and that partial listing is kept
+    // ([TEST-DISCOVERY-FQN]). On Windows a counted build collided on its log
+    // and failed exactly like this, and its tests vanished without a word (#507).
+    const root = path.join(parent, 'partial');
+    const listed = xunitProject(root, 'ListedTests', TEST_SOURCE);
+    const broken = xunitProject(root, 'BrokenTests', 'this is deliberately not compilable C#');
+    const solution = await createSolution(root, 'Partial', [listed, broken]);
+
+    // 1. The listing keeps what enumerated, and carries the compiler's reason.
+    const partial = await listTests(solution);
+    assert.deepStrictEqual([...partial.names], [EXPECTED_ID], 'the project that built still lists');
+    assert.equal(partial.ok, true, 'a partial listing is kept, never thrown away');
+    assert.equal(partial.byAssembly.length, 1, 'attributed to the one assembly that built');
+    const warnings = partial.warnings.join('\n');
+    assert.ok(warnings.includes('BrokenTests.csproj'), `the failed project is named: ${warnings}`);
+    assert.ok(warnings.includes('error CS'), `with the compiler's own error: ${warnings}`);
+
+    // 2. The Testing view shows the test that listed, and the log says why the
+    //    sibling's tests are not beside it.
+    await discoverIntoEmptyTree(api, solution);
+    assert.deepStrictEqual(
+      collectLeafIds(api.testController.items),
+      [EXPECTED_ID],
+      'the view shows the test that listed',
+    );
+    await loggedLine(
+      (line) => line.includes('Test discovery (') && line.includes('BrokenTests.csproj'),
+      'a discovery log line naming the project that failed to build',
     );
   });
 

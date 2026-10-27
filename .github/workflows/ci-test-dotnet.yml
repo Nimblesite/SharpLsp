@@ -26,12 +26,14 @@ jobs:
     name: Sidecars
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # The whole sidecar solution runs here (Common + C# + F# in parallel) under
-    # code coverage. The C# assembly alone is 833 real-SDK cases: ~4m15s on a
-    # 10-core host without coverage, so the 4-core runner with coverlet, a cold
-    # NuGet cache for the Razor/ASP.NET fixtures and the concurrent restore
-    # suites needs headroom above the old 12-minute cap (PR #494 hit it while
-    # main's smaller suite finished in 6m47s).
-    timeout-minutes: 20
+    # code coverage. The C# assembly alone is 851 real-SDK cases: ~4m15s on a
+    # 10-core host without coverage, but 13m55s on the 4-core runner with
+    # coverlet, a cold NuGet cache for the Razor/ASP.NET fixtures and the
+    # concurrent restore suites - and a slower runner adds a third to every
+    # assembly. PR #494 hit the old 12-minute cap; PR #506 hit 20 minutes with
+    # every test still passing. A cancelled job costs a whole rerun; headroom
+    # costs nothing on a normal run.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

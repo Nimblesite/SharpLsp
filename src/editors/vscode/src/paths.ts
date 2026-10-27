@@ -94,6 +94,14 @@ export function relativePath(from: string, to: string): string {
   return nodePath.relative(from, to);
 }
 
+/**
+ * The path from `from` to `to` with `/` separators: how a project file spells
+ * an item so it reads the same on every OS. [SHARPLSP-ARCHITECTURE-PATHS]
+ */
+export function portableRelativePath(from: string, to: string): string {
+  return relativePath(from, to).split(nodePath.sep).join(nodePath.posix.sep);
+}
+
 /** True when `value` is absolute. [SHARPLSP-ARCHITECTURE-PATHS] */
 export function isAbsolutePath(value: string): boolean {
   return nodePath.isAbsolute(value);

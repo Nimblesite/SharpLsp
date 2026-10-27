@@ -19,6 +19,7 @@ import {
   assertNoCompilerErrors,
   firstDiagnosticReport,
   teardownAccuracyFixture,
+  workspaceReport,
   type AccuracyFixture,
 } from './diagnostic-accuracy-fixtures';
 import { diagnosticCode } from './document-anchors';
@@ -164,7 +165,7 @@ export async function assertLintProblems(
   );
   assert.equal(found.length, count);
   for (const item of found) assertLintEditorItem(item, range);
-  assertNoCompilerErrors(fixture.closedUri);
+  await assertNoCompilerErrors(fixture.closedUri);
 }
 
 /** The actual editor preserves the same warning source, severity, range and message. */
@@ -230,11 +231,7 @@ export async function assertLintDocument(
 export async function assertLintWorkspace(fixture: AccuracyFixture, count: number): Promise<void> {
   const client = fixture.api.getLspClient();
   assert.ok(client);
-  const report = await firstDiagnosticReport<WorkspaceDiagnosticReport>(
-    client,
-    'workspace/diagnostic',
-    { previousResultIds: [] },
-  );
+  const report = await workspaceReport(client);
   assertLintWorkspaceReport(fixture, report, count);
 }
 

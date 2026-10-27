@@ -6,6 +6,7 @@ import { info } from './log';
 import { findSolutions } from './solution.js';
 import * as state from './state.js';
 import { getErrorMessage } from './utils.js';
+import { addFileToNearestProject } from './add-source-file.js';
 import {
   CMD_NEW_SOLUTION,
   CMD_NEW_PROJECT,
@@ -257,52 +258,14 @@ async function newFile(): Promise<void> {
   edit.insert(uri, new vscode.Position(0, 0), content);
   await vscode.workspace.applyEdit(edit);
 
-  // Auto-add file to the nearest .csproj if it uses explicit <Compile> includes.
-  await autoAddFileToProject(filePath);
-
   await vscode.window.showTextDocument(uri);
-}
 
-/** Try to add a file to the nearest project if it uses explicit Compile includes. */
-async function autoAddFileToProject(filePath: string): Promise<void> {
-  try {
-    const dir = directoryOf(filePath);
-    const files = await vscode.workspace.findFiles(new vscode.RelativePattern(dir, '*.csproj'));
-    if (files.length === 0) {
-      return;
-    }
-
-    const projPath = files[0]?.fsPath;
-    if (projPath === undefined) {
-      return;
-    }
-
-    const projContent = fs.readFileSync(projPath, 'utf-8');
-    // Only add if project uses explicit Compile includes (not glob patterns).
-    if (!projContent.includes('<Compile Include=')) {
-      return;
-    }
-
-    const fileName = fileNameOf(filePath);
-    if (projContent.includes(`Include="${fileName}"`)) {
-      return;
-    }
-
-    // Insert before </ItemGroup> that contains Compile elements.
-    const compileGroupEnd = projContent.lastIndexOf('</ItemGroup>');
-    if (compileGroupEnd < 0) {
-      return;
-    }
-
-    const newContent =
-      projContent.slice(0, compileGroupEnd) +
-      `    <Compile Include="${fileName}" />\n  ` +
-      projContent.slice(compileGroupEnd);
-    fs.writeFileSync(projPath, newContent, 'utf-8');
-    info(`Auto-added ${fileName} to ${fileNameOf(projPath)}`);
-  } catch (err) {
-    info(`Auto-add to project skipped: ${getErrorMessage(err)}`);
-  }
+  // Add the file to the nearest .csproj if it uses explicit <Compile> includes.
+  // The MSBuild-DOM edit decides that — no text probing of the project file
+  // ([SE-ADD-FILE-CSHARP]). It runs after the file opens and is not awaited: an
+  // SDK project compiles every .cs by glob, and the new file must never wait
+  // behind a workspace reload in the compiler. Failures are logged by the helper.
+  void addFileToNearestProject(filePath, '*.csproj');
 }
 
 /** Add an existing project to the solution. */

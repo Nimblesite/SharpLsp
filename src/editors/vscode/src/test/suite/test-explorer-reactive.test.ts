@@ -12,7 +12,6 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import type { SharpLspTestController } from '../../testing.js';
-import { logFilePath } from '../../log.js';
 import {
   XUNIT_PACKAGES,
   createSolution,
@@ -35,13 +34,9 @@ import {
   assertLeavesAre,
   unloadSolution,
 } from './test-explorer-kit';
-import {
-  comparablePath,
-  removeDirRecursive,
-  assertContainsAll,
-  pollUntilResult,
-} from './test-helpers.js';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { comparablePath, removeDirRecursive, assertContainsAll } from './test-helpers.js';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { loggedLine } from './log-kit';
 import { CS, CS_MIXED_THEORY } from './test-explorer-xunit-pair';
 import { spyOnDiscover } from './test-discovery-spy';
 
@@ -867,11 +862,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
         EXPECTED,
         'the standing tree survives a configuration failure',
       );
-      await pollUntilResult(
-        async () => (await fs.promises.readFile(logFilePath(), 'utf8')).split('\n'),
-        (lines) => lines.some((line) => line.includes('WARN') && line.includes(injected)),
-        LSP_RESPONSE_MS,
-        undefined,
+      await loggedLine(
+        (line) => line.includes('WARN') && line.includes(injected),
         'a WARN line naming the configuration failure',
       );
       // Recovery: restore the real request and rediscover the real tests.

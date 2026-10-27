@@ -4,7 +4,7 @@
   "default_threshold": 95,
   "projects": {
     "sharplsp": {
-      "threshold": 96.25,
+      "threshold": 96.26,
       "language": "rust"
     },
     "sharplsp-sidecar-common": {

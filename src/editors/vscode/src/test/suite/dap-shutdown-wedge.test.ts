@@ -57,13 +57,22 @@ const BEHAVIOUR = {
    * answering it: netcoredbg on Windows once its debuggee has ended.
    */
   vanish: 'vanish',
+  /**
+   * Refuses the FIRST `threads` request as cancelled, as netcoredbg does when
+   * the debuggee resumes while that request is still in flight (#508).
+   */
+  cancelThreads: 'cancelThreads',
 } as const;
+
+/** netcoredbg's own words for a `threads` request a resume aborted. */
+const THREADS_CANCELLED = "Error processing 'threads' request. The operation was canceled.";
 
 const STUB_NAME = 'WedgedAdapter';
 
 /**
- * The stub. Every request is answered `success: true`; what follows a
- * `terminate` or `disconnect` is decided by the behaviour file. The process
+ * The stub. Every request is answered `success: true` unless the behaviour file
+ * cancels a `threads` request; what follows a `terminate` or `disconnect` is
+ * decided by the behaviour file too. The process
  * itself ends only when its stdin closes — the router never closes it before
  * the deadline, so while the router waits the stub is alive and silent, exactly
  * as a wedged netcoredbg is.
@@ -118,14 +127,21 @@ let contentLength () =
 
 [<EntryPoint>]
 let main _argv =
+    let mutable threadsCancelled = false
     while true do
         use request = JsonDocument.Parse(readBody (contentLength ()))
         let root = request.RootElement
         if root.GetProperty("type").GetString() = "request" then
             let command = root.GetProperty("command").GetString()
+            let requestSeq = root.GetProperty("seq").GetInt32()
             // vanish: gone before the disconnect is answered
             if behaviour = "${BEHAVIOUR.vanish}" && command = "disconnect" then exit 0
-            send {| \`\`type\`\` = "response"; seq = 0; request_seq = root.GetProperty("seq").GetInt32(); command = command; success = true; body = {| |} |}
+            // cancelThreads: the first threads request is aborted by a resume
+            if behaviour = "${BEHAVIOUR.cancelThreads}" && command = "threads" && not threadsCancelled then
+                threadsCancelled <- true
+                send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = false; message = "${THREADS_CANCELLED}"; body = {| |} |}
+            else
+                send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = true; body = {| |} |}
             if behaviour <> "${BEHAVIOUR.wedge}" && (command = "terminate" || command = "disconnect") then
                 send {| \`\`type\`\` = "event"; seq = 0; event = "terminated"; body = {| |} |}
             // wedge: and then nothing — no exited, no terminated, and the process stays up
@@ -211,31 +227,35 @@ class WedgeDriver {
   }
 }
 
-suite('An adapter that stops answering the request to stop', () => {
+/**
+ * Build the stub once for the calling suite, and remove it after. The returned
+ * `start` tells the stub how to misbehave, then puts a fresh router over it.
+ */
+function useStub(prefix: string): (behaviour: string) => WedgeDriver {
   let dir = '';
-  let apphost = '';
-  let outDir = '';
-
+  let built = { apphost: '', outDir: '' };
   suiteSetup(async function () {
     // A real `dotnet build` of the F# stub: NuGet restore of FSharp.Core plus
     // the F# compiler, once for the suite. Cold on a CI runner that is tens of
     // seconds — the same budget every other suite that builds a fixture uses.
     this.timeout(FIXTURE_BUILD_MS);
-    dir = mkdtempSync(path.join(tmpdir(), 'sharplsp-wedge-'));
-    ({ apphost, outDir } = await buildStub(dir));
+    dir = mkdtempSync(path.join(tmpdir(), prefix));
+    built = await buildStub(dir);
   });
-
   suiteTeardown(() => {
     removeDirRecursive(dir);
   });
-
-  const behave = (behaviour: string): void => {
-    writeFileSync(path.join(outDir, BEHAVIOUR_FILE), behaviour, 'utf8');
+  return (behaviour) => {
+    writeFileSync(path.join(built.outDir, BEHAVIOUR_FILE), behaviour, 'utf8');
+    return new WedgeDriver(built.apphost, TEST_DEADLINE_MS);
   };
+}
+
+suite('An adapter that stops answering the request to stop', () => {
+  const start = useStub('sharplsp-wedge-');
 
   test('terminate that is answered but never honoured still ends the session', async () => {
-    behave(BEHAVIOUR.wedge);
-    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    const driver = start(BEHAVIOUR.wedge);
     try {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq(driver.events('terminated').length, 0, 'nothing has ended the session yet');
@@ -254,8 +274,7 @@ suite('An adapter that stops answering the request to stop', () => {
   });
 
   test('disconnect is owed an end on the same deadline as terminate', async () => {
-    behave(BEHAVIOUR.wedge);
-    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    const driver = start(BEHAVIOUR.wedge);
     try {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('disconnect')).success, true, 'the adapter answers disconnect too');
@@ -269,8 +288,7 @@ suite('An adapter that stops answering the request to stop', () => {
   });
 
   test('an adapter that honours the stop is never second-guessed', async () => {
-    behave(BEHAVIOUR.honest);
-    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    const driver = start(BEHAVIOUR.honest);
     try {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('terminate')).success, true, 'terminate is answered');
@@ -289,8 +307,7 @@ suite('An adapter that stops answering the request to stop', () => {
   // until that is answered: a launch made meanwhile found the dead session
   // still active, and a breakpoint edit reached an adapter that refused it.
   test('a disconnect the adapter exits on is answered for it', async () => {
-    behave(BEHAVIOUR.vanish);
-    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    const driver = start(BEHAVIOUR.vanish);
     try {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('terminate')).success, true, 'terminate is answered');
@@ -307,8 +324,7 @@ suite('An adapter that stops answering the request to stop', () => {
   });
 
   test('a restart inside the deadline retires it along with the adapter it was owed by', async () => {
-    behave(BEHAVIOUR.wedge);
-    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    const driver = start(BEHAVIOUR.wedge);
     try {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq(
@@ -348,8 +364,7 @@ suite('An adapter that stops answering the request to stop', () => {
   });
 
   test('a request that is not a stop request arms nothing', async () => {
-    behave(BEHAVIOUR.wedge);
-    const driver = new WedgeDriver(apphost, TEST_DEADLINE_MS);
+    const driver = start(BEHAVIOUR.wedge);
     try {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('threads')).success, true, 'an ordinary request is answered');
@@ -373,5 +388,38 @@ suite('An adapter that stops answering the request to stop', () => {
       SHUTDOWN_DEADLINE_MS >= 10_000,
       `a healthy teardown must never be mistaken for a wedge: ${String(SHUTDOWN_DEADLINE_MS)}`,
     );
+  });
+});
+
+// netcoredbg aborts a `threads` request still in flight when the debuggee
+// resumes — the router's own `continue` past its injected entry stop, or the
+// user's — and answers it "The operation was canceled". The workbench asked for
+// that list on its own, so the Call Stack panel logged an error for a list one
+// round trip away (#508). Implements [DEBUG-ADAPTER-GAPS].
+suite('An adapter that cancels a threads request under a resume', () => {
+  const start = useStub('sharplsp-threads-');
+
+  test('the cancelled threads request is asked again and the client gets the list', async () => {
+    const driver = start(BEHAVIOUR.cancelThreads);
+    try {
+      eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
+
+      // Interaction 1 — the adapter cancels the client's threads request.
+      const listed = await driver.request('threads');
+      eq(listed.success, true, `the client gets the thread list: ${String(listed.message)}`);
+      eq(listed.command, 'threads', 'as the answer to its own threads request');
+      const answers = driver.emitted.filter(
+        (m) => m.type === 'response' && m.command === 'threads',
+      );
+      eq(answers.length, 1, 'exactly one answer reached the client, never the cancellation too');
+
+      // Interaction 2 — the adapter answers the next one itself.
+      const again = await driver.request('threads');
+      eq(again.success, true, 'a threads request the adapter answers is forwarded as it is');
+      eq(again.request_seq, Number(listed.request_seq) + 1, 'answering the request that asked');
+      eq(driver.events('terminated').length, 0, 'and nothing about this ends the session');
+    } finally {
+      driver.dispose();
+    }
   });
 });

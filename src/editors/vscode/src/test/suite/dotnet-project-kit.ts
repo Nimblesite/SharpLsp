@@ -16,6 +16,7 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { XMLBuilder } from 'fast-xml-parser';
 import { findGlobalJson } from '../../global-json.js';
+import { joinPath } from '../../paths';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** A `<PackageReference Include=".." Version=".." />`. */
@@ -296,22 +297,28 @@ export function libraryProjectXml(...compileIncludes: readonly string[]): string
 /**
  * Count the builds a discovery sweep costs, instead of guessing from timings.
  *
- * Writes a `Directory.Build.props` into `root` whose target appends the
- * project's name to a log at the START of every build — before `BeforeBuild`,
- * the first step of `Build`, and so before anything compiles. A hook on `Build`
- * itself would run only AFTER the compile and never count a build that fails.
- * MSBuild imports the file into every project below `root`, so each line is
- * one build of one project. Returns the log's path; {@link buildsLogged} reads
- * it back.
+ * Writes a `Directory.Build.props` into `root` whose target records the
+ * project's name at the START of every build — before `BeforeBuild`, the first
+ * step of `Build`, and so before anything compiles. A hook on `Build` itself
+ * would run only AFTER the compile and never count a build that fails. MSBuild
+ * imports the file into every project below `root`.
+ *
+ * Every build writes a file of its OWN into the returned directory. One shared
+ * log is not safe: parallel MSBuild nodes appending to it collide on Windows
+ * (MSB3491, "being used by another process"), which fails the very build being
+ * counted (#507). {@link buildsLogged} reads the directory back.
  */
 export function writeBuildCounter(root: string): string {
-  const log = path.join(root, 'builds.log');
+  const log = joinPath(root, 'builds');
   const xml: string = projectBuilder.build({
     Project: {
       Target: {
         '@_Name': 'SharpLspCountBuild',
         '@_BeforeTargets': 'BeforeBuild',
-        WriteLinesToFile: { '@_File': log, '@_Lines': '$(MSBuildProjectName)' },
+        WriteLinesToFile: {
+          '@_File': joinPath(log, '$(MSBuildProjectName).$([System.Guid]::NewGuid()).log'),
+          '@_Lines': '$(MSBuildProjectName)',
+        },
       },
     },
   });
@@ -319,15 +326,19 @@ export function writeBuildCounter(root: string): string {
   return log;
 }
 
-/** The project names {@link writeBuildCounter}'s log recorded, one per build. */
+/** The project names {@link writeBuildCounter} recorded, one per build. */
 export function buildsLogged(log: string): string[] {
   if (!fs.existsSync(log)) return [];
   return fs
-    .readFileSync(log, 'utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
+    .readdirSync(log)
+    .map((entry) => fs.readFileSync(joinPath(log, entry), 'utf8').trim())
+    .filter((name) => name.length > 0)
     .sort();
+}
+
+/** Forget every build {@link writeBuildCounter} has recorded so far. */
+export function resetBuildCounter(log: string): void {
+  fs.rmSync(log, { recursive: true, force: true });
 }
 
 /** Write a fixture project (project file + single source file); returns its dir. */

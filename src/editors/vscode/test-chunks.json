@@ -221,6 +221,7 @@
         "fixture-solutions-contract.test.js",
         "tree-config-e2e.test.js",
         "solution-explorer-namespaces.test.js",
+        "solution-explorer-add-fsharp-file.test.js",
         "context-menus.test.js",
         "project-deps-watcher-e2e.test.js",
         "sort-members-command-e2e.test.js",

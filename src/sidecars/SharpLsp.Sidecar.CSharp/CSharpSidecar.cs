@@ -83,8 +83,15 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("workspace/renameForeign", HandleRenameForeignAsync);
         Register("workspace/referencesForeign", HandleReferencesForeignAsync);
         Register("project/unusedPackages", HandleUnusedPackagesAsync);
-        Register("project/addPackage", HandleAddPackageAsync);
-        Register("project/removePackage", HandleRemovePackageAsync);
+        Register("project/addPackage", ProjectFileEdit<PackageEditRequest>(PackageEditor.Add));
+        Register(
+            "project/removePackage",
+            ProjectFileEdit<PackageEditRequest>(PackageEditor.Remove)
+        );
+        Register(
+            "project/addCompileItem",
+            ProjectFileEdit<CompileInsertRequest>(CompileItemEditor.Insert)
+        );
         Register("analyzers/configure", HandleConfigureAnalyzersAsync);
         Register("debug/hotReload", HandleHotReloadAsync);
         Register("workspace/targetFramework", HandleTargetFrameworkAsync);
