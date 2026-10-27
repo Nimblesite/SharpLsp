@@ -79,7 +79,7 @@ EndGlobal"#,
             break;
         }
         assert!(
-            armed.elapsed() < Duration::from_secs(120),
+            armed.elapsed() < Duration::from_mins(2),
             "the sidecar must finish loading the solution within 120s",
         );
     }
@@ -137,7 +137,7 @@ EndGlobal"#,
             break;
         }
         assert!(
-            adoption.elapsed() < Duration::from_secs(120),
+            adoption.elapsed() < Duration::from_mins(2),
             "the stormed source Storm0.cs must be adopted and published within 120s",
         );
     }

@@ -83,7 +83,7 @@ fn test_reload_cannot_reopen_a_superseded_solution() {
     // C# must reach B: its document's hover resolves (the control leg).
     client.open_document(&b_cs_uri, CALCULATOR_CS);
     let csharp_hover =
-        poll_hover_until_ready(&mut client, &b_cs_uri, 2, 13, Duration::from_secs(120));
+        poll_hover_until_ready(&mut client, &b_cs_uri, 2, 13, Duration::from_mins(2));
     assert!(
         csharp_hover["contents"]["value"]
             .as_str()
