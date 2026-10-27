@@ -140,7 +140,7 @@ let ``loadProject discovers the fsproj through an explicit slnx`` () =
     }
 
 [<Fact>]
-let ``loadProject on a solution with no fsproj reports an error`` () =
+let ``loadProject on a solution with no fsproj opens an empty workspace`` () =
     task {
         let dir = NativePaths.Temp($"slsp-emptysln-{System.Guid.NewGuid():N}")
         Directory.CreateDirectory(dir) |> ignore
@@ -148,7 +148,9 @@ let ``loadProject on a solution with no fsproj reports an error`` () =
         File.WriteAllText(slnx, "<Solution>\n</Solution>\n")
         let ws = FSharpWorkspace.create ()
         let! result = FSharpWorkspaceLoading.loadProject ws slnx
-        Assert.True(match result with | Error _ -> true | Ok _ -> false)
+        Assert.True(Result.isOk result, $"a selection with no F# project clears the workspace, got {result}")
+        Assert.False(ws.IsLoaded, "no project is loaded")
+        Assert.True(ws.LastLoadWasEmpty, "the selection is recorded as empty")
         try Directory.Delete(dir, true) with _ -> ()
     }
 

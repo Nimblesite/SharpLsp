@@ -2333,17 +2333,18 @@ let ``WS2 getDocumentHighlights returns empty for a file that cannot be read`` (
 }
 
 [<Fact>]
-let ``WS2 loadProject reports an error for a directory with no fsproj`` () = task {
-    // discoverFsprojFiles finds zero .fsproj under a directory, so
-    // loadFirstProject returns the "No .fsproj found" error branch.
+let ``WS2 loadProject opens an empty workspace for a directory with no fsproj`` () = task {
+    // discoverFsprojFiles finds zero .fsproj under a directory: a valid project-less
+    // workspace whose scripts answer from their own context. [SCRIPT-DEGRADE]
     let dir = NativePaths.Temp($"sharplsp-empty2-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     let state = FSharpWorkspace.create ()
     try
         let! result = FSharpWorkspaceLoading.loadProject state dir
-        match result with
-        | Error msg -> Assert.Contains("No .fsproj", msg)
-        | Ok () -> Assert.Fail("expected an error for a project-less directory")
+        Assert.True(Result.isOk result, $"a project-less directory is a valid workspace, got {result}")
+        Assert.False(state.IsLoaded, "no project is loaded")
+        Assert.True(state.LastLoadWasEmpty, "the load is recorded as empty")
+        Assert.Empty(state.Projects)
     finally
         cleanup dir
 }

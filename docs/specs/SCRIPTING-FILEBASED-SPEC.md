@@ -232,6 +232,7 @@ Two file-based apps in one directory are two independent compilations. The sidec
 
 - A file with no supported document kind returns a `Result` failure, never an empty synthetic workspace.
 - A directory with no solution or project is valid: `OpenCoreAsync` records a project-less root and returns success, deferring workspace creation to the first document update. Each loose file becomes an independent ad-hoc project per [SCRIPT-ANTIPATTERN]. `IsLoaded` remains false until a document arrives.
+- The F# sidecar opens a directory or selection with no F# project as an empty workspace and returns success. A script that no loaded project compiles is never project-owned ([SCRIPT-DETECT]): hover, completion, navigation and the other semantic queries check it in its own context from its own directives ([SCRIPT-FSX-OPTIONS]), whether no workspace loaded or a project beside it does not list it (#497).
 - Multiple candidate solutions are ambiguity, not project absence. `SolutionLoader.FindAmbiguousSolutions` MUST return an error naming every candidate and the `csharp.solution_path` resolution setting from [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH], never enter project-less mode.
 - Any I/O during closure expansion is wrapped; a failure to read one included file degrades that file only and is reported as a diagnostic, leaving the rest of the closure loaded.
 

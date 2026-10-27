@@ -182,3 +182,14 @@ let scriptOptions (checker: FSharpChecker) (scriptPath: string) (source: string)
             useFsiAuxLib = true, useSdkRefs = true, assumeDotNetFramework = false)
         return! Async.StartAsTask(computation, cancellationToken = ct)
     }
+
+/// The options of a script from the text the editor holds, else the text on disk,
+/// with the resolution diagnostics and the length of the text resolved.
+/// [SCRIPT-FSX-OPTIONS] [HOVER-FSHARP-OVERLAY]
+let scriptOptionsFromEditor (checker: FSharpChecker) overlays (scriptPath: string) (ct: CancellationToken) =
+    task {
+        let! input = FSharpWorkspaceRuntime.tryReadSourceAsync overlays scriptPath ct
+        let source = input |> Option.defaultValue String.Empty
+        let! options, diagnostics = scriptOptions checker scriptPath source ct
+        return options, diagnostics, source.Length
+    }

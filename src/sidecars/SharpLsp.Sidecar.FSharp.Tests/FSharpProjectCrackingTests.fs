@@ -80,7 +80,7 @@ let ``cracking a real fsproj carries OtherFlags to FCS and drops unexpanded prop
 
     try
         let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
-        let flags = FSharpWorkspace.parseFsprojOtherFlags fsproj
+        let flags = FSharpProjectLoading.parseFsprojOtherFlags fsproj
 
         Assert.Equal<string array>([| "--nowarn:52"; "--warnon:1182" |], flags)
         Assert.DoesNotContain(flags, fun flag -> flag.StartsWith("$(", StringComparison.Ordinal))
@@ -119,7 +119,7 @@ let ``compile items become the FCS source list in declaration order`` () = task 
 
 [<Fact>]
 let ``framework reference args pin the runtime instead of the desktop profile`` () =
-    let args = FSharpWorkspace.frameworkReferenceArgs ()
+    let args = FSharpProjectLoading.frameworkReferenceArgs ()
 
     Assert.Contains("--noframework", args)
     Assert.Contains("--targetprofile:netcore", args)
@@ -244,7 +244,7 @@ let private assertEditableInputs state root project name = task {
     let reference = NativePaths.Resolve(root, "Neighbour", "Neighbour.csproj")
     let! evaluated = FSharpWorkspace.compileSources state project CancellationToken.None
     assertExactOrRefused project source evaluated
-    Assert.Equal<string array>([| "--nowarn:52"; "--warnon:1182" |], FSharpWorkspace.parseFsprojOtherFlags project)
+    Assert.Equal<string array>([| "--nowarn:52"; "--warnon:1182" |], FSharpProjectLoading.parseFsprojOtherFlags project)
     Assert.Equal(name, FSharpWorkspace.parseFsprojAssemblyName project)
     Assert.False(FSharpDesignTime.declaresTargetFrameworks project)
     Assert.Equal<string array>([| reference |], ProjectReferences.ReadReferencedProjects(project) |> Seq.toArray)
