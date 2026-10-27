@@ -1112,7 +1112,7 @@ The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `
 
 ## [DIST-CI-VSIX-SHARDS] VS Code Suite Shards
 
-One runner, `make _test-vsix-shard CHUNK=<name>`, drives every slice of the VS Code end-to-end suite on every platform, always instrumented for coverage. The chunks are declared once, in `src/editors/vscode/test-chunks.json`, and the Ubuntu and Windows matrices both expand from it. Every shard uploads its extension-host logs (`vsix-logs-<platform>-<chunk>`) on every outcome, with the DAP trace enabled, so a green shard carries the evidence of WHICH path passed it — a fallback that fired leaves its line in those logs and nowhere else.
+One runner, `make _test-vsix-shard CHUNK=<name>`, drives every slice of the VS Code end-to-end suite on every platform, always instrumented for coverage. The chunks are declared once, in `src/editors/vscode/test-chunks.json`, and the Ubuntu and Windows matrices both expand from it. Every shard uploads its extension-host logs (`vsix-logs-<platform>-<chunk>`) on every outcome, with the DAP trace enabled, so a green shard carries the evidence of WHICH path passed it — a fallback that fired leaves its line in those logs and nowhere else. The same artifact carries the server's and both sidecars' own logs (`sharplsp-logs`, copied from the system temp folder), so a compiler request that stops answering is diagnosed from the compiler's side too.
 
 The Ubuntu leg MUST fan out over the same feature chunks the Windows leg uses
 ([DIST-CI-WIN-VSIX]), one chunk per job, and MUST NOT run the suite as a single

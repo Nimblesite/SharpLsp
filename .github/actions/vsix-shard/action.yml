@@ -119,6 +119,18 @@ runs:
         name: coverage-vsix-shard-${{ inputs.platform }}-${{ inputs.chunk }}
         retention-days: 1
         path: target/coverage-vsix-shard-${{ inputs.platform }}-${{ inputs.chunk }}.lcov
+    - name: Collect server and compiler logs
+      # The host and both sidecars log beneath the system temp folder, where the
+      # extension host's logs never reach: a compiler request that stops
+      # answering is visible only there. [DIST-CI-VSIX-SHARDS]
+      if: always()
+      shell: bash
+      run: |
+        logs="$(node -e 'process.stdout.write(require("os").tmpdir())')/sharplsp-logs"
+        if [ -d "$logs" ]; then
+          mkdir -p "${{ inputs.user-data-dir }}/logs"
+          cp -R "$logs" "${{ inputs.user-data-dir }}/logs/sharplsp-logs"
+        fi
     - name: Upload extension-host diagnostics
       # A chunk that fails or HANGS is exactly what the split exists to isolate,
       # so keep the extension-host logs for triage. Keep them for a GREEN chunk
