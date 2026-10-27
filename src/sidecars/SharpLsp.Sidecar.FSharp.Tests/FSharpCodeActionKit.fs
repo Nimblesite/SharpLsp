@@ -43,6 +43,13 @@ let applyEdit (src: string) (edit: FSharpCodeFixes.TextEdit) : string =
     lines[edit.StartLine] <- line.Substring(0, edit.StartCharacter) + edit.NewText + line.Substring(edit.EndCharacter)
     String.concat "\n" lines
 
+/// The 0-based lines carrying a diagnostic `code` in a check, in order.
+let linesWith (code: int) (check: FSharpCheckFileResults) =
+    check.Diagnostics
+    |> Array.filter (fun d -> d.ErrorNumber = code)
+    |> Array.map (fun d -> d.StartLine - 1)
+    |> Array.sort
+
 /// The diagnostics of `severity` in a check.
 let diagnosticsOf (severity: FSharpDiagnosticSeverity) (check: FSharpCheckFileResults) =
     check.Diagnostics |> Array.filter (fun d -> d.Severity = severity)

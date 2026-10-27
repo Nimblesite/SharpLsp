@@ -64,7 +64,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Fix typo from compiler error ("did you mean") | ✅ | `[ANALYZERS-FSAC-CODEFIX-TYPO]` — FS0039 `Replace with 'name'`, ranked from FCS's declarations in scope |
 | Add missing `new` for `IDisposable` | ✅ | `[ANALYZERS-FSAC-CODEFIX-ADD-NEW]` — FS0760 `Add 'new'` on a constructor call |
 | Generate interface implementation | ✅ | `[ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]` — FCS `InterfaceStubGenerator` ("Implement interface"), completes the union/record/interface stub trio |
-| Extra fixes beyond FSAC list | ⭐✅ | FS0020 `\|> ignore`, FS0025 wildcard arm, FS0026 remove redundant case, FS0001 type conversion |
+| Extra fixes beyond FSAC list | ⭐✅ | `[ANALYZERS-FSAC-CODEFIX-COMPILER]` — FS0020 `\|> ignore`, FS0025 wildcard arm (innermost match, from the AST), FS0026 remove redundant case, FS0001 type conversion (typed FCS data) |
 | Formatting via Fantomas | 🟡 | implemented in `FSharpFeatures.fs` but **sequestered** — not routed by host. **gap: enable routing** |
 | Code lens (reference counts) | ✅ | `[FS-CODELENS]` |
 | Code lens (signature) | 🟡 | reference-count only; signature lens missing |

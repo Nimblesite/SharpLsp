@@ -25,6 +25,16 @@ let lineGetter (source: string) : int -> string =
         else
             ""
 
+/// The source text `r` covers, read through `line` (1-based): None when `r`
+/// spans lines or reaches past its line, as a stale range does.
+let textOf (line: int -> string) (r: range) : string option =
+    let text = line r.StartLine
+
+    if r.StartLine = r.EndLine && r.StartColumn <= r.EndColumn && r.EndColumn <= text.Length then
+        Some(text.Substring(r.StartColumn, r.EndColumn - r.StartColumn))
+    else
+        None
+
 /// The partial name before a 0-based caret and FCS's declarations in scope
 /// there: what completion lists, and what a misspelled name is matched against.
 let declarationsAt

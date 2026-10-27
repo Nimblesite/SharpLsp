@@ -78,14 +78,9 @@ let private closeness (name: string) (candidate: string) : float option =
 
 // ── FS0039: replace with the intended name ──────────────────────
 
-/// The single-line source a diagnostic's range covers.
+/// The name a diagnostic's range covers.
 let private flaggedText (line: int -> string) (r: range) : string option =
-    let text = line r.StartLine
-
-    if r.StartLine = r.EndLine && r.StartColumn < r.EndColumn && r.EndColumn <= text.Length then
-        Some(text.Substring(r.StartColumn, r.EndColumn - r.StartColumn))
-    else
-        None
+    FSharpLocalAnalysis.textOf line r |> Option.filter ((<>) "")
 
 /// The names in scope closest to `name`, best first.
 let private closestNames (name: string) (items: DeclarationListItem array) : string list =
@@ -100,7 +95,7 @@ let private closestNames (name: string) (items: DeclarationListItem array) : str
 
 /// "Replace with 'name'" for each name in scope close to the one FS0039
 /// rejected, the closest preferred. [ANALYZERS-FSAC-CODEFIX-TYPO]
-let private typoActions parseResults checkResults source filePath (r: range) : GeneratedAction list =
+let typos parseResults checkResults source filePath (r: range) : GeneratedAction list =
     let line = FSharpLocalAnalysis.lineGetter source
 
     flaggedText line r
@@ -110,10 +105,7 @@ let private typoActions parseResults checkResults source filePath (r: range) : G
         |> closestNames name)
     |> Option.defaultValue []
     |> List.mapi (fun index replacement ->
-        { Title = $"Replace with '{replacement}'"
-          Kind = "quickfix"
-          IsPreferred = (index = 0)
-          Edits = [ rangeEdit filePath r replacement ] })
+        FSharpQuickFix.replace $"Replace with '{replacement}'" (index = 0) filePath r replacement)
 
 // ── FS0039: open the namespace ──────────────────────────────────
 
@@ -126,43 +118,42 @@ let private namespaceOf (name: string) : string list option =
     | "Dictionary" -> Some [ "System"; "Collections"; "Generic" ]
     | _ -> None
 
+/// `at` moved down past blank lines, up to `lastLine`: an `open` joins the
+/// declarations it serves rather than its scope's header line.
+let rec private pastBlankLines (line: int -> string) (lastLine: int) (at: pos) : pos =
+    if at.Line < lastLine && System.String.IsNullOrWhiteSpace(line at.Line) then
+        pastBlankLines line lastLine (Position.mkPos (at.Line + 1) at.Column)
+    else
+        at
+
 /// Where FCS places an `open` serving the code at `r`: the nearest scope's
-/// opens, at that scope's indentation (1-based line).
+/// opens, at that scope's indentation (1-based line), below any blank lines.
 let private openPosition (parseResults: FSharpParseFileResults) (line: int -> string) (r: range) namespaceParts : pos =
     let context =
         ParsedInput.FindNearestPointToInsertOpenDeclaration
             r.StartLine parseResults.ParseTree (List.toArray namespaceParts) OpenStatementInsertionPoint.Nearest
+    let file = parseResults.ParseTree.Range
     // AdjustInsertionPoint reads lines by 0-based index.
     ParsedInput.AdjustInsertionPoint (fun index -> line (index + 1)) context
+    |> pastBlankLines line file.EndLine
 
 /// "Add 'open X'" for a well-known framework type FS0039 reports undefined.
-let private openActions parseResults source filePath (r: range) : GeneratedAction list =
+let opens parseResults source filePath (r: range) : GeneratedAction list =
     let line = FSharpLocalAnalysis.lineGetter source
 
     flaggedText line r
     |> Option.bind namespaceOf
     |> Option.map (fun parts ->
-        let at = openPosition parseResults line r parts
-        let start = Position.mkPos at.Line 0
         let namespaceName = String.concat "." parts
-        let indent = String.replicate at.Column " "
-
-        { Title = $"Add 'open {namespaceName}'"
-          Kind = "quickfix"
-          IsPreferred = false
-          Edits = [ rangeEdit filePath (Range.mkRange r.FileName start start) $"{indent}open {namespaceName}\n" ] })
+        FSharpQuickFix.insertLine $"Add 'open {namespaceName}'" filePath (openPosition parseResults line r parts) $"open {namespaceName}")
     |> Option.toList
 
 // ── FS1182: mark the unused value ───────────────────────────────
 
 /// "Prefix 'x' with _" for the value FS1182 reports unused.
-let private unusedActions source filePath (r: range) : GeneratedAction list =
+let unused source filePath (r: range) : GeneratedAction list =
     flaggedText (FSharpLocalAnalysis.lineGetter source) r
-    |> Option.map (fun name ->
-        { Title = $"Prefix '{name}' with _"
-          Kind = "quickfix"
-          IsPreferred = true
-          Edits = [ rangeEdit filePath r $"_{name}" ] })
+    |> Option.map (fun name -> FSharpQuickFix.replace $"Prefix '{name}' with _" true filePath r $"_{name}")
     |> Option.toList
 
 // ── FS0760: add new ─────────────────────────────────────────────
@@ -181,27 +172,8 @@ let private isConstructorCall (parseResults: FSharpParseFileResults) (r: range) 
     (SyntaxTraversal.Traverse(r.Start, parseResults.ParseTree, visitor)).IsSome
 
 /// "Add 'new'" in front of the constructor call FS0760 flags. [ANALYZERS-FSAC-CODEFIX-ADD-NEW]
-let private addNewActions (parseResults: FSharpParseFileResults) filePath (r: range) : GeneratedAction list =
+let addNew (parseResults: FSharpParseFileResults) filePath (r: range) : GeneratedAction list =
     if isConstructorCall parseResults r then
-        [ { Title = "Add 'new'"
-            Kind = "quickfix"
-            IsPreferred = true
-            Edits = [ rangeEdit filePath (Range.mkRange r.FileName r.Start r.Start) "new " ] } ]
+        [ FSharpQuickFix.replace "Add 'new'" true filePath (Range.mkRange r.FileName r.Start r.Start) "new " ]
     else
         []
-
-/// The name fixes one diagnostic offers.
-let actionsFor
-    (parseResults: FSharpParseFileResults)
-    (checkResults: FSharpCheckFileResults)
-    (source: string)
-    (filePath: string)
-    (diagnostic: FSharpDiagnostic)
-    : GeneratedAction list =
-    let r = diagnostic.Range
-
-    match diagnostic.ErrorNumber with
-    | 39 -> openActions parseResults source filePath r @ typoActions parseResults checkResults source filePath r
-    | 760 -> addNewActions parseResults filePath r
-    | 1182 -> unusedActions source filePath r
-    | _ -> []

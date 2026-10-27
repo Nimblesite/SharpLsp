@@ -15,6 +15,7 @@ open FSharp.Compiler.Syntax
 open FSharp.Compiler.SyntaxTrivia
 open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp.FSharpCodeActions
+open SharpLsp.Sidecar.FSharp.FSharpLocalAnalysis
 
 /// What every rewrite at one request reads.
 [<NoComparison; NoEquality>]
@@ -25,18 +26,6 @@ type private Site =
       Pos: pos }
 
 // ── Source slicing ──────────────────────────────────────────────
-
-/// Slice the source text covered by an expression's AST range (1-based
-/// lines). A range spanning lines has no single-line slice, so it is
-/// unavailable here.
-let private slice (line: int -> string) (e: SynExpr) : string option =
-    let r = e.Range
-    let text = line r.StartLine
-
-    if r.StartLine <> r.EndLine || r.StartColumn > r.EndColumn || r.EndColumn > text.Length then
-        None
-    else
-        Some(text.Substring(r.StartColumn, r.EndColumn - r.StartColumn))
 
 /// Every comment's range in the file.
 let private commentRanges (input: ParsedInput) : range list =
@@ -151,10 +140,10 @@ let rec private nestedPipeline (line: int -> string) (e: SynExpr) : PipelineText
     | Some(callee, last) ->
         match parenApplication last with
         | Some inner ->
-            (nestedPipeline line inner, slice line callee)
+            (nestedPipeline line inner, textOf line callee.Range)
             ||> Option.map2 (fun parts stage -> { parts with Stages = parts.Stages @ [ stage ] })
         | None ->
-            (slice line callee, slice line last)
+            (textOf line callee.Range, textOf line last.Range)
             ||> Option.map2 (fun stage value -> { Value = value; Stages = [ stage ] })
     | None -> None
 
@@ -197,13 +186,13 @@ let private asArgument (line: int -> string) (value: SynExpr) : NestedText optio
         | SynExpr.Ident _ | SynExpr.LongIdent _ | SynExpr.Const _ | SynExpr.Paren _ | SynExpr.Null _ -> true
         | _ -> false
 
-    slice line value |> Option.map (fun text -> { Text = text; IsAtomic = isAtomic })
+    textOf line value.Range |> Option.map (fun text -> { Text = text; IsAtomic = isAtomic })
 
 /// Apply one stage to the accumulated value: `stage … (value)`.
 let private applyStage (line: int -> string) (stage: SynExpr) (acc: NestedText) : NestedText option =
     let argument = if acc.IsAtomic then acc.Text else $"({acc.Text})"
 
-    slice line stage
+    textOf line stage.Range
     |> Option.map (fun part -> { Text = $"{part} {argument}"; IsAtomic = false })
 
 /// Fold `value |> f |> g a` into nested-call text `g a (f value)`.
@@ -341,7 +330,7 @@ let tryGenerateActions
     (col: int)
     : GeneratedAction list =
     let site =
-        { Line = FSharpLocalAnalysis.lineGetter source
+        { Line = lineGetter source
           Comments = commentRanges parseResults.ParseTree
           FilePath = filePath
           Pos = Position.mkPos (line + 1) col }

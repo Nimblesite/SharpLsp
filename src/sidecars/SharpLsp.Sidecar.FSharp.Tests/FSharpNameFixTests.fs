@@ -36,13 +36,6 @@ let private nameFixProject () =
           "Disposables.fs", DISPOSABLES
           "Opens.fs", OPENS ]
 
-/// The 0-based lines carrying a diagnostic `code` in a check.
-let private linesWith (code: int) (check: FSharp.Compiler.CodeAnalysis.FSharpCheckFileResults) =
-    check.Diagnostics
-    |> Array.filter (fun d -> d.ErrorNumber = code)
-    |> Array.map (fun d -> d.StartLine - 1)
-    |> Array.sort
-
 let private replaceTitlesAt state path line col =
     task {
         let! titles = titlesOfKind state path "quickfix" line col
@@ -133,7 +126,7 @@ let ``a stale source offers no name fix`` () =
         try
             let! parse, check, current = checkedFixture state paths[0]
             let typo = check.Diagnostics |> Array.find (fun d -> d.ErrorNumber = 39)
-            let titles text = FSharpNameFixes.actionsFor parse check text paths[0] typo |> List.map _.Title
+            let titles text = FSharpNameFixes.typos parse check text paths[0] typo.Range |> List.map _.Title
             Assert.Equal<string list>([ "Replace with 'length'" ], titles current)
             Assert.Empty(titles "")
         finally
