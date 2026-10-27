@@ -90,73 +90,6 @@ let private overlapsRange
 
 // ── Individual Fix Providers ─────────────────────────────────────
 
-let private namespaceForUndefinedName =
-    function
-    | "Path" | "File" | "Directory" -> Some "System.IO"
-    | "Task" -> Some "System.Threading.Tasks"
-    | "Regex" -> Some "System.Text.RegularExpressions"
-    | "Dictionary" -> Some "System.Collections.Generic"
-    | _ -> None
-
-let private isOpenHeaderLine (line: string) =
-    let trimmed = line.TrimStart()
-    String.IsNullOrWhiteSpace(trimmed)
-    || trimmed.StartsWith("module ", StringComparison.Ordinal)
-    || trimmed.StartsWith("namespace ", StringComparison.Ordinal)
-    || trimmed.StartsWith("open ", StringComparison.Ordinal)
-    || trimmed.StartsWith("#", StringComparison.Ordinal)
-    || trimmed.StartsWith("//", StringComparison.Ordinal)
-
-let private openInsertionLine (source: string) =
-    let lines = source.Split('\n')
-    lines
-    |> Array.tryFindIndex (isOpenHeaderLine >> not)
-    |> Option.defaultValue lines.Length
-
-/// FS0039: "The value or constructor 'X' is not defined."
-/// Suggests adding an open declaration for known namespaces.
-let private tryFixUndefinedName
-    (state: CodeFixState)
-    (filePath: string)
-    (source: string)
-    (diag: FSharpDiagnostic)
-    : CodeActionItem list =
-    let msg = diag.Message
-    let nameMatch = Regex.Match(msg, @"'([^']+)'")
-    if not nameMatch.Success then []
-    else
-        let name = nameMatch.Groups[1].Value
-        namespaceForUndefinedName name
-        |> Option.toList
-        |> List.map (fun namespaceName ->
-            let insertionLine = openInsertionLine source
-            let edit =
-                singleFileEdit filePath
-                    [ { StartLine = insertionLine; StartCharacter = 0
-                        EndLine = insertionLine; EndCharacter = 0
-                        NewText = $"open {namespaceName}\n" } ]
-            cacheAction state $"Add 'open {namespaceName}'" "quickfix" false edit)
-
-/// FS1182: "The value 'X' is unused."
-/// Suggests prefixing the binding name with _.
-let private tryFixUnusedValue
-    (state: CodeFixState)
-    (filePath: string)
-    (_source: string)
-    (diag: FSharpDiagnostic)
-    : CodeActionItem list =
-    let nameMatch = Regex.Match(diag.Message, @"'([^']+)'")
-    if not nameMatch.Success then []
-    else
-        let name = nameMatch.Groups[1].Value
-        let (line, col, _, _) = diagPositions diag
-        let edit =
-            singleFileEdit filePath
-                [ { StartLine = line; StartCharacter = col
-                    EndLine = line; EndCharacter = col + name.Length
-                    NewText = $"_{name}" } ]
-        [ cacheAction state $"Prefix '{name}' with _" "quickfix" true edit ]
-
 /// FS0020: "The result of this expression has type X and is implicitly ignored."
 /// Suggests adding |> ignore.
 let private tryFixImplicitlyIgnored
@@ -282,10 +215,8 @@ let private getFixesForDiagnostic
     | 20 -> tryFixImplicitlyIgnored state filePath source diag
     | 25 -> tryFixIncompleteMatch state filePath source diag
     | 26 -> tryFixRedundantCase state filePath source diag
-    | 39 -> tryFixUndefinedName state filePath source diag
     // FS0001 is the type-mismatch diagnostic ("expected type X but has type Y").
     | 1 -> tryFixTypeMismatch state filePath source diag
-    | 1182 -> tryFixUnusedValue state filePath source diag
     | _ -> []
 
 /// Wrap a GeneratedAction from FSharpCodeActions into a cached CodeActionItem.
@@ -398,13 +329,23 @@ let private collectAnalyzerActions
             @ simplifyNameActions state filePath findings.SimplifiableNames startLine endLine
     }
 
-let private diagnosticActions state filePath source startLine endLine (diagnostics: FSharpDiagnostic array) =
+/// The diagnostics on the requested lines.
+let private overlapping startLine endLine (diagnostics: FSharpDiagnostic array) =
     diagnostics
     |> Array.filter (fun diagnostic ->
         let range = diagnostic.Range
         overlapsRange (range.StartLine - 1) (range.EndLine - 1) startLine endLine)
     |> Array.toList
-    |> List.collect (getFixesForDiagnostic state filePath source)
+
+/// Text fixes keyed by diagnostic number, then the name fixes FCS's declarations
+/// and AST back. [ANALYZERS-FSAC-CODEFIX-TYPO] [ANALYZERS-FSAC-CODEFIX-ADD-NEW]
+let private diagnosticActions state filePath source parseResults checkResults (diagnostics: FSharpDiagnostic list) =
+    let named =
+        diagnostics
+        |> List.collect (FSharpNameFixes.actionsFor parseResults checkResults source filePath)
+        |> List.map (wrapGeneratedAction state)
+
+    (diagnostics |> List.collect (getFixesForDiagnostic state filePath source)) @ named
 
 let private interfaceActions
     state filePath source
@@ -422,7 +363,9 @@ let private collectCodeActions
     state filePath source parseResults (checkResults: FSharpCheckFileResults)
     startLine startCharacter endLine =
     task {
-        let diagnostics = diagnosticActions state filePath source startLine endLine checkResults.Diagnostics
+        let diagnostics =
+            overlapping startLine endLine checkResults.Diagnostics
+            |> diagnosticActions state filePath source parseResults checkResults
         let typed =
             collectTypeInformedActions
                 state filePath source checkResults parseResults startLine startCharacter

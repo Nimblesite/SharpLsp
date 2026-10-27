@@ -61,8 +61,8 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Generate record stub | ✅ | record-field stub generation |
 | Remove unused `open` | ✅ | `[ANALYZERS-FSAC-CODEFIX-UNUSED-OPEN]` — quick fix for the `SLSPF0102` hint (deletes the `open` line) |
 | Remove redundant qualifiers (`SimplifyName`) | ✅ | `[ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]` — quick fix for the `SLSPF0103` hint (strips the qualifier prefix) |
-| Fix typo from compiler error ("did you mean") | ❌ | **gap** |
-| Add missing `new` for `IDisposable` | ❌ | **gap** |
+| Fix typo from compiler error ("did you mean") | ✅ | `[ANALYZERS-FSAC-CODEFIX-TYPO]` — FS0039 `Replace with 'name'`, ranked from FCS's declarations in scope |
+| Add missing `new` for `IDisposable` | ✅ | `[ANALYZERS-FSAC-CODEFIX-ADD-NEW]` — FS0760 `Add 'new'` on a constructor call |
 | Generate interface implementation | ✅ | `[ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]` — FCS `InterfaceStubGenerator` ("Implement interface"), completes the union/record/interface stub trio |
 | Extra fixes beyond FSAC list | ⭐✅ | FS0020 `\|> ignore`, FS0025 wildcard arm, FS0026 remove redundant case, FS0001 type conversion |
 | Formatting via Fantomas | 🟡 | implemented in `FSharpFeatures.fs` but **sequestered** — not routed by host. **gap: enable routing** |
@@ -114,7 +114,9 @@ Each item is sized to one focused change with e2e + sidecar tests.
    `InterfaceStubGenerator` ("Implement interface"), completing the union/record/interface stub trio
    ([FSharpCodeActions.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`).
 7. **Fantomas formatting** — un-sequester: route `textDocument/formatting` + `rangeFormatting` to the F# sidecar.
-8. **Compiler-error typo fix** ("did you mean") + **add `new` for IDisposable**.
+8. ~~**Compiler-error typo fix** ("did you mean") + **add `new` for IDisposable**~~ — ✅ **done**
+   `[ANALYZERS-FSAC-CODEFIX-TYPO]` / `[ANALYZERS-FSAC-CODEFIX-ADD-NEW]`
+   ([FSharpNameFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpNameFixes.fs)).
 9. **FSI/`.fsx`** full script type-checking incl. `fsiExtraParameters`.
 10. **Ionide custom endpoints**: `documentation`, `f1Help`, `fsdn`, `compilerLocation`, `workspacePeek`.
 11. **completion auto-`open`** insertion `[FS-COMPLETION-RESOLVE]` — **blocked on unopened-symbol
@@ -160,8 +162,8 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 - [x] Expand F# Rust-host e2e (navigation, language surface, hierarchies) — all green
 - [x] File first parity gap (`#112`)
 - [x] Backlog item 2 (workspace/symbol), 4 (remove unused open), 5 (simplify name)
-- [x] Backlog items 1 (references/typeDefinition), 3 (FSharpLint), 6 (interface stub)
-- [ ] Backlog items 7–11 above (F# sidecar lane; 7 = formatting, sequestered by `[SHARPLSP-FEATURES-FORMATTING]`;
+- [x] Backlog items 1 (references/typeDefinition), 3 (FSharpLint), 6 (interface stub), 8 (typo fix + add `new`)
+- [ ] Backlog items 7 and 9–11 above (F# sidecar lane; 7 = formatting, sequestered by `[SHARPLSP-FEATURES-FORMATTING]`;
       11 = auto-`open`, blocked on the entity index)
 - [x] Public F# parity page at `src/website/src/docs/fsharp.md`; feature status, gaps, and F# tree-sitter/multi-project support match this matrix and the host
 - [ ] Keep this matrix in lockstep as gaps close (flip 🟡/❌ → ✅, add e2e rows)

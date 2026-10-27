@@ -105,15 +105,9 @@ let private buildEntries
         []
     else
         let lineText = lines[line]
-        // GetPartialLongNameEx wants the 0-based index of the last character before
-        // the caret; the caret sits at `character`.
-        let index = min (character - 1) (lineText.Length - 1)
-        let partialName = QuickParse.GetPartialLongNameEx(lineText, index)
+        let partialName, items = FSharpLocalAnalysis.declarationsAt parseResults checkResults lineText line character
         let span = editSpanFor lineText line character partialName.PartialIdent
-        let info =
-            checkResults.GetDeclarationListInfo(
-                Some parseResults, line + 1, lineText, partialName, (fun () -> []))
-        info.Items |> Array.mapi (toEntry span) |> Array.toList
+        items |> Array.mapi (toEntry span) |> Array.toList
 
 /// Get completion items at a 0-based position in an F# file.
 let getCompletions

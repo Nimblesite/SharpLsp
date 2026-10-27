@@ -23,8 +23,10 @@
     <Compile Include="FSharpScriptTests.fs" />
     <Compile Include="FSharpRenameSemanticTests.fs" />
     <Compile Include="FSharpSemanticHighlightingTests.fs" />
+    <Compile Include="FSharpCodeActionKit.fs" />
     <Compile Include="FSharpCodeActionSemanticTests.fs" />
     <Compile Include="FSharpPipeRefactoringTests.fs" />
+    <Compile Include="FSharpNameFixTests.fs" />
     <Compile Include="FSharpAccessorStubTests.fs" />
     <Compile Include="FSharpProjectCrackingTests.fs" />
     <Compile Include="FSharpDeclarationKindTests.fs" />

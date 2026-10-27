@@ -172,6 +172,14 @@ Each `SLSPF0103` finding overlapping the request range becomes a `Simplify name`
 
 A type-informed code action handles missing **interface members**. When the cursor is on an `interface IFoo …` declaration with unimplemented members, FCS `InterfaceStubGenerator` (`TryFindInterfaceDeclaration` → `GetImplementedMemberSignatures` → `FormatInterface`) generates `member _.X … = failwith "…"` stubs for the missing members ([FSharpCodeActions.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`, wired into `getCodeActions` Phase 4). E2E: the IPC suite (`code action offers implement-interface stub …`) and the VSIX suite (`F# LSP — Implement Interface`).
 
+#### [ANALYZERS-FSAC-CODEFIX-TYPO] "Replace with" code fix
+
+Each FS0039 diagnostic overlapping the request range (an undefined value, constructor, type, namespace or member) offers up to three `Replace with 'name'` quick fixes, the closest one preferred ([FSharpNameFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpNameFixes.fs)). The misspelled name is the source text that the diagnostic's range covers. The candidates are FCS's own declarations in scope at that position, from the same `GetDeclarationListInfo` lookup that completion uses (`FSharpLocalAnalysis.declarationsAt`), so a misspelled member is matched against the members of its receiver. Candidates are ranked by case-insensitive Jaro–Winkler similarity, and only those scoring 0.85 or above are offered, which is FCS's own high-confidence threshold for its "Maybe you want one of the following" hints. The diagnostic's message text is never parsed. Applying a fix replaces the range with the candidate's `NameInCode`, backticks included. Tests: `FSharpNameFixTests`.
+
+#### [ANALYZERS-FSAC-CODEFIX-ADD-NEW] "Add 'new'" code fix
+
+FS0760 recommends `new Type(args)` for an `IDisposable` constructor call. When the warning's range is exactly a constructor application in the untyped AST, the `Add 'new'` quick fix inserts `new ` before it. The same warning on a constructor used as a function value (`List.map StringReader`) offers nothing, because `new` cannot prefix a function value. Tests: `FSharpNameFixTests`.
+
 ## [ANALYZERS-PERFORMANCE] Performance And Salsa Queries
 
 Static analyzers are lower priority than compiler diagnostics. A `workspace/diagnostic` request must stream compiler/analyzer diagnostics first and static analyzer diagnostics as later partial results.

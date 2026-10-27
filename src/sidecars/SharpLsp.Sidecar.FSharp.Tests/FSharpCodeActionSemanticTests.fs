@@ -5,6 +5,7 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionSemanticTests
 
 open Xunit
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 
@@ -42,14 +43,6 @@ let private GENERATION_SOURCE =
           "    | Second -> 0"
           ""
           "let whole = { Alpha = 1; Beta = \"b\" }" ]
-
-let internal checkedFixture state path =
-    task {
-        let! checkedFile = FSharpWorkspace.checkFileWithParse state path
-        match checkedFile with
-        | None -> return failwith "FCS could not check the generation fixture"
-        | Some(parse, check, src) -> return (parse, check, src)
-    }
 
 let private generationProject () = loadWorkspace [ "Generation.fs", GENERATION_SOURCE ]
 

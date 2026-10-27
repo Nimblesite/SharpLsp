@@ -9,6 +9,7 @@ open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Text
 open Xunit
 open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 
@@ -134,71 +135,18 @@ let private pipeProject () = loadWorkspace [ "PipeFix.fs", PIPE_SOURCE ]
 
 // ── Harness ─────────────────────────────────────────────────────
 
-/// Code actions at a cursor, through the same entry point the conversion
-/// quick-fix tests use.
-let private actionsAt (state: FSharpWorkspace.FSharpWorkspaceState) (path: string) (line: int) (col: int) =
-    task {
-        let fixes = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions fixes state path line col line 200
-        return (fixes, actions)
-    }
-
-/// Resolve the single offered action with `title`, or None when it is absent.
-let private resolveSole
-    (fixes: FSharpCodeFixes.CodeFixState)
-    (title: string)
-    (actions: FSharpCodeFixes.CodeActionItem list)
-    : FSharpCodeFixes.WorkspaceEdit option =
-    match actions |> List.filter (fun a -> a.Title = title) with
-    | [ sole ] -> FSharpCodeFixes.resolveCodeAction fixes sole.Id
-    | [] -> None
-    | many -> failwith $"expected at most one '{title}' action, got {many.Length}"
-
-/// Apply a single-edit workspace edit to the whole-file source.
-let private applyEdit (src: string) (edit: FSharpCodeFixes.TextEdit) : string =
-    let lines = src.Split('\n')
-    let line = lines[edit.StartLine]
-    lines[edit.StartLine] <- line.Substring(0, edit.StartCharacter) + edit.NewText + line.Substring(edit.EndCharacter)
-    String.concat "\n" lines
-
-let private errorCount (check: FSharpCheckFileResults) =
-    check.Diagnostics
-    |> Array.filter (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
-    |> Array.length
-
 /// Offer → resolve → apply → assert the exact rewritten line, and that the
-/// edited file type-checks with no new FCS errors.
-let private assertConverted
-    (state: FSharpWorkspace.FSharpWorkspaceState)
-    (path: string)
-    (title: string)
-    (line: int)
-    (col: int)
-    (expected: string)
-    =
+/// edited file type-checks with no FCS errors.
+let private assertConverted state path title (line: int) (col: int) (expected: string) =
     task {
-        let! fixes, actions = actionsAt state path line col
-        match resolveSole fixes title actions with
-        | None ->
-            let offered = actions |> List.map (fun a -> a.Title) |> String.concat ", "
-            return failwith $"no '{title}' action at {line}:{col}; offered: [{offered}]"
-        | Some edit ->
-            Assert.Single(edit.DocumentChanges) |> ignore
-            Assert.Single(edit.DocumentChanges[0].Edits) |> ignore
-            Assert.Equal("refactor", (actions |> List.find (fun a -> a.Title = title)).Kind)
-            let edited = applyEdit PIPE_SOURCE edit.DocumentChanges[0].Edits[0]
-            Assert.Equal(expected, edited.Split('\n')[line])
-            let! checkedFile = FSharpWorkspace.checkFileWithSource state path edited
-            match checkedFile with
-            | None -> return failwith $"FCS could not re-check the edited file at {line}:{col}"
-            | Some(_, check, _) -> return Assert.Equal(0, errorCount check)
+        let! check = applyAction state path PIPE_SOURCE "refactor" title (line, col) expected
+        Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error check)
     }
 
 /// Assert that no refactoring action is offered at a position.
-let private assertSilent (state: FSharpWorkspace.FSharpWorkspaceState) (path: string) (line: int) (col: int) =
+let private assertSilent state path (line: int) (col: int) =
     task {
-        let! _, actions = actionsAt state path line col
-        let refactors = actions |> List.filter (fun a -> a.Kind = "refactor") |> List.map _.Title
+        let! refactors = titlesOfKind state path "refactor" line col
         Assert.Empty(refactors)
     }
 
@@ -378,11 +326,7 @@ let ``a stale source or a signature file offers no pipe conversion`` () =
     task {
         let! state, dir, _, paths = pipeProject ()
         try
-            let! checkedFile = FSharpWorkspace.checkFileWithSource state paths[0] PIPE_SOURCE
-            let parseResults =
-                match checkedFile with
-                | Some(parsed, _, _) -> parsed
-                | None -> failwith "FCS could not check the pipe fixture"
+            let! parseResults, _, _ = checkedFixture state paths[0]
             let current = FSharpPipeRefactoring.tryGenerateActions parseResults PIPE_SOURCE paths[0] 9 11
             Assert.Equal<string list>([ "Convert pipeline to nested calls" ], current |> List.map _.Title)
             Assert.Empty(FSharpPipeRefactoring.tryGenerateActions parseResults "" paths[0] 9 11)
