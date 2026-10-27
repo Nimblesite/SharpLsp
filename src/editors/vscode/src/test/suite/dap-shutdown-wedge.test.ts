@@ -62,7 +62,23 @@ const BEHAVIOUR = {
    * the debuggee resumes while that request is still in flight (#508).
    */
   cancelThreads: 'cancelThreads',
+  /**
+   * Answers `exceptionInfo` naming `<unknown module>` with no `details.message`
+   * and an empty stack, as netcoredbg does when it cannot evaluate the
+   * exception object on the stop (#496); `stackTrace` and `evaluate` still
+   * answer, so the router can recover the message.
+   */
+  unknownModuleException: 'unknownModuleException',
+  /** The same, except the `evaluate` fallback fails too. */
+  unknownModuleExceptionSilent: 'unknownModuleExceptionSilent',
 } as const;
+
+/** netcoredbg's answer when it cannot evaluate the exception object (#496). */
+const UNKNOWN_MODULE_DESCRIPTION =
+  "Exception thrown: 'System.ApplicationException' in <unknown module>";
+
+/** What the stub's `$exception.Message` evaluate answers. */
+const EXCEPTION_MESSAGE_RESULT = 'unhandled-by-design';
 
 /** netcoredbg's own words for a `threads` request a resume aborted. */
 const THREADS_CANCELLED = "Error processing 'threads' request. The operation was canceled.";
@@ -128,6 +144,9 @@ let contentLength () =
 [<EntryPoint>]
 let main _argv =
     let mutable threadsCancelled = false
+    let hidesExceptionMessage =
+        behaviour = "${BEHAVIOUR.unknownModuleException}"
+        || behaviour = "${BEHAVIOUR.unknownModuleExceptionSilent}"
     while true do
         use request = JsonDocument.Parse(readBody (contentLength ()))
         let root = request.RootElement
@@ -140,8 +159,21 @@ let main _argv =
             if behaviour = "${BEHAVIOUR.cancelThreads}" && command = "threads" && not threadsCancelled then
                 threadsCancelled <- true
                 send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = false; message = "${THREADS_CANCELLED}"; body = {| |} |}
+            // #496: the exception object could not be evaluated on this stop,
+            // so exceptionInfo names the module but carries no message
+            elif hidesExceptionMessage && command = "exceptionInfo" then
+                send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = true; body = {| description = "${UNKNOWN_MODULE_DESCRIPTION}"; details = {| typeName = "System.ApplicationException"; stackTrace = "" |} |} |}
+            elif hidesExceptionMessage && command = "stackTrace" then
+                send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = true; body = {| stackFrames = [| {| id = 1000; name = "Program.throws" |} |] |} |}
+            elif hidesExceptionMessage && command = "evaluate" && behaviour = "${BEHAVIOUR.unknownModuleExceptionSilent}" then
+                send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = false; message = "the exception object is not evaluable"; body = {| |} |}
+            elif hidesExceptionMessage && command = "evaluate" then
+                send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = true; body = {| result = "${EXCEPTION_MESSAGE_RESULT}" |} |}
             else
                 send {| \`\`type\`\` = "response"; seq = 0; request_seq = requestSeq; command = command; success = true; body = {| |} |}
+            // #496: announce the exception stop whose panel the client asks about
+            if hidesExceptionMessage && command = "initialize" then
+                send {| \`\`type\`\` = "event"; seq = 0; event = "stopped"; body = {| reason = "exception"; threadId = 7; text = "${UNKNOWN_MODULE_DESCRIPTION}" |} |}
             if behaviour <> "${BEHAVIOUR.wedge}" && (command = "terminate" || command = "disconnect") then
                 send {| \`\`type\`\` = "event"; seq = 0; event = "terminated"; body = {| |} |}
             // wedge: and then nothing — no exited, no terminated, and the process stays up
@@ -187,9 +219,9 @@ class WedgeDriver {
   }
 
   /** Send a request and wait for the stub's response to come back through. */
-  public async request(command: string): Promise<DapMessage> {
+  public async request(command: string, args: Record<string, unknown> = {}): Promise<DapMessage> {
     const seq = ++this.seq;
-    this.router.handleMessage({ type: 'request', seq, command, arguments: {} });
+    this.router.handleMessage({ type: 'request', seq, command, arguments: args });
     const answer = await pollUntilResult(
       async () => this.emitted.find((m) => m.type === 'response' && m.request_seq === seq),
       (m) => m !== undefined,
@@ -203,6 +235,11 @@ class WedgeDriver {
   /** Every event of one name the router has fired so far. */
   public events(name: string): DapMessage[] {
     return this.emitted.filter((m) => m.type === 'event' && m.event === name);
+  }
+
+  /** Every answer to `command` the router has sent the client so far. */
+  public answers(command: string): DapMessage[] {
+    return this.emitted.filter((m) => m.type === 'response' && m.command === command);
   }
 
   /** Wait for a `terminated` event to reach the client. */
@@ -408,16 +445,100 @@ suite('An adapter that cancels a threads request under a resume', () => {
       const listed = await driver.request('threads');
       eq(listed.success, true, `the client gets the thread list: ${String(listed.message)}`);
       eq(listed.command, 'threads', 'as the answer to its own threads request');
-      const answers = driver.emitted.filter(
-        (m) => m.type === 'response' && m.command === 'threads',
+      eq(
+        driver.answers('threads').length,
+        1,
+        'exactly one answer reached the client, never the cancellation too',
       );
-      eq(answers.length, 1, 'exactly one answer reached the client, never the cancellation too');
 
       // Interaction 2 — the adapter answers the next one itself.
       const again = await driver.request('threads');
       eq(again.success, true, 'a threads request the adapter answers is forwarded as it is');
       eq(again.request_seq, Number(listed.request_seq) + 1, 'answering the request that asked');
       eq(driver.events('terminated').length, 0, 'and nothing about this ends the session');
+    } finally {
+      driver.dispose();
+    }
+  });
+});
+
+// netcoredbg sometimes cannot evaluate the exception object on a stop: every
+// `exceptionInfo` reply then names the type but carries no message and no stack
+// ("Exception thrown: 'System.ApplicationException' in <unknown module>"), and
+// re-asking never fills it in (#496). The router must recover the message
+// another way — `evaluate` of `$exception.Message` in the stopped thread's top
+// frame — and splice it into the reply before the client sees it. Implements
+// [DEBUG-ADAPTER-GAPS].
+suite('An adapter that answers exceptionInfo without the message', () => {
+  const start = useStub('sharplsp-exception-');
+
+  /** The reply's `details`, the part of the reply the panel shows. */
+  const detailsOf = (message: DapMessage): Record<string, unknown> =>
+    isRecord(message.body) && isRecord(message.body.details) ? message.body.details : {};
+
+  /** A router over a stub told to `behave`, once its exception stop reached the client. */
+  const stoppedOnException = async (behave: string): Promise<WedgeDriver> => {
+    const driver = start(behave);
+    eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
+    await pollUntilResult(
+      async () => driver.events('stopped'),
+      (stops) => stops.length === 1,
+      WAIT_MS,
+      10,
+      'the exception stop to reach the client',
+    );
+    return driver;
+  };
+
+  /** The reply's description, the line the panel heads with. */
+  const descriptionOf = (message: DapMessage): string =>
+    isRecord(message.body) ? String(message.body.description ?? '') : '';
+
+  /** The session keeps serving requests, and nothing ended it. */
+  const assertSessionLives = async (driver: WedgeDriver, why: string): Promise<void> => {
+    eq((await driver.request('threads')).success, true, `${why}: the session keeps serving`);
+    eq(driver.events('terminated').length, 0, `${why}: and nothing ended it`);
+  };
+
+  test('the message is recovered from $exception.Message and reaches the client', async () => {
+    const driver = await stoppedOnException(BEHAVIOUR.unknownModuleException);
+    try {
+      // Interaction 1 — the reply the client receives must carry the message.
+      const info = await driver.request('exceptionInfo', { threadId: 7 });
+      eq(info.success, true, 'exceptionInfo succeeds');
+      eq(
+        detailsOf(info).message,
+        EXCEPTION_MESSAGE_RESULT,
+        'details.message was recovered through evaluate',
+      );
+      assertContainsAll(
+        descriptionOf(info),
+        [UNKNOWN_MODULE_DESCRIPTION, EXCEPTION_MESSAGE_RESULT],
+        'the description, carrying the message too',
+      );
+      eq(driver.answers('exceptionInfo').length, 1, 'exactly one exceptionInfo answer');
+
+      // Interaction 2 — the session is unaffected by the rescue.
+      await assertSessionLives(driver, 'after the rescue');
+    } finally {
+      driver.dispose();
+    }
+  });
+
+  test('a fallback that fails forwards the original reply and the session continues', async () => {
+    const driver = await stoppedOnException(BEHAVIOUR.unknownModuleExceptionSilent);
+    try {
+      // Interaction 1 — the original reply arrives unchanged: nothing invented.
+      const info = await driver.request('exceptionInfo', { threadId: 7 });
+      eq(info.success, true, 'the original reply was forwarded');
+      eq(detailsOf(info).message, undefined, 'no message was invented for the panel');
+      assertContainsAll(descriptionOf(info), [UNKNOWN_MODULE_DESCRIPTION], 'its description');
+
+      // Interaction 2 — a retried ask behaves the same, and the session lives on.
+      const retry = await driver.request('exceptionInfo', { threadId: 7 });
+      eq(retry.success, true, 'the retry is answered too');
+      eq(driver.answers('exceptionInfo').length, 2, 'one answer per ask, never a duplicate');
+      await assertSessionLives(driver, 'after the gap');
     } finally {
       driver.dispose();
     }

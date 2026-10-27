@@ -53,8 +53,15 @@ internal sealed partial class WorkspaceManager
             new LinePosition(0, 0),
             new LinePosition(0, 0)
         );
+        // A reference Roslyn refuses to load (e.g. one built against a newer Roslyn)
+        // is reported like the SDK build does — CS9057/CS8032 — never dropped
+        // into a silent clean answer ([DIAG-CATEGORIES-ANALYZER]).
+        var loadFailures = AnalyzerLoadMonitor
+            .ProjectFailures(project)
+            .Select(failure => failure.ToDiagnostic(projectPath));
         return
         [
+            .. loadFailures,
             .. compilation
                 .GetDiagnostics(ct)
                 .Where(diagnostic =>
