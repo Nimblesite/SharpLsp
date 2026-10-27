@@ -2,13 +2,13 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     id("java")
-    kotlin("jvm") version "2.3.0"
+    kotlin("jvm") version "2.4.21"
     // 2.14 is the current stable intellij-platform Gradle plugin release;
     // 2.2 was rejected by the platform with an "outdated" warning.
-    id("org.jetbrains.intellij.platform") version "2.14.0"
+    id("org.jetbrains.intellij.platform") version "2.19.0"
     // Line coverage for the Rider plugin, gated by the repo-wide ratchet in
     // coverage-thresholds.json. [DIST-CI-RIDER]
-    id("org.jetbrains.kotlinx.kover") version "0.9.2"
+    id("org.jetbrains.kotlinx.kover") version "0.9.11"
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -53,7 +53,7 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
     }
 
-    testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     // The platform test framework registers `com.intellij.tests.
     // JUnit5TestSessionListener`, whose constructor loads `junit.framework.
