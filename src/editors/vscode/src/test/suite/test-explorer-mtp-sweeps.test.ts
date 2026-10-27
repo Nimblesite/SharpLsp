@@ -38,6 +38,7 @@ import {
   mtpProjectXml,
   MTP_XUNIT_PACKAGES,
   projectXml,
+  resetBuildCounter,
   warmDiscovery,
   writeBuildCounter,
   writeMtpGlobalJson,
@@ -166,7 +167,7 @@ function modulesPlanned(listing: TestListing): string[] {
 
 /** The builds `run` cost, counted afresh from an empty log. */
 async function buildsDuring(log: string, run: () => Promise<unknown>): Promise<string[]> {
-  fs.rmSync(log, { force: true });
+  resetBuildCounter(log);
   await run();
   return buildsLogged(log);
 }

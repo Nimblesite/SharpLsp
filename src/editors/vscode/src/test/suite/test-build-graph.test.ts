@@ -21,6 +21,7 @@ import {
   writeMtpGlobalJson,
   writeBuildCounter,
   buildsLogged,
+  resetBuildCounter,
 } from './dotnet-project-kit';
 import {
   activateWithScratch,
@@ -31,7 +32,7 @@ import {
 import { assertFailed, assertPassed, cachedFor, runIds } from './test-explorer-outcome-assertions';
 import { COVERAGE_DIR_NAME, COVERLET_PACKAGE, MTP_CODE_COVERAGE } from './test-coverage-fixtures';
 import { removeDirRecursive, sleep } from './test-helpers';
-import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const LIBRARY =
   'namespace GraphLib; public static class Value { public static int Current() => 1; }';
@@ -151,7 +152,10 @@ suite('Incremental test build graph', () => {
             samePath(projects[0] ?? '', selected),
             `ownership comes from workspace metadata: ${JSON.stringify({ projects, selected })}`,
           );
-          await discoverSolution(api, solution, [fixture.id, 'Other.Unselected']);
+          // The test's own listing just built the graph, so discovery is
+          // incremental. Its budget stays inside this test's: a test that times
+          // out tears down inside the NEXT test and unloads its solution (#507).
+          await discoverSolution(api, solution, [fixture.id, 'Other.Unselected'], DOTNET_CLI_MS);
           await sleep(DISCOVERY_SETTLE_MS);
           await api.testController.whenIdle();
           const run = async () =>
@@ -162,7 +166,7 @@ suite('Incremental test build graph', () => {
             joinPath(otherRoot, 'Other.cs'),
             'this is deliberately not compilable C#',
           );
-          fs.writeFileSync(counter, '');
+          resetBuildCounter(counter);
           const unchanged = await run();
           assert.equal(unchanged.results.get(fixture.id)?.outcome, 'passed', unchanged.output);
           assert.equal(

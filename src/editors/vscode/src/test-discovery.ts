@@ -266,12 +266,28 @@ async function listWithVsTest(
     'quiet',
     VSTEST_LISTING_OUTPUT,
   ];
-  const run = await runDotnet(args, cwd, timeoutMs);
+  return await listingFrom(await runDotnet(args, cwd, timeoutMs), cwd, timeoutMs);
+}
+
+/**
+ * The listing one VSTest pass produced. A run that FAILED yet listed some tests
+ * keeps them ([TEST-DISCOVERY-FQN]) and says why the rest are missing: a
+ * sibling's build error must never make its tests vanish without a word.
+ */
+async function listingFrom(run: DotnetRun, cwd: string, timeoutMs: number): Promise<TestListing> {
   const output = usableStdout(run);
-  if (output === undefined) {
-    return failedListing(listFailure(run));
-  }
-  return await namesFrom(output, cwd, timeoutMs);
+  if (output === undefined) return failedListing(listFailure(run));
+  const listing = await namesFrom(output, cwd, timeoutMs);
+  if (!run.failed) return listing;
+  return { ...listing, warnings: [partialFailure(run), ...listing.warnings] };
+}
+
+/** Why a run that still listed tests failed: its error lines, else its tail. */
+function partialFailure(run: DotnetRun): string {
+  const errors = parseListingDiagnostics(run.stdout);
+  return errors.length === 0
+    ? listFailure(run)
+    : `dotnet test --list-tests failed for part of the target: ${errors.join('\n')}`;
 }
 
 /** Working directory for a target, or `undefined` when it is not on disk. */

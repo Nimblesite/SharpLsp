@@ -25,6 +25,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SharpLspExtensionApi } from '../../extension.js';
+import { logFilePath } from '../../log.js';
 import { listTests } from '../../test-discovery.js';
 import { parseListingDiagnostics } from '../../test-listing.js';
 import {
@@ -42,7 +43,8 @@ import {
   errorTextOf,
   rootsOf,
 } from './test-explorer-kit';
-import { FIXTURE_BUILD_MS } from './test-timeouts';
+import { pollUntilResult } from './test-helpers';
+import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { useScratchParent } from './test-explorer-harness';
 
 /** One real xUnit test — the test the refusal loses. */
@@ -256,6 +258,64 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
       rows.map((row) => `${row.label}: ${errorTextOf(row)}`),
       [],
       'the Testing view shows no row for a healthy solution with no test',
+    );
+  });
+
+  test('a sibling that fails to build keeps the tests that listed and says why the rest are missing', async function () {
+    this.timeout(FIXTURE_BUILD_MS * 2);
+
+    // Two test projects, one of which does not compile. `dotnet` exits
+    // non-zero having listed the other one, and that partial listing is kept
+    // ([TEST-DISCOVERY-FQN]). On Windows a counted build collided on its log
+    // and failed exactly like this, and its tests vanished without a word (#507).
+    const root = path.join(parent, 'partial');
+    const listed = writeProject(
+      path.join(root, 'ListedTests'),
+      'ListedTests.csproj',
+      projectXml(XUNIT_PACKAGES),
+      'CalculatorTests.cs',
+      TEST_SOURCE,
+    );
+    const broken = writeProject(
+      path.join(root, 'BrokenTests'),
+      'BrokenTests.csproj',
+      projectXml(XUNIT_PACKAGES),
+      'Broken.cs',
+      'this is deliberately not compilable C#',
+    );
+    const solution = await createSolution(root, 'Partial', [listed, broken]);
+
+    // 1. The listing keeps what enumerated, and carries the compiler's reason.
+    const partial = await listTests(solution);
+    assert.deepStrictEqual([...partial.names], [EXPECTED_ID], 'the project that built still lists');
+    assert.equal(partial.ok, true, 'a partial listing is kept, never thrown away');
+    assert.equal(partial.byAssembly.length, 1, 'attributed to the one assembly that built');
+    const warnings = partial.warnings.join('\n');
+    assert.ok(warnings.includes('BrokenTests.csproj'), `the failed project is named: ${warnings}`);
+    assert.ok(warnings.includes('error CS'), `with the compiler's own error: ${warnings}`);
+
+    // 2. The Testing view shows the test that listed, and the log says why the
+    //    sibling's tests are not beside it.
+    await api.explorerProvider.loadSolution(solution);
+    await drainDiscovery(() => {
+      api.testController.items.replace([]);
+    }, api.testController);
+    await api.testController.activateAndDiscover();
+    await api.testController.whenIdle();
+    assert.deepStrictEqual(
+      collectLeafIds(api.testController.items),
+      [EXPECTED_ID],
+      'the view shows the test that listed',
+    );
+    await pollUntilResult(
+      async () => (await fs.promises.readFile(logFilePath(), 'utf8')).split('\n'),
+      (lines) =>
+        lines.some(
+          (line) => line.includes('Test discovery (') && line.includes('BrokenTests.csproj'),
+        ),
+      LSP_RESPONSE_MS,
+      undefined,
+      'a discovery log line naming the project that failed to build',
     );
   });
 
