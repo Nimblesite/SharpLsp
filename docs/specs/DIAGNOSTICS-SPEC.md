@@ -153,6 +153,8 @@ Monorepo-only unused-public-code behavior is specified by [ANALYZERS-UNUSED-PUBL
 
 IDE code-style analyzers run in the editor under the effective `.editorconfig` whether or not the project sets `EnforceCodeStyleInBuild`, which governs the build alone. An IDE rule is reported once promoted to a warning or error; its hidden or suggestion default is not, so defaults never flood the report. `NoWarn`, an `.editorconfig` severity of `none`, pragma suppressions and `AnalysisMode` still win (#343).
 
+An analyzer reference the sidecar cannot load — typically one built against a newer Roslyn than the sidecar hosts — is logged as a structured warning and reported as a project-level warning matching the SDK build: `CS9057` for a newer compiler, `CS8032` for an analyzer that cannot be created or loaded. A project never answers clean and empty while its analyzer references failed to load.
+
 A finding whose rule has a documentation page carries it as LSP `codeDescription.href`: the C# descriptor's `HelpLinkUri` (compiler, IDE, CA and NuGet analyzers such as StyleCop alike) and FSharpLint's per-rule page. F# compiler codes carry none — their pages are not reliably published, and a dead link is worse than none. A link that is not a valid URI is dropped, never fatal.
 
 FSharpLint uses the same current parse tree, checked file and source text as compiler diagnostics, including unsaved editor text. It preserves upstream rule identifiers, source ranges and inline suppressions. The nearest ancestor `fsharplint.json` applies independently of the process working directory; creating, changing or deleting it triggers diagnostic refresh for closed files. `analyzers_enabled = false` retires lint findings while preserving compiler diagnostics.

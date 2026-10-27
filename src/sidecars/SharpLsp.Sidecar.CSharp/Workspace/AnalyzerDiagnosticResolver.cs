@@ -99,7 +99,10 @@ internal static class AnalyzerDiagnosticResolver
         [
             .. project
                 .AnalyzerReferences.SelectMany(reference =>
-                    reference.GetAnalyzers(LanguageNames.CSharp)
+                    // Every load is observed: a reference Roslyn refuses to load is
+                    // recorded instead of silently yielding no analyzers
+                    // ([DIAG-CATEGORIES-ANALYZER]).
+                    AnalyzerLoadMonitor.GetAnalyzers(reference, LanguageNames.CSharp)
                 )
                 .Concat(IdeStyleAnalyzers.Value)
                 .DistinctBy(analyzer => analyzer.GetType()),
