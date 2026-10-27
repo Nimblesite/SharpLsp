@@ -14,10 +14,10 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { AnchoredSource } from './debug-anchors';
 import { DapRecorder, dap, type StopRecord } from './debug-dap-kit';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import type { DebugFixture } from './debug-fixture-programs';
 import { assertSteppedThread, waitForFocusOn } from './debug-thread-kit';
-import { comparablePath } from './test-helpers';
+import { comparablePath, pollUntilResult } from './test-helpers';
 
 /** F10. */
 export const CMD_STEP_OVER = 'workbench.action.debug.stepOver';
@@ -116,6 +116,25 @@ export async function stackFrames(
   const frames: unknown = body['stackFrames'];
   assert.ok(Array.isArray(frames), '`stackTrace` must answer with a stackFrames array');
   return frames.map((frame) => frameFrom(frame as Record<string, any>));
+}
+
+/**
+ * The names of `threadId`'s frames, re-read until `ready` holds. A `stackTrace`
+ * answered before the logical async frames can be reconstructed carries the
+ * physical ones, so one read races the reconstruction; on timeout the poll
+ * names the frames it last saw. [DEBUG-FEATURES-STACK-ASYNC]
+ */
+export function frameNamesUntil(
+  session: vscode.DebugSession,
+  threadId: number,
+  nameOf: (frame: Frame) => string,
+  ready: (names: readonly string[]) => boolean,
+): Promise<string[]> {
+  return pollUntilResult(
+    async () => (await stackFrames(session, threadId)).map(nameOf),
+    ready,
+    LSP_RESPONSE_MS,
+  );
 }
 
 /** The frame execution is stopped in — frame 0 of the stopped thread. */

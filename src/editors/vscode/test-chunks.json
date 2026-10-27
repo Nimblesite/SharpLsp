@@ -102,6 +102,7 @@
         "debug-exceptions-e2e.test.js",
         "debug-exception-filters-e2e.test.js",
         "dap-exception-policy.test.js",
+        "dap-stack-retry.test.js",
         "debug-just-my-code-e2e.test.js",
         "debug-policy-e2e.test.js",
         "debug-terminal-exception-e2e.test.js",
