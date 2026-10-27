@@ -271,5 +271,216 @@ pub(crate) fn find_config_file(start: &Path) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "config_tests.rs"]
-mod tests;
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_default_config() {
+        let config = SharpLspConfig::default();
+        assert_eq!(config.server.log_level, "info");
+        assert_eq!(config.server.debounce_ms, 150);
+        assert!(config.csharp.enabled);
+        assert!(config.fsharp.enabled);
+        assert!(config.diagnostics.analyzers_enabled);
+        assert!(config.diagnostics.solution_wide_analysis);
+        assert!(
+            matches!(config.diagnostics.project_filter.as_slice(), []),
+            "{:?}",
+            config.diagnostics.project_filter
+        );
+        assert!(config.analyzers.dead_code);
+        assert!(!config.analyzers.monorepo);
+        assert_eq!(config.profiler.max_concurrent_sessions, 5);
+        assert_eq!(config.profiler.output_directory, ".sharplsp/profiles");
+    }
+
+    #[test]
+    fn test_parse_minimal_toml() {
+        let toml_str = "";
+        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.server.debounce_ms, 150);
+    }
+
+    #[test]
+    fn test_parse_partial_toml() {
+        let toml_str = r#"
+[server]
+log_level = "debug"
+debounce_ms = 200
+
+[csharp]
+solution_path = "MyApp.sln"
+
+[diagnostics]
+solution_wide_analysis = true
+project_filter = ["MyApp.Core", "MyApp.Api"]
+"#;
+        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.server.log_level, "debug");
+        assert_eq!(config.server.debounce_ms, 200);
+        assert_eq!(config.csharp.solution_path, "MyApp.sln");
+        assert!(config.diagnostics.solution_wide_analysis);
+        assert_eq!(
+            config.diagnostics.project_filter,
+            vec!["MyApp.Core", "MyApp.Api"]
+        );
+        // Defaults still apply for unset fields
+        assert!(config.fsharp.enabled);
+    }
+
+    /// A configured `solution_path` must be the path opened, not the workspace
+    /// root. Sending the root leaves the sidecar to rediscover, and in a root
+    /// holding several solutions that discovery is ambiguous and loads nothing —
+    /// no hover, no completions, no diagnostics. Implements
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
+    #[test]
+    fn test_relative_solution_path_is_opened_not_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let app = root.join("app");
+        fs::create_dir_all(&app).unwrap();
+        let sln = app.join("App.sln");
+        fs::write(&sln, "").unwrap();
+        // A second solution elsewhere is what makes discovery ambiguous.
+        fs::create_dir_all(root.join("other")).unwrap();
+        fs::write(root.join("other").join("Other.sln"), "").unwrap();
+
+        let config = CSharpConfig {
+            enabled: true,
+            solution_path: "app/App.sln".to_string(),
+        };
+
+        assert_eq!(config.open_target(root), sln);
+    }
+
+    #[test]
+    fn test_absolute_solution_path_is_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let sln = root.join("Explicit.sln");
+        fs::write(&sln, "").unwrap();
+
+        let config = CSharpConfig {
+            enabled: true,
+            solution_path: sln.to_string_lossy().to_string(),
+        };
+
+        assert_eq!(config.open_target(root), sln);
+    }
+
+    /// An empty `solution_path` is unset; a stale or misspelled one must not
+    /// wedge the sidecar on a path that does not exist; a directory is not a
+    /// solution. Each falls back to the workspace root and its auto-discovery.
+    #[test]
+    fn test_unusable_solution_path_falls_back_to_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("app")).unwrap();
+
+        for solution_path in ["", "does/not/exist.sln", "app"] {
+            let config = CSharpConfig {
+                enabled: true,
+                solution_path: solution_path.to_string(),
+            };
+            assert_eq!(config.open_target(root), root, "{solution_path:?}");
+        }
+        assert_eq!(CSharpConfig::default().open_target(root), root);
+    }
+
+    /// An unknown key is rejected in every section, never silently ignored.
+    #[test]
+    fn test_unknown_fields_rejected() {
+        for toml_str in [
+            "[server]\nnonexistent_field = true\n",
+            "[analyzers]\nbogus = true\n",
+        ] {
+            let result: std::result::Result<SharpLspConfig, _> = toml::from_str(toml_str);
+            assert!(result.is_err(), "{toml_str}");
+        }
+    }
+
+    /// `[analyzers]` with both flags, with only `monorepo` (`dead_code` keeps
+    /// its default of true), and absent altogether.
+    #[test]
+    fn test_parse_analyzers_section() {
+        for (toml_str, dead_code, monorepo) in [
+            (
+                "[analyzers]\ndead_code = true\nmonorepo = true\n",
+                true,
+                true,
+            ),
+            ("[analyzers]\nmonorepo = true\n", true, true),
+            ("", true, false),
+        ] {
+            let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
+            assert_eq!(config.analyzers.dead_code, dead_code, "{toml_str}");
+            assert_eq!(config.analyzers.monorepo, monorepo, "{toml_str}");
+        }
+    }
+
+    #[test]
+    fn test_find_config_file_in_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("sharplsp.toml");
+        fs::write(&config_path, "[server]\nlog_level = \"trace\"\n").unwrap();
+
+        let found = find_config_file(temp.path());
+        assert_eq!(found, Some(config_path));
+    }
+
+    #[test]
+    fn test_find_config_file_walks_up() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("sharplsp.toml");
+        fs::write(&config_path, "").unwrap();
+
+        let subdir = temp.path().join("src").join("deep");
+        fs::create_dir_all(&subdir).unwrap();
+
+        let found = find_config_file(&subdir);
+        assert_eq!(found, Some(config_path));
+    }
+
+    #[test]
+    fn test_find_config_file_none() {
+        let temp = tempfile::tempdir().unwrap();
+        let found = find_config_file(temp.path());
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_load_config_defaults() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = load_config(temp.path(), &serde_json::json!({})).unwrap();
+        assert_eq!(config.server.log_level, "info");
+    }
+
+    #[test]
+    fn test_load_config_from_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("sharplsp.toml");
+        fs::write(
+            &config_path,
+            r#"
+[server]
+log_level = "warn"
+debounce_ms = 300
+
+[fsharp]
+enabled = false
+"#,
+        )
+        .unwrap();
+
+        let config = load_config(temp.path(), &serde_json::json!({})).unwrap();
+        assert_eq!(config.server.log_level, "warn");
+        assert_eq!(config.server.debounce_ms, 300);
+        assert!(!config.fsharp.enabled);
+        assert!(config.csharp.enabled);
+    }
+}

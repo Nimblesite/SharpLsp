@@ -861,9 +861,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       // The sweep must not escape as an unhandled rejection, and the standing
       // tree must survive with the failure logged. [TEST-REACTIVITY]
       assert.deepStrictEqual(unhandled, [], 'reactive discovery must not reject unhandled');
-      const kept = collectLeafIds(api.testController.items);
-      assert.strictEqual(kept.length, good.length, 'a failed sweep must not blank the view');
-      assert.deepStrictEqual(sorted(kept), sorted(good), 'the kept tree is the previous tree');
+      assertLeavesAre(api.testController, good, 'a failed sweep keeps exactly the previous tree');
       assertTree(
         api.testController,
         EXPECTED,
@@ -882,9 +880,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       api.testController.items.replace([]);
       assert.deepStrictEqual(collectLeafIds(api.testController.items), [], 'empty before recovery');
       await api.testController.activateAndDiscover();
-      const recovered = await pollUntilDiscovered(api.testController, EXPECTED);
-      assert.strictEqual(recovered.length, EXPECTED.length, 'recovery rediscovers the fixture');
-      assert.deepStrictEqual(sorted(recovered), sorted(EXPECTED), 'and nothing else');
+      await pollUntilDiscovered(api.testController, EXPECTED);
+      assertLeavesAre(api.testController, EXPECTED, 'recovery rediscovers exactly the fixture');
       assertTree(
         api.testController,
         EXPECTED,

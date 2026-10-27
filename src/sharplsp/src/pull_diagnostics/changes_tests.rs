@@ -149,6 +149,17 @@ mod contract {
         )
     }
 
+    /// Initialization's transition: record `workspace` as the selection, then
+    /// open it in `compiler`.
+    fn select_and_open(
+        runtime: &tokio::runtime::Runtime,
+        compiler: &Fake,
+        workspace: &str,
+    ) -> Result<()> {
+        state::select_workspace(workspace)?;
+        runtime.block_on(open_workspace(&compiler.manager, workspace))
+    }
+
     /// One watched-file event for `path`.
     fn event(path: &str, typ: FileChangeType) -> Result<FileEvent> {
         Ok(FileEvent {
@@ -249,14 +260,13 @@ mod contract {
             }),
         );
         pull_session(&runtime, &compiler)?;
-        let workspace = dir.path().join("W.sln").to_string_lossy().into_owned();
-        state::select_workspace(&workspace)?;
         let vfs = Arc::new(Vfs::new());
         for path in [&owned, &adopted, &excluded] {
             vfs.open(paths::path_to_lsp_uri(path)?, 1, "class C {}".to_owned());
         }
         compiler.manager.set_document_source(&vfs);
-        runtime.block_on(open_workspace(&compiler.manager, &workspace))?;
+        let workspace = dir.path().join("W.sln").to_string_lossy().into_owned();
+        select_and_open(&runtime, &compiler, &workspace)?;
         let mark = compiler.mark()?;
         apply(&runtime, &compiler, &vfs, &rescan())?;
 
@@ -303,9 +313,7 @@ mod contract {
             .context("solution A")?
             .to_string_lossy()
             .into_owned();
-        // Initialization records the configured solution and opens it.
-        state::select_workspace(&first)?;
-        runtime.block_on(open_workspace(&compiler.manager, &first))?;
+        select_and_open(&runtime, &compiler, &first)?;
 
         configuration.update(&json!({"sharplsp":{"csharp":{"solution_path":"app/B.sln"}}}))?;
         let vfs = Arc::new(Vfs::new());
@@ -354,8 +362,7 @@ mod contract {
         let compiler = Fake::connect(&runtime, Arc::new(|_, _| empty()));
         pull_session(&runtime, &compiler)?;
         let workspace = dir.path().join("W.sln").to_string_lossy().into_owned();
-        state::select_workspace(&workspace)?;
-        runtime.block_on(open_workspace(&compiler.manager, &workspace))?;
+        select_and_open(&runtime, &compiler, &workspace)?;
         let mark = compiler.mark()?;
         let touched = [event(&assets, FileChangeType::CHANGED)?];
         let batch = |changes: &[FileEvent]| -> Result<ReloadBatch> {
