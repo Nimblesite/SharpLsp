@@ -25,6 +25,8 @@ import {
   CMD_OPEN_SOLUTION,
   CMD_OPEN_PROJECT_FILE,
   CMD_ADD_PROJECT_REFERENCE,
+  CMD_ADD_FSHARP_FILE,
+  CONTEXT_FS_PROJECT_SELECTED,
   CMD_NUGET_ADD_FROM_EXPLORER,
   VIEW_SOLUTION_EXPLORER,
 } from './constants.js';
@@ -45,6 +47,7 @@ import * as pkgMaint from './package-maintenance.js';
 import { registerBuildCommands } from './build.js';
 import { registerNuGetCommands, addNuGetPackageToProject } from './nuget.js';
 import { registerScaffoldingCommands } from './scaffolding.js';
+import { addFSharpSourceFile, fsharpProjectOfNode } from './add-source-file.js';
 import { registerFsiCommands } from './fsi.js';
 import { registerHotReloadCommands } from './hot-reload.js';
 import { registerDebugAdapter } from './debug.js';
@@ -164,6 +167,22 @@ function wireActiveEditorReveal(
   reveal(window.activeTextEditor);
 }
 
+/**
+ * Keep the `sharplsp.fsProjectSelected` context key in step with the tree
+ * selection, so the "Add F# Source File" menu entries ([SE-ADD-FILE-COMMAND])
+ * appear exactly on F# project / folder / file nodes.
+ */
+function wireFsProjectContext(treeView: vscode.TreeView<ExplorerNode>): void {
+  const sync = (selection: readonly ExplorerNode[]): void => {
+    const selected = selection.some((node) => fsharpProjectOfNode(node) !== undefined);
+    void commands.executeCommand('setContext', CONTEXT_FS_PROJECT_SELECTED, selected);
+  };
+  treeView.onDidChangeSelection((event) => {
+    sync(event.selection);
+  });
+  sync(treeView.selection);
+}
+
 async function activateInner(context: ExtensionContext): Promise<SharpLspExtensionApi> {
   log.info('step 1: SharpLspStatusBar');
   statusBar = new SharpLspStatusBar();
@@ -178,6 +197,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   });
   context.subscriptions.push(solutionTreeView);
   wireActiveEditorReveal(context, solutionTreeView, explorerProvider);
+  wireFsProjectContext(solutionTreeView);
 
   log.info('step 4: profiler UI');
   profilerUi = registerProfiler(context);
@@ -515,6 +535,9 @@ function registerContextMenuCommands(context: ExtensionContext): void {
     }),
     commands.registerCommand(CMD_ADD_PROJECT_REFERENCE, async (node?: ExplorerNode) => {
       await addProjectReference(node);
+    }),
+    commands.registerCommand(CMD_ADD_FSHARP_FILE, async (node?: ExplorerNode) => {
+      await addFSharpSourceFile(node);
     }),
     commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node?: ExplorerNode) => {
       const projectFilePath = projectPathOf(node);

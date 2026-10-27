@@ -52,6 +52,11 @@ export const CMD_NUGET_ADD_FROM_EXPLORER = 'sharplsp.nuget.addFromExplorer';
 export const CMD_OPEN_PROJECT_FILE = 'sharplsp.openProjectFile';
 export const CMD_ADD_PROJECT_REFERENCE = 'sharplsp.addProjectReference';
 
+// Add source file into compile order (GitHub #493, [SE-ADD-FILE-COMMAND])
+export const CMD_ADD_FSHARP_FILE = 'sharplsp.addFSharpSourceFile';
+/** VS Code context key: the Solution Explorer selection belongs to an F# project. */
+export const CONTEXT_FS_PROJECT_SELECTED = 'sharplsp.fsProjectSelected';
+
 // Scaffolding (dotnet new)
 export const CMD_NEW_SOLUTION = 'sharplsp.newSolution';
 export const CMD_NEW_PROJECT = 'sharplsp.newProject';

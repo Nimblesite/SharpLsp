@@ -14,7 +14,7 @@ Deviations from the original design below (all functionally equivalent):
 - `updatePackageVersion` is folded into `addPackage` (upsert), so there are two methods: `project/addPackage`, `project/removePackage`.
 - `.fsproj` edits route to the **C# sidecar** rather than a mirrored F# handler: `MSBuildLocator` (MSBL001) forbids a shared `Microsoft.Build` reference in the F#/Common projects, and `ProjectRootElement` is language-agnostic (the issue itself notes "it's not F#-specific").
 
-**⏳ Not yet done (separate violations, out of scope for #4):** `addCompileItem` / `reorderCompileItems`, `scaffolding.ts` (V2), `FSharpFileOrder.fs` (V3), and the Phase 5 CI grep-guard.
+**⏳ Not yet done (separate violations, out of scope for #4):** `reorderCompileItems` / `FSharpFileOrder.fs` (V3) and the Phase 5 CI grep-guard. V2 (`addCompileItem` + `scaffolding.ts`) landed with GitHub #493 / [SE-ADD-FILE-REQUEST]: the sidecar edit is `CompileItemEditor.cs` behind `project/addCompileItem`, the host routes it via `sharplsp/project/addCompileItem` (`src/sharplsp/src/project_edit.rs`), and `scaffolding.ts` auto-adds through it (see Phase 3).
 
 ## Goal
 
@@ -114,7 +114,7 @@ project.Save(path);                                   // trivia-preserving write
   - [x] `Add` — find/create `<ItemGroup>`, add `<PackageReference Include="X" Version="Y" />`; CPM variant adds `<PackageVersion>` / a versionless `<PackageReference>`; upsert updates an existing `Version`.
   - [x] `Remove` — find the matching `<PackageReference>`/`<PackageVersion>` and `.Parent.RemoveChild(el)` (removes the whole subtree, fixing issue #4).
   - [x] `UpdatePackageVersion` — folded into `Add` (upsert path sets `metadata.Value`).
-  - [ ] `AddCompileItem` — _not done (separate violation V2)._
+  - [x] `AddCompileItem` — GitHub #493 / [SE-ADD-FILE-REQUEST]: `CompileItemEditor.Insert` behind `project/addCompileItem` (`CompileItemEditor.cs`, handler in `CSharpSidecar.Packages.cs`); inserts before/after an anchor or before the LAST item (F# entry point stays last), no-op on existing includes and glob projects, formatting/BOM/CRLF preserved. Pinned in `CompileItemEditorEndToEndTests.cs` + `tests/project_edit_e2e.rs`.
 - [x] Register `project/addPackage` / `project/removePackage` in the `CSharpSidecar` router.
 - [x] `.fsproj` edits route to the C# sidecar (language-agnostic `ProjectRootElement`) — see Status for the MSBL001 rationale.
 - [ ] `ReorderCompileItems` handler — _not done (separate violation V3)._
@@ -136,12 +136,12 @@ project.Save(path);                                   // trivia-preserving write
 - [x] `src/sharplsp/tests/nuget_e2e.rs` — every existing scenario green (now full-stack via the sidecar), plus new multi-line-child, wrapped-attribute, conditional-`ItemGroup`, and comment scenarios from issue #4.
 - [x] Remove the now-dead `xml_edit` tests (coverage moved to `nuget_e2e.rs`) and the `quick-xml` dependency.
 
-### Phase 3 — Switch scaffolding.ts to the sidecar
+### Phase 3 — Switch scaffolding.ts to the sidecar ✅ (GitHub #493, [SE-ADD-FILE-CSHARP])
 
-- [ ] `src/editors/vscode/src/scaffolding.ts autoAddFileToProject` — replace the file-system splicing with a call to the new `sharplsp/project/addCompileItem` LSP custom request.
-- [ ] Delete the `fs.readFileSync`/`fs.writeFileSync` path and the `lastIndexOf('</ItemGroup>')` code.
-- [ ] Add a VSCode test that scaffolds a new `.cs` file into a project with a comment containing `</ItemGroup>` to prove the old bug is gone.
-- [ ] Add a test for SDK-style projects that have default `Compile` globs — the no-op path.
+- [x] `src/editors/vscode/src/scaffolding.ts autoAddFileToProject` — replaced by `addFileToNearestProject` in `add-source-file.ts`, which calls `sharplsp/project/addCompileItem` through the LSP client. The same module also serves the F#-first `sharplsp.addFSharpSourceFile` command ([SE-ADD-FILE-COMMAND]).
+- [x] The `fs.readFileSync`/`fs.writeFileSync` path and the `lastIndexOf('</ItemGroup>')` code are deleted.
+- [x] VSCode test: `scaffolding-e2e.test.ts` "newFile auto-adds … past a comment trap" drives the real command against a csproj whose comment contains `</ItemGroup>` and asserts the DOM insert + verbatim comment. (The same trap is pinned at the sidecar tier in `CompileItemEditorEndToEndTests.cs`.)
+- [x] Glob no-op path: `CompileItemEditorEndToEndTests.cs` `Project_without_explicit_compile_items_is_left_untouched` + the scaffolding test asserts the glob-managed `TestFixtures.csproj` stays untouched.
 
 ### Phase 4 — Switch FSharpFileOrder.fs to ProjectRootElement
 

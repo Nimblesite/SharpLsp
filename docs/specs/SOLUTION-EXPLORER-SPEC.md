@@ -560,6 +560,87 @@ Nodes set `contextValue` by kind:
 | Project Reference | `projectReference` |
 | Dependency Folder | `dependencyFolder` |
 
+## Add Source File `[SE-ADD-FILE]`
+
+In F#, compile ORDER matters: every new source file must land at a chosen
+position in the `.fsproj`'s `<Compile>` list or the project stops compiling.
+This feature adds source files without hand-editing the project file — F#
+first ([SHARPLSP-ARCHITECTURE] Aim #2); there is intentionally no C#-only
+variant.
+
+### Request: `sharplsp/project/addCompileItem` `[SE-ADD-FILE-REQUEST]`
+
+The XML mutation NEVER happens as text in any tier. The Rust host exposes
+`sharplsp/project/addCompileItem` beside the NuGet requests and routes it to
+the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
+`.props` alike), which inserts the item through
+`Microsoft.Build.Construction.ProjectRootElement` with formatting preservation
+— the same model as [NUGET-XML-DOM].
+
+| Property | Value |
+|----------|-------|
+| Method | `sharplsp/project/addCompileItem` |
+| Params | `projectPath`, `include`, optional `anchorInclude` + `position` |
+| Position | `before` \| `after` the anchor, or `default` |
+| Result | `{ success, message, modified }` (camelCase) |
+| Errors | Domain failures (missing anchor, unreadable file) return `success: false` + message, never protocol errors |
+
+**Behavior:**
+
+- Inserts `<Compile Include="…" />` before the anchor (`before`), after it
+  (`after`), or — `default` — **before the project's LAST Compile item**, so an
+  F# entry point stays last.
+- A no-op when the include already exists (separator-spelling-insensitive
+  match) — the file is left byte-identical.
+- A no-op when the project declares no explicit Compile items (glob-managed):
+  one explicit item in a glob project changes ordering semantics, so the edit
+  declines with a message.
+- Comments, whitespace, attribute order, BOM, and line endings of untouched
+  content are preserved byte-for-byte; the inserted line matches sibling
+  indentation.
+- The host logs the request and outcome with structured fields (project,
+  include, position, modified, ms) and reports `C# sidecar is not available…`
+  when no sidecar can serve the edit.
+
+### Compile-Order Rules `[SE-ADD-FILE-ORDER]`
+
+- On a **file node** (a symbol in an F# file), the command offers *Above* /
+  *Below* that file; the new file is created in the anchor file's directory.
+- On a **project or folder (namespace) node**, or from the command palette, the
+  default position applies and the file is created in the project directory.
+- When the user opts into a matching **signature file**, `.fsi` precedes `.fs`
+  in compile order: `default`/`before` insert the `.fsi` first; `after` inserts
+  the `.fs` first so the signature still lands immediately after the anchor.
+
+### Command: `sharplsp.addFSharpSourceFile` `[SE-ADD-FILE-COMMAND]`
+
+| Property | Value |
+|----------|-------|
+| Command | `sharplsp.addFSharpSourceFile` |
+| Title | Add F# Source File |
+| When | `view == sharplsp.solutionExplorer && (viewItem == project \|\| viewItem =~ /^symbol\./) && sharplsp.fsProjectSelected` — group `1_add@1` |
+| Palette | Always available (prompts for the project) |
+
+**Behavior:**
+
+- Prompts in order: file name (without extension), signature-file choice, and —
+  on file nodes — the position. Cancelling any prompt writes nothing.
+- Creates the `.fs` (and `.fsi` first when chosen) with a `module` stub on disk
+  *before* the project edit, so the reload never sees a dangling include.
+- Sends one `addCompileItem` per file, then refreshes the Solution Explorer and
+  opens the new `.fs`; the host's native watchers reload the project so the F#
+  compiler owns the new file (proved by FCS hover/diagnostics, never mocked).
+- The `sharplsp.fsProjectSelected` context key follows the tree selection
+  (parent chain to an `.fsproj`), so menu entries appear exactly on F# project,
+  folder, and file nodes.
+
+### C# `newFile` Auto-Add `[SE-ADD-FILE-CSHARP]`
+
+`sharplsp.newFile` (C# scaffolding) rides the SAME edit path: after creating a
+`.cs`, it sends `sharplsp/project/addCompileItem` for the nearest `.csproj`. No
+tier splices project XML as text; the glob-project decision belongs to the
+`MSBuild` DOM, not a string probe.
+
 ## Navigation `[SE-NAVIGATION]`
 
 Clicking a symbol node opens the file and navigates to the symbol's declaration position.
@@ -586,9 +667,13 @@ When a C# or F# document becomes active through open, focus, navigation, Quick O
 | [tree.ts](../../src/editors/vscode/src/tree.ts) | Tree data provider, node construction |
 | [tree-namespaces.ts](../../src/editors/vscode/src/tree-namespaces.ts) | Namespace nesting and the nest/flatten toggle ([SE-TREE-NAMESPACE-NEST]) |
 | [tree-sort.ts](../../src/editors/vscode/src/tree-sort.ts) | Sort modes ([SE-SORT]) |
+| [add-source-file.ts](../../src/editors/vscode/src/add-source-file.ts) | Add F# Source File command + `addCompileItem` client ([SE-ADD-FILE]) |
 | [extension.ts](../../src/editors/vscode/src/extension.ts) | Command registration, tree view creation |
 | [constants.ts](../../src/editors/vscode/src/constants.ts) | Command and view ID constants |
 | [package.json](../../src/editors/vscode/package.json) | VS Code contribution points |
 | [workspace_symbols.rs](../../src/sharplsp/src/workspace_symbols.rs) | Rust handler: sidecar solution model routing, tree-sitter symbol extraction |
+| [project_edit.rs](../../src/sharplsp/src/project_edit.rs) | Rust handler: `sharplsp/project/addCompileItem` routing ([SE-ADD-FILE-REQUEST]) |
+| [CompileItemEditor.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/CompileItemEditor.cs) | Sidecar `<Compile>` insert through the `MSBuild` DOM ([SE-ADD-FILE-REQUEST]) |
 | [solution-explorer.test.ts](../../src/editors/vscode/src/test/suite/solution-explorer.test.ts) | Coarse tree, command, reactivity, and live-buffer coverage |
 | [solution-explorer-namespaces.test.ts](../../src/editors/vscode/src/test/suite/solution-explorer-namespaces.test.ts) | Nested and flat namespaces over the C# and F# fixture projects |
+| [solution-explorer-add-fsharp-file.test.ts](../../src/editors/vscode/src/test/suite/solution-explorer-add-fsharp-file.test.ts) | Add F# Source File e2e: compile order, FCS ownership, menus ([SE-ADD-FILE]) |

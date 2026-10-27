@@ -21,6 +21,12 @@
              these assemblies from the SDK at runtime, so keep them compile-time only to
              satisfy Microsoft.Build.Locator's MSBL001 check. -->
         <PackageReference
+            Include="Microsoft.Build"
+            Version="18.9.6"
+            ExcludeAssets="runtime"
+            PrivateAssets="all"
+        />
+        <PackageReference
             Include="Microsoft.Build.Framework"
             Version="18.9.6"
             ExcludeAssets="runtime"

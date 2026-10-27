@@ -30,10 +30,10 @@ internal static class PackageEditor
         {
             if (!ApplyVersion(existing, request.Version, wantsVersion))
             {
-                return Unchanged($"{request.PackageId} already at {request.Version}");
+                return PackageEditResult.Unchanged($"{request.PackageId} already at {request.Version}");
             }
             root.Save();
-            return Changed($"Updated {request.PackageId}");
+            return PackageEditResult.Changed($"Updated {request.PackageId}");
         }
 
         var group = FirstGroupWith(root, itemType) ?? root.AddItemGroup();
@@ -43,7 +43,7 @@ internal static class PackageEditor
             _ = item.AddMetadata("Version", request.Version, expressAsAttribute: true);
         }
         root.Save();
-        return Changed($"Added {request.PackageId}");
+        return PackageEditResult.Changed($"Added {request.PackageId}");
     }
 
     /// <summary>Remove a package entry (the whole element) if present.</summary>
@@ -56,11 +56,11 @@ internal static class PackageEditor
         var item = FindItem(root, itemType, request.PackageId);
         if (item is null)
         {
-            return Unchanged($"{request.PackageId} not present");
+            return PackageEditResult.Unchanged($"{request.PackageId} not present");
         }
         item.Parent.RemoveChild(item);
         root.Save();
-        return Changed($"Removed {request.PackageId}");
+        return PackageEditResult.Changed($"Removed {request.PackageId}");
     }
 
     private static string ItemTypeFor(string elementKind)
@@ -115,15 +115,5 @@ internal static class PackageEditor
         }
         metadata.Value = version;
         return true;
-    }
-
-    private static PackageEditResult Changed(string message)
-    {
-        return new PackageEditResult { Modified = true, Message = message };
-    }
-
-    private static PackageEditResult Unchanged(string message)
-    {
-        return new PackageEditResult { Modified = false, Message = message };
     }
 }

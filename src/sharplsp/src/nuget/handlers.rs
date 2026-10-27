@@ -136,8 +136,9 @@ pub fn handle_uninstall(
     finish_with_restore(response, runtime, sender, &target)
 }
 
-/// Message returned when no C# sidecar is available to perform an `MSBuild` edit.
-const EDITOR_UNAVAILABLE: &str =
+/// Message returned when no C# sidecar is available to perform an `MSBuild`
+/// edit. Shared with the compile-item edit ([SE-ADD-FILE-REQUEST]).
+pub(crate) const EDITOR_UNAVAILABLE: &str =
     "C# sidecar is not available to edit project files (open a workspace first)";
 
 /// Serialize a pre-built failure response for the no-editor case.

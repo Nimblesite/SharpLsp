@@ -902,6 +902,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "sharplsp.addFSharpSourceFile",
+        "title": "Add F# Source File",
+        "category": "SharpLsp"
+      },
+      {
         "command": "sharplsp.nuget.addFromExplorer",
         "title": "%cmd.nuget.addFromExplorer%",
         "category": "%category%",
@@ -1347,6 +1352,16 @@
           "command": "sharplsp.nuget.addFromExplorer",
           "when": "view == sharplsp.solutionExplorer && viewItem == dependencyFolder",
           "group": "1_add"
+        },
+        {
+          "command": "sharplsp.addFSharpSourceFile",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project && sharplsp.fsProjectSelected",
+          "group": "1_add@1"
+        },
+        {
+          "command": "sharplsp.addFSharpSourceFile",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\./ && sharplsp.fsProjectSelected",
+          "group": "1_add@1"
         },
         {
           "command": "sharplsp.copyQualifiedName",
