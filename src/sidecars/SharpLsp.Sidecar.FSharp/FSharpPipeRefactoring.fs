@@ -84,10 +84,12 @@ let rec private spineHead (e: SynExpr) : SynExpr =
     | SynExpr.App(isInfix = false; funcExpr = f) -> spineHead f
     | _ -> e
 
-/// A bare operator token, such as the `-` of `-x`: it cannot stand alone as a
-/// pipeline stage. A parenthesised operator, `(+)`, can.
-let private isBareOperator (e: SynExpr) : bool =
+/// A head F# applies only in place, never as a pipeline stage: a bare operator
+/// token such as the `-` of `-x`, and the `nameof`/`reraise` intrinsics. A
+/// parenthesised operator, `(+)`, is an ordinary function.
+let private mustApplyInPlace (e: SynExpr) : bool =
     match e with
+    | SynExpr.Ident ident -> ident.idText = "nameof" || ident.idText = "reraise"
     | SynExpr.LongIdent(longDotId = SynLongIdent(trivia = trivia)) ->
         trivia
         |> List.exists (function
@@ -102,7 +104,7 @@ let private plainApplication (e: SynExpr) : (SynExpr * SynExpr) option =
     | SynExpr.App(isInfix = false; funcExpr = callee; argExpr = last) ->
         match spineHead callee with
         | SynExpr.App _ -> None
-        | head when isBareOperator head -> None
+        | head when mustApplyInPlace head -> None
         | _ -> Some(callee, last)
     | _ -> None
 
@@ -120,20 +122,26 @@ type private PipelineText =
     { Value: string
       Stages: string list }
 
+/// A string literal, parenthesised or not.
+let rec private isStringLiteral (e: SynExpr) : bool =
+    match e with
+    | SynExpr.Const(constant = SynConst.String _)
+    | SynExpr.InterpolatedString _ -> true
+    | SynExpr.Paren(expr = inner) -> isStringLiteral inner
+    | _ -> false
+
 /// Values a pipeline cannot carry. A method's argument list (`M(a)`,
 /// `M (a, b)`, `M(name = v)`) binds tupled, named, optional and ParamArray
 /// arguments only in place; a computation-expression body is no value; and a
-/// string literal type-checks as a format string only as a direct argument.
-/// [REFACTOR-FSHARP-PIPE]
+/// string literal, parenthesised or not, type-checks as a format string only
+/// as a direct argument. [REFACTOR-FSHARP-PIPE]
 let private isUnpipeable (application: SynExpr) (value: SynExpr) : bool =
     match application, value with
     | SynExpr.App(flag = ExprAtomicFlag.Atomic), SynExpr.Paren _
     | _, SynExpr.Paren(expr = SynExpr.Tuple _)
-    | _, SynExpr.ComputationExpr _
-    | _, SynExpr.Const(constant = SynConst.String _)
-    | _, SynExpr.InterpolatedString _ -> true
-    | _, SynExpr.Paren(expr = inner) -> (infixOperands "op_Equality" inner).IsSome
-    | _ -> false
+    | _, SynExpr.ComputationExpr _ -> true
+    | _, SynExpr.Paren(expr = inner) when (infixOperands "op_Equality" inner).IsSome -> true
+    | _ -> isStringLiteral value
 
 /// Decompose `g a (f x)` into pipeline parts, recursing while the last
 /// argument is itself a parenthesised application. [REFACTOR-FSHARP-PIPE]
@@ -247,9 +255,15 @@ let private isStructural (parent: SyntaxNode option) (e: SynExpr) : bool =
     | _ -> false
 
 /// A pipeline binds looser than any operator, so one replacing an operand
-/// keeps its grouping in parentheses. [REFACTOR-FSHARP-PIPE]
+/// keeps its grouping in parentheses — except at the head of a further `|>`,
+/// which is left-associative: `f x |> g` simply becomes `x |> f |> g`.
+/// [REFACTOR-FSHARP-PIPE]
 let private grouped (parent: SyntaxNode option) (text: string) : string =
     match parent with
+    | Some(SyntaxNode.SynExpr(SynExpr.App(isInfix = true; funcExpr = SynExpr.LongIdent(longDotId = lid)))) when
+        isOperator "op_PipeRight" lid
+        ->
+        text
     | Some(SyntaxNode.SynExpr(SynExpr.App _)) -> $"({text})"
     | _ -> text
 

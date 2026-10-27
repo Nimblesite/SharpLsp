@@ -50,6 +50,18 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 // 50:     async {
 // 51:         do! lift v |> Async.Ignore
 // 52:     }
+// 53: let headCall = f v |> g 1
+// 54: let label = nameof v
+// 55: let rethrow () =
+// 56:     try 1
+// 57:     with _ -> reraise ()
+// 58: let negLiteral = -1 |> f
+// 59: type Adder() =
+// 60:     member _.Sum (a: int) (b: int) = a + b
+// 61: let adder = Adder()
+// 62: let summed = adder.Sum 1 (f v)
+// 63: let bannerParen () = printfn ("hi")
+// 64: let typed = id<int> (f v)
 let private PIPE_SOURCE =
     source
         [ "module PipeFix"
@@ -104,7 +116,19 @@ let private PIPE_SOURCE =
           "let doBang () ="
           "    async {"
           "        do! lift v |> Async.Ignore"
-          "    }" ]
+          "    }"
+          "let headCall = f v |> g 1"
+          "let label = nameof v"
+          "let rethrow () ="
+          "    try 1"
+          "    with _ -> reraise ()"
+          "let negLiteral = -1 |> f"
+          "type Adder() ="
+          "    member _.Sum (a: int) (b: int) = a + b"
+          "let adder = Adder()"
+          "let summed = adder.Sum 1 (f v)"
+          "let bannerParen () = printfn (\"hi\")"
+          "let typed = id<int> (f v)" ]
 
 let private pipeProject () = loadWorkspace [ "PipeFix.fs", PIPE_SOURCE ]
 
@@ -249,6 +273,35 @@ let ``a nested call used as an operator operand converts to a parenthesised pipe
             cleanup dir
     }
 
+/// `|>` is left-associative, so a nested call at the head of a pipeline joins
+/// it unparenthesised; the whole chain converts the other way at the same spot.
+[<Fact>]
+let ``a nested call at the head of a pipeline extends the chain`` () =
+    task {
+        let! state, dir, _, paths = pipeProject ()
+        try
+            do! assertConverted state paths[0] "Convert nested calls to pipeline" 53 15 "let headCall = v |> f |> g 1"
+            do! assertConverted state paths[0] "Convert pipeline to nested calls" 53 15 "let headCall = g 1 (f v)"
+        finally
+            cleanup dir
+    }
+
+/// A negative literal stays one token after a space (`f -1` applies `f` to
+/// `-1`), and a curried member or a generic type application partially applies
+/// like any function, so each converts without the method-call guards getting
+/// in the way.
+[<Fact>]
+let ``a negative literal value, a curried member and a generic type application convert`` () =
+    task {
+        let! state, dir, _, paths = pipeProject ()
+        try
+            do! assertConverted state paths[0] "Convert pipeline to nested calls" 58 20 "let negLiteral = f -1"
+            do! assertConverted state paths[0] "Convert nested calls to pipeline" 62 13 "let summed = v |> f |> adder.Sum 1"
+            do! assertConverted state paths[0] "Convert nested calls to pipeline" 64 12 "let typed = v |> f |> id<int>"
+        finally
+            cleanup dir
+    }
+
 /// A pipeline that cannot convert — its stage holds a lambda, or it spans
 /// lines — never hides the nested call inside that lambda, which converts on
 /// its own. The pipeline itself and its stage stay untouched.
@@ -270,8 +323,9 @@ let ``a nested call inside the lambda of an unconvertible pipeline converts`` ()
 /// lambda whose parameter type would no longer flow from the piped value
 /// (FS0072), a method's argument list (ParamArray, named argument), a comment
 /// inside the expression, a computation-expression body, a format string, a
-/// bare prefix operator, which cannot stand alone as a stage, a stage that is
-/// neither a function reference nor an application, and a `do!` right-hand side.
+/// bare prefix operator or the `nameof`/`reraise` intrinsics, which apply only
+/// in place, a stage that is neither a function reference nor an application,
+/// a `do!` right-hand side, and a parenthesised format string.
 [<Fact>]
 let ``pipe conversions stay silent where the rewrite would not compile or would drop a comment`` () =
     task {
@@ -287,6 +341,9 @@ let ``pipe conversions stay silent where the rewrite would not compile or would 
             do! assertSilent state paths[0] 46 14
             do! assertSilent state paths[0] 48 16
             do! assertSilent state paths[0] 51 19
+            do! assertSilent state paths[0] 54 12
+            do! assertSilent state paths[0] 57 14
+            do! assertSilent state paths[0] 63 21
         finally
             cleanup dir
     }
