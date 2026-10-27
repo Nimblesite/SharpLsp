@@ -60,8 +60,20 @@ export function useRealRepo(
     this.timeout(REAL_REPO_MS);
     await loadSolutionInServer(path.join(repoDir, spec.sln));
     const { doc, uri } = await openRepoFile(repoDir, file);
+    const ready = positionOf(doc, snippet, focus);
     await waitForDocumentSymbols(uri, REAL_REPO_WARMUP_MS);
-    await waitForSemanticReady(uri, positionOf(doc, snippet, focus), REAL_REPO_WARMUP_MS);
+    await waitForSemanticReady(uri, ready, REAL_REPO_WARMUP_MS);
+    // The first solution-wide query checks every project: on an 11-project F#
+    // solution, ~13 s. A user pays it once, while lenses settle in idle time —
+    // an interactive request now preempts the lens that used to pay it (#504).
+    // The suites measure what follows, so the warm-up pays it here.
+    await pollProvider<vscode.Location>(
+      'vscode.executeReferenceProvider',
+      [uri, ready],
+      (locations) => locations.length > 0,
+      REAL_REPO_WARMUP_MS,
+      2_000,
+    );
   });
   suiteTeardown(async function () {
     this.timeout(ACTIVATION_MS);

@@ -7,6 +7,8 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpMultiProjectTests
 
 open System
 open System.IO
+open System.Threading
+open System.Threading.Tasks
 open System.Xml.Linq
 open FSharp.Compiler.Diagnostics
 open Xunit
@@ -223,6 +225,39 @@ let ``references, code lens and subtypes count what every project does`` () =
             Assert.True(square.IsSome, $"App's Square implements Core's IShape: {subtypes}")
             Assert.True(NativePaths.AreEqual(app, square.Value.FilePath))
             Assert.Equal(6, square.Value.Line)
+        finally
+            cleanup root
+    }
+
+/// A lens preempted while it counts stops at the next symbol, rather than finishing
+/// the count while the request that preempted it waits; and a cancelled lens request
+/// fails rather than answering an empty list (#504). [SHARPLSP-FEATURES-CODE-LENS]
+[<Fact>]
+let ``a lens preempted while it counts stops counting`` () =
+    task {
+        let! (state, root, core, _app) = openSolution ()
+
+        try
+            let! checkedFile = FSharpWorkspace.checkFileWithCancellation state core CancellationToken.None
+            let checkResults, _source = checkedFile.Value
+            let scope = FSharpWorkspace.queryScope state core
+            let! projects = FSharpWorkspace.checkAllWithCancellation state scope CancellationToken.None
+            let definitions =
+                checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.filter _.IsFromDefinition |> Seq.toArray
+            let counted = FSharpCodeLens.lensesByAnchor projects CancellationToken.None definitions
+            Assert.Contains(counted, fun lens -> lens.Line = 3 && lens.Title = "2 references")
+
+            use preempted = new CancellationTokenSource()
+            preempted.Cancel()
+            let stopped () = FSharpCodeLens.lensesByAnchor projects preempted.Token definitions |> ignore
+            Assert.ThrowsAny<OperationCanceledException>(stopped) |> ignore
+
+            let cancelledRequest () =
+                FSharpCodeLens.getCodeLensesWithCancellation state core preempted.Token :> Task
+            let! _ = Assert.ThrowsAnyAsync<OperationCanceledException>(cancelledRequest)
+            let! lenses = FSharpCodeLens.getCodeLenses state core
+            let titleAt line = lenses |> List.tryFind (fun lens -> lens.Line = line) |> Option.map _.Title
+            Assert.Equal(Some "2 references", titleAt 3)
         finally
             cleanup root
     }

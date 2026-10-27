@@ -186,16 +186,33 @@ fn announce(
         params,
     )))?;
     for method in REFRESHES.get().map_or(&[][..], Vec::as_slice) {
-        let id = RequestId::from(format!(
-            "sharplsp/refresh/{}",
-            NEXT_REFRESH.fetch_add(1, Ordering::Relaxed)
-        ));
-        sender.send(Message::Request(Request::new(
-            id,
-            (*method).to_string(),
-            serde_json::Value::Null,
-        )))?;
+        send_refresh(sender, method)?;
     }
+    Ok(())
+}
+
+/// Ask the client to request `method`'s feature again, when it declared that refresh.
+pub fn refresh(sender: &crossbeam_channel::Sender<Message>, method: &str) -> Result<()> {
+    if REFRESHES
+        .get()
+        .is_some_and(|supported| supported.contains(&method))
+    {
+        send_refresh(sender, method)?;
+    }
+    Ok(())
+}
+
+/// Send one refresh request; the client's reply is ignored.
+fn send_refresh(sender: &crossbeam_channel::Sender<Message>, method: &str) -> Result<()> {
+    let id = RequestId::from(format!(
+        "sharplsp/refresh/{}",
+        NEXT_REFRESH.fetch_add(1, Ordering::Relaxed)
+    ));
+    sender.send(Message::Request(Request::new(
+        id,
+        method.to_string(),
+        serde_json::Value::Null,
+    )))?;
     Ok(())
 }
 

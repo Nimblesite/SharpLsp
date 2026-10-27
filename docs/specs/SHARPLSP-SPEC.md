@@ -534,6 +534,8 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 
 Compiler-backed lens requests run outside the foreground protocol loop and share its request cancellation registry. Cancellation reaches the compiler checks across the complete reference-query scope, returns the standard cancellation error, and leaves later diagnostics and reference counts available in the same compiler process. Obsolete requests must not become successful empty lens lists.
 
+A lens never holds up the user. Each compiler answers one request at a time, and a cold lens counts references across every project, so every other document request preempts the lenses queued or in flight on its compiler before it waits its own turn: the user waits on it, or, for a forwarded edit, the host's main loop does. The compiler observes the cancellation while it checks and while it counts. The preempted lens is answered `ServerCancelled` (`-32802`) with `retriggerRequest`, retryable exactly like superseded work, and the host asks the client to request lenses again (`workspace/codeLens/refresh`, when the client declared it); the compiler keeps the checks it finished, so each attempt gets further, and lenses settle once edits pause. Diagnostic pulls, which reach the compiler as workspace requests, and the host's own polling never preempt a lens.
+
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
 | Reference count | `textDocument/codeLens` | SymbolFinder.FindReferences() | GetUsesOfSymbol() | P1 |
