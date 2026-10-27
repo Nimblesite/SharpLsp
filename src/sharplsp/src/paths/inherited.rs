@@ -52,6 +52,7 @@ pub fn diagnostic_input_in_scope(path: &Path, recursive: bool) -> bool {
         "Directory.Build.props",
         "Directory.Build.targets",
         "Directory.Packages.props",
+        "nuget.config",
     ]
     .into_iter()
     .any(|name| has_file_name(path, name))

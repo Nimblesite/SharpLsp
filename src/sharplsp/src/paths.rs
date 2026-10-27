@@ -12,7 +12,12 @@ use lsp_types::Uri;
 use url::Url;
 
 mod inherited;
+mod inputs;
 pub use inherited::{diagnostic_input_in_scope, diagnostic_watch_scopes};
+pub use inputs::{
+    diagnostic_requires_reload, diagnostic_restore_output, is_diagnostic_input,
+    is_diagnostic_source, is_fsharp_diagnostic_input, is_user_diagnostic_source,
+};
 
 /// Convert a `file://` URI string to a native filesystem path string.
 ///
@@ -181,65 +186,19 @@ pub fn project_matches_globs(
         })
 }
 
-/// Source and project diagnostics owned by the F# engine. [DIAG-CATEGORIES-COMPILER]
-pub fn is_fsharp_diagnostic_input(path: impl AsRef<Path>) -> bool {
-    has_extension(path, &["fs", "fsx", "fsi", "fsscript", "fsproj"])
-}
-
-/// Metadata that changes project graphs, analyzer policy, references or generated inputs.
-pub fn diagnostic_requires_reload(path: &str) -> bool {
-    has_extension(
-        path,
-        &["csproj", "fsproj", "sln", "slnx", "props", "targets"],
-    ) || [
-        ".editorconfig",
-        "fsharplint.json",
-        "project.assets.json",
-        "global.json",
-    ]
-    .into_iter()
-    .any(|name| has_file_name(path, name))
-}
-
-/// Native inputs relevant to compiler errors or analyzer policy.
-pub fn is_diagnostic_input(path: &Path) -> bool {
-    is_diagnostic_source(path)
-        || diagnostic_requires_reload(&path.to_string_lossy())
-        || has_file_name(path, "sharplsp.toml")
-}
-/// Restore outputs reload without recursively restoring. [DIAG-RESTORE] [DIAG-LSP-REFRESH]
-pub fn diagnostic_restore_output(path: impl AsRef<Path>) -> bool {
-    let path = path.as_ref();
-    diagnostic_requires_reload(&path.to_string_lossy()) && in_output_directory(path)
-}
-/// Generated outputs never become standalone compiler inputs. [DIAG-ARCHITECTURE-SCOPE]
-pub fn is_diagnostic_source(path: impl AsRef<Path>) -> bool {
-    let path = path.as_ref();
-    has_extension(path, &["cs", "csx", "fs", "fsi", "fsx", "razor", "cshtml"])
-        && !in_output_directory(path)
-}
-/// Whether an SDK `bin` or `obj` directory owns the path.
-fn in_output_directory(path: &Path) -> bool {
-    path.ancestors()
-        .skip(1)
-        .any(|directory| has_file_name(directory, "obj") || has_file_name(directory, "bin"))
-}
-/// SDK-owned sources needing metadata adoption; scripts retain independent contexts.
-pub fn is_user_diagnostic_source(path: impl AsRef<Path>) -> bool {
-    let path = path.as_ref();
-    has_extension(path, &["cs", "fs", "fsi", "razor", "cshtml"]) && is_diagnostic_source(path)
-}
-
 /// `text` folded the one way the host folds a path: [`ntfs_upcase`] per character.
 /// [SHARPLSP-ARCHITECTURE-PATHS] (GitHub #171)
 fn fold(text: &str) -> String {
     text.chars().map(ntfs_upcase).collect()
 }
 
-/// One character upcased as NTFS's `$UpCase` maps one UTF-16 unit to one.
-/// Single-character Basic Multilingual Plane mappings apply (`ä` → `Ä`, `σ` → `Σ`);
-/// expansions (`ß` → `SS`) and non-BMP characters stay unchanged. This approximates
-/// the volume's OS-defined table. [SHARPLSP-ARCHITECTURE-PATHS]
+/// One character upcased the way NTFS's `$UpCase` table upcases it: one UTF-16
+/// unit to one. A character whose uppercase is a single character in the Basic
+/// Multilingual Plane becomes it (`ä` → `Ä`, `σ` → `Σ`); any other stays itself
+/// — `ß`, whose uppercase is the two characters `SS`, and anything outside the
+/// BMP, which a table of UTF-16 units never maps. This approximates the
+/// volume's own table, which the OS fixes when it formats the volume.
+/// [SHARPLSP-ARCHITECTURE-PATHS]
 fn ntfs_upcase(character: char) -> char {
     let mut upper = character.to_uppercase();
     match (upper.next(), upper.next()) {
