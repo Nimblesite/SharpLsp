@@ -14,7 +14,14 @@ internal sealed class WorkspaceRestoreInputs(DateTime assetsTime)
     {
         try
         {
-            return new WorkspaceRestoreInputs(assetsTime).ProjectCurrent(project);
+            var current =
+                WorkspaceRestoreProof.AreCurrent(project)
+                && new WorkspaceRestoreInputs(assetsTime).ProjectCurrent(project);
+            if (current)
+            {
+                WorkspaceRestoreProof.Record(project);
+            }
+            return current;
         }
         catch (Exception error)
         {

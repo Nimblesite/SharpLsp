@@ -32,4 +32,24 @@ internal static class SdkRestoreAssertions
             .ConfigureAwait(false);
         Assert.True(result.IsOk, result.Match(_ => string.Empty, error => error));
     }
+
+    internal static async Task EnsureRestoredAsync(string project)
+    {
+        var result = await WorkspaceRestore
+            .EnsureTargetAsync(project, CancellationToken.None)
+            .ConfigureAwait(false);
+        Assert.True(result.IsOk, result.Match(_ => string.Empty, error => error));
+    }
+
+    internal static string DefaultPackagesRoot()
+    {
+#pragma warning disable RS1035 // The SDK's default packages root is environment-specific.
+        return Environment.GetEnvironmentVariable("NUGET_PACKAGES")
+            ?? NativePaths.Resolve(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".nuget",
+                "packages"
+            );
+#pragma warning restore RS1035
+    }
 }

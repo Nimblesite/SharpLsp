@@ -90,10 +90,7 @@ public sealed class WorkspaceRestoreReferencesTests : IDisposable
         WriteProject(state.Project, state.Version, kind);
         new FileInfo(state.Project).LastWriteTimeUtc = state.Time;
         Assert.Equal(unchanged, WorkspaceRestoreInputs.AreCurrent(state.Project, DateTime.UtcNow));
-        var result = await WorkspaceRestore
-            .EnsureTargetAsync(state.Project, CancellationToken.None)
-            .ConfigureAwait(false);
-        Assert.True(result.IsOk, result.Match(_ => string.Empty, error => error));
+        await EnsureRestoredAsync(state.Project).ConfigureAwait(false);
         Assert.Equal(state.Time, new FileInfo(state.Project).LastWriteTimeUtc);
         AssertSdkState(state, kind);
     }
@@ -168,11 +165,7 @@ public sealed class WorkspaceRestoreReferencesTests : IDisposable
         var before = await ReadBytesAsync(assets);
         WriteFrameworkProject(state, "TargetFrameworks", "netstandard2.1;net10.0");
         AssertFrameworks(state, "netstandard2.1;net10.0");
-        var result = await WorkspaceRestore.EnsureTargetAsync(
-            state.Project,
-            CancellationToken.None
-        );
-        Assert.True(result.IsOk, result.Match(_ => string.Empty, error => error));
+        await EnsureRestoredAsync(state.Project);
         Assert.Equal<byte>(before, await ReadBytesAsync(assets));
     }
 
@@ -194,10 +187,7 @@ public sealed class WorkspaceRestoreReferencesTests : IDisposable
     {
         WriteFrameworkProject(state, property, value);
         Assert.False(WorkspaceRestoreInputs.AreCurrent(state.Project, DateTime.UtcNow));
-        var result = await WorkspaceRestore
-            .EnsureTargetAsync(state.Project, CancellationToken.None)
-            .ConfigureAwait(false);
-        Assert.True(result.IsOk, result.Match(_ => string.Empty, error => error));
+        await EnsureRestoredAsync(state.Project).ConfigureAwait(false);
         AssertFrameworks(state, value);
     }
 

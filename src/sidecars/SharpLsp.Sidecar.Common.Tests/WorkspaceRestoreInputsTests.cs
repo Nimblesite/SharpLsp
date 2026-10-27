@@ -32,6 +32,22 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
         await AssertTransitionAsync(snapshot, "before");
     }
 
+    [Theory]
+    [InlineData("Directory.Build.props")]
+    [InlineData("Directory.Packages.props")]
+    [InlineData("nuget.config")]
+    public async Task Deleted_inherited_inputs_restore_SDK_defaults_then_settle(string name)
+    {
+        var snapshot = await ProveInheritedInputAsync(name);
+        var assetsTime = new FileInfo(AssetsPath(snapshot.Project)).LastWriteTimeUtc;
+        new FileInfo(snapshot.Input).Delete();
+        Assert.Equal(snapshot.Time, new FileInfo(snapshot.Project).LastWriteTimeUtc);
+        Assert.Equal(assetsTime, new FileInfo(AssetsPath(snapshot.Project)).LastWriteTimeUtc);
+        Assert.False(WorkspaceRestoreInputs.AreCurrent(snapshot.Project, assetsTime));
+        await AssertDeletionRestoredAsync(snapshot, assetsTime);
+        await AssertGateSettledAsync(snapshot.Project);
+    }
+
     [Fact]
     public async Task Cyclic_project_references_defer_to_the_real_SDK_and_recover_after_repair()
     {
@@ -96,11 +112,11 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
         document.Save(project);
     }
 
-    private (string Project, string Input) WriteProject(string kind)
+    private (string Project, string Input) WriteProject(string kind, string? inheritedName = null)
     {
         var directory = NativePaths.Resolve(_root, "Project");
         new DirectoryInfo(directory).Create();
-        var input = InputPath(kind);
+        var input = InputPath(kind, inheritedName);
         WriteInput(input, "before");
         var project = NativePaths.Resolve(directory, "Inputs.csproj");
         var xml = ProjectXml();
@@ -112,9 +128,10 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
         return (project, input);
     }
 
-    private string InputPath(string kind)
+    private string InputPath(string kind, string? inheritedName)
     {
-        var name = kind == "inherited" ? "Directory.Build.props" : "Packages.props";
+        var name =
+            inheritedName ?? (kind == "inherited" ? "Directory.Build.props" : "Packages.props");
         return NativePaths.Resolve(_root, name);
     }
 
@@ -133,15 +150,78 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
     private void WriteInput(string input, string name)
     {
         new DirectoryInfo(_root).Create();
-        new XDocument(
+        var root = NativePaths.SameName(input, "nuget.config")
+            ? NuGetConfig(name)
+            : MSBuildConfig(name);
+        new XDocument(root).Save(input);
+    }
+
+    private XElement NuGetConfig(string name)
+    {
+        return new XElement(
+            "configuration",
             new XElement(
-                "Project",
+                "config",
                 new XElement(
-                    "PropertyGroup",
-                    new XElement("RestorePackagesPath", NativePaths.Resolve(_root, name))
+                    "add",
+                    new XAttribute("key", "globalPackagesFolder"),
+                    new XAttribute("value", NativePaths.Resolve(_root, name))
                 )
             )
-        ).Save(input);
+        );
+    }
+
+    private XElement MSBuildConfig(string name)
+    {
+        return new XElement(
+            "Project",
+            new XElement(
+                "PropertyGroup",
+                new XElement("RestorePackagesPath", NativePaths.Resolve(_root, name))
+            )
+        );
+    }
+
+    private async Task<ProjectSnapshot> ProveInheritedInputAsync(string name)
+    {
+        var (project, input) = WriteProject("inherited", name);
+        var original = await ReadBytesAsync(project).ConfigureAwait(false);
+        await RestoreSdkAsync(project).ConfigureAwait(false);
+        await EnsureRestoredAsync(project).ConfigureAwait(false);
+        AssertPackageRoot(project, "before");
+        return new ProjectSnapshot(
+            project,
+            input,
+            new FileInfo(project).LastWriteTimeUtc,
+            original
+        );
+    }
+
+    private static async Task AssertDeletionRestoredAsync(
+        ProjectSnapshot snapshot,
+        DateTime assetsTime
+    )
+    {
+        await EnsureRestoredAsync(snapshot.Project).ConfigureAwait(false);
+        Assert.Equal(snapshot.Time, new FileInfo(snapshot.Project).LastWriteTimeUtc);
+        Assert.Equal<byte>(
+            snapshot.Bytes,
+            await ReadBytesAsync(snapshot.Project).ConfigureAwait(false)
+        );
+        Assert.True(new FileInfo(AssetsPath(snapshot.Project)).LastWriteTimeUtc > assetsTime);
+        AssertPackageRootPath(snapshot.Project, DefaultPackagesRoot());
+    }
+
+    private static async Task AssertGateSettledAsync(string project)
+    {
+        var assets = AssetsPath(project);
+        var assetsTime = new FileInfo(assets).LastWriteTimeUtc;
+        var original = await ReadBytesAsync(assets).ConfigureAwait(false);
+        Assert.True(WorkspaceRestoreInputs.AreCurrent(project, assetsTime));
+        await EnsureRestoredAsync(project).ConfigureAwait(false);
+        Assert.Equal(assetsTime, new FileInfo(assets).LastWriteTimeUtc);
+        Assert.Equal<byte>(original, await ReadBytesAsync(assets).ConfigureAwait(false));
+        AssertPackageRootPath(project, DefaultPackagesRoot());
     }
 
     private async Task AssertTransitionAsync(ProjectSnapshot snapshot, string name)
@@ -150,10 +230,7 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
         WriteInput(input, name);
         var assets = AssetsPath(project);
         new FileInfo(input).LastWriteTimeUtc = new FileInfo(assets).LastWriteTimeUtc.AddSeconds(1);
-        var result = await WorkspaceRestore
-            .EnsureTargetAsync(project, CancellationToken.None)
-            .ConfigureAwait(false);
-        Assert.True(result.IsOk, result.Match(_ => string.Empty, error => error));
+        await EnsureRestoredAsync(project).ConfigureAwait(false);
         AssertPackageRoot(project, name);
         Assert.Equal(projectTime, new FileInfo(project).LastWriteTimeUtc);
         Assert.Equal<byte>(original, await ReadBytesAsync(project).ConfigureAwait(false));
@@ -161,17 +238,22 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
 
     private void AssertPackageRoot(string project, string name)
     {
+        AssertPackageRootPath(project, NativePaths.Resolve(_root, name));
+    }
+
+    private static void AssertPackageRootPath(string project, string expected)
+    {
         using var document = ReadAssets(project);
         var roots = document
             .RootElement.GetProperty("packageFolders")
             .EnumerateObject()
             .Select(folder => folder.Name);
-        Assert.Contains(
-            roots,
-            root => NativePaths.AreEqual(root, NativePaths.Resolve(_root, name))
-        );
+        Assert.Contains(roots, root => NativePaths.AreEqual(root, expected));
         var restore = document.RootElement.GetProperty("project").GetProperty("restore");
         Assert.Equal("Inputs", restore.GetProperty("projectName").GetString());
+        Assert.True(
+            NativePaths.AreEqual(expected, restore.GetProperty("packagesPath").GetString())
+        );
         Assert.True(PackageAssets.MissingPackages(project).IsOk);
     }
 

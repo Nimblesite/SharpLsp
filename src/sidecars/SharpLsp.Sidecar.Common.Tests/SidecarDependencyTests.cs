@@ -163,13 +163,7 @@ public sealed class SidecarDependencyTests
 
     private static string FcsRequiredFSharpCore(string fcsVersion)
     {
-        var packagesRoot =
-            Environment.GetEnvironmentVariable("NUGET_PACKAGES")
-            ?? NativePaths.Resolve(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".nuget",
-                "packages"
-            );
+        var packagesRoot = SdkRestoreAssertions.DefaultPackagesRoot();
         var nuspec = NativePaths.Resolve(
             packagesRoot,
             "fsharp.compiler.service",

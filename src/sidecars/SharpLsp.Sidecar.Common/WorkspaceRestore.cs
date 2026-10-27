@@ -114,9 +114,16 @@ public static class WorkspaceRestore
             result.IsOk
         );
         return result.IsOk
-            ? result
+            ? RememberedRestore(project, result)
             : RestoreResult.Failure(
                 $"Package restore failed for {project}; run dotnet restore manually."
             );
+    }
+
+    private static RestoreResult RememberedRestore(string project, RestoreResult result)
+    {
+        // Successful SDK evaluation proves the complete surviving graph. [DIAG-RESTORE]
+        WorkspaceRestoreProof.Record(project);
+        return result;
     }
 }
