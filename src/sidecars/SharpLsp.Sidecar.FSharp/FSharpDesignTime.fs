@@ -100,22 +100,53 @@ let private failureReason (exitCode: int) (detail: string) (text: string) =
     let shown = if errors.Length > 0 then errors else lines
     $"exit {exitCode}: {String.Join(' ', shown)}"
 
-/// Wait for MSBuild, stopping it when it overruns or the caller gives up.
-let private awaitMsbuild (proc: Process) (ct: CancellationToken) =
+/// Cancel `build` once `fsprojPath` is gone, until `watch` ends: MSBuild can wait forever
+/// on a project removed while it builds, as a test fixture is when its suite ends.
+/// [DIAG-LSP-REFRESH]
+let private cancelWhenRemoved (fsprojPath: string) (build: CancellationTokenSource) (watch: CancellationToken) =
     task {
-        use timeout = CancellationTokenSource.CreateLinkedTokenSource ct
-        timeout.CancelAfter msbuildTimeout
-        let output = proc.StandardOutput.ReadToEndAsync timeout.Token
-        let error = proc.StandardError.ReadToEndAsync timeout.Token
+        try
+            while File.Exists fsprojPath do
+                do! Task.Delay(100, watch)
+
+            build.Cancel()
+        with :? OperationCanceledException ->
+            ()
+    }
+
+/// MSBuild's output once it exits within `deadline`, else stopped and `stopped ()` as why.
+let private finishMsbuild (proc: Process) (deadline: CancellationToken) (stopped: unit -> string) =
+    task {
+        let output = proc.StandardOutput.ReadToEndAsync deadline
+        let error = proc.StandardError.ReadToEndAsync deadline
 
         try
-            do! proc.WaitForExitAsync timeout.Token
+            do! proc.WaitForExitAsync deadline
             let! text = output
             let! detail = error
             return if proc.ExitCode = 0 then Ok text else Error(failureReason proc.ExitCode detail text)
         with :? OperationCanceledException ->
             stopProcess proc
-            return Error "MSBuild did not finish in time"
+            return Error(stopped ())
+    }
+
+/// Wait for MSBuild, stopping it when it overruns, its project is removed, or the caller
+/// gives up. The removal watch ends before its token sources are disposed.
+let private awaitMsbuild (proc: Process) (fsprojPath: string) (ct: CancellationToken) =
+    task {
+        use timeout = CancellationTokenSource.CreateLinkedTokenSource ct
+        timeout.CancelAfter msbuildTimeout
+        use watch = new CancellationTokenSource()
+        let removal = cancelWhenRemoved fsprojPath timeout watch.Token
+
+        let stopped () =
+            if File.Exists fsprojPath then "MSBuild did not finish in time"
+            else "MSBuild project was removed during the design-time build"
+
+        let! outcome = finishMsbuild proc timeout.Token stopped
+        watch.Cancel()
+        do! removal
+        return outcome
     }
 
 /// Run `dotnet msbuild` on the project; its standard output, or why it failed.
@@ -126,7 +157,7 @@ let private runMsbuild (fsprojPath: string) (arguments: string list) (ct: Cancel
             | null -> return Error "Could not start dotnet msbuild"
             | started ->
                 use proc = started
-                return! awaitMsbuild proc ct
+                return! awaitMsbuild proc fsprojPath ct
         with ex ->
             Log.Debug(ex, "Could not start dotnet msbuild for {Project}", fsprojPath)
             return Error $"Could not start dotnet msbuild: {ex.Message}"

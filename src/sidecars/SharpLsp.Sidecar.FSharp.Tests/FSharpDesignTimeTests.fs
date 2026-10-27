@@ -9,6 +9,7 @@ open System
 open System.Diagnostics
 open System.IO
 open System.Threading
+open System.Threading.Tasks
 open System.Xml.Linq
 open Xunit
 open SharpLsp.Sidecar.FSharp
@@ -319,6 +320,39 @@ let ``a failed design-time compile is reported by its error, on one line`` () = 
             Assert.DoesNotContain("\n", reason)
     finally
         cleanup dir
+}
+
+/// Removing a fixture while MSBuild reads it must abandon that build, not await the full timeout.
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] [DIAG-LSP-REFRESH]
+[<Fact>]
+let ``a project removed during its design-time build abandons MSBuild immediately`` () = task {
+    let dir = NativePaths.Temp($"sharplsp-fx-removed-{Guid.NewGuid():N}")
+    Directory.CreateDirectory dir |> ignore
+
+    try
+        let attribute name (value: string) = XAttribute(XName.Get name, value) :> obj
+        let pause = if OperatingSystem.IsWindows() then "powershell -NoProfile -Command \"Start-Sleep -Seconds 30\"" else "sleep 30"
+        let signal = element "Touch" [ attribute "Files" "design-time-started"; attribute "AlwaysCreate" "true" ]
+        let execute = element "Exec" [ attribute "Command" pause ]
+        let target = element "Target" [ attribute "Name" "SignalDesignTime"; attribute "BeforeTargets" "CoreCompile"; signal; execute ]
+        let project = NativePaths.Resolve(dir, "Removed.csproj")
+        let document = element "Project" [ attribute "Sdk" "Microsoft.NET.Sdk"; element "PropertyGroup" [ element "TargetFramework" [ "net10.0" ] ]; target ]
+        XDocument(document).Save(project)
+        File.WriteAllText(NativePaths.Resolve(dir, "Library.cs"), "public static class Library { }")
+        dotnet dir $"restore \"{project}\" --nologo -v q"
+        use timeout = new CancellationTokenSource(TimeSpan.FromSeconds 8.0)
+        let building = FSharpDesignTime.compilerArgs "CscCommandLineArgs" project "net10.0" timeout.Token
+        let marker = NativePaths.Resolve(dir, "design-time-started")
+
+        while not (File.Exists marker) && not timeout.IsCancellationRequested do
+            do! Task.Delay 20
+
+        Assert.True(File.Exists marker, "the real design-time target started")
+        File.Delete project
+        let! result = building
+        Assert.Equal(Error "MSBuild project was removed during the design-time build", result)
+    finally
+        if Directory.Exists dir then cleanup dir
 }
 
 /// A real SDK failure is limited to one framework; restore remains available. [DIAG-TRUTH-GUARANTEES]

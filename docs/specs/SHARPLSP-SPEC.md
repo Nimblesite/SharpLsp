@@ -217,6 +217,8 @@ Definition finds the declaration in Roslyn's compilation by the documentation id
 
 When MSBuild cannot report the command line, or Roslyn cannot emit an image at all, the reference stands on its DLL and a warning names the project and the reason. A DLL that does not exist is left for the compiler to report.
 
+A design-time build whose project file is removed while it runs is abandoned at once: its process tree is stopped and the build reports the removal. MSBuild can otherwise wait forever on a project removed under it, and the F# sidecar answers one request at a time, so a test fixture deleted at the end of its suite held every F# request for the full three-minute design-time bound.
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING] F# Files Outside the Loaded Solution
 
 A file no loaded F# project compiles still answers, from the project that owns it (#414). When the editor opens or edits such a `.fs` or `.fsi` file, the F# sidecar looks for its owner: the nearest `.fsproj`, in the file's directory or a parent, whose `<Compile>` items list the file. It loads that project in the background beside the workspace's own, exactly as a solution project loads, with its references prepared. The workspace's projects stay loaded and keep answering.
