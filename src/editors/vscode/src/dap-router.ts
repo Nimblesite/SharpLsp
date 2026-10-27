@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { retarget } from './dap-exceptions';
 import { withExceptionPolicy, type ExceptionPolicy } from './dap-exception-policy';
 import { filterExceptionStop } from './dap-exception-stops';
+import { ExceptionMessageRescuer } from './dap-exception-message';
 import { isRecord, sourcePathOf, type DapMessage } from './dap-emulate';
 import { isFSharpSource, withClrConditions } from './dap-fsharp-conditions';
 import { BreakpointEmulator } from './dap-breakpoints';
@@ -123,6 +124,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** DAP requests that need retrying or logical response expansion. */
   private readonly attaches: AttachRetrier;
   private readonly evaluations: EvaluateEmulator;
+  /** Rescues `exceptionInfo` replies that carry no message ([DEBUG-ADAPTER-GAPS]). */
+  private readonly exceptionMessages: ExceptionMessageRescuer;
   private readonly variables: VariableExpander;
   private readonly hotReload: DapHotReload;
   /**
@@ -187,6 +190,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     };
     this.attaches = new AttachRetrier(retryHost);
     this.evaluations = new EvaluateEmulator(retryHost);
+    this.exceptionMessages = new ExceptionMessageRescuer(retryHost);
     this.variables = new VariableExpander(retryHost);
     this.hotReload = new DapHotReload(this);
     this.wire = this.startWire(adapterPath);
@@ -598,6 +602,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       return;
     }
     if (this.retriedOnStoppedThread(message) || rescuedThreads(this, message)) return;
+    if (this.exceptionMessages.rescue(message, this.stoppedThread)) return;
     this.emit(this.handles.translateResponseBody(enrichResponse(message, this.latestChildCaps)));
   }
 
