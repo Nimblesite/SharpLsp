@@ -475,7 +475,7 @@ SharpLsp also owns custom static analyzers that run through the same workspace d
 | Generate override | `textDocument/codeAction` | GenerateOverrides | Custom implementation | P1 |
 | Add using/open directive | `textDocument/codeAction` | AddImport CodeFix | AddOpen CodeFix (FSAC) | P0 |
 | Organize usings/opens | `textDocument/codeAction` | OrganizeImports | Custom open sorting | P0 |
-| Convert between expression forms | `textDocument/codeAction` | Various Roslyn refactorings | Pipeline ↔ function composition | P1 |
+| Convert between expression forms | `textDocument/codeAction` | Various Roslyn refactorings | "Convert pipeline to nested calls" / "Convert nested calls to pipeline" ([REFACTOR-FSHARP-PIPE]) | P1 |
 | Surround with (try/catch, if, etc.) | `textDocument/codeAction` | Custom surround providers | Custom surround providers | P1 |
 | Change signature | `textDocument/codeAction` | ChangeSignatureRefactoring | Custom implementation | P2 |
 | Introduce parameter | `textDocument/codeAction` | IntroduceParameter refactoring | Custom implementation | P2 |
@@ -511,6 +511,20 @@ have. The C# sidecar therefore builds the declarations itself
 
 The action is verified by APPLYING it to a real MSBuild project and compiling the
 result (`HeadlessOverrideGenerationTests`), not by checking that it is offered.
+
+#### [REFACTOR-FSHARP-PIPE] F# Pipeline ↔ Nested-Call Conversion
+
+Two F# refactorings over the untyped AST (`ParsedInput` / `SynExpr`), offered at the cursor of a `textDocument/codeAction` request. "Convert pipeline to nested calls" rewrites `x |> f |> g a` to `g a (f x)`: every stage keeps its own arguments and the piped value becomes the stage's last argument, parenthesised unless it is atomic (an identifier, a constant, or an already-parenthesised expression). "Convert nested calls to pipeline" rewrites `g a (f x)` to `x |> f |> g a`, taking the last argument of an application recursively while that argument is itself a parenthesised application. A pipeline binds looser than any operator, so one that replaces an operator operand is parenthesised: `1 + g a (f x)` becomes `1 + (x |> f |> g a)`. Replacement text is assembled only from source text sliced by AST ranges — never by regex or string search ([FSharpPipeRefactoring.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpPipeRefactoring.fs), wired through the shared code-action pipeline in [FSharpCodeFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeFixes.fs)).
+
+The action is withheld wherever the syntax shows the rewrite could change meaning, stop compiling or drop source:
+
+- a stage holding a lambda, whose parameter types flow from the piped value only in pipeline order (FS0072 otherwise), or a stage that is neither a function reference nor an application;
+- a method's argument list as the piped value (`M(a)`, `M (a, b)`, `M(name = v)`), because tupled, named, optional and ParamArray arguments bind only in place;
+- a computation-expression body or a string literal as the piped value (a format string type-checks only as a direct argument), and a bare prefix operator such as the `-` of `-x` as a stage;
+- an expression spanning lines, whose layout could not be reproduced, or holding a comment, which the AST slices would drop;
+- anything inside a computation expression's `let!`/`use!`/`do!` right-hand side.
+
+Each kind of conversion is offered for the outermost expression enclosing the cursor. A chain that cannot convert still lets the expressions inside its stages convert — a nested call in a lambda body — but never one of its stages or sub-chains alone, so no partial rewrite is offered. Every conversion is verified by applying the edit and re-checking that the file has no new FCS errors (`FSharpPipeRefactoringTests`).
 
 ### [SHARPLSP-FEATURES-FORMATTING] Formatting
 

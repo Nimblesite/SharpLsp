@@ -154,7 +154,8 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
       XML parse in [FSharpWorkspace.fs:41](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs#L41))
 - [ ] File ordering awareness + reorder suggestions (F# compilation order matters)
 - [ ] Type provider navigation support
-- [ ] Convert pipe to/from nested function calls (refactoring)
+- [x] Convert pipe to/from nested function calls (refactoring) — `[REFACTOR-FSHARP-PIPE]`
+      ([FSharpPipeRefactoring.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpPipeRefactoring.fs))
 - [x] Multi-project F# workspace state (multiple `FSharpProjectOptions`). Every `.fsproj`
       loads; every F#→F# project reference is read in memory — a multi-targeted project's
       from the build MSBuild picked for its framework — and a project-wide query spans the

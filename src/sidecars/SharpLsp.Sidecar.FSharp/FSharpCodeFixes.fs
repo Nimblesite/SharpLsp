@@ -429,7 +429,10 @@ let private collectCodeActions
         let! analyzed = collectAnalyzerActions state filePath checkResults source startLine endLine
         let! interfaces =
             interfaceActions state filePath source checkResults parseResults startLine startCharacter
-        return diagnostics @ typed @ analyzed @ interfaces
+        let pipes =
+            FSharpPipeRefactoring.tryGenerateActions parseResults source filePath startLine startCharacter
+            |> List.map (wrapGeneratedAction state)
+        return diagnostics @ typed @ analyzed @ interfaces @ pipes
     }
 
 let private getCodeActionsCore state workspace filePath startLine startCharacter endLine =
