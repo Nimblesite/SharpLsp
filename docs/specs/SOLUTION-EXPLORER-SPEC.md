@@ -30,6 +30,8 @@ Per-file symbols are sourced by language, never by a single parser:
 
 The F# path reuses the sidecar `documentSymbol` request that powers the editor outline. It maps nested FCS modules, namespaces, types, DU cases, and members into the shared `FileSymbol`/`SymbolNode` tree using full ranges. `workspace_symbols::handle` receives the F# sidecar; when unavailable, `.fs` files contribute no symbols without failing the request.
 
+Which files a project lists differs by language too. A `.csproj` lists the `.cs` and `.fs` files under its folder. A `.fsproj` lists its evaluated Compile items, in compile order and wherever they sit on disk, through the F# sidecar's `project/compileItems`. A project kept in `.vscode/` that compiles `../Source/Main.fs` with `EnableDefaultCompileItems` off (#493) therefore lists `Main.fs`. Signature files are not listed: their symbols are their `.fs` file's. When the sidecar cannot evaluate the project, the host logs why and lists the project's folder instead. Implementation: `src/sharplsp/src/project_sources.rs`.
+
 Function bindings with parameters and lambda-valued bindings use the `Function` kind,
 including when FCS supplies a field glyph. Classification uses the FCS binding AST;
 ordinary value bindings keep their field kind. The outline and standard workspace
@@ -627,6 +629,11 @@ the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
 
 - Prompts in order: file name (without extension), signature-file choice, and —
   on file nodes — the position. Cancelling any prompt writes nothing.
+- The new file goes beside the file node it ran on, which can be any Compile item
+  of the project, inside its folder or not. Without a file node it goes beside
+  the project's last Compile item, read from `sharplsp/project/compileItems`, and
+  beside the project file only when the project has none. The name prompt names
+  that folder (#493).
 - Creates the `.fs` (and `.fsi` first when chosen) with a `module` stub on disk
   *before* the project edit, so the reload never sees a dangling include.
 - Sends one `addCompileItem` per file, then refreshes the Solution Explorer and

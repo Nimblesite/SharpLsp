@@ -19,14 +19,13 @@ import {
   EXTENSION_ID,
   closeAllEditors,
   pollProvider,
-  pollUntilResult,
   removeDirRecursive,
   requireWorkspaceRoot,
 } from './test-helpers';
 import { hoverText, pollHover } from './fsharp-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-import { activeExplorerProvider, pollTreeFor, type ExplorerProvider } from './explorer-kit';
-import { findNode } from './tree-node-kit';
+import { pollTreeFor } from './explorer-kit';
+import { explorer, projectNode, symbolNodeIn } from './fsharp-project-tree-kit';
 import { compileIncludes } from './project-xml-kit';
 import { useLspTestSuite } from './lsp-suite-kit';
 import { COMMAND_MS, FAST_MS, LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
@@ -38,22 +37,6 @@ import {
 } from '../../add-source-file.js';
 
 const CMD_ADD_FS_FILE = 'sharplsp.addFSharpSourceFile';
-
-/** The slice of a live ExplorerNode these tests navigate. */
-interface LiveNode {
-  readonly label?: string | { label: string };
-  readonly nodeType?: string;
-  readonly contextValue?: string;
-  readonly projectFilePath?: string;
-  readonly symbolUri?: string;
-  readonly children?: LiveNode[];
-  readonly parent?: LiveNode;
-}
-
-/** The live Solution Explorer provider, viewed as `LiveNode`s. */
-function provider(): ExplorerProvider<LiveNode> {
-  return activeExplorerProvider<LiveNode>();
-}
 
 function uniqueToken(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -134,7 +117,7 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     stubs.restore();
     await closeAllEditors();
     try {
-      provider().clear();
+      explorer().clear();
     } catch {
       /* best-effort reset of the live solution state */
     }
@@ -153,28 +136,10 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     const root = requireWorkspaceRoot();
     const { slnPath, projDir, fsprojPath } = writeFSharpProject(root, project);
     created.push(projDir, slnPath);
-    const tree = provider();
+    const tree = explorer();
     await tree.loadSolution(slnPath);
     assert.ok(await pollTreeFor(tree, project), 'the project node must appear in the tree');
     return { project, fsprojPath, projDir };
-  }
-
-  /** The loaded tree's project node for `projectFilePath`. */
-  function projectNode(projectFilePath: string): LiveNode {
-    const node = findNode(provider().getChildren(), (n) => n.projectFilePath === projectFilePath);
-    assert.ok(node, 'the project node must be reachable from the tree roots');
-    return node;
-  }
-
-  /** A symbol node whose file is `basename`, polled until FCS symbols land. */
-  function symbolNodeIn(projectFilePath: string, basename: string): Promise<LiveNode | undefined> {
-    return pollUntilResult(
-      async () =>
-        findNode(provider().getChildren(), (n) => n.symbolUri?.includes(basename) === true),
-      (node) => node !== undefined && owningProjectOf(node) === projectFilePath,
-      LSP_RESPONSE_MS,
-      500,
-    );
   }
 
   /**
@@ -192,16 +157,6 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     stubs.queueInput(name).queuePick('No').queuePick(position);
     await vscode.commands.executeCommand(CMD_ADD_FS_FILE, anchor);
     return loaded;
-  }
-
-  /** The project node a symbol node belongs to, via the parent chain. */
-  function owningProjectOf(node: LiveNode): string | undefined {
-    let current: LiveNode | undefined = node;
-    while (current !== undefined) {
-      if (current.nodeType === 'project') return current.projectFilePath;
-      current = current.parent;
-    }
-    return undefined;
   }
 
   // ── Interaction 1: project node → default position, file analysed ──
@@ -239,7 +194,7 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
 
     // Reactivity: the tree picks the new module up after the refresh.
     assert.ok(
-      await pollTreeFor(provider(), 'NewLogic'),
+      await pollTreeFor(explorer(), 'NewLogic'),
       'the new module must appear in the Solution Explorer',
     );
 
