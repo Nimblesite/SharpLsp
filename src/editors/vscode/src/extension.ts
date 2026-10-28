@@ -26,6 +26,7 @@ import {
   CMD_OPEN_PROJECT_FILE,
   CMD_ADD_PROJECT_REFERENCE,
   CMD_ADD_FSHARP_FILE,
+  CMD_REMOVE_FSHARP_FILE,
   CONTEXT_FS_PROJECT_SELECTED,
   CMD_NUGET_ADD_FROM_EXPLORER,
   VIEW_SOLUTION_EXPLORER,
@@ -48,6 +49,7 @@ import { registerBuildCommands } from './build.js';
 import { registerNuGetCommands, addNuGetPackageToProject } from './nuget.js';
 import { registerScaffoldingCommands } from './scaffolding.js';
 import { addFSharpSourceFile, fsharpProjectOfNode } from './add-source-file.js';
+import { removeFSharpSourceFile } from './remove-source-file.js';
 import { registerFsiCommands } from './fsi.js';
 import { registerHotReloadCommands } from './hot-reload.js';
 import { registerDebugAdapter } from './debug.js';
@@ -538,6 +540,9 @@ function registerContextMenuCommands(context: ExtensionContext): void {
     }),
     commands.registerCommand(CMD_ADD_FSHARP_FILE, async (node?: ExplorerNode) => {
       await addFSharpSourceFile(node);
+    }),
+    commands.registerCommand(CMD_REMOVE_FSHARP_FILE, async (node?: ExplorerNode) => {
+      await removeFSharpSourceFile(node);
     }),
     commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node?: ExplorerNode) => {
       const projectFilePath = projectPathOf(node);

@@ -30,6 +30,8 @@ Per-file symbols are sourced by language, never by a single parser:
 
 The F# path reuses the sidecar `documentSymbol` request that powers the editor outline. It maps nested FCS modules, namespaces, types, DU cases, and members into the shared `FileSymbol`/`SymbolNode` tree using full ranges. `workspace_symbols::handle` receives the F# sidecar; when unavailable, `.fs` files contribute no symbols without failing the request.
 
+Which files a project lists differs by language too. A `.csproj` lists the `.cs` and `.fs` files under its folder, and so does a `.fsproj` whose sources are just that. A `.fsproj` that turns `EnableDefaultCompileItems` off, or names a Compile include outside its folder, lists its evaluated Compile items instead, in compile order and wherever they sit on disk. A project kept in `.vscode/` that compiles `../Source/Main.fs` (#493) therefore lists `Main.fs`. The F# sidecar's `project/compileItems` decides from the project XML and evaluates only such a project, answering none for any other. `sharplsp/workspaceSymbols` runs on the host's request loop, so an ordinary project must never wait on `MSBuild` there. Signature files are not listed: their symbols are their `.fs` file's. When the sidecar cannot evaluate the project, the host logs why and lists the project's folder instead. Implementation: `src/sharplsp/src/project_sources.rs`.
+
 Function bindings with parameters and lambda-valued bindings use the `Function` kind,
 including when FCS supplies a field glyph. Classification uses the FCS binding AST;
 ordinary value bindings keep their field kind. The outline and standard workspace
@@ -627,6 +629,11 @@ the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
 
 - Prompts in order: file name (without extension), signature-file choice, and —
   on file nodes — the position. Cancelling any prompt writes nothing.
+- The new file goes beside the file node it ran on, which can be any Compile item
+  of the project, inside its folder or not. Without a file node it goes beside
+  the project's last Compile item, read from `sharplsp/project/compileItems`, and
+  beside the project file only when the project has none. The name prompt names
+  that folder (#493).
 - Creates the `.fs` (and `.fsi` first when chosen) with a `module` stub on disk
   *before* the project edit, so the reload never sees a dangling include.
 - Sends one `addCompileItem` per file, then refreshes the Solution Explorer and
@@ -642,6 +649,24 @@ the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
 `.cs`, it sends `sharplsp/project/addCompileItem` for the nearest `.csproj`. No
 tier splices project XML as text; the glob-project decision belongs to the
 `MSBuild` DOM, not a string probe.
+
+## Remove Source File `[SE-REMOVE]`
+
+The counterpart of [SE-ADD-FILE]: a file leaves its project's compile order without anyone editing the project file by hand (#493).
+
+### Request: `sharplsp/project/removeCompileItem` `[SE-REMOVE-FILE-REQUEST]`
+
+Params `{ projectPath, include }`, where `include` is project-relative as in [SE-ADD-FILE-REQUEST]. The host routes it to the C# sidecar's `project/removeCompileItem`, which removes the matching `Compile` item through the `MSBuild` DOM; the two separator spellings match. Every other item, comment, BOM and line ending stays byte for byte. An include the project lacks changes nothing and still succeeds (`modified: false`). The response is the same `{ success, message, modified }` as adding.
+
+### Command: `sharplsp.removeFSharpSourceFile` `[SE-REMOVE-FILE-COMMAND]`
+
+| Property | Value |
+|----------|-------|
+| Command | `sharplsp.removeFSharpSourceFile` |
+| Title | Remove F# Source File |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^symbol\./ && sharplsp.fsProjectSelected` — group `7_modification` |
+
+A modal question names the file and the project, and offers **Remove from Project** (the file stays on disk) or **Remove and Delete File**. Dismissing it changes nothing. The Compile item is removed first; the file is deleted only after the project no longer names it. The Solution Explorer then refreshes.
 
 ## Navigation `[SE-NAVIGATION]`
 

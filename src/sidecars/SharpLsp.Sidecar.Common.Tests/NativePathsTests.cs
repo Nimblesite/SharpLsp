@@ -146,4 +146,21 @@ public sealed class NativePathsTests
         Assert.True(NativePaths.AreEqual("", ""));
         Assert.False(NativePaths.AreEqual("", "x"));
     }
+
+    // Implements [SE-FSHARP-SYMBOLS]: a Compile item outside the project folder (#493).
+    [Fact]
+    public void IsWithin_holds_at_any_depth_and_never_for_a_path_that_climbs_out()
+    {
+        var project = Path.Combine(Path.GetTempPath(), "Mod", ".vscode");
+        Assert.True(NativePaths.IsWithin(project, Path.Combine(project, "Main.fs")));
+        Assert.True(NativePaths.IsWithin(project, Path.Combine(project, "Deep", "Er", "Main.fs")));
+        Assert.True(NativePaths.IsWithin(project, Path.Combine(project, "..rc", "Main.fs")));
+        Assert.False(
+            NativePaths.IsWithin(project, NativePaths.Resolve(project, "../Source/Main.fs"))
+        );
+        Assert.False(NativePaths.IsWithin(project, Path.Combine(project, "..")));
+        Assert.False(
+            NativePaths.IsWithin(project, Path.Combine(Path.GetTempPath(), "Other", "Main.fs"))
+        );
+    }
 }

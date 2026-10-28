@@ -14,7 +14,6 @@ use tracing::info;
 use tree_sitter::Node;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::source_walk::collect_files;
 use crate::tree_sitter_parse::{parse_file, LangId, TsParsers};
 use crate::utils::usize_to_u32;
 use crate::vfs::Vfs;
@@ -440,7 +439,12 @@ fn build_project_node(
         .parent()
         .context("project has no parent")?;
 
-    let source_files = find_source_files(proj_dir);
+    let source_files = crate::project_sources::project_source_files(
+        Path::new(&project.path),
+        proj_dir,
+        runtime,
+        fsharp_sidecar,
+    );
 
     let symbols: Vec<FileSymbol> = source_files
         .iter()
@@ -520,19 +524,6 @@ fn map_sidecar_symbol(item: &crate::document_symbols::SidecarDocumentSymbol) -> 
         },
         children: item.children.iter().map(map_sidecar_symbol).collect(),
     }
-}
-
-/// Recursively find `.cs` and `.fs` files under a directory.
-fn find_source_files(dir: &Path) -> Vec<String> {
-    let mut files = Vec::new();
-    collect_files(dir, is_source_file, &mut files);
-    files
-}
-
-/// Check whether the path has a `.cs` or `.fs` extension, in any casing —
-/// Windows filesystems are case-insensitive, so `Program.CS` is a C# file.
-fn is_source_file(path: &Path) -> bool {
-    crate::paths::has_extension(path, &["cs", "fs"])
 }
 
 /// Parse a single source file and extract symbols.
@@ -730,37 +721,6 @@ mod tests {
         }
     }
 
-    // ── is_source_file ──
-
-    /// Windows filesystems are case-insensitive — `Program.CS` is the same
-    /// file as `Program.cs` and must not vanish from workspace symbols.
-    #[test]
-    fn is_source_file_matches_extensions_case_insensitively() {
-        assert!(is_source_file(Path::new("A.CS")));
-        assert!(is_source_file(Path::new("B.Fs")));
-        assert!(!is_source_file(Path::new("C.txt")));
-    }
-
-    #[test]
-    fn is_source_file_cs() {
-        assert!(is_source_file(Path::new("Program.cs")));
-    }
-
-    #[test]
-    fn is_source_file_fs() {
-        assert!(is_source_file(Path::new("Module.fs")));
-    }
-
-    #[test]
-    fn is_source_file_txt_rejected() {
-        assert!(!is_source_file(Path::new("readme.txt")));
-    }
-
-    #[test]
-    fn is_source_file_rs_rejected() {
-        assert!(!is_source_file(Path::new("main.rs")));
-    }
-
     // ── reparent_file_scoped_members ──
 
     #[test]
@@ -804,76 +764,6 @@ mod tests {
         assert_eq!(result[0].children.len(), 2);
         assert_eq!(result[0].children[0].name, "User");
         assert_eq!(result[0].children[1].name, "Order");
-    }
-
-    // ── collect_source_files / find_source_files ──
-
-    #[test]
-    fn find_source_files_returns_cs_and_fs_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-
-        std::fs::write(dir.join("Foo.cs"), "").unwrap();
-        std::fs::write(dir.join("Bar.fs"), "").unwrap();
-        std::fs::write(dir.join("readme.txt"), "").unwrap();
-
-        let mut files = Vec::new();
-        collect_files(dir, is_source_file, &mut files);
-
-        assert_eq!(files.len(), 2, "must find exactly 2 source files");
-        assert!(files.iter().any(|f| f.ends_with("Foo.cs")));
-        assert!(files.iter().any(|f| f.ends_with("Bar.fs")));
-    }
-
-    #[test]
-    fn collect_source_files_skips_bin_obj_directories() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-
-        // Create a src file at root level.
-        std::fs::write(dir.join("Main.cs"), "").unwrap();
-
-        // Create bin/obj directories with files that must NOT be collected.
-        std::fs::create_dir(dir.join("bin")).unwrap();
-        std::fs::write(dir.join("bin").join("App.dll"), "").unwrap();
-        // Trick: put a .cs file in bin to verify it's skipped.
-        std::fs::write(dir.join("bin").join("Gen.cs"), "").unwrap();
-
-        std::fs::create_dir(dir.join("obj")).unwrap();
-        std::fs::write(dir.join("obj").join("Build.cs"), "").unwrap();
-
-        let mut files = Vec::new();
-        collect_files(dir, is_source_file, &mut files);
-
-        assert_eq!(files.len(), 1, "must skip bin/obj, got: {files:?}");
-        assert!(files[0].ends_with("Main.cs"));
-    }
-
-    #[test]
-    fn collect_source_files_skips_nonexistent_directory() {
-        let path = Path::new("/nonexistent/path/that/does/not/exist");
-        let mut files = Vec::new();
-        // Must not panic — simply returns nothing.
-        collect_files(path, is_source_file, &mut files);
-        assert!(matches!(files.as_slice(), []), "{files:?}");
-    }
-
-    #[test]
-    fn collect_source_files_recurses_into_subdirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-
-        let sub = dir.join("sub");
-        std::fs::create_dir(&sub).unwrap();
-        std::fs::write(sub.join("Nested.cs"), "").unwrap();
-        std::fs::write(dir.join("Root.cs"), "").unwrap();
-
-        let mut files = Vec::new();
-        collect_files(dir, is_source_file, &mut files);
-
-        assert_eq!(files.len(), 2, "must recurse into subdirs");
-        assert!(files.iter().any(|f| f.ends_with("Nested.cs")));
-        assert!(files.iter().any(|f| f.ends_with("Root.cs")));
     }
 
     fn project(

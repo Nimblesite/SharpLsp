@@ -273,3 +273,59 @@ let ``project metadata remains accurate across editor saves with a write handle 
     finally
         cleanup root
 }
+
+/// "Add F# Source File" edits the project, and the Solution Explorer asks for its
+/// Compile items straight away, before any reload. The cached evaluation must not
+/// answer for the project it replaced, and an item outside the project folder is
+/// resolved like any other (#493). [SE-FSHARP-SYMBOLS]
+[<Fact>]
+let ``an edited project is evaluated afresh without waiting for a reload`` () = task {
+    let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
+    try
+        let dir = NativePaths.Resolve(root, ".vscode")
+        let project = writeProject dir "Edited" FLAGS_WITHOUT_OUTPUT [||]
+        let state = FSharpWorkspace.create ()
+        let! first = FSharpWorkspace.compileSources state project CancellationToken.None
+        Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs") |], ok first)
+
+        let linked = NativePaths.Resolve(root, "Source", "Extra.fs")
+        Directory.CreateDirectory(NativePaths.DirectoryOf linked) |> ignore
+        File.WriteAllText(linked, "module Extra\n")
+        let stamp = File.GetLastWriteTimeUtc project
+        writeProject dir "Edited" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |] |> ignore
+        File.SetLastWriteTimeUtc(project, stamp.AddSeconds 2.0)
+        let! edited = FSharpWorkspace.compileSources state project CancellationToken.None
+        Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs"); linked |], ok edited)
+
+        let! again = FSharpWorkspace.compileSources state project CancellationToken.None
+        Assert.Same(ok edited, ok again)
+    finally
+        cleanup root
+}
+
+/// The Solution Explorer asks for Compile items on the host's request loop, so only a
+/// project whose sources are not simply the files under its folder may cost an MSBuild
+/// evaluation; the XML decides which (#493). [SE-FSHARP-SYMBOLS]
+[<Fact>]
+let ``only a project compiling more than its own folder is evaluated for the Solution Explorer`` () = task {
+    let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
+    try
+        let dir = NativePaths.Resolve(root, ".vscode")
+        let ordinary = writeProject (NativePaths.Resolve(root, "Ordinary")) "Ordinary" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "Sub/More.fs" |] |]
+        let linked = writeProject dir "Linked" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |]
+        let defaultsOff =
+            writeProject (NativePaths.Resolve(root, "Off")) "Off" FLAGS_WITHOUT_OUTPUT [| node "PropertyGroup" [| node "EnableDefaultCompileItems" [| "False" |] |] |]
+
+        Assert.False(FSharpProjectLoading.linksSources ordinary)
+        Assert.True(FSharpProjectLoading.linksSources linked)
+        Assert.True(FSharpProjectLoading.linksSources defaultsOff)
+
+        let state = FSharpWorkspace.create ()
+        let! none = FSharpWorkspace.linkedCompileSources state ordinary CancellationToken.None
+        Assert.Empty(ok none)
+        Assert.Empty(state.CompileSources)
+        let! items = FSharpWorkspace.linkedCompileSources state linked CancellationToken.None
+        Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs"); NativePaths.Resolve(root, "Source", "Extra.fs") |], ok items)
+    finally
+        cleanup root
+}

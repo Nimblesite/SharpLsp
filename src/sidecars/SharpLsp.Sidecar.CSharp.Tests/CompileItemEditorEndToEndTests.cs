@@ -32,6 +32,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     : IClassFixture<CSharpSidecarFixture>
 {
     private const string AddCompileItem = "project/addCompileItem";
+    private const string RemoveCompileItem = "project/removeCompileItem";
     private const string DefaultPosition = "default";
 
     /// <summary>Join <paramref name="lines"/> with CRLF and a trailing newline.</summary>
@@ -78,6 +79,14 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         return fixture.SendAndDeserializeAsync<PackageEditResult>(
             AddCompileItem,
             CompileRequest(filePath, include, anchor, position)
+        );
+    }
+
+    private Task<PackageEditResult> RemoveAsync(string filePath, string include)
+    {
+        return fixture.SendAndDeserializeAsync<PackageEditResult>(
+            RemoveCompileItem,
+            CompileRequest(filePath, include)
         );
     }
 
@@ -348,5 +357,62 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
 
         Assert.True(result.Modified);
         Assert.Equal(["Program.cs", "Generated.cs", "Service.cs"], CompileOrder(path));
+    }
+
+    /// <summary>The reporter's template: every Compile item outside the project folder (#493).</summary>
+    private static string LinkedFsproj()
+    {
+        return Crlf(
+            "<Project Sdk=\"Microsoft.NET.Sdk\">",
+            "  <ItemGroup>",
+            "    <!-- the mod's sources live beside .vscode/, not in it -->",
+            "    <Compile Include=\"../Source/Mod/Domain.fs\" />",
+            "    <Compile Include=\"../Source/Mod/Patches.fs\" />",
+            "    <Compile Include=\"../Source/Mod/Main.fs\" />",
+            "  </ItemGroup>",
+            "</Project>"
+        );
+    }
+
+    [Fact]
+    public async Task Remove_takes_out_exactly_that_item_and_keeps_the_rest_byte_for_byte()
+    {
+        var path = await CreateProjectAsync("mod.fsproj", LinkedFsproj());
+
+        var result = await RemoveAsync(path, "../Source/Mod/Patches.fs");
+
+        Assert.True(result.Modified);
+        Assert.Contains("../Source/Mod/Patches.fs", result.Message);
+        Assert.Equal(["../Source/Mod/Domain.fs", "../Source/Mod/Main.fs"], CompileOrder(path));
+        Assert.Equal(
+            LinkedFsproj().Replace("    <Compile Include=\"../Source/Mod/Patches.fs\" />\r\n", ""),
+            await File.ReadAllTextAsync(path)
+        );
+        var bytes = await File.ReadAllBytesAsync(path);
+        Assert.True(bytes is [0xEF, 0xBB, 0xBF, ..], "the BOM survives the removal");
+    }
+
+    [Fact]
+    public async Task Remove_matches_either_separator_spelling()
+    {
+        var path = await CreateProjectAsync("mod.fsproj", LinkedFsproj());
+
+        var result = await RemoveAsync(path, "..\\Source\\Mod\\Domain.fs");
+
+        Assert.True(result.Modified);
+        Assert.Equal(["../Source/Mod/Patches.fs", "../Source/Mod/Main.fs"], CompileOrder(path));
+    }
+
+    [Fact]
+    public async Task Removing_an_item_the_project_does_not_include_changes_nothing()
+    {
+        var path = await CreateProjectAsync("mod.fsproj", LinkedFsproj());
+        var before = await File.ReadAllBytesAsync(path);
+
+        var result = await RemoveAsync(path, "../Source/Mod/Missing.fs");
+
+        Assert.False(result.Modified);
+        Assert.Contains("../Source/Mod/Missing.fs", result.Message);
+        Assert.Equal(before, await File.ReadAllBytesAsync(path));
     }
 }

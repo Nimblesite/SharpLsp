@@ -113,6 +113,7 @@ pub mod workspace_diagnostic_session;
 mod workspace_diagnostic_support;
 pub mod workspace_symbol_search;
 pub mod workspace_symbols;
+pub mod workspace_symbols_linked;
 pub mod workspace_symbols_selection;
 
 // ── Re-exports so `use super::*;` in test modules gets everything ─

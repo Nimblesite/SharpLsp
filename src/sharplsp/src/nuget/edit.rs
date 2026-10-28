@@ -176,6 +176,30 @@ pub fn add_compile_item(
     )
 }
 
+/// Remove a `<Compile Include>` item via the sidecar, either separator
+/// spelling; an include the project lacks changes nothing.
+/// [SE-REMOVE-FILE-REQUEST]
+pub fn remove_compile_item(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
+    file_path: &str,
+    include: &str,
+) -> Result<EditOutcome> {
+    let request = CompileInsertWire {
+        file_path: file_path.to_string(),
+        include: include.to_string(),
+        anchor_include: String::new(),
+        position: String::new(),
+    };
+    round_trip(
+        sidecar,
+        runtime,
+        "project/removeCompileItem",
+        request,
+        file_path,
+    )
+}
+
 /// Serialize the request, round-trip it through the sidecar, and decode the outcome.
 fn dispatch(
     sidecar: &Arc<SidecarManager>,

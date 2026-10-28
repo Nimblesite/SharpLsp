@@ -93,6 +93,20 @@ public static partial class NativePaths
         return Path.GetRelativePath(Portable(baseDirectory), Portable(path));
     }
 
+    /// <summary>
+    /// Whether <paramref name="path"/> lies inside <paramref name="directory"/>, at any
+    /// depth. A path that climbs out (<c>../Source/Main.fs</c>) or names another root
+    /// does not.
+    /// </summary>
+    public static bool IsWithin(string directory, string path)
+    {
+        var relative = RelativeTo(directory, path);
+        var climbs =
+            relative == ".."
+            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        return !climbs && !IsRooted(relative);
+    }
+
     /// <summary>Whether <paramref name="path"/> is absolute on this platform.</summary>
     public static bool IsRooted(string path)
     {

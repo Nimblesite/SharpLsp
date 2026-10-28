@@ -10,14 +10,7 @@
 import * as vscode from 'vscode';
 import { CMD_REFRESH_EXPLORER } from './constants.js';
 import { info } from './log.js';
-import {
-  directoryOf,
-  fileNameOf,
-  hasExtension,
-  isWithin,
-  joinPath,
-  portableRelativePath,
-} from './paths';
+import { directoryOf, fileNameOf, hasExtension, joinPath, portableRelativePath } from './paths';
 import * as state from './state.js';
 import { getErrorMessage } from './utils.js';
 
@@ -138,14 +131,16 @@ function targetFromNode(node: NodeLike): Target | undefined {
     void vscode.window.showErrorMessage('Add F# Source File: the node is not in an F# project.');
     return undefined;
   }
-  return { projectPath, anchorFile: anchorFileOf(node, projectPath) };
+  return { projectPath, anchorFile: anchorFileOf(node) };
 }
 
-/** The anchor file when the node carries one inside the project, else none. */
-function anchorFileOf(node: NodeLike, projectPath: string): string | undefined {
-  if (node.symbolUri === undefined) return undefined;
-  const file = vscode.Uri.parse(node.symbolUri).fsPath;
-  return isWithin(file, directoryOf(projectPath)) ? file : undefined;
+/**
+ * The anchor file when the node carries one. A node under the project is one of
+ * its Compile items wherever that file sits: the reporter's template compiles
+ * `../Source/Template/Main.fs` from `.vscode/mod.fsproj` (#493).
+ */
+function anchorFileOf(node: NodeLike): string | undefined {
+  return node.symbolUri === undefined ? undefined : vscode.Uri.parse(node.symbolUri).fsPath;
 }
 
 async function targetFromPalette(): Promise<Target | undefined> {
@@ -161,9 +156,39 @@ async function targetFromPalette(): Promise<Target | undefined> {
   return pick === undefined ? undefined : { projectPath: pick.path };
 }
 
+/** Response of the `sharplsp/project/compileItems` request. */
+interface CompileItemsResponse {
+  readonly items: readonly string[];
+}
+
+/**
+ * Where a new file goes without an anchor: beside the project's LAST Compile
+ * item, where its sources live, else beside the project file. [SE-ADD-FILE-COMMAND]
+ */
+async function sourceFolderOf(projectPath: string): Promise<string> {
+  const client = state.client.value;
+  const fallback = directoryOf(projectPath);
+  if (client === undefined) return fallback;
+  try {
+    const { items } = await client.sendRequest<CompileItemsResponse>(
+      'sharplsp/project/compileItems',
+      { projectPath },
+    );
+    const last = items.at(-1);
+    return last === undefined ? fallback : directoryOf(last);
+  } catch (err) {
+    info(`Compile items unavailable for ${fileNameOf(projectPath)}: ${getErrorMessage(err)}`);
+    return fallback;
+  }
+}
+
 /** Prompt, create the files, insert them into compile order, open the .fs. */
 async function addFileInteractive(target: Target): Promise<void> {
-  const name = await promptName();
+  const folder =
+    target.anchorFile !== undefined
+      ? directoryOf(target.anchorFile)
+      : await sourceFolderOf(target.projectPath);
+  const name = await promptName(folder);
   if (name === undefined) return;
 
   const signature = await promptSignature();
@@ -173,10 +198,6 @@ async function addFileInteractive(target: Target): Promise<void> {
   if (position === undefined) return;
 
   const extensions = signature ? ['.fsi', '.fs'] : ['.fs'];
-  const folder =
-    target.anchorFile !== undefined
-      ? directoryOf(target.anchorFile)
-      : directoryOf(target.projectPath);
   const files = extensions.map((ext) => joinPath(folder, `${name}${ext}`));
 
   await createFiles(files, name);
@@ -187,9 +208,10 @@ async function addFileInteractive(target: Target): Promise<void> {
   await vscode.window.showTextDocument(vscode.Uri.file(files[files.length - 1] ?? ''));
 }
 
-async function promptName(): Promise<string | undefined> {
+/** The new file's name, the prompt naming the folder it will be created in. */
+async function promptName(folder: string): Promise<string | undefined> {
   const name = await vscode.window.showInputBox({
-    prompt: 'F# source file name (without extension)',
+    prompt: `F# source file name (without extension), created in ${vscode.workspace.asRelativePath(folder)}`,
     placeHolder: 'MyModule',
   });
   return name === undefined || name === '' ? undefined : name.replace(/\.(fsi|fs)$/u, '');
