@@ -187,6 +187,14 @@ export function isRunError(info: TrxRunInfo): boolean {
   return info.outcome.toLowerCase() === 'error';
 }
 
+/** How NUnit's filter parser ends its refusal of a name it cannot read ([TEST-FILTER-ESCAPE]). */
+const SELECTION_REFUSAL = 'in selection expression';
+
+/** A run error that is an adapter REFUSING the filter, not a host that stopped or crashed. */
+export function refusedSelection(info: TrxRunInfo): boolean {
+  return isRunError(info) && info.text.includes(SELECTION_REFUSAL);
+}
+
 /** `className.name` from the definition; the display name is the last resort. */
 function qualifiedName(unit: TrxUnitTest): string {
   const className = unit.TestMethod?.['@_className'];

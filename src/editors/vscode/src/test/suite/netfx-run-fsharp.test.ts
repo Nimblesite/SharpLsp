@@ -38,8 +38,8 @@ import {
   focusDocument,
   invokeCommand,
   stopAnyDebugSession,
-  TaskRecorder,
 } from './run-debug-kit';
+import { TaskRecorder } from './run-task-recorder';
 import { activateTestExplorer } from './test-explorer-kit';
 import { comparablePath, pollUntilResult, requireWorkspaceRoot, sleep } from './test-helpers';
 import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS, QUIET_MS } from './test-timeouts';

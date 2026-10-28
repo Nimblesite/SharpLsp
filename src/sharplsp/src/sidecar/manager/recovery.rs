@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use tracing::{info, warn};
 
+use super::exchange::CompilerRefusal;
 use super::{request_budget, SidecarManager};
 use crate::paths;
 use crate::pull_diagnostics::DiagnosticDocument;
@@ -200,17 +201,33 @@ impl SidecarManager {
         let overlays = self.overlay_snapshot(&documents, scope.as_ref());
         info!(sidecar = %self.name, documents = overlays.len(), "Replaying compiler overlays");
         for overlay in overlays {
-            let payload = rmp_serde::to_vec(&overlay)?;
-            let _response = self
-                .exchange(
-                    connection,
-                    "textDocument/didChange",
-                    payload,
-                    request_budget("textDocument/didChange"),
-                )
-                .await?;
+            self.replay_overlay(connection, &overlay).await?;
         }
         Ok(())
+    }
+
+    /// Offer one buffer. One the compiler refuses, such as a buffer in a folder
+    /// deleted since it was opened, stays outside the compiler as it was before
+    /// the respawn; failing the restore over it respawned the compiler and
+    /// replayed the same buffer without end. Only a compiler that stops
+    /// answering fails the restore. [DIAG-TRUTH-RECOVERY]
+    async fn replay_overlay(
+        &self,
+        connection: &mut Option<FramedTransport>,
+        overlay: &SidecarDidChangeReq,
+    ) -> Result<()> {
+        let method = "textDocument/didChange";
+        let payload = rmp_serde::to_vec(overlay)?;
+        match self
+            .exchange(connection, method, payload, request_budget(method))
+            .await
+        {
+            Err(error) if error.is::<CompilerRefusal>() => {
+                warn!(sidecar = %self.name, %error, "Restored compiler refused a buffer; it stays outside the compiler");
+                Ok(())
+            }
+            replayed => replayed.map(drop),
+        }
     }
 
     /// Enumerate the selected graph without compiling or adopting excluded open owners.

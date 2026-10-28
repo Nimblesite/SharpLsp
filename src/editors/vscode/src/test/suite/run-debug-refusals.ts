@@ -5,7 +5,8 @@
 // message, naming its own reason, no prompt, and neither a session nor a task —
 // so the obligation is written once here rather than per suite.
 import * as assert from 'node:assert/strict';
-import { DebugSessionRecorder, TaskRecorder, invokeCommand } from './run-debug-kit';
+import { DebugSessionRecorder, invokeCommand } from './run-debug-kit';
+import { TaskRecorder } from './run-task-recorder';
 import type { UiStubs } from './ui-stubs';
 
 // The sentence `debugCurrentProject` emits today for EVERY unresolved target.

@@ -1,7 +1,7 @@
 // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT]: real run tasks have observable process executions.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import type { ObservedTask } from './run-debug-kit';
+import type { ObservedTask } from './run-task-recorder';
 
 /** The run MUST be a `vscode.Task` on SharpLsp's own task type (rule 1). */
 export function assertTaskIdentity(task: ObservedTask, why: string): void {

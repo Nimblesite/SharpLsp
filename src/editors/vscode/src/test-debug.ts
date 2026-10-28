@@ -22,7 +22,7 @@
 import * as vscode from 'vscode';
 import { DEBUG_TYPE } from './constants';
 import { whenDebugSessionArmed } from './debug';
-import { TEST_HOST_ATTACH_FLAG } from './dap-attach';
+import { TEST_HOST_ATTACH_FLAG, TEST_HOST_RELEASE_FLAG } from './dap-attach';
 import { announcesEnd } from './dap-debuggee';
 import { asksToStop } from './dap-shutdown';
 import { error, info, warn } from './log';
@@ -173,6 +173,15 @@ class DebugRunFlow {
   /** Aborting kills the whole `dotnet test` tree — no host is left waiting. */
   private readonly stop = new AbortController();
   private readonly ownedPids = new Set<number>();
+  /** Every process this run STARTED; a test host announced by none of them is a child. */
+  private readonly startedPids = new Set<number>();
+  /** The live session on each pid this flow attached to. */
+  private readonly sessions = new Map<number, vscode.DebugSession>();
+  /** Controllers detached on purpose: their `disconnect` is no Stop. */
+  private readonly releasedPids = new Set<number>();
+  private readonly sessionEnds = vscode.debug.onDidTerminateDebugSession((session) => {
+    this.sessions.delete(Number(session.configuration.processId));
+  });
   private readonly stopObserver = vscode.debug.registerDebugAdapterTrackerFactory(DEBUG_TYPE, {
     createDebugAdapterTracker: (session) => this.trackStop(session),
   });
@@ -184,6 +193,7 @@ class DebugRunFlow {
     this.onFirstAttach = resolve;
   });
   private readonly watcher = new TestHostWatcher((pid) => {
+    this.releaseControllers(pid);
     void this.attach(pid);
   });
 
@@ -220,6 +230,7 @@ class DebugRunFlow {
       error(`Test debug run failed to settle: ${String(cause)}`);
     } finally {
       this.stopObserver.dispose();
+      this.sessionEnds.dispose();
       this.run.end();
       this.terminal.end();
     }
@@ -252,6 +263,9 @@ class DebugRunFlow {
         onOutput: (chunk) => {
           this.watcher.absorb(chunk);
           this.terminal.write(chunk);
+        },
+        onStart: (pid) => {
+          this.startedPids.add(pid);
         },
       },
       ...(target === undefined ? {} : { target }),
@@ -316,16 +330,42 @@ class DebugRunFlow {
     }
   }
 
+  /**
+   * A test host this run did NOT start announced `pid`, so every process it DID
+   * start that is still attached is that host's controller: MTP's TRX extension
+   * runs a module under one, and it waits for a debugger too. DETACH from it,
+   * never terminate it: its test host reports through it, and it writes the
+   * report. The test host's session is the one left ([TEST-MTP-DEBUG]).
+   */
+  private releaseControllers(pid: number): void {
+    if (this.startedPids.has(pid)) return;
+    for (const [owner, session] of this.sessions) {
+      if (!this.startedPids.has(owner)) continue;
+      this.releasedPids.add(owner);
+      this.sessions.delete(owner);
+      info(
+        `Test debug: releasing controller pid ${String(owner)} for test host pid ${String(pid)}`,
+      );
+      void session
+        .customRequest('disconnect', { [TEST_HOST_RELEASE_FLAG]: true })
+        .then(undefined, (cause: unknown) => {
+          warn(`Test debug: releasing controller pid ${String(owner)} failed: ${String(cause)}`);
+        });
+    }
+  }
+
   /** Stop owns every host of this invocation; natural completion may advance frameworks. */
   private trackStop(session: vscode.DebugSession): vscode.DebugAdapterTracker | undefined {
-    if (!this.ownedPids.has(Number(session.configuration.processId))) return undefined;
+    const pid = Number(session.configuration.processId);
+    if (!this.ownedPids.has(pid)) return undefined;
     let ended = false;
     return {
       onDidSendMessage: (message: unknown) => {
         if (isRecord(message) && announcesEnd(message)) ended = true;
       },
       onWillReceiveMessage: (message: unknown) => {
-        if (!isRecord(message) || ended || !asksToStop(message)) return;
+        if (!isRecord(message) || ended || this.releasedPids.has(pid)) return;
+        if (!asksToStop(message)) return;
         if (isRecord(message.arguments) && message.arguments.restart === true) return;
         this.stop.abort();
       },
@@ -349,6 +389,9 @@ class DebugRunFlow {
         // identity this flow actually chose.
         if (Number(candidate.configuration.processId) !== pid) return;
         listener.dispose();
+        // Kept the moment it starts: a controller's test host can announce
+        // itself before `startDebugging` has even resolved.
+        this.sessions.set(pid, candidate);
         resolve(candidate);
       });
       // The workbench refusing the attach resolves `startDebugging` without

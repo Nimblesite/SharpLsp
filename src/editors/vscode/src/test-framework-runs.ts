@@ -21,8 +21,8 @@ import { err, ok, type Result } from './result';
 import { batchAssemblies, listTests } from './test-discovery.js';
 import {
   cancelled,
+  earnsUnfilteredRetry,
   mergeRuns,
-  needsUnfilteredRetry,
   outcomeOf,
   type TestRunOptions,
   type TestRunOutcome,
@@ -83,8 +83,7 @@ async function invokeVsTest(
 
 /**
  * One batch, plus the unfiltered retry an adapter's refused filter earns — the
- * same recovery `dotnet test` gets ([TEST-FILTER-ESCAPE]); never for a debug or
- * cancelled run.
+ * same recovery `dotnet test` gets, on the same terms ([TEST-FILTER-ESCAPE]).
  */
 async function runBatch(
   assemblies: readonly string[],
@@ -94,8 +93,7 @@ async function runBatch(
   options: TestRunOptions,
 ): Promise<TestRunOutcome> {
   const filtered = await invokeVsTest(assemblies, ids, cwd, dir, options);
-  if (options.debug === true || options.signal?.aborted === true) return filtered;
-  if (!needsUnfilteredRetry(filtered, ids)) return filtered;
+  if (!earnsUnfilteredRetry(filtered, ids, options)) return filtered;
   return mergeRuns(filtered, await invokeVsTest(assemblies, [], cwd, dir, options));
 }
 

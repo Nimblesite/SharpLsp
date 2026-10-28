@@ -103,6 +103,8 @@ export interface DotnetHooks {
   readonly env?: Readonly<Record<string, string>>;
   /** Observes every stdout/stderr chunk as it arrives. */
   readonly onOutput?: (chunk: string) => void;
+  /** Observes the pid of the process just started, before any of its output. */
+  readonly onStart?: (pid: number) => void;
 }
 
 /**
@@ -148,6 +150,7 @@ export async function runProcess(
   if (signal?.aborted === true) return terminated(capture, CANCELLED);
   const child = startChild(program, args, spawnOptions(cwd, hooks?.env));
   if (!child.ok) return failedToRun(capture, child.error);
+  if (child.value.pid !== undefined) hooks?.onStart?.(child.value.pid);
   return await supervise(child.value, capture, { timeoutMs, signal, onOutput: hooks?.onOutput });
 }
 

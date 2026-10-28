@@ -31,7 +31,7 @@ import {
 import { runTarget } from './test-targets.js';
 import { filterBatches, filterExpression } from './test-filter.js';
 import { parseFailureMessage, parseRunSummary, type TestRunSummary } from './test-run-output.js';
-import { isRunError, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
+import { isRunError, refusedSelection, type TrxRunInfo, type TrxTestResult } from './test-trx.js';
 import { collectReport, trxFiles } from './test-trx-collect.js';
 import { removeDirRecursive } from './utils.js';
 
@@ -206,11 +206,7 @@ async function runBatch(
   options: TestRunOptions,
 ): Promise<TestRunOutcome> {
   const filtered = await invoke(testIds, cwd, resultsDirectory, options);
-  // A stopped debug host reports a run error, not a rejected filter. Retrying
-  // would start another waiting host after Stop. Debug and cancelled runs get
-  // no recovery attempt ([DEBUG-FEATURES-TESTS]), as on the MTP path.
-  if (options.debug === true || options.signal?.aborted === true) return filtered;
-  if (!needsUnfilteredRetry(filtered, testIds)) return filtered;
+  if (!earnsUnfilteredRetry(filtered, testIds, options)) return filtered;
   const unfiltered = await invoke([], cwd, resultsDirectory, options);
   return mergeRuns(filtered, unfiltered);
 }
@@ -260,6 +256,23 @@ export function outcomeOf(
     durationMs,
     output,
   };
+}
+
+/**
+ * True when `filtered` earns its ONE unfiltered retry ([TEST-FILTER-ESCAPE]). A
+ * stopped run never does. A DEBUG run does only when the adapter's own message
+ * says it refused the filter: a stopped or crashed host is no refused filter,
+ * and retrying it would start another waiting host ([DEBUG-FEATURES-TESTS]).
+ * The retry's host waits like the first, and the Debug profile attaches to it.
+ */
+export function earnsUnfilteredRetry(
+  filtered: TestRunOutcome,
+  testIds: readonly string[],
+  options: TestRunOptions,
+): boolean {
+  if (options.signal?.aborted === true) return false;
+  if (options.debug === true && !filtered.runInfos.some(refusedSelection)) return false;
+  return needsUnfilteredRetry(filtered, testIds);
 }
 
 /** True when an adapter refused the filter and swallowed a selected test with it. */
