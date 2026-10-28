@@ -166,9 +166,10 @@ async function invoke(
 }
 
 /**
- * A debug run's exit code is no verdict ([TEST-MTP-DEBUG]): it writes no TRX
- * report, a failing test exits non-zero by design, and stopping the debugger
- * ends the module however it ends. A refused option or a kill still reports.
+ * A debug run's exit code is no verdict ([TEST-MTP-DEBUG]): only an xunit.v3
+ * module writes a report, a failing test exits non-zero by design, and stopping
+ * the debugger ends the module however it ends. A refused option or a kill
+ * still reports.
  */
 function debugged(run: DotnetRun, options: TestRunOptions): DotnetRun {
   return options.debug === true ? { ...run, errorMessage: undefined } : run;
@@ -306,7 +307,7 @@ function needsUnfilteredRetry(
   testIds: readonly string[],
   context: { options: TestRunOptions },
 ): boolean {
-  // A debug run reads no report: a retry would only start another waiting module.
+  // A retry under Debug would only start another module waiting for a debugger.
   if (testIds.length === 0 || context.options.debug === true) return false;
   if (context.options.signal?.aborted === true) return false;
   if (outcome.failure === undefined) return false;

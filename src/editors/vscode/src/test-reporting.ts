@@ -121,9 +121,10 @@ function reportResults(
 
 /**
  * Report a finished DEBUG run: nothing is cached, and a test no report covers
- * BY DESIGN is left without a verdict. An MTP module is debugged without a TRX
- * report ([TEST-MTP-DEBUG]), so its tests stay unmarked instead of painted
- * "No result reported"; a run that FAILED still reports that on every test.
+ * BY DESIGN is left without a verdict. Only an xunit.v3 MTP module writes a
+ * report when debugged ([TEST-MTP-DEBUG]), so other modules' tests stay
+ * unmarked instead of painted "No result reported"; a run that FAILED still
+ * reports that on every test.
  * The debug flow has already logged the failure as a debug run's.
  */
 export function reportDebugOutcome(
