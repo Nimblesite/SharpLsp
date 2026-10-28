@@ -140,15 +140,10 @@ let private fileAnalyzers context checkedFile =
 /// The same project scope and monorepo policy govern dead-code findings.
 /// [ANALYZERS-DEADCODE-SEVERITY]
 let private projectAnalyzers context filePath ct =
-    task {
-        if not context.Workspace.IsLoaded || not context.AnalyzersEnabled || not context.Analyzers.DeadCodeEnabled then
-            return []
-        else
-            let scope = FSharpWorkspace.queryScope context.Workspace filePath
-            let! projects = FSharpWorkspace.checkAllWithCancellation context.Workspace (if context.Analyzers.Monorepo then scope else List.truncate 1 scope) ct
-            let uses = projects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
-            return FSharpAnalyzers.deadCodeDiagnosticsForFile context.Analyzers uses filePath
-    }
+    if context.AnalyzersEnabled then
+        FSharpAnalyzers.deadCodeInFile context.Workspace context.Analyzers filePath ct
+    else
+        Task.FromResult []
 
 /// One mapper supplies both real source locations and root-owned setup failures.
 let private findings context filePath data ct =

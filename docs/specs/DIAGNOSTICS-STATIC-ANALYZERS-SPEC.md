@@ -142,6 +142,22 @@ By project decision the F# dead-code analyzer (`SLSPF0101`) escalates severity i
 
 Reporting private/internal dead code (regardless of monorepo mode) extends beyond [ANALYZERS-UNUSED-PUBLIC]: a private/internal symbol can never be reached from outside its assembly, so its deadness is sound without the monorepo gate.
 
+### [ANALYZERS-DEADCODE-FIX] "Remove unused" code fix (implemented, F#)
+
+For each `SLSPF0101` finding on the requested lines, the F# `textDocument/codeAction` handler offers `Remove unused 'name'` ([FSharpDeadCodeFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpDeadCodeFixes.fs)). The findings come from the query the diagnostics use (`FSharpAnalyzers.deadCodeInFile`), under the same analyzer gate, `dead_code` flag and monorepo policy, so the fix is offered exactly where the diagnostic is reported. Resolving it deletes the whole declaration, including the XML documentation and attributes above it. When the lines on both sides are blank, or the declaration starts or ends the file, it also deletes one adjacent blank line, so the neighbours keep a single gap.
+
+The fix is offered only when the deletion cannot take live code with it:
+
+- The declaration is a module-level `let` with a single binding that names one value or function, or a type member. A tuple or other pattern binding is never offered, because deleting it would decide for every name it declares.
+- The declaration occupies its lines alone. Any other text on its first or last line, such as a trailing comment, suppresses the fix.
+- No signature file declares the symbol (FCS `SignatureLocation` outside the file). Deleting only the implementation would break that signature.
+
+It is a `quickfix` that is never preferred, so auto-fix commands never delete code unasked. Tests:
+
+- unit: [FSharpDeadCodeFixTests.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpDeadCodeFixTests.fs);
+- F# sidecar IPC suite: `code action removes a dead private function and nothing live`;
+- VSIX suite `F# LSP — Code Fixes`: `remove unused deletes a dead private function and its documentation`.
+
 ### [ANALYZERS-FSAC-PARITY] File-Local Analyzers (F#, FSAC parity)
 
 The F# sidecar also runs two always-on file-local analyzers via FCS `EditorServices`, surfaced as `Hint` diagnostics so editors grey the range and can offer the matching code fix (parity with FsAutoComplete / Ionide):

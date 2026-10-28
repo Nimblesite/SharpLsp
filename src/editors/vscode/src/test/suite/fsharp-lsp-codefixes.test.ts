@@ -12,9 +12,12 @@ import { closeAllEditors, pollUntilResult, assertContainsAll } from './test-help
 import { LSP_RESPONSE_MS } from './test-timeouts';
 import { singleEdit } from './fsharp-refactor-test-kit';
 
-// Real-LSP analyzer fixes for [ANALYZERS-FSAC-PARITY] and [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB].
+// Real-LSP analyzer fixes for [ANALYZERS-FSAC-PARITY], [ANALYZERS-DEADCODE-FIX] and
+// [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB].
 const CODEFIX_FILE = 'CodeFixes.fs';
 const ORIGINAL = fs.readFileSync(fsharpFixturePath(CODEFIX_FILE), 'utf8');
+// An unsaved overlay appends a documented private function nothing calls.
+const DEAD_OVERLAY = `${ORIGINAL}\n/// Nothing calls this.\nlet private unusedHelper () = 42\n`;
 const IMPL_FILE = 'Implement.fs';
 const IMPL_ORIGINAL = fs.readFileSync(fsharpFixturePath(IMPL_FILE), 'utf8');
 const IMPL_INCOMPLETE = `module FSharpFixtures.Implement
@@ -42,6 +45,7 @@ function defineAnalyzerFixSuite(): void {
   test('remove unused open lists, resolves, and deletes exactly one line', runRemoveTest);
   test('simplify name lists, resolves, and deletes only the qualifier', runSimplifyTest);
   test('both analyzer hints publish exact codes, severities, and ranges', runHintTest);
+  test('remove unused deletes a dead private function and its documentation', runDeadCodeTest);
 }
 
 function defineInterfaceFixSuite(): void {
@@ -81,6 +85,27 @@ async function runHintTest(this: Mocha.Context): Promise<void> {
     2_000,
   );
   assertAnalyzerHints(fixture.doc, diagnostics);
+}
+
+async function runDeadCodeTest(this: Mocha.Context): Promise<void> {
+  this.timeout(LSP_RESPONSE_MS + 5_000);
+  const fixture = await openFSharpFixture(CODEFIX_FILE);
+  await replaceDocumentText(fixture.doc, DEAD_OVERLAY);
+  assert.ok(fixture.doc.isDirty, 'the dead function must be an unsaved overlay');
+  const line = positionOf(fixture.doc, 'let private unusedHelper').line;
+  const title = "Remove unused 'unusedHelper'";
+  const action = await inspectAction(fixture.uri, fixture.doc.lineAt(line).range, title, false);
+  const edit = singleEdit(action, fixture.uri);
+  assert.strictEqual(edit.newText, '');
+  assert.strictEqual(
+    edit.range.start.line,
+    line - 2,
+    'from the blank line before its documentation',
+  );
+  assert.strictEqual(edit.range.end.line, line + 1, 'through the end of its own line');
+  assert.ok(action.edit);
+  assert.ok(await vscode.workspace.applyEdit(action.edit));
+  assert.strictEqual(fixture.doc.getText(), ORIGINAL, 'only the dead function and its gap go');
 }
 
 async function runInterfaceTest(this: Mocha.Context): Promise<void> {

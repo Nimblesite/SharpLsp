@@ -2,6 +2,7 @@
 module SharpLsp.Sidecar.FSharp.Tests.FSharpExtraSuccessCoverageTests
 
 open System.IO
+open System.Threading
 open Xunit
 open MessagePack
 open SharpLsp.Sidecar.Common.Messages
@@ -188,7 +189,7 @@ let ``code fixes fire for incomplete match and undefined name`` () =
                   + "let f (s: S) = match s with | A -> 1\n"
                   + "let u = undefinedXyz\n" ]
         let cf = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions cf ws paths[0] 0 0 20 200
+        let! actions = FSharpCodeFixes.getCodeActions cf ws None paths[0] 0 0 20 200 CancellationToken.None
         Assert.NotEmpty(actions)
         Assert.All(actions, fun a -> Assert.False(System.String.IsNullOrEmpty a.Title))
         for a in actions do
@@ -203,7 +204,7 @@ let ``code fixes fire for a redundant match case`` () =
             loadWorkspaceWith
                 [ "R.fs", "module R\nlet f x = match x with | _ -> 0 | 1 -> 1\n" ]
         let cf = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions cf ws paths[0] 0 0 10 200
+        let! actions = FSharpCodeFixes.getCodeActions cf ws None paths[0] 0 0 10 200 CancellationToken.None
         Assert.NotNull(actions :> obj)
         try Directory.Delete(dir, true) with _ -> ()
     }

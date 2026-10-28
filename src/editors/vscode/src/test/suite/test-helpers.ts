@@ -122,9 +122,27 @@ export async function pollUntilResult<T>(
 }
 
 /**
+ * Run a `vscode.execute…Provider` command once, an absent reply reading as `[]`.
+ * VS Code cancels a provider query in flight when the document's providers
+ * change, as the language client finishes registering them after a cold start.
+ * That cancellation is not an answer, so it reads as `[]` too, and a poll asks again.
+ */
+export async function executeProvider<T>(
+  command: string,
+  ...args: readonly unknown[]
+): Promise<T[]> {
+  try {
+    return (await vscode.commands.executeCommand<T[]>(command, ...args)) ?? [];
+  } catch (error) {
+    if (error instanceof Error && error.name === 'Canceled') return [];
+    throw error;
+  }
+}
+
+/**
  * Poll a `vscode.execute…Provider` command with `args` until `until` holds over
- * its reply, an absent reply reading as `[]`. Fails as `pollUntilResult` does,
- * naming the command, so a provider that never answers reports itself.
+ * its reply ([executeProvider]). Fails as `pollUntilResult` does, naming the
+ * command, so a provider that never answers reports itself.
  */
 export async function pollProvider<T>(
   command: string,
@@ -135,7 +153,7 @@ export async function pollProvider<T>(
   waitingFor = `${command} to answer as expected`,
 ): Promise<T[]> {
   return pollUntilResult(
-    async () => (await vscode.commands.executeCommand<T[]>(command, ...args)) ?? [],
+    async () => executeProvider<T>(command, ...args),
     until,
     timeoutMs,
     intervalMs,

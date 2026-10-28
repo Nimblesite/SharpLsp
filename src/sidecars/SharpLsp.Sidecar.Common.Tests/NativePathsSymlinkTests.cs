@@ -58,9 +58,10 @@ public sealed class NativePathsSymlinkTests : IDisposable
     {
         var actual = NativePaths.Join(physical, "App.cs");
         var same = new string(actual.ToCharArray());
-        var timer = System.Diagnostics.Stopwatch.StartNew();
-        Assert.True(Enumerable.Range(0, 100_000).All(_ => NativePaths.AreEqual(actual, same)));
-        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"Path lookups took {timer.Elapsed}");
+        var probes = CountProbes(() =>
+            Assert.True(Enumerable.Range(0, 100_000).All(_ => NativePaths.AreEqual(actual, same)))
+        );
+        Assert.Equal(0, probes);
         Assert.True(NativePaths.AreEqual(actual, NativePaths.Join(alias, "App.cs")));
     }
 
@@ -74,11 +75,22 @@ public sealed class NativePathsSymlinkTests : IDisposable
         _ = File.CreateSymbolicLink(linkedFile, actual);
         var paths = new HashSet<string>(NativePaths.Comparer) { actual };
         var timer = System.Diagnostics.Stopwatch.StartNew();
-        Assert.True(
-            Enumerable.Range(0, 100_000).All(_ => paths.Contains(NativePaths.Join(alias, "App.cs")))
-        );
-        Assert.True(Enumerable.Range(0, 100_000).All(_ => !NativePaths.AreEqual(actual, other)));
-        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"Path lookups took {timer.Elapsed}");
+        var probes = CountProbes(() =>
+        {
+            Assert.True(
+                Enumerable
+                    .Range(0, 100_000)
+                    .All(_ => paths.Contains(NativePaths.Join(alias, "App.cs")))
+            );
+            Assert.True(
+                Enumerable.Range(0, 100_000).All(_ => !NativePaths.AreEqual(actual, other))
+            );
+        });
+        // The five paths these lookups touch under the root (alias/App.cs, alias, App.cs,
+        // physical, Other.cs) are each probed at most once per memo lifetime, however slow the
+        // machine; resolving links per lookup (#358) probed 200,000 times.
+        var lifetimes = 1 + (int)(timer.Elapsed / NativePaths.ResolvedLifetime);
+        Assert.True(probes <= 5 * lifetimes, $"{probes} disk probes in {timer.Elapsed}");
         Assert.Contains(linkedFile, paths);
         Assert.DoesNotContain(NativePaths.Join(alias, "Other.cs"), paths);
 
@@ -88,6 +100,29 @@ public sealed class NativePathsSymlinkTests : IDisposable
         Assert.True(NativePaths.AreEqual(other, linkedFile));
         Assert.Equal(other, NativePaths.WithLinksResolved(linkedFile));
         Assert.False(NativePaths.ResolvedSegments.ContainsKey(linkedFile));
+    }
+
+    /// <summary>How many disk probes <paramref name="lookups"/> makes for paths under this test's root.</summary>
+    private int CountProbes(Action lookups)
+    {
+        var rootName = NativePaths.NameOf(root);
+        var probes = 0;
+        NativePaths.Probed = path =>
+        {
+            if (NativePaths.HasDirectory(path, rootName))
+            {
+                _ = Interlocked.Increment(ref probes);
+            }
+        };
+        try
+        {
+            lookups();
+        }
+        finally
+        {
+            NativePaths.Probed = null;
+        }
+        return probes;
     }
 
     [Fact]

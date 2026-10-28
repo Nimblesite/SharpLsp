@@ -5,6 +5,7 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 
 open System
 open System.IO
+open System.Threading
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.Common
@@ -257,8 +258,8 @@ let ``getCodeActions returns empty when workspace not loaded`` () = task {
     let cfState = FSharpCodeFixes.createState ()
     let wsState = FSharpWorkspace.create ()
     let! actions =
-        FSharpCodeFixes.getCodeActions cfState wsState
-            "/irrelevant.fs" 0 0 0 0
+        FSharpCodeFixes.getCodeActions cfState wsState None
+            "/irrelevant.fs" 0 0 0 0 CancellationToken.None
     Assert.Empty(actions)
 }
 
@@ -270,8 +271,8 @@ let ``getCodeActions handles read failure gracefully`` () = task {
         let cfState = FSharpCodeFixes.createState ()
         // Non-existent file → File.ReadAllText throws → handler returns [].
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                "/does/not/exist.fs" 0 0 0 0
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                "/does/not/exist.fs" 0 0 0 0 CancellationToken.None
         Assert.Empty(actions)
     finally
         cleanup dir
@@ -288,8 +289,8 @@ let ``getCodeActions produces fix for unused value (FS1182)`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 1 0 1 20
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 1 0 1 20 CancellationToken.None
         // Should not throw and should return a list.
         Assert.NotNull(actions :> obj)
     finally
@@ -305,8 +306,8 @@ let ``getCodeActions produces fix for implicitly ignored (FS0020)`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 10 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 10 100 CancellationToken.None
         Assert.NotNull(actions :> obj)
         // If a fix was generated, resolve it round-trips through pending edits.
         for a in actions do
@@ -330,8 +331,8 @@ let ``getCodeActions handles incomplete match (FS0025)`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 10 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 10 100 CancellationToken.None
         Assert.NotNull(actions :> obj)
         // Resolve every produced action to exercise cache paths.
         for a in actions do
@@ -352,8 +353,8 @@ let ``getCodeActions handles undefined name (FS0039)`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 5 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 5 100 CancellationToken.None
         // Code path executed; we don't assert on count since suggestions
         // depend on matching heuristics.
         Assert.NotNull(actions :> obj)
@@ -370,8 +371,8 @@ let ``getCodeActions handles undefined name matching List heuristic`` () = task 
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 5 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 5 100 CancellationToken.None
         Assert.NotNull(actions :> obj)
     finally
         cleanup dir
@@ -385,8 +386,8 @@ let ``getCodeActions handles undefined name Path heuristic`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 5 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 5 100 CancellationToken.None
         Assert.NotNull(actions :> obj)
     finally
         cleanup dir
@@ -400,8 +401,8 @@ let ``getCodeActions handles undefined name Regex heuristic`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 5 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 5 100 CancellationToken.None
         Assert.NotNull(actions :> obj)
     finally
         cleanup dir
@@ -415,8 +416,8 @@ let ``getCodeActions handles undefined name Task heuristic`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 5 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 5 100 CancellationToken.None
         Assert.NotNull(actions :> obj)
     finally
         cleanup dir
@@ -431,8 +432,8 @@ let ``getCodeActions handles type mismatch (FS0001)`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 5 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 5 100 CancellationToken.None
         Assert.NotNull(actions :> obj)
     finally
         cleanup dir
@@ -447,8 +448,8 @@ let ``resolveCodeAction removes entry once taken`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState
-                paths[0] 0 0 10 100
+            FSharpCodeFixes.getCodeActions cfState wsState None
+                paths[0] 0 0 10 100 CancellationToken.None
         for a in actions do
             let first = FSharpCodeFixes.resolveCodeAction cfState a.Id
             Assert.True(first.IsSome)
@@ -1235,7 +1236,7 @@ let ``FIX getCodeActions adds open for the exact generic Dictionary type`` () = 
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 1 0 1 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 1 0 1 20 CancellationToken.None
         let opt = fixFindByTitle actions "Add 'open System.Collections.Generic'"
         Assert.True(opt.IsSome, "expected an exact Dictionary namespace action")
         let action = opt.Value
@@ -1263,7 +1264,7 @@ let ``FIX getCodeActions returns no fix for undefined name without namespace hin
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 1 0 1 30
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 1 0 1 30 CancellationToken.None
         Assert.Empty(actions)
     finally
         cleanup dir
@@ -1276,7 +1277,7 @@ let ``FIX getCodeActions adds open System.IO for exact Path name`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 1 0 1 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 1 0 1 20 CancellationToken.None
         let opt = fixFindByTitle actions "Add 'open System.IO'"
         Assert.True(opt.IsSome)
         let resolved = FSharpCodeFixes.resolveCodeAction cfState opt.Value.Id
@@ -1295,7 +1296,7 @@ let ``FIX getCodeActions adds open System.Text.RegularExpressions for exact Rege
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 1 0 1 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 1 0 1 20 CancellationToken.None
         let opt = fixFindByTitle actions "Add 'open System.Text.RegularExpressions'"
         Assert.True(opt.IsSome)
         let resolved = FSharpCodeFixes.resolveCodeAction cfState opt.Value.Id
@@ -1314,7 +1315,7 @@ let ``FIX getCodeActions adds open System.Threading.Tasks for exact Task name`` 
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 1 0 1 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 1 0 1 20 CancellationToken.None
         let opt = fixFindByTitle actions "Add 'open System.Threading.Tasks'"
         Assert.True(opt.IsSome)
         let resolved = FSharpCodeFixes.resolveCodeAction cfState opt.Value.Id
@@ -1334,7 +1335,7 @@ let ``FIX getCodeActions adds pipe-ignore for implicitly ignored expression FS00
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 2 0 2 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 2 0 2 20 CancellationToken.None
         let opt = fixFindByTitle actions "Add '|> ignore'"
         Assert.True(opt.IsSome, "expected an 'Add |> ignore' action for FS0020")
         let action = opt.Value
@@ -1364,7 +1365,7 @@ let ``FIX getCodeActions adds wildcard case for incomplete match FS0025`` () = t
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 3 0 4 30
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 3 0 4 30 CancellationToken.None
         let opt = fixFindByTitle actions "Add wildcard case"
         Assert.True(opt.IsSome, "expected a wildcard-case fix for FS0025")
         let action = opt.Value
@@ -1393,7 +1394,7 @@ let ``FIX getCodeActions removes redundant pattern case FS0026`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 6 0 6 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 6 0 6 20 CancellationToken.None
         let opt = fixFindByTitle actions "Remove redundant pattern case"
         Assert.True(opt.IsSome, "expected a redundant-case removal fix for FS0026")
         let resolved = FSharpCodeFixes.resolveCodeAction cfState opt.Value.Id
@@ -1423,7 +1424,7 @@ let ``FIX getCodeActions ignores diagnostics outside the requested range`` () = 
         let cfState = FSharpCodeFixes.createState ()
         // Range entirely before the redundant rule on line 6.
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 0 0 1 0
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 0 0 1 0 CancellationToken.None
         // No diagnostic overlaps this range, and there is no match expr at the
         // requested position, so no actions are produced.
         Assert.Empty(actions)
@@ -1438,7 +1439,7 @@ let ``FIX getCodeActions returns empty for a clean file`` () = task {
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 0 0 2 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 0 0 2 20 CancellationToken.None
         Assert.Empty(actions)
     finally
         cleanup dir
@@ -1458,7 +1459,7 @@ let ``FIX getCodeActions union stubs surfaced through the action pipeline`` () =
         let cfState = FSharpCodeFixes.createState ()
         // Position the request cursor on the 'match s with' line.
         let! actions =
-            FSharpCodeFixes.getCodeActions cfState wsState paths[0] 3 4 4 20
+            FSharpCodeFixes.getCodeActions cfState wsState None paths[0] 3 4 4 20 CancellationToken.None
         let opt = fixFindByTitle actions "missing union case"
         Assert.True(opt.IsSome, "expected union-stub generation in the action pipeline")
         let action = opt.Value
@@ -2407,7 +2408,7 @@ let ``record stub action fills missing fields with typed defaults`` () = task {
               + "let r : Rec = { S = \"x\" }\n" ]
     try
         let cf = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 2 14 2 25
+        let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 2 14 2 25 CancellationToken.None
         let stub =
             actions
             |> Seq.tryFind (fun a -> a.Title.Contains("field") || a.Title.Contains("record"))
@@ -2438,7 +2439,7 @@ let ``record stub resolver skips a value-use before the record field`` () = task
         let cf = FSharpCodeFixes.createState ()
         // Must not throw; the copy-update record is complete so no stub is forced,
         // but resolveRecordType still iterates the value-use first.
-        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 3 8 3 38
+        let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 3 8 3 38 CancellationToken.None
         Assert.NotNull(actions :> obj)
     finally
         cleanup dir
@@ -2459,7 +2460,7 @@ let ``union stub generation returns nothing for an enum match`` () = task {
     try
         let cf = FSharpCodeFixes.createState ()
         // Position over the `match c with` line; no union-stub action results.
-        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 3 4 4 15
+        let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 3 4 4 15 CancellationToken.None
         Assert.DoesNotContain(actions, fun (a: FSharpCodeFixes.CodeActionItem) -> a.Title.Contains("union case"))
     finally
         cleanup dir
@@ -2478,7 +2479,7 @@ let ``code fix offers a conversion for a numeric type mismatch`` () = task {
               + "let y = g n\n" ]
     try
         let cf = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 3 0 3 12
+        let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 3 0 3 12 CancellationToken.None
         Assert.NotNull(actions :> obj)
         // Whatever actions exist must resolve cleanly.
         for a in actions do
@@ -2503,7 +2504,7 @@ let ``code fix converts a decimal passed where a float is expected`` () = task {
              + "let sentinel = 48\n")
         let cf = FSharpCodeFixes.createState ()
         let title = "Convert to float using 'float'"
-        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 4 19 4 30
+        let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 4 19 4 30 CancellationToken.None
         let conversions = actions |> List.filter (fun a -> a.Title = title)
         Assert.Single(conversions) |> ignore
         let edit = (FSharpCodeFixes.resolveCodeAction cf conversions.Head.Id).Value
@@ -2511,7 +2512,7 @@ let ``code fix converts a decimal passed where a float is expected`` () = task {
         let text = Assert.Single(change.Edits)
         Assert.Equal("(float actualValue)", text.NewText)
         Assert.Equal((4, 19, 4, 30), (text.StartLine, text.StartCharacter, text.EndLine, text.EndCharacter))
-        let! after = FSharpCodeFixes.getCodeActions cf state paths[0] 5 4 5 12
+        let! after = FSharpCodeFixes.getCodeActions cf state None paths[0] 5 4 5 12 CancellationToken.None
         Assert.DoesNotContain(after, fun a -> a.Title = title)
     finally
         cleanup dir
@@ -2533,7 +2534,7 @@ let ``code fix prefixes an unused value with underscore`` () = task {
         state.ProjectOptions <-
             Some { opts with OtherOptions = Array.append opts.OtherOptions [| "--warnon:1182" |] }
         let cf = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 2 0 2 24
+        let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 2 0 2 24 CancellationToken.None
         let prefix = actions |> Seq.tryFind (fun a -> a.Title.Contains("_"))
         Assert.True(prefix.IsSome, "unused value must offer an underscore-prefix fix")
         let edit = FSharpCodeFixes.resolveCodeAction cf prefix.Value.Id
@@ -2552,7 +2553,7 @@ let ``code fix ignores a diagnostic with no registered handler`` () = task {
             [ "M.fs", "module M\nlet f x = match x with | Y -> 1 | _ -> 2\n" ]
     try
         let cf = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 1 0 1 40
+        let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 1 0 1 40 CancellationToken.None
         Assert.NotNull(actions :> obj)
     finally
         cleanup dir

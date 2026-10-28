@@ -619,6 +619,44 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
 
     // ── Analyzer-driven code fixes (FSAC parity) ────────────────
 
+    /// [ANALYZERS-DEADCODE-FIX] Through the real sidecar: the dead private function
+    /// the analyzer reports offers "Remove unused", whose edit deletes its line and the
+    /// gap after it; the live binding it reads, and the unused public one outside
+    /// monorepo mode, offer nothing.
+    [<Fact>]
+    member _.``code action removes a dead private function and nothing live``() = task {
+        // Dead.fs: 2 `let private sharedConst`, 4 `let private deadPrivateFn`, 6 `let deadPublicFn`.
+        let removalsAt line = task {
+            let payload =
+                MessagePackSerializer.Serialize(
+                    { CodeActionRequest.FilePath = fixture.Dead
+                      StartLine = line; StartCharacter = 0
+                      EndLine = line; EndCharacter = 10 })
+            let! r = fixture.Send("textDocument/codeAction", payload)
+            Assert.Null(r.Error)
+            return
+                deserialize<CodeActionItemResult array>(r.Payload)
+                |> Array.filter (fun a -> a.Title.StartsWith "Remove unused '")
+        }
+        let! dead = removalsAt 4
+        let remove = Assert.Single(dead)
+        Assert.Equal("Remove unused 'deadPrivateFn'", remove.Title)
+        Assert.Equal("quickfix", remove.Kind)
+
+        let! rr = fixture.Send("codeAction/resolve", MessagePackSerializer.Serialize({ CodeActionResolveRequest.Id = remove.Id }))
+        Assert.Null(rr.Error)
+        let edit = deserialize<WorkspaceEditResult>(rr.Payload)
+        let change = Assert.Single(edit.DocumentChanges)
+        Assert.Contains("Dead.fs", change.FilePath)
+        let e = Assert.Single(change.Edits)
+        Assert.Equal((4, 0, 6, 0, ""), (e.StartLine, e.StartCharacter, e.EndLine, e.EndCharacter, e.NewText))
+
+        let! shared = removalsAt 2
+        let! publicFn = removalsAt 6
+        Assert.Empty(shared)
+        Assert.Empty(publicFn)
+    }
+
     [<Fact>]
     member _.``code action offers remove-unused-open and deletes the open line``() = task {
         // Hints.fs line 2 (0-based) is `open System.Text`, which nothing uses.

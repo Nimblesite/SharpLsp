@@ -1,9 +1,10 @@
 /// F# pipeline ↔ nested-call code actions driven through the real code-action
-/// pipeline (FSharpCodeFixes.getCodeActions → resolve → apply) over a real
+/// pipeline (FSharpCodeFixes.getCodeActions → resolve None → apply) over a real CancellationToken.None
 /// parsed .fsproj fixture. Implements [SHARPLSP-FEATURES-REFACTORING] /
 /// [REFACTOR-FSHARP-PIPE].
 module SharpLsp.Sidecar.FSharp.Tests.FSharpPipeRefactoringTests
 
+open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Text

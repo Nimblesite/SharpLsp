@@ -3,7 +3,13 @@ import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
-import { EXTENSION_ID, comparableText, pollUntilResult, warmSemanticEngine } from './test-helpers';
+import {
+  EXTENSION_ID,
+  comparableText,
+  executeProvider,
+  pollUntilResult,
+  warmSemanticEngine,
+} from './test-helpers';
 
 /** Re-exported so the refactor suites warm via their existing import. */
 export { warmSemanticEngine } from './test-helpers';
@@ -195,14 +201,12 @@ async function requestCodeActions(
   query: CodeActionQuery,
   resolveCount: number | undefined,
 ): Promise<vscode.CodeAction[]> {
-  return (
-    (await vscode.commands.executeCommand<vscode.CodeAction[]>(
-      'vscode.executeCodeActionProvider',
-      query.uri,
-      query.range,
-      query.kind?.value,
-      resolveCount,
-    )) ?? []
+  return executeProvider<vscode.CodeAction>(
+    'vscode.executeCodeActionProvider',
+    query.uri,
+    query.range,
+    query.kind?.value,
+    resolveCount,
   );
 }
 

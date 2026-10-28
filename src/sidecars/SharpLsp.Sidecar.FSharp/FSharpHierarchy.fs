@@ -100,17 +100,6 @@ let private itemKey (item: HierItem) : string =
 
 // ── Enclosing-declaration resolution (untyped AST) ───────────────
 
-/// Extract the defining identifier from a binding's head pattern.
-let rec private patIdent (pat: SynPat) : Ident option =
-    match pat with
-    | SynPat.Named(ident = SynIdent(ident, _)) -> Some ident
-    | SynPat.LongIdent(longDotId = longId) -> longId.LongIdent |> List.tryLast
-    | SynPat.As(_, rhs, _) -> patIdent rhs
-    | SynPat.Typed(inner, _, _) -> patIdent inner
-    | SynPat.Attrib(inner, _, _) -> patIdent inner
-    | SynPat.Paren(inner, _) -> patIdent inner
-    | _ -> None
-
 /// Find the innermost binding/member enclosing a position, returning its name
 /// identifier and whole-binding range.
 let private enclosingBinding (parseTree: ParsedInput) (pos: pos) : (Ident * range) option =
@@ -125,7 +114,7 @@ let private enclosingBinding (parseTree: ParsedInput) (pos: pos) : (Ident * rang
                     // RangeOfBindingWithRhs spans the whole binding incl. its body;
                     // the bare `range` field covers only the head (before `=`).
                     let (SynBinding(headPat = pat)) = binding
-                    patIdent pat |> Option.map (fun ident -> (ident, binding.RangeOfBindingWithRhs)) }
+                    FSharpCodeActions.patIdent pat |> Option.map (fun ident -> (ident, binding.RangeOfBindingWithRhs)) }
 
     SyntaxTraversal.Traverse(pos, parseTree, visitor)
 

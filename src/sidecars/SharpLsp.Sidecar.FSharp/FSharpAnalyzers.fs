@@ -145,6 +145,22 @@ let deadCodeDiagnosticsForFile
     deadCodeDiagnostics config allUses
     |> List.filter (fun d -> samePath d.FilePath filePath)
 
+/// [ANALYZERS-DEADCODE-SEVERITY] The dead declarations in `filePath`, judged against every
+/// use in the query scope: the whole monorepo when it is the world, else the declaring
+/// project alone. The diagnostics and the "Remove unused" fix share it, so the reported
+/// range and the offered fix never disagree. Empty until a workspace loads, or when off.
+let deadCodeInFile (workspace: FSharpWorkspace.FSharpWorkspaceState) (config: AnalyzerConfig) (filePath: string) ct =
+    task {
+        if not workspace.IsLoaded || not config.DeadCodeEnabled then
+            return []
+        else
+            let scope = FSharpWorkspace.queryScope workspace filePath
+            let projects = if config.Monorepo then scope else List.truncate 1 scope
+            let! checkedProjects = FSharpWorkspace.checkAllWithCancellation workspace projects ct
+            let uses = checkedProjects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
+            return deadCodeDiagnosticsForFile config uses filePath
+    }
+
 // ── File-local FCS analyzers (FSAC parity) ──────────────────────────
 
 /// A 1-based line accessor over file source. Re-exported from

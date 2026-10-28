@@ -4,6 +4,7 @@
 /// source and let FCS re-check the result.
 module SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
 
+open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Diagnostics
 open Xunit
@@ -17,13 +18,17 @@ let checkedFixture (state: FSharpWorkspace.FSharpWorkspaceState) (path: string) 
         | Some(parse, check, src) -> return (parse, check, src)
     }
 
-/// Code actions at a cursor, through the same entry point the editor uses.
-let actionsAt (state: FSharpWorkspace.FSharpWorkspaceState) (path: string) (line: int) (col: int) =
+/// Code actions at a cursor, through the same entry point the editor uses, with
+/// the fixes of the `analyzers` configuration (None: the analyzers are off).
+let actionsWith analyzers (state: FSharpWorkspace.FSharpWorkspaceState) (path: string) (line: int) (col: int) =
     task {
         let fixes = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions fixes state path line col line 200
+        let! actions = FSharpCodeFixes.getCodeActions fixes state analyzers path line col line 200 CancellationToken.None
         return (fixes, actions)
     }
+
+/// Code actions at a cursor with the analyzers off.
+let actionsAt state path line col = actionsWith None state path line col
 
 /// Resolve the single offered action with `title`, or None when it is absent.
 let resolveSole
@@ -36,12 +41,17 @@ let resolveSole
     | [] -> None
     | many -> failwith $"expected at most one '{title}' action, got {many.Length}"
 
-/// Apply a single-line edit to the whole-file source.
-let applyEdit (src: string) (edit: FSharpCodeFixes.TextEdit) : string =
+/// The offset of 0-based `line`, `character` in `src`; a line past the end is its end.
+let private offsetOf (src: string) (line: int) (character: int) =
     let lines = src.Split('\n')
-    let line = lines[edit.StartLine]
-    lines[edit.StartLine] <- line.Substring(0, edit.StartCharacter) + edit.NewText + line.Substring(edit.EndCharacter)
-    String.concat "\n" lines
+    if line >= lines.Length then src.Length
+    else (lines |> Array.take line |> Array.sumBy (fun text -> text.Length + 1)) + character
+
+/// Apply an edit, on one line or across several, to the whole-file source.
+let applyEdit (src: string) (edit: FSharpCodeFixes.TextEdit) : string =
+    let start = offsetOf src edit.StartLine edit.StartCharacter
+    let finish = offsetOf src edit.EndLine edit.EndCharacter
+    src.Substring(0, start) + edit.NewText + src.Substring(finish)
 
 /// The 0-based lines carrying a diagnostic `code` in a check, in order.
 let linesWith (code: int) (check: FSharpCheckFileResults) =
@@ -54,11 +64,12 @@ let linesWith (code: int) (check: FSharpCheckFileResults) =
 let diagnosticsOf (severity: FSharpDiagnosticSeverity) (check: FSharpCheckFileResults) =
     check.Diagnostics |> Array.filter (fun d -> d.Severity = severity)
 
-/// Offer → resolve → apply the action titled `title` at a cursor. Asserts it
-/// is the only one with that title, its kind, that it is one edit, and the
-/// exact text of line `expectedLine` afterwards; returns FCS's check of the
-/// edited file.
-let applyActionAt
+/// Offer → resolve → apply the action titled `title` at a cursor, with the
+/// fixes of `analyzers`. Asserts it is the only one with that title, its kind,
+/// that it is one edit, and the exact text of line `expectedLine` afterwards;
+/// returns FCS's check of the edited file.
+let applyActionWith
+    analyzers
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (path: string)
     (fixture: string)
@@ -68,7 +79,7 @@ let applyActionAt
     (expectedLine: int, expected: string)
     =
     task {
-        let! fixes, actions = actionsAt state path line col
+        let! fixes, actions = actionsWith analyzers state path line col
 
         match resolveSole fixes title actions with
         | None ->
@@ -85,6 +96,10 @@ let applyActionAt
             | None -> return failwith $"FCS could not re-check the edited file at {line}:{col}"
             | Some(_, check, _) -> return check
     }
+
+/// `applyActionWith` with the analyzers off.
+let applyActionAt state path fixture kind title cursor expected =
+    applyActionWith None state path fixture kind title cursor expected
 
 /// `applyActionAt` for an edit in place, checked on the cursor's own line.
 let applyAction state path fixture kind title (line: int, col: int) (expected: string) =
