@@ -101,7 +101,9 @@ public static partial class NativePaths
     public static bool IsWithin(string directory, string path)
     {
         var relative = RelativeTo(directory, path);
-        var climbs = relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        var climbs =
+            relative == ".."
+            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
         return !climbs && !IsRooted(relative);
     }
 

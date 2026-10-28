@@ -155,8 +155,12 @@ public sealed class NativePathsTests
         Assert.True(NativePaths.IsWithin(project, Path.Combine(project, "Main.fs")));
         Assert.True(NativePaths.IsWithin(project, Path.Combine(project, "Deep", "Er", "Main.fs")));
         Assert.True(NativePaths.IsWithin(project, Path.Combine(project, "..rc", "Main.fs")));
-        Assert.False(NativePaths.IsWithin(project, NativePaths.Resolve(project, "../Source/Main.fs")));
+        Assert.False(
+            NativePaths.IsWithin(project, NativePaths.Resolve(project, "../Source/Main.fs"))
+        );
         Assert.False(NativePaths.IsWithin(project, Path.Combine(project, "..")));
-        Assert.False(NativePaths.IsWithin(project, Path.Combine(Path.GetTempPath(), "Other", "Main.fs")));
+        Assert.False(
+            NativePaths.IsWithin(project, Path.Combine(Path.GetTempPath(), "Other", "Main.fs"))
+        );
     }
 }
