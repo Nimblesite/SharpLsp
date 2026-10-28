@@ -142,10 +142,10 @@ type FSharpSidecar() as this =
         base.Register("workspace/diagnostics/project", Helpers.handleWithCancellation
             (FSharpProjectDiagnostics.getDiagnostics workspace) Helpers.resultOf)
 
-        // A project's evaluated Compile items, full paths in compile order, wherever they
-        // sit on disk: the Solution Explorer's file list for an F# project. [SE-FSHARP-SYMBOLS]
+        // A project's evaluated Compile items, full paths in compile order, when they are
+        // anything but the files under its folder; none otherwise. [SE-FSHARP-SYMBOLS]
         base.Register("project/compileItems", Helpers.handleWithCancellation (fun (fsprojPath: string) ct ->
-            FSharpWorkspace.compileSources workspace fsprojPath ct) Helpers.resultOf)
+            FSharpWorkspace.linkedCompileSources workspace fsprojPath ct) Helpers.resultOf)
 
         // Unused-package detection [PKG-UNUSED-DETECT-FS].
         base.Register("project/unusedPackages", Helpers.handle (FSharpPackages.getReferenceUsage workspace) (fun usage ct ->

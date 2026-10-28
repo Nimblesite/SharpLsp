@@ -405,6 +405,15 @@ let internal compileSources (state: FSharpWorkspaceState) (fsprojPath: string) (
 
     entry.Value
 
+/// The project's Compile items when they are anything but the files under its folder, else
+/// none: the Solution Explorer then lists the folder without waiting on MSBuild, whose
+/// evaluation would hold every other request behind it. [SE-FSHARP-SYMBOLS]
+let internal linkedCompileSources (state: FSharpWorkspaceState) (fsprojPath: string) (ct: CancellationToken) =
+    if FSharpProjectLoading.linksSources fsprojPath then
+        compileSources state fsprojPath ct
+    else
+        Task.FromResult(Ok [||])
+
 /// Fallback FCS options built from MSBuild's evaluated Compile items and the sidecar's
 /// framework references; the design-time build replaces these when it can answer. An
 /// evaluation failure is logged with MSBuild's reason, never silently empty.

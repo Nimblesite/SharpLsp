@@ -302,3 +302,30 @@ let ``an edited project is evaluated afresh without waiting for a reload`` () = 
     finally
         cleanup root
 }
+
+/// The Solution Explorer asks for Compile items on the host's request loop, so only a
+/// project whose sources are not simply the files under its folder may cost an MSBuild
+/// evaluation; the XML decides which (#493). [SE-FSHARP-SYMBOLS]
+[<Fact>]
+let ``only a project compiling more than its own folder is evaluated for the Solution Explorer`` () = task {
+    let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
+    try
+        let dir = NativePaths.Resolve(root, ".vscode")
+        let ordinary = writeProject (NativePaths.Resolve(root, "Ordinary")) "Ordinary" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "Sub/More.fs" |] |]
+        let linked = writeProject dir "Linked" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |]
+        let defaultsOff =
+            writeProject (NativePaths.Resolve(root, "Off")) "Off" FLAGS_WITHOUT_OUTPUT [| node "PropertyGroup" [| node "EnableDefaultCompileItems" [| "False" |] |] |]
+
+        Assert.False(FSharpProjectLoading.linksSources ordinary)
+        Assert.True(FSharpProjectLoading.linksSources linked)
+        Assert.True(FSharpProjectLoading.linksSources defaultsOff)
+
+        let state = FSharpWorkspace.create ()
+        let! none = FSharpWorkspace.linkedCompileSources state ordinary CancellationToken.None
+        Assert.Empty(ok none)
+        Assert.Empty(state.CompileSources)
+        let! items = FSharpWorkspace.linkedCompileSources state linked CancellationToken.None
+        Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs"); NativePaths.Resolve(root, "Source", "Extra.fs") |], ok items)
+    finally
+        cleanup root
+}

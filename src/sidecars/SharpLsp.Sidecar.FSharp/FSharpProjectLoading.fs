@@ -19,6 +19,25 @@ let parseFsprojOtherFlags (fsprojPath: string) : string array =
     |> Seq.filter (fun value -> not (value.StartsWith("$(", StringComparison.Ordinal)))
     |> Seq.toArray
 
+/// Whether a project compiles anything but the files under its folder: default Compile items
+/// turned off, or an explicit Compile include outside the folder, as the reporter's template
+/// compiles `../Source/Main.fs` from `.vscode/mod.fsproj` (#493). Read from the XML, so an
+/// ordinary project never waits on MSBuild to be listed. [SE-FSHARP-SYMBOLS]
+let linksSources (fsprojPath: string) : bool =
+    let document = ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error))
+    let directory = NativePaths.DirectoryOf fsprojPath
+
+    let defaultsOff =
+        document.Descendants(XName.Get("EnableDefaultCompileItems"))
+        |> Seq.exists (fun element -> String.Equals(element.Value.Trim(), "false", StringComparison.OrdinalIgnoreCase))
+
+    let outside =
+        document.Descendants(XName.Get("Compile"))
+        |> Seq.choose (fun element -> element.Attribute(XName.Get("Include")) |> Option.ofObj)
+        |> Seq.exists (fun item -> not (NativePaths.IsWithin(directory, NativePaths.Resolve(directory, item.Value))))
+
+    defaultsOff || outside
+
 let private validAssemblyName (value: string) =
     let trimmed = value.Trim()
 

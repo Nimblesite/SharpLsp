@@ -1,9 +1,12 @@
 //! The source files a project's Solution Explorer node lists. `[SE-FSHARP-SYMBOLS]`
 //!
-//! A C# project lists the source files under its folder. An F# project lists its
-//! evaluated Compile items, in compile order and wherever they sit on disk: a
-//! project kept in `.vscode/` that compiles `../Source/Main.fs` (#493) listed
-//! nothing while only its own folder was walked.
+//! A C# project lists the source files under its folder, and so does an F#
+//! project whose sources are just that. An F# project that compiles anything else
+//! lists its evaluated Compile items, in compile order and wherever they sit on
+//! disk: a project kept in `.vscode/` that compiles `../Source/Main.fs` (#493)
+//! listed nothing while only its own folder was walked. The F# sidecar decides
+//! from the project XML, so an ordinary project never waits on `MSBuild` here:
+//! this request runs on the host's request loop.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -31,7 +34,7 @@ pub(crate) fn project_source_files(
         .filter(|_| crate::paths::has_extension(project, &["fsproj"]))
         .map(|sidecar| compile_items(project, runtime, sidecar));
     match compiled {
-        Some(Ok(items)) => items
+        Some(Ok(items)) if !items.is_empty() => items
             .into_iter()
             .filter(|item| is_fsharp_source(item))
             .collect(),
@@ -39,7 +42,7 @@ pub(crate) fn project_source_files(
             warn!(project = %project.display(), error = %error, "F# Compile items unavailable; listing the project folder");
             find_source_files(project_dir)
         }
-        None => find_source_files(project_dir),
+        Some(Ok(_)) | None => find_source_files(project_dir),
     }
 }
 
@@ -52,8 +55,9 @@ pub(crate) struct CompileItemsParams {
 }
 
 /// Handle `sharplsp/project/compileItems`: an F# project's Compile items, full
-/// paths in compile order, so "Add F# Source File" can put a new file where the
-/// project's sources live. `[SE-ADD-FILE-COMMAND]`
+/// paths in compile order, when they are anything but the files under its
+/// folder, else none. "Add F# Source File" puts a new file beside the last one,
+/// or beside the project when there are none. `[SE-ADD-FILE-COMMAND]`
 pub(crate) fn handle_compile_items(
     req: Request,
     runtime: &tokio::runtime::Runtime,
