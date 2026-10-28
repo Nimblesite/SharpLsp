@@ -35,18 +35,21 @@ let textOf (line: int -> string) (r: range) : string option =
     else
         None
 
-/// The partial name before a 0-based caret and FCS's declarations in scope
-/// there: what completion lists, and what a misspelled name is matched against.
+/// The partial name before a 0-based caret and FCS's declarations there:
+/// what completion lists, and what a misspelled name is matched against.
+/// `entities` adds those of namespaces the file has not opened; without them
+/// only the declarations in scope are listed.
 let declarationsAt
     (parseResults: FSharpParseFileResults)
     (checkResults: FSharpCheckFileResults)
+    (entities: unit -> AssemblySymbol list)
     (lineText: string)
     (line: int)
     (character: int)
     : PartialLongName * DeclarationListItem array =
     // GetPartialLongNameEx wants the 0-based index of the last character before the caret.
     let partialName = QuickParse.GetPartialLongNameEx(lineText, min (character - 1) (lineText.Length - 1))
-    let info = checkResults.GetDeclarationListInfo(Some parseResults, line + 1, lineText, partialName, (fun () -> []))
+    let info = checkResults.GetDeclarationListInfo(Some parseResults, line + 1, lineText, partialName, entities)
     partialName, info.Items
 
 /// Raw file-local analyzer findings, before any diagnostic/edit conversion.

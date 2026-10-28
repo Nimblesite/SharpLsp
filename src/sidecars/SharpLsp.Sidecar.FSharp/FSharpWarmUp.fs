@@ -18,16 +18,17 @@ let private projects (state: FSharpWorkspace.FSharpWorkspaceState) : FSharpProje
     |> Seq.sortWith (fun a b -> NativePaths.SpellingComparer.Compare(a.ProjectFileName, b.ProjectFileName))
     |> List.ofSeq
 
-/// Check the `index`-th loaded project, as a solution-wide query would, and
-/// answer with how many projects the workspace holds. An index past the end
-/// checks nothing.
+/// Check the `index`-th loaded project, as a solution-wide query would, build
+/// its referenced entities for completion, and answer with how many projects
+/// the workspace holds. An index past the end checks nothing.
 let warmProject (state: FSharpWorkspace.FSharpWorkspaceState) (index: int) (ct: CancellationToken) =
     task {
         let loaded = projects state
 
         match List.tryItem index loaded with
         | Some options ->
-            let! _ = FSharpWorkspace.checkAllWithCancellation state [ options ] ct
+            let! checkedProjects = FSharpWorkspace.checkAllWithCancellation state [ options ] ct
+            checkedProjects |> List.iter (fun results -> FSharpEntityIndex.warm state results.ProjectContext ct)
             return loaded.Length
         | None -> return loaded.Length
     }

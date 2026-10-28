@@ -414,6 +414,24 @@ Every completion item returned by either sidecar carries an explicit LSP `textEd
 
 The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/sharplsp/src/semantic.rs`.
 
+#### [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN] Completion From Unopened Namespaces
+
+Both sidecars complete types from namespaces the file has not imported, and resolving such an item adds the import. C# uses Roslyn's import completion: the detail reads `(import) <ns>`, and resolve adds the `using`. F# passes FCS `GetDeclarationListInfo` the entities of the project's referenced assemblies and of its own signature ([FSharpEntityIndex.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpEntityIndex.fs)). An item from an unopened namespace then carries `DeclarationListItem.NamespaceToOpen`, and its detail reads `(open <ns>)` (GitHub #122).
+
+- **Only for a typed prefix.** The references hold thousands of names. An unopened item is listed only once a prefix is typed, and only when its name starts with that prefix, ignoring case. Items in scope are listed as before. A bare position therefore lists what is in scope, while `StringBu` adds `StringBuilder (open System.Text)`.
+- **Resolve adds the `open`.** For each file's last completion, the sidecar remembers which namespace each listed item needs. `completionItem/resolve` then returns one additional edit that inserts `open <ns>` where FCS places an `open` serving the completion's line: `ParsedInput.FindNearestPointToInsertOpenDeclaration`, below any blank lines. That is the same placement as the FS0039 fix. An item already in scope, or one from a completion that has been replaced, resolves to no edit.
+- **Built ahead.** Each referenced assembly's entities are built once per workspace and rebuilt when the assembly file changes. The background warm-up ([SHARPLSP-FEATURES-WARM-UP]) builds them after checking each project, one assembly at a time, so a preempting request waits for at most one assembly and the first completion does not pay for the build.
+
+The same entities serve the FS0039 "Add 'open X'" fix ([ANALYZERS-FSAC-CODEFIX-COMPILER]). The fix offers each namespace that declares the undefined name, as FCS's `TryFindInsertionContext` reports it, provided the entity fits the name's position (`ParsedInput.GetEntityKind`): a type where a type is expected, and an attribute even when written without its `Attribute` suffix.
+
+Tests:
+
+- `FSharpCompletionOpenTests`;
+- `FSharpNameFixTests` (the FS0039 cases);
+- `FSharpMultiProjectTests` (the warm-up's entities);
+- the F# sidecar IPC suite (`completion offers unopened types and resolve returns their open`);
+- the VSIX suite `F# LSP — Completion` (`an unopened type completes with its namespace and resolves to its open`).
+
 #### [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP] Signature Help
 
 Inside a call's argument list, both sidecars answer `textDocument/signatureHelp` with every overload the call could bind to. The Rust host (`src/sharplsp/src/signature_help.rs`) forwards the request to the document's sidecar and maps the positional wire shape — `signatures[{ label, parameters[] }]`, `activeSignature`, `activeParameter` — onto LSP `SignatureHelp`. F# resolves the overloads with FCS `GetMethods` ([FS-SIGHELP]). C# builds them from the semantic model (`SignatureHelpResolver`), because Roslyn's own signature-help providers are MEF components a headless workspace does not have; until it did, C# answered `null` for every call (GitHub #174).

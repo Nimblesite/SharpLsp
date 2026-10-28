@@ -28,13 +28,22 @@ let private DISPOSABLES =
 let private OPENS =
     source [ "namespace Shapes"; ""; "module Area ="; "    let joined = Path.Combine(\"a\", \"b\")" ]
 
+let private BUILDERS = source [ "module Builders"; ""; "let builder = StringBuilder()" ]
+
+let private TIMERS = source [ "module Timers"; ""; "let stop (timer: Timer) = timer.Dispose()" ]
+
+let private ATTRIBUTES = source [ "module Attributes"; ""; "[<Obsolete(\"old\")>]"; "let legacy = 1" ]
+
 let private nameFixProject () =
     loadWorkspace
         [ "Typos.fs", TYPOS
           "Members.fs", MEMBERS
           "Unmatched.fs", UNMATCHED
           "Disposables.fs", DISPOSABLES
-          "Opens.fs", OPENS ]
+          "Opens.fs", OPENS
+          "Builders.fs", BUILDERS
+          "Timers.fs", TIMERS
+          "Attributes.fs", ATTRIBUTES ]
 
 let private replaceTitlesAt state path line col =
     task {
@@ -111,6 +120,50 @@ let ``an undefined type from a known namespace is opened inside its module`` () 
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error opened)
             let! titles = replaceTitlesAt state paths[4] 3 17
             Assert.Empty(titles)
+        finally
+            cleanup dir
+    }
+
+/// Any referenced namespace, not a known few: StringBuilder opens System.Text;
+/// a type two namespaces declare offers each, in order, and only where a type
+/// fits (never a module's value of that name); either leaves the file clean;
+/// and an attribute named without its suffix opens its namespace too.
+[<Fact>]
+let ``an undefined type opens whichever referenced namespace declares it`` () =
+    task {
+        let! state, dir, _, paths = nameFixProject ()
+        try
+            // 1. One namespace declares StringBuilder: its `open` goes below the module's gap.
+            let! built = applyActionAt state paths[5] BUILDERS "quickfix" "Add 'open System.Text'" (2, 14) (2, "open System.Text")
+            Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error built)
+
+            // 2. Two declare Timer: both are offered, in order.
+            let! titles = titlesOfKind state paths[6] "quickfix" 2 18
+            let opens = titles |> List.filter (fun title -> title.StartsWith "Add 'open ")
+            Assert.Equal<string list>([ "Add 'open System.Threading'"; "Add 'open System.Timers'" ], opens)
+
+            // 3. Either resolves the name.
+            let! timers = applyActionAt state paths[6] TIMERS "quickfix" "Add 'open System.Timers'" (2, 18) (2, "open System.Timers")
+            Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error timers)
+
+            // 4. An attribute named without its suffix opens its namespace too.
+            let! attributed = applyActionAt state paths[7] ATTRIBUTES "quickfix" "Add 'open System'" (2, 3) (2, "open System")
+            Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error attributed)
+        finally
+            cleanup dir
+    }
+
+/// The project's own namespaces count too: a type another file declares in a
+/// namespace this file has not opened gets that namespace's `open`.
+[<Fact>]
+let ``an undefined type of the project's own namespace opens it`` () =
+    task {
+        let geometry = source [ "namespace Geometry"; ""; "type Circle = { Radius: float }" ]
+        let drawing = source [ "module Drawing"; ""; "let area (c: Circle) = c.Radius * c.Radius" ]
+        let! state, dir, _, paths = loadWorkspace [ "Geometry.fs", geometry; "Drawing.fs", drawing ]
+        try
+            let! opened = applyActionAt state paths[1] drawing "quickfix" "Add 'open Geometry'" (2, 13) (2, "open Geometry")
+            Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error opened)
         finally
             cleanup dir
     }

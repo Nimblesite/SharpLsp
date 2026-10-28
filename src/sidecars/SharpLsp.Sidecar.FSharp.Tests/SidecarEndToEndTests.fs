@@ -1163,6 +1163,32 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Equal("pong", deserialize<string> pong.Payload)
     }
 
+    // ── Completion from unopened namespaces [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN] ──
+
+    /// Through the real sidecar: a typed prefix completes types of namespaces the
+    /// file has not opened, labelled with the namespace, and resolving one returns
+    /// the `open` that namespace needs; an item already in scope resolves to no edit.
+    [<Fact>]
+    member _.``completion offers unopened types and resolve returns their open``() = task {
+        // Library.fs 15: `let result = add 1 2`; the caret after the `a` of `add`.
+        let! r = fixture.Send("textDocument/completion", posPayload fixture.Src 15 14)
+        Assert.Null(r.Error)
+        let items = deserialize<CompletionItemResult array>(r.Payload)
+        let resolve index = task {
+            let request = { CompletionResolveRequest.FilePath = fixture.Src; Index = index }
+            let! rr = fixture.Send("completionItem/resolve", MessagePackSerializer.Serialize request)
+            Assert.Null(rr.Error)
+            return deserialize<CompletionResolveResultWire>(rr.Payload)
+        }
+        let unopened = items |> Array.find (fun item -> not (String.IsNullOrEmpty item.Detail) && item.Detail.StartsWith "(open ")
+        let! opened = resolve unopened.Index
+        let edit = Assert.Single(opened.AdditionalEdits)
+        Assert.Equal($"open {unopened.Detail.Substring(6).TrimEnd(')')}\n", edit.NewText)
+
+        let! inScope = resolve (items |> Array.find (fun item -> item.Label = "add")).Index
+        Assert.Empty(inScope.AdditionalEdits)
+    }
+
     // ── Document Symbols [SE-FSHARP-SYMBOLS] ────────────────────
 
     [<Fact>]

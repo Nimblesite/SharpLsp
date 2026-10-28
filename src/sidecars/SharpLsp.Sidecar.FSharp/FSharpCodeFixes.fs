@@ -160,7 +160,7 @@ let private overlapping startLine endLine (diagnostics: FSharpDiagnostic array) 
 /// The quick fixes one diagnostic offers, keyed by its number, each built from
 /// FCS's ranges, declarations, AST or typed data — never its message text.
 /// [ANALYZERS-FSAC-CODEFIX-COMPILER]
-let private fixesFor parseResults checkResults source filePath (diagnostic: FSharpDiagnostic) =
+let private fixesFor workspace parseResults checkResults source filePath (diagnostic: FSharpDiagnostic) =
     let r = diagnostic.Range
 
     match diagnostic.ErrorNumber with
@@ -168,14 +168,17 @@ let private fixesFor parseResults checkResults source filePath (diagnostic: FSha
     | 20 -> [ FSharpQuickFix.replace "Add '|> ignore'" true filePath (Range.mkRange r.FileName r.End r.End) " |> ignore" ]
     | 25 -> FSharpMatchFixes.wildcards parseResults filePath r
     | 26 -> [ FSharpQuickFix.replace "Remove redundant pattern case" false filePath (FSharpQuickFix.wholeLines r) "" ]
-    | 39 -> FSharpNameFixes.opens parseResults source filePath r @ FSharpNameFixes.typos parseResults checkResults source filePath r
+    | 39 -> FSharpNameFixes.opens workspace parseResults checkResults source filePath r @ FSharpNameFixes.typos parseResults checkResults source filePath r
     | 760 -> FSharpNameFixes.addNew parseResults filePath r
     | 1182 -> FSharpNameFixes.unused source filePath r
     | _ -> []
 
-let private diagnosticActions state filePath source parseResults checkResults (diagnostics: FSharpDiagnostic list) =
+/// The quick fixes of the diagnostics on the requested lines, each offered once: FCS
+/// reports an unresolved attribute twice, once per spelling, with the same fix.
+let private diagnosticActions state workspace filePath source parseResults checkResults (diagnostics: FSharpDiagnostic list) =
     diagnostics
-    |> List.collect (fixesFor parseResults checkResults source filePath)
+    |> List.collect (fixesFor workspace parseResults checkResults source filePath)
+    |> List.distinct
     |> List.map (wrapGeneratedAction state)
 
 let private interfaceActions
@@ -213,7 +216,7 @@ let private collectCodeActions
     task {
         let diagnostics =
             overlapping startLine endLine checkResults.Diagnostics
-            |> diagnosticActions state filePath source parseResults checkResults
+            |> diagnosticActions state workspace filePath source parseResults checkResults
         let! dead =
             deadCodeActions state workspace analyzers filePath parseResults checkResults source startLine endLine ct
         let typed =
