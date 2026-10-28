@@ -10,7 +10,7 @@ pub fn hover(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Va
 }
 
 /// The params of a `textDocument/hover` request.
-fn hover_params(uri: &str, line: u32, character: u32) -> Value {
+pub fn hover_params(uri: &str, line: u32, character: u32) -> Value {
     json!({
         "textDocument": { "uri": uri },
         "position": { "line": line, "character": character }

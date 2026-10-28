@@ -294,3 +294,44 @@ let ``a reference MSBuild resolved stands, and one hand-built options drop is wi
         Assert.Equal(output, file)
         Assert.Equal(shared.ProjectFileName, options.ProjectFileName)
     | other -> failwith $"exactly one in-memory reference, to Shared: {other}"
+
+// ── Background warm-up ([SHARPLSP-FEATURES-WARM-UP], GitHub #513) ────
+
+/// Warming walks the loaded projects one request at a time, in project-path
+/// order, and each request really type-checks its project's files: FCS
+/// reports App's and Core's sources checked. Every answer is the project
+/// count; warming a project again finds it warm and checks nothing more; an
+/// index past the end checks nothing; the first solution-wide query after
+/// the walk finds every project's references without checking a file again
+/// (GitHub #513); and a cancelled request stops first.
+[<Fact>]
+let ``warming checks each loaded project once, so the first solution-wide query answers warm`` () =
+    task {
+        let! state, root, core, app = openSolution ()
+        try
+            let checkedFiles = Collections.Generic.List<string>()
+            use _subscription = state.Checker.FileChecked.Subscribe(fun (file, _) -> lock checkedFiles (fun () -> checkedFiles.Add file))
+            let count () = lock checkedFiles (fun () -> checkedFiles.Count)
+            let has file = lock checkedFiles (fun () -> checkedFiles |> Seq.exists (fun seen -> NativePaths.AreEqual(seen, file)))
+            let! first = FSharpWarmUp.warmProject state 0 CancellationToken.None
+            let! second = FSharpWarmUp.warmProject state 1 CancellationToken.None
+            Assert.Equal((2, 2), (first, second))
+            let seen = lock checkedFiles (fun () -> String.Join("; ", checkedFiles))
+            Assert.True(has app, $"App's source is checked: {seen}")
+            Assert.True(has core, $"Core's source is checked: {seen}")
+            let warm = count ()
+            let! again = FSharpWarmUp.warmProject state 0 CancellationToken.None
+            let! past = FSharpWarmUp.warmProject state 2 CancellationToken.None
+            Assert.Equal((2, 2), (again, past))
+            Assert.Equal(warm, count ())
+            let! references = FSharpReferences.getProjectUsages state core 3 5
+            Assert.Equal<int list>([ 4; 8 ], linesIn app references)
+            Assert.Equal<int list>([ 3 ], linesIn core references)
+            Assert.Equal(warm, count ())
+            use cancelled = new CancellationTokenSource()
+            cancelled.Cancel()
+            let! _ = Assert.ThrowsAnyAsync<OperationCanceledException>(fun () -> FSharpWarmUp.warmProject state 0 cancelled.Token :> Task)
+            Assert.Equal(warm, count ())
+        finally
+            cleanup root
+    }

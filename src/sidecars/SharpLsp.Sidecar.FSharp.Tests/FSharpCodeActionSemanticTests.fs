@@ -100,7 +100,7 @@ let ``interface stub generation emits the member without trailing whitespace`` (
     try
         let! (parse, check, src) = checkedFixture state paths[0]
         let! action =
-            FSharpCodeActions.tryGenerateInterfaceStub check parse src paths[0] 18 15
+            FSharpInterfaceStubs.tryGenerateInterfaceStub check parse src paths[0] 18 15
             |> Async.StartAsTask
         match action with
         | None -> failwith "no interface stub offered for the unimplemented interface"
@@ -122,7 +122,7 @@ let ``interface stub generation appends after an already implemented member`` ()
     try
         let! (parse, check, src) = checkedFixture state paths[0]
         let! action =
-            FSharpCodeActions.tryGenerateInterfaceStub check parse src paths[0] 21 15
+            FSharpInterfaceStubs.tryGenerateInterfaceStub check parse src paths[0] 21 15
             |> Async.StartAsTask
         match action with
         | None -> failwith "no interface stub offered for the partial implementation"
@@ -215,7 +215,7 @@ let private interfaceStubAt state path line col =
         | None -> return failwith "FCS could not check the interface-shapes fixture"
         | Some(parse, check, src) ->
             let! action =
-                FSharpCodeActions.tryGenerateInterfaceStub check parse src path line col
+                FSharpInterfaceStubs.tryGenerateInterfaceStub check parse src path line col
                 |> Async.StartAsTask
             return action |> Option.map (fun a -> a.Edits |> List.map _.NewText |> String.concat "")
     }

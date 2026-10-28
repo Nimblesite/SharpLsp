@@ -279,6 +279,10 @@ type FSharpSidecar() as this =
               Character = lens.Character
               Title = lens.Title })))
 
+        // Background warm-up, one project per request [SHARPLSP-FEATURES-WARM-UP]
+        base.Register("workspace/warm", Helpers.handleWithCancellation (fun (index: int) ct ->
+            FSharpWarmUp.warmProject workspace index ct) Helpers.serializeOk)
+
         // Document symbols [SE-FSHARP-SYMBOLS]
         base.Register("textDocument/documentSymbol", Helpers.handle (fun (request: FileRequest) ->
             FSharpSymbols.documentSymbols workspace request.FilePath) (Helpers.listOf Helpers.toDocumentSymbol))

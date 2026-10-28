@@ -105,6 +105,20 @@ impl<'a> Session<'a> {
         id
     }
 
+    /// The real compiler's hover over `value`, which every fixture source declares at 2:4.
+    pub fn hover_value(&mut self) -> String {
+        let reply = observed_request(
+            &mut self.client,
+            "textDocument/hover",
+            hover_params(&self.fixture.uri(), 2, 4),
+            &mut self.traffic,
+        );
+        reply["result"]["contents"]["value"]
+            .as_str()
+            .expect("a markdown hover")
+            .to_owned()
+    }
+
     /// Cancellation must be observed inside the actual project analyzer before proceeding.
     pub fn cancel_analyzer(&mut self, compiler: sysinfo::Pid) -> i32 {
         let id = self.begin_analyzer(compiler, None);
@@ -368,10 +382,15 @@ impl<'a> Session<'a> {
     }
 
     /// The real host and compiler acknowledge shutdown and produce only one cancelled reply.
-    pub fn finish(mut self, cancelled: i32) {
+    pub fn finish(self, cancelled: i32) {
+        assert!(self.requests.contains(&cancelled));
+        self.shut_down();
+    }
+
+    /// Shutdown leaves every queued request exactly one terminal reply, and nothing pushed.
+    pub fn shut_down(mut self) {
         self.observe_shutdown();
         assert_no_push(&self.traffic);
-        assert!(self.requests.contains(&cancelled));
         for id in &self.requests {
             assert_eq!(
                 self.traffic

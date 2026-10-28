@@ -552,6 +552,7 @@ fn init_workspace_for_file(
         if let Err(err) = workspace_open::open_workspace(&sidecar, &file_path).await {
             error!("Failed to lazily open workspace: {err:#}");
         }
+        drop(tokio::spawn(Arc::clone(&sidecar).start_warm_up()));
         // Health monitoring starts only after workspace/open completes, matching the eager
         // path — a health check that races the load can kill a healthy sidecar.
         // Implements [SCRIPT-ROUTE-HEALTH].

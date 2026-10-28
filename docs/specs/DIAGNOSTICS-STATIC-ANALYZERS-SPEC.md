@@ -170,7 +170,7 @@ Each `SLSPF0103` finding overlapping the request range becomes a `Simplify name`
 
 #### [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB] "Implement interface" code fix
 
-A type-informed code action handles missing **interface members**. When the cursor is on an `interface IFoo …` declaration with unimplemented members, FCS `InterfaceStubGenerator` (`TryFindInterfaceDeclaration` → `GetImplementedMemberSignatures` → `FormatInterface`) generates `member _.X … = failwith "…"` stubs for the missing members ([FSharpCodeActions.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`, wired into `getCodeActions` Phase 4). E2E: the IPC suite (`code action offers implement-interface stub …`) and the VSIX suite (`F# LSP — Implement Interface`).
+A type-informed code action handles missing **interface members**. When the cursor is on an `interface IFoo …` declaration with unimplemented members, FCS `InterfaceStubGenerator` (`TryFindInterfaceDeclaration` → `GetImplementedMemberSignatures` → `FormatInterface`) generates `member _.X … = failwith "…"` stubs for the missing members ([FSharpInterfaceStubs.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpInterfaceStubs.fs) `tryGenerateInterfaceStub`, wired into `getCodeActions` Phase 4). E2E: the IPC suite (`code action offers implement-interface stub …`) and the VSIX suite (`F# LSP — Implement Interface`).
 
 #### [ANALYZERS-FSAC-CODEFIX-COMPILER] Compiler-diagnostic quick fixes
 

@@ -55,7 +55,7 @@ let private stubTextAt state (paths: string list) line col =
         let! (parse, check, src) = checkedFixture state paths[0]
 
         let! action =
-            FSharpCodeActions.tryGenerateInterfaceStub check parse src paths[0] line col
+            FSharpInterfaceStubs.tryGenerateInterfaceStub check parse src paths[0] line col
             |> Async.StartAsTask
 
         match action with

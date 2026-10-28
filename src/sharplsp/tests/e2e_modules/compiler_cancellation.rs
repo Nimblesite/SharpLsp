@@ -7,6 +7,7 @@ mod held;
 mod inputs;
 mod interests;
 mod selections;
+mod warm_up;
 
 #[test]
 fn cancelled_fsharp_read_does_not_delay_current_diagnostics_until_old_io_finishes() {
