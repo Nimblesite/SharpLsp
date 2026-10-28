@@ -46,6 +46,7 @@ pub mod call_hierarchy_tests;
 pub mod code_actions_tests;
 pub mod compiler_cancellation;
 pub mod completion_acceptance;
+pub mod configuration_live;
 pub mod configuration_session;
 pub mod coverage_boost;
 pub mod coverage_boost2;

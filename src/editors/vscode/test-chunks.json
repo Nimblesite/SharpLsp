@@ -155,6 +155,7 @@
         "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",
+        "test-explorer-glued-banners.test.js",
         "test-explorer-names.test.js",
         "testing-lens-e2e.test.js",
         "testing-lens-status.test.js",

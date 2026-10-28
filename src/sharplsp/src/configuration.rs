@@ -154,6 +154,11 @@ impl Configuration {
         configuration
     }
 
+    /// The workspace root the configuration resolves from.
+    pub(crate) fn root(&self) -> &std::path::Path {
+        &self.root
+    }
+
     /// The typed configuration of the workspace root, editor settings included.
     pub(crate) fn config(&self) -> Result<SharpLspConfig> {
         load_config(&self.root, &self.client)

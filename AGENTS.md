@@ -13,7 +13,7 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 
 # Workflow
 
-- **Sub agents are illegal.** Delegate by spawning `pi` sessions — you are responsible for their output
+- **Sub agents are illegal.** Delegate by spawning `pi` sessions (Kimi 3.1 -> GLM 5.3 -> Deepseek 4.1 and flash equivalents) — you are **responsible** for their output
 - **Plans (`docs/plans/`) are the backlog and GitHub issues is for problem tracking.** Work toward checking off their items; delete a plan once it is complete
 - **Closing a GitHub issue requires testing a released, published version** No closing issues as you fix the bug
 - ⛔️ **Never attribute a commit to yourself**: no `Co-Authored-By`, no agent name. *Never overridable*

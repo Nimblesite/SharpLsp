@@ -242,7 +242,7 @@ impl Default for ProfilerConfig {
 }
 
 /// The config file name we search for.
-const CONFIG_FILE_NAME: &str = "sharplsp.toml";
+pub(crate) const CONFIG_FILE_NAME: &str = "sharplsp.toml";
 
 /// Load configuration by searching for `sharplsp.toml` starting from `workspace_root`
 /// and walking up to parent directories, with the editor's `client` settings layered

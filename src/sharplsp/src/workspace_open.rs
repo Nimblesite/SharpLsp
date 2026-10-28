@@ -185,7 +185,7 @@ pub(crate) async fn configure_diagnostics(
 /// `analyzers/configure`. Sidecars that do not register the method ignore it; any
 /// failure is logged and never aborts startup. The flags drive the monorepo
 /// dead-code analyzer ([ANALYZERS-DEADCODE-SEVERITY]) in both the F# and C# sidecars.
-async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &AnalyzersConfig) {
+pub(crate) async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &AnalyzersConfig) {
     #[derive(serde::Serialize)]
     struct ConfigureRequest {
         dead_code: bool,
@@ -225,13 +225,24 @@ pub(crate) fn client_picks_solution(options: Option<&Value>) -> bool {
 /// Show the user why the C# workspace did not open. For a root holding several
 /// solutions, the sidecar's error names each one and `csharp.solution_path`.
 fn show_open_failure(sender: &Sender<Message>, err: &anyhow::Error) {
-    let params = ShowMessageParams {
-        typ: MessageType::ERROR,
-        message: format!("SharpLsp couldn't open the C# workspace. {err:#}"),
-    };
-    let notification = Notification::new(ShowMessage::METHOD.to_owned(), params);
+    let message = format!("SharpLsp couldn't open the C# workspace. {err:#}");
+    show_message(sender, MessageType::ERROR, message, "C# workspace failure");
+}
+
+/// Show `message` to the user with `window/showMessage`; `notice` names it in the
+/// log when the client connection is closed and it cannot be delivered.
+pub(crate) fn show_message(
+    sender: &Sender<Message>,
+    typ: MessageType,
+    message: String,
+    notice: &str,
+) {
+    let notification = Notification::new(
+        ShowMessage::METHOD.to_owned(),
+        ShowMessageParams { typ, message },
+    );
     if sender.send(Message::Notification(notification)).is_err() {
-        warn!("C# workspace failure not shown: the client connection is closed");
+        warn!(notice, "Message not shown: the client connection is closed");
     }
 }
 

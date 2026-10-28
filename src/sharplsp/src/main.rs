@@ -9,6 +9,7 @@ mod code_lens;
 mod config;
 mod config_debug;
 mod configuration;
+mod configuration_live;
 mod cross_language;
 mod diagnostic_publish;
 mod diagnostics;
@@ -33,6 +34,7 @@ mod pull_diagnostics;
 mod razor;
 mod semantic;
 mod semantic_tokens;
+mod service_notifications;
 mod sidecar;
 mod signature_help;
 mod sort_members;
@@ -81,7 +83,6 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tree_sitter::Tree;
 
-use crate::build_monitor::handle_build_watch;
 use crate::diagnostic_publish::{
     converge_provisional_publication, republish_open_diagnostics, sidecar_for_uri,
     trigger_diagnostics,
@@ -630,36 +631,9 @@ struct HostServices {
     profiler: profiler::host::ProfilerHost,
     /// The solution the C# sidecar opens, reopened when settings move it.
     solution: workspace_open::SolutionChoice,
-}
-
-/// Apply a `workspace/didChangeConfiguration`, reopening the C# workspace when
-/// the change chose another solution. A rejected change keeps the previous one.
-fn settings_changed(
-    services: &mut HostServices,
-    params: &serde_json::Value,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    vfs: &Arc<Vfs>,
-    runtime: &tokio::runtime::Runtime,
-) {
-    let settings = params.get("settings").unwrap_or(&serde_json::Value::Null);
-    match services.configuration.update(settings) {
-        Ok(()) => {
-            services.solution.settings_changed(
-                &services.configuration,
-                csharp_sidecar,
-                vfs,
-                runtime,
-            );
-            if let Err(error) = services
-                .configuration
-                .config()
-                .and_then(|config| pull_diagnostics::state::configure(&config.diagnostics))
-            {
-                warn!(%error, "Diagnostic configuration could not be applied");
-            }
-        }
-        Err(error) => warn!("Configuration change rejected: {error:#}"),
-    }
+    /// The configuration last applied, which a change is measured against
+    /// ([CONFIG-RESOLUTION-LIVE]).
+    applied: config::SharpLspConfig,
 }
 
 /// Mount the profiler under `profiler_root` beside the configuration service.
@@ -688,6 +662,7 @@ fn host_services(
         configuration,
         profiler,
         solution,
+        applied: config.clone(),
     }
 }
 
@@ -711,7 +686,13 @@ fn main_loop(
     let mut shutdown_requested = false;
     let diagnostic_requests =
         diagnostic_requests(runtime, [fsharp_sidecar, csharp_sidecar], vfs, connection);
-    let inbound = inbound_with_inputs(connection, diagnostic_requests.cancellation_handle())?;
+    let (inbound, internal) =
+        inbound_with_inputs(connection, diagnostic_requests.cancellation_handle())?;
+    let _config_watch = configuration_live::ConfigWatch::start(
+        services.configuration.root(),
+        runtime.handle(),
+        &internal,
+    );
 
     for msg in &inbound {
         match msg {
@@ -752,30 +733,17 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
-                if handle_build_watch(&notif, services, runtime, &connection.sender) {
+                let Some(notif) = service_notifications::route(
+                    notif,
+                    services,
+                    &diagnostic_requests,
+                    [csharp_sidecar, fsharp_sidecar],
+                    vfs,
+                    runtime,
+                    &connection.sender,
+                ) else {
                     continue;
-                }
-                if notif.method == "$/cancelRequest" {
-                    diagnostic_requests.cancel(&notif.params);
-                    services.profiler.cancel(&notif.params);
-                    continue;
-                }
-                if notif.method == "workspace/didChangeConfiguration" {
-                    settings_changed(services, &notif.params, csharp_sidecar, vfs, runtime);
-                    continue;
-                }
-                if notif.method == "workspace/didChangeWatchedFiles" {
-                    if let Err(error) = pull_diagnostics::changes::watched(
-                        notif.params,
-                        runtime,
-                        [csharp_sidecar, fsharp_sidecar],
-                        vfs,
-                        &connection.sender,
-                    ) {
-                        warn!(%error, "Diagnostic input update failed");
-                    }
-                    continue;
-                }
+                };
                 if notif.method == SHUTDOWN_ANSWERED {
                     diagnostic_requests.cancel_all();
                     shutdown_requested = true;

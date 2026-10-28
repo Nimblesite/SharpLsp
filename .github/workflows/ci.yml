@@ -318,12 +318,25 @@ jobs:
       - coverage
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
+    # actions: read lists this run's jobs, so the gate names what failed.
+    permissions:
+      actions: read
     steps:
+      # Name every failed or cancelled leg and the job inside it, with its link:
+      # the gate is the check a reader sees first, so it must say what broke.
       - name: Fail if any job failed or was cancelled
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
         run: |-
-          echo "::error::A required CI job did not pass. See the failed job above."
+          jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled")
+            | "::error title=\(.key)::\(.key) \(.value.result)"' <<<"$NEEDS"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled")
+              | "::error title=\(.name)::\(.name) \(.conclusion): \(.html_url)"' \
+            || echo "::warning::Could not list this run's jobs; the legs above failed."
           exit 1
       # Code changed, so the build and every test leg must have run. A skip
       # here is a broken condition upstream, never a pass (#365).

@@ -39,13 +39,19 @@ pub(crate) fn diagnostic_requests(
 /// reads the client stream ahead of the loop, answers `shutdown` itself, and
 /// hands the loop [`SHUTDOWN_ANSWERED`] in its place so the loop still refuses
 /// everything that follows.
+///
+/// Also returns a sender into the loop's queue for other internal notices, such
+/// as a changed configuration file ([CONFIG-RESOLUTION-LIVE]).
 pub(crate) fn inbound_with_inputs(
     connection: &Connection,
     cancellation: lspkit_server::CancellationHandle,
-) -> Result<crossbeam_channel::Receiver<Message>> {
+) -> Result<(
+    crossbeam_channel::Receiver<Message>,
+    crossbeam_channel::Sender<Message>,
+)> {
     let (inbound, inputs) = spawn_shutdown_fast_path(connection, cancellation.clone());
-    pull_diagnostics::state::connect_inputs(inputs, cancellation)?;
-    Ok(inbound)
+    pull_diagnostics::state::connect_inputs(inputs.clone(), cancellation)?;
+    Ok((inbound, inputs))
 }
 
 /// Read client messages while the foreground handler is occupied.
