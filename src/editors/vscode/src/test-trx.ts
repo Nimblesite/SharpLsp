@@ -48,6 +48,11 @@ export interface TrxTestResult {
   readonly message: string | undefined;
   readonly stackTrace: string | undefined;
   /**
+   * What the test WROTE, as the report carries it — absent when it wrote
+   * nothing ([TEST-RUN-OUTPUT]).
+   */
+  readonly output?: string;
+  /**
    * Every row merged into this result, with the assembly (`TestMethod/@codeBase`)
    * that reported it — which is what names the FRAMEWORK of each row when one
    * project targets several ([NETFX-TEST-RESULTS]).
@@ -68,9 +73,20 @@ interface TrxUnitTestResult {
   readonly '@_testName'?: string;
   readonly '@_outcome'?: string;
   readonly '@_duration'?: string;
-  readonly Output?: {
-    readonly ErrorInfo?: { readonly Message?: string; readonly StackTrace?: string };
-  };
+  readonly Output?: TrxOutput;
+}
+
+/**
+ * A result's `<Output>`: the failure, and what the test wrote — VSTest and MTP's
+ * `--report-trx` as StdOut/StdErr/DebugTrace, xUnit's own reporter as one
+ * `<TextMessages><Message>` per line ([TEST-RUN-OUTPUT]).
+ */
+interface TrxOutput {
+  readonly ErrorInfo?: { readonly Message?: string; readonly StackTrace?: string };
+  readonly StdOut?: string;
+  readonly StdErr?: string;
+  readonly DebugTrace?: string;
+  readonly TextMessages?: { readonly Message?: string[] };
 }
 
 interface TrxTestMethod {
@@ -98,12 +114,21 @@ interface TrxDocument {
   };
 }
 
+/** Elements that repeat under one parent, parsed as arrays even when there is one. */
+const REPEATED = new Set(['UnitTestResult', 'UnitTest', 'RunInfo']);
+
+/** `<Message>` repeats only as a written line; `ErrorInfo/Message` is ONE text. */
+const WRITTEN_LINE = 'TestRun.Results.UnitTestResult.Output.TextMessages.Message';
+
 const trxParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   parseAttributeValue: false,
-  isArray: (tagName) =>
-    tagName === 'UnitTestResult' || tagName === 'UnitTest' || tagName === 'RunInfo',
+  // Text stays text: a test that writes `42` wrote a line, not a number.
+  parseTagValue: false,
+  // VSTest writes every CR as `&#xD;`, and only this decodes character references.
+  htmlEntities: true,
+  isArray: (tagName, jPath) => REPEATED.has(tagName) || jPath === WRITTEN_LINE,
 });
 
 /** TRX outcome strings mapped onto the Testing API's three states. */
@@ -197,7 +222,17 @@ function toTestResult(
     durationMs: parseTrxDuration(result['@_duration']),
     message: textOrUndefined(error?.Message),
     stackTrace: textOrUndefined(error?.StackTrace),
+    ...writtenBy(result.Output),
   };
+}
+
+/** What the test wrote, every stream in report order; nothing when it wrote nothing. */
+function writtenBy(output: TrxOutput | undefined): { output?: string } {
+  const streams = [output?.StdOut, output?.StdErr, output?.DebugTrace];
+  const lines = [...streams, ...(output?.TextMessages?.Message ?? [])]
+    .map(textOrUndefined)
+    .filter((part) => part !== undefined);
+  return lines.length === 0 ? {} : { output: lines.join('\n') };
 }
 
 /** `result` carrying itself as its one source row, when the report named the assembly. */

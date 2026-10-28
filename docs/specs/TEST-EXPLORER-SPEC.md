@@ -228,6 +228,37 @@ the original safe discovery target. Per-test outcomes come from the TRX reports 
   failure (a build error) or a note that the filter matched nothing. It is never silently
   reported as a pass.
 
+### Test output `[TEST-RUN-OUTPUT]`
+
+What a test WRITES is shown in the Test Results view, in the place its framework sends it.
+xUnit documents the text as "wrapped up into the XML output" for the runner to surface; a
+reader that keeps only the verdict and the assertion text shows it nowhere. Measured against
+real builds, the frameworks send it to one of two places:
+
+| Framework | Captured into the test's own result | The runner's console only | Not captured |
+|---|---|---|---|
+| xUnit 2 (VSTest) | `ITestOutputHelper` | — | Console, Debug, Trace (by design) |
+| xunit.v3 (MTP) | `ITestOutputHelper`, `TestContext.Current.TestOutputHelper`; Console out and error with `[assembly: CaptureConsole]`; Debug and Trace with `[assembly: CaptureTrace]` | diagnostic messages, when `diagnosticMessages` is on | — |
+| NUnit (both runners) | `TestContext.Out`, `TestContext.WriteLine`, `TestContext.Error`, Console out and error | `TestContext.Progress` (MTP; VSTest prints it only above its default verbosity) | Debug, Trace |
+| MSTest (both runners) | `TestContext.WriteLine`, Console out and error, Debug, Trace, `Logger.LogMessage` | — | — |
+
+* A test's own output is read from every report shape: `<Output><StdOut>`, `<StdErr>` and
+  `<DebugTrace>` (VSTest `--logger trx`, MTP `--report-trx`), and one
+  `<Output><TextMessages><Message>` per line (xUnit's own `--report-xunit-trx`). XML character
+  references are decoded: VSTest writes every CR as `&#xD;`, and the failure text read beside
+  it ([TEST-RUN-TRX]) is decoded the same way.
+* It is appended with `TestRun.appendOutput(text, undefined, test)`, attached to THAT test.
+  Line breaks are CRLF, as `appendOutput` requires; a bare LF renders as a staircase in the
+  results terminal.
+* A test that wrote nothing appends nothing. A failing test's output is appended as well as
+  its failure message, never instead of it. Only the tests a run SELECTED are shown output,
+  even when an unfiltered retry ([TEST-FILTER-ESCAPE], [TEST-MTP-RUN]) ran others.
+* The rows of a data-driven test share one id ([TEST-RUN-TRX]); the merged result keeps every
+  row's output, in report order. The worst-row merge must not drop the passing rows' lines.
+* The runner's own console — `dotnet test`, or each MTP module's — is appended to the run with
+  no test, so what a framework prints there (NUnit's progress, xUnit's diagnostic messages, the
+  run summary, a build error) is in Test Results as the run's output.
+
 ## Microsoft.Testing.Platform: which runner `[TEST-MTP-DETECT]`
 
 Microsoft.Testing.Platform (MTP) is the second .NET test runner. A test project that uses it
@@ -648,6 +679,7 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `test-explorer-mtp-fsharp.test.ts` | MTP on F#, every case the C# suites prove on one module: an F# `xunit.v3` module multi-targeted at the two newest runtimes whose `#if` bindings fail in one framework's module only — ONE tree root, a module per framework, a numbered TRX per module, each theory row its own uid; an F# `[<Fact>]` and `[<Theory>]` edited between discovery and ▶, rebuilt before they run, the rows pointing at the attribute the listing reported; and an F# project moved from VSTest onto MTP in place keeping its ids and its root ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-MODULES]) |
 | `test-explorer-mtp-rows.test.ts` | Data rows of C# `xunit.v3` and MSTest tests changed between discovery and ▶: a row ADDED (a uid discovery never saw, in both frameworks) turns its test red and then green again, an `xunit.v3` row whose DATA is edited runs with the new data, the untouched tests stay green, and the tree never grows a row per data row ([TEST-MTP-RUN]) |
 | `debug-test-mtp-fsharp-e2e.test.ts` | The Debug profile on an F# MTP module: a backtick binding whose id carries SPACES attached to by pid and stopped in its body with its `let` bindings readable, an F# `[<Theory>]` stopping once per row with each row's arguments, and Debug Test at the cursor in the `.fs` file — none writing a result, ▶ afterwards reporting the real one ([TEST-MTP-DEBUG]) |
+| `test-explorer-output.test.ts` | What a test WRITES, shown where its framework sends it: ▶ over a real VSTest solution and a real MTP solution of xUnit, NUnit and MSTest in F# and C#, one test per channel each framework captures — every line attached to its own test and to no other, a failing test keeping its output and its failure, an xUnit theory keeping each row's line under its one id, the runner's console (NUnit progress, xUnit diagnostic messages) as the run's own output, CRLF and decoded XML references throughout — and ▶ on a selection whose NUnit refusal reruns everything still showing only the selected tests their output ([TEST-RUN-OUTPUT]) |
 | `test-explorer-mtp-parsers.test.ts` | the JSON listing reader at its boundary: a byte-order mark, a leading blank line, an unknown `schemaVersion`, an empty `tests` array, a missing `location`, a missing `type`, and two rows collapsing onto one id with two uids; the `global.json` opt-in against every decoy that merely mentions MTP; the uid batcher; and the waiting-host pid line in BOTH its bare and its prefixed form ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-DEBUG]) |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows

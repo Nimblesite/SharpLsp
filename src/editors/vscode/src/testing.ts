@@ -126,6 +126,15 @@ export class SharpLspTestController {
   }
 
   /**
+   * The Testing API controller every run is created on. Exposed so tests can
+   * observe the very `TestRun` a profile writes into: VS Code has no API that
+   * reads a run's output back ([TEST-RUN-OUTPUT]).
+   */
+  public get testing(): vscode.TestController {
+    return this.controller;
+  }
+
+  /**
    * The registered run profiles — Run, Debug and Run with Coverage, in that
    * order. Exposed so tests can invoke the very handler VS Code invokes when the
    * user presses the corresponding button in the Test Explorer.

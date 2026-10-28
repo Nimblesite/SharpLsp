@@ -24,6 +24,8 @@ export type CacheWriter = (testId: string, result: CachedTestResult) => void;
 interface ReportableOutcome {
   readonly results: ReadonlyMap<string, TrxTestResult>;
   readonly failure: string | undefined;
+  /** The runner's own console, stdout and stderr. */
+  readonly output: string;
 }
 
 /** Cached result for a single test, keyed by fully qualified name. */
@@ -78,7 +80,24 @@ export function reportOutcome(
   if (outcome.failure !== undefined) {
     info('Test run failed');
   }
+  appendRunOutput(run, outcome.output);
   reportResults(run, tests, outcome, cache, frameworks);
+}
+
+/** `text` as the results terminal needs it: CRLF line breaks, ending in one. */
+export function terminalText(text: string): string {
+  const lines = text.split('\n').map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+/**
+ * The runner's own console as the run's output, owned by no test: where NUnit's
+ * progress, xUnit's diagnostic messages and a build error are printed
+ * ([TEST-RUN-OUTPUT]).
+ */
+function appendRunOutput(run: vscode.TestRun, output: string): void {
+  const text = output.trim();
+  if (text !== '') run.appendOutput(terminalText(text));
 }
 
 /** Map the outcome onto each test, logging nothing. */
@@ -117,6 +136,7 @@ export function reportDebugOutcome(
     mtp !== undefined && ownedBy(mtp, test.id) && !outcome.results.has(test.id);
   const reportable =
     outcome.failure === undefined ? tests.filter((test) => !unreported(test)) : tests;
+  appendRunOutput(run, outcome.output);
   reportResults(run, reportable, outcome, undefined);
 }
 
@@ -152,6 +172,8 @@ export function reportResult(
   result: TrxTestResult,
   frameworks?: FrameworkIndex,
 ): void {
+  // What the test wrote, attached to THAT test in Test Results ([TEST-RUN-OUTPUT]).
+  if (result.output !== undefined) run.appendOutput(terminalText(result.output), undefined, test);
   if (result.outcome === 'passed') {
     run.passed(test, result.durationMs);
     return;
