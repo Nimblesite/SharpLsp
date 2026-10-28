@@ -7,6 +7,7 @@ open System.IO
 open System.Threading
 open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 open Serilog
@@ -51,6 +52,9 @@ type FSharpWorkspaceState =
         /// .fsproj is re-evaluated once, and ownership lookups never spawn MSBuild per
         /// request. Lazy, so concurrent first lookups share ONE evaluation. [NETFX-PROJECTS-FSHARP]
         CompileSources: ConcurrentDictionary<string, Lazy<Task<Result<string array, string>>>>
+        /// Every referenced assembly's public entities, by assembly file: built once,
+        /// rebuilt when that file changes. [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]
+        Entities: EntityCache
     }
 
 /// Create a new workspace with an overlay-aware FSharpChecker.
@@ -75,7 +79,8 @@ let create () : FSharpWorkspaceState =
       Projects = ConcurrentDictionary(NativePaths.Comparer)
       References = ConcurrentDictionary(NativePaths.Comparer)
       CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer)
-      CompileSources = ConcurrentDictionary(NativePaths.Comparer) }
+      CompileSources = ConcurrentDictionary(NativePaths.Comparer)
+      Entities = EntityCache() }
 
 /// The project that compiles `filePath`, if any loaded project does.
 let internal projectOf (state: FSharpWorkspaceState) (filePath: string) =

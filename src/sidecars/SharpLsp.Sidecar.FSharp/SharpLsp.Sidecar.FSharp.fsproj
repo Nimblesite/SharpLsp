@@ -77,7 +77,9 @@
     <Compile Include="FSharpFeatures.fs" />
     <Compile Include="FSharpFileOrder.fs" />
     <Compile Include="FSharpDiagnosticWire.fs" />
+    <Compile Include="FSharpCompletionWire.fs" />
     <Compile Include="FSharpLocalAnalysis.fs" />
+    <Compile Include="FSharpEntityIndex.fs" />
     <Compile Include="FSharpAnalyzers.fs" />
     <Compile Include="FSharpCodeActions.fs" />
     <Compile Include="FSharpInterfaceStubs.fs" />

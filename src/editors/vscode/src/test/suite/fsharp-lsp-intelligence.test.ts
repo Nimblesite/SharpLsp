@@ -1,5 +1,10 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import type {
+  CompletionItem as LspCompletionItem,
+  CompletionList as LspCompletionList,
+  Range as LspRange,
+} from 'vscode-languageclient/node';
 import { closeAllEditors, pollUntilResult, pollProvider, assertContainsAll } from './test-helpers';
 import { openFSharpFixture, positionOf } from './fsharp-helpers';
 import { IGNORE_SOURCE } from './fsharp-refactor-fixtures';
@@ -16,7 +21,12 @@ import {
   uniqueAction,
   assertFixApplied,
 } from './fsharp-refactor-test-kit';
-import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
+import {
+  activateRealSharpLsp,
+  replaceDocumentText,
+  revertDocument,
+  sendRealLspRequest,
+} from './refactor-test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
@@ -39,6 +49,10 @@ function defineCompletionSuite(): void {
   test('member completion after `.` on a record value', verifyRecordCompletion);
   test('module-qualified completion after `.`', verifyModuleCompletion);
   test('completion items carry concrete F# symbol kinds', verifyCompletionKind);
+  test(
+    'an unopened type completes with its namespace and resolves to its open',
+    verifyUnopenedCompletion,
+  );
 }
 
 suite('F# LSP — Signature Help', defineSignatureSuite);
@@ -124,6 +138,75 @@ async function verifyCompletionKind(this: Mocha.Context): Promise<void> {
     vscode.CompletionItemKind.Field,
     'record field completion must be reported as a Field',
   );
+}
+
+// [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]: through the real server, a typed
+// prefix completes a type of a namespace Usage.fs never opens, and resolving it adds
+// that namespace's `open`, which the accepted item then compiles against.
+async function verifyUnopenedCompletion(this: Mocha.Context): Promise<void> {
+  this.timeout(LSP_RESPONSE_MS + 5_000);
+  const usage = await openFSharpFixture('Usage.fs');
+  try {
+    await replaceDocumentText(
+      usage.doc,
+      `${usage.doc.getText()}    let probeBuilder = StringBu()\n`,
+    );
+    const position = positionOf(usage.doc, 'StringBu()', 'StringBu'.length);
+    const builder = await pollCompletionItem(usage.uri, position, 'StringBuilder');
+    assert.strictEqual(builder.detail, '(open System.Text)');
+    const resolved = await sendRealLspRequest<LspCompletionItem>('completionItem/resolve', builder);
+    const opens = resolved.additionalTextEdits ?? [];
+    assert.strictEqual(opens.length, 1, 'resolving adds exactly one open');
+    assert.strictEqual(opens[0]?.newText.trim(), 'open System.Text');
+    await acceptCompletion(usage.doc, resolved);
+    assertContainsAll(
+      usage.doc.getText(),
+      ['open System.Text\n', 'StringBuilder()'],
+      'accepted file',
+    );
+  } finally {
+    await revertDocument(usage.doc);
+  }
+}
+
+/** The raw LSP item labelled `label` the real server completes at `position`. */
+async function pollCompletionItem(
+  uri: vscode.Uri,
+  position: vscode.Position,
+  label: string,
+): Promise<LspCompletionItem> {
+  const params = { textDocument: { uri: uri.toString() }, position };
+  type Answer = LspCompletionList | LspCompletionItem[] | null;
+  const items = await pollUntilResult(
+    async () =>
+      completionItemsOf(await sendRealLspRequest<Answer>('textDocument/completion', params)),
+    (found) => found.some((item) => item.label === label),
+    LSP_RESPONSE_MS,
+    2_000,
+  );
+  const item = items.find((candidate) => candidate.label === label);
+  assert.ok(item, `${label} must be offered`);
+  return item;
+}
+
+function completionItemsOf(
+  answer: LspCompletionList | LspCompletionItem[] | null,
+): LspCompletionItem[] {
+  if (answer === null) return [];
+  return Array.isArray(answer) ? answer : answer.items;
+}
+
+/** Apply a resolved item's own edit and its additional edits, as accepting it does. */
+async function acceptCompletion(doc: vscode.TextDocument, item: LspCompletionItem): Promise<void> {
+  const own = item.textEdit;
+  assert.ok(own && 'range' in own, 'the item replaces the typed prefix');
+  const edit = new vscode.WorkspaceEdit();
+  const rangeOf = (range: LspRange) =>
+    new vscode.Range(range.start.line, range.start.character, range.end.line, range.end.character);
+  edit.replace(doc.uri, rangeOf(own.range), own.newText);
+  for (const extra of item.additionalTextEdits ?? [])
+    edit.replace(doc.uri, rangeOf(extra.range), extra.newText);
+  assert.ok(await vscode.workspace.applyEdit(edit), 'accepting the item applies');
 }
 
 function completionHasName(list: vscode.CompletionList): boolean {

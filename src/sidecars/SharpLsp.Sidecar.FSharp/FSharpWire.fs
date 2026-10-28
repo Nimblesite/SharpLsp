@@ -108,25 +108,6 @@ type ReferenceUsageResult =
       [<Key(1)>] AllPaths: string array
       [<Key(2)>] PackagesRoot: string }
 
-// ── Completion Types (wire-compatible with the Rust host) ───────
-
-[<MessagePackObject(AllowPrivate = true)>]
-[<NoComparison; NoEquality>]
-type CompletionItemResult =
-    { [<Key(0)>] Label: string
-      [<Key(1)>] Kind: string
-      [<Key(2)>] Detail: string
-      [<Key(3)>] InsertText: string
-      [<Key(4)>] Index: int
-      /// Edit that REPLACES the identifier span at the caret so acceptance does
-      /// not append the member name to the trigger text (GitHub #178).
-      [<Key(5)>] TextEdit: TextEditResult }
-
-[<MessagePackObject(AllowPrivate = true)>]
-[<NoComparison; NoEquality>]
-type CompletionResolveResultWire =
-    { [<Key(0)>] AdditionalEdits: TextEditResult array }
-
 // ── Code Lens Types ─────────────────────────────────────────────
 
 [<MessagePackObject(AllowPrivate = true)>]
@@ -410,6 +391,14 @@ module internal Helpers =
               EndCharacter = entry.EditEndCharacter
               NewText = entry.InsertText } }
 
+    /// One flat edit in its wire shape.
+    let toTextEditResult (edit: FSharpCodeActions.RawEdit) : TextEditResult =
+        { StartLine = edit.StartLine
+          StartCharacter = edit.StartCharacter
+          EndLine = edit.EndLine
+          EndCharacter = edit.EndCharacter
+          NewText = edit.NewText }
+
     /// Group flat rename edits into a per-document workspace edit.
     let toWorkspaceEdit (edits: FSharpCodeActions.RawEdit list) : WorkspaceEditResult =
         let documentChanges =
@@ -418,14 +407,7 @@ module internal Helpers =
             |> List.map (fun (filePath, fileEdits) ->
                 { FilePath = filePath
                   Edits =
-                    fileEdits
-                    |> List.map (fun edit ->
-                        { StartLine = edit.StartLine
-                          StartCharacter = edit.StartCharacter
-                          EndLine = edit.EndLine
-                          EndCharacter = edit.EndCharacter
-                          NewText = edit.NewText })
-                    |> Array.ofList })
+                    fileEdits |> List.map toTextEditResult |> Array.ofList })
             |> Array.ofList
         { DocumentChanges = documentChanges }
 

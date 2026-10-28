@@ -64,8 +64,10 @@ FCS `FSharpCheckFileResults.GetDeclarationListInfo` drives the list. The partial
 identifier is extracted with `QuickParse.GetPartialLongNameEx`. `FSharpGlyph` maps
 to the same kind strings the Rust host's `map_completion_kind` understands. Items in
 unopened namespaces expose `NamespaceToOpen`, surfaced as an `(open <ns>)` detail
-hint (mirrors C#'s `(import) <ns>`). `completionItem/resolve` returns the wire-empty
-`AdditionalEdits` for now; **auto-`open` insertion is a follow-up** (see below).
+hint (mirrors C#'s `(import) <ns>`). The entities come from the project's references
+and its own signature ([FSharpEntityIndex.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpEntityIndex.fs)), and
+`completionItem/resolve` returns the `open` the item needs
+(`[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]`, #122).
 
 ### Rename and references ([RENAME-FSHARP-PREPARE], [RENAME-FSHARP-APPLY], [REFERENCES-FSHARP-FIND])
 Rename and references both need **project-wide** symbol uses, not just the current
@@ -183,7 +185,8 @@ MessagePack response (completion, resolve, project-wide references, prepare/appl
 rename, code lens, and call/type hierarchy).
 
 - [x] [FS-COMPLETION] `textDocument/completion` via `GetDeclarationListInfo`
-- [x] [FS-COMPLETION-RESOLVE] `completionItem/resolve` (wire-empty edits + ns hint)
+- [x] [FS-COMPLETION-RESOLVE] `completionItem/resolve`: the `open` an unopened item needs
+      (`[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]`, #122)
 - [x] [REFERENCES-FSHARP-FIND] project-wide `textDocument/references`
 - [x] [RENAME-FSHARP-PREPARE] `textDocument/prepareRename`
 - [x] [RENAME-FSHARP-APPLY] `textDocument/rename` (project-wide edits)

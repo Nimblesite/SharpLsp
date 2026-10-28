@@ -198,7 +198,7 @@ Each F# compiler diagnostic overlapping the request range offers the quick fixes
 | FS0020 result implicitly ignored | `Add '\|> ignore'` after the expression (preferred) | the diagnostic range |
 | FS0025 incomplete match | `Add wildcard case '\| _ ->'` after the reported match's own last clause, lined up with its bar (or, for a first clause without one, its pattern). An enclosing match is never completed instead | the innermost `match`, `match!` or `function` in the untyped AST |
 | FS0026 rule never matched | `Remove redundant pattern case`, which deletes the clause's whole lines | the diagnostic range |
-| FS0039 undefined name | `Add 'open X'` for a well-known framework type, placed where FCS's `FindNearestPointToInsertOpenDeclaration` puts it (inside a nested module, at that module's indentation); `Replace with 'name'` ([ANALYZERS-FSAC-CODEFIX-TYPO]) | the range's source text, FCS's insertion point and its declarations |
+| FS0039 undefined name | `Add 'open X'` for each namespace of the project's references or its own that declares the name and fits its position ([SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]), placed where FCS's `FindNearestPointToInsertOpenDeclaration` puts it (inside a nested module, at that module's indentation); `Replace with 'name'` ([ANALYZERS-FSAC-CODEFIX-TYPO]) | the range's source text, FCS's entities, entity kinds and insertion point, and its declarations |
 | FS0760 disposable constructor | `Add 'new'` ([ANALYZERS-FSAC-CODEFIX-ADD-NEW]) | the untyped AST |
 | FS1182 unused value | `Prefix 'x' with _` (preferred) | the range's source text |
 

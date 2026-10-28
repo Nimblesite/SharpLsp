@@ -268,10 +268,10 @@ type FSharpSidecar() as this =
         // Completion [SHARPLSP-FEATURES-INTELLIGENCE]
         base.Register("textDocument/completion", Helpers.atPosition (FSharpCompletion.getCompletions workspace) (Helpers.listOf Helpers.toCompletionItem))
 
-        // Completion resolve [SHARPLSP-FEATURES-INTELLIGENCE] — no extra edits yet (see plan).
-        base.Register("completionItem/resolve", Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
-            let result: CompletionResolveResultWire = { AdditionalEdits = [||] }
-            Task.FromResult<ByteResult>(Helpers.serializeOk result ct)))
+        // Completion resolve: the `open` an unopened item needs [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]
+        base.Register("completionItem/resolve", Helpers.handle (fun (request: CompletionResolveRequest) ->
+            FSharpCompletion.resolve workspace request.FilePath request.Index) (fun edits ct ->
+            Helpers.serializeOk { AdditionalEdits = edits |> List.map Helpers.toTextEditResult |> Array.ofList } ct))
 
         // Code lens [SHARPLSP-FEATURES-CODE-LENS]
         base.Register("textDocument/codeLens", Helpers.handleWithCancellation (fun (request: FileRequest) ct ->

@@ -335,3 +335,32 @@ let ``warming checks each loaded project once, so the first solution-wide query 
         finally
             cleanup root
     }
+
+/// Warming also builds each project's referenced entities, the names completion
+/// offers from namespaces a file has not opened, so the first completion pays
+/// nothing for them; a cancelled build stops before the next assembly.
+/// [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]
+[<Fact>]
+let ``warming builds each project's referenced entities ahead of its first completion`` () =
+    task {
+        let! state, root, core, _app = openSolution ()
+        try
+            // 1. Checked but not warmed: no project's referenced entities are built.
+            let! checkedProjects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state core) CancellationToken.None
+            let contexts = checkedProjects |> List.map _.ProjectContext
+            Assert.Equal(2, contexts.Length)
+            Assert.All(contexts, fun context -> Assert.False(FSharpEntityIndex.isBuilt state context))
+
+            // 2. A cancelled build builds nothing.
+            use cancelled = new CancellationTokenSource()
+            cancelled.Cancel()
+            Assert.Throws<OperationCanceledException>(fun () -> FSharpEntityIndex.warm state contexts.Head cancelled.Token) |> ignore
+            Assert.False(FSharpEntityIndex.isBuilt state contexts.Head)
+
+            // 3. Warming both projects builds every reference of each.
+            let! _ = FSharpWarmUp.warmProject state 0 CancellationToken.None
+            let! _ = FSharpWarmUp.warmProject state 1 CancellationToken.None
+            Assert.All(contexts, fun context -> Assert.True(FSharpEntityIndex.isBuilt state context))
+        finally
+            cleanup root
+    }

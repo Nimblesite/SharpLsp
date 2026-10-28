@@ -37,7 +37,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 
 | FSAC capability | LSP method | SharpLsp | Spec / notes |
 |---|---|---|---|
-| Completion + resolve | `textDocument/completion`, `completionItem/resolve` | ✅ / 🟡 | `[FS-COMPLETION]`; auto-`open` insertion on resolve still stubbed `[FS-COMPLETION-RESOLVE]` |
+| Completion + resolve | `textDocument/completion`, `completionItem/resolve` | ✅ / ✅ | `[FS-COMPLETION]`; unopened-namespace items and their `open` on resolve `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]` |
 | Go to definition | `textDocument/definition` | ✅ | e2e: `test_full_stack_fsharp_navigation` |
 | Type definition | `textDocument/typeDefinition` | ✅ | resolves to the type decl; `test_full_stack_fsharp_navigation` (was gap [#112] — invalid-fixture artifact) |
 | Implementation | `textDocument/implementation` | ✅ | |
@@ -119,14 +119,10 @@ Each item is sized to one focused change with e2e + sidecar tests.
    ([FSharpNameFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpNameFixes.fs)).
 9. **FSI/`.fsx`** full script type-checking incl. `fsiExtraParameters`.
 10. **Ionide custom endpoints**: `documentation`, `f1Help`, `fsdn`, `compilerLocation`, `workspacePeek`.
-11. **completion auto-`open`** insertion `[FS-COMPLETION-RESOLVE]` — **blocked on unopened-symbol
-    completion.** `GetDeclarationListInfo` is currently called with an empty `getAllEntities`
-    (`fun () -> []`), so completion never surfaces items in unopened namespaces and
-    `DeclarationListItem.NamespaceToOpen` is always `None`. Real auto-`open` needs an
-    assembly-content/entity index (FSAC's `AssemblyContentProvider`) feeding `getAllEntities`,
-    then a per-file resolve cache mapping the item index → the `open` insertion edit
-    (computed via `ParsedInput.FindNearestPointToInsertOpenDeclaration`). Sized as its own change.
-    Tracked: [#122](https://github.com/Nimblesite/SharpLsp/issues/122).
+11. ~~**completion auto-`open`**~~ — ✅ **done** `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]` (#122): the
+    entity index ([FSharpEntityIndex.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpEntityIndex.fs)) feeds
+    `getAllEntities`, unopened items read `(open <ns>)`, and resolve returns the `open` edit; the same index
+    serves the FS0039 "Add 'open'" fix.
 
 ## E2E coverage status `[FSAC-PARITY-E2E]`
 
@@ -163,7 +159,7 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 - [x] File first parity gap (`#112`)
 - [x] Backlog item 2 (workspace/symbol), 4 (remove unused open), 5 (simplify name)
 - [x] Backlog items 1 (references/typeDefinition), 3 (FSharpLint), 6 (interface stub), 8 (typo fix + add `new`)
-- [ ] Backlog items 7 and 9–11 above (F# sidecar lane; 7 = formatting, sequestered by `[SHARPLSP-FEATURES-FORMATTING]`;
-      11 = auto-`open`, blocked on the entity index)
+- [x] Backlog item 11 (completion auto-`open`, `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]`)
+- [ ] Backlog items 7, 9 and 10 above (F# sidecar lane; 7 = formatting, sequestered by `[SHARPLSP-FEATURES-FORMATTING]`)
 - [x] Public F# parity page at `src/website/src/docs/fsharp.md`; feature status, gaps, and F# tree-sitter/multi-project support match this matrix and the host
 - [ ] Keep this matrix in lockstep as gaps close (flip 🟡/❌ → ✅, add e2e rows)

@@ -100,7 +100,7 @@ let typos parseResults checkResults source filePath (r: range) : GeneratedAction
 
     flaggedText line r
     |> Option.map (fun name ->
-        FSharpLocalAnalysis.declarationsAt parseResults checkResults (line r.StartLine) (r.StartLine - 1) r.EndColumn
+        FSharpLocalAnalysis.declarationsAt parseResults checkResults (fun () -> []) (line r.StartLine) (r.StartLine - 1) r.EndColumn
         |> snd
         |> closestNames name)
     |> Option.defaultValue []
@@ -109,44 +109,62 @@ let typos parseResults checkResults source filePath (r: range) : GeneratedAction
 
 // ── FS0039: open the namespace ──────────────────────────────────
 
-/// The namespace of a well-known framework type FS0039 reports undefined.
-let private namespaceOf (name: string) : string list option =
-    match name with
-    | "Path" | "File" | "Directory" -> Some [ "System"; "IO" ]
-    | "Task" -> Some [ "System"; "Threading"; "Tasks" ]
-    | "Regex" -> Some [ "System"; "Text"; "RegularExpressions" ]
-    | "Dictionary" -> Some [ "System"; "Collections"; "Generic" ]
-    | _ -> None
+/// The suffix an attribute's type name carries and its uses may leave off.
+[<Literal>]
+let private ATTRIBUTE = "Attribute"
 
-/// `at` moved down past blank lines, up to `lastLine`: an `open` joins the
-/// declarations it serves rather than its scope's header line.
-let rec private pastBlankLines (line: int -> string) (lastLine: int) (at: pos) : pos =
-    if at.Line < lastLine && System.String.IsNullOrWhiteSpace(line at.Line) then
-        pastBlankLines line lastLine (Position.mkPos (at.Line + 1) at.Column)
-    else
-        at
+/// Whether an entity of kind `entity` can stand where the code expects `expected`:
+/// a type where a type is expected (an attribute is one), an attribute where an
+/// attribute is, and anything where a value is or the position is unknown.
+let private fits (expected: EntityKind option) (entity: EntityKind) =
+    match expected, entity with
+    | Some EntityKind.Attribute, EntityKind.Attribute
+    | Some EntityKind.Type, (EntityKind.Type | EntityKind.Attribute)
+    | Some(EntityKind.FunctionOrValue _), _
+    | None, _ -> true
+    | _ -> false
 
-/// Where FCS places an `open` serving the code at `r`: the nearest scope's
-/// opens, at that scope's indentation (1-based line), below any blank lines.
-let private openPosition (parseResults: FSharpParseFileResults) (line: int -> string) (r: range) namespaceParts : pos =
-    let context =
-        ParsedInput.FindNearestPointToInsertOpenDeclaration
-            r.StartLine parseResults.ParseTree (List.toArray namespaceParts) OpenStatementInsertionPoint.Nearest
-    let file = parseResults.ParseTree.Range
-    // AdjustInsertionPoint reads lines by 0-based index.
-    ParsedInput.AdjustInsertionPoint (fun index -> line (index + 1)) context
-    |> pastBlankLines line file.EndLine
+/// The full names an entity answers to: its own, and an attribute's without its suffix.
+let private spellings (entity: AssemblySymbol) : string array list =
+    let idents = entity.CleanedIdents
+    let last = Array.last idents
+    [ idents
+      if last.EndsWith ATTRIBUTE && last.Length > ATTRIBUTE.Length then
+          Array.append idents[.. idents.Length - 2] [| last.Substring(0, last.Length - ATTRIBUTE.Length) |] ]
 
-/// "Add 'open X'" for a well-known framework type FS0039 reports undefined.
-let opens parseResults source filePath (r: range) : GeneratedAction list =
+/// The namespaces whose `open` brings an entity named `name` into scope at the
+/// code at `r`, among the entities the file's check can reach that fit there.
+/// FCS decides which: a module that requires qualified access or opens itself
+/// automatically takes no `open` of its own.
+let private namespacesFor (parseResults: FSharpParseFileResults) (entities: AssemblySymbol list) (r: range) name =
+    let expected = ParsedInput.GetEntityKind(r.Start, parseResults.ParseTree)
+    let candidates =
+        ParsedInput.TryFindInsertionContext
+            r.StartLine parseResults.ParseTree [| { Ident = name; Resolved = false } |] OpenStatementInsertionPoint.Nearest
+    entities
+    |> List.filter (fun entity -> fits expected (entity.Kind LookupType.Precise))
+    |> List.collect (fun entity ->
+        spellings entity
+        |> List.filter (fun idents -> Array.last idents = name)
+        |> List.collect (fun idents ->
+            candidates (entity.TopRequireQualifiedAccessParent, entity.AutoOpenParent, entity.Namespace, idents)
+            |> Array.toList))
+    |> List.choose (fun (target, _) -> target.Namespace)
+    |> List.distinct
+    |> List.sort
+    |> List.truncate MAX_SUGGESTIONS
+
+/// "Add 'open X'" for each namespace that declares the name FS0039 reports
+/// undefined, in the referenced assemblies or the project itself.
+let opens workspace parseResults (checkResults: FSharpCheckFileResults) source filePath (r: range) : GeneratedAction list =
     let line = FSharpLocalAnalysis.lineGetter source
 
     flaggedText line r
-    |> Option.bind namespaceOf
-    |> Option.map (fun parts ->
-        let namespaceName = String.concat "." parts
-        FSharpQuickFix.insertLine $"Add 'open {namespaceName}'" filePath (openPosition parseResults line r parts) $"open {namespaceName}")
-    |> Option.toList
+    |> Option.map (namespacesFor parseResults (FSharpEntityIndex.entities workspace checkResults ()) r)
+    |> Option.defaultValue []
+    |> List.map (fun namespaceName ->
+        let at = FSharpQuickFix.openPosition parseResults line r.StartLine (namespaceName.Split '.')
+        FSharpQuickFix.insertLine $"Add 'open {namespaceName}'" filePath at $"open {namespaceName}")
 
 // ── FS1182: mark the unused value ───────────────────────────────
 
