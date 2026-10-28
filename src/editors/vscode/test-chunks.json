@@ -183,13 +183,14 @@
       ]
     },
     "testexplorer-mtp-runners": {
-      "description": "Where Microsoft.Testing.Platform meets everything that is NOT one MTP solution: a VSTest folder and an MTP folder open in ONE multi-root workspace, each test routed to the runner that discovered it and an MTP module rebuilt from its own folder ([TEST-MTP-ROUTING]); the probe sweep a solution with no MTP project must not pay for, folders and project files enumerated the way `dotnet` resolves them, and the run plan a failed sweep keeps with its tree ([TEST-MTP-DETECT], [TEST-MTP-MODULES]); and a selection spanning several `--filter-uid` batches, plus Run with Coverage on a module with no coverage extension ([TEST-MTP-RUN]); and a run queued behind a discovery sweep, which must run with the runner that sweep found ([TEST-REACTIVITY]). The multi-root suite lives under `multiroot/` and runs in the second editor start `.vscode-test.mjs` opens for it. Its own job because every suite here builds its own fixtures, and joining `testexplorer-mtp` would take that job past the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
+      "description": "Where Microsoft.Testing.Platform meets everything that is NOT one MTP solution: a VSTest folder and an MTP folder open in ONE multi-root workspace, each test routed to the runner that discovered it and an MTP module rebuilt from its own folder ([TEST-MTP-ROUTING]); the probe sweep a solution with no MTP project must not pay for, folders and project files enumerated the way `dotnet` resolves them, and the run plan a failed sweep keeps with its tree ([TEST-MTP-DETECT], [TEST-MTP-MODULES]); and a selection spanning several `--filter-uid` batches, plus Run with Coverage on a module with no coverage extension ([TEST-MTP-RUN]); and a run queued behind a discovery sweep, which must run with the runner that sweep found ([TEST-REACTIVITY]); and what a test WRITES, on both runners — every channel xUnit, NUnit and MSTest capture, in F# and C#, shown on its own test in Test Results through all three report shapes, and the runner’s own console as the run’s output ([TEST-RUN-OUTPUT]). The multi-root suite lives under `multiroot/` and runs in the second editor start `.vscode-test.mjs` opens for it. Its own job because every suite here builds its own fixtures, and joining `testexplorer-mtp` would take that job past the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
       "files": [
         "multiroot/test-explorer-mixed-runners.test.js",
         "test-explorer-mtp-sweeps.test.js",
         "test-explorer-mtp-batches.test.js",
         "test-explorer-mtp-coverage.test.js",
-        "test-explorer-mtp-queue.test.js"
+        "test-explorer-mtp-queue.test.js",
+        "test-explorer-output.test.js"
       ]
     },
     "testexplorer-mtp-parity": {

@@ -50,22 +50,33 @@ const OUTCOME_SEVERITY: Record<TestOutcome, number> = {
  * A theory or `[TestCase]` with several rows writes one TRX entry PER ROW, all
  * carrying the same FQN. Keeping the last one seen would report a green tree for
  * a theory whose second row failed, purely because of the order VSTest happened
- * to write them. The worst outcome wins and the durations add up.
+ * to write them. The worst outcome wins, the durations add up, and every row's
+ * output is kept in report order ([TEST-RUN-OUTPUT]).
  */
 export function worse(left: TrxTestResult, right: TrxTestResult): TrxTestResult {
-  const durationMs = sumDurations(left.durationMs, right.durationMs);
+  const durationMs = either(left.durationMs, right.durationMs, (one, two) => one + two);
+  const output = either(left.output, right.output, (one, two) => `${one}\n${two}`);
   const dominant = OUTCOME_SEVERITY[right.outcome] > OUTCOME_SEVERITY[left.outcome] ? right : left;
   // Every row is kept: the rows of one test may come from different target
   // frameworks, and each failing framework is named ([NETFX-TEST-RESULTS]).
   const sources = [...(left.sources ?? []), ...(right.sources ?? [])];
-  return { ...dominant, durationMs, ...(sources.length === 0 ? {} : { sources }) };
+  return {
+    ...dominant,
+    durationMs,
+    ...(output === undefined ? {} : { output }),
+    ...(sources.length === 0 ? {} : { sources }),
+  };
 }
 
-/** Add two optional durations, keeping `undefined` only when both are absent. */
-function sumDurations(left: number | undefined, right: number | undefined): number | undefined {
+/** Combine two optional values, keeping `undefined` only when both are absent. */
+function either<T>(
+  left: T | undefined,
+  right: T | undefined,
+  both: (one: T, two: T) => T,
+): T | undefined {
   if (left === undefined) return right;
   if (right === undefined) return left;
-  return left + right;
+  return both(left, right);
 }
 
 /** Absolute paths of the `.trx` reports directly inside `dir`. */
