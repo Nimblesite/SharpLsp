@@ -21,6 +21,7 @@ import { useScratchSuite } from './test-explorer-harness';
 import { discoverSolution, runViaProfile } from './test-explorer-kit';
 import { itemsFor } from './test-explorer-outcome-assertions';
 import {
+  DEBUGGEE,
   FAILS,
   MTP_OUTPUT_FIXTURES,
   VSTEST_OUTPUT_FIXTURES,
@@ -32,6 +33,7 @@ import {
 import {
   assertShownWhereSent,
   assertTerminalText,
+  debuggeeOf,
   linesFor,
   observeRuns,
   runShows,
@@ -90,24 +92,92 @@ async function assertSelection(
   assertTerminalText(record);
 }
 
+/** The pid of every debug session, in the order each started and each ended. */
+interface SessionLog {
+  readonly started: number[];
+  readonly ended: number[];
+  /** Settles once the session attached to `pid` has ended. */
+  endOf(pid: number): Promise<void>;
+  dispose(): void;
+}
+
+/** The process a test debug session is attached to. */
+function pidOf(session: vscode.DebugSession): number {
+  return Number(session.configuration.processId);
+}
+
+/** Settles once the session on `pid` has ended, which `ended` may already record. */
+async function sessionEnded(ended: readonly number[], pid: number): Promise<void> {
+  if (ended.includes(pid)) return;
+  await new Promise<void>((resolve) => {
+    const watch = vscode.debug.onDidTerminateDebugSession((session) => {
+      if (pidOf(session) !== pid) return;
+      watch.dispose();
+      resolve();
+    });
+  });
+}
+
+/** Log every debug session from now until disposed. */
+function logSessions(): SessionLog {
+  const started: number[] = [];
+  const ended: number[] = [];
+  const watches = [
+    vscode.debug.onDidStartDebugSession((session) => started.push(pidOf(session))),
+    vscode.debug.onDidTerminateDebugSession((session) => ended.push(pidOf(session))),
+  ];
+  return {
+    started,
+    ended,
+    endOf: async (pid) => {
+      await sessionEnded(ended, pid);
+    },
+    dispose: () => {
+      for (const watch of watches) watch.dispose();
+    },
+  };
+}
+
 /**
- * Debug on ONE test, with nothing armed so it runs to its end: the F# and then
- * the C# xUnit test writing through `ITestOutputHelper`, each its own press.
- * Each is shown its line, on itself, as ▶ shows it — on MTP that takes xUnit's
- * own report, which runs inside the waiting test host ([TEST-MTP-DEBUG]).
+ * Debug on ONE test of every project, with nothing armed so it runs to its end.
+ * The test is shown its own line and verdict, as ▶ shows them, and the line it
+ * wrote proves a debugger was attached to the process that RAN it: the session
+ * kept is the test host's. On MTP a module that reports TRX first starts a
+ * controller that waits too; its session is released once the test host waits,
+ * so it ends before the test host's ([TEST-MTP-DEBUG], [TEST-RUN-OUTPUT]).
  */
 async function assertDebugged(
   api: SharpLspExtensionApi,
   observer: RunObserver,
   fixtures: readonly OutputFixture[],
 ): Promise<void> {
-  for (const fixture of fixtures.filter((each) => each.framework === 'xunit')) {
-    const id = testIdOf(fixture, 'helper');
-    const record = await press(api, observer, [id], vscode.TestRunProfileKind.Debug);
-    assert.deepEqual(linesFor(record, id), [markerOf(fixture, 'helper'), ''], `${id} debugged`);
-    assert.deepEqual(testsShown(record), [id], 'the debugged test alone is shown output');
-    assert.equal(record.verdicts.get(id), 'passed', `${id} passes under the debugger`);
-    assertTerminalText(record);
+  for (const fixture of fixtures) {
+    const id = testIdOf(fixture, DEBUGGEE);
+    const sessions = logSessions();
+    try {
+      const record = await press(api, observer, [id], vscode.TestRunProfileKind.Debug);
+      assert.equal(record.verdicts.get(id), 'passed', `${id} passes under the debugger`);
+      assert.deepEqual(testsShown(record), [id], 'the debugged test alone is shown output');
+      assertTerminalText(record);
+      const { pid, attached } = debuggeeOf(record, fixture);
+      assert.equal(attached, 'True', `a debugger is attached to the process that ran ${id}`);
+      await sessions.endOf(pid);
+      assertReleased(sessions, pid, id);
+    } finally {
+      sessions.dispose();
+    }
+  }
+}
+
+/** The session on the test host `pid` started, and every other one ended before it did. */
+function assertReleased(sessions: SessionLog, pid: number, id: string): void {
+  assert.ok(sessions.started.includes(pid), `a session is attached to the host that ran ${id}`);
+  for (const other of sessions.started.filter((each) => each !== pid)) {
+    const released = sessions.ended.indexOf(other);
+    assert.ok(
+      released !== -1 && released < sessions.ended.indexOf(pid),
+      `pid ${String(other)} runs no test, so its session must end before the test host's`,
+    );
   }
 }
 

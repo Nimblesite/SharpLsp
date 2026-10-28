@@ -13,6 +13,16 @@ use crate::tree_sitter_parse::LangId;
 pub(crate) type Received = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 /// A fake compiler's answer to a request, given everything received so far.
 pub(crate) type Answers = Arc<dyn Fn(&str, &[(String, Vec<u8>)]) -> Vec<u8> + Send + Sync>;
+/// How a fake compiler fails a request, given its method and payload, if it does.
+pub(crate) type Faults = Arc<dyn Fn(&str, &[u8]) -> Option<Fault> + Send + Sync>;
+
+/// A request the fake compiler does not answer normally.
+pub(crate) enum Fault {
+    /// Answer with this error, as a compiler refusing the request does.
+    Refuse(String),
+    /// Close the stream without answering, as a compiler that died does.
+    HangUp,
+}
 
 /// A host-side manager wired to a fake compiler that answers from `answers`.
 pub(crate) struct Fake {
@@ -30,9 +40,20 @@ impl Fake {
         language: LangId,
         answers: Answers,
     ) -> Self {
+        Self::connect_faulting(runtime, language, answers, Arc::new(|_, _| None))
+    }
+
+    /// A fake compiler that fails each request `faults` names, answering the rest from `answers`.
+    pub(crate) fn connect_faulting(
+        runtime: &tokio::runtime::Runtime,
+        language: LangId,
+        answers: Answers,
+        faults: Faults,
+    ) -> Self {
         let (host, compiler) = tokio::io::duplex(1 << 20);
         let received = Received::default();
-        drop(runtime.spawn(answer(compiler, answers, Arc::clone(&received))));
+        let script = (answers, faults);
+        drop(runtime.spawn(answer(compiler, script, Arc::clone(&received))));
         let manager =
             runtime.block_on(SidecarManager::compiler_on_stream_for_tests(host, language));
         Self {
@@ -81,8 +102,12 @@ impl Fake {
     }
 }
 
-/// Answer each request from `answers`, recording it first.
-async fn answer(stream: tokio::io::DuplexStream, answers: Answers, received: Received) {
+/// Answer each request from `answers`, or fail it as `faults` says, recording it first.
+async fn answer(
+    stream: tokio::io::DuplexStream,
+    (answers, faults): (Answers, Faults),
+    received: Received,
+) {
     let mut transport = FramedTransport::from_stream(stream);
     while let Ok(Some(request)) = transport.read_envelope().await {
         let method = request.method.clone().unwrap_or_default();
@@ -93,11 +118,16 @@ async fn answer(stream: tokio::io::DuplexStream, answers: Answers, received: Rec
                 answers(&method, &log)
             },
         );
+        let error = match faults(&method, &request.payload) {
+            Some(Fault::HangUp) => break,
+            Some(Fault::Refuse(error)) => Some(error),
+            None => None,
+        };
         let response = Envelope {
             id: request.id,
             method: None,
             payload,
-            error: None,
+            error,
         };
         if transport.write_envelope(&response).await.is_err() {
             break;

@@ -36,7 +36,7 @@ import {
   sleep,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-import { TaskRecorder } from './run-debug-kit.js';
+import { TaskRecorder } from './run-task-recorder.js';
 import { libraryProjectXml, writeProject } from './dotnet-project-kit.js';
 import {
   buildTasksOf,

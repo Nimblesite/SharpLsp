@@ -279,7 +279,7 @@ async function listingFrom(run: DotnetRun, cwd: string, timeoutMs: number): Prom
   if (output === undefined) return failedListing(listFailure(run));
   const listing = await namesFrom(output, cwd, timeoutMs);
   if (!run.failed) return listing;
-  return { ...listing, warnings: [partialFailure(run), ...listing.warnings] };
+  return { ...listing, partial: true, warnings: [partialFailure(run), ...listing.warnings] };
 }
 
 /** Why a run that still listed tests failed: its error lines, else its tail. */
@@ -389,7 +389,7 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
  * source of truth: a non-zero exit with a populated file still counts.
  */
 /** One `dotnet vstest --ListFullyQualifiedTests` invocation. */
-async function listFqnBatch(
+export async function listFqnBatch(
   assemblies: readonly string[],
   cwd: string,
   timeoutMs: number,

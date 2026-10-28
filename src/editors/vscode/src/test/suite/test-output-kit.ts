@@ -8,6 +8,7 @@
 import * as assert from 'node:assert/strict';
 import type * as vscode from 'vscode';
 import {
+  DEBUGGEE,
   FAILS,
   NOTHING,
   ROWS,
@@ -200,6 +201,20 @@ export function assertTerminalText(record: RunRecord): void {
       `undecoded XML reference: ${JSON.stringify(chunk.slice(0, 200))}`,
     );
   }
+}
+
+/** What the debuggee test was shown: the process that ran it, and whether a debugger was attached. */
+export function debuggeeOf(
+  record: RunRecord,
+  fixture: OutputFixture,
+): { pid: number; attached: string } {
+  const prefix = `${markerOf(fixture, DEBUGGEE)} `;
+  const line = linesFor(record, testIdOf(fixture, DEBUGGEE)).find((each) =>
+    each.startsWith(prefix),
+  );
+  assert.ok(line, `${testIdOf(fixture, DEBUGGEE)} must be shown "${prefix}<pid> <attached>"`);
+  const [pid, attached] = line.slice(prefix.length).split(' ');
+  return { pid: Number(pid), attached: attached ?? '' };
 }
 
 /** Every claim [TEST-RUN-OUTPUT] makes, for every project of a run. */

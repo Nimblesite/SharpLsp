@@ -21,13 +21,13 @@ import {
 import {
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
-  TaskRecorder,
   emptyF5Config,
   fakeFolder,
   focusDocument,
   bareF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
+import { TaskRecorder } from './run-task-recorder';
 import {
   writeCSharpConsole,
   writeFileBasedApp,

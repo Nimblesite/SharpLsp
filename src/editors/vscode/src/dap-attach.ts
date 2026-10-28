@@ -37,6 +37,12 @@ const RETRY_DELAYS_MS: Readonly<Record<'attach' | 'evaluate', readonly number[]>
  */
 export const TEST_HOST_ATTACH_FLAG = 'testHostAttach';
 
+/**
+ * Marks the `disconnect` with which the Test Explorer RELEASES a test host
+ * controller it attached to: that one only detaches ([TEST-MTP-DEBUG]).
+ */
+export const TEST_HOST_RELEASE_FLAG = 'testHostRelease';
+
 /** Stop reasons that carry the user's own gesture and are never absorbed. */
 const USER_STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'exception', 'entry'];
 
@@ -118,14 +124,19 @@ export class AttachRetrier extends InvalidArgumentRetrier {
    * the debuggee — data loss on any long-running service the user merely
    * attached to. A user-selected ATTACH target therefore disconnects with
    * `terminateDebuggee: false`. A test host belongs to the Test Explorer's
-   * run and must terminate on Stop, allowing its runner and terminal to end.
+   * run and must terminate on Stop, allowing its runner and terminal to end —
+   * except the controller the Test Explorer itself RELEASES, which keeps
+   * running its test host and so is only detached ([TEST-MTP-DEBUG]).
    * Launch disconnects pass through untouched.
    * Spec: [DEBUG-FEATURES-LAUNCH], [DEBUG-FEATURES-TESTS].
    */
   public rewriteDisconnect(message: DapMessage): DapMessage {
     if (!this.attachMode) return message;
-    const args = isRecord(message.arguments) ? message.arguments : {};
-    return { ...message, arguments: { ...args, terminateDebuggee: this.testHost } };
+    const { [TEST_HOST_RELEASE_FLAG]: release, ...args } = isRecord(message.arguments)
+      ? message.arguments
+      : {};
+    const terminateDebuggee = this.testHost && release !== true;
+    return { ...message, arguments: { ...args, terminateDebuggee } };
   }
 
   /**
