@@ -143,6 +143,12 @@ pub fn native_paths_equal(left: &str, right: &str) -> bool {
     }
 }
 
+/// Whether two native paths name the same file by the tier's rules.
+/// Implements [SHARPLSP-ARCHITECTURE-PATHS].
+pub fn same_native_path(left: &Path, right: &Path) -> bool {
+    native_paths_equal(&left.to_string_lossy(), &right.to_string_lossy())
+}
+
 /// Compare file URIs through the tier's canonical native-path rules.
 /// Implements [SHARPLSP-ARCHITECTURE-PATHS].
 pub fn same_uri(left: &str, right: &str) -> bool {

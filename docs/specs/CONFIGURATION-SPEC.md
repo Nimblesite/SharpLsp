@@ -33,11 +33,39 @@ workspace-directory or project-file URI; it enables independent resolution in
 multi-root workspaces. The server reads files on each request, including after edits
 or deletion. Resolution errors are JSON-RPC `InvalidParams` errors.
 
-Server startup uses the same personal/workspace resolution. Existing server and
-sidecar runtime settings require a server restart after changes. Debugger policy is
+Server startup uses the same personal/workspace resolution. A running server applies
+later changes as `[CONFIG-RESOLUTION-LIVE]` lists. Settings read only at startup take
+a server restart, and the server says so when one of them changes. Debugger policy is
 resolved for each new launch or attach; restarting the same debug session reuses its
 resolved policy. These lifecycle limits MUST be stated rather than implying all
 settings hot-reload.
+
+## Live reconfiguration `[CONFIG-RESOLUTION-LIVE]`
+
+A running server re-resolves its configuration in two cases:
+
+- the client sends `workspace/didChangeConfiguration`;
+- a watched configuration file changes on disk. The server watches any
+  `sharplsp.toml` in the workspace root, the nearest one above the root, and the
+  personal file. A lost native observation counts as a change.
+
+A configuration that no longer validates is not applied: the previous one stays in
+force, and the failure is logged. A valid one is applied as follows:
+
+| Settings | Applied |
+|---|---|
+| `[analyzers]` | When changed, pushed to both compilers (`analyzers/configure`) before diagnostics refresh, so the next pull is analyzed under them |
+| `[diagnostics]` | Pushed to both compilers (`diagnostics/configure`); cached reports are invalidated and the client is asked to refresh |
+| `[csharp] solution_path` | The C# workspace reopens on the new solution |
+| `[debug]`, `[testing]` | Read for each launch, attach or test build |
+| `[server]`, `[csharp] enabled`, `[fsharp] enabled`, `[profiler]` | Read only at startup. A change produces one `window/showMessage` warning that names it and asks for a restart |
+
+Two kinds of file are not watched:
+
+- a `sharplsp.toml` farther above the root than the nearest one;
+- a configuration file created in a directory that was not watched at startup.
+
+An edit to either applies at the next re-resolution or restart.
 
 ## Exceptions `[CONFIG-DEBUG-EXCEPTIONS]`
 
