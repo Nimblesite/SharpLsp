@@ -2,7 +2,8 @@
  * MTP invocation and reporter negotiation, and how a module is STARTED.
  * Implements [TEST-MTP-RUN] and [NETFX-TEST-MTP].
  */
-import { fileNameOf, hasExtension } from './paths';
+import * as fs from 'node:fs';
+import { directoryOf, fileNameOf, hasExtension, joinPath } from './paths';
 import { info } from './log';
 import { DOTNET_TIMEOUT_MS, runDotnet, runProcess, type DotnetRun } from './dotnet-process.js';
 import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
@@ -121,22 +122,40 @@ export function runArgs(
   trxName: string,
   reporter: Reporter = 'trx',
 ): string[] {
-  return ['exec', modulePath, ...moduleRunArgs(uids, resultsDirectory, options, trxName, reporter)];
+  const report = reportFor(modulePath, options, reporter);
+  return ['exec', modulePath, ...moduleRunArgs(uids, resultsDirectory, options, trxName, report)];
 }
 
-/** The module's own arguments for one invocation. Debug writes no report. */
+/** The xUnit assembly every xunit.v3 module is built with, beside the module. */
+const XUNIT_V3_CORE = 'xunit.v3.core.dll';
+
+/**
+ * The report one invocation writes. A DEBUG run never passes `--report-trx`: its
+ * extension runs the module under a controller that waits for a debugger too.
+ * xUnit's own reporter runs inside the test host, so a debugged xunit.v3 module
+ * still reports each test's verdict and output; other frameworks have no such
+ * reporter and write none ([TEST-MTP-DEBUG], [TEST-RUN-OUTPUT]).
+ */
+function reportFor(
+  modulePath: string,
+  options: TestRunOptions,
+  reporter: Reporter,
+): Reporter | undefined {
+  if (options.debug !== true) return reporter;
+  return fs.existsSync(joinPath(directoryOf(modulePath), XUNIT_V3_CORE)) ? 'xunit-trx' : undefined;
+}
+
+/** The module's own arguments for one invocation; `report` names the report it writes, if any. */
 function moduleRunArgs(
   uids: readonly string[],
   resultsDirectory: string,
   options: TestRunOptions,
   trxName: string,
-  reporter: Reporter,
+  report: Reporter | undefined,
 ): string[] {
   return [
     ...(uids.length === 0 ? [] : ['--filter-uid', ...uids]),
-    ...(options.debug === true
-      ? []
-      : [`--report-${reporter}`, `--report-${reporter}-filename`, trxName]),
+    ...(report === undefined ? [] : [`--report-${report}`, `--report-${report}-filename`, trxName]),
     '--results-directory',
     resultsDirectory,
     '--no-banner',
@@ -165,6 +184,7 @@ function refusedReporter(run: DotnetRun, option: string): boolean {
 /** Both reporter attempts share cancellation, hooks, coverage, and literal UIDs. */
 async function runReporter(invocation: MtpInvocation, reporter: Reporter): Promise<DotnetRun> {
   const { modulePath, uids, resultsDirectory, cwd, options, trxName } = invocation;
-  const args = moduleRunArgs(uids, resultsDirectory, options, trxName, reporter);
+  const report = reportFor(modulePath, options, reporter);
+  const args = moduleRunArgs(uids, resultsDirectory, options, trxName, report);
   return await runModule(modulePath, args, cwd, options);
 }
