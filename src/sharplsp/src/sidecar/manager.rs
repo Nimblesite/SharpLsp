@@ -18,6 +18,7 @@ mod exchange;
 mod preemption;
 mod recovery;
 mod shutdown;
+mod warm_up;
 
 #[cfg(test)]
 #[expect(
@@ -28,6 +29,12 @@ mod arrival_order_tests;
 
 #[cfg(test)]
 mod preemption_tests;
+
+#[cfg(test)]
+mod test_compiler;
+
+#[cfg(test)]
+mod warm_up_tests;
 
 /// Maximum backoff delay for crash recovery. `[SIDECAR-RECOVERY-BACKOFF]`
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
@@ -83,6 +90,8 @@ pub struct SidecarManager {
     session: recovery::SessionInputs,
     /// Code lenses an interactive request may preempt ([SHARPLSP-FEATURES-CODE-LENS], #504).
     preemption: preemption::Preemption,
+    /// The background warm-up of each opened workspace ([SHARPLSP-FEATURES-WARM-UP], #513).
+    warm_up: warm_up::WarmUp,
     /// Source ownership for replaying open documents to the correct compiler.
     language: Option<crate::tree_sitter_parse::LangId>,
     /// Out-of-band event lines the sidecar writes to its stdout after the
@@ -126,6 +135,7 @@ impl SidecarManager {
             ever_connected: AtomicBool::new(false),
             session: recovery::SessionInputs::default(),
             preemption: preemption::Preemption::default(),
+            warm_up: warm_up::WarmUp::default(),
             language: None,
             events_tx,
             events_rx: std::sync::Mutex::new(Some(events_rx)),
@@ -551,10 +561,10 @@ async fn forward_stdout_events(
 }
 
 /// Response budget for a sidecar method. `workspace/open` legitimately runs a
-/// full `MSBuild` design-time build; anything else past two minutes is wedged.
-/// `[SIDECAR-IPC-TIMEOUT]`
+/// full `MSBuild` design-time build, and warming one large project a full check;
+/// anything else past two minutes is wedged. `[SIDECAR-IPC-TIMEOUT]`
 fn request_budget(method: &str) -> Duration {
-    if method == "workspace/open" {
+    if method == "workspace/open" || method == warm_up::WARM_UP {
         WORKSPACE_OPEN_TIMEOUT
     } else {
         REQUEST_TIMEOUT

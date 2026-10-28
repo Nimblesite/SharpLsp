@@ -558,6 +558,15 @@ A lens never holds up the user. Each compiler answers one request at a time, and
 | Run/debug test | `textDocument/codeLens` | Custom test runner integration | Custom test runner integration | P2 |
 | Recent changes (git) | `textDocument/codeLens` | git log integration | git log integration | P3 |
 
+### [SHARPLSP-FEATURES-WARM-UP] Background Warm-Up
+
+The first solution-wide F# query on a freshly loaded workspace (Find All References, rename, a reference-count lens) type-checks every project before it answers. On an 11-project solution that took 13 s (GitHub #513). After every successful `workspace/open`, the host therefore has the F# compiler warm each loaded project's check as background work ([warm_up.rs](../../src/sharplsp/src/sidecar/manager/warm_up.rs), [FSharpWarmUp.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWarmUp.fs)):
+
+- **One project per request.** Each `workspace/warm` request checks one project, in project-path order, exactly as a solution-wide query checks it, and answers with how many projects the workspace holds. Diagnostic pulls therefore interleave between projects instead of waiting for the whole solution.
+- **Preempted by every request.** The warm-up is background work in the same registry as code lenses ([SHARPLSP-FEATURES-CODE-LENS]). Because it is speculative, it yields further than a lens: every request to its compiler, whether a document request, a diagnostic pull, a lens or a `workspace/open`, cancels the warm-up request in flight before it waits its own turn. The only exceptions are the host's own document polling, which would otherwise never let it finish, and the walk itself. A warm-up blocked on a slow file read therefore never stalls a solution switch or a pull. The walk retries that same project after a pause of 0.5 s, doubling up to 8 s; the compiler keeps the checks it finished, so each attempt gets further.
+- **One walk per workspace.** A newer open abandons the walk and starts again from the first project. A compiler failure other than a preemption stops the walk without retrying it. Only the F# compiler warms.
+- **Budgeted like an open.** One large project's check may legitimately take minutes, so a warm-up request has the `workspace/open` response budget ([SIDECAR-IPC-TIMEOUT]).
+
 ### [SHARPLSP-FEATURES-DEBUGGING] Debugging
 
 See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar contract.

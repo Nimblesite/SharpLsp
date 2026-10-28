@@ -79,6 +79,7 @@ pub(crate) fn start_sidecar(
         let target = target.to_string_lossy().to_string();
         drop(runtime.spawn(async move {
             if open_and_follow_up(&sidecar, &target, follow_up).await {
+                drop(tokio::spawn(Arc::clone(&sidecar).start_warm_up()));
                 sidecar.start_health_monitor().await;
             }
         }));
@@ -164,6 +165,7 @@ pub(crate) async fn open_workspace_locked(
     let payload = rmp_serde::to_vec(target).context("serialize workspace path")?;
     let _ = sidecar.request("workspace/open", payload).await?;
     opened.settled = Some(SystemTime::now());
+    sidecar.workspace_opened();
     info!("Workspace opened in {} sidecar", sidecar.name());
     Ok(())
 }

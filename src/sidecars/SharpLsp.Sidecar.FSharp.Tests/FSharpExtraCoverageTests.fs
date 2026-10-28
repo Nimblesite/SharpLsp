@@ -59,6 +59,7 @@ type SidecarErrorBranchTests(fixture: SidecarFixture) =
     [<InlineData("textDocument/formattingPreview")>]
     [<InlineData("textDocument/completion")>]
     [<InlineData("textDocument/codeLens")>]
+    [<InlineData("workspace/warm")>]
     [<InlineData("textDocument/prepareRename")>]
     [<InlineData("textDocument/rename")>]
     [<InlineData("textDocument/renameIdentity")>]

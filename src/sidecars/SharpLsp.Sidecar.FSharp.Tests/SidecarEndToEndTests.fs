@@ -1107,6 +1107,24 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains(lenses, fun l -> l.Line = 6)
     }
 
+    // ── Background warm-up [SHARPLSP-FEATURES-WARM-UP] ──────────
+
+    /// The host's warm-up walk through the real sidecar: each request checks
+    /// one project and answers how many the workspace holds, so the walk knows
+    /// when it is done. An index past the end checks nothing and answers the
+    /// same count, and the sidecar keeps serving afterwards.
+    [<Fact>]
+    member _.``warm-up checks a project and answers the workspace's project count``() = task {
+        let! first = fixture.Send("workspace/warm", MessagePackSerializer.Serialize(0))
+        Assert.Null(first.Error)
+        Assert.Equal(1, deserialize<int> first.Payload)
+        let! past = fixture.Send("workspace/warm", MessagePackSerializer.Serialize(1))
+        Assert.Null(past.Error)
+        Assert.Equal(1, deserialize<int> past.Payload)
+        let! pong = fixture.Send("ping", [||])
+        Assert.Equal("pong", deserialize<string> pong.Payload)
+    }
+
     // ── Document Symbols [SE-FSHARP-SYMBOLS] ────────────────────
 
     [<Fact>]

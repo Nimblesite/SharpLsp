@@ -82,6 +82,7 @@
     <Compile Include="FSharpQuickFix.fs" />
     <Compile Include="FSharpPipeRefactoring.fs" />
     <Compile Include="FSharpNameFixes.fs" />
+    <Compile Include="FSharpWarmUp.fs" />
     <Compile Include="FSharpMatchFixes.fs" />
     <Compile Include="FSharpConversionFixes.fs" />
     <Compile Include="FSharpCodeFixes.fs" />
