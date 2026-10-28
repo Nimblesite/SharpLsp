@@ -197,6 +197,12 @@ export const FAILS = 'then-fails';
 export const NOTHING = 'nothing';
 /** The xUnit theory whose two rows each write one line, under ONE id. */
 export const ROWS = 'rows';
+/**
+ * The test that writes the id of the process running it and whether a debugger
+ * is attached to that process: under Debug, the proof that the session the
+ * profile kept is attached to the TEST HOST ([TEST-MTP-DEBUG]).
+ */
+export const DEBUGGEE = 'debuggee';
 
 /** What each row of {@link ROWS} writes before its row number. */
 export function rowPrefixOf(fixture: OutputFixture): string {
@@ -211,7 +217,7 @@ export function rowMarkersOf(fixture: OutputFixture): string[] {
 /** Every key the project declares a test for. */
 export function keysOf(fixture: OutputFixture): string[] {
   const rows = fixture.framework === 'xunit' ? [ROWS] : [];
-  return [...fixture.channels.map((each) => each.key), FAILS, NOTHING, ...rows];
+  return [...fixture.channels.map((each) => each.key), FAILS, NOTHING, DEBUGGEE, ...rows];
 }
 
 /** Every test id the project declares. */

@@ -126,15 +126,21 @@ export function runArgs(
   return ['exec', modulePath, ...moduleRunArgs(uids, resultsDirectory, options, trxName, report)];
 }
 
-/** The xUnit assembly every xunit.v3 module is built with, beside the module. */
+/** Assemblies a module's build puts beside it: xunit.v3, the TRX extension, NUnit's adapter. */
 const XUNIT_V3_CORE = 'xunit.v3.core.dll';
+const TRX_REPORT = 'Microsoft.Testing.Extensions.TrxReport.dll';
+const NUNIT_ADAPTER = 'NUnit3.TestAdapter.dll';
+
+/** True when the module's build put `assembly` beside it. */
+function builtBeside(modulePath: string, assembly: string): boolean {
+  return fs.existsSync(joinPath(directoryOf(modulePath), assembly));
+}
 
 /**
- * The report one invocation writes. A DEBUG run never passes `--report-trx`: its
- * extension runs the module under a controller that waits for a debugger too.
- * xUnit's own reporter runs inside the test host, so a debugged xunit.v3 module
- * still reports each test's verdict and output; other frameworks have no such
- * reporter and write none ([TEST-MTP-DEBUG], [TEST-RUN-OUTPUT]).
+ * The report one invocation writes. A DEBUG run passes only a reporter the module
+ * was built with: xUnit's own, which runs inside the test host, else the TRX
+ * extension, whose controller the Debug profile releases once its test host waits.
+ * A module with neither writes none ([TEST-MTP-DEBUG], [TEST-RUN-OUTPUT]).
  */
 function reportFor(
   modulePath: string,
@@ -142,7 +148,20 @@ function reportFor(
   reporter: Reporter,
 ): Reporter | undefined {
   if (options.debug !== true) return reporter;
-  return fs.existsSync(joinPath(directoryOf(modulePath), XUNIT_V3_CORE)) ? 'xunit-trx' : undefined;
+  if (builtBeside(modulePath, XUNIT_V3_CORE)) return 'xunit-trx';
+  return builtBeside(modulePath, TRX_REPORT) ? 'trx' : undefined;
+}
+
+/**
+ * The uids a DEBUGGED module starts with. NUnit's bridge refuses any uid carrying
+ * a space — every idiomatic F# backtick test — by THROWING, and under a debugger
+ * that unhandled exception stops the module instead of ending it. So such a
+ * selection runs the module unfiltered: the selected tests' breakpoints still
+ * bind, and only they are reported ([TEST-MTP-DEBUG], [TEST-FILTER-ESCAPE]).
+ */
+export function debugUids(modulePath: string, uids: readonly string[]): readonly string[] {
+  const refused = builtBeside(modulePath, NUNIT_ADAPTER) && uids.some((uid) => uid.includes(' '));
+  return refused ? [] : uids;
 }
 
 /** The module's own arguments for one invocation; `report` names the report it writes, if any. */

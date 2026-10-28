@@ -6,6 +6,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { mtpProjectXml, projectXml, writeProject } from './dotnet-project-kit';
 import {
+  DEBUGGEE,
   FAILS,
   NOTHING,
   ROWS,
@@ -20,9 +21,10 @@ import {
 interface TestMethod {
   readonly name: string;
   readonly attributes: readonly string[];
-  /** A theory takes the row number; its body receives the language's spelling of it as text. */
+  /** A theory takes the row number. */
   readonly row: boolean;
-  readonly body: (rowText: string) => readonly string[];
+  /** The calls, given how the language turns a non-string expression into text. */
+  readonly body: (text: (expression: string) => string) => readonly string[];
 }
 
 const TEST_ATTRIBUTE = { xunit: 'Fact', nunit: 'Test', mstest: 'TestMethod' } as const;
@@ -44,8 +46,22 @@ function testsOf(fixture: OutputFixture): TestMethod[] {
     ),
     plain(FAILS, [write(FAILS), 'Assert.Fail("deliberate failure")']),
     plain(NOTHING, []),
+    debuggeeTest(fixture),
     ...(fixture.framework === 'xunit' ? [rowsTest(fixture)] : []),
   ];
+}
+
+/** Writes `<marker> <pid> <attached>`: the process running it, and whether a debugger is attached. */
+function debuggeeTest(fixture: OutputFixture): TestMethod {
+  const marker = markerOf(fixture, DEBUGGEE);
+  return {
+    name: testNameOf(fixture, DEBUGGEE),
+    attributes: [TEST_ATTRIBUTE[fixture.framework]],
+    row: false,
+    body: (text) => [
+      `${primaryOf(fixture).receiver}("${marker} " + ${text('Environment.ProcessId')} + " " + ${text('Debugger.IsAttached')})`,
+    ],
+  };
 }
 
 /** The xUnit theory whose two rows each write one line. */
@@ -54,7 +70,7 @@ function rowsTest(fixture: OutputFixture): TestMethod {
     name: testNameOf(fixture, ROWS),
     attributes: ['Theory', 'InlineData(1)', 'InlineData(2)'],
     row: true,
-    body: (rowText) => [`${primaryOf(fixture).receiver}("${rowPrefixOf(fixture)}" + ${rowText})`],
+    body: (text) => [`${primaryOf(fixture).receiver}("${rowPrefixOf(fixture)}" + ${text('row')})`],
   };
 }
 
@@ -81,7 +97,7 @@ function assemblyAttributesOf(fixture: OutputFixture): string[] {
 /** One C# test method. */
 function csharpTest(test: TestMethod): string[] {
   const parameter = test.row ? 'int row' : '';
-  const body = test.body('row').map((call) => `${call}; `);
+  const body = test.body((expression) => expression).map((call) => `${call}; `);
   return [
     `        [${test.attributes.join(', ')}]`,
     `        public void ${test.name}(${parameter}) { ${body.join('')}}`,
@@ -113,7 +129,7 @@ function csharpSource(fixture: OutputFixture): string {
 /** One F# member: a backtick name when it carries spaces. */
 function fsharpTest(test: TestMethod): string[] {
   const name = test.name.includes(' ') ? `\`\`${test.name}\`\`` : test.name;
-  const body = test.body('string row');
+  const body = test.body((expression) => `string ${expression}`);
   return [
     `    [<${test.attributes.join('; ')}>]`,
     `    member this.${name} (${test.row ? 'row: int' : ''}) =`,

@@ -25,7 +25,7 @@ import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
 import { relistModule } from './test-mtp-discovery.js';
-import { refusedOutcome, runReported, startedModules } from './test-mtp-report.js';
+import { debugUids, refusedOutcome, runReported, startedModules } from './test-mtp-report.js';
 import { buildTarget, builtMtpProjects, dirOf, type MtpProjectScan } from './test-mtp-modules.js';
 import { err, ok, type Result } from './result.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
@@ -166,10 +166,10 @@ async function invoke(
 }
 
 /**
- * A debug run's exit code is no verdict ([TEST-MTP-DEBUG]): only an xunit.v3
- * module writes a report, a failing test exits non-zero by design, and stopping
- * the debugger ends the module however it ends. A refused option or a kill
- * still reports.
+ * A debug run's exit code is no verdict ([TEST-MTP-DEBUG]): its report is, when
+ * the module has one; a failing test exits non-zero by design, and stopping the
+ * debugger ends the module however it ends. A refused option or a kill still
+ * reports.
  */
 function debugged(run: DotnetRun, options: TestRunOptions): DotnetRun {
   return options.debug === true ? { ...run, errorMessage: undefined } : run;
@@ -246,13 +246,25 @@ export function mergeOutcomes(left: TestRunOutcome, right: TestRunOutcome): Test
   };
 }
 
+/** The `--filter-uid` batches one module runs; one unfiltered batch for none. */
+function batchesFor(
+  module: MtpModuleRun,
+  testIds: readonly string[],
+  options: TestRunOptions,
+): (readonly string[])[] {
+  if (testIds.length === 0) return [[]];
+  const uids = uidsFor(module, testIds);
+  const started = options.debug === true ? debugUids(module.modulePath, uids) : uids;
+  return started.length === 0 ? [[]] : uidBatches(started);
+}
+
 /** Every batch of one module, merged, plus its one unfiltered recovery. */
 async function runModule(
   module: MtpModuleRun,
   testIds: readonly string[],
   context: RunContext,
 ): Promise<TestRunOutcome | undefined> {
-  const batches = testIds.length === 0 ? [[]] : uidBatches(uidsFor(module, testIds));
+  const batches = batchesFor(module, testIds, context.options);
   let merged: TestRunOutcome | undefined;
   for (const batch of batches) {
     if (context.options.signal?.aborted === true) break;
@@ -292,8 +304,8 @@ async function retryUnfiltered(
  *
  * A framework bridged onto MTP can translate `--filter-uid` back into a VSTest
  * filter EXPRESSION and then reject its own translation. NUnit does exactly
- * that for a uid carrying both a SPACE and PARENTHESES — which is every
- * idiomatic F# `[<TestCase>]` binding
+ * that for any uid carrying a SPACE — every idiomatic F# backtick binding, so
+ * every F# `[<TestCase>]` row too
  * (`Fs.Nunit.Fixtures.adds case(2,2,4)` → "Unexpected FQN 'case\(2,2,4\)' at
  * position 46 in selection expression") — and the whole module then reports
  * nothing, so perfectly runnable tests show as phantom failures.

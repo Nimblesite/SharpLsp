@@ -198,7 +198,10 @@ backtick test in an NUnit project. TRX records that refusal structurally, as a r
 "No test matches the given testcase filter". When a selected test has no result AND an
 adapter recorded such an error, the selection is re-run ONCE **without a filter** and the
 per-test outcomes are picked out of the report by name. Slower, but correct, and only ever
-on the adapter's own say-so — never on a filter that legitimately matched nothing.
+on the adapter's own say-so — never on a filter that legitimately matched nothing. A DEBUG run
+earns the retry only when that error's text is the adapter's refusal ("… in selection
+expression"): a stopped or crashed host is no refused filter ([DEBUG-FEATURES-TESTS] rule 4). The
+retry's host waits like the first, and the Debug profile attaches to it.
 
 ## Execution and Outcome Attribution `[TEST-RUN-TRX]`
 
@@ -258,10 +261,9 @@ real builds, the frameworks send it to one of two places:
 * The runner's own console — `dotnet test`, or each MTP module's — is appended to the run with
   no test, so what a framework prints there (NUnit's progress, xUnit's diagnostic messages, the
   run summary, a build error) is in Test Results as the run's output.
-* Debug shows the same. A VSTest debug run writes its usual report, and so does a debugged
-  `xunit.v3` module ([TEST-MTP-DEBUG]); a debugged MSTest or NUnit module writes none, so only
-  what its console prints — a failing test's output, NUnit's echo — reaches the run's output and
-  the debug terminal.
+* Debug shows the same. A VSTest debug run writes its usual report, and so does every debugged
+  MTP module built with a reporter ([TEST-MTP-DEBUG]); one built with neither writes none, so
+  only what its console prints reaches the run's output and the debug terminal.
 
 ## Microsoft.Testing.Platform: which runner `[TEST-MTP-DETECT]`
 
@@ -533,21 +535,31 @@ debugger at its number. Everything else in [DEBUG-FEATURES-TESTS] is unchanged: 
 invocation, attach to the announced pid, mirror the output into the terminal, and write no
 result to the cache.
 
-A debug run passes NO `--report-trx`. `Microsoft.Testing.Extensions.TrxReport` 2.x runs a module
-that reports TRX under a test host CONTROLLER, which launches the real test host as a child
-with the controller's own environment and command line. Both then wait for a debugger, so the
-Debug profile attached a second session to a supervisor that runs no test. Without the option
-the module is one process: the test host, and the one session.
+A debug run passes the report a module was built with, recognised by the assembly its build puts
+beside it, so its debugged tests get their verdicts and what they wrote ([TEST-RUN-OUTPUT])
+exactly as a Run reports them:
 
-An `xunit.v3` module — recognised by the `xunit.v3.core.dll` its build puts beside it — passes
-xUnit's own `--report-xunit-trx` instead. That reporter runs INSIDE the test host, so the module
-stays one process and one session, and its debugged tests get their verdicts and what they wrote
-([TEST-RUN-OUTPUT]) exactly as a Run reports them. Every other module has no per-test report.
-Its exit code is no verdict either, because a failing test exits non-zero by design and stopping
-the debugger ends the module however it ends. So its MTP tests are left without a verdict, never
-painted "No result reported", and it is never re-run unfiltered, which would only start another
-waiting module. A run that FAILED — a build error, a refused option, a kill —
-still reports that failure on every selected test.
+* An `xunit.v3` module (`xunit.v3.core.dll`) passes xUnit's own `--report-xunit-trx`. That
+  reporter runs INSIDE the test host: one process, one session.
+* Any other module with `Microsoft.Testing.Extensions.TrxReport.dll` — MSTest carries it, NUnit
+  needs the package — passes `--report-trx`. That extension runs the module under a test host
+  CONTROLLER, which launches the real test host as a child with the controller's own environment
+  and command line, and BOTH wait for a debugger. The controller is the process SharpLsp started;
+  its test host is not. So when a pid SharpLsp did not start announces itself while a session is
+  attached to one it did start, that session is a controller's. The Debug profile RELEASES it: it
+  DETACHES, never terminates — a test host's own Stop ends it ([DEBUG-FEATURES-TESTS] rule 4), but
+  this one is still serving its test host and writes the report when that host exits — and the
+  detach is no Stop of the run. The test host's session is the one left.
+* A module with neither has no per-test report. Its exit code is no verdict either, because a
+  failing test exits non-zero by design and stopping the debugger ends the module however it
+  ends. So its MTP tests are left without a verdict, never painted "No result reported".
+
+A debugged module is never re-run unfiltered, which would only start another waiting module. So
+a debugged NUnit module (`NUnit3.TestAdapter.dll`) whose selection holds a uid with a SPACE
+starts UNFILTERED: NUnit refuses that uid ([TEST-MTP-RUN]) by THROWING, and under a debugger the
+unhandled exception stops the module instead of ending it. Every test of the module runs, the
+selected tests' breakpoints bind, and only the selected tests are reported. A run that FAILED —
+a build error, a refused option, a kill — still reports that failure on every selected test.
 
 ## Microsoft.Testing.Platform: measured packages `[TEST-MTP-MEASURED]`
 
@@ -690,7 +702,7 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `test-explorer-mtp-fsharp.test.ts` | MTP on F#, every case the C# suites prove on one module: an F# `xunit.v3` module multi-targeted at the two newest runtimes whose `#if` bindings fail in one framework's module only — ONE tree root, a module per framework, a numbered TRX per module, each theory row its own uid; an F# `[<Fact>]` and `[<Theory>]` edited between discovery and ▶, rebuilt before they run, the rows pointing at the attribute the listing reported; and an F# project moved from VSTest onto MTP in place keeping its ids and its root ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-MODULES]) |
 | `test-explorer-mtp-rows.test.ts` | Data rows of C# `xunit.v3` and MSTest tests changed between discovery and ▶: a row ADDED (a uid discovery never saw, in both frameworks) turns its test red and then green again, an `xunit.v3` row whose DATA is edited runs with the new data, the untouched tests stay green, and the tree never grows a row per data row ([TEST-MTP-RUN]) |
 | `debug-test-mtp-fsharp-e2e.test.ts` | The Debug profile on an F# MTP module: a backtick binding whose id carries SPACES attached to by pid and stopped in its body with its `let` bindings readable, an F# `[<Theory>]` stopping once per row with each row's arguments, and Debug Test at the cursor in the `.fs` file — none writing a result, ▶ afterwards reporting the real one ([TEST-MTP-DEBUG]) |
-| `test-explorer-output.test.ts` | What a test WRITES, shown where its framework sends it: ▶ over a real VSTest solution and a real MTP solution of xUnit, NUnit and MSTest in F# and C#, one test per channel each framework captures — every line attached to its own test and to no other, a failing test keeping its output and its failure, an xUnit theory keeping each row's line under its one id, the runner's console (NUnit progress, xUnit diagnostic messages) as the run's own output, CRLF and decoded XML references throughout — ▶ on a selection whose NUnit refusal reruns everything still showing only the selected tests their output, and Debug on the F# and the C# xUnit test of each runner showing each its output and verdict ([TEST-RUN-OUTPUT], [TEST-MTP-DEBUG]) |
+| `test-explorer-output.test.ts` | What a test WRITES, shown where its framework sends it: ▶ over a real VSTest solution and a real MTP solution of xUnit, NUnit and MSTest in F# and C#, one test per channel each framework captures — every line attached to its own test and to no other, a failing test keeping its output and its failure, an xUnit theory keeping each row's line under its one id, the runner's console (NUnit progress, xUnit diagnostic messages) as the run's own output, CRLF and decoded XML references throughout — ▶ on a selection whose NUnit refusal reruns everything still showing only the selected tests their output, and Debug on one test of every project of each runner showing it its output and verdict, the line it wrote proving a debugger was attached to the process that RAN it, and every other session of the press — an MTP controller's — ending before the test host's ([TEST-RUN-OUTPUT], [TEST-MTP-DEBUG], [TEST-FILTER-ESCAPE]) |
 | `test-explorer-mtp-parsers.test.ts` | the JSON listing reader at its boundary: a byte-order mark, a leading blank line, an unknown `schemaVersion`, an empty `tests` array, a missing `location`, a missing `type`, and two rows collapsing onto one id with two uids; the `global.json` opt-in against every decoy that merely mentions MTP; the uid batcher; and the waiting-host pid line in BOTH its bare and its prefixed form ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-DEBUG]) |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows
