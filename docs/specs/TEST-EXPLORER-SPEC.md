@@ -258,6 +258,10 @@ real builds, the frameworks send it to one of two places:
 * The runner's own console — `dotnet test`, or each MTP module's — is appended to the run with
   no test, so what a framework prints there (NUnit's progress, xUnit's diagnostic messages, the
   run summary, a build error) is in Test Results as the run's output.
+* Debug shows the same. A VSTest debug run writes its usual report, and so does a debugged
+  `xunit.v3` module ([TEST-MTP-DEBUG]); a debugged MSTest or NUnit module writes none, so only
+  what its console prints — a failing test's output, NUnit's echo — reaches the run's output and
+  the debug terminal.
 
 ## Microsoft.Testing.Platform: which runner `[TEST-MTP-DETECT]`
 
@@ -531,11 +535,16 @@ A debug run passes NO `--report-trx`. `Microsoft.Testing.Extensions.TrxReport` 2
 that reports TRX under a test host CONTROLLER, which launches the real test host as a child
 with the controller's own environment and command line. Both then wait for a debugger, so the
 Debug profile attached a second session to a supervisor that runs no test. Without the option
-the module is one process: the test host, and the one session. Such a run has no per-test
-report. Its exit code is no verdict either, because a failing test exits non-zero by design and
-stopping the debugger ends the module however it ends. So its MTP tests are left without a
-verdict, never painted "No result reported", and it is never re-run unfiltered, which would only
-start another waiting module. A run that FAILED — a build error, a refused option, a kill —
+the module is one process: the test host, and the one session.
+
+An `xunit.v3` module — recognised by the `xunit.v3.core.dll` its build puts beside it — passes
+xUnit's own `--report-xunit-trx` instead. That reporter runs INSIDE the test host, so the module
+stays one process and one session, and its debugged tests get their verdicts and what they wrote
+([TEST-RUN-OUTPUT]) exactly as a Run reports them. Every other module has no per-test report.
+Its exit code is no verdict either, because a failing test exits non-zero by design and stopping
+the debugger ends the module however it ends. So its MTP tests are left without a verdict, never
+painted "No result reported", and it is never re-run unfiltered, which would only start another
+waiting module. A run that FAILED — a build error, a refused option, a kill —
 still reports that failure on every selected test.
 
 ## Microsoft.Testing.Platform: measured packages `[TEST-MTP-MEASURED]`
@@ -679,7 +688,7 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `test-explorer-mtp-fsharp.test.ts` | MTP on F#, every case the C# suites prove on one module: an F# `xunit.v3` module multi-targeted at the two newest runtimes whose `#if` bindings fail in one framework's module only — ONE tree root, a module per framework, a numbered TRX per module, each theory row its own uid; an F# `[<Fact>]` and `[<Theory>]` edited between discovery and ▶, rebuilt before they run, the rows pointing at the attribute the listing reported; and an F# project moved from VSTest onto MTP in place keeping its ids and its root ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-MODULES]) |
 | `test-explorer-mtp-rows.test.ts` | Data rows of C# `xunit.v3` and MSTest tests changed between discovery and ▶: a row ADDED (a uid discovery never saw, in both frameworks) turns its test red and then green again, an `xunit.v3` row whose DATA is edited runs with the new data, the untouched tests stay green, and the tree never grows a row per data row ([TEST-MTP-RUN]) |
 | `debug-test-mtp-fsharp-e2e.test.ts` | The Debug profile on an F# MTP module: a backtick binding whose id carries SPACES attached to by pid and stopped in its body with its `let` bindings readable, an F# `[<Theory>]` stopping once per row with each row's arguments, and Debug Test at the cursor in the `.fs` file — none writing a result, ▶ afterwards reporting the real one ([TEST-MTP-DEBUG]) |
-| `test-explorer-output.test.ts` | What a test WRITES, shown where its framework sends it: ▶ over a real VSTest solution and a real MTP solution of xUnit, NUnit and MSTest in F# and C#, one test per channel each framework captures — every line attached to its own test and to no other, a failing test keeping its output and its failure, an xUnit theory keeping each row's line under its one id, the runner's console (NUnit progress, xUnit diagnostic messages) as the run's own output, CRLF and decoded XML references throughout — and ▶ on a selection whose NUnit refusal reruns everything still showing only the selected tests their output ([TEST-RUN-OUTPUT]) |
+| `test-explorer-output.test.ts` | What a test WRITES, shown where its framework sends it: ▶ over a real VSTest solution and a real MTP solution of xUnit, NUnit and MSTest in F# and C#, one test per channel each framework captures — every line attached to its own test and to no other, a failing test keeping its output and its failure, an xUnit theory keeping each row's line under its one id, the runner's console (NUnit progress, xUnit diagnostic messages) as the run's own output, CRLF and decoded XML references throughout — ▶ on a selection whose NUnit refusal reruns everything still showing only the selected tests their output, and Debug on the F# and the C# xUnit test of each runner showing each its output and verdict ([TEST-RUN-OUTPUT], [TEST-MTP-DEBUG]) |
 | `test-explorer-mtp-parsers.test.ts` | the JSON listing reader at its boundary: a byte-order mark, a leading blank line, an unknown `schemaVersion`, an empty `tests` array, a missing `location`, a missing `type`, and two rows collapsing onto one id with two uids; the `global.json` opt-in against every decoy that merely mentions MTP; the uid batcher; and the waiting-host pid line in BOTH its bare and its prefixed form ([TEST-MTP-DETECT], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN], [TEST-MTP-DEBUG]) |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows

@@ -24,6 +24,11 @@ export interface RunRecord {
   readonly output: Map<string, string>;
   readonly chunks: string[];
   readonly verdicts: Map<string, string>;
+  /**
+   * Settles when the profile ENDS the run. A Debug handler returns once its
+   * session is armed, long before the run it created reports anything.
+   */
+  readonly ended: Promise<void>;
 }
 
 /** The key of output appended with NO test: the run's own output. */
@@ -65,7 +70,7 @@ function noteOutput(record: RunRecord, output: string, test: vscode.TestItem | u
 }
 
 /** `run`, recording every verdict and every `appendOutput` before forwarding it. */
-function recordingRun(run: vscode.TestRun, record: RunRecord): vscode.TestRun {
+function recordingRun(run: vscode.TestRun, record: RunRecord, onEnd: () => void): vscode.TestRun {
   return {
     ...verdictsOf(run, record),
     name: run.name,
@@ -87,6 +92,7 @@ function recordingRun(run: vscode.TestRun, record: RunRecord): vscode.TestRun {
     },
     end: () => {
       run.end();
+      onEnd();
     },
   };
 }
@@ -102,9 +108,13 @@ export function observeRuns(controller: vscode.TestController): RunObserver {
   const original = controller.createTestRun.bind(controller);
   const runs: RunRecord[] = [];
   controller.createTestRun = (request, name, persist) => {
-    const record: RunRecord = { output: new Map(), chunks: [], verdicts: new Map() };
+    let onEnd = (): void => undefined;
+    const ended = new Promise<void>((resolve) => {
+      onEnd = resolve;
+    });
+    const record: RunRecord = { output: new Map(), chunks: [], verdicts: new Map(), ended };
     runs.push(record);
-    return recordingRun(original(request, name, persist), record);
+    return recordingRun(original(request, name, persist), record, onEnd);
   };
   return {
     runs,

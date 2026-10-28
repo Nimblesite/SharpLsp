@@ -49,18 +49,20 @@ function fixtureTagged(fixtures: readonly OutputFixture[], tag: string): OutputF
   return fixture;
 }
 
-/** Press ▶ on `ids` (the whole tree when empty) and return the ONE run it wrote. */
+/** Press ▶ (or `kind`) on `ids` (the whole tree when empty) and return the ONE run it wrote. */
 async function press(
   api: SharpLspExtensionApi,
   observer: RunObserver,
   ids: readonly string[],
+  kind: vscode.TestRunProfileKind = vscode.TestRunProfileKind.Run,
 ): Promise<RunRecord> {
   const before = observer.runs.length;
   const items = ids.length === 0 ? [] : itemsFor(api, ids);
-  await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
-  assert.equal(observer.runs.length, before + 1, 'one ▶ creates exactly one run');
+  await runViaProfile(api.testController, kind, items);
+  assert.equal(observer.runs.length, before + 1, 'one press creates exactly one run');
   const record = observer.runs[before];
-  assert.ok(record, 'the run ▶ created must be recorded');
+  assert.ok(record, 'the run the press created must be recorded');
+  await record.ended;
   return record;
 }
 
@@ -88,7 +90,34 @@ async function assertSelection(
   assertTerminalText(record);
 }
 
-/** One runner's suite: its projects built and discovered once, then ▶ twice. */
+/**
+ * Debug on ONE test, with nothing armed so it runs to its end: the F# and then
+ * the C# xUnit test writing through `ITestOutputHelper`, each its own press.
+ * Each is shown its line, on itself, as ▶ shows it — on MTP that takes xUnit's
+ * own report, which runs inside the waiting test host ([TEST-MTP-DEBUG]).
+ */
+async function assertDebugged(
+  api: SharpLspExtensionApi,
+  observer: RunObserver,
+  fixtures: readonly OutputFixture[],
+): Promise<void> {
+  for (const fixture of fixtures.filter((each) => each.framework === 'xunit')) {
+    const id = testIdOf(fixture, 'helper');
+    const record = await press(api, observer, [id], vscode.TestRunProfileKind.Debug);
+    assert.deepEqual(linesFor(record, id), [markerOf(fixture, 'helper'), ''], `${id} debugged`);
+    assert.deepEqual(testsShown(record), [id], 'the debugged test alone is shown output');
+    assert.equal(record.verdicts.get(id), 'passed', `${id} passes under the debugger`);
+    assertTerminalText(record);
+  }
+}
+
+/** The gestures on a SELECTION every runner's suite presses, after ▶ on the whole tree. */
+const SELECTIONS = [
+  ['▶ on a selection shows the selected tests their output, and no other test', assertSelection],
+  ['Debug shows each debugged test its output, as ▶ does', assertDebugged],
+] as const;
+
+/** One runner's suite: its projects built and discovered once, then ▶ twice and Debug once. */
 function outputSuite(title: string, fixtures: readonly OutputFixture[], runSummary: string): void {
   suite(title, () => {
     let api: SharpLspExtensionApi;
@@ -121,11 +150,13 @@ function outputSuite(title: string, fixtures: readonly OutputFixture[], runSumma
       );
     });
 
-    test('▶ on a selection shows the selected tests their output, and no other test', async function () {
-      this.timeout(FIXTURE_BUILD_MS);
-      assert.ok(observer);
-      await assertSelection(api, observer, fixtures);
-    });
+    for (const [title, check] of SELECTIONS) {
+      test(title, async function () {
+        this.timeout(FIXTURE_BUILD_MS);
+        assert.ok(observer);
+        await check(api, observer, fixtures);
+      });
+    }
   });
 }
 
