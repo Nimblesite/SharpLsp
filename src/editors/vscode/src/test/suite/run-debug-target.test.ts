@@ -47,10 +47,10 @@ import { writeCSharpConsole, writeFSharpConsole } from './run-debug-fixtures';
 import {
   CMD_DEBUG_PROGRAM,
   DebugSessionRecorder,
-  TaskRecorder,
   assertCommandRegistered,
   invokeCommand,
 } from './run-debug-kit';
+import { TaskRecorder } from './run-task-recorder';
 import { comparablePath, openCSharpFile, openFSharpFile } from './test-helpers';
 import { DOTNET_CLI_MS, QUIET_MS } from './test-timeouts';
 import { type UiStubs } from './ui-stubs';

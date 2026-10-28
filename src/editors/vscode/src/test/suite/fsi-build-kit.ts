@@ -19,7 +19,7 @@ import * as vscode from 'vscode';
 import { SharpLspBuildTaskProvider } from '../../build.js';
 import { pollUntilResult } from './test-helpers.js';
 import { DOTNET_CLI_MS } from './test-timeouts';
-import type { ObservedTask, TaskRecorder } from './run-debug-kit.js';
+import type { ObservedTask, TaskRecorder } from './run-task-recorder.js';
 
 /** How long a dispatched build task may take to report that it started. */
 

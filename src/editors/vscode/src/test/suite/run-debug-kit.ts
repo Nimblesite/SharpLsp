@@ -18,7 +18,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { findNetcoredbg, getNetcoredbgCandidates } from '../../debug.js';
-import { binaryNameOf } from '../../platform.js';
 import { EXTENSION_ID, pollUntilResult, sleep } from './test-helpers';
 import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
@@ -244,126 +243,6 @@ export class DebugSessionRecorder {
       this.ours.map((session) => session.name),
       [],
       `${reason}; sessions seen: ${JSON.stringify(this.ours.map((s) => s.configuration))}`,
-    );
-  }
-
-  public dispose(): void {
-    for (const subscription of this.subscriptions) subscription.dispose();
-  }
-}
-
-/** One observed task execution and the process result it produced. */
-export interface ObservedTask {
-  readonly name: string;
-  readonly source: string;
-  readonly definitionType: string;
-  readonly command: string | undefined;
-  readonly args: readonly string[];
-}
-
-/** Flatten a task's execution into readable command + args. */
-function executionOf(task: vscode.Task): { command: string | undefined; args: string[] } {
-  const execution = task.execution;
-  if (execution instanceof vscode.ProcessExecution) {
-    return { command: execution.process, args: [...execution.args] };
-  }
-  if (execution instanceof vscode.ShellExecution) {
-    const command = execution.command;
-    const name = typeof command === 'string' ? command : command?.value;
-    // A ShellExecution built from a whole command LINE carries no args at all.
-    const args = (execution.args ?? []).map((arg) => (typeof arg === 'string' ? arg : arg.value));
-    return { command: name, args };
-  }
-  return { command: undefined, args: [] };
-}
-
-/**
- * Records every task the extension starts and every task process that ends.
- *
- * A script run must be dispatched as a `vscode.Task`, not typed into a terminal
- * ([DEBUG-FEATURES-LAUNCH-SCRIPT] rule 1) — precisely so that its command, its
- * arguments and its exit code are observable here. `Terminal.sendText` has no
- * read-back API, so a terminal-based run can assert nothing about what it ran.
- */
-export class TaskRecorder {
-  private readonly startedTasks: ObservedTask[] = [];
-  private readonly exitCodes: number[] = [];
-  private readonly subscriptions: vscode.Disposable[] = [];
-
-  constructor() {
-    this.subscriptions.push(
-      vscode.tasks.onDidStartTask((event) => {
-        const task = event.execution.task;
-        const { command, args } = executionOf(task);
-        this.startedTasks.push({
-          name: task.name,
-          source: task.source,
-          definitionType: task.definition.type,
-          command,
-          args,
-        });
-      }),
-      vscode.tasks.onDidEndTaskProcess((event) => {
-        if (event.exitCode !== undefined) this.exitCodes.push(event.exitCode);
-      }),
-    );
-  }
-
-  /** Every task observed so far, in start order. */
-  public get started(): readonly ObservedTask[] {
-    return this.startedTasks;
-  }
-
-  /** Exit codes of task processes that have finished. */
-  public get exits(): readonly number[] {
-    return this.exitCodes;
-  }
-
-  /**
-   * Tasks whose command is the `dotnet` CLI — the run paths we care about.
-   *
-   * Named through {@link binaryNameOf}, never `endsWith('dotnet')`.
-   * [DIST-RUNTIME-ACQUIRE] resolves an ABSOLUTE SDK path, so the command is
-   * `C:\Program Files\dotnet\dotnet.exe` on Windows and
-   * `/usr/share/dotnet/dotnet` elsewhere: a suffix test matched every POSIX run
-   * and NO Windows run at all, which is why every script run read as zero tasks
-   * there while passing on macOS and Linux. It also matched an unrelated
-   * `mydotnet`, so it was both too narrow and too wide.
-   */
-  public get dotnetTasks(): readonly ObservedTask[] {
-    return this.startedTasks.filter((task) => binaryNameOf(task.command ?? '') === 'dotnet');
-  }
-
-  /** Wait for at least `count` `dotnet` tasks to start. */
-  public async waitForDotnetTasks(
-    count = 1,
-    timeoutMs = DEBUG_SESSION_MS,
-  ): Promise<readonly ObservedTask[]> {
-    return pollUntilResult(
-      async () => this.dotnetTasks,
-      (tasks) => tasks.length >= count,
-      timeoutMs,
-      100,
-    );
-  }
-
-  /** Wait for at least `count` task processes to report an exit code. */
-  public async waitForExits(count = 1, timeoutMs = DEBUG_SESSION_MS): Promise<readonly number[]> {
-    return pollUntilResult(
-      async () => this.exits,
-      (codes) => codes.length >= count,
-      timeoutMs,
-      100,
-    );
-  }
-
-  /** Settle, then assert no task ran. Proves a refusal did not run anything. */
-  public async assertNoTask(reason: string, quietMs = QUIET_MS): Promise<void> {
-    await sleep(quietMs);
-    assert.deepStrictEqual(
-      this.dotnetTasks.map((task) => `${task.command ?? '?'} ${task.args.join(' ')}`),
-      [],
-      reason,
     );
   }
 

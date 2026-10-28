@@ -23,7 +23,6 @@ import { binaryNameOf } from '../../platform.js';
 import {
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
-  TaskRecorder,
   assertCommandRegistered,
   fakeFolder,
   focusDocument,
@@ -31,6 +30,7 @@ import {
   bareF5Config,
   stopAnyDebugSession,
 } from './run-debug-kit';
+import { TaskRecorder } from './run-task-recorder';
 import {
   buildProject,
   writeCSharpConsole,

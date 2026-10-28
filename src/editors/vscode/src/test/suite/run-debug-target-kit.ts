@@ -29,7 +29,6 @@ import {
   CMD_DEBUG_PROGRAM,
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
-  TaskRecorder,
   emptyF5Config,
   fakeFolder,
   focusDocument,
@@ -37,6 +36,7 @@ import {
   bareF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
+import { TaskRecorder } from './run-task-recorder';
 import { closeAllEditors, comparablePath, pollUntilResult } from './test-helpers';
 import type { UiStubs } from './ui-stubs';
 

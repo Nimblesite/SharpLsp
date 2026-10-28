@@ -29,8 +29,8 @@ import {
   focusDocument,
   invokeCommand,
   stopAnyDebugSession,
-  type ObservedTask,
 } from './run-debug-kit';
+import type { ObservedTask } from './run-task-recorder';
 import * as fixtures from './run-debug-fixtures';
 import {
   closeAllEditors,
