@@ -390,9 +390,13 @@ let private forgetFailure (state: FSharpWorkspaceState) key (entry: Lazy<Task<Re
 
 /// The Compile items MSBuild evaluated for the project, in project order, cached until a
 /// reload. Failures are forgotten so a later request retries; a reload always re-evaluates.
-/// [NETFX-PROJECTS-FSHARP]
+/// The cache is keyed by the project file's last write as well as its path, so an edit
+/// to the project — "Add F# Source File" inserting an item, say — is evaluated afresh
+/// at once, never answered from the evaluation it replaced. [NETFX-PROJECTS-FSHARP]
+/// [SE-FSHARP-SYMBOLS]
 let internal compileSources (state: FSharpWorkspaceState) (fsprojPath: string) (ct: CancellationToken) =
-    let key = NativePaths.NormalizeFullPath fsprojPath
+    let written = File.GetLastWriteTimeUtc(fsprojPath).Ticks
+    let key = $"{NativePaths.NormalizeFullPath fsprojPath}|{written}"
     let created = lazy (FSharpDesignTime.compileSources fsprojPath ct)
     let entry = state.CompileSources.GetOrAdd(key, created)
 

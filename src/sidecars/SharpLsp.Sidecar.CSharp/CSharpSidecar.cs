@@ -92,6 +92,10 @@ internal sealed partial class CSharpSidecar : SidecarHost
             "project/addCompileItem",
             ProjectFileEdit<CompileInsertRequest>(CompileItemEditor.Insert)
         );
+        Register(
+            "project/removeCompileItem",
+            ProjectFileEdit<CompileInsertRequest>(CompileItemEditor.Remove)
+        );
         Register("analyzers/configure", HandleConfigureAnalyzersAsync);
         Register("debug/hotReload", HandleHotReloadAsync);
         Register("workspace/targetFramework", HandleTargetFrameworkAsync);

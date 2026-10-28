@@ -273,3 +273,32 @@ let ``project metadata remains accurate across editor saves with a write handle 
     finally
         cleanup root
 }
+
+/// "Add F# Source File" edits the project, and the Solution Explorer asks for its
+/// Compile items straight away, before any reload. The cached evaluation must not
+/// answer for the project it replaced, and an item outside the project folder is
+/// resolved like any other (#493). [SE-FSHARP-SYMBOLS]
+[<Fact>]
+let ``an edited project is evaluated afresh without waiting for a reload`` () = task {
+    let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
+    try
+        let dir = NativePaths.Resolve(root, ".vscode")
+        let project = writeProject dir "Edited" FLAGS_WITHOUT_OUTPUT [||]
+        let state = FSharpWorkspace.create ()
+        let! first = FSharpWorkspace.compileSources state project CancellationToken.None
+        Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs") |], ok first)
+
+        let linked = NativePaths.Resolve(root, "Source", "Extra.fs")
+        Directory.CreateDirectory(NativePaths.DirectoryOf linked) |> ignore
+        File.WriteAllText(linked, "module Extra\n")
+        let stamp = File.GetLastWriteTimeUtc project
+        writeProject dir "Edited" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |] |> ignore
+        File.SetLastWriteTimeUtc(project, stamp.AddSeconds 2.0)
+        let! edited = FSharpWorkspace.compileSources state project CancellationToken.None
+        Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs"); linked |], ok edited)
+
+        let! again = FSharpWorkspace.compileSources state project CancellationToken.None
+        Assert.Same(ok edited, ok again)
+    finally
+        cleanup root
+}

@@ -1153,6 +1153,9 @@ fn handle_custom_request(
         "sharplsp/project/addCompileItem" => {
             project_edit::handle_add_compile_item(req, runtime, csharp_sidecar)
         }
+        "sharplsp/project/removeCompileItem" => {
+            project_edit::handle_remove_compile_item(req, runtime, csharp_sidecar)
+        }
         "sharplsp/project/compileItems" => {
             project_sources::handle_compile_items(req, runtime, fsharp_sidecar)
         }

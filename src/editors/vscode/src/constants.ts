@@ -54,6 +54,8 @@ export const CMD_ADD_PROJECT_REFERENCE = 'sharplsp.addProjectReference';
 
 // Add source file into compile order (GitHub #493, [SE-ADD-FILE-COMMAND])
 export const CMD_ADD_FSHARP_FILE = 'sharplsp.addFSharpSourceFile';
+// Take a source file out of compile order (GitHub #493, [SE-REMOVE-FILE-COMMAND])
+export const CMD_REMOVE_FSHARP_FILE = 'sharplsp.removeFSharpSourceFile';
 /** VS Code context key: the Solution Explorer selection belongs to an F# project. */
 export const CONTEXT_FS_PROJECT_SELECTED = 'sharplsp.fsProjectSelected';
 

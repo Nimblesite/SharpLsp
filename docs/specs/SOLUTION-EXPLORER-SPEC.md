@@ -650,6 +650,24 @@ the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
 tier splices project XML as text; the glob-project decision belongs to the
 `MSBuild` DOM, not a string probe.
 
+## Remove Source File `[SE-REMOVE]`
+
+The counterpart of [SE-ADD-FILE]: a file leaves its project's compile order without anyone editing the project file by hand (#493).
+
+### Request: `sharplsp/project/removeCompileItem` `[SE-REMOVE-FILE-REQUEST]`
+
+Params `{ projectPath, include }`, where `include` is project-relative as in [SE-ADD-FILE-REQUEST]. The host routes it to the C# sidecar's `project/removeCompileItem`, which removes the matching `Compile` item through the `MSBuild` DOM; the two separator spellings match. Every other item, comment, BOM and line ending stays byte for byte. An include the project lacks changes nothing and still succeeds (`modified: false`). The response is the same `{ success, message, modified }` as adding.
+
+### Command: `sharplsp.removeFSharpSourceFile` `[SE-REMOVE-FILE-COMMAND]`
+
+| Property | Value |
+|----------|-------|
+| Command | `sharplsp.removeFSharpSourceFile` |
+| Title | Remove F# Source File |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^symbol\./ && sharplsp.fsProjectSelected` — group `7_modification` |
+
+A modal question names the file and the project, and offers **Remove from Project** (the file stays on disk) or **Remove and Delete File**. Dismissing it changes nothing. The Compile item is removed first; the file is deleted only after the project no longer names it. The Solution Explorer then refreshes.
+
 ## Navigation `[SE-NAVIGATION]`
 
 Clicking a symbol node opens the file and navigates to the symbol's declaration position.

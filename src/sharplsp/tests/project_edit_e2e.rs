@@ -272,3 +272,51 @@ fn add_compile_item_without_a_sidecar_reports_it() {
 
     client.shutdown_and_exit();
 }
+
+/// Send `sharplsp/project/removeCompileItem` and return the response value.
+fn remove_compile_item(client: &mut LspClient, fsproj: &str, include: &str) -> Value {
+    client.request(
+        "sharplsp/project/removeCompileItem",
+        json!({ "projectPath": fsproj, "include": include }),
+    )
+}
+
+/// [SE-REMOVE-FILE-REQUEST]: the item leaves compile order and nothing else
+/// moves; removing it again is a successful no-op that leaves the file as it is.
+#[test]
+fn remove_compile_item_takes_out_exactly_that_item() {
+    if !require_dotnet() {
+        return;
+    }
+    let tmp = TempDir::new().unwrap();
+    let fsproj = isolated_fsproj(&tmp);
+
+    let mut client = LspClient::start();
+    client.initialize_with_root(tmp.path());
+
+    let resp = remove_compile_item(&mut client, fsproj.as_str(), "Library.fs");
+    assert!(resp.get("error").is_none(), "request failed: {resp}");
+    assert_eq!(resp["result"]["success"].as_bool(), Some(true), "{resp}");
+    assert_eq!(resp["result"]["modified"].as_bool(), Some(true), "{resp}");
+    let expected = ORDERED_FSPROJ.replace("    <Compile Include=\"Library.fs\" />\r\n", "");
+    assert_eq!(
+        std::fs::read_to_string(&fsproj).unwrap(),
+        expected,
+        "only Library.fs leaves"
+    );
+
+    let again = remove_compile_item(&mut client, fsproj.as_str(), "Library.fs");
+    assert_eq!(again["result"]["success"].as_bool(), Some(true), "{again}");
+    assert_eq!(
+        again["result"]["modified"].as_bool(),
+        Some(false),
+        "{again}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&fsproj).unwrap(),
+        expected,
+        "a second removal changes nothing"
+    );
+
+    client.shutdown_and_exit();
+}

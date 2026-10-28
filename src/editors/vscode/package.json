@@ -907,6 +907,11 @@
         "category": "SharpLsp"
       },
       {
+        "command": "sharplsp.removeFSharpSourceFile",
+        "title": "Remove F# Source File",
+        "category": "SharpLsp"
+      },
+      {
         "command": "sharplsp.nuget.addFromExplorer",
         "title": "%cmd.nuget.addFromExplorer%",
         "category": "%category%",
@@ -1286,6 +1291,11 @@
         {
           "command": "sharplsp.removeProjectReference",
           "when": "view == sharplsp.solutionExplorer && viewItem == projectReference",
+          "group": "7_modification"
+        },
+        {
+          "command": "sharplsp.removeFSharpSourceFile",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\./ && sharplsp.fsProjectSelected",
           "group": "7_modification"
         },
         {

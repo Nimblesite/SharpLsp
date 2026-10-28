@@ -14,15 +14,23 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { pollTreeFor } from './explorer-kit';
+import { pollTreeFor, treeContains } from './explorer-kit';
 import { explorer, owningProjectOf, projectNode, symbolNodeIn } from './fsharp-project-tree-kit';
 import { useLspTestSuite } from './lsp-suite-kit';
 import { compileIncludes } from './project-xml-kit';
-import { closeAllEditors, removeDirRecursive, requireWorkspaceRoot } from './test-helpers';
+import {
+  closeAllEditors,
+  pollUntilResult,
+  removeDirRecursive,
+  requireWorkspaceRoot,
+} from './test-helpers';
 import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 const CMD_ADD_FS_FILE = 'sharplsp.addFSharpSourceFile';
+const CMD_REMOVE_FS_FILE = 'sharplsp.removeFSharpSourceFile';
+const KEEP = 'Remove from Project';
+const DELETE = 'Remove and Delete File';
 
 /** One template-shaped project on disk. */
 interface Template {
@@ -160,5 +168,61 @@ suite('Solution Explorer — an F# project whose sources live outside its folder
       path.join(sources, 'Patches.fs'),
       'the new file is opened',
     );
+  });
+
+  /** Resolve once no tree label contains `module`. */
+  async function pollTreeWithout(module: string): Promise<boolean> {
+    return await pollUntilResult(
+      async () => !treeContains(explorer().getChildren(), module),
+      (gone) => gone,
+      LSP_RESPONSE_MS,
+      500,
+    );
+  }
+
+  test('removing a linked file takes it out of compile order, keeping or deleting it as asked', async function () {
+    this.timeout(SIDECAR_COLD_MS + 2 * LSP_RESPONSE_MS);
+    const { name, fsprojPath, sources } = await loadTemplate();
+    const domain = await symbolNodeIn(fsprojPath, `${name}Domain.fs`);
+    assert.ok(domain, 'a symbol node in the linked Domain.fs appears');
+    stubs.queueWarning(KEEP);
+    await vscode.commands.executeCommand(CMD_REMOVE_FS_FILE, domain);
+
+    assert.deepStrictEqual(stubs.log.errorMessages, [], 'no error is reported');
+    assert.ok(
+      stubs.log.warningMessages[0]?.includes(`${name}Domain.fs`),
+      'the question names the file',
+    );
+    assert.ok(stubs.log.warningMessages[0]?.includes('mod.fsproj'), 'and the project');
+    assert.deepStrictEqual(
+      stubs.log.warningActions[0],
+      [KEEP, DELETE],
+      'keep or delete, never silently',
+    );
+    assert.strictEqual(stubs.log.warningOptions[0]?.modal, true, 'asked modally');
+    assert.deepStrictEqual(compileIncludes(fsprojPath), [`../Source/${name}/${name}Main.fs`]);
+    assert.ok(fs.existsSync(path.join(sources, `${name}Domain.fs`)), 'kept on disk');
+    assert.ok(await pollTreeWithout(`${name}Domain`), 'the tree drops its module');
+
+    const main = await symbolNodeIn(fsprojPath, `${name}Main.fs`);
+    assert.ok(main, 'Main.fs is still listed');
+    stubs.queueWarning(DELETE);
+    await vscode.commands.executeCommand(CMD_REMOVE_FS_FILE, main);
+    assert.deepStrictEqual(compileIncludes(fsprojPath), [], 'the project compiles nothing now');
+    assert.ok(!fs.existsSync(path.join(sources, `${name}Main.fs`)), 'and Main.fs is deleted');
+  });
+
+  test('dismissing the question changes nothing', async function () {
+    this.timeout(SIDECAR_COLD_MS + LSP_RESPONSE_MS);
+    const { name, fsprojPath, sources } = await loadTemplate();
+    const domain = await symbolNodeIn(fsprojPath, `${name}Domain.fs`);
+    assert.ok(domain, 'a symbol node in the linked Domain.fs appears');
+    const before = fs.readFileSync(fsprojPath, 'utf-8');
+    stubs.queueWarning(undefined);
+    await vscode.commands.executeCommand(CMD_REMOVE_FS_FILE, domain);
+
+    assert.strictEqual(fs.readFileSync(fsprojPath, 'utf-8'), before, 'the project is untouched');
+    assert.ok(fs.existsSync(path.join(sources, `${name}Domain.fs`)), 'the file is untouched');
+    assert.strictEqual(stubs.log.warningMessages.length, 1, 'asked exactly once');
   });
 });

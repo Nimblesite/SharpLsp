@@ -58,6 +58,28 @@ internal static class CompileItemEditor
     }
 
     /// <summary>
+    /// Remove the Compile item whose include names <paramref name="request"/>'s
+    /// file, either separator spelling. Every other item, comment, BOM and line
+    /// ending stays as it was; an include the project lacks changes nothing.
+    /// [SE-REMOVE-FILE-REQUEST]
+    /// </summary>
+    public static PackageEditResult Remove(CompileInsertRequest request)
+    {
+        using var collection = new ProjectCollection();
+        var root = ProjectRootElement.Open(request.FilePath, collection, preserveFormatting: true);
+        var item = CompileItems(root).Find(each => SameInclude(each.Include, request.Include));
+        if (item is null)
+        {
+            return PackageEditResult.Unchanged($"{request.Include} is not a Compile item");
+        }
+        item.Parent.RemoveChild(item);
+        var hadPreamble = HasUtf8Preamble(request.FilePath);
+        root.Save();
+        PreservePreamble(request.FilePath, hadPreamble);
+        return PackageEditResult.Changed($"Removed {request.Include}");
+    }
+
+    /// <summary>
     /// The file's <c>Compile</c> items in document order — items that INCLUDE a
     /// source. Bare <c>&lt;Compile Remove="…" /&gt;</c> fences (the shared
     /// fixture projects) do not count: a project with only those is still
