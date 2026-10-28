@@ -466,7 +466,9 @@ therefore still shows that project's tests the message naming the package, whate
 other projects reported. Within one module the same rule is what makes the retry reachable: a
 selection spanning several batches whose LATER batch holds the refused uid still carries that
 batch's failure, so the refusal is retried instead of hidden behind the earlier batch's
-results. Only the unfiltered retry — the same tests again — replaces a failure with results.
+results. Only the unfiltered retry — the same tests again — replaces a failure with results,
+and its result for a test an accepted batch already ran replaces that batch's, so the test is
+shown one duration and its output once ([TEST-RUN-OUTPUT]).
 
 `--report-trx` is an EXTENSION, not part of MTP. A module that does not register
 `Microsoft.Testing.Extensions.TrxReport` rejects the option and exits with code 5, printing

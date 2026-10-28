@@ -276,9 +276,12 @@ async function retryUnfiltered(
   const unfiltered = await invoke(module, [], context);
   return {
     ...mergeOutcomes(refused, unfiltered),
-    // The retry re-ran the SAME module, so its counts REPLACE the refused
-    // attempt's rather than adding to them. Summing is right only ACROSS
-    // modules, which is what `mergeOutcomes` does everywhere else.
+    // The retry re-ran the SAME module, so its counts and its result for each
+    // test REPLACE the refused attempt's rather than adding to them: a test an
+    // accepted batch already ran is shown its duration and output once
+    // ([TEST-RUN-OUTPUT]). Summing is right only ACROSS modules, which is what
+    // `mergeOutcomes` does everywhere else.
+    results: new Map([...refused.results, ...unfiltered.results]),
     summary: unfiltered.summary ?? refused.summary,
     retriedUnfiltered: true,
   };

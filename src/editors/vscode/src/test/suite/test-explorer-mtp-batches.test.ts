@@ -60,13 +60,24 @@ const LONG_IDS = Array.from(
 /** Every id the module exposes. */
 const EXPECTED = [...LONG_IDS, SPACED];
 
+/** What the FIRST long test writes, from a batch the module accepts ([TEST-RUN-OUTPUT]). */
+const WRITTEN = 'written by the first batch';
+
+/** Long test `index`, passing; the first one also writes {@link WRITTEN}. */
+function longTest(index: number): string[] {
+  const writes = index === 0 ? [`    TestContext.Out.WriteLine("${WRITTEN}")`] : [];
+  return [
+    '[<Test>]',
+    `let ${longName(index)} () =`,
+    ...writes,
+    '    Assert.That(1 + 2, Is.EqualTo(3))',
+    '',
+  ];
+}
+
 /** The F# module: the long passing tests, then the spaced data-driven one. */
 function batchSource(): string {
-  const longTests = Array.from({ length: LONG_TEST_COUNT }, (_, index) => [
-    '[<Test>]',
-    `let ${longName(index)} () = Assert.That(1 + 2, Is.EqualTo(3))`,
-    '',
-  ]).flat();
+  const longTests = Array.from({ length: LONG_TEST_COUNT }, (_, index) => longTest(index)).flat();
   return [
     `module ${MODULE}`,
     '',
@@ -156,6 +167,13 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform selections past one invo
       [...outcome.results.keys()].sort(),
       [...EXPECTED].sort(),
       'the unfiltered report answers for exactly the module',
+    );
+    // [TEST-RUN-OUTPUT]: the retry ran the accepted batch's tests AGAIN, and its
+    // report replaces theirs, so a test is shown what it wrote once, not once per run.
+    assert.equal(
+      outcome.results.get(LONG_IDS[0] ?? '')?.output,
+      WRITTEN,
+      'a test the retry re-ran shows its line once',
     );
 
     // 3. ▶ on the module's root in the Testing view: every test comes back green.
