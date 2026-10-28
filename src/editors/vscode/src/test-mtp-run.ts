@@ -25,7 +25,7 @@ import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
 import { relistModule } from './test-mtp-discovery.js';
-import { debugUids, refusedOutcome, runReported, startedModules } from './test-mtp-report.js';
+import { refusedOutcome, refusesUids, runReported, startedModules } from './test-mtp-report.js';
 import { buildTarget, builtMtpProjects, dirOf, type MtpProjectScan } from './test-mtp-modules.js';
 import { err, ok, type Result } from './result.js';
 import { parseMtpSummary, type TestOutcome, type TestRunSummary } from './test-run-output.js';
@@ -246,7 +246,10 @@ export function mergeOutcomes(left: TestRunOutcome, right: TestRunOutcome): Test
   };
 }
 
-/** The `--filter-uid` batches one module runs; one unfiltered batch for none. */
+/**
+ * The `--filter-uid` batches one module runs: one unfiltered batch for no
+ * selection, none for a selection the module owns no test of.
+ */
 function batchesFor(
   module: MtpModuleRun,
   testIds: readonly string[],
@@ -254,8 +257,8 @@ function batchesFor(
 ): (readonly string[])[] {
   if (testIds.length === 0) return [[]];
   const uids = uidsFor(module, testIds);
-  const started = options.debug === true ? debugUids(module.modulePath, uids) : uids;
-  return started.length === 0 ? [[]] : uidBatches(started);
+  if (options.debug === true && refusesUids(module.modulePath, uids)) return [[]];
+  return uidBatches(uids);
 }
 
 /** Every batch of one module, merged, plus its one unfiltered recovery. */

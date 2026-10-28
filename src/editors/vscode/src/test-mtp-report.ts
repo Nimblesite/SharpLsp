@@ -153,15 +153,14 @@ function reportFor(
 }
 
 /**
- * The uids a DEBUGGED module starts with. NUnit's bridge refuses any uid carrying
- * a space — every idiomatic F# backtick test — by THROWING, and under a debugger
- * that unhandled exception stops the module instead of ending it. So such a
- * selection runs the module unfiltered: the selected tests' breakpoints still
+ * True when the module REFUSES `uids`: NUnit's bridge rejects any uid carrying a
+ * space — every idiomatic F# backtick test — by THROWING. Under a debugger that
+ * unhandled exception stops the module instead of ending it, so a DEBUGGED
+ * module runs such a selection unfiltered: the selected tests' breakpoints still
  * bind, and only they are reported ([TEST-MTP-DEBUG], [TEST-FILTER-ESCAPE]).
  */
-export function debugUids(modulePath: string, uids: readonly string[]): readonly string[] {
-  const refused = builtBeside(modulePath, NUNIT_ADAPTER) && uids.some((uid) => uid.includes(' '));
-  return refused ? [] : uids;
+export function refusesUids(modulePath: string, uids: readonly string[]): boolean {
+  return builtBeside(modulePath, NUNIT_ADAPTER) && uids.some((uid) => uid.includes(' '));
 }
 
 /** The module's own arguments for one invocation; `report` names the report it writes, if any. */
