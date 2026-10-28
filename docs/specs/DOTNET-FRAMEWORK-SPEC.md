@@ -104,6 +104,19 @@ Each `Test run for <dll> (<FrameworkName>)` banner names that
   lists it. A single-target project's rows are unchanged. A framework whose run wrote no result
   logs `Test run: <tfm> reported no result`.
 
+The banners are not the only word on which frameworks a project builds. The per-framework
+  VSTest passes write them unsynchronised to one stdout, and a banner that never parses would
+  silently take its framework's tags and `Run on <tfm>` profile with it. So after every VSTest
+  sweep whose run succeeded, MSBuild evaluates each test project. The project is the one a
+  declaration tied to the assembly, else its namesake. A framework it declares that no banner
+  named is then pinned: its `TargetFrameworkMoniker` says whether it is merely another spelling of
+  an announced build (`net8.0-windows` builds `net8.0`). Its `TargetPath` must name this assembly.
+  When that assembly is built, it is listed directly and joins the root as a build, and the sweep
+  logs `No test run announced <tfm> of <project>; listed <dll> directly`. A declared framework
+  with nothing built logs `<project> declares <tfm>, but it has no built test assembly`, and
+  nothing is invented for it. A run that failed is left as listed: its missing framework is the
+  failed build it already reports.
+
 ### Results `[NETFX-TEST-RESULTS]`
 
 TRX `TestMethod/@codeBase` ties each result to its assembly, hence its

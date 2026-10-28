@@ -12,6 +12,7 @@
 
 import { State } from 'vscode-languageclient/node';
 import { info } from './log.js';
+import { frameworkSources, withDeclaredFrameworks } from './test-declared-frameworks.js';
 import { listTests } from './test-discovery.js';
 import * as state from './state.js';
 import type { LspPosition, SymbolNode, WorkspaceSymbolsResponse } from './state.js';
@@ -47,9 +48,17 @@ export function onDiscoveryInputs(rediscover: () => void): () => void {
   };
 }
 
-/** Enumerate `target`, locating every test it declares. */
+/**
+ * Enumerate `target`, locating every test it declares and accounting for every
+ * framework each test project builds. [NETFX-TEST-DISCOVERY]
+ */
 export async function listLocatedTests(target: string, noBuild = false): Promise<TestListing> {
-  return await withSourceLocations(target, await listTests(target, undefined, noBuild));
+  const listing = await listTests(target, undefined, noBuild);
+  if (listing.names.length === 0) return listing;
+  const response = await declarations(target);
+  const projects = response.projects.map((project) => project.path);
+  const located = locate(listing, response);
+  return await withDeclaredFrameworks(located, projects, frameworkSources(target));
 }
 
 /**
@@ -62,7 +71,11 @@ export async function withSourceLocations(
   listing: TestListing,
 ): Promise<TestListing> {
   if (listing.names.length === 0) return listing;
-  const response = await declarations(target);
+  return locate(listing, await declarations(target));
+}
+
+/** `listing` located against the declarations in `response`. */
+function locate(listing: TestListing, response: WorkspaceSymbolsResponse): TestListing {
   const declared = indexDeclarations(response);
   const locations = new Map(listing.locations);
   const projects = new Map(listing.projects);

@@ -24,6 +24,8 @@ export interface ProjectProperties {
   readonly targetFramework: string;
   /** `;`-separated frameworks when multi-targeted, else empty. */
   readonly targetFrameworks: readonly string[];
+  /** `.NETFramework,Version=v4.7`: what a pinned evaluation builds, however it is spelled. */
+  readonly targetFrameworkMoniker: string;
   /** `Exe`, `WinExe` or `Library`. */
   readonly outputType: string;
   /**
@@ -43,6 +45,7 @@ const REQUESTED = [
   'TargetPath',
   'TargetFramework',
   'TargetFrameworks',
+  'TargetFrameworkMoniker',
   'OutputType',
   'RunCommand',
   'IsTestingPlatformApplication',
@@ -113,6 +116,7 @@ export async function evaluateProject(
     targetPath: bag.value.get('TargetPath') ?? '',
     targetFramework: bag.value.get('TargetFramework') ?? '',
     targetFrameworks: splitList(bag.value.get('TargetFrameworks')),
+    targetFrameworkMoniker: bag.value.get('TargetFrameworkMoniker') ?? '',
     outputType: bag.value.get('OutputType') ?? '',
     isTestingPlatformApplication:
       (bag.value.get('IsTestingPlatformApplication') ?? '').trim().toLowerCase() === 'true',

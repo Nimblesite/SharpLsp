@@ -36,6 +36,12 @@ export interface TestListing {
   readonly locations?: ReadonlyMap<string, TestLocation>;
   /** Owning project per id, so a selection builds only its dependency graph. [TEST-BUILD-GRAPH] */
   readonly projects?: ReadonlyMap<string, string>;
+  /**
+   * The run that listed these FAILED for part of the target, so a framework it
+   * did not announce may be a failed build rather than a lost banner.
+   * [NETFX-TEST-DISCOVERY]
+   */
+  readonly partial?: boolean;
 }
 
 /** Where a test is written, as the discovery pass reported it. */
@@ -141,7 +147,7 @@ export function mergeMultiTargeted(
  * name leaves what every build of the project agrees on. A project with one
  * target framework has nothing to reconcile and keeps its real path.
  */
-function sharedOutputPath(paths: readonly string[]): string {
+export function sharedOutputPath(paths: readonly string[]): string {
   const [first, ...rest] = paths;
   if (first === undefined) return '';
   if (rest.length === 0) return first;
