@@ -75,8 +75,15 @@ public static partial class NativePaths
             : Probe(path);
     }
 
+    /// <summary>
+    /// Observes each disk probe, so tests can count that lookups hit the memo instead of the
+    /// disk (GitHub #358). Null outside those tests.
+    /// </summary>
+    internal static Action<string>? Probed { get; set; }
+
     private static string Probe(string path)
     {
+        Probed?.Invoke(path);
         var fullPath = NormalizeFullPath(path);
         try
         {

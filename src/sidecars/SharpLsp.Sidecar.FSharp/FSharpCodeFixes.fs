@@ -190,13 +190,32 @@ let private interfaceActions
         return generated |> Option.map (wrapGeneratedAction state >> List.singleton) |> Option.defaultValue []
     }
 
+/// [ANALYZERS-DEADCODE-FIX] "Remove unused" for each dead declaration on the
+/// requested lines, from the analyzer's own findings; none while `analyzers` is
+/// off. The project-wide analysis runs only when a deletable declaration is named
+/// on those lines, so the editor's lightbulb elsewhere costs nothing.
+let private deadCodeActions state workspace analyzers filePath parseResults checkResults source startLine endLine ct =
+    task {
+        match analyzers, FSharpDeadCodeFixes.declaredOn parseResults startLine endLine with
+        | None, _
+        | _, [] -> return []
+        | Some config, candidates ->
+            let! dead = FSharpAnalyzers.deadCodeInFile workspace config filePath ct
+            return
+                dead
+                |> List.choose (FSharpDeadCodeFixes.removal checkResults source filePath candidates)
+                |> List.map (wrapGeneratedAction state)
+    }
+
 let private collectCodeActions
-    state filePath source parseResults (checkResults: FSharpCheckFileResults)
-    startLine startCharacter endLine =
+    state workspace analyzers filePath source parseResults (checkResults: FSharpCheckFileResults)
+    startLine startCharacter endLine ct =
     task {
         let diagnostics =
             overlapping startLine endLine checkResults.Diagnostics
             |> diagnosticActions state filePath source parseResults checkResults
+        let! dead =
+            deadCodeActions state workspace analyzers filePath parseResults checkResults source startLine endLine ct
         let typed =
             collectTypeInformedActions
                 state filePath source checkResults parseResults startLine startCharacter
@@ -206,10 +225,10 @@ let private collectCodeActions
         let pipes =
             FSharpPipeRefactoring.tryGenerateActions parseResults source filePath startLine startCharacter
             |> List.map (wrapGeneratedAction state)
-        return diagnostics @ typed @ analyzed @ interfaces @ pipes
+        return diagnostics @ dead @ typed @ analyzed @ interfaces @ pipes
     }
 
-let private getCodeActionsCore state workspace filePath startLine startCharacter endLine =
+let private getCodeActionsCore state workspace analyzers filePath startLine startCharacter endLine ct =
     task {
         try
             let! checkedFile = FSharpWorkspace.checkFileWithParse workspace filePath
@@ -218,24 +237,27 @@ let private getCodeActionsCore state workspace filePath startLine startCharacter
             | Some(parseResults, checkResults, source) ->
                 return!
                     collectCodeActions
-                        state filePath source parseResults checkResults
-                        startLine startCharacter endLine
+                        state workspace analyzers filePath source parseResults checkResults
+                        startLine startCharacter endLine ct
         with ex ->
             Log.Debug(ex, "[F# CodeFixes] failed")
             return []
     }
 
-/// Get all code actions for a file range.
+/// Get all code actions for a file range. `analyzers` is the analyzer configuration
+/// while the analyzers are on, whose findings offer their own fixes; None while off.
 let getCodeActions
     (state: CodeFixState)
     (workspace: FSharpWorkspace.FSharpWorkspaceState)
+    (analyzers: FSharpAnalyzers.AnalyzerConfig option)
     (filePath: string)
     (startLine: int)
     (startCharacter: int)
     (endLine: int)
     (_endCharacter: int)
+    (ct: CancellationToken)
     =
-    getCodeActionsCore state workspace filePath startLine startCharacter endLine
+    getCodeActionsCore state workspace analyzers filePath startLine startCharacter endLine ct
 
 /// Resolve a cached code action by ID.
 let resolveCodeAction (state: CodeFixState) (actionId: int) : WorkspaceEdit option =

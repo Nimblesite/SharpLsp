@@ -192,12 +192,13 @@ type FSharpSidecar() as this =
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<CodeActionRequest>(payload, cancellationToken = ct)
+                    let analyzers = if analyzersEnabled then Some analyzerConfig else None
                     let! actions =
                         FSharpCodeFixes.getCodeActions
-                            codeFixState workspace
+                            codeFixState workspace analyzers
                             request.FilePath
                             request.StartLine request.StartCharacter
-                            request.EndLine request.EndCharacter
+                            request.EndLine request.EndCharacter ct
                     let results =
                         actions
                         |> List.map (fun a ->

@@ -3,6 +3,7 @@
 /// Implements [SHARPLSP-FEATURES-REFACTORING] / [SHARPLSP-FEATURES-NAVIGATION].
 module SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionSemanticTests
 
+open System.Threading
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
@@ -245,7 +246,7 @@ let ``interface stubs insert correctly for a bare with keyword and an object exp
 let private conversionTitlesAt state path line =
     task {
         let fixes = FSharpCodeFixes.createState ()
-        let! actions = FSharpCodeFixes.getCodeActions fixes state path line 0 line 80
+        let! actions = FSharpCodeFixes.getCodeActions fixes state None path line 0 line 80 CancellationToken.None
         return actions |> List.map _.Title
     }
 

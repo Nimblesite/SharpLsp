@@ -356,7 +356,7 @@ let ``a project reading C# in memory still offers the FS0001 conversion`` () =
             Assert.DoesNotContain("--flaterrors", (FSharpWorkspace.optionsFor state app).Value.OtherOptions)
 
             let fixes = FSharpCodeFixes.createState ()
-            let! actions = FSharpCodeFixes.getCodeActions fixes state app 4 19 4 30
+            let! actions = FSharpCodeFixes.getCodeActions fixes state None app 4 19 4 30 CancellationToken.None
             let conversion = actions |> List.filter (fun action -> action.Title = "Convert to float using 'float'")
             let action = Assert.Single conversion
             Assert.Equal("quickfix", action.Kind)

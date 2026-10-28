@@ -35,6 +35,18 @@ let rangeEdit (filePath: string) (r: range) (text: string) : RawEdit =
       EndCharacter = r.EndColumn
       NewText = text }
 
+/// The identifier a binding's head pattern defines: `x` in `let x = …`, `f` in
+/// `let f a = …`, `Name` in `member this.Name = …`.
+let rec patIdent (pat: SynPat) : Ident option =
+    match pat with
+    | SynPat.Named(ident = SynIdent(ident, _)) -> Some ident
+    | SynPat.LongIdent(longDotId = longId) -> longId.LongIdent |> List.tryLast
+    | SynPat.As(_, rhs, _) -> patIdent rhs
+    | SynPat.Typed(inner, _, _) -> patIdent inner
+    | SynPat.Attrib(inner, _, _) -> patIdent inner
+    | SynPat.Paren(inner, _) -> patIdent inner
+    | _ -> None
+
 // ── Union case stub generation ──────────────────────────────────
 
 /// Walk the parse tree to find match clauses covering a position.

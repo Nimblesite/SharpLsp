@@ -146,7 +146,8 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
       — `removeUnusedOpenActions`/`simplifyNameActions` in
       [FSharpCodeFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeFixes.fs), backed by the
       shared [FSharpLocalAnalysis.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpLocalAnalysis.fs)
-- [ ] code fixes: safe-delete dead symbol
+- [x] code fixes: safe-delete dead symbol — `[ANALYZERS-DEADCODE-FIX]` "Remove unused"
+      ([FSharpDeadCodeFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpDeadCodeFixes.fs))
 
 ## Pre-existing backlog (unchanged)
 
