@@ -88,7 +88,7 @@ impl SidecarManager {
         validate_response_id(&response, id)?;
         if let Some(error) = response.error {
             error!(sidecar = %self.name, method, id, %error, "Sidecar error");
-            bail!("sidecar error: {error}");
+            return Err(CompilerRefusal(error).into());
         }
         info!(sidecar = %self.name, method, id, bytes = response.payload.len(), "Sidecar response");
         Ok(response.payload)
@@ -104,6 +104,19 @@ impl SidecarManager {
         }
     }
 }
+
+/// A compiler's own error reply: it answered, and refused the request. The
+/// connection stays usable, unlike a transport failure or a timeout.
+#[derive(Debug)]
+pub(crate) struct CompilerRefusal(String);
+
+impl std::fmt::Display for CompilerRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "sidecar error: {}", self.0)
+    }
+}
+
+impl std::error::Error for CompilerRefusal {}
 
 /// Require an ordinary request identity before handling its timeout.
 fn request_identity(request: &Envelope) -> Result<(&str, u32)> {
