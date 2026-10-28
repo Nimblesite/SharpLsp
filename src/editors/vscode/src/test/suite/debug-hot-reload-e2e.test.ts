@@ -262,10 +262,12 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
       fs.writeFileSync(razorPath, '<h1>Owned</h1>\n', 'utf8');
       const razorDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(razorPath));
       eq(razorDoc.languageId, 'razor', 'VS Code opens a .razor file as the razor language');
-      const razorEditor = await vscode.window.showTextDocument(razorDoc);
-      await razorEditor.edit((b) => {
-        b.insert(new vscode.Position(0, 0), '<p>touched</p>');
-      });
+      await vscode.window.showTextDocument(razorDoc);
+      // Edit the document, not the editor: the paused frame's reveal can
+      // replace the Razor editor, which `TextEditor.edit` then rejects.
+      const touch = new vscode.WorkspaceEdit();
+      touch.insert(razorDoc.uri, new vscode.Position(0, 0), '<p>touched</p>');
+      assert.ok(await vscode.workspace.applyEdit(touch), 'the Razor edit must apply');
       assert.ok(await razorDoc.save(), 'the Razor document must save — that is the trigger');
       await sleep(RELOAD_SETTLE_MS);
 
