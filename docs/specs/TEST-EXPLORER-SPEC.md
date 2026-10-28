@@ -77,7 +77,12 @@ passes:
    projects and to learn, from the `Test run for <assembly> (<framework>)` banners, which
    test assemblies were produced. A solution prints one banner per project, and the banners
    and names of parallel projects interleave arbitrarily, so every line is classified
-   independently; a banner-index slice is not admissible.
+   independently; a banner-index slice is not admissible. The passes also write to one
+   stdout unsynchronised, so a banner can arrive glued to another pass's text on either
+   side of it (`The following Tests are available:Test run for …`). Every banner on a line
+   counts, wherever it starts. One that does not open its line counts only when its
+   `(<FrameworkName>)` closes it, so a test name carrying the words is never a banner. The
+   framework is the rightmost group naming one, never simply the last parenthesis.
 2. `dotnet vstest <assembly…> --ListFullyQualifiedTests --ListTestsTargetPath:<file>` —
    writes `TestCase.FullyQualifiedName` verbatim, one per line, to a file. The FILE is the
    source of truth: a non-zero exit with a populated file still counts.

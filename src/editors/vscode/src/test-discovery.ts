@@ -67,38 +67,67 @@ const VSTEST_LISTING_OUTPUT = '-p:VsTestUseMSBuildOutput=false';
  */
 const MAX_ASSEMBLY_ARG_CHARS = MAX_ARG_CHARS;
 
-/**
- * Extract the assembly path from a `Test run for <path> (<framework>)` banner.
- * The path may itself contain spaces and parentheses, so the framework suffix is
- * stripped from the RIGHT rather than pattern-matched.
- */
-function assemblyFromBanner(line: string): string | undefined {
-  if (!line.startsWith(ASSEMBLY_BANNER)) return undefined;
-  const rest = line.slice(ASSEMBLY_BANNER.length);
-  const suffix = rest.lastIndexOf(' (');
-  const candidate = (suffix === -1 ? rest : rest.slice(0, suffix)).trim();
-  return candidate.length === 0 ? undefined : candidate;
+/** Every FrameworkName a banner closes with carries this: `.NETCoreApp,Version=v10.0`. */
+const FRAMEWORK_VERSION = ',Version=';
+
+/** One `Test run for <path> (<framework>)` banner, as announced. */
+interface Banner {
+  readonly assembly: string;
+  /** Short moniker (`net48`), when the banner named its framework. */
+  readonly framework?: string;
 }
 
 /**
- * The framework a banner closes with — `(.NETFramework,Version=v4.8)` → `net48`
- * — or `undefined`. Read from the RIGHT, like the path it follows.
- * Spec: [NETFX-TEST-DISCOVERY].
+ * Every banner in one stdout line. A solution's VSTest passes write to ONE
+ * stdout unsynchronised, so a banner can arrive glued to another pass's text on
+ * either side (`The following Tests are available:Test run for …`). One glued
+ * after other text counts only when its framework closes it, so a test name
+ * that happens to carry the words is never mistaken for a banner.
+ * Spec: [TEST-DISCOVERY-FQN], [NETFX-TEST-DISCOVERY].
  */
-function frameworkFromBanner(line: string): string | undefined {
-  if (!line.startsWith(ASSEMBLY_BANNER) || !line.endsWith(')')) return undefined;
-  const open = line.lastIndexOf(' (');
-  return open === -1 ? undefined : frameworkMoniker(line.slice(open + 2, -1));
+function bannersIn(line: string): Banner[] {
+  const [lead, ...pieces] = line.split(ASSEMBLY_BANNER);
+  return pieces.flatMap((rest, index) => {
+    const banner =
+      framedBanner(rest) ?? (index === 0 && lead === '' ? bareBanner(rest) : undefined);
+    return banner === undefined ? [] : [banner];
+  });
+}
+
+/**
+ * `<path> (<FrameworkName>)` at the start of `rest`, whatever was glued after
+ * it. The path may itself contain spaces and parentheses, so the framework is
+ * the RIGHTMOST group that names one, not the last parenthesis on the line.
+ */
+function framedBanner(rest: string): Banner | undefined {
+  for (let open = rest.lastIndexOf(' ('); open > 0; open = rest.lastIndexOf(' (', open - 1)) {
+    const close = rest.indexOf(')', open);
+    const name = close === -1 ? '' : rest.slice(open + 2, close);
+    if (name.includes(FRAMEWORK_VERSION)) {
+      const assembly = rest.slice(0, open).trim();
+      return assembly.length === 0 ? undefined : { assembly, framework: frameworkMoniker(name) };
+    }
+  }
+  return undefined;
+}
+
+/** A banner opening its line that names no framework: the path is all of it. */
+function bareBanner(rest: string): Banner | undefined {
+  const suffix = rest.lastIndexOf(' (');
+  const assembly = (suffix === -1 ? rest : rest.slice(0, suffix)).trim();
+  return assembly.length === 0 ? undefined : { assembly };
+}
+
+/** Every banner of `output`, line by line, in the order they were written. */
+function announcedBanners(output: string): Banner[] {
+  return output.split('\n').flatMap((raw) => bannersIn(raw.trim()));
 }
 
 /** Each announced assembly's framework, keyed by its ON-DISK path. */
 export function parseAnnouncedFrameworks(output: string): Map<string, string> {
   const frameworks = new Map<string, string>();
-  for (const raw of output.split('\n')) {
-    const line = raw.trim();
-    const announced = assemblyFromBanner(line);
-    const assembly = announced === undefined ? undefined : resolveAnnouncedAssembly(announced);
-    const framework = frameworkFromBanner(line);
+  for (const { assembly: announced, framework } of announcedBanners(output)) {
+    const assembly = resolveAnnouncedAssembly(announced);
     if (assembly !== undefined && framework !== undefined) frameworks.set(assembly, framework);
   }
   return frameworks;
@@ -120,12 +149,7 @@ function assemblyListing(
 
 /** Every assembly path a `dotnet test --list-tests` run announced, in order. */
 export function parseAnnouncedAssemblies(output: string): string[] {
-  const assemblies = new Set<string>();
-  for (const raw of output.split('\n')) {
-    const assembly = assemblyFromBanner(raw.trim());
-    if (assembly !== undefined) assemblies.add(assembly);
-  }
-  return [...assemblies];
+  return [...new Set(announcedBanners(output).map((banner) => banner.assembly))];
 }
 
 /**
