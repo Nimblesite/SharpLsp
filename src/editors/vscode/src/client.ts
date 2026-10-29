@@ -26,6 +26,7 @@ import { createOpenSync, type OpenSync } from './open-sync.js';
 import { createRazorHtml, RAZOR_LANGUAGES, serverProjection } from './razor-html.js';
 import { createAnsiStrippingChannel } from './output-filter.js';
 import { serverStdioOptions } from './server-stderr.js';
+import { createCodeActionFailureMiddleware } from './code-action-failures.js';
 import { detectRuntimePlatform } from './platform.js';
 import * as state from './state.js';
 import { wireBuildDiscovery } from './test-builds.js';
@@ -144,6 +145,9 @@ export async function start(
     middleware: {
       ...openSync.middleware,
       ...razorHtml.middleware,
+      // A failed code action must tell the user it failed, exactly once.
+      // [REFACTOR-NEVER-SILENT]
+      ...createCodeActionFailureMiddleware(),
       sendRequest: observeResponses(openSync.middleware.sendRequest),
     },
   };

@@ -29,17 +29,20 @@ import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // Full real-LSP lifecycle coverage for [ANALYZERS-FSAC-PARITY]. No mocked providers.
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
+// [REFACTOR-IMPORT-FSHARP] Titles are the exact user-facing spec strings.
+const openTitle = (namespaceName: string): string =>
+  `Add 'open ${namespaceName}' — imports every type and module in namespace ${namespaceName}`;
 const FALSE_OPEN_CASES: readonly (readonly [string, string])[] = [
-  ['MyPath', "Add 'open System.IO'"],
-  ['MyFile', "Add 'open System.IO'"],
-  ['MyDirectory', "Add 'open System.IO'"],
-  ['MyTask', "Add 'open System.Threading.Tasks'"],
-  ['MyAsync', "Add 'open System.Threading.Tasks'"],
-  ['MyRegex', "Add 'open System.Text.RegularExpressions'"],
-  ['MyList', "Add 'open System.Collections.Generic'"],
-  ['map', "Add 'open System.Collections.Generic'"],
-  ['filter', "Add 'open System.Collections.Generic'"],
-  ['fold', "Add 'open System.Collections.Generic'"],
+  ['MyPath', openTitle('System.IO')],
+  ['MyFile', openTitle('System.IO')],
+  ['MyDirectory', openTitle('System.IO')],
+  ['MyTask', openTitle('System.Threading.Tasks')],
+  ['MyAsync', openTitle('System.Threading.Tasks')],
+  ['MyRegex', openTitle('System.Text.RegularExpressions')],
+  ['MyList', openTitle('System.Collections.Generic')],
+  ['map', openTitle('System.Collections.Generic')],
+  ['filter', openTitle('System.Collections.Generic')],
+  ['fold', openTitle('System.Collections.Generic')],
 ];
 
 interface BasicFixSpec extends CodeFixScenario {

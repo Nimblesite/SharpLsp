@@ -21,6 +21,14 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <!-- [REFACTOR-IMPORT-REFERENCE]: the curated well-known package table both sidecars read. -->
+        <EmbeddedResource
+            Include="References/WellKnownPackages.json"
+            LogicalName="SharpLsp.WellKnownPackages.json"
+        />
+    </ItemGroup>
+
+    <ItemGroup>
         <InternalsVisibleTo Include="SharpLsp.Sidecar.Common.Tests" />
         <ProjectReference Include="../../../lspkit/dotnet/LspKit.Sidecar/LspKit.Sidecar.csproj" />
     </ItemGroup>

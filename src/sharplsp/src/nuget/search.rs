@@ -87,6 +87,16 @@ pub async fn fetch_versions(package_id: &str) -> Result<Vec<String>> {
     Ok(versions)
 }
 
+/// The newest version of `package_id` on nuget.org that is not a prerelease.
+/// [REFACTOR-IMPORT-REFERENCE]
+pub async fn latest_stable(package_id: &str) -> Result<String> {
+    fetch_versions(package_id)
+        .await?
+        .into_iter()
+        .find(|version| super::consolidate::split_prerelease(version).1.is_empty())
+        .with_context(|| format!("nuget.org lists no stable version of {package_id}"))
+}
+
 /// Map `NuGet` v3 API packages to our LSP response type.
 fn map_packages(resp: &NuGetApiSearchResponse) -> Vec<PackageInfo> {
     resp.data
