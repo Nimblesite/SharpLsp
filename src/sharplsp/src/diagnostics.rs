@@ -371,6 +371,9 @@ async fn fetch(
     fetch_cancellable(sidecar, file_path, source_tag, None).await
 }
 
+/// The context every compiler diagnostics request's failure carries.
+pub(crate) const DIAGNOSTICS_REQUEST: &str = "sidecar diagnostics request";
+
 /// Request fresh compiler findings under the caller's execution lifetime.
 async fn fetch_cancellable(
     sidecar: &SidecarManager,
@@ -387,7 +390,7 @@ async fn fetch_cancellable(
     let response_bytes = sidecar
         .request_cancellable(method, payload, cancel)
         .await
-        .context("sidecar diagnostics request")?;
+        .context(DIAGNOSTICS_REQUEST)?;
     let results: Vec<SidecarDiagnostic> =
         rmp_serde::from_slice(&response_bytes).context("deserialize diagnostics")?;
     Ok(results

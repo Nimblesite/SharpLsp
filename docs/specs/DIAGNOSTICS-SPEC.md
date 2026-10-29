@@ -433,6 +433,7 @@ When a file changes:
 - A diagnostic in the Problems panel corresponds to a real Roslyn compiler or analyzer diagnostic from the current `Solution` snapshot.
 - A workspace mutation that changes a file's diagnostics produces an LSP `workspace/diagnostic/refresh` within 2000ms (the debounce window). Editors converge to truth one pull cycle after that.
 - A failed SDK design-time evaluation cannot authorize diagnostics from fallback compiler inputs. Document and workspace pulls return an internal error (`-32603`) retaining the actual SDK cause; genuine supersession remains retryable (`-32802`, `retriggerRequest: true`). Successful SDK repair produces a fresh result identity. The failure applies to the selected compiler context and its in-memory dependencies, leaving independent valid owners available (#488).
+- Any other refusal by the compiler, such as a document outside every project, is settled for the current inputs. A document pull answers server-cancelled (`-32802`) with the compiler's cause and `retriggerRequest: false`, so the editor keeps what it showed rather than an empty report. A workspace pull reports every other document and leaves the refused one as the editor had it, never retiring it as clean. Neither is asked again until the workspace changes, which refreshes: told it could retry at once, VS Code re-pulled one such document 165,000 times in thirteen minutes until its extension host stopped responding (#527).
 
 ### [DIAG-TRUTH-RECOVERY] Compiler Recovery
 

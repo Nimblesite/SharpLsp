@@ -15,6 +15,7 @@ use super::protocol::Envelope;
 use super::transport::FramedTransport;
 
 mod exchange;
+pub(crate) use exchange::CompilerRefusal;
 mod preemption;
 mod recovery;
 mod shutdown;

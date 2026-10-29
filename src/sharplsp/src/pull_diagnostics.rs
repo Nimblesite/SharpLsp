@@ -87,7 +87,10 @@ fn collect_reports(
         snapshot.check()?;
         let uri = paths::path_to_lsp_uri(&document.file_path)?;
         if seen.insert(paths::comparison_key(&document.file_path)) {
-            let report = workspace_report(uri.as_str(), params, vfs, snapshot)?;
+            let Some(report) = unrefused(workspace_report(uri.as_str(), params, vfs, snapshot))?
+            else {
+                continue;
+            };
             if is_new_clean_project(&document.file_path, uri.as_str(), &report, params) {
                 continue;
             }
@@ -101,6 +104,20 @@ fn collect_reports(
     snapshot.check()?;
     retire_previous(params, &seen, &mut items, snapshot)?;
     Ok(items)
+}
+
+/// A document the compiler refuses is left as the editor last had it, counted as
+/// seen so it is never retired as clean, while the other documents report. A
+/// refusal failed the whole pull before, which the editor asked again at once
+/// (#527). [DIAG-TRUTH-GUARANTEES]
+fn unrefused(report: Result<Value>) -> Result<Option<Value>> {
+    match report {
+        Err(error) if requests::settled_refusal(&error) => {
+            tracing::debug!(%error, "Workspace pull left a refused document as it was");
+            Ok(None)
+        }
+        report => report.map(Some),
+    }
 }
 
 /// Document-level report shared by individual and workspace pulls.

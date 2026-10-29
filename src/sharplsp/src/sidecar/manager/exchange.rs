@@ -110,9 +110,15 @@ impl SidecarManager {
 #[derive(Debug)]
 pub(crate) struct CompilerRefusal(String);
 
+impl CompilerRefusal {
+    /// How a refusal renders ahead of the compiler's own message, which is how a
+    /// diagnostic pull recognizes one after the shared store flattened it to text.
+    pub(crate) const PREFIX: &'static str = "sidecar error: ";
+}
+
 impl std::fmt::Display for CompilerRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "sidecar error: {}", self.0)
+        write!(f, "{}{}", Self::PREFIX, self.0)
     }
 }
 
