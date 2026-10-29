@@ -16,6 +16,7 @@ import { activeMemorySession } from '@nimblesite/lsp-profiler-ui/out/src/memory-
 import {
   recordedAutopilotCaptures,
   recordedLeakOffers,
+  type LeakActionOffer,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-autopilot';
 import { referenceTypeCandidates } from '@nimblesite/lsp-profiler-ui/out/src/memory-ref-picker';
 import {
@@ -26,6 +27,7 @@ import {
   appliedMemoryDecorations,
   clearMemoryDecorations,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
+import { fileNameOf } from '../../paths';
 import type { DapRecorder } from './debug-dap-kit';
 import { comparablePath } from './test-helpers';
 import { LEAK_PALETTE, MEMORY_PALETTE } from './profiler-fsharp-kit';
@@ -94,6 +96,23 @@ function sawHighConfidence(): boolean {
 
 function onProgram(debuggee: Debuggee): (entry: { file: string }) => boolean {
   return (entry) => comparablePath(entry.file) === comparablePath(debuggee.program);
+}
+
+/**
+ * The offer names its leak by what the runtime reported (its type, its source
+ * line, or both) and never by an empty location: every run offered "Suspected
+ * memory leak at :0" for the leaked byte[] (lspkit [PROF-UI-AUTOPILOT]).
+ */
+function assertOfferNamesItsLeak(offer: LeakActionOffer, debuggee: Debuggee): void {
+  const shown = JSON.stringify(offer);
+  assert.ok(!offer.message.includes(' :0') && !offer.message.includes(' at :'), `no empty location: ${shown}`);
+  assert.ok(offer.typeName !== '' || offer.line > 0, `the offer names a type or a line: ${shown}`);
+  if (offer.typeName !== '') assert.ok(offer.message.includes(offer.typeName), `it names its type: ${shown}`);
+  if (offer.line === 0) return;
+  assert.ok(LEAK_LINES.includes(offer.line), `a located offer points at the leak: ${shown}`);
+  assert.equal(comparablePath(offer.file), comparablePath(debuggee.program), `in the program: ${shown}`);
+  const at = `${fileNameOf(debuggee.program)}:${offer.line}`;
+  assert.ok(offer.message.includes(at), `it names ${at}: ${shown}`);
 }
 
 /** Interval mode on, with no breakpoint to hold the program. */
@@ -364,6 +383,8 @@ suite('Memory autopilot — real end-to-end', () => {
       `the offer must point at a leak the HIGH capture flagged: ${JSON.stringify(offer)} vs ${JSON.stringify(high)}`,
     );
     assert.equal(offers[0]?.confidence, 'HIGH', 'the offer must carry the HIGH confidence');
+    assert.ok(offer !== undefined);
+    assertOfferNamesItsLeak(offer, target);
   });
 
   test('pause capture is courier-only: a paused .NET program is never auto-captured, even with autoSnapshotOnPause on', async function () {
