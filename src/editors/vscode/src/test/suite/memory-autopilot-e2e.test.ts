@@ -26,6 +26,7 @@ import {
   appliedMemoryDecorations,
   clearMemoryDecorations,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
+import type { DapRecorder } from './debug-dap-kit';
 import { comparablePath } from './test-helpers';
 import { LEAK_PALETTE, MEMORY_PALETTE } from './profiler-fsharp-kit';
 import { setProfilerSetting } from './profiler-kit';
@@ -51,14 +52,19 @@ const QUIET_SETTLE_MS = 1500;
 const AUTO_CAPTURE_WAIT_MS = 40_000;
 
 /**
- * Budget for a capture in flight to let go once its session is stopped or its
- * target dies. The stuck capture this guards against sat out the engine's 90 s
- * SessionRun deadline, and starved the next session's autopilot meanwhile
- * (lspkit [PROF-MEMORY-STOP]); a released capture answers within a round trip.
+ * Budget for a held capture to let go once it is released. The stuck capture
+ * this guards against sat out the engine's 90 s SessionRun deadline, and
+ * starved the next session's autopilot meanwhile (lspkit [PROF-MEMORY-STOP]);
+ * a released capture answers within a round trip, or a capture's own length.
  */
 const RELEASE_MS = 15_000;
-/** Poll step while racing a capture: one is in flight for well under a second. */
-const IN_FLIGHT_POLL_MS = 10;
+/** Poll step while racing a capture, which takes about a second. */
+const IN_FLIGHT_POLL_MS = 5;
+/**
+ * How long a paused capture must stay in flight to count as held: twice the
+ * second a whole capture takes, so one that merely finished late cannot pass.
+ */
+const HOLD_MS = 2_000;
 
 /** Profiler config keys this suite toggles; reset to default after each test. */
 const CONFIG_KEYS = ['autoSnapshotOnPause', 'autoSnapshot', 'autoSnapshotInterval'];
@@ -105,11 +111,14 @@ async function track(pid: number, what: string): Promise<void> {
   assert.ok(activeMemorySession() !== undefined, `${what}: tracking must start`);
 }
 
-/** A fresh launch of `target`, tracked on the interval; its session and PID. */
-async function launchTracked(
-  target: Debuggee,
-  name: string,
-): Promise<{ session: vscode.DebugSession; pid: number }> {
+/** A launched debuggee: its debug session and its process. */
+interface Launched {
+  readonly session: vscode.DebugSession;
+  readonly pid: number;
+}
+
+/** A fresh launch of `target`, tracked on the interval. */
+async function launchTracked(target: Debuggee, name: string): Promise<Launched> {
   const session = await launch(target, launchConfig(target, name));
   const pid = await debuggeePid(session);
   await track(pid, name);
@@ -131,16 +140,46 @@ async function waitForCaptureInFlight(): Promise<void> {
   });
 }
 
-/** The capture that was in flight has answered, and tracking has stopped. */
-async function assertReleased(what: string): Promise<void> {
+/**
+ * Pause the program while an automatic capture is mid-read. A .NET runtime the
+ * debugger holds cannot answer it, so the capture stays in flight for as long
+ * as the pause lasts: the step CI's teardown caught, held open on purpose
+ * rather than by timing. Returns how many captures were recorded before it.
+ */
+async function holdCapture(recorder: DapRecorder): Promise<number> {
+  await waitForCaptureInFlight();
+  const recorded = recordedAutopilotCaptures().length;
+  await vscode.commands.executeCommand('workbench.action.debug.pause');
+  await waitForPause(recorder, 1);
+  await delay(HOLD_MS);
+  assert.ok(isMemoryOperationInFlight(), 'the capture the pause holds is still in flight');
+  assert.equal(recordedAutopilotCaptures().length, recorded, 'and has recorded nothing yet');
+  return recorded;
+}
+
+/** The held capture has answered, and tracking stopped. Spec: lspkit [PROF-MEMORY-STOP]. */
+async function assertStopped(what: string): Promise<void> {
   await pollUntilResult({
     fn: () => isMemoryOperationInFlight() || activeMemorySession() !== undefined,
     until: (held) => !held,
     timeoutMs: RELEASE_MS,
-    description: `${what}: the capture in flight to answer and tracking to stop`,
+    description: `${what}: the held capture to answer and tracking to stop`,
   });
   assert.equal(isMemoryOperationInFlight(), false, `${what}: no capture is left in flight`);
   assert.equal(activeMemorySession(), undefined, `${what}: tracking has stopped`);
+}
+
+/** The held capture finished and was recorded, and tracking carried on. */
+async function assertHeldCaptureRecorded(what: string, recorded: number): Promise<void> {
+  await pollUntilResult({
+    fn: () => recordedAutopilotCaptures().length,
+    until: (count) => count > recorded,
+    timeoutMs: RELEASE_MS,
+    description: `${what}: the held capture to finish`,
+  });
+  const held = recordedAutopilotCaptures()[recorded];
+  assert.equal(held?.trigger, 'interval', `${what}: the held capture is the interval's`);
+  assert.ok(activeMemorySession() !== undefined, `${what}: tracking carries on`);
 }
 
 /** Whether process `pid` is still running. */
@@ -152,10 +191,10 @@ function isRunning(pid: number): boolean {
   }
 }
 
-/** The autopilot captures on the interval again, within its usual budget. */
-async function assertAutopilotResumes(what: string): Promise<void> {
-  await waitForAutoCaptures(2);
-  const captures = recordedAutopilotCaptures();
+/** The autopilot captures twice more on the interval after `from`, within its usual budget. */
+async function assertAutopilotResumes(what: string, from: number): Promise<void> {
+  await waitForAutoCaptures(from + 2);
+  const captures = recordedAutopilotCaptures().slice(from);
   assert.ok(captures.length >= 2, `${what}: two captures, got ${captures.length}`);
   assert.ok(
     captures.every((capture) => capture.trigger === 'interval'),
@@ -163,42 +202,70 @@ async function assertAutopilotResumes(what: string): Promise<void> {
   );
 }
 
-/** How a test lets go of the tracked session while a capture is in flight. */
+/** How a test lets go of a capture the pause holds. */
 interface Release {
   readonly what: string;
   /** Whether the debuggee survives the release. */
   readonly survives: boolean;
+  /** Whether tracking carries on through the release. */
+  readonly keepsTracking: boolean;
   readonly release: () => Promise<void>;
 }
 
 /**
- * Let go of a tracked `target` mid-capture by `release`: the capture answers,
- * the program lives or dies as the release says, and tracking it again — the
- * same program, or a fresh launch — captures within the usual budget.
+ * Hold a tracked `target`'s capture with a pause, then let go of it by
+ * `release`: the capture answers, the program lives or dies as the release
+ * says, and tracking — carried on, picked up again, or of a fresh launch —
+ * captures within the usual budget.
  */
-async function releaseMidCapture(target: Debuggee, release: Release): Promise<void> {
-  const { what } = release;
+async function releaseHeldCapture(
+  target: Debuggee,
+  recorder: DapRecorder,
+  release: Release,
+): Promise<void> {
   await useIntervalMode(target);
-  const first = await launchTracked(target, `Released: ${what}`);
-  await waitForCaptureInFlight();
+  const first = await launchTracked(target, `Held: ${release.what}`);
+  const recorded = await holdCapture(recorder);
   await release.release();
-  await assertReleased(what);
-  if (release.survives) {
-    assert.equal(vscode.debug.activeDebugSession?.id, first.session.id, `${what}: still debugged`);
-    assert.ok(isRunning(first.pid), `${what}: the program keeps running`);
-    await track(first.pid, `${what}, tracked again`);
-  } else {
-    assert.equal(vscode.debug.activeDebugSession, undefined, `${what}: the session has ended`);
-    await launchTracked(target, `After: ${what}`);
-  }
-  await assertAutopilotResumes(what);
+  if (release.keepsTracking) await assertHeldCaptureRecorded(release.what, recorded);
+  else await assertStopped(release.what);
+  const from = await trackAgain(target, release, first, recorded);
+  await assertAutopilotResumes(release.what, from);
 }
 
-/** Every way a session is let go of mid-capture. Spec: lspkit [PROF-MEMORY-STOP]. */
+/** Pick tracking up after `release`; the ledger length new captures count from. */
+async function trackAgain(
+  target: Debuggee,
+  release: Release,
+  first: Launched,
+  recorded: number,
+): Promise<number> {
+  const { what } = release;
+  if (!release.survives) {
+    assert.equal(vscode.debug.activeDebugSession, undefined, `${what}: the session has ended`);
+    await launchTracked(target, `After: ${what}`);
+    return 0;
+  }
+  assert.equal(vscode.debug.activeDebugSession?.id, first.session.id, `${what}: still debugged`);
+  assert.ok(isRunning(first.pid), `${what}: the program keeps running`);
+  if (release.keepsTracking) return recorded;
+  await resume();
+  await track(first.pid, `${what}, tracked again`);
+  return 0;
+}
+
+/** Every way a held capture is let go of. Spec: lspkit [PROF-MEMORY-STOP]. */
 const RELEASES: readonly Release[] = [
+  {
+    what: 'the program continued, so the read it held completes',
+    survives: true,
+    keepsTracking: true,
+    release: resume,
+  },
   {
     what: 'tracking stopped, program left running',
     survives: true,
+    keepsTracking: false,
     release: async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.memoryStop');
     },
@@ -206,6 +273,7 @@ const RELEASES: readonly Release[] = [
   {
     what: 'tracking stopped, then the program killed (the CI teardown)',
     survives: false,
+    keepsTracking: false,
     release: async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.memoryStop');
       await endSessions();
@@ -214,6 +282,7 @@ const RELEASES: readonly Release[] = [
   {
     what: 'the program killed while still tracked',
     survives: false,
+    keepsTracking: false,
     release: endSessions,
   },
 ];
@@ -341,9 +410,9 @@ suite('Memory autopilot — real end-to-end', () => {
   // the program once sat out the engine's 90 s deadline, so the next test's
   // session never captured ("2 automatic capture(s) not met within 40000ms").
   for (const release of RELEASES) {
-    test(`a capture in flight lets go when ${release.what}, and the autopilot captures on time after`, async function () {
+    test(`a capture a pause holds lets go when ${release.what}, and the autopilot captures on time after`, async function () {
       this.timeout(240_000);
-      await releaseMidCapture(built(), release);
+      await releaseHeldCapture(built(), recorder(), release);
     });
   }
 
