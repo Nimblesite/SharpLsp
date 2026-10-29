@@ -18,7 +18,10 @@ import {
   recordedLeakOffers,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-autopilot';
 import { referenceTypeCandidates } from '@nimblesite/lsp-profiler-ui/out/src/memory-ref-picker';
-import { lastMemorySnapshot } from '@nimblesite/lsp-profiler-ui/out/src/memory-capture';
+import {
+  isMemoryOperationInFlight,
+  lastMemorySnapshot,
+} from '@nimblesite/lsp-profiler-ui/out/src/memory-capture';
 import {
   appliedMemoryDecorations,
   clearMemoryDecorations,
@@ -31,6 +34,7 @@ import {
   LEAK_LINES,
   LOOP_LINE,
   debuggeePid,
+  endSessions,
   launch,
   launchConfig,
   resume,
@@ -45,6 +49,16 @@ import {
 const QUIET_SETTLE_MS = 1500;
 /** Budget for the autopilot to accumulate captures. */
 const AUTO_CAPTURE_WAIT_MS = 40_000;
+
+/**
+ * Budget for a capture in flight to let go once its session is stopped or its
+ * target dies. The stuck capture this guards against sat out the engine's 90 s
+ * SessionRun deadline, and starved the next session's autopilot meanwhile
+ * (lspkit [PROF-MEMORY-STOP]); a released capture answers within a round trip.
+ */
+const RELEASE_MS = 15_000;
+/** Poll step while racing a capture: one is in flight for well under a second. */
+const IN_FLIGHT_POLL_MS = 10;
 
 /** Profiler config keys this suite toggles; reset to default after each test. */
 const CONFIG_KEYS = ['autoSnapshotOnPause', 'autoSnapshot', 'autoSnapshotInterval'];
@@ -75,6 +89,134 @@ function sawHighConfidence(): boolean {
 function onProgram(debuggee: Debuggee): (entry: { file: string }) => boolean {
   return (entry) => comparablePath(entry.file) === comparablePath(debuggee.program);
 }
+
+/** Interval mode on, with no breakpoint to hold the program. */
+async function useIntervalMode(target: Debuggee): Promise<void> {
+  await setProfilerConfig('autoSnapshotOnPause', false);
+  await setProfilerConfig('autoSnapshot', true);
+  await setProfilerConfig('autoSnapshotInterval', 1);
+  vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
+  await showProgram(target);
+}
+
+/** Start tracking `pid` and confirm it took. */
+async function track(pid: number, what: string): Promise<void> {
+  await vscode.commands.executeCommand('sharplsp.profiler.memoryStart', pid);
+  assert.ok(activeMemorySession() !== undefined, `${what}: tracking must start`);
+}
+
+/** A fresh launch of `target`, tracked on the interval; its session and PID. */
+async function launchTracked(
+  target: Debuggee,
+  name: string,
+): Promise<{ session: vscode.DebugSession; pid: number }> {
+  const session = await launch(target, launchConfig(target, name));
+  const pid = await debuggeePid(session);
+  await track(pid, name);
+  return { session, pid };
+}
+
+/**
+ * Wait for the autopilot's first capture, then for the next one to be mid-flight:
+ * the moment CI's teardown stopped a session ([PROF-UI-AUTOPILOT]).
+ */
+async function waitForCaptureInFlight(): Promise<void> {
+  await waitForAutoCaptures(1);
+  await pollUntilResult({
+    fn: () => isMemoryOperationInFlight(),
+    until: (busy) => busy,
+    timeoutMs: AUTO_CAPTURE_WAIT_MS,
+    intervalMs: IN_FLIGHT_POLL_MS,
+    description: 'an automatic capture in flight',
+  });
+}
+
+/** The capture that was in flight has answered, and tracking has stopped. */
+async function assertReleased(what: string): Promise<void> {
+  await pollUntilResult({
+    fn: () => isMemoryOperationInFlight() || activeMemorySession() !== undefined,
+    until: (held) => !held,
+    timeoutMs: RELEASE_MS,
+    description: `${what}: the capture in flight to answer and tracking to stop`,
+  });
+  assert.equal(isMemoryOperationInFlight(), false, `${what}: no capture is left in flight`);
+  assert.equal(activeMemorySession(), undefined, `${what}: tracking has stopped`);
+}
+
+/** Whether process `pid` is still running. */
+function isRunning(pid: number): boolean {
+  try {
+    return process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+}
+
+/** The autopilot captures on the interval again, within its usual budget. */
+async function assertAutopilotResumes(what: string): Promise<void> {
+  await waitForAutoCaptures(2);
+  const captures = recordedAutopilotCaptures();
+  assert.ok(captures.length >= 2, `${what}: two captures, got ${captures.length}`);
+  assert.ok(
+    captures.every((capture) => capture.trigger === 'interval'),
+    `${what}: every capture is interval-triggered, got: ${captures.map((c) => c.trigger).join(', ')}`,
+  );
+}
+
+/** How a test lets go of the tracked session while a capture is in flight. */
+interface Release {
+  readonly what: string;
+  /** Whether the debuggee survives the release. */
+  readonly survives: boolean;
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Let go of a tracked `target` mid-capture by `release`: the capture answers,
+ * the program lives or dies as the release says, and tracking it again — the
+ * same program, or a fresh launch — captures within the usual budget.
+ */
+async function releaseMidCapture(target: Debuggee, release: Release): Promise<void> {
+  const { what } = release;
+  await useIntervalMode(target);
+  const first = await launchTracked(target, `Released: ${what}`);
+  await waitForCaptureInFlight();
+  await release.release();
+  await assertReleased(what);
+  if (release.survives) {
+    assert.equal(vscode.debug.activeDebugSession?.id, first.session.id, `${what}: still debugged`);
+    assert.ok(isRunning(first.pid), `${what}: the program keeps running`);
+    await track(first.pid, `${what}, tracked again`);
+  } else {
+    assert.equal(vscode.debug.activeDebugSession, undefined, `${what}: the session has ended`);
+    await launchTracked(target, `After: ${what}`);
+  }
+  await assertAutopilotResumes(what);
+}
+
+/** Every way a session is let go of mid-capture. Spec: lspkit [PROF-MEMORY-STOP]. */
+const RELEASES: readonly Release[] = [
+  {
+    what: 'tracking stopped, program left running',
+    survives: true,
+    release: async () => {
+      await vscode.commands.executeCommand('sharplsp.profiler.memoryStop');
+    },
+  },
+  {
+    what: 'tracking stopped, then the program killed (the CI teardown)',
+    survives: false,
+    release: async () => {
+      await vscode.commands.executeCommand('sharplsp.profiler.memoryStop');
+      await endSessions();
+    },
+  },
+  {
+    what: 'the program killed while still tracked',
+    survives: false,
+    release: endSessions,
+  },
+];
 
 suite('Memory autopilot — real end-to-end', () => {
   const { debuggee: built, recorder } = useDebuggee('mem-autopilot-', async () => {
@@ -184,18 +326,8 @@ suite('Memory autopilot — real end-to-end', () => {
   test('interval mode: a running program with no breakpoint is auto-captured on a timer', async function () {
     this.timeout(90_000);
     const target = built();
-    await setProfilerConfig('autoSnapshotOnPause', false);
-    await setProfilerConfig('autoSnapshot', true);
-    await setProfilerConfig('autoSnapshotInterval', 1);
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
-    await showProgram(target);
-    const session = await launch(target, launchConfig(target, 'Autopilot interval'));
-
-    await vscode.commands.executeCommand(
-      'sharplsp.profiler.memoryStart',
-      await debuggeePid(session),
-    );
-    assert.ok(activeMemorySession() !== undefined, 'tracking must start on the running program');
+    await useIntervalMode(target);
+    await launchTracked(target, 'Autopilot interval');
 
     await waitForAutoCaptures(2);
     const captures = recordedAutopilotCaptures();
@@ -204,6 +336,16 @@ suite('Memory autopilot — real end-to-end', () => {
       `every capture must be interval-triggered, got: ${captures.map((c) => c.trigger).join(', ')}`,
     );
   });
+
+  // A capture the interval sent just before teardown stopped tracking and killed
+  // the program once sat out the engine's 90 s deadline, so the next test's
+  // session never captured ("2 automatic capture(s) not met within 40000ms").
+  for (const release of RELEASES) {
+    test(`a capture in flight lets go when ${release.what}, and the autopilot captures on time after`, async function () {
+      this.timeout(240_000);
+      await releaseMidCapture(built(), release);
+    });
+  }
 
   test("reference-graph picker is populated from the real snapshot's own types (no free-text)", async function () {
     this.timeout(90_000);
