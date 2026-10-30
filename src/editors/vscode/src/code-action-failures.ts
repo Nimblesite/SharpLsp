@@ -26,9 +26,14 @@ export function failureMessage(title: string, reason: string): string {
   return `SharpLsp could not apply "${title}": ${reason}. The details are in Output › SharpLsp.`;
 }
 
-/** Whether a resolved action carries something that changes the user's code. */
+/**
+ * Whether a resolved action carries something that changes the user's code. A
+ * rename-only edit has no text edits (`size` is 0) yet still changes the file,
+ * so any edit counts; an empty edit is refused by the server tiers before it gets
+ * here ([REFACTOR-NEVER-SILENT]).
+ */
 function carriesChange(action: vscode.CodeAction): boolean {
-  return (action.edit?.size ?? 0) > 0 || action.command !== undefined;
+  return action.edit !== undefined || action.command !== undefined;
 }
 
 /** Cancellation is not a failure: the user or the editor withdrew the request. */
@@ -76,11 +81,11 @@ export function createCodeActionFailureMiddleware(): Pick<Middleware, 'resolveCo
         if (token.isCancellationRequested) return resolved ?? item;
         const reason = failureOf(item, resolved);
         if (reason === undefined) return resolved;
-        await reportCodeActionFailure(item.title, reason);
+        void reportCodeActionFailure(item.title, reason);
         return item;
       } catch (error) {
         if (isCancelled(token, error)) return item;
-        await reportCodeActionFailure(item.title, reasonOf(error));
+        void reportCodeActionFailure(item.title, reasonOf(error));
         return item;
       }
     },
