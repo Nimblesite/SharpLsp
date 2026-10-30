@@ -46,8 +46,20 @@ function multiRootWorkspace() {
   return file;
 }
 
+/**
+ * User settings for a test host. VS Code's built-in chat adds its own code
+ * actions ("Fix", "Explain", "Modify") once a diagnostic lands, so with AI on a
+ * suite's lightbulb list depends on when diagnostics arrive, not on SharpLsp.
+ */
+function writeUserSettings(userDataDir) {
+  fs.mkdirSync(path.join(userDataDir, 'User'), { recursive: true });
+  const settings = { 'chat.disableAIFeatures': true };
+  fs.writeFileSync(path.join(userDataDir, 'User', 'settings.json'), JSON.stringify(settings));
+}
+
 /** One editor start: the same extension and dependency, its own workspace shape. */
 function testConfig(label, workspaceFolder, userDataDir) {
+  writeUserSettings(userDataDir);
   return {
     label,
     // Explicit minimum-editor runs verify [DIST-VSIX-MODEL].
