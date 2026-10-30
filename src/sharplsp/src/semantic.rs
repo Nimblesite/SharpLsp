@@ -992,6 +992,11 @@ fn merge_or_keep(
     result: SidecarWorkspaceEditResult,
     foreign: SidecarWorkspaceEditResult,
 ) -> SidecarWorkspaceEditResult {
+    // Preserve resource operations for the final refusal instead of hiding one
+    // behind best-effort enrichment. [REFACTOR-NEVER-SILENT]
+    if contains_resource_operation(&result) || contains_resource_operation(&foreign) {
+        return concatenate_workspace_edits(result, foreign);
+    }
     let primary = result.clone();
     match merge_workspace_edits(result, foreign) {
         Ok(merged) => merged,
@@ -1152,17 +1157,30 @@ fn lsp_rename_edit(edit: SidecarTextEditResult) -> OneOf<TextEdit, lsp_types::An
 
 /// Merge fallback documents into the primary result and stabilize their order.
 fn merge_workspace_edits(
-    mut result: SidecarWorkspaceEditResult,
+    result: SidecarWorkspaceEditResult,
     foreign: SidecarWorkspaceEditResult,
 ) -> Result<SidecarWorkspaceEditResult> {
-    result.document_changes.extend(foreign.document_changes);
-    canonicalize_workspace_edit(result)
+    canonicalize_workspace_edit(concatenate_workspace_edits(result, foreign))
+}
+
+/// Keep both sides verbatim so validation sees every resource operation.
+fn concatenate_workspace_edits(
+    result: SidecarWorkspaceEditResult,
+    foreign: SidecarWorkspaceEditResult,
+) -> SidecarWorkspaceEditResult {
+    let document_changes = result
+        .document_changes
+        .into_iter()
+        .chain(foreign.document_changes)
+        .collect();
+    SidecarWorkspaceEditResult { document_changes }
 }
 
 /// Merge duplicate document entries, normalize edit order, and reject conflicts.
 fn canonicalize_workspace_edit(
     result: SidecarWorkspaceEditResult,
 ) -> Result<SidecarWorkspaceEditResult> {
+    ensure_rename_text_only(&result)?;
     let mut canonical = empty_workspace_edit();
     for edit in result.document_changes {
         merge_document_edit(&mut canonical, edit);
@@ -1174,14 +1192,26 @@ fn canonicalize_workspace_edit(
     Ok(canonical)
 }
 
+/// Whether any document asks rename to perform a file resource operation.
+fn contains_resource_operation(result: &SidecarWorkspaceEditResult) -> bool {
+    result
+        .document_changes
+        .iter()
+        .any(|document| document.create || document.rename_to.is_some())
+}
+
+/// Rename returns text edits only; resource operations fail with a reason.
+/// [REFACTOR-NEVER-SILENT]
+fn ensure_rename_text_only(result: &SidecarWorkspaceEditResult) -> Result<()> {
+    if contains_resource_operation(result) {
+        anyhow::bail!("rename cannot create or rename files");
+    }
+    Ok(())
+}
+
 /// Reject invalid, overlapping, or conflicting edits in every document.
 fn validate_workspace_edits(result: &SidecarWorkspaceEditResult) -> Result<()> {
     for document in &result.document_changes {
-        // Rename never creates or renames files; refuse rather than drop one.
-        // [REFACTOR-NEVER-SILENT]
-        if document.create || document.rename_to.is_some() {
-            anyhow::bail!("rename cannot create or rename files");
-        }
         validate_rename_edits(&document.file_path, &document.edits)?;
     }
     Ok(())
@@ -1411,6 +1441,27 @@ mod rename_merge_tests {
             };
             assert_eq!(error.to_string(), "rename cannot create or rename files");
         }
+        Ok(())
+    }
+
+    /// Best-effort enrichment must not hide a foreign resource operation.
+    /// [REFACTOR-NEVER-SILENT]
+    #[test]
+    fn foreign_resource_operation_is_not_dropped_by_best_effort_merge() -> Result<()> {
+        use crate::paths::test_paths::NATIVE_FILE;
+        let primary = workspace_edit(NATIVE_FILE, vec![rename_edit(0, 0, 4, "New")]);
+        let foreign = SidecarWorkspaceEditResult {
+            document_changes: vec![SidecarDocumentEditResult {
+                file_path: NATIVE_FILE.to_string(),
+                edits: Vec::new(),
+                create: true,
+                rename_to: None,
+            }],
+        };
+        let Err(error) = workspace_edit_value(merge_or_keep(primary, foreign)) else {
+            anyhow::bail!("the foreign create must refuse the whole rename");
+        };
+        assert_eq!(error.to_string(), "rename cannot create or rename files");
         Ok(())
     }
 
