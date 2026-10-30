@@ -1,14 +1,8 @@
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
-using static SharpLsp.Sidecar.CSharp.Tests.TextEditing;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
 #pragma warning disable CA1515 // Public xUnit discovery type
 #pragma warning disable CA2007 // xUnit executes without a synchronization context
-#pragma warning disable IDE0058 // Setup calls intentionally ignore their return values
-#pragma warning disable RS1035 // Real temp-path use is intentional in this coarse E2E
 
 namespace SharpLsp.Sidecar.CSharp.Tests;
 
@@ -99,44 +93,32 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         }
         """;
 
-    private readonly string _root = NativePaths.Temp($"sharplsp-override-{Guid.NewGuid():N}");
-
-    private readonly string _csprojPath;
-    private readonly string _sourcePath;
-
-    public HeadlessOverrideGenerationTests()
-    {
-        Directory.CreateDirectory(_root);
-        const string csproj = """
-            <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup>
-                <TargetFramework>net10.0</TargetFramework>
-                <OutputType>Library</OutputType>
-                <Nullable>enable</Nullable>
-                <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-              </PropertyGroup>
-            </Project>
-            """;
-        _csprojPath = NativePaths.Join(_root, "Shapes.csproj");
-        _sourcePath = NativePaths.Join(_root, "Shapes.cs");
-        File.WriteAllText(_csprojPath, csproj);
-        File.WriteAllText(_sourcePath, Source);
-    }
+    private readonly RefactoringProject _project =
+        new(
+            "Shapes",
+            new Dictionary<string, string>
+            {
+                ["Shapes.cs"] = Source,
+                ["Directory.Build.props"] = """
+                    <Project>
+                      <PropertyGroup>
+                        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+                      </PropertyGroup>
+                    </Project>
+                    """,
+            }
+        );
 
     public void Dispose()
     {
-        try
-        {
-            Directory.Delete(_root, true);
-        }
-        catch (IOException) { }
+        _project.Dispose();
     }
 
     [Fact]
     public async Task Override_action_is_offered_on_a_type_that_leaves_members_unimplemented()
     {
-        using var manager = await OpenAsync();
-        var actions = Unwrap(await CodeActionsOnTypeAsync(manager, "public class Square : Shape"));
+        using var manager = await _project.OpenAsync();
+        var actions = await CodeActionsOnTypeAsync(manager, "public class Square : Shape");
         Assert.Contains(actions, action => action.Title == "Generate overrides...");
     }
 
@@ -150,11 +132,11 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
     [Fact]
     public async Task Only_the_headless_override_action_is_ever_offered()
     {
-        using var manager = await OpenAsync();
-        var onShape = Unwrap(await CodeActionsOnTypeAsync(manager, "abstract class Shape"));
+        using var manager = await _project.OpenAsync();
+        var onShape = await CodeActionsOnTypeAsync(manager, "public abstract class Shape", "Shape");
         Assert.DoesNotContain(onShape, action => action.Title == "Generate overrides...");
 
-        var onSquare = Unwrap(await CodeActionsOnTypeAsync(manager, "public class Square : Shape"));
+        var onSquare = await CodeActionsOnTypeAsync(manager, "public class Square : Shape");
         var offered = Assert.Single(onSquare, action => action.Title == "Generate overrides...");
         var resolved = await manager.ResolveCodeActionAsync(offered.Id);
         Assert.False(resolved.IsError, resolved.Match(_ => "ok", error => error));
@@ -163,7 +145,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
     [Fact]
     public async Task Members_the_type_already_overrides_are_not_generated_again()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         // `Circle` already overrides `Compute` and `Total`. Regenerating either
         // would produce a duplicate member and break the build, so the
         // candidate scan must treat an occupied slot as satisfied.
@@ -205,19 +187,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         Assert.Contains("override int this[int index]", circle);
         Assert.Contains("protected override void Reset()", circle);
 
-        AssertParses(generated);
-    }
-
-    /// <summary>The generated file must still be syntactically valid C#.</summary>
-    private static void AssertParses(string generated)
-    {
-        var errors = CSharpSyntaxTree
-            .ParseText(generated)
-            .GetDiagnostics()
-            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            .Select(diagnostic => diagnostic.ToString())
-            .ToList();
-        Assert.Empty(errors);
+        Assert.Empty(RefactoringProject.ParseErrors(generated));
     }
 
     private static int CountOccurrences(string source, string value)
@@ -228,7 +198,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
     [Fact]
     public async Task Applying_the_action_generates_compilable_overrides_for_every_member_shape()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var generated = await ApplyOverrideActionAsync(manager);
 
         // Every abstract member of the base must now have an override.
@@ -247,13 +217,13 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
 
         // The whole file must still parse. A generator that emits malformed
         // members is the exact failure this suite exists to catch.
-        AssertParses(generated);
+        Assert.Empty(RefactoringProject.ParseErrors(generated));
     }
 
     [Fact]
     public async Task Generic_overrides_carry_the_constraint_clause_their_nullability_requires()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var generated = await ApplyOverrideActionAsync(manager);
 
         // `T?` on an unconstrained parameter is only legal on the override when
@@ -278,7 +248,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
     [Fact]
     public async Task Nullability_inside_a_constructed_generic_argument_forces_the_constraint()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var generated = await ApplyOverrideActionAsync(manager);
 
         // Bound to `Square`: the abstract declaration up in `Shape` carries the same signature.
@@ -299,7 +269,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
     [Fact]
     public async Task Init_only_property_overrides_keep_their_init_accessor()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var generated = await ApplyOverrideActionAsync(manager);
 
         // An `init` accessor regenerated as `set` would not compile against the
@@ -327,7 +297,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
     [Fact]
     public async Task Unsafe_pointer_members_are_generated_rather_than_aborting_the_action()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var generated = await ApplyOverrideActionAsync(manager);
 
         var square = generated[
@@ -341,7 +311,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         Assert.DoesNotContain("where T : default", DeclarationOf(square, "TakePointer<T>"));
         Assert.DoesNotContain("where T : default", DeclarationOf(square, "TakeCallback<T>"));
 
-        AssertParses(generated);
+        Assert.Empty(RefactoringProject.ParseErrors(generated));
     }
 
     /// <summary>The single generated declaration starting at <paramref name="anchor"/>.</summary>
@@ -360,55 +330,30 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         string anchor = "public class Square : Shape"
     )
     {
-        var actions = Unwrap(await CodeActionsOnTypeAsync(manager, anchor));
-        var action = actions.Find(item => item.Title == "Generate overrides...");
-        Assert.NotNull(action);
-
-        var edit = Unwrap(await manager.ResolveCodeActionAsync(action.Id));
+        var edit = await _project.ApplyAsync(
+            manager,
+            "Shapes.cs",
+            anchor,
+            anchor.Split(' ')[2],
+            "Generate overrides..."
+        );
         var document = Assert.Single(edit.DocumentChanges);
-        Assert.Equal(_sourcePath, document.FilePath);
+        Assert.Equal(_project.PathOf("Shapes.cs"), document.FilePath);
         Assert.NotEmpty(document.Edits);
-        return ApplyEdits(Source, document.Edits);
+        return _project.After(edit, "Shapes.cs");
     }
 
-    private async Task<Outcome.Result<List<CodeActionItem>, string>> CodeActionsOnTypeAsync(
+    private async Task<List<CodeActionItem>> CodeActionsOnTypeAsync(
         WorkspaceManager manager,
-        string anchor
+        string anchor,
+        string? token = null
     )
     {
-        var token = anchor.Split(' ')[2];
-        var (line, character) = Locate(anchor, token);
-        return await manager.GetCodeActionsAsync(_sourcePath, line, character, line, character);
-    }
-
-    /// <summary>Zero-based line/character of <paramref name="token"/> on the anchor line.</summary>
-    private static (int Line, int Character) Locate(string anchor, string token)
-    {
-        var lines = Source.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
-        var index = Array.FindIndex(
-            lines,
-            value => value.Contains(anchor, StringComparison.Ordinal)
+        return await _project.ActionsAtAsync(
+            manager,
+            "Shapes.cs",
+            anchor,
+            token ?? anchor.Split(' ')[2]
         );
-        Assert.True(index >= 0, $"anchor not found: {anchor}");
-        var character = lines[index].IndexOf(token, StringComparison.Ordinal);
-        Assert.True(character >= 0, $"token not found on anchor line: {token}");
-        return (index, character);
-    }
-
-    private async Task<WorkspaceManager> OpenAsync()
-    {
-        var manager = new WorkspaceManager();
-#pragma warning disable CS0618 // Exercise the real solution-loading boundary
-        var opened = await manager.OpenAsync(_csprojPath);
-#pragma warning restore CS0618
-        Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
-        Assert.True(manager.IsLoaded, "workspace must be loaded for code actions");
-        return manager;
-    }
-
-    private static T Unwrap<T>(Outcome.Result<T, string> result)
-    {
-        Assert.False(result.IsError, result.Match(_ => "ok", error => error));
-        return +result;
     }
 }

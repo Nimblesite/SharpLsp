@@ -551,6 +551,7 @@ internal sealed partial class CodeActionResolver
         [
             .. AnalyzerDiagnosticResolver.DiscoverProviders<CodeRefactoringProvider>(),
             new MergeDeclarationAssignmentCodeRefactoringProvider(),
+            new MoveTypeOut.MoveTypeOutCodeRefactoringProvider(),
         ];
     }
 }

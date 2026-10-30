@@ -1,12 +1,8 @@
-using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.CSharp.Workspace;
-using static SharpLsp.Sidecar.CSharp.Tests.TextEditing;
 
 #pragma warning disable CA1307 // StringComparison overloads add no value to xUnit assertions
 #pragma warning disable CA1515 // Public xUnit discovery type
 #pragma warning disable CA2007 // xUnit executes without a synchronization context
-#pragma warning disable IDE0058 // Setup calls intentionally ignore their return values
-#pragma warning disable RS1035 // Real temp-path use is intentional in this coarse E2E
 
 namespace SharpLsp.Sidecar.CSharp.Tests;
 
@@ -98,69 +94,45 @@ public sealed class MergeDeclarationAssignmentTests : IDisposable
         }
         """;
 
-    private readonly string _root = NativePaths.Temp($"sharplsp-merge-{Guid.NewGuid():N}");
-
-    private readonly string _csprojPath;
-    private readonly string _sourcePath;
-
-    public MergeDeclarationAssignmentTests()
-    {
-        Directory.CreateDirectory(_root);
-        const string csproj = """
-            <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup>
-                <TargetFramework>net10.0</TargetFramework>
-                <OutputType>Library</OutputType>
-                <Nullable>enable</Nullable>
-              </PropertyGroup>
-            </Project>
-            """;
-        _csprojPath = NativePaths.Join(_root, "Merging.csproj");
-        _sourcePath = NativePaths.Join(_root, "Merging.cs");
-        File.WriteAllText(_csprojPath, csproj);
-        File.WriteAllText(_sourcePath, Source);
-    }
+    private readonly RefactoringProject _project =
+        new("Merging", new Dictionary<string, string> { ["Merging.cs"] = Source });
 
     public void Dispose()
     {
-        try
-        {
-            Directory.Delete(_root, true);
-        }
-        catch (IOException) { }
+        _project.Dispose();
     }
 
     [Fact]
     public async Task Merging_from_the_declaration_folds_the_assignment_into_the_initializer()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var merged = await ApplyAtAsync(manager, "        int total;", "int");
 
         Assert.Contains("int total = 41 + 1;", merged);
         // The standalone assignment statement must be gone, not merely duplicated
         // into the initializer — a substring check would pass either way.
         Assert.DoesNotContain(Statements(merged), statement => statement == "total = 41 + 1;");
-        AssertStillCompiles(merged);
+        Assert.Empty(RefactoringProject.ParseErrors(merged));
     }
 
     [Fact]
     public async Task Merging_from_the_assignment_line_finds_the_declaration_above_it()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var merged = await ApplyAtAsync(manager, "        value = 7;", "value");
 
         Assert.Contains("int value = 7;", merged);
-        AssertStillCompiles(merged);
+        Assert.Empty(RefactoringProject.ParseErrors(merged));
     }
 
     [Fact]
     public async Task Merging_works_inside_a_switch_section_not_only_a_block()
     {
-        using var manager = await OpenAsync();
+        using var manager = await _project.OpenAsync();
         var merged = await ApplyAtAsync(manager, "                int inner;", "int");
 
         Assert.Contains("int inner = 2;", merged);
-        AssertStillCompiles(merged);
+        Assert.Empty(RefactoringProject.ParseErrors(merged));
     }
 
     [Theory]
@@ -179,8 +151,8 @@ public sealed class MergeDeclarationAssignmentTests : IDisposable
         string token
     )
     {
-        using var manager = await OpenAsync();
-        var actions = await ActionsAtAsync(manager, anchor, token);
+        using var manager = await _project.OpenAsync();
+        var actions = await _project.ActionsAtAsync(manager, "Merging.cs", anchor, token);
 
         Assert.DoesNotContain(actions, action => action.Title == Title);
     }
@@ -188,74 +160,16 @@ public sealed class MergeDeclarationAssignmentTests : IDisposable
     /// <summary>Apply the merge at <paramref name="anchor"/> and return the new file text.</summary>
     private async Task<string> ApplyAtAsync(WorkspaceManager manager, string anchor, string token)
     {
-        var actions = await ActionsAtAsync(manager, anchor, token);
-        var action = actions.Find(item => item.Title == Title);
-        Assert.NotNull(action);
-
-        var edit = Unwrap(await manager.ResolveCodeActionAsync(action.Id));
+        var edit = await _project.ApplyAsync(manager, "Merging.cs", anchor, token, Title);
         var document = Assert.Single(edit.DocumentChanges);
-        Assert.Equal(_sourcePath, document.FilePath);
+        Assert.Equal(_project.PathOf("Merging.cs"), document.FilePath);
         Assert.NotEmpty(document.Edits);
-        return ApplyEdits(Source, document.Edits);
-    }
-
-    private async Task<List<CodeActionItem>> ActionsAtAsync(
-        WorkspaceManager manager,
-        string anchor,
-        string token
-    )
-    {
-        var (line, character) = Locate(anchor, token);
-        return Unwrap(
-            await manager.GetCodeActionsAsync(_sourcePath, line, character, line, character)
-        );
+        return _project.After(edit, "Merging.cs");
     }
 
     /// <summary>Every line of <paramref name="text"/> trimmed, for whole-statement assertions.</summary>
     private static IEnumerable<string> Statements(string text)
     {
         return text.Split('\n').Select(line => line.Trim());
-    }
-
-    /// <summary>The merged file must still parse; a malformed rewrite is the failure hunted here.</summary>
-    private static void AssertStillCompiles(string merged)
-    {
-        var errors = Microsoft
-            .CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(merged)
-            .GetDiagnostics()
-            .Where(diagnostic =>
-                diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error
-            )
-            .Select(diagnostic => diagnostic.ToString())
-            .ToList();
-        Assert.Empty(errors);
-    }
-
-    /// <summary>Zero-based line/character of <paramref name="token"/> on the anchor line.</summary>
-    private static (int Line, int Character) Locate(string anchor, string token)
-    {
-        var lines = Source.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
-        var index = Array.FindIndex(lines, value => value == anchor);
-        Assert.True(index >= 0, $"anchor line not found verbatim: <{anchor}>");
-        var character = lines[index].IndexOf(token, StringComparison.Ordinal);
-        Assert.True(character >= 0, $"token not found on anchor line: {token}");
-        return (index, character);
-    }
-
-    private async Task<WorkspaceManager> OpenAsync()
-    {
-        var manager = new WorkspaceManager();
-#pragma warning disable CS0618 // Exercise the real solution-loading boundary
-        var opened = await manager.OpenAsync(_csprojPath);
-#pragma warning restore CS0618
-        Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
-        Assert.True(manager.IsLoaded, "workspace must be loaded for code actions");
-        return manager;
-    }
-
-    private static T Unwrap<T>(Outcome.Result<T, string> result)
-    {
-        Assert.False(result.IsError, result.Match(_ => "ok", error => error));
-        return +result;
     }
 }
