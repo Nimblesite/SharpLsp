@@ -3,40 +3,6 @@
 Video: `sharplsp-csharp-14.mp4` (1920x1080, 1:28), made by the TikTok factory reel
 `projects/sharplsp/videos/csharp-14`.
 
-## Why this one next
-
-Chosen from Google Trends (worldwide, past 12 months, web search, checked 2026-10-31) against
-the videos still unpublished. Already on the channel: Getting Started, F# in VS Code, Hover,
-Blazor.
-
-| Search term | Average interest, compared in one chart |
-|---|---|
-| xunit | 49 |
-| c# 14 | 37 |
-| c# refactoring | 1 |
-| dotnet profiler | 0 |
-| vscode debug c# | 0 |
-
-`xunit` leads, but its film has no finished cut yet. `c# 14` is the strongest term with a
-finished video, and it rides `.net 10` (17 against `c# 14` at 3 in a second chart).
-
-Queries the copy below targets:
-
-| Query | Signal |
-|---|---|
-| c# 13 features | rising +200% under `c# 14` |
-| c# 14 extension members | rising +90% under `c# 14` |
-| .net 10 lts | rising +170% under `.net 10` |
-| .net 10 sdk | rising +150% under `.net 10` |
-| c# dev kit vs code | top query under `c# dev kit` |
-| c# dev kit vscode | rising +50% under `vscode c#` |
-| visual studio 2026 | rising +1,100% under `vscode c#` |
-| jetbrains rider | rising +90% under `vscode c#` |
-| vscodium | rising +80% under `vscode c#` |
-
-Next in line: an xUnit tests video, aimed at `xunit`, `c# unit testing` and
-`xunit.runner.visualstudio` (rising +500%).
-
 ## Title
 
 ```text
