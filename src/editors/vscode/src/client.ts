@@ -45,7 +45,7 @@ import { observeResponses } from './tutorial/detect.js';
  * second client collides with, and that nothing calls. Every SharpLsp editor
  * command is contributed and registered by the extension instead.
  */
-class SharpLspClient extends LanguageClient {
+export class SharpLspClient extends LanguageClient {
   public override registerFeature(feature: StaticFeature | DynamicFeature<unknown>): void {
     if (
       'registrationType' in feature &&

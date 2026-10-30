@@ -322,26 +322,26 @@ struct SidecarCodeActionResolveReq {
 }
 
 /// Edits for a single document returned by the sidecar.
-#[derive(serde::Deserialize)]
-struct SidecarDocumentEdit {
+#[derive(serde::Deserialize, Clone)]
+pub(crate) struct SidecarDocumentEdit<T = SidecarTextEdit> {
     /// Absolute path of the file being edited.
-    file_path: String,
+    pub(crate) file_path: String,
     /// Text edits to apply to this document.
-    edits: Vec<SidecarTextEdit>,
+    pub(crate) edits: Vec<T>,
     /// Whether the edit creates the file, whose whole text it then holds.
     #[serde(default)]
-    create: bool,
+    pub(crate) create: bool,
     /// The new absolute path when this edit renames the file.
     /// [REFACTOR-MOVE-TYPE-RENAME-FILE]
     #[serde(default)]
-    rename_to: Option<String>,
+    pub(crate) rename_to: Option<String>,
 }
 
 /// A workspace-wide set of edits returned by the sidecar.
-#[derive(serde::Deserialize)]
-struct SidecarWorkspaceEdit {
+#[derive(serde::Deserialize, Clone)]
+pub(crate) struct SidecarWorkspaceEdit<T = SidecarTextEdit> {
     /// Per-document edits that compose this workspace edit.
-    document_changes: Vec<SidecarDocumentEdit>,
+    pub(crate) document_changes: Vec<SidecarDocumentEdit<T>>,
 }
 
 #[cfg(test)]

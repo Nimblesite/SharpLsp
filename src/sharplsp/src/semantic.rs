@@ -18,6 +18,7 @@ use lsp_types::{
 };
 use tracing::{debug, info, warn};
 
+use crate::code_actions::{SidecarDocumentEdit, SidecarWorkspaceEdit};
 use crate::nav_cache::is_empty_nav_result;
 use crate::paths::{normalized_rename_path, path_to_lsp_uri, uri_to_path};
 use crate::sidecar::manager::SidecarManager;
@@ -1176,6 +1177,11 @@ fn canonicalize_workspace_edit(
 /// Reject invalid, overlapping, or conflicting edits in every document.
 fn validate_workspace_edits(result: &SidecarWorkspaceEditResult) -> Result<()> {
     for document in &result.document_changes {
+        // Rename never creates or renames files; refuse rather than drop one.
+        // [REFACTOR-NEVER-SILENT]
+        if document.create || document.rename_to.is_some() {
+            anyhow::bail!("rename cannot create or rename files");
+        }
         validate_rename_edits(&document.file_path, &document.edits)?;
     }
     Ok(())
@@ -1349,25 +1355,9 @@ struct SidecarTextEditResult {
     new_text: String,
 }
 
-/// Edits to a single document from the sidecar.
-#[derive(serde::Deserialize, Clone)]
-struct SidecarDocumentEditResult {
-    /// Absolute path to the file.
-    file_path: String,
-    /// Text edits to apply.
-    edits: Vec<SidecarTextEditResult>,
-    /// Whether the edit creates the file: decoded to keep the positional wire
-    /// shape, since a rename never creates one.
-    #[serde(default)]
-    _create: bool,
-}
-
-/// A workspace-wide set of edits from the sidecar rename operation.
-#[derive(serde::Deserialize, Clone)]
-struct SidecarWorkspaceEditResult {
-    /// Per-document edits.
-    document_changes: Vec<SidecarDocumentEditResult>,
-}
+/// Rename shares the code-action wire containers so positional fields cannot drift.
+type SidecarDocumentEditResult = SidecarDocumentEdit<SidecarTextEditResult>;
+type SidecarWorkspaceEditResult = SidecarWorkspaceEdit<SidecarTextEditResult>;
 
 #[cfg(test)]
 #[expect(
@@ -1377,6 +1367,51 @@ struct SidecarWorkspaceEditResult {
 )]
 mod rename_merge_tests {
     use super::*;
+
+    /// The C# sidecar's four-field document edit must decode on the rename path.
+    /// [RAZOR-FSHARP-RENAME]
+    #[test]
+    fn csharp_rename_wire_result_decodes_to_exact_workspace_edit() -> Result<()> {
+        use crate::paths::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
+        let edit = (2, 3, 2, 8, "Points");
+        let document = (NATIVE_FILE, vec![edit], false, Option::<String>::None);
+        let bytes = rmp_serde::to_vec(&(vec![document],))?;
+        let decoded: SidecarWorkspaceEditResult = rmp_serde::from_slice(&bytes)?;
+        let expected = expected_rename_workspace_edit(NATIVE_FILE_URI);
+        assert_eq!(workspace_edit_value(decoded)?, expected);
+        Ok(())
+    }
+
+    fn expected_rename_workspace_edit(uri: &str) -> serde_json::Value {
+        serde_json::json!({"documentChanges": [{
+            "textDocument": {"uri": uri, "version": null},
+            "edits": [{
+                "range": {
+                    "start": {"line": 2, "character": 3},
+                    "end": {"line": 2, "character": 8}
+                },
+                "newText": "Points"
+            }]
+        }]})
+    }
+
+    /// Rename returns text edits only; resource operations fail with a reason.
+    /// [REFACTOR-NEVER-SILENT]
+    #[test]
+    fn rename_refuses_sidecar_file_creation_and_renames() -> Result<()> {
+        use crate::paths::test_paths::NATIVE_FILE;
+        let operations = [(true, None), (false, Some("/tmp/Renamed.cs"))];
+        for (create, rename_to) in operations {
+            let edits = Vec::<(u32, u32, u32, u32, &str)>::new();
+            let bytes = rmp_serde::to_vec(&(vec![(NATIVE_FILE, edits, create, rename_to)],))?;
+            let decoded: SidecarWorkspaceEditResult = rmp_serde::from_slice(&bytes)?;
+            let Err(error) = workspace_edit_value(decoded) else {
+                anyhow::bail!("a resource operation must not become a text edit");
+            };
+            assert_eq!(error.to_string(), "rename cannot create or rename files");
+        }
+        Ok(())
+    }
 
     #[test]
     fn cross_language_merge_normalizes_paths_and_deduplicates_edits() -> Result<()> {
@@ -1487,7 +1522,8 @@ mod rename_merge_tests {
         SidecarDocumentEditResult {
             file_path: path.to_string(),
             edits,
-            _create: false,
+            create: false,
+            rename_to: None,
         }
     }
 
