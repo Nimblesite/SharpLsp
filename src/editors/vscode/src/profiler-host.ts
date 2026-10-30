@@ -46,6 +46,7 @@ export function registerProfiler(context: vscode.ExtensionContext): SharpLspProf
     configSection: 'sharplsp',
     debugType: DEBUG_TYPE,
     languageIds: ['csharp', 'fsharp'],
+    languageNames: ['F#', 'C#'],
     client,
     logger: {
       trace: log.traceInfo,
