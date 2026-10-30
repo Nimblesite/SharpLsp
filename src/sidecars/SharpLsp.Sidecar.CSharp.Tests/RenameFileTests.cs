@@ -14,9 +14,10 @@ public sealed class RenameFileTests : IDisposable
     private const string Wrong = "Wrong.cs";
     private const string Matching = "Matching.cs";
 
-    private static readonly IReadOnlyDictionary<string, string> Files = new Dictionary<string, string>(
-        StringComparer.Ordinal
-    )
+    private static readonly IReadOnlyDictionary<string, string> Files = new Dictionary<
+        string,
+        string
+    >(StringComparer.Ordinal)
     {
         [Wrong] = "public class Lone { }\n",
         [Matching] = "public class Matching { }\n",
@@ -33,7 +34,12 @@ public sealed class RenameFileTests : IDisposable
     public async Task Rename_file_resolves_to_the_old_and_new_paths_without_text_edits()
     {
         using var manager = await _project.OpenAsync();
-        var actions = await _project.ActionsAtAsync(manager, Wrong, "public class Lone { }", "Lone");
+        var actions = await _project.ActionsAtAsync(
+            manager,
+            Wrong,
+            "public class Lone { }",
+            "Lone"
+        );
         var action = actions.Find(item => item.Title == "Rename file to Lone.cs");
 
         Assert.NotNull(action);
@@ -44,7 +50,10 @@ public sealed class RenameFileTests : IDisposable
         var change = Assert.Single(edit.DocumentChanges);
 
         Assert.True(NativePaths.AreEqual(_project.PathOf(Wrong), change.FilePath), change.FilePath);
-        Assert.True(NativePaths.AreEqual(_project.PathOf("Lone.cs"), change.RenameTo), change.RenameTo);
+        Assert.True(
+            NativePaths.AreEqual(_project.PathOf("Lone.cs"), change.RenameTo),
+            change.RenameTo
+        );
         Assert.False(change.Create);
         Assert.Empty(change.Edits);
     }
@@ -79,7 +88,13 @@ public sealed class RenameFileTests : IDisposable
         );
 
         Assert.NotEmpty(actions);
-        Assert.DoesNotContain(actions, action => action.Title.StartsWith("Rename file to ", StringComparison.Ordinal));
-        Assert.Contains(actions, action => action.Title.Contains("Matching", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            actions,
+            action => action.Title.StartsWith("Rename file to ", StringComparison.Ordinal)
+        );
+        Assert.Contains(
+            actions,
+            action => action.Title.Contains("Matching", StringComparison.Ordinal)
+        );
     }
 }

@@ -85,12 +85,18 @@ internal static class MoveTypeOutSyntax
 
     private static SyntaxNode Qualified(ISymbol symbol, SimpleNameSyntax name)
     {
-        var owner = symbol
-            .ContainingType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var owner = symbol.ContainingType.ToDisplayString(
+            SymbolDisplayFormat.MinimallyQualifiedFormat
+        );
         var bare = name.WithoutTrivia();
-        SyntaxNode qualified = symbol is ITypeSymbol
-            ? QualifiedName(ParseName(owner), bare)
-            : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseExpression(owner), bare);
+        SyntaxNode qualified =
+            symbol is ITypeSymbol
+                ? QualifiedName(ParseName(owner), bare)
+                : MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    ParseExpression(owner),
+                    bare
+                );
         return qualified.WithTriviaFrom(name);
     }
 
@@ -103,7 +109,9 @@ internal static class MoveTypeOutSyntax
     {
         var leading = declaration.GetLeadingTrivia();
         var kept = declaration
-            .Modifiers.Where(modifier => !IsAccessibility(modifier) && !modifier.IsKind(SyntaxKind.NewKeyword))
+            .Modifiers.Where(modifier =>
+                !IsAccessibility(modifier) && !modifier.IsKind(SyntaxKind.NewKeyword)
+            )
             .Select(modifier => modifier.WithoutTrivia().WithTrailingTrivia(Space));
         var access = declaration.Modifiers.Any(SyntaxKind.PublicKeyword)
             ? SyntaxKind.PublicKeyword
@@ -134,12 +142,17 @@ internal static class MoveTypeOutSyntax
         BaseTypeDeclarationSyntax moved
     )
     {
-        var member = moved.WithLeadingTrivia(moved.GetLeadingTrivia().Where(t => !t.IsKind(SyntaxKind.WhitespaceTrivia)));
-        var enclosingNamespace = target.Declaration.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
+        var member = moved.WithLeadingTrivia(
+            moved.GetLeadingTrivia().Where(t => !t.IsKind(SyntaxKind.WhitespaceTrivia))
+        );
+        var enclosingNamespace =
+            target.Declaration.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
         var namespaceName = target.Symbol.ContainingNamespace.ToDisplayString();
         MemberDeclarationSyntax top = enclosingNamespace switch
         {
-            FileScopedNamespaceDeclarationSyntax => FileScopedNamespaceDeclaration(ParseName(namespaceName))
+            FileScopedNamespaceDeclarationSyntax => FileScopedNamespaceDeclaration(
+                    ParseName(namespaceName)
+                )
                 .WithUsings(NamespaceUsings(target.Declaration))
                 .WithMembers(SingletonList<MemberDeclarationSyntax>(member)),
             NamespaceDeclarationSyntax => NamespaceDeclaration(ParseName(namespaceName))

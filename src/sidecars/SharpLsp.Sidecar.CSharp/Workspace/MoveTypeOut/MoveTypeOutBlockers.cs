@@ -95,7 +95,8 @@ internal static class MoveTypeOutBlockers
         ITypeParameterSymbol parameter
     )
     {
-        return parameter.TypeParameterKind == TypeParameterKind.Type
+        return
+            parameter.TypeParameterKind == TypeParameterKind.Type
             && parameter.ContainingType is { } owner
             && target.IsEnclosing(owner)
             ? $"'{target.Symbol.Name}' uses type parameter '{parameter.Name}' of '{owner.Name}'"
@@ -108,7 +109,11 @@ internal static class MoveTypeOutBlockers
     /// </summary>
     private static ISymbol? Hidden(ISymbol symbol)
     {
-        for (var current = symbol; current is not null and not INamespaceSymbol; current = current.ContainingType)
+        for (
+            var current = symbol;
+            current is not null and not INamespaceSymbol;
+            current = current.ContainingType
+        )
         {
             if (
                 current.DeclaredAccessibility

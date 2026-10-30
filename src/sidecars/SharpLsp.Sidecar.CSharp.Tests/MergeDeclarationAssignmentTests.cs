@@ -94,8 +94,10 @@ public sealed class MergeDeclarationAssignmentTests : IDisposable
         }
         """;
 
-    private readonly RefactoringProject _project =
-        new("Merging", new Dictionary<string, string> { ["Merging.cs"] = Source });
+    private readonly RefactoringProject _project = new(
+        "Merging",
+        new Dictionary<string, string> { ["Merging.cs"] = Source }
+    );
 
     public void Dispose()
     {

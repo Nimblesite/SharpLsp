@@ -25,8 +25,10 @@ public sealed class GenerateConstructorFromMembersTests : IDisposable
         }
         """;
 
-    private readonly RefactoringProject _project =
-        new("Generating", new Dictionary<string, string> { ["Target.cs"] = Source });
+    private readonly RefactoringProject _project = new(
+        "Generating",
+        new Dictionary<string, string> { ["Target.cs"] = Source }
+    );
 
     public void Dispose()
     {
@@ -71,11 +73,7 @@ public sealed class GenerateConstructorFromMembersTests : IDisposable
     {
         using var manager = await _project.OpenAsync();
 
-        var (line, character) = RefactoringProject.Locate(
-            Source,
-            "public class Target",
-            "public"
-        );
+        var (line, character) = RefactoringProject.Locate(Source, "public class Target", "public");
         character += "public class ".Length;
         var result = await manager.GetCodeActionsAsync(
             _project.PathOf("Target.cs"),

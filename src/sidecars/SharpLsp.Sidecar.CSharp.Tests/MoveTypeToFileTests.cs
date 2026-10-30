@@ -22,9 +22,10 @@ public sealed class MoveTypeToFileTests : IDisposable
     private const string Matched = "AlreadyMatched.cs";
     private const string Spacing = "Spacing.cs";
 
-    private static readonly IReadOnlyDictionary<string, string> Files = new Dictionary<string, string>(
-        StringComparer.Ordinal
-    )
+    private static readonly IReadOnlyDictionary<string, string> Files = new Dictionary<
+        string,
+        string
+    >(StringComparer.Ordinal)
     {
         [Many] = """
             using System;
@@ -115,7 +116,13 @@ public sealed class MoveTypeToFileTests : IDisposable
     public async Task File_scoped_move_preserves_siblings_usings_documentation_and_attributes()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Many, "public class Middle", "Middle", "Move type to Middle.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Many,
+            "public class Middle",
+            "Middle",
+            "Move type to Middle.cs"
+        );
         var created = edit.DocumentChanges.Single(change => change.Create);
         var newFile = _project.After(edit, "Middle.cs");
         var source = _project.After(edit, Many);
@@ -144,11 +151,20 @@ public sealed class MoveTypeToFileTests : IDisposable
     public async Task Block_scoped_namespace_remains_block_scoped()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Block, "    public class Worker { }", "Worker", "Move type to Worker.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Block,
+            "    public class Worker { }",
+            "Worker",
+            "Move type to Worker.cs"
+        );
         var newFile = _project.After(edit, "Worker.cs");
         var source = _project.After(edit, Block);
         Assert.Equal(2, edit.DocumentChanges.Count);
-        Assert.Equal(_project.PathOf("Worker.cs"), edit.DocumentChanges.Single(change => change.Create).FilePath);
+        Assert.Equal(
+            _project.PathOf("Worker.cs"),
+            edit.DocumentChanges.Single(change => change.Create).FilePath
+        );
         Assert.Contains("namespace Geometry", newFile);
         Assert.Contains("{", newFile);
         Assert.DoesNotContain("namespace Geometry;", newFile);
@@ -163,11 +179,20 @@ public sealed class MoveTypeToFileTests : IDisposable
     public async Task Type_without_a_namespace_moves_without_gaining_one()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Global, "public class Standalone { }", "Standalone", "Move type to Standalone.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Global,
+            "public class Standalone { }",
+            "Standalone",
+            "Move type to Standalone.cs"
+        );
         var newFile = _project.After(edit, "Standalone.cs");
         var source = _project.After(edit, Global);
         Assert.Equal(2, edit.DocumentChanges.Count);
-        Assert.Equal(_project.PathOf("Standalone.cs"), edit.DocumentChanges.Single(change => change.Create).FilePath);
+        Assert.Equal(
+            _project.PathOf("Standalone.cs"),
+            edit.DocumentChanges.Single(change => change.Create).FilePath
+        );
         Assert.Contains("public class Standalone", newFile);
         Assert.DoesNotContain("namespace ", newFile);
         Assert.DoesNotContain("class Alpha", newFile);
@@ -181,7 +206,13 @@ public sealed class MoveTypeToFileTests : IDisposable
     public async Task Documentation_and_serializable_attribute_leave_the_source_with_the_type()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Attributed, "public class LegacyValue { }", "LegacyValue", "Move type to LegacyValue.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Attributed,
+            "public class LegacyValue { }",
+            "LegacyValue",
+            "Move type to LegacyValue.cs"
+        );
         var newFile = _project.After(edit, "LegacyValue.cs");
         var source = _project.After(edit, Attributed);
         Assert.Equal(2, edit.DocumentChanges.Count);
@@ -202,11 +233,20 @@ public sealed class MoveTypeToFileTests : IDisposable
     public async Task Generic_type_moves_to_Box_cs_without_arity_in_the_file_name()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Generics, "public class Box<T>", "Box", "Move type to Box.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Generics,
+            "public class Box<T>",
+            "Box",
+            "Move type to Box.cs"
+        );
         var newFile = _project.After(edit, "Box.cs");
         var source = _project.After(edit, Generics);
         Assert.Equal(2, edit.DocumentChanges.Count);
-        Assert.Equal(_project.PathOf("Box.cs"), edit.DocumentChanges.Single(change => change.Create).FilePath);
+        Assert.Equal(
+            _project.PathOf("Box.cs"),
+            edit.DocumentChanges.Single(change => change.Create).FilePath
+        );
         Assert.Contains("namespace Boxes;", newFile);
         Assert.Contains("public class Box<T>", newFile);
         Assert.Contains("public T? Value { get; set; }", newFile);
@@ -221,13 +261,30 @@ public sealed class MoveTypeToFileTests : IDisposable
     public async Task Nested_type_moves_inside_a_partial_copy_of_its_container()
     {
         using var manager = await _project.OpenAsync();
-        var actions = await _project.ActionsAtAsync(manager, Containers, "    public class Inner { }", "Inner");
-        Assert.Contains(actions, action => action.Title == "Move 'Inner' out of 'Outer' to Inner.cs");
-        var edit = await _project.ApplyAsync(manager, Containers, "    public class Inner { }", "Inner", "Move type to Inner.cs");
+        var actions = await _project.ActionsAtAsync(
+            manager,
+            Containers,
+            "    public class Inner { }",
+            "Inner"
+        );
+        Assert.Contains(
+            actions,
+            action => action.Title == "Move 'Inner' out of 'Outer' to Inner.cs"
+        );
+        var edit = await _project.ApplyAsync(
+            manager,
+            Containers,
+            "    public class Inner { }",
+            "Inner",
+            "Move type to Inner.cs"
+        );
         var newFile = _project.After(edit, "Inner.cs");
         var source = _project.After(edit, Containers);
         Assert.Equal(2, edit.DocumentChanges.Count);
-        Assert.Equal(_project.PathOf("Inner.cs"), edit.DocumentChanges.Single(change => change.Create).FilePath);
+        Assert.Equal(
+            _project.PathOf("Inner.cs"),
+            edit.DocumentChanges.Single(change => change.Create).FilePath
+        );
         Assert.Contains("namespace Nesting;", newFile);
         Assert.Contains("partial class Outer", newFile);
         Assert.Contains("public class Inner", newFile);
@@ -243,20 +300,37 @@ public sealed class MoveTypeToFileTests : IDisposable
     public async Task Single_type_whose_name_matches_the_file_does_not_offer_the_move()
     {
         using var manager = await _project.OpenAsync();
-        var actions = await _project.ActionsAtAsync(manager, Matched, "public class AlreadyMatched { }", "AlreadyMatched");
+        var actions = await _project.ActionsAtAsync(
+            manager,
+            Matched,
+            "public class AlreadyMatched { }",
+            "AlreadyMatched"
+        );
 
-        Assert.DoesNotContain(actions, action => action.Title.StartsWith("Move type to ", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            actions,
+            action => action.Title.StartsWith("Move type to ", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
     public async Task File_scoped_namespace_has_a_blank_line_before_the_moved_declaration()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Spacing, "public class Beta { }", "Beta", "Move type to Beta.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Spacing,
+            "public class Beta { }",
+            "Beta",
+            "Move type to Beta.cs"
+        );
         var newFile = _project.After(edit, "Beta.cs");
         var source = _project.After(edit, Spacing);
         Assert.Equal(2, edit.DocumentChanges.Count);
-        Assert.Equal(_project.PathOf("Beta.cs"), edit.DocumentChanges.Single(change => change.Create).FilePath);
+        Assert.Equal(
+            _project.PathOf("Beta.cs"),
+            edit.DocumentChanges.Single(change => change.Create).FilePath
+        );
         Assert.Contains("namespace Spacing;\n\npublic class Beta", newFile);
         Assert.Contains("public class First", source);
         Assert.DoesNotContain("class Beta", source);

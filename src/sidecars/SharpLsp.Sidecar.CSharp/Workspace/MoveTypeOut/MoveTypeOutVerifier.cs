@@ -23,7 +23,9 @@ internal static class MoveTypeOutVerifier
                 .ConfigureAwait(false);
             if (introduced is not null)
             {
-                throw new InvalidOperationException($"{target.FailurePrefix} {Describe(introduced)}");
+                throw new InvalidOperationException(
+                    $"{target.FailurePrefix} {Describe(introduced)}"
+                );
             }
         }
     }
@@ -59,13 +61,17 @@ internal static class MoveTypeOutVerifier
     /// <summary>An error's identity without its position, which the move shifts.</summary>
     private static string Key(Diagnostic diagnostic)
     {
-        return diagnostic.Id + " " + diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        return diagnostic.Id
+            + " "
+            + diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string Describe(Diagnostic diagnostic)
     {
         var line = diagnostic.Location.GetLineSpan();
-        var file = line.Path is null ? "" : $" ({Common.NativePaths.NameOf(line.Path)}:{line.StartLinePosition.Line + 1})";
+        var file = line.Path is null
+            ? ""
+            : $" ({Common.NativePaths.NameOf(line.Path)}:{line.StartLinePosition.Line + 1})";
         return $"{diagnostic.Id}: {diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)}{file}";
     }
 }

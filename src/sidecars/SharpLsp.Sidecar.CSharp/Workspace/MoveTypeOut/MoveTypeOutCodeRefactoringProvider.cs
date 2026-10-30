@@ -44,7 +44,11 @@ internal sealed class MoveTypeOutCodeRefactoringProvider : CodeRefactoringProvid
         var blocker = MoveTypeOutBlockers.Find(target, model, context.CancellationToken);
         if (blocker is not null)
         {
-            Log.Information("[MoveTypeOut] Not offered for {Type}: {Reason}", target.Symbol.Name, blocker);
+            Log.Information(
+                "[MoveTypeOut] Not offered for {Type}: {Reason}",
+                target.Symbol.Name,
+                blocker
+            );
             return;
         }
 

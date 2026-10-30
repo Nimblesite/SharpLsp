@@ -26,19 +26,19 @@ internal static class MoveTypeOutRewriter
         }
 
         var inSource = references.GetValueOrDefault(target.Document.Id, []);
-        solution = await RemoveFromSourceAsync(solution, target, inSource, ct).ConfigureAwait(false);
+        solution = await RemoveFromSourceAsync(solution, target, inSource, ct)
+            .ConfigureAwait(false);
         solution = await AddFileAsync(solution, target, moved, ct).ConfigureAwait(false);
-        await MoveTypeOutVerifier.AssertCompilesAsync(target, original, solution, ct)
+        await MoveTypeOutVerifier
+            .AssertCompilesAsync(target, original, solution, ct)
             .ConfigureAwait(false);
         return solution;
     }
 
     /// <summary>Every source reference to the moved type, as the name node written, per document.</summary>
-    private static async Task<Dictionary<DocumentId, List<SimpleNameSyntax>>> ReferencesByDocumentAsync(
-        MoveTypeOutTarget target,
-        Solution solution,
-        CancellationToken ct
-    )
+    private static async Task<
+        Dictionary<DocumentId, List<SimpleNameSyntax>>
+    > ReferencesByDocumentAsync(MoveTypeOutTarget target, Solution solution, CancellationToken ct)
     {
         var found = await SymbolFinder
             .FindReferencesAsync(target.Symbol, solution, ct)
@@ -80,8 +80,12 @@ internal static class MoveTypeOutRewriter
     )
     {
         var document = solution.GetDocument(documentId);
-        var root = document is null ? null : await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
-        return root is null ? solution : solution.WithDocumentSyntaxRoot(documentId, Shorten(root, names));
+        var root = document is null
+            ? null
+            : await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
+        return root is null
+            ? solution
+            : solution.WithDocumentSyntaxRoot(documentId, Shorten(root, names));
     }
 
     private static SyntaxNode Shorten(SyntaxNode root, IEnumerable<SimpleNameSyntax> names)
@@ -123,7 +127,10 @@ internal static class MoveTypeOutRewriter
         var document = solution.GetDocument(target.Document.Id)!;
         var root = (await document.GetSyntaxRootAsync(ct).ConfigureAwait(false))!;
         var outside = names.Where(name => !target.Declaration.Span.Contains(name.Span)).ToList();
-        var removed = Remove(root.TrackNodes(outside.Append<SyntaxNode>(target.Declaration)), target);
+        var removed = Remove(
+            root.TrackNodes(outside.Append<SyntaxNode>(target.Declaration)),
+            target
+        );
         var current = outside.Select(removed.GetCurrentNode).OfType<SimpleNameSyntax>();
         var formatted = await Formatter
             .FormatAsync(
@@ -158,11 +165,17 @@ internal static class MoveTypeOutRewriter
     )
     {
         var source = (await target.Document.GetSyntaxRootAsync(ct).ConfigureAwait(false))!;
-        var unit = MoveTypeOutSyntax.NewCompilationUnit((CompilationUnitSyntax)source, target, moved);
+        var unit = MoveTypeOutSyntax.NewCompilationUnit(
+            (CompilationUnitSyntax)source,
+            target,
+            moved
+        );
         var added = solution
             .GetProject(target.Document.Project.Id)!
             .AddDocument(target.FileName, unit, target.Document.Folders, target.FilePath);
-        var formatted = await Formatter.FormatAsync(added, cancellationToken: ct).ConfigureAwait(false);
+        var formatted = await Formatter
+            .FormatAsync(added, cancellationToken: ct)
+            .ConfigureAwait(false);
         var text = await formatted.GetTextAsync(ct).ConfigureAwait(false);
         return formatted.Project.Solution.WithDocumentText(added.Id, text);
     }

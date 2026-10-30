@@ -19,9 +19,10 @@ public sealed class MoveTypeOutTests : IDisposable
     private const string Far = "Far.cs";
     private const string Existing = "Existing.cs";
 
-    private static readonly IReadOnlyDictionary<string, string> Files = new Dictionary<string, string>(
-        StringComparer.Ordinal
-    )
+    private static readonly IReadOnlyDictionary<string, string> Files = new Dictionary<
+        string,
+        string
+    >(StringComparer.Ordinal)
     {
         [Shapes] = """
             using System;
@@ -123,7 +124,13 @@ public sealed class MoveTypeOutTests : IDisposable
     public async Task A_private_nested_type_becomes_an_internal_top_level_type_in_its_own_file()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Shapes, "    private class Inner", "Inner", "Move 'Inner' out of 'Outer' to Inner.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Shapes,
+            "    private class Inner",
+            "Inner",
+            "Move 'Inner' out of 'Outer' to Inner.cs"
+        );
 
         Assert.Equal(2, edit.DocumentChanges.Count);
         var created = edit.DocumentChanges.Single(change => change.Create);
@@ -133,7 +140,10 @@ public sealed class MoveTypeOutTests : IDisposable
         Assert.Contains("using System;", newFile);
         Assert.Contains("using System.Collections.Generic;", newFile);
         Assert.Contains("namespace Geo;", newFile);
-        Assert.Contains("/// <summary>A private nested type that borrows from its container.</summary>", newFile);
+        Assert.Contains(
+            "/// <summary>A private nested type that borrows from its container.</summary>",
+            newFile
+        );
         Assert.Contains("internal class Inner", newFile);
         Assert.DoesNotContain("private class Inner", newFile);
         Assert.Contains("Outer.Helper() + Outer.Other.Size", newFile);
@@ -153,7 +163,13 @@ public sealed class MoveTypeOutTests : IDisposable
     public async Task Every_qualified_reference_in_every_file_drops_the_container()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Shapes, "    public class Exposed { }", "Exposed", "Move 'Exposed' out of 'Outer' to Exposed.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Shapes,
+            "    public class Exposed { }",
+            "Exposed",
+            "Move 'Exposed' out of 'Outer' to Exposed.cs"
+        );
 
         var consumers = _project.After(edit, Consumers);
         Assert.Contains("using Alias = Geo.Exposed;", consumers);
@@ -174,11 +190,20 @@ public sealed class MoveTypeOutTests : IDisposable
     public async Task A_protected_nested_type_becomes_internal_and_a_derived_class_still_sees_it()
     {
         using var manager = await _project.OpenAsync();
-        var edit = await _project.ApplyAsync(manager, Shapes, "    protected class Shielded { }", "Shielded", "Move 'Shielded' out of 'Outer' to Shielded.cs");
+        var edit = await _project.ApplyAsync(
+            manager,
+            Shapes,
+            "    protected class Shielded { }",
+            "Shielded",
+            "Move 'Shielded' out of 'Outer' to Shielded.cs"
+        );
 
         Assert.Contains("internal class Shielded { }", _project.After(edit, "Shielded.cs"));
         // The derived class named it bare; nothing there needed to change.
-        Assert.DoesNotContain(edit.DocumentChanges, change => NativePathsEqual(change.FilePath, _project.PathOf(Consumers)));
+        Assert.DoesNotContain(
+            edit.DocumentChanges,
+            change => NativePathsEqual(change.FilePath, _project.PathOf(Consumers))
+        );
     }
 
     [Theory]
@@ -191,19 +216,32 @@ public sealed class MoveTypeOutTests : IDisposable
     [InlineData("    private class Clash { }", "Clash")]
     // T means nothing at namespace level.
     [InlineData("    private class UsesT { public T? Value; }", "UsesT")]
-    public async Task The_move_is_not_offered_where_it_cannot_be_done_mechanically(string anchor, string token)
+    public async Task The_move_is_not_offered_where_it_cannot_be_done_mechanically(
+        string anchor,
+        string token
+    )
     {
         using var manager = await _project.OpenAsync();
         var actions = await _project.ActionsAtAsync(manager, Shapes, anchor, token);
 
-        Assert.DoesNotContain(actions, action => action.Title.StartsWith("Move '", StringComparison.Ordinal) && action.Title.Contains(" out of "));
+        Assert.DoesNotContain(
+            actions,
+            action =>
+                action.Title.StartsWith("Move '", StringComparison.Ordinal)
+                && action.Title.Contains(" out of ")
+        );
     }
 
     [Fact]
     public async Task The_move_is_not_offered_when_the_new_file_already_exists()
     {
         using var manager = await _project.OpenAsync();
-        var actions = await _project.ActionsAtAsync(manager, Existing, "    private class Existing { }", "Existing");
+        var actions = await _project.ActionsAtAsync(
+            manager,
+            Existing,
+            "    private class Existing { }",
+            "Existing"
+        );
 
         Assert.DoesNotContain(actions, action => action.Title.Contains(" out of "));
     }
@@ -212,9 +250,17 @@ public sealed class MoveTypeOutTests : IDisposable
     public async Task A_nested_type_of_a_generic_container_moves_when_it_does_not_use_the_type_parameter()
     {
         using var manager = await _project.OpenAsync();
-        var actions = await _project.ActionsAtAsync(manager, Shapes, "    private class Free { }", "Free");
+        var actions = await _project.ActionsAtAsync(
+            manager,
+            Shapes,
+            "    private class Free { }",
+            "Free"
+        );
 
-        Assert.Contains(actions, action => action.Title == "Move 'Free' out of 'Generic' to Free.cs");
+        Assert.Contains(
+            actions,
+            action => action.Title == "Move 'Free' out of 'Generic' to Free.cs"
+        );
     }
 
     [Fact]
@@ -230,8 +276,15 @@ public sealed class MoveTypeOutTests : IDisposable
     public async Task A_move_the_preconditions_let_through_fails_with_the_compile_error_instead_of_a_broken_edit()
     {
         using var manager = await _project.OpenAsync();
-        var actions = await _project.ActionsAtAsync(manager, Shapes, "    public class Portal { }", "Portal");
-        var action = actions.Find(item => item.Title == "Move 'Portal' out of 'Outer' to Portal.cs");
+        var actions = await _project.ActionsAtAsync(
+            manager,
+            Shapes,
+            "    public class Portal { }",
+            "Portal"
+        );
+        var action = actions.Find(item =>
+            item.Title == "Move 'Portal' out of 'Outer' to Portal.cs"
+        );
         Assert.NotNull(action);
 
         // Far.Sub.Portal would shorten to Far.Portal, which does not exist.
@@ -239,7 +292,11 @@ public sealed class MoveTypeOutTests : IDisposable
 
         Assert.True(resolved.IsError);
         var reason = resolved.Match(_ => "", error => error);
-        Assert.StartsWith("Moving 'Portal' out of 'Outer' would not compile:", reason, StringComparison.Ordinal);
+        Assert.StartsWith(
+            "Moving 'Portal' out of 'Outer' would not compile:",
+            reason,
+            StringComparison.Ordinal
+        );
         Assert.Contains("Far.cs:", reason);
     }
 

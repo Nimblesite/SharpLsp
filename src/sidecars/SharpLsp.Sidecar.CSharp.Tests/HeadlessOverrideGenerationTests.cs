@@ -93,21 +93,20 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         }
         """;
 
-    private readonly RefactoringProject _project =
-        new(
-            "Shapes",
-            new Dictionary<string, string>
-            {
-                ["Shapes.cs"] = Source,
-                ["Directory.Build.props"] = """
-                    <Project>
-                      <PropertyGroup>
-                        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-                      </PropertyGroup>
-                    </Project>
-                    """,
-            }
-        );
+    private readonly RefactoringProject _project = new(
+        "Shapes",
+        new Dictionary<string, string>
+        {
+            ["Shapes.cs"] = Source,
+            ["Directory.Build.props"] = """
+            <Project>
+              <PropertyGroup>
+                <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+              </PropertyGroup>
+            </Project>
+            """,
+        }
+    );
 
     public void Dispose()
     {
