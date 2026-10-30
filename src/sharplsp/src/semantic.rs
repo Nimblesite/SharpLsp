@@ -1357,6 +1357,7 @@ struct SidecarTextEditResult {
 
 /// Rename shares the code-action wire containers so positional fields cannot drift.
 type SidecarDocumentEditResult = SidecarDocumentEdit<SidecarTextEditResult>;
+/// The sidecar's rename result, decoded with the shared workspace-edit container.
 type SidecarWorkspaceEditResult = SidecarWorkspaceEdit<SidecarTextEditResult>;
 
 #[cfg(test)]
