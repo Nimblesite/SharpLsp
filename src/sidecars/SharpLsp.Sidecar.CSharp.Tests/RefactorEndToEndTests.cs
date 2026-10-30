@@ -205,16 +205,17 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     }
 
     [Fact]
-    public async Task CodeActionResolve_unknown_id_returns_nil()
+    public async Task CodeActionResolve_unknown_id_fails_with_the_spec_reason()
     {
-        // ResolveCodeActionAsync returns failure for an unknown id; the handler
-        // surfaces that as an error string, exercising the not-found branch.
+        // An unknown id fails with the exact plain-words reason the spec gives,
+        // never a silent nil or a bare number. [REFACTOR-NEVER-SILENT]
         var r = await fixture.SendAsync(
             "codeAction/resolve",
             MessagePackSerializer.Serialize(new CodeActionResolveRequest { Id = 999_999 })
         );
         Assert.NotNull(r.Error);
-        Assert.Contains("999999", r.Error);
+        Assert.Contains("the code action is no longer available", r.Error);
+        Assert.Contains("invoke the quick fix again", r.Error);
     }
 
     [Fact]

@@ -10,7 +10,8 @@
 // argument, an attribute, or as the receiver of an extension method, and Ctrl-.
 // has to work in EVERY one of them. Each row below is one of those positions;
 // each drives the full lifecycle (offer, resolve, apply, requery, undo, redo,
-// retry) and requires the diagnostic to DISAPPEAR after applying.
+// retry) and requires the diagnostic to DISAPPEAR after applying. Every title
+// is the exact one [REFACTOR-IMPORT] gives: the edit, and what it imports.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
@@ -120,20 +121,25 @@ interface MissingUsing {
   readonly alsoPresent?: readonly string[];
 }
 
+/** The namespace row's exact title. [REFACTOR-IMPORT] */
+function importTitle(namespace: string): string {
+  return `Add 'using ${namespace};' — imports every type in namespace ${namespace}`;
+}
+
 /** The row every case shares: the exact `using` as a caret-only quickfix that clears the error. */
 function missingUsing(row: MissingUsing): ActionLifecycleCase {
-  const title = `using ${row.namespace};`;
+  const directive = `using ${row.namespace};`;
   return {
     label: row.label,
     source: row.source,
     snippet: row.snippet,
     focus: row.focus,
     diagnosticCode: row.code ?? 'CS0246',
-    title,
+    title: importTitle(row.namespace),
     kind: 'quickfix',
     caretOnly: true,
     mustDisappear: true,
-    presentAfter: [title, ...(row.alsoPresent ?? []), row.sentinel],
+    presentAfter: [directive, ...(row.alsoPresent ?? []), row.sentinel],
     absentAfter: [],
   };
 }
@@ -240,8 +246,22 @@ const ALREADY_IMPORTED =
 
 const UNRESOLVED = 'CS0246';
 
+/** The namespace rows: each adds one plain `using`. [REFACTOR-IMPORT] */
 function usingActions(actions: readonly RawCodeAction[]): RawCodeAction[] {
-  return actions.filter((action) => action.title.startsWith('using '));
+  return actions.filter(
+    (action) =>
+      action.title.startsWith("Add 'using ") &&
+      action.title.includes("' — imports every type in namespace "),
+  );
+}
+
+/** Every import row of any kind: namespace, alias, static or reference. */
+function anyImport(actions: readonly RawCodeAction[]): RawCodeAction[] {
+  return actions.filter((action) =>
+    ["Add 'using ", 'Reference project ', 'Add package ', 'Install package '].some((start) =>
+      action.title.startsWith(start),
+    ),
+  );
 }
 
 /** Ctrl-. sends a COLLAPSED caret, never a selection. Model that exactly. */
@@ -287,8 +307,30 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
     // import buried under "Generate class Stopwatch" is a broken lightbulb.
     const offered = await caretActions(refactor.fixture, 'new Stopwatch()', 'Stopwatch');
     const imports = usingActions(offered);
-    assert.strictEqual(imports.length, 1, 'exactly one using directive is offered');
-    assert.strictEqual(imports[0]?.title, 'using System.Diagnostics;', 'naming the namespace');
+    assert.strictEqual(imports.length, 1, 'exactly one namespace import is offered');
+    assert.strictEqual(
+      imports[0]?.title,
+      importTitle('System.Diagnostics'),
+      'naming the directive and what it imports',
+    );
+    const titles = offered.map((action) => action.title);
+    assert.ok(
+      titles.includes(
+        "Add 'using Stopwatch = System.Diagnostics.Stopwatch;' — imports only the type System.Diagnostics.Stopwatch",
+      ),
+      `importing only the type is offered too: ${titles.join(' | ')}`,
+    );
+    assert.ok(
+      titles.includes(
+        "Change 'Stopwatch' to 'System.Diagnostics.Stopwatch' — qualifies this one use; no using added",
+      ),
+      `and qualifying this one use: ${titles.join(' | ')}`,
+    );
+    assert.ok(
+      !titles.includes('using System.Diagnostics;') &&
+        !titles.includes('System.Diagnostics.Stopwatch'),
+      "Roslyn's terse titles never reach the lightbulb",
+    );
     assert.strictEqual(imports[0]?.kind, 'quickfix', 'as a quickfix, not a refactoring');
     assert.strictEqual(
       imports[0]?.isPreferred,
@@ -307,9 +349,9 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
       uri: refactor.fixture.uri,
       range: rangeOf(refactor.fixture.document, 'new Stopwatch()', 'Stopwatch'),
       kind: vscode.CodeActionKind.QuickFix,
-      predicate: (items) => items.some((item) => item.title === 'using System.Diagnostics;'),
+      predicate: (items) => items.some((item) => item.title === importTitle('System.Diagnostics')),
     });
-    const uiImport = uiActions.find((item) => item.title === 'using System.Diagnostics;');
+    const uiImport = uiActions.find((item) => item.title === importTitle('System.Diagnostics'));
     assert.ok(uiImport, 'VS Code offers the import the protocol offered');
     assert.strictEqual(uiImport.isPreferred, true, 'and carries the preferred flag through');
     assert.ok(
@@ -317,8 +359,8 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
       'under the quickfix kind the lightbulb filters on',
     );
     assert.ok(
-      uiActions.every((item) => item.title !== 'using System.Diagnostics'),
-      'the title is the directive verbatim, semicolon included',
+      uiImport.title.includes("'using System.Diagnostics;'"),
+      'the title quotes the directive verbatim, semicolon included',
     );
   });
 
@@ -350,6 +392,11 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
       'NoSuchTypeAnywhere',
     );
     assert.deepStrictEqual(usingActions(offered), [], 'no using directive is offered');
+    assert.deepStrictEqual(
+      anyImport(offered).map((action) => action.title),
+      [],
+      'nor any alias, static, project or package import for a name nothing declares',
+    );
     assert.ok(
       offered.every((action) => !action.title.includes('NoSuchTypeAnywhere;')),
       'and nothing pretends the name is a namespace',

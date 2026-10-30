@@ -101,9 +101,14 @@ const SCENARIOS: readonly QuickFixScenario[] = [
     snippet: 'new StringBuilder()',
     focus: 'StringBuilder',
     diagnosticCode: 'CS0246',
-    title: 'using System.Text;',
+    // Exact titles per [REFACTOR-IMPORT-CSHARP].
+    title: "Add 'using System.Text;' — imports every type in namespace System.Text",
     kind: 'quickfix',
-    options: ['System.Text.StringBuilder', 'using System.Text;'],
+    options: [
+      "Add 'using System.Text;' — imports every type in namespace System.Text",
+      "Add 'using StringBuilder = System.Text.StringBuilder;' — imports only the type System.Text.StringBuilder",
+      "Change 'StringBuilder' to 'System.Text.StringBuilder' — qualifies this one use; no using added",
+    ],
     presentAfter: ['using System.Text;', 'new StringBuilder()', 'add-using-sentinel'],
     absentAfter: [],
   },

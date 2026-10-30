@@ -912,6 +912,11 @@
         "category": "SharpLsp"
       },
       {
+        "command": "sharplsp.addReferenceAndImport",
+        "title": "Add Reference and Import",
+        "category": "SharpLsp"
+      },
+      {
         "command": "sharplsp.nuget.addFromExplorer",
         "title": "%cmd.nuget.addFromExplorer%",
         "category": "%category%",
@@ -1452,6 +1457,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "sharplsp.addReferenceAndImport",
+          "when": "false"
+        },
         {
           "command": "sharplsp.profiler.profileProcess",
           "when": "false"

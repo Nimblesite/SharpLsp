@@ -66,6 +66,34 @@ pub fn request_sidecar<T: serde::de::DeserializeOwned, R: serde::Serialize>(
     }
 }
 
+/// Send `request` to the sidecar as `method` and decode its answer, answering
+/// `Err` — carrying the sidecar's own refusal reason — when anything fails.
+/// For requests whose failure must reach the user instead of degrading to an
+/// empty answer. [REFACTOR-NEVER-SILENT]
+pub fn request_sidecar_strict<T: serde::de::DeserializeOwned, R: serde::Serialize>(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &SidecarManager,
+    method: &str,
+    request: &R,
+) -> Result<T> {
+    let payload = rmp_serde::to_vec(request)?;
+    let answer = runtime
+        .block_on(sidecar.request(method, payload))
+        .map_err(|error| anyhow::anyhow!(sidecar_reason(&error)))?;
+    Ok(rmp_serde::from_slice(&answer)?)
+}
+
+/// The sidecar's refusal in plain words: its own reason, without the transport
+/// prefix the IPC layer writes in front of it. Recognized by its documented
+/// prefix, like `pull_diagnostics` does. [REFACTOR-NEVER-SILENT]
+fn sidecar_reason(error: &anyhow::Error) -> String {
+    const REFUSAL_PREFIX: &str = "sidecar error: ";
+    let full = format!("{error:#}");
+    full.strip_prefix(REFUSAL_PREFIX)
+        .map(str::to_string)
+        .unwrap_or(full)
+}
+
 /// Request identifying a whole file, sent to a sidecar. Serialized as a
 /// positional `MessagePack` array `(file_path)` matching the sidecars'
 /// `FileRequest` Key layout.
@@ -148,5 +176,26 @@ mod tests {
         assert_eq!(mapped.range.start, Position::new(1, 2));
         assert_eq!(mapped.range.end, Position::new(3, 4));
         assert_eq!(mapped.new_text, "x");
+    }
+
+    /// The sidecar's own refusal reaches the caller bare, without the IPC
+    /// transport prefix; every other failure keeps its full chain.
+    /// [REFACTOR-NEVER-SILENT]
+    #[test]
+    fn sidecar_reason_strips_only_the_transport_prefix() {
+        let refusal: anyhow::Error =
+            anyhow::anyhow!("sidecar error: the code action is no longer available");
+        assert_eq!(
+            sidecar_reason(&refusal),
+            "the code action is no longer available",
+            "a refusal arrives as its own plain-words reason"
+        );
+
+        let transport: anyhow::Error = anyhow::anyhow!("sidecar transport closed");
+        assert_eq!(
+            sidecar_reason(&transport),
+            "sidecar transport closed",
+            "a transport failure keeps its full description"
+        );
     }
 }

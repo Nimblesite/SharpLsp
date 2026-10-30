@@ -23,7 +23,7 @@ export const FS_STOREFRONT = { folder: 'fs-storefront', project: 'FsStorefront' 
  * (a set of its own), are left out, so the workspace holds exactly one solution,
  * and nothing runs.
  */
-export const SHOP = { folder: '.', project: 'Shop', omit: ['Storefront.slnx', 'FsStorefront.slnx', 'blazor-storefront'], runs: false };
+export const SHOP = { folder: '.', project: 'Shop', omit: ['Storefront.slnx', 'FsStorefront.slnx', 'blazor-storefront', 'csharp14'], runs: false };
 
 /**
  * The Blazor Web App the Razor film is shot on: a basket page whose markup and
@@ -32,6 +32,20 @@ export const SHOP = { folder: '.', project: 'Shop', omit: ['Storefront.slnx', 'F
  * must match the Roslyn the sidecar bundles (#399).
  */
 export const BLAZOR_STOREFRONT = { folder: 'blazor-storefront', project: 'BlazorStorefront', runs: false, pinSdk: true };
+
+/**
+ * The C# 14 film's set: a small shop whose code starts in C# 13 and is moved
+ * on camera to C# 14's extension members, `field` keyword and null-conditional
+ * assignment. Nothing runs.
+ */
+export const CSHARP14 = { folder: 'csharp14', project: 'Csharp14', runs: false };
+
+/**
+ * The move-type film's set: a shop whose Order class has grown three nested
+ * types and shares its file with Receipt. Each is moved out on camera
+ * ([REFACTOR-MOVE-TYPE]). Nothing runs.
+ */
+export const MOVETYPE = { folder: 'movetype', project: 'MoveType', runs: false };
 
 /** `git archive` of HEAD in `repo`, unpacked into `into`: the committed tree, nothing local. */
 function unpackHead(repo, into) {

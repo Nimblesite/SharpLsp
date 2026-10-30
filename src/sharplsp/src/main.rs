@@ -22,6 +22,7 @@ mod formatting;
 mod handlers;
 mod hierarchy;
 mod hot_reload;
+mod import_command;
 mod inbound;
 mod inlay_hints;
 mod nav_cache;
@@ -411,8 +412,13 @@ fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilit
             "lspProfiler": profiler::host::capability_block(),
         })),
         // Every profiler operation is a standard `workspace/executeCommand`.
+        // The import quick fixes add their reference the same way ([REFACTOR-IMPORT-REFERENCE]).
         execute_command_provider: Some(lsp_types::ExecuteCommandOptions {
-            commands: profiler::host::ProfilerHost::command_names(),
+            commands: [
+                profiler::host::ProfilerHost::command_names(),
+                vec![import_command::COMMAND.to_string()],
+            ]
+            .concat(),
             work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
         }),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
@@ -1149,6 +1155,10 @@ fn handle_custom_request(
             connection.sender.clone(),
             csharp_sidecar,
         ),
+        // The reference behind an import quick fix ([REFACTOR-IMPORT-REFERENCE])
+        "workspace/executeCommand" if import_command::is_import_command(&req) => {
+            import_command::handle(&req, runtime, connection.sender.clone(), csharp_sidecar)
+        }
         // MSBuild compile-order editing (GitHub #493, [SE-ADD-FILE-REQUEST])
         "sharplsp/project/addCompileItem" => {
             project_edit::handle_add_compile_item(req, runtime, csharp_sidecar)

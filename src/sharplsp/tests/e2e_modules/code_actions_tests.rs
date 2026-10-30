@@ -17,18 +17,29 @@ fn test_code_action_without_sidecar_returns_null() {
 }
 
 #[test]
-fn test_code_action_resolve_without_sidecar_returns_null() {
-    assert_no_sidecar_request(
-        SIMPLE_CLASS,
+fn test_code_action_resolve_without_sidecar_answers_not_running() {
+    // [REFACTOR-NEVER-SILENT]: a resolve with no sidecar running for the file's
+    // language is an error naming the missing service — never a silent null.
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
+    let resp = client.request(
         "codeAction/resolve",
         json!({
-            "title": "Add missing using",
+            "title": "Fix it",
             "kind": "quickfix",
             "data": { "id": 1, "uri": TEST_URI }
         }),
-        NoSidecarResult::Null,
-        "codeAction/resolve",
     );
+    assert!(
+        resp.get("result").is_none(),
+        "must answer an error, not a result: {resp}"
+    );
+    assert_eq!(
+        resp["error"]["message"].as_str().unwrap_or_default(),
+        "the C# language service is not running",
+        "the reason names the missing service"
+    );
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
 }
 
 #[test]
