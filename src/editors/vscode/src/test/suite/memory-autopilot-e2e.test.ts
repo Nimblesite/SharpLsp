@@ -105,12 +105,20 @@ function onProgram(debuggee: Debuggee): (entry: { file: string }) => boolean {
  */
 function assertOfferNamesItsLeak(offer: LeakActionOffer, debuggee: Debuggee): void {
   const shown = JSON.stringify(offer);
-  assert.ok(!offer.message.includes(' :0') && !offer.message.includes(' at :'), `no empty location: ${shown}`);
+  assert.ok(
+    !offer.message.includes(' :0') && !offer.message.includes(' at :'),
+    `no empty location: ${shown}`,
+  );
   assert.ok(offer.typeName !== '' || offer.line > 0, `the offer names a type or a line: ${shown}`);
-  if (offer.typeName !== '') assert.ok(offer.message.includes(offer.typeName), `it names its type: ${shown}`);
+  if (offer.typeName !== '')
+    assert.ok(offer.message.includes(offer.typeName), `it names its type: ${shown}`);
   if (offer.line === 0) return;
   assert.ok(LEAK_LINES.includes(offer.line), `a located offer points at the leak: ${shown}`);
-  assert.equal(comparablePath(offer.file), comparablePath(debuggee.program), `in the program: ${shown}`);
+  assert.equal(
+    comparablePath(offer.file),
+    comparablePath(debuggee.program),
+    `in the program: ${shown}`,
+  );
   const at = `${fileNameOf(debuggee.program)}:${offer.line}`;
   assert.ok(offer.message.includes(at), `it names ${at}: ${shown}`);
 }

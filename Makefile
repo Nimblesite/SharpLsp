@@ -493,7 +493,7 @@ _audit-rust:
 		cargo audit --file "$$lock" || status=1; \
 	done; exit $$status
 
-_audit-dotnet:
+_audit-dotnet: _fetch-lspkit
 	@mkdir -p $(dir $(AUDIT_DOTNET_JSON))
 	@status=0; for project in $(AUDIT_DOTNET_TARGETS); do \
 		echo "==> dotnet list package --vulnerable $$project"; \
