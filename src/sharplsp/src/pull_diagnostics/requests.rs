@@ -13,7 +13,7 @@ use lspkit_server::{
 use serde_json::{json, Value};
 use tracing::warn;
 
-use crate::sidecar::manager::SidecarManager;
+use crate::sidecar::manager::{CompilerRefusal, SidecarManager};
 use crate::vfs::Vfs;
 
 mod interest;
@@ -280,6 +280,7 @@ fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
         Some(Interrupted::Cancelled) => JsonRpcError::new(-32800, "Diagnostic request cancelled"),
         // Stable compiler-input failures retain their actionable cause. [DIAG-TRUTH-GUARANTEES]
         _ if compiler_inputs_unavailable(error) => JsonRpcError::new(-32603, error.to_string()),
+        _ if settled_refusal(error) => refused(error),
         _ if error.downcast_ref::<serde_json::Error>().is_some() => {
             JsonRpcError::new(-32602, "Invalid diagnostic parameters")
         }
@@ -294,11 +295,38 @@ fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
     }
 }
 
-/// The existing IPC error field is textual; recognize only its controlled SDK-input prefix.
-/// Other analysis failures can precede asynchronous owner adoption. [DIAG-TRUTH-GUARANTEES]
+/// The compiler's own message, when an analysis failed because the compiler
+/// answered with an error: not a superseded request, a timeout or a broken
+/// transport. The shared store keeps failures as text. [DIAG-TRUTH-GUARANTEES]
+fn compiler_refusal(error: &anyhow::Error) -> Option<&str> {
+    let Some(PullError::Analysis(AnalysisError(message))) = error.downcast_ref::<PullError>()
+    else {
+        return None;
+    };
+    message
+        .strip_prefix(crate::diagnostics::DIAGNOSTICS_REQUEST)?
+        .strip_prefix(": ")?
+        .strip_prefix(CompilerRefusal::PREFIX)
+}
+
+/// Unavailable SDK inputs fail a pull loudly, with their actionable cause. [DIAG-TRUTH-GUARANTEES]
 fn compiler_inputs_unavailable(error: &anyhow::Error) -> bool {
-    matches!(error.downcast_ref::<PullError>(), Some(PullError::Analysis(AnalysisError(message)))
-        if message.starts_with("sidecar diagnostics request: sidecar error: SDK compiler inputs unavailable: "))
+    compiler_refusal(error)
+        .is_some_and(|cause| cause.starts_with("SDK compiler inputs unavailable: "))
+}
+
+/// Any other refusal is settled for the current inputs: asking again cannot
+/// change the answer until the workspace changes, and that change refreshes.
+/// VS Code asked again at once whenever it was told it could, 165,000 times in
+/// thirteen minutes for one document outside every project (#527).
+pub(super) fn settled_refusal(error: &anyhow::Error) -> bool {
+    compiler_refusal(error).is_some() && !compiler_inputs_unavailable(error)
+}
+
+/// Server-cancelled with the compiler's cause and no retrigger: the editor keeps
+/// what it showed, never an empty report, and asks again on the next refresh.
+fn refused(error: &anyhow::Error) -> JsonRpcError {
+    JsonRpcError::new(-32802, error.to_string()).with_data(json!({"retriggerRequest": false}))
 }
 
 /// Convert shared dispatcher outcomes into the existing lsp-server wire shape.

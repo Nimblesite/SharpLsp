@@ -275,8 +275,25 @@ async function assertStartedToastOffersTakeSnapshot(): Promise<void> {
     `the started toast is the moment the user is dropped into the Debug view — it must ` +
       `offer Take Snapshot right there (#263), actions: ${JSON.stringify(startedToast.actions)}`,
   );
+  assert.ok(
+    !startedToast.message.includes('Continue') && startedToast.message.includes('never while paused'),
+    `a .NET heap is never captured at a pause, so the toast never sends the user to Continue ` +
+      `(lspkit [PROF-UI-AUTOPILOT]): ${startedToast.message}`,
+  );
+  await assertDirectStopSaysSnapshotWhileRunning();
+}
 
-  await vscode.commands.executeCommand('sharplsp.profiler.memoryStop');
+/** Stopping a .NET session before any snapshot says to take one while it runs, never while paused. */
+async function assertDirectStopSaysSnapshotWhileRunning(): Promise<void> {
+  const toasts = await captureToasts(async () => {
+    await vscode.commands.executeCommand('sharplsp.profiler.memoryStop');
+  });
+  const stopToast = toasts.find((toast) => /no snapshot was taken/i.test(toast.message));
+  assert.ok(stopToast !== undefined, `stopping before a snapshot explains itself: ${JSON.stringify(toasts)}`);
+  assert.ok(
+    stopToast.message.includes('while the program runs') && !stopToast.message.includes('snapshot while paused'),
+    `a paused .NET program refuses a snapshot (lspkit [PROF-MEMORY-MODE]): ${stopToast.message}`,
+  );
 }
 
 suite('Memory discoverability — actions visible where the user lands (#263)', () => {
