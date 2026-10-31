@@ -58,7 +58,7 @@ function unpackHead(repo, into) {
 
 /**
  * The SharpLsp repository itself, the contributors' film's set: its committed
- * tree and lspkit's, staged at a neutral path, opened without the extension
+ * tree, staged at a neutral path, opened without the extension
  * (its own sidecar solutions are not the subject), with nothing run.
  */
 export const REPO = {
@@ -69,7 +69,6 @@ export const REPO = {
     const root = fs.mkdtempSync(path.join(SCRATCH, 'film-'));
     const workspace = path.join(root, 'SharpLsp');
     unpackHead(repoRoot, workspace);
-    unpackHead(path.join(repoRoot, 'lspkit'), path.join(workspace, 'lspkit'));
     return { root, workspace };
   },
 };
