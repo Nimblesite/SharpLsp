@@ -11,7 +11,7 @@ import {
   assertCompilerReport,
   assertFileStillClosed,
   assertNoCompilerErrors,
-  retryIncompleteDiagnostic,
+  retryOrRefusedDiagnostic,
   teardownAccuracyFixture,
   writeAccuracyFixture,
   type AccuracyCase,
@@ -126,7 +126,7 @@ async function assertPreAdoptionPull(fixture: OwnershipFixture): Promise<void> {
     .sendRequest<DocumentDiagnosticReport>('textDocument/diagnostic', {
       textDocument: { uri: fixture.external.closedUri.toString() },
     })
-    .catch(retryIncompleteDiagnostic);
+    .catch(retryOrRefusedDiagnostic);
   if (report !== undefined) assertCompilerReport(fixture.external, report);
   assertFileStillClosed(fixture.external);
   await assertClosedProblem(fixture.primary, 1);
