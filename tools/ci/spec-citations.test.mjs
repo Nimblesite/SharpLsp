@@ -40,7 +40,10 @@ function repository(t, files) {
 
 /** Run the real gate over `root`. */
 function gate(root) {
-    return spawnSync(process.execPath, [GATE, root], { encoding: "utf8" });
+    return spawnSync(process.execPath, [GATE, root], {
+        encoding: "utf8",
+        env: { ...process.env, LSPKIT_DIR: "lspkit" },
+    });
 }
 
 test("a clean repository passes and says so", (t) => {

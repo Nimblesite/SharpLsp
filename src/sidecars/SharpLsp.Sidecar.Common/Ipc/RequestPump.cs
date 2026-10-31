@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using WorkResult = Outcome.Result<bool, string>;
 
-namespace LspKit.Sidecar;
+namespace SharpLsp.Sidecar.Common.Ipc;
 
 /// <summary>FIFO execution with cancellation registration before scheduling. [LSP-PULL-CANCELLATION]</summary>
 public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
@@ -15,7 +15,6 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
     private readonly Func<TRequest, CancellationToken, Task<TResponse>> _handle;
     private readonly Func<TRequest, Exception, TResponse> _failure;
     private readonly Func<TResponse, Task<WorkResult>> _complete;
-    private readonly Task<WorkResult> _worker;
 
     /// <summary>The reader remains independent of synchronous compiler work in the FIFO worker.</summary>
     public RequestPump(
@@ -29,11 +28,11 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
         _failure = failure;
         _complete = complete;
         _lifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
-        _worker = Task.Run(RunAsync);
+        Completion = Task.Run(RunAsync);
     }
 
     /// <summary>Completes only after a terminal reply has been flushed or a fatal failure occurs.</summary>
-    public Task<WorkResult> Completion => _worker;
+    public Task<WorkResult> Completion { get; }
 
     /// <summary>Register before enqueueing so a following cancellation cannot overtake registration.</summary>
     public WorkResult Enqueue(uint id, TRequest request)
@@ -45,7 +44,9 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
             return WorkResult.Failure("Request id is already active");
         }
         if (_queue.Writer.TryWrite(new Call(id, request, source)))
+        {
             return new WorkResult.Ok<bool, string>(true);
+        }
         Remove(id, source);
         return WorkResult.Failure("Request queue is closed");
     }
@@ -54,7 +55,9 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
     public WorkResult Cancel(uint id)
     {
         if (!_pending.TryGetValue(id, out var source))
+        {
             return new WorkResult.Ok<bool, string>(false);
+        }
         try
         {
             source.Cancel();
@@ -97,7 +100,9 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
             var response = await InvokeAsync(call).ConfigureAwait(false);
             var result = await _complete(response).ConfigureAwait(false);
             if (!result.Match(value => value, _ => false))
+            {
                 return result;
+            }
         }
         return new WorkResult.Ok<bool, string>(false);
     }
@@ -122,18 +127,20 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
 
     private void Remove(uint id, CancellationTokenSource source)
     {
-        _pending.TryRemove(id, out _);
+        _ = _pending.TryRemove(id, out _);
         source.Dispose();
     }
 
     /// <summary>Cancel active and queued work, observe the worker, and release all registrations.</summary>
     public async ValueTask DisposeAsync()
     {
-        _queue.Writer.TryComplete();
+        _ = _queue.Writer.TryComplete();
         await _lifetime.CancelAsync().ConfigureAwait(false);
-        await _worker.ConfigureAwait(false);
+        _ = await Completion.ConfigureAwait(false);
         foreach (var source in _pending.Values)
+        {
             source.Dispose();
+        }
         _pending.Clear();
         _lifetime.Dispose();
         GC.SuppressFinalize(this);

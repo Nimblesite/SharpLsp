@@ -44,8 +44,6 @@ jobs:
       RIDER_REQUIRED: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
       - uses: ./.github/actions/rider-environment
       - name: Build plugin and test classes without executing tests
         run: |-
@@ -69,8 +67,6 @@ jobs:
       chunks: ${{ steps.build.outputs.chunks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
       - name: Build every Linux artifact
         id: build
         uses: ./.github/actions/build-platform
@@ -96,8 +92,6 @@ jobs:
       chunks: ${{ steps.build.outputs.chunks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
       - name: Build every Windows artifact
         id: build
         uses: ./.github/actions/build-platform
@@ -118,8 +112,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20'

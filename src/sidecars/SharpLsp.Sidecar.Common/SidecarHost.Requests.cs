@@ -1,4 +1,3 @@
-using LspKit.Sidecar;
 using MessagePack;
 using Serilog;
 using SharpLsp.Sidecar.Common.Ipc;

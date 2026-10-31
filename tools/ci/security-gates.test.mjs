@@ -28,15 +28,13 @@ const action = (name) =>
         ),
     );
 
-// [DIST-CI-VSIX-SHARDS]: a cache hit must skip the shared package build too.
-test("cached VS Code dependencies skip profiler codegen and compilation", () => {
+// [DIST-CI-VSIX-SHARDS]: a cache hit skips the install entirely.
+test("cached VS Code dependencies skip npm ci", () => {
     const steps = action("vsix-node-deps").runs.steps;
     const cache = steps.findIndex((step) => step.id === "node-modules");
-    const build = steps.findIndex((step) => step.run === "make _build-profiler-ui");
-    assert.ok(cache >= 0 && cache < build, "restore before deciding whether to build");
-    assert.equal(steps[build].if, "steps.node-modules.outputs.cache-hit != 'true'");
-    const codegen = steps.find((step) => step.uses === "./.github/actions/typediagram");
-    assert.equal(codegen.if, steps[build].if, "cached shards need no code generator install");
+    const install = steps.findIndex((step) => step.run === "npm ci --prefix src/editors/vscode");
+    assert.ok(cache >= 0 && cache < install, "restore before deciding whether to install");
+    assert.equal(steps[install].if, "steps.node-modules.outputs.cache-hit != 'true'");
 });
 
 test("all checks finish before build and every test waits for artifact publication", () => {
