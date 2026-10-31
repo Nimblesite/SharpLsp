@@ -10,9 +10,12 @@ import path from 'node:path';
 // `~/Documents/Code/SharpLsp/src/editors/vscode/.vscode-test/...`) overflows it and
 // the host dies at startup with `listen EINVAL` before any test runs. The OS
 // temp dir keeps the socket path well under the limit (and Windows uses named
-// pipes, so it's unaffected either way). Overridable via the env var.
-const testUserDataDir =
-  process.env.VSCODE_TEST_USER_DATA_DIR ?? path.join(os.tmpdir(), 'slsp-vsx', `u${process.pid}`);
+// pipes, so it's unaffected either way). `mkdtemp` makes it fresh and private,
+// so no other user can plant its settings. Overridable via the env var.
+function userDataDir(suffix) {
+  const chosen = process.env.VSCODE_TEST_USER_DATA_DIR;
+  return chosen ? `${chosen}${suffix}` : fs.mkdtempSync(path.join(os.tmpdir(), 'slsp-u'));
+}
 
 /** The directory of the suites that need a MULTI-ROOT workspace ([DIST-CI-VSIX-SHARDS]). */
 const MULTI_ROOT_SUITES = 'multiroot/';
@@ -46,8 +49,20 @@ function multiRootWorkspace() {
   return file;
 }
 
+/**
+ * User settings for a test host. VS Code's built-in chat adds its own code
+ * actions ("Fix", "Explain", "Modify") once a diagnostic lands, so with AI on a
+ * suite's lightbulb list depends on when diagnostics arrive, not on SharpLsp.
+ */
+function writeUserSettings(userDataDir) {
+  fs.mkdirSync(path.join(userDataDir, 'User'), { recursive: true });
+  const settings = { 'chat.disableAIFeatures': true };
+  fs.writeFileSync(path.join(userDataDir, 'User', 'settings.json'), JSON.stringify(settings));
+}
+
 /** One editor start: the same extension and dependency, its own workspace shape. */
 function testConfig(label, workspaceFolder, userDataDir) {
+  writeUserSettings(userDataDir);
   return {
     label,
     // Explicit minimum-editor runs verify [DIST-VSIX-MODEL].
@@ -76,9 +91,9 @@ export default defineConfig({
   // Both editor starts write into ONE coverage directory, so a run that needs
   // the multi-root shape still produces one tracefile.
   tests: [
-    testConfig('folder', 'test-fixtures/workspace', testUserDataDir),
+    testConfig('folder', 'test-fixtures/workspace', userDataDir('')),
     ...(wantsMultiRoot()
-      ? [testConfig('multiroot', multiRootWorkspace(), `${testUserDataDir}-mr`)]
+      ? [testConfig('multiroot', multiRootWorkspace(), userDataDir('-mr'))]
       : []),
   ],
   coverage: {

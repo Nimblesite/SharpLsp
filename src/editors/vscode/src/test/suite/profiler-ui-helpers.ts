@@ -273,6 +273,7 @@ export function suspectedLeak(
     currentSize: 8_388_608,
     confidence: 'HIGH',
     reason: 'Monotonic growth pattern',
+    typeName: '',
     ...overrides,
   };
 }
