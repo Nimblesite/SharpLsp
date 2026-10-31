@@ -50,9 +50,9 @@ suite('Profile loopback server — speedscope deep links load automatically', ()
     fs.writeFileSync(profilePath, profileJson);
   });
 
-  suiteTeardown(() => {
+  suiteTeardown(async () => {
     disposeProfileServer();
-    removeTestDir(tmpDir);
+    await removeTestDir(tmpDir);
   });
 
   test("a registered profile is served with the headers speedscope's importer needs", async () => {

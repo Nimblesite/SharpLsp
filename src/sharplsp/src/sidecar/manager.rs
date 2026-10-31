@@ -15,6 +15,7 @@ use super::protocol::Envelope;
 use super::transport::FramedTransport;
 
 mod exchange;
+pub(crate) use exchange::CompilerRefusal;
 mod preemption;
 mod recovery;
 mod shutdown;
@@ -334,7 +335,7 @@ impl SidecarManager {
         let background = self.preemption.begin(method, cancel);
         let cancel = background.as_ref().map(|work| &work.token).or(cancel);
         let mut transport_guard =
-            lspkit_sidecar::cancellation::until_cancelled(self.transport.lock(), cancel).await?;
+            lspkit::sidecar::cancellation::until_cancelled(self.transport.lock(), cancel).await?;
         self.session.remember(method, &payload)?;
         let fresh = transport_guard.is_none();
         self.connect_if_needed(&mut transport_guard).await?;

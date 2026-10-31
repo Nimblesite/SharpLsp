@@ -1255,6 +1255,11 @@ fn handle_load_solution(
         .context("sharplsp/loadSolution requires { solutionPath: string }")?;
 
     info!("Loading solution: {sln_path}");
+    // Counted before selection supersedes anything, so no pull sees a gap.
+    [csharp_sidecar, fsharp_sidecar]
+        .into_iter()
+        .flatten()
+        .for_each(|_| pull_diagnostics::state::load_started());
     pull_diagnostics::state::select_workspace(sln_path)?;
 
     let payload = sln_path.to_owned();
@@ -1266,7 +1271,9 @@ fn handle_load_solution(
         let sender = connection.sender.clone();
         let vfs_for_diagnostics = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match workspace_open::open_workspace(&cs, &p).await {
+            let opened = workspace_open::open_workspace(&cs, &p).await;
+            pull_diagnostics::state::load_finished();
+            match opened {
                 Ok(()) => {
                     info!("Solution loaded in C# (Roslyn) sidecar");
                     if let Err(error) = workspace_open::configure_diagnostics(
@@ -1300,7 +1307,9 @@ fn handle_load_solution(
         let sender = connection.sender.clone();
         let vfs = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match workspace_open::open_workspace(&fs, &p).await {
+            let opened = workspace_open::open_workspace(&fs, &p).await;
+            pull_diagnostics::state::load_finished();
+            match opened {
                 Ok(()) => {
                     info!("Solution loaded in F# (FCS) sidecar");
                     if let Err(error) = workspace_open::configure_diagnostics(

@@ -1,10 +1,8 @@
 ---
-# The lspkit submodule's profiler generates its wire model with typeDiagram:
-# lsp-profiler's build.rs runs it on every Rust build of the host, and
-# `make _build-profiler-ui` runs it before the UI package compiles
-# ([PROFILER-SHARED-LIBRARY]). Pinned to the version lspkit's CI installs.
+# The extension's tutorial model is generated with typeDiagram ([TUTORIAL-MODEL]).
+# Pinned to the version lspkit's CI installs.
 name: Install typeDiagram
-description: Puts the typeDiagram CLI that lspkit's profiler code generation needs on PATH.
+description: Puts the typeDiagram CLI that the tutorial model generator needs on PATH.
 runs:
   using: composite
   steps:

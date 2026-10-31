@@ -4,8 +4,8 @@ max_duplication_percent = 5.85
 
 [defaults]
 exclude = [
-    # The lspkit submodule (https://github.com/Nimblesite/lspkit) is gated in its own repo.
-    "lspkit/**",
+    # lspkit release source fetched by make _fetch-lspkit; gated in its own repo.
+    ".lspkit/**",
     # Example / sample projects (test input, not codebase).
     "src/examples/**",
     # Test-input fixtures (sample sources consumed by the suites).

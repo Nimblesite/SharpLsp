@@ -149,7 +149,7 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
 
 ### Rust host
 
-- [~] Depend on `lsp-profiler` and `lsp-profiler-dotnet`: path dependencies into the public `lspkit/` submodule (`src/sharplsp/Cargo.toml`), which CI checks out without a separate repository token. Move to the crates.io release once lspkit publishes them.
+- [x] Depend on `lsp-profiler` and `lsp-profiler-dotnet` from crates.io and `@nimblesite/lsp-profiler-ui` from npm; the lspkit submodule is gone.
 - [x] Profiler wiring in `src/sharplsp/src/main.rs` replaced by `profiler::host::ProfilerHost` (`HostServices`): construction under the workspace root, shutdown before the sidecars, executeCommand routing, `$/cancelRequest`, `executeCommandProvider` and `experimental.lspProfiler` [PROFILER-SHARED-LIBRARY-HOST]. The `sharplsp/profiler/*` routes are gone.
 - [ ] Merge the profiler's diagnostics, inlay hints, code lenses and code actions with SharpLsp's own providers (blocked on the library building them).
 - [x] `[profiler]` table reduced to `max_concurrent_sessions` and `output_directory`; CLI-only settings removed (`config.rs`). The cap is not enforced by the library yet.

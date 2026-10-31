@@ -115,8 +115,8 @@ export async function setupLspTestSuite(
   return { tmpDir, hotFile };
 }
 
-export function teardownLspTestSuite(tmpDir: string): void {
-  removeTestDir(tmpDir);
+export async function teardownLspTestSuite(tmpDir: string): Promise<void> {
+  await removeTestDir(tmpDir);
 }
 
 /** Write `content` to `filename` under `tmpDir` and open it in an editor. */
@@ -143,8 +143,8 @@ export function useLspSuite(prefix: string, cleanup: () => void = () => undefine
     this.timeout(90_000);
     ({ tmpDir } = await setupLspTestSuite(prefix));
   });
-  suiteTeardown(() => {
-    teardownLspTestSuite(tmpDir);
+  suiteTeardown(async () => {
+    await teardownLspTestSuite(tmpDir);
   });
   teardown(async () => {
     cleanup();

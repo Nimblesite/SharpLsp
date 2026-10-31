@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import { shouldProfileOnLaunch } from '@nimblesite/lsp-profiler-ui/out/src/profiler';
 import { ProcessesProvider } from '@nimblesite/lsp-profiler-ui/out/src/process-explorer';
 import { createProfilerStore } from '@nimblesite/lsp-profiler-ui/out/src/store';
-import { seedSignal, fakeHost, launchConfigOf } from './profiler-ui-helpers';
+import { captureWarnings, seedSignal, fakeHost, launchConfigOf } from './profiler-ui-helpers';
 import { asRecord } from '@nimblesite/lsp-profiler-ui/out/src/unknown-shape';
 
 import { EXTENSION_ID } from './profiler-ui-helpers';
@@ -266,18 +266,24 @@ suite('Processes — fetch-state drives the welcome (#147)', () => {
 });
 
 suite('Run & Profile registered commands (#82)', () => {
-  test('both registered launches refuse to start a session without a Python file open', async () => {
+  test('both registered launches refuse to start a session without an F# or C# file open', async () => {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     // Driving the REAL registered commands end-to-end: each must exist (or
     // executeCommand rejects) and must decline to launch with no active
-    // Python editor instead of starting a broken session.
-    await vscode.commands.executeCommand('sharplsp.profiler.profileCurrentFileCpu');
-    await vscode.commands.executeCommand('sharplsp.profiler.trackMemoryCurrentFile');
+    // F# or C# editor instead of starting a broken session.
+    const warnings = await captureWarnings(async () => {
+      await vscode.commands.executeCommand('sharplsp.profiler.profileCurrentFileCpu');
+      await vscode.commands.executeCommand('sharplsp.profiler.trackMemoryCurrentFile');
+    });
     assert.strictEqual(
       vscode.debug.activeDebugSession,
       undefined,
-      'no debug session may start when no Python file is open',
+      'no debug session may start when no F# or C# file is open',
     );
+    // Each says what to open, in the languages' own names, never their editor
+    // ids ("Open a csharp/fsharp file"). lspkit [PROF-UI-HOST]
+    const open = 'SharpLsp: Open a file in F# or C# to run and profile.';
+    assert.deepStrictEqual(warnings, [open, open], 'both launches say which file to open');
   });
 });
 

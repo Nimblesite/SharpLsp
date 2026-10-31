@@ -81,7 +81,6 @@ runs:
         platform: ${{ inputs.platform }}
 
     # ── The host, the sidecars and the debug adapter ───────────────
-    - uses: ./.github/actions/typediagram
     - name: Build sharplsp host and both sidecars (release)
       shell: bash
       run: |-

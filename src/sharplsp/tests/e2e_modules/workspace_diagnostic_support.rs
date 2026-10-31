@@ -186,6 +186,49 @@ pub fn assert_superseded(response: &Value) {
     assert!(response.get("result").is_none());
 }
 
+/// Pull `uri` past genuine supersession, as an editor does, and require the
+/// settled refusal of a document outside every project. [DIAG-TRUTH-GUARANTEES]
+pub fn refused_pull(
+    client: &mut LspClient,
+    uri: &str,
+    cause: &str,
+    traffic: &mut Vec<Value>,
+) -> Value {
+    let deadline = Instant::now() + Duration::from_mins(1);
+    let params = json!({"textDocument":{"uri":uri}});
+    let response = loop {
+        let response =
+            observed_response(client, "textDocument/diagnostic", params.clone(), traffic);
+        if response["error"]["data"]["retriggerRequest"] != true || Instant::now() > deadline {
+            break response;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert_refused(&response, cause);
+    response
+}
+
+/// Server-cancelled with the compiler's cause, never asked again at once, and no
+/// report that claims the document clean (#527).
+pub fn assert_refused(response: &Value, cause: &str) {
+    let error = &response["error"];
+    assert_eq!(error["code"], -32802, "server-cancelled: {response}");
+    assert_eq!(
+        error["data"]["retriggerRequest"], false,
+        "never asked again at once: {response}"
+    );
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|message| message.contains(cause)),
+        "carries the compiler's cause `{cause}`: {response}"
+    );
+    assert!(
+        response.get("result").is_none(),
+        "no report claims it clean: {response}"
+    );
+}
+
 /// Require one report per document, rejecting both missing and duplicate reports.
 pub fn report_for<'a>(items: &'a [Value], uri: &str) -> &'a Value {
     let matching: Vec<_> = items.iter().filter(|item| item["uri"] == uri).collect();

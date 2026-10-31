@@ -214,7 +214,7 @@ suite('CPU profiling — debug-launched end-to-end', () => {
     assert.equal(profilerStore().profiler.value.cpu, 'idle', 'stop must clear the session');
   });
 
-  test('flamegraph webview HTML renders the dashboard from a profile result', () => {
+  test('flamegraph webview HTML renders the dashboard from a profile result', async () => {
     const program = built().program;
     const result: ProfileResult = {
       sessionId: 's-test',
@@ -233,7 +233,7 @@ suite('CPU profiling — debug-launched end-to-end', () => {
       ],
       hotLines: [{ file: program, line: HOT_LINE, samples: 500, percentage: 83 }],
     };
-    const html = buildFlamegraphHtml(result);
+    const html = await buildFlamegraphHtml(result);
     assert.ok(
       html.includes('LoopLeak.Program.Spin'),
       'the profile data (hot functions) must be embedded',
@@ -247,8 +247,8 @@ suite('CPU profiling — debug-launched end-to-end', () => {
     );
   });
 
-  test("the flamegraph's Speedscope link uses a working import path, not a dead file:// URL", () => {
-    const html = buildFlamegraphHtml({
+  test("the flamegraph's Speedscope link uses a working import path, not a dead file:// URL", async () => {
+    const html = await buildFlamegraphHtml({
       sessionId: 's-test',
       duration: 3,
       totalSamples: 600,
@@ -264,9 +264,9 @@ suite('CPU profiling — debug-launched end-to-end', () => {
     );
   });
 
-  test('flamegraph HTML escapes untrusted frame names/paths and nonce-gates its inline script', () => {
+  test('flamegraph HTML escapes untrusted frame names/paths and nonce-gates its inline script', async () => {
     const hostile = '</script><img src=x onerror=alert(1)>';
-    const html = buildFlamegraphHtml({
+    const html = await buildFlamegraphHtml({
       sessionId: 's-test',
       duration: 3,
       totalSamples: 600,

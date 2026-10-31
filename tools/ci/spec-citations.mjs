@@ -16,7 +16,10 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const DEPENDENCY_SPECS = ["lspkit/docs/specs/LSP-PROFILER-SPEC.md"];
+// The Makefile exports LSPKIT_DIR: the lspkit release source `_fetch-lspkit` unpacks.
+const DEPENDENCY_SPECS = ["LSP-PROFILER-SPEC.md", "LSP-PULL-SPEC.md"].map(
+    (spec) => `${process.env.LSPKIT_DIR}/docs/specs/${spec}`,
+);
 // marked ships with the extension's toolchain. Lexing the markdown, rather than
 // matching lines that start with `#`, keeps a comment inside a fenced code
 // block from defining an ID.
