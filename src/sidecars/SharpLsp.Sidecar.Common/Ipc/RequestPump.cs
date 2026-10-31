@@ -12,6 +12,7 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
     private readonly Channel<Call> _queue = Channel.CreateUnbounded<Call>();
     private readonly ConcurrentDictionary<uint, CancellationTokenSource> _pending = new();
     private readonly CancellationTokenSource _lifetime;
+    private int _disposed;
     private readonly Func<TRequest, CancellationToken, Task<TResponse>> _handle;
     private readonly Func<TRequest, Exception, TResponse> _failure;
     private readonly Func<TResponse, Task<WorkResult>> _complete;
@@ -134,6 +135,11 @@ public sealed class RequestPump<TRequest, TResponse> : IAsyncDisposable
     /// <summary>Cancel active and queued work, observe the worker, and release all registrations.</summary>
     public async ValueTask DisposeAsync()
     {
+        // Idempotent, as IAsyncDisposable requires: a second call has nothing to release.
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
         _ = _queue.Writer.TryComplete();
         await _lifetime.CancelAsync().ConfigureAwait(false);
         _ = await Completion.ConfigureAwait(false);
