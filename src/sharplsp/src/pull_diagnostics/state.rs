@@ -1,6 +1,6 @@
 //! Connection-owned pull state and refresh. [DIAG-ARCHITECTURE-SALSA]
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -19,6 +19,8 @@ static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 static REFRESH: AtomicU64 = AtomicU64::new(0);
 /// Protocol mode is read from async engine callbacks without blocking their workers.
 static PULL: AtomicBool = AtomicBool::new(false);
+/// Compilers still loading a selected solution.
+static LOADS: AtomicUsize = AtomicUsize::new(0);
 
 /// Per-connection compiler query state and effective policy.
 struct Session {
@@ -150,6 +152,23 @@ pub fn configure(config: &DiagnosticsConfig) -> Result<()> {
 /// in-flight pulls, which complete against their own. [DIAG-ANALYSIS-CANCELLATION]
 pub fn engine_changed() {
     refresh_after(PullStore::engine_changed);
+}
+
+/// A compiler began loading a selected solution. Until it finishes, a refusal
+/// describes the inputs being replaced and is never settled. [DIAG-TRUTH-GUARANTEES]
+pub fn load_started() {
+    let _ = LOADS.fetch_add(1, Ordering::AcqRel);
+}
+
+/// A compiler finished loading a selected solution, successfully or not.
+pub fn load_finished() {
+    // Saturating: a finish without its start can never underflow the count.
+    let _ = LOADS.try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
+}
+
+/// Whether any compiler is still loading a selected solution.
+pub fn loading() -> bool {
+    LOADS.load(Ordering::Acquire) > 0
 }
 
 /// A compiler that finished loading the selected workspace replaces the snapshot a
