@@ -292,7 +292,7 @@ suite('Memory discoverability — actions visible where the user lands (#263)', 
     this.timeout(30_000);
     vscode.debug.removeBreakpoints(vscode.debug.breakpoints);
     await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
+    await teardownLspTestSuite(tmpDir);
   });
 
   teardown(async () => {

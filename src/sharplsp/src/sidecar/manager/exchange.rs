@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use lspkit_server::CancellationToken;
-use lspkit_sidecar::cancellation::{Reply, RequestCancelled};
+use lspkit::sidecar::cancellation::{Reply, RequestCancelled};
 use tracing::{error, info, warn};
 
 use super::{SidecarManager, INITIAL_BACKOFF};
@@ -140,7 +140,7 @@ async fn roundtrip(
         transport,
         id: request.id.context("missing request identity")?,
     };
-    lspkit_sidecar::cancellation::receive(&mut exchange, cancel)
+    lspkit::sidecar::cancellation::receive(&mut exchange, cancel)
         .await
         .map_err(anyhow::Error::msg)
 }
@@ -153,7 +153,7 @@ struct CompilerExchange<'a> {
     id: u32,
 }
 
-impl lspkit_sidecar::cancellation::Exchange for CompilerExchange<'_> {
+impl lspkit::sidecar::cancellation::Exchange for CompilerExchange<'_> {
     type Response = Envelope;
 
     async fn receive(&mut self) -> Result<Envelope, String> {

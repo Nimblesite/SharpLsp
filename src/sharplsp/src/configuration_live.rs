@@ -12,7 +12,7 @@ use anyhow::Result;
 use crossbeam_channel::Sender;
 use lsp_server::{Message, Notification};
 use lsp_types::MessageType;
-use lspkit_live::{watcher::CoalescedWatcher, ChangeEvent, FileWatcher, ScheduleConfig};
+use lspkit_server::live::{watcher::CoalescedWatcher, ChangeEvent, FileWatcher, ScheduleConfig};
 use serde::Serialize;
 use serde_json::Value;
 use tracing::{info, warn};

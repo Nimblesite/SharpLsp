@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use lspkit_server::CancellationToken;
-use lspkit_sidecar::cancellation::RequestCancelled;
+use lspkit::sidecar::cancellation::RequestCancelled;
 
 use super::test_compiler::{polling_waits, preempts, Compiler};
 use super::SidecarManager;

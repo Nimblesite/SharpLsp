@@ -804,7 +804,9 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lsp-profiler"
-version = "0.0.1"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "289d9340d36286d75186cb7151451dd07554af2fb4c90039b998284927e9c92e"
 dependencies = [
  "async-trait",
  "humantime",
@@ -821,7 +823,9 @@ dependencies = [
 
 [[package]]
 name = "lsp-profiler-dotnet"
-version = "0.0.1"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd55c8327459420adbcd73c8f07a8003a2f35b89d66979f6583c82c547e0a7a2"
 dependencies = [
  "async-trait",
  "lsp-profiler",
@@ -860,36 +864,34 @@ dependencies = [
 
 [[package]]
 name = "lspkit"
-version = "0.0.1"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87e6c367eaa2cffef5d2536abff8c014749e00d9d6fdab130b869c84f1a3acd7"
 dependencies = [
  "async-trait",
+ "dashmap",
  "futures-core",
- "tokio-util",
-]
-
-[[package]]
-name = "lspkit-live"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "futures-util",
- "lspkit",
- "notify",
+ "rmp-serde",
+ "ropey",
+ "serde",
  "thiserror",
  "tokio",
  "tokio-util",
+ "toml",
  "tracing",
 ]
 
 [[package]]
 name = "lspkit-server"
-version = "0.0.1"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f49dfaef39b1ae30773aa83b665fb97f531d3b844c6feb589fe0eb163762c3f7"
 dependencies = [
  "async-trait",
  "futures-util",
  "lsp-types",
  "lspkit",
- "lspkit-vfs",
+ "notify",
  "salsa",
  "serde",
  "serde_json",
@@ -897,27 +899,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "lspkit-sidecar"
-version = "0.0.1"
-dependencies = [
- "rmp-serde",
- "serde",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "lspkit-vfs"
-version = "0.0.1"
-dependencies = [
- "dashmap",
- "ropey",
- "thiserror",
 ]
 
 [[package]]
@@ -1638,9 +1619,8 @@ dependencies = [
  "lsp-profiler-dotnet",
  "lsp-server",
  "lsp-types",
- "lspkit-live",
+ "lspkit",
  "lspkit-server",
- "lspkit-sidecar",
  "percent-encoding",
  "reqwest",
  "rmp-serde",

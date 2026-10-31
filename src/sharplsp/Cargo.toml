@@ -49,13 +49,11 @@ tracing-appender = "0.2"
 # Error handling
 anyhow = "1"
 
-# Shared profiler ([PROFILER-SHARED-LIBRARY]) from the lspkit submodule
-# (https://github.com/Nimblesite/lspkit) until its next release is published.
-lsp-profiler = { path = "../../lspkit/crates/lsp-profiler" }
-lsp-profiler-dotnet = { path = "../../lspkit/crates/lsp-profiler-dotnet" }
-lspkit-live = { path = "../../lspkit/crates/lspkit-live" }
-lspkit-server = { path = "../../lspkit/crates/lspkit-server", features = ["pull"] }
-lspkit-sidecar = { path = "../../lspkit/crates/lspkit-sidecar" }
+# Shared toolkit and profiler ([PROFILER-SHARED-LIBRARY]), https://lspkit.dev
+lsp-profiler = "0.4"
+lsp-profiler-dotnet = "0.4"
+lspkit = "0.4"
+lspkit-server = { version = "0.4", features = ["pull"] }
 globset = "0.4"
 async-trait = "0.1"
 

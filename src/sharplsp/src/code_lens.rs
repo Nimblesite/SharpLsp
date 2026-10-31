@@ -8,7 +8,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use lsp_server::{Message, Request};
 use lsp_types::{CodeLens, CodeLensParams, Command, Position, Range};
-use lspkit_sidecar::cancellation::RequestCancelled;
+use lspkit::sidecar::cancellation::RequestCancelled;
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
@@ -116,7 +116,7 @@ mod tests {
 
     use anyhow::anyhow;
     use lspkit_server::CancellationToken;
-    use lspkit_sidecar::cancellation::RequestCancelled;
+    use lspkit::sidecar::cancellation::RequestCancelled;
 
     use super::{preempted_or, LensPreempted};
 
