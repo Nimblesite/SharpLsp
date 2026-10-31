@@ -3,8 +3,8 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use lspkit_server::CancellationToken;
 use lspkit::sidecar::cancellation::{Reply, RequestCancelled};
+use lspkit_server::CancellationToken;
 use tracing::{error, info, warn};
 
 use super::{SidecarManager, INITIAL_BACKOFF};

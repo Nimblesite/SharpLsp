@@ -105,7 +105,10 @@ fn watch(
 }
 
 /// Keep native depth selection in the shared watcher implementation.
-fn scoped_watcher(root: &Path, recursive: bool) -> Result<FileWatcher, lspkit_server::live::WatcherError> {
+fn scoped_watcher(
+    root: &Path,
+    recursive: bool,
+) -> Result<FileWatcher, lspkit_server::live::WatcherError> {
     if recursive {
         FileWatcher::new(root)
     } else {

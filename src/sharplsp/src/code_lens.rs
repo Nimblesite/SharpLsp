@@ -115,8 +115,8 @@ mod tests {
     use std::cell::Cell;
 
     use anyhow::anyhow;
-    use lspkit_server::CancellationToken;
     use lspkit::sidecar::cancellation::RequestCancelled;
+    use lspkit_server::CancellationToken;
 
     use super::{preempted_or, LensPreempted};
 

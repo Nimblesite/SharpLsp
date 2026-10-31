@@ -95,7 +95,9 @@ fn past_supersession(client: &mut LspClient, uri: &str) -> Value {
 #[test]
 fn a_document_the_compiler_refuses_is_never_retriggered() {
     let (workspace, file_uri, mut client) = fsharp::ready_fsharp_client();
-    let project = std::fs::canonicalize(workspace.path()).unwrap().join("TestFSharp");
+    let project = std::fs::canonicalize(workspace.path())
+        .unwrap()
+        .join("TestFSharp");
     let stray = project.join("Stray.fs");
     let source = "module Stray
 
@@ -108,16 +110,24 @@ let answer = 42
     for attempt in 1..=2 {
         let refused = past_supersession(&mut client, &stray_uri);
         let error = &refused["error"];
-        assert_eq!(error["code"], -32802, "pull {attempt}: server-cancelled: {refused}");
+        assert_eq!(
+            error["code"], -32802,
+            "pull {attempt}: server-cancelled: {refused}"
+        );
         assert_eq!(
             error["data"]["retriggerRequest"], false,
             "pull {attempt}: never asked again at once: {refused}"
         );
         assert!(
-            error["message"].as_str().is_some_and(|message| message.contains("Stray.fs")),
+            error["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("Stray.fs")),
             "pull {attempt}: carries the compiler's cause: {refused}"
         );
-        assert!(refused.get("result").is_none(), "pull {attempt}: no report claims it clean");
+        assert!(
+            refused.get("result").is_none(),
+            "pull {attempt}: no report claims it clean"
+        );
     }
 
     let mut traffic = Vec::new();
@@ -127,7 +137,10 @@ let answer = 42
         json!({ "textDocument": { "uri": file_uri } }),
         &mut traffic,
     );
-    assert_eq!(owned["result"]["kind"], "full", "the project's own file still reports: {owned}");
+    assert_eq!(
+        owned["result"]["kind"], "full",
+        "the project's own file still reports: {owned}"
+    );
     let pulled = workspace_diagnostic_support::completed_pull(
         &mut client,
         "workspace/diagnostic",
@@ -135,9 +148,11 @@ let answer = 42
         &mut traffic,
     );
     assert!(
-        pulled["result"]["items"].as_array().is_some_and(|items| items
-            .iter()
-            .all(|item| item["uri"].as_str() != Some(stray_uri.as_str()))),
+        pulled["result"]["items"]
+            .as_array()
+            .is_some_and(|items| items
+                .iter()
+                .all(|item| item["uri"].as_str() != Some(stray_uri.as_str()))),
         "a refused document fails neither the workspace pull nor is reported clean: {pulled}"
     );
 
