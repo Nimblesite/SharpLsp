@@ -277,7 +277,8 @@ $(LSPKIT_DIR):
 	mkdir -p .lspkit
 	curl -fsSL -o .lspkit/lspkit.tar.gz https://github.com/Nimblesite/lspkit/archive/refs/tags/v$(LSPKIT_VERSION).tar.gz
 	node -e "const h=require('crypto').createHash('sha256').update(require('fs').readFileSync('.lspkit/lspkit.tar.gz')).digest('hex');if(h!=='$(LSPKIT_SHA256)'){console.error('lspkit source sha256 '+h+' != pinned $(LSPKIT_SHA256)');process.exit(1)}"
-	tar -xzf .lspkit/lspkit.tar.gz -C .lspkit && rm .lspkit/lspkit.tar.gz
+	rm -rf .lspkit/extract && mkdir -p .lspkit/extract && tar -xzf .lspkit/lspkit.tar.gz -C .lspkit/extract
+	mv .lspkit/extract/lspkit-$(LSPKIT_VERSION) $(LSPKIT_DIR) && rm -rf .lspkit/extract .lspkit/lspkit.tar.gz
 
 # [DIST-CI-ARTIFACT-TESTS] Compile product and tests together, once. Publishing
 # afterwards copies these exact Release assemblies; coverage retains their PDBs.

@@ -1,65 +1,43 @@
-# Static Regression Review — `ab8e713d..origin/chore/test-host-no-ai-actions`
+# Static Regression Review — `ab8e713d` → `origin/chore/test-host-no-ai-actions`
 
-**Reviewed target:** `e4e7963398088a8ee7726c675b24a2da2f762c38`  
+**Reviewed tree:** `e4e7963398088a8ee7726c675b24a2da2f762c38` (the branch tip at completion of review)  
 **Base:** `ab8e713d0597843bf2fbc3151701a38e4aba9989`  
-**Scope:** the complete Git diff: 979 files, 69,503 insertions and 8,178 deletions at the reviewed tip. This was a static, read-only review; no build or test execution was used.
+**Scope:** 979 changed files; static review only. No build, test execution, repository mutation, commit, or push was performed.
 
 ## Findings
 
-### 1. High — the dependency audit silently drops lspkit's required Rust and npm inventories
+### R-01 — Contributor film still archives the deleted lspkit submodule
 
-**Location:** `Makefile:466-467`; contract at `docs/specs/DISTRIBUTION-SPEC.md:919-921` (`[DIST-CI-AUDIT]`)
+- **Severity:** Medium
+- **Location:** `src/website/tools/video/kit/set.mjs:72` (called from `src/website/tools/video/films/contributing/film.mjs:65` through `REPO`)
+- **Evidence:** `REPO.stage` still executes `unpackHead(path.join(repoRoot, 'lspkit'), ...)`, and `unpackHead` runs `git -C <repo>/lspkit archive HEAD` at lines 51–54. This diff deletes both `.gitmodules` and the `lspkit` gitlink; the replacement source lives under `target/lspkit-0.4.0`, not `lspkit/`.
+- **Why this is a regression:** Every `contributing` shoot reaches this staging function before VS Code starts. `git archive` now runs in a nonexistent directory and the non-zero status is thrown at line 54, so a film that previously staged the two repositories can no longer be recorded. The second archive should be removed or deliberately migrated to the fetched source; leaving the old path guarantees failure.
 
-**Evidence:** `AUDIT_CARGO_LOCKS` now contains only `Cargo.lock` and the Zed lockfile. `AUDIT_NPM_DIRS` now contains only VS Code, the website and video tooling. The diff removes `lspkit/Cargo.lock`, `lspkit/packages/lspkit-debug` and `lspkit/packages/lsp-profiler-ui` from these inventories. Yet the unchanged spec explicitly requires the shared lspkit Cargo lockfile and both lspkit npm lockfiles to be scanned. The new `_fetch-lspkit` source tree makes those files available, but neither audit loop points into it.
+### R-02 — The new MoveType demo violates the Shop set's one-solution invariant
 
-**Why this is a regression:** a required security gate now examines fewer dependency inventories than it did at the base. Vulnerabilities unique to lspkit's own development/debug/UI dependency graphs can be missed while `make audit` still prints its clean-success message. Scanning SharpLsp's root lockfiles covers the packages SharpLsp directly resolves; it does not restore the removed coverage of lspkit's own lockfiles.
+- **Severity:** Medium
+- **Location:** `src/website/tools/video/kit/set.mjs:26`, with the recursive copy at `src/website/tools/video/kit/set.mjs:92-95`
+- **Evidence:** `SHOP` promises that the staged workspace holds exactly one solution and omits `Storefront.slnx`, `FsStorefront.slnx`, `blazor-storefront`, and `csharp14`. The new `MOVETYPE` set is declared at line 48, and `src/website/tools/video/demos/movetype/MoveType.slnx` is added by this diff, but `movetype` is absent from `SHOP.omit`. `stageDemo` recursively copies the entire demo root and filters only the names in that list.
+- **Why this is a regression:** Every film using `SHOP` now stages both the root `Shop.slnx` and nested `movetype/MoveType.slnx`, contradicting the set's explicit single-solution contract. Solution auto-discovery in the filmed SharpLsp workspace can become ambiguous or select the MoveType solution instead of the C#+F# Shop solution. Adding one demo has therefore changed the behavior of pre-existing language films.
 
-### 2. Medium — the contributor film still checks out the deleted `lspkit` submodule
+### R-03 — A failed lspkit extraction can be cached as a successful fetch
 
-**Location:** `src/website/tools/video/kit/set.mjs:72` (consumer at `src/website/tools/video/films/contributing/film.mjs:63-65`)
+- **Severity:** Low
+- **Location:** `Makefile:271-276`
+- **Evidence:** The directory `$(LSPKIT_DIR)` is itself the Make target and its only completion marker. The recipe streams `curl ... | tar -xz -C target` directly into the parent of that directory. Extraction creates `target/lspkit-0.4.0` before the archive has been fully read; no temporary directory, completion sentinel, or cleanup follows a failed pipeline.
+- **Why this is a regression:** If the download is truncated or `tar` fails after creating the directory, the first invocation fails but leaves the target present. Every later `make _fetch-lspkit` then considers it up to date and skips extraction, so `_build-dotnet`, profiler fixture consumers, audits, and spec-citation checks reuse a partial tree until the user manually deletes it. The submodule checkout did not treat the mere presence of this directory as a completed source fetch. Extract to a temporary directory and rename only after success.
 
-**Evidence:** `REPO.stage` runs:
+## Regression Checks That Did Not Produce Findings
 
-```js
-unpackHead(path.join(repoRoot, 'lspkit'), path.join(workspace, 'lspkit'));
-```
+- **Tests and assertions:** No test file was deleted. Removed helper assertions were found in their extracted helpers (`run-task-recorder.ts`, `RefactoringProject.cs`, `TextEditing.cs`, and the Rust test-module splits). The profiler webview suite now imports the published package's shared contract, which contains the replacement hardening, results, panel, and palette suites rather than merely deleting those checks.
+- **VS Code suite ownership:** All 208 target `.test.ts` suites map to exactly one `test-chunks.json` entry; every chunk pattern is non-empty. The `profiler*.test.js` and `memory-*.test.js` patterns include all profiler and memory e2e suites.
+- **Rust and F# test discovery:** Every added top-level and nested Rust e2e module is declared. Every Rust `#[path]` resolves to a tracked file. All F# source and test files occur exactly once in their project files.
+- **Async migrations:** New profiler decoration and cleanup promises are awaited at their call sites; F# `Task`-returning workspace, compile-order, and code-action calls are awaited or explicitly synchronised in existing test fixtures. No newly unawaited migration call was found.
+- **Paths and references:** All local GitHub composite-action references and reviewed relative TypeScript/JavaScript imports resolve. `LSPKIT_DIR` is exported for profiler fixtures and fetched before the .NET build, .NET audit, VS Code shards, and spec-citation gate. No stale `_build-profiler-ui` or `tools/profiler-film` invocation remains.
+- **Dependencies:** No Cargo or npm dependency downgrade was found relative to the base. The lspkit crates and UI move from local `0.0.1` packages to published `0.4.0` packages; other changed versions are upgrades or added transitive versions.
+- **Specs and merges:** No dangling spec-ID citation was found, including against lspkit's profiler and pull specs. Removed spec headings are not still cited. No conflict markers or lost test-module hunks were found; the audit prerequisite added during the branch's final commit is present.
+- **CI execution:** New tooling tests are invoked by their declared legs, VS Code matrix generation consumes the updated chunk manifest, and coverage/duplication thresholds were not weakened.
 
-`unpackHead` executes `git -C <repo> archive HEAD` and throws on a non-zero result. At the target, `.gitmodules` and the `lspkit` gitlink are deleted, so `<repoRoot>/lspkit` no longer exists. The `contributing` film selects `REPO` as its demo, making this path live rather than dead helper code.
+## Limitations
 
-**Why this is a regression:** `node src/website/tools/video/film.mjs contributing` can no longer stage its workspace and fails before recording. This is a direct stale path left by the submodule removal.
-
-### 3. Medium — `make _screenshots` now runs the suite without taking any screenshots
-
-**Location:** `Makefile:902-920`; unused capture helper at `src/editors/vscode/src/test/suite/test-helpers.ts:543-550`
-
-**Evidence:** the target still starts `screenshot-watcher.mjs`, sets `SHARPLSP_SCREENSHOTS=1`, runs the VS Code tests and reports the test status as the screenshot target's result. The diff deletes the `takeScreenshot(...)` calls from the diagnostics, extension, hover, LSP integration, semantic integration and NuGet suites. At the target, a repository-wide search for `takeScreenshot(` finds only the helper's own declaration and watcher documentation—no test call sites remain.
-
-**Why this is a regression:** the target can complete successfully while producing zero PNGs and leaving every existing capture stale. The new film-produced WebP stills do not repair this Make target or provide a completion check for the legacy screenshots that `src/website/tests/screenshots.spec.js` still renders. This is silent deletion of the target's advertised behavior, not merely removal of redundant test interactions.
-
-### 4. Medium — the shipped profiler engine is built from an unverified, mutable tag archive
-
-**Location:** `Makefile:96-97`, `Makefile:269`, `Makefile:271-276`
-
-**Evidence:** `_fetch-lspkit` pipes `https://github.com/Nimblesite/lspkit/archive/refs/tags/v0.4.0.tar.gz` directly from `curl` into `tar`. There is no commit assertion, SHA-256 check, signature check, or expected-file verification. `_build-dotnet` then publishes the engine from that tree. At the base, `lspkit` was a gitlink pinned to exact commit `e6e417275a76568d559ef26f9f68752f7a0f4454`.
-
-**Why this is a regression:** the bytes compiled into the shipped engine are no longer bound to an immutable reviewed revision. A moved tag, altered upstream release or incomplete extraction can change or corrupt build inputs without any SharpLsp diff, and an already-created `target/lspkit-0.4.0` directory suppresses the fetch rule on later invocations. The crates and npm package have registry integrity/checksums; the source-built engine has no equivalent guard here.
-
-### 5. Low — the profiler specification still names the removed submodule fixture path
-
-**Location:** `docs/specs/PROFILER-SPEC.md:60`; actual resolver at `src/editors/vscode/src/test/suite/profiler-fixtures.ts:10-16`
-
-**Evidence:** the spec says the F# target is `lspkit/dotnet/fixtures/HotLeakAppFs`. That path disappeared with the gitlink. The real suite now resolves `$(LSPKIT_DIR)/dotnet/fixtures`, where `LSPKIT_DIR` is `target/lspkit-0.4.0`.
-
-**Why this is a regression:** the source-of-truth test documentation points contributors and tooling at a nonexistent fixture location and disagrees with the implementation. It should name the release-source layout or the `LSPKIT_DIR` indirection, not the deleted submodule path.
-
-## Targeted checks with no additional finding
-
-- **Profiler/e2e retention:** all 31 profiler/memory `*.test.ts` suites present at the base remain at the target; none was deleted. No `test-chunks.json` file entry was removed. The profiler and memory glob entries remain in force.
-- **Webview suite replacement:** the 11 local tests deleted from `profiler-webviews.test.ts` were replaced by the 0.4 shared contract import, whose four modules register 23 tests and retain the CSP, escaping, theme, artifact, empty-state and singleton-handler assertions.
-- **Async UI 0.4 migration:** remaining `buildFlamegraphHtml`, profile/memory/leak decoration, `removeTestDir`, profiler-suite teardown and CPU-contract call sites are awaited or registered synchronously as appropriate. `buildMemoryDashboardHtml` remains synchronous in 0.4, so its unawaited call is correct.
-- **Paths:** no remaining broken Rust `#[path]` target was found. `LSPKIT_DIR` is exported by the Makefile and the profiler fixture resolver uses it correctly. The two stale paths are findings 2 and 5.
-- **Tests/assertions:** test-count comparison found no other reduced suite. Removed configuration tests were consolidated with equivalent cases; the Test Explorer coverage assertion changed to the new one-owner build-graph contract with additional assertions rather than simple weakening.
-- **Dependencies:** no version downgrade was found in the compared Cargo/npm lockfiles or direct dependency changes. All four lspkit Rust crates and the npm UI package resolve to 0.4.0. Coverage and duplication thresholds were tightened, not lowered.
-- **Spec IDs:** no newly dangling spec-ID citations were found, including the newly cited lspkit pull/profiler IDs. No spec-definition heading was removed.
-- **CI execution:** apart from intentional submodule checkout and profiler-UI generation removal, no workflow step silently disappeared. New chunk matrices continue to derive from `test-chunks.json`; the source-builder and Windows F# test legs were added.
-- **Merge damage:** no conflict markers were found. `git diff --check` reported only blank lines at EOF in two F# test files and three VTT files, not lost-hunk evidence.
+This was a static review, as requested. Behavioral conclusions above follow from direct control flow and path resolution, not from executing the affected films or build targets.
