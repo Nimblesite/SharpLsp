@@ -160,8 +160,13 @@ pub fn load_started() {
     let _ = LOADS.fetch_add(1, Ordering::AcqRel);
 }
 
-/// A compiler finished loading a selected solution, successfully or not.
+/// A compiler finished loading a selected solution, successfully or not. The
+/// revision moves first, so a refusal computed during the load can never reply
+/// as settled in the gap before the load's own invalidation. [DIAG-TRUTH-GUARANTEES]
 pub fn load_finished() {
+    if let Err(error) = invalidate() {
+        warn!(%error, "Diagnostic inputs not invalidated after a solution load");
+    }
     // Saturating: a finish without its start can never underflow the count.
     let _ = LOADS.try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
 }
