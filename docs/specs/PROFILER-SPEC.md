@@ -10,7 +10,7 @@ SharpLsp exposes `dotnet-trace`, `dotnet-counters`, and `dotnet-dump` through LS
 
 ## [PROFILER-SHARED-LIBRARY] Shared profiler library
 
-SharpLsp's profiler is moving onto **lsp-profiler**, the language-neutral profiler extracted from Basilisk. It lives in **lspkit** (https://github.com/Nimblesite/lspkit), checked out here as the `lspkit/` submodule. lspkit's `docs/specs/LSP-PROFILER-SPEC.md` is the contract for:
+SharpLsp's profiler is moving onto **lsp-profiler**, the language-neutral profiler extracted from Basilisk. It lives in **lspkit** (https://github.com/Nimblesite/lspkit), consumed as published crates.io and npm packages. lspkit's `docs/specs/LSP-PROFILER-SPEC.md` is the contract for:
 
 - the shared protocol;
 - the .NET runtime;
@@ -68,7 +68,7 @@ flowchart LR
 
 ### [PROFILER-SHARED-LIBRARY-ENGINE] Engine bundling
 
-Every platform VSIX ships the framework-dependent engine (`lsp-profiler-dotnet-engine` and its assemblies) beside the `sharplsp` binary; `make _build-dotnet` publishes it from the `lspkit/` submodule to `target/profiler-engine`, and the Makefile's `_copy-vsix-binaries` copies it from there. The engine runs on the .NET 8+ runtime that SharpLsp users already have. It never writes a process dump: CPU sampling and heap capture both use the runtime's EventPipe, which needs no debugger entitlement, so the memory profiler works on macOS where `dotnet-dump collect` hung. `dotnet-trace`, `dotnet-counters` and `dotnet-dump` are no longer required, and no `dotnet tool install` hint remains in the host; the READMEs still mention them and are updated at cutover.
+Every platform VSIX ships the framework-dependent engine (`lsp-profiler-dotnet-engine` and its assemblies) beside the `sharplsp` binary; `make _build-dotnet` publishes it from the lspkit release source `make _fetch-lspkit` unpacks to `target/profiler-engine`, and the Makefile's `_copy-vsix-binaries` copies it from there. The engine runs on the .NET 8+ runtime that SharpLsp users already have. It never writes a process dump: CPU sampling and heap capture both use the runtime's EventPipe, which needs no debugger entitlement, so the memory profiler works on macOS where `dotnet-dump collect` hung. `dotnet-trace`, `dotnet-counters` and `dotnet-dump` are no longer required, and no `dotnet tool install` hint remains in the host; the READMEs still mention them and are updated at cutover.
 
 ### [PROFILER-SHARED-LIBRARY-SUPERSEDED] Sections replaced at cutover
 

@@ -108,7 +108,6 @@ F# ahead of C# on every new feature. F# never takes the back seat.
 # Git
 
 > ⛔️ **Don't make git changes like creating new branches or worktrees** unless the user asks or a skill demands it.
-- Commit and push to submodules before commiting and pushing the feature branch
 - Commit and push after each major change
 - **One feature branch**, never `git worktree`. Work the open one; several open → merge them immediately
 - **Never push to `main`.** PR → CI green → squash-merge → delete the branch
@@ -155,12 +154,12 @@ IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS)
 
 ## lspkit — https://github.com/Nimblesite/lspkit
 
-**lspkit is the shared toolkit under every Nimblesite language server, and home of the profiler.** Git submodule `lspkit/` (`git submodule update --init`), pinned until its next crates.io/npm release.
+**lspkit is the shared toolkit under every Nimblesite language server, and home of the profiler.** Consumed as published packages only: crates `lspkit`, `lspkit-server`, `lsp-profiler`, `lsp-profiler-dotnet` (crates.io) and `@nimblesite/lsp-profiler-ui` (npm). *Never* a submodule or path dependency.
 
-- **The profiler is lspkit's.** Its crates (`lsp-profiler`, `lsp-profiler-dotnet`), .NET engine (`lspkit/dotnet/`), VS Code UI (`lspkit/packages/lsp-profiler-ui`) and spec (`lspkit/docs/specs/LSP-PROFILER-SPEC.md`) live there; SharpLsp only mounts it ([PROFILER-SHARED-LIBRARY]). Change lspkit first, then move the submodule pointer. *Never* fork profiler code back here
+- **The profiler is lspkit's.** Its crates, .NET engine, VS Code UI and spec (`docs/specs/LSP-PROFILER-SPEC.md`) live there; SharpLsp only mounts it ([PROFILER-SHARED-LIBRARY]). Change and release lspkit first, then bump the versions here. File lspkit bugs in https://github.com/Nimblesite/lspkit/issues. *Never* fork profiler code back here
 - **Migrate onto lspkit surgically.** The scaffolding here (server loop, VFS, sidecar transport and lifecycle, diagnostics pipeline, TOML config, DAP glue) duplicates `lspkit-*` crates and `@nimblesite/lspkit-debug`. Replace one piece per reviewable change, tests passing. The Roslyn and FCS engines stay; the protocol shells move
 - **New LSP infrastructure goes in lspkit.** A patch that duplicates lspkit scaffolding says so in its PR description and names the crate that should own it
-- **Wiring:** Cargo path dependencies point into `lspkit/crates/` (excluded from the root workspace); `make _build-dotnet` publishes the engine to `target/profiler-engine`; `make _build-profiler-ui` builds the UI package `npm ci` packs into the extension. CI checks out the public submodule without a token
+- **Wiring:** versioned Cargo and npm dependencies. The .NET engine and its fixtures are not published, so `make _fetch-lspkit` unpacks the pinned release source (`LSPKIT_VERSION`) to `target/lspkit-<version>`; `make _build-dotnet` publishes the engine from there to `target/profiler-engine`
 
 # Critical Docs
 
