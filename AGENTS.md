@@ -159,7 +159,7 @@ IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS)
 - **The profiler is lspkit's.** Its crates, .NET engine, VS Code UI and spec (`docs/specs/LSP-PROFILER-SPEC.md`) live there; SharpLsp only mounts it ([PROFILER-SHARED-LIBRARY]). Change and release lspkit first, then bump the versions here. File lspkit bugs in https://github.com/Nimblesite/lspkit/issues. *Never* fork profiler code back here
 - **Migrate onto lspkit surgically.** The scaffolding here (server loop, VFS, sidecar transport and lifecycle, diagnostics pipeline, TOML config, DAP glue) duplicates `lspkit-*` crates and `@nimblesite/lspkit-debug`. Replace one piece per reviewable change, tests passing. The Roslyn and FCS engines stay; the protocol shells move
 - **New LSP infrastructure goes in lspkit.** A patch that duplicates lspkit scaffolding says so in its PR description and names the crate that should own it
-- **Wiring:** versioned Cargo and npm dependencies. The .NET engine and its fixtures are not published, so `make _fetch-lspkit` unpacks the pinned release source (`LSPKIT_VERSION`) to `target/lspkit-<version>`; `make _build-dotnet` publishes the engine from there to `target/profiler-engine`
+- **Wiring:** versioned Cargo and npm dependencies. The .NET engine and its fixtures are not published, so `make _fetch-lspkit` unpacks the pinned release source (`LSPKIT_VERSION`) to `.lspkit/lspkit-<version>`; `make _build-dotnet` publishes the engine from there to `target/profiler-engine`
 
 # Critical Docs
 

@@ -95,7 +95,8 @@ PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 # unpacks to LSPKIT_DIR; `_build-dotnet` publishes the engine to PROFILER_ENGINE_OUT.
 LSPKIT_VERSION      := 0.4.0
 LSPKIT_SHA256       := 4acc4e81bb8eb20a9855478f3b496581746c4b891ffd3040e8fb3285964b0bb1
-export LSPKIT_DIR   := target/lspkit-$(LSPKIT_VERSION)
+# Outside target/: CI caches restore target/ partially, which would skip the fetch.
+export LSPKIT_DIR   := .lspkit/lspkit-$(LSPKIT_VERSION)
 PROFILER_ENGINE_OUT := target/profiler-engine
 
 VSCODE_DIR  = src/editors/vscode
@@ -273,10 +274,10 @@ _fetch-lspkit: $(LSPKIT_DIR)
 
 $(LSPKIT_DIR):
 	@echo "==> Fetching lspkit $(LSPKIT_VERSION) source (profiler engine, fixtures)..."
-	mkdir -p target
-	curl -fsSL -o target/lspkit.tar.gz https://github.com/Nimblesite/lspkit/archive/refs/tags/v$(LSPKIT_VERSION).tar.gz
-	node -e "const h=require('crypto').createHash('sha256').update(require('fs').readFileSync('target/lspkit.tar.gz')).digest('hex');if(h!=='$(LSPKIT_SHA256)'){console.error('lspkit source sha256 '+h+' != pinned $(LSPKIT_SHA256)');process.exit(1)}"
-	tar -xzf target/lspkit.tar.gz -C target && rm target/lspkit.tar.gz
+	mkdir -p .lspkit
+	curl -fsSL -o .lspkit/lspkit.tar.gz https://github.com/Nimblesite/lspkit/archive/refs/tags/v$(LSPKIT_VERSION).tar.gz
+	node -e "const h=require('crypto').createHash('sha256').update(require('fs').readFileSync('.lspkit/lspkit.tar.gz')).digest('hex');if(h!=='$(LSPKIT_SHA256)'){console.error('lspkit source sha256 '+h+' != pinned $(LSPKIT_SHA256)');process.exit(1)}"
+	tar -xzf .lspkit/lspkit.tar.gz -C .lspkit && rm .lspkit/lspkit.tar.gz
 
 # [DIST-CI-ARTIFACT-TESTS] Compile product and tests together, once. Publishing
 # afterwards copies these exact Release assemblies; coverage retains their PDBs.
