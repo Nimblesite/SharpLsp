@@ -1,6 +1,6 @@
 # XAML Implementation Plan: .NET MAUI, WPF, Avalonia, WinUI and Uno
 
-**Spec:** [XAML-SPEC.md](../specs/XAML-SPEC.md)
+**Spec:** [XAML-SPEC.md](../specs/XAML-SPEC.md) · **Device half (environment, run, debug, publish):** [MAUI-PLAN.md](MAUI-PLAN.md)
 
 ## Context
 

@@ -19,7 +19,7 @@ Only the latest releases are supported. Earlier versions may work, but they are 
 
 | Dialect | Supported | Project marker |
 |---|---|---|
-| .NET MAUI | .NET MAUI 10 on the .NET 10 SDK | `<UseMaui>true</UseMaui>` |
+| .NET MAUI | .NET MAUI 10 and 11 | `<UseMaui>true</UseMaui>` |
 | WPF | net10.0-windows | `<UseWPF>true</UseWPF>` |
 | Avalonia | Avalonia 12 | a reference to the `Avalonia` package |
 | WinUI 3 | Windows App SDK 1.8 | `<UseWinUI>true</UseWinUI>` |
