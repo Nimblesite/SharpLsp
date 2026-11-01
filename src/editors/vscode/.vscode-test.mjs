@@ -31,7 +31,8 @@ function wantsMultiRoot() {
 }
 
 /**
- * A fresh two-folder workspace for the multi-root suites: `vstest` and `mtp`.
+ * A fresh workspace for the multi-root suites: `vstest` and `mtp`, beside `no-project`,
+ * which holds nothing `dotnet test` can resolve ([TEST-DISCOVERY-TARGETS]).
  *
  * Only a workspace OPENED with two folders has two: adding the second folder
  * from inside the test host turns the window into a workspace, and VS Code
@@ -42,9 +43,10 @@ function wantsMultiRoot() {
  */
 function multiRootWorkspace() {
   const root = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'slsp-mr-'));
-  for (const folder of ['vstest', 'mtp']) fs.mkdirSync(path.join(root, folder));
+  const folders = ['vstest', 'mtp', 'no-project'];
+  for (const folder of folders) fs.mkdirSync(path.join(root, folder));
   const file = path.join(root, 'mixed-runners.code-workspace');
-  const workspace = { folders: [{ path: 'vstest' }, { path: 'mtp' }], settings: {} };
+  const workspace = { folders: folders.map((folder) => ({ path: folder })), settings: {} };
   fs.writeFileSync(file, `${JSON.stringify(workspace, null, 2)}\n`, 'utf8');
   return file;
 }

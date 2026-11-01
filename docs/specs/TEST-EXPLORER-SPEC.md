@@ -3,7 +3,7 @@
 ## Overview `[TEST-OVERVIEW]`
 
 The Test Explorer is the VS Code Testing-API surface for .NET test projects. It discovers
-every test in the loaded solution (or, absent one, in each workspace folder), runs and
+every test in the loaded solution (or, absent one, in each eligible workspace folder), runs and
 debugs them, and collects coverage. Discovery and execution shell out to the `dotnet`
 CLI; workspace symbols supply source locations and owning-project metadata for selected
 builds. No proprietary test host is required.
@@ -331,7 +331,7 @@ with the `global.json` opt-in nothing has restored the target yet, and the build
 The probe after the VSTest passes ([TEST-MTP-DETECT]) runs on a target they have just restored,
 so it evaluates first and builds only when an MTP project was found.
 
-A scan that went wrong and found nothing is NOT an empty answer. A folder `dotnet` refused, or
+A scan that went wrong and found nothing is NOT an empty answer. A target `dotnet` refused, or
 a build that failed before any module existed, reaches the user as an error row carrying the
 `dotnet` diagnostic — never as an empty tree.
 
@@ -498,10 +498,26 @@ DIRECTLY into the results directory, not one level below it as `coverlet.collect
 test, so Run with Coverage reports every selected test as not run with the message naming
 that package, exactly as the TRX message names its own.
 
+## Discovery targets `[TEST-DISCOVERY-TARGETS]`
+
+With a solution loaded, the one discovery target is that solution. With none, each workspace
+folder whose top level holds a `.sln`, `.slnx`, `.slnf`, `.csproj`, `.fsproj` or `.vbproj` file
+(in any case; a directory with such a suffix does not count) is a target.
+A folder with none of those MUST NOT be enumerated: `dotnet test` cannot resolve it (MSB1003),
+so listing it only adds a "Test discovery failed" row for a folder that never had a test
+project at its top level.
+
+A folder that cannot be read stays a target, so `dotnet` refuses it and the failure reaches the
+user as an error row ([TEST-MTP-MODULES]) rather than as an empty tree.
+
+The target set is reactive: creating or deleting one of those files rediscovers with no manual
+refresh. Build monitoring ([TEST-REACTIVITY-BUILD]) watches every workspace folder regardless, so
+a project created and built in a folder that had none is still observed.
+
 ## Microsoft.Testing.Platform: two runners in one tree `[TEST-MTP-ROUTING]`
 
 The runner is chosen per discovery TARGET ([TEST-MTP-DETECT]), and a multi-root workspace
-with no solution loaded has one target per folder. One tree can therefore hold VSTest tests
+with no solution loaded has one target per eligible folder. One tree can therefore hold VSTest tests
 beside MTP tests, and one ▶ can select from both. Each test MUST go to the runner that
 discovered it:
 

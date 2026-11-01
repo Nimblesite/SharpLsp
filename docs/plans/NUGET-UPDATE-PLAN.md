@@ -10,9 +10,9 @@ Recommend latest stable within the current major, or current minor for `0.x`, th
 ## [NUGET-UPDATE-PLAN-STATUS] Implementation Checklist
 
 - [x] Define bounds, preview/confirmation, ambiguous declarations, CPM scope, and failure behavior in the spec.
-- [ ] Add red regression coverage using disposable F# and C# projects and controlled versions; assert checked-in fixtures are unchanged.
-- [ ] Remove the test picker fallback that can choose a checked-in workspace project.
-- [ ] Route the palette Update command through the host/browser package workflow, eliminating its direct unbounded CLI path.
+- [x] Add red regression coverage using disposable F# and C# projects and controlled versions; assert checked-in fixtures are unchanged.
+- [x] Remove the test picker fallback that can choose a checked-in workspace project.
+- [x] Route the palette Update command through the host/browser package workflow, eliminating its direct unbounded CLI path.
 - [ ] Implement bounded candidate selection, explicit version confirmation and stale-preview rejection.
 - [ ] Verify major/prerelease opt-in, cancellation, failed feeds, restore errors and CPM/shared-props behavior.
 - [ ] Run the workspace/package feature chunks on supported CI platforms; only then close #270.

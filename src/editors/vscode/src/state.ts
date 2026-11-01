@@ -103,6 +103,9 @@ export const solutionPath = new Signal<string | undefined>(undefined);
 /** Successful task builds and host-observed output changes invalidate test discovery. */
 export const buildCompleted = new Signal<number>(0);
 
+/** A workspace folder gained or lost a top-level project or solution. [TEST-DISCOVERY-TARGETS] */
+export const buildableFilesChanged = new Signal<number>(0);
+
 /**
  * Absolute path to the `dotnet` executable of the acquired/located .NET 10 SDK
  * (see [DIST-RUNTIME-ACQUIRE]). Set after activation resolves the SDK; consumed

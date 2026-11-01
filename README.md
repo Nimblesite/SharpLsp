@@ -97,7 +97,7 @@ any editor that can launch an LSP server over stdio.
 
 ### Opening a trace file
 
-In VS Code, run **SharpLsp: Open Trace File…** and select a `.nettrace` or `.speedscope.json` file. SharpLsp converts a `.nettrace` to a sibling `.speedscope.json` with `dotnet-trace`, then opens it in SpeedScope. The **SharpLsp: Convert .nettrace to SpeedScope** command converts a file without starting a profiling session. Trace conversion requires the `dotnet-trace` tool.
+The current profiler does not import standalone `.nettrace` files. Instead, use **SharpLsp: Start Profiling** and **SharpLsp: Stop Profiling** on a running .NET process. Stopping opens the flame-graph results in VS Code and writes SpeedScope, flame-graph, and `.cpuprofile` artifacts; **SharpLsp: Show Profile Results** reopens the panel. The profiler engine ships with SharpLsp and uses EventPipe directly, so no `dotnet-trace` installation is required.
 
 Full documentation is available at [sharplsp.dev/docs](https://sharplsp.dev/docs).
 

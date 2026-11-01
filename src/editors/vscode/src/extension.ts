@@ -213,7 +213,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   tutorial = registerTutorial(context, solutionTreeView);
   log.info('step 9: registerAllModuleCommands');
   registerBuildCommands(context);
-  registerNuGetCommands(context);
+  registerNuGetCommands(context, () => lspClient);
   registerScaffoldingCommands(context);
   registerFsiCommands(context);
   registerHotReloadCommands(context);

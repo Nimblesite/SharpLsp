@@ -5,12 +5,12 @@ import { effect } from './signals';
 import * as state from './state';
 import { error } from './log';
 import { getErrorMessage } from './utils';
-import { discoveryTargets } from './test-targets';
+import { buildWatchTargets } from './test-targets';
 
 /** Reattach monitoring after restart and follow solution selection outside workspace folders. */
 export function wireBuildDiscovery(client: LanguageClient): Disposable {
   const update = (): void => {
-    const targets = discoveryTargets();
+    const targets = buildWatchTargets();
     if (!state.serverRunning.value || client.state !== State.Running) return;
     void client.sendNotification('sharplsp/watchBuilds', { targets }).catch((cause: unknown) => {
       error(`Build monitoring subscription failed: ${getErrorMessage(cause)}`);

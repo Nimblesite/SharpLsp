@@ -10,10 +10,13 @@
  * Implements [TEST-GOTO-SOURCE].
  */
 
+import * as vscode from 'vscode';
 import { State } from 'vscode-languageclient/node';
 import { info } from './log.js';
+import { directoryOf, samePath } from './paths.js';
 import { frameworkSources, withDeclaredFrameworks } from './test-declared-frameworks.js';
 import { listTests } from './test-discovery.js';
+import { BUILDABLE_FILE_GLOB } from './test-mtp-modules.js';
 import * as state from './state.js';
 import type { LspPosition, SymbolNode, WorkspaceSymbolsResponse } from './state.js';
 import type { TestListing, TestLocation } from './test-listing-model.js';
@@ -33,12 +36,17 @@ interface Scope {
 
 /**
  * Call `rediscover` whenever what discovery reads changes: the loaded solution,
- * or the server whose symbols locate the tests coming (back) up. Returns the
- * unsubscribe.
+ * the top-level files that make a folder a target, or the server whose symbols
+ * locate the tests coming (back) up. Returns the unsubscribe.
  */
 export function onDiscoveryInputs(rediscover: () => void): () => void {
+  const buildableFiles = watchBuildableFiles();
   const stops = [
+    () => {
+      buildableFiles.dispose();
+    },
     state.solutionPath.subscribe(rediscover),
+    state.buildableFilesChanged.subscribe(rediscover),
     state.serverRunning.subscribe((running) => {
       if (running) rediscover();
     }),
@@ -46,6 +54,19 @@ export function onDiscoveryInputs(rediscover: () => void): () => void {
   return () => {
     for (const stop of stops) stop();
   };
+}
+
+/** Bump {@link state.buildableFilesChanged} as top-level project files come and go. */
+function watchBuildableFiles(): vscode.Disposable {
+  const watcher = vscode.workspace.createFileSystemWatcher(BUILDABLE_FILE_GLOB, false, true, false);
+  const bump = (file: vscode.Uri): void => {
+    const parent = directoryOf(file.fsPath);
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (folders.some((folder) => samePath(folder.uri.fsPath, parent))) {
+      state.buildableFilesChanged.value += 1;
+    }
+  };
+  return vscode.Disposable.from(watcher, watcher.onDidCreate(bump), watcher.onDidDelete(bump));
 }
 
 /**

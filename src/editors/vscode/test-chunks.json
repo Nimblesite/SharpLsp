@@ -237,6 +237,7 @@
         "scaffolding-e2e.test.js",
         "nuget-browser.test.js",
         "nuget-deps-e2e.test.js",
+        "nuget-update-e2e.test.js",
         "fsi-build-output-e2e.test.js",
         "utils.test.js",
         "test-runner-selection.test.js"

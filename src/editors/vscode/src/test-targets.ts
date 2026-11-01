@@ -9,15 +9,33 @@ import { directoryOf } from './paths';
 import * as vscode from 'vscode';
 import * as state from './state';
 
+import { holdsBuildableFile } from './test-mtp-modules';
+
 export { dirOf } from './test-mtp-modules';
 
-/** The paths to enumerate: the loaded solution, else each workspace folder. */
+/**
+ * The paths to enumerate: the loaded solution, else each workspace folder that
+ * `dotnet test` can resolve. A folder with no solution or project at its top
+ * level (a Rust repo with one C# host three folders down) always fails with
+ * MSB1003, so it is no target — enumerating it only paints a false
+ * "Test discovery failed" row. [TEST-DISCOVERY-TARGETS]
+ */
 export function discoveryTargets(): string[] {
+  return state.solutionPath.value === undefined
+    ? buildWatchTargets().filter(holdsBuildableFile)
+    : buildWatchTargets();
+}
+
+/**
+ * Where a build can happen: the loaded solution, else every workspace folder. A
+ * folder with no project yet still counts, since one may be created and built
+ * there before any watcher reports it. [TEST-REACTIVITY-BUILD]
+ */
+export function buildWatchTargets(): string[] {
   const solution = state.solutionPath.value;
-  if (solution !== undefined) {
-    return [solution];
-  }
-  return (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+  return solution === undefined
+    ? (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)
+    : [solution];
 }
 
 /**

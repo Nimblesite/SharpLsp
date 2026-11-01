@@ -34,12 +34,12 @@ F# extras: **F# Interactive**, `.fsi` signature generation and pipeline type hin
 
 ## 🐞 Debug, profile, test. All the good stuff.
 
-| | |
-| --- | --- |
-| 🐞 **Debug** | F5, breakpoints, stepping and Hot Reload. The MIT-licensed netcoredbg debugger ships in the box. |
-| 🔥 **Profile** | CPU traces in SpeedScope, live counters, memory dumps, heap diffs, leak detection and retention graphs. |
-| 🧪 **Test** | Test Explorer and CodeLens for xUnit, NUnit, MSTest, Expecto and FsCheck — VSTest and MTP, C# and F#, .NET Framework included on Windows. |
-| 📦 **NuGet** | Browse, install, update, remove and consolidate packages. No terminal. |
+|                |                                                                                                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 🐞 **Debug**   | F5, breakpoints, stepping and Hot Reload. The MIT-licensed netcoredbg debugger ships in the box.                                          |
+| 🔥 **Profile** | CPU flame graphs and editor hot spots, memory snapshots, heap diffs, leak detection and retention graphs.                                 |
+| 🧪 **Test**    | Test Explorer and CodeLens for xUnit, NUnit, MSTest, Expecto and FsCheck — VSTest and MTP, C# and F#, .NET Framework included on Windows. |
+| 📦 **NuGet**   | Browse, install, update, remove and consolidate packages. No terminal.                                                                    |
 
 <p align="center">
   <img src="https://sharplsp.dev/assets/images/marketplace/sharplsp-nuget.png" width="100%" alt="SharpLsp NuGet browser listing packages with download counts and a package details panel with an Install button">
@@ -55,13 +55,7 @@ F# extras: **F# Interactive**, `.fsi` signature generation and pipeline type hin
 2. Open a folder containing a `.sln`, `.slnx`, `.csproj` or `.fsproj`.
 3. Code.
 
-The extension bundles the language server, both .NET sidecars and the debugger, and fetches the **.NET 10 SDK** through Microsoft's .NET Install Tool if you don't have one. The profiler drives the standard .NET diagnostic tools — install them once:
-
-```bash
-dotnet tool install -g dotnet-trace
-dotnet tool install -g dotnet-counters
-dotnet tool install -g dotnet-dump
-```
+The extension bundles the language server, both .NET sidecars, the debugger and the profiler engine, and fetches the **.NET 10 SDK** through Microsoft's .NET Install Tool if you don't have one. The profiler uses .NET EventPipe directly — no global diagnostic tools are required.
 
 Tune everything with a `sharplsp.toml` in your workspace — see the [configuration guide](https://sharplsp.dev/docs/configuration/).
 

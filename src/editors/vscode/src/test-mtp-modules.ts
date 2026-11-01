@@ -22,6 +22,12 @@ import { evaluateProject, type ProjectProperties } from './msbuild.js';
 /** Solution file extensions `dotnet sln list` accepts. */
 const SOLUTION_EXTENSIONS = ['.sln', '.slnx', '.slnf'];
 
+/** Everything `dotnet build <folder>` picks up from a folder's top level. */
+const BUILDABLE_EXTENSIONS = ['.csproj', '.fsproj', '.vbproj', ...SOLUTION_EXTENSIONS];
+
+/** Glob for every buildable file; VS Code matches it against the absolute path. */
+export const BUILDABLE_FILE_GLOB = `**/*.{${BUILDABLE_EXTENSIONS.map((extension) => extension.slice(1)).join(',')}}`;
+
 /** One MTP test project and the modules its target frameworks produced. */
 export interface MtpProject {
   /** Absolute path of the project file. */
@@ -61,19 +67,33 @@ export function parseSolutionProjects(output: string, solutionDir: string): stri
 
 /** True when `name` is a file `dotnet build <folder>` would pick up. */
 function isBuildable(name: string): boolean {
-  return isProjectFile(name) || hasExtension(name, ...SOLUTION_EXTENSIONS);
+  return hasExtension(name, ...BUILDABLE_EXTENSIONS);
 }
 
-/** The project and solution files DIRECTLY inside `dir`, never below it. */
-function buildableFilesIn(dir: string): string[] {
+/** The buildable files DIRECTLY inside `dir`; undefined when it cannot be read. */
+function readBuildableFiles(dir: string): string[] | undefined {
   try {
     return fs
       .readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && isBuildable(entry.name))
       .map((entry) => joinPath(dir, entry.name));
   } catch {
-    return [];
+    return undefined;
   }
+}
+
+/** The project and solution files DIRECTLY inside `dir`, never below it. */
+function buildableFilesIn(dir: string): string[] {
+  return readBuildableFiles(dir) ?? [];
+}
+
+/**
+ * True when `dotnet test <dir>` has something to resolve. An unreadable folder
+ * counts: `dotnet` then refuses it, and that reaches the user as an error row,
+ * where calling it empty would erase its tree. [TEST-DISCOVERY-TARGETS]
+ */
+export function holdsBuildableFile(dir: string): boolean {
+  return readBuildableFiles(dir)?.length !== 0;
 }
 
 /** True when `target` is a directory on disk. */
