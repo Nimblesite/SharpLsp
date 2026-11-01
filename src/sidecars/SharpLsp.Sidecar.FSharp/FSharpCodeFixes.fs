@@ -5,10 +5,12 @@ module SharpLsp.Sidecar.FSharp.FSharpCodeFixes
 open System
 open System.Collections.Concurrent
 open System.Threading
+open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Text
 open Serilog
+open SharpLsp.Sidecar.Common.Messages
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -17,7 +19,9 @@ type CodeActionItem =
     { Id: int
       Title: string
       Kind: string
-      IsPreferred: bool }
+      IsPreferred: bool
+      /// The reference added before resolve; null for a plain edit. [REFACTOR-IMPORT-REFERENCE]
+      Reference: ReferenceImport | null }
 
 [<NoComparison; NoEquality>]
 type TextEdit =
@@ -65,7 +69,8 @@ let private cacheAction
     { Id = id
       Title = title
       Kind = kind
-      IsPreferred = isPreferred }
+      IsPreferred = isPreferred
+      Reference = null }
 
 /// Check if a diagnostic's range overlaps with the requested range.
 let private overlapsRange
@@ -94,6 +99,9 @@ let private wrapGeneratedAction
                           EndCharacter = e.EndCharacter
                           NewText = e.NewText }) }) }
     cacheAction state action.Title action.Kind action.IsPreferred edit
+
+let private wrapImportAction state (action, reference) =
+    { wrapGeneratedAction state action with Reference = reference }
 
 /// Collect type-informed code actions (union stubs, record stubs).
 let private collectTypeInformedActions
@@ -157,29 +165,67 @@ let private overlapping startLine endLine (diagnostics: FSharpDiagnostic array) 
         overlapsRange (range.StartLine - 1) (range.EndLine - 1) startLine endLine)
     |> Array.toList
 
+let private withoutReference actions : (FSharpCodeActions.GeneratedAction * ReferenceImport | null) list =
+    actions |> List.map (fun action -> action, null)
+
+let private nameActions workspace parseResults checkResults source filePath r =
+    task {
+        let imports = FSharpNameFixes.imports workspace parseResults checkResults source filePath r
+        let! external =
+            match imports, FSharpNameFixes.flaggedName source r with
+            | [], Some name -> FSharpImportReferences.actions workspace parseResults source filePath r name
+            | _ -> Task.FromResult []
+        let own = imports @ FSharpNameFixes.typos parseResults checkResults source filePath r |> withoutReference
+        let outside = external |> List.map (fun (action, reference) -> action, reference)
+        return own @ outside
+    }
+
 /// The quick fixes one diagnostic offers, keyed by its number, each built from
 /// FCS's ranges, declarations, AST or typed data — never its message text.
-/// [ANALYZERS-FSAC-CODEFIX-COMPILER]
+/// [ANALYZERS-FSAC-CODEFIX-COMPILER] [REFACTOR-IMPORT-FSHARP]
 let private fixesFor workspace parseResults checkResults source filePath (diagnostic: FSharpDiagnostic) =
     let r = diagnostic.Range
-
     match diagnostic.ErrorNumber with
-    | 1 -> FSharpConversionFixes.conversions source filePath diagnostic
-    | 20 -> [ FSharpQuickFix.replace "Add '|> ignore'" true filePath (Range.mkRange r.FileName r.End r.End) " |> ignore" ]
-    | 25 -> FSharpMatchFixes.wildcards parseResults filePath r
-    | 26 -> [ FSharpQuickFix.replace "Remove redundant pattern case" false filePath (FSharpQuickFix.wholeLines r) "" ]
-    | 39 -> FSharpNameFixes.opens workspace parseResults checkResults source filePath r @ FSharpNameFixes.typos parseResults checkResults source filePath r
-    | 760 -> FSharpNameFixes.addNew parseResults filePath r
-    | 1182 -> FSharpNameFixes.unused source filePath r
-    | _ -> []
+    | 39 -> nameActions workspace parseResults checkResults source filePath r
+    | number ->
+        (match number with
+         | 1 -> FSharpConversionFixes.conversions source filePath diagnostic
+         | 20 -> [ FSharpQuickFix.replace "Add '|> ignore'" true filePath (Range.mkRange r.FileName r.End r.End) " |> ignore" ]
+         | 25 -> FSharpMatchFixes.wildcards parseResults filePath r
+         | 26 -> [ FSharpQuickFix.replace "Remove redundant pattern case" false filePath (FSharpQuickFix.wholeLines r) "" ]
+         | 760 -> FSharpNameFixes.addNew parseResults filePath r
+         | 1182 -> FSharpNameFixes.unused source filePath r
+         | _ -> [])
+        |> withoutReference
+        |> Task.FromResult
+
+let private tryFixesFor workspace parseResults checkResults source filePath diagnostic =
+    task {
+        try
+            return! fixesFor workspace parseResults checkResults source filePath diagnostic
+        with ex ->
+            // [REFACTOR-NEVER-SILENT] A failed provider is visible with its diagnostic id.
+            Log.Warning(ex, "F# code-action provider failed for FS{DiagnosticNumber}", diagnostic.ErrorNumber)
+            return []
+    }
+
+let rec private collectDiagnosticActions workspace filePath source parseResults checkResults diagnostics =
+    task {
+        match diagnostics with
+        | [] -> return []
+        | diagnostic :: rest ->
+            let! current = tryFixesFor workspace parseResults checkResults source filePath diagnostic
+            let! remaining = collectDiagnosticActions workspace filePath source parseResults checkResults rest
+            return current @ remaining
+    }
 
 /// The quick fixes of the diagnostics on the requested lines, each offered once: FCS
 /// reports an unresolved attribute twice, once per spelling, with the same fix.
-let private diagnosticActions state workspace filePath source parseResults checkResults (diagnostics: FSharpDiagnostic list) =
-    diagnostics
-    |> List.collect (fixesFor workspace parseResults checkResults source filePath)
-    |> List.distinct
-    |> List.map (wrapGeneratedAction state)
+let private diagnosticActions state workspace filePath source parseResults checkResults diagnostics =
+    task {
+        let! actions = collectDiagnosticActions workspace filePath source parseResults checkResults diagnostics
+        return actions |> List.distinct |> List.map (wrapImportAction state)
+    }
 
 let private interfaceActions
     state filePath source
@@ -214,7 +260,7 @@ let private collectCodeActions
     state workspace analyzers filePath source parseResults (checkResults: FSharpCheckFileResults)
     startLine startCharacter endLine ct =
     task {
-        let diagnostics =
+        let! diagnostics =
             overlapping startLine endLine checkResults.Diagnostics
             |> diagnosticActions state workspace filePath source parseResults checkResults
         let! dead =
@@ -243,7 +289,7 @@ let private getCodeActionsCore state workspace analyzers filePath startLine star
                         state workspace analyzers filePath source parseResults checkResults
                         startLine startCharacter endLine ct
         with ex ->
-            Log.Debug(ex, "[F# CodeFixes] failed")
+            Log.Warning(ex, "F# code-action provider failed while listing fixes")
             return []
     }
 

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crossbeam_channel::Sender;
 use lsp_server::{Message, Notification};
-use lspkit_live::{ChangeEvent, FileWatcher};
+use lspkit_server::live::{ChangeEvent, FileWatcher};
 use serde::Deserialize;
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;

@@ -216,7 +216,11 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
         var result = await Manager.ResolveCodeActionAsync(int.MaxValue);
 
         Assert.True(result.IsError, "an unknown action id must fail");
-        Assert.Contains("not found", result.Match(_ => string.Empty, err => err));
+        // The exact plain-words reason, per the spec. [REFACTOR-NEVER-SILENT]
+        Assert.Contains(
+            "the code action is no longer available",
+            result.Match(_ => string.Empty, err => err)
+        );
     }
 
     // ── Prepare Rename + Rename ──────────────────────────────────────

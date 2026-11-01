@@ -334,7 +334,7 @@ suite('Memory Profiler — Extended', () => {
 
   test('MemoryAllocation type enforces required fields', async () => {
     const file = await decoratedFile(tmpDir(), 'Allocator.cs');
-    applyMemoryDecorations(
+    await applyMemoryDecorations(
       memorySnapshot({ topAllocations: [{ file, line: 5, size: 52_428_800, count: 10_000 }] }),
     );
     const [painted] = appliedMemoryDecorations();
@@ -357,7 +357,7 @@ suite('Memory Profiler — Extended', () => {
 
   test('SuspectedLeak type has all required fields', async () => {
     const file = await decoratedFile(tmpDir(), 'Leaky.cs');
-    applyLeakDecorations(
+    await applyLeakDecorations(
       memoryDiff([suspectedLeak(file, 7, { sizeGrowth: 1_048_576, countGrowth: 500 })]),
     );
     const [painted] = appliedMemoryDecorations();
@@ -371,7 +371,7 @@ suite('Memory Profiler — Types and Decorations', () => {
 
   test('MemoryDiffResult type has all required fields', async () => {
     const file = await decoratedFile(tmpDir(), 'Data.cs');
-    applyLeakDecorations(memoryDiff([suspectedLeak(file, 10, { confidence: 'DEFINITE' })]));
+    await applyLeakDecorations(memoryDiff([suspectedLeak(file, 10, { confidence: 'DEFINITE' })]));
     const [painted] = appliedMemoryDecorations();
     assert.equal(painted?.color, SHARPLSP_PALETTE.leak, 'a definite leak wears the leak colour');
     assert.ok(painted.contentText.includes('DEFINITE'), painted.contentText);
@@ -379,7 +379,7 @@ suite('Memory Profiler — Types and Decorations', () => {
 
   test('applyMemoryDecorations with populated allocations does not throw', async () => {
     const file = await decoratedFile(tmpDir(), 'MemAlloc.cs');
-    applyMemoryDecorations(
+    await applyMemoryDecorations(
       memorySnapshot({
         topAllocations: [
           { file, line: 1, size: 52_428_800, count: 5000 },
@@ -400,7 +400,7 @@ suite('Memory Profiler — Types and Decorations', () => {
 
   test('applyLeakDecorations with suspected leaks does not throw', async () => {
     const file = await decoratedFile(tmpDir(), 'LeakTest.cs');
-    applyLeakDecorations(
+    await applyLeakDecorations(
       memoryDiff([suspectedLeak(file, 3), suspectedLeak('/nonexistent/Leaky.cs', 3)]),
     );
     assert.deepEqual(
@@ -501,10 +501,10 @@ suite('Profiler — Coexistence and Disposal', () => {
 
   test('profiler decorations and memory decorations can coexist', async () => {
     const file = await decoratedFile(tmpDir(), 'Coexist.cs');
-    applyProfileDecorations(
+    await applyProfileDecorations(
       profileResult({ hotLines: [{ file, line: 1, samples: 50, percentage: 50 }] }),
     );
-    applyMemoryDecorations(
+    await applyMemoryDecorations(
       memorySnapshot({ topAllocations: [{ file, line: 2, size: 524_288, count: 100 }] }),
     );
     assert.deepEqual(
@@ -539,7 +539,7 @@ suite('Profiler — Coexistence and Disposal', () => {
     disposeMemoryDecorations();
     disposeMemoryDecorations();
     const file = await decoratedFile(tmpDir(), 'Disposed.cs');
-    applyProfileDecorations(
+    await applyProfileDecorations(
       profileResult({ hotLines: [{ file, line: 4, samples: 50, percentage: 50 }] }),
     );
     assert.deepEqual(

@@ -51,9 +51,7 @@ internal static class CompileItemEditor
         {
             anchor.Parent.InsertBeforeChild(element, anchor);
         }
-        var hadPreamble = HasUtf8Preamble(request.FilePath);
-        root.Save();
-        PreservePreamble(request.FilePath, hadPreamble);
+        SaveKeepingFormat(root, request.FilePath);
         return PackageEditResult.Changed($"Added {request.Include}");
     }
 
@@ -73,9 +71,7 @@ internal static class CompileItemEditor
             return PackageEditResult.Unchanged($"{request.Include} is not a Compile item");
         }
         item.Parent.RemoveChild(item);
-        var hadPreamble = HasUtf8Preamble(request.FilePath);
-        root.Save();
-        PreservePreamble(request.FilePath, hadPreamble);
+        SaveKeepingFormat(root, request.FilePath);
         return PackageEditResult.Changed($"Removed {request.Include}");
     }
 
@@ -132,6 +128,32 @@ internal static class CompileItemEditor
             right.Replace('\\', '/'),
             StringComparison.Ordinal
         );
+    }
+
+    /// <summary>
+    /// Save <paramref name="root"/> to <paramref name="path"/>, keeping the byte-order mark and
+    /// the CRLF line endings the file had. MSBuild writes the elements it creates with the
+    /// platform's line break, so a new item group in a CRLF file would otherwise mix them.
+    /// Shared by every MSBuild DOM edit of a project file.
+    /// </summary>
+    internal static void SaveKeepingFormat(ProjectRootElement root, string path)
+    {
+        var hadPreamble = HasUtf8Preamble(path);
+        var crlf = File.ReadAllText(path).Contains("\r\n", StringComparison.Ordinal);
+        root.Save();
+        PreservePreamble(path, hadPreamble);
+        PreserveCrlf(path, crlf);
+    }
+
+    /// <summary>Rewrite every line break as CRLF when the file used CRLF before the save.</summary>
+    private static void PreserveCrlf(string path, bool crlf)
+    {
+        var text = File.ReadAllText(path);
+        var normalized = text.ReplaceLineEndings("\r\n");
+        if (crlf && normalized != text)
+        {
+            File.WriteAllText(path, normalized, new UTF8Encoding(HasUtf8Preamble(path)));
+        }
     }
 
     /// <summary>Whether the file starts with the UTF-8 byte-order mark.</summary>

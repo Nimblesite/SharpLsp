@@ -10,7 +10,7 @@ SharpLsp exposes `dotnet-trace`, `dotnet-counters`, and `dotnet-dump` through LS
 
 ## [PROFILER-SHARED-LIBRARY] Shared profiler library
 
-SharpLsp's profiler is moving onto **lsp-profiler**, the language-neutral profiler extracted from Basilisk. It lives in **lspkit** (https://github.com/Nimblesite/lspkit), checked out here as the `lspkit/` submodule. lspkit's `docs/specs/LSP-PROFILER-SPEC.md` is the contract for:
+SharpLsp's profiler is moving onto **lsp-profiler**, the language-neutral profiler extracted from Basilisk. It lives in **lspkit** (https://github.com/Nimblesite/lspkit), consumed as published crates.io and npm packages. lspkit's `docs/specs/LSP-PROFILER-SPEC.md` is the contract for:
 
 - the shared protocol;
 - the .NET runtime;
@@ -57,7 +57,7 @@ flowchart LR
 - The protocol commands (`sharplsp.lspProfiler.*`) are called over `workspace/executeCommand`, never as VS Code commands. The language client is built without the stock `workspace/executeCommand` feature (`src/client.ts`), so the server's advertised commands are not registered as editor commands: every registered `sharplsp.*` command is a contributed one.
 - A debuggee the SharpLsp debugger starts in a terminal is announced in a DAP `process` event (`startMethod: launch`) once the adapter attaches to it (`src/dap-replay.ts`), as an adapter-hosted launch announces its own. The profiler takes debuggee PIDs only from that event, so "Run & Profile CPU" and "Run & Track Memory" find the program in either console.
 - Tests: `profiler.test.ts` (registration, advertisement, manifest, settings, wire error codes), `profiler-cpu-e2e.test.ts` and `memory-e2e.test.ts` (real `ProfileTarget` and `ProfileLeakTarget` from `src/sharplsp/tests/fixtures`), through `src/test/suite/profiler-kit.ts`. The library's own suite covers the screens.
-- F# is proven by `profiler-fsharp-e2e.test.ts`, which runs the same one-click flows against lspkit's own F# target, `lspkit/dotnet/fixtures/HotLeakAppFs`. The target is lspkit's, not a copy ([PROF-TESTING]). The suite asserts that:
+- F# is proven by `profiler-fsharp-e2e.test.ts`, which runs the same one-click flows against lspkit's own F# target, `dotnet/fixtures/HotLeakAppFs` in the release source `make _fetch-lspkit` unpacks to `$(LSPKIT_DIR)`. The target is lspkit's, not a copy ([PROF-TESTING]). The suite asserts that:
   - the CPU heat map paints `Hot.spin` in `Program.fs`, and the report names that F# function at its lines;
   - the record, the union case and the generic record each anchor, and are painted, at the exact `Program.fs` line that constructs them;
   - the dashboard names the union case `HotLeakAppFs.PayloadKind+Small`;
@@ -68,7 +68,7 @@ flowchart LR
 
 ### [PROFILER-SHARED-LIBRARY-ENGINE] Engine bundling
 
-Every platform VSIX ships the framework-dependent engine (`lsp-profiler-dotnet-engine` and its assemblies) beside the `sharplsp` binary; `make _build-dotnet` publishes it from the `lspkit/` submodule to `target/profiler-engine`, and the Makefile's `_copy-vsix-binaries` copies it from there. The engine runs on the .NET 8+ runtime that SharpLsp users already have. It never writes a process dump: CPU sampling and heap capture both use the runtime's EventPipe, which needs no debugger entitlement, so the memory profiler works on macOS where `dotnet-dump collect` hung. `dotnet-trace`, `dotnet-counters` and `dotnet-dump` are no longer required, and no `dotnet tool install` hint remains in the host; the READMEs still mention them and are updated at cutover.
+Every platform VSIX ships the framework-dependent engine (`lsp-profiler-dotnet-engine` and its assemblies) beside the `sharplsp` binary; `make _build-dotnet` publishes it from the lspkit release source `make _fetch-lspkit` unpacks to `target/profiler-engine`, and the Makefile's `_copy-vsix-binaries` copies it from there. The engine runs on the .NET 8+ runtime that SharpLsp users already have. It never writes a process dump: CPU sampling and heap capture both use the runtime's EventPipe, which needs no debugger entitlement, so the memory profiler works on macOS where `dotnet-dump collect` hung. `dotnet-trace`, `dotnet-counters` and `dotnet-dump` are no longer required, and no `dotnet tool install` hint remains in the host; the READMEs still mention them and are updated at cutover.
 
 ### [PROFILER-SHARED-LIBRARY-SUPERSEDED] Sections replaced at cutover
 

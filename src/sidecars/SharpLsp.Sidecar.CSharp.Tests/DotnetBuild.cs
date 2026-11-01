@@ -31,10 +31,14 @@ internal static class DotnetBuild
         ]);
     }
 
-    /// <summary>Restore <paramref name="project"/>'s NuGet packages — real resolution, real cache.</summary>
+    /// <summary>
+    /// Restore <paramref name="project"/>'s NuGet packages — real resolution, real cache.
+    /// Build servers are off for the reason <see cref="Run"/> gives: restoring a solution
+    /// runs on MSBuild nodes, and a node kept for reuse holds the redirected pipes open.
+    /// </summary>
     public static (int ExitCode, string Output) Restore(string project)
     {
-        return RunDotnet(["restore", project, "--verbosity", "quiet"]);
+        return RunDotnet(["restore", project, "--verbosity", "quiet", "--disable-build-servers"]);
     }
 
     private static (int ExitCode, string Output) RunDotnet(IReadOnlyList<string> arguments)

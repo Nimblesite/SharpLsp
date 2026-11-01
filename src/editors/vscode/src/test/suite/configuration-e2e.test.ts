@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { LanguageClient } from 'vscode-languageclient/node';
+import { SharpLspClient } from '../../client';
 import { sharedDebugConfiguration } from '../../debug-configuration';
 import * as state from '../../state';
 import { authoredConfigurationAttributes, fakeFolder } from './run-debug-kit';
@@ -52,7 +52,7 @@ suite('Editor bridge to shared configuration', () => {
     // server is still writing its shutdown log to stderr, and that late write
     // throws. The extension's own client passes a channel it keeps; so does this.
     const outputChannel = vscode.window.createOutputChannel('Configuration test', { log: true });
-    const client = new LanguageClient(
+    const client = new SharpLspClient(
       'configuration-test',
       'Configuration test',
       { command: binary, options: { cwd: root } },

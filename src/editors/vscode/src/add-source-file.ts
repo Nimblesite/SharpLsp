@@ -308,8 +308,26 @@ export async function addFileToNearestProject(filePath: string, pattern: string)
   }
 }
 
-/** Offer the file to one project; report whether it took the item. */
+/** Whether `filePath` still exists: the un-awaited add can land after it was removed. */
+async function stillExists(filePath: string): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(vscode.Uri.file(filePath));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Offer the file to one project; report whether it took the item. A file
+ * removed before its add lands is never added to whichever project now sits
+ * beside it (#540).
+ */
 async function addToProjectIfExplicit(projectPath: string, filePath: string): Promise<boolean> {
+  if (!(await stillExists(filePath))) {
+    info(`Auto-add skipped: ${fileNameOf(filePath)} no longer exists`);
+    return true;
+  }
   const response = await insertCompileItem({
     projectPath,
     include: fileNameOf(filePath),

@@ -78,6 +78,8 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Extract variable | Yes | Yes | **DONE** |
 | Inline variable/method | Yes | Yes | **DONE** |
 | Move type to file | Yes | Yes | **DONE** |
+| Move nested type out of its container, callers rewritten ([REFACTOR-MOVE-TYPE-OUT]) | No | Yes | **DONE** |
+| Rename file to match type | Yes | Yes | **DONE** |
 | Generate constructor | Yes | Yes | **DONE** |
 | Generate interface impl | Yes | Yes | **DONE** |
 | Implement interface (explicit/implicit) | Yes | Yes | **DONE** |

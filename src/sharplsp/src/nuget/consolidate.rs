@@ -261,7 +261,7 @@ fn cmp_versions(a: &str, b: &str) -> Ordering {
 }
 
 /// Split a version into its numeric core and prerelease tail (at the first `-`).
-fn split_prerelease(version: &str) -> (&str, &str) {
+pub(crate) fn split_prerelease(version: &str) -> (&str, &str) {
     version.split_once('-').unwrap_or((version, ""))
 }
 

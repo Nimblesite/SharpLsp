@@ -22,7 +22,9 @@ type CodeActionItemResult =
     { [<Key(0)>] Id: int
       [<Key(1)>] Title: string
       [<Key(2)>] Kind: string
-      [<Key(3)>] IsPreferred: bool }
+      [<Key(3)>] IsPreferred: bool
+      /// The reference the action adds before its open; null for an edit action. [REFACTOR-IMPORT-REFERENCE]
+      [<Key(4)>] Reference: SharpLsp.Sidecar.Common.Messages.ReferenceImport | null }
 
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]

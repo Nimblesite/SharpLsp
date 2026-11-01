@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use lspkit_sidecar::cancellation::RequestCancelled;
+use lspkit::sidecar::cancellation::RequestCancelled;
 use tokio::sync::watch;
 use tracing::{info, warn};
 

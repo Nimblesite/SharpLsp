@@ -16,7 +16,7 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
     source:
       'module FSharpFixtures.RefactorOpen\n\nlet value = Path.GetTempPath()\nlet sentinel = 41\n',
     target: 'Path.GetTempPath',
-    title: "Add 'open System.IO'",
+    title: "Add 'open System.IO' — imports every type and module in namespace System.IO",
     diagnostic: 'FS0039',
     replacement: 'open System.IO\n',
   },
@@ -25,7 +25,7 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
     source:
       'module FSharpFixtures.RefactorOpen\n\nlet value = File.Exists("item")\nlet sentinel = 41\n',
     target: 'File.Exists',
-    title: "Add 'open System.IO'",
+    title: "Add 'open System.IO' — imports every type and module in namespace System.IO",
     diagnostic: 'FS0039',
     replacement: 'open System.IO\n',
   },
@@ -34,7 +34,7 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
     source:
       'module FSharpFixtures.RefactorOpen\n\nlet value = Directory.GetCurrentDirectory()\nlet sentinel = 41\n',
     target: 'Directory.GetCurrentDirectory',
-    title: "Add 'open System.IO'",
+    title: "Add 'open System.IO' — imports every type and module in namespace System.IO",
     diagnostic: 'FS0039',
     replacement: 'open System.IO\n',
   },
@@ -43,7 +43,8 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
     source:
       'module FSharpFixtures.RefactorOpen\n\nlet value = Regex.IsMatch("abc", "a")\nlet sentinel = 42\n',
     target: 'Regex.IsMatch',
-    title: "Add 'open System.Text.RegularExpressions'",
+    title:
+      "Add 'open System.Text.RegularExpressions' — imports every type and module in namespace System.Text.RegularExpressions",
     diagnostic: 'FS0039',
     replacement: 'open System.Text.RegularExpressions\n',
   },
@@ -51,7 +52,8 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
     name: 'tasks',
     source: 'module FSharpFixtures.RefactorOpen\n\nlet value = Task.Delay(1)\nlet sentinel = 43\n',
     target: 'Task.Delay',
-    title: "Add 'open System.Threading.Tasks'",
+    title:
+      "Add 'open System.Threading.Tasks' — imports every type and module in namespace System.Threading.Tasks",
     diagnostic: 'FS0039',
     replacement: 'open System.Threading.Tasks\n',
   },
@@ -60,7 +62,8 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
     source:
       'module FSharpFixtures.RefactorOpen\n\nlet value = Dictionary<int, string>()\nlet sentinel = 44\n',
     target: 'Dictionary<int, string>',
-    title: "Add 'open System.Collections.Generic'",
+    title:
+      "Add 'open System.Collections.Generic' — imports every type and module in namespace System.Collections.Generic",
     diagnostic: 'FS0039',
     replacement: 'open System.Collections.Generic\n',
   },

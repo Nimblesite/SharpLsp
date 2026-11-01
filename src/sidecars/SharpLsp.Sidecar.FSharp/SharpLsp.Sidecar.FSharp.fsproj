@@ -84,6 +84,7 @@
     <Compile Include="FSharpCodeActions.fs" />
     <Compile Include="FSharpInterfaceStubs.fs" />
     <Compile Include="FSharpQuickFix.fs" />
+    <Compile Include="FSharpImportReferences.fs" />
     <Compile Include="FSharpPipeRefactoring.fs" />
     <Compile Include="FSharpNameFixes.fs" />
     <Compile Include="FSharpWarmUp.fs" />

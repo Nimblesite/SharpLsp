@@ -281,24 +281,26 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
-            if (_solution is null)
-            {
-                return ResolveResult.Failure("No solution loaded");
-            }
-
-            var result = IsRazorAction(actionId)
-                ? ResolveRazorAction(actionId)
+            return _solution is not { } solution ? ResolveResult.Failure("No solution loaded")
+                : IsRazorAction(actionId) ? ResolveRazorCodeAction(actionId)
                 : await _codeActionResolver
-                    .ResolveAsync(actionId, _solution, ct)
+                    .ResolveAsync(actionId, solution, ct)
                     .ConfigureAwait(false);
-            return result is null
-                ? ResolveResult.Failure($"Code action {actionId} not found")
-                : new ResolveResult.Ok<WorkspaceEditResult, string>(result);
         }
         catch (Exception ex)
         {
             return ResolveResult.Failure(ex.Message);
         }
+    }
+
+    private ResolveResult ResolveRazorCodeAction(int actionId)
+    {
+        var result = ResolveRazorAction(actionId);
+        return result is null
+            // [REFACTOR-NEVER-SILENT]: the same plain-words reason as every other
+            // unknown or expired action id.
+            ? ResolveResult.Failure(CodeActionResolver.StaleActionReason)
+            : new ResolveResult.Ok<WorkspaceEditResult, string>(result);
     }
 
     // Names every candidate so the user can copy one straight into sharplsp.toml, and names

@@ -9,6 +9,7 @@ open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.Common.Solutions
 open MessagePack
+open Serilog
 
 type FSharpSidecar() as this =
     inherit SidecarHost("fsharp")
@@ -208,7 +209,7 @@ type FSharpSidecar() as this =
                         actions
                         |> List.map (fun a ->
                             { Id = a.Id; Title = a.Title
-                              Kind = a.Kind; IsPreferred = a.IsPreferred })
+                              Kind = a.Kind; IsPreferred = a.IsPreferred; Reference = a.Reference })
                         |> Array.ofList
                     return Helpers.serializeOk results ct
                 with ex ->
@@ -238,8 +239,10 @@ type FSharpSidecar() as this =
                             |> Array.ofList }
                     Task.FromResult<ByteResult>(Helpers.serializeOk result ct)
                 | None ->
-                    let empty = { DocumentChanges = [||] }
-                    Task.FromResult<ByteResult>(Helpers.serializeOk empty ct)
+                    // [REFACTOR-NEVER-SILENT] Never turn an expired action into an empty edit.
+                    let reason = "the code action is no longer available: the document changed after it was offered; invoke the quick fix again"
+                    Log.Warning("F# code action {ActionId} cannot resolve: {Reason}", request.Id, reason)
+                    Task.FromResult<ByteResult>(ByteResult.Failure(reason))
             with ex ->
                 Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
 

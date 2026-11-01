@@ -27,6 +27,7 @@
     <Compile Include="FSharpCodeActionSemanticTests.fs" />
     <Compile Include="FSharpPipeRefactoringTests.fs" />
     <Compile Include="FSharpNameFixTests.fs" />
+    <Compile Include="FSharpImportFixTests.fs" />
     <Compile Include="FSharpMatchFixTests.fs" />
     <Compile Include="FSharpDeadCodeFixTests.fs" />
     <Compile Include="FSharpCompletionOpenTests.fs" />

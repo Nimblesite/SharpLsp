@@ -2,9 +2,9 @@
 //! Both closed languages repair and regress without restarting any process. [DIAG-TRUTH-GUARANTEES]
 use super::*;
 
-#[path = "../../../../../lspkit/test-support/native_overflow.rs"]
+#[path = "../../support/native_overflow.rs"]
 mod native_overflow;
-#[path = "../../../../../lspkit/test-support/stopped_process.rs"]
+#[path = "../../support/stopped_process.rs"]
 mod stopped_process;
 
 #[test]

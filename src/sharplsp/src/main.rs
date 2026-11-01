@@ -22,6 +22,7 @@ mod formatting;
 mod handlers;
 mod hierarchy;
 mod hot_reload;
+mod import_command;
 mod inbound;
 mod inlay_hints;
 mod nav_cache;
@@ -411,8 +412,13 @@ fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilit
             "lspProfiler": profiler::host::capability_block(),
         })),
         // Every profiler operation is a standard `workspace/executeCommand`.
+        // The import quick fixes add their reference the same way ([REFACTOR-IMPORT-REFERENCE]).
         execute_command_provider: Some(lsp_types::ExecuteCommandOptions {
-            commands: profiler::host::ProfilerHost::command_names(),
+            commands: [
+                profiler::host::ProfilerHost::command_names(),
+                vec![import_command::COMMAND.to_string()],
+            ]
+            .concat(),
             work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
         }),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
@@ -1149,6 +1155,10 @@ fn handle_custom_request(
             connection.sender.clone(),
             csharp_sidecar,
         ),
+        // The reference behind an import quick fix ([REFACTOR-IMPORT-REFERENCE])
+        "workspace/executeCommand" if import_command::is_import_command(&req) => {
+            import_command::handle(&req, runtime, connection.sender.clone(), csharp_sidecar)
+        }
         // MSBuild compile-order editing (GitHub #493, [SE-ADD-FILE-REQUEST])
         "sharplsp/project/addCompileItem" => {
             project_edit::handle_add_compile_item(req, runtime, csharp_sidecar)
@@ -1245,6 +1255,11 @@ fn handle_load_solution(
         .context("sharplsp/loadSolution requires { solutionPath: string }")?;
 
     info!("Loading solution: {sln_path}");
+    // Counted before selection supersedes anything, so no pull sees a gap.
+    [csharp_sidecar, fsharp_sidecar]
+        .into_iter()
+        .flatten()
+        .for_each(|_| pull_diagnostics::state::load_started());
     pull_diagnostics::state::select_workspace(sln_path)?;
 
     let payload = sln_path.to_owned();
@@ -1256,7 +1271,9 @@ fn handle_load_solution(
         let sender = connection.sender.clone();
         let vfs_for_diagnostics = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match workspace_open::open_workspace(&cs, &p).await {
+            let opened = workspace_open::open_workspace(&cs, &p).await;
+            pull_diagnostics::state::load_finished();
+            match opened {
                 Ok(()) => {
                     info!("Solution loaded in C# (Roslyn) sidecar");
                     if let Err(error) = workspace_open::configure_diagnostics(
@@ -1290,7 +1307,9 @@ fn handle_load_solution(
         let sender = connection.sender.clone();
         let vfs = Arc::clone(vfs);
         drop(runtime.spawn(async move {
-            match workspace_open::open_workspace(&fs, &p).await {
+            let opened = workspace_open::open_workspace(&fs, &p).await;
+            pull_diagnostics::state::load_finished();
+            match opened {
                 Ok(()) => {
                     info!("Solution loaded in F# (FCS) sidecar");
                     if let Err(error) = workspace_open::configure_diagnostics(

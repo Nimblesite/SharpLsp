@@ -1,5 +1,5 @@
-/// F# quick fixes that repair a name FCS rejected: "Replace with" and
-/// "Add 'open X'" for an undefined identifier (FS0039), "Add 'new'" for a
+/// F# quick fixes that repair a name FCS rejected: "Replace with" and the
+/// explicit import rows for an undefined identifier (FS0039), "Add 'new'" for a
 /// disposable constructor call (FS0760) and "Prefix with _" for an unused
 /// value (FS1182). The name is the source a diagnostic's range covers; the
 /// candidates, the constructor call and the `open` position come from FCS's
@@ -7,7 +7,10 @@
 /// Implements [ANALYZERS-FSAC-CODEFIX-TYPO] / [ANALYZERS-FSAC-CODEFIX-ADD-NEW].
 module SharpLsp.Sidecar.FSharp.FSharpNameFixes
 
+open System
+open System.Globalization
 open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.Symbols
 open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Syntax
@@ -82,6 +85,11 @@ let private closeness (name: string) (candidate: string) : float option =
 let private flaggedText (line: int -> string) (r: range) : string option =
     FSharpLocalAnalysis.textOf line r |> Option.filter ((<>) "")
 
+/// The unresolved identifier, sliced by its FCS range rather than its message.
+/// [REFACTOR-IMPORT-FSHARP]
+let flaggedName source (r: range) =
+    flaggedText (FSharpLocalAnalysis.lineGetter source) r
+
 /// The names in scope closest to `name`, best first.
 let private closestNames (name: string) (items: DeclarationListItem array) : string list =
     items
@@ -132,11 +140,10 @@ let private spellings (entity: AssemblySymbol) : string array list =
       if last.EndsWith ATTRIBUTE && last.Length > ATTRIBUTE.Length then
           Array.append idents[.. idents.Length - 2] [| last.Substring(0, last.Length - ATTRIBUTE.Length) |] ]
 
-/// The namespaces whose `open` brings an entity named `name` into scope at the
-/// code at `r`, among the entities the file's check can reach that fit there.
-/// FCS decides which: a module that requires qualified access or opens itself
-/// automatically takes no `open` of its own.
-let private namespacesFor (parseResults: FSharpParseFileResults) (entities: AssemblySymbol list) (r: range) name =
+/// The entities whose `open` or full name brings `name` into scope at `r`.
+/// FCS's insertion context decides AutoOpen and RequireQualifiedAccess cases.
+/// [REFACTOR-IMPORT-FSHARP]
+let private candidatesFor (parseResults: FSharpParseFileResults) (entities: AssemblySymbol list) (r: range) (name: string) =
     let expected = ParsedInput.GetEntityKind(r.Start, parseResults.ParseTree)
     let candidates =
         ParsedInput.TryFindInsertionContext
@@ -148,23 +155,83 @@ let private namespacesFor (parseResults: FSharpParseFileResults) (entities: Asse
         |> List.filter (fun idents -> Array.last idents = name)
         |> List.collect (fun idents ->
             candidates (entity.TopRequireQualifiedAccessParent, entity.AutoOpenParent, entity.Namespace, idents)
-            |> Array.toList))
-    |> List.choose (fun (target, _) -> target.Namespace)
+            |> Array.toList
+            |> List.map (fun insertion -> insertion, idents)))
+
+let private namespaceNames (candidates: ((InsertionContextEntity * InsertionContext) * string array) list) =
+    candidates
+    |> List.choose (fun ((target, _), _) -> target.Namespace)
     |> List.distinct
     |> List.sort
     |> List.truncate MAX_SUGGESTIONS
 
-/// "Add 'open X'" for each namespace that declares the name FS0039 reports
-/// undefined, in the referenced assemblies or the project itself.
-let opens workspace parseResults (checkResults: FSharpCheckFileResults) source filePath (r: range) : GeneratedAction list =
-    let line = FSharpLocalAnalysis.lineGetter source
+let private qualifiedNames (candidates: ((InsertionContextEntity * InsertionContext) * string array) list) =
+    candidates
+    |> List.map (fun (_, idents) -> String.concat "." idents)
+    |> List.distinct
+    |> List.sort
 
-    flaggedText line r
-    |> Option.map (namespacesFor parseResults (FSharpEntityIndex.entities workspace checkResults ()) r)
-    |> Option.defaultValue []
-    |> List.map (fun namespaceName ->
-        let at = FSharpQuickFix.openPosition parseResults line r.StartLine (namespaceName.Split '.')
-        FSharpQuickFix.insertLine $"Add 'open {namespaceName}'" filePath at $"open {namespaceName}")
+let private openAction (parseResults: FSharpParseFileResults) line filePath (r: range) (namespaceName: string) =
+    let at = FSharpQuickFix.openPosition parseResults line r.StartLine (namespaceName.Split '.')
+    let title = $"Add 'open {namespaceName}' — imports every type and module in namespace {namespaceName}"
+    FSharpQuickFix.insertLine title filePath at $"open {namespaceName}"
+
+let private qualifyAction filePath (r: range) name fullName =
+    let title = $"Change '{name}' to '{fullName}' — qualifies this one use; no open added"
+    FSharpQuickFix.replace title false filePath r fullName
+
+let private hasMember rights name (entity: FSharpEntity) =
+    entity.MembersFunctionsAndValues
+    |> Seq.exists (fun m ->
+        m.DisplayName = name && m.IsAccessible(rights) && m.IsMember && not m.IsInstanceMember)
+
+let private hasNested rights name (entity: FSharpEntity) =
+    entity.NestedEntities
+    |> Seq.exists (fun nested -> nested.DisplayName = name && nested.IsAccessible(rights))
+
+let private accessibleType rights (entity: FSharpEntity) =
+    not entity.IsNamespace && not entity.IsFSharpModule && entity.IsAccessible(rights)
+
+let private staticTypes (checkResults: FSharpCheckFileResults) name =
+    let rights = checkResults.ProjectContext.AccessibilityRights
+    FSharpEntityIndex.types checkResults
+    |> List.filter (fun entity ->
+        accessibleType rights entity && (hasMember rights name entity || hasNested rights name entity))
+    |> List.choose (fun entity -> entity.TryFullName)
+    |> List.distinct
+    |> List.sort
+    |> List.truncate MAX_SUGGESTIONS
+
+let private supportsOpenType (checkResults: FSharpCheckFileResults) =
+    checkResults.ProjectContext.ProjectOptions.OtherOptions
+    |> Array.tryPick (FSharpProjectLoading.flagValue [ "--langversion:" ] >> Option.map snd)
+    |> Option.map (fun version ->
+        match Double.TryParse(version, NumberStyles.Float, CultureInfo.InvariantCulture) with
+        | true, number -> number >= 5.0
+        | _ -> true)
+    |> Option.defaultValue true
+
+let private staticActions parseResults checkResults line filePath (r: range) name =
+    if not (supportsOpenType checkResults) then []
+    else
+        staticTypes checkResults name
+        |> List.map (fun fullName ->
+            let at = FSharpQuickFix.openPosition parseResults line r.StartLine (fullName.Split '.')
+            let title = $"Add 'open type {fullName}' — imports the static members and nested types of {fullName}"
+            FSharpQuickFix.insertLine title filePath at $"open type {fullName}")
+
+/// Every in-reach FS0039 import: namespace opens, full qualification, and
+/// `open type` for accessible static members or nested types.
+/// [REFACTOR-IMPORT-FSHARP]
+let imports workspace parseResults (checkResults: FSharpCheckFileResults) source filePath (r: range) =
+    let line = FSharpLocalAnalysis.lineGetter source
+    match flaggedText line r with
+    | None -> []
+    | Some name ->
+        let candidates = candidatesFor parseResults (FSharpEntityIndex.entities workspace checkResults ()) r name
+        (namespaceNames candidates |> List.map (openAction parseResults line filePath r))
+        @ (qualifiedNames candidates |> List.map (qualifyAction filePath r name))
+        @ staticActions parseResults checkResults line filePath r name
 
 // ── FS1182: mark the unused value ───────────────────────────────
 

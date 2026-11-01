@@ -7,8 +7,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 const FIXTURES = path.resolve(__dirname, '../../../../../sharplsp/tests/fixtures');
-/** lspkit's own targets, which prove the engine on every .NET language. */
-const LSPKIT_FIXTURES = path.resolve(__dirname, '../../../../../../lspkit/dotnet/fixtures');
+/** lspkit's own targets, from the release source the Makefile exports as LSPKIT_DIR. */
+const LSPKIT_FIXTURES = path.resolve(
+  __dirname,
+  '../../../../../..',
+  process.env.LSPKIT_DIR ?? 'LSPKIT_DIR is unset: run through make',
+  'dotnet/fixtures',
+);
 /** SharpLsp's real-world F# programs: a pricing engine and an event-sourced order ledger. */
 const FSHARP_FIXTURES = path.join(FIXTURES, 'fsharp-profiling');
 

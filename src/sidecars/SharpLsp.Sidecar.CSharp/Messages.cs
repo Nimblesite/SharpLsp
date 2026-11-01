@@ -1,4 +1,5 @@
 using MessagePack;
+using SharpLsp.Sidecar.Common.Messages;
 
 namespace SharpLsp.Sidecar.CSharp;
 
@@ -256,6 +257,13 @@ internal sealed class CodeActionItem
 
     [Key(3)]
     public bool IsPreferred { get; set; }
+
+    /// <summary>
+    /// The reference the action adds before its import; null for an edit action.
+    /// [REFACTOR-IMPORT-REFERENCE]
+    /// </summary>
+    [Key(4)]
+    public ReferenceImport? Reference { get; set; }
 }
 
 [MessagePackObject(AllowPrivate = true)]
@@ -296,6 +304,10 @@ internal sealed class DocumentEditResult
     /// <summary>Whether the edit creates the file: it holds the new file's whole text. [RAZOR-CODE-ACTIONS]</summary>
     [Key(2)]
     public bool Create { get; init; }
+
+    /// <summary>The new absolute path when this edit renames the file. [REFACTOR-MOVE-TYPE-RENAME-FILE]</summary>
+    [Key(3)]
+    public string? RenameTo { get; init; }
 }
 
 [MessagePackObject(AllowPrivate = true)]

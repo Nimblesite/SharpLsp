@@ -89,13 +89,15 @@ RUST_TEST_LOG     ?= info
 SHARD_COUNT       ?= 2
 PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 
-# The shared profiler ([PROFILER-SHARED-LIBRARY]) lives in the lspkit submodule
-# (https://github.com/Nimblesite/lspkit). `_build-dotnet` publishes its .NET
-# engine to PROFILER_ENGINE_OUT; `_build-profiler-ui` builds its VS Code UI
-# package, which `npm ci` then copies into the extension (install-links=true).
-LSPKIT_DIR          ?= lspkit
+# The shared profiler ([PROFILER-SHARED-LIBRARY]) is lspkit (https://lspkit.dev):
+# crates.io crates and the @nimblesite/lsp-profiler-ui npm package. Its .NET
+# engine and fixtures ship only in the release source, which `_fetch-lspkit`
+# unpacks to LSPKIT_DIR; `_build-dotnet` publishes the engine to PROFILER_ENGINE_OUT.
+LSPKIT_VERSION      := 0.4.0
+LSPKIT_SHA256       := 4acc4e81bb8eb20a9855478f3b496581746c4b891ffd3040e8fb3285964b0bb1
+# Outside target/: CI caches restore target/ partially, which would skip the fetch.
+export LSPKIT_DIR   := .lspkit/lspkit-$(LSPKIT_VERSION)
 PROFILER_ENGINE_OUT := target/profiler-engine
-PROFILER_UI_DIR     := $(LSPKIT_DIR)/packages/lsp-profiler-ui
 
 VSCODE_DIR  = src/editors/vscode
 ZED_DIR     = src/editors/zed
@@ -142,7 +144,7 @@ MERGE_COBERTURA = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tool
 KOVER_PERCENT = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tools/kover-line-percent/kover-line-percent.dll,$(DOTNET) run --file tools/coverage/kover-line-percent.cs --)
 
 # The public surface. Everything under it is an internal step or a CI leg.
-.PHONY: build ci test lint fmt clean audit setup _build-profiler-ui \
+.PHONY: build ci test lint fmt clean audit setup _fetch-lspkit \
         reinstall-vsix install-vsix uninstall-vsix install-dotnet-10
 
 .PHONY: _screenshots _website-build _website-dev _film _uninstall-dotnet-10 \
@@ -261,21 +263,22 @@ _build-rust:
 	cargo build $(CARGO_FLAG) $(if $(RUST_TARGET),--target $(RUST_TARGET),)
 	@test -f $(BINARY) || { echo "ERROR: $(BINARY) not found" >&2; exit 1; }
 
-_build-dotnet:
+_build-dotnet: _fetch-lspkit
 	@$(CHECK_DOTNET_PIN)
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
 	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 	$(DOTNET) publish $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj --configuration Release --no-self-contained -p:DebugType=none -p:DebugSymbols=false --output $(PROFILER_ENGINE_OUT)
 
-# The profiler's VS Code UI package ([PROFILER-SHARED-LIBRARY-VSCODE]). Its wire
-# model is generated from lspkit's typeDiagram model first, the same file
-# lsp-profiler's build.rs generates; `npm ci` in the extension then packs `out/`.
-_build-profiler-ui:
-	@echo "==> Building the profiler UI package from lspkit..."
-	node $(LSPKIT_DIR)/scripts/typediagram/generate.mjs
-	npm ci --prefix $(PROFILER_UI_DIR)
-	npm run build --prefix $(PROFILER_UI_DIR)
+_fetch-lspkit: $(LSPKIT_DIR)
+
+$(LSPKIT_DIR):
+	@echo "==> Fetching lspkit $(LSPKIT_VERSION) source (profiler engine, fixtures)..."
+	mkdir -p .lspkit
+	curl -fsSL -o .lspkit/lspkit.tar.gz https://github.com/Nimblesite/lspkit/archive/refs/tags/v$(LSPKIT_VERSION).tar.gz
+	node -e "const h=require('crypto').createHash('sha256').update(require('fs').readFileSync('.lspkit/lspkit.tar.gz')).digest('hex');if(h!=='$(LSPKIT_SHA256)'){console.error('lspkit source sha256 '+h+' != pinned $(LSPKIT_SHA256)');process.exit(1)}"
+	rm -rf .lspkit/extract && mkdir -p .lspkit/extract && tar -xzf .lspkit/lspkit.tar.gz -C .lspkit/extract
+	mv .lspkit/extract/lspkit-$(LSPKIT_VERSION) $(LSPKIT_DIR) && rm -rf .lspkit/extract .lspkit/lspkit.tar.gz
 
 # [DIST-CI-ARTIFACT-TESTS] Compile product and tests together, once. Publishing
 # afterwards copies these exact Release assemblies; coverage retains their PDBs.
@@ -465,10 +468,10 @@ ci: lint test build audit
 # touches node_modules.
 
 AUDIT_LEVEL       ?= moderate
-AUDIT_CARGO_LOCKS  = Cargo.lock $(ZED_DIR)/Cargo.lock lspkit/Cargo.lock
-AUDIT_NPM_DIRS     = $(VSCODE_DIR) src/website src/website/tools/video lspkit/packages/lspkit-debug lspkit/packages/lsp-profiler-ui
+AUDIT_CARGO_LOCKS  = Cargo.lock $(ZED_DIR)/Cargo.lock
+AUDIT_NPM_DIRS     = $(VSCODE_DIR) src/website src/website/tools/video
 AUDIT_DOTNET_JSON  = target/audit-dotnet.json
-AUDIT_DOTNET_TARGETS = $(SIDECAR_SLN) lspkit/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj
+AUDIT_DOTNET_TARGETS = $(SIDECAR_SLN) $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj
 
 .PHONY: audit _audit-rust _audit-dotnet _audit-npm
 
@@ -495,7 +498,7 @@ _audit-rust:
 		cargo audit --file "$$lock" || status=1; \
 	done; exit $$status
 
-_audit-dotnet:
+_audit-dotnet: _fetch-lspkit
 	@mkdir -p $(dir $(AUDIT_DOTNET_JSON))
 	@status=0; for project in $(AUDIT_DOTNET_TARGETS); do \
 		echo "==> dotnet list package --vulnerable $$project"; \
@@ -645,7 +648,7 @@ _build-vsix-suite:
 # what `make test` runs locally. CI never runs it: unsharded it was the longest
 # job in the pipeline by a wide margin, so the Ubuntu leg fans out over
 # `_test-vsix-shard` instead and gates once over the union.
-_test-vsix: _build-vsix
+_test-vsix: _build-vsix _fetch-lspkit
 	@echo "==> Running VS Code extension tests..."
 	@$(MAKE) _build-vsix-suite
 	npm run build --prefix $(VSCODE_DIR)
@@ -674,7 +677,7 @@ VSIX_PLATFORM = $(shell node -e "process.stdout.write(process.platform)")
 VSIX_SHARD_LCOV = target/coverage-vsix-shard-$(VSIX_PLATFORM)-$(CHUNK).lcov
 
 # The shared runner owns the full rebuild, so invoking it directly is safe too.
-_test-vsix-shard:
+_test-vsix-shard: _fetch-lspkit
 	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-shard CHUNK=lsp)" >&2; exit 1; }
 	@echo "==> Running VS Code coverage shard '$(VSIX_PLATFORM)/$(CHUNK)'..."
 	@$(MAKE) _run-vsix-suite CHUNK=$(CHUNK)
@@ -871,7 +874,7 @@ _check-sdk-pin:
 # Every spec ID cited anywhere resolves to exactly one defining heading, so a
 # deleted section cannot leave its citations pointing at nothing
 # ([DIST-CI-SPEC-CITATIONS]).
-_check-spec-citations:
+_check-spec-citations: _fetch-lspkit
 	node tools/ci/spec-citations.mjs
 
 # Dash-form MSBuild switches only: Git Bash (MSYS) mangles slash-form switches
@@ -1265,7 +1268,7 @@ setup:
 	rustup component add clippy rustfmt llvm-tools-preview
 	cargo install cargo-llvm-cov || true
 	cargo install cargo-audit --locked || true
-	$(MAKE) _build-profiler-ui
+	$(MAKE) _fetch-lspkit
 	npm install --prefix $(VSCODE_DIR)
 	$(DOTNET) restore $(SIDECAR_SLN)
 	$(DOTNET) tool restore

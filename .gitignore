@@ -149,3 +149,6 @@ deslop-*.log
 # -----------------------------------------------------------------------------
 # Profiler output; `profiler.output_directory` in src/sharplsp/src/config.rs.
 .sharplsp/profiles/
+
+# lspkit release source fetched by make _fetch-lspkit
+.lspkit/

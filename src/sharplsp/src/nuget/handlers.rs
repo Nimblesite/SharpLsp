@@ -116,6 +116,23 @@ pub fn handle_install(
     finish_with_restore(response, runtime, sender, &target)
 }
 
+/// Install `package_id` at `version` into the project at `project_path` for an
+/// import quick fix, restoring in the background exactly as
+/// `sharplsp/nuget/install` does. [REFACTOR-IMPORT-REFERENCE]
+pub fn install_into_project(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &tokio::runtime::Runtime,
+    sender: Sender<Message>,
+    project_path: &str,
+    package_id: &str,
+    version: &str,
+) -> Result<types::InstallResponse> {
+    let target = types::NuGetTarget::from_project_path(project_path);
+    let response = apply_install(sidecar, runtime, &target, package_id, version)?;
+    restore_if_modified(&response, runtime, sender, &target);
+    Ok(response)
+}
+
 /// Handle `sharplsp/nuget/uninstall` — MSBuild-DOM edit (C# sidecar) + background
 /// restore. [NUGET-XML-DOM]
 pub fn handle_uninstall(
@@ -266,11 +283,20 @@ fn finish_with_restore<R>(
 where
     R: RestoreOutcome + serde::Serialize,
 {
+    restore_if_modified(&response, runtime, sender, target);
+    Ok(serde_json::to_value(response)?)
+}
+
+/// Restore in the background when an edit succeeded and changed files.
+fn restore_if_modified<R: RestoreOutcome>(
+    response: &R,
+    runtime: &tokio::runtime::Runtime,
+    sender: Sender<Message>,
+    target: &types::NuGetTarget,
+) {
     if response.succeeded() && !response.modified_files().is_empty() {
         spawn_restore(runtime, sender, target, response.modified_files().to_vec());
     }
-
-    Ok(serde_json::to_value(response)?)
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

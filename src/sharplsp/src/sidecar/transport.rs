@@ -62,7 +62,7 @@ impl FramedTransport {
         R: AsyncRead + Send + Unpin + 'static,
         W: AsyncWrite + Send + Unpin + 'static,
     {
-        let inbound = lspkit_sidecar::inbound::spawn(
+        let inbound = lspkit::sidecar::inbound::spawn(
             reader,
             MAX_FRAME_LEN,
             |frame| rmp_serde::from_slice::<Envelope>(&frame).map_err(|error| error.to_string()),

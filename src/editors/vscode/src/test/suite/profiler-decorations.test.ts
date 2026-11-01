@@ -45,14 +45,14 @@ function useDecoratedEditor(prefix: string): void {
 }
 
 /** Paint one hot line per percentage (line n carries the n-th) and read back each level. */
-function levelsOf(percentages: readonly number[]): Heat[] {
+async function levelsOf(percentages: readonly number[]): Promise<Heat[]> {
   const hotLines: ProfileHotLine[] = percentages.map((percentage, index) => ({
     file,
     line: index + 1,
     samples: Math.round(percentage * 10),
     percentage,
   }));
-  applyProfileDecorations(profileResult({ hotLines }));
+  await applyProfileDecorations(profileResult({ hotLines }));
   const byLine = new Map(appliedProfileDecorations().map((entry) => [entry.line, entry.color]));
   return percentages.map((_, index) => {
     const color = byLine.get(index + 1);
@@ -61,22 +61,25 @@ function levelsOf(percentages: readonly number[]): Heat[] {
   });
 }
 
-function assertLevels(percentages: readonly number[], expected: readonly Heat[]): void {
+async function assertLevels(
+  percentages: readonly number[],
+  expected: readonly Heat[],
+): Promise<void> {
   assert.deepEqual(
-    levelsOf(percentages),
+    await levelsOf(percentages),
     expected,
     `${percentages.join('% / ')}% must paint ${expected.join(' / ')}`,
   );
 }
 
 /** Paint one hot line of the open source. */
-function paintHotLine(line: number, percentage: number, samples: number): void {
-  applyProfileDecorations(profileResult({ hotLines: [{ file, line, samples, percentage }] }));
+async function paintHotLine(line: number, percentage: number, samples: number): Promise<void> {
+  await applyProfileDecorations(profileResult({ hotLines: [{ file, line, samples, percentage }] }));
 }
 
 /** Paint one allocation of the open source. */
-function paintAllocation(line: number, size: number, count: number): void {
-  applyMemoryDecorations(memorySnapshot({ topAllocations: [{ file, line, size, count }] }));
+async function paintAllocation(line: number, size: number, count: number): Promise<void> {
+  await applyMemoryDecorations(memorySnapshot({ topAllocations: [{ file, line, size, count }] }));
 }
 
 /** One test per row: its name, the percentages painted, and the levels they must get. */
@@ -84,8 +87,8 @@ function levelTests(
   rows: readonly (readonly [string, readonly number[], readonly Heat[]])[],
 ): void {
   for (const [name, percentages, expected] of rows) {
-    test(name, () => {
-      assertLevels(percentages, expected);
+    test(name, async () => {
+      await assertLevels(percentages, expected);
     });
   }
 }
@@ -93,8 +96,8 @@ function levelTests(
 suite('Profiler — Decoration Modules', () => {
   useDecoratedEditor('profiler-dec-');
 
-  test('profiler-decorations exports applyProfileDecorations function', () => {
-    paintHotLine(2, 30, 5);
+  test('profiler-decorations exports applyProfileDecorations function', async () => {
+    await paintHotLine(2, 30, 5);
     assert.deepEqual(
       appliedProfileDecorations().map((entry) => entry.line),
       [2],
@@ -102,14 +105,14 @@ suite('Profiler — Decoration Modules', () => {
     );
   });
 
-  test('profiler-decorations exports clearProfileDecorations function', () => {
-    paintHotLine(2, 30, 5);
+  test('profiler-decorations exports clearProfileDecorations function', async () => {
+    await paintHotLine(2, 30, 5);
     clearProfileDecorations();
     assert.deepEqual(appliedProfileDecorations(), [], 'it clears');
   });
 
-  test('memory-decorations exports applyMemoryDecorations function', () => {
-    paintAllocation(3, 4096, 8);
+  test('memory-decorations exports applyMemoryDecorations function', async () => {
+    await paintAllocation(3, 4096, 8);
     assert.deepEqual(
       appliedMemoryDecorations().map((entry) => entry.line),
       [3],
@@ -117,8 +120,8 @@ suite('Profiler — Decoration Modules', () => {
     );
   });
 
-  test('memory-decorations exports clearMemoryDecorations function', () => {
-    paintAllocation(3, 4096, 8);
+  test('memory-decorations exports clearMemoryDecorations function', async () => {
+    await paintAllocation(3, 4096, 8);
     clearMemoryDecorations();
     assert.deepEqual(appliedMemoryDecorations(), [], 'it clears');
   });
@@ -135,8 +138,8 @@ suite('Profiler — Decoration Modules', () => {
     assert.deepEqual(appliedMemoryDecorations(), []);
   });
 
-  test('ProfileResult type has required fields', () => {
-    applyProfileDecorations(
+  test('ProfileResult type has required fields', async () => {
+    await applyProfileDecorations(
       profileResult({
         totalSamples: 1000,
         hotFunctions: [
@@ -154,15 +157,15 @@ suite('Profiler — Decoration Modules', () => {
     );
   });
 
-  test('ProfileHotLine type has required fields', () => {
-    paintHotLine(5, 25, 500);
+  test('ProfileHotLine type has required fields', async () => {
+    await paintHotLine(5, 25, 500);
     const [painted] = appliedProfileDecorations();
     assert.equal(painted?.line, 5);
     assert.ok(painted.contentText.includes('25.0% (500 samples)'), painted.contentText);
   });
 
-  test('ProfileHotFunction type has required fields', () => {
-    applyProfileDecorations(
+  test('ProfileHotFunction type has required fields', async () => {
+    await applyProfileDecorations(
       profileResult({
         hotFunctions: [
           { name: 'ProcessData', file, line: 8, samples: 800, percentage: 40, selfPercentage: 30 },
@@ -177,8 +180,8 @@ suite('Profiler — Decoration Modules', () => {
     );
   });
 
-  test('MemoryAllocation type has required fields', () => {
-    applyMemoryDecorations(
+  test('MemoryAllocation type has required fields', async () => {
+    await applyMemoryDecorations(
       memorySnapshot({ topAllocations: [{ file, line: 9, size: 10_485_760, count: 5000 }] }),
     );
     const [painted] = appliedMemoryDecorations();
@@ -189,8 +192,8 @@ suite('Profiler — Decoration Modules', () => {
     );
   });
 
-  test('MemorySnapshotResult type has required fields', () => {
-    applyMemoryDecorations(
+  test('MemorySnapshotResult type has required fields', async () => {
+    await applyMemoryDecorations(
       memorySnapshot({
         topAllocations: [
           { file, line: 1, size: 104_857_600, count: 1 },
@@ -211,18 +214,18 @@ suite('Profiler — Decoration Modules', () => {
 suite('Profiler — Decoration Apply/Clear', () => {
   useDecoratedEditor('profiler-dec2-');
 
-  test('applyProfileDecorations handles empty result without throwing', () => {
-    applyProfileDecorations(profileResult({ totalSamples: 0, duration: 0 }));
+  test('applyProfileDecorations handles empty result without throwing', async () => {
+    await applyProfileDecorations(profileResult({ totalSamples: 0, duration: 0 }));
     assert.deepEqual(appliedProfileDecorations(), [], 'an empty profile paints nothing');
   });
 
-  test('applyMemoryDecorations handles empty result without throwing', () => {
-    applyMemoryDecorations(memorySnapshot({ currentMemory: 0, peakMemory: 0 }));
+  test('applyMemoryDecorations handles empty result without throwing', async () => {
+    await applyMemoryDecorations(memorySnapshot({ currentMemory: 0, peakMemory: 0 }));
     assert.deepEqual(appliedMemoryDecorations(), [], 'an empty snapshot paints nothing');
   });
 
-  test('ProfileResult with populated hotFunctions validates structure', () => {
-    applyProfileDecorations(
+  test('ProfileResult with populated hotFunctions validates structure', async () => {
+    await applyProfileDecorations(
       profileResult({
         hotFunctions: [
           { name: 'Compute', file, line: 10, samples: 2500, percentage: 50, selfPercentage: 35 },
@@ -251,8 +254,8 @@ suite('Profiler — Heat Level Classification', () => {
     ['below threshold (< 1%) is not classified', [0.5], ['none']],
   ]);
 
-  test('heat level boundaries are mutually exclusive', () => {
-    assertLevels(
+  test('heat level boundaries are mutually exclusive', async () => {
+    await assertLevels(
       [25, 20, 19.9, 10, 9.9, 5, 4.9, 1, 0.9],
       ['critical', 'critical', 'hot', 'hot', 'warm', 'warm', 'cool', 'cool', 'none'],
     );
@@ -262,8 +265,8 @@ suite('Profiler — Heat Level Classification', () => {
 suite('Profiler — Decoration Contracts', () => {
   useDecoratedEditor('profiler-deco-');
 
-  test('applyProfileDecorations with multiple files and varying percentages', () => {
-    applyProfileDecorations(
+  test('applyProfileDecorations with multiple files and varying percentages', async () => {
+    await applyProfileDecorations(
       profileResult({
         hotFunctions: [
           {
@@ -305,20 +308,20 @@ suite('Profiler — Decoration Contracts', () => {
 suite('Profiler — Decoration Lifecycle', () => {
   useDecoratedEditor('profiler-deco2-');
 
-  test('clearProfileDecorations removes all decorations without error', () => {
-    paintHotLine(1, 50, 50);
+  test('clearProfileDecorations removes all decorations without error', async () => {
+    await paintHotLine(1, 50, 50);
     assert.equal(appliedProfileDecorations().length, 1, 'painted before the clear');
     clearProfileDecorations();
     clearProfileDecorations();
     assert.deepEqual(appliedProfileDecorations(), [], 'a double clear leaves nothing');
   });
 
-  test('decorations apply after opening file and survive re-application', () => {
+  test('decorations apply after opening file and survive re-application', async () => {
     const result = profileResult({ hotLines: [{ file, line: 2, samples: 250, percentage: 50 }] });
-    applyProfileDecorations(result);
+    await applyProfileDecorations(result);
     clearProfileDecorations();
-    applyProfileDecorations(result);
-    applyProfileDecorations(result);
+    await applyProfileDecorations(result);
+    await applyProfileDecorations(result);
     assert.deepEqual(
       appliedProfileDecorations().map((entry) => entry.line),
       [2],

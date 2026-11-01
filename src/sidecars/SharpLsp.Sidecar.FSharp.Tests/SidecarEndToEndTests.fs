@@ -608,13 +608,15 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
     }
 
     [<Fact>]
-    member _.``code action resolve returns workspace edit for unknown id``() = task {
+    member _.``code action resolve fails explicitly for unknown id``() = task {
+        // [REFACTOR-NEVER-SILENT] An expired action is never a successful empty edit.
         let payload =
             MessagePackSerializer.Serialize({ CodeActionResolveRequest.Id = -1 })
         let! r = fixture.Send("codeAction/resolve", payload)
-        Assert.Null(r.Error)
-        let edit = deserialize<WorkspaceEditResult>(r.Payload)
-        Assert.Empty(edit.DocumentChanges)
+        Assert.Equal(
+            "the code action is no longer available: the document changed after it was offered; invoke the quick fix again",
+            r.Error)
+        Assert.Empty(r.Payload)
     }
 
     // ── Analyzer-driven code fixes (FSAC parity) ────────────────

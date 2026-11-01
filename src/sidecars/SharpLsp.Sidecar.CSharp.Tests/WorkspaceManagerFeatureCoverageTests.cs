@@ -251,10 +251,15 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
             Assert.NotNull(edit.DocumentChanges);
         }
 
-        // An ID that was never offered must fail explicitly.
+        // An ID that was never offered fails with the exact plain-words reason
+        // the spec gives. [REFACTOR-NEVER-SILENT]
         var unknown = await manager.ResolveCodeActionAsync(987654);
         Assert.True(unknown.IsError, "unknown action id must error");
-        Assert.Contains("not found", unknown.Match(_ => string.Empty, err => err));
+        Assert.Contains(
+            "the code action is no longer available",
+            unknown.Match(_ => string.Empty, err => err)
+        );
+        Assert.Contains("invoke the quick fix again", unknown.Match(_ => string.Empty, err => err));
     }
 
     [Fact]

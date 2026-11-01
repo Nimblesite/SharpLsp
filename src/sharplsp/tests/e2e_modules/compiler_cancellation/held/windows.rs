@@ -3,7 +3,7 @@ use super::*;
 use std::io::BufReader;
 use std::process::ChildStdout;
 
-#[path = "../../../../../../lspkit/test-support/windows-oplock/owner.rs"]
+#[path = "../../../support/windows-oplock/owner.rs"]
 mod owner;
 
 pub struct Source {
@@ -14,8 +14,8 @@ pub type Reader = Source;
 
 impl Source {
     pub fn new(path: &Path, _original: &str) -> io::Result<Self> {
-        let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../lspkit/test-support/windows-oplock/hold.ps1");
+        let script =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/windows-oplock/hold.ps1");
         let mut child = owner::spawn(&script, path);
         let output = BufReader::new(child.stdout.take().expect("native owner stdout"));
         let mut source = Self { child, output };

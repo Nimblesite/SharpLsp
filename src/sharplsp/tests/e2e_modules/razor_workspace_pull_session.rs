@@ -2,7 +2,7 @@
 //! [RAZOR-FEATURES-DIAGNOSTICS] [DIAG-LSP-PULL] [DIAG-TRUTH-GUARANTEES]
 use super::*;
 use workspace_diagnostic_support::{
-    assert_error, assert_no_push, completed_pull, observed_request, report_for,
+    assert_error, assert_no_push, completed_pull, observed_request, refused_pull, report_for,
 };
 
 /// A component discovered by the SDK's default glob, without explicit `AdditionalFiles`.
@@ -165,12 +165,14 @@ fn unowned_razor_diagnostics_fail_until_actual_solution_selection() {
     let mut client = initialized(&other);
     let uri = path_to_file_uri(&target.file(CLOSED));
     let mut traffic = Vec::new();
-    let (missing, messages) = client.request_collecting_notifications(
-        "textDocument/diagnostic",
-        json!({"textDocument":{"uri":uri}}),
+    let missing = refused_pull(
+        &mut client,
+        &uri,
+        "Razor compiler snapshot is unavailable",
+        &mut traffic,
     );
-    traffic.extend(messages);
-    assert_unavailable(&missing);
+    assert_eq!(missing["jsonrpc"], "2.0");
+    assert!(missing["id"].is_number());
     select_razor_owner(&mut client, &target, &mut traffic);
     let selected = document_pull(&mut client, &uri, &mut traffic);
     assert_document_error(&selected);
@@ -205,13 +207,6 @@ fn document_pull(client: &mut LspClient, uri: &str, traffic: &mut Vec<Value>) ->
         json!({"textDocument":{"uri":uri}}),
         traffic,
     )
-}
-
-/// The retryable standard error contains no fabricated clean report or result identity.
-fn assert_unavailable(response: &Value) {
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert!(response["id"].is_number());
-    workspace_diagnostic_support::assert_superseded(response);
 }
 
 /// Select the actual SDK solution through the same user command as an editor.

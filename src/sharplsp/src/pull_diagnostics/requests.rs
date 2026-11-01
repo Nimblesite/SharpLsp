@@ -319,8 +319,12 @@ fn compiler_inputs_unavailable(error: &anyhow::Error) -> bool {
 /// change the answer until the workspace changes, and that change refreshes.
 /// VS Code asked again at once whenever it was told it could, 165,000 times in
 /// thirteen minutes for one document outside every project (#527).
+/// A refusal while a selected solution still loads is about the inputs being
+/// replaced, so it stays retryable.
 pub(super) fn settled_refusal(error: &anyhow::Error) -> bool {
-    compiler_refusal(error).is_some() && !compiler_inputs_unavailable(error)
+    compiler_refusal(error).is_some()
+        && !compiler_inputs_unavailable(error)
+        && !super::state::loading()
 }
 
 /// Server-cancelled with the compiler's cause and no retrigger: the editor keeps
@@ -349,9 +353,12 @@ fn response(id: lsp_server::RequestId, result: HandlerResult) -> Response {
     }
 }
 
-/// Validate the input epoch at the serialized output boundary as well.
+/// Validate the input epoch at the serialized output boundary as well. A report
+/// or refusal computed for replaced inputs is superseded, never settled; only a
+/// client cancellation keeps its own answer. [DIAG-TRUTH-GUARANTEES]
 fn current(result: HandlerResult, store: &PullStore, revision: u64) -> HandlerResult {
-    if matches!(&result, HandlerResult::Ok(_)) && store.revision() != revision {
+    let cancelled = matches!(&result, HandlerResult::Err(error) if error.code == -32800);
+    if !cancelled && store.revision() != revision {
         HandlerResult::Err(rpc_error(&Interrupted::Superseded.into()))
     } else {
         result

@@ -486,12 +486,12 @@ SharpLsp also owns custom static analyzers that run through the same workspace d
 | Inline variable/method | `textDocument/codeAction` | InlineMethodRefactoring | Custom implementation | P1 |
 | Rename symbol | See [RENAME-SPEC.md](RENAME-SPEC.md) | [Renamer.RenameSymbolAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.rename.renamer.renamesymbolasync) | FCS rename support | P0 |
 | Rename file to match type | `textDocument/codeAction` | Custom (sync filename ↔ type) | Custom (sync filename ↔ module) | P1 |
-| Move type to file | `textDocument/codeAction` | MoveTypeRefactoring | Custom implementation | P1 |
+| Move type to file / nested type out ([REFACTOR-MOVE-TYPE]) | `textDocument/codeAction` | MoveTypeRefactoring + MoveTypeOutCodeRefactoringProvider | Custom implementation | P1 |
 | Generate constructor | `textDocument/codeAction` | GenerateConstructor fix | Custom implementation | P0 |
 | Generate equals/hashcode | `textDocument/codeAction` | GenerateEqualsAndGetHashCode | Custom implementation | P1 |
 | Generate interface impl | `textDocument/codeAction` | ImplementInterface fix | ImplementInterface fix | P0 |
 | Generate override | `textDocument/codeAction` | GenerateOverrides | Custom implementation | P1 |
-| Add using/open directive | `textDocument/codeAction` | AddImport CodeFix | AddOpen CodeFix (FSAC) | P0 |
+| Add using/open directive ([REFACTOR-IMPORT]) | `textDocument/codeAction` | AddImport CodeFix | AddOpen CodeFix (FSAC) | P0 |
 | Organize usings/opens | `textDocument/codeAction` | OrganizeImports | Custom open sorting | P0 |
 | Convert between expression forms | `textDocument/codeAction` | Various Roslyn refactorings | "Convert pipeline to nested calls" / "Convert nested calls to pipeline" ([REFACTOR-FSHARP-PIPE]) | P1 |
 | Surround with (try/catch, if, etc.) | `textDocument/codeAction` | Custom surround providers | Custom surround providers | P1 |
@@ -543,6 +543,91 @@ The action is withheld wherever the syntax shows the rewrite could change meanin
 - anything inside a computation expression's `let!`/`use!`/`do!` right-hand side.
 
 Each kind of conversion is offered for the outermost expression enclosing the cursor. A chain that cannot convert still lets the expressions inside its stages convert — a nested call in a lambda body — but never one of its stages or sub-chains alone, so no partial rewrite is offered. Every conversion is verified by applying the edit and re-checking that the file has no new FCS errors (`FSharpPipeRefactoringTests`).
+
+#### [REFACTOR-MOVE-TYPE] Moving a Type
+
+Three actions move or rename around a type declaration, all offered when the requested range touches the declaration's identifier. Each is verified by APPLYING it to a real MSBuild project and asserting on the files it produces (`MoveTypeToFileTests`, `MoveTypeOutTests`), never by checking that it is offered.
+
+##### [REFACTOR-MOVE-TYPE-FILE] Move Type to Its Own File
+
+Roslyn's `Move type to <Name>.cs` is offered for a top-level type in a file that holds more than one, or whose name differs from the file's. The new file sits beside the source file, in the same project folders, and holds: the source file's using directives, the same namespace shape (file-scoped stays file-scoped, block stays block, a blank line after a file-scoped namespace), and the declaration with its leading documentation and attributes. The source file keeps everything else, including every other type and its usings, and still parses. For a NESTED type the same action wraps the moved declaration in a `partial` copy of each enclosing type, as Visual Studio does; the type stays nested. Moving it out is [REFACTOR-MOVE-TYPE-OUT].
+
+##### [REFACTOR-MOVE-TYPE-OUT] Move a Nested Type Out of Its Container
+
+`Move 'Inner' out of 'Outer' to Inner.cs` is offered for a class, struct, record, interface or enum declared inside another type (`MoveTypeOutCodeRefactoringProvider`). It makes the type a top-level member of the enclosing types' namespace, in a new file named after it beside the source file, and it rewrites the whole solution to match:
+
+1. **Accessibility.** `public` and `internal` keep their keyword. `private`, `protected`, `private protected`, `protected internal` and no modifier become `internal`: a nested type's default is `private`, which does not exist at namespace level.
+2. **References to the moved type.** Every reference in every project, found with `SymbolFinder`, drops the container: `Outer.Inner` and `Outer<int>.Inner` become `Inner`; `Geo.Outer.Inner` and `global::Geo.Outer.Inner` become `Geo.Inner` and `global::Geo.Inner`. A reference that was already the bare name (inside `Outer`, or in a type derived from it) is left alone. Generic arguments, `typeof`, `nameof`, attributes, base lists and `using` aliases are all references.
+3. **References from the moved type to its old container.** A bare reference to an accessible static member or sibling nested type of an enclosing type (`Helper()`, `Other`) is qualified (`Outer.Helper()`, `Outer.Other`), so it still resolves from outside.
+4. **The new file.** As [REFACTOR-MOVE-TYPE-FILE]: the source file's usings, the same namespace shape, the declaration with its documentation and attributes, formatted at namespace level. The source file loses only the declaration (and its leading trivia).
+
+##### [REFACTOR-MOVE-TYPE-REFUSED] When a Nested Type Cannot Be Moved Out
+
+The action is NOT OFFERED when the move cannot be done mechanically, so the user never chooses a thing that cannot work:
+
+- the type is `partial` (its other parts would be left behind);
+- it uses a type parameter of an enclosing type (`T` has no meaning at namespace level);
+- it refers to a `private`, `protected` or `private protected` member or nested type of an enclosing type (unreachable from outside), or to an instance member of one through an instance of the container that is itself inaccessible;
+- the namespace already declares a type of the same name and arity, or a type of that name is visible there through a using (the bare name would bind to the wrong type);
+- a file of the new name already exists beside the source file.
+
+The provider resolves the action against a forked solution and compiles every project it changed. If the move introduced a compile error the preconditions did not foresee, the resolve FAILS with the first new error's message prefixed `Moving 'Inner' out of 'Outer' would not compile:` ([REFACTOR-NEVER-SILENT]); no partial edit reaches the client.
+
+##### [REFACTOR-MOVE-TYPE-RENAME-FILE] Rename File to Match Type
+
+Roslyn's `Rename file to <Name>.cs` changes a document's name and path, not its text. The sidecar expresses that as a document change with `RenameTo` set to the new path and no text edits; the host maps it to an LSP `RenameFile` resource operation. A resolve that would otherwise produce an empty edit fails with a reason ([REFACTOR-NEVER-SILENT]).
+
+#### [REFACTOR-IMPORT] Bringing an Unresolved Name into Scope
+
+When a name does not resolve, the lightbulb offers every reasonable way to bring it into scope. C# triggers on CS0246, CS0103, CS0234, CS0616 and CS1061; F# triggers on FS0039. Each way is a separate `quickfix`. Its title states the exact edit and what that edit brings into scope, so the user knows what will change before choosing. The candidates come from the compiler's symbols, never from the diagnostic's message text.
+
+| Way | C# title | F# title |
+|---|---|---|
+| Import the namespace | `Add 'using N;' — imports every type in namespace N` | `Add 'open N' — imports every type and module in namespace N` |
+| Import only the type | `Add 'using T = N.T;' — imports only the type N.T` | none: F# has no single-type import, so the fully qualified row serves |
+| Fully qualify this use | `Change 'T' to 'N.T' — qualifies this one use; no using added` | `Change 'T' to 'N.T' — qualifies this one use; no open added` |
+| Import a type's static members and nested types | `Add 'using static N.C;' — imports the static members and nested types of N.C` | `Add 'open type N.C' — imports the static members and nested types of N.C` |
+| Reference another project of the solution | `Reference project P from Q.csproj and add 'using N;' — P declares N.T` | `Reference project P from Q.fsproj and add 'open N' — P declares N.T` |
+| Add a package another project of the solution uses | `Add package Id V to Q.csproj (as in P.csproj) and add 'using N;'` | `Add package Id V to Q.fsproj (as in P.fsproj) and add 'open N'` |
+| Install a well-known package | `Install package Id (latest stable from nuget.org) in Q.csproj and add 'using N;'` | `Install package Id (latest stable from nuget.org) in Q.fsproj and add 'open N'` |
+
+`N` is the namespace, `T` the unresolved name, `N.T` the full name, `N.C` the type that declares a static member or nested type named `T`, `P` the other project or `Id` the package, `V` its version, and `Q` the project that owns the file. Each of the first four rows is offered when the target is already reachable from the file's project: its declaring assembly is a reference of the project, or the project itself declares it. The last three rows are in [REFACTOR-IMPORT-REFERENCE].
+
+#### [REFACTOR-IMPORT-CSHARP] C# Import Fixes
+
+Roslyn's `AddImport` and `FullyQualify` fixes stay the engine for the namespace and fully qualified rows, and they cover every syntactic position: base lists, attributes (`Obsolete` → `ObsoleteAttribute`), generic arity, extension-method receivers (CS1061) and static receivers. Their titles are rewritten from the change they make, not from Roslyn's title text. The change is read from the syntax tree: the `UsingDirectiveSyntax` the fix adds, or the qualified name that replaces the identifier. The alias row and the static row are SharpLsp's own:
+
+- **Alias.** Offered for each namespace row whose namespace declares an accessible, non-generic type named exactly `T`. It inserts `using T = N.T;` among the file's other aliases. A generic type has no alias row, because an alias names one closed type.
+- **Static.** Offered for each accessible static class `N.C` that declares a static member named `T` (method, property, field or event), and each type `N.C` that declares a nested type named `T`, up to three, ordered by full name. Static classes are found by walking the namespaces of the project and its references, with the walk cached per referenced assembly. Roslyn's declaration index (`SymbolFinder.FindDeclarationsAsync`) is not a member index: it finds `Vector128.Sqrt` but not `Math.Sqrt`. Nested types come from that index, which holds every type. A static method of a class that is not static, such as `Trace.WriteLine`, is not a candidate. Each candidate is kept only if the use, qualified with `N.C`, binds when it is bound speculatively in place. Members of `System.Object` and extension methods are excluded.
+
+`MSBuildWorkspace` is not a host workspace, so Roslyn never searches unreferenced projects or other projects' references for `AddImport`. SharpLsp does that itself ([REFACTOR-IMPORT-REFERENCE]).
+
+#### [REFACTOR-IMPORT-FSHARP] F# Import Fixes
+
+F# gets every row C# gets except the alias row. The namespace row is `Add 'open N'`. It is placed where FCS's `FindNearestPointToInsertOpenDeclaration` puts it ([ANALYZERS-FSAC-CODEFIX-COMPILER]). The fully qualified row replaces the diagnostic's range with the entity's full name, as written in code (backticks kept). It is offered for every entity the namespace row would open, and also for an entity in an `[<AutoOpen>]` or `[<RequireQualifiedAccess>]` module that FCS's insertion context reaches. The static row (`open type N.C`) is offered for each accessible .NET or F# type that declares a static member or nested type named `T`, up to three, when the file's language version supports `open type` (F# 5+).
+
+#### [REFACTOR-IMPORT-REFERENCE] Names from Outside the Project's References
+
+When the name is declared somewhere the file's project cannot reach yet, the fix adds the reference and the import together:
+
+1. **Another project of the loaded solution.** The project, in the same language, declares a public type named `T`; the file's project does not reference it; and referencing it would not create a cycle (the other project does not already reference the file's project, directly or transitively). The fix adds `<ProjectReference Include="relative/path/P.csproj" />`.
+2. **A package another project of the solution already uses.** Another project's references include an assembly that declares a public type `N.T`. That assembly belongs to a NuGet package, matched through the other project's `obj/project.assets.json` (the package whose `compile` items include the assembly). The fix adds that package at the same version, so the solution keeps one version.
+3. **A well-known package.** A curated table, `SharpLsp.Sidecar.Common/References/WellKnownPackages.json`, maps the full names of commonly used types to the package that ships them, for packages no project of the solution references yet. The fix installs the latest stable version from nuget.org. Both sidecars read the one table.
+
+Each of these three is an edit action that also carries a command. It resolves to the import edit, like any other action. It also carries the LSP command `sharplsp.addReferenceAndImport` with the arguments `{ title, reference: { kind: "project" | "package", projectPath, reference, version } }`. An LSP client applies an action's edit and then runs its command, so the import is in place first. The host then adds the reference through the MSBuild DOM:
+
+1. A project reference goes through the C# sidecar's `project/addProjectReference`. It adds `<ProjectReference Include="relative/path/P.csproj" />`, or changes nothing if the project already references P.
+2. A package goes through the `sharplsp/nuget/install` pipeline, which is aware of Central Package Management and restores in the background ([NUGET-XML-DOM]). An empty `version` resolves to the latest stable version on nuget.org.
+
+If the reference cannot be added, the command fails with the reason ([REFACTOR-NEVER-SILENT]). The failure message says that the import is already in place and that Undo removes it. The host reloads the compilers when a project file changes on disk, so the diagnostic clears once the reference resolves. The command does not apply the import itself through `workspace/applyEdit`, because a client may answer that request `{ applied: false }` without telling the user.
+
+#### [REFACTOR-NEVER-SILENT] Code Actions Never Fail Silently
+
+An action the user chose either makes its change or tells the user it did not, why, and that the details are in the log. No tier may turn a failure into an empty edit, a `null` result or a log line at debug level:
+
+- **Sidecars.** A resolve that cannot produce the action's change fails with a reason in plain words, and logs it at `Warning` with the action's title. The causes include: an unknown or expired action id, an action with no `ApplyChangesOperation`, an edit with no changes, and a change the edit cannot express (an added document with no path is placed at the path the project would give it, under the project directory and its folders; a project, metadata or analyzer reference change goes through [REFACTOR-IMPORT-REFERENCE]). A provider that throws while actions are listed is logged at `Warning` with the provider and the diagnostic id.
+- **Host.** A sidecar failure on `codeAction/resolve` or `workspace/executeCommand` becomes an LSP error response (`RequestFailed`) that carries the sidecar's reason, never a `null` result. The same applies when no sidecar is running for the file's language.
+- **VS Code.** The client hides failed requests (`revealOutputChannelOn: Never`), so middleware on `resolveCodeAction` reports each failed resolve once: `SharpLsp could not apply "<title>": <reason>. The details are in Output › SharpLsp.`, with a `Show Log` button that reveals the channel. The same message is shown, with the reason `the language server returned no changes`, when a resolved action carries neither an edit nor a command. An edit with no changes never reaches the client, because the sidecars and the host refuse it; the client cannot judge one itself, since VS Code's `WorkspaceEdit.size` counts text edits only and a rename-only edit has none. It is also shown, with the reason `the language server stopped before it answered; invoke the quick fix again`, when the client hands the action back unresolved without a cancellation, which it does when the connection closed under the request. A cancelled resolve is not a failure. The client's own command feature is off, because every SharpLsp command is registered by the extension. So the extension registers `sharplsp.addReferenceAndImport` itself, sends it to the server as `workspace/executeCommand`, and reports a failure the same way. That message adds that the import is already in place and that Undo removes it.
 
 ### [SHARPLSP-FEATURES-FORMATTING] Formatting
 
@@ -818,6 +903,7 @@ Priorities: P0 = launch blocker, P1 = fast follow, P2 = parity, P3 = later.
 | Rename symbol (all code elements and references) | P0 | 2 |
 | Rename file to match type | P1 | 3 |
 | Move type to file | P1 | 3 |
+| Move nested type out of its container | P1 | 3 |
 | Move type to namespace | P2 | 4 |
 | Safe delete | P2 | 4 |
 | Change signature | P2 | 4 |

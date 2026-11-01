@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::Result;
 use crossbeam_channel::Sender;
 use lsp_server::{Message, Notification};
-use lspkit_live::{ChangeEvent, FileWatcher, ScheduleConfig, Trigger};
+use lspkit_server::live::{ChangeEvent, FileWatcher, ScheduleConfig, Trigger};
 use lspkit_server::CancellationHandle;
 use serde_json::{json, Value};
 
@@ -105,7 +105,10 @@ fn watch(
 }
 
 /// Keep native depth selection in the shared watcher implementation.
-fn scoped_watcher(root: &Path, recursive: bool) -> Result<FileWatcher, lspkit_live::WatcherError> {
+fn scoped_watcher(
+    root: &Path,
+    recursive: bool,
+) -> Result<FileWatcher, lspkit_server::live::WatcherError> {
     if recursive {
         FileWatcher::new(root)
     } else {
@@ -121,7 +124,7 @@ impl Drop for InputMonitor {
 
 /// Feed the same standard watched-file handler used by clients.
 async fn observe(
-    mut watcher: lspkit_live::watcher::CoalescedWatcher,
+    mut watcher: lspkit_server::live::watcher::CoalescedWatcher,
     inbound: Sender<Message>,
     recursive: bool,
     cancellation: CancellationHandle,

@@ -116,7 +116,7 @@ let ``an undefined type from a known namespace is opened inside its module`` () 
         try
             let! _, before, _ = checkedFixture state paths[4]
             Assert.Equal<int array>([| 3 |], linesWith 39 before)
-            let! opened = applyActionAt state paths[4] OPENS "quickfix" "Add 'open System.IO'" (3, 17) (3, "    open System.IO")
+            let! opened = applyActionAt state paths[4] OPENS "quickfix" "Add 'open System.IO' — imports every type and module in namespace System.IO" (3, 17) (3, "    open System.IO")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error opened)
             let! titles = replaceTitlesAt state paths[4] 3 17
             Assert.Empty(titles)
@@ -134,20 +134,30 @@ let ``an undefined type opens whichever referenced namespace declares it`` () =
         let! state, dir, _, paths = nameFixProject ()
         try
             // 1. One namespace declares StringBuilder: its `open` goes below the module's gap.
-            let! built = applyActionAt state paths[5] BUILDERS "quickfix" "Add 'open System.Text'" (2, 14) (2, "open System.Text")
+            let! built = applyActionAt state paths[5] BUILDERS "quickfix" "Add 'open System.Text' — imports every type and module in namespace System.Text" (2, 14) (2, "open System.Text")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error built)
 
             // 2. Two declare Timer: both are offered, in order.
             let! titles = titlesOfKind state paths[6] "quickfix" 2 18
-            let opens = titles |> List.filter (fun title -> title.StartsWith "Add 'open ")
-            Assert.Equal<string list>([ "Add 'open System.Threading'"; "Add 'open System.Timers'" ], opens)
+            let opens =
+                titles
+                |> List.filter (fun title ->
+                    title.StartsWith "Add 'open " && not (title.StartsWith "Add 'open type "))
+            Assert.Equal<string list>(
+                [ "Add 'open System.Threading' — imports every type and module in namespace System.Threading"
+                  "Add 'open System.Timers' — imports every type and module in namespace System.Timers" ],
+                opens)
 
             // 3. Either resolves the name.
-            let! timers = applyActionAt state paths[6] TIMERS "quickfix" "Add 'open System.Timers'" (2, 18) (2, "open System.Timers")
+            let! timers =
+                applyActionAt
+                    state paths[6] TIMERS "quickfix"
+                    "Add 'open System.Timers' — imports every type and module in namespace System.Timers"
+                    (2, 18) (2, "open System.Timers")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error timers)
 
             // 4. An attribute named without its suffix opens its namespace too.
-            let! attributed = applyActionAt state paths[7] ATTRIBUTES "quickfix" "Add 'open System'" (2, 3) (2, "open System")
+            let! attributed = applyActionAt state paths[7] ATTRIBUTES "quickfix" "Add 'open System' — imports every type and module in namespace System" (2, 3) (2, "open System")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error attributed)
         finally
             cleanup dir
@@ -162,7 +172,7 @@ let ``an undefined type of the project's own namespace opens it`` () =
         let drawing = source [ "module Drawing"; ""; "let area (c: Circle) = c.Radius * c.Radius" ]
         let! state, dir, _, paths = loadWorkspace [ "Geometry.fs", geometry; "Drawing.fs", drawing ]
         try
-            let! opened = applyActionAt state paths[1] drawing "quickfix" "Add 'open Geometry'" (2, 13) (2, "open Geometry")
+            let! opened = applyActionAt state paths[1] drawing "quickfix" "Add 'open Geometry' — imports every type and module in namespace Geometry" (2, 13) (2, "open Geometry")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error opened)
         finally
             cleanup dir

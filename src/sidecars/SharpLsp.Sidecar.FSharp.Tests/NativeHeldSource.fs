@@ -73,7 +73,7 @@ let private windowsOwner (child: Process) (opened: TaskCompletionSource<unit>) (
 }
 
 let private windows path = task {
-    let script = NativePaths.Resolve(__SOURCE_DIRECTORY__, "../../../lspkit/test-support/windows-oplock/hold.ps1")
+    let script = NativePaths.Resolve(__SOURCE_DIRECTORY__, "../../sharplsp/tests/support/windows-oplock/hold.ps1")
     let child = start "powershell.exe" ["-NoProfile"; "-NonInteractive"; "-ExecutionPolicy"; "Bypass"; "-File"; script; "-Source"; path]
     try
         do! state child "ready"

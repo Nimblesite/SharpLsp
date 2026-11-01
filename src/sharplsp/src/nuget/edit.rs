@@ -176,6 +176,38 @@ pub fn add_compile_item(
     )
 }
 
+/// Sidecar request payload for a project reference (positional — must match C#
+/// `ProjectReferenceRequest` `[Key(0..1)]`).
+#[derive(serde::Serialize)]
+struct ProjectReferenceWire {
+    /// Absolute path of the project file that gains the reference.
+    file_path: String,
+    /// Absolute path of the referenced project file.
+    reference_path: String,
+}
+
+/// Add `<ProjectReference Include>` for `reference_path` to `file_path` via the
+/// sidecar; a project that already references it changes nothing.
+/// [REFACTOR-IMPORT-REFERENCE]
+pub fn add_project_reference(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
+    file_path: &str,
+    reference_path: &str,
+) -> Result<EditOutcome> {
+    let request = ProjectReferenceWire {
+        file_path: file_path.to_string(),
+        reference_path: reference_path.to_string(),
+    };
+    round_trip(
+        sidecar,
+        runtime,
+        "project/addProjectReference",
+        request,
+        file_path,
+    )
+}
+
 /// Remove a `<Compile Include>` item via the sidecar, either separator
 /// spelling; an include the project lacks changes nothing.
 /// [SE-REMOVE-FILE-REQUEST]

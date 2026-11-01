@@ -66,6 +66,25 @@ export function retryIncompleteDiagnostic(error: unknown): undefined {
   return undefined;
 }
 
+/**
+ * A document outside every project may also be refused, settled for the current
+ * inputs: server-cancelled with the compiler's cause and never retriggered
+ * ([DIAG-TRUTH-GUARANTEES], #527).
+ */
+export function retryOrRefusedDiagnostic(error: unknown): undefined {
+  assert.ok(error instanceof ResponseError);
+  assert.equal(error.code, -32802, 'only incomplete or refused snapshots skip a report');
+  const refused =
+    (error.data as { retriggerRequest?: unknown } | undefined)?.retriggerRequest === false;
+  if (refused) {
+    assert.deepEqual(error.data, { retriggerRequest: false });
+    assert.ok(error.message.length > 0, "a refusal carries the compiler's cause");
+  } else {
+    retryIncompleteDiagnostic(error);
+  }
+  return undefined;
+}
+
 export const ACCURACY_CASES = [
   {
     language: 'F#',

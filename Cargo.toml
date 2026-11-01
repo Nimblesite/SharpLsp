@@ -1,8 +1,6 @@
 [workspace]
 members = ["src/sharplsp"]
 default-members = ["src/sharplsp"]
-# The lspkit submodule is its own workspace; its crates are path dependencies.
-exclude = ["lspkit"]
 resolver = "2"
 
 [workspace.lints.clippy]

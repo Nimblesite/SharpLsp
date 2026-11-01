@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis.CodeRefactorings;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 using Serilog;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -14,7 +15,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// Discovers Roslyn code fix and refactoring providers via reflection,
 /// enumerates available code actions for a range, and resolves them to edits.
 /// </summary>
-internal sealed class CodeActionResolver
+internal sealed partial class CodeActionResolver
 {
     private static readonly Lazy<ImmutableArray<CodeFixProvider>> CachedFixProviders = new(
         LoadFixProviders
@@ -42,31 +43,10 @@ internal sealed class CodeActionResolver
     {
         var items = new List<CodeActionItem>();
         await CollectCodeFixesAsync(document, span, items, ct).ConfigureAwait(false);
+        await CollectImportFixesAsync(document, span, items, ct).ConfigureAwait(false);
         await CollectHeadlessOverridesAsync(document, span, items, ct).ConfigureAwait(false);
         await CollectRefactoringsAsync(document, span, items, ct).ConfigureAwait(false);
         return items;
-    }
-
-    /// <summary>
-    /// Resolve a previously cached code action by ID, returning workspace edits.
-    /// </summary>
-    public async Task<WorkspaceEditResult?> ResolveAsync(
-        int actionId,
-        Solution originalSolution,
-        CancellationToken ct
-    )
-    {
-        if (!_pendingActions.TryRemove(actionId, out var codeAction))
-        {
-            return null;
-        }
-
-        var operations = await codeAction.GetOperationsAsync(ct).ConfigureAwait(false);
-        var applyOp = operations.OfType<ApplyChangesOperation>().FirstOrDefault();
-        return applyOp is null
-            ? new WorkspaceEditResult()
-            : await BuildWorkspaceEditAsync(originalSolution, applyOp.ChangedSolution, ct)
-                .ConfigureAwait(false);
     }
 
     private async Task CollectCodeFixesAsync(
@@ -195,7 +175,14 @@ internal sealed class CodeActionResolver
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "[CodeAction] Fix provider {Provider} failed", provider.GetType().Name);
+            // [REFACTOR-NEVER-SILENT]: a provider that throws while actions are
+            // listed is logged at Warning with the provider and the diagnostic id.
+            Log.Warning(
+                ex,
+                "[CodeAction] Fix provider {Provider} threw while listing fixes for {DiagnosticId}",
+                provider.GetType().Name,
+                diagnostic.Id
+            );
         }
     }
 
@@ -328,9 +315,10 @@ internal sealed class CodeActionResolver
         }
         catch (Exception ex)
         {
-            Log.Debug(
+            // [REFACTOR-NEVER-SILENT]: no provider failure may hide at Debug level.
+            Log.Warning(
                 ex,
-                "[CodeAction] Refactoring provider {Provider} failed",
+                "[CodeAction] Refactoring provider {Provider} threw while listing actions",
                 provider.GetType().Name
             );
         }
@@ -456,7 +444,7 @@ internal sealed class CodeActionResolver
         return items.Any(item => item.Title == title && item.Kind == kind);
     }
 
-    private CodeActionItem CacheAction(CodeAction action, string kind, string title)
+    internal CodeActionItem CacheAction(CodeAction action, string kind, string title)
     {
         var id = Interlocked.Increment(ref _nextId);
         _pendingActions[id] = action;
@@ -514,70 +502,42 @@ internal sealed class CodeActionResolver
     {
         var oldDoc = oldSolution.GetDocument(docId);
         var newDoc = newSolution.GetDocument(docId);
-        if (oldDoc is null || newDoc?.FilePath is null)
+        if (oldDoc?.FilePath is null || newDoc?.FilePath is null)
         {
             return;
         }
 
         var edits = await DocumentText.ComputeEditsAsync(oldDoc, newDoc, ct).ConfigureAwait(false);
-        if (edits.Count > 0)
+        var renameTo = RenameTarget(oldDoc, newDoc);
+        if (edits.Count > 0 || renameTo is not null)
         {
+            // A rename keeps the old path as the edit target; the host applies text edits to RenameTo.
+            // Implements [REFACTOR-MOVE-TYPE-RENAME-FILE].
             result.DocumentChanges.Add(
-                new DocumentEditResult { FilePath = newDoc.FilePath, Edits = edits }
+                new DocumentEditResult
+                {
+                    FilePath = oldDoc.FilePath,
+                    RenameTo = renameTo,
+                    Edits = edits,
+                }
             );
         }
     }
 
-    private static async Task CollectAddedDocumentsAsync(
-        Solution newSolution,
-        ProjectChanges projectChange,
-        WorkspaceEditResult result,
-        CancellationToken ct
-    )
+    private static string? RenameTarget(Document oldDocument, Document newDocument)
     {
-        foreach (var docId in projectChange.GetAddedDocuments())
+        var oldPath = oldDocument.FilePath;
+        var newPath = newDocument.FilePath;
+        if (oldPath is null || newPath is null)
         {
-            await CollectAddedDocumentAsync(newSolution, docId, result, ct).ConfigureAwait(false);
-        }
-    }
-
-    private static async Task CollectAddedDocumentAsync(
-        Solution solution,
-        DocumentId docId,
-        WorkspaceEditResult result,
-        CancellationToken ct
-    )
-    {
-        var document = solution.GetDocument(docId);
-        if (document?.FilePath is null)
-        {
-            return;
+            return null;
         }
 
-        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        result.DocumentChanges.Add(CreateAddedDocumentEdit(document.FilePath, text.ToString()));
-    }
-
-    private static DocumentEditResult CreateAddedDocumentEdit(string filePath, string text)
-    {
-        return new DocumentEditResult
-        {
-            FilePath = filePath,
-            Edits = [CreateWholeDocumentEdit(text)],
-            Create = true,
-        };
-    }
-
-    private static TextEditResult CreateWholeDocumentEdit(string text)
-    {
-        return new TextEditResult
-        {
-            StartLine = 0,
-            StartCharacter = 0,
-            EndLine = 0,
-            EndCharacter = 0,
-            NewText = text,
-        };
+        // Roslyn's rename-file refactoring changes Document.Name, not FilePath.
+        var target = NativePaths.AreEqual(oldPath, newPath)
+            ? NativePaths.Join(NativePaths.DirectoryOf(oldPath), newDocument.Name)
+            : newPath;
+        return NativePaths.AreEqual(oldPath, target) ? null : target;
     }
 
     private static ImmutableArray<CodeFixProvider> LoadFixProviders()
@@ -591,6 +551,7 @@ internal sealed class CodeActionResolver
         [
             .. AnalyzerDiagnosticResolver.DiscoverProviders<CodeRefactoringProvider>(),
             new MergeDeclarationAssignmentCodeRefactoringProvider(),
+            new MoveTypeOut.MoveTypeOutCodeRefactoringProvider(),
         ];
     }
 }
