@@ -5,19 +5,39 @@
  * Testing API wiring and nothing else.
  */
 
-import { directoryOf } from './paths';
+import * as fs from 'node:fs';
+import { directoryOf, hasExtension } from './paths';
 import * as vscode from 'vscode';
 import * as state from './state';
 
 export { dirOf } from './test-mtp-modules';
 
-/** The paths to enumerate: the loaded solution, else each workspace folder. */
+/** Extensions `dotnet test <folder>` resolves from a folder's top level. */
+const BUILDABLE_EXTENSIONS = ['.sln', '.slnx', '.csproj', '.fsproj', '.vbproj'] as const;
+
+/**
+ * The paths to enumerate: the loaded solution, else each workspace folder that
+ * `dotnet test` can resolve. A folder with no solution or project at its top
+ * level (a Rust repo with one C# host three folders down) always fails with
+ * MSB1003, so it is no target — enumerating it only paints a false
+ * "Test discovery failed" row. [TEST-DISCOVERY-TARGETS]
+ */
 export function discoveryTargets(): string[] {
   const solution = state.solutionPath.value;
   if (solution !== undefined) {
     return [solution];
   }
-  return (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+  return (vscode.workspace.workspaceFolders ?? [])
+    .map((folder) => folder.uri.fsPath)
+    .filter(holdsBuildableFile);
+}
+
+function holdsBuildableFile(folder: string): boolean {
+  try {
+    return fs.readdirSync(folder).some((name) => hasExtension(name, ...BUILDABLE_EXTENSIONS));
+  } catch {
+    return false;
+  }
 }
 
 /**

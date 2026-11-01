@@ -498,6 +498,14 @@ DIRECTLY into the results directory, not one level below it as `coverlet.collect
 test, so Run with Coverage reports every selected test as not run with the message naming
 that package, exactly as the TRX message names its own.
 
+## Discovery targets `[TEST-DISCOVERY-TARGETS]`
+
+With a solution loaded, the one discovery target is that solution. With none, each workspace
+folder whose top level holds a `.sln`, `.slnx`, `.csproj`, `.fsproj` or `.vbproj` is a target.
+A folder with none of those MUST NOT be enumerated: `dotnet test` cannot resolve it (MSB1003),
+so listing it only adds a "Test discovery failed" row for a folder that never had a test
+project at its top level.
+
 ## Microsoft.Testing.Platform: two runners in one tree `[TEST-MTP-ROUTING]`
 
 The runner is chosen per discovery TARGET ([TEST-MTP-DETECT]), and a multi-root workspace
