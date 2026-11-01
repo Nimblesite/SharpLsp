@@ -5,15 +5,13 @@
  * Testing API wiring and nothing else.
  */
 
-import * as fs from 'node:fs';
-import { directoryOf, hasExtension } from './paths';
+import { directoryOf } from './paths';
 import * as vscode from 'vscode';
 import * as state from './state';
 
-export { dirOf } from './test-mtp-modules';
+import { holdsBuildableFile } from './test-mtp-modules';
 
-/** Extensions `dotnet test <folder>` resolves from a folder's top level. */
-const BUILDABLE_EXTENSIONS = ['.sln', '.slnx', '.csproj', '.fsproj', '.vbproj'] as const;
+export { dirOf } from './test-mtp-modules';
 
 /**
  * The paths to enumerate: the loaded solution, else each workspace folder that
@@ -23,21 +21,21 @@ const BUILDABLE_EXTENSIONS = ['.sln', '.slnx', '.csproj', '.fsproj', '.vbproj'] 
  * "Test discovery failed" row. [TEST-DISCOVERY-TARGETS]
  */
 export function discoveryTargets(): string[] {
-  const solution = state.solutionPath.value;
-  if (solution !== undefined) {
-    return [solution];
-  }
-  return (vscode.workspace.workspaceFolders ?? [])
-    .map((folder) => folder.uri.fsPath)
-    .filter(holdsBuildableFile);
+  return state.solutionPath.value === undefined
+    ? buildWatchTargets().filter(holdsBuildableFile)
+    : buildWatchTargets();
 }
 
-function holdsBuildableFile(folder: string): boolean {
-  try {
-    return fs.readdirSync(folder).some((name) => hasExtension(name, ...BUILDABLE_EXTENSIONS));
-  } catch {
-    return false;
-  }
+/**
+ * Where a build can happen: the loaded solution, else every workspace folder. A
+ * folder with no project yet still counts, since one may be created and built
+ * there before any watcher reports it. [TEST-REACTIVITY-BUILD]
+ */
+export function buildWatchTargets(): string[] {
+  const solution = state.solutionPath.value;
+  return solution === undefined
+    ? (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)
+    : [solution];
 }
 
 /**

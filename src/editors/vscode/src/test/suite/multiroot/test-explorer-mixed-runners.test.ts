@@ -1,6 +1,7 @@
 // A VSTest folder BESIDE a Microsoft.Testing.Platform folder, in ONE window.
 //
-// With no solution loaded, discovery enumerates every workspace folder, and one
+// With no solution loaded, discovery enumerates every workspace folder holding a
+// project or solution at its top level, and one
 // ▶ can select tests from several of them. Each test must still go to the
 // runner that DISCOVERED it: a VSTest id through `dotnet test`, an MTP id
 // through its own module. Sending every run to MTP as soon as ANY folder was
@@ -16,7 +17,7 @@
 // from belongs to the VSTest folder: an MTP rebuild that built "the run's
 // directory" would build the wrong project and run a stale module.
 //
-// Covers [TEST-MTP-DETECT], [TEST-MTP-RUN] and [TEST-MTP-ROUTING].
+// Covers [TEST-MTP-DETECT], [TEST-MTP-RUN], [TEST-MTP-ROUTING] and [TEST-DISCOVERY-TARGETS].
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -52,6 +53,13 @@ import {
 import { comparablePath } from '../test-helpers';
 import { FIXTURE_BUILD_MS } from '../test-timeouts';
 import { spyOnDiscover } from '../test-discovery-spy';
+import * as state from '../../../state.js';
+
+/** A project with no test framework: it builds and lists nothing. */
+const EMPTY_PROJECT_XML =
+  '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>';
+const WATCHER_MS = 30_000;
+const WATCHER_SETTLE_MS = 3_000;
 
 /** The F# VSTest project, alone in the FIRST workspace folder. */
 const VSTEST_PROJECT = 'MixedVsTestFs';
@@ -121,6 +129,25 @@ function folderNamed(name: string): string {
   return folder.uri.fsPath;
 }
 
+/** True when `dir` can be listed: chmod refuses nothing to root or on Windows. */
+function isReadable(dir: string): boolean {
+  try {
+    fs.readdirSync(dir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Wait for a reactive effect the editor drives from its file watcher. */
+async function pollUntil(done: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + WATCHER_MS;
+  while (!done()) {
+    assert.ok(Date.now() < deadline, `timed out waiting: ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
 /** Empty a workspace folder without removing the folder VS Code has open. */
 function emptyFolder(dir: string): void {
   for (const entry of fs.readdirSync(dir)) {
@@ -140,12 +167,14 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
   let api: SharpLspExtensionApi;
   let vstestDir: string;
   let mtpDir: string;
+  let noProjectDir: string;
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
     api = await activateTestExplorer();
     vstestDir = folderNamed('vstest');
     mtpDir = folderNamed('mtp');
+    noProjectDir = folderNamed('no-project');
     const vstestXml = projectXml(XUNIT_PACKAGES, 'CalculatorTests.fs');
     writeProject(
       vstestDir,
@@ -188,6 +217,87 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
     }, api.testController);
     emptyFolder(vstestDir);
     emptyFolder(mtpDir);
+    emptyFolder(noProjectDir);
+  });
+
+  test('a folder is a discovery target only while dotnet test can resolve it', async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    const both = [vstestDir, mtpDir];
+    const withProject = [vstestDir, mtpDir, noProjectDir];
+    const errorRows = (): string[] =>
+      rootsOf(api.testController.items)
+        .filter((root) => root.error !== undefined)
+        .map((root) => root.label);
+
+    // 1. Nothing buildable: no target, no false "Test discovery failed" row.
+    assert.deepStrictEqual(discoveryTargets(), both, 'an empty folder is no target');
+    assert.deepStrictEqual(errorRows(), [], 'and it paints no error row');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(EXPECTED),
+      'the real folders are still discovered beside it',
+    );
+
+    // 2. A directory that merely carries a project suffix is not a project.
+    const lookalike = path.join(noProjectDir, 'Fixture.csproj');
+    fs.mkdirSync(lookalike);
+    fs.writeFileSync(path.join(noProjectDir, 'notes.txt'), 'nothing to build', 'utf8');
+    assert.deepStrictEqual(discoveryTargets(), both, 'a .csproj directory is no target');
+    emptyFolder(noProjectDir);
+
+    // 3. Every extension `dotnet` resolves counts, in any case.
+    for (const name of ['A.sln', 'A.slnx', 'A.slnf', 'A.csproj', 'A.FSPROJ', 'A.vbproj']) {
+      const file = path.join(noProjectDir, name);
+      fs.writeFileSync(file, '', 'utf8');
+      assert.deepStrictEqual(discoveryTargets(), withProject, `${name} makes a target`);
+      fs.rmSync(file);
+    }
+    assert.deepStrictEqual(discoveryTargets(), both, 'and removing it takes the target away');
+
+    // 4. A folder that could not be read is not an empty answer: `dotnet` must
+    //    get to refuse it, so the failure reaches the user as an error row.
+    fs.chmodSync(noProjectDir, 0o000);
+    try {
+      const refused = !isReadable(noProjectDir);
+      assert.deepStrictEqual(discoveryTargets(), refused ? withProject : both, 'unreadable stays');
+    } finally {
+      fs.chmodSync(noProjectDir, 0o755);
+    }
+
+    // 5. A loaded solution takes over from every folder.
+    const solution = path.join(vstestDir, 'Loaded.sln');
+    state.solutionPath.value = solution;
+    assert.deepStrictEqual(discoveryTargets(), [solution], 'the solution is the one target');
+    state.solutionPath.value = undefined;
+    assert.deepStrictEqual(discoveryTargets(), both, 'and the folders return without it');
+
+    // 6. Creating and deleting a project rediscovers with no manual refresh. The
+    //    watcher echoes of the files above settle first, so only these count.
+    await new Promise((resolve) => setTimeout(resolve, WATCHER_SETTLE_MS));
+    await api.testController.whenIdle();
+    const spy = spyOnDiscover(api.testController);
+    try {
+      const project = path.join(noProjectDir, 'Empty.csproj');
+      fs.writeFileSync(project, EMPTY_PROJECT_XML, 'utf8');
+      await pollUntil(() => spy.modes.length > 0, 'a new project rediscovers');
+      await api.testController.whenIdle();
+      assert.deepStrictEqual(discoveryTargets(), withProject, 'the new project is a target');
+      assert.deepStrictEqual(errorRows(), [], 'and it lists its no tests without an error');
+
+      const seen = spy.modes.length;
+      fs.rmSync(project);
+      await pollUntil(() => spy.modes.length > seen, 'a deleted project rediscovers');
+      await api.testController.whenIdle();
+      assert.deepStrictEqual(discoveryTargets(), both, 'the target goes with its project');
+    } finally {
+      spy.restore();
+      emptyFolder(noProjectDir);
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(EXPECTED),
+      'none of that disturbed the real folders',
+    );
   });
 
   test('each folder is discovered by its own runner, under its own assembly root', function () {
