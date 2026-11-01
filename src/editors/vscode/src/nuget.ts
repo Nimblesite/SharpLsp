@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { info } from './log';
 import { getErrorMessage } from './utils';
+import { NuGetBrowserPanel } from './nuget-browser';
+import { fileNameOf } from './paths';
+import type { LanguageClient } from 'vscode-languageclient/node';
 
 /**
  * NuGet package management: search, add, update packages.
@@ -77,28 +80,14 @@ export async function addNuGetPackage(): Promise<void> {
   await searchAndAdd(pickProjectFile);
 }
 
-/**
- * Update a NuGet package in a project.
- */
-export async function updateNuGetPackage(): Promise<void> {
+/** Open the host-backed package workflow for an explicit target. [NUGET-REQUESTS-UPDATE-CONFIRM] */
+export async function updateNuGetPackage(
+  context: vscode.ExtensionContext,
+  getClient: () => LanguageClient | undefined,
+): Promise<NuGetBrowserPanel | undefined> {
   const projectFile = await pickProjectFile();
-  if (projectFile === undefined) {
-    return;
-  }
-
-  const packageName = await vscode.window.showInputBox({
-    prompt: 'Package name to update',
-  });
-  if (packageName === undefined || packageName === '') {
-    return;
-  }
-
-  try {
-    await runDotnet(['add', projectFile, 'package', packageName]);
-    void vscode.window.showInformationMessage(`Updated ${packageName}`);
-  } catch (err) {
-    void vscode.window.showErrorMessage(`Update failed: ${getErrorMessage(err)}`);
-  }
+  if (projectFile === undefined) return undefined;
+  return NuGetBrowserPanel.open(context, projectFile, fileNameOf(projectFile), getClient);
 }
 
 /** Restore NuGet packages for all projects. */
@@ -185,12 +174,18 @@ async function runDotnet(args: string[]): Promise<string> {
 /**
  * Register NuGet commands.
  */
-export function registerNuGetCommands(context: vscode.ExtensionContext): void {
+export function registerNuGetCommands(
+  context: vscode.ExtensionContext,
+  getClient: () => LanguageClient | undefined,
+): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('sharplsp.nuget.add', addNuGetPackage),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('sharplsp.nuget.update', updateNuGetPackage),
+    vscode.commands.registerCommand(
+      'sharplsp.nuget.update',
+      async () => await updateNuGetPackage(context, getClient),
+    ),
   );
   context.subscriptions.push(
     vscode.commands.registerCommand('sharplsp.nuget.restore', restorePackages),

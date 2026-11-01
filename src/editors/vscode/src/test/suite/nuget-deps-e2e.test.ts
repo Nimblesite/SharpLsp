@@ -44,6 +44,15 @@ import { effect } from '../../signals.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors, assertContainsAll, removeDirRecursive } from './test-helpers';
 import { COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
+import type { NuGetBrowserPanel } from '../../nuget-browser';
+import { joinPath } from '../../paths';
+import {
+  assertCheckedInProjectsUnchanged,
+  selectExpectedProject,
+  snapshotCheckedInProjects,
+  UPDATE_PROJECTS,
+  writeUpdateProject,
+} from './nuget-update-test-kit';
 
 // ── Fake nuget.org search responses ───────────────────────────────
 
@@ -145,6 +154,8 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   let tmpDir: string;
   let stubs: UiStubs;
   let fetchStub: { urls: string[]; restore: () => void } | undefined;
+  let palettePanel: NuGetBrowserPanel | undefined;
+  let paletteScratch: string | undefined;
 
   setup(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-nuget-cmd-'));
@@ -155,6 +166,10 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     stubs.restore();
     fetchStub?.restore();
     fetchStub = undefined;
+    palettePanel?.dispose();
+    palettePanel = undefined;
+    if (paletteScratch !== undefined) removeDirRecursive(paletteScratch);
+    paletteScratch = undefined;
     await closeAllEditors();
     removeDirRecursive(tmpDir);
   });
@@ -355,94 +370,42 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     );
   });
 
-  test('sharplsp.nuget.update prompts for a package name after a project is resolved', async function () {
-    // This queues a package name, so `nuget.update` does NOT return early the way
-    // the blank-name test above it does: it resolves the project and then shells
-    // out to the real `dotnet` CLI, which on an offline agent pays NuGet's own
-    // connect timeout before reporting the handled failure this asserts on. That
-    // is CLI work, not a command round trip, which is why the two sibling tests
-    // that also reach `dotnet` declare `DOTNET_CLI_MS`.
-    this.timeout(DOTNET_CLI_MS);
-    // Single project in this temp tree → pickProjectFile returns it without a pick,
-    // BUT findFiles searches the real workspace; queue a project pick by substring
-    // in case multiple projects are present, then the package-name input box.
-    const projectPath = writeProjectFile(tmpDir, 'UpdateTarget', {
-      packages: [{ id: 'Serilog', version: '3.0.0' }],
-    });
-    stubs
-      .queuePick((items) => {
-        const list = items as { label?: string; uri?: vscode.Uri }[];
-        return list.find((it) => it.uri?.fsPath === projectPath) ?? list[0];
-      })
-      .queueInput('Serilog');
+  test('sharplsp.nuget.update opens the host browser for the exact disposable project', async function () {
+    this.timeout(COMMAND_MS);
+    const checkedIn = await snapshotCheckedInProjects();
+    const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    assert.ok(workspace !== undefined, 'the real workspace is open');
+    paletteScratch = fs.mkdtempSync(joinPath(workspace, '.nuget-palette-'));
+    const scratch = paletteScratch;
+    const shape = UPDATE_PROJECTS.find((candidate) => candidate.extension === 'csproj');
+    assert.ok(shape !== undefined, 'the C# fixture shape exists');
+    const project = writeUpdateProject(scratch, shape);
+    stubs.queuePick(selectExpectedProject(project));
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.update');
-    }, 'update must not throw even when dotnet is offline');
-
-    // The package-name input box is the deterministic part of this flow.
-    const namePrompt = stubs.log.inputBoxOptions.find((o) =>
-      o?.prompt?.includes('Package name to update'),
+    palettePanel = await vscode.commands.executeCommand<NuGetBrowserPanel | undefined>(
+      'sharplsp.nuget.update',
     );
-    assert.ok(namePrompt, 'the "Package name to update" input box was shown');
-    // Either an "Updated" success toast or a handled "Update failed" error toast.
-    const reached =
-      stubs.log.infoMessages.some((m) => m.includes('Updated Serilog')) ||
-      stubs.log.errorMessages.some((m) => m.includes('Update failed'));
-    assert.ok(reached, 'update ended in a success or a handled-failure toast');
+    const panel = palettePanel;
+
+    assert.ok(panel !== undefined, 'the command returns its host-backed browser');
+    assert.deepEqual(stubs.log.inputBoxOptions, [], 'no package-name CLI prompt remains');
+    assert.deepEqual(stubs.log.errorMessages, [], 'opening the browser is not an update failure');
+    assertCheckedInProjectsUnchanged(checkedIn);
   });
 
-  test('sharplsp.nuget.update returns early when the package name is left blank', async function () {
+  test('sharplsp.nuget.update cancellation opens nothing and changes no fixture', async function () {
     this.timeout(COMMAND_MS);
-    const projectPath = writeProjectFile(tmpDir, 'UpdateBlank');
-    stubs
-      .queuePick((items) => {
-        const list = items as { label?: string; uri?: vscode.Uri }[];
-        return list.find((it) => it.uri?.fsPath === projectPath) ?? list[0];
-      })
-      .queueInput(''); // empty name → early return, no toast
+    const checkedIn = await snapshotCheckedInProjects();
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.update');
-    });
-
-    assert.ok(
-      !stubs.log.infoMessages.some((m) => m.includes('Updated')),
-      'no "Updated" toast when the package name is blank',
+    const panel = await vscode.commands.executeCommand<NuGetBrowserPanel | undefined>(
+      'sharplsp.nuget.update',
     );
 
-    // Interaction 2 - a blank name is a CANCELLATION, not a failure. The user
-    // pressed Escape; an error toast for that is noise.
-    assert.deepEqual(stubs.log.errorMessages, [], 'cancelling is not an error');
-    const prompt = stubs.log.inputBoxOptions.find((options) =>
-      options?.prompt?.includes('Package name to update'),
-    );
-    assert.ok(prompt, 'the package-name box was still shown before the user cancelled');
-    assert.strictEqual(
-      stubs.log.inputBoxOptions.length,
-      1,
-      'and only once - a blank answer is not re-prompted',
-    );
-
-    // Interaction 3 - [NUGET-XML-DOM]: nothing was written. A cancelled update
-    // that still rewrites the project is the worst possible outcome.
-    const after = fs.readFileSync(projectPath, 'utf8');
-    assert.ok(after.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the project is intact');
-    assert.ok(
-      !after.includes('<PackageReference'),
-      'and gained no package reference from a cancelled update',
-    );
-    assert.deepEqual(
-      parseProjectDependencies(projectPath).nugetPackages,
-      [],
-      'the parsed dependency set is unchanged',
-    );
-    assert.deepEqual(
-      parseProjectDependencies(projectPath).projectReferences,
-      [],
-      'and so is its reference set',
-    );
-    assert.ok(fs.existsSync(projectPath), 'the project file is still on disk');
+    assert.strictEqual(panel, undefined, 'dismissing the project picker cancels the command');
+    assert.deepEqual(stubs.log.inputBoxOptions, [], 'cancellation never reaches a CLI prompt');
+    assert.deepEqual(stubs.log.errorMessages, [], 'cancellation is not an error');
+    assert.deepEqual(stubs.log.infoMessages, [], 'cancellation reports no false success');
+    assertCheckedInProjectsUnchanged(checkedIn);
   });
 
   test('sharplsp.nuget.restore runs dotnet restore and reports the outcome', async function () {

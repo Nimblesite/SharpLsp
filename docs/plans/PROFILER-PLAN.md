@@ -211,6 +211,7 @@ These are SharpLsp's shipped profiler features. Cutover is blocked until each ro
 
 - [ ] Every parity row is delivered or dropped by the owner (open rows: counters, keep dump, inspect, known-leak hints, retained size, `.nettrace` import, graph UI).
 - [ ] Delete the sections listed in [PROFILER-SHARED-LIBRARY-SUPERSEDED] (they still describe features whose parity is open).
-- [ ] Update the README section "Opening a trace file" and the `dotnet tool install` hints, and the website screenshots.
+- [x] Update the README section "Opening a trace file" and the `dotnet tool install` hints.
+- [ ] Update the website screenshots.
 - [x] Spec citations pass (checked 2026-10-15). New host code cites `PROFILER-SHARED-LIBRARY-*`.
 - [ ] **Cutover**: the full Rust and editor suites pass on Windows and Linux, the coverage gates pass, and the VSIX packages are verified. On 2026-10-15 only macOS was run, and only the profiler suites of the extension.
