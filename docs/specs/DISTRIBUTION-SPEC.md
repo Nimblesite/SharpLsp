@@ -1213,6 +1213,15 @@ Invariants:
   so the union shrinks and the ratchet catches it. Coverage is never computed
   from "whatever shards happened to finish".
 
+### [DIST-CI-VSIX-HOST-CACHE] Test Host Cache
+
+Every shard runs against a VS Code test host of about 340MB. GitHub caches are ref-scoped and `ci.yml` runs only on pull requests, so a cache saved by a pull request serves that pull request alone: its first run downloads the host once per shard, and the copies fill the repository's cache quota.
+
+- `seed-vscode-test-host.yml` is the only writer. It runs daily on `main`, once per platform, and looks the key up first, so a release already cached downloads nothing.
+- A shard restores and never saves. A new release that has not been seeded yet restores the previous host and downloads the new one for that run.
+- `.github/actions/vscode-test-host-key` is the one definition of the key: the runner OS and the current stable release. If the release feed is unreachable the key is `unresolved`, no shard fails on it, the OS prefix still restores an earlier host, and nothing is saved under that key.
+- `.vscode-test.mjs` raises Node's per-address connection attempt from 250ms to 10s. At 250ms a slow first address and a refused second one fail the host download with `AggregateError [ETIMEDOUT]` before any test runs.
+
 ### [DIST-CI-VSIX-SHARDS-TIMEOUTS] Test Timeout Tiers
 
 Every wait in the suite is a poll for the STATE the next step needs, never a count of events and never a fixed sleep, and every poll takes its budget from one tier in `src/editors/vscode/src/test/suite/test-timeouts.ts`. A test that needs longer names the slow process it waits on, in a comment, at the site.

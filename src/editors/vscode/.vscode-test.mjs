@@ -1,7 +1,13 @@
 import { defineConfig } from '@vscode/test-cli';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+
+// The test CLI downloads the host in this process. Node gives each resolved address
+// 250ms by default, so a slow first address and a refused second one fail the whole
+// download within that window, before any test runs ([DIST-CI-VSIX-HOST-CACHE]).
+net.setDefaultAutoSelectFamilyAttemptTimeout(10_000);
 
 // Default the test host's --user-data-dir to a SHORT path under the OS temp
 // dir, not the repo-relative `.vscode-test/`. VS Code's main IPC handle is a

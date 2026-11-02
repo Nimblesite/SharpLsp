@@ -1,0 +1,40 @@
+# agent-pmo:0b21609
+---
+# Implements [DIST-CI-VSIX-HOST-CACHE]. The ONE cache key of the VS Code test
+# host, shared by the shards that restore it and the workflow that seeds it.
+name: VS Code test host cache key
+description: >-
+  Names the current stable VS Code release so a cached host is replaced when,
+  and only when, a new release ships.
+outputs:
+  key:
+    description: Exact key for this runner OS and release.
+    value: ${{ steps.release.outputs.key }}
+  prefix:
+    description: Matches any earlier release, which the test host's download falls back to.
+    value: ${{ steps.release.outputs.prefix }}
+  version:
+    description: The stable release, or "unresolved" when the feed could not be read.
+    value: ${{ steps.release.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve the stable VS Code release
+      id: release
+      shell: bash
+      # An unreachable feed must not fail the job here: the prefix still restores
+      # an earlier host, and the download falls back to it ([DIST-CI-VSIX-HOST-CACHE]).
+      run: |-
+        set -uo pipefail
+        url='https://update.code.visualstudio.com/api/releases/stable?released=true'
+        version=$(curl -fsS --retry 5 --retry-all-errors --connect-timeout 10 --max-time 60 "$url" | jq -r '.[0] // empty')
+        if [ -z "$version" ]; then
+          echo "::warning::Could not resolve the stable VS Code release"
+          version=unresolved
+        fi
+        prefix="vscode-test-$RUNNER_OS-"
+        {
+          echo "version=$version"
+          echo "key=$prefix$version"
+          echo "prefix=$prefix"
+        } >> "$GITHUB_OUTPUT"
