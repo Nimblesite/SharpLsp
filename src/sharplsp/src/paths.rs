@@ -378,6 +378,19 @@ pub fn relative_to(path: &Path, root: &Path) -> Option<String> {
         .map(|relative| relative.to_string_lossy().into_owned())
 }
 
+/// The comparison-keyed remainder of `path` below directory `root`, with no
+/// leading slash. `None` when `path` is not beneath `root` — a sibling that only
+/// shares a name prefix (`packages-cache` beside `packages`) is not beneath it
+/// (GitHub #170). [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn key_beneath(path: &str, root: &str) -> Option<String> {
+    let root_key = comparison_key(root);
+    let root_key = root_key.trim_end_matches('/');
+    comparison_key(path)
+        .strip_prefix(root_key)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .map(str::to_owned)
+}
+
 /// `path` spelled with forward slashes. [SHARPLSP-ARCHITECTURE-PATHS]
 pub fn slashed(path: &str) -> String {
     path.replace('\\', "/")
