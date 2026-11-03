@@ -68,4 +68,4 @@ serde_json = "1"
 workspace = true
 
 [target."cfg(windows)".dependencies]
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
