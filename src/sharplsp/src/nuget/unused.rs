@@ -66,16 +66,14 @@ fn id_set(paths: &[String], root: &str) -> HashSet<String> {
 /// `/.nuget/packages/` marker when the root is unknown. Returns `None` for
 /// assemblies that are not inside a packages folder (framework / project refs).
 fn package_id_from_path(path: &str, root: &str) -> Option<String> {
-    let normalized = crate::paths::comparison_key(path);
-
-    let root_normalized = crate::paths::comparison_key(root);
-    if !root_normalized.is_empty() {
-        let trimmed = root_normalized.trim_end_matches('/');
-        if let Some(rest) = normalized.strip_prefix(trimmed) {
-            return first_segment(rest);
-        }
+    if let Some(rest) = Some(root)
+        .filter(|root| !root.is_empty())
+        .and_then(|root| crate::paths::key_beneath(path, root))
+    {
+        return first_segment(&rest);
     }
 
+    let normalized = crate::paths::comparison_key(path);
     let marker_key = crate::paths::comparison_key(NUGET_MARKER);
     let marker = normalized.find(&marker_key)?;
     let rest = normalized.get(marker + marker_key.len()..)?;
@@ -134,6 +132,21 @@ mod tests {
         let path = r"C:\Users\u\.nuget\packages\Serilog\3.1.0\lib\net8.0\Serilog.dll";
         assert_eq!(
             package_id_from_path(path, r"C:\Users\u\.nuget\packages"),
+            Some("serilog".to_string())
+        );
+    }
+
+    /// GitHub #170: a sibling of the packages root that only shares its name
+    /// prefix is not inside it, so its assemblies belong to no package.
+    #[test]
+    fn sibling_directory_sharing_root_prefix_maps_to_no_package() {
+        let sibling = "/home/u/.nuget/packages-cache/serilog/3.1.0/lib/net8.0/Serilog.dll";
+        assert_eq!(package_id_from_path(sibling, ROOT), None);
+        let trailing_root = format!("{ROOT}/");
+        assert_eq!(package_id_from_path(sibling, &trailing_root), None);
+        let inside = format!("{ROOT}/serilog/3.1.0/lib/net8.0/Serilog.dll");
+        assert_eq!(
+            package_id_from_path(&inside, &trailing_root),
             Some("serilog".to_string())
         );
     }
