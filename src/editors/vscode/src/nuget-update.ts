@@ -2,6 +2,7 @@
 // [NUGET-REQUESTS-UPDATE-CONFIRM]. All package knowledge and mutation stays in the host.
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
+import * as log from './log.js';
 import { extensionOf, fileNameOf } from './paths.js';
 import { fetchInstalled, fetchUpdatePreview, installPackage } from './nuget-browser/lsp.js';
 import {
@@ -79,7 +80,8 @@ async function pickInstalledPackage(
 ): Promise<string | undefined> {
   const installed = await fetchInstalled(lsp, target);
   if (!installed.ok) {
-    void vscode.window.showErrorMessage(`NuGet update failed: ${installed.error}`);
+    // Nothing to pick from: the browser this command opens reports it in its own panel.
+    log.warn(`NuGet update: installed packages unavailable for ${target.path}: ${installed.error}`);
     return undefined;
   }
   const pick = await vscode.window.showQuickPick(
