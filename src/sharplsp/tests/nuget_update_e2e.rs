@@ -240,84 +240,183 @@ fn explicit_props_version_selection_preserves_shared_target_and_rejects_stale_ed
     ] {
         let directory = feed.root.join(name.replace('.', "_"));
         let props = directory.join(name);
-        let central = tag == "PackageVersion";
-        let config = if central {
-            "<PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup>"
-        } else {
-            ""
-        };
-        let props_text = format!("<Project>{config}\n<ItemGroup>\n<{tag} Include=\"{PACKAGE}\" Version=\"1.0.0\" />\n</ItemGroup>\n</Project>");
-        write(&props, &props_text);
-        let reference = if central {
-            format!("<ItemGroup><PackageReference Include='{PACKAGE}' /></ItemGroup>")
-        } else {
-            String::new()
-        };
-        let consumers = [
-            directory.join("FSharp/App.fsproj"),
-            directory.join("CSharp/App.csproj"),
-        ];
-        for consumer in &consumers {
-            write(consumer, &format!("<Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>{reference}</Project>"));
-        }
-        write(&directory.join("App.slnx"), "<Solution><Project Path='FSharp/App.fsproj' /><Project Path='CSharp/App.csproj' /></Solution>");
-        write(&directory.join("Shadow").join(name), &props_text);
-        write(&directory.join("Shadow/Shadow.csproj"), &format!("<Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>{reference}</Project>"));
-        let target = json!({"id": props, "kind": "buildProps", "displayName": name, "path": props});
+        let entry = format!("<{tag} Include=\"{PACKAGE}\" Version=\"1.0.0\" />");
+        let consumers = stage_props_scenario(&directory, name, tag, &entry);
+        let updated = drive_explicit_props_update(&mut client, &props, name, &consumers);
+        assert!(updated.contains("Version=\"2.0.0\""), "{updated}");
+    }
+    client.shutdown_and_exit();
+}
+
+/// Stage one props directory: the owning props entry, F#/C# consumer projects,
+/// their solution, and a nested shadow props whose consumers must not move.
+fn stage_props_scenario(directory: &Path, name: &str, tag: &str, entry: &str) -> Vec<PathBuf> {
+    let central = tag == "PackageVersion";
+    let config = if central {
+        "<PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup>"
+    } else {
+        ""
+    };
+    let props_text = format!("<Project>{config}\n<ItemGroup>\n{entry}\n</ItemGroup>\n</Project>");
+    write(&directory.join(name), &props_text);
+    let reference = if central {
+        format!("<ItemGroup><PackageReference Include='{PACKAGE}' /></ItemGroup>")
+    } else {
+        String::new()
+    };
+    let consumers = [
+        directory.join("FSharp/App.fsproj"),
+        directory.join("CSharp/App.csproj"),
+    ];
+    for consumer in &consumers {
+        write(consumer, &format!("<Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>{reference}</Project>"));
+    }
+    write(&directory.join("App.slnx"), "<Solution><Project Path='FSharp/App.fsproj' /><Project Path='CSharp/App.csproj' /></Solution>");
+    write(&directory.join("Shadow").join(name), &props_text);
+    write(&directory.join("Shadow/Shadow.csproj"), &format!("<Project Sdk='Microsoft.NET.Sdk'><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>{reference}</Project>"));
+    consumers.to_vec()
+}
+
+/// Preview an explicit 2.0.0 selection on the props declaration, apply it, and
+/// reject a stale replay; returns the updated props text for representation
+/// assertions. Implements [NUGET-REQUESTS-UPDATE-CONFIRM].
+fn drive_explicit_props_update(
+    client: &mut LspClient,
+    props: &Path,
+    name: &str,
+    consumers: &[PathBuf],
+) -> String {
+    let target = json!({"id": props, "kind": "buildProps", "displayName": name, "path": props});
+    let before = std::fs::read(props).unwrap();
+    let response = client.request(
+        "sharplsp/nuget/updatePreview",
+        json!({
+            "target": target, "packageId": PACKAGE, "selectedVersion": "2.0.0"
+        }),
+    );
+    assert!(
+        response.get("error").is_none(),
+        "explicit props preview failed: {response}"
+    );
+    assert_eq!(response["result"]["target"], target);
+    assert_eq!(response["result"]["versionOwner"].as_str(), props.to_str());
+    assert_eq!(response["result"]["requestedVersion"], "1.0.0");
+    assert_eq!(response["result"]["currentVersion"], "1.0.0");
+    assert_eq!(response["result"]["proposedVersion"], "2.0.0");
+    assert_eq!(response["result"]["boundary"], "major");
+    let mut expected_consumers: Vec<_> = consumers
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    expected_consumers.sort();
+    assert_eq!(
+        response["result"]["affectedProjects"],
+        json!(expected_consumers),
+        "only consumers of this exact props file move"
+    );
+    assert_eq!(std::fs::read(props).unwrap(), before, "preview never edits");
+    let install = client.request(
+        "sharplsp/nuget/install",
+        json!({
+            "target": target, "packageId": PACKAGE, "version": "2.0.0",
+            "expectedVersion": "1.0.0", "expectedRequestedVersion": "1.0.0"
+        }),
+    );
+    assert_eq!(install["result"]["success"], true, "{install}");
+    assert_eq!(install["result"]["modifiedFiles"], json!([props]));
+    let updated = std::fs::read_to_string(props).unwrap();
+    let stale = client.request(
+        "sharplsp/nuget/install",
+        json!({
+            "target": target, "packageId": PACKAGE, "version": "1.2.0",
+            "expectedVersion": "1.0.0", "expectedRequestedVersion": "1.0.0"
+        }),
+    );
+    assert!(
+        stale.get("error").is_some(),
+        "stale props edit accepted: {stale}"
+    );
+    assert_eq!(std::fs::read_to_string(props).unwrap(), updated);
+    updated
+}
+
+/// A conditional `<Version>` child is not one concrete declaration, so the props
+/// preview must refuse it instead of claiming its text. [NUGET-REQUESTS-UPDATE-BOUNDS]
+#[test]
+fn conditional_child_version_stays_unresolved_for_props_preview() {
+    let Some(feed) = controlled_feed() else {
+        return;
+    };
+    let mut client = LspClient::start();
+    client.initialize_with_root(&feed.root);
+    for (name, tag) in [
+        ("Directory.Build.props", "PackageReference"),
+        ("Directory.Packages.props", "PackageVersion"),
+    ] {
+        let directory = feed
+            .root
+            .join(format!("{}_ChildCond", name.replace('.', "_")));
+        let props = directory.join(name);
+        let entry = format!(
+            "<{tag} Include=\"{PACKAGE}\">\n  <Version Condition=\"'$(Configuration)' == 'Release'\">1.0.0</Version>\n</{tag}>"
+        );
+        let _consumers = stage_props_scenario(&directory, name, tag, &entry);
         let before = std::fs::read(&props).unwrap();
         let response = client.request(
             "sharplsp/nuget/updatePreview",
             json!({
-                "target": target, "packageId": PACKAGE, "selectedVersion": "2.0.0"
+                "target": {"id": props, "kind": "buildProps", "displayName": name, "path": props},
+                "packageId": PACKAGE, "selectedVersion": "2.0.0"
             }),
         );
         assert!(
-            response.get("error").is_none(),
-            "explicit props preview failed: {response}"
-        );
-        assert_eq!(response["result"]["target"], target);
-        assert_eq!(response["result"]["versionOwner"].as_str(), props.to_str());
-        assert_eq!(response["result"]["currentVersion"], "1.0.0");
-        assert_eq!(response["result"]["proposedVersion"], "2.0.0");
-        assert_eq!(response["result"]["boundary"], "major");
-        let mut expected_consumers: Vec<_> = consumers
-            .iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect();
-        expected_consumers.sort();
-        assert_eq!(
-            response["result"]["affectedProjects"],
-            json!(expected_consumers),
-            "only consumers of this exact props file move"
+            response.get("error").is_some(),
+            "a conditional child value was claimed: {response}"
         );
         assert_eq!(
             std::fs::read(&props).unwrap(),
             before,
             "preview never edits"
         );
-        let install = client.request(
-            "sharplsp/nuget/install",
-            json!({
-                "target": target, "packageId": PACKAGE, "version": "2.0.0",
-                "expectedVersion": "1.0.0", "expectedRequestedVersion": "1.0.0"
-            }),
+    }
+    client.shutdown_and_exit();
+}
+
+/// A legacy child `<Version>` element, not an attribute, drives the same explicit
+/// flow: the released v0.30.0 picker installed directly and the `MSBuild` DOM owns
+/// the same metadata either way. [NUGET-REQUESTS-UPDATE-CONFIRM]
+#[test]
+fn explicit_props_version_selection_supports_child_version_metadata() {
+    let Some(feed) = controlled_feed() else {
+        return;
+    };
+    let mut client = LspClient::start();
+    client.initialize_with_root(&feed.root);
+    for (name, tag) in [
+        ("Directory.Build.props", "PackageReference"),
+        ("Directory.Packages.props", "PackageVersion"),
+    ] {
+        let directory = feed.root.join(format!("{}_Child", name.replace('.', "_")));
+        let props = directory.join(name);
+        let entry = format!(
+            "<{tag} Include=\"{PACKAGE}\">\n  <Version>1.0.0</Version>\n  <PrivateAssets>all</PrivateAssets>\n</{tag}>"
         );
-        assert_eq!(install["result"]["success"], true, "{install}");
-        assert_eq!(install["result"]["modifiedFiles"], json!([props]));
-        let updated = std::fs::read_to_string(&props).unwrap();
-        assert!(updated.contains("Version=\"2.0.0\""), "{updated}");
-        let stale = client.request(
-            "sharplsp/nuget/install",
-            json!({
-                "target": target, "packageId": PACKAGE, "version": "1.2.0",
-                "expectedVersion": "1.0.0", "expectedRequestedVersion": "1.0.0"
-            }),
+        let consumers = stage_props_scenario(&directory, name, tag, &entry);
+        let before = std::fs::read_to_string(&props).unwrap();
+        let updated = drive_explicit_props_update(&mut client, &props, name, &consumers);
+        assert_eq!(
+            updated,
+            before.replace("<Version>1.0.0</Version>", "<Version>2.0.0</Version>"),
+            "the child element updates in place with formatting preserved"
         );
         assert!(
-            stale.get("error").is_some(),
-            "stale props edit accepted: {stale}"
+            !updated.contains("Version=\"2.0.0\""),
+            "no attribute conversion: {updated}"
         );
-        assert_eq!(std::fs::read_to_string(&props).unwrap(), updated);
+        assert!(
+            updated.contains("<PrivateAssets>all</PrivateAssets>"),
+            "unrelated metadata survives: {updated}"
+        );
     }
     client.shutdown_and_exit();
 }
