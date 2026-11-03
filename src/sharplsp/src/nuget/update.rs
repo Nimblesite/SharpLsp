@@ -5,11 +5,12 @@ use lsp_server::Request;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
-use std::path::Path;
 use tokio::runtime::Runtime;
 use tracing::info;
 
-use super::{cli, lanes, parse, targets, types};
+use super::{cli, lanes, types};
+mod scope;
+use scope::{affected_projects, version_owner};
 use types::{InstalledPackageInfo, NuGetTarget};
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +71,9 @@ pub fn handle_preview(req: Request, runtime: &Runtime) -> Result<serde_json::Val
     info!("Handling sharplsp/nuget/updatePreview");
     let params: UpdatePreviewParams = serde_json::from_value(req.params)?;
     let target = super::handlers::resolve_target(params.target, params.project_path)?;
-    cli::ensure_project_target(&target)?;
+    if params.selected_version.is_none() {
+        cli::ensure_project_target(&target)?;
+    }
     let lane = lanes::lane(&target.path)?;
     let response = runtime.block_on(async {
         let _listing = lane.lock().await;
@@ -158,6 +161,9 @@ async fn preview(
     selected: Option<&str>,
 ) -> Result<UpdatePreviewResponse> {
     let declaration = installed_declaration(target, package_id).await?;
+    if selected.is_none() {
+        validate_exact(&declaration.requested)?;
+    }
     let (proposed, boundary) = match selected {
         Some(version) => explicit_proposal(&declaration.resolved, version)?,
         None => bounded_proposal(target, package_id, &declaration.resolved).await?,
@@ -193,11 +199,14 @@ fn explicit_proposal(current: &str, selected: &str) -> Result<(Option<String>, U
 
 /// List every occurrence and require one exact direct declaration.
 async fn installed_declaration(target: &NuGetTarget, package_id: &str) -> Result<Declaration> {
-    let packages = cli::list_installed_occurrences(&target.path).await?;
+    let packages = match target.kind {
+        types::TargetKind::Project => cli::list_installed_occurrences(&target.path).await?,
+        types::TargetKind::BuildProps => super::handlers::list_installed_for_target(target).await?,
+    };
     single_declaration(packages, package_id)
 }
 
-/// Reject absent, floating, ranged, or differently resolved declarations.
+/// Require an installed package with one concrete resolved version.
 fn single_declaration(
     packages: Vec<InstalledPackageInfo>,
     package_id: &str,
@@ -211,7 +220,6 @@ fn single_declaration(
         "{package_id} is not an installed direct package"
     );
     let declaration = unambiguous_declaration(&matches)?;
-    validate_exact(&declaration.requested)?;
     validate_exact(&declaration.resolved)?;
     Ok(declaration)
 }
@@ -309,46 +317,6 @@ fn proposal_message(package_id: &str, current: &str, proposed: Option<&str>) -> 
     proposed.map_or_else(
         || "Already up to date within this version line".to_string(),
         |version| format!("Update {package_id} from {current} to {version}"),
-    )
-}
-
-/// Every project the proposed version moves: the target, and under CPM each project
-/// beside or below the owning props that references the package and reads its version
-/// from those props. [NUGET-REQUESTS-UPDATE-CONFIRM]
-fn affected_projects(target: &NuGetTarget, package_id: &str) -> Vec<String> {
-    let Some(props) = targets::find_packages_props(Path::new(&target.path)) else {
-        return vec![target.path.clone()];
-    };
-    let sharing = props
-        .parent()
-        .and_then(|root| targets::enumerate_targets(&root.to_string_lossy()).ok())
-        .map_or_else(Vec::new, |found| found.targets);
-    let projects = sharing
-        .into_iter()
-        .filter(|found| found.kind == types::TargetKind::Project)
-        .filter(|found| {
-            targets::find_packages_props(Path::new(&found.path)).as_ref() == Some(&props)
-        })
-        .filter(|found| references_package(&found.path, package_id))
-        .map(|found| found.path);
-    let all: BTreeSet<String> = projects.chain([target.path.clone()]).collect();
-    all.into_iter().collect()
-}
-
-/// Whether the project at `path` declares `package_id`; `NuGet` ids ignore case.
-fn references_package(path: &str, package_id: &str) -> bool {
-    std::fs::read_to_string(path).is_ok_and(|text| {
-        parse::read_package_items(&text, "PackageReference")
-            .iter()
-            .any(|item| item.id.eq_ignore_ascii_case(package_id))
-    })
-}
-
-/// CPM props own the version when present; otherwise the target does.
-fn version_owner(target: &NuGetTarget) -> String {
-    targets::find_packages_props(Path::new(&target.path)).map_or_else(
-        || target.path.clone(),
-        |path| path.to_string_lossy().into_owned(),
     )
 }
 

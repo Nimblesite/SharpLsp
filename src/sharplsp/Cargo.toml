@@ -66,6 +66,8 @@ dashmap = "6"
 url = "2"
 # Percent-decoding for file URIs with no native path representation (url's own dep)
 percent-encoding = "2"
+# Read MSBuild package declarations independently of XML formatting.
+quick-xml = "0.41"
 
 [dev-dependencies]
 tempfile = "3"

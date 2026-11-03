@@ -20,39 +20,65 @@ pub struct PackageItem {
     pub simple: bool,
 }
 
-/// Extract the value of an XML attribute (e.g. `Include="..."`) from a line.
+use anyhow::Result;
+use quick_xml::{
+    encoding::Decoder,
+    events::{BytesStart, Event},
+    Reader,
+};
+
+/// Extract a decoded attribute from an XML element, regardless of quote style.
+#[cfg(test)]
 pub fn extract_attr(line: &str, attr: &str) -> Option<String> {
-    let needle = format!("{attr}=\"");
-    let start = line.find(&needle)? + needle.len();
-    let rest = line.get(start..)?;
-    let end = rest.find('"')?;
-    Some(rest.get(..end)?.to_string())
-}
-
-/// Collect the attribute names present on an element line (`Include`, `Version`, …).
-fn attribute_names(line: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    for (idx, _) in line.match_indices("=\"") {
-        let prefix = line.get(..idx).unwrap_or("");
-        let reversed: String = prefix
-            .chars()
-            .rev()
-            .take_while(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ':'))
-            .collect();
-        if !reversed.is_empty() {
-            names.push(reversed.chars().rev().collect());
+    let mut reader = Reader::from_str(line);
+    reader.config_mut().trim_text(true);
+    match reader.read_event().ok()? {
+        Event::Start(element) | Event::Empty(element) => {
+            attribute_value(&element, attr, reader.decoder())
+                .ok()
+                .flatten()
         }
+        _ => None,
     }
-    names
 }
 
-/// Whether an element line carries only `Include` / `Version` attributes and is
-/// self-closing (so it can be hoisted/removed without dropping metadata).
-fn is_simple(trimmed: &str) -> bool {
-    trimmed.ends_with("/>")
-        && attribute_names(trimmed)
-            .iter()
-            .all(|name| name == "Include" || name == "Version")
+/// Decode entities through the XML parser, never through source-text matching.
+fn attribute_value(
+    element: &BytesStart<'_>,
+    name: &str,
+    decoder: Decoder,
+) -> Result<Option<String>> {
+    element
+        .try_get_attribute(name)?
+        .map(|attribute| {
+            attribute
+                .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, decoder)
+                .map(std::borrow::Cow::into_owned)
+                .map_err(Into::into)
+        })
+        .transpose()
+}
+
+/// A self-closing element with only identity/version attributes is safe to hoist.
+fn package_item(
+    element: &BytesStart<'_>,
+    empty: bool,
+    decoder: Decoder,
+) -> Result<Option<PackageItem>> {
+    let Some(id) = attribute_value(element, "Include", decoder)? else {
+        return Ok(None);
+    };
+    let attributes = element
+        .attributes()
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(Some(PackageItem {
+        id,
+        version: attribute_value(element, "Version", decoder)?,
+        simple: empty
+            && attributes
+                .iter()
+                .all(|attribute| matches!(attribute.key.as_ref(), b"Include" | b"Version")),
+    }))
 }
 
 /// Read all `<{tag}>` package items from `MSBuild` file text.
@@ -60,21 +86,42 @@ fn is_simple(trimmed: &str) -> bool {
 /// `tag` is `"PackageReference"` or `"PackageVersion"`. Entries without an
 /// `Include` attribute are skipped.
 pub fn read_package_items(text: &str, tag: &str) -> Vec<PackageItem> {
-    let open = format!("<{tag}");
-    text.lines()
-        .filter_map(|line| {
-            let trimmed = line.trim_start();
-            if !trimmed.starts_with(&open) {
-                return None;
+    read_items(text, tag).unwrap_or_else(|error| {
+        tracing::warn!(%error, "Invalid MSBuild package XML");
+        Vec::new()
+    })
+}
+
+/// Read actual XML elements; comments and physical line breaks never define items.
+fn read_items(text: &str, tag: &str) -> Result<Vec<PackageItem>> {
+    let mut reader = Reader::from_str(text);
+    let mut items = Vec::new();
+    let mut conditions = Vec::new();
+    loop {
+        let event = reader.read_event()?;
+        let empty = matches!(event, Event::Empty(_));
+        match event {
+            Event::Start(element) | Event::Empty(element) => {
+                let conditional = conditions.last().copied().unwrap_or(false)
+                    || element.try_get_attribute("Condition")?.is_some();
+                if element.name().as_ref() == tag.as_bytes() {
+                    items.extend(package_item(
+                        &element,
+                        empty && !conditional,
+                        reader.decoder(),
+                    )?);
+                }
+                if !empty {
+                    conditions.push(conditional);
+                }
             }
-            let id = extract_attr(line, "Include")?;
-            Some(PackageItem {
-                id,
-                version: extract_attr(line, "Version"),
-                simple: is_simple(trimmed),
-            })
-        })
-        .collect()
+            Event::End(_) => {
+                let _ = conditions.pop();
+            }
+            Event::Eof => return Ok(items),
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +181,15 @@ mod tests {
         assert!(
             !stylecop.simple,
             "PrivateAssets metadata must mark the entry non-simple"
+        );
+        let conditional = read_package_items(
+            r#"<Project><ItemGroup Condition="'$(TargetFramework)' == 'net10.0'"><PackageReference Include="Conditional" Version="1.0.0" /></ItemGroup></Project>"#,
+            "PackageReference",
+        );
+        assert_eq!(conditional.len(), 1);
+        assert!(
+            !conditional[0].simple,
+            "hoisting must preserve inherited conditions"
         );
     }
 

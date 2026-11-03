@@ -246,7 +246,7 @@ pub fn find_packages_props(start: &Path) -> Option<PathBuf> {
 
 /// Walk up from `start` to the nearest sibling or ancestor named `file_name`:
 /// the one `MSBuild` imports automatically.
-fn find_nearest(start: &Path, file_name: &str) -> Option<PathBuf> {
+pub(super) fn find_nearest(start: &Path, file_name: &str) -> Option<PathBuf> {
     let mut dir = start.parent()?.to_path_buf();
     loop {
         let candidate = dir.join(file_name);
