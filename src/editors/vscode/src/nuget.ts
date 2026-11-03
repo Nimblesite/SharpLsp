@@ -4,6 +4,8 @@ import { info } from './log';
 import { getErrorMessage } from './utils';
 import { NuGetBrowserPanel } from './nuget-browser';
 import { fileNameOf } from './paths';
+import { projectTarget, runBoundedUpdate } from './nuget-update';
+import { nugetIncludePrerelease } from './config';
 import type { LanguageClient } from 'vscode-languageclient/node';
 
 /**
@@ -87,6 +89,12 @@ export async function updateNuGetPackage(
 ): Promise<NuGetBrowserPanel | undefined> {
   const projectFile = await pickProjectFile();
   if (projectFile === undefined) return undefined;
+  const lsp = getClient();
+  if (lsp === undefined) {
+    void vscode.window.showErrorMessage('NuGet update failed: LSP client not available');
+    return undefined;
+  }
+  await runBoundedUpdate(lsp, projectTarget(projectFile));
   return NuGetBrowserPanel.open(context, projectFile, fileNameOf(projectFile), getClient);
 }
 
@@ -112,15 +120,8 @@ export async function addNuGetPackageToProject(projectPath: string): Promise<voi
   await searchAndAdd(projectPath);
 }
 
-/** Whether prerelease packages should be included in NuGet searches (config-driven, defaults false). */
-export function includePrerelease(): boolean {
-  return (
-    vscode.workspace.getConfiguration('sharplsp').get<boolean>('nuget.includePrerelease') ?? false
-  );
-}
-
 async function searchNuGet(query: string): Promise<NuGetPackage[]> {
-  const prerelease = includePrerelease();
+  const prerelease = nugetIncludePrerelease();
   const url = `${NUGET_SEARCH_URL}?q=${encodeURIComponent(query)}&take=20&prerelease=${String(prerelease)}`;
   const response = await fetch(url);
   if (!response.ok) {

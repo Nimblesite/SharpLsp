@@ -1137,6 +1137,7 @@ fn handle_custom_request(
         "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
         "sharplsp/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
         "sharplsp/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
+        "sharplsp/nuget/updatePreview" => nuget::update::handle_preview(req, runtime),
         "sharplsp/nuget/install" => {
             nuget::handlers::handle_install(req, runtime, connection.sender.clone(), csharp_sidecar)
         }

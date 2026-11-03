@@ -21,6 +21,7 @@ import {
 import { COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
 import { commandEntries } from './extension-manifest-kit';
+import { installUiStubs } from './ui-stubs';
 
 interface SharpLspApiForNuGetTests {
   readonly getLspClient: () => LanguageClient | undefined;
@@ -127,6 +128,7 @@ suite('NuGet Browser', () => {
       'sharplsp/nuget/search',
       'sharplsp/nuget/versions',
       'sharplsp/nuget/installed',
+      'sharplsp/nuget/updatePreview',
       'sharplsp/nuget/install',
       'sharplsp/nuget/uninstall',
     ];
@@ -165,13 +167,14 @@ suite('NuGet Browser', () => {
       'search', // -> sharplsp/nuget/search
       'selectPackage', // -> sharplsp/nuget/versions
       'install', // -> sharplsp/nuget/install
+      'update', // -> sharplsp/nuget/updatePreview, then install
       'uninstall', // -> sharplsp/nuget/uninstall
       'changeVersion', // -> sharplsp/nuget/install (with new version)
       'switchTab', // -> sharplsp/nuget/installed (for "installed" tab)
       'openExternal', // -> vscode.env.openExternal
     ];
 
-    assert.strictEqual(expectedCommands.length, 7, 'Should have 7 message commands');
+    assert.strictEqual(expectedCommands.length, 8, 'Should have 8 message commands');
   });
 
   // ── Tab state management ────────────────────────────────────
@@ -903,7 +906,7 @@ import {
   persistTargetSelection,
   synthesizeFallback,
 } from '../../nuget-browser/target-store.js';
-import { installKey, restoreKey, uninstallKey } from '../../nuget-browser/types.js';
+import { installKey, restoreKey, uninstallKey, updateKey } from '../../nuget-browser/types.js';
 import type {
   NuGetInstalledResponse,
   NuGetMutationResponse,
@@ -911,6 +914,7 @@ import type {
   NuGetSearchResult,
   NuGetTarget,
   NuGetTargetsResponse,
+  NuGetUpdatePreview,
   NuGetVersionsResponse,
   RestoreProgressParams,
 } from '../../nuget-browser/types.js';
@@ -924,6 +928,21 @@ function projectTarget(overrides: Partial<NuGetTarget> = {}): NuGetTarget {
     displayName: 'Proj1',
     path: '/virtual/Proj1.csproj',
     language: 'csharp',
+    ...overrides,
+  };
+}
+
+function updatePreview(overrides: Partial<NuGetUpdatePreview> = {}): NuGetUpdatePreview {
+  return {
+    target: buildPropsTarget(),
+    packageId: 'Ver.Pkg',
+    requestedVersion: '1.0.0',
+    currentVersion: '1.0.0',
+    proposedVersion: '1.2.0',
+    boundary: 'sameLine',
+    versionOwner: '/virtual/Directory.Build.props',
+    affectedProjects: ['/virtual/Proj1.csproj'],
+    message: 'Update Ver.Pkg from 1.0.0 to 1.2.0',
     ...overrides,
   };
 }
@@ -962,6 +981,7 @@ interface FakeRoutes {
   versions?: NuGetVersionsResponse | Error;
   install?: NuGetMutationResponse | Error;
   uninstall?: NuGetMutationResponse | Error;
+  updatePreview?: NuGetUpdatePreview | ((payload: unknown) => NuGetUpdatePreview) | Error;
 }
 
 interface FakeClientHandle {
@@ -979,7 +999,8 @@ function methodKey(method: string): keyof FakeRoutes | undefined {
     tail === 'search' ||
     tail === 'versions' ||
     tail === 'install' ||
-    tail === 'uninstall'
+    tail === 'uninstall' ||
+    tail === 'updatePreview'
   ) {
     return tail;
   }
@@ -1174,6 +1195,10 @@ suite('NuGet Browser — pure html', () => {
     const html = buildHtml(baseState({ selectedPackage: pkg }));
     assert.ok(html.includes('installPackage('), 'not-installed shows Install button');
     assert.ok(!html.includes('uninstallPackage'), 'not-installed must not show Remove');
+    assert.ok(
+      !html.includes('class="btn btn-primary update-package"'),
+      'not-installed must not show the Update button',
+    );
     assertContainsAll(html, ['View License', 'Project URL', 'Downloads'], 'html');
     assert.ok(html.includes('>JSON<') || html.includes('SERIALIZE'), 'tags upper-cased');
     assert.ok(html.includes('<option value="13.0.3"'), 'version option rendered');
@@ -1216,6 +1241,7 @@ suite('NuGet Browser — pure html', () => {
     );
     assert.ok(html.includes('uninstallPackage'), 'installed shows Remove button');
     assert.ok(!html.includes('installPackage('), 'installed must not show Install');
+    assert.ok(html.includes('updatePackage('), 'installed shows bounded Update');
   });
 
   test('buildHtml details panel renders pending spinners for install/uninstall/versions', () => {
@@ -1234,6 +1260,15 @@ suite('NuGet Browser — pure html', () => {
       }),
     );
     assert.ok(removing.includes('Removing…'), 'uninstall pending label');
+    const updating = buildHtml(
+      baseState({
+        selectedPackage: searchResult(),
+        installedPackages: new Map([['Newtonsoft.Json', '13.0.3']]),
+        loading: new Set([updateKey('Newtonsoft.Json')]),
+      }),
+    );
+    assertContainsAll(updating, ['Updating…', 'progress_activity'], 'updating');
+    assert.ok(updating.includes('update-package'), 'the update button owns its spinner');
   });
 
   test('buildHtml details panel falls back for missing author/description/tags', () => {
@@ -1733,14 +1768,24 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     }
   });
 
-  test('changeVersion routes through install (success reloads installed)', async () => {
+  test('changeVersion confirms the exact host proposal and routes through install', async () => {
     const installed: NuGetInstalledResponse = {
       packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
     };
-    const { panel } = openWithRoutes({
+    const { panel, handle } = openWithRoutes({
       installed,
+      updatePreview: (payload) => {
+        const selected = (payload as { selectedVersion: string }).selectedVersion;
+        return updatePreview({
+          proposedVersion: selected,
+          boundary: selected.includes('-') ? 'prerelease' : 'major',
+          explicitVersion: selected,
+        });
+      },
       install: { success: true, message: 'ok' },
     });
+    const stubs = installUiStubs();
+    stubs.queueInfo('Update', undefined, 'Update');
     try {
       await panel.waitForInitialLoad();
       await panel.simulateWebviewMessage({
@@ -1748,7 +1793,173 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
         data: { packageId: 'Ver.Pkg', version: '2.0.0' },
       });
       assert.deepStrictEqual(panel.getActiveLoadingKeys(), [], 'install loading key cleared');
+      const previews = handle.calls.filter((call) => call.method.endsWith('updatePreview'));
+      assert.strictEqual(previews.length, 2, 'preview is refreshed after confirmation');
+      assert.deepStrictEqual(
+        previews.map((call) => (call.payload as { selectedVersion?: string }).selectedVersion),
+        ['2.0.0', '2.0.0'],
+        'the explicit selection stays fixed',
+      );
+      const install = handle.calls.find((call) => call.method.endsWith('/install'));
+      assert.deepStrictEqual(
+        install?.payload,
+        {
+          target: buildPropsTarget(),
+          projectPath: buildPropsTarget().path,
+          packageId: 'Ver.Pkg',
+          version: '2.0.0',
+          expectedVersion: '1.0.0',
+          expectedRequestedVersion: '1.0.0',
+        },
+        'only the confirmed concrete version is applied',
+      );
+      assert.ok(stubs.log.infoMessages[0]?.includes('Explicit boundary: major'));
+
+      await panel.simulateWebviewMessage({
+        command: 'changeVersion',
+        data: { packageId: 'Ver.Pkg', version: '1.3.0-beta.1' },
+      });
+      const installs = handle.calls.filter((call) => call.method.endsWith('/install'));
+      assert.strictEqual(installs.length, 2, 'each explicit confirmation applies once');
+      assert.strictEqual(
+        (installs[1]?.payload as { version: string }).version,
+        '1.3.0-beta.1',
+        'prerelease is applied only through explicit selection',
+      );
+      assert.ok(
+        stubs.log.infoMessages.some((message) => message.includes('Explicit boundary: prerelease')),
+      );
+      assert.strictEqual(
+        handle.calls.filter((call) => call.method.endsWith('updatePreview')).length,
+        4,
+        'both explicit choices are revalidated',
+      );
     } finally {
+      stubs.restore();
+      panel.dispose();
+    }
+  });
+
+  test('bounded Update confirms and applies the fixed host candidate', async () => {
+    const { panel, handle } = openWithRoutes({
+      installed: {
+        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
+      },
+      updatePreview: updatePreview(),
+      install: { success: true, message: 'ok' },
+    });
+    const stubs = installUiStubs();
+    stubs.queueInfo('Update');
+    try {
+      await panel.waitForInitialLoad();
+      await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
+      const previews = handle.calls.filter((call) => call.method.endsWith('updatePreview'));
+      assert.strictEqual(previews.length, 2, 'default update previews and revalidates');
+      assert.ok(
+        previews.every(
+          (call) => (call.payload as { selectedVersion?: string }).selectedVersion === undefined,
+        ),
+        'default update never uses an explicit out-of-line selection',
+      );
+      const install = handle.calls.find((call) => call.method.endsWith('/install'));
+      assert.strictEqual((install?.payload as { version: string }).version, '1.2.0');
+      assert.strictEqual(
+        (install?.payload as { expectedVersion: string }).expectedVersion,
+        '1.0.0',
+      );
+      assert.ok(stubs.log.infoMessages[0]?.includes('Current: 1.0.0'));
+      assert.ok(stubs.log.infoMessages[0]?.includes('exact proposed version: 1.2.0'));
+      assert.ok(stubs.log.infoMessages[0]?.includes(buildPropsTarget().path));
+    } finally {
+      stubs.restore();
+      panel.dispose();
+    }
+  });
+
+  test('a failed update restore reports failure with the exact attempted version', async () => {
+    const { panel, handle } = openWithRoutes({
+      installed: {
+        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
+      },
+      updatePreview: updatePreview(),
+      install: { success: true, message: 'ok' },
+    });
+    const stubs = installUiStubs();
+    stubs.queueInfo('Update', undefined);
+    try {
+      await panel.waitForInitialLoad();
+      await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
+      const handler = handle.restoreHandlers[0];
+      assert.ok(handler !== undefined, 'the panel subscribes to restore progress');
+      handler({
+        targetId: buildPropsTarget().id,
+        phase: 'failed',
+        message: 'Restore failed for Ver.Pkg 1.2.0',
+      });
+      assertContainsAll(
+        panel.getRenderedHtml(),
+        ['Restore failed for Ver.Pkg 1.2.0', 'toast error'],
+        'failed restore',
+      );
+      assert.ok(!stubs.log.infoMessages.some((message) => message.includes('Updated')));
+      assert.deepStrictEqual(panel.getActiveLoadingKeys(), [], 'terminal failure clears loading');
+    } finally {
+      stubs.restore();
+      panel.dispose();
+    }
+  });
+
+  test('a stale preview refreshes and never calls install', async () => {
+    let calls = 0;
+    const { panel, handle } = openWithRoutes({
+      installed: {
+        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
+      },
+      updatePreview: () => {
+        calls += 1;
+        return calls === 1
+          ? updatePreview()
+          : updatePreview({ requestedVersion: '1.1.0', currentVersion: '1.1.0' });
+      },
+      install: { success: true, message: 'must not be applied' },
+    });
+    const stubs = installUiStubs();
+    stubs.queueInfo('Update');
+    try {
+      await panel.waitForInitialLoad();
+      await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
+      assert.strictEqual(calls, 2, 'the declaration is checked after confirmation');
+      assert.ok(!handle.calls.some((call) => call.method.endsWith('/install')));
+      assert.ok(stubs.log.infoMessages.some((message) => message.includes('preview refreshed')));
+      assert.deepStrictEqual(panel.getActiveLoadingKeys(), [], 'stale preview clears its spinner');
+    } finally {
+      stubs.restore();
+      panel.dispose();
+    }
+  });
+
+  test('cancelling bounded Update makes no mutation request', async () => {
+    const { panel, handle } = openWithRoutes({
+      installed: {
+        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
+      },
+      updatePreview: updatePreview(),
+      install: { success: true, message: 'must not be applied' },
+    });
+    const stubs = installUiStubs();
+    stubs.queueInfo(undefined);
+    try {
+      await panel.waitForInitialLoad();
+      await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
+      assert.ok(!handle.calls.some((call) => call.method.endsWith('/install')));
+      assert.strictEqual(
+        handle.calls.filter((call) => call.method.endsWith('updatePreview')).length,
+        1,
+        'cancel does not revalidate or apply',
+      );
+      assert.deepStrictEqual(panel.getActiveLoadingKeys(), []);
+    } finally {
+      stubs.restore();
       panel.dispose();
     }
   });

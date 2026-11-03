@@ -7,6 +7,7 @@ import {
   type NuGetSearchResponse,
   type NuGetTarget,
   type NuGetTargetsResponse,
+  type NuGetUpdatePreview,
   type NuGetVersionsResponse,
 } from './types.js';
 
@@ -103,11 +104,31 @@ export async function fetchVersions(
   }
 }
 
+export async function fetchUpdatePreview(
+  lsp: LanguageClient,
+  target: NuGetTarget,
+  packageId: string,
+  selectedVersion?: string,
+): Promise<LspResult<NuGetUpdatePreview>> {
+  try {
+    const result = await lsp.sendRequest<NuGetUpdatePreview>('sharplsp/nuget/updatePreview', {
+      target,
+      packageId,
+      selectedVersion,
+    });
+    return ok(result);
+  } catch (err: unknown) {
+    return fail(getErrorMessage(err));
+  }
+}
+
 export async function installPackage(
   lsp: LanguageClient,
   target: NuGetTarget,
   packageId: string,
   version: string,
+  expectedVersion?: string,
+  expectedRequestedVersion?: string,
 ): Promise<LspResult<NuGetMutationResponse>> {
   try {
     log.info(`nuget/lsp: install ${packageId} v${version} into ${target.id}`);
@@ -116,6 +137,8 @@ export async function installPackage(
       projectPath: target.path,
       packageId,
       version,
+      expectedVersion,
+      expectedRequestedVersion,
     });
     return ok(result);
   } catch (err: unknown) {

@@ -243,6 +243,12 @@ pub struct InstallParams {
     pub package_id: String,
     /// Version string to install.
     pub version: String,
+    /// Resolved preview snapshot that must still be current before an update.
+    #[serde(default)]
+    pub expected_version: Option<String>,
+    /// Requested declaration snapshot that must also survive until apply.
+    #[serde(default)]
+    pub expected_requested_version: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -475,4 +481,15 @@ pub struct DotNetListPackage {
     /// Actual resolved version after restore.
     #[serde(default)]
     pub resolved_version: String,
+    /// Newest version returned by an outdated lookup, when requested.
+    #[serde(default)]
+    pub latest_version: Option<String>,
+}
+
+/// One package's source-provided latest version within a requested bound.
+pub struct OutdatedPackageInfo {
+    /// Package identifier.
+    pub id: String,
+    /// Latest stable version returned by the configured source.
+    pub latest_version: String,
 }
