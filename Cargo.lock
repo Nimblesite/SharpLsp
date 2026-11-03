@@ -1622,6 +1622,7 @@ dependencies = [
  "lspkit",
  "lspkit-server",
  "percent-encoding",
+ "quick-xml",
  "reqwest",
  "rmp-serde",
  "serde",

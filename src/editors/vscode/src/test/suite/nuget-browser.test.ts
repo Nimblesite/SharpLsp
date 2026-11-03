@@ -1841,11 +1841,20 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('bounded Update confirms and applies the fixed host candidate', async () => {
+    let previewCount = 0;
     const { panel, handle } = openWithRoutes({
       installed: {
         packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
       },
-      updatePreview: updatePreview(),
+      updatePreview: () => {
+        previewCount += 1;
+        return previewCount === 1
+          ? updatePreview()
+          : updatePreview({
+              versionOwner: '/virtual/unused/../Directory.Build.props',
+              affectedProjects: ['/virtual/unused/../Proj1.csproj'],
+            });
+      },
       install: { success: true, message: 'ok' },
     });
     const stubs = installUiStubs();
@@ -1909,34 +1918,42 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     }
   });
 
-  test('a stale preview refreshes and never calls install', async () => {
-    let calls = 0;
-    const { panel, handle } = openWithRoutes({
-      installed: {
-        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-      },
-      updatePreview: () => {
-        calls += 1;
-        return calls === 1
-          ? updatePreview()
-          : updatePreview({ requestedVersion: '1.1.0', currentVersion: '1.1.0' });
-      },
-      install: { success: true, message: 'must not be applied' },
+  for (const changed of [
+    { requestedVersion: '1.1.0', currentVersion: '1.1.0' },
+    { affectedProjects: ['/virtual/Proj1.csproj', '/virtual/Sibling.fsproj'] },
+    { affectedProjects: [] },
+  ]) {
+    test(`a stale preview refreshes and never calls install: ${JSON.stringify(changed)}`, async () => {
+      let calls = 0;
+      const { panel, handle } = openWithRoutes({
+        installed: {
+          packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
+        },
+        updatePreview: () => {
+          calls += 1;
+          return calls === 1 ? updatePreview() : updatePreview(changed);
+        },
+        install: { success: true, message: 'must not be applied' },
+      });
+      const stubs = installUiStubs();
+      stubs.queueInfo('Update');
+      try {
+        await panel.waitForInitialLoad();
+        await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
+        assert.strictEqual(calls, 2, 'the declaration is checked after confirmation');
+        assert.ok(!handle.calls.some((call) => call.method.endsWith('/install')));
+        assert.ok(stubs.log.infoMessages.some((message) => message.includes('preview refreshed')));
+        assert.deepStrictEqual(
+          panel.getActiveLoadingKeys(),
+          [],
+          'stale preview clears its spinner',
+        );
+      } finally {
+        stubs.restore();
+        panel.dispose();
+      }
     });
-    const stubs = installUiStubs();
-    stubs.queueInfo('Update');
-    try {
-      await panel.waitForInitialLoad();
-      await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
-      assert.strictEqual(calls, 2, 'the declaration is checked after confirmation');
-      assert.ok(!handle.calls.some((call) => call.method.endsWith('/install')));
-      assert.ok(stubs.log.infoMessages.some((message) => message.includes('preview refreshed')));
-      assert.deepStrictEqual(panel.getActiveLoadingKeys(), [], 'stale preview clears its spinner');
-    } finally {
-      stubs.restore();
-      panel.dispose();
-    }
-  });
+  }
 
   test('cancelling bounded Update makes no mutation request', async () => {
     const { panel, handle } = openWithRoutes({

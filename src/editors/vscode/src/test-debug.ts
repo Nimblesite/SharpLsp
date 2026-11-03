@@ -179,8 +179,16 @@ class DebugRunFlow {
   private readonly sessions = new Map<number, vscode.DebugSession>();
   /** Controllers detached on purpose: their `disconnect` is no Stop. */
   private readonly releasedPids = new Set<number>();
+  /** Pids whose session terminate event has already fired. */
+  private readonly endedPids = new Set<number>();
+  /** Resolves `whenSessionEnded` promises as their sessions terminate. */
+  private readonly endedWaiters = new Map<number, () => void>();
   private readonly sessionEnds = vscode.debug.onDidTerminateDebugSession((session) => {
-    this.sessions.delete(Number(session.configuration.processId));
+    const pid = Number(session.configuration.processId);
+    this.sessions.delete(pid);
+    this.endedPids.add(pid);
+    this.endedWaiters.get(pid)?.();
+    this.endedWaiters.delete(pid);
   });
   private readonly stopObserver = vscode.debug.registerDebugAdapterTrackerFactory(DEBUG_TYPE, {
     createDebugAdapterTracker: (session) => this.trackStop(session),
@@ -192,10 +200,23 @@ class DebugRunFlow {
   private readonly attached = new Promise<void>((resolve) => {
     this.onFirstAttach = resolve;
   });
+  private announcements: Promise<void> = Promise.resolve();
+  private finished = false;
   private readonly watcher = new TestHostWatcher((pid) => {
-    this.releaseControllers(pid);
-    void this.attach(pid);
+    this.queueHost(pid);
   });
+
+  /** Queue one announcement; an unexpected error logs and ends the run. */
+  private queueHost(pid: number): void {
+    this.announcements = this.announcements
+      .then(async (): Promise<void> => {
+        await this.handleHost(pid);
+      })
+      .catch((cause: unknown): void => {
+        error(`Test debug: handling a waiting host failed: ${String(cause)}`);
+        this.stop.abort();
+      });
+  }
 
   constructor(
     private readonly host: TestDebugHost,
@@ -229,8 +250,11 @@ class DebugRunFlow {
     } catch (cause) {
       error(`Test debug run failed to settle: ${String(cause)}`);
     } finally {
+      this.finished = true;
       this.stopObserver.dispose();
       this.sessionEnds.dispose();
+      for (const release of this.endedWaiters.values()) release();
+      this.endedWaiters.clear();
       this.run.end();
       this.terminal.end();
     }
@@ -330,14 +354,10 @@ class DebugRunFlow {
     }
   }
 
-  /**
-   * A test host this run did NOT start announced `pid`, so every process it DID
-   * start that is still attached is that host's controller: MTP's TRX extension
-   * runs a module under one, and it waits for a debugger too. DETACH from it,
-   * never terminate it: its test host reports through it, and it writes the
-   * report. The test host's session is the one left ([TEST-MTP-DEBUG]).
-   */
-  private releaseControllers(pid: number): void {
+  /** A test host this run did NOT start announced `pid`: every process it DID
+   * start still attached is that host's controller (MTP's TRX extension runs
+   * one). DETACH from it — the test host's session is the one left. */
+  private async releaseControllers(pid: number): Promise<void> {
     if (this.startedPids.has(pid)) return;
     for (const [owner, session] of this.sessions) {
       if (!this.startedPids.has(owner)) continue;
@@ -346,12 +366,50 @@ class DebugRunFlow {
       info(
         `Test debug: releasing controller pid ${String(owner)} for test host pid ${String(pid)}`,
       );
-      void session
-        .customRequest('disconnect', { [TEST_HOST_RELEASE_FLAG]: true })
-        .then(undefined, (cause: unknown) => {
-          warn(`Test debug: releasing controller pid ${String(owner)} failed: ${String(cause)}`);
-        });
+      await this.detachController(owner, session);
     }
+  }
+
+  /** Release one controller for real — its session TERMINATED, never a mere request reply — before any host is attached ([TEST-MTP-DEBUG]). */
+  private async detachController(owner: number, session: vscode.DebugSession): Promise<void> {
+    // Registered BEFORE the disconnect: the terminate event can beat the request.
+    const ended = this.whenSessionEnded(owner);
+    try {
+      await session.customRequest('disconnect', { [TEST_HOST_RELEASE_FLAG]: true });
+    } catch (cause) {
+      warn(`Test debug: releasing controller pid ${String(owner)} failed: ${String(cause)}`);
+      this.stop.abort();
+      return;
+    }
+    await ended;
+  }
+
+  /** Finished or dying: no release or attach may begin. */
+  private done(): boolean {
+    return this.finished || this.stop.signal.aborted;
+  }
+
+  /** Release the host's controllers, then attach it — its session ends last. */
+  private async handleHost(pid: number): Promise<void> {
+    if (this.done()) return;
+    await this.releaseControllers(pid);
+    if (this.done()) return;
+    await this.attach(pid);
+  }
+
+  /** Settles once the session on `pid` TERMINATED — not a mere request reply — or at once when it already ended or the run is dying. */
+  private async whenSessionEnded(pid: number): Promise<void> {
+    if (this.endedPids.has(pid) || this.stop.signal.aborted) return;
+    await new Promise<void>((resolve) => {
+      const onAbort = (): void => {
+        resolve();
+      };
+      this.stop.signal.addEventListener('abort', onAbort, { once: true });
+      this.endedWaiters.set(pid, () => {
+        this.stop.signal.removeEventListener('abort', onAbort);
+        resolve();
+      });
+    });
   }
 
   /** Stop owns every host of this invocation; natural completion may advance frameworks. */

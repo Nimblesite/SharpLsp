@@ -303,7 +303,7 @@ pub(super) fn resolve_target(
 /// For `project` targets, shells out to `dotnet list package --format json`
 /// (the existing behaviour). For `buildProps` targets we scrape the XML
 /// directly — `dotnet list` doesn't understand a props file.
-async fn list_installed_for_target(
+pub(super) async fn list_installed_for_target(
     target: &types::NuGetTarget,
 ) -> Result<Vec<types::InstalledPackageInfo>> {
     match target.kind {

@@ -3,7 +3,7 @@
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import * as log from './log.js';
-import { extensionOf, fileNameOf } from './paths.js';
+import { extensionOf, fileNameOf, samePath } from './paths.js';
 import { fetchInstalled, fetchUpdatePreview, installPackage } from './nuget-browser/lsp.js';
 import {
   updateKey,
@@ -147,7 +147,11 @@ export function sameProposal(before: NuGetUpdatePreview, after: NuGetUpdatePrevi
     before.proposedVersion === after.proposedVersion &&
     before.boundary === after.boundary &&
     before.explicitVersion === after.explicitVersion &&
-    before.versionOwner === after.versionOwner
+    samePath(before.versionOwner, after.versionOwner) &&
+    before.affectedProjects.length === after.affectedProjects.length &&
+    before.affectedProjects.every((project, index) =>
+      samePath(project, after.affectedProjects[index] ?? ''),
+    )
   );
 }
 
