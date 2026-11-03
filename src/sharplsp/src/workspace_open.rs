@@ -93,7 +93,9 @@ async fn open_and_follow_up(
     target: &str,
     follow_up: OpenFollowUp,
 ) -> bool {
-    if let Err(err) = open_workspace(sidecar, target).await {
+    let opened = open_workspace(sidecar, target).await;
+    sidecar.mark_workspace_open_finished();
+    if let Err(err) = opened {
         error!("Failed to open workspace in sidecar: {err:#}");
         if let Some(sender) = &follow_up.report {
             show_open_failure(sender, &err);

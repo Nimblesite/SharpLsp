@@ -90,6 +90,24 @@ suite('Cross-language Go To Definition — the source being edited', () => {
   }
 });
 
+/** Press until the caret reaches `line`, as the buffer reaches the server asynchronously. */
+async function pressUntilOnLine(
+  use: Awaited<ReturnType<typeof openUse>>,
+  spec: CrossLanguageSpec,
+  line: number,
+): Promise<number> {
+  return pollUntilResult(
+    async () => {
+      await pressOnce(use, spec, COMMAND_MS);
+      return vscode.window.activeTextEditor?.selection.active.line ?? -1;
+    },
+    (now) => now === line,
+    LSP_RESPONSE_MS,
+    500,
+    `${spec.name}: F12 to follow the unsaved declaration`,
+  );
+}
+
 /** Push the declaration down three lines, unsaved: F12 must follow it there. */
 async function moveDeclarationThenPress(
   use: Awaited<ReturnType<typeof openUse>>,
@@ -102,17 +120,7 @@ async function moveDeclarationThenPress(
   assert.equal(await vscode.workspace.applyEdit(edit), true, 'the edit applies');
   try {
     assert.equal(origin.isDirty, true, 'the origin holds an unsaved edit');
-    const landed = await pollUntilResult(
-      async () => {
-        await pressOnce(use, spec, COMMAND_MS);
-        return vscode.window.activeTextEditor?.selection.active.line ?? -1;
-      },
-      (now) => now === line + 3,
-      LSP_RESPONSE_MS,
-      500,
-      `${spec.name}: F12 to follow the unsaved declaration`,
-    );
-    assert.equal(landed, line + 3, 'the caret follows the live buffer');
+    const landed = await pressUntilOnLine(use, spec, line + 3);
     assert.equal(vscode.window.activeTextEditor?.document.uri.fsPath, origin.uri.fsPath);
     assert.ok(origin.lineAt(landed).text.includes(spec.landsOn), 'on the declared name');
   } finally {

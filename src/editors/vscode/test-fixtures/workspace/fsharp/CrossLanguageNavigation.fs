@@ -30,6 +30,9 @@ type INavContract =
 
 type NavClass(seed: int) =
     let mutable stored = seed
+    let navChanged = Event<int>()
+    [<CLIEvent>]
+    member _.NavEvent = navChanged.Publish
     member _.NavProperty = seed
     member _.NavMutable
         with get () = stored

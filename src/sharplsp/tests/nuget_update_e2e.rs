@@ -170,6 +170,11 @@ fn cpm_preview_and_install_update_only_the_owning_props_version() {
     write(&directory.join("Library.fs"), "namespace Cpm\n");
     let props = directory.join("Directory.Packages.props");
     write(&props, "<Project><PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup><ItemGroup><PackageVersion Include=\"SharpLsp.Controlled\" Version=\"1.0.0\" /></ItemGroup></Project>");
+    // One project shares the central version; one does not use the package.
+    let sibling = directory.join("Sibling").join("Sibling.csproj");
+    write(&sibling, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup>\n<PackageReference Include=\"SharpLsp.Controlled\" />\n</ItemGroup></Project>");
+    let unrelated = directory.join("Unrelated").join("Unrelated.csproj");
+    write(&unrelated, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
     let project_before = std::fs::read(&path).unwrap();
     let mut client = LspClient::start();
     client.initialize_with_root(&feed.root);
@@ -179,6 +184,17 @@ fn cpm_preview_and_install_update_only_the_owning_props_version() {
         Some("1.2.0")
     );
     assert_eq!(response["result"]["versionOwner"].as_str(), props.to_str());
+    // [NUGET-REQUESTS-UPDATE-CONFIRM]: the preview names every project the props version moves.
+    let mut affected: Vec<&str> = response["result"]["affectedProjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    affected.sort_unstable();
+    let mut expected = vec![path.to_str().unwrap(), sibling.to_str().unwrap()];
+    expected.sort_unstable();
+    assert_eq!(affected, expected, "{response}");
     let install = client.request(
         "sharplsp/nuget/install",
         json!({

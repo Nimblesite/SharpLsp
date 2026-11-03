@@ -17,6 +17,7 @@ public static class FSharpNavigationConsumer
         var structValue = new NavStruct(4);
         var constructed = new NavClass(5);
         instance.NavMutable = instance.NavProperty;
+        instance.NavEvent += static (_, _) => { };
         var nested = new NavModule.NavNestedRecord(6);
         var failure = new NavFailure("seven");
         var shade = NavShade.NavLight;

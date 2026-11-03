@@ -85,6 +85,8 @@ pub struct SidecarManager {
     shutting_down: AtomicBool,
     /// Set once the health monitor runs, so each manager runs one.
     monitored: AtomicBool,
+    /// Set once the first `workspace/open` has answered, whatever it answered.
+    workspace_open_finished: AtomicBool,
     /// A new process must receive its previous compiler inputs before serving requests.
     ever_connected: AtomicBool,
     /// Compiler-specific session metadata, with weak access to canonical VFS inputs.
@@ -133,6 +135,7 @@ impl SidecarManager {
             spawn_retry_after: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
             monitored: AtomicBool::new(false),
+            workspace_open_finished: AtomicBool::new(false),
             ever_connected: AtomicBool::new(false),
             session: recovery::SessionInputs::default(),
             preemption: preemption::Preemption::default(),
@@ -164,6 +167,17 @@ impl SidecarManager {
             .lock()
             .ok()
             .and_then(|mut receiver| receiver.take())
+    }
+
+    /// Whether the first `workspace/open` has answered, so a sidecar that is still
+    /// not loaded is not on its way to being loaded.
+    pub fn workspace_open_finished(&self) -> bool {
+        self.workspace_open_finished.load(Ordering::Acquire)
+    }
+
+    /// Record that the first `workspace/open` has answered.
+    pub fn mark_workspace_open_finished(&self) {
+        self.workspace_open_finished.store(true, Ordering::Release);
     }
 
     /// Whether graceful shutdown has begun for this manager.

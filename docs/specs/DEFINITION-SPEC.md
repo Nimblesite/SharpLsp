@@ -176,7 +176,7 @@ C# projection ([RAZOR-FSHARP]).
 
 | Scenario | Approach |
 |---|---|
-| F# code references C# type | The F# sidecar compiles the referenced C# project with Roslyn in memory, for the framework MSBuild picked for that reference, and FCS reads the image as a `PEReference` under MSBuild's own `-r:` ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]). Definition, type definition and declaration resolve the symbol's documentation id in that Roslyn compilation, with the editor's unsaved C# buffers on top (`workspace/csharpBufferChanged`, `workspace/csharpBufferClosed`), and land in the `.cs` file and range that declares it. A C# reference the options do not carry keeps the DLL route below |
+| F# code references C# type | The F# sidecar compiles the referenced C# project with Roslyn in memory, for the framework MSBuild picked for that reference, and FCS reads the image as a `PEReference` under MSBuild's own `-r:` ([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]). Definition, type definition and declaration resolve the symbol's documentation id in that Roslyn compilation, with the editor's open C# buffers on top (`workspace/csharpBuffers`, sent with each navigation request, never per keystroke), and land in the `.cs` file and range that declares it. A C# reference the options do not carry keeps the DLL route below |
 | F# code references a type in a DLL | `FSharpMetadataNavigator` decompiles the external symbol's type through the shared `MetadataDecompiler` and lands in the metadata-as-source file |
 | C# code references F# type | Roslyn drops the F# `<ProjectReference>` (loads it as an empty stub); `WorkspaceManager.AddCrossLanguageMetadataReferences` re-attaches the built F# DLL as a metadata reference and removes the stub, then `MetadataNavigator` decompiles the resolved symbol, and the decompiled location carries the symbol's identity. The host replaces it with the F# declaration ([DEFINITION-CROSSLANG-IDENTITY]). The F# project must be built for resolution to succeed |
 
@@ -229,10 +229,11 @@ the one name both sidecars share. No cross-sidecar index is kept: each request r
   | A generic use (`Pick<int>`) | The generic declaration (`Pick``1(``0)`) |
   | Anything else F# generates (`Equals`, `Tag`, `Data0`, `Item`) | The nearest enclosing type or case |
 
-- **While loading:** until the F# sidecar has loaded, a symbol it cannot place yet answers nothing,
-  never decompiled source, and the answer is not cached, so the next request asks again.
-- **Last resort:** a location a loaded or failed F# sidecar cannot place keeps the decompiled source,
-  not cached. With no F# sidecar running, the decompiled answer is final and cached.
+- **While loading:** until the F# sidecar's first `workspace/open` has answered, a symbol it cannot
+  place yet answers nothing, never decompiled source, and the answer is not cached.
+- **Last resort:** after that, a location the F# sidecar cannot place keeps the decompiled source, so
+  a load that failed or found nothing never leaves F12 dead. It is cached only when a loaded sidecar
+  answered that it declares no such symbol. With no F# sidecar running, it is final and cached.
 
 ## Caching Strategy `[DEFINITION-CACHE]`
 

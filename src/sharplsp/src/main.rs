@@ -1086,6 +1086,9 @@ fn handle_nav_request(
         return Ok(serde_json::Value::Null);
     }
     let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+    if request_lang(&req) == Some(LangId::FSharp) && req.method != GotoImplementation::METHOD {
+        cross_language::share_csharp_buffers(runtime, fsharp_sidecar, vfs);
+    }
     match req.method.as_str() {
         GotoDefinition::METHOD => {
             semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
@@ -1609,13 +1612,6 @@ fn handle_notification(
                         let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar);
                         semantic::notify_did_change(&file_path, &change.text, runtime, sidecar);
                     }
-                    cross_language::notify_csharp_buffer(
-                        runtime,
-                        fsharp_sidecar,
-                        uri,
-                        "workspace/csharpBufferChanged",
-                        &change.text,
-                    );
                     trigger_diagnostics(uri, runtime, csharp_sidecar, fsharp_sidecar, connection);
                 }
             }
@@ -1643,13 +1639,6 @@ fn handle_notification(
                 vfs.close(&params.text_document.uri);
                 let _ = trees.remove(&params.text_document.uri);
                 nav_cache.clear();
-                cross_language::notify_csharp_buffer(
-                    runtime,
-                    fsharp_sidecar,
-                    &params.text_document.uri,
-                    "workspace/csharpBufferClosed",
-                    "",
-                );
                 closed_diagnostics(
                     params.text_document.uri,
                     runtime,

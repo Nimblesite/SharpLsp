@@ -285,7 +285,7 @@ fn restore_if_modified<R: RestoreOutcome>(
 
 /// Accept either a full `target` or a bare `projectPath` string for
 /// backwards compatibility.
-fn resolve_target(
+pub(super) fn resolve_target(
     target: Option<types::NuGetTarget>,
     project_path: Option<String>,
 ) -> Result<types::NuGetTarget> {

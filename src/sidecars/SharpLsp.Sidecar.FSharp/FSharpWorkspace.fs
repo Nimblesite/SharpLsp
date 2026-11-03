@@ -47,7 +47,7 @@ type FSharpWorkspaceState =
         /// The C# projects loaded projects reference, compiled in memory.
         /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]
         CSharpBuilds: FSharpCSharpReferences.CSharpBuilds
-        /// The unsaved C# buffers the host hands over. [DEFINITION-CROSSLANG]
+        /// The open C# buffers the host hands over. [DEFINITION-CROSSLANG]
         CSharpBuffers: FSharpCSharpReferences.CSharpBuffers
         /// The Compile items MSBuild evaluated per project, cached until a reload: the
         /// project-change watcher reloads the workspace, which clears this, so a changed

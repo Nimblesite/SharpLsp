@@ -9,7 +9,7 @@ use std::path::Path;
 use tokio::runtime::Runtime;
 use tracing::info;
 
-use super::{cli, lanes, targets, types};
+use super::{cli, lanes, parse, targets, types};
 use types::{InstalledPackageInfo, NuGetTarget};
 
 #[derive(Debug, Deserialize)]
@@ -69,7 +69,7 @@ struct Declaration {
 pub fn handle_preview(req: Request, runtime: &Runtime) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/updatePreview");
     let params: UpdatePreviewParams = serde_json::from_value(req.params)?;
-    let target = resolve_target(params.target, params.project_path)?;
+    let target = super::handlers::resolve_target(params.target, params.project_path)?;
     cli::ensure_project_target(&target)?;
     let lane = lanes::lane(&target.path)?;
     let response = runtime.block_on(async {
@@ -299,7 +299,7 @@ fn preview_response(
         boundary,
         explicit_version,
         version_owner: owner,
-        affected_projects: vec![target.path.clone()],
+        affected_projects: affected_projects(target, package_id),
         message,
     }
 }
@@ -312,26 +312,43 @@ fn proposal_message(package_id: &str, current: &str, proposed: Option<&str>) -> 
     )
 }
 
+/// Every project the proposed version moves: the target, and under CPM each project
+/// beside or below the owning props that references the package and reads its version
+/// from those props. [NUGET-REQUESTS-UPDATE-CONFIRM]
+fn affected_projects(target: &NuGetTarget, package_id: &str) -> Vec<String> {
+    let Some(props) = targets::find_packages_props(Path::new(&target.path)) else {
+        return vec![target.path.clone()];
+    };
+    let sharing = props
+        .parent()
+        .and_then(|root| targets::enumerate_targets(&root.to_string_lossy()).ok())
+        .map_or_else(Vec::new, |found| found.targets);
+    let projects = sharing
+        .into_iter()
+        .filter(|found| found.kind == types::TargetKind::Project)
+        .filter(|found| {
+            targets::find_packages_props(Path::new(&found.path)).as_ref() == Some(&props)
+        })
+        .filter(|found| references_package(&found.path, package_id))
+        .map(|found| found.path);
+    let all: BTreeSet<String> = projects.chain([target.path.clone()]).collect();
+    all.into_iter().collect()
+}
+
+/// Whether the project at `path` declares `package_id`; `NuGet` ids ignore case.
+fn references_package(path: &str, package_id: &str) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|text| {
+        parse::read_package_items(&text, "PackageReference")
+            .iter()
+            .any(|item| item.id.eq_ignore_ascii_case(package_id))
+    })
+}
+
 /// CPM props own the version when present; otherwise the target does.
 fn version_owner(target: &NuGetTarget) -> String {
     targets::find_packages_props(Path::new(&target.path)).map_or_else(
         || target.path.clone(),
         |path| path.to_string_lossy().into_owned(),
-    )
-}
-
-/// Accept a full target or the backwards-compatible project path.
-fn resolve_target(
-    target: Option<NuGetTarget>,
-    project_path: Option<String>,
-) -> Result<NuGetTarget> {
-    target.map_or_else(
-        || {
-            project_path
-                .map(|path| NuGetTarget::from_project_path(&path))
-                .context("missing target / projectPath")
-        },
-        Ok,
     )
 }
 

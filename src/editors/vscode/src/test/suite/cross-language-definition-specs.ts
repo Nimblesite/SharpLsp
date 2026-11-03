@@ -76,6 +76,7 @@ const FSHARP_DECLARATIONS: readonly Row[] = [
   ['union case field', 'payloadCase.navPayload', 'navPayload', 'navPayload: int'],
   ['enum type', 'NavEnum.NavEnumTwo', 'NavEnum', 'type NavEnum ='],
   ['enum member', 'NavEnum.NavEnumTwo', 'NavEnumTwo', '| NavEnumTwo = 2'],
+  ['event', 'instance.NavEvent', 'NavEvent', 'member _.NavEvent'],
   ['property', 'instance.NavProperty', 'NavProperty', 'member _.NavProperty'],
   ['settable property', 'instance.NavMutable', 'NavMutable', 'member _.NavMutable'],
   ['method', 'instance.NavMethod', 'NavMethod', 'member _.NavMethod'],
