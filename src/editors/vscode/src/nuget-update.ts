@@ -147,7 +147,9 @@ export function sameProposal(before: NuGetUpdatePreview, after: NuGetUpdatePrevi
     before.proposedVersion === after.proposedVersion &&
     before.boundary === after.boundary &&
     before.explicitVersion === after.explicitVersion &&
-    before.versionOwner === after.versionOwner
+    before.versionOwner === after.versionOwner &&
+    before.affectedProjects.length === after.affectedProjects.length &&
+    before.affectedProjects.every((project, index) => project === after.affectedProjects[index])
   );
 }
 
