@@ -75,22 +75,9 @@ fn test_cross_language_definition_csharp_to_fsharp() {
         Duration::from_mins(3),
     );
 
-    let uri = loc["uri"].as_str().unwrap();
-    assert!(
-        uri.contains("Shape"),
-        "C#→F# definition must land on the F#-defined `Shape` type, got: {uri}"
-    );
-
-    // Once the F# sidecar has loaded, the answer is the F# declaration: the
-    // decompiled answer before it is never cached. [DEFINITION-CROSSLANG-IDENTITY]
-    let source = poll_cross_language_definition(
-        &mut client,
-        &file_uri,
-        8,
-        22,
-        ".cs",
-        Duration::from_mins(3),
-    );
+    // The very first answer is the F# declaration: while the F# sidecar loads the
+    // answer is empty, never decompiled source. [DEFINITION-CROSSLANG-IDENTITY]
+    let source = loc;
     let uri = source["uri"].as_str().unwrap();
     assert!(
         uri.ends_with("/Shapes.fs"),
@@ -135,8 +122,8 @@ fn test_cross_language_definition_csharp_to_fsharp() {
 
 // ── F# → C# ──────────────────────────────────────────────────────────
 
-// FULL-STACK: go-to-definition from F# onto a C#-defined type resolves into
-// the C# assembly (decompiled metadata-as-source), not the F# consumer file.
+// FULL-STACK: go-to-definition from F# onto a C#-defined symbol lands on its
+// declaration in the C# source, not in decompiled source or the F# consumer.
 #[test]
 fn test_cross_language_definition_fsharp_to_csharp() {
     require_dotnet();
@@ -167,8 +154,30 @@ fn test_cross_language_definition_fsharp_to_csharp() {
 
     let uri = loc["uri"].as_str().unwrap();
     assert!(
-        uri.contains("Greeter"),
-        "F#→C# definition must land on the C#-defined `Greeter` type, got: {uri}"
+        uri.ends_with("/SharedCSharp/Greeter.cs"),
+        "F#→C# lands in the C# source, not decompiled source, got: {uri}"
+    );
+    // `public class Greeter` (line 3)
+    //  0         1
+    //  012345678901234567890
+    assert_eq!(loc["range"]["start"], json!({ "line": 3, "character": 13 }));
+    assert_eq!(loc["range"]["end"], json!({ "line": 3, "character": 20 }));
+
+    // A member takes the same route: `let message = greeter.Greet(localName)`
+    // (line 6) onto `    public string Greet(string name)` (line 6).
+    let member = first_location(&definition(&mut client, &file_uri, 6, 23)["result"]);
+    let member_uri = member["uri"].as_str().unwrap();
+    assert!(
+        member_uri.ends_with("/SharedCSharp/Greeter.cs"),
+        "F#→C# member lands in the C# source, got: {member_uri}"
+    );
+    assert_eq!(
+        member["range"]["start"],
+        json!({ "line": 6, "character": 18 })
+    );
+    assert_eq!(
+        member["range"]["end"],
+        json!({ "line": 6, "character": 23 })
     );
 
     client.shutdown_and_exit();

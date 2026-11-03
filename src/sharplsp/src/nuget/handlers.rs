@@ -12,7 +12,10 @@ use tracing::{error, info};
 
 use crate::sidecar::manager::SidecarManager;
 
-use super::{cli, consolidate, edit, lanes, parse, search, targets, types, unused};
+use super::{
+    cli, consolidate, edit, lanes, parse, restore::RestoreOutcome, search, targets, types, unused,
+    update,
+};
 
 /// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
@@ -97,6 +100,13 @@ pub fn handle_install(
     info!("Handling sharplsp/nuget/install");
     let params: types::InstallParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path.clone())?;
+    update::ensure_current(
+        runtime,
+        &target,
+        &params.package_id,
+        params.expected_version.as_deref(),
+        params.expected_requested_version.as_deref(),
+    )?;
 
     let Some(sidecar) = csharp else {
         return no_editor_response(types::InstallResponse {
@@ -244,34 +254,6 @@ pub fn handle_consolidate(
     Ok(serde_json::to_value(response)?)
 }
 
-/// Install/uninstall responses that may trigger a background restore.
-trait RestoreOutcome {
-    /// Whether the operation succeeded.
-    fn succeeded(&self) -> bool;
-    /// Paths of files the operation modified.
-    fn modified_files(&self) -> &[String];
-}
-
-impl RestoreOutcome for types::InstallResponse {
-    fn succeeded(&self) -> bool {
-        self.success
-    }
-
-    fn modified_files(&self) -> &[String] {
-        &self.modified_files
-    }
-}
-
-impl RestoreOutcome for types::UninstallResponse {
-    fn succeeded(&self) -> bool {
-        self.success
-    }
-
-    fn modified_files(&self) -> &[String] {
-        &self.modified_files
-    }
-}
-
 /// Fire a background restore when the operation modified files, then serialize the
 /// response. Shared tail of `handle_install` and `handle_uninstall`.
 fn finish_with_restore<R>(
@@ -303,7 +285,7 @@ fn restore_if_modified<R: RestoreOutcome>(
 
 /// Accept either a full `target` or a bare `projectPath` string for
 /// backwards compatibility.
-fn resolve_target(
+pub(super) fn resolve_target(
     target: Option<types::NuGetTarget>,
     project_path: Option<String>,
 ) -> Result<types::NuGetTarget> {

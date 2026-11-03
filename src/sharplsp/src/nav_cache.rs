@@ -2,12 +2,10 @@
 //!
 //! Caches serialized JSON responses keyed by
 //! `(document_uri, document_version, line, character, method)`.
-//! Returns cached results in <1ms on hit. Automatically invalidated
-//! when the document changes or closes.
+//! Returns cached results in <1ms on hit. Cleared whenever any document
+//! changes or closes, since an answer can point into any file.
 
 use std::collections::HashMap;
-
-use lsp_types::Uri;
 
 /// Cache key: position + method within a specific document version.
 #[derive(Clone, Hash, Eq, PartialEq)]
@@ -98,17 +96,12 @@ impl NavCache {
         let _ = self.entries.insert(key, CacheEntry { version, value });
     }
 
-    /// Forget every entry: a target-framework switch changes the answer at
-    /// every position of the project without changing any document version.
-    /// [NETFX-CONTEXT]
+    /// Forget every entry: an edit anywhere can move a target any cached answer
+    /// points at, and a target-framework switch changes the answer at every
+    /// position of the project without changing any document version.
+    /// [NETFX-CONTEXT] [DEFINITION-CACHE]
     pub fn clear(&mut self) {
         self.entries.clear();
-    }
-
-    /// Invalidate all cached entries for a document.
-    pub fn invalidate(&mut self, uri: &Uri) {
-        let uri_str = uri.as_str();
-        self.entries.retain(|(k, _), _| k != uri_str);
     }
 }
 

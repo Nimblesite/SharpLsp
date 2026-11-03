@@ -1086,6 +1086,9 @@ fn handle_nav_request(
         return Ok(serde_json::Value::Null);
     }
     let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+    if request_lang(&req) == Some(LangId::FSharp) && req.method != GotoImplementation::METHOD {
+        cross_language::share_csharp_buffers(runtime, fsharp_sidecar, vfs);
+    }
     match req.method.as_str() {
         GotoDefinition::METHOD => {
             semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
@@ -1137,6 +1140,7 @@ fn handle_custom_request(
         "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
         "sharplsp/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
         "sharplsp/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
+        "sharplsp/nuget/updatePreview" => nuget::update::handle_preview(req, runtime),
         "sharplsp/nuget/install" => {
             nuget::handlers::handle_install(req, runtime, connection.sender.clone(), csharp_sidecar)
         }
@@ -1600,7 +1604,8 @@ fn handle_notification(
                     pull_diagnostics::state::begin_change();
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
-                    nav_cache.invalidate(uri);
+                    // A cached answer can point into the edited file from any other.
+                    nav_cache.clear();
                     // Notify the document's own sidecar so the semantic engine
                     // sees the new source text (F# → F# sidecar, C# → C#).
                     if let Ok(file_path) = paths::uri_to_path(uri.as_str()) {
@@ -1633,32 +1638,37 @@ fn handle_notification(
                 pull_diagnostics::state::begin_change();
                 vfs.close(&params.text_document.uri);
                 let _ = trees.remove(&params.text_document.uri);
-                nav_cache.invalidate(&params.text_document.uri);
-                if pull_diagnostics::state::is_pull() {
-                    if let Err(error) = pull_diagnostics::changes::closed(
-                        &params.text_document.uri,
-                        runtime,
-                        [csharp_sidecar, fsharp_sidecar],
-                    ) {
-                        warn!(%error, "Closed document could not reload disk text");
-                    }
-                    trigger_diagnostics(
-                        &params.text_document.uri,
-                        runtime,
-                        csharp_sidecar,
-                        fsharp_sidecar,
-                        connection,
-                    );
-                } else if let Err(err) =
-                    diagnostics::clear(&connection.sender, params.text_document.uri)
-                {
-                    warn!("Failed to clear diagnostics: {err:#}");
-                }
+                nav_cache.clear();
+                closed_diagnostics(
+                    params.text_document.uri,
+                    runtime,
+                    [csharp_sidecar, fsharp_sidecar],
+                    connection,
+                );
             }
         }
         _ => {
             // Ignore unknown notifications per LSP spec.
         }
+    }
+}
+
+/// Reload a closed document's disk text and refresh its diagnostics under the pull
+/// model, or clear what the push model published for it.
+fn closed_diagnostics(
+    uri: Uri,
+    runtime: &tokio::runtime::Runtime,
+    sidecars: [Option<&Arc<SidecarManager>>; 2],
+    connection: &Connection,
+) {
+    let [csharp, fsharp] = sidecars;
+    if pull_diagnostics::state::is_pull() {
+        if let Err(error) = pull_diagnostics::changes::closed(&uri, runtime, sidecars) {
+            warn!(%error, "Closed document could not reload disk text");
+        }
+        trigger_diagnostics(&uri, runtime, csharp, fsharp, connection);
+    } else if let Err(err) = diagnostics::clear(&connection.sender, uri) {
+        warn!("Failed to clear diagnostics: {err:#}");
     }
 }
 

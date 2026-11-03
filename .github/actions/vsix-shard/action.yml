@@ -65,13 +65,16 @@ runs:
         key: >-
           nuget-${{ runner.os }}-${{ hashFiles('src/editors/vscode/test-fixtures/**/*.*proj') }}
         restore-keys: nuget-${{ runner.os }}-
-    - name: Cache the VS Code test host
-      # ~100MB downloaded per job otherwise, once per shard per platform.
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - id: host-key
+      uses: ./.github/actions/vscode-test-host-key
+    - name: Restore the VS Code test host
+      # Restore only: seed-vscode-test-host.yml saves it, once per release, where
+      # every pull request can read it ([DIST-CI-VSIX-HOST-CACHE]).
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: src/editors/vscode/.vscode-test
-        key: vscode-test-${{ runner.os }}-${{ hashFiles('src/editors/vscode/package-lock.json') }}
-        restore-keys: vscode-test-${{ runner.os }}-
+        key: ${{ steps.host-key.outputs.key }}
+        restore-keys: ${{ steps.host-key.outputs.prefix }}
     - name: Install .NET diagnostic tools
       # The workspace chunk's profiler suites trace and dump real processes,
       # exactly as ci-test-rust.yml's profiler e2e tests do.

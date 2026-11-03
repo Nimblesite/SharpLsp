@@ -1,10 +1,12 @@
 import { buildCss } from './css.js';
+import { buildUpdateButton } from './update-action.js';
 import {
   installKey,
   type LoadingKey,
   type NuGetSearchResult,
   type NuGetTarget,
   uninstallKey,
+  updateKey,
 } from './types.js';
 import { escapeHtml } from '../utils.js';
 
@@ -90,6 +92,7 @@ function switchTab(tab) { vscode.postMessage({ command: 'switchTab', data: { tab
 function selectPackage(id) { vscode.postMessage({ command: 'selectPackage', data: { packageId: id } }); }
 globalThis['install' + 'Package'] = (id, v) => vscode.postMessage({ command: 'install', data: { packageId: id, version: v } });
 globalThis['uninstall' + 'Package'] = (id) => vscode.postMessage({ command: 'uninstall', data: { packageId: id } });
+function updatePackage(id) { vscode.postMessage({ command: 'update', data: { packageId: id } }); }
 function changeVersion(id, v) { vscode.postMessage({ command: 'changeVersion', data: { packageId: id, version: v } }); }
 function changeTarget(id) { vscode.postMessage({ command: 'changeTarget', data: { targetId: id } }); }
 function openExternal(url) { vscode.postMessage({ command: 'openExternal', data: { url } }); }
@@ -289,6 +292,7 @@ function buildDetailsHtml(state: RenderState): string {
 
   const installPending = state.loading.has(installKey(pkg.id));
   const uninstallPending = state.loading.has(uninstallKey(pkg.id));
+  const updatePending = state.loading.has(updateKey(pkg.id));
   const versionsPending = state.loading.has('versions');
 
   const tagsHtml =
@@ -330,6 +334,7 @@ function buildDetailsHtml(state: RenderState): string {
 </div>
 <div class="details-actions">
 ${installBtn}
+${installed ? buildUpdateButton(escAttr(pkg.id), updatePending, spinner()) : ''}
 <div class="version-select"><select onchange="changeVersion('${escAttr(pkg.id)}', this.value)" ${!installed || versionsPending ? 'disabled' : ''}>${versionOptions}</select><span class="material-symbols-outlined version-chevron">${versionsPending ? 'progress_activity' : 'expand_more'}</span></div>
 </div>
 <div class="section"><h4 class="section-title">Description</h4><p class="section-content">${safeDesc}</p></div>

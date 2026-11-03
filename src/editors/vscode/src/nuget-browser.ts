@@ -1,5 +1,6 @@
 // Implements the editor boundary in [NUGET-WEBVIEW-EXTENSION].
 import { resolvePath } from './paths';
+import { nugetIncludePrerelease } from './config.js';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import * as log from './log.js';
@@ -8,7 +9,6 @@ import {
   fetchInstalled,
   fetchVersions,
   installPackage,
-  type LspResult,
   searchPackages,
   uninstallPackage,
 } from './nuget-browser/lsp.js';
@@ -24,7 +24,9 @@ import {
   revertOptimisticUninstall,
 } from './nuget-browser/mutate.js';
 import { loadTargetsWithDefaults, persistTargetSelection } from './nuget-browser/target-store.js';
+import { showMutationResult } from './nuget-browser/mutation-result.js';
 import * as projectDeps from './project-deps-store.js';
+import { runBrowserUpdate } from './nuget-update.js';
 import * as solutionState from './state.js';
 import {
   installKey,
@@ -179,7 +181,6 @@ export class NuGetBrowserPanel {
     this.updateContent();
     log.info('NuGetBrowserPanel: initial load complete');
   }
-
   // ── Test accessors ──────────────────────────────────────────
   public async waitForInitialLoad(): Promise<void> {
     await this.initialLoadDone;
@@ -215,7 +216,6 @@ export class NuGetBrowserPanel {
   public async simulateWebviewMessage(m: WebviewMessage): Promise<void> {
     await this.handleMessage(m);
   }
-
   // ── Restore progress subscription ───────────────────────────
 
   private subscribeToRestoreProgress(): void {
@@ -287,6 +287,9 @@ export class NuGetBrowserPanel {
           this.str(message.data?.packageId),
           this.str(message.data?.version),
         );
+        break;
+      case 'update':
+        await this.handleUpdate(this.str(message.data?.packageId));
         break;
       case 'uninstall':
         await this.handleUninstall(this.str(message.data?.packageId));
@@ -511,7 +514,9 @@ export class NuGetBrowserPanel {
       this.updateContent();
       return;
     }
-    pkg._versions = result.value.versions;
+    pkg._versions = result.value.versions.filter(
+      (version) => nugetIncludePrerelease() || !version.includes('-'),
+    );
     this.updateContent();
   }
 
@@ -537,7 +542,11 @@ export class NuGetBrowserPanel {
     const result = await installPackage(lsp, target, packageId, version);
     this.loading.delete(installLoadKey);
 
-    if (this.handleMutationResult(result, 'install', packageId)) {
+    if (
+      showMutationResult(result, 'install', packageId, (toast, ms) => {
+        this.setToast(toast, ms);
+      })
+    ) {
       await this.loadInstalledPackages();
     } else {
       revertOptimisticInstall(this.installedPackages, packageId, snapshot);
@@ -566,7 +575,11 @@ export class NuGetBrowserPanel {
     const result = await uninstallPackage(lsp, target, packageId);
     this.loading.delete(uninstallLoadKey);
 
-    if (this.handleMutationResult(result, 'uninstall', packageId)) {
+    if (
+      showMutationResult(result, 'uninstall', packageId, (toast, ms) => {
+        this.setToast(toast, ms);
+      })
+    ) {
       await this.loadInstalledPackages();
     } else {
       revertOptimisticUninstall(this.installedPackages, packageId, snapshot);
@@ -575,7 +588,17 @@ export class NuGetBrowserPanel {
   }
 
   private async handleChangeVersion(packageId: string, version: string): Promise<void> {
-    await this.handleInstall(packageId, version);
+    await this.handleUpdate(packageId, version);
+  }
+
+  private async handleUpdate(packageId: string, version?: string): Promise<void> {
+    const target = this.currentTarget();
+    const lsp = this.getClient();
+    if (target === undefined || lsp === undefined) return;
+    const updated = await runBrowserUpdate(lsp, target, packageId, version, this.loading, () => {
+      this.updateContent();
+    });
+    if (updated) await this.loadInstalledPackages();
   }
 
   private async handleSwitchTab(tabValue: string): Promise<void> {
@@ -589,26 +612,9 @@ export class NuGetBrowserPanel {
     await this.performSearch(this.currentSearchQuery);
   }
 
-  private handleMutationResult(
-    result: LspResult<{ success: boolean; message: string }>,
-    op: 'install' | 'uninstall',
-    packageId: string,
-  ): boolean {
-    const errorText = !result.ok
-      ? result.error
-      : !result.value.success
-        ? result.value.message
-        : undefined;
-    if (errorText !== undefined) {
-      const text = `${op} failed: ${errorText}`;
-      this.toast = { kind: 'error', text };
-      void vscode.window.showErrorMessage(text);
-      return false;
-    }
-    const verb = op === 'install' ? 'Installed' : 'Removed';
-    this.toast = { kind: 'success', text: `${verb} ${packageId}` };
-    this.scheduleToastClear(2000);
-    return true;
+  private setToast(toast: ToastState | undefined, clearMs?: number): void {
+    this.toast = toast;
+    if (clearMs !== undefined) this.scheduleToastClear(clearMs);
   }
 
   // ── Rendering ───────────────────────────────────────────────

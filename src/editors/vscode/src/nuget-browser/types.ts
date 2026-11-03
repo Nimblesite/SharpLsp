@@ -41,6 +41,21 @@ export interface NuGetMutationResponse {
   readonly modifiedFiles?: string[];
 }
 
+export type NuGetUpdateBoundary = 'sameLine' | 'major' | 'zeroMinor' | 'prerelease';
+
+export interface NuGetUpdatePreview {
+  readonly target: NuGetTarget;
+  readonly packageId: string;
+  readonly requestedVersion: string;
+  readonly currentVersion: string;
+  readonly proposedVersion: string | null;
+  readonly boundary: NuGetUpdateBoundary;
+  readonly explicitVersion?: string;
+  readonly versionOwner: string;
+  readonly affectedProjects: readonly string[];
+  readonly message: string;
+}
+
 export type TargetKind = 'project' | 'buildProps';
 export type TargetLanguage = 'csharp' | 'fsharp';
 
@@ -79,11 +94,16 @@ export type LoadingKey =
   | 'search'
   | 'versions'
   | `install:${string}`
+  | `update:${string}`
   | `uninstall:${string}`
   | `restore:${string}`;
 
 export function installKey(packageId: string): LoadingKey {
   return `install:${packageId}`;
+}
+
+export function updateKey(packageId: string): LoadingKey {
+  return `update:${packageId}`;
 }
 
 export function uninstallKey(packageId: string): LoadingKey {

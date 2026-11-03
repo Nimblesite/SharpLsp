@@ -1,0 +1,47 @@
+# agent-pmo:0b21609
+---
+# Implements [DIST-CI-VSIX-HOST-CACHE]. Caches are ref-scoped and ci.yml only runs
+# on pull requests, so only this workflow gives every pull request a host to
+# restore. A release already cached costs one key lookup and downloads nothing.
+name: Seed VS Code test host
+'on':
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  seed:
+    name: Seed (${{ matrix.os }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Linux
+            runner: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+          - os: Windows
+            runner: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: host-key
+        uses: ./.github/actions/vscode-test-host-key
+      - id: cached
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src/editors/vscode/.vscode-test
+          key: ${{ steps.host-key.outputs.key }}
+          lookup-only: true
+      - if: steps.cached.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vsix-node-deps
+      - name: Download the test host
+        if: steps.cached.outputs.cache-hit != 'true'
+        working-directory: src/editors/vscode
+        run: node ../../../tools/vsix/seed-test-host.mjs
+      - if: steps.cached.outputs.cache-hit != 'true' && steps.host-key.outputs.version != 'unresolved'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src/editors/vscode/.vscode-test
+          key: ${{ steps.host-key.outputs.key }}

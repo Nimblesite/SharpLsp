@@ -76,7 +76,9 @@ let private isCliEvent (memberOrValue: FSharpMemberOrFunctionOrValue) =
 let private projectedEventKey (symbol: FSharpSymbol) =
     match symbol with
     | :? FSharpMemberOrFunctionOrValue as memberOrValue when isCliEvent memberOrValue ->
-        Some(string symbol.Assembly.SimpleName, sourceRangeKey memberOrValue.DeclarationLocation)
+        // A C# event has no F# declaration: FCS throws from the member's own property.
+        symbol.DeclarationLocation
+        |> Option.map (fun declared -> string symbol.Assembly.SimpleName, sourceRangeKey declared)
     | _ -> None
 
 let private matchesProjectedEvent key (symbolUse: FSharpSymbolUse) =

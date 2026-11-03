@@ -25,6 +25,13 @@ type DidChangeRequest =
     { [<Key(0)>] FilePath: string
       [<Key(1)>] NewText: string }
 
+/// `workspace/csharpBuffers` payload: every C# document the editor holds open.
+/// Layout mirrors the Rust host's `CSharpBuffersReq`. [DEFINITION-CROSSLANG]
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type CSharpBuffersRequest =
+    { [<Key(0)>] Buffers: DidChangeRequest array }
+
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
 type HoverResult =

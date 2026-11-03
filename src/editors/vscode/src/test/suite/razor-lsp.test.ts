@@ -299,6 +299,7 @@ suite('Razor in VS Code', () => {
       (found) => found.some((target) => inScores(targetUri(target))),
       LSP_RESPONSE_MS * 2,
     );
+    assert.equal(definitions.length, 1, 'the F# declaration alone, nothing decompiled beside it');
     const declared = definitions.find((target) => inScores(targetUri(target)));
     assert.ok(declared, 'a definition in Scores.fs');
     const scores = await vscode.workspace.openTextDocument(targetUri(declared));

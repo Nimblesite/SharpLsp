@@ -59,6 +59,7 @@
     <Compile Include="RenameNamespace.fs" />
     <Compile Include="RenameNamespaceUsage.fs" />
     <Compile Include="CrossLanguage.fs" />
+    <Compile Include="CrossLanguageNavigation.fs" />
     <Compile Include="DiagnosticsTarget.fs" />
   </ItemGroup>
 

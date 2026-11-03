@@ -309,6 +309,14 @@ type FSharpSidecar() as this =
 
         // A symbol C# or Razor uses, named by identity: where F# declares it and every F#
         // use. [DEFINITION-CROSSLANG-IDENTITY] [REFERENCES-CROSS-LANGUAGE]
+        // Live C# text, so definition lands where the editor shows the declaration. [DEFINITION-CROSSLANG]
+        base.Register("workspace/csharpBuffers", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            let request = MessagePackSerializer.Deserialize<CSharpBuffersRequest>(payload, cancellationToken = ct)
+            workspace.CSharpBuffers.Clear()
+            for buffer in request.Buffers do
+                workspace.CSharpBuffers[buffer.FilePath] <- buffer.NewText
+            Task.FromResult(Helpers.serializeOk "ok" ct)))
+
         base.Register("workspace/declarationForeign", Helpers.foreignLocationsHandler (FSharpForeignSymbols.declarations workspace))
         base.Register("workspace/referencesForeign", Helpers.foreignLocationsHandler (FSharpForeignSymbols.uses workspace))
 

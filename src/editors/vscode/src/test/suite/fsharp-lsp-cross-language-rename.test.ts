@@ -1,8 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
-import * as path from 'node:path';
-import { promisify } from 'node:util';
+import { readFile } from 'node:fs/promises';
 import * as vscode from 'vscode';
 import {
   changedFileNames,
@@ -12,21 +9,16 @@ import {
   tokenRange,
 } from './fsharp-refactor-test-kit';
 import {
-  activateRealSharpLsp,
   applyWorkspaceEdit,
   assertWorkspaceEditSafe,
   openFixtureDocument,
   waitForMatchingDiagnostics,
-  workspaceFixturePath,
   type OpenFixture,
   fullDocumentRange,
 } from './refactor-test-helpers';
+import { rebuildAndRestartRealLsp } from './cross-language-kit';
 import { closeAllEditors } from './test-helpers';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
-
-const execFileAsync = promisify(execFile);
-const FIXTURE_SOLUTION = workspaceFixturePath('TestFixtures.slnx');
-const RESTART_COMMAND = 'sharplsp.restartServer';
 
 // Both foreign-sidecar directions are mandatory. [RENAME-CROSSLANGUAGE]
 interface CrossRenameSpec {
@@ -45,11 +37,6 @@ interface CrossRenameFixture {
   readonly foreign: OpenFixture;
   readonly originalOrigin: string;
   readonly originalForeign: string;
-}
-
-interface BuildArtifact {
-  readonly source: string;
-  readonly output: string;
 }
 
 suite('Real LSP - cross-language rename', () => {
@@ -374,62 +361,6 @@ async function assertFixtureDisk(
   ]);
   assert.strictEqual(originDisk, expectedOrigin);
   assert.strictEqual(foreignDisk, expectedForeign);
-}
-
-async function rebuildAndRestartRealLsp(): Promise<void> {
-  await buildCrossLanguageFixtures();
-  const client = await activateRealSharpLsp();
-  const commands = await vscode.commands.getCommands(true);
-  assert.ok(commands.includes(RESTART_COMMAND), `${RESTART_COMMAND} must be registered`);
-  await vscode.commands.executeCommand(RESTART_COMMAND);
-  const restarted = await activateRealSharpLsp();
-  assert.strictEqual(restarted, client, 'restart must leave the real LanguageClient running');
-}
-
-async function buildCrossLanguageFixtures(): Promise<void> {
-  const result = await execFileAsync(
-    'dotnet',
-    ['build', FIXTURE_SOLUTION, '--configuration', 'Debug', '--nologo', '--verbosity', 'minimal'],
-    { cwd: path.dirname(FIXTURE_SOLUTION), encoding: 'utf8', timeout: DOTNET_CLI_MS },
-  ).catch((error: { stdout?: string; stderr?: string }) => {
-    // A failed build names its cause only in its own output; surface it.
-    throw new Error(`fixture build failed:\n${error.stdout ?? ''}\n${error.stderr ?? ''}`);
-  });
-  assert.strictEqual(typeof result.stdout, 'string');
-  assert.strictEqual(typeof result.stderr, 'string');
-  assert.ok(result.stdout.trim().length > 0, 'real fixture build must report output');
-  await Promise.all(buildArtifacts().map(assertArtifactFresh));
-}
-
-function buildArtifacts(): readonly BuildArtifact[] {
-  return [
-    {
-      source: workspaceFixturePath('CrossLanguageCSharp.cs'),
-      output: workspaceFixturePath('bin/Debug/net10.0/TestFixtures.dll'),
-    },
-    {
-      source: workspaceFixturePath('fsharp/CrossLanguage.fs'),
-      output: workspaceFixturePath('fsharp/bin/Debug/net10.0/FSharpFixtures.dll'),
-    },
-    {
-      source: workspaceFixturePath('crosslanguage/FSharpConsumer.cs'),
-      output: workspaceFixturePath('crosslanguage/bin/Debug/net10.0/CSharpConsumer.dll'),
-    },
-  ];
-}
-
-async function assertArtifactFresh(artifact: BuildArtifact): Promise<void> {
-  const [sourceStats, outputStats] = await Promise.all([
-    stat(artifact.source),
-    stat(artifact.output),
-  ]);
-  assert.ok(sourceStats.isFile(), `${artifact.source} must be a source file`);
-  assert.ok(outputStats.isFile(), `${artifact.output} must be a real assembly`);
-  assert.ok(outputStats.size > 0, `${artifact.output} must not be empty`);
-  assert.ok(
-    outputStats.mtimeMs >= sourceStats.mtimeMs,
-    `${artifact.output} is stale relative to ${artifact.source}`,
-  );
 }
 
 async function restoreOriginalFixture(fixture: CrossRenameFixture): Promise<void> {

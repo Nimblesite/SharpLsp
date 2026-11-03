@@ -68,7 +68,7 @@ fn at(file: &str, (line, character): (u32, u32)) -> (String, u64, u64) {
 }
 
 /// Poll definition at `position` until it lands in `Scores.fs`: until the F#
-/// sidecar has loaded Domain, the C# sidecar's decompiled answer stands.
+/// sidecar has loaded Domain, the answer is empty, and never decompiled source.
 fn poll_fsharp_definition(
     client: &mut LspClient,
     uri: &str,
@@ -79,10 +79,11 @@ fn poll_fsharp_definition(
         let response = definition(client, uri, line, character);
         assert_nav_ok(&response);
         let location = first_location(&response["result"]);
-        if location["uri"]
-            .as_str()
-            .is_some_and(|found| found.ends_with("Scores.fs"))
-        {
+        if let Some(found) = location["uri"].as_str() {
+            assert!(
+                found.ends_with("Scores.fs"),
+                "definition at {line}:{character} left the F# source: {found}"
+            );
             return location;
         }
         assert!(
