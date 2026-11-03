@@ -302,23 +302,33 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
 
   // ── Cancel path ───────────────────────────────────────────────────
 
-  test('cancelling at the signature prompt writes nothing', async function () {
-    this.timeout(COMMAND_MS);
-    const { fsprojPath } = await loadProject();
-    const before = fs.readFileSync(fsprojPath, 'utf-8');
+  // The cold solution load is SETUP on the sidecar-load tier; the test's 5s
+  // COMMAND_MS then measures only the cancelled command round trip.
+  suite('Cancel path', function () {
+    let fsprojPath: string;
 
-    stubs.queueInput('Cancelled').queuePick(undefined);
-    await vscode.commands.executeCommand(CMD_ADD_FS_FILE, projectNode(fsprojPath));
+    setup(async function () {
+      this.timeout(SIDECAR_COLD_MS);
+      fsprojPath = (await loadProject()).fsprojPath;
+    });
 
-    assert.strictEqual(
-      fs.readFileSync(fsprojPath, 'utf-8'),
-      before,
-      'the fsproj must be untouched on cancel',
-    );
-    assert.ok(
-      !vscode.workspace.textDocuments.some((d) => d.uri.fsPath.includes('Cancelled')),
-      'no document may be opened for a cancelled add',
-    );
+    test('cancelling at the signature prompt writes nothing', async function () {
+      this.timeout(COMMAND_MS);
+      const before = fs.readFileSync(fsprojPath, 'utf-8');
+
+      stubs.queueInput('Cancelled').queuePick(undefined);
+      await vscode.commands.executeCommand(CMD_ADD_FS_FILE, projectNode(fsprojPath));
+
+      assert.strictEqual(
+        fs.readFileSync(fsprojPath, 'utf-8'),
+        before,
+        'the fsproj must be untouched on cancel',
+      );
+      assert.ok(
+        !vscode.workspace.textDocuments.some((d) => d.uri.fsPath.includes('Cancelled')),
+        'no document may be opened for a cancelled add',
+      );
+    });
   });
 
   // ── Pure helpers ──────────────────────────────────────────────────
