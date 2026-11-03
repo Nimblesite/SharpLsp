@@ -1841,11 +1841,20 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('bounded Update confirms and applies the fixed host candidate', async () => {
+    let previewCount = 0;
     const { panel, handle } = openWithRoutes({
       installed: {
         packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
       },
-      updatePreview: updatePreview(),
+      updatePreview: () => {
+        previewCount += 1;
+        return previewCount === 1
+          ? updatePreview()
+          : updatePreview({
+              versionOwner: '/virtual/unused/../Directory.Build.props',
+              affectedProjects: ['/virtual/unused/../Proj1.csproj'],
+            });
+      },
       install: { success: true, message: 'ok' },
     });
     const stubs = installUiStubs();

@@ -8,7 +8,8 @@ use std::{collections::BTreeSet, path::Path};
 /// Every project the proposed shared version moves, without naming props as a project.
 pub(super) fn affected_projects(target: &NuGetTarget, package_id: &str) -> Vec<String> {
     let owner = version_owner(target);
-    if owner == target.path && target.kind == TargetKind::Project {
+    if crate::paths::native_paths_equal(&owner, &target.path) && target.kind == TargetKind::Project
+    {
         return vec![target.path.clone()];
     }
     let sharing = crate::paths::directory_of(&owner)
@@ -33,9 +34,8 @@ fn consumes_version(project: &str, owner: &str, package_id: &str) -> bool {
         "Directory.Build.props"
     };
     let imported = targets::find_nearest(Path::new(project), file_name);
-    imported.is_some_and(|path| {
-        crate::paths::comparison_key(&path.to_string_lossy()) == crate::paths::comparison_key(owner)
-    }) && (!central || references_package(project, package_id))
+    imported.is_some_and(|path| crate::paths::native_paths_equal(&path.to_string_lossy(), owner))
+        && (!central || references_package(project, package_id))
 }
 
 /// Whether the project declares the package; `NuGet` ids ignore case.
