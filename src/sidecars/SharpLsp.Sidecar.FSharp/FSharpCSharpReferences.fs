@@ -45,6 +45,9 @@ type CSharpBuild =
 /// Every build prepared, keyed by project and framework.
 type CSharpBuilds = ConcurrentDictionary<string, CSharpBuild>
 
+/// The live text of each C# source the editor holds open and has edited, by path.
+type CSharpBuffers = ConcurrentDictionary<string, string>
+
 /// Whether `path` is a C# project file.
 let isCSharpProject (path: string) = NativePaths.HasExtension(path, ".csproj")
 
@@ -270,16 +273,32 @@ let private positionsOf (location: Location) =
     let span = location.GetLineSpan()
     span.Path, span.StartLinePosition.Line, span.StartLinePosition.Character, span.EndLinePosition.Line, span.EndLinePosition.Character
 
-/// Where `symbol` is declared in C# source: its file and 0-based start and end positions
-/// in the compilation FCS read it from, found by the documentation id both compilers give
-/// one declaration. [DEFINITION-CROSSLANG]
-let tryLocate (builds: CSharpBuilds) (symbol: FSharpSymbol) : (string * int * int * int * int) option =
+/// `compilation` reading each source the editor holds unsaved from its live buffer.
+let private withBuffers (buffers: CSharpBuffers) (compilation: CSharpCompilation) =
+    compilation.SyntaxTrees
+    |> Seq.fold (fun (current: CSharpCompilation) tree ->
+        match buffers.TryGetValue tree.FilePath with
+        | true, text -> current.ReplaceSyntaxTree(tree, CSharpSyntaxTree.ParseText(text, downcast tree.Options, tree.FilePath))
+        | _ -> current) compilation
+
+/// The source position of the declaration `id` names in `compilation`.
+let private locateIn (compilation: CSharpCompilation) (id: string) =
+    DocumentationCommentId.GetFirstSymbolForDeclarationId(id, compilation)
+    |> Option.ofObj
+    |> Option.bind (fun declared -> declared.Locations |> Seq.tryFind _.IsInSource)
+    |> Option.map positionsOf
+
+/// Where `symbol` is declared in C# source, as the editor shows it now: its file and 0-based
+/// start and end positions, found by the documentation id both compilers give one
+/// declaration, in the compilation FCS read it from with the unsaved buffers on top. A
+/// declaration an unsaved edit removed answers from the saved file. [DEFINITION-CROSSLANG]
+let tryLocate (builds: CSharpBuilds) (buffers: CSharpBuffers) (symbol: FSharpSymbol) : (string * int * int * int * int) option =
     try
         buildOf builds symbol
         |> Option.bind (fun build -> docId symbol |> Option.map (fun id -> compilationOf build, id))
-        |> Option.bind (fun (compilation, id) -> DocumentationCommentId.GetFirstSymbolForDeclarationId(id, compilation) |> Option.ofObj)
-        |> Option.bind (fun declared -> declared.Locations |> Seq.tryFind _.IsInSource)
-        |> Option.map positionsOf
+        |> Option.bind (fun (compilation, id) ->
+            locateIn (withBuffers buffers compilation) id
+            |> Option.orElseWith (fun () -> locateIn compilation id))
     with ex ->
         Log.Debug(ex, "[F# Definition] the C# declaration of {Symbol} was not located", symbol.DisplayName)
         None

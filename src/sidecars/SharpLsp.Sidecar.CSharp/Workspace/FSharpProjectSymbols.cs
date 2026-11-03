@@ -42,13 +42,14 @@ internal static class FSharpProjectSymbols
     /// <summary>
     /// The identity the F# sidecar finds <paramref name="symbol"/> by, when an F# project
     /// declares it; null otherwise. A constructor is named by its type: F# declares a record's
-    /// or union's constructor nowhere but in the type itself.
+    /// or union's constructor nowhere but in the type itself. A generic use is named by the
+    /// declaration it constructs: <c>Pick&lt;int&gt;</c> by <c>Pick``1(``0)</c>.
     /// </summary>
     public static RenameIdentityResultWire? IdentityOf(Project project, ISymbol symbol)
     {
         var named = symbol is IMethodSymbol { MethodKind: MethodKind.Constructor } constructor
-            ? constructor.ContainingType
-            : symbol;
+            ? constructor.ContainingType.OriginalDefinition
+            : symbol.OriginalDefinition;
         return Declares(project, named) ? Identity(named) : null;
     }
 

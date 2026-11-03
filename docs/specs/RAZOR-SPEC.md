@@ -547,7 +547,7 @@ Blazor front ends often sit over F# domain libraries. A Razor project that refer
 
 - Definition, type definition and declaration on an F# symbol from Razor land on its F# declaration in the `.fs` file, ranged on its name.
 - A record's or union's constructor (`new Player(…)`) lands on its type.
-- Until the F# sidecar has loaded, the answer is the decompiled source, and it is not cached.
+- Until the F# sidecar has loaded, the answer is empty, never decompiled source, and it is not cached.
 
 ### [RAZOR-FSHARP-REFERENCES] References
 

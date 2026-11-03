@@ -291,7 +291,7 @@ let private extractDeclaration (external: ExternalResolver) checkResults source 
         match useInfo.Symbol with
         | :? FSharpMemberOrFunctionOrValue as memberValue ->
             findBaseMember memberValue
-            |> Option.orElseWith (fun () -> rangeToLocation memberValue.DeclarationLocation)
+            |> Option.orElseWith (fun () -> extractDefinition external checkResults source line character)
         | _ -> extractDefinition external checkResults source line character
 
 /// The declaration of the symbol at a position: the base member an override implements,

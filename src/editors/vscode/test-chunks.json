@@ -54,6 +54,7 @@
         "fsharp-lsp-rename-symbols.test.js",
         "fsharp-lsp-rename-edge.test.js",
         "fsharp-lsp-cross-language-rename.test.js",
+        "cross-language-definition.test.js",
         "tutorial.test.js"
       ]
     },

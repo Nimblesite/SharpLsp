@@ -542,7 +542,11 @@ export class NuGetBrowserPanel {
     const result = await installPackage(lsp, target, packageId, version);
     this.loading.delete(installLoadKey);
 
-    if (showMutationResult(result, 'install', packageId, (toast, ms) => this.setToast(toast, ms))) {
+    if (
+      showMutationResult(result, 'install', packageId, (toast, ms) => {
+        this.setToast(toast, ms);
+      })
+    ) {
       await this.loadInstalledPackages();
     } else {
       revertOptimisticInstall(this.installedPackages, packageId, snapshot);
@@ -572,7 +576,9 @@ export class NuGetBrowserPanel {
     this.loading.delete(uninstallLoadKey);
 
     if (
-      showMutationResult(result, 'uninstall', packageId, (toast, ms) => this.setToast(toast, ms))
+      showMutationResult(result, 'uninstall', packageId, (toast, ms) => {
+        this.setToast(toast, ms);
+      })
     ) {
       await this.loadInstalledPackages();
     } else {
@@ -589,9 +595,9 @@ export class NuGetBrowserPanel {
     const target = this.currentTarget();
     const lsp = this.getClient();
     if (target === undefined || lsp === undefined) return;
-    const updated = await runBrowserUpdate(lsp, target, packageId, version, this.loading, () =>
-      this.updateContent(),
-    );
+    const updated = await runBrowserUpdate(lsp, target, packageId, version, this.loading, () => {
+      this.updateContent();
+    });
     if (updated) await this.loadInstalledPackages();
   }
 

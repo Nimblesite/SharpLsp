@@ -2,24 +2,26 @@
 //! their identity: the assembly that declares them and their XML doc
 //! signature, the only name both compilers give a symbol.
 //!
-//! C# sees an F# project only as its built DLL, so definition from C# or a
-//! Razor file onto an F# symbol lands in decompiled source. That location
-//! carries the symbol's identity, and the F# sidecar answers its F#
-//! declaration instead. References merge each side's uses the same way.
+//! C# sees an F# project only as its built DLL, so the C# sidecar answers
+//! definition from C# or a Razor file onto an F# symbol with decompiled source.
+//! That location carries the symbol's identity, and the F# sidecar answers its
+//! F# declaration instead, which is what the editor shows. References merge each side's uses the same way.
 //! Implements [DEFINITION-CROSSLANG-IDENTITY], [REFERENCES-CROSS-LANGUAGE]
 //! and [RAZOR-FSHARP].
 
 use std::sync::Arc;
 
 use anyhow::Result;
-use lsp_types::Location;
+use lsp_types::{Location, Uri};
 use tracing::debug;
 
 use crate::semantic::{
     request_symbol_identity, sidecar_location_to_lsp, sidecar_workspace_loaded,
-    SidecarLocationListResult, SidecarLocationResult, SidecarRenameIdentityResult,
+    SidecarDidChangeReq, SidecarLocationListResult, SidecarLocationResult,
+    SidecarRenameIdentityResult,
 };
 use crate::sidecar::manager::SidecarManager;
+use crate::tree_sitter_parse::LangId;
 use crate::utils::{request_sidecar, SidecarPositionReq};
 
 /// The request naming a symbol by identity, matching the sidecars'
@@ -34,12 +36,39 @@ struct ForeignSymbolReq<'a> {
     include_declaration: bool,
 }
 
+/// Hand the F# sidecar what the editor shows of a C# source, so definition from
+/// F# lands where the declaration is now: the live text, or an empty text under
+/// `workspace/csharpBufferClosed` once the disk is the truth again. [DEFINITION-CROSSLANG]
+pub fn notify_csharp_buffer(
+    runtime: &tokio::runtime::Runtime,
+    fsharp: Option<&Arc<SidecarManager>>,
+    uri: &Uri,
+    method: &str,
+    text: &str,
+) {
+    let Some(fsharp) = fsharp.filter(|_| LangId::from_uri(uri) == Some(LangId::CSharp)) else {
+        return;
+    };
+    let Ok(file_path) = crate::paths::uri_to_path(uri.as_str()) else {
+        return;
+    };
+    let request = SidecarDidChangeReq {
+        file_path,
+        new_text: text.to_string(),
+    };
+    let sent: Result<Option<String>> = request_sidecar(runtime, fsharp, method, &request);
+    if let Err(err) = sent {
+        debug!(error = %format_args!("{err:#}"), method, "C# buffer not handed to F#");
+    }
+}
+
 /// `result` with each decompiled location of an F# project's symbol replaced
 /// by that symbol's F# declarations, where the F# sidecar finds them, and
-/// whether the answer is settled. A location without an identity stays; one
-/// the F# sidecar cannot place yet stays too, and leaves the answer unsettled,
-/// since the F# sidecar may still be loading. With no F# sidecar, nothing can
-/// place it, so the decompiled answer is final.
+/// whether the answer is settled. A location without an identity stays. While
+/// the F# sidecar is loading, one it cannot place yet is dropped rather than
+/// shown decompiled, leaving the answer unsettled. One a loaded or failed F#
+/// sidecar cannot place stays, unsettled. With no F# sidecar, nothing can place
+/// it, so the decompiled answer is final.
 pub fn in_fsharp_source(
     runtime: &tokio::runtime::Runtime,
     fsharp: Option<&Arc<SidecarManager>>,
@@ -80,7 +109,24 @@ fn declarations_of(
     .inspect_err(|err| debug!(error = %format_args!("{err:#}"), "F# declaration lookup failed"))
     .ok()
     .filter(|declared| !declared.is_empty())
-    .map_or_else(|| (vec![location], false), |declared| (declared, true))
+    .map_or_else(
+        || (unplaced(runtime, fsharp, location), false),
+        |declared| (declared, true),
+    )
+}
+
+/// What to show of `location`, which the F# sidecar did not place: nothing while
+/// it loads, as the source is on its way; else the decompiled source, the last
+/// resort. [DEFINITION-CROSSLANG-IDENTITY]
+fn unplaced(
+    runtime: &tokio::runtime::Runtime,
+    fsharp: &Arc<SidecarManager>,
+    location: SidecarLocationResult,
+) -> Vec<SidecarLocationResult> {
+    match sidecar_workspace_loaded(runtime, fsharp) {
+        Ok(false) => Vec::new(),
+        Ok(true) | Err(_) => vec![location],
+    }
 }
 
 /// The other language's uses of the symbol at `at`, found by its identity:

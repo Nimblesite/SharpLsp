@@ -47,6 +47,8 @@ type FSharpWorkspaceState =
         /// The C# projects loaded projects reference, compiled in memory.
         /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES]
         CSharpBuilds: FSharpCSharpReferences.CSharpBuilds
+        /// The unsaved C# buffers the host hands over. [DEFINITION-CROSSLANG]
+        CSharpBuffers: FSharpCSharpReferences.CSharpBuffers
         /// The Compile items MSBuild evaluated per project, cached until a reload: the
         /// project-change watcher reloads the workspace, which clears this, so a changed
         /// .fsproj is re-evaluated once, and ownership lookups never spawn MSBuild per
@@ -79,6 +81,7 @@ let create () : FSharpWorkspaceState =
       Projects = ConcurrentDictionary(NativePaths.Comparer)
       References = ConcurrentDictionary(NativePaths.Comparer)
       CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer)
+      CSharpBuffers = ConcurrentDictionary(NativePaths.Comparer)
       CompileSources = ConcurrentDictionary(NativePaths.Comparer)
       Entities = EntityCache() }
 
@@ -495,7 +498,7 @@ let private mapNavigationList (operation: Task<FSharpSemanticNavigation.Navigati
 /// Where an external symbol is declared: in the C# source compiled in memory, when a C#
 /// project of the workspace declares it. [DEFINITION-CROSSLANG]
 let private external (state: FSharpWorkspaceState) =
-    FSharpCSharpReferences.tryLocate state.CSharpBuilds
+    FSharpCSharpReferences.tryLocate state.CSharpBuilds state.CSharpBuffers
 
 let getDefinition state filePath line character =
     FSharpSemanticNavigation.getDefinitionIn (external state) (checkFile state) filePath line character

@@ -110,14 +110,21 @@ internal static class MetadataNavigator
 
     /// <summary>
     /// Build the type name in the format ICSharpCode.Decompiler expects:
-    /// Namespace.TypeName (using metadata name with arity suffix).
+    /// Namespace.Outer+Nested (using metadata names with arity suffixes).
     /// </summary>
     private static string BuildDecompilerTypeName(INamedTypeSymbol containingType)
     {
+        if (containingType.ContainingType is { } outer)
+        {
+            return $"{BuildDecompilerTypeName(outer)}+{containingType.MetadataName}";
+        }
+
         var ns = containingType.ContainingNamespace?.ToDisplayString();
         var metadataName = containingType.MetadataName;
 
-        return string.IsNullOrEmpty(ns) ? metadataName : $"{ns}.{metadataName}";
+        return string.IsNullOrEmpty(ns) || containingType.ContainingNamespace!.IsGlobalNamespace
+            ? metadataName
+            : $"{ns}.{metadataName}";
     }
 
     /// <summary>Build a search pattern based on the symbol kind.</summary>

@@ -113,10 +113,101 @@ let private inScope (state: FSharpWorkspace.FSharpWorkspaceState) (identity: Sym
 
 let private isDefinition (symbolUse: FSharpSymbolUse) = symbolUse.IsFromDefinition
 
-/// Where F# declares the symbol `identity` names: the name of each defining use. A symbol
-/// no loaded F# project declares has none. [DEFINITION-CROSSLANG-IDENTITY]
-let declarations state identity (_: bool) =
-    inScope state identity (Seq.filter isDefinition)
+/// `signature` without its parameter list.
+let private withoutParameters (signature: string) =
+    match signature.IndexOf '(' with
+    | -1 -> signature
+    | at -> signature[.. at - 1]
+
+/// The types enclosing `name`, innermost first.
+let rec private enclosingTypes (name: string) =
+    match name.LastIndexOf '.' with
+    | -1 -> []
+    | at -> $"T:{name[.. at - 1]}" :: enclosingTypes name[.. at - 1]
+
+/// The types enclosing the member `signature` names. Every member F# generates (`Equals`,
+/// `Tag`, `Data0`) is declared nowhere but in its type. A type that F# does not declare has
+/// no such fallback: it is simply not F#'s.
+let private enclosingTypesOfMember (signature: string) =
+    if signature.StartsWith("T:", StringComparison.Ordinal) then []
+    else enclosingTypes ((withoutParameters signature).Substring 2)
+
+/// The names C# reads an F# union case by: its property and `Is` test, and its factory.
+let private compiledCaseNames (case: FSharpUnionCase) =
+    let union = (case.ReturnType.TypeDefinition.XmlDocSig).Substring 2
+    [ $"P:{union}.{case.Name}"; $"P:{union}.Is{case.Name}"; $"M:{union}.New{case.Name}" ]
+
+/// The signature C# reads an F# field by, where FCS's differs: a union field's names its
+/// case, and an enum member's calls it a property.
+let private compiledFieldNames (field: FSharpField) =
+    match field.DeclaringUnionCase with
+    | Some case -> [ $"P:{case.XmlDocSig.Substring 2}.{field.Name}" ]
+    | None when field.DeclaringEntity |> Option.exists _.IsEnum -> [ $"F:{field.XmlDocSig.Substring 2}" ]
+    | None -> []
+
+/// The signature FCS names a declaration by, except a union field's, which is its case's,
+/// and a namespace's, which declares no symbol anyone navigates to.
+let private declaredName (symbol: FSharpSymbol) =
+    match symbol with
+    | :? FSharpField as field when field.DeclaringUnionCase.IsSome -> ""
+    | :? FSharpEntity as entity when entity.IsNamespace -> ""
+    | _ -> xmlDocSignature symbol
+
+/// The signatures C# compiles `symbol` to, beside the one both compilers share.
+let private compiledNames (symbol: FSharpSymbol) =
+    match symbol with
+    | :? FSharpUnionCase as case -> compiledCaseNames case
+    | :? FSharpField as field -> compiledFieldNames field
+    | _ -> []
+
+/// Of `definitions`, those the signature names: the declaration itself, else the F# construct
+/// C# reads under a compiled name, else the nearest enclosing type.
+let private declaredBy (signature: string) (definitions: FSharpSymbolUse seq) =
+    let named test = definitions |> Seq.filter (fun definition -> test definition.Symbol) |> Seq.toArray
+    let exact = named (fun symbol -> declaredName symbol = signature)
+    if exact.Length > 0 then
+        exact
+    else
+        let compiled = named (compiledNames >> List.contains (withoutParameters signature))
+        if compiled.Length > 0 then
+            compiled
+        else
+            enclosingTypesOfMember signature
+            |> List.tryPick (fun enclosing ->
+                match named (fun symbol -> declaredName symbol = enclosing) with
+                | [||] -> None
+                | found -> Some found)
+            |> Option.defaultValue [||]
+
+/// Every declaration of the assembly `assemblyName` in `files`.
+let private definitionsIn state assemblyName (files: string array) =
+    task {
+        let collected = ResizeArray<FSharpSymbolUse>()
+        for filePath in files do
+            let! fileCheck = FSharpWorkspace.checkFile state filePath
+            let checkResults, _ = requireCheckedFile filePath fileCheck
+            checkResults.GetAllUsesOfAllSymbolsInFile()
+            |> Seq.filter (fun symbolUse ->
+                isDefinition symbolUse
+                && String.Equals(assemblyNameOf symbolUse.Symbol, assemblyName, StringComparison.Ordinal))
+            |> collected.AddRange
+        return collected.ToArray()
+    }
+
+/// Where F# declares the symbol `identity` names, by the name of each declaration, however
+/// the compiler compiled it. Never decompiled source while the source is here. A symbol no
+/// loaded F# project declares has none. [DEFINITION-CROSSLANG-IDENTITY]
+let declarations (state: FSharpWorkspace.FSharpWorkspaceState) identity (_: bool) =
+    task {
+        if not state.IsLoaded
+           || String.IsNullOrWhiteSpace identity.AssemblyName
+           || String.IsNullOrWhiteSpace identity.XmlDocSig then
+            return []
+        else
+            let files = scopeOf state identity.AssemblyName
+            let! definitions = definitionsIn state identity.AssemblyName files
+            return FSharpReferences.nameLocations state (declaredBy identity.XmlDocSig definitions)
+    }
 
 /// Every F# use of the symbol `identity` names, and its F# declaration when
 /// `includeDeclaration` asks for it. [REFERENCES-CROSS-LANGUAGE]
