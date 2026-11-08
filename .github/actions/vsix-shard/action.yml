@@ -43,7 +43,7 @@ runs:
       with:
         dotnet-version: |
           9.0.x
-          10.0.303
+          10.0.403
     - name: Install VS Code extension deps
       uses: ./.github/actions/vsix-node-deps
     - name: Download the compiled suite

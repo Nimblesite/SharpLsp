@@ -143,9 +143,9 @@ internal static partial class RazorIr
     }
 
     /// <summary>
-    /// An element tag helpers bind. A component's IR carries its start tag name's span; a
-    /// legacy file's does not, so its name, prefix first, is read just after the element's
-    /// <c>&lt;</c>, as HTML spells it in any case, and only where the text holds it.
+    /// An element tag helpers bind. MVC names carry their file's prefix and ignore case.
+    /// When the IR omits the name's span, read it just after the element's <c>&lt;</c>,
+    /// and report it only where the text holds it.
     /// </summary>
     private static MarkupTag? BoundTag(
         TagHelperIntermediateNode bound,
@@ -154,7 +154,7 @@ internal static partial class RazorIr
         string prefix
     )
     {
-        var legacy = bound.StartTagSpan is null;
+        var legacy = bound.TagHelpers.Any(RazorTagHelperScope.IsMvc);
         var comparison = legacy ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         var spelled = legacy ? prefix + bound.TagName : bound.TagName;
         var start = bound.StartTagSpan is { } span

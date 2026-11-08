@@ -27,7 +27,6 @@ public sealed class NewerSdkRazorFixture : IDisposable
     [
         "Microsoft.AspNetCore.Razor.Utilities.Shared.dll",
         Compiler,
-        "Microsoft.Extensions.ObjectPool.dll",
     ];
 
     /// <summary>
