@@ -76,6 +76,10 @@ const TOTAL_DECLARED: Name = name(USE_CS, 11, 12, 5);
 const TOTAL_ADDED: Name = name(USE_CS, 12, 8, 5);
 const TOTAL_RETURNED: Name = name(USE_CS, 13, 15, 5);
 
+/// Every use of the active pattern case `Even`: its declaration, the pattern's
+/// own result, a match in its file and one in another.
+const USES_OF_EVEN: [&Name; 4] = [&EVEN, &EVEN_RESULT, &EVEN_MATCH, &ODD_EVEN];
+
 /// LSP `DocumentHighlightKind.Read`.
 const READ: u64 = 2;
 /// LSP `DocumentHighlightKind.Write`.
@@ -265,8 +269,7 @@ fn fsharp_references(client: &mut LspClient, uses: &str) {
         "record field → record expression and access",
     );
     let even = references(client, uses, 11, 23, true);
-    let uses_of_even = [&EVEN, &EVEN_RESULT, &EVEN_MATCH, &ODD_EVEN];
-    assert_answers(&even, &uses_of_even, "active pattern case → every use");
+    assert_answers(&even, &USES_OF_EVEN, "active pattern case → every use");
 }
 
 /// F# highlights: definitions and pattern uses write, other uses read.
@@ -278,7 +281,14 @@ fn fsharp_highlights(client: &mut LspClient, kinds: &str) {
         &expected,
         "function: declaration writes, call reads",
     );
-    let even = document_highlight(client, kinds, 13, 6);
+    // From the case's own name in `(|Even|Odd|)`: the case, not the pattern function.
+    let declared = references(client, kinds, 9, 6, true);
+    assert_answers(
+        &declared,
+        &USES_OF_EVEN,
+        "active pattern case, from its own name",
+    );
+    let even = document_highlight(client, kinds, 9, 6);
     // FCS counts the case the pattern's own body returns as part of its definition.
     let expected = [(&EVEN, WRITE), (&EVEN_RESULT, WRITE), (&EVEN_MATCH, WRITE)];
     assert_highlights(
