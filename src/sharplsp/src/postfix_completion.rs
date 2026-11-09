@@ -227,50 +227,52 @@ pub fn get_postfix_completions(
     character: u32,
     lang: LangId,
 ) -> Vec<CompletionItem> {
-    let lines: Vec<&str> = source.lines().collect();
-    let Some(line_idx) = usize::try_from(line).ok() else {
-        return Vec::new();
-    };
-
-    let Some(line_text) = lines.get(line_idx) else {
+    let Some(line_text) = usize::try_from(line)
+        .ok()
+        .and_then(|index| source.lines().nth(index))
+    else {
         return Vec::new();
     };
     let Some((expr_start, expr_text, trigger_part)) = extract_postfix_context(line_text, character)
     else {
         return Vec::new();
     };
-
     let replace_range = Range::new(
         Position::new(line, expr_start),
         Position::new(line, character),
     );
-
     TEMPLATES
         .iter()
         .filter(|t| t.trigger.starts_with(&trigger_part))
-        .filter_map(|t| {
-            let snippet = match lang {
-                LangId::CSharp => t.csharp_snippet,
-                LangId::FSharp => t.fsharp_snippet,
-                LangId::Razor => None,
-            }?;
-
-            let expanded = snippet.replace("{expr}", &expr_text);
-
-            Some(CompletionItem {
-                label: t.label.to_string(),
-                kind: Some(CompletionItemKind::SNIPPET),
-                detail: Some(t.detail.to_string()),
-                insert_text_format: Some(InsertTextFormat::SNIPPET),
-                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
-                    range: replace_range,
-                    new_text: expanded,
-                })),
-                sort_text: Some(format!("0_{}", t.trigger)),
-                ..CompletionItem::default()
-            })
-        })
+        .filter_map(|t| template_item(t, lang, &expr_text, replace_range))
         .collect()
+}
+
+/// One template as a snippet completion that replaces `expr.trigger` with the
+/// expansion; `None` when the template has no snippet for `lang`.
+fn template_item(
+    template: &Template,
+    lang: LangId,
+    expr_text: &str,
+    replace_range: Range,
+) -> Option<CompletionItem> {
+    let snippet = match lang {
+        LangId::CSharp => template.csharp_snippet,
+        LangId::FSharp => template.fsharp_snippet,
+        LangId::Razor => None,
+    }?;
+    Some(CompletionItem {
+        label: template.label.to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some(template.detail.to_string()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+            range: replace_range,
+            new_text: snippet.replace("{expr}", expr_text),
+        })),
+        sort_text: Some(format!("0_{}", template.trigger)),
+        ..CompletionItem::default()
+    })
 }
 
 #[cfg(test)]
