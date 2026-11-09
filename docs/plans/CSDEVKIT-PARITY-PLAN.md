@@ -315,7 +315,7 @@ Features users expect within the first day of use.
   - [x] Add Dependencies section to details panel
   - [x] Add automated VSIX tests for NuGet browser
   - [x] Add E2E Rust tests for all sharplsp/nuget/* handlers
-  - [x] Prerelease version toggle — NuGet browser prerelease toggle (`nuget-browser.test.ts`)
+  - [x] Prerelease version toggle — the `sharplsp.nuget.includePrerelease` setting, honoured by search and the version list (`nuget-browser.test.ts` asserts it off by default and on the wire)
   - [x] NuGet restore command — `sharplsp.nuget.restore` (`nuget-deps-e2e.test.ts`)
   - [x] Auto-restore on project load — `[diagnostics] auto_restore_on_open` ([DIAG-RESTORE], #459)
 
