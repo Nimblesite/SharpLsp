@@ -144,7 +144,17 @@ internal sealed partial class WorkspaceManager
         var file = await FileMemberAsync(declaration, ct).ConfigureAwait(false);
         return file is null
             ? null
-            : Place(AsFile(item, file), new LocationResult { FilePath = file });
+            : Place(
+                AsFile(item, file),
+                new LocationResult(
+                    FilePath: file,
+                    Line: 0,
+                    Character: 0,
+                    EndLine: 0,
+                    EndCharacter: 0,
+                    Symbol: null
+                )
+            );
     }
 
     /// <summary>
@@ -207,14 +217,14 @@ internal sealed partial class WorkspaceManager
 
     private static LocationResult DeclarationOf(HierarchyItem item)
     {
-        return new LocationResult
-        {
-            FilePath = item.FilePath,
-            Line = item.Line,
-            Character = item.Character,
-            EndLine = item.EndLine,
-            EndCharacter = item.EndCharacter,
-        };
+        return new LocationResult(
+            FilePath: item.FilePath,
+            Line: item.Line,
+            Character: item.Character,
+            EndLine: item.EndLine,
+            EndCharacter: item.EndCharacter,
+            Symbol: null
+        );
     }
 
     private static T Place<T>(T item, LocationResult place)

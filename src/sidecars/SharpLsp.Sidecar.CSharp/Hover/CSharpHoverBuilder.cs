@@ -283,14 +283,13 @@ internal static class CSharpHoverBuilder
     /// <summary>A hover with <paramref name="markdown"/>, ranged on <paramref name="span"/>.</summary>
     internal static HoverResult MakeResult(string markdown, LinePositionSpan span)
     {
-        return new HoverResult
-        {
-            Contents = markdown,
-            StartLine = span.Start.Line,
-            StartCharacter = span.Start.Character,
-            EndLine = span.End.Line,
-            EndCharacter = span.End.Character,
-        };
+        return new HoverResult(
+            Contents: markdown,
+            StartLine: span.Start.Line,
+            StartCharacter: span.Start.Character,
+            EndLine: span.End.Line,
+            EndCharacter: span.End.Character
+        );
     }
 
     /// Build hover showing the inferred type (for literals, lambdas, tuples, patterns).

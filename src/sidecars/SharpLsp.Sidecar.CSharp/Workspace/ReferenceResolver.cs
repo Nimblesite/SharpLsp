@@ -224,9 +224,8 @@ internal static class ReferenceResolver
     /// <summary>Each place once: one place is found through every symbol that names it.</summary>
     internal static LocationListResult Distinct(IEnumerable<LocationResult> locations)
     {
-        return new LocationListResult
-        {
-            Locations =
+        return new LocationListResult(
+            Locations:
             [
                 .. locations.DistinctBy(location =>
                     (
@@ -237,8 +236,8 @@ internal static class ReferenceResolver
                         location.EndCharacter
                     )
                 ),
-            ],
-        };
+            ]
+        );
     }
 
     /// <summary>One referenced symbol's declaration (a write) and its uses in the document.</summary>
@@ -281,14 +280,13 @@ internal static class ReferenceResolver
     {
         var span = location.GetMappedLineSpan();
         return span.IsValid && NativePaths.AreEqual(span.Path, answerPath)
-            ? new DocumentHighlightResult
-            {
-                StartLine = span.StartLinePosition.Line,
-                StartCharacter = span.StartLinePosition.Character,
-                EndLine = span.EndLinePosition.Line,
-                EndCharacter = span.EndLinePosition.Character,
-                Kind = kind,
-            }
+            ? new DocumentHighlightResult(
+                StartLine: span.StartLinePosition.Line,
+                StartCharacter: span.StartLinePosition.Character,
+                EndLine: span.EndLinePosition.Line,
+                EndCharacter: span.EndLinePosition.Character,
+                Kind: kind
+            )
             : null;
     }
 

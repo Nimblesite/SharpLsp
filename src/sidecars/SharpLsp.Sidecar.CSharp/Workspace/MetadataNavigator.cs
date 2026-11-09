@@ -44,14 +44,14 @@ internal static class MetadataNavigator
             BuildSearchPattern(symbol, name)
         );
 
-        return new LocationResult
-        {
-            FilePath = filePath,
-            Line = position.Line,
-            Character = position.Character,
-            EndLine = position.Line,
-            EndCharacter = position.Character + name.Length,
-        };
+        return new LocationResult(
+            FilePath: filePath,
+            Line: position.Line,
+            Character: position.Character,
+            EndLine: position.Line,
+            EndCharacter: position.Character + name.Length,
+            Symbol: null
+        );
     }
 
     /// <summary>

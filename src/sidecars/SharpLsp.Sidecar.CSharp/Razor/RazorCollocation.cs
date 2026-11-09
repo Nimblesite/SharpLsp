@@ -53,15 +53,16 @@ internal static class RazorCollocation
     {
         return
         [
-            .. stylesheet.Names.Select(name => new CompletionItem
-            {
-                Label = name,
-                Kind = "Value",
-                Detail = NativePaths.NameOf(stylesheet.FilePath),
-                SortText = name,
-                Index = -1,
-                TextEdit = DocumentText.ToTextEdit(markup.Text, new TextChange(at.Class, name)),
-            }),
+            .. stylesheet.Names.Select(name => new CompletionItem(
+                Label: name,
+                Kind: "Value",
+                Detail: NativePaths.NameOf(stylesheet.FilePath),
+                InsertText: null,
+                Index: -1,
+                TextEdit: DocumentText.ToTextEdit(markup.Text, new TextChange(at.Class, name)),
+                Documentation: null,
+                SortText: name
+            )),
         ];
     }
 
@@ -76,15 +77,14 @@ internal static class RazorCollocation
     )
     {
         var name = markup.Text.ToString(at.Class);
-        return new LocationListResult
-        {
-            Locations =
+        return new LocationListResult(
+            Locations:
             [
                 .. stylesheet
                     .Classes.Where(cssClass => cssClass.Name == name)
                     .Select(cssClass => ToLocation(stylesheet, cssClass)),
-            ],
-        };
+            ]
+        );
     }
 
     /// <summary>The name a module import at <paramref name="offset"/> passes to <c>InvokeAsync</c>; null elsewhere.</summary>
@@ -172,14 +172,14 @@ internal static class RazorCollocation
     {
         var start = stylesheet.Text.Lines.GetLinePosition(cssClass.Span.Start);
         var end = stylesheet.Text.Lines.GetLinePosition(cssClass.Span.End);
-        return new LocationResult
-        {
-            FilePath = stylesheet.FilePath,
-            Line = start.Line,
-            Character = start.Character,
-            EndLine = end.Line,
-            EndCharacter = end.Character,
-        };
+        return new LocationResult(
+            FilePath: stylesheet.FilePath,
+            Line: start.Line,
+            Character: start.Character,
+            EndLine: end.Line,
+            EndCharacter: end.Character,
+            Symbol: null
+        );
     }
 
     /// <summary>The call the literal is the second argument of; null when it is not one.</summary>

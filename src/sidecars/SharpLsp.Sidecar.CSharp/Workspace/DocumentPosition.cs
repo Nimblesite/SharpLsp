@@ -99,14 +99,14 @@ internal static class DocumentPosition
     public static LocationResult ToLocationResult(FileLinePositionSpan span)
     {
         var (path, line, character, endLine, endCharacter) = Coordinates(span);
-        return new LocationResult
-        {
-            FilePath = path,
-            Line = line,
-            Character = character,
-            EndLine = endLine,
-            EndCharacter = endCharacter,
-        };
+        return new LocationResult(
+            FilePath: path,
+            Line: line,
+            Character: character,
+            EndLine: endLine,
+            EndCharacter: endCharacter,
+            Symbol: null
+        );
     }
 
     /// <summary>A diagnostic of the file <paramref name="span"/> names, at that span.</summary>
@@ -120,19 +120,18 @@ internal static class DocumentPosition
     )
     {
         var (path, line, character, endLine, endCharacter) = Coordinates(span);
-        return new DiagnosticResult
-        {
-            FilePath = path,
-            StartLine = line,
-            StartCharacter = character,
-            EndLine = endLine,
-            EndCharacter = endCharacter,
-            Message = message,
-            Severity = severity,
-            Code = code,
-            HelpLink = helpLink ?? "",
-            Tags = tags ?? [],
-        };
+        return new DiagnosticResult(
+            FilePath: path,
+            StartLine: line,
+            StartCharacter: character,
+            EndLine: endLine,
+            EndCharacter: endCharacter,
+            Message: message,
+            Severity: severity,
+            Code: code,
+            HelpLink: helpLink ?? "",
+            Tags: tags ?? []
+        );
     }
 
     /// <summary>

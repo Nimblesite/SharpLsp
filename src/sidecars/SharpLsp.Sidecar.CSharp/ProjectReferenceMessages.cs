@@ -8,14 +8,10 @@ namespace SharpLsp.Sidecar.CSharp;
 /// other project-file edits share. Positional keys mirror the Rust host.
 /// [REFACTOR-IMPORT-REFERENCE]
 /// </summary>
+/// <param name="FilePath">Absolute path of the project file that gains the reference.</param>
+/// <param name="ReferencePath">Absolute path of the referenced project file.</param>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class ProjectReferenceRequest
-{
-    /// <summary>Absolute path of the project file that gains the reference.</summary>
-    [Key(0)]
-    public string FilePath { get; set; } = "";
-
-    /// <summary>Absolute path of the referenced project file.</summary>
-    [Key(1)]
-    public string ReferencePath { get; set; } = "";
-}
+internal sealed record ProjectReferenceRequest(
+    [property: Key(0)] string FilePath,
+    [property: Key(1)] string ReferencePath
+);

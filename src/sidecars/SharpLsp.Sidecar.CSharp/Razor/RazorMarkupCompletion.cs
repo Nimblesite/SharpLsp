@@ -322,15 +322,15 @@ internal static class RazorMarkupCompletion
 
     private static CompletionItem Item(Entry entry, SourceText text, TextSpan replace)
     {
-        return new CompletionItem
-        {
-            Label = entry.Label,
-            Kind = entry.Kind,
-            Detail = entry.Detail,
-            Documentation = entry.Documentation,
-            SortText = $"{entry.Group}{entry.Label}",
-            Index = -1,
-            TextEdit = DocumentText.ToTextEdit(text, new TextChange(replace, entry.Label)),
-        };
+        return new CompletionItem(
+            Label: entry.Label,
+            Kind: entry.Kind,
+            Detail: entry.Detail,
+            InsertText: null,
+            Index: -1,
+            TextEdit: DocumentText.ToTextEdit(text, new TextChange(replace, entry.Label)),
+            Documentation: entry.Documentation,
+            SortText: $"{entry.Group}{entry.Label}"
+        );
     }
 }

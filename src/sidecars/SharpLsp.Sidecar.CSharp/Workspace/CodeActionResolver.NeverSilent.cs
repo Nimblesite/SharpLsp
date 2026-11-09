@@ -136,24 +136,23 @@ internal sealed partial class CodeActionResolver
 
     private static DocumentEditResult CreateAddedDocumentEdit(string filePath, string text)
     {
-        return new DocumentEditResult
-        {
-            FilePath = filePath,
-            Edits = [CreateWholeDocumentEdit(text)],
-            Create = true,
-        };
+        return new DocumentEditResult(
+            FilePath: filePath,
+            Edits: [CreateWholeDocumentEdit(text)],
+            Create: true,
+            RenameTo: null
+        );
     }
 
     private static TextEditResult CreateWholeDocumentEdit(string text)
     {
-        return new TextEditResult
-        {
-            StartLine = 0,
-            StartCharacter = 0,
-            EndLine = 0,
-            EndCharacter = 0,
-            NewText = text,
-        };
+        return new TextEditResult(
+            StartLine: 0,
+            StartCharacter: 0,
+            EndLine: 0,
+            EndCharacter: 0,
+            NewText: text
+        );
     }
 
     /// <summary>

@@ -162,18 +162,18 @@ internal static class DeadCodeAnalyzer
             ? $"Public {KindLabel(symbol)} '{symbol.Name}' has no references in the configured monorepo."
             : $"Dead code: {KindLabel(symbol)} '{symbol.Name}' has no references in the solution.";
 
-        return new DiagnosticResult
-        {
-            FilePath = filePath,
-            StartLine = span.StartLinePosition.Line,
-            StartCharacter = span.StartLinePosition.Character,
-            EndLine = span.EndLinePosition.Line,
-            EndCharacter = span.EndLinePosition.Character,
-            Message = message,
-            Severity = severity,
-            Code = DiagnosticCode,
-            Tags = [DiagnosticTags.Unnecessary],
-        };
+        return new DiagnosticResult(
+            FilePath: filePath,
+            StartLine: span.StartLinePosition.Line,
+            StartCharacter: span.StartLinePosition.Character,
+            EndLine: span.EndLinePosition.Line,
+            EndCharacter: span.EndLinePosition.Character,
+            Message: message,
+            Severity: severity,
+            Code: DiagnosticCode,
+            HelpLink: "",
+            Tags: [DiagnosticTags.Unnecessary]
+        );
     }
 
     private static async Task<bool> HasReferencesAsync(

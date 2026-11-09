@@ -7,12 +7,7 @@ public sealed class SerializationTests
     [Fact]
     public void PositionRequest_roundtrip()
     {
-        var original = new PositionRequest
-        {
-            FilePath = "/src/Program.cs",
-            Line = 10,
-            Character = 5,
-        };
+        var original = new PositionRequest(FilePath: "/src/Program.cs", Line: 10, Character: 5);
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<PositionRequest>(bytes);
 
@@ -24,7 +19,7 @@ public sealed class SerializationTests
     [Fact]
     public void DidChangeRequest_roundtrip()
     {
-        var original = new DidChangeRequest { FilePath = "/src/Foo.cs", NewText = "class Foo { }" };
+        var original = new DidChangeRequest(FilePath: "/src/Foo.cs", NewText: "class Foo { }");
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<DidChangeRequest>(bytes);
 
@@ -35,13 +30,16 @@ public sealed class SerializationTests
     [Fact]
     public void CompletionItem_roundtrip_with_nullable_fields()
     {
-        var original = new CompletionItem
-        {
-            Label = "ToString",
-            Kind = "Method",
-            Detail = "string Object.ToString()",
-            InsertText = null,
-        };
+        var original = new CompletionItem(
+            Label: "ToString",
+            Kind: "Method",
+            Detail: "string Object.ToString()",
+            InsertText: null,
+            Index: 0,
+            TextEdit: null,
+            Documentation: null,
+            SortText: null
+        );
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<CompletionItem>(bytes);
 
@@ -54,14 +52,13 @@ public sealed class SerializationTests
     [Fact]
     public void HoverResult_roundtrip_with_range()
     {
-        var original = new HoverResult
-        {
-            Contents = "```csharp\nint x\n```",
-            StartLine = 5,
-            StartCharacter = 8,
-            EndLine = 5,
-            EndCharacter = 9,
-        };
+        var original = new HoverResult(
+            Contents: "```csharp\nint x\n```",
+            StartLine: 5,
+            StartCharacter: 8,
+            EndLine: 5,
+            EndCharacter: 9
+        );
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<HoverResult>(bytes);
 
@@ -73,7 +70,13 @@ public sealed class SerializationTests
     [Fact]
     public void HoverResult_roundtrip_without_range()
     {
-        var original = new HoverResult { Contents = "hover text" };
+        var original = new HoverResult(
+            Contents: "hover text",
+            StartLine: null,
+            StartCharacter: null,
+            EndLine: null,
+            EndCharacter: null
+        );
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<HoverResult>(bytes);
 
@@ -85,14 +88,14 @@ public sealed class SerializationTests
     [Fact]
     public void LocationResult_roundtrip()
     {
-        var original = new LocationResult
-        {
-            FilePath = "/src/Foo.cs",
-            Line = 20,
-            Character = 4,
-            EndLine = 20,
-            EndCharacter = 7,
-        };
+        var original = new LocationResult(
+            FilePath: "/src/Foo.cs",
+            Line: 20,
+            Character: 4,
+            EndLine: 20,
+            EndCharacter: 7,
+            Symbol: null
+        );
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<LocationResult>(bytes);
 
@@ -104,28 +107,27 @@ public sealed class SerializationTests
     [Fact]
     public void LocationListResult_roundtrip_with_multiple_locations()
     {
-        var original = new LocationListResult
-        {
-            Locations =
+        var original = new LocationListResult(
+            Locations:
             [
-                new LocationResult
-                {
-                    FilePath = "/a.cs",
-                    Line = 1,
-                    Character = 0,
-                    EndLine = 1,
-                    EndCharacter = 5,
-                },
-                new LocationResult
-                {
-                    FilePath = "/b.cs",
-                    Line = 10,
-                    Character = 2,
-                    EndLine = 10,
-                    EndCharacter = 8,
-                },
-            ],
-        };
+                new LocationResult(
+                    FilePath: "/a.cs",
+                    Line: 1,
+                    Character: 0,
+                    EndLine: 1,
+                    EndCharacter: 5,
+                    Symbol: null
+                ),
+                new LocationResult(
+                    FilePath: "/b.cs",
+                    Line: 10,
+                    Character: 2,
+                    EndLine: 10,
+                    EndCharacter: 8,
+                    Symbol: null
+                ),
+            ]
+        );
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<LocationListResult>(bytes);
 
@@ -137,7 +139,7 @@ public sealed class SerializationTests
     [Fact]
     public void LocationListResult_roundtrip_empty()
     {
-        var original = new LocationListResult();
+        var original = new LocationListResult(Locations: []);
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<LocationListResult>(bytes);
 
@@ -147,17 +149,18 @@ public sealed class SerializationTests
     [Fact]
     public void DiagnosticResult_roundtrip()
     {
-        var original = new DiagnosticResult
-        {
-            FilePath = "/src/Bad.cs",
-            StartLine = 3,
-            StartCharacter = 0,
-            EndLine = 3,
-            EndCharacter = 10,
-            Message = "CS0246: The type 'Foo' could not be found",
-            Severity = "Error",
-            Code = "CS0246",
-        };
+        var original = new DiagnosticResult(
+            FilePath: "/src/Bad.cs",
+            StartLine: 3,
+            StartCharacter: 0,
+            EndLine: 3,
+            EndCharacter: 10,
+            Message: "CS0246: The type 'Foo' could not be found",
+            Severity: "Error",
+            Code: "CS0246",
+            HelpLink: "",
+            Tags: []
+        );
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<DiagnosticResult>(bytes);
 

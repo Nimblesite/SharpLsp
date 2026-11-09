@@ -50,13 +50,12 @@ public sealed class PackageEditorEndToEndTests(CSharpSidecarFixture fixture)
         string elementKind
     )
     {
-        return new PackageEditRequest
-        {
-            FilePath = filePath,
-            PackageId = packageId,
-            Version = version,
-            ElementKind = elementKind,
-        };
+        return new PackageEditRequest(
+            FilePath: filePath,
+            PackageId: packageId,
+            Version: version,
+            ElementKind: elementKind
+        );
     }
 
     private Task<PackageEditResult> AddAsync(

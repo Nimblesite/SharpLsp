@@ -26,7 +26,7 @@ internal sealed partial class CodeActionResolver
     {
         var subjects = await ImportSubject.FindAsync(document, span, ct).ConfigureAwait(false);
         // Only the providers' own fixes are retitled, never the rows added below.
-        var offered = items.Where(item => item.Kind == QuickFix).ToList();
+        var offered = items.Where(item => item.Kind == QuickFix).Select(item => item.Id).ToHashSet();
         foreach (var subject in subjects)
         {
             await CollectImportFixesAsync(document, subject, offered, items, ct)
@@ -38,14 +38,14 @@ internal sealed partial class CodeActionResolver
     private async Task CollectImportFixesAsync(
         Document document,
         ImportSubject subject,
-        List<CodeActionItem> offered,
+        HashSet<int> offered,
         List<CodeActionItem> items,
         CancellationToken ct
     )
     {
         try
         {
-            var imports = await RetitleOfferedAsync(document, subject, offered, ct)
+            var imports = await RetitleOfferedAsync(document, subject, offered, items, ct)
                 .ConfigureAwait(false);
             var own = await OwnImportFixesAsync(document, subject, imports, ct)
                 .ConfigureAwait(false);
@@ -66,13 +66,20 @@ internal sealed partial class CodeActionResolver
     private async Task<ImmutableArray<RetitledImport>> RetitleOfferedAsync(
         Document document,
         ImportSubject subject,
-        List<CodeActionItem> offered,
+        HashSet<int> offered,
+        List<CodeActionItem> items,
         CancellationToken ct
     )
     {
         var retitled = ImmutableArray.CreateBuilder<RetitledImport>();
-        foreach (var item in offered)
+        for (var index = 0; index < items.Count; index++)
         {
+            var item = items[index];
+            if (!offered.Contains(item.Id))
+            {
+                continue;
+            }
+
             var import = _pendingActions.TryGetValue(item.Id, out var action)
                 ? await ImportRetitling
                     .RetitleAsync(document, subject, action, ct)
@@ -80,7 +87,7 @@ internal sealed partial class CodeActionResolver
                 : null;
             if (import is not null)
             {
-                item.Title = import.Action.Title;
+                items[index] = item with { Title = import.Action.Title };
                 _pendingActions[item.Id] = import.Action;
                 retitled.Add(import);
             }
@@ -92,7 +99,10 @@ internal sealed partial class CodeActionResolver
     private static Predicate<CodeActionItem> Repeated(List<CodeActionItem> items)
     {
         var seen = new HashSet<(string, string)>();
-        var keep = items.Where(item => seen.Add((item.Title, item.Kind))).ToHashSet();
+        // By reference: two items are only the same row when they are the same object.
+        var keep = items
+            .Where(item => seen.Add((item.Title, item.Kind)))
+            .ToHashSet(ReferenceEqualityComparer.Instance);
         return item => !keep.Contains(item);
     }
 
@@ -128,13 +138,12 @@ internal sealed partial class CodeActionResolver
     {
         var id = Interlocked.Increment(ref _nextId);
         _pendingActions[id] = fix.Action;
-        return new CodeActionItem
-        {
-            Id = id,
-            Title = fix.Action.Title,
-            Kind = QuickFix,
-            IsPreferred = fix.Preferred,
-            Reference = fix.Reference,
-        };
+        return new CodeActionItem(
+            Id: id,
+            Title: fix.Action.Title,
+            Kind: QuickFix,
+            IsPreferred: fix.Preferred,
+            Reference: fix.Reference
+        );
     }
 }

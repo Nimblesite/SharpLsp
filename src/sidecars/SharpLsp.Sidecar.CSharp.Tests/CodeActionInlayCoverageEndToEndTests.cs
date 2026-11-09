@@ -106,7 +106,7 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
     {
         await fixture.SendAndAssertOkAsync(
             "textDocument/didChange",
-            new DidChangeRequest { FilePath = fixture.MetaProbeFile, NewText = source }
+            new DidChangeRequest(FilePath: fixture.MetaProbeFile, NewText: source)
         );
         try
         {
@@ -116,11 +116,10 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
         {
             await fixture.SendAndAssertOkAsync(
                 "textDocument/didChange",
-                new DidChangeRequest
-                {
-                    FilePath = fixture.MetaProbeFile,
-                    NewText = CSharpSidecarFixture.MetaProbeSource,
-                }
+                new DidChangeRequest(
+                    FilePath: fixture.MetaProbeFile,
+                    NewText: CSharpSidecarFixture.MetaProbeSource
+                )
             );
         }
     }
@@ -139,12 +138,7 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
     {
         var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
             "textDocument/inlayHint",
-            new InlayHintRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 63,
-                EndLine = 75,
-            }
+            new InlayHintRequest(FilePath: fixture.SourceFile, StartLine: 63, EndLine: 75)
         );
 
         Assert.NotEmpty(hints);
@@ -173,12 +167,7 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
                     InlayHintResult[]
                 >(
                     "textDocument/inlayHint",
-                    new InlayHintRequest
-                    {
-                        FilePath = fixture.MetaProbeFile,
-                        StartLine = 0,
-                        EndLine = 17,
-                    }
+                    new InlayHintRequest(FilePath: fixture.MetaProbeFile, StartLine: 0, EndLine: 17)
                 );
 
                 Assert.NotEmpty(hints);
@@ -204,12 +193,7 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
     {
         var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
             "textDocument/inlayHint",
-            new InlayHintRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 1,
-                EndLine = 1,
-            }
+            new InlayHintRequest(FilePath: fixture.SourceFile, StartLine: 1, EndLine: 1)
         );
 
         Assert.Empty(hints);
@@ -234,14 +218,13 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
                     CodeActionItem[]
                 >(
                     "textDocument/codeAction",
-                    new CodeActionRequest
-                    {
-                        FilePath = fixture.MetaProbeFile,
-                        StartLine = 6,
-                        StartCharacter = 8,
-                        EndLine = 6,
-                        EndCharacter = 15,
-                    }
+                    new CodeActionRequest(
+                        FilePath: fixture.MetaProbeFile,
+                        StartLine: 6,
+                        StartCharacter: 8,
+                        EndLine: 6,
+                        EndCharacter: 15
+                    )
                 );
 
                 Assert.NotEmpty(actions);
@@ -266,14 +249,13 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
                     CodeActionItem[]
                 >(
                     "textDocument/codeAction",
-                    new CodeActionRequest
-                    {
-                        FilePath = fixture.MetaProbeFile,
-                        StartLine = 7,
-                        StartCharacter = 0,
-                        EndLine = 7,
-                        EndCharacter = 0,
-                    }
+                    new CodeActionRequest(
+                        FilePath: fixture.MetaProbeFile,
+                        StartLine: 7,
+                        StartCharacter: 0,
+                        EndLine: 7,
+                        EndCharacter: 0
+                    )
                 );
 
                 Assert.Empty(actions);
@@ -297,14 +279,13 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
                 var response = await fixture.SendAsync(
                     "textDocument/codeAction",
                     MessagePackSerializer.Serialize(
-                        new CodeActionRequest
-                        {
-                            FilePath = fixture.MetaProbeFile,
-                            StartLine = 6,
-                            StartCharacter = 8,
-                            EndLine = 7,
-                            EndCharacter = 16,
-                        }
+                        new CodeActionRequest(
+                            FilePath: fixture.MetaProbeFile,
+                            StartLine: 6,
+                            StartCharacter: 8,
+                            EndLine: 7,
+                            EndCharacter: 16
+                        )
                     )
                 );
                 Assert.NotNull(response);

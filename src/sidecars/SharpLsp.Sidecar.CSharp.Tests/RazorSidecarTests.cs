@@ -26,7 +26,7 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
         await socket
             .SendAndAssertOkAsync(
                 "textDocument/didChange",
-                new DidChangeRequest { FilePath = Board, NewText = changed }
+                new DidChangeRequest(FilePath: Board, NewText: changed)
             )
             .ConfigureAwait(true);
         var after = await AtAsync<HtmlProjectionResult?>("sharplsp/razor/htmlProjection", Board)
@@ -89,7 +89,7 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
         await socket
             .SendAndAssertOkAsync(
                 "textDocument/didChange",
-                new DidChangeRequest { FilePath = Board, NewText = text }
+                new DidChangeRequest(FilePath: Board, NewText: text)
             )
             .ConfigureAwait(true);
         var at = await socket
@@ -195,12 +195,11 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
         var player = await socket
             .SendAndDeserializeAsync<ForeignSymbolRequest, LocationListResult>(
                 "workspace/referencesForeign",
-                new ForeignSymbolRequest
-                {
-                    AssemblyName = "Domain",
-                    XmlDocSig = "T:Domain.Player",
-                    IncludeDeclaration = false,
-                }
+                new ForeignSymbolRequest(
+                    AssemblyName: "Domain",
+                    XmlDocSig: "T:Domain.Player",
+                    IncludeDeclaration: false
+                )
             )
             .ConfigureAwait(true);
         Assert.Equal(3, player.Locations.Count);
@@ -221,11 +220,11 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
         var elsewhere = await socket
             .SendAndDeserializeAsync<ForeignSymbolRequest, LocationListResult>(
                 "workspace/referencesForeign",
-                new ForeignSymbolRequest
-                {
-                    AssemblyName = "Elsewhere",
-                    XmlDocSig = "T:Domain.Player",
-                }
+                new ForeignSymbolRequest(
+                    AssemblyName: "Elsewhere",
+                    XmlDocSig: "T:Domain.Player",
+                    IncludeDeclaration: false
+                )
             )
             .ConfigureAwait(true);
         Assert.Empty(elsewhere.Locations);
@@ -264,12 +263,7 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
         return line is { } at
             ? socket.SendAndDeserializeAsync<PositionRequest, T>(
                 method,
-                new PositionRequest
-                {
-                    FilePath = path,
-                    Line = at,
-                    Character = character,
-                }
+                new PositionRequest(FilePath: path, Line: at, Character: character)
             )
             : socket.SendAndDeserializeAsync<T>(
                 method,

@@ -153,12 +153,7 @@ public sealed class RazorNewerSdkTests(NewerSdkRazorFixture newer, RazorFixture 
     private static byte[] At(string file, (int Line, int Character) position)
     {
         return MessagePackSerializer.Serialize(
-            new PositionRequest
-            {
-                FilePath = file,
-                Line = position.Line,
-                Character = position.Character,
-            }
+            new PositionRequest(FilePath: file, Line: position.Line, Character: position.Character)
         );
     }
 

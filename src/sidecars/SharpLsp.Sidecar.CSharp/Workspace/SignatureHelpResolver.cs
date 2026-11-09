@@ -98,12 +98,11 @@ internal static class SignatureHelpResolver
         }
 
         var active = ActiveSignature(model, arguments, methods);
-        return new SignatureHelpResult
-        {
-            Signatures = [.. methods.Select(Signature)],
-            ActiveSignature = active,
-            ActiveParameter = ActiveParameter(arguments, methods[active], position),
-        };
+        return new SignatureHelpResult(
+            Signatures: [.. methods.Select(Signature)],
+            ActiveSignature: active,
+            ActiveParameter: ActiveParameter(arguments, methods[active], position)
+        );
     }
 
     /// <summary>What the argument list could call: a method group, a delegate, or constructors.</summary>
@@ -223,11 +222,10 @@ internal static class SignatureHelpResolver
         var parameters = method
             .Parameters.Select(parameter => parameter.ToDisplayString(ParameterFormat))
             .ToList();
-        return new SignatureInfoResult
-        {
-            Label = $"{Callee(method)}({string.Join(", ", parameters)})",
-            Parameters = parameters,
-        };
+        return new SignatureInfoResult(
+            Label: $"{Callee(method)}({string.Join(", ", parameters)})",
+            Parameters: parameters
+        );
     }
 
     /// <summary>What the label calls: <c>Point</c>, <c>string Func&lt;int, string&gt;</c>, <c>void Console.WriteLine</c>.</summary>

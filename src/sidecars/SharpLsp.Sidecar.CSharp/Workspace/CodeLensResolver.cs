@@ -107,12 +107,11 @@ internal static class CodeLensResolver
     /// <summary>A lens titled <paramref name="title"/> at the start of <paramref name="span"/>.</summary>
     private static CodeLensResult LensAt(FileLinePositionSpan span, string title)
     {
-        return new CodeLensResult
-        {
-            Line = span.StartLinePosition.Line,
-            Character = span.StartLinePosition.Character,
-            Title = title,
-        };
+        return new CodeLensResult(
+            Line: span.StartLinePosition.Line,
+            Character: span.StartLinePosition.Character,
+            Title: title
+        );
     }
 
     private static async Task<int> CountReferencesAsync(

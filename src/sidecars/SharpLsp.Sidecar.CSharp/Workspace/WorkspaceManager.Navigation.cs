@@ -73,7 +73,7 @@ internal sealed partial class WorkspaceManager
         var csharp = await RunPositionQueryAsync(
                 filePath,
                 (line, character),
-                new LocationListResult(),
+                new LocationListResult(Locations: []),
                 target => DefinitionAtAsync(target, ct),
                 ct
             )
@@ -253,18 +253,17 @@ internal sealed partial class WorkspaceManager
         var csharp = await RunPositionQueryAsync(
                 filePath,
                 (line, character),
-                new DocumentHighlightListResult(),
-                async target => new DocumentHighlightListResult
-                {
-                    Highlights = await ReferenceResolver
+                new DocumentHighlightListResult(Highlights: []),
+                async target => new DocumentHighlightListResult(
+                    Highlights: await ReferenceResolver
                         .ResolveDocumentHighlightsAsync(
                             target.Document,
                             (target.Line, target.Character),
                             target.AnswerPath,
                             ct
                         )
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 ct
             )
             .ConfigureAwait(false);

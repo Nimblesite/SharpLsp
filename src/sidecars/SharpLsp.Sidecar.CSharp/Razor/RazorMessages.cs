@@ -8,49 +8,23 @@ namespace SharpLsp.Sidecar.CSharp.Razor;
 /// Implements [RAZOR-FEATURES-STRUCTURE].
 /// </summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class DocumentSymbolResult
-{
-    [Key(0)]
-    public string Name { get; set; } = "";
-
-    [Key(1)]
-    public string Kind { get; set; } = "";
-
-    [Key(2)]
-    public int StartLine { get; init; }
-
-    [Key(3)]
-    public int StartCharacter { get; init; }
-
-    [Key(4)]
-    public int EndLine { get; init; }
-
-    [Key(5)]
-    public int EndCharacter { get; init; }
-
-    [Key(6)]
-    public int SelectionStartLine { get; init; }
-
-    [Key(7)]
-    public int SelectionStartCharacter { get; init; }
-
-    [Key(8)]
-    public int SelectionEndLine { get; init; }
-
-    [Key(9)]
-    public int SelectionEndCharacter { get; init; }
-
-    [Key(10)]
-    public List<DocumentSymbolResult> Children { get; set; } = [];
-}
+internal sealed record DocumentSymbolResult(
+    [property: Key(0)] string Name,
+    [property: Key(1)] string Kind,
+    [property: Key(2)] int StartLine,
+    [property: Key(3)] int StartCharacter,
+    [property: Key(4)] int EndLine,
+    [property: Key(5)] int EndCharacter,
+    [property: Key(6)] int SelectionStartLine,
+    [property: Key(7)] int SelectionStartCharacter,
+    [property: Key(8)] int SelectionEndLine,
+    [property: Key(9)] int SelectionEndCharacter,
+    [property: Key(10)] List<DocumentSymbolResult> Children
+);
 
 /// <summary>A foldable line range. Implements [RAZOR-FEATURES-STRUCTURE].</summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class FoldingRangeResult
-{
-    [Key(0)]
-    public int StartLine { get; init; }
-
-    [Key(1)]
-    public int EndLine { get; init; }
-}
+internal sealed record FoldingRangeResult(
+    [property: Key(0)] int StartLine,
+    [property: Key(1)] int EndLine
+);

@@ -71,13 +71,12 @@ internal static class RazorHints
             projection.ToRazor(new LinePositionSpan(at, at)) is { } razor
             && razor.Start.Line >= startLine
             && razor.Start.Line <= endLine
-            ? new InlayHintResult
-            {
-                Line = razor.Start.Line,
-                Character = razor.Start.Character,
-                Label = hint.Label,
-                Kind = hint.Kind,
-            }
+            ? new InlayHintResult(
+                Line: razor.Start.Line,
+                Character: razor.Start.Character,
+                Label: hint.Label,
+                Kind: hint.Kind
+            )
             : null;
     }
 

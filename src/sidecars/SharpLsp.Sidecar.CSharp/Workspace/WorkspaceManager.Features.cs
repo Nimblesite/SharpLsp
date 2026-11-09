@@ -112,13 +112,12 @@ internal sealed partial class WorkspaceManager
             ? GetRazorSemanticTokensAsync(filePath, null, ct)
             : RunDocumentQueryAsync(
                 filePath,
-                new SemanticTokensResult(),
-                async document => new SemanticTokensResult
-                {
-                    Data = await SemanticTokensResolver
+                new SemanticTokensResult(Data: []),
+                async document => new SemanticTokensResult(
+                    Data: await SemanticTokensResolver
                         .GetFullAsync(document, ct)
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 ct
             );
     }
@@ -144,13 +143,12 @@ internal sealed partial class WorkspaceManager
 
         return RunDocumentQueryAsync(
             filePath,
-            new SemanticTokensResult(),
-            async document => new SemanticTokensResult
-            {
-                Data = await SemanticTokensResolver
+            new SemanticTokensResult(Data: []),
+            async document => new SemanticTokensResult(
+                Data: await SemanticTokensResolver
                     .GetRangeAsync(document, startLine, startCharacter, endLine, endCharacter, ct)
-                    .ConfigureAwait(false),
-            },
+                    .ConfigureAwait(false)
+            ),
             ct
         );
     }

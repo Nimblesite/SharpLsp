@@ -93,13 +93,12 @@ internal static class FSharpProjectSymbols
                 ? declared[..at]
                 : declared;
         return string.IsNullOrEmpty(assemblyName) || string.IsNullOrEmpty(xmlDocSig)
-            ? new RenameIdentityResultWire()
-            : new RenameIdentityResultWire
-            {
-                Found = true,
-                AssemblyName = assemblyName,
-                XmlDocSig = xmlDocSig,
-            };
+            ? new RenameIdentityResultWire(Found: false, AssemblyName: "", XmlDocSig: "")
+            : new RenameIdentityResultWire(
+                Found: true,
+                AssemblyName: assemblyName,
+                XmlDocSig: xmlDocSig
+            );
     }
 
     /// <summary><paramref name="location"/>, carrying the identity of the F# symbol it shows, if any.</summary>
@@ -107,15 +106,14 @@ internal static class FSharpProjectSymbols
     {
         return symbol is null
             ? location
-            : new LocationResult
-            {
-                FilePath = location.FilePath,
-                Line = location.Line,
-                Character = location.Character,
-                EndLine = location.EndLine,
-                EndCharacter = location.EndCharacter,
-                Symbol = symbol,
-            };
+            : new LocationResult(
+                FilePath: location.FilePath,
+                Line: location.Line,
+                Character: location.Character,
+                EndLine: location.EndLine,
+                EndCharacter: location.EndCharacter,
+                Symbol: symbol
+            );
     }
 
     /// <summary>The assembly name of each F# project <paramref name="project"/> references.</summary>

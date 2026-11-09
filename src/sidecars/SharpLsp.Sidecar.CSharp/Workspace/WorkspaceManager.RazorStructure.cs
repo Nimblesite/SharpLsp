@@ -52,7 +52,7 @@ internal sealed partial class WorkspaceManager
     {
         return RunMarkupQueryAsync(
             filePath,
-            new LocationListResult(),
+            new LocationListResult(Locations: []),
             markup => Task.FromResult(LinkedNames(filePath, markup, at)),
             ct
         );
@@ -66,9 +66,8 @@ internal sealed partial class WorkspaceManager
     {
         var offset = DocumentText.TryOffset(markup.Text, new LinePosition(at.Line, at.Character));
         var spans = offset is { } found ? RazorStructure.LinkedNames(markup, found) : [];
-        return new LocationListResult
-        {
-            Locations =
+        return new LocationListResult(
+            Locations:
             [
                 .. spans.Select(span =>
                     DocumentPosition.ToLocationResult(
@@ -78,8 +77,8 @@ internal sealed partial class WorkspaceManager
                         )
                     )
                 ),
-            ],
-        };
+            ]
+        );
     }
 
     /// <summary>Run <paramref name="query"/> on a Razor file's markup facts; <paramref name="empty"/> when it has none.</summary>

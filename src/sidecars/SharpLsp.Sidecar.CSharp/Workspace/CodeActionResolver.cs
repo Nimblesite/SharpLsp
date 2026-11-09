@@ -448,13 +448,13 @@ internal sealed partial class CodeActionResolver
     {
         var id = Interlocked.Increment(ref _nextId);
         _pendingActions[id] = action;
-        return new CodeActionItem
-        {
-            Id = id,
-            Title = title,
-            Kind = kind,
-            IsPreferred = action.Priority == CodeActionPriority.High,
-        };
+        return new CodeActionItem(
+            Id: id,
+            Title: title,
+            Kind: kind,
+            IsPreferred: action.Priority == CodeActionPriority.High,
+            Reference: null
+        );
     }
 
     private static async Task<WorkspaceEditResult> BuildWorkspaceEditAsync(
@@ -463,7 +463,7 @@ internal sealed partial class CodeActionResolver
         CancellationToken ct
     )
     {
-        var result = new WorkspaceEditResult();
+        var result = new WorkspaceEditResult(DocumentChanges: []);
         var changes = newSolution.GetChanges(oldSolution);
 
         foreach (var projectChange in changes.GetProjectChanges())
@@ -514,12 +514,12 @@ internal sealed partial class CodeActionResolver
             // A rename keeps the old path as the edit target; the host applies text edits to RenameTo.
             // Implements [REFACTOR-MOVE-TYPE-RENAME-FILE].
             result.DocumentChanges.Add(
-                new DocumentEditResult
-                {
-                    FilePath = oldDoc.FilePath,
-                    RenameTo = renameTo,
-                    Edits = edits,
-                }
+                new DocumentEditResult(
+                    FilePath: oldDoc.FilePath,
+                    Edits: edits,
+                    Create: false,
+                    RenameTo: renameTo
+                )
             );
         }
     }

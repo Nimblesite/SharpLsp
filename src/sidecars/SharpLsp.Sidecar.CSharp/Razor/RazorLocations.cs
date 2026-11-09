@@ -39,7 +39,7 @@ internal static class RazorLocations
             }
         }
 
-        return new LocationListResult { Locations = [.. mapped.DistinctBy(Key)] };
+        return new LocationListResult(Locations: [.. mapped.DistinctBy(Key)]);
     }
 
     /// <summary><paramref name="location"/> mapped out of a projection, or null when it is hidden scaffolding.</summary>
@@ -109,7 +109,14 @@ internal static class RazorLocations
         return
             DocumentText.TryOffset(projection.GeneratedText, position) is { } offset
             && DeclaresComponentClass(projection.GeneratedRoot.FindToken(offset))
-            ? new LocationResult { FilePath = projection.RazorPath }
+            ? new LocationResult(
+                FilePath: projection.RazorPath,
+                Line: 0,
+                Character: 0,
+                EndLine: 0,
+                EndCharacter: 0,
+                Symbol: null
+            )
             : null;
     }
 

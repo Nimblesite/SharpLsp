@@ -46,7 +46,7 @@ internal sealed partial class WorkspaceManager
     {
         return RunQueryAsync(
             () => Task.FromResult(FindRazorDocument(filePath)),
-            new LocationListResult(),
+            new LocationListResult(Locations: []),
             async razor =>
                 await MarkupAtAsync(razor, line, character, ct).ConfigureAwait(false) is { } at
                 && RazorMarkupSymbols.At(at.Compilation, at.Markup, at.Offset) is { } named
@@ -57,7 +57,7 @@ internal sealed partial class WorkspaceManager
                             ct
                         )
                         .ConfigureAwait(false)
-                    : new LocationListResult()
+                    : new LocationListResult(Locations: [])
         );
     }
 
