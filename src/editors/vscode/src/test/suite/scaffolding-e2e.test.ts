@@ -346,7 +346,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('newProject scaffolds a real C# console project the workspace folder', async function () {
     this.timeout(DOTNET_CLI_MS);
     const name = scaffoldName('Cs');
-    const projDir = trackedProjectDir(track, 'Cs');
+    const projDir = trackedProjectDir(track, name);
 
     // PROJECT_TEMPLATES QuickPick → 'Console App', then a project-name InputBox.
     stubs.queuePick('Console App').queueInput(name).queueInfo(undefined);
@@ -372,7 +372,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('newProject scaffolds a real F# class library (--language branch)', async function () {
     this.timeout(DOTNET_CLI_MS);
     const name = scaffoldName('Fs');
-    const projDir = trackedProjectDir(track, 'Fs');
+    const projDir = trackedProjectDir(track, name);
 
     stubs.queuePick('F# Class Library').queueInput(name).queueInfo(undefined);
     await vscode.commands.executeCommand(CMD_NEW_PROJECT);
@@ -386,7 +386,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('newProject cancels cleanly when no template is picked', async function () {
     this.timeout(COMMAND_MS);
     const name = scaffoldName('NoTpl');
-    const projDir = trackedProjectDir(track, 'NoTpl');
+    const projDir = trackedProjectDir(track, name);
 
     // No queuePick → the template QuickPick returns undefined → command bails.
     stubs.queueInput(name);

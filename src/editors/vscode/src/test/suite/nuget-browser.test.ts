@@ -59,9 +59,19 @@ function interceptRequests(
 }
 
 /** Sends a switchTab message and asserts the panel reports `tab` on screen. */
-async function switchToTab(panel: NuGetBrowserPanel, tab: string, message?: string): Promise<void> {
+/** Switch the panel to `tab` and assert where it lands (`expected`, by default the tab itself). */
+async function switchToTab(
+  panel: NuGetBrowserPanel,
+  tab: string,
+  message?: string,
+  expected: string = tab,
+): Promise<void> {
   await panel.simulateWebviewMessage({ command: 'switchTab', data: { tab } });
-  assert.strictEqual(panel.getCurrentTab(), tab, message ?? `switchTab must land on '${tab}'`);
+  assert.strictEqual(
+    panel.getCurrentTab(),
+    expected,
+    message ?? `switchTab must land on '${expected}'`,
+  );
 }
 
 suite('NuGet Browser', () => {
@@ -1871,7 +1881,8 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       assert.ok(panel.getRenderedHtml().includes('Installed Packages'));
       await switchToTab(panel, 'browse');
       // unknown tab value falls back to browse.
-      await switchToTab(panel, 'nonsense');
+      // unknown tab value falls back to browse.
+      await switchToTab(panel, 'nonsense', 'an unknown tab falls back to browse', 'browse');
     } finally {
       panel.dispose();
     }

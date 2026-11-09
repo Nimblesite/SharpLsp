@@ -329,8 +329,11 @@ export function assertStringEnumSetting(
 
 /** Update a sharplsp setting at global scope and assert it reads back from there. */
 export async function assertGlobalSettingReadsBack(key: string, value: string): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('sharplsp')
+    .update(key, value, vscode.ConfigurationTarget.Global);
+  // A WorkspaceConfiguration is a snapshot: read through a fresh one.
   const config = vscode.workspace.getConfiguration('sharplsp');
-  await config.update(key, value, vscode.ConfigurationTarget.Global);
   assert.strictEqual(config.get(key), value, `${key} must read back ${JSON.stringify(value)}`);
   assert.strictEqual(
     config.inspect(key)?.globalValue,
@@ -344,8 +347,10 @@ export async function assertGlobalSettingCleared(
   key: string,
   expectedDefault: string,
 ): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('sharplsp')
+    .update(key, undefined, vscode.ConfigurationTarget.Global);
   const config = vscode.workspace.getConfiguration('sharplsp');
-  await config.update(key, undefined, vscode.ConfigurationTarget.Global);
   assert.strictEqual(config.get(key), expectedDefault, `clearing ${key} restores the default`);
   assert.strictEqual(config.inspect(key)?.globalValue, undefined, `${key} leaves no residue`);
 }

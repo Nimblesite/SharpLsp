@@ -31,9 +31,9 @@ export function scaffoldName(caseName: string): string {
   return `ScaffTmp_${caseName}_${uniqueToken()}`;
 }
 
-/** Tracks a fresh `ScaffTmp_<case>_<token>` project directory under the workspace. */
-export function trackedProjectDir(track: (artifact: string) => string, caseName: string): string {
-  return track(path.join(workspaceFolder(), scaffoldName(caseName)));
+/** Tracks the project directory `dotnet new` will create for `name` under the workspace. */
+export function trackedProjectDir(track: (artifact: string) => string, name: string): string {
+  return track(path.join(workspaceFolder(), name));
 }
 
 /** Both solution-file candidates `dotnet new sln` may produce for `name`. */
