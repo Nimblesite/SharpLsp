@@ -200,33 +200,45 @@ impl SidecarManager {
 
     /// Create a manager for the C# sidecar.
     pub fn csharp(workspace_root: &Path) -> Self {
-        let socket_path = ipc_path("sharplsp-csharp", workspace_root);
-
-        let (command, args) = sidecar_launch(
-            "sharplsp-sidecar-csharp",
-            "sidecar-csharp",
+        Self::for_language(
+            crate::tree_sitter_parse::LangId::CSharp,
+            "C# (Roslyn)",
+            "csharp",
             "SharpLsp.Sidecar.CSharp",
-            &socket_path,
-        );
-        Self {
-            language: Some(crate::tree_sitter_parse::LangId::CSharp),
-            ..Self::new("C# (Roslyn)", &command, args, &socket_path)
-        }
+            workspace_root,
+        )
     }
 
     /// Create a manager for the F# sidecar.
     pub fn fsharp(workspace_root: &Path) -> Self {
-        let socket_path = ipc_path("sharplsp-fsharp", workspace_root);
-
-        let (command, args) = sidecar_launch(
-            "sharplsp-sidecar-fsharp",
-            "sidecar-fsharp",
+        Self::for_language(
+            crate::tree_sitter_parse::LangId::FSharp,
+            "F# (FCS)",
+            "fsharp",
             "SharpLsp.Sidecar.FSharp",
+            workspace_root,
+        )
+    }
+
+    /// A manager for one language's sidecar: `sharplsp-sidecar-<kind>` on `PATH`,
+    /// the `sidecar-<kind>` installed layout, or the `project` run from source.
+    fn for_language(
+        language: crate::tree_sitter_parse::LangId,
+        name: &str,
+        kind: &str,
+        project: &str,
+        workspace_root: &Path,
+    ) -> Self {
+        let socket_path = ipc_path(&format!("sharplsp-{kind}"), workspace_root);
+        let (command, args) = sidecar_launch(
+            &format!("sharplsp-sidecar-{kind}"),
+            &format!("sidecar-{kind}"),
+            project,
             &socket_path,
         );
         Self {
-            language: Some(crate::tree_sitter_parse::LangId::FSharp),
-            ..Self::new("F# (FCS)", &command, args, &socket_path)
+            language: Some(language),
+            ..Self::new(name, &command, args, &socket_path)
         }
     }
 
