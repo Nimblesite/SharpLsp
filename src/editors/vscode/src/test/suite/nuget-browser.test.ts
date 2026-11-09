@@ -20,8 +20,20 @@ import {
 } from './nuget-stub-kit';
 import { COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
-import { commandEntries } from './extension-manifest-kit';
+import { commandEntries, requireExtensionExports } from './extension-manifest-kit';
 import { installUiStubs } from './ui-stubs';
+import {
+  barePackage,
+  EMPTY_PROJECT_XML,
+  fakeContextWithStore,
+  installedNone,
+  installedSingle,
+  JSON_PROJECT_XML,
+  openFreshPanel,
+  previewCalls,
+  resetPanelSingleton,
+  VIRTUAL_PROJECT,
+} from './nuget-browser-kit';
 
 interface SharpLspApiForNuGetTests {
   readonly getLspClient: () => LanguageClient | undefined;
@@ -44,6 +56,12 @@ function interceptRequests(
   const original = handle.client.sendRequest.bind(handle.client) as SendRequest;
   const client = handle.client as unknown as { sendRequest: SendRequest };
   client.sendRequest = async (method, params) => route(method) ?? original(method, params);
+}
+
+/** Sends a switchTab message and asserts the panel reports `tab` on screen. */
+async function switchToTab(panel: NuGetBrowserPanel, tab: string, message?: string): Promise<void> {
+  await panel.simulateWebviewMessage({ command: 'switchTab', data: { tab } });
+  assert.strictEqual(panel.getCurrentTab(), tab, message ?? `switchTab must land on '${tab}'`);
 }
 
 suite('NuGet Browser', () => {
@@ -76,8 +94,7 @@ suite('NuGet Browser', () => {
     this.timeout(COMMAND_MS);
 
     // Import the module to access the static open method.
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'Extension must be active');
+    assert.ok(vscode.extensions.getExtension(EXTENSION_ID)?.isActive, 'Extension must be active');
 
     // We can't easily call NuGetBrowserPanel.open() directly without
     // a real project file, but we can verify the command doesn't crash
@@ -97,10 +114,8 @@ suite('NuGet Browser', () => {
   // ── Extension API availability ──────────────────────────────
 
   test('extension exports API with explorerProvider', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'Extension must be active');
-    const api = ext.exports as { explorerProvider: unknown } | undefined;
-    assert.ok(api?.explorerProvider, 'Extension must export explorerProvider');
+    const api = requireExtensionExports('explorerProvider') as { explorerProvider: unknown };
+    assert.ok(api.explorerProvider, 'Extension must export explorerProvider');
   });
 
   // ── Context menu registration ───────────────────────────────
@@ -190,30 +205,9 @@ suite('NuGet Browser', () => {
 
   // ── Real panel lifecycle (bug regression tests) ─────────────
 
-  function getExtensionContext(): vscode.ExtensionContext {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'Extension must be active');
-    const store = new Map<string, unknown>();
-    const workspaceState = {
-      get: (key: string): unknown => store.get(key),
-      update: (key: string, value: unknown): Thenable<void> => {
-        if (value === undefined) store.delete(key);
-        else store.set(key, value);
-        return Promise.resolve();
-      },
-      keys: (): readonly string[] => Array.from(store.keys()),
-    };
-    return {
-      subscriptions: [],
-      workspaceState,
-    } as unknown as vscode.ExtensionContext;
-  }
-
   function getLspClientGetter(): () => LanguageClient | undefined {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'Extension must be active');
-    const api = ext.exports as SharpLspApiForNuGetTests | undefined;
-    assert.ok(api?.getLspClient, 'Extension must export getLspClient');
+    const api = requireExtensionExports('getLspClient') as SharpLspApiForNuGetTests;
+    assert.ok(api.getLspClient, 'Extension must export getLspClient');
     return api.getLspClient;
   }
 
@@ -228,7 +222,7 @@ suite('NuGet Browser', () => {
   ): { panel: NuGetBrowserPanel; feed: StubbedFeed; getClient: () => LanguageClient | undefined } {
     const feed = stubSearchFeed(getLspClientGetter());
     assert.ok(feed.getClient(), 'LSP client must be running for this test');
-    const panel = NuGetBrowserPanel.open(getExtensionContext(), projectPath, name, feed.getClient);
+    const panel = NuGetBrowserPanel.open(fakeContextWithStore(), projectPath, name, feed.getClient);
     return { panel, feed, getClient: feed.getClient };
   }
 
@@ -242,7 +236,7 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
-    const context = getExtensionContext();
+    const context = fakeContextWithStore();
     const feed = stubSearchFeed(getLspClientGetter());
     const getClient = feed.getClient;
 
@@ -353,11 +347,7 @@ suite('NuGet Browser', () => {
       );
 
       // Switch to the Installed tab.
-      await panel.simulateWebviewMessage({
-        command: 'switchTab',
-        data: { tab: 'installed' },
-      });
-      assert.strictEqual(panel.getCurrentTab(), 'installed', 'Tab must switch to installed');
+      await switchToTab(panel, 'installed', 'Tab must switch to installed');
 
       // Click the installed package.
       await panel.simulateWebviewMessage({
@@ -551,15 +541,7 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const scratch = path.join(tmpDir(), 'reactivity-panel');
-    const csprojPath = createScratchProject(
-      scratch,
-      `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-  </ItemGroup>
-</Project>`,
-    );
+    const csprojPath = createScratchProject(scratch, JSON_PROJECT_XML);
 
     const { panel } = openPanel(csprojPath, 'Scratch');
 
@@ -579,14 +561,7 @@ suite('NuGet Browser', () => {
       );
 
       // Rewrite the csproj to drop the package — no manual refresh.
-      fs.writeFileSync(
-        csprojPath,
-        `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup></ItemGroup>
-</Project>`,
-        'utf-8',
-      );
+      fs.writeFileSync(csprojPath, EMPTY_PROJECT_XML, 'utf-8');
 
       // Wait for the signal-driven re-render. No manual refresh() call.
       await pollUntilResult(
@@ -620,13 +595,7 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const scratch = path.join(tmpDir(), 'reactivity-panel-add');
-    const csprojPath = createScratchProject(
-      scratch,
-      `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup></ItemGroup>
-</Project>`,
-    );
+    const csprojPath = createScratchProject(scratch, EMPTY_PROJECT_XML);
 
     const { panel } = openPanel(csprojPath, 'ScratchAdd');
 
@@ -637,16 +606,7 @@ suite('NuGet Browser', () => {
         'Newtonsoft.Json must not be installed initially',
       );
 
-      fs.writeFileSync(
-        csprojPath,
-        `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-  </ItemGroup>
-</Project>`,
-        'utf-8',
-      );
+      fs.writeFileSync(csprojPath, JSON_PROJECT_XML, 'utf-8');
 
       await pollUntilResult(
         () => Promise.resolve(panel.getInstalledPackageIds()),
@@ -783,15 +743,7 @@ suite('NuGet Browser', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const scratch = path.join(tmpDir(), 'reactivity-details');
-    const csprojPath = createScratchProject(
-      scratch,
-      `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-  </ItemGroup>
-</Project>`,
-    );
+    const csprojPath = createScratchProject(scratch, JSON_PROJECT_XML);
 
     const { panel } = openPanel(csprojPath, 'ReactivityDetails');
 
@@ -825,14 +777,7 @@ suite('NuGet Browser', () => {
 
       // External edit: rewrite the csproj to drop the PackageReference.
       // No manual refresh, no UI interaction — just a file write.
-      fs.writeFileSync(
-        csprojPath,
-        `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup></ItemGroup>
-</Project>`,
-        'utf-8',
-      );
+      fs.writeFileSync(csprojPath, EMPTY_PROJECT_XML, 'utf-8');
 
       // Wait for the signal to drive a re-render of the details panel.
       // The selectedPackage snapshot still has isInstalled=true; the bug
@@ -1041,24 +986,6 @@ function makeFakeClient(routes: FakeRoutes, failNotification = false): FakeClien
   handle.client = { sendRequest, onNotification } as unknown as LanguageClient;
   return handle;
 }
-
-function fakeContextWithStore(): vscode.ExtensionContext {
-  const store = new Map<string, unknown>();
-  const workspaceState = {
-    get: (key: string): unknown => store.get(key),
-    update: (key: string, value: unknown): Thenable<void> => {
-      if (value === undefined) store.delete(key);
-      else store.set(key, value);
-      return Promise.resolve();
-    },
-    keys: (): readonly string[] => Array.from(store.keys()),
-  };
-  return { subscriptions: [], workspaceState } as unknown as vscode.ExtensionContext;
-}
-
-// A virtual project path that does NOT exist on disk, so the panel's
-// on-disk csproj sync short-circuits to `false` and the LSP path runs.
-const VIRTUAL_PROJECT = '/virtual/nonexistent/Fake.csproj';
 
 suite('NuGet Browser — pure html', () => {
   test('esc escapes all five HTML-significant characters', () => {
@@ -1411,13 +1338,7 @@ suite('NuGet Browser — pure mutate/types/target-store', () => {
     const handle = makeFakeClient({
       search: { packages: [searchResult({ id: 'X', description: 'Enriched!' })], totalHits: 1 },
     });
-    const pkg: NuGetSearchResult = {
-      id: 'X',
-      version: '1',
-      description: '',
-      authors: '',
-      tags: [],
-    };
+    const pkg = barePackage();
     await enrichPackageMetadata(handle.client, projectTarget(), pkg);
     assert.strictEqual(pkg.description, 'Enriched!', 'description merged in place');
     assert.strictEqual(handle.calls[0]!.method, 'sharplsp/nuget/search');
@@ -1425,13 +1346,7 @@ suite('NuGet Browser — pure mutate/types/target-store', () => {
 
   test('enrichPackageMetadata leaves package unchanged on search failure or no match', async () => {
     const failing = makeFakeClient({ search: new Error('search down') });
-    const pkg: NuGetSearchResult = {
-      id: 'X',
-      version: '1',
-      description: '',
-      authors: '',
-      tags: [],
-    };
+    const pkg = barePackage();
     await enrichPackageMetadata(failing.client, projectTarget(), pkg);
     assert.strictEqual(pkg.description, '', 'no mutation when search fails');
     const noMatch = makeFakeClient({
@@ -1587,21 +1502,14 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       },
       failNotification,
     );
-    // Reset the singleton so each test gets a fresh panel.
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
-    const panel = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      buildPropsTarget().path,
-      'PropsProj',
-      () => handle.client,
-    );
+    const panel = openFreshPanel(buildPropsTarget().path, 'PropsProj', () => handle.client);
     return { panel, handle };
   }
 
   test('initial load selects the build-props target and populates search results', async () => {
     const { panel, handle } = openWithRoutes({
       search: { packages: [searchResult({ id: 'Popular.Pkg' })], totalHits: 1 },
-      installed: { packages: [] },
+      installed: installedNone(),
     });
     try {
       await panel.waitForInitialLoad();
@@ -1672,7 +1580,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('install success reloads installed; failure reverts + shows error', async () => {
-    const installed: NuGetInstalledResponse = { packages: [] };
+    const installed = installedNone();
     const { panel } = openWithRoutes({
       installed,
       search: { packages: [searchResult({ id: 'Inst.Me', description: '' })], totalHits: 1 },
@@ -1699,7 +1607,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('install success path reloads installed packages from LSP', async () => {
-    let installedPackages: NuGetInstalledResponse = { packages: [] };
+    let installedPackages = installedNone();
     const handle = makeFakeClient({
       targets: { targets: [buildPropsTarget()], defaultTargetId: 'props-1', cpmEnabled: false },
       search: { packages: [searchResult({ id: 'Good.Pkg', description: '' })], totalHits: 1 },
@@ -1709,18 +1617,10 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     interceptRequests(handle, (m) => {
       if (m === 'sharplsp/nuget/installed') return installedPackages;
       if (m !== 'sharplsp/nuget/install') return undefined;
-      installedPackages = {
-        packages: [{ id: 'Good.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-      };
+      installedPackages = installedSingle('Good.Pkg');
       return { success: true, message: 'ok' };
     });
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
-    const panel = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      buildPropsTarget().path,
-      'Y',
-      () => handle.client,
-    );
+    const panel = openFreshPanel(buildPropsTarget().path, 'Y', () => handle.client);
     try {
       await panel.waitForInitialLoad();
       await panel.simulateWebviewMessage({
@@ -1741,9 +1641,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('uninstall failure reverts the optimistic removal', async () => {
-    const installed: NuGetInstalledResponse = {
-      packages: [{ id: 'Remove.Me', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-    };
+    const installed = installedSingle('Remove.Me');
     const { panel } = openWithRoutes({
       installed,
       uninstall: new Error('uninstall network error'),
@@ -1769,9 +1667,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('changeVersion confirms the exact host proposal and routes through install', async () => {
-    const installed: NuGetInstalledResponse = {
-      packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-    };
+    const installed = installedSingle('Ver.Pkg');
     const { panel, handle } = openWithRoutes({
       installed,
       updatePreview: (payload) => {
@@ -1793,10 +1689,11 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
         data: { packageId: 'Ver.Pkg', version: '2.0.0' },
       });
       assert.deepStrictEqual(panel.getActiveLoadingKeys(), [], 'install loading key cleared');
-      const previews = handle.calls.filter((call) => call.method.endsWith('updatePreview'));
-      assert.strictEqual(previews.length, 2, 'preview is refreshed after confirmation');
+      assert.strictEqual(previewCalls(handle).length, 2, 'preview is refreshed after confirmation');
       assert.deepStrictEqual(
-        previews.map((call) => (call.payload as { selectedVersion?: string }).selectedVersion),
+        previewCalls(handle).map(
+          (call) => (call.payload as { selectedVersion?: string }).selectedVersion,
+        ),
         ['2.0.0', '2.0.0'],
         'the explicit selection stays fixed',
       );
@@ -1829,11 +1726,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       assert.ok(
         stubs.log.infoMessages.some((message) => message.includes('Explicit boundary: prerelease')),
       );
-      assert.strictEqual(
-        handle.calls.filter((call) => call.method.endsWith('updatePreview')).length,
-        4,
-        'both explicit choices are revalidated',
-      );
+      assert.strictEqual(previewCalls(handle).length, 4, 'both explicit choices are revalidated');
     } finally {
       stubs.restore();
       panel.dispose();
@@ -1843,9 +1736,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   test('bounded Update confirms and applies the fixed host candidate', async () => {
     let previewCount = 0;
     const { panel, handle } = openWithRoutes({
-      installed: {
-        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-      },
+      installed: installedSingle('Ver.Pkg'),
       updatePreview: () => {
         previewCount += 1;
         return previewCount === 1
@@ -1862,7 +1753,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     try {
       await panel.waitForInitialLoad();
       await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
-      const previews = handle.calls.filter((call) => call.method.endsWith('updatePreview'));
+      const previews = previewCalls(handle);
       assert.strictEqual(previews.length, 2, 'default update previews and revalidates');
       assert.ok(
         previews.every(
@@ -1887,9 +1778,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
 
   test('a failed update restore reports failure with the exact attempted version', async () => {
     const { panel, handle } = openWithRoutes({
-      installed: {
-        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-      },
+      installed: installedSingle('Ver.Pkg'),
       updatePreview: updatePreview(),
       install: { success: true, message: 'ok' },
     });
@@ -1926,9 +1815,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     test(`a stale preview refreshes and never calls install: ${JSON.stringify(changed)}`, async () => {
       let calls = 0;
       const { panel, handle } = openWithRoutes({
-        installed: {
-          packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-        },
+        installed: installedSingle('Ver.Pkg'),
         updatePreview: () => {
           calls += 1;
           return calls === 1 ? updatePreview() : updatePreview(changed);
@@ -1957,9 +1844,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
 
   test('cancelling bounded Update makes no mutation request', async () => {
     const { panel, handle } = openWithRoutes({
-      installed: {
-        packages: [{ id: 'Ver.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-      },
+      installed: installedSingle('Ver.Pkg'),
       updatePreview: updatePreview(),
       install: { success: true, message: 'must not be applied' },
     });
@@ -1969,11 +1854,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       await panel.waitForInitialLoad();
       await panel.simulateWebviewMessage({ command: 'update', data: { packageId: 'Ver.Pkg' } });
       assert.ok(!handle.calls.some((call) => call.method.endsWith('/install')));
-      assert.strictEqual(
-        handle.calls.filter((call) => call.method.endsWith('updatePreview')).length,
-        1,
-        'cancel does not revalidate or apply',
-      );
+      assert.strictEqual(previewCalls(handle).length, 1, 'cancel does not revalidate or apply');
       assert.deepStrictEqual(panel.getActiveLoadingKeys(), []);
     } finally {
       stubs.restore();
@@ -1982,20 +1863,15 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('switchTab to installed loads installed packages; back to browse keeps tab', async () => {
-    const installed: NuGetInstalledResponse = {
-      packages: [{ id: 'Tab.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-    };
+    const installed = installedSingle('Tab.Pkg');
     const { panel } = openWithRoutes({ installed });
     try {
       await panel.waitForInitialLoad();
-      await panel.simulateWebviewMessage({ command: 'switchTab', data: { tab: 'installed' } });
-      assert.strictEqual(panel.getCurrentTab(), 'installed');
+      await switchToTab(panel, 'installed');
       assert.ok(panel.getRenderedHtml().includes('Installed Packages'));
-      await panel.simulateWebviewMessage({ command: 'switchTab', data: { tab: 'browse' } });
-      assert.strictEqual(panel.getCurrentTab(), 'browse');
+      await switchToTab(panel, 'browse');
       // unknown tab value falls back to browse.
-      await panel.simulateWebviewMessage({ command: 'switchTab', data: { tab: 'nonsense' } });
-      assert.strictEqual(panel.getCurrentTab(), 'browse');
+      await switchToTab(panel, 'nonsense');
     } finally {
       panel.dispose();
     }
@@ -2003,7 +1879,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
 
   test('refresh re-runs installed + search; openExternal + unknown commands are safe', async () => {
     const { panel, handle } = openWithRoutes({
-      installed: { packages: [] },
+      installed: installedNone(),
       search: { packages: [searchResult({ id: 'Refr.Pkg' })], totalHits: 1 },
     });
     try {
@@ -2037,7 +1913,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       installed: { packages: [] },
       search: { packages: [searchResult()], totalHits: 1 },
     });
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
+    resetPanelSingleton();
     const panel = NuGetBrowserPanel.open(
       ctx,
       buildPropsTarget().path,
@@ -2067,13 +1943,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('loadTargets shows an error toast when no LSP client is available', async () => {
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
-    const panel = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      VIRTUAL_PROJECT,
-      'NoClient',
-      () => undefined,
-    );
+    const panel = openFreshPanel(VIRTUAL_PROJECT, 'NoClient', () => undefined);
     try {
       await panel.waitForInitialLoad();
       assert.ok(
@@ -2086,7 +1956,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('restore progress notifications drive loading keys and toasts', async () => {
-    const { panel, handle } = openWithRoutes({ installed: { packages: [] } });
+    const { panel, handle } = openWithRoutes({ installed: installedNone() });
     try {
       await panel.waitForInitialLoad();
       assert.strictEqual(handle.restoreHandlers.length, 1, 'restore handler subscribed');
@@ -2114,17 +1984,11 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('a failing onNotification subscription does not crash the panel', async () => {
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
     const handle = makeFakeClient(
       { targets: { targets: [buildPropsTarget()], defaultTargetId: 'props-1', cpmEnabled: false } },
       true,
     );
-    const panel = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      buildPropsTarget().path,
-      'SubFail',
-      () => handle.client,
-    );
+    const panel = openFreshPanel(buildPropsTarget().path, 'SubFail', () => handle.client);
     try {
       await panel.waitForInitialLoad();
       assert.strictEqual(handle.restoreHandlers.length, 0, 'no handler registered after throw');
@@ -2138,16 +2002,10 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('open() reuses the existing singleton instead of creating a second panel', async () => {
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
     const handle = makeFakeClient({
       targets: { targets: [buildPropsTarget()], defaultTargetId: 'props-1', cpmEnabled: false },
     });
-    const first = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      buildPropsTarget().path,
-      'First',
-      () => handle.client,
-    );
+    const first = openFreshPanel(buildPropsTarget().path, 'First', () => handle.client);
     try {
       const second = NuGetBrowserPanel.open(
         fakeContextWithStore(),
@@ -2168,17 +2026,8 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   // uninstall SUCCESS reload.
 
   test('loadTargets error toast: a failing targets route renders "Failed to load targets"', async () => {
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
-    // Note: makeFakeClient defaults `targets` to an empty list; override it with
-    // an Error so loadTargetsWithDefaults returns result.error and the panel's
-    // loadTargets() takes its error-toast branch.
     const handle = makeFakeClient({ targets: new Error('targets endpoint exploded') });
-    const panel = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      VIRTUAL_PROJECT,
-      'TargetsFail',
-      () => handle.client,
-    );
+    const panel = openFreshPanel(VIRTUAL_PROJECT, 'TargetsFail', () => handle.client);
     try {
       await panel.waitForInitialLoad();
       const html = panel.getRenderedHtml();
@@ -2198,18 +2047,12 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     // VIRTUAL_PROJECT does not exist on disk, so syncInstalledPackagesFromTrackedProject
     // returns false and the LSP `installed` route runs — which we make reject.
     const fallbackTarget = projectTarget({ id: 'virt', path: VIRTUAL_PROJECT });
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
     const handle = makeFakeClient({
       targets: { targets: [fallbackTarget], defaultTargetId: 'virt', cpmEnabled: false },
       installed: new Error('installed endpoint down'),
       search: { packages: [], totalHits: 0 },
     });
-    const panel = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      VIRTUAL_PROJECT,
-      'InstalledFail',
-      () => handle.client,
-    );
+    const panel = openFreshPanel(VIRTUAL_PROJECT, 'InstalledFail', () => handle.client);
     try {
       await panel.waitForInitialLoad();
       const html = panel.getRenderedHtml();
@@ -2230,9 +2073,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('uninstall SUCCESS reloads installed and removes the package + success toast', async () => {
-    let installed: NuGetInstalledResponse = {
-      packages: [{ id: 'Bye.Pkg', requestedVersion: '1.0.0', resolvedVersion: '1.0.0' }],
-    };
+    let installed = installedSingle('Bye.Pkg');
     const handle = makeFakeClient({
       targets: { targets: [buildPropsTarget()], defaultTargetId: 'props-1', cpmEnabled: false },
       search: { packages: [], totalHits: 0 },
@@ -2244,16 +2085,10 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       if (m === 'sharplsp/nuget/installed') return installed;
       if (m !== 'sharplsp/nuget/uninstall') return undefined;
       uninstallSent = true;
-      installed = { packages: [] }; // server confirms removal
+      installed = installedNone(); // server confirms removal
       return { success: true, message: 'removed' };
     });
-    NuGetBrowserPanel.open(fakeContextWithStore(), VIRTUAL_PROJECT, 'x', () => undefined).dispose();
-    const panel = NuGetBrowserPanel.open(
-      fakeContextWithStore(),
-      buildPropsTarget().path,
-      'UninstallOk',
-      () => handle.client,
-    );
+    const panel = openFreshPanel(buildPropsTarget().path, 'UninstallOk', () => handle.client);
     try {
       await panel.waitForInitialLoad();
       assert.ok(
@@ -2280,7 +2115,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('str() default branch: switchTab with a non-string tab falls back to browse', async () => {
-    const { panel } = openWithRoutes({ installed: { packages: [] } });
+    const { panel } = openWithRoutes({ installed: installedNone() });
     try {
       await panel.waitForInitialLoad();
       // Drive str(value, 'browse') with a NON-string value (number) so the

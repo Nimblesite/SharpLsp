@@ -8,7 +8,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { EXTENSION_ID, pollUntilResult } from './test-helpers';
+import { EXTENSION_ID, openCSharpOutline, pollUntilResult } from './test-helpers';
+import { childNamed } from './lsp-invariants-kit';
 
 /** One node of the tree, viewed only through the fields the searches read. */
 export interface ExplorerNode {
@@ -81,4 +82,21 @@ export async function pollTreeFor(provider: ExplorerProvider, target: string): P
     (found) => found,
     5_000,
   );
+}
+
+/** Opens a C# scratch file via the outline helper and resolves its namespace child. */
+export async function openOutlineNs(
+  dir: string,
+  file: string,
+  source: string,
+  nsName: string,
+  nsKind?: vscode.SymbolKind,
+): Promise<{
+  uri: vscode.Uri;
+  doc: vscode.TextDocument;
+  symbols: vscode.DocumentSymbol[];
+  ns: vscode.DocumentSymbol;
+}> {
+  const opened = await openCSharpOutline(dir, file, source);
+  return { ...opened, ns: childNamed(opened.symbols, nsName, nsKind) };
 }

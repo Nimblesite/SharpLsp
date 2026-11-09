@@ -42,6 +42,14 @@ import {
 } from '../../project-deps-store.js';
 import { effect } from '../../signals.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
+import {
+  assertFirstPickOffered,
+  assertPackageNames,
+  assertProjectXmlCloses,
+  assertSdkProjectIntact,
+  observeProjectCount,
+  packageNode,
+} from './nuget-deps-kit';
 import { closeAllEditors, assertContainsAll, removeDirRecursive } from './test-helpers';
 import { COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
 import type { NuGetBrowserPanel } from '../../nuget-browser';
@@ -256,10 +264,10 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.nuget.add');
     });
-    const offered = stubs.log.quickPickItems[0] as { label?: string }[] | undefined;
-    assert.ok(offered, 'the next search produced a package list');
-    assert.ok(
-      offered.some((item) => item.label === 'Found.Later'),
+    assertFirstPickOffered(
+      stubs,
+      'Found.Later',
+      'the next search produced a package list',
       'naming the hit',
     );
   });
@@ -362,10 +370,10 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
       await vscode.commands.executeCommand('sharplsp.nuget.add');
     }, 'a later search must not inherit the earlier failure');
     assert.strictEqual(fetchStub.urls.length, 1, 'the retry reached the feed');
-    const recovered = stubs.log.quickPickItems[0] as { label?: string }[] | undefined;
-    assert.ok(recovered, 'and produced a package list this time');
-    assert.ok(
-      recovered.some((item) => item.label === 'Recovered'),
+    assertFirstPickOffered(
+      stubs,
+      'Recovered',
+      'and produced a package list this time',
       'naming the package the healthy feed returned',
     );
   });
@@ -483,10 +491,10 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     }, 'addFromExplorer must complete against an explicit project node');
 
     assert.strictEqual(fetchStub.urls.length, 1, 'a single search request was made');
-    const items = stubs.log.quickPickItems[0] as { label?: string }[] | undefined;
-    assert.ok(items, 'a package quick pick was shown');
-    assert.ok(
-      items.some((it) => it.label === 'Polly'),
+    assertFirstPickOffered(
+      stubs,
+      'Polly',
+      'a package quick pick was shown',
       'the explorer add offered the Polly package',
     );
     // No project-pick quick pick should have been needed — the package list is
@@ -557,11 +565,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
 
     const parsed = parseProjectXml(xml);
 
-    assert.deepEqual(
-      parsed.nugetPackages.map((p) => p.name),
-      ['AutoMapper', 'Serilog'],
-      'packages are sorted by name',
-    );
+    assertPackageNames(parsed, ['AutoMapper', 'Serilog'], 'packages are sorted by name');
     assert.strictEqual(parsed.nugetPackages[0]?.version, '13.0.1', 'AutoMapper version captured');
     assert.strictEqual(parsed.nugetPackages[1]?.version, '3.1.0', 'Serilog version captured');
     assert.deepEqual(
@@ -653,11 +657,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
         '</Project>',
       ].join('\n'),
     );
-    assert.deepEqual(
-      mixed.nugetPackages.map((pkg) => pkg.name),
-      ['Alpha', 'Zeta'],
-      'both are captured and sorted by name',
-    );
+    assertPackageNames(mixed, ['Alpha', 'Zeta'], 'both are captured and sorted by name');
     assert.strictEqual(
       mixed.nugetPackages[0]?.version,
       '1.2.3',
@@ -730,11 +730,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
         '</Project>',
       ].join('\n'),
     );
-    assert.deepEqual(
-      commented.nugetPackages.map((pkg) => pkg.name),
-      ['Live'],
-      'a commented-out reference is not a dependency',
-    );
+    assertPackageNames(commented, ['Live'], 'a commented-out reference is not a dependency');
     assert.strictEqual(commented.nugetPackages.length, 1, 'exactly one live package');
     assert.strictEqual(commented.nugetPackages[0]?.version, '1.0.0', 'with its real version');
 
@@ -750,8 +746,8 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
         '</Project>',
       ].join('\n'),
     );
-    assert.deepEqual(
-      several.nugetPackages.map((pkg) => pkg.name),
+    assertPackageNames(
+      several,
       ['Ant', 'Zebra'],
       'packages from separate ItemGroups merge and sort',
     );
@@ -816,11 +812,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
     });
 
     const parsed = parseProjectDependencies(projectPath);
-    assert.deepEqual(
-      parsed.nugetPackages.map((p) => p.name),
-      ['MediatR', 'Polly'],
-      'on-disk packages parsed and sorted',
-    );
+    assertPackageNames(parsed, ['MediatR', 'Polly'], 'on-disk packages parsed and sorted');
     assert.strictEqual(parsed.projectReferences.length, 1, 'the project reference was parsed');
     assert.strictEqual(parsed.projectReferences[0]?.name, 'Shared', 'reference basename extracted');
     assert.strictEqual(
@@ -841,8 +833,8 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
       ext: 'fsproj',
     });
     const fsharp = parseProjectDependencies(fsharpPath);
-    assert.deepEqual(
-      fsharp.nugetPackages.map((pkg) => pkg.name),
+    assertPackageNames(
+      fsharp,
       ['Expecto', 'FsToolkit.ErrorHandling'],
       'an .fsproj parses and sorts exactly like a .csproj',
     );
@@ -854,8 +846,8 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
     const before = fs.readFileSync(projectPath, 'utf8');
     parseProjectDependencies(projectPath);
     assert.strictEqual(fs.readFileSync(projectPath, 'utf8'), before, 'parsing writes nothing back');
-    assert.deepEqual(
-      parseProjectDependencies(projectPath).nugetPackages.map((pkg) => pkg.name),
+    assertPackageNames(
+      parseProjectDependencies(projectPath),
       ['MediatR', 'Polly'],
       'and a second read answers identically',
     );
@@ -958,12 +950,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // parts of the project survive. A mutation done by string splicing loses
     // the SDK attribute or the TargetFramework the moment an element moves.
     const afterXml = fs.readFileSync(projectPath, 'utf8');
-    assertContainsAll(
-      afterXml,
-      ['<Project Sdk="Microsoft.NET.Sdk">', '<TargetFramework>net9.0</TargetFramework>'],
-      'afterXml',
-    );
-    assert.ok(afterXml.trim().endsWith('</Project>'), 'and the document still closes');
+    assertSdkProjectIntact(afterXml, 'afterXml', 'and the document still closes');
 
     // Interaction 3 - [NUGET-ERRORS]: removing a package that is not there is
     // reported, never thrown, and never silently rewrites the file.
@@ -1016,12 +1003,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // a well-formed SDK project with its TargetFramework intact. A round trip
     // that leaves the file unparseable breaks the build, not just the feature.
     const consumerXml = fs.readFileSync(consumer, 'utf8');
-    assertContainsAll(
-      consumerXml,
-      ['<Project Sdk="Microsoft.NET.Sdk">', '<TargetFramework>net9.0</TargetFramework>'],
-      'consumerXml',
-    );
-    assert.ok(consumerXml.trim().endsWith('</Project>'), 'and the document closes');
+    assertSdkProjectIntact(consumerXml, 'consumerXml', 'and the document closes');
 
     // Interaction 3 - the LIBRARY is untouched by either direction of the round
     // trip. Adding a reference edits the consumer alone.
@@ -1047,12 +1029,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // confirmAndRemoveDependency shows a modal warning with a 'Remove' action.
     stubs.queueWarning('Remove');
 
-    const node = {
-      projectFilePath: projectPath,
-      referenceName: 'Serilog',
-      label: 'Serilog',
-      contextValue: 'nugetPackage',
-    };
+    const node = packageNode(projectPath, 'Serilog');
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', node);
     }, 'the remove command must complete (handling offline dotnet)');
@@ -1103,12 +1080,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
       packages: [{ id: 'Serilog', version: '3.1.0' }],
     });
     // No queued warning answer → dialog dismissed (returns undefined) → no removal.
-    const node = {
-      projectFilePath: projectPath,
-      referenceName: 'Serilog',
-      label: 'Serilog',
-      contextValue: 'nugetPackage',
-    };
+    const node = packageNode(projectPath, 'Serilog');
 
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', node);
@@ -1182,8 +1154,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // Interaction 3 - the consumer project survives as a project, and the
     // command reported exactly one outcome ([NUGET-ERRORS]).
     const consumerXml = fs.readFileSync(consumer, 'utf8');
-    assert.ok(consumerXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the consumer is intact');
-    assert.ok(consumerXml.trim().endsWith('</Project>'), 'and still well formed');
+    assertProjectXmlCloses(consumerXml, 'the consumer is intact', 'and still well formed');
     const outcomes =
       stubs.log.infoMessages.filter((m) => m.includes('Removed')).length +
       stubs.log.errorMessages.filter((m) => m.includes('Failed to remove')).length;
@@ -1241,14 +1212,12 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // Interaction 5 - the guard is about the NODE, not about the command: a
     // complete node still prompts, so the inert paths above are a guard and not
     // a dead command.
-    const complete = {
-      projectFilePath: writeProjectFile(tmpDir, 'CompleteNode', {
+    const complete = packageNode(
+      writeProjectFile(tmpDir, 'CompleteNode', {
         packages: [{ id: 'Serilog', version: '3.1.0' }],
       }),
-      referenceName: 'Serilog',
-      label: 'Serilog',
-      contextValue: 'nugetPackage',
-    };
+      'Serilog',
+    );
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', complete);
     }, 'a complete node must reach the confirmation');
@@ -1306,8 +1275,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     );
     assert.strictEqual(stubs.log.quickPickItems.length, 1, 'one picker, not a chain of them');
     const consumerXml = fs.readFileSync(projectPath, 'utf8');
-    assert.ok(consumerXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the consumer is intact');
-    assert.ok(consumerXml.trim().endsWith('</Project>'), 'and still well formed');
+    assertProjectXmlCloses(consumerXml, 'the consumer is intact', 'and still well formed');
 
     // Interaction 4 - the candidate list has no duplicates. The same project
     // offered twice is a picker where the user cannot tell the entries apart.
@@ -1411,10 +1379,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 2 - a redundant call publishes NOTHING, so no effect re-runs.
     // Republishing an identical map is how a reactive tree ends up rebuilding
     // itself on every keystroke ([VSCODE-REACTIVITY-SPEC]).
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
+    const { runs, dispose } = observeProjectCount();
     assert.deepEqual(runs, [1], 'the effect ran once for the current state');
     ensureTracked(projectPath);
     ensureTracked(projectPath);
@@ -1445,10 +1410,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
   });
 
   test('an effect re-runs when ensureTracked publishes a new project', () => {
-    const observedSizes: number[] = [];
-    const dispose = effect(() => {
-      observedSizes.push(projectDependencies.value.size);
-    });
+    const { runs: observedSizes, dispose } = observeProjectCount();
     assert.deepEqual(observedSizes, [0], 'effect ran once with the empty store');
 
     const a = writeProjectFile(tmpDir, 'EffectA', { packages: [{ id: 'A', version: '1.0.0' }] });
@@ -1475,10 +1437,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 3 - a NEW effect starts from the current state, not from the
     // history the disposed one saw. That is what makes a late-mounting tree
     // view render correctly instead of empty.
-    const late: number[] = [];
-    const disposeLate = effect(() => {
-      late.push(projectDependencies.value.size);
-    });
+    const { runs: late, dispose: disposeLate } = observeProjectCount();
     assert.deepEqual(late, [3], 'a late observer sees the CURRENT store, not an empty one');
     ensureTracked(writeProjectFile(tmpDir, 'EffectD'));
     disposeLate();
@@ -1525,10 +1484,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 3 - refreshing when NOTHING changed publishes nothing. A
     // store that republishes on every poll makes every reactive consumer
     // rebuild on a timer ([VSCODE-REACTIVITY-SPEC]).
-    const quiet: number[] = [];
-    const disposeQuiet = effect(() => {
-      quiet.push(projectDependencies.value.size);
-    });
+    const { runs: quiet, dispose: disposeQuiet } = observeProjectCount();
     assert.deepEqual(quiet, [1], 'the effect ran once for the current state');
     const again = refreshTracked(projectPath);
     disposeQuiet();
@@ -1551,10 +1507,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
 
     // Interaction 2 - refreshing something untracked publishes nothing, so no
     // reactive consumer wakes up for a project nobody asked about.
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
+    const { runs, dispose } = observeProjectCount();
     refreshTracked(projectPath);
     refreshTracked(path.join(tmpDir, 'never-existed.csproj'));
     dispose();
@@ -1586,10 +1539,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 2 - the drop is PUBLISHED. A tree that keeps rendering a
     // deleted project offers build and debug actions against a missing file.
     assert.strictEqual(projectDependencies.value.size, 0, 'the map is now empty');
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
+    const { runs, dispose } = observeProjectCount();
     assert.deepEqual(runs, [0], 'a fresh observer sees the project already gone');
 
     // Interaction 3 - a project that comes BACK (a branch switch, an undo) is
@@ -1640,10 +1590,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // makes every reactive consumer rebuild once per project in the solution,
     // which is the difference between a snappy tree and a frozen one on a
     // hundred-project repository ([VSCODE-REACTIVITY-SPEC]).
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
+    const { runs, dispose } = observeProjectCount();
     assert.deepEqual(runs, [2], 'the observer starts from the rescanned state');
     writeProjectFile(tmpDir, 'RescanA', { packages: [{ id: 'A', version: '3.0.0' }] });
     writeProjectFile(tmpDir, 'RescanB', { packages: [{ id: 'B', version: '3.0.0' }] });
@@ -1681,10 +1628,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     ensureTracked(
       writeProjectFile(tmpDir, 'Second', { packages: [{ id: 'Y', version: '1.0.0' }] }),
     );
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
+    const { runs, dispose } = observeProjectCount();
     assert.deepEqual(runs, [1], 'the observer starts from the tracked state');
     resetForTests();
     dispose();
