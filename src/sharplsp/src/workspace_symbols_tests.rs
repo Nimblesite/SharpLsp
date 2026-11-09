@@ -5,6 +5,7 @@
     reason = "test code — panics are the correct failure mode"
 )]
 
+use super::file_symbols::reparent_file_scoped_members;
 use super::*;
 
 fn make_symbol(name: &str, kind: &str) -> SymbolNode {
