@@ -259,7 +259,7 @@ fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<V
 fn document_request(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
     if request.method == "textDocument/codeLens" {
         let [fsharp, csharp] = context.engines.each_ref().map(Option::as_ref);
-        let sidecar = crate::pick_sidecar(&request, csharp, fsharp);
+        let sidecar = crate::dispatch::pick_sidecar(&request, csharp, fsharp);
         crate::code_lens::handle_code_lens(
             request,
             &context.runtime,
