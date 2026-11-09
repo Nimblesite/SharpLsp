@@ -26,7 +26,10 @@ internal sealed partial class CodeActionResolver
     {
         var subjects = await ImportSubject.FindAsync(document, span, ct).ConfigureAwait(false);
         // Only the providers' own fixes are retitled, never the rows added below.
-        var offered = items.Where(item => item.Kind == QuickFix).Select(item => item.Id).ToHashSet();
+        var offered = items
+            .Where(item => item.Kind == QuickFix)
+            .Select(item => item.Id)
+            .ToHashSet();
         foreach (var subject in subjects)
         {
             await CollectImportFixesAsync(document, subject, offered, items, ct)
