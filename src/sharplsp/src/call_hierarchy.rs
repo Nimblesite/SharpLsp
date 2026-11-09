@@ -7,6 +7,7 @@ use lsp_types::{
     SymbolKind,
 };
 
+use crate::document_symbols::hierarchy_symbol_kind;
 use crate::hierarchy::{hierarchy_item_location, SidecarCallHierarchyCall, SidecarHierarchyItem};
 
 /// An incoming call (`callHierarchy/incomingCalls`): the caller, and where it calls.
@@ -67,21 +68,9 @@ pub fn map_hierarchy_item(item: &SidecarHierarchyItem) -> Option<CallHierarchyIt
     })
 }
 
-/// Parse a sidecar symbol kind string into an LSP `SymbolKind`.
+/// A call hierarchy item's kind; an unnamed kind is a method.
 fn parse_symbol_kind(kind: &str) -> SymbolKind {
-    match kind {
-        "Function" => SymbolKind::FUNCTION,
-        "Constructor" => SymbolKind::CONSTRUCTOR,
-        "Property" => SymbolKind::PROPERTY,
-        "Field" => SymbolKind::FIELD,
-        "Class" => SymbolKind::CLASS,
-        "Event" => SymbolKind::EVENT,
-        "Interface" => SymbolKind::INTERFACE,
-        "Struct" => SymbolKind::STRUCT,
-        "Enum" => SymbolKind::ENUM,
-        "Module" | "Namespace" => SymbolKind::MODULE,
-        _ => SymbolKind::METHOD,
-    }
+    hierarchy_symbol_kind(kind, SymbolKind::METHOD)
 }
 
 #[cfg(test)]
