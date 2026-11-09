@@ -113,7 +113,7 @@ Requires `rustup target add wasm32-wasip2` for WASM builds.
 
 - [x] `lsp.sharplsp.binary.path`, `.arguments` and `.env` from Zed settings
 - [x] `lsp.sharplsp.settings` passed through as the server's client layer
-- [ ] Send initialization options (solution path) to sharplsp
+- [x] Send initialization options (solution path) to sharplsp — `language_server_initialization_options` sends the `lsp.sharplsp.settings` client layer with `initialize` (#375; `multi_solution.rs` `test_full_stack_initialization_options_choose_the_solution_in_multi_solution_root`)
 
 ### Phase 3: Symbol Integration
 
