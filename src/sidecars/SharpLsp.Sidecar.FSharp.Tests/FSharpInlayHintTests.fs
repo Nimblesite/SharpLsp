@@ -70,3 +70,28 @@ let ``inlay hints use short type names, skip operators and sit before each argum
         finally
             try Directory.Delete(dir, true) with _ -> ()
     }
+
+// [SHARPLSP-FEATURES-INTELLIGENCE] Each positional argument gets its own parameter name.
+[<Theory>]
+[<InlineData("let result = System.Math.Clamp(5, 0, 10)", "31:value:|34:min:|37:max:")>]
+[<InlineData("let result = \"abcd\".Substring(1, 2)", "30:startIndex:|33:length:")>]
+[<InlineData("let result = System.Math.Clamp(value = 5, min = 0, max = 10)", "")>]
+[<InlineData("let result = System.Math.Clamp(5, min = 0, max = 10)", "31:value:")>]
+[<InlineData("let result = \"abcd\".Substring(startIndex = 1, length = 2)", "")>]
+[<InlineData("let result = \"abcd\".Substring(1, length = 2)", "30:startIndex:")>]
+let ``tupled calls label each positional argument and omit names already written`` (source: string) (expected: string) =
+    task {
+        let dir = createTestProject ()
+        try
+            let ws = FSharpWorkspace.create ()
+            let! _ = FSharpWorkspaceLoading.loadProject ws dir
+            let file = NativePaths.Resolve(dir, "Library.fs")
+            FSharpWorkspace.applyDidChange ws file ("module TestProject.Library\n" + source + "\n")
+            let! _, check, _ = FSharpCodeActionKit.checkedFixture ws file
+            Assert.DoesNotContain(check.Diagnostics, fun diagnostic -> diagnostic.Severity = FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error)
+            let! hints = FSharpInlayHints.getInlayHints ws file 1 1
+            let actual = labelsOn hints 2 1 |> List.map (fun (column, label) -> $"{column}:{label}") |> String.concat "|"
+            Assert.Equal(expected, actual)
+        finally
+            try Directory.Delete(dir, true) with _ -> ()
+    }

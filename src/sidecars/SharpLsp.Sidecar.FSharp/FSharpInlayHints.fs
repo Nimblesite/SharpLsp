@@ -56,14 +56,18 @@ let private typeHint (parseResults: FSharpParseFileResults) (symbolUse: FSharpSy
     | _ -> []
 
 /// The ranges of a method call's positional arguments, or of a function's curried ones.
-let private argumentRanges (parseResults: FSharpParseFileResults) (at: pos) =
-    match parseResults.FindParameterLocations at with
-    | Some call when call.ArgumentLocations.Length > 0 && call.LongIdStartLocation = at ->
+let private argumentRanges (parseResults: FSharpParseFileResults) (symbolRange: range) =
+    let arguments = parseResults.GetAllArgumentsForFunctionApplicationAtPosition symbolRange.Start |> Option.defaultValue []
+    // FCS locates a call from a position inside its arguments.
+    let call = arguments |> List.tryHead |> Option.bind (fun argument -> parseResults.FindParameterLocations argument.Start)
+
+    match call with
+    | Some call when call.LongIdEndLocation = symbolRange.End ->
         call.ArgumentLocations
         |> Array.filter (fun argument -> not argument.IsNamedArgument)
         |> Array.map _.ArgumentRange
         |> List.ofArray
-    | _ -> parseResults.GetAllArgumentsForFunctionApplicationAtPosition at |> Option.defaultValue []
+    | _ -> arguments
 
 /// The parameter names an applied method or function takes, one per argument: a
 /// method's tupled group, or the name of each single-parameter curried group.
@@ -86,7 +90,7 @@ let private parameterHints (parseResults: FSharpParseFileResults) (symbolUse: FS
         symbolUse.IsFromUse && not (PrettyNaming.IsOperatorDisplayName value.DisplayName)
         ->
         let range = symbolUse.Range
-        let arguments = argumentRanges parseResults range.Start
+        let arguments = argumentRanges parseResults range
         let tupled = value.IsMethod || value.IsConstructor
 
         Seq.zip arguments (parameterNames value tupled)
