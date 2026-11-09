@@ -12,7 +12,6 @@ Remaining code intelligence features not covered by other plans.
 - [x] F# active parameter follows the caret across nested calls, string commas and unsaved changes — `FSharpSignatureParameterTests`, [FS-SIGHELP], issue #552
 - [x] F# named arguments select their declared parameter when reordered or mixed with positional arguments — `FSharpSignatureParameterTests`, [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP], issue #552
 - [x] F# variadic arguments stay on the final `ParamArray` parameter, including unfinished calls — `FSharpSignatureParameterTests`, [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP], issue #552
-
 - [x] F# multiline calls resolve their enclosing callee from the cached syntax tree, including punctuation literals and unsaved edits — `FSharpSignatureParameterTests`, [FS-SIGHELP], issue #555
 
 ## Rename
@@ -33,18 +32,18 @@ The five completed core items were verified against the latest published v0.32.1
 
 ### C# Rename
 
-- [ ] Resolve symbols with Roslyn semantic APIs for declarations and references
+- [x] Resolve symbols with Roslyn semantic APIs for declarations and references — `WorkspaceManager.Rename.cs`, `RefactorEndToEndTests`, [RENAME-CSHARP]
 - [ ] Validate new names with Roslyn language services
-- [ ] Wire C# sidecar to Roslyn `Renamer.RenameSymbolAsync`
-- [ ] Map changed Roslyn documents to LSP text edits
+- [x] Wire C# sidecar to Roslyn `Renamer.RenameSymbolAsync` — `WorkspaceManager.Rename.cs`, `RefactorEndToEndTests`, [RENAME-CSHARP]
+- [x] Map changed Roslyn documents to LSP text edits — `WorkspaceManager.Rename.cs`, the native C# session edit-application assertions, [RENAME-APPLY]
 - [ ] Preserve Roslyn-provided edits for `nameof`, XML doc references, partial declarations, overrides, and explicit interface implementations
 
 ### F# Rename
 
-- [ ] Resolve `FSharpSymbolUse` at the cursor
+- [x] Resolve `FSharpSymbolUse` at the cursor — `FSharpRename.fs`, `FSharpRenameSemanticTests`, [RENAME-FSHARP-PREPARE]
 - [ ] Validate new names for F# symbol kinds
-- [ ] Wire F# sidecar to FCS rename/symbol-use pipeline
-- [ ] Emit edits for every declaration and usage location in F# projects
+- [x] Wire F# sidecar to FCS rename/symbol-use pipeline — `FSharpRename.fs`, `FSharpReferences.fs`, `FSharpRenameSemanticTests`, [RENAME-FSHARP-APPLY]
+- [x] Emit edits for every declaration and usage location in F# projects — `FSharpRenameSemanticTests` asserts exact declaration and usage edits across two ordered files, [RENAME-FSHARP-APPLY]
 - [ ] Preserve F# file-ordering semantics during project-wide rename
 
 ### Rename Code Element Coverage
