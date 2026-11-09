@@ -489,12 +489,6 @@ let private mapNavigation (operation: Task<FSharpSemanticNavigation.NavigationLo
         return result |> Option.map mapLocation
     }
 
-let private mapNavigationList (operation: Task<FSharpSemanticNavigation.NavigationLocation list>) =
-    task {
-        let! result = operation
-        return result |> List.map mapLocation
-    }
-
 /// Where an external symbol is declared: in the C# source compiled in memory, when a C#
 /// project of the workspace declares it. [DEFINITION-CROSSLANG]
 let private external (state: FSharpWorkspaceState) =
@@ -512,6 +506,3 @@ let getDeclaration state filePath line character =
     FSharpSemanticNavigation.getDeclarationIn (external state) (checkFile state) filePath line character
     |> mapNavigation
 
-let getImplementations state filePath line character =
-    FSharpSemanticNavigation.getImplementations (checkFile state) filePath line character
-    |> mapNavigationList

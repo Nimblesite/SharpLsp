@@ -167,7 +167,7 @@ let ``definition family on unloaded workspace returns empty`` () =
         let! d = FSharpWorkspace.getDefinition ws missing 0 0
         let! td = FSharpWorkspace.getTypeDefinition ws missing 0 0
         let! decl = FSharpWorkspace.getDeclaration ws missing 0 0
-        let! impl = FSharpWorkspace.getImplementations ws missing 0 0
+        let! impl = FSharpImplementations.getImplementations ws missing 0 0
         Assert.True(Option.isNone d)
         Assert.True(Option.isNone td)
         Assert.True(Option.isNone decl)
@@ -258,7 +258,7 @@ let ``loaded queries on a missing file fail gracefully`` () =
         let! d = FSharpWorkspace.getDefinition ws missing 0 0
         let! td = FSharpWorkspace.getTypeDefinition ws missing 0 0
         let! decl = FSharpWorkspace.getDeclaration ws missing 0 0
-        let! impl = FSharpWorkspace.getImplementations ws missing 0 0
+        let! impl = FSharpImplementations.getImplementations ws missing 0 0
         Assert.True(Option.isNone h)
         Assert.True(Option.isNone d)
         Assert.True(Option.isNone td)

@@ -347,7 +347,7 @@ internal static class DefinitionResolver
     /// Navigation FROM generated files requires WorkspaceManager.FindDocumentAsync
     /// to resolve source-generated documents via Project.GetSourceGeneratedDocumentsAsync.
     /// </summary>
-    private static LocationListResult ToAllSourceLocations(ISymbol symbol)
+    internal static LocationListResult ToAllSourceLocations(ISymbol symbol)
     {
         var locations = new List<LocationResult>();
         foreach (var location in symbol.Locations.Where(l => l.IsInSource))

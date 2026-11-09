@@ -301,23 +301,3 @@ let getDeclarationIn (external: ExternalResolver) (checkFile: string -> Task<Che
 
 let getDeclaration (checkFile: string -> Task<CheckedFile option>) filePath line character =
     getDeclarationIn noExternalSource checkFile filePath line character
-
-let private extractImplementations checkResults source line character =
-    getSymbolUse checkResults source line character
-    |> Option.bind (fun useInfo -> useInfo.Symbol.DeclarationLocation)
-    |> Option.bind rangeToLocation
-    |> Option.toList
-
-let getImplementations (checkFile: string -> Task<CheckedFile option>) filePath line character =
-    task {
-        try
-            let! result = checkFile filePath
-
-            return
-                result
-                |> Option.map (fun (check, source) -> extractImplementations check source line character)
-                |> Option.defaultValue []
-        with ex ->
-            Log.Debug(ex, "[F# Implementation] failed")
-            return []
-    }

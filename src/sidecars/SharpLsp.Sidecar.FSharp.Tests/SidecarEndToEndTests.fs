@@ -1293,7 +1293,7 @@ let ``workspace returns None for all queries when not loaded`` () = task {
     Assert.True(t.IsNone)
     let! dc = FSharpWorkspace.getDeclaration st "/x.fs" 0 0
     Assert.True(dc.IsNone)
-    let! im = FSharpWorkspace.getImplementations st "/x.fs" 0 0
+    let! im = FSharpImplementations.getImplementations st "/x.fs" 0 0
     Assert.Empty(im)
 }
 

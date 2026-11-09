@@ -91,7 +91,7 @@ let ``navigation resolves type-definition, declaration and implementation`` () =
         let greetImplLine = lineOf lines "member _.Greet(name)"
         let! decl = FSharpWorkspace.getDeclaration ws src greetImplLine 17
         // implementation of the abstract `Greet`.
-        let! impl = FSharpWorkspace.getImplementations ws src (lineOf lines "abstract Greet") 13
+        let! impl = FSharpImplementations.getImplementations ws src (lineOf lines "abstract Greet") 13
         Assert.True(Option.isSome td)
         Assert.True(Option.isSome decl)
         Assert.NotEmpty(impl)

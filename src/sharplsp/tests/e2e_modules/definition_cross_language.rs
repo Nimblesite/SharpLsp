@@ -16,8 +16,8 @@ use super::*;
 /// symbols, so a definition on a not-yet-resolved cross-language reference
 /// falls through to the enclosing local declaration in the same file. Polling
 /// until the result leaves that file distinguishes "still loading / unresolved"
-/// from a genuine cross-language resolution, and fails loudly on timeout.
-fn poll_cross_language_definition(
+/// from a genuine cross-file resolution, and fails loudly on timeout.
+pub(super) fn poll_cross_language_definition(
     client: &mut LspClient,
     uri: &str,
     line: u32,

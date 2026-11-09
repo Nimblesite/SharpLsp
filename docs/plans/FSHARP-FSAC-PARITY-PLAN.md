@@ -40,7 +40,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Completion + resolve | `textDocument/completion`, `completionItem/resolve` | ✅ / ✅ | `[FS-COMPLETION]`; unopened-namespace items and their `open` on resolve `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]` |
 | Go to definition | `textDocument/definition` | ✅ | e2e: `test_full_stack_fsharp_navigation` |
 | Type definition | `textDocument/typeDefinition` | ✅ | resolves to the type decl; `test_full_stack_fsharp_navigation` (was gap [#112] — invalid-fixture artifact) |
-| Implementation | `textDocument/implementation` | ✅ | |
+| Implementation | `textDocument/implementation` | ✅ | `FSharpImplementations.fs`: an abstract member's overrides and interface implementations, a type's derived types; until 2026-11-09 it answered the symbol's own declaration |
 | Declaration | `textDocument/declaration` | ⭐✅ | not in FSAC's list |
 | Find references | `textDocument/references` | ✅ | `[REFERENCES-FSHARP-FIND]` project-wide incl. type use-sites; `test_full_stack_fsharp_references_type_use_sites` (was gap [#112] — invalid-fixture artifact) |
 | Hover | `textDocument/hover` | ✅ | XML-doc rendering; e2e covered |

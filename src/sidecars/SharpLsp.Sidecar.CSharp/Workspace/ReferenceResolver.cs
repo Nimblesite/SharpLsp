@@ -181,7 +181,10 @@ internal static class ReferenceResolver
             .Where(member => member.IsOverride);
     }
 
-    /// <summary>Each referenced symbol's uses in source, after its declaration when asked for.</summary>
+    /// <summary>
+    /// Each referenced symbol's uses in source, after its declarations when asked for: every
+    /// part of a partial type or method. [REFERENCES-CSHARP-FIND] [REFERENCES-CSHARP-RESOLUTION]
+    /// </summary>
     private static IEnumerable<LocationResult> ReferenceLocations(
         IEnumerable<ReferencedSymbol> referenced,
         bool includeDeclaration
@@ -189,11 +192,11 @@ internal static class ReferenceResolver
     {
         foreach (var reference in referenced)
         {
-            if (
-                includeDeclaration
-                && DeclaresItself(reference)
-                && DefinitionResolver.ToFirstSourceLocation(reference.Definition) is { } declared
-            )
+            var declarations =
+                includeDeclaration && DeclaresItself(reference)
+                    ? DefinitionResolver.ToAllSourceLocations(reference.Definition).Locations
+                    : [];
+            foreach (var declared in declarations)
             {
                 yield return declared;
             }

@@ -155,7 +155,7 @@ type FSharpSidecar() as this =
         base.Register("textDocument/definition", Helpers.locationOptionHandler workspace FSharpWorkspace.getDefinition)
         base.Register("textDocument/typeDefinition", Helpers.locationOptionHandler workspace FSharpWorkspace.getTypeDefinition)
         base.Register("textDocument/declaration", Helpers.locationOptionHandler workspace FSharpWorkspace.getDeclaration)
-        base.Register("textDocument/implementation", Helpers.locationListHandler workspace FSharpWorkspace.getImplementations)
+        base.Register("textDocument/implementation", Helpers.locationListHandler workspace FSharpImplementations.getImplementations)
 
         // References
         base.Register("textDocument/references", Helpers.handle (fun (request: ReferencesRequest) ->
