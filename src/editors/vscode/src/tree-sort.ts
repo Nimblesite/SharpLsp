@@ -1,6 +1,6 @@
 /** Sorting of Solution Explorer rows. Implements [SE-SORT], [SE-SORT-ACCESS] and [SE-SORT-SCOPE]. */
 import { SortOrder } from './state.js';
-import type { ExplorerNode } from './tree.js';
+import type { ExplorerNode } from './tree-nodes.js';
 
 const ACCESS_PRIORITY: Record<string, number> = {
   public: 0,

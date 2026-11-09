@@ -31,7 +31,8 @@ import { registerNamespaceLayout } from './tree-namespaces.js';
 import { registerBuildCommands } from './build.js';
 import { registerNuGetCommands } from './nuget.js';
 import { fsharpProjectOfNode } from './add-source-file.js';
-import { type ExplorerNode, SolutionExplorerProvider } from './tree.js';
+import { SolutionExplorerProvider } from './tree.js';
+import { type ExplorerNode } from './tree-nodes.js';
 import { registerScaffoldingCommands } from './scaffolding.js';
 import { registerFsiCommands } from './fsi.js';
 import { registerHotReloadCommands } from './hot-reload.js';
@@ -409,10 +410,16 @@ function registerCommands(context: ExtensionContext): void {
   const handlers: Record<string, (...args: never[]) => unknown> = {
     [CMD_RESTART_SERVER]: restartServer,
     [CMD_RETRY_DOTNET_ACQUISITION]: retryDotnetAcquisition,
-    [CMD_SHOW_OUTPUT]: () => { log.output().show(); },
-    [CMD_SHOW_TRACE]: () => { log.trace().show(); },
+    [CMD_SHOW_OUTPUT]: () => {
+      log.output().show();
+    },
+    [CMD_SHOW_TRACE]: () => {
+      log.trace().show();
+    },
     [CMD_SELECT_SOLUTION]: solutions.selectAndLoad,
-    [CMD_OPEN_SOLUTION]: async (solutionPath: string) => { await solutions.load({ path: solutionPath, name: '' }); },
+    [CMD_OPEN_SOLUTION]: async (solutionPath: string) => {
+      await solutions.load({ path: solutionPath, name: '' });
+    },
     [CMD_REFRESH_EXPLORER]: async () => await explorerProvider?.refresh(),
     [CMD_SORT_NATURAL]: cycleSort,
     [CMD_SORT_ALPHABETICAL]: cycleSort,

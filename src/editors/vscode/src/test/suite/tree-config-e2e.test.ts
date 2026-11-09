@@ -43,7 +43,7 @@ import {
   assertContainsAll,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-import { buildQualifiedName } from '../../tree.js';
+import { buildQualifiedName } from '../../tree-build.js';
 import { buildNonSymbolTooltip, SYMBOL_CONTEXT_VALUES } from '../../tree-tooltip.js';
 import * as state from '../../state.js';
 import { SortOrder, SORT_CYCLE } from '../../state.js';

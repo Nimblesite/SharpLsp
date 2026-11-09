@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
-import { type ExplorerNode } from './tree.js';
+import { type ExplorerNode } from './tree-nodes.js';
 import { getErrorMessage } from './utils.js';
 
 // ── Wire types (match the Rust host responses) ────────────────────

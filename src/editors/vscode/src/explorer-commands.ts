@@ -32,7 +32,9 @@ import { samePath } from './paths';
 import { addReferenceAndImport } from './reference-import-command.js';
 import { removeFSharpSourceFile } from './remove-source-file.js';
 import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
-import { type ExplorerNode, type SolutionExplorerProvider, buildQualifiedName } from './tree.js';
+import { type SolutionExplorerProvider } from './tree.js';
+import { buildQualifiedName } from './tree-build.js';
+import { type ExplorerNode } from './tree-nodes.js';
 import { getErrorMessage } from './utils.js';
 
 /** The live client and explorer the commands act on; either may not exist yet. */
