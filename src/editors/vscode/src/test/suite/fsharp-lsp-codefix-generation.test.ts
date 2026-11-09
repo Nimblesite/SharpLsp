@@ -17,26 +17,27 @@ import {
   WILDCARD_UNION_SOURCE,
 } from './fsharp-refactor-fixtures';
 import {
-  applyAction,
+  applyToOverlay,
   assertInsertion,
-  assertNoAction,
+  assertNoGeneratedFixes,
   diagnosticsSettled,
-  openOverlay,
-  quickFixes,
+  errorLabels,
+  quickFixesWithout,
   singleEdit,
   tokenRange,
-  inspectQuickFix,
-  undoAndRequery,
+  underLspBudget,
+  withOverlay,
+  withQuickFixLifecycle,
+  type QuickFixSite,
 } from './fsharp-refactor-test-kit';
 import { diagnosticCode } from './document-anchors';
-import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
+import { activateRealSharpLsp, type OpenFixture } from './refactor-test-helpers';
 import { closeAllEditors, comparableText } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Union, record, and interface generators through shipped FCS. [ANALYZERS-FSAC-PARITY]
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
 
-interface GenerationSpec {
+interface GenerationSpec extends QuickFixSite {
   readonly name: string;
   readonly source: string;
   readonly target: string;
@@ -57,19 +58,17 @@ suite('F# real LSP — generated refactors', () => {
   teardown(closeAllEditors);
   suiteTeardown(closeAllEditors);
 
-  for (const spec of generationSpecs()) {
-    test(`${spec.name} survives list, resolve, apply, recheck, and undo`, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await runGeneration(spec);
-    });
-  }
+  for (const spec of generationSpecs())
+    test(
+      `${spec.name} survives list, resolve, apply, recheck, and undo`,
+      underLspBudget(() => runGeneration(spec)),
+    );
 
-  for (const spec of completeSpecs()) {
-    test(`${spec.name} offers no generation refactor when already complete`, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await assertComplete(spec);
-    });
-  }
+  for (const spec of completeSpecs())
+    test(
+      `${spec.name} offers no generation refactor when already complete`,
+      underLspBudget(() => assertComplete(spec)),
+    );
 });
 
 function generationSpecs(): readonly GenerationSpec[] {
@@ -139,32 +138,51 @@ function interfaceSpec(): GenerationSpec {
 }
 
 function genericInterfaceSpec(): GenerationSpec {
-  return {
-    name: 'closed generic interface preserves substituted type parameters',
-    source: GENERIC_INTERFACE_SOURCE,
-    target: 'IBox<string>',
-    title: 'Implement interface',
-    diagnostic: 'FS0366',
-    editPosition: [8, 32],
-    editPrefix: '\n        member _.Map',
-    expectedFragments: ['member _.Map', 'string', 'Not implemented yet'],
-    preservedFragments: ['member _.Value = "ready"'],
-    absentFragments: ['member _.Value = failwith', "member _.Map(arg1: 'T)"],
-  };
+  return genericInterfaceGeneration(
+    'closed generic interface preserves substituted type parameters',
+    GENERIC_INTERFACE_SOURCE,
+    'IBox<string>',
+    {
+      editPosition: [8, 32],
+      editPrefix: '\n        member _.Map',
+      expectedFragments: ['member _.Map', 'string', 'Not implemented yet'],
+      absentFragments: ['member _.Value = failwith', "member _.Map(arg1: 'T)"],
+      preservedFragments: ['member _.Value = "ready"'],
+    },
+  );
 }
 
 function nestedGenericInterfaceSpec(): GenerationSpec {
-  return {
-    name: 'nested generic interface resolves the outer interface symbol',
-    source: NESTED_GENERIC_INTERFACE_SOURCE,
-    target: 'IWrapper<IOther>',
-    title: 'Implement interface',
-    diagnostic: 'FS0366',
-    editPosition: [9, 35],
-    editPrefix: '\n        member _.Wrap',
-    expectedFragments: ['member _.Wrap', 'IOther', 'Not implemented yet'],
-    absentFragments: ['member _.Code'],
-  };
+  return genericInterfaceGeneration(
+    'nested generic interface resolves the outer interface symbol',
+    NESTED_GENERIC_INTERFACE_SOURCE,
+    'IWrapper<IOther>',
+    {
+      editPosition: [9, 35],
+      editPrefix: '\n        member _.Wrap',
+      expectedFragments: ['member _.Wrap', 'IOther', 'Not implemented yet'],
+      absentFragments: ['member _.Code'],
+    },
+  );
+}
+
+/** The stub a generated fix must write, and the text it must not write. */
+interface StubExpectation {
+  readonly editPosition: readonly [number, number];
+  readonly editPrefix: string;
+  readonly expectedFragments: readonly string[];
+  readonly absentFragments: readonly string[];
+  readonly preservedFragments?: readonly string[];
+}
+
+/** An `Implement interface` stub for a generic target. */
+function genericInterfaceGeneration(
+  name: string,
+  source: string,
+  target: string,
+  stub: StubExpectation,
+): GenerationSpec {
+  return { name, source, target, title: 'Implement interface', diagnostic: 'FS0366', ...stub };
 }
 
 function objectExpressionInterfaceSpec(): GenerationSpec {
@@ -219,70 +237,61 @@ function interfaceGenerationSpec(
 
 function completeSpecs(): readonly GenerationSpec[] {
   return [
-    completeUnionSpec(),
-    wildcardUnionSpec(),
-    completeRecordSpec(),
-    recordCopyUpdateSpec(),
-    completeInterfaceSpec(),
+    completeSpec(
+      'exhaustive DU',
+      EXHAUSTIVE_UNION_SOURCE,
+      'match value with',
+      'Generate 1 missing union case(s)',
+      'FS0025',
+    ),
+    completeSpec(
+      'complete record',
+      COMPLETE_RECORD_SOURCE,
+      '{ X = 1; Y = 2 }',
+      'Generate 1 missing record field(s)',
+      'FS0764',
+    ),
+    completeSpec(
+      'wildcard-covered DU match',
+      WILDCARD_UNION_SOURCE,
+      'match value with',
+      'Generate 3 missing union case(s)',
+      'FS0025',
+    ),
+    completeSpec(
+      'record copy-and-update expression',
+      RECORD_COPY_UPDATE_SOURCE,
+      '{ point with X = 3 }',
+      'Generate 1 missing record field(s)',
+      'FS0764',
+    ),
+    completeSpec(
+      'complete interface',
+      COMPLETE_INTERFACE_SOURCE,
+      'IShape',
+      'Implement interface',
+      'FS0366',
+      1,
+    ),
   ];
 }
 
-function completeUnionSpec(): GenerationSpec {
+/** A source that is already complete: the generated fix must not be offered for it. */
+function completeSpec(
+  name: string,
+  source: string,
+  target: string,
+  title: string,
+  diagnostic: string,
+  occurrence?: number,
+): GenerationSpec {
   return {
-    name: 'exhaustive DU',
-    source: EXHAUSTIVE_UNION_SOURCE,
-    target: 'match value with',
-    title: 'Generate 1 missing union case(s)',
-    diagnostic: 'FS0025',
-    expectedFragments: [],
-    absentFragments: [],
-  };
-}
-
-function completeRecordSpec(): GenerationSpec {
-  return {
-    name: 'complete record',
-    source: COMPLETE_RECORD_SOURCE,
-    target: '{ X = 1; Y = 2 }',
-    title: 'Generate 1 missing record field(s)',
-    diagnostic: 'FS0764',
-    expectedFragments: [],
-    absentFragments: [],
-  };
-}
-
-function wildcardUnionSpec(): GenerationSpec {
-  return {
-    name: 'wildcard-covered DU match',
-    source: WILDCARD_UNION_SOURCE,
-    target: 'match value with',
-    title: 'Generate 3 missing union case(s)',
-    diagnostic: 'FS0025',
-    expectedFragments: [],
-    absentFragments: [],
-  };
-}
-
-function recordCopyUpdateSpec(): GenerationSpec {
-  return {
-    name: 'record copy-and-update expression',
-    source: RECORD_COPY_UPDATE_SOURCE,
-    target: '{ point with X = 3 }',
-    title: 'Generate 1 missing record field(s)',
-    diagnostic: 'FS0764',
-    expectedFragments: [],
-    absentFragments: [],
-  };
-}
-
-function completeInterfaceSpec(): GenerationSpec {
-  return {
-    name: 'complete interface',
-    source: COMPLETE_INTERFACE_SOURCE,
-    target: 'IShape',
-    occurrence: 1,
-    title: 'Implement interface',
-    diagnostic: 'FS0366',
+    name,
+    source,
+    target,
+    title,
+    diagnostic,
+    ...(occurrence === undefined ? {} : { occurrence }),
     expectedFragments: [],
     absentFragments: [],
   };
@@ -323,16 +332,14 @@ function recordFragments(): readonly string[] {
 }
 
 async function runGeneration(spec: GenerationSpec): Promise<void> {
-  const fixture = await openOverlay(TARGET_FILE, spec.source);
-  try {
-    const range = tokenRange(fixture.document, spec.target, spec.occurrence);
-    const action = await inspectQuickFix(fixture, range, spec, true);
-    inspectGenerationEdit(fixture.uri, action, spec);
-    await applyGeneration(fixture, action, spec);
-    await undoAndRequery(fixture, spec, true);
-  } finally {
-    await revertDocument(fixture.document);
-  }
+  await withQuickFixLifecycle(
+    TARGET_FILE,
+    spec,
+    (fixture, action) => applyGeneration(fixture, action, spec),
+    (uri, action) => {
+      inspectGenerationEdit(uri, action, spec);
+    },
+  );
 }
 
 function inspectGenerationEdit(
@@ -371,30 +378,23 @@ function assertEditPosition(
 }
 
 async function applyGeneration(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
+  fixture: OpenFixture,
   action: vscode.CodeAction,
   spec: GenerationSpec,
 ): Promise<void> {
-  const beforeVersion = fixture.document.version;
-  const snapshots = await applyAction(action);
-  assert.strictEqual(snapshots.length, 1);
-  assert.strictEqual(snapshots[0]?.uri.toString(), fixture.uri.toString());
-  assert.ok(fixture.document.version > beforeVersion);
-  assert.ok(fixture.document.isDirty);
+  await applyToOverlay(fixture, action);
   assertGeneratedDocument(fixture.document, spec);
   await assertAllErrorsGone(fixture.uri, spec.diagnostic);
-  const actions = await quickFixes(
+  await quickFixesWithout(
     fixture.uri,
     tokenRange(fixture.document, spec.postTarget ?? spec.target, spec.occurrence),
+    spec.title,
   );
-  assertNoAction(actions, spec.title);
 }
 
 async function assertAllErrorsGone(uri: vscode.Uri, diagnostic: string): Promise<void> {
-  const diagnostics = await diagnosticsSettled(uri, diagnostic);
-  const errors = diagnostics.filter((item) => item.severity === vscode.DiagnosticSeverity.Error);
   assert.deepStrictEqual(
-    errors.map((item) => `${item.range.start.line}:${diagnosticCode(item)} ${item.message}`),
+    errorLabels(await diagnosticsSettled(uri, diagnostic)),
     [],
     'generation must leave the real F# document free of compiler errors',
   );
@@ -409,13 +409,10 @@ function assertGeneratedDocument(document: vscode.TextDocument, spec: Generation
 }
 
 async function assertComplete(spec: GenerationSpec): Promise<void> {
-  const fixture = await openOverlay(TARGET_FILE, spec.source);
-  try {
+  await withOverlay(TARGET_FILE, spec.source, async (fixture) => {
     const range = tokenRange(fixture.document, spec.target, spec.occurrence);
     await assertAllErrorsGone(fixture.uri, spec.diagnostic);
-    const actions = await quickFixes(fixture.uri, range);
-    assertNoAction(actions, spec.title);
-    assert.ok(!actions.some((action) => action.title.startsWith('Generate ')));
+    await assertNoGeneratedFixes(fixture.uri, range, spec.title);
     assert.ok(
       !vscode.languages
         .getDiagnostics(fixture.uri)
@@ -423,7 +420,5 @@ async function assertComplete(spec: GenerationSpec): Promise<void> {
     );
     assert.strictEqual(fixture.document.getText(), spec.source);
     assert.ok(fixture.document.isDirty);
-  } finally {
-    await revertDocument(fixture.document);
-  }
+  });
 }

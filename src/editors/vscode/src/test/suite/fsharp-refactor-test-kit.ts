@@ -3,31 +3,78 @@ import * as vscode from 'vscode';
 import {
   activateRealSharpLsp,
   applyWorkspaceEdit,
-  openFixtureDocument,
-  preparedRenameAt,
-  replaceDocumentText,
   revertDocument,
   waitForCodeActions,
   waitForMatchingDiagnostics,
   waitForResolvedCodeActions,
   type OpenFixture,
-  type PrepareRenameResult,
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
-import { pollUntilResult } from './test-helpers';
+import { requireAt } from './test-helpers';
+import {
+  assertOverlayUnchanged,
+  openOverlay,
+  tokenRange,
+  undoAction,
+  withOverlay,
+  type OverlayText,
+} from './fsharp-rename-test-kit';
 import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 import { diagnosticCode } from './document-anchors';
 
 // Assertion helpers shared by the real-LSP F# suites. [ANALYZERS-FSAC-PARITY]
 
+export * from './fsharp-rename-test-kit';
 export type { PrepareRenameResult } from './refactor-test-helpers';
 
-export async function openOverlay(relativePath: string, source: string): Promise<OpenFixture> {
-  const fixture = await openFixtureDocument(relativePath);
-  await replaceDocumentText(fixture.document, source);
-  assert.strictEqual(fixture.document.getText(), source);
-  assert.ok(fixture.document.isDirty, 'overlay fixture must remain unsaved');
-  return fixture;
+/** An Error-severity diagnostic. */
+export function isErrorDiagnostic(diagnostic: vscode.Diagnostic): boolean {
+  return diagnostic.severity === vscode.DiagnosticSeverity.Error;
+}
+
+/** A Mocha test body that runs `operation` under the real-LSP response budget. */
+export function underLspBudget(operation: () => Promise<void>): () => Promise<void> {
+  return async function (this: Mocha.Context): Promise<void> {
+    this.timeout(LSP_RESPONSE_MS + 5_000);
+    await operation();
+  };
+}
+
+/** `line:CODE message` for every Error diagnostic — empty means the document is clean. */
+export function errorLabels(diagnostics: readonly vscode.Diagnostic[]): string[] {
+  return diagnostics
+    .filter(isErrorDiagnostic)
+    .map((item) => `${item.range.start.line}:${diagnosticCode(item)} ${item.message}`);
+}
+
+/** `uri`'s diagnostics as `[severity/code@line:char] message`, for failure messages. */
+export function diagnosticSummary(uri: vscode.Uri): string {
+  const diagnostics = vscode.languages.getDiagnostics(uri);
+  if (diagnostics.length === 0) return '<none>';
+  return diagnostics
+    .map((item) => {
+      const start = `${item.range.start.line}:${item.range.start.character}`;
+      return `[${item.severity}/${String(item.code ?? 'none')}@${start}] ${item.message}`;
+    })
+    .join(' | ');
+}
+
+/** `uri`'s diagnostics once none of them is an Error. */
+async function withoutErrors(uri: vscode.Uri): Promise<vscode.Diagnostic[]> {
+  return waitForMatchingDiagnostics(
+    uri,
+    (diagnostics) => errorLabels(diagnostics).length === 0,
+    LSP_RESPONSE_MS,
+  );
+}
+
+/** Wait until `uri` carries no Error diagnostics, failing with the ones that remain. */
+export async function assertNoErrorDiagnostics(uri: vscode.Uri): Promise<void> {
+  try {
+    assert.deepStrictEqual(errorLabels(await withoutErrors(uri)), []);
+  } catch (error: unknown) {
+    assert.fail(`diagnostics for ${uri.fsPath}: ${diagnosticSummary(uri)}; wait=${String(error)}`);
+  }
 }
 
 export async function diagnosticWithCode(
@@ -100,7 +147,7 @@ export async function diagnosticsSettled(
     uri,
     (diagnostics) =>
       diagnostics.every((diagnostic) => diagnosticCode(diagnostic) !== code) &&
-      diagnostics.every((diagnostic) => diagnostic.severity !== vscode.DiagnosticSeverity.Error),
+      errorLabels(diagnostics).length === 0,
     LSP_RESPONSE_MS,
   );
 }
@@ -126,6 +173,27 @@ export async function quickFixes(
   });
 }
 
+/** `range`'s quick fixes, proven not to contain `title`; returns the rest. */
+export async function quickFixesWithout(
+  uri: vscode.Uri,
+  range: vscode.Range,
+  title: string,
+): Promise<vscode.CodeAction[]> {
+  const actions = await quickFixes(uri, range);
+  assertNoAction(actions, title);
+  return actions;
+}
+
+/** Neither `title` nor any `Generate …` stub is offered on `range`. */
+export async function assertNoGeneratedFixes(
+  uri: vscode.Uri,
+  range: vscode.Range,
+  title: string,
+): Promise<void> {
+  const actions = await quickFixesWithout(uri, range, title);
+  assert.ok(!actions.some((action) => action.title.startsWith('Generate ')));
+}
+
 export async function resolvedQuickFixes(
   uri: vscode.Uri,
   range: vscode.Range,
@@ -145,6 +213,30 @@ export async function applyAction(action: vscode.CodeAction): Promise<WorkspaceE
   return applyWorkspaceEdit(action.edit);
 }
 
+/** Apply `action` to `fixture` alone and prove the overlay advanced and stays unsaved. */
+export async function applyToOverlay(
+  fixture: OpenFixture,
+  action: vscode.CodeAction,
+): Promise<WorkspaceEditSnapshot[]> {
+  const version = fixture.document.version;
+  const snapshots = await applyAction(action);
+  assert.strictEqual(snapshots.length, 1);
+  assert.strictEqual(snapshots[0]?.uri.toString(), fixture.uri.toString());
+  assert.ok(fixture.document.version > version, 'the edit must reach the overlay');
+  assert.ok(fixture.document.isDirty, 'the overlay must stay unsaved');
+  return snapshots;
+}
+
+/** Apply `edit`, then prove every `site` holds its text, stays unsaved, and is error-free. */
+export async function applyAndVerify(
+  edit: vscode.WorkspaceEdit,
+  sites: readonly OverlayText[],
+): Promise<void> {
+  await applyWorkspaceEdit(edit);
+  for (const site of sites) assertOverlayUnchanged(site.fixture.document, site.expected);
+  await Promise.all(sites.map((site) => assertNoErrorDiagnostics(site.fixture.uri)));
+}
+
 /**
  * Apply `action` to the unsaved overlay and prove the fix took: one file
  * edited into exactly `expected`, still unsaved, `diagnostic` gone, and the
@@ -157,96 +249,36 @@ export async function assertFixApplied(
   diagnostic: string,
   target: string,
 ): Promise<void> {
-  const version = fixture.document.version;
-  const snapshots = await applyAction(action);
-  assert.strictEqual(snapshots.length, 1);
-  assert.ok(fixture.document.version > version);
+  await applyToOverlay(fixture, action);
   assert.strictEqual(fixture.document.getText(), expected);
-  assert.ok(fixture.document.isDirty);
   await diagnosticGone(fixture.uri, diagnostic);
-  assertNoAction(await quickFixes(fixture.uri, tokenRange(fixture.document, target)), action.title);
+  await quickFixesWithout(fixture.uri, tokenRange(fixture.document, target), action.title);
 }
 
-export async function undoAction(
-  document: vscode.TextDocument,
-  expectedText: string,
-): Promise<void> {
-  const appliedVersion = document.version;
-  await vscode.window.showTextDocument(document, { preview: false });
-  await vscode.commands.executeCommand('undo');
-  assert.ok(document.version > appliedVersion, 'undo must advance the document version');
-  assert.strictEqual(document.getText(), expectedText, 'undo must restore the overlay source');
-  assert.ok(document.isDirty, 'undo must leave the original unsaved overlay active');
+/** `action` is a quick fix titled `title`, offered (or not) as preferred. */
+function assertQuickFixIdentity(
+  action: vscode.CodeAction,
+  title: string,
+  preferred: boolean,
+): void {
+  assert.strictEqual(action.title, title);
+  assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
+  assert.strictEqual(action.isPreferred, preferred);
 }
 
-export function tokenRange(
-  document: vscode.TextDocument,
-  needle: string,
-  occurrence = 0,
-): vscode.Range {
-  let index = -1;
-  for (let current = 0; current <= occurrence; current += 1) {
-    index = document.getText().indexOf(needle, index + 1);
-  }
-  assert.ok(index >= 0, `fixture must contain occurrence ${occurrence} of ${needle}`);
-  const start = document.positionAt(index);
-  return new vscode.Range(start, document.positionAt(index + needle.length));
-}
-
-function candidateRanges(document: vscode.TextDocument, needle: string): vscode.Range[] {
-  const text = document.getText();
-  const ranges: vscode.Range[] = [];
-  let index = text.indexOf(needle);
-  while (index >= 0) {
-    ranges.push(
-      new vscode.Range(document.positionAt(index), document.positionAt(index + needle.length)),
-    );
-    index = text.indexOf(needle, index + 1);
-  }
-  return ranges;
-}
-
-function sameRange(left: vscode.Range, right: PrepareRenameResult['range']): boolean {
-  return (
-    left.start.line === right.start.line &&
-    left.start.character === right.start.character &&
-    left.end.line === right.end.line &&
-    left.end.character === right.end.character
-  );
-}
-
-export async function semanticTokenRange(
-  uri: vscode.Uri,
-  document: vscode.TextDocument,
-  needle: string,
-  occurrence = 0,
-): Promise<vscode.Range> {
-  const matches: vscode.Range[] = [];
-  for (const candidate of candidateRanges(document, needle)) {
-    const prepare = await requestPrepareRename(uri, candidate.start);
-    if (prepare?.placeholder === needle && sameRange(candidate, prepare.range))
-      matches.push(candidate);
-  }
-  const match = matches[occurrence];
-  assert.ok(match, `missing semantic occurrence ${occurrence} of ${needle}`);
-  return match;
-}
-
+/** `actions` holds exactly one action titled `title`. */
 export function uniqueAction(
   actions: readonly vscode.CodeAction[],
   title: string,
 ): vscode.CodeAction {
   const matches = actions.filter((action) => action.title === title);
   assert.strictEqual(matches.length, 1, `expected one ${title}; got ${matches.length}`);
-  const action = matches[0];
-  assert.ok(action, `${title} must exist`);
-  return action;
+  return requireAt(matches, 0, title);
 }
 
+/** A RESOLVED quick fix: `title`, `preferred`, and an edit that already carries its change. */
 export function assertQuickFix(action: vscode.CodeAction, title: string, preferred: boolean): void {
-  assert.strictEqual(action.title, title);
-  assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
-  assert.strictEqual(action.isPreferred, preferred);
+  assertQuickFixIdentity(action, title, preferred);
   assert.ok(action.edit, `${title} must resolve to a WorkspaceEdit`);
 }
 
@@ -281,73 +313,6 @@ export function assertNoAction(actions: readonly vscode.CodeAction[], title: str
   assert.ok(!actions.some((action) => action.title === title), `${title} must not be offered`);
 }
 
-export async function requestRename(
-  uri: vscode.Uri,
-  position: vscode.Position,
-  newName: string,
-  timeoutMs: number,
-): Promise<vscode.WorkspaceEdit> {
-  return pollUntilResult(
-    async () =>
-      (await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
-        'vscode.executeDocumentRenameProvider',
-        uri,
-        position,
-        newName,
-      )) ?? new vscode.WorkspaceEdit(),
-    (edit) => edit.size > 0,
-    timeoutMs,
-    2_000,
-  );
-}
-
-export async function requestPrepareRename(
-  uri: vscode.Uri,
-  position: vscode.Position,
-): Promise<PrepareRenameResult | null> {
-  return preparedRenameAt(uri, position);
-}
-
-// prepareRename at `position` answers exactly `expected` and `placeholder`. [RENAME-FSHARP-PREPARE]
-export async function assertPrepareRename(
-  uri: vscode.Uri,
-  expected: vscode.Range,
-  position: vscode.Position,
-  placeholder: string,
-): Promise<void> {
-  const prepare = await requestPrepareRename(uri, position);
-  assert.ok(prepare, `${placeholder} must support prepareRename`);
-  assert.strictEqual(prepare.placeholder, placeholder);
-  assert.strictEqual(prepare.range.start.line, expected.start.line);
-  assert.strictEqual(prepare.range.start.character, expected.start.character);
-  assert.strictEqual(prepare.range.end.line, expected.end.line);
-  assert.strictEqual(prepare.range.end.character, expected.end.character);
-}
-
-// Every caret offset inside the token prepares the whole token. [RENAME-FSHARP-PREPARE]
-export async function assertPrepareAcrossToken(
-  uri: vscode.Uri,
-  range: vscode.Range,
-  placeholder: string,
-): Promise<void> {
-  assert.ok(range.isSingleLine && !range.isEmpty);
-  for (let offset = 0; offset < range.end.character - range.start.character; offset += 1) {
-    await assertPrepareRename(uri, range, range.start.translate(0, offset), placeholder);
-  }
-}
-
-export function editCount(edit: vscode.WorkspaceEdit): number {
-  return edit.entries().reduce((total, [, edits]) => total + edits.length, 0);
-}
-
-export function changedFileNames(edit: vscode.WorkspaceEdit): string[] {
-  return edit.entries().map(([uri]) => uri.path.split('/').at(-1) ?? uri.path);
-}
-
-export function countOccurrences(text: string, needle: string): number {
-  return text.split(needle).length - 1;
-}
-
 /** Where a quick fix is exercised: the overlay, the token it fixes, and what it answers. */
 export interface QuickFixSite {
   readonly source: string;
@@ -373,9 +338,7 @@ export function assertSidecarDiagnostics(
 
 /** A LISTED quick fix: still unresolved, and an edit rather than a command. */
 function assertListedQuickFix(action: vscode.CodeAction, title: string, preferred: boolean): void {
-  assert.strictEqual(action.title, title);
-  assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
-  assert.strictEqual(action.isPreferred, preferred);
+  assertQuickFixIdentity(action, title, preferred);
   assert.strictEqual(action.edit, undefined, 'listed action must remain unresolved');
   assert.strictEqual(action.command, undefined, 'quick fix must use an edit, not a command');
 }
@@ -421,4 +384,23 @@ export async function undoAndRequery(
   const range = tokenRange(fixture.document, site.target, site.occurrence);
   const actions = await resolvedQuickFixes(fixture.uri, range, site.title);
   assertQuickFix(uniqueAction(actions, site.title), site.title, preferred);
+}
+
+/**
+ * Open `file` as `site.source`, then list, resolve, inspect, apply and undo the
+ * quick fix `site` names. [ANALYZERS-FSAC-PARITY]
+ */
+export async function withQuickFixLifecycle(
+  file: string,
+  site: QuickFixSite,
+  apply: (fixture: OpenFixture, action: vscode.CodeAction) => Promise<void>,
+  inspect: (uri: vscode.Uri, action: vscode.CodeAction) => void = () => undefined,
+): Promise<void> {
+  await withOverlay(file, site.source, async (fixture) => {
+    const range = tokenRange(fixture.document, site.target, site.occurrence);
+    const action = await inspectQuickFix(fixture, range, site, true);
+    inspect(fixture.uri, action);
+    await apply(fixture, action);
+    await undoAndRequery(fixture, site, true);
+  });
 }

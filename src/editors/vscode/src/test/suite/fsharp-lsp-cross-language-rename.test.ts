@@ -2,9 +2,12 @@ import * as assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as vscode from 'vscode';
 import {
+  assertNoErrorDiagnostics,
   changedFileNames,
+  countOccurrences,
   editCount,
   assertPrepareRename,
+  renamePreparedToken,
   requestRename,
   tokenRange,
 } from './fsharp-refactor-test-kit';
@@ -12,12 +15,12 @@ import {
   applyWorkspaceEdit,
   assertWorkspaceEditSafe,
   openFixtureDocument,
-  waitForMatchingDiagnostics,
   type OpenFixture,
   fullDocumentRange,
 } from './refactor-test-helpers';
 import { rebuildAndRestartRealLsp } from './cross-language-kit';
 import { closeAllEditors } from './test-helpers';
+import { fileNameOf } from '../../paths';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 // Both foreign-sidecar directions are mandatory. [RENAME-CROSSLANGUAGE]
@@ -31,6 +34,24 @@ interface CrossRenameSpec {
   readonly originOccurrences: number;
   readonly foreignOccurrences: number;
 }
+
+/** The two language fixtures one rename crosses. */
+interface CrossRenameSite {
+  readonly originFile: string;
+  readonly foreignFile: string;
+}
+
+/** The C# fixture owns the symbol; the F# fixture references it. */
+const CSHARP_ORIGIN: CrossRenameSite = {
+  originFile: 'CrossLanguageCSharp.cs',
+  foreignFile: 'fsharp/CrossLanguage.fs',
+};
+
+/** The F# fixture owns the symbol; the C# fixture references it. */
+const FSHARP_ORIGIN: CrossRenameSite = {
+  originFile: 'fsharp/CrossLanguage.fs',
+  foreignFile: 'crosslanguage/FSharpConsumer.cs',
+};
 
 interface CrossRenameFixture {
   readonly origin: OpenFixture;
@@ -55,59 +76,37 @@ suite('Real LSP - cross-language rename', () => {
   }
 });
 
+/** Every cross-language case, as the arguments `crossRenameSpec` takes. */
+const CROSS_RENAMES: readonly (readonly [string, CrossRenameSite, string, string, number])[] = [
+  ['C# origin -> F# reference', CSHARP_ORIGIN, 'CSharpOrigin', 'BridgedCSharpType', 2],
+  ['F# origin -> C# reference', FSHARP_ORIGIN, 'FSharpOrigin', 'BridgedFSharpType', 3],
+  ['C# member -> F# reference', CSHARP_ORIGIN, 'CSharpValue', 'BridgedCSharpMember', 2],
+  ['F# member -> C# reference', FSHARP_ORIGIN, 'FSharpValue', 'BridgedFSharpMember', 2],
+];
+
 function crossLanguageSpecs(): readonly CrossRenameSpec[] {
-  return [csharpOriginSpec(), fsharpOriginSpec(), csharpMemberSpec(), fsharpMemberSpec()];
+  return CROSS_RENAMES.map(([name, site, target, newName, originOccurrences]) =>
+    crossRenameSpec(name, site, target, newName, originOccurrences),
+  );
 }
 
-function csharpOriginSpec(): CrossRenameSpec {
+/** One cross-language rename: `target` becomes `newName` in both language fixtures. */
+function crossRenameSpec(
+  name: string,
+  site: CrossRenameSite,
+  target: string,
+  newName: string,
+  originOccurrences: number,
+  foreignOccurrences = 1,
+): CrossRenameSpec {
   return {
-    name: 'C# origin -> F# reference',
-    originFile: 'CrossLanguageCSharp.cs',
-    foreignFile: 'fsharp/CrossLanguage.fs',
-    target: 'CSharpOrigin',
-    newName: 'BridgedCSharpType',
-    expectedFiles: ['CrossLanguage.fs', 'CrossLanguageCSharp.cs'],
-    originOccurrences: 2,
-    foreignOccurrences: 1,
-  };
-}
-
-function csharpMemberSpec(): CrossRenameSpec {
-  return {
-    name: 'C# member -> F# reference',
-    originFile: 'CrossLanguageCSharp.cs',
-    foreignFile: 'fsharp/CrossLanguage.fs',
-    target: 'CSharpValue',
-    newName: 'BridgedCSharpMember',
-    expectedFiles: ['CrossLanguage.fs', 'CrossLanguageCSharp.cs'],
-    originOccurrences: 2,
-    foreignOccurrences: 1,
-  };
-}
-
-function fsharpMemberSpec(): CrossRenameSpec {
-  return {
-    name: 'F# member -> C# reference',
-    originFile: 'fsharp/CrossLanguage.fs',
-    foreignFile: 'crosslanguage/FSharpConsumer.cs',
-    target: 'FSharpValue',
-    newName: 'BridgedFSharpMember',
-    expectedFiles: ['CrossLanguage.fs', 'FSharpConsumer.cs'],
-    originOccurrences: 2,
-    foreignOccurrences: 1,
-  };
-}
-
-function fsharpOriginSpec(): CrossRenameSpec {
-  return {
-    name: 'F# origin -> C# reference',
-    originFile: 'fsharp/CrossLanguage.fs',
-    foreignFile: 'crosslanguage/FSharpConsumer.cs',
-    target: 'FSharpOrigin',
-    newName: 'BridgedFSharpType',
-    expectedFiles: ['CrossLanguage.fs', 'FSharpConsumer.cs'],
-    originOccurrences: 3,
-    foreignOccurrences: 1,
+    name,
+    ...site,
+    target,
+    newName,
+    expectedFiles: [fileNameOf(site.originFile), fileNameOf(site.foreignFile)],
+    originOccurrences,
+    foreignOccurrences,
   };
 }
 
@@ -158,10 +157,16 @@ function assertInitialSources(
 ): void {
   assert.ok(!origin.document.isDirty);
   assert.ok(!foreign.document.isDirty);
-  assert.strictEqual(count(origin.document.getText(), spec.target), spec.originOccurrences);
-  assert.strictEqual(count(foreign.document.getText(), spec.target), spec.foreignOccurrences);
-  assert.strictEqual(count(origin.document.getText(), spec.newName), 0);
-  assert.strictEqual(count(foreign.document.getText(), spec.newName), 1);
+  assert.strictEqual(
+    countOccurrences(origin.document.getText(), spec.target),
+    spec.originOccurrences,
+  );
+  assert.strictEqual(
+    countOccurrences(foreign.document.getText(), spec.target),
+    spec.foreignOccurrences,
+  );
+  assert.strictEqual(countOccurrences(origin.document.getText(), spec.newName), 0);
+  assert.strictEqual(countOccurrences(foreign.document.getText(), spec.newName), 1);
   assert.notStrictEqual(origin.uri.toString(), foreign.uri.toString());
 }
 
@@ -216,13 +221,18 @@ async function applyCrossLanguageEdit(
   edit: vscode.WorkspaceEdit,
   spec: CrossRenameSpec,
 ): Promise<void> {
+  await applyToBoth(fixture, edit);
+  assertAppliedTexts(fixture, spec);
+  await persistFixtureState(fixture);
+}
+
+/** Apply `edit` to both language documents, proving each overlay advanced. */
+async function applyToBoth(fixture: CrossRenameFixture, edit: vscode.WorkspaceEdit): Promise<void> {
   const originVersion = fixture.origin.document.version;
   const foreignVersion = fixture.foreign.document.version;
   await applyWorkspaceEdit(edit);
   assert.ok(fixture.origin.document.version > originVersion);
   assert.ok(fixture.foreign.document.version > foreignVersion);
-  assertAppliedTexts(fixture, spec);
-  await persistFixtureState(fixture);
 }
 
 function assertAppliedTexts(fixture: CrossRenameFixture, spec: CrossRenameSpec): void {
@@ -237,10 +247,10 @@ function assertAppliedTexts(fixture: CrossRenameFixture, spec: CrossRenameSpec):
   assert.ok(fixture.origin.document.isDirty);
   assert.ok(fixture.foreign.document.isDirty);
   assert.strictEqual(
-    count(fixture.origin.document.getText(), spec.newName),
+    countOccurrences(fixture.origin.document.getText(), spec.newName),
     spec.originOccurrences,
   );
-  assert.strictEqual(count(fixture.foreign.document.getText(), spec.newName), 2);
+  assert.strictEqual(countOccurrences(fixture.foreign.document.getText(), spec.newName), 2);
 }
 
 async function reverseCrossLanguageEdit(
@@ -249,11 +259,7 @@ async function reverseCrossLanguageEdit(
 ): Promise<void> {
   const reverse = await requestReverseEdit(fixture, spec);
   await assertCrossLanguageEdit(reverse, spec.newName, spec.target, spec);
-  const originVersion = fixture.origin.document.version;
-  const foreignVersion = fixture.foreign.document.version;
-  await applyWorkspaceEdit(reverse);
-  assert.ok(fixture.origin.document.version > originVersion);
-  assert.ok(fixture.foreign.document.version > foreignVersion);
+  await applyToBoth(fixture, reverse);
   assertOriginalTexts(fixture, spec);
   await assertOriginalPrepare(fixture, spec);
   await persistFixtureState(fixture);
@@ -264,14 +270,8 @@ async function requestReverseEdit(
   fixture: CrossRenameFixture,
   spec: CrossRenameSpec,
 ): Promise<vscode.WorkspaceEdit> {
-  const range = tokenRange(fixture.origin.document, spec.newName);
-  await assertPrepare(fixture.origin.uri, range, spec.newName);
-  return requestRename(
-    fixture.origin.uri,
-    range.start.translate(0, 1),
-    spec.target,
-    LSP_RESPONSE_MS,
-  );
+  const { edit } = await renamePreparedToken(fixture.origin, spec.newName, spec.target);
+  return edit;
 }
 
 async function assertOriginalPrepare(
@@ -295,32 +295,14 @@ function assertOriginalTexts(fixture: CrossRenameFixture, spec: CrossRenameSpec)
   assertOriginalContent(fixture);
   assert.ok(fixture.origin.document.isDirty);
   assert.ok(fixture.foreign.document.isDirty);
-  assert.strictEqual(count(fixture.origin.document.getText(), spec.newName), 0);
-  assert.strictEqual(count(fixture.foreign.document.getText(), spec.newName), 1);
+  assert.strictEqual(countOccurrences(fixture.origin.document.getText(), spec.newName), 0);
+  assert.strictEqual(countOccurrences(fixture.foreign.document.getText(), spec.newName), 1);
 }
 
-async function assertNoErrors(uri: vscode.Uri): Promise<void> {
-  try {
-    const diagnostics = await waitForMatchingDiagnostics(
-      uri,
-      (items) => items.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
-      LSP_RESPONSE_MS,
-    );
-    assert.ok(diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error));
-  } catch (error: unknown) {
-    assert.fail(`diagnostics for ${uri.fsPath}: ${diagnosticSummary(uri)}; wait=${String(error)}`);
-  }
-}
-
-function diagnosticSummary(uri: vscode.Uri): string {
-  const diagnostics = vscode.languages.getDiagnostics(uri);
-  if (diagnostics.length === 0) return '<none>';
-  return diagnostics
-    .map((item) => {
-      const start = `${item.range.start.line}:${item.range.start.character}`;
-      return `[${item.severity}/${String(item.code ?? 'none')}@${start}] ${item.message}`;
-    })
-    .join(' | ');
+/** Both language documents carry no Error diagnostics. */
+async function assertBothErrorFree(fixture: CrossRenameFixture): Promise<void> {
+  await assertNoErrorDiagnostics(fixture.origin.uri);
+  await assertNoErrorDiagnostics(fixture.foreign.uri);
 }
 
 async function persistFixtureState(fixture: CrossRenameFixture): Promise<void> {
@@ -331,10 +313,14 @@ async function persistFixtureState(fixture: CrossRenameFixture): Promise<void> {
   await rebuildAndRestartRealLsp();
   assert.strictEqual(fixture.origin.document.getText(), expectedOrigin);
   assert.strictEqual(fixture.foreign.document.getText(), expectedForeign);
+  assertBothSaved(fixture);
+  await assertBothErrorFree(fixture);
+}
+
+/** Both language documents match what is on disk. */
+function assertBothSaved(fixture: CrossRenameFixture): void {
   assert.ok(!fixture.origin.document.isDirty);
   assert.ok(!fixture.foreign.document.isDirty);
-  await assertNoErrors(fixture.origin.uri);
-  await assertNoErrors(fixture.foreign.uri);
 }
 
 async function saveFixtureDocuments(fixture: CrossRenameFixture): Promise<void> {
@@ -346,8 +332,7 @@ async function saveFixtureDocuments(fixture: CrossRenameFixture): Promise<void> 
   assert.ok(await fixture.foreign.document.save(), 'foreign document must save');
   assert.strictEqual(fixture.origin.document.version, originVersion);
   assert.strictEqual(fixture.foreign.document.version, foreignVersion);
-  assert.ok(!fixture.origin.document.isDirty);
-  assert.ok(!fixture.foreign.document.isDirty);
+  assertBothSaved(fixture);
 }
 
 async function assertFixtureDisk(
@@ -378,8 +363,4 @@ async function restoreOriginalFixture(fixture: CrossRenameFixture): Promise<void
   await applyWorkspaceEdit(restoration);
   assertOriginalContent(fixture);
   await persistFixtureState(fixture);
-}
-
-function count(source: string, needle: string): number {
-  return source.split(needle).length - 1;
 }

@@ -12,6 +12,7 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
   CodeActionResolveRequest,
+  type CodeActionMiddleware,
   type LanguageClient,
   type ResolveCodeActionSignature,
 } from 'vscode-languageclient/node';
@@ -29,6 +30,7 @@ import {
   useRefactorFixture,
   waitForMatchingDiagnostics,
   type OpenFixture,
+  type RefactorFixture,
 } from './refactor-test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 import { useUiStubs } from './ui-stubs';
@@ -103,6 +105,47 @@ function asWorkspaceEdit(wire: WireWorkspaceEdit | undefined): vscode.WorkspaceE
   return edit;
 }
 
+type ResolveMiddleware = NonNullable<CodeActionMiddleware['resolveCodeAction']>;
+type ResolveNext = Parameters<ResolveMiddleware>[2];
+
+/** The real client plus the `codeAction/resolve` middleware it carries. */
+async function resolveMiddleware(): Promise<{
+  readonly client: LanguageClient;
+  readonly resolve: ResolveMiddleware;
+}> {
+  const client = await activateRealSharpLsp();
+  const resolve = client.middleware.resolveCodeAction;
+  assert.ok(resolve, 'the client must carry the resolveCodeAction middleware');
+  return { client, resolve };
+}
+
+/** Overlay `MISSING_USING` on `fixture` and wait for its CS0246. */
+async function missingUsingOverlay(fixture: RefactorFixture): Promise<void> {
+  await replaceDocumentText(fixture.fixture.document, MISSING_USING);
+  await waitForMatchingDiagnostics(
+    fixture.fixture.uri,
+    (diagnostics) => diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === 'CS0246'),
+    LSP_RESPONSE_MS,
+  );
+}
+
+/** A live (or cancelled, when `source` is cancelled) resolve token. */
+function resolveToken(source?: vscode.CancellationTokenSource): vscode.CancellationToken {
+  if (source === undefined) return new vscode.CancellationTokenSource().token;
+  source.cancel();
+  return source.token;
+}
+
+/** Run the client's resolve middleware on the wire `item`. */
+async function resolveItem(
+  resolve: ResolveMiddleware,
+  item: WireCodeAction,
+  next: ResolveNext,
+  source?: vscode.CancellationTokenSource,
+): Promise<vscode.CodeAction | null | undefined> {
+  return resolve(item as unknown as vscode.CodeAction, resolveToken(source), next);
+}
+
 /** The quick fix importing `System.Text` for the probe's `StringBuilder`. */
 async function systemTextFix(
   fixture: OpenFixture,
@@ -118,6 +161,28 @@ async function systemTextFix(
     `a System.Text import fix must be offered: ${actions.map((a) => a.title).join(', ')}`,
   );
   return { item: fix as WireCodeAction, range };
+}
+
+/** A wire quick fix that targets `fixture`'s document. */
+function wireFix(fixture: RefactorFixture, id: number, title: string): WireCodeAction {
+  return { title, kind: 'quickfix', data: { id, uri: fixture.fixture.uri.toString() } };
+}
+
+/** Resolve the probe's `System.Text` fix through the real middleware, from a fresh overlay. */
+async function healthyResolve(fixture: RefactorFixture): Promise<{
+  readonly item: WireCodeAction;
+  readonly resolved: vscode.CodeAction | null | undefined;
+  readonly again: () => Promise<vscode.CodeAction | null | undefined>;
+}> {
+  const { client, resolve } = await resolveMiddleware();
+  await missingUsingOverlay(fixture);
+  const { item } = await systemTextFix(fixture.fixture);
+  const next = resolveNext(client);
+  return {
+    item,
+    resolved: await resolveItem(resolve, item, next),
+    again: () => resolveItem(resolve, item, next),
+  };
 }
 
 /** Count reveals of the SharpLsp channel until `restore` puts `show` back. */
@@ -145,24 +210,9 @@ suite('Code actions never fail silently [REFACTOR-NEVER-SILENT]', function () {
   });
 
   test('an expired quick fix reports exactly one message; Show Log reveals the channel', async () => {
-    const client = await activateRealSharpLsp();
-    const resolve = client.middleware.resolveCodeAction;
-    assert.ok(resolve, 'the client must carry the resolveCodeAction middleware');
-    await replaceDocumentText(refactor.fixture.document, MISSING_USING);
-    await waitForMatchingDiagnostics(
-      refactor.fixture.uri,
-      (diagnostics) => diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === 'CS0246'),
-      LSP_RESPONSE_MS,
-    );
-
     // Interaction 1 — the healthy resolve: the fix resolves to a real edit and
     // the middleware shows NOTHING. This is the no-failure control.
-    const { item } = await systemTextFix(refactor.fixture);
-    const resolved = await resolve(
-      item as unknown as vscode.CodeAction,
-      new vscode.CancellationTokenSource().token,
-      resolveNext(client),
-    );
+    const { item, resolved, again } = await healthyResolve(refactor);
     assert.ok(resolved, 'the healthy resolve must answer the action');
     assert.strictEqual(stubs().log.errorMessages.length, 0, 'a healthy resolve says nothing');
 
@@ -172,11 +222,7 @@ suite('Code actions never fail silently [REFACTOR-NEVER-SILENT]', function () {
     const showLog = stubShowLog();
     let expired: vscode.CodeAction | null | undefined;
     try {
-      expired = await resolve(
-        item as unknown as vscode.CodeAction,
-        new vscode.CancellationTokenSource().token,
-        resolveNext(client),
-      );
+      expired = await again();
     } finally {
       showLog.restore();
     }
@@ -210,23 +256,14 @@ suite('Code actions never fail silently [REFACTOR-NEVER-SILENT]', function () {
   });
 
   test('a cancelled resolve is not a failure: no message', async () => {
-    const client = await activateRealSharpLsp();
-    const resolve = client.middleware.resolveCodeAction;
-    assert.ok(resolve, 'the client must carry the resolveCodeAction middleware');
-    await replaceDocumentText(refactor.fixture.document, MISSING_USING);
-    await waitForMatchingDiagnostics(
-      refactor.fixture.uri,
-      (diagnostics) => diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === 'CS0246'),
-      LSP_RESPONSE_MS,
-    );
+    const { client, resolve } = await resolveMiddleware();
+    await missingUsingOverlay(refactor);
     const { item } = await systemTextFix(refactor.fixture);
-
-    const source = new vscode.CancellationTokenSource();
-    source.cancel();
-    const resolved = await resolve(
-      item as unknown as vscode.CodeAction,
-      source.token,
+    const resolved = await resolveItem(
+      resolve,
+      item,
       resolveNext(client),
+      new vscode.CancellationTokenSource(),
     );
     assert.strictEqual(
       stubs().log.errorMessages.length,
@@ -237,20 +274,13 @@ suite('Code actions never fail silently [REFACTOR-NEVER-SILENT]', function () {
   });
 
   test('a resolve with no changes gets the no-changes message', async () => {
-    const client = await activateRealSharpLsp();
-    const resolve = client.middleware.resolveCodeAction;
-    assert.ok(resolve, 'the client must carry the resolveCodeAction middleware');
-    const item: WireCodeAction = {
-      title: 'Change nothing',
-      kind: 'quickfix',
-      data: { id: 1, uri: refactor.fixture.uri.toString() },
-    };
+    const { resolve } = await resolveMiddleware();
+    const item = wireFix(refactor, 1, 'Change nothing');
     // A server answer of the unresolved action back: no edit, no command.
-    const resolved = await resolve(
-      item as unknown as vscode.CodeAction,
-      new vscode.CancellationTokenSource().token,
-      async () => ({ title: item.title, kind: vscode.CodeActionKind.QuickFix }),
-    );
+    const resolved = await resolveItem(resolve, item, async () => ({
+      title: item.title,
+      kind: vscode.CodeActionKind.QuickFix,
+    }));
     assert.strictEqual(stubs().log.errorMessages.length, 1, 'the empty resolve says so');
     assert.strictEqual(
       stubs().log.errorMessages[0],
@@ -261,22 +291,12 @@ suite('Code actions never fail silently [REFACTOR-NEVER-SILENT]', function () {
   });
 
   test('a resolve the client gave up on reports that the server did not answer', async () => {
-    const client = await activateRealSharpLsp();
-    const resolve = client.middleware.resolveCodeAction;
-    assert.ok(resolve, 'the client must carry the resolveCodeAction middleware');
-    const item: WireCodeAction = {
-      title: 'Import the namespace',
-      kind: 'quickfix',
-      data: { id: 2, uri: refactor.fixture.uri.toString() },
-    };
+    const { resolve } = await resolveMiddleware();
+    const item = wireFix(refactor, 2, 'Import the namespace');
     // vscode-languageclient answers the unresolved item itself, without a
     // cancellation, when the connection closed under the request.
     const unresolved = item as unknown as vscode.CodeAction;
-    const resolved = await resolve(
-      unresolved,
-      new vscode.CancellationTokenSource().token,
-      async () => unresolved,
-    );
+    const resolved = await resolveItem(resolve, item, async () => unresolved);
     assert.strictEqual(stubs().log.errorMessages.length, 1, 'the lost answer says so, once');
     assert.strictEqual(
       stubs().log.errorMessages[0],
@@ -288,23 +308,8 @@ suite('Code actions never fail silently [REFACTOR-NEVER-SILENT]', function () {
   });
 
   test('a healthy quick fix applies its edit and says nothing', async () => {
-    const client = await activateRealSharpLsp();
-    const resolve = client.middleware.resolveCodeAction;
-    assert.ok(resolve, 'the client must carry the resolveCodeAction middleware');
-    await replaceDocumentText(refactor.fixture.document, MISSING_USING);
-    await waitForMatchingDiagnostics(
-      refactor.fixture.uri,
-      (diagnostics) => diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === 'CS0246'),
-      LSP_RESPONSE_MS,
-    );
-
     // Interaction 1 — resolve through the middleware: a real edit comes back.
-    const { item } = await systemTextFix(refactor.fixture);
-    const resolved = await resolve(
-      item as unknown as vscode.CodeAction,
-      new vscode.CancellationTokenSource().token,
-      resolveNext(client),
-    );
+    const { resolved } = await healthyResolve(refactor);
     const action = resolved!;
     assert.ok(action?.edit, 'the middleware must return the resolved edit');
     assert.strictEqual(stubs().log.errorMessages.length, 0, 'no failure, no message');
