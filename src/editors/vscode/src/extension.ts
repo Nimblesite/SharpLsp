@@ -403,83 +403,57 @@ export async function deactivate(): Promise<void> {
 }
 
 function registerCommands(context: ExtensionContext): void {
-  context.subscriptions.push(
-    commands.registerCommand(CMD_RESTART_SERVER, async () => {
-      if (statusBar === undefined) return;
-      log.info('Restarting server…');
-      statusBar.setState(ServerState.Starting);
-      try {
-        if (lspClient !== undefined) await client.restart(lspClient);
-        log.info('Server restarted.');
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        log.info(`Restart failed: ${msg}`);
-        statusBar.setState(ServerState.Error);
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_RETRY_DOTNET_ACQUISITION, async () => {
-      if (statusBar === undefined) return;
-      log.info('Retrying .NET 10 SDK acquisition…');
-      // Implements [DIST-FAILURE-UX]: Result-based retry with toast on failure.
-      const retryResult = await acquireDotnet10Sdk(statusBar);
-      if (!retryResult.ok) {
-        await showAcquireFailureNotification(retryResult.error, CMD_RETRY_DOTNET_ACQUISITION);
-        return;
-      }
-      sharedState.dotnetPath.value = retryResult.value;
-      const reload = 'Reload Window';
-      const choice = await window.showInformationMessage(
-        'SharpLsp: .NET 10 SDK acquired. Reload the window to start the language server.',
-        reload,
-      );
-      if (choice === reload) {
-        await commands.executeCommand('workbench.action.reloadWindow');
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_SHOW_OUTPUT, () => {
-      log.output().show();
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_SHOW_TRACE, () => {
-      log.trace().show();
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_SELECT_SOLUTION, async () => {
-      await solutions.selectAndLoad();
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_OPEN_SOLUTION, async (solutionPath: string) => {
-      await solutions.load({ path: solutionPath, name: '' });
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_REFRESH_EXPLORER, async () => {
-      await explorerProvider?.refresh();
-    }),
-  );
-
-  const cycleSortHandler = (): void => {
+  const cycleSort = (): void => {
     explorerProvider?.cycleSortOrder();
   };
+  const handlers: Record<string, (...args: never[]) => unknown> = {
+    [CMD_RESTART_SERVER]: restartServer,
+    [CMD_RETRY_DOTNET_ACQUISITION]: retryDotnetAcquisition,
+    [CMD_SHOW_OUTPUT]: () => { log.output().show(); },
+    [CMD_SHOW_TRACE]: () => { log.trace().show(); },
+    [CMD_SELECT_SOLUTION]: solutions.selectAndLoad,
+    [CMD_OPEN_SOLUTION]: async (solutionPath: string) => { await solutions.load({ path: solutionPath, name: '' }); },
+    [CMD_REFRESH_EXPLORER]: async () => await explorerProvider?.refresh(),
+    [CMD_SORT_NATURAL]: cycleSort,
+    [CMD_SORT_ALPHABETICAL]: cycleSort,
+    [CMD_SORT_ACCESSIBILITY]: cycleSort,
+  };
   context.subscriptions.push(
-    commands.registerCommand(CMD_SORT_NATURAL, cycleSortHandler),
-    commands.registerCommand(CMD_SORT_ALPHABETICAL, cycleSortHandler),
-    commands.registerCommand(CMD_SORT_ACCESSIBILITY, cycleSortHandler),
+    ...Object.entries(handlers).map(([id, handler]) => commands.registerCommand(id, handler)),
   );
-
   registerNamespaceLayout(context);
   registerExplorerCommands(context, explorerDeps);
+}
+
+async function restartServer(): Promise<void> {
+  if (statusBar === undefined) return;
+  log.info('Restarting server…');
+  statusBar.setState(ServerState.Starting);
+  try {
+    if (lspClient !== undefined) await client.restart(lspClient);
+    log.info('Server restarted.');
+  } catch (err: unknown) {
+    log.info(`Restart failed: ${getErrorMessage(err)}`);
+    statusBar.setState(ServerState.Error);
+  }
+}
+
+/** Implements [DIST-FAILURE-UX]: Result-based retry with a toast on failure. */
+async function retryDotnetAcquisition(): Promise<void> {
+  if (statusBar === undefined) return;
+  log.info('Retrying .NET 10 SDK acquisition…');
+  const retryResult = await acquireDotnet10Sdk(statusBar);
+  if (!retryResult.ok) {
+    await showAcquireFailureNotification(retryResult.error, CMD_RETRY_DOTNET_ACQUISITION);
+    return;
+  }
+  sharedState.dotnetPath.value = retryResult.value;
+  const reload = 'Reload Window';
+  const choice = await window.showInformationMessage(
+    'SharpLsp: .NET 10 SDK acquired. Reload the window to start the language server.',
+    reload,
+  );
+  if (choice === reload) {
+    await commands.executeCommand('workbench.action.reloadWindow');
+  }
 }
