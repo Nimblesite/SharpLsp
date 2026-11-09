@@ -33,7 +33,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
-  EXTENSION_ID,
   closeAllEditors,
   openCSharpFile,
   pollUntilResult,
@@ -41,6 +40,7 @@ import {
   teardownLspTestSuite,
   pollSymbols,
   assertContainsAll,
+  requireAt,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { buildQualifiedName } from '../../tree-build.js';
@@ -54,7 +54,17 @@ import { ok, err, type Result } from '../../result.js';
 import { detectRuntimePlatform } from '../../platform.js';
 import { CONFIG_SECTION } from '../../constants.js';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
-import { nodeLabel, findNode, findByLabel, findByContext, walkTree } from './tree-node-kit';
+import { assertDottedName, assertRuns } from './context-menu-kit';
+import { type ExplorerProvider } from './explorer-kit';
+import { sharpLspExtension } from './extension-manifest-kit';
+import {
+  nodeLabel,
+  findByLabel,
+  findByContext,
+  walkTree,
+  labelledSymbol,
+  requireNodeWhere,
+} from './tree-node-kit';
 
 // ── Shared tree-node shape (the real ExplorerNode, viewed structurally) ──────
 
@@ -69,43 +79,98 @@ interface TreeNode extends vscode.TreeItem {
   readonly parent?: TreeNode;
 }
 
-interface ExplorerApi {
-  explorerProvider: {
-    loadSolution(slnPath: string): Promise<void>;
-    refresh(): Promise<void>;
-    clear(): void;
-    getChildren(element?: unknown): TreeNode[] | undefined;
-    getTreeItem(element: TreeNode): vscode.TreeItem;
-    onDidChangeTreeData: vscode.Event<unknown>;
-  };
-}
-
 const FIXTURE_DIR = path.resolve(__dirname, '../../../test-fixtures/workspace');
 const FIXTURE_SLN = path.join(FIXTURE_DIR, 'TestFixtures.sln');
 
-function getProvider(): ExplorerApi['explorerProvider'] {
-  const ext = vscode.extensions.getExtension(EXTENSION_ID);
-  assert.ok(ext, 'Extension must be found');
-  const api = ext.exports as ExplorerApi | undefined;
+/** The exported provider as these suites drive it: the shared surface plus tree items. */
+type Provider = ExplorerProvider<TreeNode> & {
+  getTreeItem(element: TreeNode): vscode.TreeItem;
+  onDidChangeTreeData: vscode.Event<unknown>;
+};
+
+/** The extension's exported Solution Explorer provider, asserted present. */
+function getProvider(): Provider {
+  const api = sharpLspExtension().exports as { explorerProvider?: Provider } | undefined;
   assert.ok(api?.explorerProvider, 'Extension must export explorerProvider');
   return api.explorerProvider;
 }
 
+/** The tree's root nodes, asserted non-empty. */
+function requireRoots(provider: Provider): TreeNode[] {
+  const roots = provider.getChildren();
+  assert.ok(roots !== undefined && roots.length > 0, 'tree must have at least one root');
+  return roots;
+}
+
+/** `node`'s qualified name, as `sharplsp.copyQualifiedName` computes it. */
+function qualified(node: TreeNode): string {
+  return buildQualifiedName(node as unknown as Parameters<typeof buildQualifiedName>[0]);
+}
+
+/** The non-symbol tooltip `node` renders, if any (symbol nodes render via LSP hover). */
+function tooltipOf(node: TreeNode): vscode.MarkdownString | undefined {
+  return buildNonSymbolTooltip(node as never);
+}
+
+/** Load `slnPath`, refresh, and poll until a node labelled `label` appears in the tree. */
+async function loadUntil(
+  provider: Provider,
+  slnPath: string,
+  label: string,
+  timeoutMs = 60_000,
+): Promise<void> {
+  await provider.loadSolution(slnPath);
+  await provider.refresh();
+  await pollUntilResult(
+    async () => findByLabel(provider.getChildren(), label),
+    (node) => node !== undefined,
+    timeoutMs,
+    1_000,
+  );
+}
+
 /** Load the committed fixture solution and wait until its symbols populate. */
-async function loadFixtureSolution(provider: ExplorerApi['explorerProvider']): Promise<void> {
+async function loadFixtureSolution(provider: Provider): Promise<void> {
   // Warm Roslyn against a real fixture file so workspaceSymbols has content.
   const calcUri = vscode.Uri.file(path.join(FIXTURE_DIR, 'Calculator.cs'));
   await vscode.workspace.openTextDocument(calcUri).then((d) => vscode.window.showTextDocument(d));
 
-  await provider.loadSolution(FIXTURE_SLN);
-  await provider.refresh();
+  await loadUntil(provider, FIXTURE_SLN, 'Calculator');
+}
 
-  await pollUntilResult(
-    async () => findByLabel(provider.getChildren(), 'Calculator'),
-    (node) => node !== undefined,
-    60_000,
-    1_000,
-  );
+/** The reveal surface of the live provider the active-editor sync drives (issue #118). */
+interface RevealProvider extends Provider {
+  findNodeForUri(uri: string): TreeNode | undefined;
+  getParent(node: TreeNode): TreeNode | undefined;
+}
+
+/** The live provider viewed through that reveal surface: the same object, richer type. */
+function liveExplorer(): RevealProvider {
+  return getProvider() as RevealProvider;
+}
+
+/**
+ * Bind `assign` (when given) to the committed fixture solution's provider for
+ * the enclosing suite: loaded and settled in `suiteSetup`, then cleared down
+ * and its sort order restored after the last test so the next suite starts
+ * from a clean tree.
+ */
+function useFixtureTree(prefix: string, assign?: (provider: Provider) => void): void {
+  let tmpDir = '';
+  let provider: Provider | undefined;
+  suiteSetup(async function () {
+    this.timeout(ACTIVATION_MS);
+    tmpDir = (await setupLspTestSuite(prefix)).tmpDir;
+    provider = getProvider();
+    await loadFixtureSolution(provider);
+    assign?.(provider);
+  });
+  suiteTeardown(async () => {
+    provider?.clear();
+    state.sortOrder.value = SortOrder.Alphabetical;
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -113,22 +178,10 @@ async function loadFixtureSolution(provider: ExplorerApi['explorerProvider']): P
 // ─────────────────────────────────────────────────────────────────
 
 suite('Tree E2E — real fixture solution walk', () => {
-  let tmpDir: string;
-  let provider: ExplorerApi['explorerProvider'];
+  let provider: Provider;
 
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('tree-walk-');
-    tmpDir = result.tmpDir;
-    provider = getProvider();
-    await loadFixtureSolution(provider);
-  });
-
-  suiteTeardown(async () => {
-    provider.clear();
-    state.sortOrder.value = SortOrder.Alphabetical;
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
+  useFixtureTree('tree-walk-', (loaded) => {
+    provider = loaded;
   });
 
   teardown(async () => {
@@ -136,8 +189,7 @@ suite('Tree E2E — real fixture solution walk', () => {
   });
 
   test('solution root → project → namespace → class → method chain is well formed', () => {
-    const roots = provider.getChildren();
-    assert.ok(roots !== undefined && roots.length > 0, 'tree must have at least one root');
+    const roots = requireRoots(provider);
 
     const solution = roots[0];
     assert.ok(solution, 'solution root must exist');
@@ -167,55 +219,52 @@ suite('Tree E2E — real fixture solution walk', () => {
       `project label should mention TestFixtures, got '${nodeLabel(project)}'`,
     );
 
-    const calcClass = findNode(
+    const calcClass = requireNodeWhere(
       roots,
-      (node) => nodeLabel(node).includes('Calculator') && node.contextValue === 'symbol.class',
+      labelledSymbol('Calculator', 'symbol.class'),
+      'Calculator class node must exist',
     );
-    assert.ok(calcClass, 'Calculator class node must exist');
 
-    const addMethod = findNode(
+    requireNodeWhere(
       calcClass.children,
-      (node) => nodeLabel(node).includes('Add') && node.contextValue === 'symbol.method',
+      labelledSymbol('Add', 'symbol.method'),
+      'Add method must be a child of Calculator',
     );
-    assert.ok(addMethod, 'Add method must be a child of Calculator');
   });
 
   test('buildQualifiedName threads Namespace.Class.Member for real nodes', () => {
     const roots = provider.getChildren();
 
-    const ns = findNode(roots, (node) => node.contextValue === 'symbol.namespace');
-    assert.ok(ns, 'a namespace node must exist');
+    const ns = requireNodeWhere(
+      roots,
+      (node) => node.contextValue === 'symbol.namespace',
+      'a namespace node must exist',
+    );
     // A namespace qualifies to just its own name (project ancestor is skipped).
     assert.strictEqual(
-      buildQualifiedName(ns as unknown as Parameters<typeof buildQualifiedName>[0]),
+      qualified(ns),
       ns.sortName,
       'namespace qualified name is its own name (no project/solution leak)',
     );
 
-    const calcClass = findNode(
+    const calcClass = requireNodeWhere(
       roots,
-      (node) => nodeLabel(node).includes('Calculator') && node.contextValue === 'symbol.class',
+      labelledSymbol('Calculator', 'symbol.class'),
+      'Calculator class node must exist',
     );
-    assert.ok(calcClass, 'Calculator class node must exist');
-    const classQualified = buildQualifiedName(
-      calcClass as unknown as Parameters<typeof buildQualifiedName>[0],
-    );
+    const classQualified = qualified(calcClass);
     assert.ok(
       classQualified.endsWith('Calculator'),
       `class qualified name should end with Calculator, got '${classQualified}'`,
     );
-    assert.ok(classQualified.includes('.'), 'class lives in a namespace → name has a dot');
-    assert.ok(!classQualified.startsWith('.'), 'qualified name must not start with a dot');
-    assert.ok(!classQualified.endsWith('.'), 'qualified name must not end with a dot');
+    assertDottedName(classQualified);
 
-    const addMethod = findNode(
+    const addMethod = requireNodeWhere(
       calcClass.children,
-      (node) => nodeLabel(node).includes('Add') && node.contextValue === 'symbol.method',
+      labelledSymbol('Add', 'symbol.method'),
+      'Add method must exist',
     );
-    assert.ok(addMethod, 'Add method must exist');
-    const methodQualified = buildQualifiedName(
-      addMethod as unknown as Parameters<typeof buildQualifiedName>[0],
-    );
+    const methodQualified = qualified(addMethod);
     assert.strictEqual(
       methodQualified,
       `${classQualified}.Add`,
@@ -230,22 +279,20 @@ suite('Tree E2E — real fixture solution walk', () => {
   });
 
   test('getTreeItem returns the node identity and every symbol node carries a symbol contextValue', () => {
-    const roots = provider.getChildren();
-    assert.ok(roots !== undefined && roots.length > 0);
+    const roots = requireRoots(provider);
 
-    const solution = roots[0];
-    assert.ok(solution);
+    const solution = requireAt(roots, 0, 'the solution root');
     assert.strictEqual(
       provider.getTreeItem(solution),
       solution,
       'getTreeItem is identity for the solution root',
     );
 
-    const calcClass = findNode(
+    const calcClass = requireNodeWhere(
       roots,
-      (node) => nodeLabel(node).includes('Calculator') && node.contextValue === 'symbol.class',
+      labelledSymbol('Calculator', 'symbol.class'),
+      'Calculator class node must exist',
     );
-    assert.ok(calcClass);
     assert.strictEqual(provider.getTreeItem(calcClass), calcClass, 'getTreeItem is identity');
 
     // Every node with a symbol kind must map to a SYMBOL_CONTEXT_VALUES entry.
@@ -274,17 +321,17 @@ suite('Tree E2E — real fixture solution walk', () => {
     // The fixture project compiles MULTIPLE interfaces (ICalculator + IShape) and
     // enums (Operation + Color), so we must match by BOTH context value AND label
     // rather than taking whichever the tree happens to list first.
-    const iface = findNode(
+    requireNodeWhere(
       roots,
-      (node) => node.contextValue === 'symbol.interface' && nodeLabel(node).includes('ICalculator'),
+      labelledSymbol('ICalculator', 'symbol.interface'),
+      'ICalculator interface node must exist with contextValue symbol.interface',
     );
-    assert.ok(iface, 'ICalculator interface node must exist with contextValue symbol.interface');
 
-    const enumNode = findNode(
+    requireNodeWhere(
       roots,
-      (node) => node.contextValue === 'symbol.enum' && nodeLabel(node).includes('Operation'),
+      labelledSymbol('Operation', 'symbol.enum'),
+      'Operation enum node must exist with contextValue symbol.enum',
     );
-    assert.ok(enumNode, 'Operation enum node must exist with contextValue symbol.enum');
 
     const enumMember = findByContext(roots, 'symbol.enumMember');
     assert.ok(enumMember, 'an enum member node (Add/Subtract/Multiply/Divide) must exist');
@@ -297,7 +344,7 @@ suite('Tree E2E — real fixture solution walk', () => {
 
 suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () => {
   let tmpDir: string;
-  let provider: ExplorerApi['explorerProvider'];
+  let provider: Provider;
 
   suiteSetup(async function () {
     this.timeout(ACTIVATION_MS);
@@ -351,14 +398,7 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
     );
     await pollSymbols(uri, (syms) => syms.length > 0, 30_000);
 
-    await provider.loadSolution(slnPath);
-    await provider.refresh();
-    await pollUntilResult(
-      async () => findByLabel(provider.getChildren(), 'Newtonsoft.Json'),
-      (node) => node !== undefined,
-      30_000,
-      1_000,
-    );
+    await loadUntil(provider, slnPath, 'Newtonsoft.Json', 30_000);
   });
 
   suiteTeardown(async () => {
@@ -372,10 +412,13 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
   });
 
   test('NuGet package node renders a markdown tooltip with name + version', () => {
-    const pkg = findByContext(provider.getChildren(), 'nugetPackage');
-    assert.ok(pkg, 'a nugetPackage node must exist');
+    const pkg = requireNodeWhere(
+      provider.getChildren(),
+      (node) => node.contextValue === 'nugetPackage',
+      'a nugetPackage node must exist',
+    );
 
-    const tooltip = buildNonSymbolTooltip(pkg as never);
+    const tooltip = tooltipOf(pkg);
     assert.ok(tooltip instanceof vscode.MarkdownString, 'package tooltip must be a MarkdownString');
     assertContainsAll(
       tooltip.value,
@@ -385,29 +428,26 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
   });
 
   test('symbol and structural nodes get NO non-symbol tooltip (symbols use LSP hover)', () => {
-    const roots = provider.getChildren();
-    assert.ok(roots !== undefined && roots.length > 0);
+    const roots = requireRoots(provider);
 
     // Solution, project, and a class are all non-tooltip kinds here.
-    const solution = roots[0];
-    assert.ok(solution);
-    assert.strictEqual(
-      buildNonSymbolTooltip(solution as never),
-      undefined,
-      'solution node has no non-symbol tooltip',
-    );
+    const solution = requireAt(roots, 0, 'the solution root');
+    assert.strictEqual(tooltipOf(solution), undefined, 'solution node has no non-symbol tooltip');
 
-    const project = findByContext(roots, 'project');
-    assert.ok(project);
-    assert.strictEqual(buildNonSymbolTooltip(project as never), undefined);
-
-    const programClass = findNode(
+    const project = requireNodeWhere(
       roots,
-      (node) => nodeLabel(node).includes('Program') && node.contextValue === 'symbol.class',
+      (node) => node.contextValue === 'project',
+      'a project node must exist',
     );
-    assert.ok(programClass, 'Program class node must exist');
+    assert.strictEqual(tooltipOf(project), undefined);
+
+    const programClass = requireNodeWhere(
+      roots,
+      labelledSymbol('Program', 'symbol.class'),
+      'Program class node must exist',
+    );
     assert.strictEqual(
-      buildNonSymbolTooltip(programClass as never),
+      tooltipOf(programClass),
       undefined,
       'class node has no non-symbol tooltip (handled by hover)',
     );
@@ -433,7 +473,7 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
 
 suite('State E2E — reactive sort signals drive tree order', () => {
   let tmpDir: string;
-  let provider: ExplorerApi['explorerProvider'];
+  let provider: Provider;
   let originalSort: SortOrder;
 
   suiteSetup(async function () {
@@ -459,11 +499,11 @@ suite('State E2E — reactive sort signals drive tree order', () => {
 
   /** Member sortNames under the Calculator class for the current sort order. */
   function calculatorMemberNames(): string[] {
-    const calcClass = findNode(
+    const calcClass = requireNodeWhere(
       provider.getChildren(),
-      (node) => nodeLabel(node).includes('Calculator') && node.contextValue === 'symbol.class',
+      labelledSymbol('Calculator', 'symbol.class'),
+      'Calculator class must exist',
     );
-    assert.ok(calcClass, 'Calculator class must exist');
     return (calcClass.children ?? []).map((child) => child.sortName ?? '');
   }
 
@@ -834,9 +874,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
 
     // Self-contained activation: in an isolated run no earlier suite has
     // activated the extension yet (Suite 5 has no suiteSetup by design).
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension must be found');
-    await ext.activate();
+    await sharpLspExtension().activate();
 
     const provider = getProvider();
     provider.clear();
@@ -959,12 +997,8 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     // These commands call channel.show() through the channel-guard Proxy. Even
     // when the channel races teardown the guard must swallow the error — here we
     // simply assert the registered commands never reject.
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.showOutput');
-    }, 'sharplsp.showOutput must not throw');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.showTraceOutput');
-    }, 'sharplsp.showTraceOutput must not throw');
+    await assertRuns('sharplsp.showOutput');
+    await assertRuns('sharplsp.showTraceOutput');
   });
 });
 
@@ -973,37 +1007,13 @@ suite('Solution / Result / Platform / Channel E2E', () => {
 // ─────────────────────────────────────────────────────────────────
 
 suite('Tree Reveal E2E — active-editor parent chain', () => {
-  let tmpDir: string;
-  let provider: ExplorerApi['explorerProvider'];
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('tree-reveal-');
-    tmpDir = result.tmpDir;
-    provider = getProvider();
-    await loadFixtureSolution(provider);
-  });
-
-  suiteTeardown(async () => {
-    provider.clear();
-    state.sortOrder.value = SortOrder.Alphabetical;
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
+  useFixtureTree('tree-reveal-');
 
   test('findNodeForUri resolves a Calculator node and getParent walks up to the solution root', () => {
     const calcUri = vscode.Uri.file(path.join(FIXTURE_DIR, 'Calculator.cs')).toString();
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext);
-    const live = ext.exports as {
-      explorerProvider: {
-        findNodeForUri(uri: string): TreeNode | undefined;
-        getParent(node: TreeNode): TreeNode | undefined;
-        getChildren(element?: unknown): TreeNode[] | undefined;
-      };
-    };
+    const live = liveExplorer();
 
-    const node = live.explorerProvider.findNodeForUri(calcUri);
+    const node = live.findNodeForUri(calcUri);
     assert.ok(node, 'a tree node living in Calculator.cs must resolve for active-editor sync');
     assert.strictEqual(node.symbolUri, calcUri, 'resolved node belongs to Calculator.cs');
 
@@ -1013,7 +1023,7 @@ suite('Tree Reveal E2E — active-editor parent chain', () => {
     while (current !== undefined) {
       chain.push(current);
       assert.ok(chain.length < 50, 'parent chain must terminate (no cycle)');
-      current = live.explorerProvider.getParent(current);
+      current = live.getParent(current);
     }
     const top = chain[chain.length - 1];
     assert.ok(top, 'chain has a top');
@@ -1027,20 +1037,16 @@ suite('Tree Reveal E2E — active-editor parent chain', () => {
       'chain passes through the project node so reveal can expand it',
     );
 
-    const roots = live.explorerProvider.getChildren();
+    const roots = live.getChildren();
     assert.ok(roots?.[0]);
-    assert.strictEqual(live.explorerProvider.getParent(roots[0]), undefined, 'root has no parent');
+    assert.strictEqual(live.getParent(roots[0]), undefined, 'root has no parent');
   });
 
   test('findNodeForUri returns undefined for a file that contributes no tree symbols', () => {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext);
-    const live = ext.exports as {
-      explorerProvider: { findNodeForUri(uri: string): TreeNode | undefined };
-    };
+    const live = liveExplorer();
     const unrelated = vscode.Uri.file(path.join(os.tmpdir(), 'no-such-symbols.cs')).toString();
     assert.strictEqual(
-      live.explorerProvider.findNodeForUri(unrelated),
+      live.findNodeForUri(unrelated),
       undefined,
       'an unrelated file uri resolves to no tree node',
     );

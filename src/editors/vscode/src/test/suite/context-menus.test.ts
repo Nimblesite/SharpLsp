@@ -12,28 +12,34 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { type LanguageClient } from 'vscode-languageclient/node';
 import { collectProjectPaths } from '../../package-maintenance.js';
 import {
+  SERILOG_PAIR,
+  SPLIT_SERILOG_PAIR,
   type SymbolTree,
   type TreeNode,
+  activeLspClient,
+  assertCommandSucceeds,
   assertRuns,
+  consolidate,
+  consolidateNew,
   copiedText,
   labelled,
   loadTreeUntil,
+  assertDottedName,
+  assertMentions,
   requireNode,
+  requireSoleMoved,
   requireSolutionNode,
+  solutionFor,
+  unsharedPair,
   useSymbolTree,
 } from './context-menu-kit';
-import { findNode, nodeLabel } from './tree-node-kit';
+import { assertAllNodes, collectNodes, findNode, nodeLabel } from './tree-node-kit';
 import { activeExplorerProvider } from './explorer-kit';
+import { sharpLspExtension } from './extension-manifest-kit';
 import { useLspTestSuite } from './lsp-suite-kit';
-import {
-  EXTENSION_ID,
-  pollUntilResult,
-  assertContainsAll,
-  assertContainsNone,
-} from './test-helpers';
+import { pollUntilResult, assertContainsAll, assertContainsNone } from './test-helpers';
 import { installUiStubs } from './ui-stubs';
 import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -72,9 +78,7 @@ interface Contributes {
 
 /** The extension manifest's `contributes` block. */
 function contributes(): Contributes {
-  const ext = vscode.extensions.getExtension(EXTENSION_ID);
-  assert.ok(ext, 'Extension must be found');
-  return (ext.packageJSON.contributes ?? {}) as Contributes;
+  return (sharpLspExtension().packageJSON.contributes ?? {}) as Contributes;
 }
 
 /** Every entry the manifest contributes to `menu`. */
@@ -82,10 +86,15 @@ function menuEntries(menu = 'view/item/context'): MenuEntry[] {
   return contributes().menus?.[menu] ?? [];
 }
 
-/** `command`'s view/item/context entry, asserted present. */
-function menuEntry(command: string): MenuEntry {
-  const entry = menuEntries().find((m) => m.command === command);
-  assert.ok(entry, `${command} must have a view/item/context menu entry`);
+/** `command`'s view/item/context entry, asserted present, optionally scoped to a `when` clause. */
+function menuEntry(command: string, when?: string): MenuEntry {
+  const entry = menuEntries().find(
+    (m) => m.command === command && (when === undefined || m.when === when),
+  );
+  assert.ok(
+    entry,
+    `${command} must have a view/item/context entry${when === undefined ? '' : ` for '${when}'`}`,
+  );
   return entry;
 }
 
@@ -121,8 +130,7 @@ suite('Context Menu — Package.json Contributions', () => {
 
   for (const cmd of BUILD_COMMANDS) {
     test(`${cmd} has a solution-node menu entry in the 2_build group`, () => {
-      const entry = menuEntries().find((m) => m.command === cmd && m.when === SOLUTION_WHEN);
-      assert.ok(entry, `${cmd} must have a view/item/context entry scoped to the solution node`);
+      const entry = menuEntry(cmd, SOLUTION_WHEN);
       assert.strictEqual(
         entry.group,
         '2_build',
@@ -131,8 +139,7 @@ suite('Context Menu — Package.json Contributions', () => {
     });
 
     test(`${cmd} still has its project-node menu entry`, () => {
-      const entry = menuEntries().find((m) => m.command === cmd && m.when === PROJECT_WHEN);
-      assert.ok(entry, `${cmd} must keep its project-node menu entry`);
+      const entry = menuEntry(cmd, PROJECT_WHEN);
       assert.strictEqual(entry.group, '2_build', `${cmd} project entry must stay in '2_build'`);
     });
   }
@@ -140,19 +147,15 @@ suite('Context Menu — Package.json Contributions', () => {
   // ── Package maintenance (unused / consolidate) ────────────────
 
   test('removeUnusedPackages has project + solution menu entries in 5_dependencies', () => {
-    const entries = menuEntries().filter((m) => m.command === 'sharplsp.removeUnusedPackages');
-    const project = entries.find((m) => m.when === PROJECT_WHEN);
-    const solution = entries.find((m) => m.when === SOLUTION_WHEN);
-    assert.ok(project, 'removeUnusedPackages must have a project-node entry');
-    assert.ok(solution, 'removeUnusedPackages must have a solution-node entry');
+    const project = menuEntry('sharplsp.removeUnusedPackages', PROJECT_WHEN);
+    const solution = menuEntry('sharplsp.removeUnusedPackages', SOLUTION_WHEN);
     assert.strictEqual(project.group, '5_dependencies');
     assert.strictEqual(solution.group, '5_dependencies');
   });
 
   test('consolidatePackages has a solution-only menu entry in 5_dependencies', () => {
     const entries = menuEntries().filter((m) => m.command === 'sharplsp.consolidatePackages');
-    const solution = entries.find((m) => m.when === SOLUTION_WHEN);
-    assert.ok(solution, 'consolidatePackages must have a solution-node entry');
+    const solution = menuEntry('sharplsp.consolidatePackages', SOLUTION_WHEN);
     assert.strictEqual(solution.group, '5_dependencies');
     assert.ok(
       !entries.some((m) => m.when === PROJECT_WHEN),
@@ -164,22 +167,23 @@ suite('Context Menu — Package.json Contributions', () => {
 
   test('sortMembers is offered on type nodes of the solutionExplorer view only', () => {
     const { when } = menuEntry('sharplsp.sortMembers');
-    for (const scope of ['class', 'interface', 'enum', 'record', 'sharplsp.solutionExplorer']) {
-      assert.ok(when.includes(scope), `sortMembers when clause must include '${scope}': ${when}`);
-    }
+    assertContainsAll(
+      when,
+      ['class', 'interface', 'enum', 'record', 'sharplsp.solutionExplorer'],
+      'sortMembers when clause',
+    );
     // The pattern should only match type-level nodes (class, struct, etc.)
     // It must NOT be a catch-all for all symbol nodes.
-    for (const member of ['symbol.method', 'symbol.property', 'symbol.field']) {
-      assert.ok(!when.includes(member), `sortMembers must NOT show for ${member} nodes`);
-    }
+    assertContainsNone(
+      when,
+      ['symbol.method', 'symbol.property', 'symbol.field'],
+      'sortMembers when clause',
+    );
   });
 
   test('sortMembers is in a modification group', () => {
     const { group } = menuEntry('sharplsp.sortMembers');
-    assert.ok(
-      group.includes('modification') || group.startsWith('1'),
-      `sortMembers group '${group}' should be a modification group`,
-    );
+    assertMentions(group, ['modification'], 'the sortMembers group', ['1']);
   });
 
   // ── copy / reveal when clauses and groups ─────────────────────
@@ -198,19 +202,13 @@ suite('Context Menu — Package.json Contributions', () => {
   for (const cmd of ['sharplsp.copyQualifiedName', 'sharplsp.copyName']) {
     test(`${cmd} is in a copy/paste group`, () => {
       const { group } = menuEntry(cmd);
-      assert.ok(
-        group.includes('cutcopypaste') || group.includes('copy') || group.startsWith('9'),
-        `${cmd} group '${group}' should be a copy/paste group`,
-      );
+      assertMentions(group, ['cutcopypaste', 'copy'], `the ${cmd} group`, ['9']);
     });
   }
 
   test('copyName when clause covers solution and project nodes', () => {
     const { when } = menuEntry('sharplsp.copyName');
-    assert.ok(
-      when.includes('solution') || when.includes('project'),
-      `copyName when clause '${when}' should cover solution or project nodes`,
-    );
+    assertMentions(when, ['solution', 'project'], 'the copyName when clause');
   });
 });
 
@@ -230,11 +228,6 @@ const CONTEXT_VALUES: readonly (readonly [contextValue: string, label: string])[
   ['symbol.constructor', ''],
   ['symbol.delegate', 'MyDelegate'],
 ];
-
-/** Every node at or below `nodes` a menu keys on, depth-first. */
-function everyNode(nodes: TreeNode[] | undefined): TreeNode[] {
-  return (nodes ?? []).flatMap((node) => [node, ...everyNode(node.children)]);
-}
 
 suite('Context Menu — Context Values on Tree Nodes', () => {
   // Use the fixture workspace — it already has TestFixtures.sln loaded and
@@ -300,17 +293,16 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
       'nugetPackage',
       'projectReference',
     ];
-    const symbols = everyNode(tree.getChildren()).filter(
+    const symbols = collectNodes(tree.getChildren()).filter(
       (node) => (node.contextValue ?? '') !== '' && !structural.includes(node.contextValue ?? ''),
     );
-    const badNodes = symbols
-      .filter((node) => !(node.contextValue ?? '').startsWith('symbol.'))
-      .map((node) => `${nodeLabel(node)} (contextValue=${node.contextValue ?? ''})`);
-    assert.ok(symbols.length > 0, 'Must find at least some symbol nodes in the tree');
-    assert.deepEqual(
-      badNodes,
-      [],
-      `These nodes have unexpected contextValues: ${badNodes.join(', ')}`,
+    assertAllNodes(
+      symbols,
+      (node) =>
+        (node.contextValue ?? '').startsWith('symbol.')
+          ? undefined
+          : `${nodeLabel(node)} (contextValue=${node.contextValue ?? ''})`,
+      'these nodes have unexpected contextValues',
     );
   });
 });
@@ -354,12 +346,8 @@ suite('Context Menu — Copy Qualified Name', () => {
       this.timeout(COMMAND_MS);
       const node = requireNode(tree().getChildren(), label, contextValue);
       const text = await copiedText('sharplsp.copyQualifiedName', node, '');
-      for (const part of parts) {
-        assert.ok(text.includes(part), `Expected '${part}' in the qualified name, got '${text}'`);
-      }
-      assert.ok(text.includes('.'), 'Qualified name must contain a dot separator');
-      assert.ok(!text.startsWith('.'), 'Qualified name must not start with a dot');
-      assert.ok(!text.endsWith('.'), 'Qualified name must not end with a dot');
+      assertContainsAll(text, parts, 'the qualified name');
+      assertDottedName(text);
     });
   }
 });
@@ -450,18 +438,17 @@ suite('Context Menu — Reveal in File Explorer', () => {
   });
 
   test('symbolUri on all symbol nodes is a valid file URI', () => {
-    const symbols = everyNode(tree().getChildren()).filter((node) => {
+    const symbols = collectNodes(tree().getChildren()).filter((node) => {
       const cv = node.contextValue ?? '';
       return cv.startsWith('symbol.') && cv !== 'symbol.namespace';
     });
-    const badNodes = symbols
-      .filter((node) => !(node.symbolUri ?? '').startsWith('file://'))
-      .map((node) => `${nodeLabel(node)} (${node.contextValue ?? ''}): ${node.symbolUri ?? ''}`);
-    assert.ok(symbols.length > 0, 'Must find at least some non-namespace symbol nodes');
-    assert.deepEqual(
-      badNodes,
-      [],
-      `These symbol nodes are missing a valid symbolUri: ${badNodes.join(', ')}`,
+    assertAllNodes(
+      symbols,
+      (node) =>
+        (node.symbolUri ?? '').startsWith('file://')
+          ? undefined
+          : `${nodeLabel(node)} (${node.contextValue ?? ''}): ${node.symbolUri ?? ''}`,
+      'these symbol nodes are missing a valid symbolUri',
     );
   });
 });
@@ -744,91 +731,14 @@ suite('Package Maintenance — collectProjectPaths', () => {
 
 // ── Shared package-maintenance LSP e2e helpers ───────────────────
 
-interface ConsolidateResp {
-  readonly moved: { id: string; version: string; fromProjects: string[] }[];
-  readonly propsFile?: string;
-  readonly modifiedFiles: string[];
-  readonly message: string;
-}
-
 interface UnusedResp {
   readonly projectPath: string;
   readonly unused: { id: string; version: string }[];
 }
 
-interface SharpLspApiForPkgTests {
-  readonly getLspClient: () => LanguageClient | undefined;
-}
-
-/** Resolve a running LSP client from the extension exports. */
-function getPkgLspClient(): LanguageClient {
-  const ext = vscode.extensions.getExtension(EXTENSION_ID);
-  assert.ok(ext, 'Extension must be found');
-  const api = ext.exports as SharpLspApiForPkgTests | undefined;
-  assert.ok(api?.getLspClient, 'Extension must export getLspClient');
-  const client = api.getLspClient();
-  assert.ok(client, 'LSP client must be running');
-  return client;
-}
-
 /** Absolute path to the TestFixtures project loaded in the sidecar workspace. */
 function fixtureProjectPath(): string {
   return path.resolve(__dirname, '../../../test-fixtures/workspace/TestFixtures.csproj');
-}
-
-/** A `[id, version]` package reference pair. */
-type Ref = readonly string[];
-
-interface ProjectSpec {
-  readonly name: string;
-  readonly refs: readonly Ref[];
-  readonly ext?: string;
-}
-
-/** Write a project file with the given PackageReferences. */
-function writeProject(dir: string, name: string, refs: readonly Ref[], ext = 'csproj'): string {
-  const projDir = path.join(dir, name);
-  fs.mkdirSync(projDir, { recursive: true });
-  const items = refs
-    .map((ref) => `    <PackageReference Include="${ref[0]}" Version="${ref[1]}" />`)
-    .join('\n');
-  const file = path.join(projDir, `${name}.${ext}`);
-  fs.writeFileSync(
-    file,
-    `<Project Sdk="Microsoft.NET.Sdk">\n` +
-      `  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n` +
-      `  <ItemGroup>\n${items}\n  </ItemGroup>\n</Project>\n`,
-  );
-  return file;
-}
-
-/** Create an isolated solution directory containing the given projects. */
-function makeSolution(
-  tmpDir: string,
-  name: string,
-  projects: readonly ProjectSpec[],
-): { sln: string; dir: string; projects: string[] } {
-  const dir = path.join(tmpDir, name);
-  fs.mkdirSync(dir, { recursive: true });
-  const created = projects.map((p) => writeProject(dir, p.name, p.refs, p.ext ?? 'csproj'));
-  const sln = path.join(dir, `${name}.sln`);
-  fs.writeFileSync(sln, 'Microsoft Visual Studio Solution File, Format Version 12.00\n');
-  return { sln, dir, projects: created };
-}
-
-/** Two projects sharing one Serilog version: the canonical consolidation input. */
-const SERILOG_PAIR: readonly ProjectSpec[] = [
-  { name: 'A', refs: [['Serilog', '3.1.0']] },
-  { name: 'B', refs: [['Serilog', '3.1.0']] },
-];
-
-/** Send a consolidate request (scan or apply) over the LSP. */
-async function consolidate(
-  lsp: LanguageClient,
-  solutionPath: string,
-  dryRun: boolean,
-): Promise<ConsolidateResp> {
-  return lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', { solutionPath, dryRun });
 }
 
 // ── Suite 10: Package Maintenance — Consolidate (LSP e2e) ─────────
@@ -838,19 +748,11 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('dry-run reports the shared package with full detail and touches no files', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln, dir } = makeSolution(tmpDir(), 'DryDetail', [
-      { name: 'A', refs: [['Serilog', '3.1.0']] },
-      { name: 'B', refs: [['Serilog', '3.0.0']] },
-    ]);
-
-    const resp = await consolidate(lsp, sln, true);
+    const { resp, dir } = await consolidateNew(tmpDir(), 'DryDetail', SPLIT_SERILOG_PAIR);
 
     assert.ok(resp, 'response must be defined');
     assert.ok(Array.isArray(resp.moved), 'moved is an array');
-    assert.strictEqual(resp.moved.length, 1, 'exactly one shared package');
-    const serilog = resp.moved[0];
-    assert.ok(serilog, 'the moved entry exists');
+    const serilog = requireSoleMoved(resp);
     assert.strictEqual(serilog.id, 'Serilog', 'the shared package id');
     assert.strictEqual(serilog.version, '3.1.0', 'highest version (3.1.0 > 3.0.0) is chosen');
     assert.ok(Array.isArray(serilog.fromProjects), 'fromProjects is an array');
@@ -873,8 +775,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('dry-run ignores packages referenced by only one project', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln } = makeSolution(tmpDir(), 'MixedShare', [
+    const { resp } = await consolidateNew(tmpDir(), 'MixedShare', [
       {
         name: 'A',
         refs: [
@@ -891,7 +792,6 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
       },
     ]);
 
-    const resp = await consolidate(lsp, sln, true);
     const ids = resp.moved.map((m) => m.id);
     assert.strictEqual(resp.moved.length, 1, 'only the shared package is reported');
     assert.deepEqual(ids, ['Serilog'], 'exactly Serilog');
@@ -903,17 +803,13 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('dry-run selects the highest version across three projects', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln } = makeSolution(tmpDir(), 'ThreeWay', [
+    const { resp } = await consolidateNew(tmpDir(), 'ThreeWay', [
       { name: 'A', refs: [['Newtonsoft.Json', '12.0.1']] },
       { name: 'B', refs: [['Newtonsoft.Json', '13.0.3']] },
       { name: 'C', refs: [['Newtonsoft.Json', '13.0.1']] },
     ]);
 
-    const resp = await consolidate(lsp, sln, true);
-    assert.strictEqual(resp.moved.length, 1, 'one shared package');
-    const pkg = resp.moved[0];
-    assert.ok(pkg, 'moved entry present');
+    const pkg = requireSoleMoved(resp);
     assert.strictEqual(pkg.id, 'Newtonsoft.Json');
     assert.strictEqual(pkg.version, '13.0.3', 'highest of 12.0.1 / 13.0.3 / 13.0.1');
     assert.strictEqual(pkg.fromProjects.length, 3, 'shared across all three projects');
@@ -921,16 +817,12 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('dry-run enumerates F# (.fsproj) projects too', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln } = makeSolution(tmpDir(), 'FSharpShare', [
+    const { resp } = await consolidateNew(tmpDir(), 'FSharpShare', [
       { name: 'A', refs: [['FSharp.Data', '6.3.0']], ext: 'fsproj' },
       { name: 'B', refs: [['FSharp.Data', '6.3.0']], ext: 'fsproj' },
     ]);
 
-    const resp = await consolidate(lsp, sln, true);
-    assert.strictEqual(resp.moved.length, 1, 'F# projects are scanned');
-    const pkg = resp.moved[0];
-    assert.ok(pkg, 'moved entry present');
+    const pkg = requireSoleMoved(resp);
     assert.strictEqual(pkg.id, 'FSharp.Data');
     assert.strictEqual(pkg.fromProjects.length, 2);
     assertContainsAll(pkg.fromProjects, ['A.fsproj', 'B.fsproj'], 'pkg.fromProjects');
@@ -938,10 +830,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('apply hoists shared package into Directory.Build.props and strips projects', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln, dir } = makeSolution(tmpDir(), 'Apply', SERILOG_PAIR);
-
-    const resp = await consolidate(lsp, sln, false);
+    const { resp, dir } = await consolidateNew(tmpDir(), 'Apply', SERILOG_PAIR, false);
 
     assert.strictEqual(resp.moved.length, 1, 'one package moved');
     assert.ok(
@@ -980,8 +869,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('apply preserves existing Directory.Build.props content', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln, dir } = makeSolution(tmpDir(), 'PreserveProps', SERILOG_PAIR);
+    const { lsp, sln, dir } = solutionFor(tmpDir(), 'PreserveProps', SERILOG_PAIR);
     const propsPath = path.join(dir, 'Directory.Build.props');
     fs.writeFileSync(propsPath, '<Project>\n  <!-- sentinel comment -->\n</Project>\n');
 
@@ -993,8 +881,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('apply is idempotent — a second scan finds nothing shared', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln } = makeSolution(tmpDir(), 'Idempotent', SERILOG_PAIR);
+    const { lsp, sln } = solutionFor(tmpDir(), 'Idempotent', SERILOG_PAIR);
 
     const applied = await consolidate(lsp, sln, false);
     assert.strictEqual(applied.moved.length, 1, 'first apply moves Serilog');
@@ -1008,13 +895,8 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('reports nothing when no package is shared', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln, dir } = makeSolution(tmpDir(), 'NoShare', [
-      { name: 'A', refs: [['OnlyA', '1.0.0']] },
-      { name: 'B', refs: [['OnlyB', '1.0.0']] },
-    ]);
+    const { resp, dir } = await consolidateNew(tmpDir(), 'NoShare', unsharedPair());
 
-    const resp = await consolidate(lsp, sln, true);
     assert.deepEqual(resp.moved, [], 'nothing shared is reported');
     assert.strictEqual(resp.moved.length, 0);
     assert.strictEqual(resp.propsFile, undefined, 'no props file');
@@ -1025,9 +907,9 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
 
   test('a single-project solution shares nothing', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
-    const { sln } = makeSolution(tmpDir(), 'Single', [{ name: 'A', refs: [['Serilog', '3.1.0']] }]);
-    const resp = await consolidate(lsp, sln, true);
+    const { resp } = await consolidateNew(tmpDir(), 'Single', [
+      { name: 'A', refs: [['Serilog', '3.1.0']] },
+    ]);
     assert.deepEqual(resp.moved, [], 'one project cannot share with itself');
     assert.strictEqual(resp.moved.length, 0);
     assert.deepEqual(resp.modifiedFiles, []);
@@ -1041,7 +923,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
 
   test('unused request resolves against the loaded fixture project via Roslyn', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    const lsp = getPkgLspClient();
+    const lsp = activeLspClient();
     const projectPath = fixtureProjectPath();
 
     // Poll until the Roslyn workspace is warm enough to answer (request rejects
@@ -1083,7 +965,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
 
   test('unused request rejects for a project file that cannot be read', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
+    const lsp = activeLspClient();
     const bogus = path.join(tmpDir(), 'Nope', 'Nope.csproj');
     await assert.rejects(async () => {
       await lsp.sendRequest<UnusedResp>('sharplsp/nuget/unused', { projectPath: bogus });
@@ -1092,7 +974,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
 
   test('removeUnusedPackages command runs end-to-end through the real LSP', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
+    const lsp = activeLspClient();
     const projectPath = fixtureProjectPath();
     const projectNode = { contextValue: 'project', projectFilePath: projectPath, children: [] };
     const before = fs.readFileSync(projectPath, 'utf8');
@@ -1102,9 +984,11 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
     // destructive path stayed shut — a checked-in fixture must survive the run.
     const ui = installUiStubs();
     try {
-      await assert.doesNotReject(async () => {
-        await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', projectNode);
-      }, 'the command must complete against the real LSP');
+      await assertCommandSucceeds(
+        'sharplsp.removeUnusedPackages',
+        [projectNode],
+        'the command must complete against the real LSP',
+      );
 
       assert.strictEqual(ui.log.warningMessages.length, 1, 'exactly one confirmation was shown');
       const prompt = ui.log.warningMessages[0] ?? '';
@@ -1135,18 +1019,17 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
 
   test('consolidatePackages command runs end-to-end through the real LSP', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const lsp = getPkgLspClient();
+    const lsp = activeLspClient();
     // No shared packages → the command takes the non-modal "nothing to do" path,
     // exercising the real LSP scan without a confirmation dialog.
-    const { sln, dir } = makeSolution(tmpDir(), 'CmdConsolidate', [
-      { name: 'A', refs: [['OnlyA', '1.0.0']] },
-      { name: 'B', refs: [['OnlyB', '2.0.0']] },
-    ]);
+    const { sln, dir } = solutionFor(tmpDir(), 'CmdConsolidate', unsharedPair('2.0.0'));
     const solutionNode = { contextValue: 'solution', projectFilePath: sln, children: [] };
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.consolidatePackages', solutionNode);
-    }, 'the command must complete against the real LSP');
+    await assertCommandSucceeds(
+      'sharplsp.consolidatePackages',
+      [solutionNode],
+      'the command must complete against the real LSP',
+    );
 
     // The scan truth the command relied on, asserted directly over the LSP.
     const preview = await consolidate(lsp, sln, true);
