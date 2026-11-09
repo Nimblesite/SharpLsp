@@ -100,6 +100,52 @@ let private trimDocsOn packs runtime =
     finally
         try Directory.Delete(root, true) with _ -> ()
 
+/// Two documentation ids with the first repeated to verify stable duplicate handling.
+let private membersXml =
+    let entry name summary = $"<member name=\"{name}\"><summary>{summary}</summary></member>"
+
+    "<doc><members>"
+    + entry "M:First.Dup" "first wins"
+    + entry "M:Second.Unique" "second unique"
+    + entry "M:First.Dup" "second ignored"
+    + "</members></doc>"
+
+[<Fact>]
+let ``xml doc files are cached whole: edits after the first lookup never change results`` () =
+    let root, assembly = dotnetRoot [ "10.0.11", "pack" ] "10.0.14"
+    try
+        let xmlPath = NativePaths.Resolve(root, "packs", "Microsoft.NETCore.App.Ref", "10.0.11", "ref", "net10.0", "System.Runtime.xml")
+        let lookup memberId = Hover.FSharpXmlDocFiles.tryMember assembly memberId |> Option.defaultValue ""
+        File.WriteAllText(xmlPath, membersXml)
+        // [HOVER-FSHARP-RENDERING] retain all members after the first read, including duplicate order.
+        Assert.Contains("first wins", lookup "M:First.Dup")
+        File.WriteAllText(xmlPath, "")
+        Assert.Contains("second unique", lookup "M:Second.Unique")
+        Assert.Contains("first wins", lookup "M:First.Dup")
+        Assert.DoesNotContain("second ignored", lookup "M:First.Dup")
+        Assert.Equal(None, Hover.FSharpXmlDocFiles.tryMember assembly "M:Never.Written")
+    finally
+        try Directory.Delete(root, true) with _ -> ()
+
+[<Fact>]
+let ``unreadable or non-matching adjacent xml files yield no docs instead of throwing`` () =
+    let cases =
+        [ "<doc><members><member name="
+          "<!DOCTYPE doc [<!ENTITY e \"entity\">]><doc><members>"
+          + "<member name=\"M:System.String.Trim\"><summary>&e;</summary></member></members></doc>"
+          "<doc><members><member name=\"M:Other.Thing\"><summary>other</summary></member></members></doc>" ]
+
+    for xml in cases do
+        let root, assembly = dotnetRoot [] "10.0.14"
+
+        try
+            // [HOVER-FSHARP-RENDERING] untrusted XML cannot expand DTD entities.
+            File.WriteAllText(NativePaths.WithExtension(assembly, ".xml"), xml)
+            let docs = Hover.FSharpXmlDocFiles.tryMember assembly "M:System.String.Trim"
+            Assert.Equal(None, docs)
+        finally
+            try Directory.Delete(root, true) with _ -> ()
+
 [<Fact>]
 let ``a runtime with no reference pack of its own version is documented by the newest pack of its major version`` () =
     let packs = [ "9.0.20", "nine"; "10.0.0", "ten zero"; "10.0.2", "ten two"; "10.0.11", "ten eleven"; "11.0.0", "eleven" ]
