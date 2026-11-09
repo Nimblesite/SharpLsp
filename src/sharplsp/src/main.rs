@@ -722,12 +722,12 @@ fn handle_request(
         // Rename — [RENAME-PREPARE], [RENAME-APPLY], [RENAME-CROSSLANGUAGE].
         PrepareRenameRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            semantic::handle_prepare_rename(req, runtime, sidecar)
+            semantic::rename::handle_prepare_rename(req, runtime, sidecar)
         }
         Rename::METHOD => {
             let (primary, fallback) =
                 pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
-            semantic::handle_rename(req, runtime, primary, fallback)
+            semantic::rename::handle_rename(req, runtime, primary, fallback)
         }
         // Call hierarchy
         CallHierarchyPrepare::METHOD => {

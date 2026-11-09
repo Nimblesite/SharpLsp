@@ -15,10 +15,11 @@ use anyhow::Result;
 use lsp_types::Location;
 use tracing::debug;
 
+use crate::semantic::rename::{
+    request_symbol_identity, sidecar_workspace_loaded, SidecarRenameIdentityResult,
+};
 use crate::semantic::{
-    request_symbol_identity, sidecar_location_to_lsp, sidecar_workspace_loaded,
-    SidecarDidChangeReq, SidecarLocationListResult, SidecarLocationResult,
-    SidecarRenameIdentityResult,
+    sidecar_location_to_lsp, SidecarDidChangeReq, SidecarLocationListResult, SidecarLocationResult,
 };
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::LangId;
