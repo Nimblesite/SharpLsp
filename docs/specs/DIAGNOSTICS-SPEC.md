@@ -165,6 +165,17 @@ The compiler-compatible FSharpLint dependency is a normal source project referen
 
 Real source-builder CLI tests run against the compiled builder and pinned archive on both operating systems. They reject incorrect arguments, paths and archive bytes before extraction; verify both AST compatibility patterns and the rule-state correction; and preserve source, license, provenance and fingerprint timestamps on a verified no-op. Corrupt source or any fingerprint identity/hash field requires fresh extraction and verification. A matching output fingerprint never bypasses hashing the current archive. CI passes these inputs across [DIST-CI-ARTIFACT-TESTS] rather than recompiling the builder in the tooling consumer.
 
+### [DIAG-CATEGORIES-TAGS] Unnecessary and Deprecated Tags
+
+A finding on unused or unreachable code carries LSP `DiagnosticTag.Unnecessary` (1), so the editor greys the code out. A finding on a use of an obsolete symbol carries `DiagnosticTag.Deprecated` (2), so the editor strikes it through. Every other finding carries no tag, and the host then sends no `tags`.
+
+| Language | `Unnecessary` | `Deprecated` |
+|---|---|---|
+| C# | Every finding whose rule's descriptor carries Roslyn's `WellKnownDiagnosticTags.Unnecessary` custom tag (`IDE0005`, `IDE0051`, …; the compiler's `CS8019` carries none, and `IDE0005` greys the same using out), and SharpLsp's dead code `SLSPC0101` | `CS0612`, `CS0618`, `CS0619` |
+| F# | SharpLsp's dead code `SLSPF0101`, unused `open` `SLSPF0102` and redundant qualifier `SLSPF0103`; FCS's unused value `FS1182` and never-matched rule `FS0026` | `FS0044` |
+
+Each sidecar sends the tags as LSP numbers on the diagnostic wire, after the help link; the host passes them through unchanged, push and pull alike.
+
 ### [DIAG-CATEGORIES-LIVE] Live Squiggles
 
 Live diagnostics flow through [DIAG-ARCHITECTURE-PULL-REFRESH]:

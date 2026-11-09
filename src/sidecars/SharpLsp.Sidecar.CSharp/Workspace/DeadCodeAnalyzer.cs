@@ -172,6 +172,7 @@ internal static class DeadCodeAnalyzer
             Message = message,
             Severity = severity,
             Code = DiagnosticCode,
+            Tags = [DiagnosticTags.Unnecessary],
         };
     }
 

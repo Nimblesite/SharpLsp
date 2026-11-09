@@ -76,7 +76,8 @@ let buildDiagnostic
       Message = message
       Severity = severity
       Code = code
-      HelpLink = "" }
+      HelpLink = ""
+      Tags = DiagnosticTags.ofCode code }
 
 /// Classify a dead declaration into a diagnostic, honoring the monorepo gate.
 let private classifyDead

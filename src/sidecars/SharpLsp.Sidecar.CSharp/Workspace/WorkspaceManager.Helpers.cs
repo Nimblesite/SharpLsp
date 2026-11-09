@@ -74,7 +74,8 @@ internal sealed partial class WorkspaceManager
             diag.Id,
             diag.Severity.ToString(),
             diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
-            diag.Descriptor.HelpLinkUri
+            diag.Descriptor.HelpLinkUri,
+            DiagnosticTags.Of(diag)
         );
     }
 

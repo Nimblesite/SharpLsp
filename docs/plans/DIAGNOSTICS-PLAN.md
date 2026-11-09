@@ -81,7 +81,7 @@ Full branch CI is not green. The normal release host, sidecars, packaged extensi
 - [ ] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly.
 - [ ] Preserve F# FSharpLint/FSharp.Analyzers.SDK and SharpLsp static analyzer behavior.
 - [x] Supply codeDescription URLs ([#343](https://github.com/Nimblesite/SharpLsp/issues/343)): each C# finding's descriptor `HelpLinkUri` and FSharpLint's per-rule page; F# compiler codes carry none.
-- [ ] Supply unnecessary tags where specified.
+- [x] Supply unnecessary tags where specified. — [DIAG-CATEGORIES-TAGS] (#390): `Unnecessary` and `Deprecated` from both sidecars, passed through by the host — `diagnostic_tags.rs`
 
 ## [DIAG-PLAN-CONFIG] Configuration
 

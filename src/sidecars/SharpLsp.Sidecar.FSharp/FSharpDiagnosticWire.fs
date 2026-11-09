@@ -66,7 +66,28 @@ type DiagnosticResult =
       [<Key(7)>] Code: string
       /// The rule's documentation page (FSharpLint rules only), if any;
       /// empty for compiler and built-in analyzer diagnostics ([DIAG-CATEGORIES-ANALYZER]).
-      [<Key(8)>] HelpLink: string }
+      [<Key(8)>] HelpLink: string
+      /// LSP `DiagnosticTag` numbers: unnecessary, deprecated ([DIAG-CATEGORIES-TAGS]).
+      [<Key(9)>] Tags: int array }
+
+/// The LSP tags of an F# finding, by its code: unused or unreachable code is unnecessary,
+/// a use of an `[<Obsolete>]` symbol deprecated. Implements [DIAG-CATEGORIES-TAGS].
+module DiagnosticTags =
+    /// LSP `DiagnosticTag.Unnecessary`.
+    [<Literal>]
+    let Unnecessary = 1
+
+    /// LSP `DiagnosticTag.Deprecated`.
+    [<Literal>]
+    let Deprecated = 2
+
+    /// SharpLsp's dead code, unused open and redundant qualifier; FCS's unused value
+    /// (FS1182) and never-matched rule (FS0026). FCS reports an obsolete use as FS0044.
+    let ofCode (code: string) : int array =
+        match code with
+        | "SLSPF0101" | "SLSPF0102" | "SLSPF0103" | "FS1182" | "FS0026" -> [| Unnecessary |]
+        | "FS0044" -> [| Deprecated |]
+        | _ -> [||]
 
 /// `analyzers/configure` request: analyzer flags the host reads from
 /// `sharplsp.toml` `[analyzers]` and pushes to the sidecar after `workspace/open`.

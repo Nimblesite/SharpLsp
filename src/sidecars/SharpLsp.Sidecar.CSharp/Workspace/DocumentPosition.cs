@@ -115,7 +115,8 @@ internal static class DocumentPosition
         string code,
         string severity,
         string message,
-        string? helpLink = null
+        string? helpLink = null,
+        List<int>? tags = null
     )
     {
         var (path, line, character, endLine, endCharacter) = Coordinates(span);
@@ -130,6 +131,7 @@ internal static class DocumentPosition
             Severity = severity,
             Code = code,
             HelpLink = helpLink ?? "",
+            Tags = tags ?? [],
         };
     }
 

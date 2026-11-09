@@ -25,6 +25,7 @@ let private coordinates projectScope (diagnostic: FSharpDiagnostic) =
 /// Map one compiler diagnostic through the canonical source/project mapper.
 let compilerDiagnostic filePath projectScope (diagnostic: FSharpDiagnostic) : DiagnosticResult =
     let startLine, startCharacter, endLine, endCharacter = coordinates projectScope diagnostic
+    let code = $"FS{diagnostic.ErrorNumber:D4}"
     { FilePath = filePath
       StartLine = startLine
       StartCharacter = startCharacter
@@ -32,10 +33,11 @@ let compilerDiagnostic filePath projectScope (diagnostic: FSharpDiagnostic) : Di
       EndCharacter = endCharacter
       Message = diagnostic.Message
       Severity = severity diagnostic
-      Code = $"FS{diagnostic.ErrorNumber:D4}"
+      Code = code
       // F# compiler messages have no guaranteed stable page: many FS codes 404 on
       // learn.microsoft.com, so no link is safer than a dead one ([DIAG-CATEGORIES-ANALYZER]).
-      HelpLink = "" }
+      HelpLink = ""
+      Tags = DiagnosticTags.ofCode code }
 
 /// Source-file failures are answered by their existing document query, once.
 let internal belongsToProject (options: FSharp.Compiler.CodeAnalysis.FSharpProjectOptions) (diagnostic: FSharpDiagnostic) =

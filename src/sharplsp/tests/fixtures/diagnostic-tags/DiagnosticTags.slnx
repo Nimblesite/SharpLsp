@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CsTags/CsTags.csproj" />
+  <Project Path="FsTags/FsTags.fsproj" />
+</Solution>

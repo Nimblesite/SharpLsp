@@ -205,6 +205,10 @@ internal sealed class DiagnosticResult
     /// <summary>The rule's documentation link (descriptor <c>HelpLinkUri</c>), if any.</summary>
     [Key(8)]
     public string HelpLink { get; set; } = "";
+
+    /// <summary>LSP <c>DiagnosticTag</c> numbers: unnecessary, deprecated. [DIAG-CATEGORIES-TAGS]</summary>
+    [Key(9)]
+    public List<int> Tags { get; set; } = [];
 }
 
 /// <summary>

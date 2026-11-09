@@ -65,6 +65,7 @@ fn to_lsp_diagnostic_maps_all_fields() {
         help_link:
             "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1822"
                 .to_string(),
+        tags: vec![1, 2, 7],
     };
 
     let diag = to_lsp_diagnostic(input, "sharplsp-csharp");
@@ -84,6 +85,12 @@ fn to_lsp_diagnostic_maps_all_fields() {
     );
     assert_eq!(diag.source, Some("sharplsp-csharp".to_string()));
     assert_eq!(diag.message, "Unused variable");
+    // The sidecar's tag numbers reach the editor; one LSP does not define is dropped
+    // ([DIAG-CATEGORIES-TAGS]).
+    assert_eq!(
+        diag.tags,
+        Some(vec![DiagnosticTag::UNNECESSARY, DiagnosticTag::DEPRECATED])
+    );
 }
 
 /// A sidecar answer without a help link — F# compiler and built-in analyzer
@@ -101,11 +108,13 @@ fn to_lsp_diagnostic_without_help_link_has_no_code_description() {
         severity: "Info".to_string(),
         code: "IDE0005".to_string(),
         help_link: String::new(),
+        tags: Vec::new(),
     };
 
     let diag = to_lsp_diagnostic(input, "sharplsp-fsharp");
 
     assert_eq!(diag.code_description, None);
+    assert_eq!(diag.tags, None, "an untagged finding sends no tags");
 }
 
 /// An F# `FSharpLint` finding carries its rule's stable documentation page
@@ -122,6 +131,7 @@ fn to_lsp_diagnostic_maps_fsharp_lint_help_link() {
         severity: "Warning".to_string(),
         code: "FL0065".to_string(),
         help_link: "https://fsprojects.github.io/FSharpLint/how-tos/rules/FL0065.html".to_string(),
+        tags: Vec::new(),
     };
 
     let diag = to_lsp_diagnostic(input, "sharplsp-fsharp");

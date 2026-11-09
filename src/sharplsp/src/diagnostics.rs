@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use dashmap::DashMap;
 use lsp_server::{Message, Notification};
 use lsp_types::{
-    CodeDescription, Diagnostic, DiagnosticSeverity, NumberOrString, Position,
+    CodeDescription, Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position,
     PublishDiagnosticsParams, Range, Uri,
 };
 use tracing::{debug, info, warn};
@@ -82,6 +82,10 @@ struct SidecarDiagnostic {
     /// empty when the source sidecar sends none ([DIAG-CATEGORIES-ANALYZER]).
     #[serde(default)]
     help_link: String,
+    /// LSP `DiagnosticTag` numbers: unnecessary, deprecated; empty for every
+    /// other finding ([DIAG-CATEGORIES-TAGS]).
+    #[serde(default)]
+    tags: Vec<i32>,
 }
 
 /// A document to push diagnostics for: its owning sidecar, URI and native path.
@@ -493,6 +497,7 @@ fn to_lsp_diagnostic(result: SidecarDiagnostic, source_tag: &str) -> Diagnostic 
         severity: Some(map_severity(&result.severity)),
         code: Some(NumberOrString::String(result.code)),
         code_description: code_description(&result.help_link),
+        tags: lsp_tags(&result.tags),
         source: Some(source_tag.to_string()),
         message: result.message,
         ..Diagnostic::default()
@@ -514,6 +519,21 @@ fn code_description(help_link: &str) -> Option<CodeDescription> {
             None
         }
     }
+}
+
+/// The finding's LSP tags, so the editor greys out unnecessary code and strikes
+/// through a use of an obsolete symbol; none when the sidecar sent none, and an
+/// unknown number is dropped ([DIAG-CATEGORIES-TAGS]).
+fn lsp_tags(tags: &[i32]) -> Option<Vec<DiagnosticTag>> {
+    let known: Vec<DiagnosticTag> = tags
+        .iter()
+        .filter_map(|tag| match *tag {
+            1 => Some(DiagnosticTag::UNNECESSARY),
+            2 => Some(DiagnosticTag::DEPRECATED),
+            _ => None,
+        })
+        .collect();
+    (!known.is_empty()).then_some(known)
 }
 
 /// Map Roslyn severity string to LSP `DiagnosticSeverity`.
