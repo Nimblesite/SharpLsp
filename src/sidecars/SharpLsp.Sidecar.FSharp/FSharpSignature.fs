@@ -107,6 +107,8 @@ let private resolveSignatures
                             parseResults.FindParameterLocations(caret)
                             |> Option.map (fun locations ->
                                 locations.TupleEndLocations
+                                // The final endpoint ends the call, including an unfinished argument.
+                                |> Array.truncate (max 0 (locations.TupleEndLocations.Length - 1))
                                 |> Array.takeWhile (fun ending -> Position.posGeq caret ending)
                                 |> Array.length)
                             |> Option.defaultValue 0 }

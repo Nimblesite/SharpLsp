@@ -86,3 +86,23 @@ let ``signature help reports the parameter the caret sits on`` () =
         finally
             cleanup dir
     }
+
+[<Fact>]
+let ``signature help keeps the current parameter while the closing parenthesis is missing`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", SIGNATURE_SOURCE ]
+    try
+        for call, expected in
+            [ "Calc.Add(", 0; "Calc.Add(1", 0; "Calc.Add(1,", 1
+              "Calc.Add(1, 2", 1; "Calc.Add(1, 2,", 2; "Calc.Add(1, 2, 3", 2 ] do
+            let pending = "let pending = " + call
+            FSharpWorkspace.applyDidChange state paths[0] (SIGNATURE_SOURCE + pending)
+            let! result = FSharpSignature.signatureHelp state paths[0] 6 pending.Length
+            match result with
+            | None -> failwith $"no signature help while typing {call}"
+            | Some help ->
+                Assert.NotEmpty(help.Signatures)
+                Assert.Equal<string list>([ "a"; "b"; "c" ], help.Signatures[0].Parameters)
+                Assert.Equal(expected, help.ActiveParameter)
+    finally
+        cleanup dir
+}
