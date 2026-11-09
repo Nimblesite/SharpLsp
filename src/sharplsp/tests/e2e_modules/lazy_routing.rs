@@ -127,3 +127,38 @@ fn a_script_in_a_folder_with_no_project_answers_after_a_space_and_after_a_token(
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+#[test]
+fn the_second_language_starts_on_its_first_document_without_a_restart() {
+    require_dotnet();
+    let dir = tempfile::tempdir().expect("a folder of loose files in both languages");
+    let mut client = rootless(dir.path());
+    let app = open_loose(&mut client, dir.path(), "app.cs", APP);
+    let csharp = hover_answered(&mut client, &app, 1, 25);
+    assert!(csharp.contains("Add"), "Roslyn answers the app: {csharp}");
+    assert_eq!(
+        running(&client, "SHARPLSP_FSHARP_SIDECAR_PATH"),
+        0,
+        "no FCS before an F# file"
+    );
+    let script = open_loose(&mut client, dir.path(), "Script.fsx", SCRIPT);
+    let fsharp = hover_answered(&mut client, &script, 1, 14);
+    assert!(
+        fsharp.contains("add"),
+        "FCS answers the script opened second: {fsharp}"
+    );
+    assert_eq!(
+        running(&client, "SHARPLSP_CSHARP_SIDECAR_PATH"),
+        1,
+        "one Roslyn"
+    );
+    assert_eq!(
+        running(&client, "SHARPLSP_FSHARP_SIDECAR_PATH"),
+        1,
+        "one FCS"
+    );
+    let again = hover_answered(&mut client, &app, 1, 25);
+    assert!(again.contains("Add"), "the C# app still answers: {again}");
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}

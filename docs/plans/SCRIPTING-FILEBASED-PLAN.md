@@ -62,8 +62,10 @@ remaining gaps are explicit rather than implied.
       lattice; currently an extension match inside `main.rs` — [SCRIPT-DETECT]
 - [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
       filesystem root) — [SCRIPT-CONE]
-- [ ] Start the second language's sidecar on demand when a document of that language is first opened
-      (still a one-shot latch, so a mixed-language folder needs a restart) — [SCRIPT-ROUTE-LAZY]
+- [x] Start the second language's sidecar on demand when a document of that language is first opened
+      — [SCRIPT-ROUTE-LAZY]: the latch only gates the first lazy `workspace/open`; the second language's
+      document is forwarded to its own sidecar, which starts and loads it — `lazy_routing.rs`
+      `the_second_language_starts_on_its_first_document_without_a_restart`
 - [x] Deduplicate the lazy path against `start_sidecar`: the lazy open goes through the same
       `start_sidecar` follow-up (analyzers, diagnostics, health) as the eager path — [SCRIPT-ROUTE-LAZY]
 
