@@ -10,7 +10,7 @@ use lsp_types::notification::{
     Notification as _,
 };
 use lsp_types::Uri;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use tree_sitter::Tree;
 
 use crate::diagnostic_publish::{sidecar_for_uri, trigger_diagnostics};
@@ -163,7 +163,8 @@ fn reparse(parsers: &TsParsers, trees: &mut HashMap<Uri, Tree>, uri: &Uri, sourc
 }
 
 /// Lazily open the workspace for the first opened document when the client supplied no
-/// workspace root.
+/// workspace root, through the same `start_sidecar` path as an eager open so analyzers,
+/// diagnostics and health monitoring are wired identically.
 ///
 /// Returns `true` only when a sidecar workspace was actually opened. Returning `true` for an
 /// unsupported document would latch `workspace_initialized` on, so opening a `.md` or `.json`
@@ -173,6 +174,7 @@ pub(crate) fn init_workspace_for_file(
     notif: &Notification,
     runtime: &tokio::runtime::Runtime,
     sidecars: [Option<&Arc<SidecarManager>>; 2],
+    follow_up: workspace_open::OpenFollowUp,
 ) -> bool {
     let Some(file_path) = opened_document_path(notif) else {
         return false;
@@ -180,22 +182,12 @@ pub(crate) fn init_workspace_for_file(
     let Some(sidecar) = sidecar_for_path(&file_path, sidecars) else {
         return false;
     };
-
     // The sidecar is given the FILE PATH, not its parent directory. Sending a directory is what
     // forces the sidecar to glob the folder and compile unrelated programs together.
-    // Implements [SCRIPT-ROUTE-TARGET].
+    // Implements [SCRIPT-ROUTE-TARGET]; health monitoring waits for the open ([SCRIPT-ROUTE-HEALTH]).
     info!("No workspace root — opening single-document workspace for {file_path}");
-    let sidecar = Arc::clone(sidecar);
-    drop(runtime.spawn(async move {
-        if let Err(err) = workspace_open::open_workspace(&sidecar, &file_path).await {
-            error!("Failed to lazily open workspace: {err:#}");
-        }
-        drop(tokio::spawn(Arc::clone(&sidecar).start_warm_up()));
-        // Health monitoring starts only after workspace/open completes, matching the eager
-        // path — a health check that races the load can kill a healthy sidecar.
-        // Implements [SCRIPT-ROUTE-HEALTH].
-        sidecar.start_health_monitor().await;
-    }));
+    let target = std::path::PathBuf::from(file_path);
+    workspace_open::start_sidecar(Some(sidecar), Some(&target), follow_up, runtime);
     true
 }
 

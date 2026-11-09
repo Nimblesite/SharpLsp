@@ -64,8 +64,8 @@ remaining gaps are explicit rather than implied.
       filesystem root) — [SCRIPT-CONE]
 - [ ] Start the second language's sidecar on demand when a document of that language is first opened
       (still a one-shot latch, so a mixed-language folder needs a restart) — [SCRIPT-ROUTE-LAZY]
-- [ ] Deduplicate the lazy path against `start_sidecar`: the lazy path still skips analyzer
-      configuration and diagnostics wiring that the eager path performs — [SCRIPT-ROUTE-LAZY]
+- [x] Deduplicate the lazy path against `start_sidecar`: the lazy open goes through the same
+      `start_sidecar` follow-up (analyzers, diagnostics, health) as the eager path — [SCRIPT-ROUTE-LAZY]
 
 ### C# Sidecar — file-based apps
 

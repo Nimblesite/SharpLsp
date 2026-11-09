@@ -559,6 +559,7 @@ fn main_loop(
                         &notif,
                         runtime,
                         [csharp_sidecar, fsharp_sidecar],
+                        OpenFollowUp::new(&services.applied, vfs, Some(&connection.sender), None),
                     );
                 }
                 notifications::handle(
