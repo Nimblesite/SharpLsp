@@ -94,20 +94,20 @@ A full audit of the retired `fixrelease` branch (39 commits, 90 files) found eve
 
 ### Spec hygiene — sweep numbered headings (CLAUDE.md violation)
 
-CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separated, never numbered. `docs/specs/DISTRIBUTION-SPEC.md` has been converted. The remaining 11 specs still use numbered headings and need a careful pass:
+CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separated, never numbered. Every spec below is converted: none has a heading numbered `N.` or `N.N` (checked 2026-11-10).
 
 - [x] `docs/specs/DISTRIBUTION-SPEC.md` — converted in this rev
-- [ ] `docs/specs/SHARPLSP-SPEC.md` — 44 numbered headings (cross-link to `DIST-RUNTIME-ACQUIRE` already updated)
-- [ ] `docs/specs/BINARY-DEPLOYMENT.md` — 6
-- [ ] `docs/specs/DEBUGGING-SPEC.md` — 51
-- [ ] `docs/specs/DEFINITION-SPEC.md` — 29
-- [ ] `docs/specs/DIAGNOSTICS-SPEC.md` — 34
-- [ ] `docs/specs/HOVER-SPEC.md` — 18
-- [ ] `docs/specs/NUGET-BROWSER-SPEC.md` — 27
-- [ ] `docs/specs/PROFILER-SPEC.md` — 34
-- [ ] `docs/specs/REFERENCES-SPEC.md` — 22
-- [ ] `docs/specs/RIDER-PLUGIN-SPEC.md` — 21
-- [ ] `docs/specs/VSCODE-REACTIVITY-SPEC.md` — 10
+- [x] `docs/specs/SHARPLSP-SPEC.md` — 44 numbered headings (cross-link to `DIST-RUNTIME-ACQUIRE` already updated) — no numbered heading remains
+- [x] `docs/specs/BINARY-DEPLOYMENT.md` — 6 — no numbered heading remains
+- [x] `docs/specs/DEBUGGING-SPEC.md` — 51 — no numbered heading remains
+- [x] `docs/specs/DEFINITION-SPEC.md` — 29 — no numbered heading remains
+- [x] `docs/specs/DIAGNOSTICS-SPEC.md` — 34 — no numbered heading remains
+- [x] `docs/specs/HOVER-SPEC.md` — 18 — no numbered heading remains
+- [x] `docs/specs/NUGET-BROWSER-SPEC.md` — 27 — no numbered heading remains
+- [x] `docs/specs/PROFILER-SPEC.md` — 34 — no numbered heading remains
+- [x] `docs/specs/REFERENCES-SPEC.md` — 22 — no numbered heading remains
+- [x] `docs/specs/RIDER-PLUGIN-SPEC.md` — 21 — no numbered heading remains
+- [x] `docs/specs/VSCODE-REACTIVITY-SPEC.md` — 10 — no numbered heading remains
 
 ### Release
 
