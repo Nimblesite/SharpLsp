@@ -30,6 +30,36 @@ impl SidecarPositionReq {
     }
 }
 
+/// Request identifying a range in a file, sent to a sidecar. Serialized as a
+/// positional `MessagePack` array `(file_path, start_line, start_character,
+/// end_line, end_character)` matching the sidecars' range request Key layouts.
+#[derive(serde::Serialize)]
+pub struct SidecarRangeReq {
+    /// Absolute path to the source file.
+    pub file_path: String,
+    /// Zero-based start line.
+    pub start_line: u32,
+    /// Zero-based start character.
+    pub start_character: u32,
+    /// Zero-based end line.
+    pub end_line: u32,
+    /// Zero-based end character.
+    pub end_character: u32,
+}
+
+impl SidecarRangeReq {
+    /// The request for `range` in the document at `uri`.
+    pub fn at(uri: &Uri, range: Range) -> Result<Self> {
+        Ok(Self {
+            file_path: crate::paths::uri_to_path(uri.as_str())?,
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
+        })
+    }
+}
+
 /// Run `handle` over `req`'s params when a sidecar is attached, and answer
 /// `null` when none is: a request the sidecar would serve has nothing to say
 /// without it. The params are only read once a sidecar is known to exist.

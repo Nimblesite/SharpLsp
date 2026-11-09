@@ -17,7 +17,8 @@ use tracing::debug;
 
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::{
-    map_text_edit, request_sidecar, request_sidecar_strict, with_sidecar, SidecarTextEdit,
+    map_text_edit, request_sidecar, request_sidecar_strict, with_sidecar, SidecarRangeReq,
+    SidecarTextEdit,
 };
 
 /// The plain-words reason a C# resolve answers with when no C# sidecar runs.
@@ -38,13 +39,7 @@ pub fn handle_code_action(
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: CodeActionParams| {
-        let request = SidecarCodeActionReq {
-            file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
-            start_line: params.range.start.line,
-            start_character: params.range.start.character,
-            end_line: params.range.end.line,
-            end_character: params.range.end.character,
-        };
+        let request = SidecarRangeReq::at(&params.text_document.uri, params.range)?;
         let Some(items) = request_sidecar::<Vec<SidecarCodeActionItem>, _>(
             runtime,
             sidecar,
@@ -281,21 +276,6 @@ fn map_text_changes(edit: &SidecarWorkspaceEdit) -> anyhow::Result<WorkspaceEdit
 }
 
 // ── Sidecar wire types (MessagePack) ──────────────────────────────
-
-/// Request sent to the sidecar for code actions at a given range.
-#[derive(serde::Serialize)]
-struct SidecarCodeActionReq {
-    /// Absolute path to the source file.
-    file_path: String,
-    /// Start line of the selection range.
-    start_line: u32,
-    /// Start character offset within the start line.
-    start_character: u32,
-    /// End line of the selection range.
-    end_line: u32,
-    /// End character offset within the end line.
-    end_character: u32,
-}
 
 /// A single code action returned by the sidecar.
 #[derive(serde::Deserialize)]

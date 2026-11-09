@@ -13,7 +13,7 @@ use lsp_types::{
 use tracing::debug;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{request_sidecar, with_sidecar, SidecarFileReq};
+use crate::utils::{request_sidecar, with_sidecar, SidecarFileReq, SidecarRangeReq};
 
 /// Cache of previous semantic token results per document URI.
 static TOKEN_CACHE: std::sync::LazyLock<Mutex<TokenCache>> =
@@ -100,13 +100,7 @@ pub fn handle_range(
         req,
         sidecar,
         |sidecar, params: SemanticTokensRangeParams| {
-            let request = SidecarRangeReq {
-                file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
-                start_line: params.range.start.line,
-                start_character: params.range.start.character,
-                end_line: params.range.end.line,
-                end_character: params.range.end.character,
-            };
+            let request = SidecarRangeReq::at(&params.text_document.uri, params.range)?;
             let method = "textDocument/semanticTokens/range";
             let Some(result) =
                 request_sidecar::<SidecarSemanticTokens, _>(runtime, sidecar, method, &request)?
@@ -335,21 +329,6 @@ fn decode_tokens(data: &[i32]) -> SemanticTokens {
 }
 
 // ── Wire types ────────────────────────────────────────────────────
-
-/// Sidecar request for semantic tokens within a specific range.
-#[derive(serde::Serialize)]
-struct SidecarRangeReq {
-    /// Absolute filesystem path of the document.
-    file_path: String,
-    /// Start line of the requested range.
-    start_line: u32,
-    /// Start character of the requested range.
-    start_character: u32,
-    /// End line of the requested range.
-    end_line: u32,
-    /// End character of the requested range.
-    end_character: u32,
-}
 
 /// Sidecar response containing a flat array of encoded semantic tokens.
 #[derive(serde::Deserialize)]
