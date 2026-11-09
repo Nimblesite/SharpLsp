@@ -84,6 +84,7 @@
     <Compile Include="FSharpImplementations.fs" />
     <Compile Include="FSharpForeignSymbols.fs" />
     <Compile Include="FSharpFeatures.fs" />
+    <Compile Include="FSharpInlayHints.fs" />
     <Compile Include="FSharpFileOrder.fs" />
     <Compile Include="FSharpDiagnosticWire.fs" />
     <Compile Include="FSharpCompletionWire.fs" />

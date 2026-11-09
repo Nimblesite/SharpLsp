@@ -106,7 +106,7 @@ let ``semantic tokens (full and ranged) and pipeline inlay hints on a loaded fil
         let! ranged = FSharpFeatures.getSemanticTokensRange ws src 0 (lines.Length - 1)
         // Inlay over the whole file includes the `[1;2;3] |> List.sum` pipeline,
         // exercising the pipeline-hint path.
-        let! hints = FSharpFeatures.getInlayHints ws src 0 (lines.Length - 1)
+        let! hints = FSharpInlayHints.getInlayHints ws src 0 (lines.Length - 1)
         Assert.NotEmpty(full)
         Assert.NotEmpty(ranged)
         Assert.NotEmpty(hints)
@@ -308,7 +308,7 @@ let ``feature extractors swallow a read failure on a loaded workspace`` () =
         let ws, _ = loaded.Value
         let! tokens = FSharpFeatures.getSemanticTokens ws missing
         let! ranged = FSharpFeatures.getSemanticTokensRange ws missing 0 100
-        let! hints = FSharpFeatures.getInlayHints ws missing 0 100
+        let! hints = FSharpInlayHints.getInlayHints ws missing 0 100
         Assert.Empty(tokens)
         Assert.Empty(ranged)
         Assert.Empty(hints)

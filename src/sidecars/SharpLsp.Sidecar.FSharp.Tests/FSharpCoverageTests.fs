@@ -700,7 +700,7 @@ let ``getSemanticTokensRange filters by range`` () = task {
 [<Fact>]
 let ``getInlayHints returns empty when not loaded`` () = task {
     let state = FSharpWorkspace.create ()
-    let! hints = FSharpFeatures.getInlayHints state "/x.fs" 0 10
+    let! hints = FSharpInlayHints.getInlayHints state "/x.fs" 0 10
     Assert.Empty(hints)
 }
 
@@ -714,7 +714,7 @@ let ``getInlayHints returns list for loaded file`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace [ "M.fs", src ]
     try
-        let! hints = FSharpFeatures.getInlayHints state paths[0] 0 10
+        let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
     finally
         cleanup dir
@@ -1649,7 +1649,7 @@ let ``FEAT getInlayHints produces type and parameter hints`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace [ "M.fs", src ]
     try
-        let! hints = FSharpFeatures.getInlayHints state paths[0] 0 10
+        let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
         // Real symbols are present, so at least one hint must be produced.
         Assert.NotEmpty(hints)
@@ -2245,7 +2245,7 @@ let ``FEAT2 getInlayHints emits a pipeline type hint`` () = task {
         "let again = total |> string\n"
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
-        let! hints = FSharpFeatures.getInlayHints state paths[0] 0 10
+        let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
         // The pipeline path may or may not resolve a tooltip depending on FCS,
         // but every hint produced is well-formed.

@@ -248,7 +248,7 @@ type FSharpSidecar() as this =
 
         // Inlay hints
         base.Register("textDocument/inlayHint", Helpers.handle (fun (request: InlayHintRequest) ->
-            FSharpFeatures.getInlayHints workspace request.FilePath request.StartLine request.EndLine) (Helpers.listOf id))
+            FSharpInlayHints.getInlayHints workspace request.FilePath request.StartLine request.EndLine) (Helpers.listOf id))
 
         // Compiler truth and analyzers share one uncached query boundary.
         base.Register("workspace/diagnostics", Helpers.handleWithCancellation (fun (requestPath: string) ct ->
