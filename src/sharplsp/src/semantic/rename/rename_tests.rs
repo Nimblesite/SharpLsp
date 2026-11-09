@@ -5,6 +5,7 @@
               instead would hide which condition broke"
 )]
 
+use super::merge::*;
 use super::*;
 
 /// The C# sidecar's four-field document edit must decode on the rename path.

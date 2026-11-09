@@ -5,14 +5,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use lsp_server::Request;
-use lsp_types::{
-    OneOf, Position, PrepareRenameResponse, Range, RenameParams, TextDocumentPositionParams,
-    TextEdit, WorkspaceEdit,
-};
+use lsp_types::{Position, PrepareRenameResponse, Range, RenameParams, TextDocumentPositionParams};
 use tracing::warn;
 
 use crate::code_actions::{SidecarDocumentEdit, SidecarWorkspaceEdit};
-use crate::paths::{normalized_rename_path, path_to_lsp_uri, uri_to_path};
+use crate::paths::uri_to_path;
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::SidecarPositionReq;
 
@@ -224,218 +221,6 @@ fn request_workspace_edit<T: serde::Serialize>(
     Ok(rmp_serde::from_slice(&bytes)?)
 }
 
-/// Construct an empty sidecar workspace edit.
-fn empty_workspace_edit() -> SidecarWorkspaceEditResult {
-    SidecarWorkspaceEditResult {
-        document_changes: Vec::new(),
-    }
-}
-
-/// Convert the merged sidecar result into an LSP workspace edit or `null`.
-fn workspace_edit_value(result: SidecarWorkspaceEditResult) -> Result<serde_json::Value> {
-    let result = canonicalize_workspace_edit(result)?;
-    // One unconvertible document path must not sink an otherwise valid rename —
-    // skip it and keep every edit we can represent.
-    let edits: Vec<_> = result
-        .document_changes
-        .into_iter()
-        .filter_map(|change| match lsp_document_edit(change) {
-            Ok(edit) => Some(edit),
-            Err(err) => {
-                warn!("Skipping rename edit for an unconvertible document path: {err:#}");
-                None
-            }
-        })
-        .collect();
-    if edits.is_empty() {
-        return Ok(serde_json::Value::Null);
-    }
-    let workspace_edit = WorkspaceEdit {
-        document_changes: Some(lsp_types::DocumentChanges::Edits(edits)),
-        ..WorkspaceEdit::default()
-    };
-    Ok(serde_json::to_value(workspace_edit)?)
-}
-
-/// Convert one sidecar document edit into its LSP representation.
-fn lsp_document_edit(edit: SidecarDocumentEditResult) -> Result<lsp_types::TextDocumentEdit> {
-    let uri = path_to_lsp_uri(&edit.file_path)?;
-    let edits = edit.edits.into_iter().map(lsp_rename_edit).collect();
-    Ok(lsp_types::TextDocumentEdit {
-        text_document: lsp_types::OptionalVersionedTextDocumentIdentifier { uri, version: None },
-        edits,
-    })
-}
-
-/// Convert one sidecar rename replacement into an unannotated LSP text edit.
-fn lsp_rename_edit(edit: SidecarTextEditResult) -> OneOf<TextEdit, lsp_types::AnnotatedTextEdit> {
-    OneOf::Left(TextEdit {
-        range: Range {
-            start: Position {
-                line: edit.start_line,
-                character: edit.start_character,
-            },
-            end: Position {
-                line: edit.end_line,
-                character: edit.end_character,
-            },
-        },
-        new_text: edit.new_text,
-    })
-}
-
-/// Merge fallback documents into the primary result and stabilize their order.
-fn merge_workspace_edits(
-    result: SidecarWorkspaceEditResult,
-    foreign: SidecarWorkspaceEditResult,
-) -> Result<SidecarWorkspaceEditResult> {
-    canonicalize_workspace_edit(concatenate_workspace_edits(result, foreign))
-}
-
-/// Keep both sides verbatim so validation sees every resource operation.
-fn concatenate_workspace_edits(
-    result: SidecarWorkspaceEditResult,
-    foreign: SidecarWorkspaceEditResult,
-) -> SidecarWorkspaceEditResult {
-    let document_changes = result
-        .document_changes
-        .into_iter()
-        .chain(foreign.document_changes)
-        .collect();
-    SidecarWorkspaceEditResult { document_changes }
-}
-
-/// Merge duplicate document entries, normalize edit order, and reject conflicts.
-fn canonicalize_workspace_edit(
-    result: SidecarWorkspaceEditResult,
-) -> Result<SidecarWorkspaceEditResult> {
-    ensure_rename_text_only(&result)?;
-    let mut canonical = empty_workspace_edit();
-    for edit in result.document_changes {
-        merge_document_edit(&mut canonical, edit);
-    }
-    canonical
-        .document_changes
-        .sort_by_key(|edit| normalized_rename_path(&edit.file_path));
-    validate_workspace_edits(&canonical)?;
-    Ok(canonical)
-}
-
-/// Whether any document asks rename to perform a file resource operation.
-fn contains_resource_operation(result: &SidecarWorkspaceEditResult) -> bool {
-    result
-        .document_changes
-        .iter()
-        .any(|document| document.create || document.rename_to.is_some())
-}
-
-/// Rename returns text edits only; resource operations fail with a reason.
-/// [REFACTOR-NEVER-SILENT]
-fn ensure_rename_text_only(result: &SidecarWorkspaceEditResult) -> Result<()> {
-    if contains_resource_operation(result) {
-        anyhow::bail!("rename cannot create or rename files");
-    }
-    Ok(())
-}
-
-/// Reject invalid, overlapping, or conflicting edits in every document.
-fn validate_workspace_edits(result: &SidecarWorkspaceEditResult) -> Result<()> {
-    for document in &result.document_changes {
-        validate_rename_edits(&document.file_path, &document.edits)?;
-    }
-    Ok(())
-}
-
-/// Reject invalid or overlapping replacement ranges within one document.
-fn validate_rename_edits(path: &str, edits: &[SidecarTextEditResult]) -> Result<()> {
-    for edit in edits {
-        if rename_edit_start(edit) > rename_edit_end(edit) {
-            anyhow::bail!("invalid rename range returned for {path}");
-        }
-    }
-    let overlaps = edits.windows(2).any(|pair| match pair {
-        [left, right] => rename_edits_overlap(left, right),
-        _ => false,
-    });
-    if overlaps {
-        anyhow::bail!("overlapping rename edits returned for {path}");
-    }
-    Ok(())
-}
-
-/// Test whether two half-open edit ranges conflict, including point insertions.
-fn rename_edits_overlap(left: &SidecarTextEditResult, right: &SidecarTextEditResult) -> bool {
-    let (left_start, left_end) = (rename_edit_start(left), rename_edit_end(left));
-    let (right_start, right_end) = (rename_edit_start(right), rename_edit_end(right));
-    if left_start == left_end {
-        return (right_start == right_end && left_start == right_start)
-            || (right_start <= left_start && left_start < right_end);
-    }
-    if right_start == right_end {
-        return left_start <= right_start && right_start < left_end;
-    }
-    left_start < right_end && right_start < left_end
-}
-
-/// Return an edit's zero-based inclusive start position.
-fn rename_edit_start(edit: &SidecarTextEditResult) -> (u32, u32) {
-    (edit.start_line, edit.start_character)
-}
-
-/// Return an edit's zero-based exclusive end position.
-fn rename_edit_end(edit: &SidecarTextEditResult) -> (u32, u32) {
-    (edit.end_line, edit.end_character)
-}
-
-/// Merge one normalized document into the accumulated result.
-fn merge_document_edit(
-    result: &mut SidecarWorkspaceEditResult,
-    mut incoming: SidecarDocumentEditResult,
-) {
-    let key = normalized_rename_path(&incoming.file_path);
-    let existing = result
-        .document_changes
-        .iter_mut()
-        .find(|edit| normalized_rename_path(&edit.file_path) == key);
-    if let Some(existing) = existing {
-        existing.edits.append(&mut incoming.edits);
-        normalize_rename_edits(&mut existing.edits);
-    } else {
-        normalize_rename_edits(&mut incoming.edits);
-        result.document_changes.push(incoming);
-    }
-}
-
-/// Sort and remove duplicate range/replacement tuples.
-fn normalize_rename_edits(edits: &mut Vec<SidecarTextEditResult>) {
-    edits.sort_by(compare_rename_edits);
-    edits.dedup_by(|right, left| same_rename_edit(left, right));
-}
-
-/// Compare rename edits in deterministic source order.
-fn compare_rename_edits(
-    left: &SidecarTextEditResult,
-    right: &SidecarTextEditResult,
-) -> std::cmp::Ordering {
-    rename_edit_key(left).cmp(&rename_edit_key(right))
-}
-
-/// Return the fields that uniquely identify a rename replacement.
-fn rename_edit_key(edit: &SidecarTextEditResult) -> (u32, u32, u32, u32, &str) {
-    (
-        edit.start_line,
-        edit.start_character,
-        edit.end_line,
-        edit.end_character,
-        edit.new_text.as_str(),
-    )
-}
-
-/// Test whether two replacements target the same range with the same text.
-fn same_rename_edit(left: &SidecarTextEditResult, right: &SidecarTextEditResult) -> bool {
-    rename_edit_key(left) == rename_edit_key(right)
-}
-
 /// Sidecar request to rename a symbol.
 #[derive(serde::Serialize)]
 struct SidecarRenameRequest {
@@ -518,6 +303,12 @@ struct SidecarTextEditResult {
 type SidecarDocumentEditResult = SidecarDocumentEdit<SidecarTextEditResult>;
 /// The sidecar's rename result, decoded with the shared workspace-edit container.
 type SidecarWorkspaceEditResult = SidecarWorkspaceEdit<SidecarTextEditResult>;
+
+mod merge;
+use merge::{
+    concatenate_workspace_edits, contains_resource_operation, empty_workspace_edit,
+    merge_workspace_edits, workspace_edit_value,
+};
 
 #[cfg(test)]
 mod rename_tests;
