@@ -15,25 +15,24 @@ use crate::utils::usize_to_u32;
 /// Extract document symbols from a tree-sitter parse tree.
 pub fn document_symbols(tree: &Tree, source: &str) -> Vec<DocumentSymbol> {
     let root = tree.root_node();
-    let symbols = collect_symbols(root, source.as_bytes());
+    let symbols = collect_declarations(root, source.as_bytes(), &node_to_symbol);
     reparent_file_scoped_members(symbols)
 }
 
-/// Recursively collect document symbols from tree-sitter child nodes.
-fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<DocumentSymbol> {
-    let mut symbols = Vec::new();
-
+/// The declarations under `node`, in source order: every child `to_symbol`
+/// recognises becomes one entry; the rest are descended into.
+pub(crate) fn collect_declarations<T>(
+    node: Node<'_>,
+    source: &[u8],
+    to_symbol: &impl Fn(Node<'_>, &[u8]) -> Option<T>,
+) -> Vec<T> {
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if let Some(sym) = node_to_symbol(child, source) {
-            symbols.push(sym);
-        } else {
-            // Recurse into nodes that aren't themselves symbols
-            symbols.extend(collect_symbols(child, source));
-        }
-    }
-
-    symbols
+    node.children(&mut cursor)
+        .flat_map(|child| match to_symbol(child, source) {
+            Some(symbol) => vec![symbol],
+            None => collect_declarations(child, source, to_symbol),
+        })
+        .collect()
 }
 
 /// Extract the symbol name and its AST node for range calculation.
@@ -91,7 +90,7 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<DocumentSymbol> {
     let range = ts_range_to_lsp(node);
     let selection_range = ts_range_to_lsp(name_node);
 
-    let children = collect_symbols(node, source);
+    let children = collect_declarations(node, source, &node_to_symbol);
 
     let children_opt = if children.is_empty() {
         None

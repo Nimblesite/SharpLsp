@@ -8,8 +8,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tree_sitter::Node;
 
-use super::{FileSymbol, SymbolNode, SymbolPosition, SymbolRange};
+use super::{FileSymbol, SymbolNode, SymbolRange};
 use crate::sidecar::manager::SidecarManager;
+use crate::syntax::collect_declarations;
 use crate::tree_sitter_parse::{parse_file, LangId, TsParsers};
 use crate::utils::usize_to_u32;
 use crate::vfs::Vfs;
@@ -56,26 +57,14 @@ fn map_sidecar_symbol(item: &crate::document_symbols::SidecarDocumentSymbol) -> 
         kind: item.kind.clone(),
         detail: None,
         access: None,
-        range: SymbolRange {
-            start: SymbolPosition {
-                line: item.start_line,
-                character: item.start_character,
-            },
-            end: SymbolPosition {
-                line: item.end_line,
-                character: item.end_character,
-            },
-        },
-        selection_range: SymbolRange {
-            start: SymbolPosition {
-                line: item.selection_start_line,
-                character: item.selection_start_character,
-            },
-            end: SymbolPosition {
-                line: item.selection_end_line,
-                character: item.selection_end_character,
-            },
-        },
+        range: SymbolRange::new(
+            (item.start_line, item.start_character),
+            (item.end_line, item.end_character),
+        ),
+        selection_range: SymbolRange::new(
+            (item.selection_start_line, item.selection_start_character),
+            (item.selection_end_line, item.selection_end_character),
+        ),
         children: item.children.iter().map(map_sidecar_symbol).collect(),
     }
 }
@@ -86,7 +75,7 @@ fn map_sidecar_symbol(item: &crate::document_symbols::SidecarDocumentSymbol) -> 
 fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<FileSymbol> {
     let (source, tree) = parse_file(file_path, parsers, vfs)?;
 
-    let symbols = collect_symbols(tree.root_node(), source.as_bytes());
+    let symbols = collect_declarations(tree.root_node(), source.as_bytes(), &node_to_symbol);
     let symbols = top_level_program(tree.root_node())
         .into_iter()
         .chain(reparent_file_scoped_members(symbols))
@@ -154,22 +143,6 @@ pub(super) fn reparent_file_scoped_members(symbols: Vec<SymbolNode>) -> Vec<Symb
     namespaces
 }
 
-/// Walk a tree-sitter node and collect recognized symbols.
-fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<SymbolNode> {
-    let mut symbols = Vec::new();
-    let mut cursor = node.walk();
-
-    for child in node.children(&mut cursor) {
-        if let Some(sym) = node_to_symbol(child, source) {
-            symbols.push(sym);
-        } else {
-            symbols.extend(collect_symbols(child, source));
-        }
-    }
-
-    symbols
-}
-
 /// Map a tree-sitter node to a `SymbolNode` if it is a recognized declaration.
 fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
     let kind = match node.kind() {
@@ -192,7 +165,7 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
 
     let detail = extract_type_detail(node, source);
     let access = crate::sort_members::extract_access_modifiers(&node, source);
-    let children = collect_symbols(node, source);
+    let children = collect_declarations(node, source, &node_to_symbol);
 
     Some(SymbolNode {
         name,
@@ -207,14 +180,12 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
 
 /// The span a tree-sitter node covers, in 0-based lines and characters.
 fn node_range(node: Node<'_>) -> SymbolRange {
-    let position = |point: tree_sitter::Point| SymbolPosition {
-        line: usize_to_u32(point.row),
-        character: usize_to_u32(point.column),
-    };
-    SymbolRange {
-        start: position(node.start_position()),
-        end: position(node.end_position()),
-    }
+    let position =
+        |point: tree_sitter::Point| (usize_to_u32(point.row), usize_to_u32(point.column));
+    SymbolRange::new(
+        position(node.start_position()),
+        position(node.end_position()),
+    )
 }
 
 /// Extract type info (base class, return type) for display.

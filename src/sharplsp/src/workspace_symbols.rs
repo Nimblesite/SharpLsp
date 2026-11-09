@@ -101,6 +101,22 @@ pub struct SymbolRange {
     pub end: SymbolPosition,
 }
 
+impl SymbolRange {
+    /// The range from `start` to `end`, each a `(line, character)` pair.
+    pub const fn new(start: (u32, u32), end: (u32, u32)) -> Self {
+        Self {
+            start: SymbolPosition {
+                line: start.0,
+                character: start.1,
+            },
+            end: SymbolPosition {
+                line: end.0,
+                character: end.1,
+            },
+        }
+    }
+}
+
 /// Position within a file.
 #[derive(Debug, Serialize)]
 pub struct SymbolPosition {
