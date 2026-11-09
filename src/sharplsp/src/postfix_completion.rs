@@ -148,6 +148,51 @@ const TEMPLATES: &[Template] = &[
     },
 ];
 
+/// Byte offset where the receiver expression ending at `expr_part`'s end
+/// begins: walk back over balanced parens/brackets and stop at a statement
+/// delimiter (`; { } = ,`) or the space after a leading keyword, then skip the
+/// indentation so the replacement range starts on the expression itself.
+fn expression_start(expr_part: &str) -> usize {
+    let bytes = expr_part.as_bytes();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, &byte) in bytes.iter().enumerate().rev() {
+        match byte {
+            b')' | b']' => depth += 1,
+            b'(' | b'[' => {
+                depth -= 1;
+                if depth < 0 {
+                    start = i + 1;
+                    break;
+                }
+            }
+            b';' | b'{' | b'}' | b'=' | b',' if depth == 0 => {
+                start = i + 1;
+                break;
+            }
+            b' ' | b'\t' if depth == 0 && i > 0 && follows_keyword(expr_part, i) => {
+                start = i + 1;
+                break;
+            }
+            _ => {}
+        }
+    }
+    while start < bytes.len() && matches!(bytes.get(start), Some(b' ' | b'\t')) {
+        start += 1;
+    }
+    start
+}
+
+/// Whether the word ending at byte `i` of `text` is a keyword that introduces an expression.
+fn follows_keyword(text: &str, i: usize) -> bool {
+    let word_before = text.get(..i).unwrap_or("").trim_end();
+    let last_word = word_before.rsplit_once(' ').map_or(word_before, |p| p.1);
+    matches!(
+        last_word,
+        "return" | "var" | "let" | "if" | "while" | "case" | "yield"
+    )
+}
+
 /// Extract the expression text before a `.trigger` at the cursor position.
 ///
 /// Given line text `foo.bar.if` and cursor at col 10, extracts `foo.bar`
@@ -165,50 +210,7 @@ fn extract_postfix_context(line_text: &str, col: u32) -> Option<(u32, String, St
         return None;
     }
 
-    // Walk backward from the dot to find the expression start.
-    // Stop at statement-level delimiters: ; { } = , (but not within parens/brackets).
-    let mut depth = 0i32;
-    let mut start = 0;
-    let bytes = expr_part.as_bytes();
-
-    for i in (0..bytes.len()).rev() {
-        let Some(&byte) = bytes.get(i) else {
-            continue;
-        };
-        match byte {
-            b')' | b']' => depth += 1,
-            b'(' | b'[' => {
-                depth -= 1;
-                if depth < 0 {
-                    start = i + 1;
-                    break;
-                }
-            }
-            b';' | b'{' | b'}' | b'=' | b',' if depth == 0 => {
-                start = i + 1;
-                break;
-            }
-            b' ' | b'\t' if depth == 0 && i > 0 => {
-                // Check if this space separates a keyword from the expression.
-                let word_before = expr_part.get(..i).unwrap_or("").trim_end();
-                let last_word = word_before.rsplit_once(' ').map_or(word_before, |p| p.1);
-                if matches!(
-                    last_word,
-                    "return" | "var" | "let" | "if" | "while" | "case" | "yield"
-                ) {
-                    start = i + 1;
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // Skip leading whitespace so the replacement range starts at the expression.
-    while start < bytes.len() && matches!(bytes.get(start), Some(b' ' | b'\t')) {
-        start += 1;
-    }
-
+    let start = expression_start(expr_part);
     let expr_text = expr_part.get(start..)?.to_string();
     if expr_text.is_empty() {
         return None;
