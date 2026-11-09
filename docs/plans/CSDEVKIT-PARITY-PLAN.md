@@ -300,9 +300,9 @@ Features users expect within the first day of use.
 - [ ] **P2.3: Build Integration**
   - [x] Build command (`dotnet build`) from Command Palette — `sharplsp.build` (`extension.test.ts`, `context-menus.test.ts`)
   - [x] Build/Rebuild/Clean from Solution Explorer context menu — `sharplsp.build`/`rebuild`/`clean` (`context-menus.test.ts`)
-  - [ ] Build errors routed to diagnostics
+  - [x] Build errors routed to diagnostics — every build task carries the `$msCompile` matcher (`run-debug-contributions.test.ts` *errors reach the Problems panel*)
   - [ ] Auto-build on test discovery refresh
-  - [x] Build task provider for tasks.json integration — `build.ts` `registerTaskProvider`
+  - [x] Build task provider for tasks.json integration — `build.ts` `registerTaskProvider` (`run-debug-contributions.test.ts`)
 
 - [x] **P2.4: NuGet Package Management** — see [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) (core complete; remaining items in [#123](https://github.com/Nimblesite/SharpLsp/issues/123))
   - [x] Implement `sharplsp/nuget/search` LSP handler (Rust host)
