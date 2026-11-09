@@ -28,8 +28,8 @@ Core infrastructure improvements for the SharpLsp LSP host.
 
 ## File Watching
 
-- [ ] Implement `workspace/didChangeWatchedFiles` notification handler
-- [ ] React to .csproj/.fsproj/.sln changes and trigger sidecar reload
+- [x] Implement `workspace/didChangeWatchedFiles` notification handler (`service_notifications.rs` → `pull_diagnostics/changes.rs`, [DIAG-LSP-REFRESH])
+- [x] React to .csproj/.fsproj/.sln changes and trigger sidecar reload (the serialized reload worker reopens each concerned compiler's workspace; `workspace_diagnostic_protocol/input_reload.rs`, `owned_projects.rs`)
 
 ## Sidecar Startup Performance
 
