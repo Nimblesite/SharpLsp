@@ -658,58 +658,81 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** Events that carry emulation state, not just data. */
   private onChildEvent(message: DapMessage): void {
     const name = typeof message.event === 'string' ? message.event : '';
-    if (['stopped', 'continued'].includes(name)) {
-      traceInfo(
-        `[stop] ${name} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
-      );
-    }
-    if (process.env.SHARPLSP_DAP_TRACE === '1') {
-      traceInfo(
-        `[dap<-event] ${name} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
-      );
-    }
-    if (name === 'stopped') {
-      const stoppedBody = isRecord(message.body) ? message.body : {};
-      const stoppedThread = Number(stoppedBody.threadId ?? Number.NaN);
-      if (Number.isInteger(stoppedThread)) this.stoppedThread = stoppedThread;
-      if (this.stacks.interceptStop(message)) return;
-      // A VSTest host's own attach break is resumed, never surfaced
-      // ([DEBUG-FEATURES-TESTS]); dap-attach.ts owns that judgement.
-      if (this.attaches.absorbTestHostBreak(message)) return;
-      if (stoppedBody.reason === 'exception') void this.deliverExceptionStop(message);
-      else this.deliverStopped(message);
-      return;
-    } else if (name === 'initialized') {
-      const replacing = this.transitioning;
-      this.transitioning = false;
-      if (replacing || this.clientConfigured) {
-        void this.breakpoints.replayFunctions(this, error);
-        this.replayer.replayConfiguration();
+    this.traceEvent(name, message);
+    switch (name) {
+      case 'stopped':
+        this.onStopped(message);
         return;
-      }
-    } else if (name === 'exited' || name === 'terminated') {
-      // A respawn's teardown noise is not the session ending, and must not be
-      // RECORDED as one: the adapter being killed for a restart announces an
-      // end that is swallowed here, and a guard that counted it would leave the
-      // replacement debuggee unable to announce its own.
-      if (this.transitioning) return;
-      if (!this.endsSessionOnce(name)) return;
-    } else if (name === 'breakpoint') {
-      // Keep breakpoint EVENT ids in the session-scoped space the
-      // setBreakpoints responses already promised VS Code.
-      const body = isRecord(message.body) ? message.body : {};
-      this.noteBreakpointBind(body.breakpoint);
-      // The emulator indexes by the line the adapter BOUND, and a lazily bound
-      // breakpoint only learns it here ([DEBUG-FEATURES-BREAKPOINTS-VERIFY]).
-      this.breakpoints.rebind(body.breakpoint);
-      this.announceWhenArmed();
-      this.emit(this.handles.translateEvent(message));
-      return;
-    } else if (name === 'capabilities') {
-      this.rememberChildCapabilities(message);
-      return;
+      case 'initialized':
+        if (this.onInitialized()) return;
+        break;
+      case 'exited':
+      case 'terminated':
+        if (!this.onEnded(name)) return;
+        break;
+      case 'breakpoint':
+        this.onBreakpointEvent(message);
+        return;
+      case 'capabilities':
+        this.rememberChildCapabilities(message);
+        return;
+      default:
+        break;
     }
     this.emit(message);
+  }
+
+  /** Stop/continue transitions always trace; every event traces under SHARPLSP_DAP_TRACE=1. */
+  private traceEvent(name: string, message: DapMessage): void {
+    const payload = JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS);
+    if (['stopped', 'continued'].includes(name)) traceInfo(`[stop] ${name} ${payload}`);
+    if (process.env.SHARPLSP_DAP_TRACE === '1') traceInfo(`[dap<-event] ${name} ${payload}`);
+  }
+
+  /** A stop: remember the thread, then let the stack, attach and exception layers judge it. */
+  private onStopped(message: DapMessage): void {
+    const stoppedBody = isRecord(message.body) ? message.body : {};
+    const stoppedThread = Number(stoppedBody.threadId ?? Number.NaN);
+    if (Number.isInteger(stoppedThread)) this.stoppedThread = stoppedThread;
+    if (this.stacks.interceptStop(message)) return;
+    // A VSTest host's own attach break is resumed, never surfaced
+    // ([DEBUG-FEATURES-TESTS]); dap-attach.ts owns that judgement.
+    if (this.attaches.absorbTestHostBreak(message)) return;
+    if (stoppedBody.reason === 'exception') void this.deliverExceptionStop(message);
+    else this.deliverStopped(message);
+  }
+
+  /** `initialized` after a respawn or a configured client replays state; true when swallowed. */
+  private onInitialized(): boolean {
+    const replacing = this.transitioning;
+    this.transitioning = false;
+    if (!replacing && !this.clientConfigured) return false;
+    void this.breakpoints.replayFunctions(this, error);
+    this.replayer.replayConfiguration();
+    return true;
+  }
+
+  /**
+   * Whether an `exited`/`terminated` event is the session really ending. A
+   * respawn's teardown noise is not, and must not be RECORDED as one: the
+   * adapter being killed for a restart announces an end that is swallowed
+   * here, and a guard that counted it would leave the replacement debuggee
+   * unable to announce its own.
+   */
+  private onEnded(name: 'exited' | 'terminated'): boolean {
+    if (this.transitioning) return false;
+    return this.endsSessionOnce(name);
+  }
+
+  /** Keep breakpoint EVENT ids in the session-scoped space the setBreakpoints responses promised. */
+  private onBreakpointEvent(message: DapMessage): void {
+    const body = isRecord(message.body) ? message.body : {};
+    this.noteBreakpointBind(body.breakpoint);
+    // The emulator indexes by the line the adapter BOUND, and a lazily bound
+    // breakpoint only learns it here ([DEBUG-FEATURES-BREAKPOINTS-VERIFY]).
+    this.breakpoints.rebind(body.breakpoint);
+    this.announceWhenArmed();
+    this.emit(this.handles.translateEvent(message));
   }
 
   /**
