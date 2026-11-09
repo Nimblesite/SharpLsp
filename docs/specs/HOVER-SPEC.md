@@ -137,6 +137,16 @@ F# hover follows the same Markdown structure as C#:
 | Constraints | Generic constraints | Extracted from signature |
 | Union cases | Case fields and types | `ToolTipElement` for DU cases |
 
+The documentation of a source symbol is its `///` text. A .NET symbol's comes from
+the `.xml` file FCS names beside its assembly (`FSharpXmlDoc.FromXmlFile`), as C#
+hover reads it: a package's sits beside its assembly, and the sidecar ships
+FSharp.Core's beside FSharp.Core. The runtime implementation assemblies the
+sidecar compiles against ship none, so `<dotnet>/shared/<framework>/<version>/`
+is documented by `<dotnet>/packs/<framework>.Ref/<version>/ref/<tfm>/`, whose
+files are indexed by member id once, on the first hover that needs them. The
+files are untrusted input, read with no DTD. A symbol with no documentation file
+shows its signature alone (GitHub #388).
+
 ### [HOVER-FSHARP-CASES] F#-Specific Cases
 
 | Hover Target | Behavior |
