@@ -15,17 +15,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { pollTreeFor, treeContains } from './explorer-kit';
-import { explorer, owningProjectOf, projectNode, symbolNodeIn } from './fsharp-project-tree-kit';
-import { useLspTestSuite } from './lsp-suite-kit';
-import { compileIncludes } from './project-xml-kit';
 import {
-  closeAllEditors,
-  pollUntilResult,
-  removeDirRecursive,
-  requireWorkspaceRoot,
-} from './test-helpers';
+  explorer,
+  owningProjectOf,
+  projectNode,
+  symbolNodeIn,
+  type LiveNode,
+} from './fsharp-project-tree-kit';
+import { useExplorerSuite, writeFSharpModuleSources } from './lsp-suite-kit';
+import { compileIncludes } from './project-xml-kit';
+import { pollUntilResult, requireWorkspaceRoot } from './test-helpers';
 import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
-import { installUiStubs, type UiStubs } from './ui-stubs';
 
 const CMD_ADD_FS_FILE = 'sharplsp.addFSharpSourceFile';
 const CMD_REMOVE_FS_FILE = 'sharplsp.removeFSharpSourceFile';
@@ -64,14 +64,7 @@ function writeTemplate(parent: string, name: string): Template {
   const sources = path.join(root, 'Source', name);
   fs.mkdirSync(sources, { recursive: true });
   fs.mkdirSync(path.join(root, '.vscode'), { recursive: true });
-  fs.writeFileSync(
-    path.join(sources, `${name}Domain.fs`),
-    `module ${name}Domain\n\nlet answer = 42\n`,
-  );
-  fs.writeFileSync(
-    path.join(sources, `${name}Main.fs`),
-    `module ${name}Main\n\nlet twice x = x * 2\n`,
-  );
+  writeFSharpModuleSources(sources, name, 'let twice x = x * 2\n');
   const fsprojPath = path.join(root, '.vscode', 'mod.fsproj');
   fs.writeFileSync(fsprojPath, fsprojText(name));
   const slnx = '<Solution>\n  <Project Path=".vscode/mod.fsproj" />\n</Solution>\n';
@@ -80,20 +73,11 @@ function writeTemplate(parent: string, name: string): Template {
 }
 
 suite('Solution Explorer — an F# project whose sources live outside its folder (#493)', () => {
-  useLspTestSuite('linked-sources-');
-  let stubs: UiStubs;
-  let created: string[];
-
-  setup(() => {
-    stubs = installUiStubs();
-    created = [];
-  });
-
-  teardown(async () => {
-    stubs.restore();
-    await closeAllEditors();
-    explorer().clear();
-    for (const dir of created) removeDirRecursive(dir);
+  const ui = useExplorerSuite('linked-sources-', {
+    cleanup: 'strict',
+    reset: () => {
+      explorer().clear();
+    },
   });
 
   /** Write and load a fresh template; resolve once its Main.fs symbols are in the tree. */
@@ -102,9 +86,29 @@ suite('Solution Explorer — an F# project whose sources live outside its folder
       requireWorkspaceRoot(),
       `Mod${Math.random().toString(36).slice(2, 8)}`,
     );
-    created.push(template.root);
+    ui().created.push(template.root);
     await explorer().loadSolution(path.join(template.root, 'mod.slnx'));
     return template;
+  }
+
+  /** Load a template and the tree node of its linked Domain.fs. */
+  async function loadDomain(): Promise<Template & { domain: LiveNode }> {
+    const template = await loadTemplate();
+    const domain = await symbolNodeIn(template.fsprojPath, `${template.name}Domain.fs`);
+    assert.ok(domain, 'a symbol node in the linked Domain.fs appears');
+    return { ...template, domain };
+  }
+
+  /** Assert `fileName` landed beside the sources, never beside the fsproj, in order. */
+  function assertLinkedInsert(template: Template, fileName: string, created: string): void {
+    const { name, fsprojPath, sources, root } = template;
+    assert.ok(fs.existsSync(path.join(sources, fileName)), created);
+    assert.ok(!fs.existsSync(path.join(root, '.vscode', fileName)), 'never beside the fsproj');
+    assert.deepStrictEqual(compileIncludes(fsprojPath), [
+      `../Source/${name}/${name}Domain.fs`,
+      `../Source/${name}/${fileName}`,
+      `../Source/${name}/${name}Main.fs`,
+    ]);
   }
 
   test('the tree lists the Compile items outside the project folder, under that project', async function () {
@@ -126,21 +130,14 @@ suite('Solution Explorer — an F# project whose sources live outside its folder
 
   test('adding beside a linked file puts it next to that file, in compile order', async function () {
     this.timeout(SIDECAR_COLD_MS + LSP_RESPONSE_MS);
-    const { name, fsprojPath, sources, root } = await loadTemplate();
-    const anchor = await symbolNodeIn(fsprojPath, `${name}Domain.fs`);
-    assert.ok(anchor, 'a symbol node in the linked Domain.fs appears');
-    stubs.queueInput('Rules').queuePick('No').queuePick('Below');
-    await vscode.commands.executeCommand(CMD_ADD_FS_FILE, anchor);
+    const template = await loadDomain();
+    const { name } = template;
+    ui().stubs.queueInput('Rules').queuePick('No').queuePick('Below');
+    await vscode.commands.executeCommand(CMD_ADD_FS_FILE, template.domain);
 
-    assert.deepStrictEqual(stubs.log.errorMessages, [], 'no error is reported');
-    assert.ok(fs.existsSync(path.join(sources, 'Rules.fs')), 'created beside Domain.fs');
-    assert.ok(!fs.existsSync(path.join(root, '.vscode', 'Rules.fs')), 'never beside the fsproj');
-    assert.deepStrictEqual(compileIncludes(fsprojPath), [
-      `../Source/${name}/${name}Domain.fs`,
-      `../Source/${name}/Rules.fs`,
-      `../Source/${name}/${name}Main.fs`,
-    ]);
-    const positions = stubs.log.quickPickItems.at(-1) as { label: string }[] | undefined;
+    assert.deepStrictEqual(ui().stubs.log.errorMessages, [], 'no error is reported');
+    assertLinkedInsert(template, 'Rules.fs', 'created beside Domain.fs');
+    const positions = ui().stubs.log.quickPickItems.at(-1) as { label: string }[] | undefined;
     assert.ok(
       positions?.some((item) => item.label === `Below ${name}Domain.fs`),
       'Below was offered',
@@ -149,19 +146,14 @@ suite('Solution Explorer — an F# project whose sources live outside its folder
 
   test('adding from the project node puts the file among its sources and says where', async function () {
     this.timeout(SIDECAR_COLD_MS + LSP_RESPONSE_MS);
-    const { name, fsprojPath, sources, root } = await loadTemplate();
+    const template = await loadTemplate();
+    const { name, fsprojPath, sources } = template;
     assert.ok(await pollTreeFor(explorer(), 'mod'), 'the project node appears');
-    stubs.queueInput('Patches').queuePick('No');
+    ui().stubs.queueInput('Patches').queuePick('No');
     await vscode.commands.executeCommand(CMD_ADD_FS_FILE, projectNode(fsprojPath));
 
-    assert.ok(fs.existsSync(path.join(sources, 'Patches.fs')), 'created where the sources are');
-    assert.ok(!fs.existsSync(path.join(root, '.vscode', 'Patches.fs')), 'never beside the fsproj');
-    assert.deepStrictEqual(compileIncludes(fsprojPath), [
-      `../Source/${name}/${name}Domain.fs`,
-      `../Source/${name}/Patches.fs`,
-      `../Source/${name}/${name}Main.fs`,
-    ]);
-    const prompt = stubs.log.inputBoxOptions[0]?.prompt ?? '';
+    assertLinkedInsert(template, 'Patches.fs', 'created where the sources are');
+    const prompt = ui().stubs.log.inputBoxOptions[0]?.prompt ?? '';
     assert.ok(prompt.includes(`Source/${name}`), `the prompt names the folder: ${prompt}`);
     assert.strictEqual(
       vscode.window.activeTextEditor?.document.uri.fsPath,
@@ -182,31 +174,29 @@ suite('Solution Explorer — an F# project whose sources live outside its folder
 
   test('removing a linked file takes it out of compile order, keeping or deleting it as asked', async function () {
     this.timeout(SIDECAR_COLD_MS + 2 * LSP_RESPONSE_MS);
-    const { name, fsprojPath, sources } = await loadTemplate();
-    const domain = await symbolNodeIn(fsprojPath, `${name}Domain.fs`);
-    assert.ok(domain, 'a symbol node in the linked Domain.fs appears');
-    stubs.queueWarning(KEEP);
+    const { name, fsprojPath, sources, domain } = await loadDomain();
+    ui().stubs.queueWarning(KEEP);
     await vscode.commands.executeCommand(CMD_REMOVE_FS_FILE, domain);
 
-    assert.deepStrictEqual(stubs.log.errorMessages, [], 'no error is reported');
+    assert.deepStrictEqual(ui().stubs.log.errorMessages, [], 'no error is reported');
     assert.ok(
-      stubs.log.warningMessages[0]?.includes(`${name}Domain.fs`),
+      ui().stubs.log.warningMessages[0]?.includes(`${name}Domain.fs`),
       'the question names the file',
     );
-    assert.ok(stubs.log.warningMessages[0]?.includes('mod.fsproj'), 'and the project');
+    assert.ok(ui().stubs.log.warningMessages[0]?.includes('mod.fsproj'), 'and the project');
     assert.deepStrictEqual(
-      stubs.log.warningActions[0],
+      ui().stubs.log.warningActions[0],
       [KEEP, DELETE],
       'keep or delete, never silently',
     );
-    assert.strictEqual(stubs.log.warningOptions[0]?.modal, true, 'asked modally');
+    assert.strictEqual(ui().stubs.log.warningOptions[0]?.modal, true, 'asked modally');
     assert.deepStrictEqual(compileIncludes(fsprojPath), [`../Source/${name}/${name}Main.fs`]);
     assert.ok(fs.existsSync(path.join(sources, `${name}Domain.fs`)), 'kept on disk');
     assert.ok(await pollTreeWithout(`${name}Domain`), 'the tree drops its module');
 
     const main = await symbolNodeIn(fsprojPath, `${name}Main.fs`);
     assert.ok(main, 'Main.fs is still listed');
-    stubs.queueWarning(DELETE);
+    ui().stubs.queueWarning(DELETE);
     await vscode.commands.executeCommand(CMD_REMOVE_FS_FILE, main);
     assert.deepStrictEqual(compileIncludes(fsprojPath), [], 'the project compiles nothing now');
     assert.ok(!fs.existsSync(path.join(sources, `${name}Main.fs`)), 'and Main.fs is deleted');
@@ -214,15 +204,13 @@ suite('Solution Explorer — an F# project whose sources live outside its folder
 
   test('dismissing the question changes nothing', async function () {
     this.timeout(SIDECAR_COLD_MS + LSP_RESPONSE_MS);
-    const { name, fsprojPath, sources } = await loadTemplate();
-    const domain = await symbolNodeIn(fsprojPath, `${name}Domain.fs`);
-    assert.ok(domain, 'a symbol node in the linked Domain.fs appears');
+    const { name, fsprojPath, sources, domain } = await loadDomain();
     const before = fs.readFileSync(fsprojPath, 'utf-8');
-    stubs.queueWarning(undefined);
+    ui().stubs.queueWarning(undefined);
     await vscode.commands.executeCommand(CMD_REMOVE_FS_FILE, domain);
 
     assert.strictEqual(fs.readFileSync(fsprojPath, 'utf-8'), before, 'the project is untouched');
     assert.ok(fs.existsSync(path.join(sources, `${name}Domain.fs`)), 'the file is untouched');
-    assert.strictEqual(stubs.log.warningMessages.length, 1, 'asked exactly once');
+    assert.strictEqual(ui().stubs.log.warningMessages.length, 1, 'asked exactly once');
   });
 });

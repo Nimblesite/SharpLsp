@@ -10,8 +10,6 @@ import {
   findSharpLspBinary,
   flattenSymbolNames,
   openCSharpFile,
-  setupLspTestSuite,
-  teardownLspTestSuite,
   waitForDocumentSymbols,
   assertContainsAll,
   assertContainsNone,
@@ -43,6 +41,37 @@ import {
 } from '../../state.js';
 import { notifyActivationFailure } from '../../extension.js';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
+import { useLspTestSuite } from './lsp-suite-kit';
+
+/** Assert a `sharplsp` setting is inspectable and declares exactly `expected`. */
+function assertSettingDefault(key: string, expected: string, why: string): void {
+  const inspected = vscode.workspace.getConfiguration('sharplsp').inspect<string>(key);
+  assert.ok(inspected, `${key} is inspectable`);
+  assert.strictEqual(inspected.defaultValue, expected, why);
+}
+
+/** Everything the shared signals emitted while a test drove them. */
+interface StateRecord {
+  readonly paths: (string | undefined)[];
+  readonly kinds: string[];
+  readonly stop: () => void;
+}
+
+/** Start recording every solutionPath value and symbolsState kind emitted. */
+function recordStateSignals(): StateRecord {
+  const paths: (string | undefined)[] = [];
+  const kinds: string[] = [];
+  const stopPath = solutionPath.subscribe((value) => paths.push(value));
+  const stopState = symbolsState.subscribe((value) => kinds.push(value.kind));
+  return {
+    paths,
+    kinds,
+    stop: () => {
+      stopPath();
+      stopState();
+    },
+  };
+}
 
 /**
  * Coarse end-to-end coverage for the extension lifecycle plumbing:
@@ -52,22 +81,11 @@ import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './
  * and REAL exported functions and assert their deterministic effects.
  */
 suite('Lifecycle E2E', () => {
-  let tmpDir: string;
+  const tmpDir = useLspTestSuite('lifecycle-e2e-');
   let stubs: UiStubs;
   let scratchDir: string;
   let savedSortOrder: SortOrder;
   let savedSolutionPath: string | undefined;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('lifecycle-e2e-');
-    tmpDir = result.tmpDir;
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
 
   setup(() => {
     stubs = installUiStubs();
@@ -96,7 +114,7 @@ suite('Lifecycle E2E', () => {
     this.timeout(ACTIVATION_MS);
     const filename = 'lifecycle-restart.cs';
     const content = 'namespace L { class Restartable { void Run() { } } }';
-    const { symbols: before } = await openCSharpOutline(tmpDir, filename, content);
+    const { symbols: before } = await openCSharpOutline(tmpDir(), filename, content);
     assert.ok(before.length > 0, 'Server should serve symbols before restart');
 
     // The live client is exposed through the extension API.
@@ -112,7 +130,7 @@ suite('Lifecycle E2E', () => {
     // Re-open the document so it is active and synced to the fresh server
     // instance. No settling pause first: the poll below waits for the state a
     // recovered server produces, and a fixed second only guessed at it.
-    const { uri: reopened } = await openCSharpFile(tmpDir, filename, content);
+    const { uri: reopened } = await openCSharpFile(tmpDir(), filename, content);
 
     // CRITICAL: restart MUST recover — poll generously until symbols return so
     // later suites inherit a WORKING server (never left mid-restart).
@@ -150,17 +168,9 @@ suite('Lifecycle E2E', () => {
     assert.ok(inspectArgs, 'server.extraArgs is inspectable');
     assert.deepStrictEqual(inspectArgs.defaultValue, [], 'default extraArgs is empty');
 
-    const inspectLevel = vscode.workspace
-      .getConfiguration('sharplsp')
-      .inspect<string>('logging.level');
-    assert.ok(inspectLevel, 'logging.level is inspectable');
-    assert.strictEqual(inspectLevel.defaultValue, 'info', 'default RUST_LOG level is info');
+    assertSettingDefault('logging.level', 'info', 'default RUST_LOG level is info');
 
-    const inspectTrace = vscode.workspace
-      .getConfiguration('sharplsp')
-      .inspect<string>('trace.server');
-    assert.ok(inspectTrace, 'trace.server is inspectable');
-    assert.strictEqual(inspectTrace.defaultValue, 'off', 'default trace level is off');
+    assertSettingDefault('trace.server', 'off', 'default trace level is off');
   });
 
   // ── install.ts: pure version probes ─────────────────────────────
@@ -338,7 +348,7 @@ suite('Lifecycle E2E', () => {
   test('restartServer drives the live status bar through Starting and back to Running', async function () {
     this.timeout(ACTIVATION_MS);
     const { uri } = await openCSharpFile(
-      tmpDir,
+      tmpDir(),
       'lifecycle-status.cs',
       'class StatusProbe { void M() { } }',
     );
@@ -382,9 +392,13 @@ suite('Lifecycle E2E', () => {
     );
 
     // The SORT_CYCLE map is the single source of truth for the transitions above.
-    assert.strictEqual(SORT_CYCLE[SortOrder.Natural], SortOrder.Alphabetical);
-    assert.strictEqual(SORT_CYCLE[SortOrder.Alphabetical], SortOrder.Accessibility);
-    assert.strictEqual(SORT_CYCLE[SortOrder.Accessibility], SortOrder.Natural);
+    assert.deepStrictEqual(
+      [SortOrder.Natural, SortOrder.Alphabetical, SortOrder.Accessibility].map(
+        (order) => SORT_CYCLE[order],
+      ),
+      [SortOrder.Alphabetical, SortOrder.Accessibility, SortOrder.Natural],
+      'each order cycles to the next, and Accessibility back round to Natural',
+    );
   });
 
   test('sort commands execute against the live explorer without throwing', async function () {
@@ -406,10 +420,7 @@ suite('Lifecycle E2E', () => {
     // empty branch deterministically — exactly the no-client code path.
     assert.strictEqual(clientSignal.value, undefined, 'state.client starts unbound');
 
-    const paths: (string | undefined)[] = [];
-    const states: string[] = [];
-    const disposePath = solutionPath.subscribe((value) => paths.push(value));
-    const disposeState = symbolsState.subscribe((value) => states.push(value.kind));
+    const recorder = recordStateSignals();
 
     const fakeSolution = path.join(scratchDir, 'Demo.sln');
     await loadSolutionState(fakeSolution);
@@ -424,10 +435,9 @@ suite('Lifecycle E2E', () => {
     assert.strictEqual(solutionPath.value, undefined, 'clear resets the solution path');
     assert.strictEqual(symbolsState.value.kind, 'empty', 'clear resets symbols to empty');
 
-    disposePath();
-    disposeState();
-    assertContainsAll(paths, [fakeSolution, undefined], 'solutionPath signal emitted the');
-    assert.ok(states.includes('empty'), 'symbolsState signal emitted the empty state');
+    recorder.stop();
+    assertContainsAll(recorder.paths, [fakeSolution, undefined], 'solutionPath signal emitted the');
+    assert.ok(recorder.kinds.includes('empty'), 'symbolsState signal emitted the empty state');
   });
 
   test('selectSolution command resolves through the headless host', async function () {

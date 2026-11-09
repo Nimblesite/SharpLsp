@@ -5,7 +5,8 @@ import type {
   CompletionList as LspCompletionList,
   Range as LspRange,
 } from 'vscode-languageclient/node';
-import { closeAllEditors, pollUntilResult, pollProvider, assertContainsAll } from './test-helpers';
+import { pollUntilResult, pollProvider, assertContainsAll } from './test-helpers';
+import { closeEditorsBetweenTests, inlayHintLabel } from './lsp-suite-kit';
 import { openFSharpFixture, positionOf } from './fsharp-helpers';
 import { assertFixtureCompletion, openFSharpAt, pollCompletion } from './fsharp-lsp-kit';
 import { IGNORE_SOURCE } from './fsharp-refactor-fixtures';
@@ -44,8 +45,7 @@ import { LSP_RESPONSE_MS } from './test-timeouts';
 suite('F# LSP — Completion', defineCompletionSuite);
 
 function defineCompletionSuite(): void {
-  suiteTeardown(closeAllEditors);
-  teardown(closeAllEditors);
+  closeEditorsBetweenTests();
   test('member completion after `.` on a class instance', verifyClassCompletion);
   test('member completion after `.` on a record value', verifyRecordCompletion);
   test('module-qualified completion after `.`', verifyModuleCompletion);
@@ -59,24 +59,21 @@ function defineCompletionSuite(): void {
 suite('F# LSP — Signature Help', defineSignatureSuite);
 
 function defineSignatureSuite(): void {
-  suiteTeardown(closeAllEditors);
-  teardown(closeAllEditors);
+  closeEditorsBetweenTests();
   test('signature help inside a constructor call', verifySignatureHelp);
 }
 
 suite('F# LSP — Rename', defineRenameSuite);
 
 function defineRenameSuite(): void {
-  suiteTeardown(closeAllEditors);
-  teardown(closeAllEditors);
+  closeEditorsBetweenTests();
   test('rename a function updates the declaration and every use site', verifySimpleRename);
 }
 
 suite('F# LSP — Inlay Hints', defineInlaySuite);
 
 function defineInlaySuite(): void {
-  suiteTeardown(closeAllEditors);
-  teardown(closeAllEditors);
+  closeEditorsBetweenTests();
   test('type inlay hints appear on unannotated let bindings', verifyInlayHints);
 }
 
@@ -84,8 +81,7 @@ suite('F# LSP — Code Actions', defineCodeActionSuite);
 
 function defineCodeActionSuite(): void {
   suiteSetup(activateRealSharpLsp);
-  suiteTeardown(closeAllEditors);
-  teardown(closeAllEditors);
+  closeEditorsBetweenTests();
   test('offers a fix to ignore an implicitly-discarded result', verifyIgnoreCodeActionTest);
 }
 
@@ -276,7 +272,7 @@ async function verifyInlayHints(this: Mocha.Context): Promise<void> {
   const range = new vscode.Range(0, 0, usage.doc.lineCount, 0);
   const hints = await requestInlayHints(usage.uri, range);
   assert.ok(hints.length >= 1, `Usage.fs must surface ≥1 inlay hint, got ${hints.length}`);
-  const labels = hints.map(inlayLabel).join(' ');
+  const labels = hints.map(inlayHintLabel).join(' ');
   assert.match(labels, /Greeter|float|string|int/, 'inlay hints must reveal inferred types');
 }
 
@@ -296,13 +292,6 @@ async function requestInlayHints(
 async function verifyIgnoreCodeActionTest(this: Mocha.Context): Promise<void> {
   this.timeout(LSP_RESPONSE_MS + 5_000);
   await verifyIgnoreCodeAction();
-}
-
-function inlayLabel(hint: vscode.InlayHint): string {
-  if (typeof hint.label === 'string') {
-    return hint.label;
-  }
-  return hint.label.map((part) => part.value).join('');
 }
 
 async function verifyIgnoreCodeAction(): Promise<void> {

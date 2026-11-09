@@ -25,7 +25,6 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { SharpLspLaunchProvider } from '../../debug.js';
 import {
   CMD_DEBUG_PROGRAM,
   CMD_RUN_PROGRAM,
@@ -37,8 +36,10 @@ import {
   assertCommandRegistered,
   emptyF5Config,
   fakeFolder,
+  focusAndResolve,
   focusDocument,
   invokeCommand,
+  resolveThroughProvider,
   stopAnyDebugSession,
   type CommandOutcome,
   type ObservedSession,
@@ -80,12 +81,6 @@ interface ResolveCapture {
   readonly config: vscode.DebugConfiguration;
 }
 
-/** The outcome of calling the shipped provider directly. */
-interface ProviderResolution {
-  readonly config: vscode.DebugConfiguration | undefined;
-  readonly error: string;
-}
-
 /** Every user-visible refusal the extension issued, errors first. */
 function refusals(stubs: UiStubs): string[] {
   return [...stubs.log.errorMessages, ...stubs.log.warningMessages];
@@ -115,25 +110,6 @@ function samePath(actual: string | undefined, expected: string, message: string)
  */
 function assertAbsent(config: vscode.DebugConfiguration, key: string, why: string): void {
   assert.ok(!Object.prototype.hasOwnProperty.call(config, key), `\`${key}\` ${why}`);
-}
-
-/**
- * Call the SHIPPED provider directly and report a throw as a value.
- *
- * [DEBUG-FEATURES-LAUNCH-NOCONFIG] rule 2: the provider MUST NOT throw for any
- * input. Catching turns "it threw" into a named assertion failure instead of an
- * unattributed TypeError in the mocha report.
- */
-async function resolveThroughProvider(
-  folder: vscode.WorkspaceFolder,
-  config: vscode.DebugConfiguration,
-): Promise<ProviderResolution> {
-  try {
-    const resolved = await new SharpLspLaunchProvider().resolveDebugConfiguration(folder, config);
-    return { config: resolved ?? undefined, error: '' };
-  } catch (error) {
-    return { config: undefined, error: error instanceof Error ? error.message : String(error) };
-  }
 }
 
 /** Wait until the spy has recorded at least `count` configurations. */
@@ -194,22 +170,14 @@ function assertLaunchesDll(
   eq(programOf(config as Record<string, any> | undefined), comparablePath(dll), why);
 }
 
-/** Assert two resolved configurations name the SAME launch target. */
-function assertSameTarget(
+/** Assert two resolved configurations name the same (`eq`) or another (`neq`) target. */
+function assertTarget(
+  compare: typeof eq,
   left: Record<string, any> | vscode.DebugConfiguration | undefined,
   right: Record<string, any> | vscode.DebugConfiguration | undefined,
   why: string,
 ): void {
-  eq(programOf(left as Record<string, any>), programOf(right as Record<string, any>), why);
-}
-
-/** Assert two resolved configurations name DIFFERENT launch targets. */
-function assertTargetChanged(
-  left: Record<string, any> | vscode.DebugConfiguration | undefined,
-  right: Record<string, any> | vscode.DebugConfiguration | undefined,
-  why: string,
-): void {
-  neq(programOf(left as Record<string, any>), programOf(right as Record<string, any>), why);
+  compare(programOf(left as Record<string, any>), programOf(right as Record<string, any>), why);
 }
 
 /** The refusal message at `index`, with content and no leaked TypeError. */
@@ -420,7 +388,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     assertSessionShape(debugSession, 'Debug Program');
     neq(dbgCfg['noDebug'], true, 'Debug must NOT set noDebug — the sole difference'); // B16
     // B15, B16 — one resolver, two flags.
-    assertSameTarget(dbgCfg, runCfg, 'Run and Debug must resolve the identical target');
+    assertTarget(eq, dbgCfg, runCfg, 'Run and Debug must resolve the identical target');
     eq(cwdOf(dbgCfg), cwdOf(runCfg), 'Run and Debug must share the cwd too'); // B16
     neq(debugSession.id, runSession.id, 'the second gesture is a distinct session');
     deepEq(refusals(stubs), [], 'two successful launches must produce no refusal message');
@@ -438,10 +406,11 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 1 — focus B, then resolve the SAME document through the
     // provider F5 uses. Both surfaces must agree; there is one resolver.
-    await focusDocument(appB.sourceFile);
-    const resolvedB = await resolveThroughProvider(folder, emptyF5Config());
-    eq(resolvedB.error, '', 'the provider MUST NOT throw for the bare F5 configuration'); // B20
-    const configB = resolvedB.config;
+    const configB = await focusAndResolve(
+      folder,
+      appB.sourceFile,
+      'the provider MUST NOT throw for the bare F5 configuration',
+    ); // B20
     neq(configB, undefined, 'a runnable project must resolve to a configuration');
     eq(configB?.type, DEBUG_TYPE_ID, 'a returned config with a falsy type is discarded silently');
     eq(configB?.request, 'launch', 'the synthesized request must be exactly "launch"');
@@ -454,16 +423,17 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     assertSessionShape(sessionB, 'Debug Program on project B');
     assertLaunchesDll(cfgB, dllB, 'focusing B must launch project B'); // B20
     eq(cwdOf(cfgB), comparablePath(appB.dir), 'the cwd must be project B’s directory');
-    assertSameTarget(cfgB, configB, 'the command and F5 must not diverge'); // B20
+    assertTarget(eq, cfgB, configB, 'the command and F5 must not diverge'); // B20
 
     // Interaction 3 — stop, then focus the OTHER project.
     await stopAndSettle(recorder, sessionB.id);
-    await focusDocument(appA.sourceFile);
-    const resolvedA = await resolveThroughProvider(folder, emptyF5Config());
-    eq(resolvedA.error, '', 'the provider must stay total across a focus change');
-    const configA = resolvedA.config;
+    const configA = await focusAndResolve(
+      folder,
+      appA.sourceFile,
+      'the provider must stay total across a focus change',
+    );
     assertLaunchesDll(configA, dllA, 'a focus change MUST change the target'); // B20
-    assertTargetChanged(configA, configB, 'the previous target must not be reused'); // B20
+    assertTarget(neq, configA, configB, 'the previous target must not be reused'); // B20
 
     // Interaction 4 — Debug Program again, now on A.
     await pressGesture(CMD_DEBUG_PROGRAM, 'the second Debug Program must succeed');
@@ -474,8 +444,8 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     );
     const cfgA = sessionA.configuration;
     assertLaunchesDll(cfgA, dllA, 'focusing A must launch project A'); // B20
-    assertTargetChanged(cfgA, cfgB, 'the command is document-sensitive'); // B20
-    assertSameTarget(cfgA, configA, 'command and provider agree on A too'); // B20
+    assertTarget(neq, cfgA, cfgB, 'the command is document-sensitive'); // B20
+    assertTarget(eq, cfgA, configA, 'command and provider agree on A too'); // B20
     neq(sessionA.id, sessionB.id, 'two gestures produce two distinct sessions');
     deepEq(refusals(stubs), [], 'two resolvable targets must produce no refusal message');
   });

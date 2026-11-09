@@ -17,8 +17,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { findNetcoredbg, getNetcoredbgCandidates } from '../../debug.js';
-import { EXTENSION_ID, pollUntilResult, sleep } from './test-helpers';
+import { findNetcoredbg, getNetcoredbgCandidates, SharpLspLaunchProvider } from '../../debug.js';
+import { EXTENSION_ID, eq, pollUntilResult, sleep } from './test-helpers';
 import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
 /** Registered by the extension today. */
@@ -104,12 +104,22 @@ export function authoredPackageJson(): Record<string, any> {
   return JSON.parse(fs.readFileSync(manifest, 'utf-8'));
 }
 
+/** The single `DEBUG_TYPE_ID` entry of a `contributes.debuggers` value. */
+function debuggerEntry(debuggers: unknown, notArray: string, missing: string): Record<string, any> {
+  assert.ok(Array.isArray(debuggers), notArray);
+  const entry = debuggers.find((item) => item?.type === DEBUG_TYPE_ID);
+  assert.ok(entry, missing);
+  return entry;
+}
+
 /** The `configurationAttributes` block exactly as authored on disk. */
 export function authoredConfigurationAttributes(): Record<string, any> {
   const debuggers: unknown = authoredPackageJson().contributes?.debuggers;
-  assert.ok(Array.isArray(debuggers), 'the authored manifest must declare contributes.debuggers');
-  const entry = debuggers.find((item) => item?.type === DEBUG_TYPE_ID);
-  assert.ok(entry, `the authored manifest must declare the '${DEBUG_TYPE_ID}' debugger`);
+  const entry = debuggerEntry(
+    debuggers,
+    'the authored manifest must declare contributes.debuggers',
+    `the authored manifest must declare the '${DEBUG_TYPE_ID}' debugger`,
+  );
   const attributes: unknown = entry.configurationAttributes;
   assert.ok(attributes, 'the authored debugger must declare configurationAttributes');
   return attributes as Record<string, any>;
@@ -124,17 +134,54 @@ export function contributes(): Record<string, any> {
 
 /** The single `sharplsp-coreclr` entry of `contributes.debuggers`. */
 export function debuggerContribution(): Record<string, any> {
-  const debuggers: unknown = contributes().debuggers;
-  assert.ok(Array.isArray(debuggers), 'contributes.debuggers must be an array');
-  const entry = debuggers.find((item) => item?.type === DEBUG_TYPE_ID);
-  assert.ok(entry, `contributes.debuggers must declare type '${DEBUG_TYPE_ID}'`);
-  return entry;
+  return debuggerEntry(
+    contributes().debuggers,
+    'contributes.debuggers must be an array',
+    `contributes.debuggers must declare type '${DEBUG_TYPE_ID}'`,
+  );
 }
 
 /** Menu entries contributed to `menu`, or an empty list when absent. */
 export function menuItems(menu: string): Record<string, any>[] {
   const items: unknown = contributes().menus?.[menu];
   return Array.isArray(items) ? items : [];
+}
+
+/** The outcome of calling the shipped provider directly. */
+export interface ProviderResolution {
+  readonly config: vscode.DebugConfiguration | undefined;
+  readonly error: string;
+}
+
+/**
+ * Call the SHIPPED provider directly and report a throw as a value.
+ *
+ * [DEBUG-FEATURES-LAUNCH-NOCONFIG] rule 2: the provider MUST NOT throw for any
+ * input. Catching turns "it threw" into a named assertion failure instead of an
+ * unattributed TypeError in the mocha report.
+ */
+export async function resolveThroughProvider(
+  folder: vscode.WorkspaceFolder,
+  config: vscode.DebugConfiguration,
+): Promise<ProviderResolution> {
+  try {
+    const resolved = await new SharpLspLaunchProvider().resolveDebugConfiguration(folder, config);
+    return { config: resolved ?? undefined, error: '' };
+  } catch (error) {
+    return { config: undefined, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Focus `file`, then resolve the bare F5 configuration and assert it did not throw. */
+export async function focusAndResolve(
+  folder: vscode.WorkspaceFolder,
+  file: string,
+  total: string,
+): Promise<vscode.DebugConfiguration | undefined> {
+  await focusDocument(file);
+  const resolved = await resolveThroughProvider(folder, emptyF5Config());
+  eq(resolved.error, '', total);
+  return resolved.config;
 }
 
 /**
