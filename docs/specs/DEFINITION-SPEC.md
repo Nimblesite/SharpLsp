@@ -56,7 +56,7 @@ All four definition-family requests are **semantic** requests. The Rust host rou
 
 The Rust host MAY use tree-sitter to pre-validate the position (e.g., reject whitespace, comments, string literals) and short-circuit with `null` before dispatching to the sidecar.
 
-Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs) and [syntax.rs](../../src/sharplsp/src/syntax.rs).
+Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs), [semantic/navigation.rs](../../src/sharplsp/src/semantic/navigation.rs) and [syntax.rs](../../src/sharplsp/src/syntax.rs).
 
 ## C# Implementation (Roslyn) `[DEFINITION-CSHARP]`
 

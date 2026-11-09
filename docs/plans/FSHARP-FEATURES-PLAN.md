@@ -30,7 +30,7 @@ that feature — that is the parity gap.
 | `typeHierarchy/supertypes` | [type_hierarchy.rs:58](../../src/sharplsp/src/type_hierarchy.rs#L58) | ✅ | ✅ **(this plan)** | [FS-TYPEHIER-SUPER] |
 | `typeHierarchy/subtypes` | [type_hierarchy.rs:93](../../src/sharplsp/src/type_hierarchy.rs#L93) | ✅ | ✅ **(this plan)** | [FS-TYPEHIER-SUB] |
 | `textDocument/references` | [semantic.rs](../../src/sharplsp/src/semantic.rs) | ✅ solution-wide | ✅ **project-wide (this plan)** | [REFERENCES-FSHARP-FIND] |
-| `textDocument/hover` | [semantic.rs](../../src/sharplsp/src/semantic.rs) | ✅ | ✅ | — |
+| `textDocument/hover` | [semantic/hover.rs](../../src/sharplsp/src/semantic/hover.rs) | ✅ | ✅ | — |
 | `textDocument/definition` etc. | [dispatch.rs](../../src/sharplsp/src/dispatch.rs) `handle_nav_request` | ✅ | ✅ | — |
 | `textDocument/typeDefinition` | nav | ✅ | ✅ | — |
 | `textDocument/declaration` | nav | ✅ | ✅ | — |
