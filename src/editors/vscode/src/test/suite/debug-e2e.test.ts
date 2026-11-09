@@ -6,7 +6,6 @@ import {
   DEBUG_TYPE_ID,
   debuggerContribution,
   emptyF5Config,
-  fakeFolder,
   focusDocument,
   bareF5Config,
   undefinedF5Config,
@@ -14,7 +13,6 @@ import {
 import {
   TFM,
   buildProject,
-  writeCSharpConsole,
   writeLaunchSettings,
   writeRawLaunchSettings,
 } from './run-debug-fixtures';
@@ -22,6 +20,8 @@ import { comparablePath } from './test-helpers';
 import { DOTNET_CLI_MS } from './test-timeouts';
 import {
   assertBuildTaskContributed,
+  builtAssembly,
+  consoleProject,
   assertNoProfileValues,
   assertResolves,
   assertSamePath,
@@ -53,13 +53,12 @@ suite('Debug E2E — F5 with no launch.json', () => {
   test('every no-config shape resolves to the same launchable, idempotent config', async function () {
     this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
-    const project = writeCSharpConsole(path.join(tmpDir, 'Console1'), 'Console1');
-    const folder = fakeFolder(project.dir);
+    const { project, folder } = consoleProject(tmpDir, 'Console1');
 
     // 1. The user builds the project, so MSBuild — not a guessed layout — says
     //    where the assembly is. [DEBUG-FEATURES-LAUNCH-BUILD] rule 3.
     await buildProject(project);
-    const built = path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
+    const built = builtAssembly(project);
     assert.ok(fs.existsSync(built), `dotnet build must produce ${built}`);
 
     // 2. The user opens Program.cs, then presses F5. The shape VS Code really
@@ -117,10 +116,9 @@ suite('Debug E2E — F5 with no launch.json', () => {
   test('an explicit program is preserved verbatim while a missing one is resolved', async function () {
     this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
-    const project = writeCSharpConsole(path.join(tmpDir, 'Explicit'), 'Explicit');
-    const folder = fakeFolder(project.dir);
+    const { project, folder } = consoleProject(tmpDir, 'Explicit');
     await buildProject(project);
-    const built = path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
+    const built = builtAssembly(project);
     assert.ok(fs.existsSync(built), 'the premise: the project really built');
 
     // 1. No program at all — the resolver must find the project's own output.
@@ -176,8 +174,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
   test('a launch profile still applies when the configuration states its own program', async function () {
     this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
-    const project = writeCSharpConsole(path.join(tmpDir, 'ExplicitProfile'), 'ExplicitProfile');
-    const folder = fakeFolder(project.dir);
+    const { project, folder } = consoleProject(tmpDir, 'ExplicitProfile');
     writeLaunchSettings(project.dir, IIS_AND_WEB);
 
     // 1. The user's own program, plus the project's profile. Both must survive.
@@ -239,8 +236,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
   test('an unsound launchSettings.json never blocks F5; a sound one supplies env and args', async function () {
     this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
-    const project = writeCSharpConsole(path.join(tmpDir, 'Profiles'), 'Profiles');
-    const folder = fakeFolder(project.dir);
+    const { project, folder } = consoleProject(tmpDir, 'Profiles');
 
     // 1. No profile file at all. B10
     const clean = await resolveConfig(folder, emptyF5Config());
@@ -336,8 +332,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
   test('Ctrl/Cmd+F5 keeps noDebug through resolution and resolves the same target as F5', async function () {
     this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
-    const project = writeCSharpConsole(path.join(tmpDir, 'NoDebug'), 'NoDebug');
-    const folder = fakeFolder(project.dir);
+    const { project, folder } = consoleProject(tmpDir, 'NoDebug');
     const runShape = (): vscode.DebugConfiguration =>
       ({ noDebug: true }) as unknown as vscode.DebugConfiguration;
 
@@ -406,8 +401,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
   test('the manifest offers initial configurations and snippets the live provider agrees with', async function () {
     this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
-    const project = writeCSharpConsole(path.join(tmpDir, 'Agree'), 'Agree');
-    const folder = fakeFolder(project.dir);
+    const { folder } = consoleProject(tmpDir, 'Agree');
 
     // 1. The live provider is the reference: whatever framework IT targets is
     //    the one every manifest surface has to teach. Rule 5.
@@ -481,8 +475,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
     assert.deepStrictEqual(none, [], 'a folderless window generates no configurations');
 
     // 2. One project, no profiles: exactly one default configuration.
-    const solo = writeCSharpConsole(path.join(tmpDir, 'Solo'), 'Solo');
-    const folder = fakeFolder(solo.dir);
+    const { project: solo, folder } = consoleProject(tmpDir, 'Solo');
     const defaults = await provideFor(folder);
     assert.strictEqual(defaults.length, 1, 'exactly one default configuration');
     assert.strictEqual(defaults[0]?.name, 'Launch .NET Project', 'named for the generated file');

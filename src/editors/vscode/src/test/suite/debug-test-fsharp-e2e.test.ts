@@ -15,7 +15,6 @@ import { DapRecorder, assertSessionEnded } from './debug-dap-kit';
 import {
   CMD_CONTINUE,
   CMD_STEP_OUT,
-  assertStopReason,
   evaluate,
   gesture,
   localsOf,
@@ -41,7 +40,11 @@ import {
   type TestDebugFixture,
 } from './debug-test-kit';
 import {
-  debugRun,
+  armAnchoredBreakpoints,
+  assertCleanDebugTraffic,
+  breakpointStopFrame,
+  debugRunBound,
+  debugRunOneSession,
   useDebugTestFixture,
   firstBreakpointStop,
   caretInSource,
@@ -79,10 +82,13 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     eq(item.children.size, 0, 'an F# module-level test is a LEAF, like any other test');
 
     // Interaction 2 — arm a breakpoint inside the F# body and debug it.
-    vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-call')]);
-    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint armed inside the F# binding');
-    await debugRun([item]);
-    assertOneTestSession(sessions, 'debugging an F# test');
+    armAnchoredBreakpoints(
+      FS_SOURCE,
+      fixture.sourceUri,
+      ['fs-call'],
+      'one breakpoint armed inside the F# binding',
+    );
+    await debugRunOneSession([item], sessions, 'debugging an F# test');
     assertHandshakeOrder(recorder, 'debugging an F# test');
     // Interaction 3 — it stops IN the F# source, with F# locals readable. The
     // F# compiler's PDB gaps ([DEBUG-FSHARP-PDB]) are about state machines, not
@@ -131,8 +137,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // than the test.
     const item = await debuggableRow(fixture, FS_ALL, FS_SPACED);
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-add-body')]);
-    await debugRun([item]);
-    assertOneTestSession(sessions, 'debugging into an F# helper');
+    await debugRunOneSession([item], sessions, 'debugging into an F# helper');
     assertBoundAtLines(
       recorder,
       [FS_SOURCE.dapLine('fs-add-body')],
@@ -214,14 +219,14 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     assert.ok(item.id.startsWith(`${FS_MODULE}.`), 'qualified by the F# MODULE, not by a class');
     assert.ok(!item.id.includes('('), 'and carrying no row data into the filter grammar');
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-rows-body')]);
-    await debugRun([item]);
-    assertOneTestSession(sessions, 'debugging an F# theory');
+    await debugRunOneSession([item], sessions, 'debugging an F# theory');
 
     // Interaction 2 — the first row stops, inside the F# body.
-    const first = requireAt(await recorder.waitForStops(1), 0, 'the first F# row');
-    assertStopReason(first, 'breakpoint', 'the first row of an F# theory');
-    const firstActive = requireActive('the first F# row');
-    const firstFrame = await topFrame(firstActive, first.threadId);
+    const { active: firstActive, frame: firstFrame } = await breakpointStopFrame(
+      recorder,
+      1,
+      'the first row of an F# theory',
+    );
     eq(firstFrame.line, FS_SOURCE.dapLine('fs-rows-body'), 'on the armed line');
     const firstExpected = variableNamed(
       await localsOf(firstActive, firstFrame.id),
@@ -231,10 +236,11 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // Interaction 3 — continuing reaches the SECOND row, with the other
     // arguments, in the same session.
     await gesture(CMD_CONTINUE);
-    const second = requireAt(await recorder.waitForStops(2), 1, 'the second F# row');
-    assertStopReason(second, 'breakpoint', 'the second row of an F# theory');
-    const secondActive = requireActive('the second F# row');
-    const secondFrame = await topFrame(secondActive, second.threadId);
+    const { active: secondActive, frame: secondFrame } = await breakpointStopFrame(
+      recorder,
+      2,
+      'the second row of an F# theory',
+    );
     eq(secondFrame.line, firstFrame.line, 'the same body, run a second time');
     deepEq(
       [
@@ -260,8 +266,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       'each naming the thread it stopped',
     );
     eq(vscode.debug.breakpoints.length, 1, 'one breakpoint served both rows');
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    assertCleanDebugTraffic(recorder, stubs);
   });
 
   test('Debug Test at the cursor debugs the F# binding the caret is in', async function () {
@@ -287,9 +292,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
 
     // Interaction 3 — it breaks in the binding the caret was in, and nothing
     // was reported to the user as a refusal.
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the at-cursor stop');
-    assertStopReason(stop, 'breakpoint', 'a breakpoint reached by the at-cursor gesture');
-    const frame = await topFrame(requireActive('the at-cursor stop'), stop.threadId);
+    const { frame } = await breakpointStopFrame(recorder, 1, 'the at-cursor stop');
     eq(frame.line, FS_SOURCE.dapLine('fs-call'), 'on the line the caret was on');
     eq(
       comparablePath(frame.sourcePath),
@@ -348,33 +351,31 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
 
     // Interaction 2 — arm the spaced binding and the module HELPER both
     // bindings call, then debug the module once.
-    vscode.debug.addBreakpoints([
-      breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-seed'),
-      breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-add-body'),
-    ]);
-    eq(vscode.debug.breakpoints.length, 2, 'one breakpoint in a test body, one in the helper');
-    await debugRun([moduleRow]);
-    assertOneTestSession(sessions, 'debugging an F# module');
-    assertHandshakeOrder(recorder, 'debugging an F# module');
-    assertBoundAtLines(
-      recorder,
-      [FS_SOURCE.dapLine('fs-add-body'), FS_SOURCE.dapLine('fs-seed')],
+    armAnchoredBreakpoints(
+      FS_SOURCE,
+      fixture.sourceUri,
+      ['fs-seed', 'fs-add-body'],
+      'one breakpoint in a test body, one in the helper',
+    );
+    await debugRunBound(
+      [moduleRow],
+      { recorder, sessions },
+      FS_SOURCE,
+      ['fs-seed', 'fs-add-body'],
+      'debugging an F# module',
       'both armed lines of an F# module debug',
     );
 
     // Interaction 3 — the first stop is real, in F# code, in this fixture's own
     // file. A module debug that resolved to the wrong assembly stops nowhere.
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the first stop of a module debug');
-    assertStopReason(stop, 'breakpoint', 'debugging an F# module');
-    const frame = await topFrame(requireActive('the module stop'), stop.threadId);
+    const { frame } = await breakpointStopFrame(recorder, 1, 'the first stop of a module debug');
     eq(
       comparablePath(frame.sourcePath ?? ''),
       comparablePath(fixture.sourceFile),
       'the stop is in the fixture source the user armed, not in a framework file',
     );
     eq(sessions.ours.length, 1, 'a module is ONE session, not one per binding');
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    assertCleanDebugTraffic(recorder, stubs);
     // Interaction 4 - the module row is a GROUP, and a group is one invocation
     // ([TEST-RUN-TRX]). Its id must never be a test name, and every binding
     // under it must still be addressable afterwards.
@@ -414,10 +415,13 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
 
     // Interaction 2 — arm the shared helper, which BOTH bindings call, then
     // debug the selection.
-    vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-add-body')]);
-    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint, in the helper both bindings call');
-    await debugRun(rows);
-    assertOneTestSession(sessions, 'debugging an F# multi-select');
+    armAnchoredBreakpoints(
+      FS_SOURCE,
+      fixture.sourceUri,
+      ['fs-add-body'],
+      'one breakpoint, in the helper both bindings call',
+    );
+    await debugRunOneSession(rows, sessions, 'debugging an F# multi-select');
     // Interaction 3 — the helper is reached more than once, because more than
     // one selected binding called it, and all of it happens in ONE session.
     const first = await firstBreakpointStop(recorder, FS_SOURCE, 'fs-add-body');
@@ -481,8 +485,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     // straight through to termination.
     const row = await debuggableRow(fixture, FS_ALL, FS_SPACED);
     eq(vscode.debug.breakpoints.length, 0, 'the user has armed nothing');
-    await debugRun([row]);
-    assertOneTestSession(sessions, 'debugging an F# binding with nothing armed');
+    await debugRunOneSession([row], sessions, 'debugging an F# binding with nothing armed');
     await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
     deepEq(recorder.stops(), [], 'with no breakpoint armed, a debug run must never stop');
     deepEq(recorder.errors, [], 'and no adapter transport error');

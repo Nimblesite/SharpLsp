@@ -17,8 +17,10 @@ import {
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
   contributes,
+  fakeFolder,
   stopAnyDebugSession,
 } from './run-debug-kit';
+import { TFM, writeCSharpConsole, type ConsoleProject } from './run-debug-fixtures';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { DEBUG_SESSION_MS } from './test-timeouts';
@@ -191,4 +193,18 @@ export async function provideFor(
   folder: vscode.WorkspaceFolder,
 ): Promise<vscode.DebugConfiguration[]> {
   return provider.provideDebugConfigurations(folder);
+}
+
+/** A fresh C# console project under `tmpDir`, and the fake folder F5 resolves against. */
+export function consoleProject(
+  tmpDir: string,
+  name: string,
+): { project: ConsoleProject; folder: vscode.WorkspaceFolder } {
+  const project = writeCSharpConsole(path.join(tmpDir, name), name);
+  return { project, folder: fakeFolder(project.dir) };
+}
+
+/** The assembly MSBuild produces for `project`: the hard-coded `bin/Debug/<tfm>/` ladder. */
+export function builtAssembly(project: ConsoleProject): string {
+  return path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
 }

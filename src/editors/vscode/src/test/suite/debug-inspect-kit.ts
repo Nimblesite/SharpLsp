@@ -45,6 +45,12 @@ export async function continueToEnd(recorder: DapRecorder, why: string): Promise
   assert.deepStrictEqual(recorder.errors, [], why);
 }
 
+/** F5 from the stop, then the debuggee itself runs to completion and exits. */
+export async function continueToCompletion(recorder: DapRecorder, why: string): Promise<void> {
+  await vscode.commands.executeCommand(CMD_CONTINUE);
+  await assertRanToCompletion(recorder, 0, why);
+}
+
 /**
  * Each `expression` evaluates in `frameId` to a Watch value containing its
  * `expected` text, and the Debug Console and a hover agree with that value
@@ -189,6 +195,34 @@ export async function assertSentField(
   command = 'setBreakpoints',
 ): Promise<void> {
   assert.deepStrictEqual(await waitForSentField(recorder, field, want, why, command), want, why);
+}
+
+/**
+ * Wait until a `setBreakpoints` request carries exactly `lines` — sorted,
+ * because the workbench keeps its breakpoint list sorted by line — and assert
+ * the request it found really did carry them. Waiting rather than sampling
+ * matters: a gesture is routinely several syncs (a remove then an add), so the
+ * last request on the wire at an arbitrary instant can be an intermediate one.
+ */
+export async function waitForSyncedLines(
+  recorder: DapRecorder,
+  lines: readonly number[],
+  why: string,
+): Promise<void> {
+  const sorted = [...lines].sort((left, right) => left - right);
+  const read = (args: Record<string, any>): number[] =>
+    entriesOf(args)
+      .map((entry) => Number(entry['line']))
+      .sort((left, right) => left - right);
+  const carried = await recorder.waitForRequestArgs(
+    'setBreakpoints',
+    (args) => {
+      const got = read(args);
+      return got.length === sorted.length && sorted.every((line, at) => got[at] === line);
+    },
+    why,
+  );
+  assert.deepStrictEqual(read(carried), sorted, why);
 }
 
 /** Every response to each named DAP command succeeded, each row failing with its own reason. */

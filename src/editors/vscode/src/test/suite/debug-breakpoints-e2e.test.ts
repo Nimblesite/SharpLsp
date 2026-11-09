@@ -27,14 +27,13 @@ import {
   armBreakpoints,
   assertBreakpointsBound,
   assertCleanSession,
-  assertRanToCompletion,
   breakpointAt,
   startDebuggee,
   useDebuggee,
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
-import { assertSentField } from './debug-inspect-kit';
+import { assertSentField, continueToCompletion, waitForSyncedLines } from './debug-inspect-kit';
 
 /** The 0-based lines the workbench currently holds source breakpoints on. */
 function armedLines(): number[] {
@@ -44,21 +43,6 @@ function armedLines(): number[] {
     })
     .map((breakpoint) => breakpoint.location.range.start.line)
     .sort((left, right) => left - right);
-}
-
-/** The 1-based lines carried by one `setBreakpoints` request, sorted. */
-function linesOf(args: Record<string, any>): number[] {
-  const list: unknown = args['breakpoints'];
-  assert.ok(Array.isArray(list), '`setBreakpoints` must carry a breakpoints array');
-  return list.map((entry) => Number((entry as Record<string, any>)['line'])).sort((a, b) => a - b);
-}
-
-/** Does this `setBreakpoints` request carry exactly `want`? */
-function sameLines(args: Record<string, any>, want: readonly number[]): boolean {
-  const list: unknown = args['breakpoints'];
-  if (!Array.isArray(list)) return false;
-  const lines = list.map((e) => Number((e as Record<string, any>)['line'])).sort((a, b) => a - b);
-  return lines.length === want.length && want.every((line, at) => lines[at] === line);
 }
 
 suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints', () => {
@@ -132,12 +116,11 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       const [first] = await recorder.waitForStops(1);
       assert.ok(first, 'the debuggee must reach the only armed breakpoint');
       const armedOnly = [fixture.source.dapLine('main-accumulate')];
-      const atLaunch = await recorder.waitForRequestArgs(
-        'setBreakpoints',
-        (args) => sameLines(args, armedOnly),
+      await waitForSyncedLines(
+        recorder,
+        armedOnly,
         'only the armed line may be sent to the adapter',
       );
-      deepEq(linesOf(atLaunch), armedOnly, 'only the armed line may be sent to the adapter');
 
       // Interaction 2 — add a SECOND breakpoint while the debuggee is paused.
       vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-done')]);
@@ -148,12 +131,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       const addReason =
         'a breakpoint added mid-session must be pushed to the live adapter, not queued for the ' +
         'next launch — otherwise the user sets a breakpoint and the debuggee runs straight past';
-      const afterAdd = await recorder.waitForRequestArgs(
-        'setBreakpoints',
-        (args) => sameLines(args, bothLines),
-        addReason,
-      );
-      deepEq(linesOf(afterAdd), bothLines, addReason);
+      await waitForSyncedLines(recorder, bothLines, addReason);
 
       // Interaction 3 — continue. The newly added breakpoint must stop the program.
       const second = await stepToFrame(recorder, CMD_CONTINUE);
@@ -172,15 +150,9 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       const removeReason =
         'removing every breakpoint must send an EMPTY breakpoints array; a removal that is ' +
         'never sent leaves the debuggee stopping on a breakpoint the user has deleted';
-      const afterRemoval = await recorder.waitForRequestArgs(
-        'setBreakpoints',
-        (args) => sameLines(args, []),
-        removeReason,
-      );
-      deepEq(linesOf(afterRemoval), [], removeReason);
+      await waitForSyncedLines(recorder, [], removeReason);
       const stopsBefore = recorder.stops().length;
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a session whose breakpoints were all removed');
+      await continueToCompletion(recorder, 'a session whose breakpoints were all removed');
       eq(recorder.stops().length, stopsBefore, 'a removed breakpoint must never stop the debuggee');
       assertCleanSession(debuggee(), 'add and remove mid-session');
     },
@@ -211,12 +183,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       const disabledReason =
         'a DISABLED breakpoint must not be sent to the adapter — the Breakpoints view shows it ' +
         'greyed out precisely because it is inert';
-      const sentAtLaunch = await recorder.waitForRequestArgs(
-        'setBreakpoints',
-        (args) => sameLines(args, enabledOnly),
-        disabledReason,
-      );
-      deepEq(linesOf(sentAtLaunch), enabledOnly, disabledReason);
+      await waitForSyncedLines(recorder, enabledOnly, disabledReason);
       assertStoppedAt(
         await topFrame(session, first.threadId),
         fixture,
@@ -234,13 +201,8 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       ].sort((left, right) => left - right);
       vscode.debug.removeBreakpoints(disabled);
       vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-inspect')]);
-      const afterEnable = await recorder.waitForRequestArgs(
-        'setBreakpoints',
-        (args) => sameLines(args, bothArmed),
-        'enabling a breakpoint mid-session must arm it on the live adapter',
-      );
-      deepEq(
-        linesOf(afterEnable),
+      await waitForSyncedLines(
+        recorder,
         bothArmed,
         'enabling a breakpoint mid-session must arm it on the live adapter',
       );

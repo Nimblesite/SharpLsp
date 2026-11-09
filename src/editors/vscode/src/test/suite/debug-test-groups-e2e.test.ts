@@ -29,7 +29,16 @@ import {
   requireActive,
   type TestDebugFixture,
 } from './debug-test-kit';
-import { debugRun, useDebugTestFixture, firstBreakpointStop } from './debug-test-harness';
+import {
+  debugRun,
+  useDebugTestFixture,
+  firstBreakpointStop,
+  armAnchoredBreakpoints,
+  assertCleanDebugTraffic,
+  breakpointStopFrame,
+  debugRunBound,
+  debugRunOneSession,
+} from './debug-test-harness';
 import { DebugSessionRecorder } from './run-debug-kit';
 import {
   activateTestExplorer,
@@ -108,17 +117,18 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
 
     // Interaction 2 — arm one breakpoint in each of two of its tests, then
     // debug the class ONCE.
-    vscode.debug.addBreakpoints([
-      breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-seed'),
-      breakpointAt(CS_SOURCE, fixture.sourceUri, 'multiplies-seed'),
-    ]);
-    eq(vscode.debug.breakpoints.length, 2, 'one breakpoint armed in each of two test bodies');
-    await debugRun([classRow]);
-    assertOneTestSession(sessions, 'debugging a class');
-    assertHandshakeOrder(recorder, 'debugging a class');
-    assertBoundAtLines(
-      recorder,
-      [CS_SOURCE.dapLine('adds-seed'), CS_SOURCE.dapLine('multiplies-seed')],
+    armAnchoredBreakpoints(
+      CS_SOURCE,
+      fixture.sourceUri,
+      ['adds-seed', 'multiplies-seed'],
+      'one breakpoint armed in each of two test bodies',
+    );
+    await debugRunBound(
+      [classRow],
+      { recorder, sessions },
+      CS_SOURCE,
+      ['adds-seed', 'multiplies-seed'],
+      'debugging a class',
       'both armed test bodies of a class-level debug',
     );
 
@@ -131,8 +141,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       'debugging a class breaks in each of its tests, not twice in one of them',
     );
     eq(sessions.ours.length, 1, 'and one class is ONE session, not one per test');
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    assertCleanDebugTraffic(recorder, stubs);
     // Interaction 4 - a class is ONE invocation ([TEST-RUN-TRX]) however many
     // tests it holds, and the tree row itself must stay a GROUP the whole time.
     eq(sessions.ours.length, 1, 'a class of five tests is ONE session, never five');
@@ -145,8 +154,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       recorder.stops().every((entry) => entry.reason === 'breakpoint'),
       'every stop was an armed breakpoint - a step or entry stop is a pause nobody asked for',
     );
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    assertCleanDebugTraffic(recorder, stubs);
     assert.ok(recorder.requests('setBreakpoints').length >= 1, 'the breakpoints were synced');
     assert.ok(recorder.responses('attach').length >= 1, 'and the attach was answered');
     assert.ok(recorder.events('exited').length <= 1, 'with at most one process exit');
@@ -170,18 +178,16 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
 
     // Interaction 2 — arm a breakpoint in BOTH namespaces, then debug only one
     // of them. The other namespace's breakpoint is the control.
-    vscode.debug.addBreakpoints([
-      breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-seed'),
-      breakpointAt(CS_SOURCE, fixture.sourceUri, 'text-seed'),
-    ]);
-    eq(vscode.debug.breakpoints.length, 2, 'one breakpoint in each namespace');
-    await debugRun([mathRow]);
-    assertOneTestSession(sessions, 'debugging a namespace');
+    armAnchoredBreakpoints(
+      CS_SOURCE,
+      fixture.sourceUri,
+      ['adds-seed', 'text-seed'],
+      'one breakpoint in each namespace',
+    );
+    await debugRunOneSession([mathRow], sessions, 'debugging a namespace');
 
     // Interaction 3 — the selected namespace breaks…
-    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop in the selected namespace');
-    assertStopReason(stop, 'breakpoint', 'a namespace-level debug');
-    const frame = await topFrame(requireActive('a namespace debug'), stop.threadId);
+    const { frame } = await breakpointStopFrame(recorder, 1, 'the stop in the selected namespace');
     eq(methodOf(frame), 'Adds_Two_Numbers', 'in a test belonging to the selected namespace');
 
     // …and the OTHER namespace never runs. [TEST-RUN-TRX] makes a run one
@@ -237,8 +243,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-seed'),
       breakpointAt(CS_SOURCE, fixture.sourceUri, 'text-seed'),
     ]);
-    await debugRun([root]);
-    assertOneTestSession(sessions, 'debugging the assembly root');
+    await debugRunOneSession([root], sessions, 'debugging the assembly root');
     assertBoundAtLines(
       recorder,
       [CS_SOURCE.dapLine('adds-seed'), CS_SOURCE.dapLine('text-seed')],
@@ -361,8 +366,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       new Set(recorder.stops().map((entry) => entry.threadId)).size >= 1,
       'and every stop named a thread',
     );
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    assertCleanDebugTraffic(recorder, stubs);
     assert.ok(
       recorder.responses('attach').length >= 1,
       'the multi-select attached to exactly one test host',
@@ -412,8 +416,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(recorder.events('initialized').length, 1, 'the handshake still happened in full');
     eq(recorder.events('terminated').length, 1, 'and the session ended exactly once');
     eq(sessions.ours.length, 1, 'one group, one session, breakpoints or not');
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    assertCleanDebugTraffic(recorder, stubs);
     assert.ok(
       recorder.requestedCommands().includes('configurationDone'),
       'the handshake completed even with nothing to bind',
@@ -497,12 +500,15 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     const root = await assemblyRoot();
     const classRow = groupUnder(groupUnder(root, CS_MATH_NAMESPACE), 'CalculatorTests');
     eq(classRow.children.size, MATH_CLASS_TESTS, 'the class holds every test it declares');
-    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'multiplies-seed')]);
-    eq(vscode.debug.breakpoints.length, 1, 'exactly ONE breakpoint is armed');
+    armAnchoredBreakpoints(
+      CS_SOURCE,
+      fixture.sourceUri,
+      ['multiplies-seed'],
+      'exactly ONE breakpoint is armed',
+    );
 
     // Interaction 2 — debug the whole class. The one armed body binds and stops.
-    await debugRun([classRow]);
-    assertOneTestSession(sessions, 'debugging a class with one armed test');
+    await debugRunOneSession([classRow], sessions, 'debugging a class with one armed test');
     assertHandshakeOrder(recorder, 'debugging a class with one armed test');
     const stop = await firstBreakpointStop(recorder, CS_SOURCE, 'multiplies-seed');
     const frame = await topFrame(requireActive('the armed stop'), stop.threadId);
@@ -617,10 +623,13 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     neq(textChildren, 0, 'and the other namespace holds tests of its own');
 
     // Interaction 2 — debug the TEXT namespace, with its own body armed.
-    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'text-seed')]);
-    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint, in the namespace being debugged');
-    await debugRun([textRow]);
-    assertOneTestSession(sessions, 'debugging the text namespace');
+    armAnchoredBreakpoints(
+      CS_SOURCE,
+      fixture.sourceUri,
+      ['text-seed'],
+      'one breakpoint, in the namespace being debugged',
+    );
+    await debugRunOneSession([textRow], sessions, 'debugging the text namespace');
     const stop = await firstBreakpointStop(recorder, CS_SOURCE, 'text-seed');
     eq(
       methodOf(await topFrame(requireActive('the text stop'), stop.threadId)),
@@ -639,8 +648,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(rootsOf(api.testController.items).length, 1, 'still ONE assembly root');
     eq(textRow.children.size, textChildren, 'and the debugged group keeps its children');
     eq(sessions.ours.length, 1, 'one group, one session');
-    deepEq(recorder.errors, [], 'with no adapter transport error');
-    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    assertCleanDebugTraffic(recorder, stubs);
     // Interaction 4 - and the OTHER namespace's tests are still addressable by
     // their own fully-qualified names, which is what makes them runnable.
     const finalRoot = await assemblyRoot();

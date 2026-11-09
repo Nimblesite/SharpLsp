@@ -38,6 +38,7 @@ import {
   entriesOf,
   waitForSentField,
   assertSentField,
+  continueToCompletion,
 } from './debug-inspect-kit';
 
 /** How many times the fixture's `Add` call site is reached in one run. */
@@ -321,8 +322,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         ['index', '2', 'stopped on the pass the condition selects'],
         ['running', '3', 'with the accumulator the condition required'],
       ]);
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a multi-local conditional breakpoint');
+      await continueToCompletion(recorder, 'a multi-local conditional breakpoint');
       eq(
         recorder.stops().length,
         1,
@@ -384,8 +384,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         'a condition that never holds must produce no stop at all, however many times its line ' +
           'is reached',
       );
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a session with an impossible condition');
+      await continueToCompletion(recorder, 'a session with an impossible condition');
       eq(recorder.stops().length, 1, 'and no stop after the gate either');
       deepEq(
         recorder.errors,
@@ -449,8 +448,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
         '3',
         'the third pass stops as well - ">= 2" is a RANGE, not an equality',
       );
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a relational hit condition');
+      await continueToCompletion(recorder, 'a relational hit condition');
       eq(
         recorder.stops().length,
         2,
