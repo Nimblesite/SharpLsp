@@ -28,7 +28,7 @@ runs:
   steps:
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
-        node-version: '22'
+        node-version: '24'
         cache: npm
         cache-dependency-path: src/editors/vscode/package-lock.json
     - name: Restore the installed dependency tree
@@ -37,7 +37,7 @@ runs:
       with:
         path: src/editors/vscode/node_modules
         key: >-
-          vsix-node-modules-${{ runner.os }}-${{ runner.arch }}-node22-${{
+          vsix-node-modules-${{ runner.os }}-${{ runner.arch }}-node24-${{
           hashFiles('src/editors/vscode/package-lock.json') }}
     - name: Install VS Code extension deps
       # Only on a miss. On a hit the tree is already exactly what this lockfile
