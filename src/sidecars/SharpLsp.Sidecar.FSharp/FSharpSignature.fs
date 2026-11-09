@@ -4,6 +4,7 @@
 /// [SHARPLSP-FEATURES-INTELLIGENCE].
 module SharpLsp.Sidecar.FSharp.FSharpSignature
 
+open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Text
 open Serilog
@@ -73,6 +74,24 @@ let private toSignature (methodName: string) (m: MethodGroupItem) : SignatureInf
     { Label = $"{methodName}({joined})"
       Parameters = parameters }
 
+/// Named arguments select their declaration's parameter; positional arguments follow commas.
+let private activeParameter
+    (parseResults: FSharpParseFileResults) caret (parameters: string list) =
+    parseResults.FindParameterLocations(caret)
+    |> Option.map (fun locations ->
+        let argument =
+            locations.TupleEndLocations
+            // The final endpoint ends the call, including an unfinished argument.
+            |> Array.truncate (max 0 (locations.TupleEndLocations.Length - 1))
+            |> Array.takeWhile (fun ending -> Position.posGeq caret ending)
+            |> Array.length
+        locations.NamedParamNames
+        |> Array.tryItem argument
+        |> Option.flatten
+        |> Option.bind (fun name -> parameters |> List.tryFindIndex ((=) name))
+        |> Option.defaultValue argument)
+    |> Option.defaultValue 0
+
 /// Pure resolution of signature help from a checked file. Extracted so
 /// `signatureHelp`'s `task` is a single bind + single return (FS3511).
 let private resolveSignatures
@@ -103,14 +122,10 @@ let private resolveSignatures
                         { Signatures = signatures
                           ActiveSignature = 0
                           ActiveParameter =
-                            let caret = Position.mkPos (line + 1) character
-                            parseResults.FindParameterLocations(caret)
-                            |> Option.map (fun locations ->
-                                locations.TupleEndLocations
-                                // The final endpoint ends the call, including an unfinished argument.
-                                |> Array.truncate (max 0 (locations.TupleEndLocations.Length - 1))
-                                |> Array.takeWhile (fun ending -> Position.posGeq caret ending)
-                                |> Array.length)
+                            signatures
+                            |> List.tryHead
+                            |> Option.map (fun signature ->
+                                activeParameter parseResults (Position.mkPos (line + 1) character) signature.Parameters)
                             |> Option.defaultValue 0 }
 
 /// Signature help at a 0-based position in an F# file.

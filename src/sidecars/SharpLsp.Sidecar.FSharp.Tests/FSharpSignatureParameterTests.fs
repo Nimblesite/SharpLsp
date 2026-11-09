@@ -49,6 +49,7 @@ let private assertActive state path text lineIdx needle expected =
         | None -> failwith $"no signature help at ({line}, {character})"
         | Some help ->
             Assert.NotEmpty(help.Signatures)
+            Assert.Equal<string list>([ "a"; "b"; "c" ], help.Signatures[0].Parameters)
             Assert.Equal(expected, help.ActiveParameter)
     }
 
@@ -83,6 +84,44 @@ let ``signature help reports the parameter the caret sits on`` () =
             do! assertActive state paths[0] EDITED_SOURCE 3 "7," 0
             do! assertActive state paths[0] EDITED_SOURCE 3 "8," 1
             do! assertActive state paths[0] EDITED_SOURCE 3 "9)" 2
+        finally
+            cleanup dir
+    }
+
+/// Named arguments are matched to the declaration by name, not by position, so
+/// an out-of-order named call must report declaration indices (2, 0, 1) rather
+/// than argument positions (0, 1, 2). Line indices: 3 = out-of-order named,
+/// 4 = mixed positional + named. The unsaved overlay appends a new call at line 6.
+let private NAMED_SOURCE =
+    source
+        [ "module Signatures"
+          "type Calc ="
+          "    static member Add(a: int, b: int, c: int) = a + b + c"
+          "let named = Calc.Add(c = 3, a = 1, b = 2)"
+          "let mixed = Calc.Add(1, c = 3, b = 2)" ]
+
+[<Fact>]
+let ``signature help resolves named arguments out of declaration order`` () =
+    task {
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", NAMED_SOURCE ]
+
+        try
+            // Out-of-order named call: each name selects its declaration index.
+            do! assertActive state paths[0] NAMED_SOURCE 3 "c = 3" 2
+            do! assertActive state paths[0] NAMED_SOURCE 3 "a = 1" 0
+            do! assertActive state paths[0] NAMED_SOURCE 3 "b = 2" 1
+
+            // Mixed positional + named: positional fills `a`, then names win.
+            do! assertActive state paths[0] NAMED_SOURCE 4 "1, c" 0
+            do! assertActive state paths[0] NAMED_SOURCE 4 "c = 3" 2
+            do! assertActive state paths[0] NAMED_SOURCE 4 "b = 2" 1
+
+            // Unsaved overlay permutation: resolution follows the overlay text.
+            let edited = SIGNATURE_SOURCE + "let overlay = Calc.Add(b = 8, c = 9, a = 7)\n"
+            FSharpWorkspace.applyDidChange state paths[0] edited
+            do! assertActive state paths[0] edited 6 "b = 8" 1
+            do! assertActive state paths[0] edited 6 "c = 9" 2
+            do! assertActive state paths[0] edited 6 "a = 7" 0
         finally
             cleanup dir
     }
