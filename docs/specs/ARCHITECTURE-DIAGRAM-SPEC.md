@@ -92,7 +92,8 @@ flowchart TB
 | `install.ts` — binary acquisition | [src/editors/vscode/src/install.ts](../../src/editors/vscode/src/install.ts) |
 | Custom requests + DAP | [tree.ts](../../src/editors/vscode/src/tree.ts), [testing.ts](../../src/editors/vscode/src/testing.ts), [nuget.ts](../../src/editors/vscode/src/nuget.ts), [debug.ts](../../src/editors/vscode/src/debug.ts) |
 | `main.rs` — JSON-RPC loop | [src/sharplsp/src/main.rs](../../src/sharplsp/src/main.rs) |
-| Request routing | [src/sharplsp/src/handlers.rs](../../src/sharplsp/src/handlers.rs) |
+| Request routing | [src/sharplsp/src/dispatch.rs](../../src/sharplsp/src/dispatch.rs) |
+| Syntax-only handlers | [src/sharplsp/src/handlers.rs](../../src/sharplsp/src/handlers.rs) |
 | tree-sitter parsing | [src/sharplsp/src/tree_sitter_parse.rs](../../src/sharplsp/src/tree_sitter_parse.rs), [src/sharplsp/src/syntax.rs](../../src/sharplsp/src/syntax.rs) |
 | Document state (VFS) | [src/sharplsp/src/vfs.rs](../../src/sharplsp/src/vfs.rs) |
 | Caches | [src/sharplsp/src/nav_cache.rs](../../src/sharplsp/src/nav_cache.rs), [src/sharplsp/src/semantic_tokens.rs](../../src/sharplsp/src/semantic_tokens.rs) |

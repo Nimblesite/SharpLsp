@@ -40,7 +40,7 @@ Changing the monorepo gate or static analyzer settings via `workspace/didChangeC
 
 ### [ANALYZERS-CONFIG-IMPL] Implemented Configuration (F#)
 
-The F# sidecar gate is live. The Rust host reads an `[analyzers]` table from `sharplsp.toml` and pushes the flags to each sidecar via the `analyzers/configure` request immediately after `workspace/open` (see [config.rs](../../src/sharplsp/src/config.rs) `AnalyzersConfig` and [main.rs](../../src/sharplsp/src/main.rs) `configure_analyzers`):
+The F# sidecar gate is live. The Rust host reads an `[analyzers]` table from `sharplsp.toml` and pushes the flags to each sidecar via the `analyzers/configure` request immediately after `workspace/open` (see [config.rs](../../src/sharplsp/src/config.rs) `AnalyzersConfig` and [workspace_open.rs](../../src/sharplsp/src/workspace_open.rs) `configure_analyzers`):
 
 ```toml
 [analyzers]
