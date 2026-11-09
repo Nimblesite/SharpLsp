@@ -192,12 +192,7 @@ fn map_workspace_edit_creates_new_files_before_editing_them() {
             },
         ],
     };
-    let workspace_edit = map_workspace_edit(&edit).expect("the edit maps");
-    assert!(workspace_edit.changes.is_none());
-    let operations = match workspace_edit.document_changes {
-        Some(DocumentChanges::Operations(operations)) => operations,
-        _ => Vec::new(),
-    };
+    let operations = mapped_operations(&edit);
     let steps: Vec<(&str, &str, Option<bool>, usize)> =
         operations.iter().map(operation_step).collect();
     let created_uri = crate::paths::path_to_lsp_uri(&created).unwrap();
@@ -245,12 +240,7 @@ fn map_workspace_edit_renames_before_editing_the_new_uri() {
             }],
         }],
     };
-    let workspace_edit = map_workspace_edit(&edit).expect("the edit maps");
-    assert!(workspace_edit.changes.is_none());
-    let operations = match workspace_edit.document_changes {
-        Some(DocumentChanges::Operations(operations)) => operations,
-        _ => Vec::new(),
-    };
+    let operations = mapped_operations(&edit);
     assert_eq!(operations.len(), 2);
     assert!(matches!(
         operations[0],
@@ -295,12 +285,7 @@ fn map_workspace_edit_rename_without_text_emits_only_the_resource_operation() {
         }],
     };
     assert!(edit.document_changes[0].rename_to.is_some());
-    let workspace_edit = map_workspace_edit(&edit).expect("the edit maps");
-    assert!(workspace_edit.changes.is_none());
-    let operations = match workspace_edit.document_changes {
-        Some(DocumentChanges::Operations(operations)) => operations,
-        _ => Vec::new(),
-    };
+    let operations = mapped_operations(&edit);
     assert_eq!(operations.len(), 1);
     assert!(matches!(
         operations[0],
@@ -360,5 +345,15 @@ fn operation_step(operation: &DocumentChangeOperation) -> (&str, &str, Option<bo
             edit.edits.len(),
         ),
         DocumentChangeOperation::Op(_) => ("other", "", None, 0),
+    }
+}
+
+/// The resource operations and edits `edit` maps to, which never use the `changes` map.
+fn mapped_operations(edit: &SidecarWorkspaceEdit) -> Vec<DocumentChangeOperation> {
+    let workspace_edit = map_workspace_edit(edit).expect("the edit maps");
+    assert!(workspace_edit.changes.is_none());
+    match workspace_edit.document_changes {
+        Some(DocumentChanges::Operations(operations)) => operations,
+        _ => Vec::new(),
     }
 }
