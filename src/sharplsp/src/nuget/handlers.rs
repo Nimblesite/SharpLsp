@@ -13,10 +13,7 @@ use tracing::info;
 use crate::sidecar::manager::SidecarManager;
 
 use super::restore_job::spawn_restore;
-use super::{
-    cli, consolidate, edit, lanes, parse, restore::RestoreOutcome, search, targets, types, unused,
-    update,
-};
+use super::{cli, consolidate, edit, lanes, parse, search, targets, types, unused, update};
 
 /// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
@@ -110,11 +107,7 @@ pub fn handle_install(
     )?;
 
     let Some(sidecar) = csharp else {
-        return no_editor_response(types::InstallResponse {
-            success: false,
-            message: EDITOR_UNAVAILABLE.to_string(),
-            modified_files: Vec::new(),
-        });
+        return no_editor_response();
     };
     let response = apply_install(
         sidecar,
@@ -137,7 +130,7 @@ pub fn install_into_project(
     project_path: &str,
     package_id: &str,
     version: &str,
-) -> Result<types::InstallResponse> {
+) -> Result<types::PackageEditResponse> {
     let target = types::NuGetTarget::from_project_path(project_path);
     let response = apply_install(sidecar, runtime, &target, package_id, version)?;
     restore_if_modified(&response, runtime, sender, &target);
@@ -157,11 +150,7 @@ pub fn handle_uninstall(
     let target = resolve_target(params.target, params.project_path.clone())?;
 
     let Some(sidecar) = csharp else {
-        return no_editor_response(types::UninstallResponse {
-            success: false,
-            message: EDITOR_UNAVAILABLE.to_string(),
-            modified_files: Vec::new(),
-        });
+        return no_editor_response();
     };
     let response = apply_uninstall(sidecar, runtime, &target, &params.package_id)?;
 
@@ -173,9 +162,20 @@ pub fn handle_uninstall(
 pub(crate) const EDITOR_UNAVAILABLE: &str =
     "C# sidecar is not available to edit project files (open a workspace first)";
 
-/// Serialize a pre-built failure response for the no-editor case.
-fn no_editor_response<R: serde::Serialize>(response: R) -> Result<serde_json::Value> {
-    Ok(serde_json::to_value(response)?)
+/// The failed package edit answered when no C# sidecar can perform it.
+fn no_editor_response() -> Result<serde_json::Value> {
+    Ok(serde_json::to_value(failed_edit(
+        EDITOR_UNAVAILABLE.to_string(),
+    ))?)
+}
+
+/// A package edit that changed nothing, with why.
+fn failed_edit(message: String) -> types::PackageEditResponse {
+    types::PackageEditResponse {
+        success: false,
+        message,
+        modified_files: Vec::new(),
+    }
 }
 
 /// Handle `sharplsp/nuget/unused` — detect unused direct package references.
@@ -257,28 +257,25 @@ pub fn handle_consolidate(
 
 /// Fire a background restore when the operation modified files, then serialize the
 /// response. Shared tail of `handle_install` and `handle_uninstall`.
-fn finish_with_restore<R>(
-    response: R,
+fn finish_with_restore(
+    response: types::PackageEditResponse,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
     target: &types::NuGetTarget,
-) -> Result<serde_json::Value>
-where
-    R: RestoreOutcome + serde::Serialize,
-{
+) -> Result<serde_json::Value> {
     restore_if_modified(&response, runtime, sender, target);
     Ok(serde_json::to_value(response)?)
 }
 
 /// Restore in the background when an edit succeeded and changed files.
-fn restore_if_modified<R: RestoreOutcome>(
-    response: &R,
+fn restore_if_modified(
+    response: &types::PackageEditResponse,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
     target: &types::NuGetTarget,
 ) {
-    if response.succeeded() && !response.modified_files().is_empty() {
-        spawn_restore(runtime, sender, target, response.modified_files().to_vec());
+    if response.success && !response.modified_files.is_empty() {
+        spawn_restore(runtime, sender, target, response.modified_files.clone());
     }
 }
 
@@ -338,14 +335,9 @@ fn apply_install(
     target: &types::NuGetTarget,
     package_id: &str,
     version: &str,
-) -> Result<types::InstallResponse> {
-    let path = Path::new(&target.path);
-    if !path.exists() {
-        return Ok(types::InstallResponse {
-            success: false,
-            message: format!("target not found: {}", target.path),
-            modified_files: Vec::new(),
-        });
+) -> Result<types::PackageEditResponse> {
+    if !Path::new(&target.path).exists() {
+        return Ok(failed_edit(format!("target not found: {}", target.path)));
     }
 
     let element = pick_install_element(target);
@@ -356,7 +348,7 @@ fn apply_install(
         sidecar, runtime, target, package_id, version, element,
     )?);
 
-    Ok(types::InstallResponse {
+    Ok(types::PackageEditResponse {
         success: true,
         message: outcome.message,
         modified_files: modified,
@@ -403,20 +395,15 @@ fn apply_uninstall(
     runtime: &Runtime,
     target: &types::NuGetTarget,
     package_id: &str,
-) -> Result<types::UninstallResponse> {
-    let path = Path::new(&target.path);
-    if !path.exists() {
-        return Ok(types::UninstallResponse {
-            success: false,
-            message: format!("target not found: {}", target.path),
-            modified_files: Vec::new(),
-        });
+) -> Result<types::PackageEditResponse> {
+    if !Path::new(&target.path).exists() {
+        return Ok(failed_edit(format!("target not found: {}", target.path)));
     }
 
     let element = pick_install_element(target);
     let outcome = edit::remove_package(sidecar, runtime, &target.path, package_id, element)?;
 
-    Ok(types::UninstallResponse {
+    Ok(types::PackageEditResponse {
         success: outcome.modified,
         message: outcome.message,
         modified_files: modified_target(outcome.modified, target),
