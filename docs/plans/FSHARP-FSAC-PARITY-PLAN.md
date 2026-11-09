@@ -138,6 +138,11 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 | Call hierarchy + type hierarchy | `test_full_stack_fsharp_hierarchies` | ✅ |
 | Rename (prepare + project-wide apply) | `test_full_stack_fsharp_rename` | ✅ |
 | Extension routing (.fs/.fsx/.fsi), no-sidecar nulls | `test_fsharp_*`, `coverage_boost*` | ✅ |
+| Definition on every kind (function, type, DU case, record field, active pattern), type definition, implementation of an abstract member, after a compiler crash | `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`, `definition_answers_from_source_again_after_the_fsharp_compiler_crashes` | ✅ |
+| References and highlights on DU cases, record fields, active pattern cases (from their own name too), an unsaved edit | `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp` | ✅ |
+| Diagnostic tags: unused open, dead code, never-matched rule → `Unnecessary`; obsolete use → `Deprecated` | `diagnostic_tags.rs` | ✅ |
+| Scripts with no project and no root: hover after any token, only FCS started, then a C# file too | `lazy_routing.rs` | ✅ |
+| Cross-language references, F# ↔ C# | `definition_cross_language.rs` | ✅ |
 
 **TODO — e2e to add as the impl lands each gap:**
 - [x] rename (prepare + apply) full-stack — `test_full_stack_fsharp_rename`
