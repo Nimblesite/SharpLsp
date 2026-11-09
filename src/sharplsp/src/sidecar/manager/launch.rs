@@ -125,44 +125,29 @@ pub(super) fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::pat
     let current = std::env::current_exe().ok()?;
     let exe_dir = current.parent()?;
     debug!(current_exe = %current.display(), exe_dir = %exe_dir.display(), "Resolving installed sidecar");
-
     let exe_name = crate::paths::executable_name(name);
-
-    // 1. VSIX layout: sidecar sits next to the binary.
-    let vsix = exe_dir.join(subdir).join(&exe_name);
-    debug!(candidate = %vsix.display(), "Checking VSIX layout");
-    if vsix.exists() {
-        debug!(path = %vsix.display(), "Found sidecar at VSIX layout");
-        return Some(vsix);
-    }
-
-    // 2. make install layout: ../lib/sharplsp/<subdir>/
-    let installed = exe_dir
-        .parent()?
-        .join("lib/sharplsp")
-        .join(subdir)
-        .join(&exe_name);
-    debug!(candidate = %installed.display(), "Checking make-install layout");
-    if installed.exists() {
-        debug!(path = %installed.display(), "Found sidecar at make-install layout");
-        return Some(installed);
-    }
-
-    // 3. Dev-build layout: sibling of target/release or target/debug.
-    let dev = exe_dir.parent()?.join(subdir).join(&exe_name);
-    debug!(candidate = %dev.display(), "Checking dev-build layout");
-    if dev.exists() {
-        debug!(path = %dev.display(), "Found sidecar at dev-build layout");
-        Some(dev)
-    } else {
+    let parent = exe_dir.parent()?;
+    let candidates = [
+        ("VSIX", exe_dir.join(subdir).join(&exe_name)),
+        (
+            "make-install",
+            parent.join("lib/sharplsp").join(subdir).join(&exe_name),
+        ),
+        ("dev-build", parent.join(subdir).join(&exe_name)),
+    ];
+    let found = candidates.iter().find(|(layout, path)| {
+        debug!(candidate = %path.display(), layout, "Checking sidecar layout");
+        path.exists()
+    });
+    let Some((layout, path)) = found else {
         warn!(
-            vsix = %vsix.display(),
-            installed = %installed.display(),
-            dev = %dev.display(),
+            candidates = ?candidates.iter().map(|(_, path)| path.display().to_string()).collect::<Vec<_>>(),
             "No installed sidecar found at any layout — falling back to dotnet run"
         );
-        None
-    }
+        return None;
+    };
+    debug!(path = %path.display(), layout, "Found installed sidecar");
+    Some(path.clone())
 }
 
 /// Monotonic counter making each sidecar endpoint unique within this process.
