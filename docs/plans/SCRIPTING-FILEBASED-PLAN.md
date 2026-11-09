@@ -211,9 +211,12 @@ Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, 
 
 Still to write:
 
-- [ ] Host-level `src/sharplsp/tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
-      workspace — latch regression test for [SCRIPT-ROUTE-LAZY]
-- [ ] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY]
+- [x] Host-level `src/sharplsp/tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
+      workspace — latch regression test for [SCRIPT-ROUTE-LAZY] — `lazy_routing.rs`
+      `a_document_no_compiler_reads_leaves_the_latch_clear_and_csharp_starts_only_roslyn`
+- [x] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY] — `lazy_routing.rs`,
+      counting the host's compiler children by apphost; it found both #554 (the workspace scan started FCS) and #553
+      (hover on an F# token right after another token was dropped as whitespace)
 - [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]
 - [ ] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [SCRIPT-FSX-NUGET]
 

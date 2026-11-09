@@ -244,10 +244,7 @@ pub fn linked_editing_ranges(
 /// caller to short-circuit hover requests with `null` before dispatching
 /// to the sidecar.
 pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
-    let point = lsp_pos_to_ts_point(position);
-    tree.root_node()
-        .descendant_for_point_range(point, point)
-        .is_some_and(|node| node.kind() == "comment")
+    node_under_cursor(tree, position).is_some_and(|node| node.kind() == "comment")
 }
 
 /// Whether a position has no symbol under it at all: whitespace, or a comment.
@@ -262,9 +259,7 @@ pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
 /// containing a point inside a TOKEN is that token, a leaf, while a point
 /// between tokens resolves to the enclosing construct, which has children.
 pub fn has_no_symbol_at_position(tree: &Tree, position: Position) -> bool {
-    let point = lsp_pos_to_ts_point(position);
-    tree.root_node()
-        .descendant_for_point_range(point, point)
+    node_under_cursor(tree, position)
         .is_some_and(|node| node.kind() == "comment" || node.child_count() > 0)
 }
 
@@ -273,24 +268,34 @@ pub fn has_no_symbol_at_position(tree: &Tree, position: Position) -> bool {
 /// Returns `true` when the position falls inside a string literal, allowing
 /// the caller to short-circuit definition requests with `null`.
 pub fn is_string_at_position(tree: &Tree, position: Position) -> bool {
-    let point = lsp_pos_to_ts_point(position);
-    tree.root_node()
-        .descendant_for_point_range(point, point)
-        .is_some_and(|node| {
-            matches!(
-                node.kind(),
-                "string_literal"
-                    | "verbatim_string_literal"
-                    | "raw_string_literal"
-                    | "interpolated_string_expression"
-                    | "interpolated_string_text"
-                    | "string_content"
-                    | "character_literal"
-            )
-        })
+    node_under_cursor(tree, position).is_some_and(|node| {
+        matches!(
+            node.kind(),
+            "string_literal"
+                | "verbatim_string_literal"
+                | "raw_string_literal"
+                | "interpolated_string_expression"
+                | "interpolated_string_text"
+                | "string_content"
+                | "character_literal"
+        )
+    })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
+
+/// The smallest node holding the character under `position`: the span from the
+/// cursor to the next column. A zero-width point on the boundary of two adjacent
+/// tokens — the `(` and `add` of `(add 1 2)` — resolves to the construct holding
+/// both, which reads as whitespace and dropped the hover (#553).
+fn node_under_cursor(tree: &Tree, position: Position) -> Option<Node<'_>> {
+    let start = lsp_pos_to_ts_point(position);
+    let end = Point {
+        row: start.row,
+        column: start.column.saturating_add(1),
+    };
+    tree.root_node().descendant_for_point_range(start, end)
+}
 
 /// Convert a tree-sitter `Point` to an LSP `Position`.
 fn ts_point_to_lsp_pos(point: Point) -> Position {

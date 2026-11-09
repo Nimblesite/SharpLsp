@@ -208,9 +208,14 @@ fn retire_previous(
 }
 
 /// Metadata only, without the old eager get-all or simulated verification pass.
+/// A compiler nothing opened has no documents and is not started to say so.
 async fn documents(sidecars: [Option<&Arc<SidecarManager>>; 2]) -> Result<Vec<DiagnosticDocument>> {
     let mut documents = Vec::new();
-    for sidecar in sidecars.into_iter().flatten() {
+    for sidecar in sidecars
+        .into_iter()
+        .flatten()
+        .filter(|sidecar| sidecar.has_workspace())
+    {
         documents.extend(engine_documents(sidecar).await?);
     }
     Ok(documents)

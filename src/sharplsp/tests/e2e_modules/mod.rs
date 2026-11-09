@@ -71,6 +71,7 @@ pub mod full_stack_semantic;
 pub mod hot_reload;
 pub mod hover;
 pub mod inlay_hints_tests;
+pub mod lazy_routing;
 pub mod lifecycle;
 pub mod logging;
 pub mod lsp_features;

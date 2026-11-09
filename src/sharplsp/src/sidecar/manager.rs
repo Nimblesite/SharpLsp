@@ -184,6 +184,15 @@ impl SidecarManager {
         self.workspace_open_finished.store(true, Ordering::Release);
     }
 
+    /// Whether a workspace was opened in this sidecar, or an open is in flight
+    /// (it holds the workspace lock). A sidecar nothing opened has no documents,
+    /// and asking it for some would start its process ([SCRIPT-ROUTE-LAZY], #554).
+    pub fn has_workspace(&self) -> bool {
+        self.workspace
+            .try_lock()
+            .map_or(true, |opened| opened.target.is_some())
+    }
+
     /// Whether graceful shutdown has begun for this manager.
     pub fn is_shutting_down(&self) -> bool {
         self.shutting_down.load(Ordering::Acquire)
