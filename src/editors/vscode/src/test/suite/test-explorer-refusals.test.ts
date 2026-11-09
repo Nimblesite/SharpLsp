@@ -26,6 +26,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { listTests } from '../../test-discovery.js';
+import type { TestListing } from '../../test-listing-model.js';
 import { parseListingDiagnostics } from '../../test-listing.js';
 import {
   buildProjectXml,
@@ -69,6 +70,36 @@ function xunitProject(root: string, name: string, source: string): string {
     'CalculatorTests.cs',
     source,
   );
+}
+
+/** A named xunit test project under `parent`'s `leaf` directory, with its root. */
+function xunitProjectUnder(
+  parent: string,
+  leaf: string,
+  name: string,
+): { readonly root: string; readonly project: string } {
+  const root = path.join(parent, leaf);
+  return { root, project: xunitProject(root, name, TEST_SOURCE) };
+}
+
+/** One listing's shape: exactly `names`, the ok flag, and `assemblies` attributed. */
+function assertListingVerdict(
+  listing: TestListing,
+  names: readonly string[],
+  namesWhy: string,
+  ok: boolean,
+  okWhy: string,
+  assemblies: number,
+  assembliesWhy: string,
+): void {
+  assert.deepStrictEqual([...listing.names], names, namesWhy);
+  assert.equal(listing.ok, ok, okWhy);
+  assert.equal(listing.byAssembly.length, assemblies, assembliesWhy);
+}
+
+/** `warnings` carries `text` — `why` names it, with the whole warning text. */
+function assertWarningCarries(warnings: string, text: string, why: string): void {
+  assert.ok(warnings.includes(text), `${why}: ${warnings}`);
 }
 
 /** The id the tree must carry once the solution is one `dotnet` accepts. */
@@ -117,8 +148,7 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
   test('a solution dotnet restores nothing from explains itself instead of going blank', async function () {
     this.timeout(FIXTURE_BUILD_MS * 2);
 
-    const root = path.join(parent, 'refused');
-    const project = xunitProject(root, 'RefusedTests', TEST_SOURCE);
+    const { root, project } = xunitProjectUnder(parent, 'refused', 'RefusedTests');
     const unconfigured = writeUnconfiguredSolution(
       root,
       'Refused',
@@ -128,15 +158,20 @@ suite('Test Explorer e2e — a target dotnet refuses without failing', () => {
     // 1. The listing itself. `dotnet` exits ZERO here, so the exit code cannot
     //    be what tells discovery the target was refused — the diagnostic is.
     const refused = await listTests(unconfigured);
-    assert.deepStrictEqual([...refused.names], [], 'a refused solution lists nothing');
-    assert.equal(
-      refused.ok,
+    assertListingVerdict(
+      refused,
+      [],
+      'a refused solution lists nothing',
       false,
       'and is NOT a truthful empty answer, whatever the exit code said',
+      0,
+      'and attributes no assembly',
     );
-    assert.equal(refused.byAssembly.length, 0, 'and attributes no assembly');
-    const warnings = refused.warnings.join('\n');
-    assert.ok(warnings.includes(REFUSAL), `dotnet's own words reach the caller: ${warnings}`);
+    assertWarningCarries(
+      refused.warnings.join('\n'),
+      REFUSAL,
+      "dotnet's own words reach the caller",
+    );
 
     // 2. The same solution through the Testing view: one error row carrying the
     //    diagnostic AND the remedy, never a blank tree ([TEST-MTP-MODULES]).
@@ -262,19 +297,24 @@ suite('Test Explorer e2e — a refusal is told apart from an ordinary diagnostic
     // non-zero having listed the other one, and that partial listing is kept
     // ([TEST-DISCOVERY-FQN]). On Windows a counted build collided on its log
     // and failed exactly like this, and its tests vanished without a word (#507).
-    const root = path.join(parent, 'partial');
-    const listed = xunitProject(root, 'ListedTests', TEST_SOURCE);
+    const { root, project: listed } = xunitProjectUnder(parent, 'partial', 'ListedTests');
     const broken = xunitProject(root, 'BrokenTests', 'this is deliberately not compilable C#');
     const solution = await createSolution(root, 'Partial', [listed, broken]);
 
     // 1. The listing keeps what enumerated, and carries the compiler's reason.
     const partial = await listTests(solution);
-    assert.deepStrictEqual([...partial.names], [EXPECTED_ID], 'the project that built still lists');
-    assert.equal(partial.ok, true, 'a partial listing is kept, never thrown away');
-    assert.equal(partial.byAssembly.length, 1, 'attributed to the one assembly that built');
+    assertListingVerdict(
+      partial,
+      [EXPECTED_ID],
+      'the project that built still lists',
+      true,
+      'a partial listing is kept, never thrown away',
+      1,
+      'attributed to the one assembly that built',
+    );
     const warnings = partial.warnings.join('\n');
-    assert.ok(warnings.includes('BrokenTests.csproj'), `the failed project is named: ${warnings}`);
-    assert.ok(warnings.includes('error CS'), `with the compiler's own error: ${warnings}`);
+    assertWarningCarries(warnings, 'BrokenTests.csproj', 'the failed project is named');
+    assertWarningCarries(warnings, 'error CS', `with the compiler's own error`);
 
     // 2. The Testing view shows the test that listed, and the log says why the
     //    sibling's tests are not beside it.

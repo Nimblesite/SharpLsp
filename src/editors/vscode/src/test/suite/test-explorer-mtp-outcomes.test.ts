@@ -20,11 +20,13 @@ import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { runMtpTests } from '../../test-mtp-run.js';
 import { listMtpTests } from '../../test-mtp-discovery.js';
+import type { CachedTestResult } from '../../testing.js';
 import { MTP_TRX_REPORT } from './dotnet-project-kit';
 import {
   ALL_MTP_IDS,
   createMtpSolution,
   idsOf,
+  type MtpFixture,
   MTP_FIXTURES,
   mtpFixtureFor,
 } from './test-explorer-mtp-fixtures';
@@ -42,6 +44,7 @@ import {
   assertSkipped,
   cachedFor,
   itemsFor,
+  runAndSettle,
   sorted,
   runIds,
 } from './test-explorer-outcome-assertions';
@@ -62,6 +65,30 @@ const FAILING: readonly string[] = MTP_FIXTURES.flatMap((fixture) => [
 /** Every id that must come back skipped, and NEVER as a failure. */
 const SKIPPED: readonly string[] = MTP_FIXTURES.map((fixture) => fixture.skipped);
 
+/** `id`'s cached outcome is `outcome` (`why` names the contract); returns the result. */
+function assertOutcomeIs(
+  api: SharpLspExtensionApi,
+  id: string,
+  outcome: string,
+  why?: string,
+): CachedTestResult {
+  const result = cachedFor(api, id);
+  if (why === undefined) assert.equal(result.outcome, outcome);
+  else assert.equal(result.outcome, outcome, why);
+  return result;
+}
+
+/** The fixture's whole family reports: a pass, its own failure text, a skip, both theories. */
+function assertFamilyOutcomes(api: SharpLspExtensionApi, fixture: MtpFixture): void {
+  assertPassed(cachedFor(api, fixture.passing), fixture.passing);
+  assertFailed(cachedFor(api, fixture.failing), fixture.failing, fixture.failureText);
+  assertSkipped(cachedFor(api, fixture.skipped), fixture.skipped);
+  assertPassed(cachedFor(api, fixture.parameterized), fixture.parameterized);
+  if (fixture.mixedParameterized !== undefined) {
+    assertFailed(cachedFor(api, fixture.mixedParameterized), fixture.mixedParameterized);
+  }
+}
+
 suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
   let api: SharpLspExtensionApi;
   let root: string;
@@ -75,11 +102,9 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
 
   test('▶ on the whole tree attributes a pass, a fail and a skip to each test', async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    const items = itemsFor(api, [...PASSING, ...FAILING, ...SKIPPED]);
 
     // 1. Press ▶ on the whole selection, in ONE run.
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
-    await api.testController.whenIdle();
+    await runAndSettle(api, [...PASSING, ...FAILING, ...SKIPPED]);
 
     // 2. Every pass and every skip is attributed on its own terms, six
     //    projects at once. A skip is NEVER a failure.
@@ -109,8 +134,7 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
     assert.ok(item, 'the theory must be one row in the tree');
 
     // 1. Both rows run under the one id, because the id owns both uids.
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
-    await api.testController.whenIdle();
+    await runAndSettle(api, [mixed]);
 
     // 2. One row passes and one fails, and the merged outcome is the failure.
     const result = cachedFor(api, mixed);
@@ -119,11 +143,8 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
     assert.ok(result.message, "and it carries the failing row's assertion text");
 
     // 3. The all-passing theory of the same class stays green.
-    const [allGreen] = itemsFor(api, [csharp.parameterized]);
-    assert.ok(allGreen);
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [allGreen]);
-    await api.testController.whenIdle();
-    assert.equal(cachedFor(api, csharp.parameterized).outcome, 'passed');
+    await runAndSettle(api, [csharp.parameterized]);
+    assertOutcomeIs(api, csharp.parameterized, 'passed');
   });
 
   test('▶ on one test runs that test and no other, across every module', async function () {
@@ -131,13 +152,14 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
     const fsharp = mtpFixtureFor('xunit-fsharp');
 
     // 1. Run ONE F# backtick test whose id carries spaces.
-    const [only] = itemsFor(api, [fsharp.passing]);
-    assert.ok(only);
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [only]);
-    await api.testController.whenIdle();
+    await runAndSettle(api, [fsharp.passing]);
 
-    const result = cachedFor(api, fsharp.passing);
-    assert.equal(result.outcome, 'passed', 'a uid carrying spaces in its display name still runs');
+    const result = assertOutcomeIs(
+      api,
+      fsharp.passing,
+      'passed',
+      'a uid carrying spaces in its display name still runs',
+    );
     assert.equal(result.passed, true);
     assert.equal(typeof result.duration, 'number');
 
@@ -167,11 +189,10 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
     // 2. Its uid is `Ns.Class.Adds_Case(2,2,4)` — parentheses and commas, passed
     //    literally. Escaping them the way a VSTest filter needs would match
     //    nothing and report "No result reported" instead.
-    const cased = cachedFor(api, nunit.parameterized);
-    assert.equal(cased.outcome, 'passed', 'a decorated uid must match its own test');
-    assert.equal(cachedFor(api, nunit.passing).outcome, 'passed');
-    assert.equal(cachedFor(api, nunit.failing).outcome, 'failed');
-    assert.equal(cachedFor(api, nunit.skipped).outcome, 'skipped', 'a skip is never a failure');
+    assertOutcomeIs(api, nunit.parameterized, 'passed', 'a decorated uid must match its own test');
+    assertOutcomeIs(api, nunit.passing, 'passed');
+    assertOutcomeIs(api, nunit.failing, 'failed');
+    assertOutcomeIs(api, nunit.skipped, 'skipped', 'a skip is never a failure');
   });
 
   test('⏹ stops the run, and an already-cancelled token starts nothing', async function () {
@@ -193,30 +214,35 @@ suite('Test Explorer e2e — Microsoft.Testing.Platform runs', () => {
         `no entry invented: ${why}`,
       );
     };
+    /** After a cancelled run: the tree stands, nothing was cached, every leaf kept. */
+    const assertRunLeftNothing = (sizeWhy: string, cacheWhy: string): void => {
+      assert.equal(api.testController.items.size, before, sizeWhy);
+      assertNothingCached(cacheWhy);
+      assert.deepStrictEqual(
+        sorted(collectLeafIds(api.testController.items)),
+        leaves,
+        'every leaf',
+      );
+    };
 
     // 1. Press ⏹ shortly after ▶ — inside the build every MTP run starts with:
     //    the run resolves rather than rejecting, and caches nothing.
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items, 200);
     await api.testController.whenIdle();
-    assert.equal(api.testController.items.size, before, 'the tree stands after a cancelled run');
-    assertNothingCached('a stopped run caches nothing');
     // [TEST-MTP-RUN]: ⏹ kills the build like any other invocation — the tree
     // keeps every test, not just as many roots.
-    assert.deepStrictEqual(sorted(collectLeafIds(api.testController.items)), leaves, 'every leaf');
+    assertRunLeftNothing('the tree stands after a cancelled run', 'a stopped run caches nothing');
 
     // 2. A token already cancelled when the handler is entered starts nothing.
     await runAlreadyCancelled(api.testController, vscode.TestRunProfileKind.Run, items);
     await api.testController.whenIdle();
-    assert.equal(api.testController.items.size, before, 'and still stands');
-    assertNothingCached('a run cancelled before it started caches nothing');
-    assert.deepStrictEqual(sorted(collectLeafIds(api.testController.items)), leaves, 'every leaf');
+    assertRunLeftNothing('and still stands', 'a run cancelled before it started caches nothing');
 
     // 3. The queue drained, so the next run is not poisoned.
     const [one] = itemsFor(api, [mtpFixtureFor('xunit-fsharp').passing]);
     assert.ok(one);
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [one]);
-    await api.testController.whenIdle();
-    assert.equal(cachedFor(api, mtpFixtureFor('xunit-fsharp').passing).outcome, 'passed');
+    await runAndSettle(api, [one.id]);
+    assertOutcomeIs(api, mtpFixtureFor('xunit-fsharp').passing, 'passed');
     // [TEST-RUN-TRX]/[TEST-STATUS-LENS]: a whole pass — flag, duration, no text, lens …
     assertPassed(cachedFor(api, one.id), one.id);
     // … and [TEST-MTP-RUN]: `--filter-uid` ran that ONE test; every other stands.
@@ -354,13 +380,7 @@ suite('Test Explorer e2e — built-in xUnit reporting', () => {
 
       await runIds(api, vscode.TestRunProfileKind.Run, ids);
       await api.testController.whenIdle();
-      assertPassed(cachedFor(api, fixture.passing), fixture.passing);
-      assertFailed(cachedFor(api, fixture.failing), fixture.failing, fixture.failureText);
-      assertSkipped(cachedFor(api, fixture.skipped), fixture.skipped);
-      assertPassed(cachedFor(api, fixture.parameterized), fixture.parameterized);
-      if (fixture.mixedParameterized !== undefined) {
-        assertFailed(cachedFor(api, fixture.mixedParameterized), fixture.mixedParameterized);
-      }
+      assertFamilyOutcomes(api, fixture);
 
       const selected = await runMtpTests(listing.mtp, [fixture.passing], root);
       assert.equal(selected.failure, undefined);

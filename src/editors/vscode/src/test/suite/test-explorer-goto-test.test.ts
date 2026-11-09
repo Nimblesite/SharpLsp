@@ -256,6 +256,36 @@ function assertRevealed(
   );
 }
 
+/**
+ * Go to Test on a fact and a theory from ONE project: the fact's URI must
+ * pass the `uriPart` check (`uriMustBe`, `uriWhy`), both reveals must land on
+ * their own declarations, and the two lines must differ (`distinctWhy`).
+ */
+async function gotoFactAndTheory(
+  api: SharpLspExtensionApi,
+  factFqn: string,
+  theoryFqn: string,
+  projectDir: string,
+  fileName: string,
+  uriPart: (file: string) => string,
+  uriMustBe: string,
+  uriWhy: string,
+  distinctWhy: string,
+): Promise<void> {
+  const fact = leafFor(api, factFqn);
+  const factUri = gotoUri(fact);
+  assert.strictEqual(uriPart(factUri.fsPath), uriMustBe, `${uriWhy}, not ${factUri.fsPath}`);
+  assert.strictEqual(
+    comparablePath(factUri.fsPath),
+    comparablePath(path.join(projectDir, fileName)),
+    'the URI must be the fixture source file itself',
+  );
+  assertRevealed(await goToTest(fact), fact, expectationFor(factFqn), projectDir);
+  const theory = leafFor(api, theoryFqn);
+  assertRevealed(await goToTest(theory), theory, expectationFor(theoryFqn), projectDir);
+  assert.notStrictEqual(gotoRange(theory).start.line, gotoRange(fact).start.line, distinctWhy);
+}
+
 /** Every LEAF in the settled tree — the tests, never the group nodes. */
 function leaves(api: SharpLspExtensionApi): vscode.TestItem[] {
   const items: vscode.TestItem[] = [];
@@ -307,27 +337,15 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
     const ids = await discoverSolution(api, slnPath, EXPECTED);
     assertContainsAll(ids, [FS_FACT, FS_THEORY], 'discovery must surface');
 
-    const fact = leafFor(api, FS_FACT);
-    const factUri = gotoUri(fact);
-    assert.strictEqual(
-      path.basename(factUri.fsPath),
+    await gotoFactAndTheory(
+      api,
+      FS_FACT,
+      FS_THEORY,
+      fsProjDir,
       FS_FILE,
-      `an F# test must point at the .fs file that declares it, not ${factUri.fsPath}`,
-    );
-    assert.strictEqual(
-      comparablePath(factUri.fsPath),
-      comparablePath(path.join(fsProjDir, FS_FILE)),
-      'the URI must be the fixture source file itself',
-    );
-    const factEditor = await goToTest(fact);
-    assertRevealed(factEditor, fact, expectationFor(FS_FACT), fsProjDir);
-
-    const theory = leafFor(api, FS_THEORY);
-    const theoryEditor = await goToTest(theory);
-    assertRevealed(theoryEditor, theory, expectationFor(FS_THEORY), fsProjDir);
-    assert.notStrictEqual(
-      gotoRange(theory).start.line,
-      gotoRange(fact).start.line,
+      path.basename,
+      FS_FILE,
+      'an F# test must point at the .fs file that declares it',
       'two tests in ONE file must reveal at DIFFERENT lines — a constant range is the bug',
     );
 
@@ -343,27 +361,15 @@ suite('Test Explorer — Go to Test reveals the declaring source', () => {
     const ids = await discoverSolution(api, slnPath, EXPECTED);
     assert.ok(ids.includes(CS_FACT), `discovery must surface ${CS_FACT}`);
 
-    const fact = leafFor(api, CS_FACT);
-    const factUri = gotoUri(fact);
-    assert.strictEqual(
-      path.extname(factUri.fsPath),
+    await gotoFactAndTheory(
+      api,
+      CS_FACT,
+      CS_THEORY,
+      csProjDir,
+      CS_FILE,
+      path.extname,
       '.cs',
-      `a C# test must point at a .cs file, not ${factUri.fsPath}`,
-    );
-    assert.strictEqual(
-      comparablePath(factUri.fsPath),
-      comparablePath(path.join(csProjDir, CS_FILE)),
-      'the URI must be the fixture source file itself',
-    );
-    const factEditor = await goToTest(fact);
-    assertRevealed(factEditor, fact, expectationFor(CS_FACT), csProjDir);
-
-    const theory = leafFor(api, CS_THEORY);
-    const theoryEditor = await goToTest(theory);
-    assertRevealed(theoryEditor, theory, expectationFor(CS_THEORY), csProjDir);
-    assert.notStrictEqual(
-      gotoRange(theory).start.line,
-      gotoRange(fact).start.line,
+      'a C# test must point at a .cs file',
       'two methods in ONE class must reveal at DIFFERENT lines',
     );
   });

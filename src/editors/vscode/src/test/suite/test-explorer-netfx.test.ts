@@ -136,37 +136,50 @@ const CS_SOURCE = [
   '',
 ].join('\n');
 
-/** The F# fixture's ids: backtick names, SPACES verbatim. */
-const FSHARP: NetfxFixture = {
-  ...fixtureNames('xunit', 'fsharp', 'Netfx'),
-  language: 'fsharp',
-  packages: XUNIT_PACKAGES,
-  source: FS_SOURCE,
-  ids: {
-    passes: 'Fs.Netfx.Tests.passes everywhere',
-    failsOnNetfx: 'Fs.Netfx.Tests.fails only on netfx',
-    failsOnNet472: 'Fs.Netfx.Tests.fails only on net472',
-    skipped: 'Fs.Netfx.Tests.skipped everywhere',
-    net48Only: 'Fs.Netfx.Tests.exists only on net48',
-    modernOnly: 'Fs.Netfx.Tests.exists only on modern dotnet',
-  },
+/** Each test shape's id suffix: the F# backtick binding and the C# method. */
+const NETFX_NAMES: Readonly<Record<keyof NetfxIds, readonly [fs: string, cs: string]>> = {
+  passes: ['passes everywhere', 'PassesEverywhere'],
+  failsOnNetfx: ['fails only on netfx', 'FailsOnlyOnNetfx'],
+  failsOnNet472: ['fails only on net472', 'FailsOnlyOnNet472'],
+  skipped: ['skipped everywhere', 'SkippedEverywhere'],
+  net48Only: ['exists only on net48', 'ExistsOnlyOnNet48'],
+  modernOnly: ['exists only on modern dotnet', 'ExistsOnlyOnModernDotnet'],
 };
 
-/** The C# fixture's ids. */
-const CSHARP: NetfxFixture = {
-  ...fixtureNames('xunit', 'csharp', 'Netfx'),
-  language: 'csharp',
-  packages: XUNIT_PACKAGES,
-  source: CS_SOURCE,
-  ids: {
-    passes: 'Cs.Netfx.NetfxTests.PassesEverywhere',
-    failsOnNetfx: 'Cs.Netfx.NetfxTests.FailsOnlyOnNetfx',
-    failsOnNet472: 'Cs.Netfx.NetfxTests.FailsOnlyOnNet472',
-    skipped: 'Cs.Netfx.NetfxTests.SkippedEverywhere',
-    net48Only: 'Cs.Netfx.NetfxTests.ExistsOnlyOnNet48',
-    modernOnly: 'Cs.Netfx.NetfxTests.ExistsOnlyOnModernDotnet',
-  },
+/** The id namespace each language's tests live in. */
+const NETFX_NAMESPACES: Readonly<Record<'fsharp' | 'csharp', string>> = {
+  fsharp: 'Fs.Netfx.Tests',
+  csharp: 'Cs.Netfx.NetfxTests',
 };
+
+/** One language's fixture: project metadata, its source, and its six ids. */
+function netfxFixture(language: 'fsharp' | 'csharp', source: string): NetfxFixture {
+  const csharp = language === 'csharp';
+  const id = (shape: keyof NetfxIds): string =>
+    csharp
+      ? `${NETFX_NAMESPACES[language]}.${NETFX_NAMES[shape][1]}`
+      : `${NETFX_NAMESPACES[language]}.${NETFX_NAMES[shape][0]}`;
+  return {
+    ...fixtureNames('xunit', language, 'Netfx'),
+    language,
+    packages: XUNIT_PACKAGES,
+    source,
+    ids: {
+      passes: id('passes'),
+      failsOnNetfx: id('failsOnNetfx'),
+      failsOnNet472: id('failsOnNet472'),
+      skipped: id('skipped'),
+      net48Only: id('net48Only'),
+      modernOnly: id('modernOnly'),
+    },
+  };
+}
+
+/** The F# fixture: backtick ids, SPACES verbatim. */
+const FSHARP: NetfxFixture = netfxFixture('fsharp', FS_SOURCE);
+
+/** The C# fixture. */
+const CSHARP: NetfxFixture = netfxFixture('csharp', CS_SOURCE);
 
 /** F# FIRST, always. */
 const FIXTURES = [FSHARP, CSHARP];
