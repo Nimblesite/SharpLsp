@@ -14,7 +14,7 @@ Deviations from the original design below (all functionally equivalent):
 - `updatePackageVersion` is folded into `addPackage` (upsert), so there are two methods: `project/addPackage`, `project/removePackage`.
 - `.fsproj` edits route to the **C# sidecar** rather than a mirrored F# handler: `MSBuildLocator` (MSBL001) forbids a shared `Microsoft.Build` reference in the F#/Common projects, and `ProjectRootElement` is language-agnostic (the issue itself notes "it's not F#-specific").
 
-**⏳ Not yet done (separate violations, out of scope for #4):** `reorderCompileItems` / `FSharpFileOrder.fs` (V3) and the Phase 5 CI grep-guard. V2 (`addCompileItem` + `scaffolding.ts`) landed with GitHub #493 / [SE-ADD-FILE-REQUEST]: the sidecar edit is `CompileItemEditor.cs` behind `project/addCompileItem`, the host routes it via `sharplsp/project/addCompileItem` (`src/sharplsp/src/project_edit.rs`), and `scaffolding.ts` auto-adds through it (see Phase 3).
+**⏳ Not yet done (separate violations, out of scope for #4):** a `reorderCompileItems` request and the Phase 5 CI grep-guard. V3 is gone: `generateReorderEdit` had no caller and was deleted, so no code reorders `<Compile>` items. V2 (`addCompileItem` + `scaffolding.ts`) landed with GitHub #493 / [SE-ADD-FILE-REQUEST]: the sidecar edit is `CompileItemEditor.cs` behind `project/addCompileItem`, the host routes it via `sharplsp/project/addCompileItem` (`src/sharplsp/src/project_edit.rs`), and `scaffolding.ts` auto-adds through it (see Phase 3).
 
 ## Goal
 
@@ -145,8 +145,8 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Phase 4 — Switch FSharpFileOrder.fs to ProjectRootElement
 
-- [ ] Rewrite `FSharpFileOrder.fs generateReorderEdit` using `ProjectRootElement.Open` → locate the two `<Compile>` elements by `Include` attribute → reorder via `InsertBeforeChild` → `Save`.
-- [ ] Add tests covering:
+- [x] Remove the line-splicing `FSharpFileOrder.fs generateReorderEdit` (V3): nothing called it, so it was deleted rather than rewritten.
+- [ ] Reorder through `CompileItemEditor` (`ProjectRootElement`: locate the two `<Compile>` elements by `Include`, move with `InsertBeforeChild`, `Save`) behind `project/reorderCompileItems`, when a feature needs it (FSHARP-FEATURES-PLAN "reorder suggestions"), with tests covering:
   - [ ] Multi-line `<Compile>` with a `<Link>` child
   - [ ] Conditional `<Compile Include="Platform.fs" Condition="'$(OS)' == 'Windows_NT'" />`
   - [ ] CRLF preservation
@@ -164,10 +164,10 @@ project.Save(path);                                   // trivia-preserving write
 
 ## Acceptance Criteria
 
-- [ ] `src/sharplsp/src/nuget/xml_edit.rs` **does not exist**.
-- [ ] No source file under `src/`, `src/editors/vscode/src/`, or `src/sidecars/**/*.{cs,fs}` writes to a `.csproj`/`.fsproj`/`.props`/`.targets`/`.sln`/`.vsixmanifest`/`.json` via string concatenation, `.replace()`, regex, or line-array joins. Verified by grep.
-- [ ] Issue #4's exact reproduction case (multi-line `<PackageReference>` with `<PrivateAssets>`/`<IncludeAssets>` children) is covered by a test and passes.
-- [ ] Scaffolding a new `.cs` into a project whose comments contain `</ItemGroup>` works correctly.
+- [x] `src/sharplsp/src/nuget/xml_edit.rs` **does not exist**.
+- [x] No source file under `src/`, `src/editors/vscode/src/`, or `src/sidecars/**/*.{cs,fs}` writes to a `.csproj`/`.fsproj`/`.props`/`.targets`/`.sln`/`.vsixmanifest`/`.json` via string concatenation, `.replace()`, regex, or line-array joins. Verified by grep.
+- [x] Issue #4's exact reproduction case (multi-line `<PackageReference>` with `<PrivateAssets>`/`<IncludeAssets>` children) is covered by a test and passes.
+- [x] Scaffolding a new `.cs` into a project whose comments contain `</ItemGroup>` works correctly.
 - [ ] F# file-order reordering preserves comments, CRLF, conditions, and child elements.
 - [ ] Existing `src/sharplsp/tests/nuget_e2e.rs` scenarios still pass.
 - [ ] CI has a grep-based guard that blocks re-introduction.
