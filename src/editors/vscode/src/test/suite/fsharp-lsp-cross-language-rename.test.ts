@@ -60,6 +60,20 @@ interface CrossRenameFixture {
   readonly originalForeign: string;
 }
 
+/** Every cross-language case, as the arguments `crossRenameSpec` takes. */
+const CROSS_RENAMES: readonly (readonly [string, CrossRenameSite, string, string, number])[] = [
+  ['C# origin -> F# reference', CSHARP_ORIGIN, 'CSharpOrigin', 'BridgedCSharpType', 2],
+  ['F# origin -> C# reference', FSHARP_ORIGIN, 'FSharpOrigin', 'BridgedFSharpType', 3],
+  ['C# member -> F# reference', CSHARP_ORIGIN, 'CSharpValue', 'BridgedCSharpMember', 2],
+  ['F# member -> C# reference', FSHARP_ORIGIN, 'FSharpValue', 'BridgedFSharpMember', 2],
+];
+
+function crossLanguageSpecs(): readonly CrossRenameSpec[] {
+  return CROSS_RENAMES.map(([name, site, target, newName, originOccurrences]) =>
+    crossRenameSpec(name, site, target, newName, originOccurrences),
+  );
+}
+
 suite('Real LSP - cross-language rename', () => {
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
@@ -75,20 +89,6 @@ suite('Real LSP - cross-language rename', () => {
     });
   }
 });
-
-/** Every cross-language case, as the arguments `crossRenameSpec` takes. */
-const CROSS_RENAMES: readonly (readonly [string, CrossRenameSite, string, string, number])[] = [
-  ['C# origin -> F# reference', CSHARP_ORIGIN, 'CSharpOrigin', 'BridgedCSharpType', 2],
-  ['F# origin -> C# reference', FSHARP_ORIGIN, 'FSharpOrigin', 'BridgedFSharpType', 3],
-  ['C# member -> F# reference', CSHARP_ORIGIN, 'CSharpValue', 'BridgedCSharpMember', 2],
-  ['F# member -> C# reference', FSHARP_ORIGIN, 'FSharpValue', 'BridgedFSharpMember', 2],
-];
-
-function crossLanguageSpecs(): readonly CrossRenameSpec[] {
-  return CROSS_RENAMES.map(([name, site, target, newName, originOccurrences]) =>
-    crossRenameSpec(name, site, target, newName, originOccurrences),
-  );
-}
 
 /** One cross-language rename: `target` becomes `newName` in both language fixtures. */
 function crossRenameSpec(
