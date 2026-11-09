@@ -695,7 +695,9 @@ When a C# or F# document becomes active through open, focus, navigation, Quick O
 | [tree-namespaces.ts](../../src/editors/vscode/src/tree-namespaces.ts) | Namespace nesting and the nest/flatten toggle ([SE-TREE-NAMESPACE-NEST]) |
 | [tree-sort.ts](../../src/editors/vscode/src/tree-sort.ts) | Sort modes ([SE-SORT]) |
 | [add-source-file.ts](../../src/editors/vscode/src/add-source-file.ts) | Add F# Source File command + `addCompileItem` client ([SE-ADD-FILE]) |
-| [extension.ts](../../src/editors/vscode/src/extension.ts) | Command registration, tree view creation |
+| [extension.ts](../../src/editors/vscode/src/extension.ts) | Activation, tree view creation, server commands |
+| [explorer-commands.ts](../../src/editors/vscode/src/explorer-commands.ts) | Solution Explorer row and dependency commands |
+| [solution-load.ts](../../src/editors/vscode/src/solution-load.ts) | Solution selection, loading and debounced tree refresh |
 | [constants.ts](../../src/editors/vscode/src/constants.ts) | Command and view ID constants |
 | [package.json](../../src/editors/vscode/package.json) | VS Code contribution points |
 | [workspace_symbols.rs](../../src/sharplsp/src/workspace_symbols.rs) | Rust handler: sidecar solution model routing, tree-sitter symbol extraction |
