@@ -14,7 +14,7 @@ Deviations from the original design below (all functionally equivalent):
 - `updatePackageVersion` is folded into `addPackage` (upsert), so there are two methods: `project/addPackage`, `project/removePackage`.
 - `.fsproj` edits route to the **C# sidecar** rather than a mirrored F# handler: `MSBuildLocator` (MSBL001) forbids a shared `Microsoft.Build` reference in the F#/Common projects, and `ProjectRootElement` is language-agnostic (the issue itself notes "it's not F#-specific").
 
-**⏳ Not yet done (separate violations, out of scope for #4):** a `reorderCompileItems` request. V3 is gone: `generateReorderEdit` had no caller and was deleted, so no code reorders `<Compile>` items. V2 (`addCompileItem` + `scaffolding.ts`) landed with GitHub #493 / [SE-ADD-FILE-REQUEST]: the sidecar edit is `CompileItemEditor.cs` behind `project/addCompileItem`, the host routes it via `sharplsp/project/addCompileItem` (`src/sharplsp/src/project_edit.rs`), and `scaffolding.ts` auto-adds through it (see Phase 3).
+**⏳ Not yet done (separate violations, out of scope for #4):** `reorderCompileItems` / `FSharpFileOrder.fs` (V3). `generateReorderEdit` has no production caller: only its own tests call it. V2 (`addCompileItem` + `scaffolding.ts`) landed with GitHub #493 / [SE-ADD-FILE-REQUEST]: the sidecar edit is `CompileItemEditor.cs` behind `project/addCompileItem`, the host routes it via `sharplsp/project/addCompileItem` (`src/sharplsp/src/project_edit.rs`), and `scaffolding.ts` auto-adds through it (see Phase 3).
 
 ## Goal
 
@@ -145,8 +145,7 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Phase 4 — Switch FSharpFileOrder.fs to ProjectRootElement
 
-- [x] Remove the line-splicing `FSharpFileOrder.fs generateReorderEdit` (V3): nothing called it, so it was deleted rather than rewritten.
-- [ ] Reorder through `CompileItemEditor` (`ProjectRootElement`: locate the two `<Compile>` elements by `Include`, move with `InsertBeforeChild`, `Save`) behind `project/reorderCompileItems`, when a feature needs it (FSHARP-FEATURES-PLAN "reorder suggestions"), with tests covering:
+- [ ] Replace the line-splicing `FSharpFileOrder.fs generateReorderEdit` (no production caller yet) with a reorder through `CompileItemEditor` (`ProjectRootElement`: locate the two `<Compile>` elements by `Include`, move with `InsertBeforeChild`, `Save`) behind `project/reorderCompileItems`, when a feature needs it (FSHARP-FEATURES-PLAN "reorder suggestions"), with tests covering:
   - [ ] Multi-line `<Compile>` with a `<Link>` child
   - [ ] Conditional `<Compile Include="Platform.fs" Condition="'$(OS)' == 'Windows_NT'" />`
   - [ ] CRLF preservation
@@ -154,7 +153,7 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Phase 5 — Enforce the CLAUDE.md rule
 
-- [x] Add a lint/CI check that greps the codebase for banned patterns in source (not src/sharplsp/tests/fixtures) — `tools/ci/structured-file-writes.mjs` (+ `.test.mjs`), run by `make _lint-vsix` (`_check-structured-writes`). JSON is left out: `JSON.stringify` is a DOM write. The vague `String.Join` pattern is left out too: the deleted V3 was its only instance:
+- [x] Add a lint/CI check that greps the codebase for banned patterns in source (not src/sharplsp/tests/fixtures) — `tools/ci/structured-file-writes.mjs` (+ `.test.mjs`), run by `make _lint-vsix` (`_check-structured-writes`). JSON is left out: `JSON.stringify` is a DOM write. The vague `String.Join` pattern is left out too: V3 is its only instance and builds text it never writes:
   - `fs.writeFileSync(.*\.(csproj|fsproj|props|targets|sln|vsixmanifest|json)`
   - `File.WriteAllText(.*\.(csproj|fsproj|props|targets))`
   - `std::fs::write(.*\.(csproj|fsproj|props|targets))`

@@ -146,3 +146,44 @@ let analyzeFileOrder
             Log.Debug(ex, "[F# FileOrder] failed")
             return []
     }
+
+/// Generate a .fsproj text edit that moves a dependency file before the current file.
+let generateReorderEdit
+    (fsprojPath: string)
+    (dependencyFile: string)
+    (beforeFile: string)
+    : {| FilePath: string; StartLine: int; StartCharacter: int
+         EndLine: int; EndCharacter: int; NewText: string |} option =
+    try
+        let lines = File.ReadAllLines(fsprojPath)
+        let depName = SharpLsp.Sidecar.Common.NativePaths.NameOf dependencyFile
+        let beforeName = SharpLsp.Sidecar.Common.NativePaths.NameOf beforeFile
+        let mutable depLineIdx = -1
+        let mutable beforeLineIdx = -1
+        for i in 0 .. lines.Length - 1 do
+            let trimmed = lines[i].Trim()
+            if trimmed.Contains($"Include=\"{depName}\"") then depLineIdx <- i
+            if trimmed.Contains($"Include=\"{beforeName}\"") then beforeLineIdx <- i
+        if depLineIdx >= 0 && beforeLineIdx >= 0 && depLineIdx > beforeLineIdx then
+            let depLine = lines[depLineIdx]
+            let remaining =
+                [| for i in 0 .. lines.Length - 1 do
+                    if i <> depLineIdx then yield lines[i] |]
+            let insertIdx =
+                if depLineIdx < beforeLineIdx then beforeLineIdx - 1
+                else beforeLineIdx
+            let newLines =
+                [| yield! remaining[.. insertIdx - 1]
+                   yield depLine
+                   yield! remaining[insertIdx ..] |]
+            let newText = System.String.Join("\n", newLines)
+            Some {| FilePath = fsprojPath
+                    StartLine = 0; StartCharacter = 0
+                    EndLine = lines.Length - 1
+                    EndCharacter = lines[lines.Length - 1].Length
+                    NewText = newText |}
+        else
+            None
+    with ex ->
+        Log.Debug(ex, "[F# FileOrder] reorder edit failed")
+        None
