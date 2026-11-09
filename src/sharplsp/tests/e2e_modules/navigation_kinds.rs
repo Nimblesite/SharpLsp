@@ -13,6 +13,9 @@
 //! [REFERENCES-CSHARP-HIGHLIGHT].
 
 use super::definition_cross_language::poll_cross_language_definition;
+use super::workspace_diagnostic_protocol::recovery::{
+    crash_owned_pid, owned_apphost, published_apphost_uri,
+};
 use super::*;
 
 /// A name in the fixture: its file, 0-based line and column, and its length.
@@ -360,5 +363,42 @@ fn references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp() {
     let shapes = open_fixture_file(&mut client, &root, SHAPES);
     csharp_references(&mut client, &use_cs, &shapes);
     csharp_highlights(&mut client, &use_cs);
+    end(client);
+}
+
+/// The F# compiler this host runs, by its process id.
+fn fsharp_compiler(client: &LspClient, when: &str) -> sysinfo::Pid {
+    let uri = published_apphost_uri("SHARPLSP_FSHARP_SIDECAR_PATH", "the F# compiler apphost");
+    owned_apphost(client, &uri, when)
+}
+
+#[test]
+fn definition_answers_from_source_again_after_the_fsharp_compiler_crashes() {
+    let (_ws, root, mut client, uses, _kinds) = session();
+    let before = poll_cross_language_definition(&mut client, &uses, 5, 12, "Uses.fs", LOAD);
+    assert_on(
+        &before,
+        &POINT,
+        "type annotation → record type, before the crash",
+    );
+    let crashed = fsharp_compiler(&client, "one F# compiler before the crash");
+    crash_owned_pid(&client, crashed);
+    // An edit clears the host's navigation cache, so the next answer is the compiler's own.
+    let saved = std::fs::read_to_string(root.join(USES)).expect("read Uses.fs");
+    client.change_document(&uses, 2, &saved);
+    let after = poll_cross_language_definition(&mut client, &uses, 5, 12, "Uses.fs", LOAD);
+    assert_on(
+        &after,
+        &POINT,
+        "type annotation → record type, after the crash",
+    );
+    let replacement = fsharp_compiler(&client, "one F# compiler after recovery");
+    assert_ne!(replacement, crashed, "a new compiler process answered");
+    let case = definition(&mut client, &uses, 6, 12);
+    assert_answers(
+        &case,
+        &[&CIRCLE],
+        "union case construction → case, after recovery",
+    );
     end(client);
 }

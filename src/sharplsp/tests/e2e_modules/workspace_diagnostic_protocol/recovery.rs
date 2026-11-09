@@ -169,7 +169,7 @@ fn crash_owned_fsharp(client: &LspClient) -> sysinfo::Pid {
 }
 
 /// Revalidate parent ownership immediately before terminating this test's actual apphost.
-fn crash_owned_pid(client: &LspClient, pid: sysinfo::Pid) {
+pub(in crate::e2e_modules) fn crash_owned_pid(client: &LspClient, pid: sysinfo::Pid) {
     let system = sysinfo::System::new_all();
     let process = system.process(pid).expect("owned compiler remains alive");
     assert_eq!(

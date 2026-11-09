@@ -161,7 +161,7 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] E2E test: F# go-to-type-definition on value navigates to type — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
 - [x] E2E test: F# go-to-implementation on abstract member returns implementations — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`; F# implementation was a stub answering the symbol's own declaration, now `FSharpImplementations.fs`
 - [x] E2E test: definition after document edit returns updated location
-- [ ] E2E test: definition after sidecar crash recovery works correctly
+- [x] E2E test: definition after sidecar crash recovery works correctly — `navigation_kinds.rs` `definition_answers_from_source_again_after_the_fsharp_compiler_crashes` kills the host's F# compiler and requires a new process to answer from source
 - [ ] E2E test: definition salsa hit returns result in <1ms
 - [ ] E2E test: definition latency p50 <100ms, p95 <250ms on medium solution
 - [x] E2E test: all four nav methods interleaved in single session
