@@ -42,31 +42,13 @@ pub(crate) struct DocumentContext<'a> {
 pub(crate) fn handle(notif: Notification, ctx: &mut DocumentContext<'_>) {
     match notif.method.as_str() {
         DidOpenTextDocument::METHOD => {
-            if let Ok(params) =
-                serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params)
-            {
-                let doc = params.text_document;
-                info!("Opened: {}", doc.uri.as_str());
-                pull_diagnostics::state::begin_change();
-                ctx.vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
-                sync_document(&doc.uri, &doc.text, ctx);
+            if let Ok(params) = serde_json::from_value(notif.params) {
+                opened(params, ctx);
             }
         }
         DidChangeTextDocument::METHOD => {
-            if let Ok(params) =
-                serde_json::from_value::<lsp_types::DidChangeTextDocumentParams>(notif.params)
-            {
-                let uri = params.text_document.uri;
-                let version = params.text_document.version;
-                info!("Changed: {} (v{version})", uri.as_str());
-                // Full sync — last content change is the full text.
-                if let Some(change) = params.content_changes.into_iter().next_back() {
-                    pull_diagnostics::state::begin_change();
-                    ctx.vfs.change(&uri, version, change.text.clone());
-                    // A cached answer can point into the edited file from any other.
-                    ctx.nav_cache.clear();
-                    sync_document(&uri, &change.text, ctx);
-                }
+            if let Ok(params) = serde_json::from_value(notif.params) {
+                changed(params, ctx);
             }
         }
         DidSaveTextDocument::METHOD => {
@@ -88,6 +70,30 @@ pub(crate) fn handle(notif: Notification, ctx: &mut DocumentContext<'_>) {
             // Ignore unknown notifications per LSP spec.
         }
     }
+}
+
+/// A document opened: record its text and sync it everywhere.
+fn opened(params: lsp_types::DidOpenTextDocumentParams, ctx: &mut DocumentContext<'_>) {
+    let doc = params.text_document;
+    info!("Opened: {}", doc.uri.as_str());
+    pull_diagnostics::state::begin_change();
+    ctx.vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
+    sync_document(&doc.uri, &doc.text, ctx);
+}
+
+/// A document changed under full sync: the last content change is the whole text.
+fn changed(params: lsp_types::DidChangeTextDocumentParams, ctx: &mut DocumentContext<'_>) {
+    let uri = params.text_document.uri;
+    let version = params.text_document.version;
+    info!("Changed: {} (v{version})", uri.as_str());
+    let Some(change) = params.content_changes.into_iter().next_back() else {
+        return;
+    };
+    pull_diagnostics::state::begin_change();
+    ctx.vfs.change(&uri, version, change.text.clone());
+    // A cached answer can point into the edited file from any other.
+    ctx.nav_cache.clear();
+    sync_document(&uri, &change.text, ctx);
 }
 
 /// Re-parse the new text, hand it to the document's own sidecar and refresh
