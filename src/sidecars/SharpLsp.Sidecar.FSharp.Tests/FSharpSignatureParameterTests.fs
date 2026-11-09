@@ -40,8 +40,9 @@ let private at (lines: string array) lineIdx (needle: string) (nth: int) =
 
 let private linesOf (text: string) = text.Replace("\r\n", "\n").Split('\n')
 
-/// The active parameter reported with the caret on `needle` must be `expected`.
-let private assertActive state path text lineIdx needle expected =
+/// The active parameter reported with the caret on `needle` must be `expected`,
+/// and the signature must expose exactly `parameters`.
+let private assertActiveWith parameters state path text lineIdx needle expected =
     task {
         let line, character = at (linesOf text) lineIdx needle 0
         let! help = FSharpSignature.signatureHelp state path line character
@@ -49,9 +50,13 @@ let private assertActive state path text lineIdx needle expected =
         | None -> failwith $"no signature help at ({line}, {character})"
         | Some help ->
             Assert.NotEmpty(help.Signatures)
-            Assert.Equal<string list>([ "a"; "b"; "c" ], help.Signatures[0].Parameters)
+            Assert.Equal<string list>(parameters, help.Signatures[0].Parameters)
             Assert.Equal(expected, help.ActiveParameter)
     }
+
+/// The active parameter reported with the caret on `needle` must be `expected`.
+let private assertActive state path text lineIdx needle expected =
+    assertActiveWith [ "a"; "b"; "c" ] state path text lineIdx needle expected
 
 [<Fact>]
 let ``signature help reports the parameter the caret sits on`` () =
@@ -142,6 +147,42 @@ let ``signature help keeps the current parameter while the closing parenthesis i
                 Assert.NotEmpty(help.Signatures)
                 Assert.Equal<string list>([ "a"; "b"; "c" ], help.Signatures[0].Parameters)
                 Assert.Equal(expected, help.ActiveParameter)
+    finally
+        cleanup dir
+}
+
+/// A `[<ParamArray>]` rest parameter absorbs every trailing argument, so all of
+/// them must report the rest parameter's declaration index, never the raw
+/// argument position. Line indices: 3 = full call, 4 = unfinished overlay.
+let private VARIADIC_SOURCE =
+    source
+        [ "module Signatures"
+          "type Calc ="
+          "    static member Variadic(first: int, [<System.ParamArray>] rest: int array) = first + Array.sum rest"
+          "let variadic = Calc.Variadic(1, 2, 3, 4)" ]
+
+[<Fact>]
+let ``signature help maps every rest argument to the ParamArray parameter`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", VARIADIC_SOURCE ]
+    try
+        let labels = [ "first"; "rest" ]
+
+        // The mandatory argument is parameter 0; every following argument is the rest parameter.
+        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "1," 0
+        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "2," 1
+        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "3," 1
+        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "4)" 1
+
+        // Unfinished call: the caret stays on the rest parameter while more arguments arrive.
+        let pending = "let pending = Calc.Variadic(1, 2, 3"
+        FSharpWorkspace.applyDidChange state paths[0] (VARIADIC_SOURCE + pending)
+        let! result = FSharpSignature.signatureHelp state paths[0] 4 pending.Length
+        match result with
+        | None -> failwith $"no signature help while typing {pending}"
+        | Some help ->
+            Assert.NotEmpty(help.Signatures)
+            Assert.Equal<string list>(labels, help.Signatures[0].Parameters)
+            Assert.Equal(1, help.ActiveParameter)
     finally
         cleanup dir
 }

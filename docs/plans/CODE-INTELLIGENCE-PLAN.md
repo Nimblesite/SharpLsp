@@ -11,6 +11,7 @@ Remaining code intelligence features not covered by other plans.
 - [x] E2E test: signature help on method call returns parameter info — `SignatureHelpEndToEndTests`, the F# sidecar IPC constructor test, and published v0.32.1 F# LSP verification
 - [x] F# active parameter follows the caret across nested calls, string commas and unsaved changes — `FSharpSignatureParameterTests`, [FS-SIGHELP], issue #552
 - [x] F# named arguments select their declared parameter when reordered or mixed with positional arguments — `FSharpSignatureParameterTests`, [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP], issue #552
+- [x] F# variadic arguments stay on the final `ParamArray` parameter, including unfinished calls — `FSharpSignatureParameterTests`, [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP], issue #552
 
 ## Rename
 

@@ -89,7 +89,7 @@ let private activeParameter
         |> Array.tryItem argument
         |> Option.flatten
         |> Option.bind (fun name -> parameters |> List.tryFindIndex ((=) name))
-        |> Option.defaultValue argument)
+        |> Option.defaultValue (min argument (max 0 (parameters.Length - 1))))
     |> Option.defaultValue 0
 
 /// Pure resolution of signature help from a checked file. Extracted so
