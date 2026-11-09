@@ -663,12 +663,12 @@ fn handle_request(
                 Ok(serde_json::Value::Null)
             } else {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-                semantic::handle_completion(req, runtime, sidecar, vfs)
+                semantic::completion::handle_completion(req, runtime, sidecar, vfs)
             }
         }
         ResolveCompletionItem::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            semantic::handle_completion_resolve(req, runtime, sidecar)
+            semantic::completion::handle_completion_resolve(req, runtime, sidecar)
         }
         HoverRequest::METHOD => {
             if handlers::hover_has_no_symbol(&req, trees) {
