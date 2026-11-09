@@ -26,6 +26,7 @@ import {
 } from './nuget-browser/mutate.js';
 import { loadTargetsWithDefaults, persistTargetSelection } from './nuget-browser/target-store.js';
 import { showMutationResult } from './nuget-browser/mutation-result.js';
+import { restoreEffect } from './nuget-browser/restore-progress.js';
 import * as projectDeps from './project-deps-store.js';
 import { runBrowserUpdate } from './nuget-update.js';
 import * as solutionState from './state.js';
@@ -35,7 +36,6 @@ import {
   type NuGetSearchResult,
   type NuGetTarget,
   type RestoreProgressParams,
-  restoreKey,
   uninstallKey,
   type WebviewMessage,
 } from './nuget-browser/types.js';
@@ -235,33 +235,10 @@ export class NuGetBrowserPanel {
   }
 
   private handleRestoreProgress(params: RestoreProgressParams): void {
-    const key = restoreKey(params.targetId);
-    switch (params.phase) {
-      case 'started':
-      case 'restoring':
-        this.loading.add(key);
-        this.toast = {
-          kind: 'info',
-          text: params.message ?? 'Restoring packages…',
-        };
-        break;
-      case 'succeeded':
-        this.loading.delete(key);
-        this.toast = {
-          kind: 'success',
-          text: params.message ?? 'Restore succeeded',
-        };
-        this.scheduleToastClear(2000);
-        break;
-      case 'failed':
-        this.loading.delete(key);
-        this.toast = {
-          kind: 'error',
-          text: params.message ?? 'Restore failed',
-        };
-        this.scheduleToastClear(5000);
-        break;
-    }
+    const effect = restoreEffect(params);
+    if (effect.spinning) this.loading.add(effect.key);
+    else this.loading.delete(effect.key);
+    this.setToast(effect.toast, effect.clearMs);
     this.updateContent();
   }
 
