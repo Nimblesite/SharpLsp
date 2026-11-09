@@ -36,6 +36,15 @@ export function trackedProjectDir(track: (artifact: string) => string, name: str
   return track(path.join(workspaceFolder(), name));
 }
 
+/** Tracks `<workspace>/ScaffTmp_<case>_<token>.cs` for cleanup; returns the generated name and its path. */
+export function trackedNewFile(
+  track: (artifact: string) => string,
+  caseName: string,
+): { readonly name: string; readonly filePath: string } {
+  const name = scaffoldName(caseName);
+  return { name, filePath: track(path.join(workspaceFolder(), `${name}.cs`)) };
+}
+
 /** Both solution-file candidates `dotnet new sln` may produce for `name`. */
 export function slnCandidates(
   folder: string,
@@ -53,6 +62,60 @@ export function slnCandidates(
 /** The first of `candidates` that exists on disk, if any. */
 export function firstExisting(candidates: readonly string[]): string | undefined {
   return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
+/** Tracks both `.sln`/`.slnx` candidates `dotnet new sln` may produce under `folder`, returning their paths. */
+export function trackSlnCandidates(
+  track: (artifact: string) => string,
+  folder: string,
+  name: string,
+): { slnPath: string; slnxPath: string } {
+  const candidates = slnCandidates(folder, name);
+  track(candidates.slnPath);
+  track(candidates.slnxPath);
+  return candidates;
+}
+
+/**
+ * Drives `command` (`sharplsp.newProject`) with `template` picked and `name`
+ * typed, tracking the project dir; asserts the dir was created and returns it
+ * with the located project file (undefined when none was scaffolded).
+ */
+export async function scaffoldProjectViaCommand(
+  stubs: UiStubs,
+  track: (artifact: string) => string,
+  command: string,
+  template: string,
+  name: string,
+  dirMessage: string,
+): Promise<{ readonly projDir: string; readonly projFile: string | undefined }> {
+  const projDir = trackedProjectDir(track, name);
+  stubs.queuePick(template).queueInput(name).queueInfo(undefined);
+  await vscode.commands.executeCommand(command);
+  assert.ok(fs.existsSync(projDir), dirMessage);
+  return { projDir, projFile: findProjectFile(projDir, name) };
+}
+
+/**
+ * Drives `command` against a cancelled prompt — `template` picked with an empty
+ * name when given, else just `input` queued (the picker cancels) — asserting
+ * `artifact` was never created.
+ */
+export async function runCancelledCommand(
+  stubs: UiStubs,
+  command: string,
+  template: string | undefined,
+  input: string,
+  artifact: string,
+  message: string,
+): Promise<void> {
+  if (template === undefined) {
+    stubs.queueInput(input);
+  } else {
+    stubs.queuePick(template).queueInput(input);
+  }
+  await vscode.commands.executeCommand(command);
+  assert.ok(!fs.existsSync(artifact), message);
 }
 
 /** Creates a real solution + classlib project pair via the pure helpers. */

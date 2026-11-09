@@ -32,6 +32,10 @@ import {
   openFreshPanel,
   previewCalls,
   resetPanelSingleton,
+  scratchCsproj,
+  sendAfterLoad,
+  sendUninstallAfterLoad,
+  sendWebviewMessage,
   VIRTUAL_PROJECT,
 } from './nuget-browser-kit';
 
@@ -360,10 +364,7 @@ suite('NuGet Browser', () => {
       await switchToTab(panel, 'installed', 'Tab must switch to installed');
 
       // Click the installed package.
-      await panel.simulateWebviewMessage({
-        command: 'selectPackage',
-        data: { packageId: 'Newtonsoft.Json' },
-      });
+      await sendWebviewMessage(panel, 'selectPackage', { packageId: 'Newtonsoft.Json' });
 
       assert.strictEqual(
         panel.getSelectedPackageId(),
@@ -484,10 +485,7 @@ suite('NuGet Browser', () => {
       // 1 — the user types a query that matches some of the catalogue, not all of
       //     it. A query matching everything could not tell filtering from a panel
       //     that ignored the query and re-rendered the popular list.
-      await panel.simulateWebviewMessage({
-        command: 'search',
-        data: { query: 'Bravo' },
-      });
+      await sendWebviewMessage(panel, 'search', { query: 'Bravo' });
 
       assert.strictEqual(
         feed.searches.length,
@@ -529,17 +527,6 @@ suite('NuGet Browser', () => {
   // ── Reactivity: csproj edits propagate to the panel ─────────────
 
   /**
-   * Copy the NuGetTest fixture into a temp directory so we can mutate the
-   * csproj without corrupting the shared fixture used by other tests.
-   */
-  function createScratchProject(scratchDir: string, initialCsproj: string): string {
-    fs.mkdirSync(scratchDir, { recursive: true });
-    const csprojPath = path.join(scratchDir, 'Scratch.csproj');
-    fs.writeFileSync(csprojPath, initialCsproj, 'utf-8');
-    return csprojPath;
-  }
-
-  /**
    * REACTIVITY: editing a csproj on disk to remove a <PackageReference>
    * MUST propagate into the panel without any manual refresh. The rendered
    * HTML must switch from "Remove" to "Install" for that package.
@@ -550,8 +537,7 @@ suite('NuGet Browser', () => {
   test('panel reacts to external csproj edit (package removed)', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const scratch = path.join(tmpDir(), 'reactivity-panel');
-    const csprojPath = createScratchProject(scratch, JSON_PROJECT_XML);
+    const csprojPath = scratchCsproj(tmpDir(), 'reactivity-panel', JSON_PROJECT_XML);
 
     const { panel } = openPanel(csprojPath, 'Scratch');
 
@@ -559,10 +545,7 @@ suite('NuGet Browser', () => {
       await panel.waitForInitialLoad();
 
       // Select Newtonsoft.Json so we can verify the Remove button exists.
-      await panel.simulateWebviewMessage({
-        command: 'selectPackage',
-        data: { packageId: 'Newtonsoft.Json' },
-      });
+      await sendWebviewMessage(panel, 'selectPackage', { packageId: 'Newtonsoft.Json' });
 
       const htmlBefore = panel.getRenderedHtml();
       assert.ok(
@@ -604,8 +587,7 @@ suite('NuGet Browser', () => {
   test('panel reacts to external csproj edit (package added)', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const scratch = path.join(tmpDir(), 'reactivity-panel-add');
-    const csprojPath = createScratchProject(scratch, EMPTY_PROJECT_XML);
+    const csprojPath = scratchCsproj(tmpDir(), 'reactivity-panel-add', EMPTY_PROJECT_XML);
 
     const { panel } = openPanel(csprojPath, 'ScratchAdd');
 
@@ -649,10 +631,7 @@ suite('NuGet Browser', () => {
 
       // 1 — the user clicks the installed package. Its metadata is not on the
       //     browse list, so the panel has to enrich it by id.
-      await panel.simulateWebviewMessage({
-        command: 'selectPackage',
-        data: { packageId: INSTALLED_FIXTURE_PACKAGE.id },
-      });
+      await sendWebviewMessage(panel, 'selectPackage', { packageId: INSTALLED_FIXTURE_PACKAGE.id });
 
       await pollUntilResult(
         () => Promise.resolve(panel.getRenderedHtml()),
@@ -700,10 +679,7 @@ suite('NuGet Browser', () => {
     try {
       await panel.waitForInitialLoad();
 
-      await panel.simulateWebviewMessage({
-        command: 'switchTab',
-        data: { tab: 'installed' },
-      });
+      await sendWebviewMessage(panel, 'switchTab', { tab: 'installed' });
 
       // After enrichment, Newtonsoft.Json must show its real icon.
       await pollUntilResult(
@@ -752,8 +728,7 @@ suite('NuGet Browser', () => {
   test('details panel button flips Remove→Install on external csproj edit (snapshot bug)', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const scratch = path.join(tmpDir(), 'reactivity-details');
-    const csprojPath = createScratchProject(scratch, JSON_PROJECT_XML);
+    const csprojPath = scratchCsproj(tmpDir(), 'reactivity-details', JSON_PROJECT_XML);
 
     const { panel } = openPanel(csprojPath, 'ReactivityDetails');
 
@@ -770,10 +745,7 @@ suite('NuGet Browser', () => {
 
       // Select Newtonsoft.Json — it's installed, so the details panel
       // header MUST render the Remove button.
-      await panel.simulateWebviewMessage({
-        command: 'selectPackage',
-        data: { packageId: 'Newtonsoft.Json' },
-      });
+      await sendWebviewMessage(panel, 'selectPackage', { packageId: 'Newtonsoft.Json' });
 
       const detailsBefore = detailsSection(panel.getRenderedHtml());
       assert.ok(
@@ -861,7 +833,13 @@ import {
   persistTargetSelection,
   synthesizeFallback,
 } from '../../nuget-browser/target-store.js';
-import { installKey, restoreKey, uninstallKey, updateKey } from '../../nuget-browser/types.js';
+import {
+  installKey,
+  restoreKey,
+  uninstallKey,
+  updateKey,
+  type LoadingKey,
+} from '../../nuget-browser/types.js';
 import type {
   NuGetInstalledResponse,
   NuGetMutationResponse,
@@ -962,6 +940,14 @@ function methodKey(method: string): keyof FakeRoutes | undefined {
   return undefined;
 }
 
+/** Asserts a wrapper `Result` failed with exactly `error`. */
+function assertFailedWith(
+  result: { readonly ok: boolean; readonly error?: string },
+  error: string,
+): void {
+  assert.ok(!result.ok && result.error === error, `expected failure '${error}'`);
+}
+
 function makeFakeClient(routes: FakeRoutes, failNotification = false): FakeClientHandle {
   const handle: FakeClientHandle = {
     calls: [],
@@ -1026,6 +1012,20 @@ suite('NuGet Browser — pure html', () => {
       toast: undefined,
       ...overrides,
     };
+  }
+
+  /** Details-panel HTML for the fixture package with `loadingKeys` active over `installedPackages`. */
+  function detailsPendingHtml(
+    loadingKeys: readonly LoadingKey[],
+    installedPackages = new Map<string, string>(),
+  ): string {
+    return buildHtml(
+      baseState({
+        selectedPackage: searchResult(),
+        installedPackages,
+        loading: new Set(loadingKeys),
+      }),
+    );
   }
 
   test('buildHtml escapes the project name and renders shell markup', () => {
@@ -1182,27 +1182,16 @@ suite('NuGet Browser — pure html', () => {
   });
 
   test('buildHtml details panel renders pending spinners for install/uninstall/versions', () => {
-    const installing = buildHtml(
-      baseState({
-        selectedPackage: searchResult(),
-        loading: new Set([installKey('Newtonsoft.Json'), 'versions']),
-      }),
-    );
+    const installing = detailsPendingHtml([installKey('Newtonsoft.Json'), 'versions']);
     assertContainsAll(installing, ['Installing…', 'progress_activity'], 'installing');
-    const removing = buildHtml(
-      baseState({
-        selectedPackage: searchResult(),
-        installedPackages: new Map([['Newtonsoft.Json', '13.0.3']]),
-        loading: new Set([uninstallKey('Newtonsoft.Json')]),
-      }),
+    const removing = detailsPendingHtml(
+      [uninstallKey('Newtonsoft.Json')],
+      new Map([['Newtonsoft.Json', '13.0.3']]),
     );
     assert.ok(removing.includes('Removing…'), 'uninstall pending label');
-    const updating = buildHtml(
-      baseState({
-        selectedPackage: searchResult(),
-        installedPackages: new Map([['Newtonsoft.Json', '13.0.3']]),
-        loading: new Set([updateKey('Newtonsoft.Json')]),
-      }),
+    const updating = detailsPendingHtml(
+      [updateKey('Newtonsoft.Json')],
+      new Map([['Newtonsoft.Json', '13.0.3']]),
     );
     assertContainsAll(updating, ['Updating…', 'progress_activity'], 'updating');
     assert.ok(updating.includes('update-package'), 'the update button owns its spinner');
@@ -1478,17 +1467,17 @@ suite('NuGet Browser — lsp wrappers (success + failure)', () => {
       uninstall: new Error('uninst-err'),
     });
     const t = await fetchTargets(handle.client, '/ws');
-    assert.ok(!t.ok && t.error === 't-err');
+    assertFailedWith(t, 't-err');
     const inst = await fetchInstalled(handle.client, projectTarget());
-    assert.ok(!inst.ok && inst.error === 'i-err');
+    assertFailedWith(inst, 'i-err');
     const s = await searchPackages(handle.client, projectTarget(), 'q');
-    assert.ok(!s.ok && s.error === 's-err');
+    assertFailedWith(s, 's-err');
     const v = await fetchVersions(handle.client, 'Pkg');
-    assert.ok(!v.ok && v.error === 'v-err');
+    assertFailedWith(v, 'v-err');
     const i = await installPackage(handle.client, projectTarget(), 'Pkg', '1');
-    assert.ok(!i.ok && i.error === 'inst-err');
+    assertFailedWith(i, 'inst-err');
     const u = await uninstallPackage(handle.client, projectTarget(), 'Pkg');
-    assert.ok(!u.ok && u.error === 'uninst-err');
+    assertFailedWith(u, 'uninst-err');
   });
 });
 
@@ -1514,6 +1503,18 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     );
     const panel = openFreshPanel(buildPropsTarget().path, 'PropsProj', () => handle.client);
     return { panel, handle };
+  }
+
+  /** Opens the panel over the Ver.Pkg installed fixture with a fixed preview route and install response. */
+  function openUpdatePanel(
+    preview: NonNullable<FakeRoutes['updatePreview']>,
+    install: NuGetMutationResponse,
+  ): { panel: NuGetBrowserPanel; handle: FakeClientHandle } {
+    return openWithRoutes({
+      installed: installedSingle('Ver.Pkg'),
+      updatePreview: preview,
+      install,
+    });
   }
 
   test('initial load selects the build-props target and populates search results', async () => {
@@ -1572,17 +1573,10 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       versions: new Error('versions down'),
     });
     try {
-      await panel.waitForInitialLoad();
-      await panel.simulateWebviewMessage({
-        command: 'selectPackage',
-        data: { packageId: 'Sel.Pkg' },
-      });
+      await sendAfterLoad(panel, 'selectPackage', { packageId: 'Sel.Pkg' });
       assert.strictEqual(panel.getSelectedPackageId(), 'Sel.Pkg', 'package selected');
       // selecting an unknown id is a no-op.
-      await panel.simulateWebviewMessage({
-        command: 'selectPackage',
-        data: { packageId: 'Does.Not.Exist' },
-      });
+      await sendWebviewMessage(panel, 'selectPackage', { packageId: 'Does.Not.Exist' });
       assert.strictEqual(panel.getSelectedPackageId(), 'Sel.Pkg', 'unknown id leaves selection');
     } finally {
       panel.dispose();
@@ -1632,11 +1626,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     });
     const panel = openFreshPanel(buildPropsTarget().path, 'Y', () => handle.client);
     try {
-      await panel.waitForInitialLoad();
-      await panel.simulateWebviewMessage({
-        command: 'install',
-        data: { packageId: 'Good.Pkg', version: '1.0.0' },
-      });
+      await sendAfterLoad(panel, 'install', { packageId: 'Good.Pkg', version: '1.0.0' });
       assert.ok(
         panel.getInstalledPackageIds().includes('Good.Pkg'),
         'installed list reloaded after a successful install',
@@ -1657,12 +1647,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       uninstall: new Error('uninstall network error'),
     });
     try {
-      await panel.waitForInitialLoad();
-      assert.ok(panel.getInstalledPackageIds().includes('Remove.Me'), 'precondition installed');
-      await panel.simulateWebviewMessage({
-        command: 'uninstall',
-        data: { packageId: 'Remove.Me' },
-      });
+      await sendUninstallAfterLoad(panel, 'Remove.Me', 'precondition installed');
       assert.ok(
         panel.getRenderedHtml().includes('uninstall failed'),
         'failed uninstall shows error toast',
@@ -1677,10 +1662,8 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('changeVersion confirms the exact host proposal and routes through install', async () => {
-    const installed = installedSingle('Ver.Pkg');
-    const { panel, handle } = openWithRoutes({
-      installed,
-      updatePreview: (payload) => {
+    const { panel, handle } = openUpdatePanel(
+      (payload) => {
         const selected = (payload as { selectedVersion: string }).selectedVersion;
         return updatePreview({
           proposedVersion: selected,
@@ -1688,16 +1671,12 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
           explicitVersion: selected,
         });
       },
-      install: { success: true, message: 'ok' },
-    });
+      { success: true, message: 'ok' },
+    );
     const stubs = installUiStubs();
     stubs.queueInfo('Update', undefined, 'Update');
     try {
-      await panel.waitForInitialLoad();
-      await panel.simulateWebviewMessage({
-        command: 'changeVersion',
-        data: { packageId: 'Ver.Pkg', version: '2.0.0' },
-      });
+      await sendAfterLoad(panel, 'changeVersion', { packageId: 'Ver.Pkg', version: '2.0.0' });
       assert.deepStrictEqual(panel.getActiveLoadingKeys(), [], 'install loading key cleared');
       assert.strictEqual(previewCalls(handle).length, 2, 'preview is refreshed after confirmation');
       assert.deepStrictEqual(
@@ -1722,9 +1701,9 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       );
       assert.ok(stubs.log.infoMessages[0]?.includes('Explicit boundary: major'));
 
-      await panel.simulateWebviewMessage({
-        command: 'changeVersion',
-        data: { packageId: 'Ver.Pkg', version: '1.3.0-beta.1' },
+      await sendWebviewMessage(panel, 'changeVersion', {
+        packageId: 'Ver.Pkg',
+        version: '1.3.0-beta.1',
       });
       const installs = handle.calls.filter((call) => call.method.endsWith('/install'));
       assert.strictEqual(installs.length, 2, 'each explicit confirmation applies once');
@@ -1745,9 +1724,8 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
 
   test('bounded Update confirms and applies the fixed host candidate', async () => {
     let previewCount = 0;
-    const { panel, handle } = openWithRoutes({
-      installed: installedSingle('Ver.Pkg'),
-      updatePreview: () => {
+    const { panel, handle } = openUpdatePanel(
+      () => {
         previewCount += 1;
         return previewCount === 1
           ? updatePreview()
@@ -1756,8 +1734,8 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
               affectedProjects: ['/virtual/unused/../Proj1.csproj'],
             });
       },
-      install: { success: true, message: 'ok' },
-    });
+      { success: true, message: 'ok' },
+    );
     const stubs = installUiStubs();
     stubs.queueInfo('Update');
     try {
@@ -1787,11 +1765,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   });
 
   test('a failed update restore reports failure with the exact attempted version', async () => {
-    const { panel, handle } = openWithRoutes({
-      installed: installedSingle('Ver.Pkg'),
-      updatePreview: updatePreview(),
-      install: { success: true, message: 'ok' },
-    });
+    const { panel, handle } = openUpdatePanel(updatePreview(), { success: true, message: 'ok' });
     const stubs = installUiStubs();
     stubs.queueInfo('Update', undefined);
     try {
@@ -1824,14 +1798,13 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   ]) {
     test(`a stale preview refreshes and never calls install: ${JSON.stringify(changed)}`, async () => {
       let calls = 0;
-      const { panel, handle } = openWithRoutes({
-        installed: installedSingle('Ver.Pkg'),
-        updatePreview: () => {
+      const { panel, handle } = openUpdatePanel(
+        () => {
           calls += 1;
           return calls === 1 ? updatePreview() : updatePreview(changed);
         },
-        install: { success: true, message: 'must not be applied' },
-      });
+        { success: true, message: 'must not be applied' },
+      );
       const stubs = installUiStubs();
       stubs.queueInfo('Update');
       try {
@@ -1853,10 +1826,9 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
   }
 
   test('cancelling bounded Update makes no mutation request', async () => {
-    const { panel, handle } = openWithRoutes({
-      installed: installedSingle('Ver.Pkg'),
-      updatePreview: updatePreview(),
-      install: { success: true, message: 'must not be applied' },
+    const { panel, handle } = openUpdatePanel(updatePreview(), {
+      success: true,
+      message: 'must not be applied',
     });
     const stubs = installUiStubs();
     stubs.queueInfo(undefined);
@@ -1900,10 +1872,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       assert.ok(handle.calls.length > before, 'refresh issued new LSP calls');
       // openExternal with empty url must not throw; with a url it must not throw either.
       await panel.simulateWebviewMessage({ command: 'openExternal', data: { url: '' } });
-      await panel.simulateWebviewMessage({
-        command: 'openExternal',
-        data: { url: 'https://example.com' },
-      });
+      await sendWebviewMessage(panel, 'openExternal', { url: 'https://example.com' });
       // entirely unknown command is ignored.
       await panel.simulateWebviewMessage({ command: 'totally-unknown' });
       assert.ok(panel.getRenderedHtml().length > 0, 'panel still renders after odd messages');
@@ -1934,10 +1903,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     try {
       await panel.waitForInitialLoad();
       assert.strictEqual(panel.getSelectedTargetId(), 'props-1');
-      await panel.simulateWebviewMessage({
-        command: 'changeTarget',
-        data: { targetId: 'proj-2' },
-      });
+      await sendWebviewMessage(panel, 'changeTarget', { targetId: 'proj-2' });
       assert.strictEqual(panel.getSelectedTargetId(), 'proj-2', 'selection changed');
       assert.strictEqual(
         ctx.workspaceState.get(LAST_TARGET_KEY),
@@ -2101,15 +2067,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
     });
     const panel = openFreshPanel(buildPropsTarget().path, 'UninstallOk', () => handle.client);
     try {
-      await panel.waitForInitialLoad();
-      assert.ok(
-        panel.getInstalledPackageIds().includes('Bye.Pkg'),
-        'precondition: package is installed',
-      );
-      await panel.simulateWebviewMessage({
-        command: 'uninstall',
-        data: { packageId: 'Bye.Pkg' },
-      });
+      await sendUninstallAfterLoad(panel, 'Bye.Pkg', 'precondition: package is installed');
       assert.ok(
         !panel.getInstalledPackageIds().includes('Bye.Pkg'),
         'a successful uninstall reloads installed and drops the package',
@@ -2131,10 +2089,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       await panel.waitForInitialLoad();
       // Drive str(value, 'browse') with a NON-string value (number) so the
       // typeof check fails and the documented default 'browse' is returned.
-      await panel.simulateWebviewMessage({
-        command: 'switchTab',
-        data: { tab: 123 },
-      });
+      await sendWebviewMessage(panel, 'switchTab', { tab: 123 });
       assert.strictEqual(
         panel.getCurrentTab(),
         'browse',
@@ -2171,10 +2126,7 @@ suite('NuGet Browser — panel driven by fake LanguageClient', () => {
       await panel.waitForInitialLoad();
       // packageId is a number → str() returns '' → findOrSynthesizePackage('')
       // matches nothing → selection stays undefined, no throw.
-      await panel.simulateWebviewMessage({
-        command: 'selectPackage',
-        data: { packageId: 42 },
-      });
+      await sendWebviewMessage(panel, 'selectPackage', { packageId: 42 });
       assert.strictEqual(
         panel.getSelectedPackageId(),
         undefined,

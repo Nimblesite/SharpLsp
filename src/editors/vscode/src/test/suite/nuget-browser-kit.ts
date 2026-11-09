@@ -7,6 +7,9 @@
 // lines each time, and easy to get subtly wrong (leaking a stale getClient).
 // One helper owns that dance; the installed/search fixtures below give each
 // test a named, typed response shape instead of an inline object literal.
+import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { NuGetBrowserPanel } from '../../nuget-browser.js';
@@ -80,3 +83,42 @@ export const EMPTY_PROJECT_XML = `<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup></ItemGroup>
 </Project>`;
+
+/** Creates `<root>/<dir>/Scratch.csproj` holding `xml` and returns the csproj path. */
+export function scratchCsproj(root: string, dir: string, xml: string): string {
+  const scratchDir = path.join(root, dir);
+  fs.mkdirSync(scratchDir, { recursive: true });
+  const csprojPath = path.join(scratchDir, 'Scratch.csproj');
+  fs.writeFileSync(csprojPath, xml, 'utf-8');
+  return csprojPath;
+}
+
+/** Sends `command` with `data` to `panel`'s webview message handler. */
+export function sendWebviewMessage(
+  panel: NuGetBrowserPanel,
+  command: string,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return panel.simulateWebviewMessage({ command, data });
+}
+
+/** Waits for `panel`'s initial load, then sends `command` with `data`. */
+export async function sendAfterLoad(
+  panel: NuGetBrowserPanel,
+  command: string,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  await panel.waitForInitialLoad();
+  return sendWebviewMessage(panel, command, data);
+}
+
+/** Waits for the initial load, asserts `packageId` is installed, then sends the `uninstall` message. */
+export async function sendUninstallAfterLoad(
+  panel: NuGetBrowserPanel,
+  packageId: string,
+  preconditionMessage: string,
+): Promise<unknown> {
+  await panel.waitForInitialLoad();
+  assert.ok(panel.getInstalledPackageIds().includes(packageId), preconditionMessage);
+  return sendWebviewMessage(panel, 'uninstall', { packageId });
+}
