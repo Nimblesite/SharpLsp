@@ -33,10 +33,28 @@ let private members (wanted: string -> bool) (xmlPath: string) =
             | _ -> reader.Read() |> ignore
     }
 
+/// Every member's XML of the documentation file `xmlPath`, by id.
+let private documentationOf (xmlPath: string) : IReadOnlyDictionary<string, string> =
+    let documentation = Dictionary<string, string>(StringComparer.Ordinal)
+
+    for id, xml in members (fun _ -> true) xmlPath do
+        xml |> Option.iter (fun xml -> documentation.TryAdd(id, xml) |> ignore)
+
+    documentation
+
+/// Each documentation file's members, read once, on the first hover that needs
+/// one: a hover on each overload of a `System.String` method would otherwise
+/// stream the 7.6 MB `System.Runtime.xml` again.
+let private files = ConcurrentDictionary<string, Lazy<IReadOnlyDictionary<string, string>>>()
+
 /// The `<member>` XML of `memberId` in the documentation file `xmlPath`.
 let private memberIn (memberId: string) (xmlPath: string) =
     if File.Exists xmlPath then
-        members ((=) memberId) xmlPath |> Seq.tryPick snd
+        let documentation = files.GetOrAdd(NativePaths.IdentityOf xmlPath, fun _ -> lazy documentationOf xmlPath)
+
+        match documentation.Value.TryGetValue memberId with
+        | true, xml -> Some xml
+        | false, _ -> None
     else
         None
 
