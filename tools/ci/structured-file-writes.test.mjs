@@ -2,28 +2,17 @@
 // git repository, and over this one.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { repository as gitRepository } from "./git-fixture.mjs";
 import test from "node:test";
 import { bannedWrite, violations } from "./structured-file-writes.mjs";
 
 const GATE = join(dirname(fileURLToPath(import.meta.url)), "structured-file-writes.mjs");
 
 /** A git repository holding `files`, removed when the test ends. */
-function repository(t, files) {
-    const root = mkdtempSync(join(tmpdir(), "sharplsp-structured-writes-"));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
-    for (const [path, text] of Object.entries(files)) {
-        mkdirSync(dirname(join(root, path)), { recursive: true });
-        writeFileSync(join(root, path), text, "utf8");
-    }
-    const git = (...args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
-    assert.equal(git("init", "--quiet").status, 0);
-    assert.equal(git("add", "--all").status, 0);
-    return root;
-}
+const repository = (t, files) => gitRepository(t, "sharplsp-structured-writes-", files);
 
 test("a whole-string write of a project, solution or manifest is banned in every language", () => {
     for (const line of [

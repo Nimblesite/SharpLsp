@@ -2,10 +2,10 @@
 // the real CLI over a real git repository.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { repository as gitRepository } from "./git-fixture.mjs";
 import test from "node:test";
 import { definedByHeading, headingIds, idsIn, problems } from "./spec-citations.mjs";
 
@@ -25,18 +25,7 @@ const SPEC = [
 ].join("\n");
 
 /** A git repository holding `files`, removed when the test ends. */
-function repository(t, files) {
-    const root = mkdtempSync(join(tmpdir(), "sharplsp-spec-citations-"));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
-    for (const [path, text] of Object.entries(files)) {
-        mkdirSync(dirname(join(root, path)), { recursive: true });
-        writeFileSync(join(root, path), text, "utf8");
-    }
-    const git = (...args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
-    assert.equal(git("init", "--quiet").status, 0);
-    assert.equal(git("add", "--all").status, 0);
-    return root;
-}
+const repository = (t, files) => gitRepository(t, "sharplsp-spec-citations-", files);
 
 /** Run the real gate over `root`. */
 function gate(root) {
