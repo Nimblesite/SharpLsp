@@ -476,8 +476,10 @@ export class NuGetBrowserPanel {
 
   private async performSearch(query: string): Promise<void> {
     this.currentSearchQuery = query;
-    const result = await this.loadFromServer('search', 'Search failed', async (lsp, target) =>
-      await searchPackages(lsp, target, query),
+    const result = await this.loadFromServer(
+      'search',
+      'Search failed',
+      async (lsp, target) => await searchPackages(lsp, target, query),
     );
     if (result === undefined) return;
     this.searchResults = result.packages;
