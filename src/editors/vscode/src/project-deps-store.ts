@@ -36,22 +36,7 @@ export function initProjectDepsStore(context: vscode.ExtensionContext): void {
   startMtimeGuard(context);
   if (watcher !== undefined) return;
   watcher = vscode.workspace.createFileSystemWatcher(WATCH_GLOB);
-  context.subscriptions.push(watcher);
-  context.subscriptions.push(
-    watcher.onDidChange((uri) => {
-      schedule(uri.fsPath);
-    }),
-  );
-  context.subscriptions.push(
-    watcher.onDidCreate((uri) => {
-      schedule(uri.fsPath);
-    }),
-  );
-  context.subscriptions.push(
-    watcher.onDidDelete((uri) => {
-      remove(uri.fsPath);
-    }),
-  );
+  context.subscriptions.push(watcher, ...followProjectFiles(watcher));
   log.traceInfo(`project-deps-store: watching ${WATCH_GLOB}`);
   for (const projectPath of projectDependencies.value.keys()) ensureProjectWatcher(projectPath);
 }
@@ -69,15 +54,7 @@ export function ensureTracked(projectPath: string): deps.ProjectDependencies {
     updateProjectMtime(absolute);
     return existing;
   }
-  const parsed = deps.parseProjectDependencies(absolute);
-  const next = new Map(projectDependencies.value);
-  next.set(absolute, parsed);
-  updateProjectMtime(absolute);
-  projectDependencies.value = next;
-  log.traceInfo(
-    `project-deps-store: tracked ${absolute} (${parsed.nugetPackages.length.toString()} packages)`,
-  );
-  return parsed;
+  return storeParsed(absolute, 'tracked');
 }
 
 /** Synchronously refresh an already-tracked project from disk. */
@@ -94,13 +71,7 @@ export function refreshTracked(projectPath: string): deps.ProjectDependencies | 
   projectMtimes.set(absolute, mtime);
   const existing = projectDependencies.value.get(absolute);
   if (existing !== undefined && dependenciesEqual(existing, parsed)) return parsed;
-
-  const next = new Map(projectDependencies.value);
-  next.set(absolute, parsed);
-  projectDependencies.value = next;
-  log.traceInfo(
-    `project-deps-store: refreshed ${absolute} (${parsed.nugetPackages.length.toString()} packages)`,
-  );
+  publish(absolute, parsed, 'refreshed');
   return parsed;
 }
 
@@ -123,15 +94,7 @@ function ensureProjectWatcher(projectPath: string): void {
   const nodeWatcher = watchTrackedProjectWithNode(projectPath);
   const subscription = vscode.Disposable.from(
     projectWatcher,
-    projectWatcher.onDidChange((uri) => {
-      schedule(uri.fsPath);
-    }),
-    projectWatcher.onDidCreate((uri) => {
-      schedule(uri.fsPath);
-    }),
-    projectWatcher.onDidDelete((uri) => {
-      remove(uri.fsPath);
-    }),
+    ...followProjectFiles(projectWatcher),
     ...(nodeWatcher !== undefined ? [nodeWatcher] : []),
   );
   storeContext.subscriptions.push(subscription);
@@ -218,6 +181,20 @@ function updateProjectMtime(projectPath: string): void {
   }
 }
 
+/** Rescan on change or create, forget on delete — the one reaction every project watcher has. */
+function followProjectFiles(projectWatcher: vscode.FileSystemWatcher): vscode.Disposable[] {
+  const rescanPath = (uri: vscode.Uri): void => {
+    schedule(uri.fsPath);
+  };
+  return [
+    projectWatcher.onDidChange(rescanPath),
+    projectWatcher.onDidCreate(rescanPath),
+    projectWatcher.onDidDelete((uri) => {
+      remove(uri.fsPath);
+    }),
+  ];
+}
+
 function dependenciesEqual(
   left: deps.ProjectDependencies,
   right: deps.ProjectDependencies,
@@ -228,23 +205,30 @@ function dependenciesEqual(
   );
 }
 
+/** Same length and pairwise `same`, in order. */
+function sameList<T>(
+  left: readonly T[],
+  right: readonly T[],
+  same: (a: T, b: T) => boolean,
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => {
+      const other = right[index];
+      return other !== undefined && same(item, other);
+    })
+  );
+}
+
 function packagesEqual(left: deps.NuGetPackage[], right: deps.NuGetPackage[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((pkg, index) => {
-    const other = right[index];
-    return pkg.name === other?.name && pkg.version === other.version;
-  });
+  return sameList(left, right, (a, b) => a.name === b.name && a.version === b.version);
 }
 
 function projectReferencesEqual(
   left: deps.ProjectReference[],
   right: deps.ProjectReference[],
 ): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((ref, index) => {
-    const other = right[index];
-    return ref.name === other?.name && ref.includePath === other.includePath;
-  });
+  return sameList(left, right, (a, b) => a.name === b.name && a.includePath === b.includePath);
 }
 
 function schedule(filePath: string): void {
@@ -272,13 +256,24 @@ function rescan(filePath: string): void {
 function rescanOne(projectPath: string): void {
   const absolute = resolvePath(projectPath);
   if (!projectDependencies.value.has(absolute)) return;
+  storeParsed(absolute, 'rescanned');
+}
+
+/** Parse `absolute` from disk, record its mtime and publish it under `verb`. */
+function storeParsed(absolute: string, verb: 'tracked' | 'rescanned'): deps.ProjectDependencies {
   const parsed = deps.parseProjectDependencies(absolute);
+  updateProjectMtime(absolute);
+  publish(absolute, parsed, verb);
+  return parsed;
+}
+
+/** Replace one project's entry in the signal, notifying every consumer. */
+function publish(absolute: string, parsed: deps.ProjectDependencies, verb: string): void {
   const next = new Map(projectDependencies.value);
   next.set(absolute, parsed);
-  updateProjectMtime(absolute);
   projectDependencies.value = next;
   log.traceInfo(
-    `project-deps-store: rescanned ${absolute} (${parsed.nugetPackages.length.toString()} packages)`,
+    `project-deps-store: ${verb} ${absolute} (${parsed.nugetPackages.length.toString()} packages)`,
   );
 }
 
