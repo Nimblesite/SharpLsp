@@ -30,6 +30,7 @@ import { buildProjectXml, writeProject } from './dotnet-project-kit';
 import { TFM, buildProject, isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { eq, pollUntilResult, removeDirRecursive, assertContainsAll } from './test-helpers';
+import { assertEndedOnce, endsAfterDeadline, withDriver } from './debug-flow-kit';
 
 /** How long this suite gives the router's own deadline to fire. */
 const TEST_DEADLINE_MS = 400;
@@ -234,12 +235,17 @@ class WedgeDriver {
 
   /** Every event of one name the router has fired so far. */
   public events(name: string): DapMessage[] {
-    return this.emitted.filter((m) => m.type === 'event' && m.event === name);
+    return this.matching((message) => message.type === 'event' && message.event === name);
   }
 
   /** Every answer to `command` the router has sent the client so far. */
   public answers(command: string): DapMessage[] {
-    return this.emitted.filter((m) => m.type === 'response' && m.command === command);
+    return this.matching((message) => message.type === 'response' && message.command === command);
+  }
+
+  /** The messages among what the router emitted that `predicate` accepts. */
+  private matching(predicate: (message: DapMessage) => boolean): DapMessage[] {
+    return this.emitted.filter(predicate);
   }
 
   /** Wait for a `terminated` event to reach the client. */
@@ -262,6 +268,11 @@ class WedgeDriver {
   public dispose(): void {
     this.router.dispose();
   }
+}
+
+/** The stub ANSWERED `command`: a wedge is a silence, never a refused request. */
+async function assertAnswered(driver: WedgeDriver, command: string, why: string): Promise<void> {
+  eq((await driver.request(command)).success, true, why);
 }
 
 /**
@@ -291,9 +302,8 @@ function useStub(prefix: string): (behaviour: string) => WedgeDriver {
 suite('An adapter that stops answering the request to stop', () => {
   const start = useStub('sharplsp-wedge-');
 
-  test('terminate that is answered but never honoured still ends the session', async () => {
-    const driver = start(BEHAVIOUR.wedge);
-    try {
+  test('terminate that is answered but never honoured still ends the session', () =>
+    withDriver(start, BEHAVIOUR.wedge, async (driver) => {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq(driver.events('terminated').length, 0, 'nothing has ended the session yet');
 
@@ -301,51 +311,43 @@ suite('An adapter that stops answering the request to stop', () => {
       eq(stop.success, true, 'the adapter ANSWERS terminate — that is the whole trap');
       eq(driver.events('terminated').length, 0, 'answering it is not ending it: none yet');
 
-      const ended = await driver.awaitTerminated();
-      eq(ended.length, 1, 'the router ended the session exactly once');
+      await assertEndedOnce(driver, 'the router ended the session exactly once');
       const told = driver.console();
       assertContainsAll(told, ['netcoredbg', 'stop'], 'told');
-    } finally {
-      driver.dispose();
-    }
-  });
+    }));
 
-  test('disconnect is owed an end on the same deadline as terminate', async () => {
-    const driver = start(BEHAVIOUR.wedge);
-    try {
+  test('disconnect is owed an end on the same deadline as terminate', () =>
+    withDriver(start, BEHAVIOUR.wedge, async (driver) => {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('disconnect')).success, true, 'the adapter answers disconnect too');
       eq(driver.events('terminated').length, 0, 'answering disconnect did not end the session');
 
-      const ended = await driver.awaitTerminated();
-      eq(ended.length, 1, 'the router ended the session after disconnect went unhonoured');
-    } finally {
-      driver.dispose();
-    }
-  });
+      await assertEndedOnce(
+        driver,
+        'the router ended the session after disconnect went unhonoured',
+      );
+    }));
 
-  test('an adapter that honours the stop is never second-guessed', async () => {
-    const driver = start(BEHAVIOUR.honest);
-    try {
+  test('an adapter that honours the stop is never second-guessed', () =>
+    withDriver(start, BEHAVIOUR.honest, async (driver) => {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('terminate')).success, true, 'terminate is answered');
-      const ended = await driver.awaitTerminated();
-      eq(ended.length, 1, "the adapter's own terminated reached the client");
+      await assertEndedOnce(driver, "the adapter's own terminated reached the client");
 
-      await new Promise((resolve) => setTimeout(resolve, TEST_DEADLINE_MS * 4));
-      eq(driver.events('terminated').length, 1, 'and the deadline, disarmed, added no second one');
+      await endsAfterDeadline(
+        driver,
+        1,
+        'and the deadline, disarmed, added no second one',
+        TEST_DEADLINE_MS,
+      );
       eq(driver.console(), '', 'nothing was said to the user: nothing went wrong');
-    } finally {
-      driver.dispose();
-    }
-  });
+    }));
 
   // VS Code replies to `terminated` with `disconnect` and holds the session
   // until that is answered: a launch made meanwhile found the dead session
   // still active, and a breakpoint edit reached an adapter that refused it.
-  test('a disconnect the adapter exits on is answered for it', async () => {
-    const driver = start(BEHAVIOUR.vanish);
-    try {
+  test('a disconnect the adapter exits on is answered for it', () =>
+    withDriver(start, BEHAVIOUR.vanish, async (driver) => {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('terminate')).success, true, 'terminate is answered');
       eq((await driver.awaitTerminated()).length, 1, "the adapter's own terminated arrived");
@@ -355,62 +357,49 @@ suite('An adapter that stops answering the request to stop', () => {
       eq(reply.command, 'disconnect', 'the answer is to the disconnect itself');
       eq(driver.events('terminated').length, 1, 'the end was announced once, not again');
       eq(driver.console(), '', 'a session that ended cleanly reports no failure');
-    } finally {
-      driver.dispose();
-    }
-  });
+    }));
 
-  test('a restart inside the deadline retires it along with the adapter it was owed by', async () => {
-    const driver = start(BEHAVIOUR.wedge);
-    try {
+  test('a restart inside the deadline retires it along with the adapter it was owed by', () =>
+    withDriver(start, BEHAVIOUR.wedge, async (driver) => {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
-      eq(
-        (await driver.request('terminate')).success,
-        true,
-        'the first adapter answers the stop, then wedges',
-      );
+      await assertAnswered(driver, 'terminate', 'the first adapter answers the stop, then wedges');
       // Stop visibly did nothing, so the user's next click is Restart. The
       // wedged adapter is retired as `replaced` — its death is ordered, never
       // reported — and a fresh one takes over the session.
       eq((await driver.request('restart')).success, true, 'restart is accepted');
 
-      await new Promise((resolve) => setTimeout(resolve, TEST_DEADLINE_MS * 4));
-      eq(
-        driver.events('terminated').length,
+      await endsAfterDeadline(
+        driver,
         0,
         'the deadline the RETIRED adapter owed did not end the session the restart began',
+        TEST_DEADLINE_MS,
       );
       eq(driver.console(), '', 'and the user was not told a replaced adapter stopped answering');
-      eq(
-        (await driver.request('threads')).success,
-        true,
-        'the restarted adapter is alive and answering',
-      );
+      await assertAnswered(driver, 'threads', 'the restarted adapter is alive and answering');
 
       // Retired, not disabled: a stop the NEW adapter wedges on is owed its own end.
-      eq(
-        (await driver.request('terminate')).success,
-        true,
+      await assertAnswered(
+        driver,
+        'terminate',
         'the restarted adapter answers a stop, then wedges',
       );
-      const ended = await driver.awaitTerminated();
-      eq(ended.length, 1, 'the router ended the session exactly once, on the fresh deadline');
-    } finally {
-      driver.dispose();
-    }
-  });
+      await assertEndedOnce(
+        driver,
+        'the router ended the session exactly once, on the fresh deadline',
+      );
+    }));
 
-  test('a request that is not a stop request arms nothing', async () => {
-    const driver = start(BEHAVIOUR.wedge);
-    try {
+  test('a request that is not a stop request arms nothing', () =>
+    withDriver(start, BEHAVIOUR.wedge, async (driver) => {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
       eq((await driver.request('threads')).success, true, 'an ordinary request is answered');
-      await new Promise((resolve) => setTimeout(resolve, TEST_DEADLINE_MS * 4));
-      eq(driver.events('terminated').length, 0, 'a session nobody asked to stop is never ended');
-    } finally {
-      driver.dispose();
-    }
-  });
+      await endsAfterDeadline(
+        driver,
+        0,
+        'a session nobody asked to stop is never ended',
+        TEST_DEADLINE_MS,
+      );
+    }));
 
   test('the shipped deadline leaves the teardown poll room to observe the end', () => {
     assert.ok(
@@ -436,9 +425,8 @@ suite('An adapter that stops answering the request to stop', () => {
 suite('An adapter that cancels a threads request under a resume', () => {
   const start = useStub('sharplsp-threads-');
 
-  test('the cancelled threads request is asked again and the client gets the list', async () => {
-    const driver = start(BEHAVIOUR.cancelThreads);
-    try {
+  test('the cancelled threads request is asked again and the client gets the list', () =>
+    withDriver(start, BEHAVIOUR.cancelThreads, async (driver) => {
       eq((await driver.request('initialize')).success, true, 'the stub is speaking DAP');
 
       // Interaction 1 — the adapter cancels the client's threads request.
@@ -456,10 +444,7 @@ suite('An adapter that cancels a threads request under a resume', () => {
       eq(again.success, true, 'a threads request the adapter answers is forwarded as it is');
       eq(again.request_seq, Number(listed.request_seq) + 1, 'answering the request that asked');
       eq(driver.events('terminated').length, 0, 'and nothing about this ends the session');
-    } finally {
-      driver.dispose();
-    }
-  });
+    }));
 });
 
 // netcoredbg sometimes cannot evaluate the exception object on a stop: every

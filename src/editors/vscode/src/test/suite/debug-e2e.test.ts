@@ -10,28 +10,29 @@ import {
   bareF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
-import {
-  TFM,
-  buildProject,
-  writeLaunchSettings,
-  writeRawLaunchSettings,
-} from './run-debug-fixtures';
+import { TFM, writeLaunchSettings, writeRawLaunchSettings } from './run-debug-fixtures';
 import { comparablePath } from './test-helpers';
 import { DOTNET_CLI_MS } from './test-timeouts';
 import {
   assertBuildTaskContributed,
-  builtAssembly,
-  consoleProject,
+  buildConsole,
+  handPickedProgram,
   assertNoProfileValues,
+  assertPresetWins,
+  assertProfileApplied,
   assertResolves,
   assertSamePath,
   assertSynthesised,
   countScans,
+  newConsole,
   provideFor,
   provider,
   resolveConfig,
+  resolveExplicitProgram,
+  PROFILE_ENV,
   staleFrameworks,
   useHarness,
+  userConfig,
 } from './debug-e2e-kit';
 
 /** An IISExpress profile the adapter must skip, and one eligible `Project` profile. */
@@ -40,7 +41,7 @@ const IIS_AND_WEB = {
     IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
     Web: {
       commandName: 'Project',
-      environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
+      environmentVariables: PROFILE_ENV,
       commandLineArgs: '--port 5000',
     },
   },
@@ -52,13 +53,11 @@ suite('Debug E2E — F5 with no launch.json', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG] rules 1-5, [DEBUG-FEATURES-LAUNCH-BUILD] rules 1-3.
   test('every no-config shape resolves to the same launchable, idempotent config', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const { tmpDir, stubs, recorder } = harness();
-    const { project, folder } = consoleProject(tmpDir, 'Console1');
+    const { project, folder, stubs, recorder } = newConsole(harness(), 'Console1');
 
     // 1. The user builds the project, so MSBuild — not a guessed layout — says
     //    where the assembly is. [DEBUG-FEATURES-LAUNCH-BUILD] rule 3.
-    await buildProject(project);
-    const built = builtAssembly(project);
+    const built = await buildConsole(project);
     assert.ok(fs.existsSync(built), `dotnet build must produce ${built}`);
 
     // 2. The user opens Program.cs, then presses F5. The shape VS Code really
@@ -115,10 +114,8 @@ suite('Debug E2E — F5 with no launch.json', () => {
   // asserted it. Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG] rule 4.
   test('an explicit program is preserved verbatim while a missing one is resolved', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const { tmpDir, stubs, recorder } = harness();
-    const { project, folder } = consoleProject(tmpDir, 'Explicit');
-    await buildProject(project);
-    const built = builtAssembly(project);
+    const { project, folder, stubs, recorder } = newConsole(harness(), 'Explicit');
+    const built = await buildConsole(project);
     assert.ok(fs.existsSync(built), 'the premise: the project really built');
 
     // 1. No program at all — the resolver must find the project's own output.
@@ -128,14 +125,11 @@ suite('Debug E2E — F5 with no launch.json', () => {
     assertSamePath(detected.cwd, project.dir, 'and cwd is the project directory');
 
     // 2. An explicit program the user wrote in launch.json is NOT re-resolved.
-    const chosen = path.join(project.dir, 'bin', 'Debug', TFM, 'HandPicked.dll');
-    const explicit = await resolveConfig(folder, {
-      type: DEBUG_TYPE_ID,
-      request: 'launch',
-      name: 'Mine',
-      program: chosen,
-    });
-    assert.strictEqual(explicit.program, chosen, 'an explicit program survives byte-for-byte');
+    const explicit = await resolveExplicitProgram(
+      folder,
+      project,
+      'an explicit program survives byte-for-byte',
+    );
     assert.notStrictEqual(
       comparablePath(explicit.program),
       comparablePath(built),
@@ -145,7 +139,11 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
     // 3. Resolving twice is idempotent — VS Code re-enters this chain.
     const again = await resolveConfig(folder, { ...explicit });
-    assert.strictEqual(again.program, chosen, 're-resolving never rewrites the explicit program');
+    assert.strictEqual(
+      again.program,
+      explicit.program,
+      're-resolving never rewrites the explicit program',
+    );
 
     // 4. An explicit program that does NOT exist is still the user's decision at
     //    this stage; refusing it belongs to the post-substitution pass, which is
@@ -173,59 +171,35 @@ suite('Debug E2E — F5 with no launch.json', () => {
   // profile's environment and arguments from every hand-written configuration.
   test('a launch profile still applies when the configuration states its own program', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const { tmpDir, stubs, recorder } = harness();
-    const { project, folder } = consoleProject(tmpDir, 'ExplicitProfile');
+    const { project, folder, stubs, recorder } = newConsole(harness(), 'ExplicitProfile');
     writeLaunchSettings(project.dir, IIS_AND_WEB);
 
     // 1. The user's own program, plus the project's profile. Both must survive.
-    const chosen = path.join(project.dir, 'bin', 'Debug', TFM, 'HandPicked.dll');
-    const resolved = await resolveConfig(folder, {
-      type: DEBUG_TYPE_ID,
-      request: 'launch',
-      name: 'Mine',
-      program: chosen,
+    const chosen = handPickedProgram(project);
+    const resolved = await resolveExplicitProgram(
+      folder,
+      project,
+      'the explicit program is still never rewritten',
+    );
+    assertProfileApplied(resolved, {
+      env: 'the Project profile supplies env even when the program was stated',
+      args: 'and commandLineArgs still become argv',
+      keys: 'the IISExpress profile must not leak in on this path either',
     });
-    assert.strictEqual(resolved.program, chosen, 'the explicit program is still never rewritten');
-    const resolvedEnv: Record<string, string> = resolved.env;
-    assert.deepStrictEqual(
-      resolvedEnv,
-      { ASPNETCORE_ENVIRONMENT: 'Development' },
-      'the Project profile supplies env even when the program was stated',
-    );
-    assert.deepStrictEqual(
-      resolved.args,
-      ['--port', '5000'],
-      'and commandLineArgs still become argv',
-    );
-    assert.deepStrictEqual(
-      Object.keys(resolvedEnv).sort(),
-      ['ASPNETCORE_ENVIRONMENT'],
-      'the IISExpress profile must not leak in on this path either',
-    );
 
     // 2. What the configuration states itself still wins over the profile.
-    const preset = await resolveConfig(folder, {
-      type: DEBUG_TYPE_ID,
-      request: 'launch',
-      name: 'Mine',
-      program: chosen,
-      env: { WHICH: 'explicit' },
-      args: ['kept'],
-    });
-    assert.deepStrictEqual(
-      preset.env,
-      { ASPNETCORE_ENVIRONMENT: 'Development', WHICH: 'explicit' },
-      'env still merges per key when the program was stated',
+    const preset = await resolveConfig(
+      folder,
+      userConfig('Mine', 'launch', { program: chosen, env: { WHICH: 'explicit' }, args: ['kept'] }),
     );
-    assert.deepStrictEqual(preset.args, ['kept'], 'and explicit args still win whole');
+    assertPresetWins(
+      preset,
+      'env still merges per key when the program was stated',
+      'and explicit args still win whole',
+    );
 
     // 3. An attach that names a program is still not a launch. Rule 2.
-    const attach = await resolveConfig(folder, {
-      type: DEBUG_TYPE_ID,
-      request: 'attach',
-      name: 'A',
-      program: chosen,
-    });
+    const attach = await resolveConfig(folder, userConfig('A', 'attach', { program: chosen }));
     assertNoProfileValues(attach, 'an attach configuration that states a program');
 
     assert.deepStrictEqual(stubs.log.errorMessages, [], 'this path raises no error dialog');
@@ -235,8 +209,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
   test('an unsound launchSettings.json never blocks F5; a sound one supplies env and args', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const { tmpDir, stubs, recorder } = harness();
-    const { project, folder } = consoleProject(tmpDir, 'Profiles');
+    const { project, folder, stubs, recorder } = newConsole(harness(), 'Profiles');
 
     // 1. No profile file at all. B10
     const clean = await resolveConfig(folder, emptyF5Config());
@@ -272,51 +245,29 @@ suite('Debug E2E — F5 with no launch.json', () => {
     // 4. The user repairs the document. One `Project` profile is eligible; the
     //    IISExpress one is not. [DEBUG-FEATURES-LAUNCH-PROFILES] mapping table.
     writeLaunchSettings(project.dir, IIS_AND_WEB);
-    const launch = await resolveConfig(folder, {
-      type: DEBUG_TYPE_ID,
-      name: 'L',
-      request: 'launch',
+    const launch = await resolveConfig(folder, userConfig('L', 'launch'));
+    assertProfileApplied(launch, {
+      env: 'the Project profile beats the IISExpress one',
+      args: 'commandLineArgs become argv',
+      keys: 'the IISExpress env must not leak in',
     });
-    // Captured before the deepStrictEqual below: that assertion is a TypeScript
-    // assertion function, so it NARROWS `launch.env` to the compared shape and a
-    // later lookup of a key outside that shape stops compiling.
-    const launchEnv: Record<string, string> = launch.env;
-    assert.deepStrictEqual(
-      launchEnv,
-      { ASPNETCORE_ENVIRONMENT: 'Development' },
-      'the Project profile beats the IISExpress one',
-    );
-    assert.deepStrictEqual(launch.args, ['--port', '5000'], 'commandLineArgs become argv');
-    assert.deepStrictEqual(
-      Object.keys(launchEnv).sort(),
-      ['ASPNETCORE_ENVIRONMENT'],
-      'the IISExpress env must not leak in',
-    );
     assertSamePath(launch.program, String(clean.program), 'a profile does not move the target');
 
     // 5. Profiles apply only to launch requests. Rule 2.
-    const attach = await resolveConfig(folder, {
-      type: DEBUG_TYPE_ID,
-      name: 'A',
-      request: 'attach',
-    });
+    const attach = await resolveConfig(folder, userConfig('A', 'attach'));
     assertNoProfileValues(attach, 'an attach configuration');
     assert.strictEqual(attach.request, 'attach', 'and stays an attach request');
 
     // 6. A launch.json that already states env/args wins per the mapping table.
-    const preset = await resolveConfig(folder, {
-      type: DEBUG_TYPE_ID,
-      name: 'L',
-      request: 'launch',
-      env: { WHICH: 'explicit' },
-      args: ['kept'],
-    });
-    assert.deepStrictEqual(
-      preset.env,
-      { ASPNETCORE_ENVIRONMENT: 'Development', WHICH: 'explicit' },
-      'the mapping table merges env PER KEY: WHICH is pinned, the rest still arrives',
+    const preset = await resolveConfig(
+      folder,
+      userConfig('L', 'launch', { env: { WHICH: 'explicit' }, args: ['kept'] }),
     );
-    assert.deepStrictEqual(preset.args, ['kept'], 'args are a list, so explicit args win whole');
+    assertPresetWins(
+      preset,
+      'the mapping table merges env PER KEY: WHICH is pinned, the rest still arrives',
+      'args are a list, so explicit args win whole',
+    );
     assert.strictEqual(
       (preset.env as Record<string, string>)['WHICH'],
       'explicit',
@@ -331,8 +282,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-NODEBUG] rules 1 and 3.
   test('Ctrl/Cmd+F5 keeps noDebug through resolution and resolves the same target as F5', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const { tmpDir, stubs, recorder } = harness();
-    const { project, folder } = consoleProject(tmpDir, 'NoDebug');
+    const { project, folder, stubs, recorder } = newConsole(harness(), 'NoDebug');
     const runShape = (): vscode.DebugConfiguration =>
       ({ noDebug: true }) as unknown as vscode.DebugConfiguration;
 
@@ -400,8 +350,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-DYNAMIC] rules 3, 4 and 5.
   test('the manifest offers initial configurations and snippets the live provider agrees with', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const { tmpDir, stubs, recorder } = harness();
-    const { folder } = consoleProject(tmpDir, 'Agree');
+    const { folder, stubs, recorder } = newConsole(harness(), 'Agree');
 
     // 1. The live provider is the reference: whatever framework IT targets is
     //    the one every manifest surface has to teach. Rule 5.
@@ -468,14 +417,14 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-DYNAMIC] rule 6.
   test('provideDebugConfigurations emits one config per profile and resolves the target once', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const { tmpDir, stubs, recorder } = harness();
+    const { stubs, recorder } = harness();
 
     // 1. A window with no folder open generates nothing at all.
     const none = await provider.provideDebugConfigurations(undefined);
     assert.deepStrictEqual(none, [], 'a folderless window generates no configurations');
 
     // 2. One project, no profiles: exactly one default configuration.
-    const { project: solo, folder } = consoleProject(tmpDir, 'Solo');
+    const { project: solo, folder } = newConsole(harness(), 'Solo');
     const defaults = await provideFor(folder);
     assert.strictEqual(defaults.length, 1, 'exactly one default configuration');
     assert.strictEqual(defaults[0]?.name, 'Launch .NET Project', 'named for the generated file');

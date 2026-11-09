@@ -12,7 +12,7 @@
 import * as assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as vscode from 'vscode';
-import { MODE } from './debug-fixture-programs';
+import { MODE, type DebugFixture } from './debug-fixture-programs';
 import {
   CMD_STOP,
   assertStopReason,
@@ -22,6 +22,7 @@ import {
   variableNamed,
 } from './debug-drive-kit';
 import { assertCleanSession, stopDebuggee, useDebuggee, debugTest } from './debug-suite-kit';
+import { assertPauseFor, refusedLaunch, startAttached } from './debug-flow-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import {
   commandTokens,
@@ -73,6 +74,13 @@ function attachConfig(extra: Record<string, unknown>): vscode.DebugConfiguration
     justMyCode: true,
     ...extra,
   };
+}
+
+/** Start the fixture outside the debugger, asserted ALIVE: the premise of every attach. */
+async function startAliveOutside(fixture: DebugFixture, why: string): Promise<RunningDebuggee> {
+  const running = await startOutsideDebugger(fixture.dll, fixture.dir);
+  assert.ok(isAlive(running.pid), why);
+  return running;
 }
 
 /** True while the process is still alive — signal 0 probes without signalling. */
@@ -183,28 +191,18 @@ suite('Debug attach — taking control of a process that is already running', ()
     const { fixture, folder, recorder } = debuggee();
 
     // Interaction 1 — start the debuggee OUTSIDE the debugger.
-    const running = await startOutsideDebugger(fixture.dll, fixture.dir);
-    assert.ok(isAlive(running.pid), 'the process is alive before the attach');
+    const running = await startAliveOutside(fixture, 'the process is alive before the attach');
     eq(vscode.debug.activeDebugSession, undefined, 'and no session exists yet');
 
     // Interaction 2 — attach to it by pid.
-    const started = await vscode.debug.startDebugging(
+    const session = await startAttached(
       folder,
       attachConfig({ processId: running.pid }),
-    );
-    assert.ok(
-      started,
       '"Attach to running process by PID" is a P1 row. [DEBUG-GAPS] records the upstream ' +
         '`0x80070057` flakiness and commits SharpLsp to "Retry with exponential backoff", so a ' +
         'refusal here is a defect and not an accepted limitation',
+      'an accepted attach must leave an active session',
     );
-    const session = await pollUntilResult(
-      async () => vscode.debug.activeDebugSession,
-      (current) => current?.type === DEBUG_TYPE_ID,
-      60_000,
-      50,
-    );
-    assert.ok(session, 'an accepted attach must leave an active session');
     eq(session.configuration['request'], 'attach', 'the session must be an ATTACH, not a launch');
     eq(Number(session.configuration['processId']), running.pid, 'aimed at the pid we named');
     eq(session.configuration['justMyCode'], true, 'the attach schema carries justMyCode');
@@ -214,9 +212,9 @@ suite('Debug attach — taking control of a process that is already running', ()
     const [stop] = await recorder.waitForStops(1);
     assert.ok(stop, 'an attached process must be pausable — otherwise nothing can be inspected');
     assertStopReason(stop, 'pause', 'a pause on an attached process');
-    deepEq(
-      recorder.requests('pause').map((request) => Number(request.args['threadId'])),
-      [pausedThread],
+    assertPauseFor(
+      recorder,
+      pausedThread,
       'one Pause gesture must target the live attached thread exactly once',
     );
     const frames = await walkAttachedStack(session, stop.threadId);
@@ -257,8 +255,7 @@ suite('Debug attach — taking control of a process that is already running', ()
     const { fixture, folder, recorder } = debuggee();
 
     // Interaction 1 — one process of that name is running.
-    const running = await startOutsideDebugger(fixture.dll, fixture.dir);
-    assert.ok(isAlive(running.pid), 'the named process is alive');
+    const running = await startAliveOutside(fixture, 'the named process is alive');
 
     // Interaction 2 — attach by NAME, never mentioning the pid.
     const config = attachConfig({ processName: fixture.assemblyName });
@@ -290,28 +287,22 @@ suite('Debug attach — taking control of a process that is already running', ()
         `(pid ${String(running.pid)}), not another in its tree; it resolved ` +
         String(resolvedPid),
     );
-    const started = await vscode.debug.startDebugging(folder, config);
-    assert.ok(
-      started,
+    const session = await startAttached(
+      folder,
+      config,
       '"Attach to running process by name | attach (processName) | P2 | SharpLsp resolves ' +
         `name -> PID". Attaching to '${fixture.assemblyName}' must work without the user ` +
         'hunting for a pid in a process list',
+      'a name attach must leave an active session',
     );
 
     // Interaction 3 — the resolution must have landed on the RIGHT process.
-    const session = await pollUntilResult(
-      async () => vscode.debug.activeDebugSession,
-      (current) => current?.type === DEBUG_TYPE_ID,
-      60_000,
-      50,
-    );
-    assert.ok(session, 'a name attach must leave an active session');
     const pausedThread = await pauseAttached(session);
     const [stop] = await recorder.waitForStops(1);
     assert.ok(stop, 'the named process must be pausable');
-    deepEq(
-      recorder.requests('pause').map((request) => Number(request.args['threadId'])),
-      [pausedThread],
+    assertPauseFor(
+      recorder,
+      pausedThread,
       'the name attach must issue one Pause request to its resolved process thread',
     );
     const walk = await walkAttachedStack(session, stop.threadId);
@@ -342,11 +333,13 @@ suite('Debug attach — taking control of a process that is already running', ()
       deepEq(stubs.log.errorMessages, [], 'nothing has been reported yet');
 
       // Interaction 2 — attempt the attach.
-      const started = await vscode.debug.startDebugging(folder, attachConfig({ processId: ghost }));
-      assert.ok(!started, 'an attach to a dead pid must be refused, not reported as started');
+      await refusedLaunch(
+        folder,
+        attachConfig({ processId: ghost }),
+        'an attach to a dead pid must be refused, not reported as started',
+      );
 
       // Interaction 3 — exactly one message must tell the user why.
-      await sleep(QUIET_MS);
       const reported = [...stubs.log.errorMessages, ...stubs.log.warningMessages];
       eq(
         reported.length,
@@ -382,12 +375,11 @@ suite('Debug attach — taking control of a process that is already running', ()
       // merits, or one typo ends the debugging session for good.
       const secondGhost = ghost - 1;
       assert.ok(!isAlive(secondGhost), 'the second ghost pid is also dead');
-      const retried = await vscode.debug.startDebugging(
+      await refusedLaunch(
         folder,
         attachConfig({ processId: secondGhost }),
+        'a second dead pid is refused the same way',
       );
-      assert.ok(!retried, 'a second dead pid is refused the same way');
-      await sleep(QUIET_MS);
       eq(
         [...stubs.log.errorMessages, ...stubs.log.warningMessages].length,
         2,
