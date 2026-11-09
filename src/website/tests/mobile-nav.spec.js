@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+/** Open `path` and return its hamburger toggle and its nav links. */
+async function openNav(page, path = '/') {
+  await page.goto(path);
+  return { toggle: page.locator('#mobile-menu-toggle'), navLinks: page.locator('.nav-links') };
+}
+
 const MOBILE_VIEWPORTS = [
   { name: 'iPhone SE (375px)', width: 375, height: 667 },
   { name: 'iPhone 14 (390px)', width: 390, height: 844 },
@@ -11,41 +17,33 @@ for (const viewport of MOBILE_VIEWPORTS) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test('hamburger button is visible on homepage', async ({ page }) => {
-      await page.goto('/');
-      const toggle = page.locator('#mobile-menu-toggle');
+      const { toggle } = await openNav(page);
       await expect(toggle).toBeVisible();
     });
 
     test('nav links are hidden by default on homepage', async ({ page }) => {
-      await page.goto('/');
-      const navLinks = page.locator('.nav-links');
+      const { navLinks } = await openNav(page);
       await expect(navLinks).not.toBeVisible();
     });
 
     test('clicking hamburger reveals nav links', async ({ page }) => {
-      await page.goto('/');
-      const toggle = page.locator('#mobile-menu-toggle');
-      const navLinks = page.locator('.nav-links');
+      const { toggle, navLinks } = await openNav(page);
 
       await toggle.click();
       await expect(navLinks).toBeVisible();
     });
 
     test('nav links contain Docs, Blog, GitHub links', async ({ page }) => {
-      await page.goto('/');
-      const toggle = page.locator('#mobile-menu-toggle');
+      const { toggle, navLinks } = await openNav(page);
       await toggle.click();
 
-      const navLinks = page.locator('.nav-links');
       await expect(navLinks.locator('a[href*="/docs"]')).toBeVisible();
       await expect(navLinks.locator('a[href*="/blog"]')).toBeVisible();
       await expect(navLinks.locator('a[href*="github.com"]')).toBeVisible();
     });
 
     test('clicking hamburger again hides nav links', async ({ page }) => {
-      await page.goto('/');
-      const toggle = page.locator('#mobile-menu-toggle');
-      const navLinks = page.locator('.nav-links');
+      const { toggle, navLinks } = await openNav(page);
 
       await toggle.click();
       await expect(navLinks).toBeVisible();
@@ -55,8 +53,7 @@ for (const viewport of MOBILE_VIEWPORTS) {
     });
 
     test('hamburger aria-expanded state toggles correctly', async ({ page }) => {
-      await page.goto('/');
-      const toggle = page.locator('#mobile-menu-toggle');
+      const { toggle } = await openNav(page);
 
       await expect(toggle).not.toHaveAttribute('aria-expanded', 'true');
 
@@ -68,8 +65,7 @@ for (const viewport of MOBILE_VIEWPORTS) {
     });
 
     test('can navigate to docs page via mobile nav', async ({ page }) => {
-      await page.goto('/');
-      const toggle = page.locator('#mobile-menu-toggle');
+      const { toggle } = await openNav(page);
       await toggle.click();
 
       await page.locator('.nav-links a[href*="/docs"]').click();
@@ -77,17 +73,14 @@ for (const viewport of MOBILE_VIEWPORTS) {
     });
 
     test('hamburger is visible on docs page', async ({ page }) => {
-      await page.goto('/docs/');
-      const toggle = page.locator('#mobile-menu-toggle');
+      const { toggle } = await openNav(page, '/docs/');
       await expect(toggle).toBeVisible();
     });
 
     test('clicking hamburger on docs page reveals nav links', async ({ page }) => {
-      await page.goto('/docs/');
-      const toggle = page.locator('#mobile-menu-toggle');
+      const { toggle, navLinks } = await openNav(page, '/docs/');
       await toggle.click();
 
-      const navLinks = page.locator('.nav-links');
       await expect(navLinks).toBeVisible();
     });
 
@@ -117,14 +110,12 @@ test.describe('Desktop nav (sanity check)', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
   test('hamburger is hidden on desktop', async ({ page }) => {
-    await page.goto('/');
-    const toggle = page.locator('#mobile-menu-toggle');
+    const { toggle } = await openNav(page);
     await expect(toggle).not.toBeVisible();
   });
 
   test('nav links are visible on desktop without clicking anything', async ({ page }) => {
-    await page.goto('/');
-    const navLinks = page.locator('.nav-links');
+    const { navLinks } = await openNav(page);
     await expect(navLinks).toBeVisible();
   });
 
