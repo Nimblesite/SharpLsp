@@ -26,11 +26,12 @@ import {
 import {
   armBreakpoints,
   assertCleanSession,
-  startDebuggee,
   useDebuggee,
   runToFirstStop,
   debugTest,
 } from './debug-suite-kit';
+import { stopAfterLaunch } from './debug-stepping-kit';
+import { assertCapabilitySession, assertSingleHandshake } from './debug-protocol-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS } from './test-timeouts';
@@ -74,11 +75,9 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
   debugTest(
     'every Phase Four capability the table marks Yes is advertised',
     debuggee,
-    async ({ fixture, recorder }) => {
+    async ({ recorder }) => {
       // Interaction 1 — a real session, so the handshake is real.
-      armBreakpoints(fixture, 'main-accumulate');
-      await startDebuggee(debuggee(), { mode: MODE.plain });
-      await recorder.waitForStops(1);
+      await runToFirstStop(debuggee(), 'main-accumulate', { mode: MODE.plain });
       const capabilities = recorder.capabilities();
       eq(typeof capabilities, 'object', 'the initialize response must carry a capabilities body');
 
@@ -122,21 +121,14 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
       assertCleanSession(debuggee(), 'reading the Yes column');
       // Interaction 5 - the capability body must be a real object with real
       // flags, not an empty bag that trivially satisfies every "No" assertion.
-      assert.ok(
-        Object.keys(recorder.capabilities()).length >= 10,
+      assertCapabilitySession(
+        recorder,
         'the initialize response carries a populated capability body',
-      );
-      eq(recorder.responses('initialize').length, 1, 'answered exactly once');
-      assert.ok(
-        recorder.responses('initialize').every((response) => response.success),
+        'answered exactly once',
+        'with one initialized event unlocking configuration',
+        'and no adapter transport error',
         'and successfully',
       );
-      eq(
-        recorder.events('initialized').length,
-        1,
-        'with one initialized event unlocking configuration',
-      );
-      deepEq(recorder.errors, [], 'and no adapter transport error');
     },
   );
 
@@ -144,11 +136,9 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
   debugTest(
     'no Phase Five capability is over-claimed in Phase Four',
     debuggee,
-    async ({ fixture, recorder }) => {
+    async ({ recorder }) => {
       // Interaction 1 — a real session.
-      armBreakpoints(fixture, 'main-accumulate');
-      await startDebuggee(debuggee(), { mode: MODE.plain });
-      await recorder.waitForStops(1);
+      await runToFirstStop(debuggee(), 'main-accumulate', { mode: MODE.plain });
       const capabilities = recorder.capabilities();
 
       // Interaction 2 — every No row.
@@ -188,13 +178,13 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
         PHASE_FOUR_YES.length,
         'every Yes row really is advertised',
       );
-      assert.ok(
-        Object.keys(recorder.capabilities()).length >= 10,
+      assertCapabilitySession(
+        recorder,
         'so the capability body is genuinely populated',
+        'from one initialize response',
+        'and one initialized event',
+        'with no adapter transport error',
       );
-      eq(recorder.responses('initialize').length, 1, 'from one initialize response');
-      eq(recorder.events('initialized').length, 1, 'and one initialized event');
-      deepEq(recorder.errors, [], 'with no adapter transport error');
     },
   );
 
@@ -202,11 +192,9 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
   debugTest(
     'the initialize request pins the dialect the whole suite depends on',
     debuggee,
-    async ({ fixture, recorder }) => {
+    async ({ recorder }) => {
       // Interaction 1 — a real session.
-      armBreakpoints(fixture, 'main-accumulate');
-      await startDebuggee(debuggee(), { mode: MODE.plain });
-      await recorder.waitForStops(1);
+      await runToFirstStop(debuggee(), 'main-accumulate', { mode: MODE.plain });
 
       // Interaction 2 — the adapter must be addressed by the shipped type id.
       const initialize = requireAt(recorder.requests('initialize'), 0, 'the initialize request');
@@ -278,13 +266,15 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     async ({ fixture, recorder }) => {
       // Interaction 1 — launch with a mode argument and an environment probe.
       armBreakpoints(fixture, 'main-env');
-      await startDebuggee(debuggee(), {
-        mode: MODE.plain,
-        justMyCode: true,
-        env: { [ENV_PROBE]: 'capabilities-probe' },
-      });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'the debuggee must reach the statement that reads the environment');
+      await stopAfterLaunch(
+        debuggee(),
+        {
+          mode: MODE.plain,
+          justMyCode: true,
+          env: { [ENV_PROBE]: 'capabilities-probe' },
+        },
+        'the debuggee must reach the statement that reads the environment',
+      );
 
       // Interaction 2 — the request the workbench actually sent.
       const launch = requireAt(recorder.requests('launch'), 0, 'the launch request');
@@ -418,9 +408,11 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     async ({ fixture, recorder, sessions }) => {
       // Interaction 1 — a session parked on a breakpoint, mid-program.
       armBreakpoints(fixture, 'main-accumulate');
-      await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'the debuggee must be parked before it can be stopped');
+      await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the debuggee must be parked before it can be stopped',
+      );
       eq(sessions.ours.length, 1, 'exactly one session is running');
       eq(
         recorder.capabilities()['supportsTerminateRequest'],
@@ -474,12 +466,10 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
   debugTest(
     'every request is answered and every event is well-formed DAP',
     debuggee,
-    async ({ fixture, recorder }) => {
+    async ({ recorder }) => {
       // Interaction 1 — a session that runs from launch to termination, so the
       // whole conversation is on the wire.
-      armBreakpoints(fixture, 'main-accumulate');
-      await startDebuggee(debuggee(), { mode: MODE.plain });
-      await recorder.waitForStops(1);
+      await runToFirstStop(debuggee(), 'main-accumulate', { mode: MODE.plain });
       await vscode.commands.executeCommand(CMD_CONTINUE);
       await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
 
@@ -534,9 +524,12 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
         'a real session exchanges several commands',
       );
       assert.ok(new Set(recorder.requestedCommands()).size >= 4, 'of more than one kind');
-      eq(recorder.responses('initialize').length, 1, 'with exactly one initialize response');
-      eq(recorder.events('initialized').length, 1, 'one initialized event');
-      eq(recorder.events('terminated').length, 1, 'and one termination');
+      assertSingleHandshake(
+        recorder,
+        'with exactly one initialize response',
+        'one initialized event',
+        'and one termination',
+      );
     },
   );
 });

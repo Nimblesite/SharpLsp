@@ -38,14 +38,15 @@ import {
   assertBreakpointsBound,
   assertCleanSession,
   breakpointAt,
-  startDebuggee,
   useDebuggee,
   runToFirstStop,
   stopInFrame,
   debugTest,
 } from './debug-suite-kit';
+import { stopAfterLaunch } from './debug-stepping-kit';
 import { deepEq, eq, requireAt, assertContainsAll } from './test-helpers';
 import {
+  assertArmedSourceLines,
   assertValues,
   continueToCompletion,
   onlySourceBreakpoint,
@@ -71,10 +72,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
       // Interaction 2 — F9 must create the breakpoint.
       await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-      deepEq(
-        vscode.debug.breakpoints
-          .filter((bp): bp is vscode.SourceBreakpoint => bp instanceof vscode.SourceBreakpoint)
-          .map((bp) => bp.location.range.start.line),
+      assertArmedSourceLines(
         [fixture.source.line('main-accumulate')],
         'F9 must create an F# breakpoint. [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rule 3: F# ' +
           'breakpoints working today "only by accident — the built-in ms-vscode.js-debug happens ' +
@@ -83,9 +81,11 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
       );
 
       // Interaction 3 — launch and prove the breakpoint really binds.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'an F# breakpoint must stop the debuggee');
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'an F# breakpoint must stop the debuggee',
+      );
       assertStopReason(stop, 'breakpoint', 'an F# line breakpoint');
       assertBreakpointsBound(recorder, fixture, ['main-accumulate'], 'the F# line');
       assertStoppedAt(
@@ -291,9 +291,11 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
       // Interaction 2 — the condition must reach the adapter, and the stop must
       // be the pass it names.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'the condition holds on one F# pass, so the debuggee must stop once');
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the condition holds on one F# pass, so the debuggee must stop once',
+      );
       assertStopReason(stop, 'breakpoint', 'an F# conditional breakpoint');
       eq(
         recorder.capabilities()['supportsConditionalBreakpoints'],

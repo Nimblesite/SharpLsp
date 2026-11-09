@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DapRouter, INTERPRETER_ARGS } from '../../dap-router.js';
 import { SharpLspDebugAdapterFactory, getNetcoredbgCandidates } from '../../debug.js';
-import { DEBUG_TYPE_ID, fakeFolder, stopAnyDebugSession } from './run-debug-kit';
+import { debugSessionFor, stopAnyDebugSession } from './run-debug-kit';
 import { writeSpawnableAdapter } from './run-debug-fixtures';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
@@ -39,27 +39,6 @@ function bundledPath(extensionPath: string): string {
 /** Materialise an executable stand-in so `existsSync` sees a real candidate. */
 function writeFakeAdapter(target: string): string {
   return writeSpawnableAdapter(target);
-}
-
-/**
- * A session shaped like the real one VS Code hands the factory: it carries the
- * resolved `configuration` and the owning `workspaceFolder`, not just an id.
- */
-function sessionFor(name: string, root: string): vscode.DebugSession {
-  return {
-    id: `sess-${name}`,
-    type: DEBUG_TYPE_ID,
-    name,
-    workspaceFolder: fakeFolder(root),
-    configuration: {
-      type: DEBUG_TYPE_ID,
-      request: 'launch',
-      name,
-      program: path.join(root, 'bin', 'Debug', 'net10.0', `${name}.dll`),
-      cwd: root,
-      justMyCode: true,
-    },
-  } as unknown as vscode.DebugSession;
 }
 
 suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () => {
@@ -160,15 +139,42 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     return router;
   }
 
+  /** Write a fake adapter under `dir`, point the setting at it, and resolve a router. */
+  async function configureAndResolve(
+    target: SharpLspDebugAdapterFactory,
+    session: vscode.DebugSession,
+    dir: string,
+    message: string,
+  ): Promise<{ path: string; router: DapRouter }> {
+    const adapterPath = writeFakeAdapter(path.join(tmpDir, dir, EXE));
+    await setNetcoredbgPath(adapterPath);
+    const router = routerOf(target, session);
+    assert.strictEqual(router.adapterPath, adapterPath, message);
+    return { path: adapterPath, router };
+  }
+
+  /** Assert the factory refused and reported exactly `errorCount` messages. */
+  function assertRefused(
+    session: vscode.DebugSession,
+    message: string,
+    errorCount: number,
+    countMessage: string,
+  ): void {
+    assert.strictEqual(descriptorOf(factory, session), undefined, message);
+    assert.strictEqual(stubs.log.errorMessages.length, errorCount, countMessage);
+  }
+
   // B59 — the configured override outranks every discovered candidate.
   test('a configured netcoredbgPath outranks bundled, user-installed and PATH copies', async function () {
     this.timeout(SETTINGS_WRITE_MS);
-    const session = sessionFor('Configured', tmpDir);
+    const session = debugSessionFor('Configured', tmpDir);
 
-    const primary = writeFakeAdapter(path.join(tmpDir, 'configured', EXE));
-    await setNetcoredbgPath(primary);
-    const first = routerOf(factory, session);
-    assert.strictEqual(first.adapterPath, primary, 'B59: the configured path is spawned verbatim');
+    const { path: primary, router: first } = await configureAndResolve(
+      factory,
+      session,
+      'configured',
+      'B59: the configured path is spawned verbatim',
+    );
     assert.strictEqual(
       typeof first.adapterPath,
       'string',
@@ -216,10 +222,12 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     );
 
     // Repointing the setting repoints the descriptor.
-    const replacement = writeFakeAdapter(path.join(tmpDir, 'other', EXE));
-    await setNetcoredbgPath(replacement);
-    const fourth = routerOf(bundledFactory, session);
-    assert.strictEqual(fourth.adapterPath, replacement, 'B59: the setting is read per descriptor');
+    const { router: fourth } = await configureAndResolve(
+      bundledFactory,
+      session,
+      'other',
+      'B59: the setting is read per descriptor',
+    );
     assert.notStrictEqual(fourth.adapterPath, primary, 'B59: the old value must not be cached');
 
     // Clearing the setting hands the decision back to the candidate order.
@@ -280,7 +288,7 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     // The factory must honour that order, not merely publish it.
     isolateHome();
     await setNetcoredbgPath(undefined);
-    const session = sessionFor('Ordered', tmpDir);
+    const session = debugSessionFor('Ordered', tmpDir);
     const local = writeFakeAdapter(path.join(tmpDir, '.local', 'share', 'netcoredbg', EXE));
     assert.strictEqual(getNetcoredbgCandidates()[1], local, 'B61: ~/.local/share is candidate one');
     assert.strictEqual(
@@ -310,14 +318,14 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     const present = getNetcoredbgCandidates().filter((candidate) => fs.existsSync(candidate));
     assert.deepStrictEqual(present, [], 'the isolated HOME must leave no candidate on disk');
 
-    const session = sessionFor('Absent', tmpDir);
-    assert.strictEqual(
-      descriptorOf(factory, session),
-      undefined,
+    const session = debugSessionFor('Absent', tmpDir);
+    assertRefused(
+      session,
       "B60: with nothing installed the factory must refuse — a bare 'netcoredbg' descriptor " +
         'only defers the failure to a spawn ENOENT the user cannot diagnose',
+      1,
+      'B60: exactly one message per attempt',
     );
-    assert.strictEqual(stubs.log.errorMessages.length, 1, 'B60: exactly one message per attempt');
     assert.ok(
       stubs.log.errorMessages[0]?.includes('netcoredbg'),
       `B60: the message must name the missing tool; got: ${stubs.log.errorMessages[0] ?? '<none>'}`,
@@ -329,17 +337,16 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     const ghost = path.join(tmpDir, 'ghost', EXE);
     assert.ok(!fs.existsSync(ghost), 'the ghost path must not exist');
     await setNetcoredbgPath(ghost);
-    assert.strictEqual(
-      descriptorOf(factory, session),
-      undefined,
+    assertRefused(
+      session,
       'B60: a configured path that is missing falls through to the same refusal',
+      2,
+      'B60: one more message, not zero or two',
     );
-    assert.strictEqual(stubs.log.errorMessages.length, 2, 'B60: one more message, not zero or two');
 
     // An empty configured path is the same case.
     await setNetcoredbgPath('');
-    assert.strictEqual(descriptorOf(factory, session), undefined, 'B60: empty means unset');
-    assert.strictEqual(stubs.log.errorMessages.length, 3, 'B60: still one message per attempt');
+    assertRefused(session, 'B60: empty means unset', 3, 'B60: still one message per attempt');
 
     // Install one: resolution succeeds and adds NO new message.
     const installed = writeFakeAdapter(path.join(tmpDir, '.dotnet', 'tools', EXE));

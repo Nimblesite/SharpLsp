@@ -57,6 +57,18 @@ import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
 import { type UiStubs } from './ui-stubs';
 
+/** Discover `fixture`'s solution and assert the discovered set matches `expected`. */
+async function assertDiscoveredSet(
+  api: Parameters<typeof discoverSolution>[0],
+  fixture: TestDebugFixture,
+  expected: readonly string[],
+  message: string,
+): Promise<string[]> {
+  const discovered = await discoverSolution(api, fixture.solutionPath, FS_ALL);
+  deepEq([...discovered].sort(), [...expected].sort(), message);
+  return discovered;
+}
+
 suite('Debug an F# test — backtick names, modules and the at-cursor gesture', () => {
   let fixture: TestDebugFixture;
   let recorder: DapRecorder;
@@ -468,8 +480,12 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     //
     // Interaction 1 — the tree before.
     const api = await activateTestExplorer();
-    const before = await discoverSolution(api, fixture.solutionPath, FS_ALL);
-    deepEq([...before].sort(), [...FS_ALL].sort(), 'the F# fixture is fully discovered');
+    const before = await assertDiscoveredSet(
+      api,
+      fixture,
+      FS_ALL,
+      'the F# fixture is fully discovered',
+    );
     eq(
       before.filter((id) => id.trim() !== id).length,
       0,
@@ -492,8 +508,7 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
 
     // Interaction 3 — the tree, and every id in it, is byte-for-byte what it was.
-    const after = await discoverSolution(api, fixture.solutionPath, FS_ALL);
-    deepEq([...after].sort(), [...before].sort(), 'a debug run adds, drops and reorders nothing');
+    await assertDiscoveredSet(api, fixture, before, 'a debug run adds, drops and reorders nothing');
     for (const fqn of FS_ALL) {
       const item = findItem(api.testController.items, fqn);
       assert.ok(item, `${fqn} must still be a row after a debug run`);
