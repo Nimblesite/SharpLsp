@@ -24,6 +24,7 @@
     <Compile Include="FSharpRenameSemanticTests.fs" />
     <Compile Include="FSharpSemanticHighlightingTests.fs" />
     <Compile Include="FSharpCodeActionKit.fs" />
+    <Compile Include="FSharpSignatureParameterTests.fs" />
     <Compile Include="FSharpCodeActionSemanticTests.fs" />
     <Compile Include="FSharpPipeRefactoringTests.fs" />
     <Compile Include="FSharpNameFixTests.fs" />

@@ -1,0 +1,88 @@
+/// Active-parameter resolution for F# signature help. Implements [FS-SIGHELP].
+///
+/// `signatureHelp` always reports `ActiveParameter = 0`, so every parameter after
+/// the first is highlighted wrongly: the caret on the 2nd or 3rd argument of a
+/// static member must report 1 and 2. Nested calls, commas in strings and overlay
+/// edits can only be resolved from the caret, never from the line's raw text.
+module SharpLsp.Sidecar.FSharp.Tests.FSharpSignatureParameterTests
+
+open Xunit
+open SharpLsp.Sidecar.FSharp
+open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
+open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
+
+// Line indices (0-based): 3 = flat call, 4 = nested, 5 = comma in a string.
+let private SIGNATURE_SOURCE =
+    source
+        [ "module Signatures"
+          "type Calc ="
+          "    static member Add(a: int, b: int, c: int) = a + b + c"
+          "let first = Calc.Add(1, 2, 3)"
+          "let nested = Calc.Add(1, Calc.Add(4, 5, 6), 3)"
+          "let text = Calc.Add(\"x,y\".Length, 2, 3)" ]
+
+let private EDITED_SOURCE =
+    source
+        [ "module Signatures"
+          "type Calc ="
+          "    static member Add(a: int, b: int, c: int) = a + b + c"
+          "let edited = Calc.Add(7, 8, 9)" ]
+
+/// 0-based (line, character) of the `nth` occurrence of `needle` on `lineIdx`.
+let private at (lines: string array) lineIdx (needle: string) (nth: int) =
+    let line = lines[lineIdx]
+    let rec scan (from: int) (n: int) =
+        match line.IndexOf(needle, from) with
+        | -1 -> failwith $"'{needle}' missing on line {lineIdx} (occurrence {nth})"
+        | idx when n = 0 -> idx
+        | idx -> scan (idx + needle.Length) (n - 1)
+    (lineIdx, scan 0 nth)
+
+let private linesOf (text: string) = text.Replace("\r\n", "\n").Split('\n')
+
+/// The active parameter reported with the caret on `needle` must be `expected`.
+let private assertActive state path text lineIdx needle expected =
+    task {
+        let line, character = at (linesOf text) lineIdx needle 0
+        let! help = FSharpSignature.signatureHelp state path line character
+        match help with
+        | None -> failwith $"no signature help at ({line}, {character})"
+        | Some help ->
+            Assert.NotEmpty(help.Signatures)
+            Assert.Equal(expected, help.ActiveParameter)
+    }
+
+[<Fact>]
+let ``signature help reports the parameter the caret sits on`` () =
+    task {
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", SIGNATURE_SOURCE ]
+
+        try
+            // Flat call: each argument position, in order.
+            do! assertActive state paths[0] SIGNATURE_SOURCE 3 "1," 0
+            do! assertActive state paths[0] SIGNATURE_SOURCE 3 "2," 1
+            do! assertActive state paths[0] SIGNATURE_SOURCE 3 "3)" 2
+
+            // Nested call: the outer call keeps its own parameter index.
+            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "1, Calc" 0
+            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "Calc.Add(4" 1
+            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "3)" 2
+
+            // Inner call: the innermost call wins, again from argument 0.
+            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "4, 5" 0
+            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "5, 6" 1
+            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "6)" 2
+
+            // A comma inside a string literal is part of argument 0, not a separator.
+            do! assertActive state paths[0] SIGNATURE_SOURCE 5 "y\"." 0
+            do! assertActive state paths[0] SIGNATURE_SOURCE 5 "2," 1
+            do! assertActive state paths[0] SIGNATURE_SOURCE 5 "3)" 2
+
+            // Unsaved edits: the overlay text is what the caret is resolved against.
+            FSharpWorkspace.applyDidChange state paths[0] EDITED_SOURCE
+            do! assertActive state paths[0] EDITED_SOURCE 3 "7," 0
+            do! assertActive state paths[0] EDITED_SOURCE 3 "8," 1
+            do! assertActive state paths[0] EDITED_SOURCE 3 "9)" 2
+        finally
+            cleanup dir
+    }

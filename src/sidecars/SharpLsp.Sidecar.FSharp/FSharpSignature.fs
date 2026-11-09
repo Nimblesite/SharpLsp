@@ -5,6 +5,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpSignature
 
 open FSharp.Compiler.EditorServices
+open FSharp.Compiler.Text
 open Serilog
 
 /// One signature (overload) in the sidecar's neutral domain shape.
@@ -81,7 +82,7 @@ let private resolveSignatures
     : SignatureHelp option =
     match checkData with
     | None -> None
-    | Some(_parseResults, checkResults, source) ->
+    | Some(parseResults, checkResults, source) ->
         let lines = source.Replace("\r\n", "\n").Split('\n')
         if line < 0 || line >= lines.Length then
             None
@@ -101,7 +102,14 @@ let private resolveSignatures
                     Some
                         { Signatures = signatures
                           ActiveSignature = 0
-                          ActiveParameter = 0 }
+                          ActiveParameter =
+                            let caret = Position.mkPos (line + 1) character
+                            parseResults.FindParameterLocations(caret)
+                            |> Option.map (fun locations ->
+                                locations.TupleEndLocations
+                                |> Array.takeWhile (fun ending -> Position.posGeq caret ending)
+                                |> Array.length)
+                            |> Option.defaultValue 0 }
 
 /// Signature help at a 0-based position in an F# file.
 let signatureHelp

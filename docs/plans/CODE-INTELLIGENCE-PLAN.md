@@ -4,11 +4,12 @@ Remaining code intelligence features not covered by other plans.
 
 ## Signature Help
 
-- [ ] Implement `textDocument/signatureHelp` handler in Rust host
-- [ ] Wire C# sidecar to Roslyn `SignatureHelpService`
-- [ ] Wire F# sidecar to FCS signature help
-- [ ] Register `signatureHelpProvider` in server capabilities
-- [ ] E2E test: signature help on method call returns parameter info
+- [x] Implement `textDocument/signatureHelp` handler in Rust host — `signature_help.rs`
+- [x] Wire C# sidecar to Roslyn semantic-model overload resolution — `SignatureHelpResolver.cs`, matching [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]
+- [x] Wire F# sidecar to FCS signature help — `FSharpSignature.fs`
+- [x] Register `signatureHelpProvider` in server capabilities
+- [x] E2E test: signature help on method call returns parameter info — `SignatureHelpEndToEndTests`, the F# sidecar IPC constructor test, and published v0.32.1 F# LSP verification
+- [x] F# active parameter follows the caret across nested calls, string commas and unsaved changes — `FSharpSignatureParameterTests`, [FS-SIGHELP], issue #552
 
 ## Rename
 
