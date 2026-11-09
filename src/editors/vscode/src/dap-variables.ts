@@ -13,6 +13,7 @@ import { childrenOf, evaluateIn, referenceOf, stringField, variablesOf } from '.
 import { DebuggerDisplayEmulator } from './dap-display';
 import { StaticsScopes } from './dap-statics';
 import type { RetryHost } from './dap-attach';
+import { fsharpStateMachine } from './dap-frames';
 
 const MAX_FSHARP_ITEMS = 1_024;
 
@@ -35,7 +36,7 @@ function withVariables(response: DapMessage, variables: Record<string, unknown>[
   return { ...response, body: { ...body, variables } };
 }
 
-/** Surface bindings hoisted into an F# resumable state machine's `this`. */
+/** Surface bindings captured by an F# state machine or dynamic resumption closure. */
 async function fsharpStateMachineLocals(
   host: RetryHost,
   variables: Record<string, unknown>[],
@@ -44,7 +45,11 @@ async function fsharpStateMachineLocals(
   const self = context?.scope === true ? named(variables, 'this') : undefined;
   if (self === undefined || referenceOf(self) <= 0) return undefined;
   const fields = await childrenOf(host, referenceOf(self));
-  if (named(fields, 'data') === undefined || named(fields, 'resumptionpoint') === undefined) {
+  const closure = fsharpStateMachine(stringField(self, 'type')) !== undefined;
+  if (
+    !closure &&
+    (named(fields, 'data') === undefined || named(fields, 'resumptionpoint') === undefined)
+  ) {
     return undefined;
   }
   return [...variables, ...fields];

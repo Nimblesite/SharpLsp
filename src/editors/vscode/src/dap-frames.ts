@@ -105,7 +105,7 @@ function isDigits(text: string): boolean {
  * The digit test is what keeps a legitimate name containing `@` from being
  * mistaken for a state machine.
  */
-function fsharpStateMachine(segment: string): string | undefined {
+export function fsharpStateMachine(segment: string): string | undefined {
   const at = segment.lastIndexOf('@');
   if (at <= 0) return undefined;
   const suffix = segment.slice(at + 1);
