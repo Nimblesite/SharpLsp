@@ -134,46 +134,40 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
   }
 
   private rebuildTree(): void {
-    const phase = state.loadPhase.value;
-    if (phase.kind !== 'idle') {
-      // [SE-LOADING-FEEDBACK]: while solutions are being discovered or a
-      // solution is loading, a spinner node replaces whatever the tree held —
-      // an empty tree reads as "broken", a stale tree reads as "done".
-      const message =
-        phase.kind === 'discovering'
-          ? 'Searching for solutions…'
-          : `Loading ${fileNameOf(phase.solutionPath)}…`;
-      log.traceInfo(`Tree feedback: ${message}`);
-      this.roots = [makeFeedbackNode(message)];
-      this.onDidChangeEmitter.fire(undefined);
-      return;
-    }
-
-    const symbols = state.symbolsState.value;
-    const solution = state.solutionPath.value;
-    const order = state.sortOrder.value;
-
-    if (symbols.kind === 'error') {
-      log.traceInfo(`Tree error: ${symbols.message}`);
-      this.roots = [makeErrorNode(symbols.message)];
-      this.onDidChangeEmitter.fire(undefined);
-      return;
-    }
-
-    if (symbols.kind === 'empty' || solution === undefined) {
-      this.roots = [];
-      this.onDidChangeEmitter.fire(undefined);
-      return;
-    }
-
-    const projects = symbols.response.projects.length;
-    const nest = state.nestNamespaces.value;
-    log.traceInfo(
-      `Rebuilding tree: ${String(projects)} projects, sort=${order}, nest=${String(nest)}`,
-    );
-    this.roots = buildTree(solution, symbols.response, order, nest);
+    this.roots = currentRoots();
     this.onDidChangeEmitter.fire(undefined);
   }
+}
+
+/**
+ * The tree the shared state currently calls for. [SE-LOADING-FEEDBACK]: while
+ * solutions are being discovered or one is loading, a spinner node replaces
+ * whatever the tree held — an empty tree reads as "broken", a stale tree reads
+ * as "done".
+ */
+function currentRoots(): ExplorerNode[] {
+  const phase = state.loadPhase.value;
+  if (phase.kind !== 'idle') {
+    const message =
+      phase.kind === 'discovering'
+        ? 'Searching for solutions…'
+        : `Loading ${fileNameOf(phase.solutionPath)}…`;
+    log.traceInfo(`Tree feedback: ${message}`);
+    return [makeFeedbackNode(message)];
+  }
+  const symbols = state.symbolsState.value;
+  const solution = state.solutionPath.value;
+  if (symbols.kind === 'error') {
+    log.traceInfo(`Tree error: ${symbols.message}`);
+    return [makeErrorNode(symbols.message)];
+  }
+  if (symbols.kind === 'empty' || solution === undefined) return [];
+  const order = state.sortOrder.value;
+  const nest = state.nestNamespaces.value;
+  log.traceInfo(
+    `Rebuilding tree: ${String(symbols.response.projects.length)} projects, sort=${order}, nest=${String(nest)}`,
+  );
+  return buildTree(solution, symbols.response, order, nest);
 }
 
 /** Depth-first search for the first node whose `symbolUri` matches `uri`. */
