@@ -1,9 +1,15 @@
-/// F# inlay hints via FCS: inferred types, parameter names and pipeline types.
+/// F# inlay hints via FCS, as FSAC shows them (GitHub #389): a definition's inferred
+/// type in the file's short display names, each parameter name before its own
+/// argument and never on an operator, and a pipeline's input type before its `|>`.
+/// Arguments come from the parsed applications and types from the checked symbol
+/// uses: no scan of the source text. Implements [SHARPLSP-FEATURES-INTELLIGENCE]
+/// inlay hints and [SHARPLSP-FEATURES-FSHARP] pipeline hints.
 module SharpLsp.Sidecar.FSharp.FSharpInlayHints
 
-open System
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
+open FSharp.Compiler.Syntax
+open FSharp.Compiler.Text
 open MessagePack
 open Serilog
 
@@ -19,106 +25,117 @@ type InlayHintItem =
       [<Key(2)>] Label: string
       [<Key(3)>] Kind: int }
 
-/// Extract type hints for let bindings (Kind = 1 = Type).
-let private extractTypeHints
-    (checkResults: FSharpCheckFileResults)
-    (startLine: int)
-    (endLine: int)
-    : InlayHintItem list =
-    // getInlayHints wraps all extractors in a try/with, so no re-catch here.
-    let uses = checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.toArray
-    [ for su in uses do
-        let r = su.Range
-        let line = r.StartLine - 1
-        if line >= startLine && line <= endLine then
-            match su.Symbol with
-            | :? FSharpMemberOrFunctionOrValue as mfv
-                when su.IsFromDefinition && not mfv.IsProperty ->
-                let typeName = mfv.FullType.Format(FSharpDisplayContext.Empty)
-                let endCol = r.EndColumn
-                yield
-                    { Line = line
-                      Character = endCol
-                      Label = $": {typeName}"
-                      Kind = 1 }
-            | _ -> () ]
+/// LSP `InlayHintKind.Type`.
+let private typeKind = 1
 
-/// Extract parameter name hints for function applications (Kind = 2 = Parameter).
-let private extractParameterHints
-    (checkResults: FSharpCheckFileResults)
-    (parseResults: FSharpParseFileResults)
-    (startLine: int)
-    (endLine: int)
-    : InlayHintItem list =
-    // getInlayHints wraps all extractors in a try/with, so no re-catch here.
-    let uses = checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.toArray
-    [ for su in uses do
-        let r = su.Range
-        let line = r.StartLine - 1
-        if line >= startLine && line <= endLine then
-            match su.Symbol with
-            | :? FSharpMemberOrFunctionOrValue as mfv
-                when not su.IsFromDefinition && mfv.CurriedParameterGroups.Count > 0 ->
-                // Show parameter names for the first parameter group.
-                for paramGroup in mfv.CurriedParameterGroups do
-                    for param in paramGroup do
-                        match param.DisplayName with
-                        | name when name <> "" ->
-                            yield
-                                { Line = line
-                                  Character = r.StartColumn
-                                  Label = $"{name}:"
-                                  Kind = 2 }
-                        | _ -> ()
-            | _ -> () ]
+/// LSP `InlayHintKind.Parameter`.
+let private parameterKind = 2
 
-/// Extract pipeline type hints (Kind = 1 = Type).
-let private extractPipelineHints
-    (checkResults: FSharpCheckFileResults)
-    (source: string)
-    (startLine: int)
-    (endLine: int)
-    : InlayHintItem list =
-    // getInlayHints wraps all extractors in a try/with, so no re-catch here.
-    let lines = source.Split('\n')
-    [ for lineIdx in startLine .. (min endLine (lines.Length - 1)) do
-        let line = lines[lineIdx]
-        let pipeIdx = line.IndexOf("|>", StringComparison.Ordinal)
-        if pipeIdx >= 0 then
-            // Try to get type info just before the pipe.
-            let col = max 0 (pipeIdx - 1)
-            let tooltip = checkResults.GetToolTip(lineIdx + 1, col, line, [], FSharp.Compiler.Tokenization.FSharpTokenTag.Identifier)
-            match tooltip with
-            | FSharp.Compiler.EditorServices.ToolTipText(elems) when not (List.isEmpty elems) ->
-                match elems[0] with
-                | FSharp.Compiler.EditorServices.ToolTipElement.Group(items) when not (List.isEmpty items) ->
-                    let typeName = items[0].MainDescription |> Array.map (fun t -> t.Text) |> String.concat ""
-                    if typeName <> "" then
-                        yield
-                            { Line = lineIdx
-                              Character = pipeIdx
-                              Label = $": {typeName}"
-                              Kind = 1 }
-                | _ -> ()
-            | _ -> () ]
+/// A hint `label` of `kind` before the character at `position`.
+let private hintAt (position: pos) label kind =
+    { Line = position.Line - 1
+      Character = position.Column
+      Label = label
+      Kind = kind }
+
+/// `ty` as the file reads it at `symbolUse`: short names, no namespaces.
+let private display (symbolUse: FSharpSymbolUse) (ty: FSharpType) =
+    ty.Format(symbolUse.DisplayContext.WithShortTypeNames true)
+
+/// The inferred type after a definition the source leaves unannotated.
+let private typeHint (parseResults: FSharpParseFileResults) (symbolUse: FSharpSymbolUse) =
+    let range = symbolUse.Range
+
+    match symbolUse.Symbol with
+    | :? FSharpMemberOrFunctionOrValue as value when
+        symbolUse.IsFromDefinition
+        && not value.IsProperty
+        && not (parseResults.IsTypeAnnotationGivenAtPosition range.Start)
+        ->
+        [ hintAt range.End $": {display symbolUse value.FullType}" typeKind ]
+    | _ -> []
+
+/// The ranges of a method call's positional arguments, or of a function's curried ones.
+let private argumentRanges (parseResults: FSharpParseFileResults) (at: pos) =
+    match parseResults.FindParameterLocations at with
+    | Some call when call.ArgumentLocations.Length > 0 && call.LongIdStartLocation = at ->
+        call.ArgumentLocations
+        |> Array.filter (fun argument -> not argument.IsNamedArgument)
+        |> Array.map _.ArgumentRange
+        |> List.ofArray
+    | _ -> parseResults.GetAllArgumentsForFunctionApplicationAtPosition at |> Option.defaultValue []
+
+/// The parameter names an applied method or function takes, one per argument: a
+/// method's tupled group, or the name of each single-parameter curried group.
+let private parameterNames (value: FSharpMemberOrFunctionOrValue) (tupledCall: bool) =
+    let named (parameter: FSharpParameter) = parameter.Name |> Option.filter ((<>) "")
+    let groups = value.CurriedParameterGroups |> Seq.map List.ofSeq |> List.ofSeq
+
+    match groups with
+    | [ group ] when tupledCall -> group |> List.map named
+    | _ ->
+        groups
+        |> List.map (function
+            | [ parameter ] -> named parameter
+            | _ -> None)
+
+/// Each parameter name before its own argument of a call to a method or function.
+let private parameterHints (parseResults: FSharpParseFileResults) (symbolUse: FSharpSymbolUse) =
+    match symbolUse.Symbol with
+    | :? FSharpMemberOrFunctionOrValue as value when
+        symbolUse.IsFromUse && not (PrettyNaming.IsOperatorDisplayName value.DisplayName)
+        ->
+        let range = symbolUse.Range
+        let arguments = argumentRanges parseResults range.Start
+        let tupled = value.IsMethod || value.IsConstructor
+
+        Seq.zip arguments (parameterNames value tupled)
+        |> Seq.choose (fun (argument, name) -> name |> Option.map (fun name -> hintAt argument.Start $"{name}:" parameterKind))
+        |> List.ofSeq
+    | _ -> []
+
+/// `ty` as instantiated at `symbolUse` when it is one of the symbol's generic parameters.
+let private instantiated (symbolUse: FSharpSymbolUse) (ty: FSharpType) =
+    if ty.IsGenericParameter then
+        symbolUse.GenericArguments
+        |> List.tryFind (fun (parameter, _) -> parameter.Name = ty.GenericParameter.Name)
+        |> Option.map snd
+    else
+        Some ty
+
+/// The type flowing into a `|>`, before the operator. [SHARPLSP-FEATURES-FSHARP]
+let private pipelineHint (symbolUse: FSharpSymbolUse) =
+    match symbolUse.Symbol with
+    | :? FSharpMemberOrFunctionOrValue as pipe when symbolUse.IsFromUse && pipe.CompiledName = "op_PipeRight" ->
+        pipe.CurriedParameterGroups
+        |> Seq.tryHead
+        |> Option.bind Seq.tryHead
+        |> Option.bind (fun input -> instantiated symbolUse input.Type)
+        |> Option.map (fun input ->
+            let range = symbolUse.Range
+            hintAt range.Start $": {display symbolUse input}" typeKind)
+        |> Option.toList
+    | _ -> []
+
+/// Every hint of the symbol uses that start on lines `startLine..endLine` (0-based).
+let private hintsIn parseResults (checkResults: FSharpCheckFileResults) startLine endLine =
+    checkResults.GetAllUsesOfAllSymbolsInFile()
+    |> Seq.filter (fun symbolUse ->
+        let range = symbolUse.Range
+        range.StartLine - 1 >= startLine && range.StartLine - 1 <= endLine)
+    |> Seq.collect (fun symbolUse ->
+        typeHint parseResults symbolUse
+        @ parameterHints parseResults symbolUse
+        @ pipelineHint symbolUse)
+    |> List.ofSeq
 
 /// Get inlay hints for an F# file. The overlay-aware `checkFileWithParse`
 /// supplies the live buffer text. [HOVER-FSHARP-OVERLAY]
-let getInlayHints
-    (state: FSharpWorkspace.FSharpWorkspaceState)
-    (filePath: string)
-    (startLine: int)
-    (endLine: int)
-    =
+let getInlayHints (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) (startLine: int) (endLine: int) =
     task {
         try
-            let! result = FSharpWorkspace.checkFileWithParse state filePath
-            match result with
-            | Some(parseResults, checkResults, source) ->
-                let typeHints = extractTypeHints checkResults startLine endLine
-                let paramHints = extractParameterHints checkResults parseResults startLine endLine
-                let pipeHints = extractPipelineHints checkResults source startLine endLine
-                return typeHints @ paramHints @ pipeHints
+            match! FSharpWorkspace.checkFileWithParse state filePath with
+            | Some(parseResults, checkResults, _) -> return hintsIn parseResults checkResults startLine endLine
             | None -> return []
         with ex ->
             Log.Debug(ex, "[F# InlayHints] failed")

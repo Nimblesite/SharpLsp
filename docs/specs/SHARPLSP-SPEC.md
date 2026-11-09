@@ -714,6 +714,13 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 
 ### [SHARPLSP-FEATURES-FSHARP] F#-Specific Features
 
+F# inlay hints read as FSAC's: a definition's inferred type in the file's short
+display names, after it, unless the source annotates it; each parameter name
+before its own argument (a method's tupled arguments, a function's curried ones),
+never on an operator; and a pipeline's input type before its `|>`. They come
+from FCS's parsed applications and checked symbol uses, never a scan of the
+source text (GitHub #389).
+
 | Feature | LSP Method | Implementation | Priority |
 |---|---|---|---|
 | Pipeline hints | `textDocument/inlayHint` | FSAC pipelineHint | P1 |

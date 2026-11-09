@@ -55,6 +55,7 @@
     <Compile Include="FSharpForeignSymbolsWireTests.fs" />
     <Compile Include="FSharpWildcardCompileTests.fs" />
     <Compile Include="FSharpHoverDocsTests.fs" />
+    <Compile Include="FSharpInlayHintTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
