@@ -310,11 +310,21 @@ mod tests {
         path
     }
 
-    /// Create a solution dir with a `.sln` and return its path.
-    fn write_solution(dir: &Path) -> String {
-        let sln = dir.join("App.sln");
+    /// Consolidate (sidecar-free) a fresh solution whose projects `A` and `B` reference
+    /// `a` and `b`, returning its temp root, both project files and the response.
+    fn consolidate_pair(
+        a: &[(&str, &str)],
+        b: &[(&str, &str)],
+        dry_run: bool,
+    ) -> (TempDir, PathBuf, PathBuf, ConsolidateResponse) {
+        let td = TempDir::new().unwrap();
+        let sln = td.path().join("App.sln");
         std::fs::write(&sln, "Microsoft Visual Studio Solution File\n").unwrap();
-        sln.to_string_lossy().to_string()
+        let a = write_project(td.path(), "A/A", a);
+        let b = write_project(td.path(), "B/B", b);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let resp = consolidate(&sln.to_string_lossy(), dry_run, None, &runtime).unwrap();
+        (td, a, b, resp)
     }
 
     #[test]
@@ -360,14 +370,9 @@ mod tests {
 
     #[test]
     fn consolidate_reports_nothing_when_no_shared_packages() {
-        let td = TempDir::new().unwrap();
+        let (td, _, _, resp) =
+            consolidate_pair(&[("OnlyA", "1.0.0")], &[("OnlyB", "1.0.0")], false);
         let root = td.path();
-        let sln = write_solution(root);
-        let _a = write_project(root, "A/A", &[("OnlyA", "1.0.0")]);
-        let _b = write_project(root, "B/B", &[("OnlyB", "1.0.0")]);
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let resp = consolidate(&sln, false, None, &runtime).unwrap();
         assert!(resp.moved.is_empty());
         assert!(resp.props_file.is_none());
         // No props file should have been created.
@@ -376,14 +381,9 @@ mod tests {
 
     #[test]
     fn dry_run_reports_moves_without_touching_files() {
-        let td = TempDir::new().unwrap();
+        let serilog = [("Serilog", "3.1.0")];
+        let (td, a, b, resp) = consolidate_pair(&serilog, &serilog, true);
         let root = td.path();
-        let sln = write_solution(root);
-        let a = write_project(root, "A/A", &[("Serilog", "3.1.0")]);
-        let b = write_project(root, "B/B", &[("Serilog", "3.1.0")]);
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let resp = consolidate(&sln, true, None, &runtime).unwrap();
         assert_eq!(
             resp.moved.len(),
             1,
