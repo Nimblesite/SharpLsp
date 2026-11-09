@@ -22,6 +22,11 @@ import {
   confidenceRank,
   disposeMemoryDecorations,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
+import type { AppliedDecoration } from '@nimblesite/lsp-profiler-ui/out/src/profiler-decorations';
+import type {
+  MemorySnapshotResult,
+  SuspectedLeak,
+} from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
 import { memoryDashboardState } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import { refGraphState } from '@nimblesite/lsp-profiler-ui/out/src/memory-ref-graph';
 import { executeError } from './profiler-kit';
@@ -86,6 +91,28 @@ function assertClientRunning(why: string): void {
 /** Open the decorated C# source and return its path. */
 async function decoratedFile(dir: string, name: string): Promise<string> {
   return (await openSourceFile(dir, name, DECORATED_SOURCE)).uri.fsPath;
+}
+
+/** Paint `topAllocations` through a real memory snapshot; returns the applied decorations. */
+async function paintedAllocations(
+  topAllocations: MemorySnapshotResult['topAllocations'],
+): Promise<readonly AppliedDecoration[]> {
+  await applyMemoryDecorations(memorySnapshot({ topAllocations }));
+  return appliedMemoryDecorations();
+}
+
+/** Paint `leaks` through a real memory diff; returns the applied decorations. */
+async function paintedLeaks(leaks: SuspectedLeak[]): Promise<readonly AppliedDecoration[]> {
+  await applyLeakDecorations(memoryDiff(leaks));
+  return appliedMemoryDecorations();
+}
+
+/** Paint one hot line on `file` through a real profile result; returns the applied decorations. */
+async function paintedHotLines(file: string, line: number): Promise<readonly AppliedDecoration[]> {
+  await applyProfileDecorations(
+    profileResult({ hotLines: [{ file, line, samples: 50, percentage: 50 }] }),
+  );
+  return appliedProfileDecorations();
 }
 
 suite('Profiler — Start/Stop Lifecycle', () => {
@@ -334,10 +361,9 @@ suite('Memory Profiler — Extended', () => {
 
   test('MemoryAllocation type enforces required fields', async () => {
     const file = await decoratedFile(tmpDir(), 'Allocator.cs');
-    await applyMemoryDecorations(
-      memorySnapshot({ topAllocations: [{ file, line: 5, size: 52_428_800, count: 10_000 }] }),
-    );
-    const [painted] = appliedMemoryDecorations();
+    const [painted] = await paintedAllocations([
+      { file, line: 5, size: 52_428_800, count: 10_000 },
+    ]);
     assert.equal(painted?.line, 5, 'the allocation lands on its line');
     assert.ok(
       painted.contentText.includes('50.0 MB allocated (10000 objects)'),
@@ -357,10 +383,9 @@ suite('Memory Profiler — Extended', () => {
 
   test('SuspectedLeak type has all required fields', async () => {
     const file = await decoratedFile(tmpDir(), 'Leaky.cs');
-    await applyLeakDecorations(
-      memoryDiff([suspectedLeak(file, 7, { sizeGrowth: 1_048_576, countGrowth: 500 })]),
-    );
-    const [painted] = appliedMemoryDecorations();
+    const [painted] = await paintedLeaks([
+      suspectedLeak(file, 7, { sizeGrowth: 1_048_576, countGrowth: 500 }),
+    ]);
     assert.equal(painted?.line, 7);
     assert.ok(painted.contentText.includes('HIGH +1.0 MB leak (500 objects)'), painted.contentText);
   });
@@ -371,25 +396,20 @@ suite('Memory Profiler — Types and Decorations', () => {
 
   test('MemoryDiffResult type has all required fields', async () => {
     const file = await decoratedFile(tmpDir(), 'Data.cs');
-    await applyLeakDecorations(memoryDiff([suspectedLeak(file, 10, { confidence: 'DEFINITE' })]));
-    const [painted] = appliedMemoryDecorations();
+    const [painted] = await paintedLeaks([suspectedLeak(file, 10, { confidence: 'DEFINITE' })]);
     assert.equal(painted?.color, SHARPLSP_PALETTE.leak, 'a definite leak wears the leak colour');
     assert.ok(painted.contentText.includes('DEFINITE'), painted.contentText);
   });
 
   test('applyMemoryDecorations with populated allocations does not throw', async () => {
     const file = await decoratedFile(tmpDir(), 'MemAlloc.cs');
-    await applyMemoryDecorations(
-      memorySnapshot({
-        topAllocations: [
-          { file, line: 1, size: 52_428_800, count: 5000 },
-          { file: '/nonexistent/B.cs', line: 15, size: 10_485_760, count: 1000 },
-          { file, line: 3, size: 1_048_576, count: 100 },
-        ],
-      }),
-    );
+    const painted = await paintedAllocations([
+      { file, line: 1, size: 52_428_800, count: 5000 },
+      { file: '/nonexistent/B.cs', line: 15, size: 10_485_760, count: 1000 },
+      { file, line: 3, size: 1_048_576, count: 100 },
+    ]);
     assert.deepEqual(
-      appliedMemoryDecorations().map((entry) => [entry.line, entry.color]),
+      painted.map((entry) => [entry.line, entry.color]),
       [
         [1, SHARPLSP_PALETTE.memoryHot],
         [3, SHARPLSP_PALETTE.memoryWarm],
@@ -400,11 +420,12 @@ suite('Memory Profiler — Types and Decorations', () => {
 
   test('applyLeakDecorations with suspected leaks does not throw', async () => {
     const file = await decoratedFile(tmpDir(), 'LeakTest.cs');
-    await applyLeakDecorations(
-      memoryDiff([suspectedLeak(file, 3), suspectedLeak('/nonexistent/Leaky.cs', 3)]),
-    );
+    const painted = await paintedLeaks([
+      suspectedLeak(file, 3),
+      suspectedLeak('/nonexistent/Leaky.cs', 3),
+    ]);
     assert.deepEqual(
-      appliedMemoryDecorations().map((entry) => [entry.line, entry.color]),
+      painted.map((entry) => [entry.line, entry.color]),
       [[3, '#f87171']],
       'the open file wears the HIGH leak badge; the missing one paints nothing',
     );
@@ -501,9 +522,7 @@ suite('Profiler — Coexistence and Disposal', () => {
 
   test('profiler decorations and memory decorations can coexist', async () => {
     const file = await decoratedFile(tmpDir(), 'Coexist.cs');
-    await applyProfileDecorations(
-      profileResult({ hotLines: [{ file, line: 1, samples: 50, percentage: 50 }] }),
-    );
+    await paintedHotLines(file, 1);
     await applyMemoryDecorations(
       memorySnapshot({ topAllocations: [{ file, line: 2, size: 524_288, count: 100 }] }),
     );
@@ -539,11 +558,8 @@ suite('Profiler — Coexistence and Disposal', () => {
     disposeMemoryDecorations();
     disposeMemoryDecorations();
     const file = await decoratedFile(tmpDir(), 'Disposed.cs');
-    await applyProfileDecorations(
-      profileResult({ hotLines: [{ file, line: 4, samples: 50, percentage: 50 }] }),
-    );
     assert.deepEqual(
-      appliedProfileDecorations().map((entry) => entry.line),
+      (await paintedHotLines(file, 4)).map((entry) => entry.line),
       [4],
       'the heat map still paints after repeated disposal',
     );

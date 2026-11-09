@@ -27,8 +27,8 @@ import type {
   MemoryStep,
 } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import {
+  assertWireError,
   completed,
-  embeddedLeaks,
   execute,
   executeError,
   fixtureSource,
@@ -38,10 +38,13 @@ import {
   profilerStore,
   profilingSuite,
   snapshotSession,
+  startMemorySession,
+  stopMemorySession,
   stopTracking,
   trackMemory,
   uiCommand,
   waitFor,
+  waitForLeaks,
 } from './profiler-kit';
 import { COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -53,20 +56,18 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
 
   test('memory.start on a PID that names no process is PROCESS_NOT_FOUND', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const error = await executeError('memory.start', { pid: 999_999 });
-    assert.equal(error?.code, -32001, error?.message ?? 'no error');
+    await assertWireError('memory.start', { pid: 999_999 }, -32001, 'the pid names no process');
   });
 
   test('memory.start on a live non-.NET process is UNSUPPORTED_RUNTIME', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const error = await executeError('memory.start', { pid: process.pid });
-    assert.equal(error?.code, -32002, error?.message ?? 'no error');
+    await assertWireError('memory.start', { pid: process.pid }, -32002, 'a non-.NET runtime');
   });
 
   test('memory.start without a PID is INVALID_PARAMS; a step without a session id too', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.equal((await executeError('memory.start', {}))?.code, -32602);
-    assert.equal((await executeError('memory.snapshot', {}))?.code, -32602);
+    await assertWireError('memory.start', {}, -32602, 'a start without a pid');
+    await assertWireError('memory.snapshot', {}, -32602, 'a snapshot without a session id');
   });
 
   test('a direct-mode start completes at once with the runtime and mode named', async function () {
@@ -76,16 +77,13 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
     assert.equal(started.runtime, 'dotnet');
     assert.deepEqual(started.mode, { kind: 'Direct' });
     assert.equal(completed(started.step).outcome.kind, 'Ack');
-    completed(
-      await execute<MemoryStep>('memory.stop', { memory_session_id: started.memory_session_id }),
-    );
+    await stopMemorySession({ memory_session_id: started.memory_session_id });
   });
 
   test('snapshot sites carry the runtime’s type names and resolve the leak to its source', async function () {
     this.timeout(STEP_MS);
     const { target } = live;
-    const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
-    const session = { memory_session_id: started.memory_session_id };
+    const session = await startMemorySession(target.pid);
     const snap = completed(await execute<MemoryStep>('memory.snapshot', session));
     assert.equal(snap.outcome.kind, 'Snapshot');
     if (snap.outcome.kind === 'Snapshot') {
@@ -103,7 +101,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
       second.outcome.kind === 'Snapshot' && second.outcome.timeline.length >= 2,
       'the timeline grows by one point per snapshot',
     );
-    completed(await execute<MemoryStep>('memory.stop', session));
+    await stopMemorySession(session);
   });
 
   test('objectsByType lists the leaked objects largest first; an absent type lists none', async function () {
@@ -150,14 +148,13 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
         absent.outcome.objects.objects.length === 0,
       'an absent type lists nothing',
     );
-    completed(await execute<MemoryStep>('memory.stop', session));
+    await stopMemorySession(session);
   });
 
   test('heap inspection before any snapshot is refused and says to take one', async function () {
     this.timeout(STEP_MS);
     const { target } = live;
-    const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
-    const session = { memory_session_id: started.memory_session_id };
+    const session = await startMemorySession(target.pid);
     for (const step of ['memory.references', 'memory.objectsByType']) {
       const error = await executeError(step, {
         ...session,
@@ -171,7 +168,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
         `${step} explains itself: ${error.message}`,
       );
     }
-    completed(await execute<MemoryStep>('memory.stop', session));
+    await stopMemorySession(session);
   });
 
   test('a retention walk for a type the heap does not hold is an honest empty graph', async function () {
@@ -190,25 +187,23 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
       refs.outcome.kind === 'Refs' && !refs.outcome.graph.nodes.some((n) => n.is_target),
       'no target nodes are invented',
     );
-    completed(await execute<MemoryStep>('memory.stop', session));
+    await stopMemorySession(session);
   });
 
   test('a stopped session is gone: every later step is refused', async function () {
     this.timeout(STEP_MS);
     const { target } = live;
-    const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
-    const session = { memory_session_id: started.memory_session_id };
-    completed(await execute<MemoryStep>('memory.stop', session));
+    const session = await startMemorySession(target.pid);
+    await stopMemorySession(session);
     for (const step of ['memory.snapshot', 'memory.diff', 'memory.gcCollect', 'memory.stop']) {
-      assert.equal((await executeError(step, session))?.code, -32000, `${step} after stop`);
+      await assertWireError(step, session, -32000, `${step} after stop`);
     }
   });
 
   test('a cancelled snapshot answers REQUEST_CANCELLED and the next request works', async function () {
     this.timeout(STEP_MS * 2);
     const { target } = live;
-    const started = await execute<MemoryStartResult>('memory.start', { pid: target.pid });
-    const session = { memory_session_id: started.memory_session_id };
+    const session = await startMemorySession(target.pid);
     const source = new CancellationTokenSource();
     const pending = lspClient().sendRequest(
       'workspace/executeCommand',
@@ -225,7 +220,7 @@ suite('Memory sessions — wire refusals and lifecycle', () => {
     assert.equal(code, -32800, 'the cancelled request is answered as cancelled');
     const after = completed(await execute<MemoryStep>('memory.snapshot', session));
     assert.equal(after.outcome.kind, 'Snapshot', 'the session still works after a cancel');
-    completed(await execute<MemoryStep>('memory.stop', session));
+    await stopMemorySession(session);
   });
 });
 
@@ -330,12 +325,7 @@ suite('Memory sessions — the UI flow on a live target', () => {
     this.timeout(STEP_MS);
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     await vscode.commands.executeCommand(uiCommand('memoryDiff'));
-    const leaks = await waitFor(
-      () => embeddedLeaks(memoryDashboardState()?.html ?? ''),
-      (found) => found.length > 0,
-      STEP_MS,
-      'suspected leaks in the dashboard',
-    );
+    const leaks = await waitForLeaks(1, STEP_MS);
     assert.ok(
       leaks.some((leak) => leak.typeName === LEAK_TYPE),
       `the growing type is a suspected leak, named by type: ${JSON.stringify(leaks)}`,

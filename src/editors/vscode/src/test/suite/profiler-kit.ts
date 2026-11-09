@@ -6,6 +6,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
+  memoryDashboardState,
   memoryStatusText,
   profilerStatusText,
   type ProcessesProvider,
@@ -356,6 +357,24 @@ export async function snapshotSession(pid: number): Promise<{ memory_session_id:
   const session = { memory_session_id: started.memory_session_id };
   completed(await execute<MemoryStep>('memory.snapshot', session));
   return session;
+}
+
+/** End a wire memory session; the stop must complete. */
+export async function stopMemorySession(session: { memory_session_id: string }): Promise<void> {
+  completed(await execute<MemoryStep>('memory.stop', session));
+}
+
+/** Poll the memory dashboard until its embedded script lists `min` suspected leaks. */
+export async function waitForLeaks(
+  min: number,
+  timeoutMs: number,
+): Promise<Partial<DashboardLeak>[]> {
+  return waitFor(
+    () => embeddedLeaks(memoryDashboardState()?.html ?? ''),
+    (found) => found.length >= min,
+    timeoutMs,
+    'suspected leaks in the dashboard',
+  );
 }
 
 /** The retention graph of `typeName` in the session's latest snapshot; its instances are the targets. */
