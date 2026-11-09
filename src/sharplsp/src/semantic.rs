@@ -213,30 +213,9 @@ fn handle_references_nav(
             params.text_document_position.position,
         )?;
         let include_declaration = params.context.include_declaration;
-        debug!(
-            file = %at.file_path,
-            line = at.line,
-            character = at.character,
-            include_declaration,
-            "References request dispatching to sidecar"
-        );
-        let request = SidecarReferencesReq {
-            file_path: at.file_path.clone(),
-            line: at.line,
-            character: at.character,
-            include_declaration,
-        };
-        let method = "textDocument/references";
-        let Some(result) =
-            request_sidecar::<SidecarLocationListResult, _>(runtime, sidecar, method, &request)?
-        else {
+        let Some(own) = own_references(runtime, sidecar, &at, include_declaration)? else {
             return Ok(serde_json::Value::Null);
         };
-        let own: Vec<Location> = result
-            .locations
-            .iter()
-            .filter_map(sidecar_location_to_lsp)
-            .collect();
         let foreign = crate::cross_language::foreign_references(
             runtime,
             sidecar,
@@ -248,6 +227,39 @@ fn handle_references_nav(
             own, foreign,
         ))?)
     })
+}
+
+/// The owning sidecar's references for the symbol at `at`; `None` when it
+/// could not answer, which is the whole request's `null`.
+fn own_references(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &SidecarManager,
+    at: &SidecarPositionReq,
+    include_declaration: bool,
+) -> Result<Option<Vec<Location>>> {
+    debug!(
+        file = %at.file_path,
+        line = at.line,
+        character = at.character,
+        include_declaration,
+        "References request dispatching to sidecar"
+    );
+    let request = SidecarReferencesReq {
+        file_path: at.file_path.clone(),
+        line: at.line,
+        character: at.character,
+        include_declaration,
+    };
+    let method = "textDocument/references";
+    let result: Option<SidecarLocationListResult> =
+        request_sidecar(runtime, sidecar, method, &request)?;
+    Ok(result.map(|found| {
+        found
+            .locations
+            .iter()
+            .filter_map(sidecar_location_to_lsp)
+            .collect()
+    }))
 }
 
 /// Convert a sidecar `LocationResult` to an LSP `Location`.
