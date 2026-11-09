@@ -61,6 +61,8 @@ pub(crate) fn handle_request(
     let id = req.id.clone();
     let method = req.method.clone();
     let document_uri = request_document_uri(&req.params);
+    // The sidecar that owns the request's document; every semantic arm uses it.
+    let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
 
     let result = match req.method.as_str() {
         // Syntax-only (tree-sitter, Rust) for C#; documentSymbol for F# is
@@ -73,7 +75,6 @@ pub(crate) fn handle_request(
         // [SHARPLSP-FEATURES-NAVIGATION] [RAZOR-ARCHITECTURE-ROUTING]
         DocumentSymbolRequest::METHOD => match request_lang(&req) {
             Some(LangId::FSharp | LangId::Razor) => {
-                let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
                 document_symbols::handle_via_sidecar(req, runtime, sidecar)
             }
             _ => handlers::handle_document_symbols(req, vfs, parsers, trees),
@@ -101,12 +102,10 @@ pub(crate) fn handle_request(
             {
                 Ok(serde_json::Value::Null)
             } else {
-                let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
                 semantic::completion::handle_completion(req, runtime, sidecar, vfs)
             }
         }
         ResolveCompletionItem::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             semantic::completion::handle_completion_resolve(req, runtime, sidecar)
         }
         HoverRequest::METHOD => {
@@ -114,7 +113,6 @@ pub(crate) fn handle_request(
                 info!("Hover: skipped (whitespace or comment position)");
                 Ok(serde_json::Value::Null)
             } else {
-                let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
                 semantic::hover::handle_hover(req, vfs, nav_cache, runtime, sidecar)
             }
         }
@@ -136,31 +134,17 @@ pub(crate) fn handle_request(
         // Handler code is sequestered in src/sharplsp/src/formatting.rs
         // (see docs/formatting/README.md).
         // Semantic tokens
-        SemanticTokensFullRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            semantic_tokens::handle_full(req, runtime, sidecar)
-        }
-        SemanticTokensRangeRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            semantic_tokens::handle_range(req, runtime, sidecar)
-        }
+        SemanticTokensFullRequest::METHOD => semantic_tokens::handle_full(req, runtime, sidecar),
+        SemanticTokensRangeRequest::METHOD => semantic_tokens::handle_range(req, runtime, sidecar),
         SemanticTokensFullDeltaRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             semantic_tokens::handle_delta(req, runtime, sidecar)
         }
         // Inlay hints
-        InlayHintRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            inlay_hints::handle_inlay_hint(req, runtime, sidecar, vfs)
-        }
+        InlayHintRequest::METHOD => inlay_hints::handle_inlay_hint(req, runtime, sidecar, vfs),
         // Signature help [SHARPLSP-FEATURES-INTELLIGENCE]
-        SignatureHelpRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            signature_help::handle(req, runtime, sidecar)
-        }
+        SignatureHelpRequest::METHOD => signature_help::handle(req, runtime, sidecar),
         // Rename — [RENAME-PREPARE], [RENAME-APPLY], [RENAME-CROSSLANGUAGE].
         PrepareRenameRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             semantic::rename::handle_prepare_rename(req, runtime, sidecar)
         }
         Rename::METHOD => {
@@ -170,29 +154,22 @@ pub(crate) fn handle_request(
         }
         // Call hierarchy
         CallHierarchyPrepare::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             hierarchy::handle_prepare(req, runtime, sidecar, call_hierarchy::map_hierarchy_item)
         }
         CallHierarchyIncomingCalls::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             hierarchy::handle_related(req, runtime, sidecar, call_hierarchy::incoming_call)
         }
         CallHierarchyOutgoingCalls::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             hierarchy::handle_related(req, runtime, sidecar, call_hierarchy::outgoing_call)
         }
         // Type hierarchy
-        TypeHierarchyPrepare::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            hierarchy::handle_prepare(
-                req,
-                runtime,
-                sidecar,
-                type_hierarchy::map_type_hierarchy_item,
-            )
-        }
+        TypeHierarchyPrepare::METHOD => hierarchy::handle_prepare(
+            req,
+            runtime,
+            sidecar,
+            type_hierarchy::map_type_hierarchy_item,
+        ),
         TypeHierarchySupertypes::METHOD | TypeHierarchySubtypes::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             hierarchy::handle_related(
                 req,
                 runtime,
@@ -201,12 +178,8 @@ pub(crate) fn handle_request(
             )
         }
         // Code actions
-        CodeActionRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            code_actions::handle_code_action(req, runtime, sidecar)
-        }
+        CodeActionRequest::METHOD => code_actions::handle_code_action(req, runtime, sidecar),
         CodeActionResolveRequest::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             code_actions::handle_code_action_resolve(req, runtime, sidecar)
         }
         // Standard workspace/symbol
@@ -214,13 +187,9 @@ pub(crate) fn handle_request(
             workspace_symbol_query::handle(req, parsers, vfs, runtime, fsharp_sidecar)
         }
         // Active target framework [NETFX-CONTEXT]
-        "sharplsp/targetFramework" => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            target_framework::handle_get(req, runtime, sidecar)
-        }
-        "sharplsp/setTargetFramework" => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            target_framework::handle_set(req, runtime, sidecar).and_then(|switched| {
+        "sharplsp/targetFramework" => target_framework::handle_get(req, runtime, sidecar),
+        "sharplsp/setTargetFramework" => target_framework::handle_set(req, runtime, sidecar)
+            .and_then(|switched| {
                 nav_cache.clear();
                 republish_open_diagnostics(
                     vfs,
@@ -230,8 +199,7 @@ pub(crate) fn handle_request(
                     connection,
                 );
                 switched.announce(&connection.sender)
-            })
-        }
+            }),
         // Solution loading
         "sharplsp/loadSolution" => solution_load::handle(
             req,
