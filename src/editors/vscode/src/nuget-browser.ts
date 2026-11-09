@@ -9,6 +9,7 @@ import {
   fetchInstalled,
   fetchVersions,
   installPackage,
+  type LspResult,
   searchPackages,
   uninstallPackage,
 } from './nuget-browser/lsp.js';
@@ -369,23 +370,14 @@ export class NuGetBrowserPanel {
 
   private async loadInstalledPackages(): Promise<void> {
     if (this.syncInstalledPackagesFromTrackedProject()) return;
-    const target = this.currentTarget();
-    const lsp = this.getClient();
-    if (target === undefined || lsp === undefined) return;
-    this.loading.add('installed');
-    this.updateContent();
-    const result = await fetchInstalled(lsp, target);
-    this.loading.delete('installed');
-    if (!result.ok) {
-      this.toast = {
-        kind: 'error',
-        text: `Failed to load installed: ${result.error}`,
-      };
-      this.updateContent();
-      return;
-    }
+    const result = await this.loadFromServer(
+      'installed',
+      'Failed to load installed',
+      async (lsp, target) => await fetchInstalled(lsp, target),
+    );
+    if (result === undefined) return;
     this.installedPackages.clear();
-    for (const pkg of result.value.packages) {
+    for (const pkg of result.packages) {
       this.installedPackages.set(pkg.id, pkg.resolvedVersion);
     }
     log.info(
@@ -394,6 +386,28 @@ export class NuGetBrowserPanel {
     this.updateContent();
     // Fetch icons/descriptions in the background — render immediately, refine later.
     void this.enrichInstalled();
+  }
+
+  /**
+   * Run one server fetch for the current target under the `key` spinner; a
+   * failure becomes an error toast and `undefined`, so callers only handle success.
+   */
+  private async loadFromServer<T>(
+    key: LoadingKey,
+    errorPrefix: string,
+    fetch: (lsp: LanguageClient, target: NuGetTarget) => Promise<LspResult<T>>,
+  ): Promise<T | undefined> {
+    const target = this.currentTarget();
+    const lsp = this.getClient();
+    if (target === undefined || lsp === undefined) return undefined;
+    this.loading.add(key);
+    this.updateContent();
+    const result = await fetch(lsp, target);
+    this.loading.delete(key);
+    if (result.ok) return result.value;
+    this.toast = { kind: 'error', text: `${errorPrefix}: ${result.error}` };
+    this.updateContent();
+    return undefined;
   }
 
   private syncInstalledPackagesFromTrackedProject(): boolean {
@@ -462,22 +476,11 @@ export class NuGetBrowserPanel {
 
   private async performSearch(query: string): Promise<void> {
     this.currentSearchQuery = query;
-    const target = this.currentTarget();
-    const lsp = this.getClient();
-    if (target === undefined || lsp === undefined) return;
-    this.loading.add('search');
-    this.updateContent();
-    const result = await searchPackages(lsp, target, query);
-    this.loading.delete('search');
-    if (!result.ok) {
-      this.toast = {
-        kind: 'error',
-        text: `Search failed: ${result.error}`,
-      };
-      this.updateContent();
-      return;
-    }
-    this.searchResults = result.value.packages;
+    const result = await this.loadFromServer('search', 'Search failed', async (lsp, target) =>
+      await searchPackages(lsp, target, query),
+    );
+    if (result === undefined) return;
+    this.searchResults = result.packages;
     log.info(`NuGetBrowserPanel: search returned ${this.searchResults.length.toString()} results`);
     this.updateContent();
   }
