@@ -4,6 +4,7 @@
 
 mod build_monitor;
 mod call_hierarchy;
+mod capabilities;
 mod code_actions;
 mod code_lens;
 mod config;
@@ -26,6 +27,7 @@ mod import_command;
 mod inbound;
 mod inlay_hints;
 mod nav_cache;
+mod notifications;
 mod nuget;
 mod paths;
 mod postfix_completion;
@@ -39,6 +41,7 @@ mod semantic_tokens;
 mod service_notifications;
 mod sidecar;
 mod signature_help;
+mod solution_load;
 mod sort_members;
 mod source_walk;
 mod statement_stop;
@@ -49,6 +52,7 @@ mod type_hierarchy;
 mod utils;
 mod vfs;
 mod workspace_open;
+mod workspace_symbol_query;
 mod workspace_symbols;
 mod workspace_targets;
 
@@ -59,12 +63,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use lsp_server::{Connection, Message, Notification, Request, Response};
+use lsp_server::{Connection, Message, Request, Response};
 use lsp_types::{
-    notification::{
-        DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
-        Notification as _,
-    },
+    notification::{DidOpenTextDocument, Notification as _},
     request::{
         CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
         CodeActionRequest, CodeActionResolveRequest, Completion, DocumentDiagnosticRequest,
@@ -76,9 +77,7 @@ use lsp_types::{
         TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
         WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
     },
-    FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
-    SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Uri,
+    InitializeParams, Uri,
 };
 use tracing::{error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -87,7 +86,6 @@ use tree_sitter::Tree;
 
 use crate::diagnostic_publish::{
     converge_provisional_publication, republish_open_diagnostics, sidecar_for_uri,
-    trigger_diagnostics,
 };
 use crate::inbound::{diagnostic_requests, inbound_with_inputs, SHUTDOWN_ANSWERED};
 use crate::sidecar::manager::SidecarManager;
@@ -183,7 +181,7 @@ fn run_server() -> Result<()> {
     let (initialize_id, init_params) = connection.initialize_start()?;
     let init_params: InitializeParams = lspkit_server::capabilities::decode_initialize(init_params)
         .context("deserialize InitializeParams")?;
-    let server_capabilities = build_capabilities(&init_params.capabilities);
+    let server_capabilities = capabilities::build(&init_params.capabilities);
     target_framework::remember_client(&init_params.capabilities);
     let capabilities_json = serde_json::json!({
         "capabilities": serde_json::to_value(server_capabilities).context("serialize capabilities")?,
@@ -402,197 +400,6 @@ async fn shutdown_sidecars(
     tokio::join!(cs, fs);
 }
 
-/// Build the server capabilities advertised during LSP initialization.
-fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilities {
-    ServerCapabilities {
-        // Implements [CONFIG-RESOLUTION]: discoverable by every LSP client, and
-        // [PROFILER-SHARED-LIBRARY-HOST]: the profiler's runtimes and capabilities.
-        experimental: Some(serde_json::json!({
-            "configurationProvider": {"method": "sharplsp/configuration"},
-            "lspProfiler": profiler::host::capability_block(),
-        })),
-        // Every profiler operation is a standard `workspace/executeCommand`.
-        // The import quick fixes add their reference the same way ([REFACTOR-IMPORT-REFERENCE]).
-        execute_command_provider: Some(lsp_types::ExecuteCommandOptions {
-            commands: [
-                profiler::host::ProfilerHost::command_names(),
-                vec![import_command::COMMAND.to_string()],
-            ]
-            .concat(),
-            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
-        }),
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-        document_symbol_provider: Some(OneOf::Left(true)),
-        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
-        selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
-        linked_editing_range_provider: Some(
-            lsp_types::LinkedEditingRangeServerCapabilities::Simple(true),
-        ),
-        completion_provider: Some(lsp_types::CompletionOptions {
-            resolve_provider: Some(true),
-            // `.` must be advertised so editors auto-send textDocument/completion
-            // on member access (e.g. `this.`). Without it the popup never appears
-            // after a dot. Applies to both C# and F# member access. `<` and `@`
-            // complete Razor markup. [RAZOR-ARCHITECTURE-ROUTING]
-            trigger_characters: Some(
-                std::iter::once(".")
-                    .chain(razor::MARKUP_TRIGGERS)
-                    .map(str::to_string)
-                    .collect(),
-            ),
-            ..lsp_types::CompletionOptions::default()
-        }),
-        hover_provider: Some(HoverProviderCapability::Simple(true)),
-        definition_provider: Some(OneOf::Left(true)),
-        type_definition_provider: Some(lsp_types::TypeDefinitionProviderCapability::Simple(true)),
-        declaration_provider: Some(lsp_types::DeclarationCapability::Simple(true)),
-        implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
-        references_provider: Some(OneOf::Left(true)),
-        rename_provider: Some(OneOf::Right(lsp_types::RenameOptions {
-            prepare_provider: Some(true),
-            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
-        })),
-        document_highlight_provider: Some(OneOf::Left(true)),
-        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
-            lsp_types::CodeActionOptions {
-                code_action_kinds: Some(vec![
-                    lsp_types::CodeActionKind::QUICKFIX,
-                    lsp_types::CodeActionKind::REFACTOR,
-                    lsp_types::CodeActionKind::REFACTOR_EXTRACT,
-                    lsp_types::CodeActionKind::REFACTOR_INLINE,
-                    lsp_types::CodeActionKind::REFACTOR_REWRITE,
-                    lsp_types::CodeActionKind::SOURCE_ORGANIZE_IMPORTS,
-                ]),
-                resolve_provider: Some(true),
-                ..lsp_types::CodeActionOptions::default()
-            },
-        )),
-        // Formatting is intentionally disabled. Use CSharpier (C#) / Fantomas via Ionide (F#).
-        // See docs/formatting/README.md for details on the sequestered formatter code.
-        document_formatting_provider: None,
-        document_range_formatting_provider: None,
-        document_on_type_formatting_provider: None,
-        semantic_tokens_provider: Some(
-            lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
-                lsp_types::SemanticTokensOptions {
-                    legend: lsp_types::SemanticTokensLegend {
-                        token_types: semantic_tokens::token_types(),
-                        token_modifiers: semantic_tokens::token_modifiers(),
-                    },
-                    full: Some(lsp_types::SemanticTokensFullOptions::Delta { delta: Some(true) }),
-                    range: Some(true),
-                    ..lsp_types::SemanticTokensOptions::default()
-                },
-            ),
-        ),
-        inlay_hint_provider: Some(OneOf::Left(true)),
-        signature_help_provider: Some(lsp_types::SignatureHelpOptions {
-            trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
-            retrigger_characters: Some(vec![",".to_string()]),
-            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
-        }),
-        workspace_symbol_provider: Some(OneOf::Left(true)),
-        call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
-        code_lens_provider: Some(lsp_types::CodeLensOptions {
-            resolve_provider: Some(false),
-        }),
-        diagnostic_provider: pull_diagnostics_capability(client),
-        ..ServerCapabilities::default()
-    }
-}
-
-/// Advertise pull diagnostics only to clients that cannot receive push ones.
-///
-/// A client offered both models runs both: `vscode-languageclient` creates one
-/// `DiagnosticCollection` for `publishDiagnostics` and a second one for
-/// `textDocument/diagnostic`, and `languages.getDiagnostics` concatenates them,
-/// so every diagnostic is shown — and counted — twice. This host's diagnostics
-/// pipeline is push-first (background fetch, generation gate, restore-settle
-/// republication), so push wins wherever the client supports it and the pull
-/// handlers stay for clients that declare no `publishDiagnostics` support.
-/// Implements [DIAG-LSP-CAPABILITIES-EXCLUSIVE].
-fn pull_diagnostics_capability(
-    client: &lsp_types::ClientCapabilities,
-) -> Option<lsp_types::DiagnosticServerCapabilities> {
-    let supports_push = client
-        .text_document
-        .as_ref()
-        .is_some_and(|text_document| text_document.publish_diagnostics.is_some());
-    if supports_push && !pull_diagnostics::state::supports_pull(client) {
-        return None;
-    }
-    Some(lsp_types::DiagnosticServerCapabilities::Options(
-        lsp_types::DiagnosticOptions {
-            identifier: Some("sharplsp".to_owned()),
-            inter_file_dependencies: true,
-            workspace_diagnostics: true,
-            ..lsp_types::DiagnosticOptions::default()
-        },
-    ))
-}
-
-/// Lazily open the workspace for the first opened document when the client supplied no
-/// workspace root.
-///
-/// Returns `true` only when a sidecar workspace was actually opened. Returning `true` for an
-/// unsupported document would latch `workspace_initialized` on, so opening a `.md` or `.json`
-/// before any source file would permanently prevent the real workspace from loading.
-/// Implements [SCRIPT-ROUTE-LAZY].
-fn init_workspace_for_file(
-    notif: &Notification,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) -> bool {
-    let Some(file_path) = opened_document_path(notif) else {
-        return false;
-    };
-    let Some(sidecar) = sidecar_for_path(&file_path, csharp_sidecar, fsharp_sidecar) else {
-        return false;
-    };
-
-    // The sidecar is given the FILE PATH, not its parent directory. Sending a directory is what
-    // forces the sidecar to glob the folder and compile unrelated programs together.
-    // Implements [SCRIPT-ROUTE-TARGET].
-    info!("No workspace root — opening single-document workspace for {file_path}");
-    let sidecar = Arc::clone(sidecar);
-    drop(runtime.spawn(async move {
-        if let Err(err) = workspace_open::open_workspace(&sidecar, &file_path).await {
-            error!("Failed to lazily open workspace: {err:#}");
-        }
-        drop(tokio::spawn(Arc::clone(&sidecar).start_warm_up()));
-        // Health monitoring starts only after workspace/open completes, matching the eager
-        // path — a health check that races the load can kill a healthy sidecar.
-        // Implements [SCRIPT-ROUTE-HEALTH].
-        sidecar.start_health_monitor().await;
-    }));
-    true
-}
-
-/// Extract the file path from a `textDocument/didOpen` notification.
-fn opened_document_path(notif: &Notification) -> Option<String> {
-    let params =
-        serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params.clone())
-            .ok()?;
-    paths::uri_to_path(params.text_document.uri.as_str()).ok()
-}
-
-/// Map a document to the sidecar that owns its language. Implements [SCRIPT-DETECT].
-///
-/// `.fsi` is deliberately absent: a signature file with no owning project has no meaningful
-/// semantic closure and is served syntax-only by the host. Implements [SCRIPT-FSX-FSI].
-fn sidecar_for_path<'a>(
-    file_path: &str,
-    csharp_sidecar: Option<&'a Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&'a Arc<SidecarManager>>,
-) -> Option<&'a Arc<SidecarManager>> {
-    match paths::extension_key(file_path).as_deref() {
-        Some("CS" | "CSX") => csharp_sidecar,
-        Some("FS" | "FSX" | "FSSCRIPT") => fsharp_sidecar,
-        _ => None,
-    }
-}
-
 /// Republish provisional diagnostics as soon as the C# restore settles.
 fn start_csharp_event_pump(
     sidecar: Option<&Arc<SidecarManager>>,
@@ -761,19 +568,23 @@ fn main_loop(
                     return Ok(());
                 }
                 if !workspace_initialized && notif.method == DidOpenTextDocument::METHOD {
-                    workspace_initialized =
-                        init_workspace_for_file(&notif, runtime, csharp_sidecar, fsharp_sidecar);
+                    workspace_initialized = notifications::init_workspace_for_file(
+                        &notif,
+                        runtime,
+                        [csharp_sidecar, fsharp_sidecar],
+                    );
                 }
-                handle_notification(
+                notifications::handle(
                     notif,
-                    vfs,
-                    &parsers,
-                    &mut trees,
-                    &mut nav_cache,
-                    connection,
-                    runtime,
-                    csharp_sidecar,
-                    fsharp_sidecar,
+                    &mut notifications::DocumentContext {
+                        vfs,
+                        parsers: &parsers,
+                        trees: &mut trees,
+                        nav_cache: &mut nav_cache,
+                        connection,
+                        runtime,
+                        sidecars: [csharp_sidecar, fsharp_sidecar],
+                    },
                 );
             }
             Message::Response(_) => {
@@ -961,7 +772,7 @@ fn handle_request(
         }
         // Standard workspace/symbol
         WorkspaceSymbolRequest::METHOD => {
-            handle_standard_workspace_symbol(req, parsers, vfs, runtime, fsharp_sidecar)
+            workspace_symbol_query::handle(req, parsers, vfs, runtime, fsharp_sidecar)
         }
         // Active target framework [NETFX-CONTEXT]
         "sharplsp/targetFramework" => {
@@ -983,11 +794,10 @@ fn handle_request(
             })
         }
         // Solution loading
-        "sharplsp/loadSolution" => handle_load_solution(
+        "sharplsp/loadSolution" => solution_load::handle(
             req,
             runtime,
-            csharp_sidecar,
-            fsharp_sidecar,
+            [csharp_sidecar, fsharp_sidecar],
             connection,
             vfs,
         ),
@@ -1237,107 +1047,6 @@ fn nested_uri(params: &serde_json::Value, outer: &str) -> Option<Uri> {
         .and_then(|raw| raw.parse::<Uri>().ok())
 }
 
-// ── Solution Loading ─────────────────────────────────────────────
-
-/// Handle `sharplsp/loadSolution` — reload sidecars with an explicit solution file path.
-///
-/// The extension sends this when the user selects a solution. Without it,
-/// the sidecar receives only the workspace root and picks an arbitrary solution
-/// from recursive search, which breaks hover/definition/etc.
-fn handle_load_solution(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
-    vfs: &Arc<Vfs>,
-) -> Result<serde_json::Value> {
-    let params: serde_json::Value = serde_json::from_value(req.params)?;
-    let sln_path = params
-        .get("solutionPath")
-        .and_then(|v| v.as_str())
-        .context("sharplsp/loadSolution requires { solutionPath: string }")?;
-
-    info!("Loading solution: {sln_path}");
-    // Counted before selection supersedes anything, so no pull sees a gap.
-    [csharp_sidecar, fsharp_sidecar]
-        .into_iter()
-        .flatten()
-        .for_each(|_| pull_diagnostics::state::load_started());
-    pull_diagnostics::state::select_workspace(sln_path)?;
-
-    let payload = sln_path.to_owned();
-    let diagnostic_config = pull_diagnostics::state::configuration()?;
-
-    if let Some(cs) = csharp_sidecar {
-        let cs = Arc::clone(cs);
-        let p = payload.clone();
-        let sender = connection.sender.clone();
-        let vfs_for_diagnostics = Arc::clone(vfs);
-        drop(runtime.spawn(async move {
-            let opened = workspace_open::open_workspace(&cs, &p).await;
-            pull_diagnostics::state::load_finished();
-            match opened {
-                Ok(()) => {
-                    info!("Solution loaded in C# (Roslyn) sidecar");
-                    if let Err(error) = workspace_open::configure_diagnostics(
-                        &cs,
-                        diagnostic_config.analyzers_enabled,
-                        diagnostic_config.auto_restore_on_open,
-                    )
-                    .await
-                    {
-                        warn!(%error, "C# diagnostic configuration failed");
-                    }
-                    if pull_diagnostics::state::is_pull() {
-                        pull_diagnostics::state::engine_loaded();
-                        return;
-                    }
-                    diagnostics::request_solution_in_background(
-                        cs,
-                        sender,
-                        vec![],
-                        vfs_for_diagnostics,
-                    );
-                }
-                Err(err) => error!("C# sidecar workspace/open failed: {err:#}"),
-            }
-        }));
-    }
-
-    if let Some(fs) = fsharp_sidecar {
-        let fs = Arc::clone(fs);
-        let p = payload;
-        let sender = connection.sender.clone();
-        let vfs = Arc::clone(vfs);
-        drop(runtime.spawn(async move {
-            let opened = workspace_open::open_workspace(&fs, &p).await;
-            pull_diagnostics::state::load_finished();
-            match opened {
-                Ok(()) => {
-                    info!("Solution loaded in F# (FCS) sidecar");
-                    if let Err(error) = workspace_open::configure_diagnostics(
-                        &fs,
-                        diagnostic_config.analyzers_enabled,
-                        diagnostic_config.auto_restore_on_open,
-                    )
-                    .await
-                    {
-                        warn!(%error, "F# diagnostic configuration failed");
-                    }
-                    pull_diagnostics::state::engine_loaded();
-                    if !pull_diagnostics::state::is_pull() {
-                        diagnostics::request_solution_in_background(fs, sender, vec![], vfs);
-                    }
-                }
-                Err(err) => error!("F# sidecar workspace/open failed: {err:#}"),
-            }
-        }));
-    }
-
-    Ok(serde_json::json!({ "success": true }))
-}
-
 // ── Custom Request Handling ───────────────────────────────────────
 
 /// Handle the custom `sharplsp/workspaceSymbols` request.
@@ -1361,166 +1070,6 @@ fn handle_workspace_symbols(
     Ok(serde_json::to_value(response)?)
 }
 
-/// Standard `workspace/symbol` handler. C#/syntax files are matched by tree-sitter
-/// over the VFS; F# files are matched via the FCS sidecar's document symbols, since
-/// the host has no F# tree-sitter grammar. `[SHARPLSP-FEATURES-NAVIGATION]`
-fn handle_standard_workspace_symbol(
-    req: Request,
-    parsers: &TsParsers,
-    vfs: &Vfs,
-    runtime: &tokio::runtime::Runtime,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    let params: lsp_types::WorkspaceSymbolParams = serde_json::from_value(req.params)?;
-    let query = params.query.to_lowercase();
-
-    // Get all files from the VFS and search for matching symbols.
-    let mut symbols = Vec::new();
-    for entry in vfs.iter() {
-        let uri = entry.key().clone();
-        let Some(lang) = LangId::from_uri(&uri).filter(|lang| lang.has_grammar()) else {
-            continue;
-        };
-        if matches!(lang, LangId::FSharp) {
-            collect_fsharp_ws_symbols(&uri, runtime, fsharp_sidecar, &query, &mut symbols);
-            continue;
-        }
-        let content = entry.value().content.clone();
-        if let Ok(tree) = parsers.parse(lang, &content, None) {
-            collect_matching_symbols(&uri, &tree, &content, &query, &mut symbols);
-        }
-    }
-
-    Ok(serde_json::to_value(symbols)?)
-}
-
-/// Append the FCS-sourced workspace symbols matching `query` for one open F#
-/// document. No sidecar / unresolvable path / sidecar error → contributes
-/// nothing, never fails the whole search. `[SHARPLSP-FEATURES-NAVIGATION]`,
-/// `[FS-WORKSPACE-SYMBOL]`
-fn collect_fsharp_ws_symbols(
-    uri: &Uri,
-    runtime: &tokio::runtime::Runtime,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    query: &str,
-    symbols: &mut Vec<lsp_types::SymbolInformation>,
-) {
-    let Some(sidecar) = fsharp_sidecar else {
-        return;
-    };
-    let Ok(file_path) = crate::paths::uri_to_path(uri.as_str()) else {
-        return;
-    };
-    let Ok(found) = document_symbols::fsharp_workspace_symbols(runtime, sidecar, uri, file_path)
-    else {
-        return;
-    };
-    for sym in found {
-        if query.is_empty() || fuzzy_match_subsequence(&sym.name.to_lowercase(), query) {
-            symbols.push(sym);
-        }
-    }
-}
-
-/// Collect symbols from a tree that match the query string.
-fn collect_matching_symbols(
-    uri: &Uri,
-    tree: &tree_sitter::Tree,
-    source: &str,
-    query: &str,
-    symbols: &mut Vec<lsp_types::SymbolInformation>,
-) {
-    let root = tree.root_node();
-    collect_symbols_recursive(uri, root, source.as_bytes(), query, symbols);
-}
-
-/// Recursively walk tree-sitter nodes and collect matching workspace symbols.
-fn collect_symbols_recursive(
-    uri: &Uri,
-    node: tree_sitter::Node<'_>,
-    source: &[u8],
-    query: &str,
-    symbols: &mut Vec<lsp_types::SymbolInformation>,
-) {
-    let kind = match node.kind() {
-        "class_declaration" | "record_declaration" | "type_definition" => {
-            Some(lsp_types::SymbolKind::CLASS)
-        }
-        "struct_declaration" => Some(lsp_types::SymbolKind::STRUCT),
-        "interface_declaration" => Some(lsp_types::SymbolKind::INTERFACE),
-        "enum_declaration" => Some(lsp_types::SymbolKind::ENUM),
-        "method_declaration" | "local_function_statement" => Some(lsp_types::SymbolKind::METHOD),
-        "property_declaration" => Some(lsp_types::SymbolKind::PROPERTY),
-        "field_declaration" => Some(lsp_types::SymbolKind::FIELD),
-        "constructor_declaration" => Some(lsp_types::SymbolKind::CONSTRUCTOR),
-        "event_declaration" => Some(lsp_types::SymbolKind::EVENT),
-        "delegate_declaration" | "value_declaration" | "function_or_value_defn" => {
-            Some(lsp_types::SymbolKind::FUNCTION)
-        }
-        "enum_member_declaration" => Some(lsp_types::SymbolKind::ENUM_MEMBER),
-        "namespace_declaration" | "file_scoped_namespace_declaration" => {
-            Some(lsp_types::SymbolKind::NAMESPACE)
-        }
-        "module_defn" => Some(lsp_types::SymbolKind::MODULE),
-        _ => None,
-    };
-
-    if let Some(symbol_kind) = kind {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let name = name_node.utf8_text(source).unwrap_or_default();
-            let matches = query.is_empty() || fuzzy_match_subsequence(&name.to_lowercase(), query);
-            if matches {
-                let start = node.start_position();
-                let end = node.end_position();
-                #[expect(
-                    deprecated,
-                    reason = "SymbolInformation is the LSP 3.17 workspace/symbol response type"
-                )]
-                symbols.push(lsp_types::SymbolInformation {
-                    name: name.to_string(),
-                    kind: symbol_kind,
-                    tags: None,
-                    deprecated: None,
-                    location: lsp_types::Location {
-                        uri: uri.clone(),
-                        range: lsp_types::Range::new(
-                            lsp_types::Position::new(
-                                u32::try_from(start.row).unwrap_or(0),
-                                u32::try_from(start.column).unwrap_or(0),
-                            ),
-                            lsp_types::Position::new(
-                                u32::try_from(end.row).unwrap_or(0),
-                                u32::try_from(end.column).unwrap_or(0),
-                            ),
-                        ),
-                    },
-                    container_name: None,
-                });
-            }
-        }
-    }
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_symbols_recursive(uri, child, source, query, symbols);
-    }
-}
-
-/// Fuzzy subsequence match: every character in `query` appears in `name` in order.
-fn fuzzy_match_subsequence(name: &str, query: &str) -> bool {
-    let mut name_chars = name.chars();
-    for qc in query.chars() {
-        loop {
-            match name_chars.next() {
-                Some(nc) if nc == qc => break,
-                Some(_) => {}
-                None => return false,
-            }
-        }
-    }
-    true
-}
-
 /// Handle the custom `sharplsp/sortMembers` request.
 fn handle_sort_members(req: Request, parsers: &TsParsers, vfs: &Vfs) -> Result<serde_json::Value> {
     let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
@@ -1541,158 +1090,4 @@ fn handle_statement_stop(
     let params: statement_stop::StatementStopParams = serde_json::from_value(req.params)?;
     let response = statement_stop::handle(&params, parsers, vfs)?;
     Ok(serde_json::to_value(response)?)
-}
-
-// ── Notification Handling ─────────────────────────────────────────
-
-#[expect(clippy::mutable_key_type, reason = "see main_loop")]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "dispatcher passes per-notification context; extracting a struct adds indirection for no benefit"
-)]
-/// Dispatch an incoming LSP notification (open, change, save, close).
-fn handle_notification(
-    notif: Notification,
-    vfs: &Vfs,
-    parsers: &TsParsers,
-    trees: &mut HashMap<Uri, Tree>,
-    nav_cache: &mut nav_cache::NavCache,
-    connection: &Connection,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) {
-    match notif.method.as_str() {
-        DidOpenTextDocument::METHOD => {
-            if let Ok(params) =
-                serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params)
-            {
-                let doc = &params.text_document;
-                info!("Opened: {}", doc.uri.as_str());
-                pull_diagnostics::state::begin_change();
-                vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
-                reparse(parsers, trees, &doc.uri, &doc.text);
-                // Sync text to the document's own sidecar so the semantic engine
-                // (Roslyn / FCS) sees the current buffer. Routing by language is
-                // essential: without it F# edits never reach the F# sidecar, which
-                // then resolves hover/completion against stale on-disk text.
-                if let Ok(file_path) = paths::uri_to_path(doc.uri.as_str()) {
-                    let sidecar = sidecar_for_uri(&doc.uri, csharp_sidecar, fsharp_sidecar);
-                    semantic::notify_did_change(&file_path, &doc.text, runtime, sidecar);
-                }
-                trigger_diagnostics(
-                    &doc.uri,
-                    runtime,
-                    csharp_sidecar,
-                    fsharp_sidecar,
-                    connection,
-                );
-            }
-        }
-        DidChangeTextDocument::METHOD => {
-            if let Ok(params) =
-                serde_json::from_value::<lsp_types::DidChangeTextDocumentParams>(notif.params)
-            {
-                let uri = &params.text_document.uri;
-                info!(
-                    "Changed: {} (v{})",
-                    uri.as_str(),
-                    params.text_document.version
-                );
-                // Full sync — last content change is the full text.
-                if let Some(change) = params.content_changes.into_iter().next_back() {
-                    pull_diagnostics::state::begin_change();
-                    vfs.change(uri, params.text_document.version, change.text.clone());
-                    reparse(parsers, trees, uri, &change.text);
-                    // A cached answer can point into the edited file from any other.
-                    nav_cache.clear();
-                    // Notify the document's own sidecar so the semantic engine
-                    // sees the new source text (F# → F# sidecar, C# → C#).
-                    if let Ok(file_path) = paths::uri_to_path(uri.as_str()) {
-                        let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar);
-                        semantic::notify_did_change(&file_path, &change.text, runtime, sidecar);
-                    }
-                    trigger_diagnostics(uri, runtime, csharp_sidecar, fsharp_sidecar, connection);
-                }
-            }
-        }
-        DidSaveTextDocument::METHOD => {
-            if let Ok(params) =
-                serde_json::from_value::<lsp_types::DidSaveTextDocumentParams>(notif.params)
-            {
-                info!("Saved: {}", params.text_document.uri.as_str());
-                trigger_diagnostics(
-                    &params.text_document.uri,
-                    runtime,
-                    csharp_sidecar,
-                    fsharp_sidecar,
-                    connection,
-                );
-            }
-        }
-        DidCloseTextDocument::METHOD => {
-            if let Ok(params) =
-                serde_json::from_value::<lsp_types::DidCloseTextDocumentParams>(notif.params)
-            {
-                info!("Closed: {}", params.text_document.uri.as_str());
-                pull_diagnostics::state::begin_change();
-                vfs.close(&params.text_document.uri);
-                let _ = trees.remove(&params.text_document.uri);
-                nav_cache.clear();
-                closed_diagnostics(
-                    params.text_document.uri,
-                    runtime,
-                    [csharp_sidecar, fsharp_sidecar],
-                    connection,
-                );
-            }
-        }
-        _ => {
-            // Ignore unknown notifications per LSP spec.
-        }
-    }
-}
-
-/// Reload a closed document's disk text and refresh its diagnostics under the pull
-/// model, or clear what the push model published for it.
-fn closed_diagnostics(
-    uri: Uri,
-    runtime: &tokio::runtime::Runtime,
-    sidecars: [Option<&Arc<SidecarManager>>; 2],
-    connection: &Connection,
-) {
-    let [csharp, fsharp] = sidecars;
-    if pull_diagnostics::state::is_pull() {
-        if let Err(error) = pull_diagnostics::changes::closed(&uri, runtime, sidecars) {
-            warn!(%error, "Closed document could not reload disk text");
-        }
-        trigger_diagnostics(&uri, runtime, csharp, fsharp, connection);
-    } else if let Err(err) = diagnostics::clear(&connection.sender, uri) {
-        warn!("Failed to clear diagnostics: {err:#}");
-    }
-}
-
-/// Re-parse a document with tree-sitter and cache the result.
-///
-/// We always do a fresh parse (no old tree) because `textDocument/didChange`
-/// with full sync replaces the entire document text. Passing a stale old tree
-/// without calling `tree.edit()` causes tree-sitter to reuse invalid byte
-/// ranges — producing wrong results for longer content and panicking
-/// (index out of bounds) for shorter content.
-#[expect(clippy::mutable_key_type, reason = "see main_loop")]
-fn reparse(parsers: &TsParsers, trees: &mut HashMap<Uri, Tree>, uri: &Uri, source: &str) {
-    let Some(lang) = LangId::from_uri(uri).filter(|lang| lang.has_grammar()) else {
-        return;
-    };
-    match parsers.parse(lang, source, None) {
-        Ok(tree) => {
-            let _ = trees.insert(uri.clone(), tree);
-        }
-        Err(e) => {
-            // Remove stale tree so request handlers don't use a mismatched
-            // old tree with the updated VFS content.
-            let _ = trees.remove(uri);
-            warn!("tree-sitter parse failed for {}: {e:#}", uri.as_str());
-        }
-    }
 }

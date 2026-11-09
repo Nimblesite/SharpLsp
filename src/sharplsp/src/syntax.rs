@@ -310,7 +310,7 @@ fn lsp_pos_to_ts_point(position: Position) -> Point {
 }
 
 /// Convert a tree-sitter node's range to an LSP `Range`.
-fn ts_range_to_lsp(node: Node<'_>) -> Range {
+pub(crate) fn ts_range_to_lsp(node: Node<'_>) -> Range {
     Range {
         start: ts_point_to_lsp_pos(node.start_position()),
         end: ts_point_to_lsp_pos(node.end_position()),
