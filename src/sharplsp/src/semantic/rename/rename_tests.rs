@@ -125,18 +125,12 @@ fn unconvertible_document_path_is_skipped_not_fatal() -> Result<()> {
 }
 
 fn assert_overlap_conflicts() -> Result<()> {
-    let Err(overlap) = merge_workspace_edits(
-        workspace_edit("Origin.cs", vec![rename_edit(1, 3, 15, "One")]),
-        workspace_edit("Origin.cs", vec![rename_edit(1, 8, 18, "Two")]),
-    ) else {
+    let Err(overlap) = merge_origin((1, 3, 15, "One"), (1, 8, 18, "Two")) else {
         anyhow::bail!("overlapping edits must fail");
     };
     assert!(overlap.to_string().contains("overlapping rename edits"));
     assert!(overlap.to_string().contains("Origin.cs"));
-    let conflict = merge_workspace_edits(
-        workspace_edit("Origin.cs", vec![rename_edit(1, 3, 15, "One")]),
-        workspace_edit("Origin.cs", vec![rename_edit(1, 3, 15, "Two")]),
-    );
+    let conflict = merge_origin((1, 3, 15, "One"), (1, 3, 15, "Two"));
     assert!(
         conflict.is_err(),
         "same range with different text must fail"
@@ -145,10 +139,7 @@ fn assert_overlap_conflicts() -> Result<()> {
 }
 
 fn assert_insertion_conflict() {
-    let insertion = merge_workspace_edits(
-        workspace_edit("Origin.cs", vec![rename_edit(1, 3, 15, "One")]),
-        workspace_edit("Origin.cs", vec![rename_edit(1, 8, 8, "Two")]),
-    );
+    let insertion = merge_origin((1, 3, 15, "One"), (1, 8, 8, "Two"));
     assert!(insertion.is_err(), "an insertion inside a range must fail");
 }
 
@@ -188,6 +179,17 @@ fn document_edit(path: &str, edits: Vec<SidecarTextEditResult>) -> SidecarDocume
     }
 }
 
+/// Merge two single-edit renames of `Origin.cs`, each `(line, start, end, new_text)`.
+fn merge_origin(
+    first: (u32, u32, u32, &str),
+    second: (u32, u32, u32, &str),
+) -> Result<SidecarWorkspaceEditResult> {
+    let edit = |(line, start, end, text): (u32, u32, u32, &str)| {
+        workspace_edit("Origin.cs", vec![rename_edit(line, start, end, text)])
+    };
+    merge_workspace_edits(edit(first), edit(second))
+}
+
 fn rename_edit(line: u32, start: u32, end: u32, new_text: &str) -> SidecarTextEditResult {
     SidecarTextEditResult {
         start_line: line,
@@ -204,10 +206,7 @@ fn assert_invalid_and_adjacent_ranges() -> Result<()> {
         anyhow::bail!("reversed ranges must fail");
     };
     assert!(invalid.to_string().contains("invalid rename range"));
-    let adjacent = merge_workspace_edits(
-        workspace_edit("Origin.cs", vec![rename_edit(1, 3, 8, "One")]),
-        workspace_edit("Origin.cs", vec![rename_edit(1, 8, 15, "Two")]),
-    )?;
+    let adjacent = merge_origin((1, 3, 8, "One"), (1, 8, 15, "Two"))?;
     assert_adjacent_edits(&adjacent)
 }
 
