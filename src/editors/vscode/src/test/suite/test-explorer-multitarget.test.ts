@@ -64,6 +64,11 @@ import {
 } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers.js';
 import { cachedFor, itemsFor, sorted, runIds } from './test-explorer-outcome-assertions';
+import {
+  assertBareFilterClauses,
+  assertGreenResult,
+  assertMergedTheoryFails,
+} from './test-explorer-assert-kit';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { CS } from './test-explorer-xunit-pair';
 
@@ -836,15 +841,13 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
     // Interaction 3 — the same for a test that FAILS under both, whose two
     // reports must merge to the one failure with real assertion text.
     await runIds(api, vscode.TestRunProfileKind.Run, [CS.failing]);
-    const failed = cachedFor(api, CS.failing);
-    assert.strictEqual(failed.outcome, 'failed', 'a red test is red under both frameworks');
-    assert.ok(!failed.passed, 'and never flips to a pass');
-    assert.ok(
-      (failed.message ?? '').includes('Assert.Equal'),
-      `the merged failure keeps the TRX ErrorInfo text; got ${failed.message ?? '(none)'}`,
+    assertMergedTheoryFails(
+      cachedFor(api, CS.failing),
+      CS.failing,
+      'a red test is red under both frameworks, and the merged failure keeps the TRX ErrorInfo text',
     );
     assert.ok(
-      !(failed.message ?? '').includes('No result'),
+      !(cachedFor(api, CS.failing).message ?? '').includes('No result'),
       'the second session did report it, so nothing is missing',
     );
     // Interaction 4 - a shared test is compiled into BOTH assemblies, so the
@@ -990,18 +993,11 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
     // Interaction 1 — the argument vector for the two exclusive tests.
     const items = itemsFor(api, conditional);
     assert.strictEqual(items.length, frameworks.length, 'one row selected per framework');
-    const args = buildFilterArgs(items);
-    assert.strictEqual(args.length, 2, '--filter and exactly one expression');
-    assert.strictEqual(args[0], '--filter', 'a filtered run passes --filter first');
-    const expression = args[1] ?? '';
-    assert.ok(
-      !expression.includes('\\'),
-      `a bare C# FQN needs no escaping anywhere; got ${expression}`,
-    );
-    assert.deepStrictEqual(
-      expression.split('|'),
-      conditional.map((fqn) => `FullyQualifiedName=${fqn}`),
-      'the clauses are OR-ed, one per selected test, in selection order',
+    assert.strictEqual(buildFilterArgs(items).length, 2, '--filter and exactly one expression');
+    assertBareFilterClauses(
+      items,
+      conditional,
+      'neither conditional name carries a metacharacter, so no clause may carry a backslash',
     );
     for (const fqn of conditional) {
       assert.strictEqual(
@@ -1015,13 +1011,10 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
     // clause matches in only one of the two sessions.
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
     for (const fqn of conditional) {
-      const result = cachedFor(api, fqn);
-      assert.strictEqual(result.outcome, 'passed', `${fqn} reports a real outcome`);
-      assert.ok(
-        !(result.message ?? '').includes('No result'),
-        `${fqn} matched in the session that has it, so nothing is missing`,
-      );
-      assert.ok(Number(result.duration) >= 0, `${fqn} carries a measured duration`);
+      assertGreenResult(cachedFor(api, fqn), fqn, 'matched in the session that has it', {
+        duration: true,
+        noNote: 'No result',
+      });
     }
 
     // Interaction 3 — a clause matching NOTHING in one session is VSTest's
@@ -1042,10 +1035,9 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
     const both = conditional.map((id) => ({ id }));
     const orArgs = buildFilterArgs(both);
     assert.strictEqual(orArgs.length, 2, 'one --filter flag and one expression');
-    assert.strictEqual(orArgs[0], '--filter', 'the flag comes first');
-    assert.strictEqual(
-      orArgs[1],
-      conditional.map((id) => `FullyQualifiedName=${id}`).join('|'),
+    assertBareFilterClauses(
+      both,
+      conditional,
       'two selected tests are OR-ed with an unescaped pipe, in selection order',
     );
     assert.strictEqual(
@@ -1178,15 +1170,13 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
     assert.ok(Number(allGreen.duration) >= 0, 'carrying the summed duration of four entries');
 
     // Interaction 3 — the disagreeing theory merges to the WORST row.
-    const worst = cachedFor(api, mixed);
-    assert.strictEqual(worst.outcome, 'failed', 'one failing row makes the whole theory fail');
-    assert.ok(!worst.passed, 'and the flag agrees');
-    assert.ok(
-      (worst.message ?? '').includes('Assert.Equal'),
-      "carrying the failing row's own assertion text",
+    assertMergedTheoryFails(
+      cachedFor(api, mixed),
+      mixed,
+      'the disagreeing theory merges to its worst row',
     );
     assert.ok(
-      !(worst.message ?? '').includes('No result'),
+      !(cachedFor(api, mixed).message ?? '').includes('No result'),
       'every session reported it, so nothing is missing',
     );
 

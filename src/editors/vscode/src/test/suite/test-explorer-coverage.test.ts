@@ -83,6 +83,7 @@ import {
   runIds,
 } from './test-explorer-outcome-assertions';
 import { assertContainsAll, assertContainsNone } from './test-helpers.js';
+import { assertRowsRemain } from './test-explorer-assert-kit';
 import { DOTNET_CLI_MS } from './test-timeouts';
 import { useWarmFixture } from './test-explorer-harness';
 import { buildsLogged, resetBuildCounter, writeBuildCounter } from './dotnet-project-kit';
@@ -160,6 +161,26 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
   /** {@link reportedLines}, each line once. */
   const coveredLines = (): number[] => [...new Set(reportedLines())];
+
+  /**
+   * The coverage collected is the project whose tests ran: its own line is
+   * covered, the idle project's line is not, and NEVER_COVERED never runs.
+   */
+  const assertCoverageIsolated = (ran: string, idle: string, why: string): void => {
+    const covered = coveredLines();
+    assert.ok(
+      covered.includes(declarationLine(ran)),
+      `the project's tests call Calculator.${ran}, so its line must be covered: ${why}`,
+    );
+    assert.ok(
+      !covered.includes(declarationLine(idle)),
+      `Calculator.${idle} must NOT be reported as executed — a stale or merged report would ` +
+        `claim it was: ${why}`,
+    );
+    for (const name of NEVER_COVERED) {
+      assert.ok(!covered.includes(declarationLine(name)), `Calculator.${name} is never executed`);
+    }
+  };
 
   /** Run with Coverage on `ids`, asserting ONE report per test project. */
   async function coverEvery(ids: readonly string[], why: string): Promise<string[]> {
@@ -1199,22 +1220,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
     // Interaction 3 — the coverage collected is the C# project's alone: `Add`
     // ran, `Multiply` did not, because no F# test was selected.
-    const covered = coveredLines();
-    assert.ok(
-      covered.includes(declarationLine(COVERED_BY_CSHARP)),
-      `the class's tests call Calculator.${COVERED_BY_CSHARP}, so its line must be covered`,
-    );
-    assert.ok(
-      !covered.includes(declarationLine(COVERED_BY_FSHARP)),
-      `no F# test was selected, so Calculator.${COVERED_BY_FSHARP} must NOT be reported as ` +
-        'executed — a merge that attached a stale report would claim it was',
-    );
-    for (const name of NEVER_COVERED) {
-      assert.ok(
-        !covered.includes(declarationLine(name)),
-        `Calculator.${name} is still never executed`,
-      );
-    }
+    assertCoverageIsolated(COVERED_BY_CSHARP, COVERED_BY_FSHARP, 'only C# tests were selected');
     // Interaction 4 - a class row is a group, and coverage of a group is the
     // union of what its tests loaded.
     const classLines = new Set(reportedLines());
@@ -1380,22 +1386,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
 
     // Interaction 3 — the coverage collected is that project's alone: `Multiply`
     // ran, `Add` did not, because no C# test was in the selection.
-    const covered = coveredLines();
-    assert.ok(
-      covered.includes(declarationLine(COVERED_BY_FSHARP)),
-      `the F# project's test calls Calculator.${COVERED_BY_FSHARP}, so its line must be covered`,
-    );
-    assert.ok(
-      !covered.includes(declarationLine(COVERED_BY_CSHARP)),
-      `no C# test ran, so Calculator.${COVERED_BY_CSHARP} must not be reported as executed — ` +
-        'a stale report attached from an earlier run would claim it was',
-    );
-    for (const name of NEVER_COVERED) {
-      assert.ok(
-        !covered.includes(declarationLine(name)),
-        `Calculator.${name} is never executed by anything`,
-      );
-    }
+    assertCoverageIsolated(COVERED_BY_FSHARP, COVERED_BY_CSHARP, 'only F# tests were selected');
     assertLeavesAre(api.testController, ALL_COVERAGE_TESTS, 'and the tree stands');
     // Interaction 4 - one project's assembly root covers that project alone, so
     // the OTHER project's function must be absent. This is the assertion a
@@ -1648,11 +1639,9 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       ALL_COVERAGE_TESTS.length,
       'the tree is unchanged by a debug run',
     );
-    for (const id of ALL_COVERAGE_TESTS) {
-      const item = findItem(api.testController.items, id);
-      assert.ok(item, `${id} must still be a row`);
-      assert.strictEqual(item.id, id, 'under its own fully-qualified name');
-    }
+    assertRowsRemain(api.testController.items, ALL_COVERAGE_TESTS, {
+      why: 'must still be a row after the debug run',
+    });
     // Interaction 4 - Debug is a THIRD profile kind, and it collects nothing.
     // Attaching a collector to a debug session would slow every breakpoint the
     // user sets to inspect a failing test ([TEST-COVERAGE]).

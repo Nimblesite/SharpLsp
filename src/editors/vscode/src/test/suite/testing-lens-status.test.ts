@@ -37,7 +37,11 @@ import type { SharpLspExtensionApi } from '../../extension.js';
 import { formatDuration } from '../../test-lens.js';
 import { createSolution } from './dotnet-project-kit';
 import {
+  actionLenses,
+  assertLensesPair,
+  assertLensedRowsStand,
   codeLensesFor,
+  lensedMethods,
   warmCodeLensPath,
   TEST_LENS_SECTION,
   TEST_LENS_KEY,
@@ -119,15 +123,6 @@ function isStatusLens(lens: vscode.CodeLens): boolean {
   return STATUS_ICONS.some((icon) => title.startsWith(icon));
 }
 
-/** The Run/Debug action lenses this extension contributes. */
-function actionLenses(lenses: readonly vscode.CodeLens[]): vscode.CodeLens[] {
-  return lenses.filter(
-    (lens) =>
-      lens.command?.command === CMD_TEST_RUN_AT_CURSOR ||
-      lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR,
-  );
-}
-
 /**
  * The status title rendered for `method` in `lenses`, or `undefined`.
  *
@@ -140,18 +135,6 @@ function statusFor(lenses: readonly vscode.CodeLens[], method: string): string |
   if (action === undefined) return undefined;
   return lenses.find((lens) => isStatusLens(lens) && lens.range.isEqual(action.range))?.command
     ?.title;
-}
-
-/** Every method name the Run actions in `lenses` target. */
-function lensedMethods(lenses: readonly vscode.CodeLens[]): string[] {
-  return sorted([
-    ...new Set(
-      actionLenses(lenses)
-        .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
-        .map((lens) => lens.command?.arguments?.[1])
-        .filter((name): name is string => typeof name === 'string'),
-    ),
-  ]);
 }
 
 suite('Test Status Lens e2e — the last known result, above the method', () => {
@@ -288,21 +271,9 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
         'nor as a skip',
       );
     }
-    eq(
-      actionLenses(await codeLensesFor(csFile)).length % 2,
-      0,
-      'the C# actions come in Run/Debug pairs',
-    );
-    eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'and so do the F# ones');
-    assert.ok(
-      lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      'every C# test method is lensed',
-    );
-    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and every F# binding');
-    assert.ok(
-      rootsOf(api.testController.items).length >= 1,
-      'while the tree behind them is discovered',
-    );
+    await assertLensesPair(csFile, 'the C# actions come in Run/Debug pairs');
+    await assertLensesPair(fsFile, 'and so do the F# ones');
+    await assertLensedRowsStand(csFile, fsFile, api.testController, 'the fixture rows are lensed');
   });
 
   test('after ▶ on the whole tree, each method’s lens shows ITS OWN outcome', async function () {
@@ -512,7 +483,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
       'every method is still lensed after the re-run',
     );
-    eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'in Run/Debug pairs');
+    await assertLensesPair(csFile, 'in Run/Debug pairs');
     eq(
       cachedFor(api, CS.passing).outcome,
       'passed',
@@ -607,13 +578,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       true,
       'the setting is left on for every test that follows',
     );
-    assert.ok(lensedMethods(await codeLensesFor(csFile)).length >= 4, 'and the C# rows are back');
-    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and the F# ones');
-    eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'in Run/Debug pairs');
-    assert.ok(
-      rootsOf(api.testController.items).length >= 1,
-      'with the tree untouched by the toggle',
-    );
+    await assertLensedRowsStand(csFile, fsFile, api.testController, 'the rows came back');
+    await assertLensesPair(fsFile, 'in Run/Debug pairs');
   });
 
   test('the Run action ON the lens runs that test and updates that row', async function () {
@@ -711,7 +677,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
       'and every row is still lensed',
     );
-    eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'in Run/Debug pairs');
+    await assertLensesPair(csFile, 'in Run/Debug pairs');
     assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree standing');
   });
 
@@ -806,12 +772,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       PASSING.length,
       'every passing test is a row of its own',
     );
-    assert.ok(
-      lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      'and the C# rows are all lensed',
-    );
-    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and the F# ones');
-    assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree intact');
+    await assertLensedRowsStand(csFile, fsFile, api.testController, 'the fixture rows stand');
   });
 
   test('closing and reopening the file re-renders the LAST KNOWN result', async function () {
@@ -896,7 +857,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       lensedMethods(await codeLensesFor(csFile)).length >= 4,
       'the reopened file carries every row',
     );
-    eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'in Run/Debug pairs');
+    await assertLensesPair(csFile, 'in Run/Debug pairs');
     eq(
       cachedFor(api, CS.passing).outcome,
       'passed',
@@ -995,7 +956,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       lensedMethods(await codeLensesFor(fsFile)).includes(methodOf(FS_SPACED)),
       'lensed under its own binding name',
     );
-    eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'with both actions');
+    await assertLensesPair(fsFile, 'with both actions');
     assert.ok(rootsOf(api.testController.items).length >= 1, 'and the tree standing');
   });
 
@@ -1129,12 +1090,12 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'every test in the fixture is still a row',
     );
     eq(cachedFor(api, CS.passing).outcome, 'passed', 'the single run produced a real outcome');
-    assert.ok(
-      lensedMethods(await codeLensesFor(csFile)).length >= 4,
-      'and every C# row is still lensed',
+    await assertLensedRowsStand(
+      csFile,
+      fsFile,
+      api.testController,
+      'every fixture row is still lensed',
     );
-    assert.ok(lensedMethods(await codeLensesFor(fsFile)).length >= 4, 'and every F# one');
-    assert.ok(rootsOf(api.testController.items).length >= 1, 'with the tree standing');
   });
 
   // Implements [TEST-STATUS-LENS] "above every C# and F# test method" as a
@@ -1273,8 +1234,8 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       'the whole fixture is discovered',
     );
     eq(itemsFor(api, [...ALL_TESTS]).length, ALL_TESTS.length, 'and every test resolves to a row');
-    eq(actionLenses(await codeLensesFor(csFile)).length % 2, 0, 'the C# actions are paired');
-    eq(actionLenses(await codeLensesFor(fsFile)).length % 2, 0, 'and so are the F# ones');
+    await assertLensesPair(csFile, 'the C# actions are paired');
+    await assertLensesPair(fsFile, 'and so are the F# ones');
     assert.ok(rootsOf(api.testController.items).length >= 1, 'under at least one assembly root');
   });
 });

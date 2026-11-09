@@ -70,6 +70,7 @@ import {
 } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { sorted } from './test-explorer-outcome-assertions';
+import { assertSnapshotUriShape } from './test-explorer-assert-kit';
 import {
   CS,
   FS_FIXTURE,
@@ -186,6 +187,41 @@ function assertLeavesAreTests(group: vscode.TestItem, prefix: string): void {
 /** The fixture's eleven FQNs as a set, for membership assertions. */
 const EXPECTED_SET = new Set<string>(EXPECTED);
 
+/** A GROUP row is non-empty, expandable, and never carries a test's FQN as its id. */
+function assertGroupShape(
+  node: vscode.TestItem,
+  forbidden: ReadonlySet<string>,
+  kind: string,
+): void {
+  assert.ok(node.children.size > 0, `a ${kind} group is never empty: ${node.label}`);
+  assert.ok(node.canResolveChildren, `a ${kind} node declares children: ${node.label}`);
+  assert.ok(!forbidden.has(node.id), `a ${kind} id is a group id, never an FQN: ${node.id}`);
+}
+
+/**
+ * ▶ on `node` runs THAT selection: the watched results do not move, and every
+ * id in `leaves` comes back with a real outcome ([TEST-RUN-TRX]).
+ */
+async function assertScopedRun(
+  controller: SharpLspTestController,
+  node: vscode.TestItem,
+  watched: readonly string[],
+  leaves: readonly string[],
+  gesture: string,
+  why: string,
+): Promise<void> {
+  const before = resultSnapshot(controller, watched);
+  await runViaProfile(controller, vscode.TestRunProfileKind.Run, [node]);
+  assert.strictEqual(resultSnapshot(controller, watched), before, why);
+  for (const id of leaves) {
+    const result = controller.getResult(id);
+    assert.ok(
+      result !== undefined && result.outcome !== 'notRun',
+      `▶ on the ${gesture} node must produce a real outcome for ${id}: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 /**
  * Assert the settled tree is EXACTLY the fixture's documented hierarchy —
  * Assembly → Namespace → Class → Test — and return the leaf ids. Called by
@@ -218,23 +254,10 @@ function assertHierarchyTree(items: vscode.TestItemCollection): string[] {
     );
     rootNode.children.forEach((nsNode) => {
       namespaces.push(nsNode.label);
-      assert.ok(nsNode.children.size > 0, `a namespace group is never empty: ${nsNode.label}`);
-      assert.ok(nsNode.canResolveChildren, `a namespace node declares children: ${nsNode.label}`);
-      assert.ok(
-        !EXPECTED_SET.has(nsNode.id),
-        `a namespace id is a group id, never an FQN: ${nsNode.id}`,
-      );
+      assertGroupShape(nsNode, EXPECTED_SET, 'namespace');
       nsNode.children.forEach((classNode) => {
         classes.push(classNode.label);
-        assert.ok(classNode.children.size > 0, `a class group is never empty: ${classNode.label}`);
-        assert.ok(
-          classNode.canResolveChildren,
-          `a class node declares children: ${classNode.label}`,
-        );
-        assert.ok(
-          !EXPECTED_SET.has(classNode.id),
-          `a class id is a group id, never an FQN: ${classNode.id}`,
-        );
+        assertGroupShape(classNode, EXPECTED_SET, 'class');
         classNode.children.forEach((leaf) => {
           leaves.push(leaf.id);
           assert.strictEqual(
@@ -413,26 +436,10 @@ function assertRenderedRows(items: vscode.TestItemCollection, anchor: string): v
   );
   for (const snapshot of leaves) assertPlainLeaf(snapshot, anchor);
   for (const snapshot of groups) assertGroupSnapshot(snapshot, anchor);
-  assert.deepStrictEqual(
-    snapshots.flatMap((snapshot) => snapshot.tags),
-    [],
-    'plain xUnit tests AND their groups carry no framework tag anywhere — that tag is reserved for Expecto/FsCheck naming',
-  );
-  assert.strictEqual(
-    new Set(groups.map((snapshot) => snapshot.uriPath)).size,
-    1,
-    'every group shares the one discovery-target uri',
-  );
-  assert.strictEqual(
-    new Set(leaves.map((snapshot) => snapshot.uriPath)).size,
-    2,
-    'every test points at its declaring file: one per fixture project',
-  );
-  assert.strictEqual(
-    new Set(leaves.map((snapshot) => snapshot.description)).size,
-    11,
-    'leaf descriptions stay unique — that is WHY the description carries the whole FQN',
-  );
+  assertSnapshotUriShape(groups, leaves, {
+    fileCount: 2,
+    why: 'the rendered rows of the settled fixture tree',
+  });
   assert.deepStrictEqual(
     groups.map((snapshot) => snapshot.childCount).sort((a, b) => a - b),
     [1, 1, 1, 1, 5, 6],
@@ -1341,12 +1348,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     for (const rootNode of roots) {
       rootNode.children.forEach((nsNode) => {
         seenNamespaces.push(nsNode.label);
-        assert.ok(nsNode.children.size > 0, `a namespace node is never empty: ${nsNode.label}`);
-        assert.ok(nsNode.canResolveChildren, `a namespace node declares children: ${nsNode.label}`);
-        assert.ok(
-          !fqnSet.has(nsNode.id),
-          `a namespace id is a group id, never an FQN: ${nsNode.id}`,
-        );
+        assertGroupShape(nsNode, fqnSet, 'namespace');
         assert.strictEqual(
           nsNode.error,
           undefined,
@@ -1388,15 +1390,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       rootNode.children.forEach((nsNode) => {
         nsNode.children.forEach((classNode) => {
           seenClasses.push(classNode.label);
-          assert.ok(classNode.children.size > 0, `a class node is never empty: ${classNode.label}`);
-          assert.ok(
-            classNode.canResolveChildren,
-            `a class node declares children: ${classNode.label}`,
-          );
-          assert.ok(
-            !fqnSet.has(classNode.id),
-            `a class id is a group id, never an FQN: ${classNode.id}`,
-          );
+          assertGroupShape(classNode, fqnSet, 'class');
           const members: string[] = [];
           classNode.children.forEach((leaf) => members.push(leaf.id));
           // Membership derived from the FQN split: parts[-2] is the class.
@@ -1632,20 +1626,14 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // the OTHER assembly's results were, so a run that silently widened to the
     // whole solution is visible.
     const fsWatched = [FS_FIXTURE.passing, FS_FACT_SPACED, FS_FIXTURE.failing, FS_FIXTURE.skipped];
-    const fsBefore = resultSnapshot(api.testController, fsWatched);
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [csClass]);
-    assert.strictEqual(
-      resultSnapshot(api.testController, fsWatched),
-      fsBefore,
+    await assertScopedRun(
+      api.testController,
+      csClass,
+      fsWatched,
+      csLeaves,
+      'class',
       'running a C# class must run THAT selection: the F# results may not move',
     );
-    for (const id of csLeaves) {
-      const result = api.testController.getResult(id);
-      assert.ok(
-        result !== undefined && result.outcome !== 'notRun',
-        `▶ on the class node must produce a real outcome for ${id}: ${JSON.stringify(result)}`,
-      );
-    }
     assert.strictEqual(
       api.testController.getResult(CS.passing)?.outcome,
       'passed',
@@ -1746,20 +1734,14 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // Interaction 3 — run the namespace, having recorded the C# assembly's
     // results so a run that widened to the solution is visible.
     const csWatched = [CS.passing, CS.failing, CS.skipped];
-    const csBefore = resultSnapshot(api.testController, csWatched);
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [fsNamespace]);
-    assert.strictEqual(
-      resultSnapshot(api.testController, csWatched),
-      csBefore,
+    await assertScopedRun(
+      api.testController,
+      fsNamespace,
+      csWatched,
+      fsLeaves,
+      'namespace',
       'running the F# namespace runs THAT selection — the C# results may not move',
     );
-    for (const id of fsLeaves) {
-      const result = api.testController.getResult(id);
-      assert.ok(
-        result !== undefined && result.outcome !== 'notRun',
-        `▶ on the namespace node must produce a real outcome for ${id}: ${JSON.stringify(result)}`,
-      );
-    }
     assert.strictEqual(
       api.testController.getResult(FS_FIXTURE.passing)?.outcome,
       'passed',

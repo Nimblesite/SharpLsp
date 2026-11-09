@@ -45,6 +45,7 @@ import {
   type TestItemSnapshot,
   assertPlainLeaf,
 } from './test-explorer-kit';
+import { assertSnapshotUriShape } from './test-explorer-assert-kit';
 import { comparablePath, assertContainsAll, assertContainsNone } from './test-helpers';
 import { DOTNET_CLI_MS } from './test-timeouts';
 import { sorted } from './test-explorer-outcome-assertions';
@@ -77,6 +78,27 @@ function fqnsOf(fixture: FrameworkFixture): readonly string[] {
   const mixed = fixture.mixedParameterized === undefined ? [] : [fixture.mixedParameterized];
   const roles = [fixture.passing, fixture.failing, fixture.skipped, fixture.parameterized];
   return [...roles, ...mixed, ...(EXTRA_FQNS.get(fixture.key) ?? [])];
+}
+
+/** The `language` half of FRAMEWORK_FIXTURES covers xUnit, NUnit and MSTest, in build order. */
+function assertLanguagePartition(
+  language: FrameworkFixture['language'],
+  keys: readonly string[],
+  why: string,
+): FrameworkFixture[] {
+  const chosen = FRAMEWORK_FIXTURES.filter((fixture) => fixture.language === language);
+  assert.strictEqual(chosen.length, 3, `${why}: three fixtures, one per framework`);
+  assert.deepStrictEqual(
+    chosen.map((one) => one.framework),
+    ['xunit', 'nunit', 'mstest'],
+    `${why}: the frameworks, mirrored framework for framework`,
+  );
+  assert.deepStrictEqual(
+    chosen.map((one) => one.key),
+    keys,
+    `${why}: the fixture keys, in build order`,
+  );
+  return chosen;
 }
 
 /** Every name the six-project solution must expose, F# fixtures first. */
@@ -650,26 +672,10 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       assert.deepStrictEqual(snapshot.tags, [], `a group row carries no tag: ${snapshot.id}`);
     }
     for (const snapshot of testSnapshots) assertItemShape(snapshot, root);
-    assert.deepStrictEqual(
-      snapshots.flatMap((snapshot) => snapshot.tags),
-      [],
-      'plain xUnit/NUnit/MSTest tests AND their groups carry no framework tag anywhere in the tree',
-    );
-    assert.strictEqual(
-      new Set(groupSnapshots.map((snapshot) => snapshot.uriPath)).size,
-      1,
-      'every group shares the one discovery-target uri',
-    );
-    assert.strictEqual(
-      new Set(testSnapshots.map((snapshot) => snapshot.uriPath)).size,
-      6,
-      'every test points at its declaring file: one per fixture project',
-    );
-    assert.strictEqual(
-      new Set(testSnapshots.map((snapshot) => snapshot.description)).size,
-      27,
-      'descriptions stay unique even where labels collide',
-    );
+    assertSnapshotUriShape(groupSnapshots, testSnapshots, {
+      fileCount: 6,
+      why: 'the rendered rows of the six-fixture framework tree',
+    });
     assert.strictEqual(
       testSnapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
       0,
@@ -777,17 +783,10 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   test('F# first: one passing test from each F# fixture runs green through the controller', async function () {
     this.timeout(DOTNET_CLI_MS);
     await ensureTree();
-    const fsharp = FRAMEWORK_FIXTURES.filter((fixture) => fixture.language === 'fsharp');
-    assert.strictEqual(fsharp.length, 3, 'F# must cover xUnit, NUnit and MSTest');
-    assert.deepStrictEqual(
-      fsharp.map((one) => one.framework),
-      ['xunit', 'nunit', 'mstest'],
-      'the F# fixtures come first in FRAMEWORK_FIXTURES — F# never takes the backseat',
-    );
-    assert.deepStrictEqual(
-      fsharp.map((one) => one.key),
+    const fsharp = assertLanguagePartition(
+      'fsharp',
       ['xunit-fsharp', 'nunit-fsharp', 'mstest-fsharp'],
-      'the F# fixture keys, in build order',
+      'F# first',
     );
     assert.deepStrictEqual(
       FRAMEWORK_FIXTURES.slice(0, 3),
@@ -842,17 +841,10 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   test('and then C#: one passing test from each C# fixture runs green through the controller', async function () {
     this.timeout(DOTNET_CLI_MS);
     await ensureTree();
-    const csharp = FRAMEWORK_FIXTURES.filter((fixture) => fixture.language === 'csharp');
-    assert.strictEqual(csharp.length, 3, 'C# must cover xUnit, NUnit and MSTest');
-    assert.deepStrictEqual(
-      csharp.map((one) => one.framework),
-      ['xunit', 'nunit', 'mstest'],
-      'the C# fixtures mirror the F# ones, framework for framework',
-    );
-    assert.deepStrictEqual(
-      csharp.map((one) => one.key),
+    const csharp = assertLanguagePartition(
+      'csharp',
       ['xunit-csharp', 'nunit-csharp', 'mstest-csharp'],
-      'the C# fixture keys, in build order',
+      'and then C#',
     );
     assert.deepStrictEqual(
       FRAMEWORK_FIXTURES.slice(3),

@@ -33,6 +33,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
+import type { CachedTestResult } from '../../testing.js';
 import { findCoberturaFiles } from '../../test-coverage.js';
 import { filterClause } from '../../test-filter.js';
 import { statusLensTitle } from '../../test-lens.js';
@@ -54,6 +55,13 @@ import {
   assertOneProfile,
 } from './test-explorer-kit';
 import { cachedFor, itemsFor, sorted, runIds } from './test-explorer-outcome-assertions';
+import {
+  assertAllResultsGreen,
+  assertExactIdSet,
+  assertGreenResult,
+  assertRowsRemain,
+  assertSoleAssemblyRoot,
+} from './test-explorer-assert-kit';
 import { pollUntilResult, removeDirRecursive, sleep } from './test-helpers.js';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { warmAndDiscover } from './test-explorer-harness';
@@ -248,6 +256,33 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
   };
 
   /**
+   * {@link runAndStop}, then assert the stop was prompt and the batch really
+   * had started — the contract every Stop gesture below shares.
+   */
+  const stopPromptly = async (
+    kind: vscode.TestRunProfileKind,
+    items: readonly vscode.TestItem[],
+    why: string,
+  ): Promise<StopOutcome> => {
+    const outcome = await runAndStop(kind, items);
+    assert.ok(
+      outcome.afterStop < STOP_BUDGET_MS,
+      `${why}: Stop must end the run promptly, took ${String(outcome.afterStop)}ms`,
+    );
+    assert.ok(marked(outcome.running.started), `${why}: the batch really was running`);
+    return outcome;
+  };
+
+  /** Run the fast test to a settled green result, the baseline a late Stop must not disturb. */
+  const settledFastRun = async (why: string): Promise<CachedTestResult> => {
+    await runIds(api, vscode.TestRunProfileKind.Run, [FAST_TEST]);
+    const settled = api.testController.getResult(FAST_TEST);
+    assert.ok(settled, `${FAST_TEST} ${why}`);
+    assert.strictEqual(settled.outcome, 'passed', 'a real pass');
+    return settled;
+  };
+
+  /**
    * Assert Stop ended the whole batch: the test it caught was TERMINATED rather
    * than waited out, and every test queued behind it never ran at all.
    *
@@ -377,21 +412,10 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     );
 
     // Interaction 3 — every outcome is cached, green, and renders as a pass.
-    for (const id of ALL_TESTS) {
-      const result = api.testController.getResult(id);
-      assert.ok(result, `the control run must cache a result for ${id}`);
-      assert.strictEqual(result.outcome, 'passed', `${id} passes when left alone`);
-      assert.ok(result.passed, `${id} carries the pass flag`);
-      assert.ok(
-        !(result.message ?? '').includes('No result reported'),
-        `${id} really ran, so it reports no missing-result note`,
-      );
-      assert.ok(Number(result.duration) >= 0, `${id} carries a measured duration`);
-      assert.ok(
-        statusLensTitle(result).startsWith('$(pass) Passed'),
-        `${id} renders above its binding as a pass`,
-      );
-    }
+    assertAllResultsGreen(api.testController, ALL_TESTS, 'must report after the control run', {
+      passFlag: true,
+      duration: true,
+    });
     assert.ok(
       api.testController.cachedResults.size >= ALL_TESTS.length,
       'one batched invocation reported every selected test',
@@ -465,15 +489,10 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 2 — press ▶, then ⏹ the moment the first long test announces
     // itself. Stop must END the run, not wait it out.
-    const { afterStop, running } = await runAndStop(
+    const { afterStop, running } = await stopPromptly(
       vscode.TestRunProfileKind.Run,
       itemsFor(api, ALL_TESTS),
-    );
-    assert.ok(marked(running.started), 'the run really was under way');
-    assert.ok(
-      afterStop < STOP_BUDGET_MS,
-      `Stop must END the run: returned ${String(afterStop)}ms after Stop, budget ` +
-        `${String(STOP_BUDGET_MS)}ms, fixture sleep ${String(FIXTURE_SLEEP_MS)}ms`,
+      'Stop must END the run instead of waiting the fixture sleep out',
     );
 
     // Interaction 3 — past the point where a SURVIVING test process would have
@@ -493,12 +512,10 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     await assertIdlePromptly('after Stop on the play button');
     assertTreeIntact('the tree still holds every discovered test after a cancelled run');
     assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE assembly root');
-    for (const id of ALL_TESTS) {
-      const item = findItem(api.testController.items, id);
-      assert.ok(item, `${id} must still be a row`);
-      assert.strictEqual(item.id, id, 'under its own fully-qualified name');
-      assert.strictEqual(item.children.size, 0, 'and still a leaf');
-    }
+    assertRowsRemain(api.testController.items, ALL_TESTS, {
+      why: 'must still be a row after Stop on the play button',
+      asLeaf: true,
+    });
     assert.ok(
       fs.existsSync(markerDir),
       'and the fixture marker directory survives, so the next test can read it',
@@ -534,13 +551,10 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 2 — Run with Coverage, then ⏹. The coverage profile spawns the
     // same batched `dotnet test`, so Stop has the same contract on it.
-    const { afterStop, running } = await runAndStop(
+    const { afterStop, running } = await stopPromptly(
       vscode.TestRunProfileKind.Coverage,
       itemsFor(api, ALL_TESTS),
-    );
-    assert.ok(
-      afterStop < STOP_BUDGET_MS,
-      `Stop must end a COVERAGE run just as promptly: ${String(afterStop)}ms`,
+      'Stop must end a COVERAGE run just as promptly',
     );
 
     // Interaction 3 — the process tree is dead, so no long test finished…
@@ -706,12 +720,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — Stop, once the batch is demonstrably running.
-    const { afterStop, running } = await runAndStop(vscode.TestRunProfileKind.Run, [namespaceNode]);
-    assert.ok(
-      afterStop < STOP_BUDGET_MS,
-      `Stop on a group row must end the run as promptly as on a leaf: ${String(afterStop)}ms`,
+    const { running } = await stopPromptly(
+      vscode.TestRunProfileKind.Run,
+      [namespaceNode],
+      'Stop on a group row must end the run as promptly as on a leaf',
     );
-    assert.ok(marked(running.started), 'the batch really was running');
     for (const queued of queuedBehind(running)) {
       assert.ok(
         !marked(queued.started),
@@ -772,24 +785,19 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 1 — the top row of the Testing view, which is the project.
     clearMarkers();
-    const roots = rootsOf(api.testController.items);
-    assert.strictEqual(roots.length, 1, 'the fixture is one project, so one assembly root');
-    const assemblyNode = roots[0];
-    assert.ok(assemblyNode, 'the assembly root is readable');
-    assert.strictEqual(assemblyNode.label, PROJECT, 'labelled for the project');
-    assert.ok(
-      assemblyNode.id.startsWith('assembly:'),
-      `an assembly root is a GROUP id, never an FQN; got ${assemblyNode.id}`,
+    const assemblyNode = assertSoleAssemblyRoot(
+      api.testController,
+      PROJECT,
+      'the fixture is one project',
     );
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — run everything from the root, then Stop.
-    const { afterStop, running } = await runAndStop(vscode.TestRunProfileKind.Run, [assemblyNode]);
-    assert.ok(
-      afterStop < STOP_BUDGET_MS,
-      `Stop on the assembly root must end the run: ${String(afterStop)}ms`,
+    await stopPromptly(
+      vscode.TestRunProfileKind.Run,
+      [assemblyNode],
+      'Stop on the assembly root must end the run',
     );
-    assert.ok(marked(running.started), 'the whole-project batch really was running');
 
     // Interaction 3 — nothing is attributed, and the whole tree survives. A
     // cancelled root run that cleared the tree would look like a failed
@@ -805,11 +813,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // Interaction 4 - the assembly root is the widest gesture there is, and
     // cancelling it must still leave exactly one root behind.
     await assertIdlePromptly('after Stop on the assembly root');
-    const rootRows = rootsOf(api.testController.items);
-    assert.strictEqual(rootRows.length, 1, 'still ONE assembly root after cancelling it');
-    const only = rootRows[0];
-    assert.ok(only, 'and it exists');
-    assert.strictEqual(only.label, PROJECT, 'labelled with the project the user recognises');
+    const only = assertSoleAssemblyRoot(
+      api.testController,
+      PROJECT,
+      'still exactly ONE assembly root after cancelling it',
+    );
     assert.ok(only.children.size >= 1, 'still holding its tests');
     assert.strictEqual(collectLeafIds(only.children).length, ALL_TESTS.length, 'all of them');
     // Interaction 4 - the assembly root is the widest gesture there is, so
@@ -852,9 +860,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — Stop while the first of them runs.
-    const { afterStop, running } = await runAndStop(vscode.TestRunProfileKind.Run, items);
-    assert.ok(afterStop < STOP_BUDGET_MS, `Stop ends the batch: ${String(afterStop)}ms`);
-    assert.ok(marked(running.started), 'one of the two clauses ran');
+    const { running } = await stopPromptly(
+      vscode.TestRunProfileKind.Run,
+      items,
+      'Stop ends the batch, with one of the two clauses actually running',
+    );
     assert.ok(
       selection.includes(running.fqn),
       `${running.fqn} is one of the two clauses actually selected`,
@@ -930,13 +940,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const started = Date.now();
     await runIds(api, vscode.TestRunProfileKind.Run, [FAST_TEST]);
     const elapsed = Date.now() - started;
-    const result = api.testController.getResult(FAST_TEST);
-    assert.ok(result, `${FAST_TEST} must report after a cancelled run — the queue drained`);
-    assert.strictEqual(result.outcome, 'passed', 'and report the real outcome');
-    assert.ok(result.passed, 'with the pass flag set');
-    assert.ok(
-      !(result.message ?? '').includes('No result reported'),
-      'a re-run after Stop attributes a real TRX result, not a missing one',
+    assertGreenResult(
+      api.testController.getResult(FAST_TEST),
+      FAST_TEST,
+      'must report after a cancelled run — the queue drained',
+      { passFlag: true },
     );
     assert.ok(
       elapsed < FIXTURE_SLEEP_MS,
@@ -1083,10 +1091,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 1 — let a run of the fast test finish normally.
     clearMarkers();
-    await runIds(api, vscode.TestRunProfileKind.Run, [FAST_TEST]);
-    const settled = api.testController.getResult(FAST_TEST);
-    assert.ok(settled, 'the completed run cached a result');
-    assert.strictEqual(settled.outcome, 'passed', 'a real pass');
+    const settled = await settledFastRun('the completed run cached a result');
     const baseline = new Map(api.testController.cachedResults);
     const markersAfterRun = markersOnDisk();
 
@@ -1192,14 +1197,10 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     );
 
     // Interaction 3 — the tree is whole: one root, one namespace, every leaf.
-    const roots = rootsOf(api.testController.items);
-    assert.strictEqual(roots.length, 1, 'one assembly root after re-discovery');
-    assert.strictEqual(roots[0]?.label, PROJECT, 'still labelled for the project');
-    for (const id of ALL_TESTS) {
-      const item = findItem(api.testController.items, id);
-      assert.ok(item, `${id} must still be a row after a cancelled run and a refresh`);
-      assert.strictEqual(item.id, id, 'under its own fully-qualified name');
-    }
+    assertSoleAssemblyRoot(api.testController, PROJECT, 'one assembly root after re-discovery');
+    assertRowsRemain(api.testController.items, ALL_TESTS, {
+      why: 'must still be a row after a cancelled run and a refresh',
+    });
     assert.deepStrictEqual(
       markersOnDisk().filter((name) => name.startsWith('finished-')),
       [],
@@ -1217,18 +1218,15 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     await assertIdlePromptly('after a cancelled run, before refreshing');
     assertTreeIntact('every test is still discovered after the refresh');
     assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE assembly root');
-    for (const id of ALL_TESTS) {
-      const item = findItem(api.testController.items, id);
-      assert.ok(item, `${id} survived the cancel-then-refresh round trip`);
-      assert.strictEqual(item.id, id, 'under its own fully-qualified name');
-      assert.strictEqual(item.error, undefined, `${id} is not marked errored by a cancellation`);
-    }
+    assertRowsRemain(api.testController.items, ALL_TESTS, {
+      why: 'survived the cancel-then-refresh round trip',
+      unerrored: true,
+    });
     // Interaction 4 - discovery and execution are separate passes, so killing a
     // RUN must not invalidate the TREE. A refresh that comes back short means the
     // kill took the discovery cache down with it ([TEST-REACTIVITY]).
     const rediscovered = collectLeafIds(api.testController.items);
-    assert.deepStrictEqual(sorted(rediscovered), sorted([...ALL_TESTS]), 'every test came back');
-    assert.strictEqual(new Set(rediscovered).size, rediscovered.length, 'and none of them twice');
+    assertExactIdSet(rediscovered, [...ALL_TESTS], 'every test came back, none of them twice');
     assert.strictEqual(
       rootsOf(api.testController.items).length,
       1,
@@ -1334,12 +1332,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     //
     // Interaction 1 — cancel a run of everything.
     clearMarkers();
-    const { afterStop, running } = await runAndStop(
+    await stopPromptly(
       vscode.TestRunProfileKind.Run,
       itemsFor(api, ALL_TESTS),
+      'the run was cancelled',
     );
-    assert.ok(afterStop < STOP_BUDGET_MS, `the run was cancelled: ${String(afterStop)}ms`);
-    assert.ok(marked(running.started), 'having really started');
     await assertIdlePromptly('before the recovery run');
 
     // Interaction 2 — run the whole tree again and let it finish. Every long
@@ -1361,21 +1358,10 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 3 — every outcome is real, green and rendered as such
     // ([TEST-RUN-TRX], [TEST-STATUS-LENS]).
-    for (const id of ALL_TESTS) {
-      const result = api.testController.getResult(id);
-      assert.ok(result, `${id} must report after the recovery run`);
-      assert.strictEqual(result.outcome, 'passed', `${id} passes when left alone`);
-      assert.ok(result.passed, `${id} carries the pass flag`);
-      assert.ok(
-        !(result.message ?? '').includes('No result reported'),
-        `${id} really ran, so it reports no missing result`,
-      );
-      assert.ok(Number(result.duration) >= 0, `${id} carries a measured duration`);
-      assert.ok(
-        statusLensTitle(result).startsWith('$(pass) Passed'),
-        `${id} renders above its binding as a pass`,
-      );
-    }
+    assertAllResultsGreen(api.testController, ALL_TESTS, 'must report after the recovery run', {
+      passFlag: true,
+      duration: true,
+    });
     assertTreeIntact('and the tree is whole');
     // Interaction 4 - the whole tree running to completion afterwards is the
     // strongest recovery assertion there is: every marker, every outcome, one
@@ -1488,11 +1474,12 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 4 — and the completed coverage run attributed its outcome, so
     // the cancellation before it changed nothing about how a real run reports.
-    const result = api.testController.getResult(FAST_TEST);
-    assert.ok(result, `${FAST_TEST} must report under the Coverage profile`);
-    assert.strictEqual(result.outcome, 'passed', 'as a pass');
-    assert.ok(result.passed, 'with the flag set');
-    assert.ok(!(result.message ?? '').includes('No result reported'), 'and no missing-result note');
+    assertGreenResult(
+      api.testController.getResult(FAST_TEST),
+      FAST_TEST,
+      'must report under the Coverage profile',
+      { passFlag: true },
+    );
     for (const each of LONG_TESTS) {
       assert.ok(
         !marked(each.started),
@@ -1544,10 +1531,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     //
     // Interaction 1 — a baseline the assertions below can be compared against.
     clearMarkers();
-    await runIds(api, vscode.TestRunProfileKind.Run, [FAST_TEST]);
-    const settled = api.testController.getResult(FAST_TEST);
-    assert.ok(settled, 'the control run cached a result');
-    assert.strictEqual(settled.outcome, 'passed', 'a real pass');
+    await settledFastRun('the control run cached a result');
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — run the fast test again and press ⏹ almost immediately.
@@ -1565,17 +1549,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // Interaction 3 — the result is EITHER the one already cached (the run was
     // suppressed) OR a fresh real pass. It is never a failure, never notRun, and
     // never a "no result" note.
-    const after = api.testController.getResult(FAST_TEST);
-    assert.ok(after, 'the last known result must survive a cancellation either way');
-    assert.ok(
-      ['passed'].includes(after.outcome),
-      `${FAST_TEST} passes; a cancelled run may suppress that but never contradict it — ` +
-        `got ${after.outcome}`,
-    );
-    assert.ok(after.passed, 'so the pass flag stands');
-    assert.ok(
-      !(after.message ?? '').includes('No result reported'),
-      'a cancelled run must not turn a passing test into a missing result',
+    const after = assertGreenResult(
+      api.testController.getResult(FAST_TEST),
+      FAST_TEST,
+      'the last known result must survive a cancellation either way, as a pass',
+      { passFlag: true },
     );
     assert.notStrictEqual(after.outcome, 'notRun', 'nor into a notRun');
     assert.ok(

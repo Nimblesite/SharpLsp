@@ -72,6 +72,14 @@ import {
   NO_RESULT,
   runIds,
 } from './test-explorer-outcome-assertions';
+import {
+  assertAllThreeOutcomes,
+  assertBareFilterClauses,
+  assertExactLeafSet,
+  assertMergedTheoryFails,
+  assertRowsRemain,
+  assertSoleAssemblyRoot,
+} from './test-explorer-assert-kit';
 import { removeDirRecursive, assertContainsAll, assertContainsNone } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
@@ -508,18 +516,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // Interaction 2 — the argument vector a run actually spawns carries no
     // escaped metacharacter either.
     const items = itemsFor(api, RUNNABLE);
-    const args = buildFilterArgs(items);
-    assert.strictEqual(args[0], '--filter', 'a filtered run passes --filter first');
-    const expression = args[1] ?? '';
-    assert.ok(
-      !expression.includes('\\'),
-      `a bare C# FQN filter contains no escapes; got ${expression}`,
-    );
-    assert.deepStrictEqual(
-      expression.split('|'),
-      RUNNABLE.map((id) => `FullyQualifiedName=${id}`),
-      'the selection is OR-ed clause by clause, one per selected test',
-    );
+    assertBareFilterClauses(items, RUNNABLE, 'the run spawns a bare OR-ed FQN filter');
     // Interaction 3 - the whole selection, as one filter. [TEST-FILTER-ESCAPE]
     // OR-s escaped clauses with an unescaped pipe, and a decorated name would
     // have escaped its parentheses and matched nothing at all.
@@ -828,11 +825,11 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       classRow === undefined || classRow.children.size > 0,
       'a class row, if addressed by name, still holds its tests',
     );
+    assertRowsRemain(api.testController.items, EXPECTED, {
+      why: 'must still be a row after the class run, unerrored under its bare id',
+      unerrored: true,
+    });
     for (const id of EXPECTED) {
-      const leaf = findItem(api.testController.items, id);
-      assert.ok(leaf, `${id} must still be a row after the class run`);
-      assert.strictEqual(leaf.id, id, 'under its bare id');
-      assert.strictEqual(leaf.error, undefined, `${id} must not be marked errored`);
       const message = cachedFor(api, id).message ?? '';
       assert.ok(
         !message.includes(NO_RESULT),
@@ -869,14 +866,10 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     this.timeout(DOTNET_CLI_MS);
 
     // Interaction 1 — the user presses ▶ on the top row of the Testing view.
-    const roots = rootsOf(api.testController.items);
-    assert.strictEqual(roots.length, 1, 'the fixture is one project, so one assembly root');
-    const assemblyNode = roots[0];
-    assert.ok(assemblyNode, 'the assembly root is readable');
-    assert.strictEqual(assemblyNode.label, FIXTURE.projectName, 'labelled for the project');
-    assert.ok(
-      assemblyNode.id.startsWith('assembly:'),
-      `an assembly root is a GROUP id, never an FQN; got ${assemblyNode.id}`,
+    const assemblyNode = assertSoleAssemblyRoot(
+      api.testController,
+      FIXTURE.projectName,
+      'the fixture is one project',
     );
 
     // Interaction 2 — every test under it reports a real outcome. This is the
@@ -891,9 +884,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // Interaction 3 — the three kinds are still told apart, and the lens renders
     // each of them the way the user reads it above the method
     // ([TEST-STATUS-LENS]).
-    assertPassed(cachedFor(api, FIXTURE.passing), FIXTURE.passing);
-    assertFailed(cachedFor(api, FIXTURE.failing), FIXTURE.failing);
-    assertSkipped(cachedFor(api, FIXTURE.skipped), FIXTURE.skipped);
+    assertAllThreeOutcomes(api, FIXTURE);
     assert.strictEqual(
       statusLensTitle(cachedFor(api, FIXTURE.skipped)),
       '$(debug-step-over) Skipped',
@@ -947,9 +938,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         `${id} was attributed from the root run`,
       );
     }
-    assertPassed(cachedFor(api, FIXTURE.passing), FIXTURE.passing);
-    assertFailed(cachedFor(api, FIXTURE.failing), FIXTURE.failing);
-    assertSkipped(cachedFor(api, FIXTURE.skipped), FIXTURE.skipped);
+    assertAllThreeOutcomes(api, FIXTURE);
   });
 
   test('a [Theory] whose rows each carried a unique ID reports as ONE test', async function () {
@@ -1000,12 +989,10 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // failing row is a failing test, reported once.
     assertPassed(cachedFor(api, FIXTURE.parameterized), FIXTURE.parameterized);
     if (FIXTURE.mixedParameterized !== undefined) {
-      const mixed = cachedFor(api, FIXTURE.mixedParameterized);
-      assert.strictEqual(mixed.outcome, 'failed', 'one failing row makes the theory fail');
-      assert.ok(!mixed.passed, 'and the pass flag agrees');
-      assert.ok(
-        (mixed.message ?? '').includes('Assert.Equal'),
-        "carrying the failing row's own assertion text",
+      assertMergedTheoryFails(
+        cachedFor(api, FIXTURE.mixedParameterized),
+        FIXTURE.mixedParameterized,
+        'a theory with one failing row is a failing test, reported once',
       );
     }
     assertLeavesAre(api.testController, EXPECTED, 'and the tree still holds one leaf per theory');
@@ -1074,22 +1061,11 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // is the clauses OR-ed with an UNESCAPED pipe ([TEST-FILTER-ESCAPE]).
     const items = itemsFor(api, EXPECTED);
     assert.strictEqual(items.length, EXPECTED.length, 'every test is in the selection');
-    const args = buildFilterArgs(items);
-    const expression = args[1] ?? '';
-    assert.strictEqual(args.length, 2, '--filter and exactly one expression');
-    assert.ok(
-      !expression.includes('\\'),
-      `a bare C# FQN needs no escaping anywhere in the expression; got ${expression}`,
-    );
-    assert.strictEqual(
-      expression.split('|').length,
-      EXPECTED.length,
-      'one clause per selected test, OR-ed',
-    );
-    assert.deepStrictEqual(
-      expression.split('|'),
-      EXPECTED.map((id) => `FullyQualifiedName=${id}`),
-      'and in the order the rows were selected',
+    assert.strictEqual(buildFilterArgs(items).length, 2, '--filter and exactly one expression');
+    assertBareFilterClauses(
+      items,
+      EXPECTED,
+      'the selection OR-s one bare clause per row, in selection order',
     );
 
     // Interaction 2 — every one of them comes back with its own outcome.
@@ -1122,10 +1098,10 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         'notRun',
         `${id} was selected, so it must report an outcome`,
       );
-      const leaf = findItem(api.testController.items, id);
-      assert.ok(leaf, `${id} is still a row`);
-      assert.strictEqual(leaf.id, id, 'under its bare id');
     }
+    assertRowsRemain(api.testController.items, EXPECTED, {
+      why: 'is still a row under its bare id after the run',
+    });
     assertLeavesAre(
       api.testController,
       [...EXPECTED],
@@ -1220,16 +1196,10 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // Interaction 4 - a refresh is a RE-READ, not an append. A refresh that
     // appends gives the user two play buttons for one test, and neither of them
     // is wrong enough to be obviously broken ([TEST-REACTIVITY]).
-    const refreshedLeaves = collectLeafIds(api.testController.items);
-    assert.deepStrictEqual(
-      sorted(refreshedLeaves),
-      sorted([...EXPECTED]),
-      'the same tests came back, no more and no fewer',
-    );
-    assert.strictEqual(
-      new Set(refreshedLeaves).size,
-      refreshedLeaves.length,
-      'and not one of them duplicated',
+    const refreshedLeaves = assertExactLeafSet(
+      api.testController,
+      [...EXPECTED],
+      'a refresh reads the same tests back, no more, no fewer, none duplicated',
     );
     assert.strictEqual(
       rootsOf(api.testController.items).length,
@@ -1281,9 +1251,7 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // Interaction 3 — the three kinds are still told apart, and the cache is
     // keyed by the BARE id so the lens can find each of them
     // ([TEST-STATUS-LENS]).
-    assertPassed(cachedFor(api, FIXTURE.passing), FIXTURE.passing);
-    assertFailed(cachedFor(api, FIXTURE.failing), FIXTURE.failing);
-    assertSkipped(cachedFor(api, FIXTURE.skipped), FIXTURE.skipped);
+    assertAllThreeOutcomes(api, FIXTURE);
     for (const fqn of EXPECTED) {
       assert.ok(
         api.testController.getResult(fqn),
@@ -1581,13 +1549,11 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // Interaction 4 - the second run reported under the SAME ids, so membership
     // is unchanged and every outcome is still readable. A run that re-keys its
     // results grows the tree by one row per test on every press.
-    const twiceLeaves = collectLeafIds(api.testController.items);
-    assert.deepStrictEqual(
-      sorted(twiceLeaves),
-      sorted([...EXPECTED]),
-      'the same rows survived a second run',
+    assertExactLeafSet(
+      api.testController,
+      [...EXPECTED],
+      'the same rows survived a second run, none of them duplicated',
     );
-    assert.strictEqual(new Set(twiceLeaves).size, twiceLeaves.length, 'none of them duplicated');
     for (const id of RUNNABLE) {
       assert.notStrictEqual(
         cachedFor(api, id).outcome,
