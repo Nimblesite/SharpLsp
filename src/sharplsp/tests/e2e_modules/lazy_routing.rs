@@ -99,3 +99,31 @@ fn an_fsharp_script_starts_only_fcs() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+#[test]
+fn a_script_in_a_folder_with_no_project_answers_after_a_space_and_after_a_token() {
+    require_dotnet();
+    let dir = tempfile::tempdir().expect("a folder with one script and no project");
+    let root = std::fs::canonicalize(dir.path()).expect("canonical folder");
+    let mut client = LspClient::spawn_in(Stdio::null(), Some(&root));
+    let initialized = client.initialize_with_root(json!(path_to_file_uri(&root)));
+    assert_rpc_ok(&initialized, "initialize on the folder (#497)");
+    let script = open_loose(&mut client, &root, "build.fsx", SCRIPT);
+    let declared = hover_answered(&mut client, &script, 0, 4);
+    assert!(
+        declared.contains("add"),
+        "the definition after `let `: {declared}"
+    );
+    let called = hover_answered(&mut client, &script, 1, 14);
+    assert!(
+        called.contains("add"),
+        "the call right after `(` (#553): {called}"
+    );
+    assert_eq!(
+        running(&client, "SHARPLSP_FSHARP_SIDECAR_PATH"),
+        1,
+        "FCS serves the script"
+    );
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
