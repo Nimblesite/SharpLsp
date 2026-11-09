@@ -371,7 +371,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     // Interaction 1 — the user is looking at the file, and the row already
     // shows a result from the previous test's run.
     const before = await openAndReadLenses(csFile);
-    const method = CS.passing;
+    const method = lensMethodOf(CS.passing);
     assertRowOpens(before, method, PASSED_PREFIX, 'the row starts green from the previous run');
     assert.strictEqual(
       vscode.window.activeTextEditor?.document.uri.fsPath,
@@ -511,7 +511,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       missing: (method) => method + ' carries a status again after re-enabling',
     });
     assert.ok(
-      lensedMethods(restoredAgain).includes(CS.passing),
+      lensedMethods(restoredAgain).includes(lensMethodOf(CS.passing)),
       'including the method the earlier run passed',
     );
     eq(
@@ -533,7 +533,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     //
     // Interaction 1 — the user opens the file and reads the row.
     const before = await openAndReadLenses(csFile);
-    const method = CS.passing;
+    const method = lensMethodOf(CS.passing);
     const runAction = actionLenses(before).find(
       (lens) =>
         lens.command?.command === CMD_TEST_RUN_AT_CURSOR && lens.command.arguments?.[1] === method,
@@ -897,17 +897,17 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       );
     }
     eq(
-      baseline.get(CS.passing)?.startsWith(PASSED_PREFIX),
+      baseline.get(lensMethodOf(CS.passing))?.startsWith(PASSED_PREFIX),
       true,
       'the passing method reads as a pass',
     );
     eq(
-      baseline.get(CS.failing)?.startsWith(FAILED_PREFIX),
+      baseline.get(lensMethodOf(CS.failing))?.startsWith(FAILED_PREFIX),
       true,
       'the failing method reads as a failure',
     );
     eq(
-      baseline.get(CS.skipped),
+      baseline.get(lensMethodOf(CS.skipped)),
       SKIPPED_TITLE,
       'and the skipped method as a skip, never as a failure ([TEST-RUN-TRX])',
     );
@@ -930,7 +930,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     deepEq(lensedMethods(after), methods, 'a single-test run must not add or remove a lens row');
     assertRowOpens(after, CS.passing, PASSED_PREFIX, 'the row that ran reads as a pass');
     for (const method of methods) {
-      if (method === CS.passing) continue;
+      if (method === lensMethodOf(CS.passing)) continue;
       eq(
         statusFor(after, method),
         baseline.get(method),
