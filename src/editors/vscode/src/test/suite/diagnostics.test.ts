@@ -47,6 +47,24 @@ function assertDiagnosticShape(diagnostic: vscode.Diagnostic, document: vscode.T
   );
 }
 
+/** Assert the list carries no Error-severity diagnostic. */
+function assertErrorFree(diagnostics: readonly vscode.Diagnostic[], why: string): void {
+  const errors = diagnostics.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+  assert.strictEqual(errors.length, 0, why);
+}
+
+/** Assert `code` is absent from the list, naming whatever is still reported. */
+function assertCodeGone(
+  diagnostics: readonly vscode.Diagnostic[],
+  code: string,
+  why: string,
+): void {
+  assert.ok(
+    !diagnostics.some((diagnostic) => codeOf(diagnostic) === code),
+    `${why}; still reported: ${diagnostics.map((d) => codeOf(d)).join(', ')}`,
+  );
+}
+
 /** Clean starting content for the diagnostic target file. */
 const CLEAN_CONTENT = `namespace DiagTest
 {
@@ -141,17 +159,45 @@ suite('Diagnostics / Problems Panel', () => {
     await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
   });
 
+  /** Swap the fixture buffer to `content`, await its diagnostics, and return the list with its error entry. */
+  async function brokenBuffer(
+    content: string,
+    listWhy: string,
+    errorWhy: string,
+  ): Promise<{ diagnostics: vscode.Diagnostic[]; error: vscode.Diagnostic }> {
+    await replaceDocumentContent(diagDoc, content);
+    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
+    assert.ok(diagnostics.length > 0, listWhy);
+    const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
+    assert.ok(error, errorWhy);
+    return { diagnostics, error };
+  }
+
+  /** Assert every published diagnostic satisfies the shape invariant. */
+  function assertAllShaped(diagnostics: readonly vscode.Diagnostic[]): void {
+    for (const diagnostic of diagnostics) {
+      assertDiagnosticShape(diagnostic, diagDoc);
+    }
+  }
+
+  /** Assert no diagnostic is published twice, keyed by code and range start. */
+  function assertNoDuplicates(diagnostics: readonly vscode.Diagnostic[]): void {
+    const keys = diagnostics.map(
+      (diagnostic) =>
+        `${codeOf(diagnostic)}:${diagnostic.range.start.line}:${diagnostic.range.start.character}`,
+    );
+    assert.deepEqual([...new Set(keys)], keys, 'no diagnostic may be published twice');
+  }
+
   // ── Error Detection ───────────────────────────────────────────
 
   test('file with type error shows diagnostics', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(diagDoc, TYPE_ERROR_CS);
-
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
-    assert.ok(diagnostics.length > 0, 'Must have at least one diagnostic');
-
-    const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.ok(error, 'Must have at least one error-level diagnostic');
+    const { diagnostics, error } = await brokenBuffer(
+      TYPE_ERROR_CS,
+      'Must have at least one diagnostic',
+      'Must have at least one error-level diagnostic',
+    );
     assert.ok(error.message.length > 0, 'Error diagnostic must have a message');
     assert.ok(error.source === 'sharplsp-csharp', "Error source must be 'sharplsp-csharp'");
     assert.ok(error.range.start.line >= 0, 'Error must have a valid start line');
@@ -192,27 +238,19 @@ suite('Diagnostics / Problems Panel', () => {
 
     // Interaction 4 - every published diagnostic is well formed, and none is
     // published twice. A duplicate is one Problems row per pull.
-    for (const diagnostic of diagnostics) {
-      assertDiagnosticShape(diagnostic, diagDoc);
-    }
-    const keys = diagnostics.map(
-      (diagnostic) =>
-        `${codeOf(diagnostic)}:${diagnostic.range.start.line}:${diagnostic.range.start.character}`,
-    );
-    assert.deepEqual([...new Set(keys)], keys, 'no diagnostic may be published twice');
+    assertAllShaped(diagnostics);
+    assertNoDuplicates(diagnostics);
 
     await vscode.commands.executeCommand('workbench.actions.view.problems');
   });
 
   test('file with missing type shows diagnostics', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(diagDoc, MISSING_TYPE_CS);
-
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
-    assert.ok(diagnostics.length > 0, 'Must have diagnostics for missing type');
-
-    const csError = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.ok(csError, 'Must have an error diagnostic for missing type');
+    const { diagnostics, error: csError } = await brokenBuffer(
+      MISSING_TYPE_CS,
+      'Must have diagnostics for missing type',
+      'Must have an error diagnostic for missing type',
+    );
 
     // Interaction 2 - [DIAG-CATEGORIES-COMPILER]: an unresolved type is CS0246.
     // That exact code is what the AddImport code fix keys off, so a diagnostic
@@ -243,9 +281,7 @@ suite('Diagnostics / Problems Panel', () => {
       1,
       `one unresolved type, one error; got: ${errors.map((e) => codeOf(e)).join(', ')}`,
     );
-    for (const diagnostic of diagnostics) {
-      assertDiagnosticShape(diagnostic, diagDoc);
-    }
+    assertAllShaped(diagnostics);
   });
 
   // ── Clean Files ───────────────────────────────────────────────
@@ -257,19 +293,13 @@ suite('Diagnostics / Problems Panel', () => {
 
     // Wait for diagnostics to clear (sidecar needs time to reanalyze on CI).
     const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
-    const errors = cleared.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.strictEqual(errors.length, 0, 'Valid file should have no error diagnostics');
+    assertErrorFree(cleared, 'Valid file should have no error diagnostics');
 
     // Interaction 2 - and no phantom CS0246. [DIAG-RESTORE] exists because a
     // workspace analysed before NuGet restore finishes reports every reference
     // as missing; a clean file showing one means the gate did not hold.
-    assert.ok(
-      !cleared.some((diagnostic) => codeOf(diagnostic) === 'CS0246'),
-      `no phantom unresolved-reference errors: ${cleared.map((d) => codeOf(d)).join(', ')}`,
-    );
-    for (const diagnostic of cleared) {
-      assertDiagnosticShape(diagnostic, diagDoc);
-    }
+    assertCodeGone(cleared, 'CS0246', 'no phantom unresolved-reference errors');
+    assertAllShaped(cleared);
 
     // Interaction 3 - whatever IS reported on a clean file is advisory, never
     // an error, and it is still addressable: [DIAG-CATEGORIES-ANALYZER] style
@@ -293,10 +323,11 @@ suite('Diagnostics / Problems Panel', () => {
 
   test('fixing an error clears the diagnostic', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(diagDoc, BAD_RETURN_CS);
-
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
-    assert.ok(diagnostics.length > 0, 'Must have diagnostics for broken code');
+    const { error: before } = await brokenBuffer(
+      BAD_RETURN_CS,
+      'Must have diagnostics for broken code',
+      'the broken buffer produced an error',
+    );
 
     // Fix the error.
     await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
@@ -304,14 +335,11 @@ suite('Diagnostics / Problems Panel', () => {
     // Clearing is one more sidecar round trip, so it gets the same warm
     // semantic budget as every other diagnostics wait in this suite.
     const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
-    const errors = cleared.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.strictEqual(errors.length, 0, 'Diagnostics should clear after fixing the error');
+    assertErrorFree(cleared, 'Diagnostics should clear after fixing the error');
 
     // Interaction 2 - the error that WAS reported was the real one, so the
     // clearing below is about the fix and not about an analyser that never
     // looked ([DIAG-CATEGORIES-COMPILER]).
-    const before = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.ok(before, 'the broken buffer produced an error');
     assert.strictEqual(
       codeOf(before),
       'CS0029',
@@ -322,10 +350,7 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 3 - the specific code is GONE, not merely outnumbered. A
     // stale squiggle on a line the user already fixed is the single most
     // corrosive diagnostics defect there is ([DIAG-CATEGORIES-LIVE]).
-    assert.ok(
-      !cleared.some((diagnostic) => codeOf(diagnostic) === 'CS0029'),
-      `CS0029 must be gone; still reported: ${cleared.map((d) => codeOf(d)).join(', ')}`,
-    );
+    assertCodeGone(cleared, 'CS0029', 'CS0029 must be gone');
     assert.ok(diagDoc.getText().includes('return 42'), 'and the fix really is in the buffer');
     assert.ok(!diagDoc.getText().includes('"bad"'), 'with the bad literal removed');
 
@@ -344,13 +369,11 @@ suite('Diagnostics / Problems Panel', () => {
 
   test('diagnostics have correct severity and range', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(diagDoc, WRONG_LOCAL_CS);
-
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
-    assert.ok(diagnostics.length > 0, 'Must have diagnostics');
-
-    const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.ok(error, 'Must have an error diagnostic');
+    const { diagnostics, error } = await brokenBuffer(
+      WRONG_LOCAL_CS,
+      'Must have diagnostics',
+      'Must have an error diagnostic',
+    );
     assert.ok(error.range.start.line >= 0, 'Range start line must be valid');
     assert.ok(error.range.start.character >= 0, 'Range start character must be valid');
     assert.ok(error.range.end.line >= error.range.start.line, 'Range end line must be >= start');
@@ -374,10 +397,11 @@ suite('Diagnostics / Problems Panel', () => {
 
   test('closing a document clears its diagnostics', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
-    await replaceDocumentContent(diagDoc, BAD_RETURN_CS);
-
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
-    assert.ok(diagnostics.length > 0, 'Must have diagnostics before close');
+    const { error: broken } = await brokenBuffer(
+      BAD_RETURN_CS,
+      'Must have diagnostics before close',
+      'the broken buffer produced an error before the close',
+    );
 
     // Restore clean content so the sidecar clears errors first.
     await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
@@ -393,8 +417,6 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 2 - what was reported BEFORE the close was the real error, so
     // the emptiness above is the close taking effect rather than an analyser
     // that never ran.
-    const broken = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.ok(broken, 'the broken buffer produced an error before the close');
     assert.strictEqual(codeOf(broken), 'CS0029', 'and it was the type mismatch');
     assertDiagnosticShape(broken, diagDoc);
 

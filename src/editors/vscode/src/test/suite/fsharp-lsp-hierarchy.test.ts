@@ -2,7 +2,8 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult, pollProvider } from './test-helpers';
 import { codeLensesFor } from './code-lens-kit';
-import { openFSharpFixture, positionOf } from './fsharp-helpers';
+import { openFSharpFixture } from './fsharp-helpers';
+import { openFSharpAt } from './fsharp-lsp-kit';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
@@ -97,11 +98,10 @@ suite('F# LSP — Call Hierarchy', () => {
   teardown(closeAllEditors);
 
   test('prepares a call hierarchy item and resolves incoming calls', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — preparing on `double` yields the item the hierarchy view
     // is rooted at.
-    const usage = await openFSharpFixture('Usage.fs');
-    const position = positionOf(usage.doc, 'let double (value', 'let '.length);
+    const usage = await openFSharpAt(this, 'Usage.fs', 'let double (value', 'let '.length);
+    const position = usage.position;
     const items = await pollProvider<vscode.CallHierarchyItem>(
       'vscode.prepareCallHierarchy',
       [usage.uri, position],
