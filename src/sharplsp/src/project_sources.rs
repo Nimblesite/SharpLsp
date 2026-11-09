@@ -141,18 +141,28 @@ mod tests {
 
     // ── collect_source_files / find_source_files ──
 
-    #[test]
-    fn find_source_files_returns_cs_and_fs_files() {
+    /// A temp directory holding an empty file at each relative path, parents created.
+    fn tree_with(files: &[&str]) -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
+        for file in files {
+            let path = tmp.path().join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "").unwrap();
+        }
+        tmp
+    }
 
-        std::fs::write(dir.join("Foo.cs"), "").unwrap();
-        std::fs::write(dir.join("Bar.fs"), "").unwrap();
-        std::fs::write(dir.join("readme.txt"), "").unwrap();
-
+    /// The source files `collect_files` finds under `dir`.
+    fn sources_under(dir: &Path) -> Vec<String> {
         let mut files = Vec::new();
         collect_files(dir, is_source_file, &mut files);
+        files
+    }
 
+    #[test]
+    fn find_source_files_returns_cs_and_fs_files() {
+        let tmp = tree_with(&["Foo.cs", "Bar.fs", "readme.txt"]);
+        let files = sources_under(tmp.path());
         assert_eq!(files.len(), 2, "must find exactly 2 source files");
         assert!(files.iter().any(|f| f.ends_with("Foo.cs")));
         assert!(files.iter().any(|f| f.ends_with("Bar.fs")));
@@ -160,50 +170,24 @@ mod tests {
 
     #[test]
     fn collect_source_files_skips_bin_obj_directories() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-
-        // Create a src file at root level.
-        std::fs::write(dir.join("Main.cs"), "").unwrap();
-
-        // Create bin/obj directories with files that must NOT be collected.
-        std::fs::create_dir(dir.join("bin")).unwrap();
-        std::fs::write(dir.join("bin").join("App.dll"), "").unwrap();
-        // Trick: put a .cs file in bin to verify it's skipped.
-        std::fs::write(dir.join("bin").join("Gen.cs"), "").unwrap();
-
-        std::fs::create_dir(dir.join("obj")).unwrap();
-        std::fs::write(dir.join("obj").join("Build.cs"), "").unwrap();
-
-        let mut files = Vec::new();
-        collect_files(dir, is_source_file, &mut files);
-
+        // A .cs file inside bin/ and obj/ proves those directories are skipped.
+        let tmp = tree_with(&["Main.cs", "bin/App.dll", "bin/Gen.cs", "obj/Build.cs"]);
+        let files = sources_under(tmp.path());
         assert_eq!(files.len(), 1, "must skip bin/obj, got: {files:?}");
         assert!(files[0].ends_with("Main.cs"));
     }
 
     #[test]
     fn collect_source_files_skips_nonexistent_directory() {
-        let path = Path::new("/nonexistent/path/that/does/not/exist");
-        let mut files = Vec::new();
         // Must not panic — simply returns nothing.
-        collect_files(path, is_source_file, &mut files);
+        let files = sources_under(Path::new("/nonexistent/path/that/does/not/exist"));
         assert!(matches!(files.as_slice(), []), "{files:?}");
     }
 
     #[test]
     fn collect_source_files_recurses_into_subdirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-
-        let sub = dir.join("sub");
-        std::fs::create_dir(&sub).unwrap();
-        std::fs::write(sub.join("Nested.cs"), "").unwrap();
-        std::fs::write(dir.join("Root.cs"), "").unwrap();
-
-        let mut files = Vec::new();
-        collect_files(dir, is_source_file, &mut files);
-
+        let tmp = tree_with(&["sub/Nested.cs", "Root.cs"]);
+        let files = sources_under(tmp.path());
         assert_eq!(files.len(), 2, "must recurse into subdirs");
         assert!(files.iter().any(|f| f.ends_with("Nested.cs")));
         assert!(files.iter().any(|f| f.ends_with("Root.cs")));
