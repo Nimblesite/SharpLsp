@@ -27,7 +27,7 @@
 // Deliberately free of `vscode` imports so the walk is exercisable directly
 // against a live adapter.
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
-import { splitQualifiedName, stateMachineMethod } from './dap-frames';
+import { isFSharpMachineryName, splitQualifiedName, stateMachineMethod } from './dap-frames';
 import { err, ok, type Result } from './result';
 
 /** The internal static the runtime keys async-debugging support on. */
@@ -87,6 +87,8 @@ interface Evaluated {
 
 /** One suspended async activation found in the active-task registry. */
 interface TaskNode {
+  /** Runtime task identity, including when several activations share a machine type. */
+  readonly id: string;
   /** The state machine's runtime type, as netcoredbg renders it. */
   readonly smType: string;
   /** `variablesReference` of the state machine object — its hoisted locals. */
@@ -223,14 +225,20 @@ async function readSlot(
   const machine = await evaluate(host, frameId, `${entry}.value.StateMachine`);
   if (machine === undefined) return undefined;
   const contPath = `${entry}.value.m_continuationObject`;
-  return nodeFrom(machine, await evaluate(host, frameId, contPath), contPath);
+  return nodeFrom(key.result, machine, await evaluate(host, frameId, contPath), contPath);
 }
 
 /** Assemble one node from its evaluated state machine and continuation. */
-function nodeFrom(machine: Evaluated, cont: Evaluated | undefined, contPath: string): TaskNode {
+function nodeFrom(
+  id: string,
+  machine: Evaluated,
+  cont: Evaluated | undefined,
+  contPath: string,
+): TaskNode {
   const smType = machine.type !== '' ? machine.type : unbrace(machine.result);
   const { method, prefix } = parseMachineType(smType);
   return {
+    id,
     smType,
     smRef: machine.ref,
     method,
@@ -277,6 +285,7 @@ async function digDynamicName(
       spent += 1;
       const rendered = [textOf(child.type), unbrace(textOf(child.value))];
       for (const candidate of rendered) {
+        if (isFSharpMachineryName(candidate)) continue;
         const parsed = parseMachineType(candidate);
         if (parsed.method !== undefined) return { method: parsed.method, prefix: parsed.prefix };
       }
@@ -309,12 +318,6 @@ async function nameNode(host: ChainHost, node: TaskNode): Promise<TaskNode> {
   return { ...node, method: dug.method, prefix: dug.prefix };
 }
 
-/** The single unused node matching a state-machine type, or undefined. */
-function soleMatch(nodes: readonly TaskNode[], smType: string): TaskNode | undefined {
-  const matches = nodes.filter((node) => !node.used && node.smType === smType);
-  return matches.length === 1 ? matches[0] : undefined;
-}
-
 /** Render one node as the frame the Call Stack panel will show. */
 function frameOf(method: string, prefix: string, localsRef: number): AwaitingFrame {
   const name = prefix === '' ? `${method}()` : `${prefix}.${method}()`;
@@ -330,9 +333,9 @@ async function nextHop(
 ): Promise<TaskNode | AwaitingFrame | 'sink' | undefined> {
   if (current.contType === undefined) return undefined;
   const carried = { path: current.contPath, type: current.contType };
-  const lead = await awaitingMachine(host, frameId, carried, current.smType, MAX_CARRIER_HOPS);
+  const lead = await awaitingMachine(host, frameId, carried, current.id, MAX_CARRIER_HOPS);
   if (lead === undefined || lead === 'sink') return lead;
-  const node = soleMatch(nodes, lead.machine);
+  const node = nodes.find((candidate) => !candidate.used && candidate.id === lead.id);
   if (node !== undefined) return node;
   const { method, prefix } = parseMachineType(lead.machine);
   return method === undefined ? 'sink' : frameOf(method, prefix, 0);
@@ -350,7 +353,7 @@ interface Carried {
  * a hop was REFUSED: a cut, which the caller still stitches from the physical
  * stacks rather than presenting as the end of the chain.
  */
-type Lead = { readonly machine: string } | 'sink' | undefined;
+type Lead = { readonly machine: string; readonly id: string } | 'sink' | undefined;
 
 /** Cross carriers one FIELD at a time to the box a continuation leads to. */
 async function awaitingMachine(
@@ -361,7 +364,11 @@ async function awaitingMachine(
   budget: number,
 ): Promise<Lead> {
   const machine = boxStateMachineType(carried.type);
-  if (machine !== undefined) return machine === from ? 'sink' : { machine };
+  if (machine !== undefined) {
+    const task = await evaluate(host, frameId, `${carried.path}.m_taskId`);
+    if (task === undefined) return undefined;
+    return task.result === from ? 'sink' : { machine, id: task.result };
+  }
   if (carried.type === CONTINUATION_LIST) {
     return await listedMachine(host, frameId, carried, from, budget);
   }

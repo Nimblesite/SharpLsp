@@ -56,8 +56,8 @@ export type StopOrigin = 'function-entry';
  */
 const MAX_COALESCED = 8;
 
-/** `stepIn` probes spent digging through one stretch of non-user code. */
-const MAX_MACHINERY_EXPLORE = 16;
+/** SDK 10.0.403's F# task interpreter needs 18 probes before the user closure. */
+const MAX_MACHINERY_EXPLORE = 24;
 
 /** `stepOut` climbs allowed while escaping non-user code. */
 const MAX_MACHINERY_ESCAPES = 24;

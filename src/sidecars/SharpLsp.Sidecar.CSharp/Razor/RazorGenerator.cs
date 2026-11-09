@@ -19,7 +19,6 @@ internal static class RazorGenerator
     [
         Compiler,
         "Microsoft.AspNetCore.Razor.Utilities.Shared.dll",
-        "Microsoft.Extensions.ObjectPool.dll",
     ];
 
     public static ProjectInfo Compatible(ProjectInfo project)

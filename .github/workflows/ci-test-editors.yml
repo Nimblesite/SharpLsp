@@ -45,7 +45,7 @@ jobs:
           tool: nextest
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Download precompiled Release tests
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -72,7 +72,7 @@ jobs:
       # merge-cobertura.cs reads the sidecar reports.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 10.0.303
+          dotnet-version: 10.0.403
       # The IntelliJ Platform SDK is a multi-GB download resolved through
       # Gradle. Uncached, it dominates this job's wall time.
       - name: Download compiled plugin and test classes
