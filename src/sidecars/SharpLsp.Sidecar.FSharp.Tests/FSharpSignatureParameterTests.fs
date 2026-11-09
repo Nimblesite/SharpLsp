@@ -151,6 +151,56 @@ let ``signature help keeps the current parameter while the closing parenthesis i
         cleanup dir
 }
 
+/// Multiline static calls put the callee and its arguments on different lines.
+/// Line indices: 4 = call opener, 5-7 = arguments, 10 = punctuated opener,
+/// 11-13 = punctuation-bearing arguments. The overlay appends a second call
+/// starting at line 15.
+let private MULTILINE_SOURCE =
+    source
+        [ "module Signatures"
+          "type Calc ="
+          "    static member Add(a: int, b: int, c: int) = a + b + c"
+          "let multiline ="
+          "    Calc.Add("
+          "        1,"
+          "        2,"
+          "        3"
+          "    )"
+          "let punctuated ="
+          "    Calc.Add("
+          "        \"(a,b)\".Length,"
+          "        2,"
+          "        3"
+          "    )" ]
+
+[<Fact>]
+let ``multilineStaticSignatureHelp tracks active parameters and string punctuation`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", MULTILINE_SOURCE ]
+    try
+        // The callee's own line carries no argument text, so the caret line alone
+        // cannot identify the enclosing call or the parameter the caret sits on.
+        do! assertActive state paths[0] MULTILINE_SOURCE 5 "1," 0
+        do! assertActive state paths[0] MULTILINE_SOURCE 6 "2," 1
+        do! assertActive state paths[0] MULTILINE_SOURCE 7 "3" 2
+
+        // Parentheses and a comma inside a string literal are data, not call
+        // structure: they must not hide the enclosing signature or shift indices.
+        do! assertActive state paths[0] MULTILINE_SOURCE 11 "\"(a,b)\"." 0
+        do! assertActive state paths[0] MULTILINE_SOURCE 12 "2," 1
+        do! assertActive state paths[0] MULTILINE_SOURCE 13 "3" 2
+
+        // Unsaved multiline overlay: resolution follows the edited buffer.
+        let overlay =
+            MULTILINE_SOURCE
+            + "let overlay =\n    Calc.Add(\n        4,\n        5,\n        6\n    )\n"
+        FSharpWorkspace.applyDidChange state paths[0] overlay
+        do! assertActive state paths[0] overlay 17 "4," 0
+        do! assertActive state paths[0] overlay 18 "5," 1
+        do! assertActive state paths[0] overlay 19 "6" 2
+    finally
+        cleanup dir
+}
+
 /// A `[<ParamArray>]` rest parameter absorbs every trailing argument, so all of
 /// them must report the rest parameter's declaration index, never the raw
 /// argument position. Line indices: 3 = full call, 4 = unfinished overlay.

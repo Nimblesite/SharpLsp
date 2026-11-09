@@ -13,6 +13,8 @@ Remaining code intelligence features not covered by other plans.
 - [x] F# named arguments select their declared parameter when reordered or mixed with positional arguments — `FSharpSignatureParameterTests`, [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP], issue #552
 - [x] F# variadic arguments stay on the final `ParamArray` parameter, including unfinished calls — `FSharpSignatureParameterTests`, [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP], issue #552
 
+- [x] F# multiline calls resolve their enclosing callee from the cached syntax tree, including punctuation literals and unsaved edits — `FSharpSignatureParameterTests`, [FS-SIGHELP], issue #555
+
 ## Rename
 
 Spec: [RENAME-SPEC.md](../specs/RENAME-SPEC.md). Rename is P0 and must cover every renameable code element, not only types.
