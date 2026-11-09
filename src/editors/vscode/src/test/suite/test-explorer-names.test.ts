@@ -78,6 +78,16 @@ const FS_MSTEST_NESTED = 'Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers';
  */
 const UNIQUE_ID = 'd87517d9ff18440615ea8de9ec508cb292e09385';
 
+/** `name` round-trips the stripper verbatim, labelled `why`. */
+function survivesVerbatim(name: string, why: string): void {
+  eq(withoutAdapterUniqueId(name), name, why);
+}
+
+/** `bare` carrying the adapter's unique-ID decoration still reduces to `bare`. */
+function decoratedReduces(bare: string, why: string): void {
+  eq(withoutAdapterUniqueId(bare + ' (' + UNIQUE_ID + ')'), bare, why);
+}
+
 suite('Test Explorer — adapter decoration comes off, real names stay on', () => {
   test('an adapter unique ID is stripped, and every name that only LOOKS like one is not', function () {
     this.timeout(FAST_MS);
@@ -465,23 +475,21 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     const csXunit = fixtureFor('xunit-csharp');
     const csNunit = fixtureFor('nunit-csharp');
     const csMstest = fixtureFor('mstest-csharp');
-    eq(withoutAdapterUniqueId(csXunit.passing), csXunit.passing, 'xUnit C#, passing');
-    eq(withoutAdapterUniqueId(csXunit.failing), csXunit.failing, 'xUnit C#, failing');
-    eq(withoutAdapterUniqueId(csXunit.skipped), csXunit.skipped, 'xUnit C#, skipped');
-    eq(withoutAdapterUniqueId(csXunit.parameterized), csXunit.parameterized, 'xUnit C#, [Theory]');
-    eq(withoutAdapterUniqueId(csNunit.passing), csNunit.passing, 'NUnit C#, passing');
-    eq(withoutAdapterUniqueId(csNunit.failing), csNunit.failing, 'NUnit C#, failing');
-    eq(withoutAdapterUniqueId(csNunit.skipped), csNunit.skipped, 'NUnit C#, ignored');
-    eq(
-      withoutAdapterUniqueId(csNunit.parameterized),
+    survivesVerbatim(csXunit.passing, 'xUnit C#, passing');
+    survivesVerbatim(csXunit.failing, 'xUnit C#, failing');
+    survivesVerbatim(csXunit.skipped, 'xUnit C#, skipped');
+    survivesVerbatim(csXunit.parameterized, 'xUnit C#, [Theory]');
+    survivesVerbatim(csNunit.passing, 'NUnit C#, passing');
+    survivesVerbatim(csNunit.failing, 'NUnit C#, failing');
+    survivesVerbatim(csNunit.skipped, 'NUnit C#, ignored');
+    survivesVerbatim(
       csNunit.parameterized,
       'NUnit C#, [TestCase] - the shape carrying PARENTHESES the stripper must not touch',
     );
-    eq(withoutAdapterUniqueId(csMstest.passing), csMstest.passing, 'MSTest C#, passing');
-    eq(withoutAdapterUniqueId(csMstest.failing), csMstest.failing, 'MSTest C#, failing');
-    eq(withoutAdapterUniqueId(csMstest.skipped), csMstest.skipped, 'MSTest C#, ignored');
-    eq(
-      withoutAdapterUniqueId(csMstest.parameterized),
+    survivesVerbatim(csMstest.passing, 'MSTest C#, passing');
+    survivesVerbatim(csMstest.failing, 'MSTest C#, failing');
+    survivesVerbatim(csMstest.skipped, 'MSTest C#, ignored');
+    survivesVerbatim(
       csMstest.parameterized,
       'MSTest C#, [DataRow] - reported without row data, so one name for every row',
     );
@@ -491,67 +499,37 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
     const fsXunit = fixtureFor('xunit-fsharp');
     const fsNunit = fixtureFor('nunit-fsharp');
     const fsMstest = fixtureFor('mstest-fsharp');
-    eq(withoutAdapterUniqueId(fsXunit.passing), fsXunit.passing, 'xUnit F#, passing');
-    eq(
-      withoutAdapterUniqueId(fsXunit.failing),
+    survivesVerbatim(fsXunit.passing, 'xUnit F#, passing');
+    survivesVerbatim(
       fsXunit.failing,
       'xUnit F#, failing - a backtick binding whose name carries SPACES',
     );
-    eq(withoutAdapterUniqueId(fsXunit.skipped), fsXunit.skipped, 'xUnit F#, skipped');
-    eq(
-      withoutAdapterUniqueId(fsXunit.parameterized),
-      fsXunit.parameterized,
-      'xUnit F#, [<Theory>]',
-    );
-    eq(withoutAdapterUniqueId(fsNunit.passing), fsNunit.passing, 'NUnit F#, passing');
-    eq(withoutAdapterUniqueId(fsNunit.failing), fsNunit.failing, 'NUnit F#, failing');
-    eq(withoutAdapterUniqueId(fsNunit.skipped), fsNunit.skipped, 'NUnit F#, ignored');
-    eq(
-      withoutAdapterUniqueId(fsNunit.parameterized),
+    survivesVerbatim(fsXunit.skipped, 'xUnit F#, skipped');
+    survivesVerbatim(fsXunit.parameterized, 'xUnit F#, [<Theory>]');
+    survivesVerbatim(fsNunit.passing, 'NUnit F#, passing');
+    survivesVerbatim(fsNunit.failing, 'NUnit F#, failing');
+    survivesVerbatim(fsNunit.skipped, 'NUnit F#, ignored');
+    survivesVerbatim(
       fsNunit.parameterized,
       'NUnit F#, [<TestCase>] - SPACES and PARENTHESES in one name, which is the shape ' +
         'NUnit’s own filter parser then refuses ([TEST-FILTER-ESCAPE])',
     );
-    eq(
-      withoutAdapterUniqueId(fsMstest.passing),
-      fsMstest.passing,
-      'MSTest F#, passing - the CLR nested-type + separator',
-    );
-    eq(withoutAdapterUniqueId(fsMstest.failing), fsMstest.failing, 'MSTest F#, failing');
-    eq(withoutAdapterUniqueId(fsMstest.skipped), fsMstest.skipped, 'MSTest F#, ignored');
-    eq(withoutAdapterUniqueId(fsMstest.parameterized), fsMstest.parameterized, 'MSTest F#, row');
+    survivesVerbatim(fsMstest.passing, 'MSTest F#, passing - the CLR nested-type + separator');
+    survivesVerbatim(fsMstest.failing, 'MSTest F#, failing');
+    survivesVerbatim(fsMstest.skipped, 'MSTest F#, ignored');
+    survivesVerbatim(fsMstest.parameterized, 'MSTest F#, row');
 
     // Interaction 3 — the same twenty-four names, DECORATED, must each reduce
     // to themselves. The adapter decorates whatever it reports, so the
     // decoration lands on the spaced, parenthesised and nested shapes alike.
     const dress = (name: string): string => name + ' (' + UNIQUE_ID + ')';
-    eq(withoutAdapterUniqueId(dress(csXunit.passing)), csXunit.passing, 'decorated xUnit C#');
-    eq(
-      withoutAdapterUniqueId(dress(csXunit.parameterized)),
-      csXunit.parameterized,
-      'decorated C# theory',
-    );
-    eq(
-      withoutAdapterUniqueId(dress(csNunit.parameterized)),
-      csNunit.parameterized,
-      'decorated NUnit case',
-    );
-    eq(
-      withoutAdapterUniqueId(dress(csMstest.parameterized)),
-      csMstest.parameterized,
-      'decorated MSTest row',
-    );
-    eq(withoutAdapterUniqueId(dress(fsXunit.failing)), fsXunit.failing, 'decorated F# spaced name');
-    eq(
-      withoutAdapterUniqueId(dress(fsNunit.parameterized)),
-      fsNunit.parameterized,
-      'decorated F# NUnit case',
-    );
-    eq(
-      withoutAdapterUniqueId(dress(fsMstest.passing)),
-      fsMstest.passing,
-      'decorated F# nested type',
-    );
+    decoratedReduces(csXunit.passing, 'decorated xUnit C#');
+    decoratedReduces(csXunit.parameterized, 'decorated C# theory');
+    decoratedReduces(csNunit.parameterized, 'decorated NUnit case');
+    decoratedReduces(csMstest.parameterized, 'decorated MSTest row');
+    decoratedReduces(fsXunit.failing, 'decorated F# spaced name');
+    decoratedReduces(fsNunit.parameterized, 'decorated F# NUnit case');
+    decoratedReduces(fsMstest.passing, 'decorated F# nested type');
     assert.ok(
       withoutAdapterUniqueId(dress(fsXunit.failing)).includes(' '),
       'and the F# spaces survive the stripping that removed the ID',

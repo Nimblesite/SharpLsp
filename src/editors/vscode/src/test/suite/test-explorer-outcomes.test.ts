@@ -57,6 +57,13 @@ import { DEBUG_SESSION_MS, DOTNET_CLI_MS } from './test-timeouts';
 import { useWarmFixture } from './test-explorer-harness';
 import { COVERAGE_DIR_NAME } from './test-coverage-fixtures';
 import { CS } from './test-explorer-xunit-pair';
+import {
+  assertMeasuredDuration,
+  assertMessageMentions,
+  assertTimedResult,
+  runExactSelection,
+  selectionFor,
+} from './test-explorer-matrix-kit';
 const FSX = fixtureFor('xunit-fsharp');
 
 /** The idiomatic F# backtick fact whose xUnit FQN literally contains spaces. */
@@ -87,6 +94,23 @@ const OUTCOME_GROUPS = { passing: PASSING, failing: FAILING, skipped: SKIPPED };
 
 /** The terminal the Debug profile opens for the user to attach to. */
 const DEBUG_TERMINAL = 'SharpLsp Test Debug';
+
+/** One Cobertura report: the collector's file name, one directory below `coverageDir`. */
+function assertCoberturaReport(
+  report: string,
+  coverageDir: string,
+  nameWhy: string,
+  dirWhy: string,
+): void {
+  assert.strictEqual(path.basename(report), 'coverage.cobertura.xml', nameWhy);
+  assert.strictEqual(path.dirname(path.dirname(report)), coverageDir, dirWhy);
+}
+
+/** The cache holds exactly one key per fixture test, and the tree still stands. */
+function assertFreshKeysOnly(api: SharpLspExtensionApi, why: string, leavesWhy: string): void {
+  assert.strictEqual(new Set(fixtureKeys(api, ALL_TESTS)).size, ALL_TESTS.length, why);
+  assertLeavesAre(api.testController, ALL_TESTS, leavesWhy);
+}
 
 suite('Test Explorer e2e — run profiles, outcome attribution and coverage', () => {
   let api: SharpLspExtensionApi;
@@ -156,15 +180,10 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       treeIds.length,
       `the tree must not hold a duplicate item: ${treeIds.join(' | ')}`,
     );
-    const items = itemsFor(api, ALL_TESTS);
-    assert.strictEqual(
-      items.length,
-      ALL_TESTS.length,
+    const items = selectionFor(
+      api,
+      ALL_TESTS,
       'every expected test resolved to a tree item',
-    );
-    assert.deepStrictEqual(
-      items.map((item) => item.id),
-      [...ALL_TESTS],
       'the selection handed to ▶ is exactly the tree, in order',
     );
     assert.deepStrictEqual(
@@ -196,8 +215,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'passed',
       'a theory whose rows ALL pass stays green through the worst-row merge',
     );
-    assert.ok(
-      (cachedFor(api, CS.parameterized).duration ?? -1) >= 0,
+    assertMeasuredDuration(
+      cachedFor(api, CS.parameterized),
       "a theory's row durations are summed into one number",
     );
     assert.deepStrictEqual(
@@ -210,12 +229,11 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       items.length,
       'the number of cached results equals the number of items run',
     );
-    assert.strictEqual(
-      new Set(fixtureKeys(api, ALL_TESTS)).size,
-      ALL_TESTS.length,
+    assertFreshKeysOnly(
+      api,
       'and the cache is keyed by FQN, so no key repeats',
+      'running tests must not mutate the tree',
     );
-    assertLeavesAre(api.testController, ALL_TESTS, 'running tests must not mutate the tree');
   });
 
   test('the whole tree runs in ONE dotnet invocation, not one per selected test', async function () {
@@ -332,8 +350,9 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     const failed = cachedFor(api, FSX.failing);
     assertPassed(passed, CS.passing);
     assertFailed(failed, FSX.failing);
-    assert.ok(
-      (failed.message ?? '').includes('Assert.Equal() Failure'),
+    assertMessageMentions(
+      failed,
+      'Assert.Equal() Failure',
       `listeners see the REAL assertion text: ${failed.message ?? 'none'}`,
     );
     const singleChange = nextResultsChange(api.testController, DOTNET_CLI_MS);
@@ -412,12 +431,13 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'the baseline cached every test the subset re-runs',
     );
     const subsetItems = itemsFor(api, subset);
-    assert.deepStrictEqual(
-      subsetItems.map((item) => item.id),
+    await runExactSelection(
+      api,
+      vscode.TestRunProfileKind.Run,
+      subsetItems,
       [...subset],
       'exactly the two selected items reach the run handler',
     );
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, subsetItems);
     for (const id of subset) {
       assert.notStrictEqual(
         api.testController.getResult(id),
@@ -462,12 +482,11 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       snapshot.size,
       'the cache is updated in place, never rebuilt',
     );
-    assert.strictEqual(
-      new Set(fixtureKeys(api, ALL_TESTS)).size,
-      ALL_TESTS.length,
+    assertFreshKeysOnly(
+      api,
       'and still holds no duplicate key',
+      'a subset run leaves the whole tree standing',
     );
-    assertLeavesAre(api.testController, ALL_TESTS, 'a subset run leaves the whole tree standing');
   });
 
   test('the Coverage profile writes a Cobertura report beside the solution and still attributes outcomes', async function () {
@@ -491,12 +510,13 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       4,
       'four items are selected for the coverage run, one of them exercising the library',
     );
-    assert.deepStrictEqual(
-      items.map((item) => item.id),
+    await runExactSelection(
+      api,
+      vscode.TestRunProfileKind.Coverage,
+      items,
       [...selection],
       'the coverage selection spans BOTH fixture projects',
     );
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Coverage, items);
     assert.ok(fs.existsSync(coverageDir), `the coverage run must create ${coverageDir}`);
     const entries = fs.readdirSync(coverageDir);
     const trx = entries.filter((entry) => entry.toLowerCase().endsWith('.trx'));
@@ -527,14 +547,10 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     );
     assert.deepStrictEqual([...reports].sort(), reports, 'the reports come back in a stable order');
     for (const each of reports) {
-      assert.strictEqual(
-        path.basename(each),
-        'coverage.cobertura.xml',
-        "every report carries the collector's file name",
-      );
-      assert.strictEqual(
-        path.dirname(path.dirname(each)),
+      assertCoberturaReport(
+        each,
         coverageDir,
+        "every report carries the collector's file name",
         `${each} must sit exactly one directory down`,
       );
     }
@@ -548,14 +564,10 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       report,
       `findCoberturaFiles must locate a report under ${coverageDir}; found: ${entries.join(' | ')}`,
     );
-    assert.strictEqual(
-      path.basename(report),
-      'coverage.cobertura.xml',
-      "the collector's own file name",
-    );
-    assert.strictEqual(
-      path.dirname(path.dirname(report)),
+    assertCoberturaReport(
+      report,
       coverageDir,
+      "the collector's own file name",
       'written exactly one directory down',
     );
     assert.ok(
@@ -912,13 +924,9 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       (result.message ?? '').includes(ghost),
       'the message names the id verbatim, spaces and all',
     );
-    assert.strictEqual(
-      typeof result.duration,
-      'number',
+    assertTimedResult(
+      result,
       'the invocation still took wall-clock time, and that is reported',
-    );
-    assert.ok(
-      (result.duration ?? -1) >= 0,
       `a real invocation was made and timed, got ${String(result.duration)}`,
     );
     assert.strictEqual(
@@ -963,12 +971,13 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       5,
       'one pass, two skips and two failures are run for this test',
     );
-    assert.deepStrictEqual(
-      items.map((item) => item.id),
+    await runExactSelection(
+      api,
+      vscode.TestRunProfileKind.Run,
+      items,
       [...selection],
       'and the run gets exactly them',
     );
-    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
     const passed = cachedFor(api, CS.passing);
     assertPassed(passed, CS.passing);
     const passTitle = statusLensTitle(passed);

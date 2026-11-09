@@ -50,6 +50,11 @@ import { comparablePath, assertContainsAll, assertContainsNone } from './test-he
 import { DOTNET_CLI_MS } from './test-timeouts';
 import { sorted } from './test-explorer-outcome-assertions';
 import { useScratchSuite } from './test-explorer-harness';
+import {
+  assertMeasuredDuration,
+  assertRealAssemblyPath,
+  assertTimedResult,
+} from './test-explorer-matrix-kit';
 
 /** The idiomatic F# backtick fact whose xUnit FQN literally contains spaces. */
 const FS_SPACED_FACT = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
@@ -205,8 +210,11 @@ function assertFixtureInTree(fixture: FrameworkFixture, ids: readonly string[]):
 
 /** One `Test run for <dll>` banner, asserted to name a real built assembly. */
 function assertAnnouncedAssembly(assembly: string): void {
-  assert.ok(path.isAbsolute(assembly), `${assembly} must be an absolute path`);
-  assert.ok(fs.existsSync(assembly), `${assembly} must exist on disk — the project really built`);
+  assertRealAssemblyPath(
+    assembly,
+    `${assembly} must be an absolute path`,
+    `${assembly} must exist on disk — the project really built`,
+  );
   assert.strictEqual(path.extname(assembly), '.dll', `${assembly} must name a managed assembly`);
   assert.ok(
     !assembly.includes('(.NETCoreApp'),
@@ -264,6 +272,11 @@ function assertItemShape(snapshot: TestItemSnapshot, anchor: string): void {
   );
 }
 
+/** The fixture file of `key` really is on disk at `dir`. */
+function assertFixtureOnDisk(key: string, dir: string, fileName: string): void {
+  assert.ok(fs.existsSync(path.join(dir, fileName)), `${key}: ${fileName} must be on disk`);
+}
+
 /** A fixture's project really is on disk, directly under the solution root. */
 function assertProjectOnDisk(fixture: FrameworkFixture, dir: string, root: string): void {
   assert.strictEqual(
@@ -280,14 +293,8 @@ function assertProjectOnDisk(fixture: FrameworkFixture, dir: string, root: strin
     comparablePath(dir).startsWith(comparablePath(root) + path.sep),
     `${fixture.key}: its project must live under the solution root ${root}`,
   );
-  assert.ok(
-    fs.existsSync(path.join(dir, fixture.projectFileName)),
-    `${fixture.key}: ${fixture.projectFileName} must be on disk`,
-  );
-  assert.ok(
-    fs.existsSync(path.join(dir, fixture.sourceFileName)),
-    `${fixture.key}: ${fixture.sourceFileName} must be on disk`,
-  );
+  assertFixtureOnDisk(fixture.key, dir, fixture.projectFileName);
+  assertFixtureOnDisk(fixture.key, dir, fixture.sourceFileName);
   assert.strictEqual(
     fs.readFileSync(path.join(dir, fixture.sourceFileName), 'utf8'),
     fixture.source,
@@ -340,7 +347,7 @@ function assertGreen(result: CachedTestResult, fqn: string, key: string): void {
     'number',
     `${key}: the TRX duration must reach the cache for ${fqn}`,
   );
-  assert.ok((result.duration ?? -1) >= 0, `${key}: ${fqn} duration must not be negative`);
+  assertMeasuredDuration(result, `${key}: ${fqn} duration must not be negative`);
   assert.deepStrictEqual(
     Object.keys(result),
     RESULT_KEYS,
@@ -374,12 +381,11 @@ function assertNotRun(result: CachedTestResult, fqn: string): void {
     message,
     'the message must NAME the test, so the user sees which id matched nothing',
   );
-  assert.strictEqual(
-    typeof result.duration,
-    'number',
+  assertTimedResult(
+    result,
     'the wall-clock duration of the invocation is still reported',
+    'a run that matched nothing still took real time',
   );
-  assert.ok((result.duration ?? -1) >= 0, 'a run that matched nothing still took real time');
   assert.deepStrictEqual(
     Object.keys(result),
     RESULT_KEYS,
@@ -498,6 +504,17 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     const ids = await discoverSolution(api, slnPath, ALL_EXPECTED);
     await api.testController.whenIdle();
     return ids;
+  }
+
+  /** runGreen on the fixture's passing test, asserting the FQN's language prefix. */
+  async function runPassingGreen(
+    fixture: FrameworkFixture,
+    prefix: string,
+    why: string,
+  ): Promise<CachedTestResult> {
+    const result = await runGreen(api.testController, fixture, fixture.passing, dirFor(fixture));
+    assert.ok(fixture.passing.startsWith(prefix), why);
+    return result;
   }
 
   useScratchSuite('sharplsp-frameworks-', async (scratch) => {
@@ -794,9 +811,9 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       'F# FIRST: every F# fixture is built, listed and RUN before any C# one',
     );
     for (const fixture of fsharp) {
-      const result = await runGreen(api.testController, fixture, fixture.passing, dirFor(fixture));
-      assert.ok(
-        fixture.passing.startsWith('Fs.'),
+      const result = await runPassingGreen(
+        fixture,
+        'Fs.',
         `${fixture.key}: an F# FQN starts at the F# module`,
       );
       assert.strictEqual(
@@ -852,9 +869,9 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       'the C# fixtures are the LAST three — F# leads',
     );
     for (const fixture of csharp) {
-      const result = await runGreen(api.testController, fixture, fixture.passing, dirFor(fixture));
-      assert.ok(
-        fixture.passing.startsWith('Cs.'),
+      const result = await runPassingGreen(
+        fixture,
+        'Cs.',
         `${fixture.key}: a C# FQN starts at the C# namespace`,
       );
       assert.strictEqual(
@@ -964,8 +981,8 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       'an adapter that refuses the filter must NOT leave the user with "No result reported": ' +
         'the unfiltered re-run is what turns that refusal back into an outcome',
     );
-    assert.ok(
-      (refused.duration ?? -1) >= 0,
+    assertMeasuredDuration(
+      refused,
       'and the outcome carries the duration TRX recorded, not a fabricated zero',
     );
     assert.ok(refused.passed, 'the F# parenthesised, spaced case really passes in the fixture');

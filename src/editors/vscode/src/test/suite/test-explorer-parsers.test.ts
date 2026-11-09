@@ -39,6 +39,7 @@ import {
 } from '../../test-discovery.js';
 import { parseFailureMessage, parseRunSummary } from '../../test-run-output.js';
 import { isRunError, parseTrx, parseTrxDuration, parseTrxReport } from '../../test-trx.js';
+import type { TrxRunInfo, TrxTestResult } from '../../test-trx.js';
 import { FAST_MS } from './test-timeouts';
 import { assertContainsAll, assertContainsNone } from './test-helpers';
 import { assertMapsEach } from './test-explorer-outcome-assertions';
@@ -100,6 +101,30 @@ function orphanTrx(outcome: string): string {
 /** The state `parseTrx` maps one TRX outcome spelling onto. */
 function mappedOutcome(outcome: string): string | undefined {
   return parseTrx(orphanTrx(outcome))[0]?.outcome;
+}
+
+/** The TRX result keyed under `fqn`, failing with `why` when the reader dropped it. */
+function listed(byName: Map<string, TrxTestResult>, fqn: string, why: string): TrxTestResult {
+  const result = byName.get(fqn);
+  assert.ok(result, why);
+  return result;
+}
+
+/** A TRX with no results carries exactly ONE run-level message spelling `outcome`. */
+function assertSoleRunInfo(
+  trx: string,
+  resultsWhy: string,
+  countWhy: string,
+  outcome: string,
+  outcomeWhy: string,
+): TrxRunInfo {
+  const parsed = parseTrxReport(trx);
+  assert.strictEqual(parsed.results.length, 0, resultsWhy);
+  assert.strictEqual(parsed.runInfos.length, 1, countWhy);
+  const info = parsed.runInfos[0];
+  assert.ok(info, 'the run info must be readable');
+  assert.strictEqual(info.outcome, outcome, outcomeWhy);
+  return info;
 }
 
 /** One assembly's `dotnet test` console summary, in VSTest's exact spacing. */
@@ -176,8 +201,7 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     assert.strictEqual(byName.size, 6, 'every result keys to a DISTINCT fully-qualified name');
 
     // A pass: the FQN comes from the DEFINITION, not the display name.
-    const pass = byName.get(CS.passing);
-    assert.ok(pass, `the C# pass must key on its FQN: ${CS.passing}`);
+    const pass = listed(byName, CS.passing, `the C# pass must key on its FQN: ${CS.passing}`);
     assert.strictEqual(pass.outcome, 'passed', 'Passed maps to passed');
     assert.strictEqual(
       pass.displayName,
@@ -194,8 +218,7 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     assert.strictEqual(pass.stackTrace, undefined, 'nor a stack trace');
 
     // A failure: the assertion text and the drive-letter stack trace survive.
-    const failure = byName.get(CS.failing);
-    assert.ok(failure, `the C# failure must key on its FQN: ${CS.failing}`);
+    const failure = listed(byName, CS.failing, `the C# failure must key on its FQN: ${CS.failing}`);
     assert.strictEqual(failure.outcome, 'failed', 'Failed maps to failed');
     assert.strictEqual(failure.durationMs, 25, '00:00:00.0250000 is 25ms');
     assert.ok(
@@ -211,41 +234,45 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     assert.ok(failure.stackTrace?.includes('Tests.cs:line 9'), 'down to the file and line');
 
     // A skip is a SKIP. Reporting NotExecuted as a failure was the headline bug.
-    const skipped = byName.get(CS.skipped);
-    assert.ok(skipped, `the skipped test must key on its FQN: ${CS.skipped}`);
+    const skipped = listed(
+      byName,
+      CS.skipped,
+      `the skipped test must key on its FQN: ${CS.skipped}`,
+    );
     assert.strictEqual(skipped.outcome, 'skipped', 'NotExecuted maps to skipped, NOT to failed');
     assert.notStrictEqual(skipped.outcome, 'failed', 'a skipped test is never a failure');
     assert.strictEqual(skipped.durationMs, undefined, 'a test that never ran has no duration');
 
     // The three hostile FQN shapes.
-    assert.ok(
-      byName.has(FS_FACT_SPACED),
-      `an F# name carrying SPACES must key verbatim: ${FS_FACT_SPACED}`,
-    );
-    assert.strictEqual(byName.get(FS_FACT_SPACED)?.outcome, 'passed', 'and report its own outcome');
-    assert.ok(
-      byName.has(NUNIT_CASE),
-      `an NUnit case name carrying PARENTHESES must key verbatim: ${NUNIT_CASE}`,
+    assert.strictEqual(
+      listed(
+        byName,
+        FS_FACT_SPACED,
+        `an F# name carrying SPACES must key verbatim: ${FS_FACT_SPACED}`,
+      ).outcome,
+      'passed',
+      'and report its own outcome',
     );
     assert.strictEqual(
-      byName.get(NUNIT_CASE)?.displayName,
+      listed(
+        byName,
+        NUNIT_CASE,
+        `an NUnit case name carrying PARENTHESES must key verbatim: ${NUNIT_CASE}`,
+      ).displayName,
       'Adds_Case(2,2,4)',
       "NUnit's display name is the bare method plus its row",
     );
-    assert.ok(
-      byName.has(FS_MSTEST_NESTED),
+    const nested = listed(
+      byName,
+      FS_MSTEST_NESTED,
       `an F# MSTest class is a CLR NESTED type, so its FQN carries '+': ${FS_MSTEST_NESTED}`,
     );
     assert.strictEqual(
-      byName.get(FS_MSTEST_NESTED)?.displayName,
+      nested.displayName,
       'AddsTwoNumbers',
       'MSTest renders only the bare member name',
     );
-    assert.strictEqual(
-      byName.get(FS_MSTEST_NESTED)?.durationMs,
-      1500,
-      '00:00:01.5000000 is 1500ms',
-    );
+    assert.strictEqual(nested.durationMs, 1500, '00:00:01.5000000 is 1500ms');
 
     // Outcome spellings, and the ones that must NOT become a silent pass.
     assertMapsEach(mappedOutcome, [
@@ -300,25 +327,23 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
     // This distinction is the whole basis of the unfiltered retry. Getting it
     // wrong either re-runs the world on every empty filter, or leaves every F#
     // NUnit test permanently unrunnable.
-    const rejected = parseTrxReport(REJECTED_FILTER_TRX);
-    assert.strictEqual(
-      rejected.results.length,
-      0,
+    const error = assertSoleRunInfo(
+      REJECTED_FILTER_TRX,
       'a refused filter produces no test results at all',
+      'exactly one run-level message',
+      'Error',
+      'a refusal is recorded as an Error',
     );
-    assert.strictEqual(rejected.runInfos.length, 1, 'exactly one run-level message');
-    const error = rejected.runInfos[0];
-    assert.ok(error, 'the run info must be readable');
-    assert.strictEqual(error.outcome, 'Error', 'a refusal is recorded as an Error');
     assert.ok(isRunError(error), 'and is classified as one');
     assertContainsAll(error.text, ['selection expression', 'nunit3testexecutor'], 'error.text');
 
-    const noMatch = parseTrxReport(NO_MATCH_TRX);
-    assert.strictEqual(noMatch.results.length, 0, 'an unmatched filter also produces no results');
-    assert.strictEqual(noMatch.runInfos.length, 1, 'and one run-level message');
-    const warning = noMatch.runInfos[0];
-    assert.ok(warning, 'the run info must be readable');
-    assert.strictEqual(warning.outcome, 'Warning', 'but it is a WARNING, not an error');
+    const warning = assertSoleRunInfo(
+      NO_MATCH_TRX,
+      'an unmatched filter also produces no results',
+      'and one run-level message',
+      'Warning',
+      'but it is a WARNING, not an error',
+    );
     assert.ok(
       !isRunError(warning),
       'so it must NOT trigger a retry — the filter simply matched nothing',
