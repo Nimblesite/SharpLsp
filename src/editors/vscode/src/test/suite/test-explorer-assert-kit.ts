@@ -9,6 +9,7 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { buildFilterArgs } from '../../test-execution.js';
+import { filterClause } from '../../test-filter.js';
 import { statusLensTitle } from '../../test-lens.js';
 import type { CachedTestResult, SharpLspTestController } from '../../testing.js';
 import { NO_RESULT, sorted } from './test-explorer-outcome-assertions';
@@ -193,6 +194,116 @@ export function assertBareFilterClauses(
     ids.map((id) => `FullyQualifiedName=${id}`),
     `${why}: one clause per selected test, OR-ed with a bare pipe in selection order`,
   );
+}
+
+/** This FQN carries SPACES, which are not filter grammar: its clause is the bare name. */
+export function assertBareSpacedClause(
+  fqn: string,
+  why: { readonly spaced: string; readonly clause: string },
+): void {
+  assert.ok(fqn.includes(' '), why.spaced);
+  assert.strictEqual(filterClause(fqn), `FullyQualifiedName=${fqn}`, why.clause);
+}
+
+/** `actual` and `expected` hold the same ids, whatever order they arrived in. */
+export function assertSameSet(
+  actual: readonly string[],
+  expected: readonly string[],
+  why: string,
+): void {
+  assert.deepStrictEqual(sorted(actual), sorted(expected), why);
+}
+
+/** The controller's tree stands on exactly `count` roots. */
+export function assertRootCount(
+  controller: SharpLspTestController,
+  count: number,
+  why: string,
+): void {
+  assert.strictEqual(rootsOf(controller.items).length, count, why);
+}
+
+/** `id` still reports exactly what `baseline` cached for it, named by `why`. */
+export function assertResultUnchanged(
+  controller: SharpLspTestController,
+  id: string,
+  baseline: ReadonlyMap<string, CachedTestResult>,
+  why: string,
+): void {
+  assert.deepStrictEqual(controller.getResult(id), baseline.get(id), why);
+}
+
+/** Every id still reports exactly what `baseline` cached for it, named by `why`. */
+export function assertResultsKept(
+  controller: SharpLspTestController,
+  ids: readonly string[],
+  baseline: ReadonlyMap<string, CachedTestResult>,
+  why: (id: string) => string,
+): void {
+  for (const id of ids) {
+    assertResultUnchanged(controller, id, baseline, why(id));
+  }
+}
+
+/** `id`'s cached result carries no "missing result" note — the test really ran. */
+export function assertResultReported(
+  api: SharpLspExtensionApi,
+  id: string,
+  why: string,
+): CachedTestResult {
+  const result = cachedFor(api, id);
+  assert.ok(!(result.message ?? '').includes(NO_RESULT), `${id}: ${why}`);
+  return result;
+}
+
+/** Not one of `ids` carries a "missing result" note. */
+export function assertNoMissingResults(
+  controller: SharpLspTestController,
+  ids: readonly string[],
+  why: string,
+): void {
+  assert.deepStrictEqual(
+    ids
+      .map((id) => controller.getResult(id)?.message ?? '')
+      .filter((message) => message.includes(NO_RESULT)),
+    [],
+    why,
+  );
+}
+
+/** One test's cached outcome, named on failure by the site's own text. */
+export function assertOutcome(
+  controller: SharpLspTestController,
+  id: string,
+  outcome: string,
+  why: string,
+): void {
+  assert.strictEqual(controller.getResult(id)?.outcome, outcome, why);
+}
+
+/** The status lens above `id` renders exactly `title`. */
+export function assertLensTitle(
+  api: SharpLspExtensionApi,
+  id: string,
+  title: string,
+  why: string,
+): void {
+  assert.strictEqual(statusLensTitle(cachedFor(api, id)), title, why);
+}
+
+/** The status lens above `id` renders a title beginning with `prefix`. */
+export function assertLensStarts(
+  api: SharpLspExtensionApi,
+  id: string,
+  prefix: string,
+  why: string,
+): void {
+  assert.ok(statusLensTitle(cachedFor(api, id)).startsWith(prefix), why);
+}
+
+/** The status lens above `id` reads NO "missing result" note. */
+export function assertLensReported(api: SharpLspExtensionApi, id: string, why: string): void {
+  assert.ok(!statusLensTitle(cachedFor(api, id)).includes(NO_RESULT), why);
 }
 
 /**
