@@ -351,30 +351,45 @@ fn apply_install(
     let element = pick_install_element(target);
     let outcome = edit::add_package(sidecar, runtime, &target.path, package_id, version, element)?;
 
-    // For CPM projects, also update Directory.Packages.props.
     let mut modified = modified_target(outcome.modified, target);
-    if matches!(element, edit::PackageElement::ReferenceNoVersion) {
-        if let Some(props_path) = targets::find_packages_props(path) {
-            let props_str = props_path.to_string_lossy().to_string();
-            let props_outcome = edit::add_package(
-                sidecar,
-                runtime,
-                &props_str,
-                package_id,
-                version,
-                edit::PackageElement::Version,
-            )?;
-            if props_outcome.modified {
-                modified.push(props_str);
-            }
-        }
-    }
+    modified.extend(pin_cpm_version(
+        sidecar, runtime, target, package_id, version, element,
+    )?);
 
     Ok(types::InstallResponse {
         success: true,
         message: outcome.message,
         modified_files: modified,
     })
+}
+
+/// Under central package management the project reference carries no version,
+/// so the version is pinned in `Directory.Packages.props`; returns that file
+/// when the pin changed it.
+fn pin_cpm_version(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
+    target: &types::NuGetTarget,
+    package_id: &str,
+    version: &str,
+    element: edit::PackageElement,
+) -> Result<Option<String>> {
+    if !matches!(element, edit::PackageElement::ReferenceNoVersion) {
+        return Ok(None);
+    }
+    let Some(props_path) = targets::find_packages_props(Path::new(&target.path)) else {
+        return Ok(None);
+    };
+    let props = props_path.to_string_lossy().to_string();
+    let outcome = edit::add_package(
+        sidecar,
+        runtime,
+        &props,
+        package_id,
+        version,
+        edit::PackageElement::Version,
+    )?;
+    Ok(outcome.modified.then_some(props))
 }
 
 /// The target's path, when the edit changed it: the start of `modified_files`.
