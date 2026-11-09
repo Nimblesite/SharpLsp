@@ -364,3 +364,32 @@ fn find_command_reads_quoted_windows_path_entries() {
     assert!(found.is_file());
     assert!(!found.to_string_lossy().contains('"'));
 }
+
+/// GitHub #170: `key_beneath` answers only for paths truly under the root —
+/// a name-prefix sibling is outside it, a trailing slash on the root is the same
+/// root, and Windows spellings compare by the one path key.
+#[test]
+fn key_beneath_requires_a_separator_boundary() {
+    let root = "/home/u/.nuget/packages";
+    assert_eq!(
+        key_beneath("/home/u/.nuget/packages/serilog/3.1.0", root).as_deref(),
+        Some(comparison_key("serilog/3.1.0").as_str())
+    );
+    assert_eq!(
+        key_beneath("/home/u/.nuget/packages-cache/serilog", root),
+        None
+    );
+    assert_eq!(key_beneath("/home/u/.nuget/packages", root), None);
+    assert_eq!(
+        key_beneath("/home/u/.nuget/packages/a.dll", "/home/u/.nuget/packages/").as_deref(),
+        Some(comparison_key("a.dll").as_str())
+    );
+    assert_eq!(
+        key_beneath(
+            r"C:\Users\u\.nuget\packages\Serilog\x.dll",
+            r"C:\Users\u\.nuget\packages"
+        )
+        .as_deref(),
+        Some(comparison_key("Serilog/x.dll").as_str())
+    );
+}
