@@ -68,13 +68,12 @@ import {
   processRow,
   profileRow,
   SHAPES,
-  settleLedger,
   showSources,
   STOP_MS,
-  endProfiling,
   wireDiff,
   wireLeak,
 } from './profiler-fsharp-kit';
+import { assertNoPhantomPaint, endAndSettle } from './profiler-fsharp-soak-kit';
 
 const SEEDED = { orders: 12_000, quotes: 4_000, rejections: 1_500 };
 
@@ -122,6 +121,36 @@ function assertZoo(snapshot: MemoryDashboardSnapshot, counts: Counts): void {
   }
 }
 
+/** Assert no listed site or leak is of `type`. */
+function assertNoSite(
+  sites: readonly { typeName?: string | null }[],
+  type: string,
+  why: string,
+): void {
+  assert.ok(!sites.some((site) => site.typeName === type), why);
+}
+
+/** Assert the gating context keys read exactly `expected`. */
+function assertKeys(expected: Record<string, boolean>): void {
+  assert.deepEqual(keys(), expected);
+}
+
+/** Assert the gating keys `pick` selects read exactly `expected`. */
+function assertPickedKeys(
+  pick: (all: ReturnType<typeof keys>) => Record<string, boolean>,
+  expected: Record<string, boolean>,
+  why: string,
+): void {
+  assert.deepEqual(pick(keys()), expected, why);
+}
+
+/** Stopping tracking clears the panel chrome, the memory track and per-session state. */
+function assertTrackCleared(): void {
+  assert.deepEqual(processesViewState(), { message: undefined, badge: undefined });
+  assert.deepEqual(appliedMemoryDecorations(), [], 'the memory track is cleared');
+  assert.equal(lastMemorySnapshot(), undefined, 'per-session state is dropped');
+}
+
 /** [PROF-UI-MEMORY]: the dashboard's own numbers are coherent and branded. */
 function assertDashboard(snapshot: MemoryDashboardSnapshot, types: readonly string[]): void {
   const html = assertBrandedPanel(memoryDashboardState(), 'SharpLsp Memory Dashboard', 'MEMORY');
@@ -142,25 +171,11 @@ function assertDashboard(snapshot: MemoryDashboardSnapshot, types: readonly stri
   assert.ok(profile.head !== undefined, 'the .heapprofile has a call tree head');
 }
 
-/** Every painted memory decoration on a ledger file stands on a reported site. */
-function assertNoPhantomPaint(snapshot: MemoryDashboardSnapshot): void {
-  for (const file of LEDGER_FILES) {
-    for (const decoration of memoryTrackOn(file)) {
-      if (leakBadge(file, decoration.line) === decoration) continue;
-      assert.ok(
-        snapshot.topAllocations.some((s) => isFile(s.file, file) && s.line === decoration.line),
-        `${file}:${decoration.line} is painted only because a site is there`,
-      );
-    }
-  }
-}
-
 suite('F# memory — FsOrderLedger through the UI and the wire', () => {
   const live = profilingSuite('profiler-fs-mem-', LEDGER);
   teardown(async function () {
     this.timeout(STOP_MS * 2);
-    await endProfiling();
-    await settleLedger(live.target);
+    await endAndSettle(live.target);
   });
 
   test('the F# heap zoo: seed every leak → Track Memory from the row → snapshot anchors every shape at its line with every instance counted → drain the mailbox → snapshot again → release → only the true leaks survive → stop clears everything', async function () {
@@ -238,8 +253,9 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
     assert.equal(count(grown, 'audits'), 0, 'the mailbox drained');
     const second = await uiSnapshot(first);
     assertZoo(second, grown);
-    assert.ok(
-      !second.topAllocations.some((s) => s.typeName === SHAPES.audit.type),
+    assertNoSite(
+      second.topAllocations,
+      SHAPES.audit.type,
       'drained audit entries are gone from the live heap',
     );
     assert.equal(second.timeline.length, 2, 'one timeline point per snapshot');
@@ -260,10 +276,7 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
       SHAPES.shipped,
       SHAPES.rejected,
     ]) {
-      assert.ok(
-        !third.topAllocations.some((s) => s.typeName === dead.type),
-        `${dead.type} died with the ledger`,
-      );
+      assertNoSite(third.topAllocations, dead.type, `${dead.type} died with the ledger`);
     }
     assert.equal(handlerSite(third).count, count(released, 'handlers'), 'handlers still leak');
     assertAnchored(third, SHAPES.quote, count(released, 'quotes'));
@@ -279,16 +292,14 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
     // Stop: the session ends everywhere.
     await stopTracking();
     assert.equal(memoryStatusText(), undefined);
-    assert.deepEqual(keys(), {
+    assertKeys({
       profiling: false,
       cpuBusy: false,
       memoryTracking: false,
       memoryBusy: false,
       profilerBusy: false,
     });
-    assert.deepEqual(processesViewState(), { message: undefined, badge: undefined });
-    assert.deepEqual(appliedMemoryDecorations(), [], 'the memory track is cleared');
-    assert.equal(lastMemorySnapshot(), undefined, 'per-session state is dropped');
+    assertTrackCleared();
   });
 
   test('leak confidence, exactly as specified, on two sessions at once: Low → Medium → High on three growths, reset by a flat diff, Low again, freed by a release, Medium on one growth over 10 MiB → High; the dashboard and the wire agree at every step', async function () {
@@ -368,7 +379,7 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
     // A flat diff resets the streak on both surfaces, and the badge goes.
     const flat = await bothDiff();
     assert.equal(wireLeak(flat.leaks, SHAPES.order.type), undefined, 'no growth, no suspicion');
-    assert.ok(!flat.shown.some((l) => l.typeName === SHAPES.order.type), 'the dashboard agrees');
+    assertNoSite(flat.shown, SHAPES.order.type, 'the dashboard agrees');
     assert.equal(leakBadge('Ledger.fs', SHAPES.order.line), undefined, 'the badge is gone');
     await grow('Low');
 
@@ -442,12 +453,12 @@ suite('F# memory — FsOrderLedger through the UI and the wire', () => {
       memoryTrack.some((d) => d.line === SHAPES.order.line),
       'the memory track survives',
     );
-    assert.deepEqual(
-      {
-        profiling: keys().profiling,
-        memoryTracking: keys().memoryTracking,
-        busy: keys().profilerBusy,
-      },
+    assertPickedKeys(
+      (all) => ({
+        profiling: all.profiling === true,
+        memoryTracking: all.memoryTracking === true,
+        busy: all.profilerBusy === true,
+      }),
       { profiling: false, memoryTracking: true, busy: true },
       'stopping CPU leaves memory running',
     );

@@ -42,9 +42,12 @@ import {
   assertAnchored,
   count,
   type Counts,
+  endProfiling,
+  settleLedger,
   STOP_MS,
   wireDiff,
 } from './profiler-fsharp-kit';
+import type { Target } from './profiler-kit';
 import type {
   MemoryOutcome,
   MemoryStep,
@@ -146,14 +149,28 @@ export function assertDashboard(
   }
 }
 
-/** [PROF-UI-MEMORY] + [PROF-UI-WEBVIEW]: every painted memory line is a site or a leak badge. */
-export function assertNoPhantomMemoryPaint(snapshot: MemoryDashboardSnapshot): void {
+/** One entry of the memory track, as `memoryTrackOn` paints it. */
+type TrackEntry = ReturnType<typeof memoryTrackOn>[number];
+
+/** [PROF-UI-PALETTE]: a painted memory line wears a memory or leak colour. */
+function assertTrackColour(file: string, decoration: TrackEntry): void {
+  assert.ok(
+    MEMORY_PALETTE.includes(decoration.color) || LEAK_PALETTE.includes(decoration.color),
+    `${file}:${decoration.line} wears a memory or leak colour: ${decoration.color}`,
+  );
+}
+
+/** [PROF-UI-WEBVIEW]: every painted memory line wears a memory or leak colour. */
+export function assertMemoryTrackColours(): void {
+  for (const file of LEDGER_FILES) {
+    for (const decoration of memoryTrackOn(file)) assertTrackColour(file, decoration);
+  }
+}
+
+/** [PROF-UI-MEMORY]: every painted memory line stands on a reported site or a leak badge. */
+export function assertNoPhantomPaint(snapshot: MemoryDashboardSnapshot): void {
   for (const file of LEDGER_FILES) {
     for (const decoration of memoryTrackOn(file)) {
-      assert.ok(
-        MEMORY_PALETTE.includes(decoration.color) || LEAK_PALETTE.includes(decoration.color),
-        `${file}:${decoration.line} wears a memory or leak colour: ${decoration.color}`,
-      );
       if (leakBadge(file, decoration.line) === decoration) continue;
       assert.ok(
         snapshot.topAllocations.some(
@@ -163,6 +180,12 @@ export function assertNoPhantomMemoryPaint(snapshot: MemoryDashboardSnapshot): v
       );
     }
   }
+}
+
+/** [PROF-UI-MEMORY] + [PROF-UI-WEBVIEW]: every painted memory line is a site or a leak badge. */
+export function assertNoPhantomMemoryPaint(snapshot: MemoryDashboardSnapshot): void {
+  assertMemoryTrackColours();
+  assertNoPhantomPaint(snapshot);
 }
 
 /** [PROF-MEMORY-OUTCOME]: compare ONCE on each independent session, before replacing a baseline. */
@@ -269,10 +292,7 @@ export function assertTimelineCoherent(snapshot: MemoryDashboardSnapshot): void 
 export function assertPaletteDiscipline(): void {
   for (const file of LEDGER_FILES) {
     for (const decoration of memoryTrackOn(file)) {
-      assert.ok(
-        MEMORY_PALETTE.includes(decoration.color) || LEAK_PALETTE.includes(decoration.color),
-        `${file}:${decoration.line} wears a memory or leak colour: ${decoration.color}`,
-      );
+      assertTrackColour(file, decoration);
       assert.ok(
         !MEMORY_PALETTE.includes(decoration.color) || !BADGE.test(decoration.contentText),
         'a plain site is not badged as a leak',
@@ -338,20 +358,36 @@ export async function step(name: string, params: Record<string, unknown>): Promi
   return result.result.outcome;
 }
 
+/** Run memory step `name` on session `id`; assert its outcome is `kind`, narrowed to it. */
+async function outcomeOfKind<K extends MemoryOutcome['kind']>(
+  name: string,
+  id: string,
+  kind: K,
+  what: string,
+): Promise<Extract<MemoryOutcome, { kind: K }>> {
+  const outcome = await step(name, { memory_session_id: id });
+  assert.equal(outcome.kind, kind, `[PROF-MEMORY-STEP] ${what}`);
+  assert.ok(outcome.kind === kind, 'narrowed');
+  // TypeScript cannot narrow a generic discriminant; the assert above guarantees the kind.
+  return outcome as Extract<MemoryOutcome, { kind: K }>;
+}
+
+/** A Snapshot outcome of one memory.snapshot step on session `id`. */
 export async function snapshotOutcome(
   id: string,
 ): Promise<Extract<MemoryOutcome, { kind: 'Snapshot' }>> {
-  const outcome = await step('memory.snapshot', { memory_session_id: id });
-  assert.equal(outcome.kind, 'Snapshot', '[PROF-MEMORY-STEP] snapshot yields a Snapshot outcome');
-  assert.ok(outcome.kind === 'Snapshot', 'narrowed');
-  return outcome;
+  return outcomeOfKind('memory.snapshot', id, 'Snapshot', 'snapshot yields a Snapshot outcome');
 }
 
+/** A Diff outcome of one memory.diff step on session `id`. */
 export async function diffOutcome(id: string): Promise<Extract<MemoryOutcome, { kind: 'Diff' }>> {
-  const outcome = await step('memory.diff', { memory_session_id: id });
-  assert.equal(outcome.kind, 'Diff', '[PROF-MEMORY-STEP] diff yields a Diff outcome');
-  assert.ok(outcome.kind === 'Diff', 'narrowed');
-  return outcome;
+  return outcomeOfKind('memory.diff', id, 'Diff', 'diff yields a Diff outcome');
+}
+
+/** The F# suite teardown: end every session, then settle the ledger fixture. */
+export async function endAndSettle(target: Target): Promise<void> {
+  await endProfiling();
+  await settleLedger(target);
 }
 
 /** `workspace/executeCommand` exactly as the spec shapes it, with caller-chosen arguments. */

@@ -41,6 +41,23 @@ function assertWhenHas(entry: MenuContribution | undefined, command: string, cla
   );
 }
 
+/** Assert `command`'s title-menu entry never keys off `busyKey`, so it stays available. */
+function assertNeverGatedOn(command: string, launch: string, busyKey: string): void {
+  const entry = panelMenu('view/title').find((item) => item.command === command);
+  assert.ok(entry, `the ${launch} launch must be declared`);
+  assert.ok(
+    !(entry.when ?? '').includes(busyKey),
+    `the ${launch} launch must not key off ${busyKey}: ${entry.when ?? '(none)'}`,
+  );
+}
+
+/** The inline entry of `command` in the row context menu, if the manifest has one. */
+function inlineEntry(command: string): MenuContribution | undefined {
+  return panelMenu('view/item/context').find(
+    (entry) => entry.command === command && (entry.group ?? '').startsWith('inline'),
+  );
+}
+
 /** Assert `command` is declared in `menu` with `clause` in its when. */
 function assertGated(menu: MenuContribution[], command: string, clause: string): void {
   assertWhenHas(
@@ -65,6 +82,13 @@ function assertLacks(text: string | undefined, needle: string): void {
   assert.ok(!text?.includes(needle), `unexpected "${needle}" in: ${text ?? '(none)'}`);
 }
 
+/** Assert the panel shows no message, no badge, and the status bar hides. */
+function assertAllChromeCleared(messageWhy: string, badgeWhy: string, statusWhy: string): void {
+  assert.strictEqual(processesViewState().message, undefined, messageWhy);
+  assert.strictEqual(processesViewState().badge, undefined, badgeWhy);
+  assert.strictEqual(profilerStatusText(), undefined, statusWhy);
+}
+
 suite('Processes panel — reactive button gating (manifest)', () => {
   test('the Run & Profile launches gate per activity — CPU on cpuBusy, memory on memoryBusy', () => {
     const title = panelMenu('view/title');
@@ -73,22 +97,8 @@ suite('Processes panel — reactive button gating (manifest)', () => {
   });
 
   test('the CPU launch does NOT gate on the memory activity, so it stays available during memory tracking', () => {
-    const cpu = panelMenu('view/title').find(
-      (item) => item.command === 'sharplsp.profiler.profileCurrentFileCpu',
-    );
-    assert.ok(cpu, 'the CPU launch must be declared');
-    assert.ok(
-      !(cpu.when ?? '').includes('memoryBusy'),
-      `the CPU launch must not key off memoryBusy: ${cpu.when ?? '(none)'}`,
-    );
-    const mem = panelMenu('view/title').find(
-      (item) => item.command === 'sharplsp.profiler.trackMemoryCurrentFile',
-    );
-    assert.ok(mem, 'the memory launch must be declared');
-    assert.ok(
-      !(mem.when ?? '').includes('cpuBusy'),
-      `the memory launch must not key off cpuBusy: ${mem.when ?? '(none)'}`,
-    );
+    assertNeverGatedOn('sharplsp.profiler.profileCurrentFileCpu', 'CPU', 'memoryBusy');
+    assertNeverGatedOn('sharplsp.profiler.trackMemoryCurrentFile', 'memory', 'cpuBusy');
   });
 
   test('the title bar reveals a Stop button keyed on the active metric', () => {
@@ -116,19 +126,15 @@ suite('Processes panel — reactive button gating (manifest)', () => {
     // The CPU Profile action, by contrast, stays available on every attachable
     // row — blocked (🚫) rows opt out via `blockedProcess`, which the
     // `/^process/` clause deliberately does not match (#266).
-    const profile = panelMenu('view/item/context').find(
-      (e) =>
-        e.command === 'sharplsp.profiler.profileProcess' && (e.group ?? '').startsWith('inline'),
+    assertWhenHas(
+      inlineEntry('sharplsp.profiler.profileProcess'),
+      'sharplsp.profiler.profileProcess',
+      '/^process/',
     );
-    assertWhenHas(profile, 'sharplsp.profiler.profileProcess', '/^process/');
   });
 
   test('the actively-profiled row carries an inline Stop action', () => {
-    const inlineStop = panelMenu('view/item/context').find(
-      (entry) =>
-        entry.command === 'sharplsp.profiler.profileStop' &&
-        (entry.group ?? '').startsWith('inline'),
-    );
+    const inlineStop = inlineEntry('sharplsp.profiler.profileStop');
     assert.ok(inlineStop, 'the profiled row must offer an inline Stop');
     assert.strictEqual(
       inlineStop.when,
@@ -201,9 +207,11 @@ suite('Processes panel — reactive chrome (store-driven, live)', () => {
 
   test('idle: no live chrome, the status bar is hidden, and nothing is busy', () => {
     resetProfilerState();
-    assert.strictEqual(processesViewState().message, undefined, 'no panel message when idle');
-    assert.strictEqual(processesViewState().badge, undefined, 'no badge when idle');
-    assert.strictEqual(profilerStatusText(), undefined, 'status bar hidden when idle');
+    assertAllChromeCleared(
+      'no panel message when idle',
+      'no badge when idle',
+      'status bar hidden when idle',
+    );
     assert.strictEqual(liveStore().profilerBusy.value, false);
   });
 
@@ -227,11 +235,9 @@ suite('Processes panel — reactive chrome (store-driven, live)', () => {
 
     store.profilerStopped();
     assert.strictEqual(store.profilerBusy.value, false, 'stop clears busy');
-    assert.strictEqual(processesViewState().message, undefined, 'stop clears the panel chrome');
-    assert.strictEqual(processesViewState().badge, undefined, 'stop clears the badge');
-    assert.strictEqual(
-      profilerStatusText(),
-      undefined,
+    assertAllChromeCleared(
+      'stop clears the panel chrome',
+      'stop clears the badge',
       'stop hides the status bar — no zombie spinner',
     );
   });

@@ -29,6 +29,7 @@ import {
   uiCommand,
   waitFor,
 } from './profiler-kit';
+import { killOnWire, twoTargetsSuite } from './profiler-flow-kit';
 import { setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
@@ -75,6 +76,40 @@ async function untilSortMode(mode: string): Promise<void> {
   }
 }
 
+/** Assert `pid`'s in_workspace flag as the server sees it under `roots`. */
+async function inWorkspace(roots: string[], pid: number, inside: boolean): Promise<void> {
+  const listing = await execute<ProcessList>('processes', { workspace_roots: roots });
+  assert.equal(listing.processes.find((proc) => proc.pid === pid)?.in_workspace, inside);
+}
+
+/** Assert `pids` is in ascending order. */
+function assertAscending(pids: readonly number[]): void {
+  assert.deepEqual(
+    pids,
+    [...pids].sort((a, b) => a - b),
+    `ascending: ${pids.join(', ')}`,
+  );
+}
+
+/** Assert a wire kill of `pid` is refused with `code`, returning the refusal. */
+function killRefusal(
+  pid: number,
+  code: number,
+  why: string,
+): Promise<{ code: number; message: string }> {
+  return assertWireError('kill', { pid }, code, why);
+}
+
+/** Run a UI command and assert the store's session `field` still reads `state`. */
+async function assertCommandHolds(
+  command: string,
+  field: 'cpu' | 'memory',
+  state: string,
+): Promise<void> {
+  await vscode.commands.executeCommand(command);
+  assert.equal(profilerStore().profiler.value[field], state);
+}
+
 suite('Processes panel — the server lists live .NET processes', () => {
   const live = profilingSuite('profiler-procs-', 'ProfileTarget');
 
@@ -100,10 +135,8 @@ suite('Processes panel — the server lists live .NET processes', () => {
     this.timeout(LSP_RESPONSE_MS);
     const { target } = live;
     const project = path.dirname(fixtureSource('ProfileTarget'));
-    const inside = await execute<ProcessList>('processes', { workspace_roots: [project] });
-    const outside = await execute<ProcessList>('processes', { workspace_roots: [os.tmpdir()] });
-    assert.equal(inside.processes.find((proc) => proc.pid === target?.pid)?.in_workspace, true);
-    assert.equal(outside.processes.find((proc) => proc.pid === target?.pid)?.in_workspace, false);
+    await inWorkspace([project], target.pid, true);
+    await inWorkspace([os.tmpdir()], target.pid, false);
   });
 
   test('a listing request without workspace roots is INVALID_PARAMS', async function () {
@@ -201,26 +234,13 @@ suite('Processes panel — the server lists live .NET processes', () => {
 });
 
 suite('Processes panel — filter, sort and group re-project the same list', () => {
-  let tmpDir = '';
-  let first: Target | undefined;
-  let second: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS * 2);
-    ({ tmpDir } = await setupLspTestSuite('profiler-procs-view-'));
-    first = await Target.start('ProfileTarget');
-    second = await Target.start('ProfileLeakTarget');
-    await refreshed();
-  });
-  suiteTeardown(() => {
+  const live = twoTargetsSuite('profiler-procs-view-', refreshed, () => {
     processesProvider().setFilter('');
-    first?.stop();
-    second?.stop();
-    teardownLspTestSuite(tmpDir);
   });
 
   test('a PID filter narrows the rows to that process', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    assert.ok(first && second);
+    const { first, second } = live;
     await listedRow(first.pid);
     processesProvider().setFilter(String(first.pid));
     assert.ok(rowOf(first.pid), 'the matching row stays');
@@ -228,7 +248,7 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
   });
 
   test('a name filter matches case-insensitively', () => {
-    assert.ok(first && second);
+    const { first, second } = live;
     processesProvider().setFilter('PROFILELEAKTARGET');
     assert.ok(rowOf(second.pid), 'the leak target matches its name in any case');
     assert.equal(rowOf(first.pid), undefined);
@@ -249,13 +269,13 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
   });
 
   test('clearing the filter restores both rows', () => {
-    assert.ok(first && second);
+    const { first, second } = live;
     processesProvider().setFilter('');
     assert.ok(rowOf(first.pid) && rowOf(second.pid));
   });
 
   test('the panel opens grouped by runtime version, both targets under one header with a count', () => {
-    assert.ok(first && second);
+    const { first, second } = live;
     const store = profilerStore();
     assert.equal(store.processes.value.groupMode, 'version', 'the default grouping');
     const provider = processesProvider();
@@ -264,7 +284,7 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
     const holding = groups.filter((group) =>
       provider
         .getChildren(group)
-        .some((row) => row.id === `process:${first?.pid}` || row.id === `process:${second?.pid}`),
+        .some((row) => row.id === `process:${first.pid}` || row.id === `process:${second.pid}`),
     );
     assert.equal(holding.length, 1, 'both net10.0 targets share one version group');
     assert.ok(
@@ -293,7 +313,7 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
   });
 
   test('PID sort orders each block by ascending PID, attachable rows above blocked ones', async () => {
-    assert.ok(first && second);
+    const { first, second } = live;
     const store = profilerStore();
     await untilSortMode('pid');
     const attachable = new Map(
@@ -305,16 +325,8 @@ suite('Processes panel — filter, sort and group re-project the same list', () 
     const open = pids.filter((pid) => attachable.get(pid) === true);
     const blocked = pids.filter((pid) => attachable.get(pid) !== true);
     assert.deepEqual(pids, [...open, ...blocked], `attachable rows first: ${pids.join(', ')}`);
-    assert.deepEqual(
-      open,
-      [...open].sort((a, b) => a - b),
-      `ascending: ${open.join(', ')}`,
-    );
-    assert.deepEqual(
-      blocked,
-      [...blocked].sort((a, b) => a - b),
-      `ascending: ${blocked.join(', ')}`,
-    );
+    assertAscending(open);
+    assertAscending(blocked);
     assert.ok(
       open.includes(first.pid) && open.includes(second.pid),
       'both live targets are attachable',
@@ -337,8 +349,7 @@ suite('Processes panel — kill', () => {
     this.timeout(PROCESS_START_MS + LSP_RESPONSE_MS);
     const victim = await Target.start('ProfileTarget');
     try {
-      const result = await execute<{ pid: number; killed: boolean }>('kill', { pid: victim.pid });
-      assert.deepEqual(result, { pid: victim.pid, killed: true });
+      await killOnWire(victim);
       await waitFor(
         () => victim.pid,
         (pid) => {
@@ -360,17 +371,16 @@ suite('Processes panel — kill', () => {
 
   test('kill refuses a process no runtime recognises — it can never hit the editor', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    await assertWireError('kill', { pid: process.pid }, -32002, 'a process no runtime recognises');
+    await killRefusal(process.pid, -32002, 'a process no runtime recognises');
   });
 
   test('kill refuses a PID that does not exist', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    await assertWireError('kill', { pid: 999_999 }, -32001, 'a pid that does not exist');
+    await killRefusal(999_999, -32001, 'a pid that does not exist');
   });
 
   test('the kill command without a row does nothing and raises nothing', async function () {
     this.timeout(COMMAND_MS);
-    await vscode.commands.executeCommand(uiCommand('killProcess'));
-    assert.equal(profilerStore().profiler.value.cpu, 'idle');
+    await assertCommandHolds(uiCommand('killProcess'), 'cpu', 'idle');
   });
 });

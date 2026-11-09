@@ -29,7 +29,7 @@ import type {
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
 import { memoryDashboardState } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import { refGraphState } from '@nimblesite/lsp-profiler-ui/out/src/memory-ref-graph';
-import { executeError } from './profiler-kit';
+import { assertPickProcessWarning, executeError } from './profiler-kit';
 import { SHARPLSP_PALETTE } from '../../profiler-host';
 import {
   EXTENSION_ID,
@@ -115,21 +115,52 @@ async function paintedHotLines(file: string, line: number): Promise<readonly App
   return appliedProfileDecorations();
 }
 
+/** Assert `command` with `args` is rejected naming one of `needles`. */
+async function assertRejectedAs(
+  command: string,
+  args: Record<string, unknown>,
+  needles: readonly string[],
+  what: string,
+): Promise<void> {
+  assertMentions(await rejectionOf(command, args), needles, what);
+}
+
+/** Set `key` in the workspace and assert the value read back. */
+async function writeSetting(
+  key: string,
+  value: number | undefined,
+  expected: number,
+  why: string,
+): Promise<void> {
+  const read = (): vscode.WorkspaceConfiguration =>
+    vscode.workspace.getConfiguration('sharplsp.profiler');
+  await read().update(key, value, vscode.ConfigurationTarget.Workspace);
+  assert.equal(read().get<number>(key), expected, why);
+}
+
 suite('Profiler — Start/Stop Lifecycle', () => {
   useLspSuite('profiler-lc-');
 
   test('profiler.start rejects invalid PID', async () => {
-    assertMentions(await rejectionOf(CPU('start'), { pid: 0 }), PROCESS_NEEDLES, 'PID 0');
+    await assertRejectedAs(CPU('start'), { pid: 0 }, PROCESS_NEEDLES, 'PID 0');
   });
 
   test('profiler.stop rejects unknown session ID', async () => {
-    const message = await rejectionOf(CPU('stop'), { session_id: 'nonexistent-session-id' });
-    assertMentions(message, SESSION_NEEDLES, 'unknown session');
+    await assertRejectedAs(
+      CPU('stop'),
+      { session_id: 'nonexistent-session-id' },
+      SESSION_NEEDLES,
+      'unknown session',
+    );
   });
 
   test('profiler.snapshot rejects unknown session ID', async () => {
-    const message = await rejectionOf(CPU('snapshot'), { session_id: 'nonexistent-session-id' });
-    assertMentions(message, SESSION_NEEDLES, 'unknown session');
+    await assertRejectedAs(
+      CPU('snapshot'),
+      { session_id: 'nonexistent-session-id' },
+      SESSION_NEEDLES,
+      'unknown session',
+    );
   });
 
   test('profiler.list returns array structure', async () => {
@@ -210,18 +241,16 @@ suite('Profiler — Lifecycle Interaction', () => {
   });
 
   test('profiler.start with extremely large PID returns error', async () => {
-    assertMentions(
-      await rejectionOf(CPU('start'), { pid: 999_999_999 }),
-      PROCESS_NEEDLES,
-      'huge PID',
-    );
+    await assertRejectedAs(CPU('start'), { pid: 999_999_999 }, PROCESS_NEEDLES, 'huge PID');
   });
 
   test('profiler.stop without active session returns clear error', async () => {
-    const message = await rejectionOf(CPU('stop'), {
-      session_id: 'definitely-not-a-real-session-id-abc123',
-    });
-    assertMentions(message, SESSION_NEEDLES, 'stop without a session');
+    await assertRejectedAs(
+      CPU('stop'),
+      { session_id: 'definitely-not-a-real-session-id-abc123' },
+      SESSION_NEEDLES,
+      'stop without a session',
+    );
   });
 
   test('profiler.snapshot without active session returns clear error', async () => {
@@ -296,10 +325,8 @@ suite('Profiler — Configuration Interaction', () => {
     const config = (): vscode.WorkspaceConfiguration =>
       vscode.workspace.getConfiguration('sharplsp.profiler');
     assert.equal(config().get<number>('sampleRate'), 100, 'default sampleRate is 100');
-    await config().update('sampleRate', 50, vscode.ConfigurationTarget.Workspace);
-    assert.equal(config().get<number>('sampleRate'), 50, 'sampleRate updates to 50');
-    await config().update('sampleRate', undefined, vscode.ConfigurationTarget.Workspace);
-    assert.equal(config().get<number>('sampleRate'), 100, 'sampleRate restores to 100');
+    await writeSetting('sampleRate', 50, 50, 'sampleRate updates to 50');
+    await writeSetting('sampleRate', undefined, 100, 'sampleRate restores to 100');
   });
 
   test('quick preset is offered for short burst profiling', () => {
@@ -339,10 +366,7 @@ suite('Memory Profiler — Extended', () => {
       vscode.commands.executeCommand(UI('memoryStart')),
     );
     assert.equal(getStore().profiler.value.memory, 'idle', 'no target, so nothing is tracked');
-    assert.ok(
-      warnings.some((warning) => warning.includes('Pick a process')),
-      `with no target the user is told how to pick one: ${JSON.stringify(warnings)}`,
-    );
+    assertPickProcessWarning(warnings);
   });
 
   test('memorySnapshot without active session warns gracefully', async () => {

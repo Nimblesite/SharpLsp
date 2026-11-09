@@ -480,3 +480,11 @@ export function assertTrackingInStatusBar(): void {
     `status bar follows the session: ${String(status)}`,
   );
 }
+
+/** Assert a no-target warning tells the user to pick a process. */
+export function assertPickProcessWarning(warnings: readonly string[]): void {
+  assert.ok(
+    warnings.some((warning) => warning.includes('Pick a process')),
+    `with no target the user is told how to pick one: ${JSON.stringify(warnings)}`,
+  );
+}

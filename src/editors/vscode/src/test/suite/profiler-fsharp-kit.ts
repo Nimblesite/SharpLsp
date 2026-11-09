@@ -293,10 +293,14 @@ export function hotFunction(result: ProfileResult, identifier: string, file: str
   return result.hotFunctions.find((fn) => fn.name.includes(identifier) && isFile(fn.file, file));
 }
 
+/** A reader of one ledger's decorations, filtered to the file it asks for. */
+const onFile =
+  (ledger: () => readonly AppliedDecoration[]) =>
+  (file: string): AppliedDecoration[] =>
+    ledger().filter((d) => isFile(d.file, file));
+
 /** The heat map as painted on `file`. */
-export function heatOn(file: string): AppliedDecoration[] {
-  return appliedProfileDecorations().filter((d) => isFile(d.file, file));
-}
+export const heatOn = onFile(appliedProfileDecorations);
 
 /** [PROF-UI-HEATMAP]: `span` is painted, in the CPU palette, graded by each line's share. */
 export function assertHeatMap(result: ProfileResult, span: Span): void {
@@ -444,9 +448,7 @@ export function assertAnchored(
 }
 
 /** The memory track (allocations and leak badges) as painted on `file`. */
-export function memoryTrackOn(file: string): AppliedDecoration[] {
-  return appliedMemoryDecorations().filter((d) => isFile(d.file, file));
-}
+export const memoryTrackOn = onFile(appliedMemoryDecorations);
 
 /** The leak badge painted at `file`:`line`, if any. */
 export function leakBadge(file: string, line: number): AppliedDecoration | undefined {
