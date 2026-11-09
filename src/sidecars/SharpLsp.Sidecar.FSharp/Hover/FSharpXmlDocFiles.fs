@@ -58,6 +58,30 @@ let private memberIn (memberId: string) (xmlPath: string) =
     else
         None
 
+/// The numeric part of a runtime version such as `10.0.14` or `11.0.0-preview.1`.
+let private versionOf (name: string) =
+    match Version.TryParse(name.Split('-')[0]) with
+    | true, NonNull version -> Some version
+    | _ -> None
+
+/// The reference pack of `version` among the versioned packs `packRoot` holds: its own,
+/// or else the newest of its major version, whose documentation a patch runtime
+/// installed without an SDK shares.
+let private packVersionOf (packRoot: string) (version: string) =
+    let wanted = versionOf version |> Option.map _.Major
+
+    if Directory.Exists(NativePaths.Resolve(packRoot, version)) then
+        Some(NativePaths.Resolve(packRoot, version))
+    elif Directory.Exists packRoot && wanted.IsSome then
+        Directory.GetDirectories packRoot
+        |> Array.choose (fun pack -> versionOf (NativePaths.NameOf pack) |> Option.map (fun found -> found, pack))
+        |> Array.filter (fun (found, _) -> Some found.Major = wanted)
+        |> Array.sortDescending
+        |> Array.tryHead
+        |> Option.map snd
+    else
+        None
+
 /// The reference-pack documentation directory of a shared-framework assembly:
 /// `<dotnet>/shared/<framework>/<version>/` is documented by
 /// `<dotnet>/packs/<framework>.Ref/<version>/ref/<tfm>/`.
@@ -65,11 +89,13 @@ let private referencePackOf (assembly: string) =
     let version = NativePaths.DirectoryOf assembly
     let framework = NativePaths.DirectoryOf version
     let shared = NativePaths.DirectoryOf framework
-    let packs = NativePaths.Resolve(NativePaths.DirectoryOf shared, "packs")
-    let refs = NativePaths.Resolve(packs, $"{NativePaths.NameOf framework}.Ref", NativePaths.NameOf version, "ref")
+    let packRoot = NativePaths.Resolve(NativePaths.DirectoryOf shared, "packs", $"{NativePaths.NameOf framework}.Ref")
 
-    if NativePaths.SameName(NativePaths.NameOf shared, "shared") && Directory.Exists refs then
-        Directory.GetDirectories refs |> Array.sortDescending |> Array.tryHead
+    if NativePaths.SameName(NativePaths.NameOf shared, "shared") then
+        packVersionOf packRoot (NativePaths.NameOf version)
+        |> Option.map (fun pack -> NativePaths.Resolve(pack, "ref"))
+        |> Option.filter Directory.Exists
+        |> Option.bind (fun refs -> Directory.GetDirectories refs |> Array.sortDescending |> Array.tryHead)
     else
         None
 

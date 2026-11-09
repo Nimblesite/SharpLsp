@@ -74,3 +74,39 @@ let ``hover on framework and FSharp.Core symbols shows their XML docs, beside th
         finally
             try Directory.Delete(dir, true) with _ -> ()
     }
+
+/// A dotnet root with the reference packs `packs`, each `(version, summary)`
+/// documenting `M:System.String.Trim`, and the runtime implementation assembly
+/// of `runtime`, which ships no documentation of its own.
+let private dotnetRoot (packs: (string * string) list) (runtime: string) =
+    let root = Directory.CreateTempSubdirectory("sharplsp-dotnet-").FullName
+
+    for version, summary in packs do
+        let refs = Directory.CreateDirectory(NativePaths.Resolve(root, "packs", "Microsoft.NETCore.App.Ref", version, "ref", "net10.0"))
+        let xml = $"<doc><members><member name=\"M:System.String.Trim\"><summary>{summary}</summary></member></members></doc>"
+        File.WriteAllText(NativePaths.Resolve(refs.FullName, "System.Runtime.xml"), xml)
+
+    let shared = Directory.CreateDirectory(NativePaths.Resolve(root, "shared", "Microsoft.NETCore.App", runtime))
+    let assembly = NativePaths.Resolve(shared.FullName, "System.Private.CoreLib.dll")
+    File.WriteAllBytes(assembly, [||])
+    root, assembly
+
+/// The documentation `tryMember` finds for `M:System.String.Trim` on `runtime`.
+let private trimDocsOn packs runtime =
+    let root, assembly = dotnetRoot packs runtime
+
+    try
+        Hover.FSharpXmlDocFiles.tryMember assembly "M:System.String.Trim"
+    finally
+        try Directory.Delete(root, true) with _ -> ()
+
+[<Fact>]
+let ``a runtime with no reference pack of its own version is documented by the newest pack of its major version`` () =
+    let packs = [ "9.0.20", "nine"; "10.0.0", "ten zero"; "10.0.2", "ten two"; "10.0.11", "ten eleven"; "11.0.0", "eleven" ]
+
+    Assert.Contains("ten zero", trimDocsOn packs "10.0.0" |> Option.defaultValue "")
+    Assert.Contains("nine", trimDocsOn packs "9.0.20" |> Option.defaultValue "")
+    Assert.Contains("ten eleven", trimDocsOn packs "10.0.14" |> Option.defaultValue "")
+    Assert.Contains("eleven", trimDocsOn packs "11.0.3-preview.1" |> Option.defaultValue "")
+    Assert.Equal(None, trimDocsOn packs "12.0.0")
+    Assert.Equal(None, trimDocsOn [] "10.0.14")
