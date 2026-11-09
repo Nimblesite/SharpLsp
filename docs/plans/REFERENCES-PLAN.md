@@ -108,7 +108,7 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Design cross-sidecar merge strategy in Rust host (dispatch to both sidecars, merge + deduplicate results)
 - [x] Implement C# symbol → F# references (Rust host dispatches to F# sidecar for F# projects)
 - [x] Implement F# symbol → C# references (Rust host dispatches to C# sidecar for C# projects)
-- [ ] E2E test: cross-language references on a mixed C#/F# solution
+- [x] E2E test: cross-language references on a mixed C#/F# solution — `definition_cross_language.rs`: an F# type from its C# use and its F# declaration, a C# type from its F# use (that direction answered only the F# use before)
 
 ### Testing — Rust E2E (`src/sharplsp/tests/lsp_e2e.rs`)
 

@@ -191,9 +191,18 @@ let prepareRename
             return None
     }
 
+/// The identity of a symbol a C# project of the workspace declares, used here: F# reads that
+/// project in memory, so the C# sidecar finds its C# declaration and uses by it.
+/// [REFERENCES-CROSS-LANGUAGE]
+let private csharpIdentity (state: FSharpWorkspace.FSharpWorkspaceState) checkResults source line character =
+    FSharpWorkspace.getSymbolUse checkResults source line character
+    |> Option.filter (fun symbolUse -> FSharpCSharpReferences.declares state.CSharpBuilds symbolUse.Symbol)
+    |> Option.bind (fun symbolUse -> FSharpForeignSymbols.identityOf symbolUse.Symbol)
+
 let private computeRenameIdentity state parseResults checkResults source line character =
     resolveRenameUse state checkResults parseResults source line character
     |> Option.bind (fun resolved -> FSharpForeignSymbols.identityOf (normalizeSymbol resolved.SymbolUse.Symbol))
+    |> Option.orElseWith (fun () -> csharpIdentity state checkResults source line character)
 
 /// Return the compiler-stable identity for the renameable symbol at a position.
 let getRenameIdentity (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =

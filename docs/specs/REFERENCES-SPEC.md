@@ -161,6 +161,7 @@ When a C# project references an F# project (or vice versa), find-all-references 
 | C# symbol used in F# code | C# sidecar finds references in C# projects and Razor files → the Rust host asks it for the symbol's identity, then asks the F# sidecar for the F# uses of that identity |
 | F# symbol used in C# or Razor code | F# sidecar finds references in F# projects → the Rust host asks it for the symbol's identity, then asks the C# sidecar for the C# and Razor uses of that identity |
 | F# symbol, asked from a C# or Razor use | C# sidecar finds the C# and Razor uses of the metadata symbol → the Rust host asks the F# sidecar for its F# declaration and uses by the same identity |
+| C# symbol, asked from an F# use | F# sidecar finds the F# uses of the C# project it reads in memory → the Rust host asks it for the symbol's identity, then asks the C# sidecar for the C# declaration and C# and Razor uses by the same identity |
 
 - **Identity:** the symbol's assembly and XML doc signature, from `textDocument/renameIdentity` ([DEFINITION-CROSSLANG-IDENTITY]). A Razor position resolves through its projection.
 - **Request:** `workspace/referencesForeign` (`{ assemblyName, xmlDocSig, includeDeclaration }`) answers a location list. The C# sidecar searches every C# project and maps Razor uses back to their Razor files, dropping hidden scaffolding. The F# sidecar searches only the project that builds the assembly and its in-memory readers, or, for an assembly no F# project builds, the F# projects that reference it. It never walks every file of the workspace.

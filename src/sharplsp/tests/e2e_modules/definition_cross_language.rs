@@ -49,6 +49,21 @@ pub(super) fn poll_cross_language_definition(
     }
 }
 
+/// Each location of a references answer as `(uri, start)`, ordered by file and position.
+fn reference_starts(resp: &Value) -> Vec<(Value, Value)> {
+    let mut starts: Vec<(Value, Value)> = resp["result"]
+        .as_array()
+        .map(|found| {
+            found
+                .iter()
+                .map(|at| (at["uri"].clone(), at["range"]["start"].clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    starts.sort_by_key(|(uri, start)| (uri.to_string(), start.to_string()));
+    starts
+}
+
 // ── C# → F# ──────────────────────────────────────────────────────────
 
 // FULL-STACK: go-to-definition from C# onto an F#-defined type lands on its
@@ -57,7 +72,7 @@ pub(super) fn poll_cross_language_definition(
 fn test_cross_language_definition_csharp_to_fsharp() {
     require_dotnet();
 
-    let (_tmp, root_uri, file_uri, source) = create_cross_language_cs_to_fs_workspace();
+    let (tmp, root_uri, file_uri, source) = create_cross_language_cs_to_fs_workspace();
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
@@ -98,23 +113,29 @@ fn test_cross_language_definition_csharp_to_fsharp() {
     // its references are C#'s alone: the declaration and its one use.
     // [REFERENCES-CROSS-LANGUAGE]
     let local = references(&mut client, &file_uri, 8, 12, true);
-    let starts: Vec<(Value, Value)> = local["result"]
-        .as_array()
-        .map(|found| {
-            found
-                .iter()
-                .map(|at| (at["uri"].clone(), at["range"]["start"].clone()))
-                .collect()
-        })
-        .unwrap_or_default();
     assert_eq!(
-        starts,
+        reference_starts(&local),
         vec![
             (json!(file_uri), json!({ "line": 8, "character": 12 })),
             (json!(file_uri), json!({ "line": 9, "character": 15 })),
         ],
         "the local's references stay in C#: {local}"
     );
+
+    // The F# type's references cross the language boundary both ways: from its
+    // C# use and from its F# declaration, the C# use and the F# declaration.
+    // [REFERENCES-CROSS-LANGUAGE]
+    let shapes_uri = uri.to_owned();
+    let both = vec![
+        (json!(file_uri), json!({ "line": 8, "character": 20 })),
+        (json!(shapes_uri), json!({ "line": 3, "character": 5 })),
+    ];
+    let at_use = references(&mut client, &file_uri, 8, 22, true);
+    assert_eq!(reference_starts(&at_use), both, "{at_use}");
+    let shapes = std::fs::read_to_string(tmp.path().join("SharedFSharp/Shapes.fs")).unwrap();
+    client.open_document(&shapes_uri, &shapes);
+    let at_declaration = references(&mut client, &shapes_uri, 3, 6, true);
+    assert_eq!(reference_starts(&at_declaration), both, "{at_declaration}");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -178,6 +199,18 @@ fn test_cross_language_definition_fsharp_to_csharp() {
     assert_eq!(
         member["range"]["end"],
         json!({ "line": 6, "character": 23 })
+    );
+
+    // The C# type's references cross back: its F# use and its C# declaration.
+    // [REFERENCES-CROSS-LANGUAGE]
+    let greeter = references(&mut client, &file_uri, 5, 16, true);
+    assert_eq!(
+        reference_starts(&greeter),
+        vec![
+            (json!(file_uri), json!({ "line": 5, "character": 14 })),
+            (json!(uri), json!({ "line": 3, "character": 13 })),
+        ],
+        "{greeter}"
     );
 
     client.shutdown_and_exit();
