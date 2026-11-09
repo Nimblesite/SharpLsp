@@ -33,8 +33,13 @@ import {
   uiCommand,
   waitFor,
 } from './profiler-kit';
-import { setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
+import { pollUntilResult, setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
+import {
+  ACTIVATION_MS,
+  LSP_RESPONSE_MS,
+  POLL_INTERVAL_MS,
+  PROCESS_START_MS,
+} from './test-timeouts';
 
 const SAMPLE_WINDOW_MS = 2_000;
 const HOT_FUNCTIONS = [
@@ -69,6 +74,21 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Wait until `sessionId`'s sampler really runs: its live count shows a finished
+ * segment. A fixed sleep after `cpu.start` is no bound on a slow runner's
+ * EventPipe attach, so a window timed from the start can hold no samples (#363).
+ */
+async function untilSampling(sessionId: string): Promise<void> {
+  await pollUntilResult(
+    async () => (await sessions()).find((s) => s.session_id === sessionId)?.sample_count ?? 0,
+    (count) => count > 0,
+    PROCESS_START_MS,
+    POLL_INTERVAL_MS,
+    `CPU session ${sessionId}'s first samples`,
+  );
+}
+
 suite('CPU sessions — list, snapshot and presets over the wire', () => {
   const live = profilingSuite('profiler-cpu-sessions-', 'ProfileTarget');
   // A test that fails mid-way must not leave its session running into the next
@@ -92,6 +112,7 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
     assert.equal(listed.runtime, 'dotnet');
     assert.equal(listed.runtime_version, started.runtime_version);
     assert.ok(!Number.isNaN(Date.parse(listed.started_at)), `RFC 3339 start: ${listed.started_at}`);
+    await untilSampling(started.session_id);
     await sleep(SAMPLE_WINDOW_MS);
     const later = (await sessions()).find((s) => s.session_id === started.session_id);
     assert.ok(later, 'still listed');
@@ -117,8 +138,13 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
     this.timeout(STOP_MS);
     const { target } = live;
     const started = await start(target.pid);
-    await sleep(SAMPLE_WINDOW_MS);
-    const snap = await execute<ProfileReport>('cpu.snapshot', { session_id: started.session_id });
+    const snap = await pollUntilResult(
+      () => execute<ProfileReport>('cpu.snapshot', { session_id: started.session_id }),
+      (report) => report.total_samples > 0,
+      PROCESS_START_MS,
+      SAMPLE_WINDOW_MS / 4,
+      'a snapshot with samples',
+    );
     assert.equal(snap.session_id, started.session_id);
     assert.ok(snap.total_samples > 0, `snapshot has samples: ${snap.total_samples}`);
     assert.ok(snap.hot_functions.length > 0, 'snapshot has hot functions');
@@ -233,6 +259,8 @@ suite('CPU sessions — concurrency and a target that dies', () => {
       both.map((s) => s.pid).sort((x, y) => x - y),
       [first.pid, second.pid].sort((x, y) => x - y),
     );
+    await untilSampling(a.session_id);
+    await untilSampling(b.session_id);
     await sleep(SAMPLE_WINDOW_MS);
     const reportA = await stop(a.session_id);
     assert.equal(reportA.pid, first.pid);
@@ -252,6 +280,7 @@ suite('CPU sessions — concurrency and a target that dies', () => {
     this.timeout(STOP_MS + PROCESS_START_MS);
     const victim = await Target.start('ProfileTarget');
     const started = await start(victim.pid);
+    await untilSampling(started.session_id);
     await sleep(SAMPLE_WINDOW_MS);
     victim.stop();
     await sleep(1_000);

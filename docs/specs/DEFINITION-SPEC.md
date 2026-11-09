@@ -103,7 +103,7 @@ Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs) and [syntax.r
 | Override method | Override declaration | Return type | Base virtual/abstract method | All sibling overrides |
 | Constructor (`new Foo()`) | Constructor declaration | `Foo` class definition | Same as definition | N/A |
 | Property access (`obj.Name`) | Property declaration | Property type definition | Interface property (if any) | All implementing properties |
-| Partial class/method | First `partial` declaration | The type itself | Defining partial part | All partial parts |
+| Partial class/method | Every `partial` declaration (step 7) | The type itself | Defining partial part | All partial parts |
 | Generic type parameter (`T`) | Type parameter declaration | Constraint type (if any) | Same as definition | N/A |
 | `using` alias (`using X = Y`) | Alias declaration | Aliased type `Y` | Same as definition | N/A |
 | `nameof(Foo)` | `Foo` definition | `Foo` type definition | Same as definition | N/A |
