@@ -177,107 +177,153 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 1: SharpLspStatusBar');
   statusBar = new SharpLspStatusBar();
   context.subscriptions.push(statusBar);
+  const { provider, solutionTreeView } = createSolutionExplorer(context);
+  log.info('step 4: profiler UI');
+  profilerUi = registerProfiler(context);
+  const features = registerFeatureModules(context, solutionTreeView);
 
+  log.info('step 10c: acquireDotnet10Sdk');
+  const dotnetPath = await acquireSdk(statusBar);
+  if (dotnetPath === undefined) return degradedApi(context);
+
+  log.info('step 11: activateShipwright');
+  lspClient = await startLanguageServer(context, statusBar, dotnetPath);
+  if (lspClient === undefined) return degradedApi(context);
+
+  log.info('step 12: post-start wiring');
+  wirePostStart(context, lspClient);
+  log.info('step 13: activate complete');
+  return {
+    explorerProvider: provider,
+    profiler: profilerUi,
+    getLspClient: () => lspClient,
+    testController: features.testController,
+    logUri: context.logUri,
+    targetFrameworkStatus: features.targetFrameworks.status,
+    tutorial: features.tutorial,
+  };
+}
+
+/** The Solution Explorer view, its provider and the editor wiring around it. */
+function createSolutionExplorer(context: ExtensionContext): {
+  provider: SolutionExplorerProvider;
+  solutionTreeView: vscode.TreeView<ExplorerNode>;
+} {
   log.info('step 2: SolutionExplorerProvider');
-  explorerProvider = new SolutionExplorerProvider();
+  const provider = new SolutionExplorerProvider();
+  explorerProvider = provider;
   log.info('step 3: createTreeView SOLUTION_EXPLORER');
   const solutionTreeView = window.createTreeView<ExplorerNode>(VIEW_SOLUTION_EXPLORER, {
-    treeDataProvider: explorerProvider,
+    treeDataProvider: provider,
     showCollapseAll: true,
   });
   context.subscriptions.push(solutionTreeView);
-  wireActiveEditorReveal(context, solutionTreeView, explorerProvider);
+  wireActiveEditorReveal(context, solutionTreeView, provider);
   wireFsProjectContext(solutionTreeView);
-
-  log.info('step 4: profiler UI');
-  profilerUi = registerProfiler(context);
-
   log.info('step 7: initSortContext');
-  explorerProvider.initSortContext();
+  provider.initSortContext();
+  return { provider, solutionTreeView };
+}
+
+/** Every feature module's commands, providers and stores; none needs the server yet. */
+function registerFeatureModules(
+  context: ExtensionContext,
+  solutionTreeView: vscode.TreeView<ExplorerNode>,
+): {
+  testController: SharpLspTestController;
+  targetFrameworks: TargetFrameworkUi;
+  tutorial: TutorialApi;
+} {
   log.info('step 8: registerCommands');
   registerCommands(context);
-  tutorial = registerTutorial(context, solutionTreeView);
+  const tour = registerTutorial(context, solutionTreeView);
+  tutorial = tour;
   log.info('step 9: registerAllModuleCommands');
   registerBuildCommands(context);
   registerNuGetCommands(context, () => lspClient);
   registerScaffoldingCommands(context);
   registerFsiCommands(context);
   registerHotReloadCommands(context);
-  targetFrameworks = registerTargetFramework(context, () => lspClient);
-  registerDebugAdapter(context, targetFrameworks.answerFor);
-  testController = registerTestExplorer(context);
-  registerTestStatusLens(context, testController);
+  const frameworks = registerTargetFramework(context, () => lspClient);
+  targetFrameworks = frameworks;
+  registerDebugAdapter(context, frameworks.answerFor);
+  const controller = registerTestExplorer(context);
+  testController = controller;
+  registerTestStatusLens(context, controller);
   log.info('step 10: wireDocumentChangeRefresh');
   solutions.wireRefresh(context);
-
   log.info('step 10b: initProjectDepsStore');
   initProjectDepsStore(context);
+  return { testController: controller, targetFrameworks: frameworks, tutorial: tour };
+}
 
-  log.info('step 10c: acquireDotnet10Sdk');
-  // Implements [DIST-FAILURE-UX]: Result-based; never throws.
-  const dotnetResult = await acquireDotnet10Sdk(statusBar);
+/**
+ * The .NET 10 SDK every dotnet child runs on, published to the shared state
+ * and the process spawner; `undefined` once the failure has been shown.
+ * Implements [DIST-FAILURE-UX] and [DIST-RUNTIME-ACQUIRE].
+ */
+async function acquireSdk(bar: SharpLspStatusBar): Promise<string | undefined> {
+  const dotnetResult = await acquireDotnet10Sdk(bar);
   if (!dotnetResult.ok) {
-    statusBar.setState(ServerState.Error);
+    bar.setState(ServerState.Error);
     void showAcquireFailureNotification(dotnetResult.error, CMD_RETRY_DOTNET_ACQUISITION);
-    return degradedApi(context);
+    return undefined;
   }
   const dotnetPath = dotnetResult.value;
-  // Publish the resolved SDK path so dotnet-spawning features (e.g. F#
-  // Interactive) use it even when `dotnet` is not on $PATH. See
-  // [DIST-RUNTIME-ACQUIRE].
+  // Features that spawn dotnet (e.g. F# Interactive) use the resolved SDK even
+  // when `dotnet` is not on $PATH, and builds, discovery and test runs point at
+  // it too: the PATH SDK may be exactly the one `global.json` rejects (exit 155).
   sharedState.dotnetPath.value = dotnetPath;
-  // Point builds, test discovery and test runs at the SDK that was actually
-  // resolved. Without this every `dotnet` child runs whatever is first on
-  // $PATH — which on a machine whose PATH SDK cannot satisfy the workspace
-  // `global.json` is precisely the SDK that fails with exit code 155.
   configureDotnet(dotnetPath);
+  return dotnetPath;
+}
 
-  log.info('step 11: activateShipwright');
-  // Implements [DIST-FAILURE-UX] and [BINARY-VSCODE]: deployment-toolkit failures surface a toast
-  // and return a degraded API instead of throwing out of activate().
+/**
+ * Verify the bundled binaries and start the language client; `undefined` once
+ * a failure has been shown. Implements [DIST-FAILURE-UX] and [BINARY-VSCODE].
+ */
+async function startLanguageServer(
+  context: ExtensionContext,
+  bar: SharpLspStatusBar,
+  dotnetPath: string,
+): Promise<LanguageClient | undefined> {
   const deployResult = await verifyDeployment(context.extensionPath, dotnetPath);
-  const blockingDiagnostics = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
-  if (blockingDiagnostics.length > 0) {
-    for (const diagnostic of blockingDiagnostics) {
+  const blocking = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
+  if (blocking.length > 0) {
+    for (const diagnostic of blocking) {
       log.error(`Deployment toolkit (${diagnostic.componentId}): ${diagnostic.message}`);
     }
-    statusBar.setState(ServerState.Error);
-    const detail = blockingDiagnostics.map((diagnostic) => diagnostic.message).join(' ');
+    bar.setState(ServerState.Error);
     void notifyActivationFailure(
       'SharpLsp could not start: required binaries are missing or version-mismatched.',
-      detail,
+      blocking.map((diagnostic) => diagnostic.message).join(' '),
     );
-    return degradedApi(context);
+    return undefined;
   }
   log.info('step 11b: client.start (await)');
-  // Implements [DIST-FAILURE-UX]: client.start failures also surface a toast.
   try {
-    lspClient = await client.start(context, statusBar, deploymentPaths(deployResult), dotnetPath);
-    log.info('step 11b: client.start returned');
+    return await client.start(context, bar, deploymentPaths(deployResult), dotnetPath);
   } catch (err: unknown) {
     const msg = getErrorMessage(err);
     log.error(`Failed to start server: ${msg}`);
-    statusBar.setState(ServerState.Error);
+    bar.setState(ServerState.Error);
     void notifyActivationFailure('SharpLsp could not start the language server.', msg);
-    return degradedApi(context);
+    return undefined;
   }
+}
 
-  log.info('step 12: post-start wiring');
-  if (lspClient !== undefined) {
-    explorerProvider.setClient(lspClient);
-    profilerUi.setClient(lspClient);
-    targetFrameworks.attach(lspClient);
-    // Fire-and-forget — don't block activation on solution loading.
-    void solutions.selectAndLoad().catch((err: unknown) => {
-      const msg = getErrorMessage(err);
-      log.error(`Auto-select solution failed: ${msg}`);
-    });
-  }
-
-  // Implements [DIST-WORKSPACE-TRUST]: when the user grants trust, the
-  // previously-restricted executable-path/extra-args settings become active.
-  // Restart the client so a trusted custom server path/args take effect without
-  // requiring a manual window reload.
+/** Hand the started client to the views, load the solution, and restart on trust. */
+function wirePostStart(context: ExtensionContext, started: LanguageClient): void {
+  explorerProvider?.setClient(started);
+  profilerUi?.setClient(started);
+  targetFrameworks?.attach(started);
+  // Fire-and-forget — don't block activation on solution loading.
+  void solutions.selectAndLoad().catch((err: unknown) => {
+    log.error(`Auto-select solution failed: ${getErrorMessage(err)}`);
+  });
+  // Implements [DIST-WORKSPACE-TRUST]: granting trust activates the previously
+  // restricted executable-path/extra-args settings, so restart the client
+  // rather than require a window reload.
   context.subscriptions.push(
     workspace.onDidGrantWorkspaceTrust(() => {
       log.info(
@@ -288,17 +334,6 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
       });
     }),
   );
-
-  log.info('step 13: activate complete');
-  return {
-    explorerProvider,
-    profiler: profilerUi,
-    getLspClient: () => lspClient,
-    testController,
-    logUri: context.logUri,
-    targetFrameworkStatus: targetFrameworks.status,
-    tutorial,
-  };
 }
 
 function deploymentPaths(deployResult: DeploymentResult): client.DeploymentPaths {
