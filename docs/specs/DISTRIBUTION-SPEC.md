@@ -1042,11 +1042,15 @@ each platform's VSIX carries no other platform's host ([DIST-RELEASE]).
 
 Ground truth: <https://github.com/microsoft/vscode-vsce>
 
-All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '22'` or
-higher. `npm` reports a lower runtime only as an `EBADENGINE` warning, so the
-workflows, not `npm`, have to hold the line (GitHub #310 tracks moving them off
-Node 20). Do not upgrade beyond what vsce requires without checking the above URL
-first.
+**Pinned: Node.js 24 LTS**, in every `setup-node` step and the development
+container alike, never a mix. A job that runs `vsce package` or `vsce publish` below
+22 fails only with an `EBADENGINE` warning from `npm`, so the workflows, not `npm`,
+hold the line (GitHub #310). Before moving the pin, check the above URL.
+
+Every CI job that installs the extension goes through `.github/actions/vsix-node-deps`,
+whose `node_modules` cache key carries the Node major: a tree restored across majors
+is a partial install. The release runs a fresh `npm ci` instead, so no restored
+`node_modules` tree ever reaches a published VSIX.
 
 ## [DIST-CI-DOTNET] .NET Toolchain
 

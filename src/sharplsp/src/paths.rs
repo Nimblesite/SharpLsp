@@ -357,11 +357,15 @@ pub fn minimal_watch_roots(
 
 /// A directory prefix must end at a component boundary, including filesystem roots.
 fn watch_key_contains(parent: &str, child: &str) -> bool {
-    let parent = parent.trim_end_matches('/');
-    child == parent
-        || child
-            .strip_prefix(parent)
-            .is_some_and(|tail| tail.starts_with('/'))
+    child == parent.trim_end_matches('/') || remainder_below(child, parent).is_some()
+}
+
+/// The remainder of the keyed `path` below the keyed directory `root`, with no
+/// leading slash: only across a `/` boundary, so a sibling that merely shares a
+/// name prefix (`packages-cache` beside `packages`) is not below it (GitHub #170).
+fn remainder_below<'a>(path: &'a str, root: &str) -> Option<&'a str> {
+    path.strip_prefix(root.trim_end_matches('/'))?
+        .strip_prefix('/')
 }
 
 /// Compiler outputs and `MSBuild`'s end-of-build file list, including custom output folders.
@@ -376,6 +380,12 @@ pub fn relative_to(path: &Path, root: &Path) -> Option<String> {
     path.strip_prefix(root)
         .ok()
         .map(|relative| relative.to_string_lossy().into_owned())
+}
+
+/// The comparison-keyed remainder of `path` below directory `root`; `None` when
+/// `path` is not beneath it. [SHARPLSP-ARCHITECTURE-PATHS]
+pub fn key_beneath(path: &str, root: &str) -> Option<String> {
+    remainder_below(&comparison_key(path), &comparison_key(root)).map(str::to_owned)
 }
 
 /// `path` spelled with forward slashes. [SHARPLSP-ARCHITECTURE-PATHS]
