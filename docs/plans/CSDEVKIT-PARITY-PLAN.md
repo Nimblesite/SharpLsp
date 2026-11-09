@@ -240,8 +240,8 @@ These are the features users hit within the first 5 minutes. Without them, Sharp
   - [x] Parameter name hints (C# + F#)
   - [x] Type inference hints for `var` and lambdas (C#)
   - [x] Type inference hints for let bindings (F#)
-  - [ ] Pipeline type hints (F#)
-  - [ ] Add VS Code settings to toggle each hint category
+  - [x] Pipeline type hints (F#) — `FSharpFeatures.getInlayHints` pipeline hints (`FSharpExtraSuccessCoverageTests` *pipeline inlay hints*)
+  - [x] Add VS Code settings to toggle each hint category — `sharplsp.inlayHints.parameterNames`, `.typeInference`, `.pipelineTypes`
 
 - [x] **P1.5: Import Suggestions in Completion** (handled via code actions — add missing usings)
   - [x] Enable Roslyn import completion provider
@@ -298,11 +298,11 @@ Features users expect within the first day of use.
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`
 
 - [ ] **P2.3: Build Integration**
-  - [ ] Build command (`dotnet build`) from Command Palette
-  - [ ] Build/Rebuild/Clean from Solution Explorer context menu
+  - [x] Build command (`dotnet build`) from Command Palette — `sharplsp.build` (`extension.test.ts`, `context-menus.test.ts`)
+  - [x] Build/Rebuild/Clean from Solution Explorer context menu — `sharplsp.build`/`rebuild`/`clean` (`context-menus.test.ts`)
   - [ ] Build errors routed to diagnostics
   - [ ] Auto-build on test discovery refresh
-  - [ ] Build task provider for tasks.json integration
+  - [x] Build task provider for tasks.json integration — `build.ts` `registerTaskProvider`
 
 - [x] **P2.4: NuGet Package Management** — see [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) (core complete; remaining items in [#123](https://github.com/Nimblesite/SharpLsp/issues/123))
   - [x] Implement `sharplsp/nuget/search` LSP handler (Rust host)
@@ -315,33 +315,33 @@ Features users expect within the first day of use.
   - [x] Add Dependencies section to details panel
   - [x] Add automated VSIX tests for NuGet browser
   - [x] Add E2E Rust tests for all sharplsp/nuget/* handlers
-  - [ ] Prerelease version toggle
-  - [ ] NuGet restore command
-  - [ ] Auto-restore on project load
+  - [x] Prerelease version toggle — NuGet browser prerelease toggle (`nuget-browser.test.ts`)
+  - [x] NuGet restore command — `sharplsp.nuget.restore` (`nuget-deps-e2e.test.ts`)
+  - [x] Auto-restore on project load — `[diagnostics] auto_restore_on_open` ([DIAG-RESTORE], #459)
 
 ### Priority 3 -- Quality of Life (Weeks 15-20)
 
 Features that make the daily experience smooth.
 
-- [ ] **P3.1: Project Scaffolding**
-  - [ ] "SharpLsp: New Project" command using `dotnet new` templates
-  - [ ] Template selection quick pick (console, web, classlib, test, etc.)
-  - [ ] "SharpLsp: New File" command (class, interface, enum, struct, record)
-  - [ ] Auto-add file to project
-  - [ ] "SharpLsp: Add Project to Solution" command
+- [x] **P3.1: Project Scaffolding**
+  - [x] "SharpLsp: New Project" command using `dotnet new` templates — `sharplsp.newProject` (`scaffolding-e2e.test.ts`)
+  - [x] Template selection quick pick (console, web, classlib, test, etc.) — `scaffolding.ts` templates: console, classlib, webapi, xunit, mstest, F# console
+  - [x] "SharpLsp: New File" command (class, interface, enum, struct, record) — `sharplsp.newFile` (`scaffolding-e2e.test.ts`)
+  - [x] Auto-add file to project — `add-source-file.ts` through `project/addCompileItem` (`scaffolding-e2e.test.ts` comment trap, #493)
+  - [x] "SharpLsp: Add Project to Solution" command — `sharplsp.addProjectToSolution` (`scaffolding-e2e.test.ts`)
 
-- [ ] **P3.2: Hot Reload**
-  - [ ] Integrate `dotnet watch` for hot reload during debug
-  - [ ] Hot Reload button in debug toolbar
-  - [ ] Hot Reload on save setting
-  - [ ] Status bar indicator for hot reload state
+- [x] **P3.2: Hot Reload**
+  - [x] Integrate `dotnet watch` for hot reload during debug — `hot-reload.ts` `dotnet watch` (`debug-hot-reload-e2e.test.ts`)
+  - [x] Hot Reload button in debug toolbar — `debug/toolbar` `sharplsp.hotReload.toggle`/`stop`
+  - [x] Hot Reload on save setting — `sharplsp.hotReload.onSave`
+  - [x] Status bar indicator for hot reload state — `hot-reload.ts` status bar item (`coverage-extension-workflows.test.ts`)
 
 - [ ] **P3.3: Solution Explorer Enhancements**
   - [ ] Solution Folders display and management
-  - [ ] Open .csproj/.fsproj from project node
-  - [ ] Add existing project to solution
-  - [ ] Add project reference via UI
-  - [ ] Add NuGet package from explorer context menu
+  - [x] Open .csproj/.fsproj from project node — `sharplsp.openProjectFile` (`context-menus.test.ts`)
+  - [x] Add existing project to solution — `sharplsp.addProjectToSolution`
+  - [x] Add project reference via UI — `sharplsp.addProjectReference` (`context-menus.test.ts`, `nuget-deps-e2e.test.ts`)
+  - [x] Add NuGet package from explorer context menu — `sharplsp.nuget.addFromExplorer` / `browseNuGetPackages` on explorer items
 
 - [x] **P3.4: Workspace Symbol Search**
   - [x] Implement standard `workspace/symbol` LSP method — `workspace_symbols.rs`
@@ -351,7 +351,7 @@ Features that make the daily experience smooth.
 - [x] **P3.5: Code Lens** — `code_lens.rs`
   - [x] Reference count lens above types and members
   - [x] Implementation count lens above interfaces/abstract classes
-  - [ ] Test status lens (pass/fail indicator above test methods)
+  - [x] Test status lens (pass/fail indicator above test methods) — [TEST-STATUS-LENS] (`testing-lens-e2e.test.ts`, `testing-lens-status.test.ts`)
 
 ### Priority 4 -- Surpass C# Dev Kit (Weeks 21+)
 
@@ -368,23 +368,23 @@ Features where we go beyond what C# Dev Kit offers.
   - [x] Subtypes
 
 - [ ] **P4.3: Decompiled Source Navigation**
-  - [ ] Navigate to decompiled source via ICSharpCode.Decompiler
-  - [ ] Navigate to metadata-as-source
+  - [x] Navigate to decompiled source via ICSharpCode.Decompiler — `MetadataDecompiler` (Common), [DEFINITION-CSHARP-METADATA]
+  - [x] Navigate to metadata-as-source — same `MetadataDecompiler` path, both sidecars
   - [ ] Source generator output navigation
 
 - [ ] **P4.4: Advanced F# Features**
-  - [ ] Signature file generation (.fsi)
-  - [ ] FSI integration (send selection to F# Interactive)
+  - [x] Signature file generation (.fsi) — `sharplsp.fsi.generateSignature` (`fsi-build-output-e2e.test.ts`)
+  - [x] FSI integration (send selection to F# Interactive) — `sharplsp.fsi.send`/`sendFile` (`fsi-build-output-e2e.test.ts`)
   - [ ] File ordering awareness and reorder suggestions
-  - [ ] FSharpLint integration
+  - [x] FSharpLint integration — `FSharpLintDiagnostics.fs`, [DIAG-CATEGORIES-ANALYZER]
   - [ ] Fantomas formatting with preview
-  - [ ] Pipeline operator type hints
-  - [ ] Union case/record stub generation
+  - [x] Pipeline operator type hints — see P1.4
+  - [x] Union case/record stub generation — FSHARP-FSAC-PARITY-PLAN DU-case, record and interface stubs
 
-- [ ] **P4.5: Cross-Language Features**
-  - [ ] C# to F# go-to-definition
-  - [ ] F# to C# go-to-definition
-  - [ ] Cross-language find references
+- [x] **P4.5: Cross-Language Features**
+  - [x] C# to F# go-to-definition — [DEFINITION-CROSSLANG-IDENTITY] (`cross-language-definition.test.ts`, `definition_cross_language.rs`)
+  - [x] F# to C# go-to-definition — `FSharpCSharpReferences` in-memory compile (`definition_cross_language.rs`)
+  - [x] Cross-language find references — [REFERENCES-CROSS-LANGUAGE], both directions (`definition_cross_language.rs`)
 
 - [ ] **P4.6: Advanced Refactorings**
   - [ ] Change signature
@@ -393,7 +393,7 @@ Features where we go beyond what C# Dev Kit offers.
   - [ ] Convert to LINQ / from LINQ
   - [ ] Safe delete
   - [ ] Convert class to record
-  - [ ] Postfix completion templates
+  - [x] Postfix completion templates — `postfix_completion.rs`
 
 ---
 
