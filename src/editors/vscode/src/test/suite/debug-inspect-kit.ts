@@ -6,7 +6,7 @@
 // [DEBUG-FEATURES-EXCEPTIONS].
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { DapRecorder, type StopRecord } from './debug-dap-kit';
+import { DapRecorder, dap, type StopRecord } from './debug-dap-kit';
 import {
   CMD_CONTINUE,
   evaluate,
@@ -15,6 +15,7 @@ import {
   type Variable,
   CMD_STEP_INTO,
   CMD_STEP_OVER,
+  assertStopReason,
   assertStoppedAt,
   at,
   methodOf,
@@ -22,12 +23,16 @@ import {
   stepToFrame,
   trace,
   walk,
+  exceptionInfoOf,
+  assertExceptionIs,
+  type ExceptionInfo,
   type Frame,
 } from './debug-drive-kit';
 import { CAUGHT_MESSAGE, type DebugFixture } from './debug-fixture-programs';
-import { assertRanToCompletion } from './debug-suite-kit';
+import { assertRanToCompletion, refusalsOf, type Debuggee } from './debug-suite-kit';
 import { assertContainsAll, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS } from './test-timeouts';
+import type { UiStubs } from './ui-stubs';
 
 /** Each named variable reads exactly its expected value, each row failing with its own reason. */
 export function assertValues(
@@ -236,4 +241,118 @@ export function assertEverySucceeded(
       why,
     );
   }
+}
+
+/** The debuggee is still parked on `count` stops — an inspection must never resume it. */
+export function assertPausedAt(recorder: DapRecorder, count: number, why: string): void {
+  assert.strictEqual(
+    recorder.stops().length,
+    count,
+    `${why}: the debuggee must still be parked where the panel found it`,
+  );
+}
+
+/**
+ * The paused session is still the active one, and no second was started behind
+ * it — the claim every hot-reload and rude-edit case owes the user.
+ */
+export function assertSessionUninterrupted(
+  debuggee: Debuggee,
+  session: vscode.DebugSession,
+  why: string,
+): void {
+  assert.strictEqual(
+    vscode.debug.activeDebugSession?.id,
+    session.id,
+    `${why}: a new session id means the debuggee was restarted and the user lost their state`,
+  );
+  assert.strictEqual(
+    debuggee.sessions.ours.length,
+    1,
+    `${why}: and exactly one session has existed`,
+  );
+}
+
+/** Each workbench breakpoint's 0-based source line, in order; -1 marks a non-source one. */
+export function sourceBreakpointLines(): number[] {
+  return vscode.debug.breakpoints.map((breakpoint) =>
+    breakpoint instanceof vscode.SourceBreakpoint ? breakpoint.location.range.start.line : -1,
+  );
+}
+
+/** The Breakpoints view holds exactly `expected`, on those source lines and no others. */
+export function assertSourceBreakpointLines(expected: readonly number[], why: string): void {
+  assert.deepStrictEqual(sourceBreakpointLines(), expected, why);
+}
+
+/** The one refusal the pipeline issued, failing with every message seen when the count differs. */
+export function requireSingleRefusal(stubs: UiStubs, why: string): string {
+  const reported = refusalsOf(stubs);
+  assert.strictEqual(reported.length, 1, `${why}; messages seen: ${JSON.stringify(reported)}`);
+  return requireAt(reported, 0, 'the refusal message');
+}
+
+/**
+ * The `filter` ids the initialize response advertises under
+ * `exceptionBreakpointFilters`, failing when there are none: VS Code builds the
+ * Breakpoints-view checkboxes entirely from that array.
+ */
+export function advertisedExceptionFilters(capabilities: Record<string, any>): string[] {
+  const filters: unknown = capabilities['exceptionBreakpointFilters'];
+  assert.ok(
+    Array.isArray(filters),
+    '[DEBUG-FEATURES-EXCEPTIONS] makes "Break on all CLR exceptions" and "Break on unhandled ' +
+      'exceptions only" P1 rows. VS Code renders those as the Breakpoints-view checkboxes and ' +
+      'builds them ENTIRELY from `exceptionBreakpointFilters` in the initialize response; with ' +
+      'none advertised the user has no exception checkboxes at all',
+  );
+  return filters.map((filter) => String((filter as Record<string, any>)['filter']));
+}
+
+/** The advertised id of the unhandled-only filter, failing with what WAS offered. */
+export function requireUnhandledFilterId(recorder: DapRecorder): string {
+  const filters = advertisedExceptionFilters(recorder.capabilities());
+  const unhandled = filters.find((filter) => UNHANDLED_FILTER_IDS.includes(filter));
+  assert.ok(unhandled, `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`);
+  return unhandled;
+}
+
+/** The filter ids an adapter may use for "unhandled only"; one MUST exist. */
+export const UNHANDLED_FILTER_IDS: readonly string[] = ['unhandled', 'user-unhandled', 'uncaught'];
+
+/** Push `filters` to the LIVE adapter and assert the request carried exactly them. */
+export async function pushExceptionFilters(
+  session: vscode.DebugSession,
+  recorder: DapRecorder,
+  filters: readonly string[],
+  why: string,
+): Promise<void> {
+  const before = recorder.requests('setExceptionBreakpoints').length;
+  await dap(session, 'setExceptionBreakpoints', { filters });
+  const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
+  assert.deepStrictEqual(sent.args['filters'], filters, why);
+}
+
+/**
+ * F5 from the current stop into the next throw: assert it stopped on `anchor`
+ * in `method` with the `exception` reason, read the panel, and assert it names
+ * `type` carrying `message`. Returns the stop and the panel's answer for
+ * further checks.
+ */
+export async function stopOnThrow(
+  recorder: DapRecorder,
+  session: vscode.DebugSession,
+  fixture: DebugFixture,
+  anchor: string,
+  method: string,
+  type: string,
+  message: string,
+  why: string,
+): Promise<{ stop: StopRecord; info: ExceptionInfo }> {
+  const landed = await stepToFrame(recorder, CMD_CONTINUE);
+  assertStopReason(landed.stop, 'exception', why);
+  assertStoppedAt(landed.frame, fixture, anchor, method, why);
+  const info = await exceptionInfoOf(session, landed.stop.threadId);
+  assertExceptionIs(info, type, message, why);
+  return { stop: landed.stop, info };
 }

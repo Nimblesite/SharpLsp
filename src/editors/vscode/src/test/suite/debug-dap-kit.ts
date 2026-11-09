@@ -454,6 +454,19 @@ export function assertAdapterAlive(recorder: DapRecorder, why: string): void {
   deepEq(recorder.exits, [], `${why}: and the adapter process never exited under it`);
 }
 
+/**
+ * The initialize response advertises `capability` — the row of
+ * [DEBUG-PROTOCOL-CAPABILITIES] the calling gesture is specified to use.
+ */
+export function assertAdvertises(recorder: DapRecorder, capability: string, why: string): void {
+  eq(
+    recorder.capabilities()[capability],
+    true,
+    `${why}: [DEBUG-PROTOCOL-CAPABILITIES] makes \`${capability}\` a Phase 4 Yes; without it ` +
+      'the workbench never sends the request the gesture needs',
+  );
+}
+
 /** One handshake, one termination, and the adapter process alive throughout. */
 export function assertOneWholeSession(recorder: DapRecorder): void {
   eq(recorder.events('initialized').length, 1, 'behind one initialized event');

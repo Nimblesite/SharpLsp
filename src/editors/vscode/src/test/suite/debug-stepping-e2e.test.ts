@@ -17,7 +17,6 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { MODE } from './debug-fixture-programs';
 import {
-  CMD_CONTINUE,
   CMD_STEP_INTO,
   CMD_STEP_OUT,
   CMD_STEP_OVER,
@@ -29,7 +28,6 @@ import {
   methodOf,
   openFixture,
   stackFrames,
-  stepToFrame,
   topFrame,
   trace,
   walk,
@@ -38,24 +36,27 @@ import {
   armBreakpoints,
   assertBreakpointsBound,
   assertCleanSession,
-  assertRanToCompletion,
   startDebuggee,
   useDebuggee,
   runToFirstStop,
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt } from './test-helpers';
-import { onlySourceBreakpoint, stepIntoAddThroughLoop } from './debug-inspect-kit';
+import {
+  continueToCompletion,
+  onlySourceBreakpoint,
+  assertSourceBreakpointLines,
+  stepIntoAddThroughLoop,
+} from './debug-inspect-kit';
+import {
+  assertAllStepStops,
+  assertLandingDepth,
+  continueToBreakpoint,
+  stepLandsAt,
+} from './debug-stepping-kit';
 
 /** The framework directory a Just-My-Code step must never surface. */
 const FRAMEWORK_HINTS: readonly string[] = ['Microsoft.NETCore.App', 'System.Private.CoreLib'];
-
-/** Each workbench breakpoint's 0-based line, in order; -1 marks a non-source one. */
-function workbenchBreakpointLines(): number[] {
-  return vscode.debug.breakpoints.map((breakpoint) =>
-    breakpoint instanceof vscode.SourceBreakpoint ? breakpoint.location.range.start.line : -1,
-  );
-}
 
 suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
   const debuggee = useDebuggee('debug-step-cs-', 'csharp');
@@ -100,14 +101,13 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
           'Accumulate, Box..ctor or Inspect means `next` was serviced as `stepIn`',
       );
       deepEq(
-        stepped.stops.map((stop) => stop.reason),
-        ['step', 'step', 'step'],
-        'every F10 stop must report the DAP reason `step`, never `breakpoint`',
-      );
-      deepEq(
         stepped.frames.map((frame) => methodOf(frame)),
         ['Main', 'Main', 'Main'],
         'stepping OVER keeps the frame; a changed frame is a step INTO',
+      );
+      assertAllStepStops(
+        stepped.stops,
+        'every F10 stop must report the DAP reason `step`, never `breakpoint`',
       );
 
       // Interaction 4 — the wire must show the right request, aimed at the thread.
@@ -141,12 +141,19 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       eq(methodOf(requireAt(before, 0, 'the stopped frame')), 'Main', 'the walk starts in Main');
 
       // Interaction 2 — F11 into Accumulate. The stack must grow by exactly one.
-      const intoAccumulate = await stepToFrame(recorder, CMD_STEP_INTO);
-      assertStopReason(intoAccumulate.stop, 'step', 'a step-into stop');
-      assertStoppedAt(intoAccumulate.frame, fixture, 'accumulate-entry', 'Accumulate', 'F11 once');
+      const intoAccumulate = await stepLandsAt(
+        recorder,
+        CMD_STEP_INTO,
+        fixture,
+        'accumulate-entry',
+        'Accumulate',
+        'F11 once',
+        'step',
+      );
       const inAccumulate = await stackFrames(session, intoAccumulate.stop.threadId);
-      eq(
-        inAccumulate.length,
+      await assertLandingDepth(
+        session,
+        intoAccumulate,
         before.length + 1,
         'stepping INTO pushes exactly one frame; an unchanged depth means the adapter stepped over',
       );
@@ -179,18 +186,32 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       );
 
       // Interaction 5 — Shift+F11 back to Accumulate, then to Main.
-      const outToAccumulate = await stepToFrame(recorder, CMD_STEP_OUT);
-      assertStopReason(outToAccumulate.stop, 'step', 'a step-out stop');
-      assertStoppedAt(outToAccumulate.frame, fixture, 'accumulate-call', 'Accumulate', 'Shift+F11');
-      eq(
-        (await stackFrames(session, outToAccumulate.stop.threadId)).length,
+      const outToAccumulate = await stepLandsAt(
+        recorder,
+        CMD_STEP_OUT,
+        fixture,
+        'accumulate-call',
+        'Accumulate',
+        'Shift+F11',
+        'step',
+      );
+      await assertLandingDepth(
+        session,
+        outToAccumulate,
         deep.length - 1,
         'stepping OUT pops exactly one frame',
       );
-      const outToMain = await stepToFrame(recorder, CMD_STEP_OUT);
-      assertStoppedAt(outToMain.frame, fixture, 'main-accumulate', 'Main', 'Shift+F11 twice');
-      eq(
-        (await stackFrames(session, outToMain.stop.threadId)).length,
+      const outToMain = await stepLandsAt(
+        recorder,
+        CMD_STEP_OUT,
+        fixture,
+        'main-accumulate',
+        'Main',
+        'Shift+F11 twice',
+      );
+      await assertLandingDepth(
+        session,
+        outToMain,
         before.length,
         'two step-outs from Add must return the stack to the depth the walk started at',
       );
@@ -223,9 +244,9 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       );
 
       // Interaction 2 — F11. With Just My Code on, this is a step OVER.
-      const stepped = await stepToFrame(recorder, CMD_STEP_INTO);
-      assertStoppedAt(
-        stepped.frame,
+      const stepped = await stepLandsAt(
+        recorder,
+        CMD_STEP_INTO,
         fixture,
         'main-inspect',
         'Main',
@@ -249,9 +270,9 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       eq(methodOf(requireAt(frames, 0, 'the stopped frame')), 'Main', 'still in user code');
 
       // Interaction 4 — F11 into the user method on the next statement DOES descend.
-      const intoInspect = await stepToFrame(recorder, CMD_STEP_INTO);
-      assertStoppedAt(
-        intoInspect.frame,
+      await stepLandsAt(
+        recorder,
+        CMD_STEP_INTO,
         fixture,
         'inspect-list',
         'Inspect',
@@ -311,16 +332,14 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       );
 
       // Interaction 4 — the temporary breakpoint must not have been persisted.
-      deepEq(
-        workbenchBreakpointLines(),
+      assertSourceBreakpointLines(
         [fixture.source.line('main-accumulate')],
         'run to cursor uses a TEMPORARY breakpoint; leaving it in the Breakpoints view is a ' +
           'stale stop the user never asked for',
       );
 
       // Interaction 5 — continue out; the program completes normally.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a run-to-cursor session resumed to the end');
+      await continueToCompletion(recorder, 'a run-to-cursor session resumed to the end');
       await recorder.waitForOutput('done plain 45');
       assertCleanSession(debuggee(), 'run to cursor then continue');
     },
@@ -335,8 +354,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       // Interaction 1 — three breakpoints in source order.
       const anchors = ['main-accumulate', 'main-inspect', 'main-done'];
       armBreakpoints(fixture, ...anchors);
-      deepEq(
-        workbenchBreakpointLines(),
+      assertSourceBreakpointLines(
         anchors.map((anchor) => fixture.source.line(anchor)),
         'the workbench holds all three breakpoints, on the lines they were set on',
       );
@@ -356,9 +374,13 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       assert.ok(!recorder.outputText().includes('total='), 'nothing has been printed yet');
 
       // Interaction 3 — continue to the second breakpoint.
-      const second = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStopReason(second.stop, 'breakpoint', 'the second stop');
-      assertStoppedAt(second.frame, fixture, 'main-inspect', 'Main', 'the second breakpoint');
+      await continueToBreakpoint(
+        recorder,
+        fixture,
+        'main-inspect',
+        'Main',
+        'the second stop must be the second breakpoint',
+      );
       await recorder.waitForOutput('total=8');
       assert.ok(
         !recorder.outputText().includes('boxed=8'),
@@ -366,15 +388,18 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       );
 
       // Interaction 4 — continue to the third.
-      const third = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStopReason(third.stop, 'breakpoint', 'the third stop');
-      assertStoppedAt(third.frame, fixture, 'main-done', 'Main', 'the third breakpoint');
+      await continueToBreakpoint(
+        recorder,
+        fixture,
+        'main-done',
+        'Main',
+        'the third stop must be the third breakpoint',
+      );
       await recorder.waitForOutput('boxed=8 1 2');
       eq(recorder.stops().length, 3, 'three breakpoints produce exactly three stops');
 
       // Interaction 5 — the final continue runs the program to exit.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'the last continue');
+      await continueToCompletion(recorder, 'the last continue');
       await recorder.waitForOutput('done plain 45');
       eq(
         recorder.stops().length,

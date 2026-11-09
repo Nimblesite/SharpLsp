@@ -40,6 +40,7 @@ import {
   focusDocument,
   invokeCommand,
   stopAnyDebugSession,
+  type CommandOutcome,
   type ObservedSession,
 } from './run-debug-kit';
 import {
@@ -166,6 +167,59 @@ function assertSessionShape(session: ObservedSession, gesture: string): void {
   neq(session.workspaceFolder, undefined, `${gesture} must bind the session to a folder`);
 }
 
+/** Press a launch gesture, asserting the command resolved rather than rejecting. */
+async function pressGesture(command: string, why: string): Promise<CommandOutcome> {
+  const pressed = await invokeCommand(command);
+  assert.ok(!pressed.rejected, `${why}: ${pressed.message}`);
+  return pressed;
+}
+
+/** Wait for `count` SharpLsp sessions and return the `count`th one the workbench observed. */
+async function nthSession(
+  rec: DebugSessionRecorder,
+  count: number,
+  why: string,
+): Promise<ObservedSession> {
+  const sessions = await rec.waitForSessions(count);
+  eq(sessions.length, count, why);
+  return requireAt(sessions, count - 1, `the session the gesture started`);
+}
+
+/** Assert `config` launches exactly the assembly `dll` the build produced. */
+function assertLaunchesDll(
+  config: Record<string, any> | vscode.DebugConfiguration | undefined,
+  dll: string,
+  why: string,
+): void {
+  eq(programOf(config as Record<string, any> | undefined), comparablePath(dll), why);
+}
+
+/** Assert two resolved configurations name the SAME launch target. */
+function assertSameTarget(
+  left: Record<string, any> | vscode.DebugConfiguration | undefined,
+  right: Record<string, any> | vscode.DebugConfiguration | undefined,
+  why: string,
+): void {
+  eq(programOf(left as Record<string, any>), programOf(right as Record<string, any>), why);
+}
+
+/** Assert two resolved configurations name DIFFERENT launch targets. */
+function assertTargetChanged(
+  left: Record<string, any> | vscode.DebugConfiguration | undefined,
+  right: Record<string, any> | vscode.DebugConfiguration | undefined,
+  why: string,
+): void {
+  neq(programOf(left as Record<string, any>), programOf(right as Record<string, any>), why);
+}
+
+/** The refusal message at `index`, with content and no leaked TypeError. */
+function assertReadableRefusal(messages: readonly string[], index: number, which: string): string {
+  const message = requireAt(messages, index, which);
+  neq(message, '', 'a refusal message must have content');
+  assert.ok(!message.includes('Cannot read properties'), 'not a leaked TypeError');
+  return message;
+}
+
 suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
   let workspaceRoot: string;
   let scratchDir: string;
@@ -241,8 +295,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     deepEq(captures, [], 'focusing a document must not resolve any configuration');
 
     // Interaction 2 — press F5.
-    const f5 = await invokeCommand(CMD_VSCODE_DEBUG_START);
-    assert.ok(!f5.rejected, `F5 must not reject: ${f5.message}`); // B08
+    await pressGesture(CMD_VSCODE_DEBUG_START, 'F5 must not reject'); // B08
     const afterF5 = await waitForCaptures(captures, 1);
     eq(
       afterF5.length,
@@ -283,8 +336,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     eq(direct.config?.type, DEBUG_TYPE_ID, 'and it must fill in a non-empty type'); // B08
 
     // Interaction 3 — press Ctrl/Cmd+F5, Run Without Debugging.
-    const ctrlF5 = await invokeCommand(CMD_VSCODE_DEBUG_RUN);
-    assert.ok(!ctrlF5.rejected, `Ctrl+F5 must not reject: ${ctrlF5.message}`); // B09
+    await pressGesture(CMD_VSCODE_DEBUG_RUN, 'Ctrl+F5 must not reject'); // B09
     const afterRun = await waitForCaptures(captures, 2);
     eq(afterRun.length, 2, 'Ctrl+F5 must reach the provider chain exactly once more'); // B09
     const runCapture = requireAt(afterRun, 1, 'the config Ctrl+F5 handed the chain');
@@ -299,8 +351,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
     // Interaction 4 — focus the OTHER project and press F5 again.
     await focusDocument(appB.sourceFile);
-    const again = await invokeCommand(CMD_VSCODE_DEBUG_START);
-    assert.ok(!again.rejected, `the second F5 must not reject either: ${again.message}`);
+    await pressGesture(CMD_VSCODE_DEBUG_START, 'the second F5 must not reject either');
     const afterSecond = await waitForCaptures(captures, 3);
     eq(afterSecond.length, 3, 'every F5 press must reach the provider chain');
     const secondCapture = requireAt(afterSecond, 2, 'the config the second F5 handed the chain');
@@ -336,16 +387,13 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     await focusDocument(appA.sourceFile);
 
     // Interaction 3 — Run Without Debugging.
-    const run = await invokeCommand(CMD_RUN_PROGRAM);
-    assert.ok(!run.rejected, `${CMD_RUN_PROGRAM} must exist and succeed: ${run.message}`); // B11
+    const run = await pressGesture(CMD_RUN_PROGRAM, `${CMD_RUN_PROGRAM} must exist and succeed`); // B11
     eq(run.message, '', 'a successful run reports no failure message');
-    const afterRun = await recorder.waitForSessions(1);
-    eq(afterRun.length, 1, 'Run must start exactly one debug session'); // B15
-    const runSession = requireAt(afterRun, 0, 'the session Run started');
+    const runSession = await nthSession(recorder, 1, 'Run must start exactly one debug session'); // B15
     const runCfg = runSession.configuration;
     assertSessionShape(runSession, 'Run Without Debugging'); // B15, B63
     eq(runCfg['noDebug'], true, 'Run must go through startDebugging with noDebug:true'); // B15
-    eq(programOf(runCfg), comparablePath(dllA), 'Run launches the dll the build produced'); // B15
+    assertLaunchesDll(runCfg, dllA, 'Run launches the dll the build produced'); // B15
     eq(cwdOf(runCfg), comparablePath(appA.dir), 'cwd must be the project directory'); // B63
     samePath(runSession.workspaceFolder?.uri.fsPath, workspaceRoot, 'session folder is bound'); // B63
     eq(vscode.debug.activeDebugSession?.id, runSession.id, 'the session must be ACTIVE'); // B63
@@ -366,16 +414,13 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     eq(vscode.debug.activeDebugSession, undefined, 'stopping must clear the active session');
 
     // Interaction 5 — Debug the same document.
-    const dbg = await invokeCommand(CMD_DEBUG_PROGRAM);
-    assert.ok(!dbg.rejected, `${CMD_DEBUG_PROGRAM} must succeed: ${dbg.message}`);
-    const afterDebug = await recorder.waitForSessions(2);
-    eq(afterDebug.length, 2, 'Debug must start a second session'); // B16
-    const debugSession = requireAt(afterDebug, 1, 'the session Debug started');
+    await pressGesture(CMD_DEBUG_PROGRAM, `${CMD_DEBUG_PROGRAM} must succeed`);
+    const debugSession = await nthSession(recorder, 2, 'Debug must start a second session'); // B16
     const dbgCfg = debugSession.configuration;
     assertSessionShape(debugSession, 'Debug Program');
     neq(dbgCfg['noDebug'], true, 'Debug must NOT set noDebug — the sole difference'); // B16
     // B15, B16 — one resolver, two flags.
-    eq(programOf(dbgCfg), programOf(runCfg), 'Run and Debug must resolve the identical target');
+    assertSameTarget(dbgCfg, runCfg, 'Run and Debug must resolve the identical target');
     eq(cwdOf(dbgCfg), cwdOf(runCfg), 'Run and Debug must share the cwd too'); // B16
     neq(debugSession.id, runSession.id, 'the second gesture is a distinct session');
     deepEq(refusals(stubs), [], 'two successful launches must produce no refusal message');
@@ -400,19 +445,16 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     neq(configB, undefined, 'a runnable project must resolve to a configuration');
     eq(configB?.type, DEBUG_TYPE_ID, 'a returned config with a falsy type is discarded silently');
     eq(configB?.request, 'launch', 'the synthesized request must be exactly "launch"');
-    eq(programOf(configB), comparablePath(dllB), 'the ACTIVE document picks the target'); // B20
+    assertLaunchesDll(configB, dllB, 'the ACTIVE document picks the target'); // B20
 
     // Interaction 2 — Debug Program on the same document.
-    const first = await invokeCommand(CMD_DEBUG_PROGRAM);
-    assert.ok(!first.rejected, `Debug Program must succeed for project B: ${first.message}`);
-    const afterB = await recorder.waitForSessions(1);
-    eq(afterB.length, 1, 'Debug Program must start exactly one session');
-    const sessionB = requireAt(afterB, 0, 'the session started while B was focused');
+    await pressGesture(CMD_DEBUG_PROGRAM, 'Debug Program must succeed for project B');
+    const sessionB = await nthSession(recorder, 1, 'Debug Program must start exactly one session');
     const cfgB = sessionB.configuration;
     assertSessionShape(sessionB, 'Debug Program on project B');
-    eq(programOf(cfgB), comparablePath(dllB), 'focusing B must launch project B'); // B20
+    assertLaunchesDll(cfgB, dllB, 'focusing B must launch project B'); // B20
     eq(cwdOf(cfgB), comparablePath(appB.dir), 'the cwd must be project B’s directory');
-    eq(programOf(cfgB), programOf(configB), 'the command and F5 must not diverge'); // B20
+    assertSameTarget(cfgB, configB, 'the command and F5 must not diverge'); // B20
 
     // Interaction 3 — stop, then focus the OTHER project.
     await stopAndSettle(recorder, sessionB.id);
@@ -420,19 +462,20 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     const resolvedA = await resolveThroughProvider(folder, emptyF5Config());
     eq(resolvedA.error, '', 'the provider must stay total across a focus change');
     const configA = resolvedA.config;
-    eq(programOf(configA), comparablePath(dllA), 'a focus change MUST change the target'); // B20
-    neq(programOf(configA), programOf(configB), 'the previous target must not be reused'); // B20
+    assertLaunchesDll(configA, dllA, 'a focus change MUST change the target'); // B20
+    assertTargetChanged(configA, configB, 'the previous target must not be reused'); // B20
 
     // Interaction 4 — Debug Program again, now on A.
-    const second = await invokeCommand(CMD_DEBUG_PROGRAM);
-    assert.ok(!second.rejected, `the second Debug Program must succeed: ${second.message}`);
-    const afterA = await recorder.waitForSessions(2);
-    eq(afterA.length, 2, 'the second gesture must start a second session');
-    const sessionA = requireAt(afterA, 1, 'the session started while A was focused');
+    await pressGesture(CMD_DEBUG_PROGRAM, 'the second Debug Program must succeed');
+    const sessionA = await nthSession(
+      recorder,
+      2,
+      'the second gesture must start a second session',
+    );
     const cfgA = sessionA.configuration;
-    eq(programOf(cfgA), comparablePath(dllA), 'focusing A must launch project A'); // B20
-    neq(programOf(cfgA), programOf(cfgB), 'the command is document-sensitive'); // B20
-    eq(programOf(cfgA), programOf(configA), 'command and provider agree on A too'); // B20
+    assertLaunchesDll(cfgA, dllA, 'focusing A must launch project A'); // B20
+    assertTargetChanged(cfgA, cfgB, 'the command is document-sensitive'); // B20
+    assertSameTarget(cfgA, configA, 'command and provider agree on A too'); // B20
     neq(sessionA.id, sessionB.id, 'two gestures produce two distinct sessions');
     deepEq(refusals(stubs), [], 'two resolvable targets must produce no refusal message');
   });
@@ -452,8 +495,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     deepEq(refusals(stubs), [], 'merely opening a document must not warn about anything');
 
     // Interaction 3 — Debug Program. startDebugging resolves false.
-    const dbg = await invokeCommand(CMD_DEBUG_PROGRAM);
-    assert.ok(!dbg.rejected, `a refusal is reported, not thrown at the caller: ${dbg.message}`); // B62
+    await pressGesture(CMD_DEBUG_PROGRAM, 'a refusal is reported, not thrown at the caller'); // B62
     await recorder.assertNoSession('a launch whose program is missing must start no session'); // B62
     const afterDebug = refusals(stubs);
     eq(
@@ -462,22 +504,17 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
       'the discarded Promise<boolean> from startDebugging must be observed: exactly one ' +
         `message must tell the user the session was refused; saw ${afterDebug.length}`,
     ); // B62
-    const debugMessage = requireAt(afterDebug, 0, 'the refusal message for Debug Program');
-    neq(debugMessage, '', 'a refusal message must have content');
-    assert.ok(!debugMessage.includes('Cannot read properties'), 'not a TypeError'); // B62
+    assertReadableRefusal(afterDebug, 0, 'the refusal message for Debug Program'); // B62
     deepEq(stubs.log.infoMessages, [], 'a refusal is not an informational message');
     eq(vscode.debug.activeDebugSession, undefined, 'a refused launch leaves no active session');
 
     // Interaction 4 — Run Without Debugging on the same document must refuse
     // identically: one resolver means one refusal, never a silent no-op.
-    const run = await invokeCommand(CMD_RUN_PROGRAM);
-    assert.ok(!run.rejected, `${CMD_RUN_PROGRAM} must exist and refuse cleanly: ${run.message}`); // B11
+    await pressGesture(CMD_RUN_PROGRAM, `${CMD_RUN_PROGRAM} must exist and refuse cleanly`); // B11
     await recorder.assertNoSession('Run must refuse the same unbuildable target Debug refused'); // B62
     const afterRun = refusals(stubs);
     eq(afterRun.length, 2, 'Run must produce exactly one further refusal message'); // B62
-    const runMessage = requireAt(afterRun, 1, 'the refusal message for Run Without Debugging');
-    neq(runMessage, '', 'the Run refusal must have content too');
-    assert.ok(!runMessage.includes('Cannot read properties'), 'no leaked TypeError'); // B62
+    assertReadableRefusal(afterRun, 1, 'the refusal message for Run Without Debugging'); // B62
     deepEq(recorder.terminated, [], 'nothing started across either gesture, so nothing ended');
     assert.ok(!fs.existsSync(missingDll), 'a refused launch must not have built anything');
   });
