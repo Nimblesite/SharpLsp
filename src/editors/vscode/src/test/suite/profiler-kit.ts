@@ -15,18 +15,18 @@ import { activeMemorySession } from '@nimblesite/lsp-profiler-ui/out/src/memory-
 import type {
   MemoryStartResult,
   MemoryStep,
-  ProfileReport,
+  ProfileSessionList,
   RefGraph,
-  StartProfileResult,
 } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import type { SuspectedLeak as DashboardLeak } from '@nimblesite/lsp-profiler-ui/out/src/memory-dashboard';
 import {
   closeAllEditors,
   EXTENSION_ID,
+  pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
 } from './test-helpers';
-import { ACTIVATION_MS, PROCESS_START_MS } from './test-timeouts';
+import { ACTIVATION_MS, POLL_INTERVAL_MS, PROCESS_START_MS } from './test-timeouts';
 import { buildFixture } from './profiler-fixtures';
 
 export { buildFixture, fixtureFile, fixtureSource } from './profiler-fixtures';
@@ -340,6 +340,12 @@ export async function profileFromRowFor(
     profilerStatusText()?.includes('Profiling'),
     `status bar shows the live session: ${profilerStatusText()}`,
   );
+  await waitFor(
+    () => profilerStore().profiler.value.sampleCount,
+    (count) => count > 0,
+    PROCESS_START_MS,
+    'the live session to collect its first samples',
+  );
   await new Promise((resolve) => setTimeout(resolve, sampleMs));
   await stopProfiling(stopMs);
 }
@@ -429,19 +435,22 @@ export async function assertWireError(
 }
 
 /**
- * Attach the CPU sampler to `pid`, let it sample for `windowMs`, stop it, and
- * return both the start reply and the report — the shape every "did the
- * sampler really sample" assertion starts from.
+ * Wait until CPU session `sessionId`'s sampler really runs: its live count
+ * shows a finished segment. A fixed sleep after `cpu.start` is no bound on a
+ * slow runner's EventPipe attach, so a window timed from the start can hold no
+ * samples (#363).
  */
-export async function sampleCpu(
-  pid: number,
-  windowMs: number,
-  extra: Record<string, unknown> = {},
-): Promise<{ started: StartProfileResult; report: ProfileReport }> {
-  const started = await execute<StartProfileResult>('cpu.start', { pid, ...extra });
-  await new Promise((resolve) => setTimeout(resolve, windowMs));
-  const report = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
-  return { started, report };
+export async function untilSampling(sessionId: string): Promise<void> {
+  await pollUntilResult(
+    async () =>
+      (await execute<ProfileSessionList>('cpu.list', {})).sessions.find(
+        (session) => session.session_id === sessionId,
+      )?.sample_count ?? 0,
+    (count) => count > 0,
+    PROCESS_START_MS,
+    POLL_INTERVAL_MS,
+    `CPU session ${sessionId}'s first samples`,
+  );
 }
 
 /** Assert the status bar names the live tracking session, as it must while one runs. */

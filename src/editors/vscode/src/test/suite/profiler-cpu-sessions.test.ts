@@ -31,15 +31,11 @@ import {
   stopProfiling,
   Target,
   uiCommand,
+  untilSampling,
   waitFor,
 } from './profiler-kit';
 import { pollUntilResult, setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
-import {
-  ACTIVATION_MS,
-  LSP_RESPONSE_MS,
-  POLL_INTERVAL_MS,
-  PROCESS_START_MS,
-} from './test-timeouts';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
 const SAMPLE_WINDOW_MS = 2_000;
 const HOT_FUNCTIONS = [
@@ -72,21 +68,6 @@ function dotnetCpu(): { live_progress: boolean } | undefined {
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Wait until `sessionId`'s sampler really runs: its live count shows a finished
- * segment. A fixed sleep after `cpu.start` is no bound on a slow runner's
- * EventPipe attach, so a window timed from the start can hold no samples (#363).
- */
-async function untilSampling(sessionId: string): Promise<void> {
-  await pollUntilResult(
-    async () => (await sessions()).find((s) => s.session_id === sessionId)?.sample_count ?? 0,
-    (count) => count > 0,
-    PROCESS_START_MS,
-    POLL_INTERVAL_MS,
-    `CPU session ${sessionId}'s first samples`,
-  );
 }
 
 suite('CPU sessions — list, snapshot and presets over the wire', () => {
