@@ -148,7 +148,7 @@ let ``unreadable or non-matching adjacent xml files yield no docs instead of thr
 
 [<Fact>]
 let ``a runtime with no reference pack of its own version is documented by the newest pack of its major version`` () =
-    let packs = [ "9.0.20", "nine"; "10.0.0", "ten zero"; "10.0.2", "ten two"; "10.0.11", "ten eleven"; "11.0.0", "eleven" ]
+    let packs = [ "10.0.99.backup", "ignored"; "9.0.20", "nine"; "10.0.0", "ten zero"; "10.0.2", "ten two"; "10.0.11", "ten eleven"; "11.0.0", "eleven" ]
 
     Assert.Contains("ten zero", trimDocsOn packs "10.0.0" |> Option.defaultValue "")
     Assert.Contains("nine", trimDocsOn packs "9.0.20" |> Option.defaultValue "")

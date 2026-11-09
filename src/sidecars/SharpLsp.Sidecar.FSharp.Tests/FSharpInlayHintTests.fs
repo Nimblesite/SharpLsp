@@ -17,7 +17,9 @@ let private appended =
       "let isLucky x = x % 7 = 0"
       "let lengths = [ \"a\"; \"bb\" ] |> List.map String.length"
       "let parts = \"a,b\".Split ','"
-      "let total = List.fold (fun acc item -> acc + item) 0 [ 1; 2 ]" ]
+      "let total = List.fold (fun acc item -> acc + item) 0 [ 1; 2 ]"
+      "let (|>) (value: int) (mapping: int -> string) = mapping value"
+      "let rendered = 5 |> string" ]
 
 /// The line of `source` that starts with `prefix`, and the column of `text` on it.
 let private at (lines: string array) (prefix: string) (text: string) =
@@ -64,6 +66,9 @@ let ``inlay hints use short type names, skip operators and sit before each argum
             let _, list = at lines "let total" "[ 1; 2 ]"
             let expected = [ folder, "folder:"; state, "state:"; list, "list:" ]
             Assert.Equal<(int * string) list>(expected, labelsOn hints 2 totalLine)
+
+            let renderedLine, customPipe = at lines "let rendered" "|>"
+            Assert.Contains((customPipe, ": int"), labelsOn hints 1 renderedLine)
 
             Assert.DoesNotContain(hints, fun hint -> hint.Label.Contains "Microsoft.FSharp")
             Assert.DoesNotContain(hints, fun hint -> hint.Label.Contains "System.")
