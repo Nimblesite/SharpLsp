@@ -142,7 +142,7 @@ SharpLsp ships inside them as a server option ([DIST-ZED-REGISTRY]).
 - [ ] E2E test harness (launch Zed with extension, open .sln workspace)
 - [x] CI pipeline: `cargo test` with the coverage ratchet (`make _test-zed`)
 - [x] CI pipeline: `cargo clippy` (`make _lint-zed`)
-- [ ] WASM binary size optimization
+- [x] WASM binary size optimization — `[profile.release]` `opt-level = "s"`, LTO, one codegen unit, stripped: the release `sharplsp_zed.wasm` went from 337,328 to 182,829 bytes
 - [x] No bundled server: resolve from settings or PATH, else download the release archive ([DIST-ZED-REGISTRY])
 
 ### Phase 7: Upstream Distribution

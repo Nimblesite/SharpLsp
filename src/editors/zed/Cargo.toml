@@ -24,3 +24,12 @@ zed_extension_api = "0.7"
 # Parses extension.toml in the version-parity test. A dev-dependency, so the
 # wasm32-wasip1 extension build never pulls it in.
 toml = "1.1"
+
+# Zed downloads and instantiates the extension's wasm, so the release build is
+# optimised for size: whole-program inlining across crates, one codegen unit, no
+# symbols. The extension only starts a process and shapes labels; speed is moot.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
